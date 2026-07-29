@@ -6,6 +6,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    environment:
+      VITE_RISU_LEGAL_CONFIGURED: "TRUE"
     restart: always
     ports:
       - 6001:6001
