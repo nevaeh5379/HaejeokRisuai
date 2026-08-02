@@ -113,6 +113,8 @@ export async function SaveLocalBackup(){
         if(isNodeServer && !forageStorage.isAccount){
             let lastProgress = -1
             if(assetKeys.length > 0){
+                writer.setBufferSize(64 * 1024 * 1024)
+
                 await (forageStorage.realStorage as NodeStorage).streamItems(assetKeys, {
                     onFileStart: async(key, size) => {
                         await writer.startBackup(key, size)
@@ -454,26 +456,9 @@ export function LoadLocalBackup(){
             const file = input.files[0];
             input.remove();
 
-            const reader = file.stream().getReader();
-            let bytesRead = 0;
-            let lastReadProgress = -1;
             let pendingDatabase: Uint8Array | null = null;
             const restoredColdStorageKeys = new Set<string>();
-            const useNodeBulkRestore = isNodeServer && !forageStorage.isAccount
-            const pendingNodeAssets = new Map<string, Uint8Array>()
-            const nodeBulkMaxFiles = 64
-            const nodeBulkMaxBytes = 64 * 1024 * 1024
-            let pendingNodeAssetBytes = 0
-
-            const flushNodeAssets = async() => {
-                if(pendingNodeAssets.size === 0){
-                    return
-                }
-
-                await (forageStorage.realStorage as NodeStorage).setItems(pendingNodeAssets)
-                pendingNodeAssets.clear()
-                pendingNodeAssetBytes = 0
-            }
+            const useNodeDirectRestore = isNodeServer && !forageStorage.isAccount
 
             const restoreBackupEntry = async(name:string, data:Uint8Array) => {
                 if(name === 'encryption.risudat') {
@@ -520,28 +505,13 @@ export function LoadLocalBackup(){
                     if (!handledAsColdStorage) {
                         if (isTauri) {
                             await writeFile(`assets/` + name, data, { baseDir: BaseDirectory.AppData });
-                        } else if (useNodeBulkRestore) {
-                            const key = 'assets/' + name
-                            const previous = pendingNodeAssets.get(key)
-                            if(previous){
-                                pendingNodeAssetBytes -= previous.byteLength
-                            }
-                            pendingNodeAssets.set(key, data)
-                            pendingNodeAssetBytes += data.byteLength
-
-                            if(
-                                pendingNodeAssets.size >= nodeBulkMaxFiles
-                                || pendingNodeAssetBytes >= nodeBulkMaxBytes
-                            ){
-                                await flushNodeAssets()
-                            }
                         } else {
                             await forageStorage.setItem('assets/' + name, data);
                         }
                     }
                 }
 
-                if(!useNodeBulkRestore){
+                if(!useNodeDirectRestore){
                     await sleep(10);
                 }
                 if (forageStorage.isAccount) {
@@ -549,34 +519,59 @@ export function LoadLocalBackup(){
                 }
             }
 
-            type BackupParserPhase = 'nameLength' | 'name' | 'dataLength' | 'data'
-            let parserPhase: BackupParserPhase = 'nameLength'
-            const lengthBuffer = new Uint8Array(4)
-            let lengthOffset = 0
-            let entryNameBuffer = new Uint8Array()
-            let entryNameOffset = 0
-            let entryName = ''
-            let entryDataLength = 0
-            let entryDataReceived = 0
-            let entryDataChunks: Uint8Array[] = []
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    break;
+            if(useNodeDirectRestore){
+                const storage = forageStorage.realStorage as NodeStorage
+                const restore = await storage.restoreBackup(file, (uploadedBytes, totalBytes) => {
+                    const progress = totalBytes === 0
+                        ? 100
+                        : Math.floor(uploadedBytes / totalBytes * 100)
+                    alertWait(`Loading local Backup... (${progress}%)`)
+                })
+                try {
+                    for(const name of restore.entries){
+                        const data = await storage.getBackupRestoreEntry(restore.restoreId, name)
+                        await restoreBackupEntry(name, data)
+                    }
+                } finally {
+                    try {
+                        await storage.closeBackupRestore(restore.restoreId)
+                    } catch (error) {
+                        console.error('Failed to clean backup restore session:', error)
+                    }
                 }
+            }
+            else{
+                const reader = file.stream().getReader();
+                let bytesRead = 0;
+                let lastReadProgress = -1;
+                type BackupParserPhase = 'nameLength' | 'name' | 'dataLength' | 'data'
+                let parserPhase: BackupParserPhase = 'nameLength'
+                const lengthBuffer = new Uint8Array(4)
+                let lengthOffset = 0
+                let entryNameBuffer = new Uint8Array()
+                let entryNameOffset = 0
+                let entryName = ''
+                let entryDataLength = 0
+                let entryDataReceived = 0
+                let entryDataChunks: Uint8Array[] = []
 
-                bytesRead += value.length;
-                const readProgress = file.size === 0
-                    ? 100
-                    : Math.floor(bytesRead / file.size * 100)
-                if(readProgress !== lastReadProgress){
-                    lastReadProgress = readProgress
-                    alertWait(`Loading local Backup... (${readProgress}%)`);
-                }
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) {
+                        break;
+                    }
 
-                let chunkOffset = 0
-                while(chunkOffset < value.length){
+                    bytesRead += value.length;
+                    const readProgress = file.size === 0
+                        ? 100
+                        : Math.floor(bytesRead / file.size * 100)
+                    if(readProgress !== lastReadProgress){
+                        lastReadProgress = readProgress
+                        alertWait(`Loading local Backup... (${readProgress}%)`);
+                    }
+
+                    let chunkOffset = 0
+                    while(chunkOffset < value.length){
                     if(parserPhase === 'nameLength' || parserPhase === 'dataLength'){
                         const copyLength = Math.min(
                             lengthBuffer.length - lengthOffset,
@@ -667,15 +662,14 @@ export function LoadLocalBackup(){
                         entryDataChunks = []
                         parserPhase = 'nameLength'
                     }
+                    }
+                }
+
+                if(parserPhase !== 'nameLength' || lengthOffset !== 0){
+                    alertError('Failed, backup file ended with an incomplete entry.')
+                    return
                 }
             }
-
-            if(parserPhase !== 'nameLength' || lengthOffset !== 0){
-                alertError('Failed, backup file ended with an incomplete entry.')
-                return
-            }
-
-            await flushNodeAssets()
 
             if(!pendingDatabase){
                 alertError('Failed, Is file corrupted?')

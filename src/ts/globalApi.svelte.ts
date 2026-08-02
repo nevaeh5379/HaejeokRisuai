@@ -1282,6 +1282,33 @@ export class TauriWriter {
  */
 export class LocalWriter {
     writer: WritableStreamDefaultWriter | TauriWriter
+    private bufferSize = 0
+    private buffer: Uint8Array | null = null
+    private bufferLength = 0
+
+    setBufferSize(size: number): void {
+        if(!Number.isSafeInteger(size) || size <= 0){
+            throw new Error('Writer buffer size must be a positive integer')
+        }
+        if(this.bufferLength !== 0){
+            throw new Error('Writer buffer size cannot be changed while data is buffered')
+        }
+        this.bufferSize = size
+        this.buffer = null
+    }
+
+    private async flushBuffer(): Promise<void> {
+        if(!this.buffer || this.bufferLength === 0){
+            return
+        }
+
+        const data = this.bufferLength === this.buffer.byteLength
+            ? this.buffer
+            : this.buffer.subarray(0, this.bufferLength)
+        this.buffer = null
+        this.bufferLength = 0
+        await this.writer.write(data)
+    }
 
     /**
      * Initializes the writer.
@@ -1317,7 +1344,7 @@ export class LocalWriter {
      */
     async writeBackup(name: string, data: Uint8Array): Promise<void> {
         await this.startBackup(name, data.byteLength)
-        await this.writer.write(data)
+        await this.write(data)
     }
 
     /**
@@ -1332,10 +1359,10 @@ export class LocalWriter {
         }
         const encodedName = new TextEncoder().encode(getBasename(name))
         const nameLength = new Uint32Array([encodedName.byteLength])
-        await this.writer.write(new Uint8Array(nameLength.buffer))
-        await this.writer.write(encodedName)
+        await this.write(new Uint8Array(nameLength.buffer))
+        await this.write(encodedName)
         const encodedDataLength = new Uint32Array([Number(normalizedLength)])
-        await this.writer.write(new Uint8Array(encodedDataLength.buffer))
+        await this.write(new Uint8Array(encodedDataLength.buffer))
     }
 
     /**
@@ -1344,13 +1371,39 @@ export class LocalWriter {
      * @param {Uint8Array} data - The data to write.
      */
     async write(data: Uint8Array): Promise<void> {
-        await this.writer.write(data)
+        if(this.bufferSize === 0){
+            await this.writer.write(data)
+            return
+        }
+
+        let offset = 0
+        while(offset < data.byteLength){
+            if(!this.buffer){
+                this.buffer = new Uint8Array(this.bufferSize)
+            }
+
+            const writableLength = Math.min(
+                this.bufferSize - this.bufferLength,
+                data.byteLength - offset
+            )
+            this.buffer.set(
+                data.subarray(offset, offset + writableLength),
+                this.bufferLength
+            )
+            this.bufferLength += writableLength
+            offset += writableLength
+
+            if(this.bufferLength === this.bufferSize){
+                await this.flushBuffer()
+            }
+        }
     }
 
     /**
      * Closes the writer.
      */
     async close(): Promise<void> {
+        await this.flushBuffer()
         await this.writer.close()
     }
 }

@@ -22,6 +22,11 @@ export type NodeStorageBulkWriteProgress = {
     percent: number
 }
 
+export type NodeStorageBackupRestoreResult = {
+    restoreId: string
+    entries: string[]
+}
+
 export class NodeStorage{
 
     authChecked = false
@@ -194,6 +199,67 @@ export class NodeStorage{
 
             request.send(body)
         })
+    }
+
+    async restoreBackup(
+        file: File,
+        onProgress?: (uploadedBytes: number, totalBytes: number) => void
+    ): Promise<NodeStorageBackupRestoreResult> {
+        await this.checkAuth()
+        const auth = await this.createAuth()
+
+        return await new Promise<NodeStorageBackupRestoreResult>((resolve, reject) => {
+            const request = new XMLHttpRequest()
+            request.open('POST', '/api/restore-backup')
+            request.responseType = 'json'
+            request.setRequestHeader('content-type', 'application/x-risu-backup')
+            request.setRequestHeader('risu-auth', auth)
+            request.upload.onprogress = (event) => {
+                onProgress?.(event.loaded, event.lengthComputable ? event.total : file.size)
+            }
+            request.onerror = () => reject(new Error('Backup restore upload failed'))
+            request.onabort = () => reject(new Error('Backup restore upload was aborted'))
+            request.onload = () => {
+                if(request.status < 200 || request.status >= 300){
+                    reject(new Error(
+                        request.response?.error
+                        ?? `Backup restore upload failed: ${request.status}`
+                    ))
+                    return
+                }
+                resolve(request.response as NodeStorageBackupRestoreResult)
+            }
+            request.send(file)
+        })
+    }
+
+    async getBackupRestoreEntry(restoreId: string, name: string): Promise<Buffer> {
+        await this.checkAuth()
+        const response = await fetch('/api/restore-backup-entry', {
+            headers: {
+                'restore-id': restoreId,
+                'entry-name': Buffer.from(name, 'utf8').toString('hex'),
+                'risu-auth': await this.createAuth()
+            }
+        })
+        if(!response.ok){
+            throw new Error(`Backup restore entry read failed: ${response.status}`)
+        }
+        return Buffer.from(await response.arrayBuffer())
+    }
+
+    async closeBackupRestore(restoreId: string): Promise<void> {
+        await this.checkAuth()
+        const response = await fetch('/api/restore-backup-session', {
+            method: 'DELETE',
+            headers: {
+                'restore-id': restoreId,
+                'risu-auth': await this.createAuth()
+            }
+        })
+        if(!response.ok){
+            throw new Error(`Backup restore cleanup failed: ${response.status}`)
+        }
     }
 
     async getItem(key:string):Promise<Buffer> {

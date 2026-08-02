@@ -1233,12 +1233,276 @@ const BULK_WRITE_CONTENT_TYPE = 'application/x-risu-bulk';
 const BULK_WRITE_MAX_NAME_BYTES = 64 * 1024;
 const BULK_WRITE_MAX_CHUNK_BYTES = 8 * 1024 * 1024;
 const BULK_WRITE_MAX_FILES = 10000;
+const BACKUP_RESTORE_CONTENT_TYPE = 'application/x-risu-backup';
+const BACKUP_RESTORE_MAX_NAME_BYTES = 1024 * 1024;
+const BACKUP_RESTORE_MAX_FILES = 100000;
+const BACKUP_RESTORE_SESSION_TTL_MS = 30 * 60 * 1000;
+const backupRestoreSessions = new Map();
+
+function isBackupRestoreSpecialEntry(name) {
+    return name === 'database.risudat'
+        || name === 'encryption.risudat'
+        || /^(?:coldstorage[/_])?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.json$/.test(name);
+}
+
+async function removeBackupRestoreFiles(files) {
+    await Promise.all(files.map((file) =>
+        fs.rm(file.temporaryPath, { force: true }).catch(() => {})
+    ));
+}
+
+async function removeBackupRestoreSession(restoreId) {
+    const session = backupRestoreSessions.get(restoreId);
+    if (!session) return;
+    backupRestoreSessions.delete(restoreId);
+    if (session.cleanupTimer) {
+        clearTimeout(session.cleanupTimer);
+    }
+    await removeBackupRestoreFiles(Array.from(session.entries.values()));
+}
+
+async function cleanExpiredBackupRestoreSessions() {
+    const expiredBefore = Date.now() - BACKUP_RESTORE_SESSION_TTL_MS;
+    for (const [restoreId, session] of backupRestoreSessions) {
+        if (session.createdAt < expiredBefore) {
+            await removeBackupRestoreSession(restoreId);
+        }
+    }
+}
 
 function createBulkProtocolError(message) {
     const error = new Error(message);
     error.statusCode = 400;
     return error;
 }
+
+app.post('/api/restore-backup', authenticatedRouteLimiter, async(req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+
+    if (!req.is(BACKUP_RESTORE_CONTENT_TYPE)) {
+        res.status(415).send({ error: `Content-Type must be ${BACKUP_RESTORE_CONTENT_TYPE}` });
+        return;
+    }
+
+    await cleanExpiredBackupRestoreSessions();
+
+    const restoreId = crypto.randomUUID();
+    const completedFiles = [];
+    const entryNames = new Set();
+    let currentFile = null;
+    let phase = 'nameLength';
+    const lengthBuffer = Buffer.alloc(4);
+    let lengthOffset = 0;
+    let nameBuffer = null;
+    let nameOffset = 0;
+    let entryName = '';
+    let entryDataLength = 0;
+    let entryDataReceived = 0;
+    let fileCount = 0;
+
+    const cleanup = async() => {
+        if (currentFile) {
+            try {
+                await currentFile.fileHandle.close();
+            } catch {}
+        }
+        await removeBackupRestoreFiles(completedFiles);
+    };
+
+    const startEntry = async() => {
+        if (entryNames.has(entryName)) {
+            throw createBulkProtocolError(`Duplicate backup entry: ${entryName}`);
+        }
+        if (fileCount >= BACKUP_RESTORE_MAX_FILES) {
+            throw createBulkProtocolError('Too many backup entries');
+        }
+
+        const temporaryPath = path.join(savePath, `__restore-${restoreId}-${crypto.randomUUID()}`);
+        currentFile = {
+            name: entryName,
+            dataLength: entryDataLength,
+            temporaryPath,
+            fileHandle: await fs.open(temporaryPath, 'wx'),
+            special: isBackupRestoreSpecialEntry(entryName)
+        };
+        entryNames.add(entryName);
+        fileCount += 1;
+    };
+
+    const finishEntry = async() => {
+        await currentFile.fileHandle.close();
+        delete currentFile.fileHandle;
+        completedFiles.push(currentFile);
+        currentFile = null;
+        entryName = '';
+        entryDataLength = 0;
+        entryDataReceived = 0;
+        phase = 'nameLength';
+    };
+
+    try {
+        for await (const incomingChunk of req) {
+            let chunkOffset = 0;
+            while (chunkOffset < incomingChunk.length) {
+                if (phase === 'nameLength' || phase === 'dataLength') {
+                    const copyLength = Math.min(
+                        lengthBuffer.length - lengthOffset,
+                        incomingChunk.length - chunkOffset
+                    );
+                    incomingChunk.copy(
+                        lengthBuffer,
+                        lengthOffset,
+                        chunkOffset,
+                        chunkOffset + copyLength
+                    );
+                    lengthOffset += copyLength;
+                    chunkOffset += copyLength;
+                    if (lengthOffset < lengthBuffer.length) continue;
+
+                    const length = lengthBuffer.readUInt32LE(0);
+                    lengthOffset = 0;
+                    if (phase === 'nameLength') {
+                        if (length === 0 || length > BACKUP_RESTORE_MAX_NAME_BYTES) {
+                            throw createBulkProtocolError('Invalid backup entry name length');
+                        }
+                        nameBuffer = Buffer.alloc(length);
+                        nameOffset = 0;
+                        phase = 'name';
+                    } else {
+                        entryDataLength = length;
+                        entryDataReceived = 0;
+                        await startEntry();
+                        phase = 'data';
+                        if (entryDataLength === 0) {
+                            await finishEntry();
+                        }
+                    }
+                    continue;
+                }
+
+                if (phase === 'name') {
+                    const copyLength = Math.min(
+                        nameBuffer.length - nameOffset,
+                        incomingChunk.length - chunkOffset
+                    );
+                    incomingChunk.copy(
+                        nameBuffer,
+                        nameOffset,
+                        chunkOffset,
+                        chunkOffset + copyLength
+                    );
+                    nameOffset += copyLength;
+                    chunkOffset += copyLength;
+                    if (nameOffset === nameBuffer.length) {
+                        entryName = nameBuffer.toString('utf8');
+                        nameBuffer = null;
+                        phase = 'dataLength';
+                    }
+                    continue;
+                }
+
+                const copyLength = Math.min(
+                    entryDataLength - entryDataReceived,
+                    incomingChunk.length - chunkOffset
+                );
+                await writeFileChunk(
+                    currentFile.fileHandle,
+                    incomingChunk.subarray(chunkOffset, chunkOffset + copyLength)
+                );
+                entryDataReceived += copyLength;
+                chunkOffset += copyLength;
+                if (entryDataReceived === entryDataLength) {
+                    await finishEntry();
+                }
+            }
+        }
+
+        if (phase !== 'nameLength' || lengthOffset !== 0 || currentFile) {
+            throw createBulkProtocolError('Backup ended with an incomplete entry');
+        }
+
+        const specialEntries = new Map();
+        for (const file of completedFiles) {
+            if (file.special) {
+                specialEntries.set(file.name, file);
+                continue;
+            }
+            const storageKey = `assets/${file.name}`;
+            const targetPath = path.join(savePath, Buffer.from(storageKey, 'utf8').toString('hex'));
+            await fs.rename(file.temporaryPath, targetPath);
+        }
+
+        const specialFiles = Array.from(specialEntries.values());
+        if (specialFiles.length > 0) {
+            const session = {
+                createdAt: Date.now(),
+                entries: specialEntries,
+                cleanupTimer: null
+            };
+            session.cleanupTimer = setTimeout(() => {
+                removeBackupRestoreSession(restoreId).catch((error) => {
+                    console.error('Failed to clean expired backup restore session:', error);
+                });
+            }, BACKUP_RESTORE_SESSION_TTL_MS);
+            session.cleanupTimer.unref?.();
+            backupRestoreSessions.set(restoreId, session);
+        }
+
+        res.send({
+            restoreId,
+            entries: Array.from(specialEntries.keys())
+        });
+    } catch (error) {
+        await cleanup();
+        if (error?.statusCode) {
+            res.status(error.statusCode).send({ error: error.message });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.get('/api/restore-backup-entry', authenticatedRouteLimiter, async(req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+
+    const restoreId = req.headers['restore-id'];
+    const encodedName = req.headers['entry-name'];
+    const session = typeof restoreId === 'string'
+        ? backupRestoreSessions.get(restoreId)
+        : null;
+    if (!session || typeof encodedName !== 'string') {
+        res.status(404).send({ error: 'Backup restore session not found' });
+        return;
+    }
+
+    if (encodedName.length % 2 !== 0 || !hexRegex.test(encodedName)) {
+        res.status(400).send({ error: 'Invalid backup entry name' });
+        return;
+    }
+    const name = Buffer.from(encodedName, 'hex').toString('utf8');
+    const file = session.entries.get(name);
+    if (!file) {
+        res.status(404).send({ error: 'Backup entry not found' });
+        return;
+    }
+
+    try {
+        res.type('application/octet-stream');
+        const fileHandle = await fs.open(file.temporaryPath, 'r');
+        await pipeline(fileHandle.createReadStream(), res);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.delete('/api/restore-backup-session', authenticatedRouteLimiter, async(req, res) => {
+    if (!await checkAuth(req, res)) return;
+    const restoreId = req.headers['restore-id'];
+    if (typeof restoreId === 'string') {
+        await removeBackupRestoreSession(restoreId);
+    }
+    res.send({ success: true });
+});
 
 async function writeFileChunk(fileHandle, data) {
     let offset = 0;
