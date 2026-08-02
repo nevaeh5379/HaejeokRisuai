@@ -17,6 +17,7 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.raw({ type: 'application/octet-stream', limit: '100mb' }));
 app.use(express.text({ limit: '100mb' }));
 const {pipeline} = require('stream/promises')
+const {once} = require('events')
 const https = require('https');
 const sslPath = path.join(process.cwd(), 'server/node/ssl/certificate');
 const hubURL = 'https://sv.risuai.xyz'; 
@@ -1226,6 +1227,33 @@ async function writePacket(res, packet) {
 
     return packet;
   }
+
+const BULK_WRITE_CONTENT_TYPE = 'application/x-risu-bulk';
+const BULK_WRITE_MAX_NAME_BYTES = 64 * 1024;
+const BULK_WRITE_MAX_CHUNK_BYTES = 8 * 1024 * 1024;
+const BULK_WRITE_MAX_FILES = 10000;
+
+function createBulkProtocolError(message) {
+    const error = new Error(message);
+    error.statusCode = 400;
+    return error;
+}
+
+async function writeFileChunk(fileHandle, data) {
+    let offset = 0;
+    while (offset < data.length) {
+        const { bytesWritten } = await fileHandle.write(
+            data,
+            offset,
+            data.length - offset,
+            null
+        );
+        if (bytesWritten === 0) {
+            throw new Error('Failed to write bulk file chunk');
+        }
+        offset += bytesWritten;
+    }
+}
 //   Type list:
 // Header Type (Type: 0x01):
 // Type - 1 byte
@@ -1261,7 +1289,7 @@ app.post('/api/read-bulk', authenticatedRouteLimiter, async(req, res, next) => {
         const stat = await fileHandle.stat()
         const name = Buffer.from(filePath, 'hex').toString('utf8')
         try {
-            await writePacket(fileId, createHeaderPacket(name, stat.size));
+            await writePacket(res, createHeaderPacket(fileId, name, stat.size));
 
             const stream = fileHandle.createReadStream({autoClose: false})
             for await (const chunk of stream) {
@@ -1277,6 +1305,167 @@ app.post('/api/read-bulk', authenticatedRouteLimiter, async(req, res, next) => {
     }
 
     res.end();
+})
+
+app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+
+    if (!req.is(BULK_WRITE_CONTENT_TYPE)) {
+        res.status(415).send({ error: `Content-Type must be ${BULK_WRITE_CONTENT_TYPE}` });
+        return;
+    }
+
+    const receivingFiles = new Map();
+    const targetPaths = new Set();
+    const completedFiles = [];
+    let pending = Buffer.alloc(0);
+    let fileCount = 0;
+
+    const cleanup = async() => {
+        const temporaryFiles = [];
+        for (const file of receivingFiles.values()) {
+            try {
+                await file.fileHandle.close();
+            } catch {}
+            temporaryFiles.push(file.temporaryPath);
+        }
+        for (const file of completedFiles) {
+            temporaryFiles.push(file.temporaryPath);
+        }
+        await Promise.all(temporaryFiles.map((temporaryPath) =>
+            fs.rm(temporaryPath, { force: true }).catch(() => {})
+        ));
+    };
+
+    try {
+        for await (const incomingChunk of req) {
+            pending = Buffer.concat([pending, incomingChunk]);
+            let offset = 0;
+
+            while (offset < pending.length) {
+                const available = pending.length - offset;
+                if (available < 1) break;
+
+                const type = pending.readUInt8(offset);
+
+                if (type === 0x01) {
+                    if (available < 9) break;
+
+                    const fileId = pending.readUInt32BE(offset + 1);
+                    const nameLength = pending.readUInt32BE(offset + 5);
+                    if (nameLength === 0 || nameLength > BULK_WRITE_MAX_NAME_BYTES) {
+                        throw createBulkProtocolError('Invalid bulk file name length');
+                    }
+
+                    const packetLength = 1 + 4 + 4 + nameLength + 8;
+                    if (available < packetLength) break;
+                    if (receivingFiles.has(fileId)) {
+                        throw createBulkProtocolError(`Duplicate bulk file ID: ${fileId}`);
+                    }
+                    if (fileCount >= BULK_WRITE_MAX_FILES) {
+                        throw createBulkProtocolError('Too many files in bulk write request');
+                    }
+
+                    const nameStart = offset + 9;
+                    const nameEnd = nameStart + nameLength;
+                    const name = pending.subarray(nameStart, nameEnd).toString('utf8');
+                    const expectedSize = pending.readBigUInt64BE(nameEnd);
+                    const encodedName = Buffer.from(name, 'utf8').toString('hex');
+                    const targetPath = path.join(savePath, encodedName);
+                    if (targetPaths.has(targetPath)) {
+                        throw createBulkProtocolError(`Duplicate bulk file name: ${name}`);
+                    }
+
+                    const temporaryPath = path.join(savePath, `__bulk-${crypto.randomUUID()}`);
+                    const fileHandle = await fs.open(temporaryPath, 'wx');
+                    receivingFiles.set(fileId, {
+                        name,
+                        expectedSize,
+                        receivedSize: 0n,
+                        targetPath,
+                        temporaryPath,
+                        fileHandle
+                    });
+                    targetPaths.add(targetPath);
+                    fileCount += 1;
+                    offset += packetLength;
+                    continue;
+                }
+
+                if (type === 0x02) {
+                    if (available < 9) break;
+
+                    const fileId = pending.readUInt32BE(offset + 1);
+                    const chunkSize = pending.readUInt32BE(offset + 5);
+                    if (chunkSize > BULK_WRITE_MAX_CHUNK_BYTES) {
+                        throw createBulkProtocolError('Bulk file chunk is too large');
+                    }
+
+                    const packetLength = 1 + 4 + 4 + chunkSize;
+                    if (available < packetLength) break;
+
+                    const file = receivingFiles.get(fileId);
+                    if (!file) {
+                        throw createBulkProtocolError(`Chunk for unknown bulk file ID: ${fileId}`);
+                    }
+
+                    const nextSize = file.receivedSize + BigInt(chunkSize);
+                    if (nextSize > file.expectedSize) {
+                        throw createBulkProtocolError(`Too much data for bulk file: ${file.name}`);
+                    }
+
+                    await writeFileChunk(
+                        file.fileHandle,
+                        pending.subarray(offset + 9, offset + packetLength)
+                    );
+                    file.receivedSize = nextSize;
+                    offset += packetLength;
+                    continue;
+                }
+
+                if (type === 0x03) {
+                    if (available < 5) break;
+
+                    const fileId = pending.readUInt32BE(offset + 1);
+                    const file = receivingFiles.get(fileId);
+                    if (!file) {
+                        throw createBulkProtocolError(`End packet for unknown bulk file ID: ${fileId}`);
+                    }
+                    if (file.receivedSize !== file.expectedSize) {
+                        throw createBulkProtocolError(`Incomplete bulk file: ${file.name}`);
+                    }
+
+                    await file.fileHandle.close();
+                    receivingFiles.delete(fileId);
+                    completedFiles.push(file);
+                    offset += 5;
+                    continue;
+                }
+
+                throw createBulkProtocolError(`Unknown bulk packet type: ${type}`);
+            }
+
+            pending = pending.subarray(offset);
+        }
+
+        if (pending.length !== 0 || receivingFiles.size !== 0) {
+            throw createBulkProtocolError('Bulk write request ended with an incomplete packet');
+        }
+
+        for (const file of completedFiles) {
+            await fs.rename(file.temporaryPath, file.targetPath);
+        }
+        completedFiles.length = 0;
+
+        res.send({ success: true, written: fileCount });
+    } catch (error) {
+        await cleanup();
+        if (error?.statusCode) {
+            res.status(error.statusCode).send({ error: error.message });
+            return;
+        }
+        next(error);
+    }
 })
 
 app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {

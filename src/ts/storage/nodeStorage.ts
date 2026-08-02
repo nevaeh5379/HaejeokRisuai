@@ -2,6 +2,19 @@ import { language } from "src/lang"
 import { alertError, alertInput, waitAlert } from "../alert"
 import { base64url, getKeypairStore, saveKeypairStore } from "../util"
 
+export type NodeStorageBulkReadProgress = {
+    completedFiles: number
+    totalFiles: number
+    currentFile: string | null
+    receivedBytes: number
+    totalBytes: bigint
+}
+
+export type NodeStorageBulkWriteProgress = {
+    uploadedBytes: number
+    totalBytes: number
+    percent: number
+}
 
 export class NodeStorage{
 
@@ -88,6 +101,95 @@ export class NodeStorage{
             throw data.error
         }
     }
+
+    async setItems(
+        items: ReadonlyMap<string, Uint8Array>,
+        onProgress?: (progress: NodeStorageBulkWriteProgress) => void
+    ):Promise<void> {
+        await this.checkAuth()
+
+        const parts: BlobPart[] = []
+        const chunkSize = 256 * 1024
+        let fileId = 0
+
+        for(const [name, data] of items){
+            const nameBuffer = Buffer.from(name, 'utf8')
+            const header = Buffer.alloc(1 + 4 + 4 + nameBuffer.length + 8)
+            let offset = 0
+
+            header.writeUInt8(0x01, offset)
+            offset += 1
+            header.writeUInt32BE(fileId, offset)
+            offset += 4
+            header.writeUInt32BE(nameBuffer.length, offset)
+            offset += 4
+            nameBuffer.copy(header, offset)
+            offset += nameBuffer.length
+            header.writeBigUInt64BE(BigInt(data.byteLength), offset)
+            parts.push(header as unknown as BlobPart)
+
+            for(let dataOffset=0;dataOffset<data.byteLength;dataOffset+=chunkSize){
+                const chunk = data.subarray(
+                    dataOffset,
+                    Math.min(dataOffset + chunkSize, data.byteLength)
+                )
+                const chunkHeader = Buffer.alloc(1 + 4 + 4)
+                chunkHeader.writeUInt8(0x02, 0)
+                chunkHeader.writeUInt32BE(fileId, 1)
+                chunkHeader.writeUInt32BE(chunk.byteLength, 5)
+                parts.push(chunkHeader as unknown as BlobPart)
+                parts.push(chunk as unknown as BlobPart)
+            }
+
+            const end = Buffer.alloc(1 + 4)
+            end.writeUInt8(0x03, 0)
+            end.writeUInt32BE(fileId, 1)
+            parts.push(end as unknown as BlobPart)
+            fileId += 1
+        }
+
+        const body = new Blob(parts, { type: 'application/x-risu-bulk' })
+        const auth = await this.createAuth()
+
+        await new Promise<void>((resolve, reject) => {
+            const request = new XMLHttpRequest()
+            request.open('POST', '/api/write-bulk')
+            request.responseType = 'json'
+            request.setRequestHeader('content-type', body.type)
+            request.setRequestHeader('risu-auth', auth)
+
+            request.upload.onprogress = (event) => {
+                const totalBytes = event.lengthComputable ? event.total : body.size
+                const percent = totalBytes === 0
+                    ? 100
+                    : Math.min(100, event.loaded / totalBytes * 100)
+                onProgress?.({
+                    uploadedBytes: event.loaded,
+                    totalBytes,
+                    percent
+                })
+            }
+            request.onerror = () => reject(new Error('setItems network error'))
+            request.onabort = () => reject(new Error('setItems request aborted'))
+            request.onload = () => {
+                if(request.status < 200 || request.status >= 300){
+                    const message = request.response?.error
+                        ?? `setItems Error: ${request.status}`
+                    reject(new Error(message))
+                    return
+                }
+                onProgress?.({
+                    uploadedBytes: body.size,
+                    totalBytes: body.size,
+                    percent: 100
+                })
+                resolve()
+            }
+
+            request.send(body)
+        })
+    }
+
     async getItem(key:string):Promise<Buffer> {
         await this.checkAuth()
         const da = await fetch('/api/read', {
@@ -108,7 +210,10 @@ export class NodeStorage{
         return data
     }
 
-    async getItems(keys: string[]): Promise<Map<string, Buffer>> {
+    async getItems(
+      keys: string[],
+      onProgress?: (progress: NodeStorageBulkReadProgress) => void
+    ): Promise<Map<string, Buffer>> {
       await this.checkAuth()
 
       const filePaths = keys.map((key) =>
@@ -142,8 +247,17 @@ export class NodeStorage{
       const reader = response.body.getReader()
       const receivingFiles = new Map<number, ReceivingFile>()
       const results = new Map<string, Buffer>()
+      let completedFiles = 0
 
       let pending = Buffer.alloc(0)
+
+      onProgress?.({
+          completedFiles,
+          totalFiles: keys.length,
+          currentFile: null,
+          receivedBytes: 0,
+          totalBytes: 0n
+      })
 
       while (true) {
           const { value, done } = await reader.read()
@@ -187,6 +301,14 @@ export class NodeStorage{
                       chunks: []
                   })
 
+                  onProgress?.({
+                      completedFiles,
+                      totalFiles: keys.length,
+                      currentFile: name,
+                      receivedBytes: 0,
+                      totalBytes: expectedSize
+                  })
+
                   offset += packetLength
                   continue
               }
@@ -224,6 +346,14 @@ export class NodeStorage{
                       )
                   }
 
+                  onProgress?.({
+                      completedFiles,
+                      totalFiles: keys.length,
+                      currentFile: file.name,
+                      receivedBytes: file.receivedSize,
+                      totalBytes: file.expectedSize
+                  })
+
                   offset += packetLength
                   continue
               }
@@ -254,6 +384,14 @@ export class NodeStorage{
                   )
 
                   receivingFiles.delete(fileId)
+                  completedFiles += 1
+                  onProgress?.({
+                      completedFiles,
+                      totalFiles: keys.length,
+                      currentFile: null,
+                      receivedBytes: 0,
+                      totalBytes: 0n
+                  })
                   offset += 5
                   continue
               }
