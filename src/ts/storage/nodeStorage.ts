@@ -107,6 +107,176 @@ export class NodeStorage{
         }
         return data
     }
+
+    async getItems(keys: string[]): Promise<Map<string, Buffer>> {
+      await this.checkAuth()
+
+      const filePaths = keys.map((key) =>
+          Buffer.from(key, "utf8").toString("hex")
+      )
+
+      const response = await fetch("/api/read-bulk", {
+          method: "POST",
+          body: JSON.stringify({ filePaths }),
+          headers: {
+              "content-type": "application/json",
+              "risu-auth": await this.createAuth()
+          }
+      })
+
+      if (!response.ok) {
+          throw new Error(`getItems Error: ${response.status}`)
+      }
+
+      if (!response.body) {
+          throw new Error("getItems Error: response body is missing")
+      }
+
+      type ReceivingFile = {
+          name: string
+          expectedSize: bigint
+          receivedSize: number
+          chunks: Buffer[]
+      }
+
+      const reader = response.body.getReader()
+      const receivingFiles = new Map<number, ReceivingFile>()
+      const results = new Map<string, Buffer>()
+
+      let pending = Buffer.alloc(0)
+
+      while (true) {
+          const { value, done } = await reader.read()
+
+          if (value) {
+              pending = Buffer.concat([pending, Buffer.from(value)])
+          }
+
+          let offset = 0
+
+          while (offset < pending.length) {
+              const available = pending.length - offset
+
+              if (available < 1) break
+
+              const type = pending.readUInt8(offset)
+
+              if (type === 0x01) {
+                  // Type(1) + File ID(4) + NameLength(4)
+                  if (available < 9) break
+
+                  const fileId = pending.readUInt32BE(offset + 1)
+                  const nameLength = pending.readUInt32BE(offset + 5)
+                  const packetLength = 1 + 4 + 4 + nameLength + 8
+
+                  if (available < packetLength) break
+
+                  const nameStart = offset + 9
+                  const nameEnd = nameStart + nameLength
+
+                  const name = pending
+                      .subarray(nameStart, nameEnd)
+                      .toString("utf8")
+
+                  const expectedSize = pending.readBigUInt64BE(nameEnd)
+
+                  receivingFiles.set(fileId, {
+                      name,
+                      expectedSize,
+                      receivedSize: 0,
+                      chunks: []
+                  })
+
+                  offset += packetLength
+                  continue
+              }
+
+              if (type === 0x02) {
+                  // Type(1) + File ID(4) + ChunkSize(4)
+                  if (available < 9) break
+
+                  const fileId = pending.readUInt32BE(offset + 1)
+                  const chunkSize = pending.readUInt32BE(offset + 5)
+                  const packetLength = 1 + 4 + 4 + chunkSize
+
+                  if (available < packetLength) break
+
+                  const file = receivingFiles.get(fileId)
+
+                  if (!file) {
+                      throw new Error(
+                          `Received chunk for unknown file ID: ${fileId}`
+                      )
+                  }
+
+                  const chunkStart = offset + 9
+                  const chunkEnd = chunkStart + chunkSize
+                  const chunk = Buffer.from(
+                      pending.subarray(chunkStart, chunkEnd)
+                  )
+
+                  file.chunks.push(chunk)
+                  file.receivedSize += chunk.length
+
+                  if (BigInt(file.receivedSize) > file.expectedSize) {
+                      throw new Error(
+                          `Received too much data for file: ${file.name}`
+                      )
+                  }
+
+                  offset += packetLength
+                  continue
+              }
+
+              if (type === 0x03) {
+                  // Type(1) + File ID(4)
+                  if (available < 5) break
+
+                  const fileId = pending.readUInt32BE(offset + 1)
+                  const file = receivingFiles.get(fileId)
+
+                  if (!file) {
+                      throw new Error(
+                          `Received end packet for unknown file ID: ${fileId}`
+                      )
+                  }
+
+                  if (BigInt(file.receivedSize) !== file.expectedSize) {
+                      throw new Error(
+                          `File size mismatch for ${file.name}: ` +
+                          `expected ${file.expectedSize}, received ${file.receivedSize}`
+                      )
+                  }
+
+                  results.set(
+                      file.name,
+                      Buffer.concat(file.chunks, file.receivedSize)
+                  )
+
+                  receivingFiles.delete(fileId)
+                  offset += 5
+                  continue
+              }
+
+              throw new Error(`Unknown bulk packet type: ${type}`)
+          }
+
+          pending = pending.subarray(offset)
+
+          if (done) break
+      }
+
+      if (pending.length !== 0) {
+          throw new Error("Bulk response ended with an incomplete packet")
+      }
+
+      if (receivingFiles.size !== 0) {
+          throw new Error("Bulk response ended before all files were completed")
+      }
+
+      return results
+  }
+
     async keys():Promise<string[]>{
         await this.checkAuth()
         const da = await fetch('/api/list', {

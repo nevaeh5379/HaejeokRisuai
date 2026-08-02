@@ -2,7 +2,7 @@ import { BaseDirectory, readFile, readDir, writeFile } from "@tauri-apps/plugin-
 import localforage from "localforage";
 import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm } from "../alert";
 import { LocalWriter, forageStorage, requiresFullEncoderReload } from "../globalApi.svelte";
-import { isTauri } from "src/ts/platform"
+import { isNodeServer, isTauri } from "src/ts/platform"
 import { decodeRisuSave, encodeRisuSaveLegacy } from "../storage/risuSave";
 import { getDatabase, setDatabaseLite } from "../storage/database.svelte";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -11,6 +11,7 @@ import { hubURL } from "../characterCards";
 import { language } from "src/lang";
 import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupKey, getColdStorageItem, isColdStorageBackupData, listColdDataKeys, setColdStorageItem } from "../process/coldstorage.svelte";
 import { DBState } from "../stores.svelte";
+import type { NodeStorage } from "../storage/nodeStorage";
 
 function getBasename(data:string){
     const baseNameRegex = /\\/g
@@ -107,46 +108,72 @@ export async function SaveLocalBackup(){
     else{
         const keys = await forageStorage.keys()
 
-        for(let i=0;i<keys.length;i++){
-            const key = keys[i]
-            let message = `Saving local Backup... (${i + 1} / ${keys.length})`
-            if (missingAssets.length > 0) {
-                const skippedItems = missingAssets.map(key => {
-                    const assetInfo = assetMap.get(key);
-                    return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-                }).join(', ');
-                message += `\n(Skipping... ${skippedItems})`;
-            }
-            alertWait(message)
+        if(isNodeServer && !forageStorage.isAccount){
+            const assetKeys = keys.filter((key) => key?.endsWith('.png'))
+            const items = await (forageStorage.realStorage as NodeStorage).getItems(assetKeys)
 
-            if(!key || !key.endsWith('.png')){
-                continue
+            for(let i=0;i<assetKeys.length;i++){
+                const key = assetKeys[i]
+                let message = `Saving local Backup... (${i + 1} / ${assetKeys.length})`
+                if (missingAssets.length > 0) {
+                    const skippedItems = missingAssets.map(key => {
+                        const assetInfo = assetMap.get(key);
+                        return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
+                    }).join(', ');
+                    message += `\n(Skipping... ${skippedItems})`;
+                }
+                alertWait(message)
+
+                const data = items.get(key)
+                if (data) {
+                    await writer.writeBackup(key, data)
+                } else {
+                    missingAssets.push(key)
+                }
             }
-            let data: Uint8Array | undefined;
-            let isCached = false;
-            if(forageStorage.isAccount && key.startsWith('assets/')){
-                if(DBState.db.skipSavingAssetsOnWebSync){
+        }
+        else{
+            for(let i=0;i<keys.length;i++){
+                const key = keys[i]
+                let message = `Saving local Backup... (${i + 1} / ${keys.length})`
+                if (missingAssets.length > 0) {
+                    const skippedItems = missingAssets.map(key => {
+                        const assetInfo = assetMap.get(key);
+                        return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
+                    }).join(', ');
+                    message += `\n(Skipping... ${skippedItems})`;
+                }
+                alertWait(message)
+
+                if(!key || !key.endsWith('.png')){
                     continue
                 }
+                let data: Uint8Array | undefined;
+                let isCached = false;
+                if(forageStorage.isAccount && key.startsWith('assets/')){
+                    if(DBState.db.skipSavingAssetsOnWebSync){
+                        continue
+                    }
 
-                const cached = await localforage.getItem(key) as ArrayBuffer;
-                if(cached) {
-                    isCached = true;
-                    data = new Uint8Array(cached);
+                    const cached = await localforage.getItem(key) as ArrayBuffer;
+                    if(cached) {
+                        isCached = true;
+                        data = new Uint8Array(cached);
+                    }
                 }
-            }
-            
-            if (!data) {
-                data = await forageStorage.getItem(key) as unknown as Uint8Array
-            }
+                
+                if (!data) {
+                    data = await forageStorage.getItem(key) as unknown as Uint8Array
+                }
 
-            if (data) {
-                await writer.writeBackup(key, data)
-            } else {
-                missingAssets.push(key)
-            }
-            if(forageStorage.isAccount && !isCached){
-                await sleep(1000)
+                if (data) {
+                    await writer.writeBackup(key, data)
+                } else {
+                    missingAssets.push(key)
+                }
+                if(forageStorage.isAccount && !isCached){
+                    await sleep(1000)
+                }
             }
         }
     }
