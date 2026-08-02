@@ -57,14 +57,14 @@ const PROXY_STREAM_MAX_BODY_BASE64_BYTES = 8 * 1024 * 1024;
 const proxyStreamJobs = new Map();
 const authenticatedRouteLimiter = rateLimit({
     windowMs: 60 * 1000,
-    max: 2000,
+    max: 20000,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests. Please retry shortly.' }
 });
 const authRouteLimiter = rateLimit({
     windowMs: 60 * 1000,
-    max: 2000,
+    max: 20000,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests. Please retry shortly.' }
