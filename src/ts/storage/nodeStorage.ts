@@ -10,6 +10,12 @@ export type NodeStorageBulkReadProgress = {
     totalBytes: bigint
 }
 
+export type NodeStorageBulkReadHandlers = {
+    onFileStart: (name: string, size: bigint) => Promise<void> | void
+    onFileChunk: (name: string, chunk: Uint8Array) => Promise<void> | void
+    onFileEnd?: (name: string) => Promise<void> | void
+}
+
 export type NodeStorageBulkWriteProgress = {
     uploadedBytes: number
     totalBytes: number
@@ -214,6 +220,38 @@ export class NodeStorage{
       keys: string[],
       onProgress?: (progress: NodeStorageBulkReadProgress) => void
     ): Promise<Map<string, Buffer>> {
+      const results = new Map<string, Buffer>()
+      const receivingChunks = new Map<string, Buffer[]>()
+
+      await this.streamItems(keys, {
+          onFileStart: (name) => {
+              receivingChunks.set(name, [])
+          },
+          onFileChunk: (name, chunk) => {
+              const chunks = receivingChunks.get(name)
+              if (!chunks) {
+                  throw new Error(`Received chunk before file start: ${name}`)
+              }
+              chunks.push(Buffer.from(chunk))
+          },
+          onFileEnd: (name) => {
+              const chunks = receivingChunks.get(name)
+              if (!chunks) {
+                  throw new Error(`Received file end before file start: ${name}`)
+              }
+              results.set(name, Buffer.concat(chunks))
+              receivingChunks.delete(name)
+          }
+      }, onProgress)
+
+      return results
+    }
+
+    async streamItems(
+      keys: string[],
+      handlers: NodeStorageBulkReadHandlers,
+      onProgress?: (progress: NodeStorageBulkReadProgress) => void
+    ): Promise<void> {
       await this.checkAuth()
 
       const filePaths = keys.map((key) =>
@@ -241,12 +279,10 @@ export class NodeStorage{
           name: string
           expectedSize: bigint
           receivedSize: number
-          chunks: Buffer[]
       }
 
       const reader = response.body.getReader()
       const receivingFiles = new Map<number, ReceivingFile>()
-      const results = new Map<string, Buffer>()
       let completedFiles = 0
 
       let pending = Buffer.alloc(0)
@@ -297,9 +333,10 @@ export class NodeStorage{
                   receivingFiles.set(fileId, {
                       name,
                       expectedSize,
-                      receivedSize: 0,
-                      chunks: []
+                      receivedSize: 0
                   })
+
+                  await handlers.onFileStart(name, expectedSize)
 
                   onProgress?.({
                       completedFiles,
@@ -333,11 +370,8 @@ export class NodeStorage{
 
                   const chunkStart = offset + 9
                   const chunkEnd = chunkStart + chunkSize
-                  const chunk = Buffer.from(
-                      pending.subarray(chunkStart, chunkEnd)
-                  )
+                  const chunk = pending.subarray(chunkStart, chunkEnd)
 
-                  file.chunks.push(chunk)
                   file.receivedSize += chunk.length
 
                   if (BigInt(file.receivedSize) > file.expectedSize) {
@@ -345,6 +379,8 @@ export class NodeStorage{
                           `Received too much data for file: ${file.name}`
                       )
                   }
+
+                  await handlers.onFileChunk(file.name, chunk)
 
                   onProgress?.({
                       completedFiles,
@@ -378,10 +414,7 @@ export class NodeStorage{
                       )
                   }
 
-                  results.set(
-                      file.name,
-                      Buffer.concat(file.chunks, file.receivedSize)
-                  )
+                  await handlers.onFileEnd?.(file.name)
 
                   receivingFiles.delete(fileId)
                   completedFiles += 1
@@ -412,7 +445,11 @@ export class NodeStorage{
           throw new Error("Bulk response ended before all files were completed")
       }
 
-      return results
+      if (completedFiles !== keys.length) {
+          throw new Error(
+              `Bulk response completed ${completedFiles} of ${keys.length} files`
+          )
+      }
   }
 
     async keys():Promise<string[]>{

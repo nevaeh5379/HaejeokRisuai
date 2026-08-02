@@ -112,8 +112,15 @@ export async function SaveLocalBackup(){
 
         if(isNodeServer && !forageStorage.isAccount){
             let lastProgress = -1
-            const items = assetKeys.length > 0
-                ? await (forageStorage.realStorage as NodeStorage).getItems(assetKeys, (progress) => {
+            if(assetKeys.length > 0){
+                await (forageStorage.realStorage as NodeStorage).streamItems(assetKeys, {
+                    onFileStart: async(key, size) => {
+                        await writer.startBackup(key, size)
+                    },
+                    onFileChunk: async(_key, chunk) => {
+                        await writer.write(chunk)
+                    }
+                }, (progress) => {
                     const currentRatio = progress.currentFile
                         ? progress.totalBytes === 0n
                             ? 1
@@ -128,30 +135,10 @@ export async function SaveLocalBackup(){
                     }
                     lastProgress = percent
                     alertWait(
-                        `Saving local Backup... (Downloading assets ${percent}%, ` +
+                        `Saving local Backup... (Streaming assets ${percent}%, ` +
                         `${progress.completedFiles} / ${progress.totalFiles})`
                     )
                 })
-                : new Map<string, Buffer>()
-
-            for(let i=0;i<assetKeys.length;i++){
-                const key = assetKeys[i]
-                let message = `Saving local Backup... (Writing assets ${i + 1} / ${assetKeys.length})`
-                if (missingAssets.length > 0) {
-                    const skippedItems = missingAssets.map(key => {
-                        const assetInfo = assetMap.get(key);
-                        return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-                    }).join(', ');
-                    message += `\n(Skipping... ${skippedItems})`;
-                }
-                alertWait(message)
-
-                const data = items.get(key)
-                if (data) {
-                    await writer.writeBackup(key, data)
-                } else {
-                    missingAssets.push(key)
-                }
             }
         }
         else{

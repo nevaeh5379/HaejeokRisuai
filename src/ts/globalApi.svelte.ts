@@ -1316,13 +1316,26 @@ export class LocalWriter {
      * @param {Uint8Array} data - The data to write.
      */
     async writeBackup(name: string, data: Uint8Array): Promise<void> {
+        await this.startBackup(name, data.byteLength)
+        await this.writer.write(data)
+    }
+
+    /**
+     * Writes a backup entry header so its data can be streamed in chunks.
+     */
+    async startBackup(name: string, dataLength: number | bigint): Promise<void> {
+        const normalizedLength = typeof dataLength === 'bigint'
+            ? dataLength
+            : BigInt(dataLength)
+        if(normalizedLength < 0n || normalizedLength > 0xffffffffn){
+            throw new Error(`Backup entry is too large: ${name}`)
+        }
         const encodedName = new TextEncoder().encode(getBasename(name))
         const nameLength = new Uint32Array([encodedName.byteLength])
         await this.writer.write(new Uint8Array(nameLength.buffer))
         await this.writer.write(encodedName)
-        const dataLength = new Uint32Array([data.byteLength])
-        await this.writer.write(new Uint8Array(dataLength.buffer))
-        await this.writer.write(data)
+        const encodedDataLength = new Uint32Array([Number(normalizedLength)])
+        await this.writer.write(new Uint8Array(encodedDataLength.buffer))
     }
 
     /**
