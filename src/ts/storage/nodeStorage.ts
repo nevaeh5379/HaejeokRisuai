@@ -1,6 +1,12 @@
 import { language } from "src/lang"
 import { alertError, alertInput, waitAlert } from "../alert"
 import { base64url, getKeypairStore, saveKeypairStore } from "../util"
+import { NodePostgresStorage } from "./nodePostgresStorage"
+
+export {
+    NodePostgresPayloadTooLargeError,
+    NodePostgresRevisionConflictError,
+} from "./nodePostgresStorage"
 
 export type NodeStorageBulkReadProgress = {
     completedFiles: number
@@ -30,6 +36,10 @@ export type NodeStorageBackupRestoreResult = {
 export class NodeStorage{
 
     authChecked = false
+    readonly postgres = new NodePostgresStorage(async () => {
+        await this.checkAuth()
+        return await this.createAuth()
+    })
     JSONStringlifyAndbase64Url(obj:any){
         return base64url(Buffer.from(JSON.stringify(obj), 'utf-8'))
     }
@@ -553,6 +563,34 @@ export class NodeStorage{
         }
     }
 
+    private async authorizeKey(password:string) {
+        const keypair = await this.getKeyPair()
+        const publicKey = await crypto.subtle.exportKey('jwk', keypair.publicKey)
+        const response = await fetch('/api/login',{
+            method: "POST",
+            body: JSON.stringify({
+                password,
+                publicKey,
+            }),
+            headers: {
+                'content-type': 'application/json'
+            }
+        })
+        if(response.status < 200 || response.status >= 300){
+            let message = `Login failed (${response.status})`
+            try {
+                const body = await response.json()
+                if(body?.error){
+                    message = body.error
+                }
+            } catch {}
+            alertError(message)
+            await waitAlert()
+            throw message
+        }
+        this.authChecked = true
+    }
+
     private async checkAuth(){
 
         if(!this.authChecked){
@@ -564,7 +602,7 @@ export class NodeStorage{
 
             if(data.status === 'unset'){
                 const input = await digestPassword(await alertInput(language.setNodePassword))
-                await fetch('/api/set_password',{
+                const response = await fetch('/api/set_password',{
                     method: "POST",
                     body:JSON.stringify({
                         password: input 
@@ -573,38 +611,14 @@ export class NodeStorage{
                         'content-type': 'application/json'
                     }
                 })
-                return await this.createAuth()
+                if(response.status < 200 || response.status >= 300){
+                    throw new Error(`Setting the Node server password failed (${response.status})`)
+                }
+                await this.authorizeKey(input)
             }
             else if(data.status === 'incorrect'){
-                const keypair = await this.getKeyPair()
-                const publicKey = await crypto.subtle.exportKey('jwk', keypair.publicKey)
                 const input = await digestPassword(await alertInput(language.inputNodePassword))
-
-                const s = await fetch('/api/login',{
-                    method: "POST",
-                    body: JSON.stringify({
-                        password: input,
-                        publicKey: publicKey
-                    }),
-                    headers: {
-                        'content-type': 'application/json'
-                    }
-                })
-                if(s.status < 200 || s.status >= 300){
-                    let message = `Login failed (${s.status})`
-                    try {
-                        const body = await s.json()
-                        if(body?.error){
-                            message = body.error
-                        }
-                    } catch {}
-                    alertError(message)
-                    await waitAlert()
-                    throw message
-                }
-                this.authChecked = true
-                return await this.createAuth()
-            
+                await this.authorizeKey(input)
             }
             else{
                 this.authChecked = true

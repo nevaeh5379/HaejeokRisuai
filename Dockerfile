@@ -23,7 +23,7 @@ FROM deps AS builder
 COPY . .
 # Install including dev deps
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm build
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store VITE_RISU_LEGAL_CONFIGURED=TRUE pnpm build
 
 # ------------------------------------------------------------------------------------------
 

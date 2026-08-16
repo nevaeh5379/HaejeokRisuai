@@ -11,7 +11,7 @@ import { hubURL } from "../characterCards";
 import { language } from "src/lang";
 import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupKey, getColdStorageItem, isColdStorageBackupData, listColdDataKeys, setColdStorageItem } from "../process/coldstorage.svelte";
 import { DBState } from "../stores.svelte";
-import type { NodeStorage } from "../storage/nodeStorage";
+import { NodeStorage } from "../storage/nodeStorage";
 
 function getBasename(data:string){
     const baseNameRegex = /\\/g
@@ -713,6 +713,9 @@ export function LoadLocalBackup(){
                     msg: "Success, Refreshing your app."
                 });
             } else {
+                if(isNodeServer && forageStorage.realStorage instanceof NodeStorage && forageStorage.realStorage.postgres.isEnabled()){
+                    await forageStorage.realStorage.postgres.replaceDatabase(dbData)
+                }
                 await forageStorage.setItem('database/database.bin', db);
                 location.search = '';
                 alertStore.set({
