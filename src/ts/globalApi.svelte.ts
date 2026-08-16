@@ -44,7 +44,12 @@ import { getColdStorageItem, makeColdData } from "./process/coldstorage.svelte";
 import { isTauri, isNodeServer } from "./platform";
 import { isLocalNetworkUrl } from "./network/localNetwork";
 import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from "./network/proxyJobWs";
-import { getNodeServerProxyAuth } from "./storage/nodeStorage";
+import {
+    getNodeServerProxyAuth,
+    NodePostgresPayloadTooLargeError,
+    NodePostgresRevisionConflictError,
+    NodeStorage,
+} from "./storage/nodeStorage";
 
 export const forageStorage = new AutoStorage()
 
@@ -322,10 +327,17 @@ export async function saveDb() {
         pluginCustomStorage: false
     }
 
-    let encoder = new RisuSaveEncoder()
-    await encoder.init(getDatabase(), {
-        compression: forageStorage.isAccount
-    })
+    const nodeStorage = isNodeServer && forageStorage.realStorage instanceof NodeStorage
+        ? forageStorage.realStorage
+        : null
+    const usePostgresStorage = nodeStorage?.postgres.isEnabled() ?? false
+    let encoder:RisuSaveEncoder|null = null
+    if(!usePostgresStorage){
+        encoder = new RisuSaveEncoder()
+        await encoder.init(getDatabase(), {
+            compression: forageStorage.isAccount
+        })
+    }
 
     $effect.root(() => {
 
@@ -404,7 +416,6 @@ export async function saveDb() {
     })
 
     let savetrys = 0
-    let lastDbData = new Uint8Array(0)
     await sleep(1000)
     while (true) {
         if (!changed) {
@@ -416,13 +427,13 @@ export async function saveDb() {
         changed = false
         try {
 
-            if (requiresFullEncoderReload.state) {
+            const forceFullSave = requiresFullEncoderReload.state
+            if (forceFullSave && !usePostgresStorage) {
                 encoder = new RisuSaveEncoder()
                 await encoder.init(getDatabase(), {
                     compression: forageStorage.isAccount,
                     skipRemoteSavingOnCharacters: false
                 })
-                requiresFullEncoderReload.state = false
             }
 
             let toSave = safeStructuredClone(changeTracker)
@@ -430,6 +441,9 @@ export async function saveDb() {
             changeTracker.chat = changeTracker.chat.length === 0 ? [] : [changeTracker.chat[0]]
             changeTracker.botPreset = false
             changeTracker.modules = false
+            changeTracker.loadouts = false
+            changeTracker.plugins = false
+            changeTracker.pluginCustomStorage = false
             if (gotChannel) {
                 //Data is saved in other tab
                 await sleep(1000)
@@ -444,28 +458,43 @@ export async function saveDb() {
                 continue
             }
 
-            await encoder.set(db, toSave)
-            const encoded = encoder.encode()
-            if (!encoded) {
-                await sleep(1000)
-                continue
+            let savedToPostgres = false
+            if(usePostgresStorage && nodeStorage){
+                savedToPostgres = await nodeStorage.postgres.saveDatabase(db, toSave, {
+                    forceFull: forceFullSave
+                })
             }
-            const dbData = new Uint8Array(encoded)
-            if (isTauri) {
-                await writeFile('database/database.bin', dbData, { baseDir: BaseDirectory.AppData });
-                await writeFile(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData, { baseDir: BaseDirectory.AppData });
-            }
-            else {
 
-                await forageStorage.setItem('database/database.bin', dbData)
-                if (!forageStorage.isAccount) {
-                    await forageStorage.setItem(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData)
+            if(!savedToPostgres){
+                if(!encoder){
+                    encoder = new RisuSaveEncoder()
+                    await encoder.init(db, {
+                        compression: forageStorage.isAccount
+                    })
                 }
-                if (forageStorage.isAccount) {
-                    await sleep(3000)
+                await encoder.set(db, toSave)
+                const encoded = encoder.encode()
+                if (!encoded) {
+                    await sleep(1000)
+                    continue
+                }
+                const dbData = new Uint8Array(encoded)
+                if (isTauri) {
+                    await writeFile('database/database.bin', dbData, { baseDir: BaseDirectory.AppData });
+                    await writeFile(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData, { baseDir: BaseDirectory.AppData });
+                }
+                else {
+                    await forageStorage.setItem('database/database.bin', dbData)
+                    if (!forageStorage.isAccount) {
+                        await forageStorage.setItem(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData)
+                    }
+                    if (forageStorage.isAccount) {
+                        await sleep(3000)
+                    }
                 }
             }
-            if (!forageStorage.isAccount) {
+            requiresFullEncoderReload.state = false
+            if (!forageStorage.isAccount && !savedToPostgres) {
                 await getDbBackups()
             }
             savetrys = 0
@@ -473,11 +502,20 @@ export async function saveDb() {
             await sleep(500)
         } catch (error) {
             savetrys += 1
-            if (savetrys > 4) {
+            if (
+                error instanceof NodePostgresRevisionConflictError ||
+                error instanceof NodePostgresPayloadTooLargeError
+            ) {
+                savetrys = 5
+                alertError(error)
+            }
+            else if (savetrys > 4) {
                 alertError(error)
             }
             else {
                 console.error(error)
+                requiresFullEncoderReload.state = true
+                changed = true
             }
         }
 
@@ -2077,6 +2115,7 @@ export async function loadInternalBackup() {
     setDatabase(
         await decodeRisuSave(Buffer.from(data) as unknown as Uint8Array)
     )
+    requiresFullEncoderReload.state = true
 
     alertNormal('Loaded backup')
 

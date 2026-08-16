@@ -12,8 +12,24 @@ const fs = require('fs/promises')
 const crypto = require('crypto')
 const rateLimit = require('express-rate-limit');
 const { WebSocketServer } = require('ws');
+const { promisify } = require('util');
+const { gzip } = require('zlib');
+const {
+    PostgresPayloadError,
+    PostgresRevisionConflictError,
+    PostgresStorage,
+} = require('./postgresStorage.cjs');
+const defaultJsonParser = express.json({ limit: '100mb' });
+const postgresJsonBodyLimit = process.env.RISU_POSTGRES_JSON_BODY_LIMIT || '1gb';
+const postgresJsonParser = express.json({ limit: postgresJsonBodyLimit });
 app.use(express.static(path.join(process.cwd(), 'dist'), {index: false}));
-app.use(express.json({ limit: '100mb' }));
+app.use((req, res, next) => {
+    if (isLargePostgresJsonRequest(req)) {
+        next();
+        return;
+    }
+    defaultJsonParser(req, res, next);
+});
 app.use(express.raw({ type: 'application/octet-stream', limit: '100mb' }));
 app.use(express.text({ limit: '100mb' }));
 const {pipeline} = require('stream/promises')
@@ -21,27 +37,75 @@ const https = require('https');
 const sslPath = path.join(process.cwd(), 'server/node/ssl/certificate');
 const hubURL = 'https://sv.risuai.xyz'; 
 const openid = require('openid-client');
+const gzipAsync = promisify(gzip);
 
 let password = ''
 let knownPublicKeysHashes = []
 
-const savePath = path.join(process.cwd(), "save")
+const savePath = process.env.RISU_SAVE_PATH
+    ? path.resolve(process.env.RISU_SAVE_PATH)
+    : path.join(process.cwd(), 'save')
 if(!existsSync(savePath)){
     mkdirSync(savePath)
 }
 
-const passwordPath = path.join(process.cwd(), 'save', '__password')
+const postgresConfigPath = path.join(savePath, '__postgres_config.json');
+const postgresManagedByEnvironment = Boolean(process.env.DATABASE_URL);
+const postgresConfigExists = existsSync(postgresConfigPath);
+const postgresBootstrapUrl = process.env.RISU_POSTGRES_BOOTSTRAP_URL || '';
+
+function readStoredPostgresConfig() {
+    if (!existsSync(postgresConfigPath)) {
+        return { enabled: false, connectionString: '', poolMax: 10 };
+    }
+    try {
+        const parsed = JSON.parse(readFileSync(postgresConfigPath, 'utf8'));
+        return {
+            enabled: parsed.enabled === true,
+            connectionString: typeof parsed.connectionString === 'string' ? parsed.connectionString : '',
+            poolMax: Number.isSafeInteger(parsed.poolMax) && parsed.poolMax > 0 ? parsed.poolMax : 10,
+        };
+    } catch (error) {
+        throw new Error(`Could not read PostgreSQL server configuration: ${error.message}`);
+    }
+}
+
+const storedPostgresConfig = readStoredPostgresConfig();
+const environmentPoolMax = Number.parseInt(process.env.RISU_POSTGRES_POOL_MAX || '10', 10);
+const initialPoolMax = Number.isSafeInteger(environmentPoolMax) && environmentPoolMax > 0
+    ? environmentPoolMax
+    : 10;
+let postgresServerConfig = postgresManagedByEnvironment
+    ? {
+        enabled: process.env.RISU_POSTGRES_ENABLED !== 'false',
+        connectionString: process.env.DATABASE_URL,
+        poolMax: initialPoolMax,
+    }
+    : (!postgresConfigExists && postgresBootstrapUrl
+        ? {
+            enabled: true,
+            connectionString: postgresBootstrapUrl,
+            poolMax: initialPoolMax,
+        }
+        : storedPostgresConfig);
+
+const postgresStorage = new PostgresStorage({
+    connectionString: postgresServerConfig.enabled ? postgresServerConfig.connectionString : '',
+    poolMax: postgresServerConfig.poolMax,
+});
+
+const passwordPath = path.join(savePath, '__password')
 if(existsSync(passwordPath)){
     password = readFileSync(passwordPath, 'utf-8')
 }
 
-const knownPublicKeysPath = path.join(process.cwd(), 'save', '__known_public_key_hashes.json')
+const knownPublicKeysPath = path.join(savePath, '__known_public_key_hashes.json')
 if(existsSync(knownPublicKeysPath)){
     const knownPublicKeysRaw = readFileSync(knownPublicKeysPath, 'utf-8');
     knownPublicKeysHashes = JSON.parse(knownPublicKeysRaw);
 }
 
-const authCodePath = path.join(process.cwd(), 'save', '__authcode')
+const authCodePath = path.join(savePath, '__authcode')
 const hexRegex = /^[0-9a-fA-F]+$/;
 const PROXY_STREAM_DEFAULT_TIMEOUT_MS = 600000;
 const PROXY_STREAM_MAX_TIMEOUT_MS = 3600000;
@@ -55,6 +119,12 @@ const PROXY_STREAM_MAX_PENDING_EVENTS = 512;
 const PROXY_STREAM_MAX_PENDING_BYTES = 2 * 1024 * 1024;
 const PROXY_STREAM_MAX_BODY_BASE64_BYTES = 8 * 1024 * 1024;
 const proxyStreamJobs = new Map();
+
+function isLargePostgresJsonRequest(req) {
+    return (req.method === 'POST' && req.path === '/api/database-v2/sync') ||
+        (req.method === 'PUT' && req.path.startsWith('/api/database-v2/cold-storage/'));
+}
+
 const authenticatedRouteLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 2000,
@@ -78,6 +148,104 @@ const loginRouteLimiter = rateLimit({
 });
 function isHex(str) {
     return hexRegex.test(str.toUpperCase().trim()) || str === '__password';
+}
+
+async function sendCompressedJson(req, res, payload) {
+    const body = Buffer.from(JSON.stringify(payload));
+    const acceptEncoding = normalizeAuthHeader(req.headers['accept-encoding']);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Vary', 'Accept-Encoding');
+    if (body.length >= 1024 && /(^|,|\s)gzip(\s|,|;|$)/i.test(acceptEncoding)) {
+        const compressed = await gzipAsync(body, { level: 6 });
+        res.setHeader('Content-Encoding', 'gzip');
+        res.setHeader('Content-Length', compressed.length);
+        res.send(compressed);
+        return;
+    }
+    res.setHeader('Content-Length', body.length);
+    res.send(body);
+}
+
+function validatePostgresConnectionString(value) {
+    if (typeof value !== 'string' || value.length === 0 || value.length > 4096) {
+        throw new PostgresPayloadError('PostgreSQL connection string must contain 1 to 4096 characters');
+    }
+    let parsed;
+    try {
+        parsed = new URL(value);
+    } catch {
+        throw new PostgresPayloadError('PostgreSQL connection string is not a valid URL');
+    }
+    if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
+        throw new PostgresPayloadError('PostgreSQL connection string must use postgres:// or postgresql://');
+    }
+    if (!parsed.hostname || !parsed.pathname || parsed.pathname === '/') {
+        throw new PostgresPayloadError('PostgreSQL connection string must include a host and database name');
+    }
+    return value;
+}
+
+function maskPostgresConnectionString(value) {
+    if (!value) {
+        return '';
+    }
+    try {
+        const parsed = new URL(value);
+        if (parsed.password) {
+            parsed.password = '********';
+        }
+        for (const key of new Set(parsed.searchParams.keys())) {
+            if (/^(?:password|passfile|sslpassword|sslkey|token|secret|api[_-]?key)$/i.test(key)) {
+                parsed.searchParams.set(key, '********');
+            }
+        }
+        return parsed.toString();
+    } catch {
+        return 'Configured connection string';
+    }
+}
+
+function normalizePostgresPoolMax(value) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 100) {
+        throw new PostgresPayloadError('PostgreSQL pool size must be an integer from 1 to 100');
+    }
+    return parsed;
+}
+
+function isSecurePostgresConfigRequest(req) {
+    if (req.secure) {
+        return true;
+    }
+    const remoteAddress = req.socket?.remoteAddress || '';
+    return remoteAddress === '127.0.0.1' || remoteAddress === '::1' ||
+        remoteAddress === '::ffff:127.0.0.1';
+}
+
+async function persistPostgresServerConfig(config) {
+    const temporaryPath = `${postgresConfigPath}.tmp`;
+    await fs.writeFile(temporaryPath, JSON.stringify(config, null, 2), { mode: 0o600 });
+    await fs.chmod(temporaryPath, 0o600);
+    await fs.rename(temporaryPath, postgresConfigPath);
+}
+
+async function getPostgresConfigResponse() {
+    let revision = null;
+    let initialized = false;
+    if (postgresStorage.enabled) {
+        const state = await postgresStorage.getState();
+        revision = state.revision;
+        initialized = state.initialized;
+    }
+    return {
+        enabled: postgresStorage.enabled,
+        configured: Boolean(postgresServerConfig.connectionString),
+        managedByEnvironment: postgresManagedByEnvironment,
+        connectionDisplay: maskPostgresConnectionString(postgresServerConfig.connectionString),
+        poolMax: postgresServerConfig.poolMax,
+        revision,
+        initialized,
+    };
 }
 
 async function hashJSON(json){
@@ -739,6 +907,12 @@ async function checkAuth(req, res, returnOnlyStatus = false){
     }
 }
 
+async function requireNodeAuth(req, res, next) {
+    if (await checkAuth(req, res)) {
+        next();
+    }
+}
+
 const reverseProxyFunc = async (req, res, next) => {
     if(!await checkProxyAuth(req, res)){
         return;
@@ -902,7 +1076,7 @@ async function getSionywAccessToken() {
     //     client_secret: string;
     // }
     
-    const clientDataPath = path.join(process.cwd(), 'save', '__sionyw_client_data.json');
+    const clientDataPath = path.join(savePath, '__sionyw_client_data.json');
     let refreshToken = ''
     let clientId = ''
     let clientSecret = ''
@@ -1180,6 +1354,334 @@ app.post('/api/set_password', async (req, res) => {
     }
 })
 
+app.get('/api/postgres-config', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    try {
+        res.send(await getPostgresConfigResponse());
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/postgres-config', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (postgresManagedByEnvironment) {
+        res.status(403).send({
+            error: 'PostgreSQL is managed by server environment variables',
+            code: 'postgres_environment_managed',
+        });
+        return;
+    }
+    if (!isSecurePostgresConfigRequest(req)) {
+        res.status(403).send({
+            error: 'PostgreSQL configuration changes require HTTPS or a localhost connection',
+            code: 'postgres_secure_transport_required',
+        });
+        return;
+    }
+
+    const previousConfig = { ...postgresServerConfig };
+    try {
+        if (typeof req.body?.enabled !== 'boolean') {
+            throw new PostgresPayloadError('enabled must be a boolean');
+        }
+        const connectionString = typeof req.body.connectionString === 'string' && req.body.connectionString.trim()
+            ? req.body.connectionString.trim()
+            : previousConfig.connectionString;
+        const poolMax = normalizePostgresPoolMax(req.body.poolMax ?? previousConfig.poolMax);
+        if (req.body.enabled) {
+            validatePostgresConnectionString(connectionString);
+        }
+
+        const connectionChanged = connectionString !== previousConfig.connectionString;
+        const mustExportLegacy = postgresStorage.enabled && (!req.body.enabled || connectionChanged);
+        if (mustExportLegacy && req.body.legacySnapshotReady !== true) {
+            throw new PostgresPayloadError(
+                'A current database.bin snapshot is required before changing active PostgreSQL storage'
+            );
+        }
+        if (mustExportLegacy) {
+            await postgresStorage.exportColdStorageToLegacy(savePath);
+        }
+
+        const needsReconfigure = postgresStorage.enabled !== req.body.enabled ||
+            (req.body.enabled && (connectionChanged || poolMax !== previousConfig.poolMax));
+        if (needsReconfigure) {
+            await postgresStorage.reconfigure({
+                connectionString: req.body.enabled ? connectionString : '',
+                poolMax,
+            });
+        }
+
+        postgresServerConfig = {
+            enabled: req.body.enabled,
+            connectionString,
+            poolMax,
+        };
+        try {
+            await persistPostgresServerConfig(postgresServerConfig);
+        } catch (persistError) {
+            postgresServerConfig = previousConfig;
+            await postgresStorage.reconfigure({
+                connectionString: previousConfig.enabled ? previousConfig.connectionString : '',
+                poolMax: previousConfig.poolMax,
+            });
+            throw persistError;
+        }
+
+        if (postgresStorage.enabled) {
+            await postgresStorage.migrateLegacyColdStorage(savePath);
+        }
+        res.send({ success: true, ...await getPostgresConfigResponse() });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_postgres_configuration' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.get('/api/database-v2', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({
+            error: 'PostgreSQL storage is not configured',
+            code: 'postgres_disabled',
+        });
+        return;
+    }
+
+    try {
+        const stored = await postgresStorage.loadDatabase();
+        const etag = `"risu-postgres-${stored.revision}"`;
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
+        if (stored.initialized && requestEtag.split(',').map((value) => value.trim()).includes(etag)) {
+            res.status(304).end();
+            return;
+        }
+        await sendCompressedJson(req, res, {
+            status: stored.initialized ? 'ready' : 'empty',
+            revision: stored.revision,
+            database: stored.database,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/revisions', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    try {
+        res.send({ revisions: await postgresStorage.listRevisions(req.query.limit) });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post(
+    '/api/database-v2/revisions/restore',
+    authenticatedRouteLimiter,
+    requireNodeAuth,
+    async (req, res, next) => {
+        if (!postgresStorage.enabled) {
+            res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+            return;
+        }
+        try {
+            res.send({ success: true, ...await postgresStorage.restoreRevision(req.body?.revisionId) });
+        } catch (error) {
+            if (error instanceof PostgresPayloadError) {
+                res.status(400).send({ error: error.message, code: 'invalid_revision_restore' });
+                return;
+            }
+            next(error);
+        }
+    }
+);
+
+app.post(
+    '/api/database-v2/sync',
+    authenticatedRouteLimiter,
+    requireNodeAuth,
+    postgresJsonParser,
+    async (req, res, next) => {
+        if (!postgresStorage.enabled) {
+            res.status(404).send({
+                error: 'PostgreSQL storage is not configured',
+                code: 'postgres_disabled',
+            });
+            return;
+        }
+
+        try {
+            const result = await postgresStorage.sync(req.body);
+            res.send({ success: true, ...result });
+        } catch (error) {
+            if (error instanceof PostgresRevisionConflictError) {
+                res.status(409).send({
+                    error: error.message,
+                    code: 'revision_conflict',
+                    revision: error.revision,
+                });
+                return;
+            }
+            if (error instanceof PostgresPayloadError) {
+                res.status(400).send({
+                    error: error.message,
+                    code: 'invalid_sync_payload',
+                });
+                return;
+            }
+            next(error);
+        }
+    }
+);
+
+app.get('/api/database-v2/cold-storage', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+
+    try {
+        const items = await postgresStorage.listColdStorage();
+        await sendCompressedJson(req, res, { items });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/cold-storage/:key', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+
+    try {
+        const item = await postgresStorage.loadColdStorage(req.params.key);
+        if (!item) {
+            res.status(404).send({ error: 'Cold storage item not found', code: 'cold_storage_not_found' });
+            return;
+        }
+        const etag = `"risu-cold-${item.key}-${item.revision}"`;
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
+        if (requestEtag.split(',').map((value) => value.trim()).includes(etag)) {
+            res.status(304).end();
+            return;
+        }
+        await sendCompressedJson(req, res, {
+            key: item.key,
+            kind: item.kind,
+            updatedAt: item.updated_at,
+            data: item.data,
+        });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_cold_storage_key' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.put(
+    '/api/database-v2/cold-storage/:key',
+    authenticatedRouteLimiter,
+    requireNodeAuth,
+    postgresJsonParser,
+    async (req, res, next) => {
+        if (!postgresStorage.enabled) {
+            res.status(404).send({
+                error: 'PostgreSQL storage is not configured',
+                code: 'postgres_disabled',
+            });
+            return;
+        }
+
+        try {
+            const item = await postgresStorage.upsertColdStorage(req.params.key, req.body?.data);
+            res.send({
+                success: true,
+                key: item.key,
+                kind: item.kind,
+                updatedAt: item.updated_at,
+            });
+        } catch (error) {
+            if (error instanceof PostgresPayloadError) {
+                res.status(400).send({
+                    error: error.message,
+                    code: 'invalid_cold_storage_payload',
+                });
+                return;
+            }
+            next(error);
+        }
+    }
+);
+
+app.delete('/api/database-v2/cold-storage', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+
+    try {
+        res.send({ success: true, ...await postgresStorage.deleteColdStorage(req.body?.keys) });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_cold_storage_keys' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.post('/api/database-v2/cold-storage/prune', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+
+    try {
+        res.send({ success: true, ...await postgresStorage.pruneColdStorage(req.body?.retainedKeys) });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_cold_storage_keys' });
+            return;
+        }
+        next(error);
+    }
+});
+
 app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;
@@ -1397,6 +1899,20 @@ app.get('/api/oauth_callback', async (req, res) => {
             
 })
 
+app.use((error, req, res, next) => {
+    if (error?.type === 'entity.too.large' || error?.status === 413) {
+        const isPostgresPayload = isLargePostgresJsonRequest(req);
+        res.status(413).send({
+            error: isPostgresPayload
+                ? `PostgreSQL JSON payload exceeds the configured ${postgresJsonBodyLimit} limit`
+                : 'Request payload exceeds the configured 100mb limit',
+            code: 'payload_too_large',
+        });
+        return;
+    }
+    next(error);
+});
+
 async function getHttpsOptions() {
 
     const keyPath = path.join(sslPath, 'server.key');
@@ -1498,7 +2014,19 @@ function setupProxyStreamWebSocket(server) {
 
 async function startServer() {
     try {
-      
+        await postgresStorage.initialize();
+        if (!postgresManagedByEnvironment && !postgresConfigExists && postgresBootstrapUrl) {
+            await persistPostgresServerConfig(postgresServerConfig);
+        }
+        if (postgresStorage.enabled) {
+            const coldStorageMigration = await postgresStorage.migrateLegacyColdStorage(savePath);
+            if (coldStorageMigration.migrated > 0 || coldStorageMigration.skipped > 0) {
+                console.log(
+                    `[PostgreSQL] Legacy cold storage migration: ` +
+                    `${coldStorageMigration.migrated} migrated, ${coldStorageMigration.skipped} skipped.`
+                );
+            }
+        }
         const port = process.env.PORT || 6001;
         const httpsOptions = await getHttpsOptions();
         let server = null;

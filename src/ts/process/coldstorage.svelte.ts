@@ -61,6 +61,9 @@ export async function getColdStorageItem(key:string, opts:{
     else if(isNodeServer){
         try {
             const storage = forageStorage.realStorage as NodeStorage
+            if(storage.postgres.isEnabled()){
+                return await storage.postgres.getColdStorageItem(key)
+            }
             const f = await storage.getItem('coldstorage/' + key)
             if(!f){
                 return null
@@ -148,10 +151,22 @@ export async function setAccountColdStorageItem(key:string, value:any):Promise<b
 }
 
 export async function setColdStorageItem(key:string, value:any):Promise<boolean> {
-    console.log("setting cold storage item", key, value)
+    console.log("setting cold storage item", key)
 
     if(forageStorage.isAccount){
         return await setAccountColdStorageItem(key, value)
+    }
+
+    if(isNodeServer){
+        try {
+            const storage = forageStorage.realStorage as NodeStorage
+            if(storage.postgres.isEnabled()){
+                return await storage.postgres.setColdStorageItem(key, value)
+            }
+        } catch (error) {
+            console.error('Cold storage PostgreSQL write failed:', error)
+            return false
+        }
     }
 
     const compressed = await compressColdStorageValue(value)
@@ -212,7 +227,11 @@ export async function listColdStorageItems():Promise<{items:string[]}> {
     }
 
     else if(isNodeServer){
-        const fullKeys = await (forageStorage.realStorage as NodeStorage).keys()
+        const storage = forageStorage.realStorage as NodeStorage
+        if(storage.postgres.isEnabled()){
+            return await storage.postgres.listColdStorageItems()
+        }
+        const fullKeys = await storage.keys()
         const keys = fullKeys.filter(k => k.startsWith('coldstorage/')).map(k => k.replace('coldstorage/', ''))
         return {
             items: keys
@@ -243,6 +262,15 @@ export async function listColdStorageItems():Promise<{items:string[]}> {
 
 export async function cleanColdStorage(){
     const actualUsedKeys = await listColdDataKeys()
+    if(isNodeServer && !forageStorage.isAccount){
+        const storage = forageStorage.realStorage as NodeStorage
+        if(storage.postgres.isEnabled()){
+            const deleted = await storage.postgres.pruneColdStorage(actualUsedKeys)
+            console.log('Cleaned PostgreSQL cold storage, retained keys:', actualUsedKeys, 'deleted:', deleted)
+            alertClear()
+            return
+        }
+    }
     const allKeys = (await listColdStorageItems()).items
     const unusedKeys = allKeys.filter(k => !actualUsedKeys.includes(k))
     console.log('Cleaning cold storage, actual used keys:', actualUsedKeys, 'all keys:', allKeys, 'unused keys:', unusedKeys)
@@ -283,8 +311,12 @@ async function removeColdStorageItems(keys:string[]) {
     else if(isNodeServer){
         try {
             const storage = forageStorage.realStorage as NodeStorage
+            if(storage.postgres.isEnabled()){
+                await storage.postgres.removeColdStorageItems(keys)
+                return
+            }
             const deleteKeys = keys.map(k => 'coldstorage/' + k);
-            (storage as NodeStorage).removeItem(deleteKeys)
+            await storage.removeItem(deleteKeys)
         } catch (error) {
             console.error(error)
         }

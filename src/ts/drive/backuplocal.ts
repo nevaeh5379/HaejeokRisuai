@@ -2,7 +2,7 @@ import { BaseDirectory, readFile, readDir, writeFile } from "@tauri-apps/plugin-
 import localforage from "localforage";
 import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm } from "../alert";
 import { LocalWriter, forageStorage, requiresFullEncoderReload } from "../globalApi.svelte";
-import { isTauri } from "src/ts/platform"
+import { isNodeServer, isTauri } from "src/ts/platform"
 import { decodeRisuSave, encodeRisuSaveLegacy } from "../storage/risuSave";
 import { getDatabase, setDatabaseLite } from "../storage/database.svelte";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -11,6 +11,7 @@ import { hubURL } from "../characterCards";
 import { language } from "src/lang";
 import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupKey, getColdStorageItem, isColdStorageBackupData, listColdDataKeys, setColdStorageItem } from "../process/coldstorage.svelte";
 import { DBState } from "../stores.svelte";
+import { NodeStorage } from "../storage/nodeStorage";
 
 function getBasename(data:string){
     const baseNameRegex = /\\/g
@@ -566,6 +567,9 @@ export function LoadLocalBackup(){
                     msg: "Success, Refreshing your app."
                 });
             } else {
+                if(isNodeServer && forageStorage.realStorage instanceof NodeStorage && forageStorage.realStorage.postgres.isEnabled()){
+                    await forageStorage.realStorage.postgres.replaceDatabase(dbData)
+                }
                 await forageStorage.setItem('database/database.bin', db);
                 location.search = '';
                 alertStore.set({

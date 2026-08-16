@@ -1,0 +1,348 @@
+import type { Database } from './database.svelte'
+import type { toSaveType } from './risuSave'
+import {
+    buildNodeDatabaseSync,
+    createNodeDatabaseSyncCache,
+    primeNodeDatabaseSyncCache,
+    type NodeDatabaseSyncCache,
+} from './nodeDatabaseSync'
+
+export interface NodePostgresServerConfig {
+    enabled:boolean
+    configured:boolean
+    managedByEnvironment:boolean
+    connectionDisplay:string
+    poolMax:number
+    revision:number|null
+    initialized:boolean
+}
+
+export interface NodePostgresServerConfigUpdate {
+    enabled:boolean
+    connectionString?:string
+    poolMax:number
+    legacySnapshotReady?:boolean
+}
+
+export interface NodePostgresRevision {
+    id:number
+    storage_revision:number|null
+    database_initialized:boolean|null
+    scope:'database'|'cold-storage'|'restore'
+    action:string
+    restored_from_revision:number|null
+    created_at:string
+    change_count:number
+}
+
+async function encodeJsonBody(payload:unknown):Promise<{
+    body:BodyInit
+    contentEncoding?:string
+}> {
+    const json = JSON.stringify(payload)
+    if(json.length < 64 * 1024 || typeof CompressionStream === 'undefined'){
+        return { body: json }
+    }
+    const input = new Blob([json]).stream()
+    const compressed = input.pipeThrough(new CompressionStream('gzip'))
+    return {
+        body: await new Response(compressed).arrayBuffer(),
+        contentEncoding: 'gzip',
+    }
+}
+
+async function responseError(response:Response, fallback:string) {
+    const body = await response.json().catch(() => null)
+    return new Error(body?.error || `${fallback} (${response.status})`)
+}
+
+export class NodePostgresRevisionConflictError extends Error {
+    constructor(revision:unknown) {
+        super(`PostgreSQL data changed in another session (server revision ${revision ?? 'unknown'}). Reload before saving again.`)
+        this.name = 'NodePostgresRevisionConflictError'
+    }
+}
+
+export class NodePostgresPayloadTooLargeError extends Error {
+    constructor(message?:string) {
+        super(message || 'PostgreSQL save payload is larger than the Node server allows.')
+        this.name = 'NodePostgresPayloadTooLargeError'
+    }
+}
+
+export class NodePostgresStorage {
+    private status:'unknown'|'enabled'|'disabled' = 'unknown'
+    private cache:NodeDatabaseSyncCache = createNodeDatabaseSyncCache()
+
+    constructor(private readonly getAuth:() => Promise<string>) {}
+
+    isEnabled() {
+        return this.status === 'enabled'
+    }
+
+    private async authHeaders() {
+        return {
+            'risu-auth': await this.getAuth()
+        }
+    }
+
+    private async ensureEnabled() {
+        if(this.status === 'unknown'){
+            await this.loadDatabase()
+        }
+        return this.status === 'enabled'
+    }
+
+    async getServerConfig():Promise<NodePostgresServerConfig> {
+        const response = await fetch('/api/postgres-config', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL configuration load failed')
+        }
+        const config:NodePostgresServerConfig = await response.json()
+        this.status = config.enabled ? 'enabled' : 'disabled'
+        return config
+    }
+
+    async configureServer(update:NodePostgresServerConfigUpdate):Promise<NodePostgresServerConfig> {
+        const encodedBody = await encodeJsonBody(update)
+        const response = await fetch('/api/postgres-config', {
+            method: 'POST',
+            body: encodedBody.body,
+            headers: {
+                'content-type': 'application/json',
+                ...(encodedBody.contentEncoding ? { 'content-encoding': encodedBody.contentEncoding } : {}),
+                ...await this.authHeaders()
+            }
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL configuration update failed')
+        }
+        const config:NodePostgresServerConfig = await response.json()
+        this.status = config.enabled ? 'enabled' : 'disabled'
+        this.cache = createNodeDatabaseSyncCache(config.revision ?? 0)
+        return config
+    }
+
+    async loadDatabase():Promise<Database|null> {
+        const response = await fetch('/api/database-v2', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if(response.status === 404){
+            this.status = 'disabled'
+            return null
+        }
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL database load failed')
+        }
+
+        const body:{
+            status:'ready'|'empty'
+            revision:number
+            database:Database|null
+        } = await response.json()
+        this.status = 'enabled'
+        if(body.status === 'ready' && body.database){
+            this.cache = primeNodeDatabaseSyncCache(body.database, body.revision)
+            return body.database
+        }
+        this.cache = createNodeDatabaseSyncCache(body.revision)
+        return null
+    }
+
+    async listRevisions(limit = 50):Promise<NodePostgresRevision[]> {
+        if(!await this.ensureEnabled()){
+            return []
+        }
+        const response = await fetch(`/api/database-v2/revisions?limit=${encodeURIComponent(limit)}`, {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL revision history load failed')
+        }
+        const body:{ revisions:NodePostgresRevision[] } = await response.json()
+        return body.revisions
+    }
+
+    async restoreRevision(revisionId:number):Promise<{revision:number, revisionId:number}> {
+        if(!await this.ensureEnabled()){
+            throw new Error('PostgreSQL storage is disabled')
+        }
+        const encodedBody = await encodeJsonBody({ revisionId })
+        const response = await fetch('/api/database-v2/revisions/restore', {
+            method: 'POST',
+            body: encodedBody.body,
+            headers: {
+                'content-type': 'application/json',
+                ...(encodedBody.contentEncoding ? { 'content-encoding': encodedBody.contentEncoding } : {}),
+                ...await this.authHeaders()
+            }
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL revision restore failed')
+        }
+        const result:{revision:number, revisionId:number} = await response.json()
+        this.cache = createNodeDatabaseSyncCache(result.revision)
+        return result
+    }
+
+    async getColdStorageItem(key:string):Promise<unknown|null> {
+        if(!await this.ensureEnabled()){
+            return null
+        }
+        const response = await fetch(`/api/database-v2/cold-storage/${encodeURIComponent(key)}`, {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if(response.status === 404){
+            return null
+        }
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL cold storage load failed')
+        }
+        const body:{ data:unknown } = await response.json()
+        return body.data
+    }
+
+    async listColdStorageItems():Promise<{items:string[]}> {
+        if(!await this.ensureEnabled()){
+            return { items: [] }
+        }
+        const response = await fetch('/api/database-v2/cold-storage', {
+            method: 'GET',
+            headers: await this.authHeaders()
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL cold storage list failed')
+        }
+        const body:{ items:{ key:string }[] } = await response.json()
+        return {
+            items: body.items.map((item) => item.key)
+        }
+    }
+
+    async setColdStorageItem(key:string, value:unknown):Promise<boolean> {
+        if(!await this.ensureEnabled()){
+            return false
+        }
+        const encodedBody = await encodeJsonBody({ data: value })
+        const response = await fetch(`/api/database-v2/cold-storage/${encodeURIComponent(key)}`, {
+            method: 'PUT',
+            body: encodedBody.body,
+            headers: {
+                'content-type': 'application/json',
+                ...(encodedBody.contentEncoding ? { 'content-encoding': encodedBody.contentEncoding } : {}),
+                ...await this.authHeaders()
+            }
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL cold storage save failed')
+        }
+        return true
+    }
+
+    async removeColdStorageItems(keys:string[]):Promise<number> {
+        if(!await this.ensureEnabled() || keys.length === 0){
+            return 0
+        }
+        const encodedBody = await encodeJsonBody({ keys })
+        const response = await fetch('/api/database-v2/cold-storage', {
+            method: 'DELETE',
+            body: encodedBody.body,
+            headers: {
+                'content-type': 'application/json',
+                ...(encodedBody.contentEncoding ? { 'content-encoding': encodedBody.contentEncoding } : {}),
+                ...await this.authHeaders()
+            }
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL cold storage delete failed')
+        }
+        const body:{ deleted:number } = await response.json()
+        return body.deleted
+    }
+
+    async pruneColdStorage(retainedKeys:string[]):Promise<number> {
+        if(!await this.ensureEnabled()){
+            return 0
+        }
+        const encodedBody = await encodeJsonBody({ retainedKeys })
+        const response = await fetch('/api/database-v2/cold-storage/prune', {
+            method: 'POST',
+            body: encodedBody.body,
+            headers: {
+                'content-type': 'application/json',
+                ...(encodedBody.contentEncoding ? { 'content-encoding': encodedBody.contentEncoding } : {}),
+                ...await this.authHeaders()
+            }
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL cold storage cleanup failed')
+        }
+        const body:{ deleted:number } = await response.json()
+        return body.deleted
+    }
+
+    async saveDatabase(
+        database:Database,
+        changes:toSaveType,
+        options:{ forceFull?:boolean } = {}
+    ):Promise<boolean> {
+        if(!await this.ensureEnabled()){
+            return false
+        }
+
+        const built = buildNodeDatabaseSync(database, changes, this.cache, options)
+        if(!built){
+            return true
+        }
+        const encodedBody = await encodeJsonBody(built.payload)
+        const response = await fetch('/api/database-v2/sync', {
+            method: 'POST',
+            body: encodedBody.body,
+            headers: {
+                'content-type': 'application/json',
+                ...(encodedBody.contentEncoding ? { 'content-encoding': encodedBody.contentEncoding } : {}),
+                ...await this.authHeaders()
+            }
+        })
+        if(response.status === 409){
+            const conflict = await response.json().catch(() => null)
+            throw new NodePostgresRevisionConflictError(conflict?.revision)
+        }
+        if(response.status === 413){
+            const body = await response.json().catch(() => null)
+            throw new NodePostgresPayloadTooLargeError(body?.error)
+        }
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL database save failed')
+        }
+        const result:{ revision:number } = await response.json()
+        built.nextCache.revision = result.revision
+        built.nextCache.initialized = true
+        this.cache = built.nextCache
+        return true
+    }
+
+    async replaceDatabase(database:Database) {
+        return await this.saveDatabase(database, {
+            character: [],
+            chat: [],
+            botPreset: false,
+            modules: false,
+            loadouts: false,
+            plugins: false,
+            pluginCustomStorage: false,
+        }, {
+            forceFull: true,
+        })
+    }
+}
