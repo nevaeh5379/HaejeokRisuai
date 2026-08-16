@@ -22,8 +22,8 @@ import {
 } from '../chatLoadPages';
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
-export let appVer = "2026.6.215" //<APP_VERSION_POINT>
-export let webAppSubVer = ''
+export let appVer = "2026.8.160" //<APP_VERSION_POINT>
+export let appSubVer = 'preview'
 
 export type StreamingDisplayOptimizationMode = 'off'|'balanced'|'strong'
 
