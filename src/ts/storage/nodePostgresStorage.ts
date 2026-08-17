@@ -79,6 +79,7 @@ export interface NodePostgresColumnInfo {
 export interface NodePostgresTableData {
     table:string
     columns:NodePostgresColumnInfo[]
+    allColumns?:NodePostgresColumnInfo[]
     rows:Record<string, unknown>[]
     offset:number
     limit:number
@@ -490,6 +491,8 @@ export class NodePostgresStorage {
             limit?:number
             sortColumn?:string
             sortOrder?:'asc'|'desc'
+            search?:string
+            columns?:string[]
         } = {}
     ):Promise<NodePostgresTableData> {
         if(!await this.ensureEnabled()){
@@ -504,6 +507,12 @@ export class NodePostgresStorage {
         }
         if(options.sortOrder){
             params.set('dir', options.sortOrder)
+        }
+        if(options.search && options.search.length > 0){
+            params.set('search', options.search)
+        }
+        if(options.columns && options.columns.length > 0){
+            params.set('columns', options.columns.join(','))
         }
         const response = await fetch(
             `/api/database-v2/tables/${encodeURIComponent(table)}/rows?${params.toString()}`,

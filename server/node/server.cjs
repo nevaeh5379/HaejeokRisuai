@@ -1779,7 +1779,11 @@ app.get('/api/database-v2/tables/:table/rows', authenticatedRouteLimiter, async 
             req.query.offset,
             req.query.limit,
             req.query.sort,
-            req.query.dir
+            req.query.dir,
+            req.query.search,
+            typeof req.query.columns === 'string' && req.query.columns.length > 0
+                ? req.query.columns.split(',')
+                : null
         );
         await sendCompressedJson(req, res, { data });
     } catch (error) {

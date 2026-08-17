@@ -161,4 +161,43 @@ describe('Node PostgreSQL storage client', () => {
         expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/tables')
         expect(fetchMock.mock.calls[2][0]).toBe('/api/database-v2/tables/risu_characters/rows?offset=50&limit=50&sort=id&dir=desc')
     })
+
+    it('searches and filters table rows with column selection through the server API', async () => {
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                enabled: true,
+                configured: true,
+                managedByEnvironment: false,
+                connectionDisplay: 'postgresql://localhost/risuai',
+                poolMax: 10,
+                revision: 2,
+                initialized: true,
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                data: {
+                    table: 'risu_messages',
+                    columns: [
+                        { name: 'id', dataType: 'text', nullable: false, primaryKey: true },
+                        { name: 'content', dataType: 'text', nullable: true, primaryKey: false },
+                    ],
+                    rows: [{ id: 'm1', content: 'hello world' }],
+                    offset: 0,
+                    limit: 25,
+                    total: 1,
+                },
+            }), { status: 200 }))
+        vi.stubGlobal('fetch', fetchMock)
+
+        const storage = new NodePostgresStorage(async () => 'test-auth')
+        await storage.getServerConfig()
+
+        expect(await storage.getDbTableData('risu_messages', {
+            search: 'hello',
+            columns: ['id', 'content'],
+            limit: 25,
+        })).toMatchObject({ table: 'risu_messages', total: 1, rows: [{ id: 'm1', content: 'hello world' }] })
+        expect(fetchMock.mock.calls[1][0]).toBe(
+            '/api/database-v2/tables/risu_messages/rows?offset=0&limit=25&search=hello&columns=id%2Ccontent'
+        )
+    })
 })

@@ -1704,13 +1704,34 @@ class PostgresStorage {
         }));
     }
 
-    async getDbExplorerTableRows(table, rawOffset = 0, rawLimit = 50, rawSortColumn = null, rawSortOrder = 'asc') {
+    async getDbExplorerTableRows(table, rawOffset = 0, rawLimit = 50, rawSortColumn = null, rawSortOrder = 'asc', rawSearch = '', rawColumns = null) {
         this.assertEnabled();
         assertDbExplorerIdentifier(table, 'table name');
         const columns = await this.getDbExplorerTableColumns(table);
         if (columns.length === 0) {
             throw new PostgresPayloadError('table has no columns');
         }
+
+        let visibleColumns = columns;
+        if (rawColumns !== null && rawColumns !== undefined) {
+            if (!Array.isArray(rawColumns) || rawColumns.length === 0) {
+                throw new PostgresPayloadError('column list must not be empty');
+            }
+            const visibleNames = [];
+            for (const name of rawColumns) {
+                const validated = assertDbExplorerIdentifier(name, 'column name');
+                const match = columns.find((column) => column.name === validated);
+                if (!match) {
+                    throw new PostgresPayloadError('column was not found in the table');
+                }
+                if (!visibleNames.includes(validated)) {
+                    visibleNames.push(validated);
+                }
+            }
+            visibleColumns = columns.filter((column) => visibleNames.includes(column.name));
+        }
+
+        const searchTerm = typeof rawSearch === 'string' ? rawSearch.trim().slice(0, 200) : '';
         const parsedOffset = Number.parseInt(rawOffset, 10);
         const offset = Number.isSafeInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
         const parsedLimit = Number.parseInt(rawLimit, 10);
@@ -1726,22 +1747,36 @@ class PostgresStorage {
         }
         const sortOrder = rawSortOrder === 'desc' ? 'DESC' : 'ASC';
 
-        const selectList = columns
+        const selectList = visibleColumns
             .map((column) => dbExplorerSelectExpression(column.name, column.dataType))
             .join(', ');
+
+        const searchTerms = [];
+        let whereClause = '';
+        if (searchTerm.length > 0) {
+            const escaped = searchTerm.replace(/([%_\\])/g, '\\$1');
+            const conditions = visibleColumns
+                .map((column) => `("${column.name}")::text ILIKE $1`)
+                .join(' OR ');
+            whereClause = ` WHERE (${conditions})`;
+            searchTerms.push(`%${escaped}%`);
+        }
+        const rowParams = [...searchTerms, limit, offset];
         const rows = await this.pool.query(
             `SELECT ${selectList}
-             FROM "${table}"
+             FROM "${table}"${whereClause}
              ORDER BY "${sortColumn}" ${sortOrder} NULLS LAST
-             LIMIT $1 OFFSET $2`,
-            [limit, offset]
+             LIMIT $${rowParams.length - 1} OFFSET $${rowParams.length}`,
+            rowParams
         );
         const count = await this.pool.query(
-            `SELECT COUNT(*)::text AS total FROM "${table}"`
+            `SELECT COUNT(*)::text AS total FROM "${table}"${whereClause}`,
+            searchTerms
         );
         return {
             table,
-            columns,
+            columns: visibleColumns,
+            allColumns: columns,
             rows: rows.rows,
             offset,
             limit,
