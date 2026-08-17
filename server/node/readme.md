@@ -63,3 +63,44 @@ An example deployment is provided in `docker-compose.postgres.yml`. Set `POSTGRE
 The PostgreSQL Compose example also includes the CloudBeaver Community web database manager. It listens on `http://127.0.0.1:8978` by default and keeps its workspace in the `cloudbeaver-workspace` volume. In the first-run wizard, connect with host `postgres`, port `5432`, database/user `risuai`, and the configured `POSTGRES_PASSWORD`.
 
 Set `CLOUDBEAVER_PORT` to change the host port, `CLOUDBEAVER_VERSION` to pin an image tag, or `CLOUDBEAVER_BIND_ADDRESS=0.0.0.0` to allow remote access. Remote access should be protected with HTTPS, a firewall, and CloudBeaver authentication because this UI can directly modify the database.
+
+## S3 / RustFS Object Storage for Assets
+
+RisuAI supports offloading media assets (character avatars, emotion sprites, audio, attachments) to **S3-compatible Object Storage** such as [RustFS](https://github.com/rustfs/rustfs), MinIO, Cloudflare R2, or AWS S3. This eliminates file system bottlenecks and inode exhaustion when managing tens of thousands of assets across multiple characters.
+
+### Configuration
+
+Configure S3 storage from **Advanced Settings → S3 / Object Storage**, or via environment variables:
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `RISU_STORAGE_TYPE` | `fs` | Set to `s3` to enable S3 storage by default. |
+| `RISU_S3_ENDPOINT` | *(empty)* | S3 endpoint URL (e.g., `http://127.0.0.1:9000` for RustFS/MinIO). |
+| `RISU_S3_BUCKET` | `risuai-assets` | Target bucket name. |
+| `RISU_S3_ACCESS_KEY_ID` | *(empty)* | S3 Access Key ID. |
+| `RISU_S3_SECRET_ACCESS_KEY` | *(empty)* | S3 Secret Access Key. |
+| `RISU_S3_REGION` | `us-east-1` | S3 Region. |
+| `RISU_S3_FORCE_PATH_STYLE` | `true` | Path-style addressing (required for RustFS and MinIO). |
+| `RISU_S3_AUTO_CREATE_BUCKET` | `true` | Automatically create the bucket if it does not exist. |
+
+### RustFS + PostgreSQL All-in-One Deployment
+
+A complete Docker Compose stack is provided in `docker-compose.rustfs.yml`:
+
+```bash
+POSTGRES_PASSWORD=your_password docker compose -f docker-compose.rustfs.yml up -d
+```
+
+This stack starts:
+- **RustFS**: High-performance Rust-based S3 object storage (S3 API on port 9000, Web Console on port 9001).
+- **PostgreSQL 17**: Relational database for chats, characters, and revisions.
+- **RisuAI Server**: Pre-configured to communicate with both PostgreSQL and RustFS.
+- **CloudBeaver**: Database explorer on port 8978.
+
+### Asset Migration & Tools
+
+When S3 is enabled:
+- **Migrate Local Assets to S3**: Copies all existing local asset files in `save/` to the S3 bucket.
+- **Download S3 Assets to Local**: Exports all objects from the S3 bucket back to the local `save/` directory.
+- During migration, read requests automatically fall back to local disk if an asset hasn't been uploaded yet, ensuring zero broken images.
+

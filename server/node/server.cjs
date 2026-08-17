@@ -19,6 +19,10 @@ const {
     PostgresRevisionConflictError,
     PostgresStorage,
 } = require('./postgresStorage.cjs');
+const {
+    AssetStorageManager,
+    S3AssetStorage,
+} = require('./assetStorage.cjs');
 const defaultJsonParser = express.json({ limit: '100mb' });
 const postgresJsonBodyLimit = process.env.RISU_POSTGRES_JSON_BODY_LIMIT || '1gb';
 const postgresJsonParser = express.json({ limit: postgresJsonBodyLimit });
@@ -93,6 +97,8 @@ const postgresStorage = new PostgresStorage({
     connectionString: postgresServerConfig.enabled ? postgresServerConfig.connectionString : '',
     poolMax: postgresServerConfig.poolMax,
 });
+
+const assetStorageManager = new AssetStorageManager(savePath);
 
 const passwordPath = path.join(savePath, '__password')
 if(existsSync(passwordPath)){
@@ -1795,13 +1801,183 @@ app.get('/api/database-v2/tables/:table/rows', authenticatedRouteLimiter, async 
     }
 });
 
+app.get('/api/s3-config', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        res.send(assetStorageManager.getPublicConfig());
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/s3-config', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        const body = req.body || {};
+        const updated = await assetStorageManager.setConfig(body);
+        res.send({ success: true, config: updated });
+    } catch (error) {
+        res.status(400).send({ error: error.message });
+    }
+});
+
+app.post('/api/s3-test', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        const body = req.body || {};
+        const merged = {
+            ...assetStorageManager.config,
+            ...body,
+            accessKeyId: (body.accessKeyId !== undefined && body.accessKeyId !== '')
+                ? body.accessKeyId.trim()
+                : assetStorageManager.config.accessKeyId,
+            secretAccessKey: (body.secretAccessKey !== undefined && body.secretAccessKey !== '')
+                ? body.secretAccessKey.trim()
+                : assetStorageManager.config.secretAccessKey,
+        };
+        const result = await S3AssetStorage.testConnection(merged);
+        res.send(result);
+    } catch (error) {
+        res.status(400).send({ success: false, message: error.message });
+    }
+});
+
+app.get('/api/s3-stats', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        const stats = await assetStorageManager.getStorage().getStats();
+        res.send(stats);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/storage-summary', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        const summary = await assetStorageManager.getSummary();
+        res.send(summary);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/s3-asset-details', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        const target = req.query.target || 'active';
+        const details = await assetStorageManager.getAssetDetails(target);
+        res.send(details);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/storage-assets-delete', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        const { keys, target = 'active' } = req.body || {};
+        if (!Array.isArray(keys)) {
+            res.status(400).send({ error: 'keys must be an array of asset keys' });
+            return;
+        }
+        const result = await assetStorageManager.deleteAssetKeys(keys, target);
+        res.send(result);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/storage-local-clean', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        const result = await assetStorageManager.cleanLocalAssets();
+        res.send(result);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/s3-migrate', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        if (assetStorageManager.getStorage().type !== 's3') {
+            res.status(400).send({ error: 'S3 storage is not currently active.' });
+            return;
+        }
+
+        res.setHeader('Content-Type', 'application/x-ndjson');
+        res.setHeader('Transfer-Encoding', 'chunked');
+
+        const result = await assetStorageManager.getStorage().migrateFromLocal(savePath, (progress) => {
+            res.write(JSON.stringify({ type: 'progress', ...progress }) + '\n');
+        });
+
+        res.write(JSON.stringify({ type: 'done', ...result }) + '\n');
+        res.end();
+    } catch (error) {
+        if (!res.headersSent) {
+            res.status(500).send({ error: error.message });
+        } else {
+            res.write(JSON.stringify({ type: 'error', error: error.message }) + '\n');
+            res.end();
+        }
+    }
+});
+
+app.post('/api/s3-rollback', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        if (assetStorageManager.getStorage().type !== 's3') {
+            res.status(400).send({ error: 'S3 storage is not currently active.' });
+            return;
+        }
+
+        res.setHeader('Content-Type', 'application/x-ndjson');
+        res.setHeader('Transfer-Encoding', 'chunked');
+
+        const result = await assetStorageManager.getStorage().rollbackToLocal(savePath, (progress) => {
+            res.write(JSON.stringify({ type: 'progress', ...progress }) + '\n');
+        });
+
+        res.write(JSON.stringify({ type: 'done', ...result }) + '\n');
+        res.end();
+    } catch (error) {
+        if (!res.headersSent) {
+            res.status(500).send({ error: error.message });
+        } else {
+            res.write(JSON.stringify({ type: 'error', error: error.message }) + '\n');
+            res.end();
+        }
+    }
+});
+
 app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;
     }
     const filePath = req.headers['file-path'];
     if (!filePath) {
-        console.log('no path')
         res.status(400).send({
             error:'File path required'
         });
@@ -1815,12 +1991,23 @@ app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
         return;
     }
     try {
-        if(!existsSync(path.join(savePath, filePath))){
+        const storage = assetStorageManager.getStorage();
+        const result = await storage.read(filePath);
+        if(!result.exists){
             res.send();
         }
         else{
-            res.setHeader('Content-Type','application/octet-stream');
-            res.sendFile(path.join(savePath, filePath));
+            res.setHeader('Content-Type', result.contentType || 'application/octet-stream');
+            if (result.contentLength) {
+                res.setHeader('Content-Length', result.contentLength);
+            }
+            if (result.filePath) {
+                res.sendFile(result.filePath);
+            } else if (result.stream) {
+                result.stream.pipe(res);
+            } else {
+                res.send();
+            }
         }
     } catch (error) {
         next(error);
@@ -1846,17 +2033,16 @@ app.get('/api/remove', authenticatedRouteLimiter, async (req, res, next) => {
             });
             return;
         }
-
-        try {
-            await fs.rm(path.join(savePath, filePath));
-            res.send({
-                success: true,
-            });
-        } catch (error) {
-            next(error);
-        }
     }
-    
+
+    try {
+        await assetStorageManager.getStorage().remove(filePaths);
+        res.send({
+            success: true,
+        });
+    } catch (error) {
+        next(error);
+    }
 });
 
 app.get('/api/list', authenticatedRouteLimiter, async (req, res, next) => {
@@ -1864,12 +2050,11 @@ app.get('/api/list', authenticatedRouteLimiter, async (req, res, next) => {
         return;
     }
     try {
-        const data = (await fs.readdir(path.join(savePath))).map((v) => {
-            return Buffer.from(v, 'hex').toString('utf-8')
-        })
+        const storage = assetStorageManager.getStorage();
+        const content = await storage.list();
         res.send({
             success: true,
-            content: data
+            content
         });
     } catch (error) {
         next(error);
@@ -1896,7 +2081,7 @@ app.post('/api/write', authenticatedRouteLimiter, async (req, res, next) => {
     }
 
     try {
-        await fs.writeFile(path.join(savePath, filePath), fileContent);
+        await assetStorageManager.getStorage().write(filePath, fileContent);
         res.send({
             success: true
         });
@@ -2128,6 +2313,7 @@ function setupProxyStreamWebSocket(server) {
 async function startServer() {
     try {
         await postgresStorage.initialize();
+        await assetStorageManager.init();
         if (!postgresManagedByEnvironment && !postgresConfigExists && postgresBootstrapUrl) {
             await persistPostgresServerConfig(postgresServerConfig);
         }

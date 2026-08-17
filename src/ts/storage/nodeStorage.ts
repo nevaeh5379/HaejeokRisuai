@@ -2,17 +2,34 @@ import { language } from "src/lang"
 import { alertError, alertInput, waitAlert } from "../alert"
 import { base64url, getKeypairStore, saveKeypairStore } from "../util"
 import { NodePostgresStorage } from "./nodePostgresStorage"
+import { NodeS3Storage } from "./nodeS3Storage"
 
 export {
     NodePostgresPayloadTooLargeError,
     NodePostgresRevisionConflictError,
 } from "./nodePostgresStorage"
+export {
+    type NodeS3ServerConfig,
+    type NodeS3ServerConfigUpdate,
+    type NodeS3Stats,
+    type NodeS3TestResult,
+    type NodeS3MigrationResult,
+    type NodeS3RollbackResult,
+    type NodeS3ProgressEvent,
+    type NodeStorageAssetItem,
+    type NodeStorageAssetDetails,
+    type NodeStorageSummary,
+} from "./nodeS3Storage"
 
 
 export class NodeStorage{
 
     authChecked = false
     readonly postgres = new NodePostgresStorage(async () => {
+        await this.checkAuth()
+        return await this.createAuth()
+    })
+    readonly s3 = new NodeS3Storage(async () => {
         await this.checkAuth()
         return await this.createAuth()
     })
