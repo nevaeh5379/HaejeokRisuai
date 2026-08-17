@@ -9,7 +9,7 @@
     import { forageStorage } from 'src/ts/globalApi.svelte'
     import { getDatabase } from 'src/ts/storage/database.svelte'
     import { NodeStorage } from 'src/ts/storage/nodeStorage'
-    import type { NodePostgresRevision, NodePostgresServerConfig } from 'src/ts/storage/nodePostgresStorage'
+    import type { NodePostgresRevision, NodePostgresServerConfig, NodePostgresTokenUsage } from 'src/ts/storage/nodePostgresStorage'
     import { encodeRisuSaveLegacy } from 'src/ts/storage/risuSave'
 
     let config = $state<NodePostgresServerConfig|null>(null)
@@ -19,6 +19,7 @@
     let busy = $state(false)
     let loadError = $state('')
     let revisions = $state<NodePostgresRevision[]>([])
+    let tokenUsage = $state<NodePostgresTokenUsage[]>([])
 
     function getNodeStorage() {
         if(!(forageStorage.realStorage instanceof NodeStorage)){
@@ -35,6 +36,7 @@
             enabled = config.enabled
             poolMax = config.poolMax
             revisions = config.enabled ? await getNodeStorage().postgres.listRevisions(20) : []
+            tokenUsage = config.enabled ? await getNodeStorage().postgres.getTokenUsage() : []
         } catch (error) {
             loadError = `${error}`
         } finally {
@@ -162,6 +164,31 @@
         {/if}
 
         {#if config.enabled}
+            <div class="mt-5 border-t border-darkborderc pt-4">
+                <h4 class="text-sm font-semibold">{language.postgresTokenUsage}</h4>
+                <p class="mt-1 text-xs text-textcolor2">{language.postgresTokenUsageDescription}</p>
+                {#if tokenUsage.length === 0}
+                    <p class="mt-3 text-sm text-textcolor2">{language.postgresTokenUsageEmpty}</p>
+                {:else}
+                    <div class="mt-3 max-h-72 space-y-2 overflow-y-auto">
+                        {#each tokenUsage as usage}
+                            <div class="flex items-center justify-between gap-3 rounded-md border border-darkborderc bg-bgcolor/30 p-2">
+                                <div class="min-w-0 text-xs">
+                                    <div class="font-medium text-textcolor">{usage.model}</div>
+                                    <div class="mt-0.5 text-textcolor2">
+                                        {usage.messageCount} {language.postgresTokenUsageMessages}
+                                    </div>
+                                </div>
+                                <div class="text-right text-xs text-textcolor2">
+                                    <div>{language.postgresTokenUsageInput}: {usage.totalInputTokens.toLocaleString()}</div>
+                                    <div>{language.postgresTokenUsageOutput}: {usage.totalOutputTokens.toLocaleString()}</div>
+                                </div>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+            </div>
+
             <div class="mt-5 border-t border-darkborderc pt-4">
                 <h4 class="text-sm font-semibold">{language.postgresHistory}</h4>
                 <p class="mt-1 text-xs text-textcolor2">{language.postgresHistoryDescription}</p>

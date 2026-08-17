@@ -34,6 +34,7 @@
     import SliderInput from "../UI/GUI/SliderInput.svelte";
     import Toggles from "./Toggles.svelte";
     import { convertCharacterToModule } from "src/ts/interchangeability";
+    import { getMimeType } from "src/ts/media";
 
     let iconRemoveMode = $state(false)
     let viewSubMenu = $state(0)
@@ -284,7 +285,7 @@
                 <div class="text-center">{language.talkness}</div>
                 <div class="text-center">{language.active}</div>
                 {#each (DBState.db.characters[$selectedCharID] as groupChat).characters as char, i}
-                    {#await getCharImage(findCharacterbyId(char).image, 'css')}
+                    {#await getCharImage(findCharacterbyId(char).image, 'css', { thumbnail: true })}
                         <BarIcon onClick={() => {
                             rmCharFromGroup(i)
                         }}>
@@ -626,12 +627,12 @@
                             <tr>
                                 <td class="font-medium truncate">
                                     {#if assetFilePath[i] && DBState.db.useAdditionalAssetsPreview}
-                                        {#if assetFileExtensions[i] === 'mp4'}
+                                        {#if ['mp4', 'webm', 'mkv', 'mov', 'avi'].includes(assetFileExtensions[i])}
                                         <!-- svelte-ignore a11y_media_has_caption -->
-                                            <video controls class="mt-2 px-2 w-full m-1 rounded-md"><source src={assetFilePath[i]} type="video/mp4"></video>
-                                        {:else if assetFileExtensions[i] === 'mp3'}
-                                            <audio controls class="mt-2 px-2 w-full h-16 m-1 rounded-md" loop><source src={assetFilePath[i]} type="audio/mpeg"></audio>
-                                        {:else if ['png', 'webp', 'jpeg', 'jpg', 'gif'].includes(assetFileExtensions[i])}
+                                            <video controls class="mt-2 px-2 w-full m-1 rounded-md"><source src={assetFilePath[i]} type={getMimeType(assetFileExtensions[i])}></video>
+                                        {:else if ['mp3', 'wav', 'ogg', 'flac', 'aac'].includes(assetFileExtensions[i])}
+                                            <audio controls class="mt-2 px-2 w-full h-16 m-1 rounded-md" loop><source src={assetFilePath[i]} type={getMimeType(assetFileExtensions[i])}></audio>
+                                        {:else if ['png', 'webp', 'jpeg', 'jpg', 'gif', 'avif', 'svg', 'bmp'].includes(assetFileExtensions[i])}
                                             <img src={assetFilePath[i]} class="w-16 h-16 m-1 rounded-md" alt={assets[0]}/>
                                         {/if}
                                     {/if}

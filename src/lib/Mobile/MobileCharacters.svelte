@@ -13,9 +13,15 @@
     }
 
     const agoFormatter = new Intl.RelativeTimeFormat(navigator.languages, { style: 'short' });
+    const ITEM_HEIGHT = 73; // Height per character row in px
+    const OVERSCAN = 4; // Extra items to render above/below viewport
 
     let {endGrid = () => {}, search, hideTrash = false}: Props = $props();
     let normalizedSearch = $derived(normalizeSearch(search ?? $MobileSearch));
+
+    let scrollContainer: HTMLDivElement | null = $state(null);
+    let scrollTop = $state(0);
+    let viewportHeight = $state(600);
 
     function normalizeSearch(value:string){
         return value.replace(/ /g,"").toLocaleLowerCase();
@@ -69,27 +75,67 @@
             return b.interaction - a.interaction;
         });
     }
+
+    let filteredChars = $derived(
+        sortChar(DBState.db.characters).filter(char =>
+            normalizeSearch(char.name).includes(normalizedSearch)
+        )
+    );
+
+    let totalCount = $derived(filteredChars.length);
+    let startIndex = $derived(Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - OVERSCAN));
+    let endIndex = $derived(Math.min(totalCount, Math.ceil((scrollTop + viewportHeight) / ITEM_HEIGHT) + OVERSCAN));
+
+    let visibleItems = $derived(
+        filteredChars.slice(startIndex, endIndex).map((item, relIndex) => ({
+            item,
+            index: startIndex + relIndex
+        }))
+    );
+
+    let topOffsetY = $derived(startIndex * ITEM_HEIGHT);
+    let bottomOffsetY = $derived(Math.max(0, (totalCount - endIndex) * ITEM_HEIGHT));
+
+    function handleScroll(e: Event) {
+        const target = e.currentTarget as HTMLDivElement;
+        scrollTop = target.scrollTop;
+    }
 </script>
-<div class="flex flex-col items-center w-full overflow-y-auto h-full">
-    {#each sortChar(DBState.db.characters) as char, i}
-        {#if normalizeSearch(char.name).includes(normalizedSearch)}
-            <button class="flex p-2 border-t-darkborderc gap-2 w-full" class:border-t={i !== 0} onclick={() => {
+
+<div
+    bind:this={scrollContainer}
+    bind:clientHeight={viewportHeight}
+    onscroll={handleScroll}
+    class="flex flex-col items-center w-full overflow-y-auto h-full"
+>
+    {#if topOffsetY > 0}
+        <div style="height: {topOffsetY}px; flex-shrink: 0; width: 100%;"></div>
+    {/if}
+    {#each visibleItems as { item: char, index }}
+        <button
+            class="flex p-2 border-t-darkborderc gap-2 w-full"
+            class:border-t={index !== 0}
+            style="height: {ITEM_HEIGHT}px; min-height: {ITEM_HEIGHT}px; max-height: {ITEM_HEIGHT}px; box-sizing: border-box;"
+            onclick={() => {
                 changeChar(char.i)
                 endGrid()
-            }}>
-                <BarIcon additionalStyle={getCharImage(char.image, 'css')}></BarIcon>
-                <div class="flex flex-1 w-full flex-col justify-start items-start text-start">
-                    <span>{char.name}</span>
-                    <div class="text-sm text-textcolor2 flex items-center w-full flex-wrap">
-                        <span class="mr-1">{char.chats}</span>
-                        <MessageSquareIcon size={14} />
-                        <span class="mr-1 ml-1">|</span>
-                        <span>{char.agoText}</span>
-                    </div>
+            }}
+        >
+            <BarIcon additionalStyle={getCharImage(char.image, 'css', { thumbnail: true })}></BarIcon>
+            <div class="flex flex-1 w-full flex-col justify-start items-start text-start overflow-hidden">
+                <span class="truncate w-full">{char.name}</span>
+                <div class="text-sm text-textcolor2 flex items-center w-full flex-wrap">
+                    <span class="mr-1">{char.chats}</span>
+                    <MessageSquareIcon size={14} />
+                    <span class="mr-1 ml-1">|</span>
+                    <span>{char.agoText}</span>
                 </div>
-            </button>
-        {/if}
+            </div>
+        </button>
     {/each}
+    {#if bottomOffsetY > 0}
+        <div style="height: {bottomOffsetY}px; flex-shrink: 0; width: 100%;"></div>
+    {/if}
 </div>
 
 <button class="p-4 rounded-full absolute bottom-2 right-2 bg-borderc" onclick={() => {

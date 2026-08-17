@@ -182,7 +182,7 @@
                                         idx={msg.originalIndex}
                                         message={msg.data}
                                         name={msg.speaker?.name}
-                                        img={getCharImage(msg.speaker?.image, 'css')}
+                                        img={getCharImage(msg.speaker?.image, 'css', { thumbnail: true })}
                                         role={msg.role}
                                         messageGenerationInfo={msg.generationInfo}
                                         rerollIcon={false}
@@ -195,7 +195,7 @@
                                         idx={msg.originalIndex}
                                         message={msg.data}
                                         name={msg.role === 'user' ? getUserName() : chara.name}
-                                        img={msg.role === 'user' ? getCharImage(getUserIcon(), 'css') : getCharImage(chara.image, 'css')}
+                                        img={msg.role === 'user' ? getCharImage(getUserIcon(), 'css', { thumbnail: true }) : getCharImage(chara.image, 'css', { thumbnail: true })}
                                         role={msg.role}
                                         messageGenerationInfo={msg.generationInfo}
                                         rerollIcon={false}

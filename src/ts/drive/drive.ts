@@ -106,7 +106,7 @@ export async function checkDriverInit() {
     }
 }
 
-let lastSaved:number = parseInt(localStorage.getItem('risu_lastsaved') ?? '-1')
+let lastSaved:number = parseInt((typeof localStorage !== 'undefined' ? localStorage.getItem('risu_lastsaved') : null) ?? '-1')
 let BackupDb:Database = null
 
 

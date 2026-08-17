@@ -32,6 +32,7 @@
     import Button from '../UI/GUI/Button.svelte';
     import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte';
     import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages';
+    import { getMimeType } from 'src/ts/media';
 
     const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then(m => m.default);
     
@@ -735,13 +736,13 @@
                                     <img src={inlayAsset.data} alt="Inlay" class="max-w-48 max-h-48 border border-darkborderc">
                                 {:else if inlayAsset.type === 'video'}
                                     <video controls class="max-w-48 max-h-48 border border-darkborderc">
-                                        <source src={inlayAsset.data} type="video/mp4" />
+                                        <source src={inlayAsset.data} type={inlayAsset.name ? getMimeType(inlayAsset.name) : 'video/mp4'} />
                                         <track kind="captions" />
                                         Your browser does not support the video tag.
                                     </video>
                                 {:else if inlayAsset.type === 'audio'}
                                     <audio controls class="max-w-48 max-h-24 border border-darkborderc">
-                                        <source src={inlayAsset.data} type="audio/mpeg" />
+                                        <source src={inlayAsset.data} type={inlayAsset.name ? getMimeType(inlayAsset.name) : 'audio/mpeg'} />
                                         Your browser does not support the audio tag.
                                     </audio>
                                 {:else}

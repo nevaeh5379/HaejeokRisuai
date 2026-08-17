@@ -2,11 +2,24 @@ import { language } from "src/lang"
 import { alertError, alertInput, waitAlert } from "../alert"
 import { base64url, getKeypairStore, saveKeypairStore } from "../util"
 import { NodePostgresStorage } from "./nodePostgresStorage"
+import { NodeS3Storage } from "./nodeS3Storage"
 
 export {
     NodePostgresPayloadTooLargeError,
     NodePostgresRevisionConflictError,
 } from "./nodePostgresStorage"
+export {
+    type NodeS3ServerConfig,
+    type NodeS3ServerConfigUpdate,
+    type NodeS3Stats,
+    type NodeS3TestResult,
+    type NodeS3MigrationResult,
+    type NodeS3RollbackResult,
+    type NodeS3ProgressEvent,
+    type NodeStorageAssetItem,
+    type NodeStorageAssetDetails,
+    type NodeStorageSummary,
+} from "./nodeS3Storage"
 
 export type NodeStorageBulkReadProgress = {
     completedFiles: number
@@ -40,6 +53,10 @@ export class NodeStorage{
         await this.checkAuth()
         return await this.createAuth()
     })
+    readonly s3 = new NodeS3Storage(async () => {
+        await this.checkAuth()
+        return await this.createAuth()
+    })
     JSONStringlifyAndbase64Url(obj:any){
         return base64url(Buffer.from(JSON.stringify(obj), 'utf-8'))
     }
@@ -69,6 +86,26 @@ export class NodeStorage{
         )
         const sigString = base64url(new Uint8Array(sig))
         return this.JSONStringlifyAndbase64Url(header) + "." + this.JSONStringlifyAndbase64Url(payload) + "." + sigString
+    }
+
+    private cachedAuthToken: string = ''
+    private cachedAuthTokenExpiresAt: number = 0
+
+    async getCachedAuth(): Promise<string> {
+        const now = Math.floor(Date.now() / 1000)
+        if (!this.cachedAuthToken || this.cachedAuthTokenExpiresAt - now < 60) {
+            await this.checkAuth()
+            this.cachedAuthToken = await this.createAuth()
+            this.cachedAuthTokenExpiresAt = now + 4 * 60
+        }
+        return this.cachedAuthToken
+    }
+
+    async getDirectUrl(key: string, options?: { thumbnail?: boolean }): Promise<string> {
+        const auth = await this.getCachedAuth()
+        const hex = Buffer.from(key, 'utf-8').toString('hex')
+        const thumbParam = options?.thumbnail ? '&thumb=1' : ''
+        return `/api/read?path=${hex}${thumbParam}&auth=${encodeURIComponent(auth)}`
     }
 
     async getProxyAuth() {
@@ -271,15 +308,18 @@ export class NodeStorage{
             throw new Error(`Backup restore cleanup failed: ${response.status}`)
         }
     }
-
-    async getItem(key:string):Promise<Buffer> {
+    async getItem(key:string, options?: { thumbnail?: boolean }):Promise<Buffer> {
         await this.checkAuth()
-        const da = await fetch('/api/read', {
+        const headers: Record<string, string> = {
+            'file-path': Buffer.from(key, 'utf-8').toString('hex'),
+            'risu-auth': await this.createAuth()
+        }
+        if (options?.thumbnail) {
+            headers['x-thumbnail'] = 'true'
+        }
+        const da = await fetch('/api/read' + (options?.thumbnail ? '?thumb=1' : ''), {
             method: "GET",
-            headers: {
-                'file-path': Buffer.from(key, 'utf-8').toString('hex'),
-                'risu-auth': await this.createAuth()
-            }
+            headers
         })
         if(da.status < 200 || da.status >= 300){
             throw "getItem Error"

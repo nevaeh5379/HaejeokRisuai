@@ -17,7 +17,7 @@ self.addEventListener('fetch', (event) => {
                     break
                 }
                 case "img": {
-                    event.respondWith(getSource(url))
+                    event.respondWith(getSource(url, event.request))
                     break
                 }
                 case "register": {
@@ -28,8 +28,9 @@ self.addEventListener('fetch', (event) => {
                         targetUrl.pathname = decodeURIComponent(headerUrl)
                     }
                     const noContentType = headers.get('x-no-content-type') === 'true'
+                    const customContentType = headers.get('content-type') || headers.get('x-content-type')
                     event.respondWith(
-                        registerCache(targetUrl, event.request.arrayBuffer(), noContentType)
+                        registerCache(targetUrl, event.request.arrayBuffer(), noContentType, customContentType)
                     )
                     break
                 }
@@ -99,16 +100,84 @@ async function checkCache(url){
     }))
 }
 
-async function getSource(url){
+function hexToKey(hex) {
+    try {
+        let str = '';
+        for (let i = 0; i < hex.length; i += 2) {
+            str += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+        }
+        return str;
+    } catch (e) {
+        return '';
+    }
+}
+
+function getMimeFromPath(path) {
+    const ext = path.split('?')[0].split('.').pop()?.toLowerCase();
+    switch (ext) {
+        case 'png': return 'image/png';
+        case 'jpg':
+        case 'jpeg': return 'image/jpeg';
+        case 'webp': return 'image/webp';
+        case 'gif': return 'image/gif';
+        case 'svg': return 'image/svg+xml';
+        case 'avif': return 'image/avif';
+        case 'webm': return 'video/webm';
+        case 'mp4': return 'video/mp4';
+        case 'mkv': return 'video/x-matroska';
+        case 'mov': return 'video/quicktime';
+        case 'mp3': return 'audio/mpeg';
+        case 'wav': return 'audio/wav';
+        case 'ogg': return 'audio/ogg';
+        case 'flac': return 'audio/flac';
+        case 'aac': return 'audio/aac';
+        default: return 'application/octet-stream';
+    }
+}
+
+async function getSource(url, request){
     const cache = await caches.open('risuCache')
-    return await cache.match(url)
+    const cached = await cache.match(url)
+    if (!cached) {
+        return new Response("Not found", { status: 404 })
+    }
+
+    const rangeHeader = request?.headers?.get('range')
+    if (rangeHeader) {
+        const buffer = await cached.arrayBuffer()
+        const total = buffer.byteLength
+        const parts = rangeHeader.replace(/bytes=/, '').split('-')
+        const start = parseInt(parts[0], 10)
+        const end = parts[1] ? parseInt(parts[1], 10) : total - 1
+
+        if (!isNaN(start) && start < total) {
+            const chunkEnd = Math.min(end, total - 1)
+            const slice = buffer.slice(start, chunkEnd + 1)
+            const headers = new Headers(cached.headers)
+            headers.set('Content-Range', `bytes ${start}-${chunkEnd}/${total}`)
+            headers.set('Content-Length', slice.byteLength.toString())
+            headers.set('Accept-Ranges', 'bytes')
+            return new Response(slice, {
+                status: 206,
+                statusText: 'Partial Content',
+                headers
+            })
+        }
+    }
+
+    const headers = new Headers(cached.headers)
+    headers.set('Accept-Ranges', 'bytes')
+    return new Response(cached.body, {
+        status: 200,
+        headers
+    })
 }
 
 async function check(){
 
 }
 
-async function registerCache(urlr, buffer, noContentType = false){
+async function registerCache(urlr, buffer, noContentType = false, customContentType = null){
     const cache = await caches.open('risuCache')
     const url = new URL(urlr)
     if(!noContentType){
@@ -117,9 +186,16 @@ async function registerCache(urlr, buffer, noContentType = false){
         url.pathname = path.join('/')
     }
     const buf = new Uint8Array(await buffer)
+    let contentType = customContentType
+    if (!contentType && !noContentType) {
+        const rawHex = url.pathname.split('/').pop() || ''
+        const decodedKey = hexToKey(rawHex)
+        contentType = getMimeFromPath(decodedKey || url.pathname)
+    }
     let headers = {
         "cache-control": "max-age=604800",
-        "content-type": "image/png"
+        "accept-ranges": "bytes",
+        "content-type": contentType || "application/octet-stream"
     }
     if(noContentType){
         delete headers["content-type"]

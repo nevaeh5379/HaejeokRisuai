@@ -3,6 +3,7 @@
     import { type character, type groupChat } from "src/ts/storage/database.svelte";
     import { getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
     import { selectMultipleFile } from "src/ts/util";
+    import { getMimeType } from "src/ts/media";
     interface Props {
         currentCharacter: character|groupChat;
         onSelect: (additionalAsset:[string,string,string])=>void;
@@ -34,7 +35,7 @@
 {#if currentCharacter.type ==='character'}
     <button class="hover:text-green-500 bg-textcolor2 flex justify-center items-center w-16 h-16 m-1 rounded-md" onclick={async () => {
         if(currentCharacter.type === 'character'){
-            const da = await selectMultipleFile(['png', 'webp', 'mp4', 'mp3', 'gif'])
+            const da = await selectMultipleFile(['png', 'webp', 'mp4', 'webm', 'mp3', 'wav', 'ogg', 'gif'])
             currentCharacter.additionalAssets = currentCharacter.additionalAssets ?? []
             if(!da){
                 return
@@ -43,9 +44,9 @@
                 console.log(f)
                 const img = f.data
                 const name = f.name
-                const extension = name.split('.').pop().toLowerCase()
+                const extension = name.split('.').pop() || 'png'
                 const imgp = await saveAsset(img,'',extension)
-                currentCharacter.additionalAssets.push([name, imgp, extension])
+                currentCharacter.additionalAssets.push([name,imgp,extension])
             }
         }
     }}>
@@ -57,10 +58,10 @@
                     onSelect(additionalAsset)
                 }}>
                     {#if assetFilePath[i]}
-                        {#if assetFileExtensions[i] === 'mp4'}
+                        {#if ['mp4', 'webm', 'mkv', 'mov', 'avi'].includes(assetFileExtensions[i])}
                             <!-- svelte-ignore a11y_media_has_caption -->
-                            <video class="w-16 h-16 m-1 rounded-md"><source src={assetFilePath[i]} type="video/mp4"></video>
-                        {:else if assetFileExtensions[i] === 'mp3'}
+                            <video class="w-16 h-16 m-1 rounded-md"><source src={assetFilePath[i]} type={getMimeType(assetFileExtensions[i])}></video>
+                        {:else if ['mp3', 'wav', 'ogg', 'flac', 'aac'].includes(assetFileExtensions[i])}
                             <div class='w-16 h-16 m-1 rounded-md bg-slate-500 flex flex-col justify-center items-center'>
                                 <FileMusicIcon/>
                                 <div class='w-16 px-1 text-ellipsis whitespace-nowrap overflow-hidden'>{additionalAsset[0]}</div>

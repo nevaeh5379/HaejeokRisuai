@@ -1,0 +1,75 @@
+name: risuai-rustfs
+
+services:
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: risuai-rustfs
+    restart: always
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+    ports:
+      - "${RUSTFS_API_PORT:-9000}:9000"
+      - "${RUSTFS_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - rustfs-data:/data
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: risuai-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: risuai
+      POSTGRES_USER: risuai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD before starting the stack}
+    volumes:
+      - risuai-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U risuai -d risuai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  risuai:
+    container_name: risuai
+    build: .
+    image: risuai-full:local
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_started
+    environment:
+      RISU_POSTGRES_BOOTSTRAP_URL: postgresql://risuai:${POSTGRES_PASSWORD}@postgres:5432/risuai
+      RISU_POSTGRES_POOL_MAX: 10
+      RISU_STORAGE_TYPE: s3
+      RISU_S3_BOOTSTRAP_ENDPOINT: http://rustfs:9000
+      RISU_S3_BOOTSTRAP_BUCKET: risuai-assets
+      RISU_S3_BOOTSTRAP_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RISU_S3_BOOTSTRAP_SECRET: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+    ports:
+      - 6001:6001
+    volumes:
+      - ./save:/app/save
+
+  cloudbeaver:
+    image: dbeaver/cloudbeaver:${CLOUDBEAVER_VERSION:-latest}
+    container_name: risuai-cloudbeaver
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${CLOUDBEAVER_BIND_ADDRESS:-127.0.0.1}:${CLOUDBEAVER_PORT:-8978}:8978"
+    volumes:
+      - cloudbeaver-workspace:/opt/cloudbeaver/workspace
+
+volumes:
+  rustfs-data:
+  risuai-save:
+  risuai-postgres:
+  cloudbeaver-workspace:

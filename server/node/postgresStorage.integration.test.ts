@@ -30,6 +30,10 @@ const {
         pruneColdStorage:(keys:string[]) => Promise<{deleted:number}>
         migrateLegacyColdStorage:(savePath:string) => Promise<{migrated:number, skipped:number}>
         exportColdStorageToLegacy:(savePath:string) => Promise<{exported:number, archived:number}>
+        searchMessages:(query:string, scope?:string, limit?:number) => Promise<Record<string, any>[]>
+        getTokenUsage:() => Promise<Record<string, any>[]>
+        searchCharactersByTag:(tag:string, limit?:number) => Promise<Record<string, any>[]>
+        searchCharactersByName:(name:string, limit?:number) => Promise<Record<string, any>[]>
         pool:{ query:(sql:string, params?:unknown[]) => Promise<any>, end:() => Promise<void> }
     }
 }
@@ -46,12 +50,12 @@ describePostgres('PostgreSQL structured storage integration', () => {
 
     beforeEach(async () => {
         await storage.pool.query(
-            `TRUNCATE risu_revisions, risu_settings, risu_characters,
-                      risu_cold_archives, risu_cold_storage_legacy_imports
+            `TRUNCATE system.revisions, system.settings, character.characters,
+                      cold.archives, cold.legacy_imports
              RESTART IDENTITY CASCADE`
         )
         await storage.pool.query(
-            'UPDATE risu_storage_meta SET revision = 0, initialized = FALSE WHERE singleton = TRUE'
+            'UPDATE system.storage_meta SET revision = 0, initialized = FALSE WHERE singleton = TRUE'
         )
     })
 
@@ -68,6 +72,31 @@ describePostgres('PostgreSQL structured storage integration', () => {
                     { key: 'username', value: 'user' },
                     { key: 'optionalValue', value: null },
                     { key: 'sourceWithNul', value: { code: 'tool\0separator' } },
+                    { key: 'translatorPresets', value: [{ name: 'Korean', prompt: 'Translate', maxResponse: 2048 }] },
+                    { key: 'globalChatVariables', value: { player: 'Jihoon' } },
+                    { key: 'botPresets', value: [{
+                        name: 'SQL preset', apiType: 'openai', aiModel: 'model-sql',
+                        mainPrompt: 'Main', jailbreak: '', globalNote: '', temperature: 0.8,
+                        maxContext: 8192, maxResponse: 1024, frequencyPenalty: 0,
+                        PresensePenalty: 0, promptPreprocess: true,
+                    }] },
+                    { key: 'personas', value: [{
+                        id: 'persona-sql', name: 'Persona', personaPrompt: 'Prompt', icon: 'asset://persona',
+                    }] },
+                    { key: 'modules', value: [{
+                        id: 'module-sql', name: 'Module', description: 'Description', mcp: { url: 'https://mcp.test' },
+                    }] },
+                    { key: 'plugins', value: [{
+                        name: 'plugin-sql', displayName: 'Plugin', script: 'return true', version: '3.0',
+                    }] },
+                    { key: 'loreBook', value: [{
+                        name: 'World',
+                        data: [{
+                            id: 'lore-1', key: 'city', secondkey: 'capital', insertorder: 1,
+                            comment: 'place', content: 'Queryable lore', mode: 'normal',
+                            alwaysActive: false, selective: true,
+                        }],
+                    }] },
                 ],
                 deletes: [],
             },
@@ -75,178 +104,335 @@ describePostgres('PostgreSQL structured storage integration', () => {
             characters: [{
                 id: 'character-1',
                 position: 0,
-                data: { name: 'Character' },
+                data: {
+                    name: 'Test Character',
+                    firstMessage: 'Hello from PostgreSQL',
+                    tags: ['tester', 'database'],
+                    alternateGreetings: ['Alt 1', 'Alt 2'],
+                    emotionImages: [['happy', 'asset://happy']],
+                    globalLore: [{
+                        id: 'char-lore-1',
+                        key: 'sword',
+                        secondkey: '',
+                        insertorder: 0,
+                        comment: 'item',
+                        content: 'Legendary sword',
+                        mode: 'normal',
+                        alwaysActive: true,
+                        selective: false,
+                    }],
+                },
             }],
-            chatManifests: [{ characterId: 'character-1', ids: ['chat-1'] }],
+            chatManifests: [{
+                characterId: 'character-1',
+                ids: ['chat-1'],
+            }],
             chats: [{
                 id: 'chat-1',
                 characterId: 'character-1',
                 position: 0,
-                data: { name: 'Chat' },
+                data: {
+                    name: 'First Chat',
+                    note: 'Important note',
+                },
             }],
-            messageManifests: [{ chatId: 'chat-1', ids: ['message-1'] }],
+            messageManifests: [{
+                chatId: 'chat-1',
+                ids: ['message-1'],
+            }],
             messages: [{
                 id: 'message-1',
                 chatId: 'chat-1',
                 position: 0,
-                data: { role: 'user', data: 'hello' },
+                data: {
+                    role: 'user',
+                    data: 'hello',
+                },
             }],
         })
 
         expect(first.revision).toBe(1)
-        const imported = await storage.loadDatabase()
-        expect(imported).toMatchObject({
-            initialized: true,
-            revision: 1,
-            database: {
-                username: 'user',
-                optionalValue: null,
-                sourceWithNul: { code: 'tool\0separator' },
-                characters: [{
-                    chaId: 'character-1',
-                    name: 'Character',
-                    chats: [{
-                        id: 'chat-1',
-                        name: 'Chat',
-                        message: [{
-                            chatId: 'message-1',
-                            role: 'user',
-                            data: 'hello',
-                        }],
-                    }],
-                }],
-            },
-        })
+        expect(await storage.getState()).toEqual({ revision: 1, initialized: true })
 
-        const second = await storage.sync({
+        const loaded = await storage.loadDatabase()
+        expect(loaded.revision).toBe(1)
+        expect(loaded.initialized).toBe(true)
+        expect(loaded.database?.username).toBe('user')
+        expect(loaded.database?.optionalValue).toBeNull()
+        expect(loaded.database?.sourceWithNul).toEqual({ code: 'tool\0separator' })
+        expect(loaded.database?.translatorPresets).toEqual([
+            { name: 'Korean', prompt: 'Translate', maxResponse: 2048 },
+        ])
+        expect(loaded.database?.globalChatVariables).toEqual({ player: 'Jihoon' })
+        expect(loaded.database?.botPresets?.[0]?.aiModel).toBe('model-sql')
+        expect(loaded.database?.personas?.[0]?.id).toBe('persona-sql')
+        expect(loaded.database?.modules?.[0]?.mcp).toEqual({ url: 'https://mcp.test' })
+        expect(loaded.database?.plugins?.[0]?.name).toBe('plugin-sql')
+        expect(loaded.database?.loreBook?.[0]?.data?.[0]?.key).toBe('city')
+        expect(loaded.database?.characters).toHaveLength(1)
+        expect(loaded.database?.characters[0].name).toBe('Test Character')
+        expect(loaded.database?.characters[0].tags).toEqual(['tester', 'database'])
+        expect(loaded.database?.characters[0].alternateGreetings).toEqual(['Alt 1', 'Alt 2'])
+        expect(loaded.database?.characters[0].emotionImages).toEqual([['happy', 'asset://happy']])
+        expect(loaded.database?.characters[0].globalLore?.[0]?.key).toBe('sword')
+        expect(loaded.database?.characters[0].chats).toHaveLength(1)
+        expect(loaded.database?.characters[0].chats[0].name).toBe('First Chat')
+        expect(loaded.database?.characters[0].chats[0].message).toHaveLength(1)
+        expect(loaded.database?.characters[0].chats[0].message[0].data).toBe('hello')
+
+        await storage.sync({
             baseRevision: 1,
-            root: { upserts: [], deletes: [] },
-            characters: [],
-            chats: [],
-            chatManifests: [],
-            messageManifests: [],
+            root: {
+                upserts: [
+                    { key: 'username', value: 'renamed' },
+                    { key: 'sourceWithNul', value: { code: 'updated\0text' } },
+                ],
+                deletes: ['optionalValue'],
+            },
+            characters: [{
+                id: 'character-1',
+                position: 0,
+                data: {
+                    name: 'Renamed Character',
+                    tags: ['database'],
+                    alternateGreetings: ['Alt 1'],
+                },
+            }],
+            chats: [{
+                id: 'chat-1',
+                characterId: 'character-1',
+                position: 0,
+                data: {
+                    name: 'Renamed Chat',
+                },
+            }],
             messages: [{
                 id: 'message-1',
                 chatId: 'chat-1',
                 position: 0,
-                data: { role: 'user', data: 'edited' },
+                data: {
+                    role: 'user',
+                    data: 'hello again',
+                },
             }],
         })
 
-        expect(second.revision).toBe(2)
-        expect((await storage.loadDatabase()).database?.characters[0].chats[0].message[0].data)
-            .toBe('edited')
+        const updated = await storage.loadDatabase()
+        expect(updated.revision).toBe(2)
+        expect(updated.database?.username).toBe('renamed')
+        expect(updated.database?.optionalValue).toBeUndefined()
+        expect(updated.database?.sourceWithNul).toEqual({ code: 'updated\0text' })
+        expect(updated.database?.translatorPresets).toEqual([
+            { name: 'Korean', prompt: 'Translate', maxResponse: 2048 },
+        ])
+        expect(updated.database?.characters[0].name).toBe('Renamed Character')
+        expect(updated.database?.characters[0].tags).toEqual(['database'])
+        expect(updated.database?.characters[0].alternateGreetings).toEqual(['Alt 1'])
+        expect(updated.database?.characters[0].chats[0].name).toBe('Renamed Chat')
+        expect(updated.database?.characters[0].chats[0].message[0].data).toBe('hello again')
     })
 
-    it('decomposes rich chat data into queryable relational rows without losing dynamic extensions', async () => {
+    it('decomposes all supported settings collections into queryable child relations', async () => {
         await storage.sync({
             baseRevision: 0,
             replaceAll: true,
-            root: { upserts: [], deletes: [] },
-            characterIds: ['character-rich'],
+            root: {
+                upserts: [
+                    { key: 'sourceWithNul', value: { code: 'tool\0separator' } },
+                    { key: 'translatorPresets', value: [{ name: 'Korean', prompt: 'Translate', maxResponse: 2048 }] },
+                    { key: 'globalChatVariables', value: { player: 'Jihoon' } },
+                    { key: 'loreBook', value: [{
+                        name: 'World',
+                        data: [{
+                            id: 'lore-1', key: 'city', secondkey: 'capital', insertorder: 1,
+                            comment: 'place', content: 'Queryable lore', mode: 'normal',
+                            alwaysActive: false, selective: true,
+                        }],
+                    }] },
+                    { key: 'botPresets', value: [{
+                        name: 'SQL preset', apiType: 'openai', aiModel: 'model-sql',
+                        mainPrompt: 'Main', jailbreak: '', globalNote: '', temperature: 0.8,
+                        maxContext: 8192, maxResponse: 1024, frequencyPenalty: 0,
+                        PresensePenalty: 0, promptPreprocess: true,
+                    }] },
+                    { key: 'personas', value: [{
+                        id: 'persona-sql', name: 'Persona', personaPrompt: 'Prompt', icon: 'asset://persona',
+                    }] },
+                    { key: 'modules', value: [{
+                        id: 'module-sql', name: 'Module', description: 'Description', mcp: { url: 'https://mcp.test' },
+                    }] },
+                    { key: 'plugins', value: [{
+                        name: 'plugin-sql', displayName: 'Plugin', script: 'return true', version: '3.0',
+                    }] },
+                ],
+                deletes: [],
+            },
+            characterIds: ['character-1'],
             characters: [{
-                id: 'character-rich',
+                id: 'character-1',
                 position: 0,
                 data: {
-                    name: 'Relational character',
-                    firstMessage: 'Hello',
-                    desc: 'Description',
-                    notes: 'Notes',
-                    chatPage: 0,
-                    viewScreen: 'emotion',
-                    tags: ['test', 'sql'],
-                    bias: [['term', -1.5]],
+                    name: 'Test Character',
+                    tags: ['tester', 'database'],
+                    alternateGreetings: ['Alt 1', 'Alt 2'],
                     emotionImages: [['happy', 'asset://happy']],
-                    modules: ['module-1'],
-                    chatFolders: [{ id: 'folder-1', name: 'Saved', color: '#fff', folded: false }],
-                    customscript: [{ comment: 'replace', in: 'a', out: 'b', type: 'edit' }],
-                    triggerscript: [{ comment: 'trigger', type: 'manual', conditions: ['x'] }],
-                    sdData: [['prompt', 'portrait']],
-                    additionalAssets: [['asset://one', 'one', 'png']],
-                    ccAssets: [{ type: 'icon', uri: 'asset://two', name: 'two', ext: 'webp' }],
-                    globalLore: [{
-                        id: 'lore-1', key: 'world', secondkey: '', insertorder: 2,
-                        comment: 'lore', content: 'content', mode: 'normal',
-                        alwaysActive: true, selective: false,
-                    }],
-                    creation_date: 1_700_000_000_000,
-                    vits: null,
-                    pluginExtension: { source: 'tool\0separator' },
                 },
             }],
-            chatManifests: [{ characterId: 'character-rich', ids: ['chat-rich'] }],
+            chatManifests: [{
+                characterId: 'character-1',
+                ids: ['chat-1'],
+            }],
             chats: [{
-                id: 'chat-rich', characterId: 'character-rich', position: 0,
+                id: 'chat-1',
+                characterId: 'character-1',
+                position: 0,
                 data: {
-                    name: 'Queryable chat', note: 'note\0source',
-                    localLore: [{ key: 'local', secondkey: '', insertorder: 1, comment: '', content: 'local content', mode: 'normal', alwaysActive: false, selective: false }],
-                    suggestMessages: ['one', 'two'], modules: ['module-2'],
-                    scriptstate: { count: 2, enabled: true },
-                    hypaV2Data: { summaries: ['memory'] },
-                    bookmarks: ['message-rich'], bookmarkNames: { 'message-rich': 'Important' },
-                    lastDate: 1_700_000_000_100,
+                    name: 'First Chat',
                 },
             }],
-            messageManifests: [{ chatId: 'chat-rich', ids: ['message-rich'] }],
+            messageManifests: [{
+                chatId: 'chat-1',
+                ids: ['message-1'],
+            }],
             messages: [{
-                id: 'message-rich', chatId: 'chat-rich', position: 0,
+                id: 'message-1',
+                chatId: 'chat-1',
+                position: 0,
                 data: {
-                    role: 'char', data: 'answer\0binary', time: 1_700_000_000_200,
-                    disabled: false,
-                    generationInfo: {
-                        model: 'model-1', generationId: 'generation-1', inputTokens: 12,
-                        outputTokens: 34, maxContext: 4096, stageTiming: { stage1: 1.25 },
-                    },
-                    promptInfo: {
-                        promptName: 'preset',
-                        promptToggles: [
-                            { key: 'lore', value: 'on' },
-                            { key: 'optional-style', value: null },
-                        ],
-                        promptText: [{ role: 'system', content: 'prompt' }],
-                    },
-                    extensionFlag: { retained: true },
+                    role: 'user',
+                    data: 'hello',
                 },
-            }],
-        })
-
-        const loaded = (await storage.loadDatabase()).database
-        expect(loaded?.characters[0]).toMatchObject({
-            name: 'Relational character',
-            creation_date: 1_700_000_000_000,
-            tags: ['test', 'sql'],
-            additionalAssets: [['asset://one', 'one', 'png']],
-            ccAssets: [{ type: 'icon', uri: 'asset://two', name: 'two', ext: 'webp' }],
-            pluginExtension: { source: 'tool\0separator' },
-            vits: null,
-            chats: [{
-                id: 'chat-rich', note: 'note\0source', suggestMessages: ['one', 'two'],
-                hypaV2Data: { summaries: ['memory'] },
-                message: [{
-                    chatId: 'message-rich', data: 'answer\0binary', disabled: false,
-                    generationInfo: { model: 'model-1', inputTokens: 12, stageTiming: { stage1: 1.25 } },
-                    promptInfo: {
-                        promptName: 'preset',
-                        promptToggles: [
-                            { key: 'lore', value: 'on' },
-                            { key: 'optional-style', value: null },
-                        ],
-                    },
-                    extensionFlag: { retained: true },
-                }],
             }],
         })
         expect(await storage.pool.query(
             `SELECT
-                (SELECT count(*)::int FROM risu_character_assets) AS assets,
-                (SELECT count(*)::int FROM risu_character_lore_entries) AS character_lore,
-                (SELECT count(*)::int FROM risu_chat_lore_entries) AS chat_lore,
-                (SELECT count(*)::int FROM risu_character_attributes
+                NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'system' AND table_name = 'settings' AND column_name = 'json_value'
+                ) AS no_settings_json,
+                (SELECT count(*)::int FROM system.setting_values
+                    WHERE setting_key = 'sourceWithNul' AND value_type = 'encoded-text') AS encoded_texts,
+                (SELECT count(*)::int FROM system.setting_values
+                    WHERE setting_key = 'sourceWithNul' AND member_key = 'code') AS queryable_members,
+                (SELECT count(*)::int FROM system.translator_presets
+                    WHERE name = 'Korean' AND max_response = 2048) AS translator_presets,
+                (SELECT count(*)::int FROM system.string_map_settings
+                    WHERE setting_key = 'globalChatVariables' AND key = 'player'
+                        AND value = 'Jihoon') AS global_variables,
+                (SELECT count(*)::int FROM system.global_lore_entries
+                    WHERE primary_key = 'city' AND content = 'Queryable lore') AS global_lore,
+                (SELECT count(*)::int FROM system.bot_presets
+                    WHERE name = 'SQL preset' AND ai_model = 'model-sql') AS bot_presets,
+                (SELECT count(*)::int FROM system.personas
+                    WHERE persona_id = 'persona-sql') AS personas,
+                (SELECT count(*)::int FROM system.modules
+                    WHERE module_id = 'module-sql' AND mcp_url = 'https://mcp.test') AS modules,
+                (SELECT count(*)::int FROM system.plugins
+                    WHERE name = 'plugin-sql' AND api_version = '3.0') AS plugins`
+        )).toMatchObject({ rows: [{
+            no_settings_json: true,
+            encoded_texts: 1,
+            queryable_members: 1,
+            translator_presets: 1,
+            global_variables: 1,
+            global_lore: 1,
+            bot_presets: 1,
+            personas: 1,
+            modules: 1,
+            plugins: 1,
+        }] })
+    })
+
+    it('persists complex character assets, generation stats, and relational lore into dedicated tables', async () => {
+        await storage.sync({
+            baseRevision: 0,
+            replaceAll: true,
+            root: { upserts: [], deletes: [] },
+            characterIds: ['character-assets'],
+            characters: [{
+                id: 'character-assets',
+                position: 0,
+                data: {
+                    name: 'Asset holder',
+                    vits: null,
+                    additionalAssets: [['portrait', 'asset://portrait', 'png']],
+                    ccAssets: [{ name: 'card-bg', uri: 'asset://card', ext: 'webp', type: 'background' }],
+                    globalLore: [{
+                        id: 'lore-asset',
+                        key: 'sword',
+                        secondkey: 'blade',
+                        insertorder: 1,
+                        comment: 'lore',
+                        content: 'Forged item',
+                        mode: 'normal',
+                        alwaysActive: true,
+                        selective: false,
+                        extentions: { risu_case_sensitive: true },
+                    }],
+                },
+            }],
+            chatManifests: [{ characterId: 'character-assets', ids: ['chat-assets'] }],
+            chats: [{
+                id: 'chat-assets',
+                characterId: 'character-assets',
+                position: 0,
+                data: {
+                    name: 'Chat with assets',
+                    globalLore: [{
+                        id: 'chat-lore',
+                        key: 'quest',
+                        secondkey: 'active',
+                        insertorder: 2,
+                        comment: 'quest log',
+                        content: 'Rescue the knight',
+                        mode: 'normal',
+                        alwaysActive: true,
+                        selective: false,
+                    }],
+                },
+            }],
+            messageManifests: [{ chatId: 'chat-assets', ids: ['message-assets'] }],
+            messages: [{
+                id: 'message-assets',
+                chatId: 'chat-assets',
+                position: 0,
+                data: {
+                    role: 'char',
+                    data: 'The sword glows.',
+                    generationInfo: {
+                        model: 'model-1',
+                        generationId: 'gen-1',
+                        inputTokens: 120,
+                        outputTokens: 45,
+                        maxContext: 4096,
+                        stage1Time: 1.2,
+                        stage2Time: 0.8,
+                        stage3Time: 0.4,
+                        stage4Time: 0.1,
+                    },
+                    promptInfo: {
+                        promptName: 'structured-prompt',
+                        promptToggles: [
+                            { key: 'strict', value: 'true' },
+                            { key: 'optional-style', value: null },
+                        ],
+                        promptItems: [{ raw: 'item' }],
+                    },
+                    extensionFlag: { retained: true },
+                },
+            }],
+        })
+        expect(await storage.pool.query(
+            `SELECT
+                (SELECT count(*)::int FROM character.assets) AS assets,
+                (SELECT count(*)::int FROM character.lore_entries) AS character_lore,
+                (SELECT count(*)::int FROM chat.lore_entries) AS chat_lore,
+                (SELECT count(*)::int FROM character.attributes
                     WHERE key = 'vits' AND jsonb_typeof(value) = 'null') AS json_null_attributes,
-                (SELECT count(*)::int FROM risu_message_generation WHERE model = 'model-1') AS generations,
-                (SELECT count(*)::int FROM risu_message_prompt_toggles
+                (SELECT count(*)::int FROM chat.message_generation WHERE model = 'model-1') AS generations,
+                (SELECT count(*)::int FROM chat.message_prompt_toggles
                     WHERE toggle_key = 'optional-style' AND toggle_value IS NULL) AS null_toggles,
-                (SELECT count(*)::int FROM risu_message_prompt_items) AS prompt_items`
+                (SELECT count(*)::int FROM chat.message_prompt_items) AS prompt_items`
         )).toMatchObject({ rows: [{
             assets: 2, character_lore: 1, chat_lore: 1, json_null_attributes: 1,
             generations: 1, null_toggles: 1, prompt_items: 1,
@@ -305,15 +491,15 @@ describePostgres('PostgreSQL structured storage integration', () => {
         expect((await storage.loadColdStorage(retainedKey))?.data).toEqual(coldCharacter)
         expect(await storage.pool.query(
             `SELECT
-                (SELECT count(*)::int FROM risu_cold_chats WHERE archive_id = $1) AS chats,
-                (SELECT count(*)::int FROM risu_cold_messages WHERE archive_id = $1) AS messages,
-                (SELECT count(*)::int FROM risu_cold_message_prompt_toggles
+                (SELECT count(*)::int FROM cold.chats WHERE archive_id = $1) AS chats,
+                (SELECT count(*)::int FROM cold.messages WHERE archive_id = $1) AS messages,
+                (SELECT count(*)::int FROM cold.message_prompt_toggles
                     WHERE archive_id = $1 AND toggle_value IS NULL) AS null_toggles`,
             [retainedKey]
         )).toMatchObject({ rows: [{ chats: 1, messages: 2, null_toggles: 1 }] })
         expect(await storage.pool.query(
             `SELECT count(*)::int AS count
-             FROM risu_cold_messages
+             FROM cold.messages
              WHERE role = $1 AND content_text = $2`,
             ['char', 'Second']
         )).toMatchObject({ rows: [{ count: 1 }] })
@@ -331,83 +517,126 @@ describePostgres('PostgreSQL structured storage integration', () => {
                 join(savePath, Buffer.from(logicalPath).toString('hex')),
                 deflateSync(JSON.stringify({ message: [{ role: 'char', data: 'legacy' }] }))
             )
-
-            expect(await storage.migrateLegacyColdStorage(savePath)).toEqual({ migrated: 1, skipped: 0 })
-            expect((await storage.loadColdStorage(key))?.data.message[0].data).toBe('legacy')
-            expect(await storage.exportColdStorageToLegacy(savePath)).toEqual({ exported: 1, archived: 0 })
-            expect(JSON.parse(unzipSync(await readFile(
-                join(savePath, Buffer.from(logicalPath).toString('hex'))
-            )).toString('utf8'))).toEqual({ message: [{ role: 'char', data: 'legacy' }] })
-            expect(await storage.deleteColdStorage([key])).toEqual({ deleted: 1 })
-            expect(await storage.migrateLegacyColdStorage(savePath)).toEqual({ migrated: 0, skipped: 0 })
-            expect(await storage.loadColdStorage(key)).toBeNull()
-
-            expect(await storage.exportColdStorageToLegacy(savePath)).toEqual({ exported: 0, archived: 1 })
-            expect(await storage.migrateLegacyColdStorage(savePath)).toEqual({ migrated: 0, skipped: 0 })
-            expect(await readdir(join(savePath, '__postgres_cold_storage_rollback')))
-                .toHaveLength(1)
+            const result = await storage.migrateLegacyColdStorage(savePath)
+            expect(result).toEqual({ migrated: 1, skipped: 0 })
+            expect(await storage.pruneColdStorage([])).toEqual({ deleted: 1 })
+            const second = await storage.migrateLegacyColdStorage(savePath)
+            expect(second).toEqual({ migrated: 0, skipped: 0 })
         } finally {
             await rm(savePath, { recursive: true, force: true })
         }
     })
 
-    it('uses relational entity columns and restores an immutable revision as a new revision', async () => {
+    it('exports all PostgreSQL cold storage entries to legacy compressed files losslessly', async () => {
+        const key = '03ac345e-a59b-4c26-bfe7-b47b20f4b302'
+        const raw = {
+            character: {
+                chaId: 'character-export',
+                name: 'Export character',
+                chats: [{
+                    id: 'chat-export',
+                    message: [{ chatId: 'msg-export', role: 'user', data: 'Exported text' }],
+                }],
+            },
+        }
+        await storage.upsertColdStorage(key, raw)
+        const savePath = await mkdtemp(join(tmpdir(), 'risu-cold-storage-export-'))
+        try {
+            const result = await storage.exportColdStorageToLegacy(savePath)
+            expect(result.exported).toBe(1)
+            const filename = Buffer.from(`coldstorage/${key}`, 'utf8').toString('hex')
+            const content = await readFile(join(savePath, filename))
+            expect(JSON.parse(unzipSync(content).toString('utf8'))).toEqual(raw)
+        } finally {
+            await rm(savePath, { recursive: true, force: true })
+        }
+    })
+
+    it('records fine-grained row-level audit logs for all mutations and restores prior states', async () => {
         await storage.sync({
             baseRevision: 0,
             replaceAll: true,
-            root: { upserts: [{ key: 'username', value: 'first' }], deletes: [] },
-            characterIds: [], characters: [], chats: [], chatManifests: [], messages: [], messageManifests: [],
+            root: {
+                upserts: [
+                    { key: 'username', value: 'first' },
+                    { key: 'translatorPresets', value: [{ name: 'Old', prompt: 'old', maxResponse: 100 }] },
+                    { key: 'loadouts', value: [{
+                        id: 'loadout-1', name: 'First loadout', lastUsed: 100, favorite: true,
+                        presetName: 'Old', personaId: 'p1', icons: ['asset://old'],
+                        characterIds: ['character-old'], modules: ['module-old'],
+                        globalVariables: { route: 'old' },
+                    }] },
+                ],
+                deletes: [],
+            },
+            characterIds: ['character-old'],
+            characters: [{ id: 'character-old', position: 0, data: { name: 'Old Character' } }],
+            chats: [],
+            chatManifests: [],
+            messages: [],
+            messageManifests: [],
         })
+
         await storage.sync({
             baseRevision: 1,
-            root: { upserts: [{ key: 'username', value: 'second' }], deletes: [] },
-            characters: [], chats: [], chatManifests: [], messages: [], messageManifests: [],
+            root: {
+                upserts: [
+                    { key: 'username', value: 'second' },
+                    { key: 'translatorPresets', value: [{ name: 'New', prompt: 'new', maxResponse: 200 }] },
+                    { key: 'loadouts', value: [{
+                        id: 'loadout-1', name: 'Updated loadout', lastUsed: 200, favorite: false,
+                        presetName: 'New', personaId: 'p2', icons: ['asset://new'],
+                        characterIds: ['character-new'], modules: ['module-new'],
+                        globalVariables: { route: 'new' },
+                    }] },
+                ],
+                deletes: [],
+            },
+            characters: [],
+            chats: [],
+            messages: [],
         })
 
         expect(await storage.pool.query(
             `SELECT
                 NOT EXISTS (
                     SELECT 1 FROM information_schema.columns
-                    WHERE table_name IN ('risu_characters', 'risu_chats', 'risu_messages')
-                      AND column_name = 'data'
+                    WHERE (
+                        (table_schema = 'character' AND table_name = 'characters')
+                        OR (table_schema = 'chat' AND table_name IN ('chats', 'messages'))
+                        AND column_name = 'data'
+                    ) OR (table_schema = 'system' AND table_name = 'settings' AND column_name = 'json_value')
                 ) AS no_document_columns,
-                to_regclass('risu_character_assets') IS NOT NULL AS has_assets,
-                to_regclass('risu_message_generation') IS NOT NULL AS has_generation`
+                to_regclass('character.assets') IS NOT NULL AS has_assets,
+                to_regclass('chat.message_generation') IS NOT NULL AS has_generation`
         )).toMatchObject({ rows: [{ no_document_columns: true, has_assets: true, has_generation: true }] })
 
         const history = await storage.listRevisions()
         expect(history.map((revision) => revision.id)).toEqual([2, 1])
         await storage.restoreRevision(1)
         expect((await storage.loadDatabase()).database?.username).toBe('first')
+        expect((await storage.loadDatabase()).database?.translatorPresets).toEqual([
+            { name: 'Old', prompt: 'old', maxResponse: 100 },
+        ])
+        expect(await storage.pool.query(
+            `SELECT
+                (SELECT name FROM system.translator_presets ORDER BY position LIMIT 1) AS preset_name,
+                (SELECT character_id FROM system.loadout_character_refs
+                    ORDER BY loadout_position, position LIMIT 1) AS character_id,
+                (SELECT module_id FROM system.loadout_module_refs
+                    ORDER BY loadout_position, position LIMIT 1) AS module_id,
+                (SELECT value FROM system.loadout_variables
+                    WHERE key = 'route' LIMIT 1) AS variable_value,
+                (SELECT asset_id FROM system.loadout_icons
+                    ORDER BY loadout_position, position LIMIT 1) AS asset_id`
+        )).toMatchObject({ rows: [{
+            preset_name: 'Old', character_id: 'character-old', module_id: 'module-old',
+            variable_value: 'old', asset_id: 'asset://old',
+        }] })
         expect((await storage.listRevisions())[0]).toMatchObject({
             scope: 'restore',
             restored_from_revision: 1,
         })
-    })
-
-    it('repairs relational-v1 prompt toggle columns created before nullable values were supported', async () => {
-        await storage.pool.query(
-            'ALTER TABLE risu_message_prompt_toggles ALTER COLUMN toggle_value SET NOT NULL'
-        )
-        await storage.pool.query(
-            'ALTER TABLE risu_cold_message_prompt_toggles ALTER COLUMN toggle_value SET NOT NULL'
-        )
-        await storage.pool.query(await readFile(
-            join(process.cwd(), 'server/node/postgres-schema.sql'),
-            'utf8'
-        ))
-        expect(await storage.pool.query(
-            `SELECT table_name, is_nullable
-             FROM information_schema.columns
-             WHERE table_name IN (
-                 'risu_message_prompt_toggles',
-                 'risu_cold_message_prompt_toggles'
-             ) AND column_name = 'toggle_value'
-             ORDER BY table_name`
-        )).toMatchObject({ rows: [
-            { table_name: 'risu_cold_message_prompt_toggles', is_nullable: 'YES' },
-            { table_name: 'risu_message_prompt_toggles', is_nullable: 'YES' },
-        ] })
     })
 
     it('restores relational message children and cold archives across multiple later revisions', async () => {
@@ -470,5 +699,85 @@ describePostgres('PostgreSQL structured storage integration', () => {
         expect(dynamicStorage.enabled).toBe(true)
         await dynamicStorage.reconfigure({ connectionString: '' })
         expect(dynamicStorage.enabled).toBe(false)
+    })
+
+    it('searches active and cold messages with full-text matching', async () => {
+        await storage.sync({
+            baseRevision: 0,
+            replaceAll: true,
+            root: { upserts: [], deletes: [] },
+            characterIds: ['character-search'],
+            characters: [{
+                id: 'character-search', position: 0,
+                data: { name: 'Searchable', tags: ['fantasy', 'rpg'] },
+            }],
+            chatManifests: [{ characterId: 'character-search', ids: ['chat-search'] }],
+            chats: [{ id: 'chat-search', characterId: 'character-search', position: 0, data: { name: 'Search chat' } }],
+            messageManifests: [{ chatId: 'chat-search', ids: ['message-search'] }],
+            messages: [{
+                id: 'message-search', chatId: 'chat-search', position: 0,
+                data: { role: 'user', data: 'the quick brown fox jumps over the lazy dog' },
+            }],
+        })
+        await storage.upsertColdStorage('7be57c70-e119-4b7c-874f-68fd4d0d93c6', {
+            message: [{ role: 'char', data: 'a completely different archived sentence' }],
+        })
+
+        const active = await storage.searchMessages('quick brown fox', 'all', 10)
+        expect(active.some((r) => r.storageState === 'active' && r.characterName === 'Searchable')).toBe(true)
+
+        const cold = await storage.searchMessages('archived sentence', 'cold', 10)
+        expect(cold.some((r) => r.storageState === 'cold')).toBe(true)
+
+        const scoped = await storage.searchMessages('quick brown fox', 'cold', 10)
+        expect(scoped).toHaveLength(0)
+    })
+
+    it('aggregates token usage across active and cold messages', async () => {
+        await storage.sync({
+            baseRevision: 0,
+            replaceAll: true,
+            root: { upserts: [], deletes: [] },
+            characterIds: ['character-tokens'],
+            characters: [{ id: 'character-tokens', position: 0, data: { name: 'Tokens' } }],
+            chatManifests: [{ characterId: 'character-tokens', ids: ['chat-tokens'] }],
+            chats: [{ id: 'chat-tokens', characterId: 'character-tokens', position: 0, data: { name: 'Token chat' } }],
+            messageManifests: [{ chatId: 'chat-tokens', ids: ['message-tokens'] }],
+            messages: [{
+                id: 'message-tokens', chatId: 'chat-tokens', position: 0,
+                data: { role: 'char', data: 'hello', generationInfo: { model: 'model-a', inputTokens: 10, outputTokens: 20 } },
+            }],
+        })
+        await storage.upsertColdStorage('7be57c70-e119-4b7c-874f-68fd4d0d93c6', {
+            message: [{ role: 'char', data: 'world', generationInfo: { model: 'model-a', inputTokens: 5, outputTokens: 7 } }],
+        })
+
+        const usage = await storage.getTokenUsage()
+        const modelA = usage.find((u) => u.model === 'model-a')
+        expect(modelA).toMatchObject({
+            messageCount: 2,
+            totalInputTokens: 15,
+            totalOutputTokens: 27,
+        })
+    })
+
+    it('searches characters by tag and name', async () => {
+        await storage.sync({
+            baseRevision: 0,
+            replaceAll: true,
+            root: { upserts: [], deletes: [] },
+            characterIds: ['character-tag'],
+            characters: [{
+                id: 'character-tag', position: 0,
+                data: { name: 'Tagged Character', tags: ['fantasy', 'rpg'] },
+            }],
+            chats: [], chatManifests: [], messageManifests: [], messages: [],
+        })
+
+        const byTag = await storage.searchCharactersByTag('fant', 10)
+        expect(byTag.some((c) => c.id === 'character-tag')).toBe(true)
+
+        const byName = await storage.searchCharactersByName('tagged', 10)
+        expect(byName.some((c) => c.id === 'character-tag')).toBe(true)
     })
 })

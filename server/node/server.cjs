@@ -19,6 +19,11 @@ const {
     PostgresRevisionConflictError,
     PostgresStorage,
 } = require('./postgresStorage.cjs');
+const {
+    AssetStorageManager,
+    S3AssetStorage,
+    keyToHex,
+} = require('./assetStorage.cjs');
 const defaultJsonParser = express.json({ limit: '100mb' });
 const postgresJsonBodyLimit = process.env.RISU_POSTGRES_JSON_BODY_LIMIT || '1gb';
 const postgresJsonParser = express.json({ limit: postgresJsonBodyLimit });
@@ -94,6 +99,8 @@ const postgresStorage = new PostgresStorage({
     connectionString: postgresServerConfig.enabled ? postgresServerConfig.connectionString : '',
     poolMax: postgresServerConfig.poolMax,
 });
+
+const assetStorageManager = new AssetStorageManager(savePath);
 
 const passwordPath = path.join(savePath, '__password')
 if(existsSync(passwordPath)){
@@ -796,7 +803,7 @@ app.get('/', async (req, res, next) => {
 
 async function checkAuth(req, res, returnOnlyStatus = false){
     try {
-        const authHeader = normalizeAuthHeader(req.headers['risu-auth']);
+        const authHeader = normalizeAuthHeader(req.headers['risu-auth'] || req.query.auth || req.query['risu-auth']);
 
         if(!authHeader){
             console.log('No auth header')
@@ -2235,13 +2242,297 @@ app.post('/api/database-v2/cold-storage/prune', authenticatedRouteLimiter, async
     }
 });
 
+app.get('/api/database-v2/search', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+
+    try {
+        const results = await postgresStorage.searchMessages(
+            req.query.q,
+            req.query.scope,
+            req.query.limit
+        );
+        await sendCompressedJson(req, res, { results });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_search_query' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/token-usage', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+
+    try {
+        await sendCompressedJson(req, res, { usage: await postgresStorage.getTokenUsage() });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/characters/search', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+
+    try {
+        const tag = req.query.tag;
+        const name = req.query.name;
+        const results = tag
+            ? await postgresStorage.searchCharactersByTag(tag, req.query.limit)
+            : await postgresStorage.searchCharactersByName(name, req.query.limit);
+        await sendCompressedJson(req, res, { results });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_character_search' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/tables', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+
+    try {
+        await sendCompressedJson(req, res, { tables: await postgresStorage.listDbExplorerTables() });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/tables/:table/rows', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+
+    try {
+        const data = await postgresStorage.getDbExplorerTableRows(
+            req.params.table,
+            req.query.offset,
+            req.query.limit,
+            req.query.sort,
+            req.query.dir,
+            req.query.search,
+            typeof req.query.columns === 'string' && req.query.columns.length > 0
+                ? req.query.columns.split(',')
+                : null
+        );
+        await sendCompressedJson(req, res, { data });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_table' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.get('/api/s3-config', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        res.send(assetStorageManager.getPublicConfig());
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/s3-config', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        const body = req.body || {};
+        const updated = await assetStorageManager.setConfig(body);
+        res.send({ success: true, config: updated });
+    } catch (error) {
+        res.status(400).send({ error: error.message });
+    }
+});
+
+app.post('/api/s3-test', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        const body = req.body || {};
+        const merged = {
+            ...assetStorageManager.config,
+            ...body,
+            accessKeyId: (body.accessKeyId !== undefined && body.accessKeyId !== '')
+                ? body.accessKeyId.trim()
+                : assetStorageManager.config.accessKeyId,
+            secretAccessKey: (body.secretAccessKey !== undefined && body.secretAccessKey !== '')
+                ? body.secretAccessKey.trim()
+                : assetStorageManager.config.secretAccessKey,
+        };
+        const result = await S3AssetStorage.testConnection(merged);
+        res.send(result);
+    } catch (error) {
+        res.status(400).send({ success: false, message: error.message });
+    }
+});
+
+app.get('/api/s3-stats', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        const stats = await assetStorageManager.getStorage().getStats();
+        res.send(stats);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/storage-summary', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        const summary = await assetStorageManager.getSummary();
+        res.send(summary);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/s3-asset-details', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        const target = req.query.target || 'active';
+        const details = await assetStorageManager.getAssetDetails(target);
+        res.send(details);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/storage-assets-delete', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        const { keys, target = 'active' } = req.body || {};
+        if (!Array.isArray(keys)) {
+            res.status(400).send({ error: 'keys must be an array of asset keys' });
+            return;
+        }
+        const result = await assetStorageManager.deleteAssetKeys(keys, target);
+        res.send(result);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/storage-local-clean', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        const result = await assetStorageManager.cleanLocalAssets();
+        res.send(result);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/s3-migrate', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        if (assetStorageManager.getStorage().type !== 's3') {
+            res.status(400).send({ error: 'S3 storage is not currently active.' });
+            return;
+        }
+
+        res.setHeader('Content-Type', 'application/x-ndjson');
+        res.setHeader('Transfer-Encoding', 'chunked');
+
+        const result = await assetStorageManager.getStorage().migrateFromLocal(savePath, (progress) => {
+            res.write(JSON.stringify({ type: 'progress', ...progress }) + '\n');
+        });
+
+        res.write(JSON.stringify({ type: 'done', ...result }) + '\n');
+        res.end();
+    } catch (error) {
+        if (!res.headersSent) {
+            res.status(500).send({ error: error.message });
+        } else {
+            res.write(JSON.stringify({ type: 'error', error: error.message }) + '\n');
+            res.end();
+        }
+    }
+});
+
+app.post('/api/s3-rollback', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        if (assetStorageManager.getStorage().type !== 's3') {
+            res.status(400).send({ error: 'S3 storage is not currently active.' });
+            return;
+        }
+
+        res.setHeader('Content-Type', 'application/x-ndjson');
+        res.setHeader('Transfer-Encoding', 'chunked');
+
+        const result = await assetStorageManager.getStorage().rollbackToLocal(savePath, (progress) => {
+            res.write(JSON.stringify({ type: 'progress', ...progress }) + '\n');
+        });
+
+        res.write(JSON.stringify({ type: 'done', ...result }) + '\n');
+        res.end();
+    } catch (error) {
+        if (!res.headersSent) {
+            res.status(500).send({ error: error.message });
+        } else {
+            res.write(JSON.stringify({ type: 'error', error: error.message }) + '\n');
+            res.end();
+        }
+    }
+});
+
 app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;
     }
-    const filePath = req.headers['file-path'];
+    let filePath = req.headers['file-path'] || req.query.path || req.query['file-path'] || req.query.filePath;
+    const isThumb = req.query.thumb === '1' || req.query.thumb === 'true' || req.headers['x-thumbnail'] === 'true';
     if (!filePath) {
-        console.log('no path')
         res.status(400).send({
             error:'File path required'
         });
@@ -2249,18 +2540,60 @@ app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
     }
 
     if(!isHex(filePath)){
-        res.status(400).send({
-            error:'Invaild Path'
-        });
-        return;
+        filePath = keyToHex(filePath);
     }
     try {
-        if(!existsSync(path.join(savePath, filePath))){
+        const storage = assetStorageManager.getStorage();
+        const result = isThumb && typeof storage.readThumbnail === 'function'
+            ? await storage.readThumbnail(filePath)
+            : await storage.read(filePath);
+        if(!result.exists){
             res.send();
         }
         else{
-            res.setHeader('Content-Type','application/octet-stream');
-            res.sendFile(path.join(savePath, filePath));
+            const contentType = result.contentType || 'application/octet-stream';
+            const totalLength = result.contentLength || (result.buffer ? result.buffer.length : 0);
+            const rangeHeader = req.headers.range;
+
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Accept-Ranges', 'bytes');
+            res.setHeader('Cache-Control', isThumb ? 'public, max-age=604800, immutable' : 'public, max-age=86400');
+
+            if (rangeHeader && totalLength > 0 && !isThumb) {
+                const parts = rangeHeader.replace(/bytes=/, '').split('-');
+                const start = parseInt(parts[0], 10);
+                const end = parts[1] ? parseInt(parts[1], 10) : totalLength - 1;
+
+                if (!isNaN(start) && start < totalLength) {
+                    const chunkEnd = Math.min(end, totalLength - 1);
+                    const chunkSize = (chunkEnd - start) + 1;
+
+                    res.status(206);
+                    res.setHeader('Content-Range', `bytes ${start}-${chunkEnd}/${totalLength}`);
+                    res.setHeader('Content-Length', chunkSize);
+
+                    if (result.filePath) {
+                        fs.createReadStream(result.filePath, { start, end: chunkEnd }).pipe(res);
+                        return;
+                    } else if (result.buffer) {
+                        res.send(result.buffer.subarray(start, chunkEnd + 1));
+                        return;
+                    }
+                }
+            }
+
+            if (result.contentLength) {
+                res.setHeader('Content-Length', result.contentLength);
+            }
+            if (result.filePath) {
+                res.sendFile(result.filePath);
+            } else if (result.buffer) {
+                res.send(result.buffer);
+            } else if (result.stream) {
+                result.stream.pipe(res);
+            } else {
+                res.send();
+            }
         }
     } catch (error) {
         next(error);
@@ -2286,17 +2619,16 @@ app.get('/api/remove', authenticatedRouteLimiter, async (req, res, next) => {
             });
             return;
         }
-
-        try {
-            await fs.rm(path.join(savePath, filePath));
-            res.send({
-                success: true,
-            });
-        } catch (error) {
-            next(error);
-        }
     }
-    
+
+    try {
+        await assetStorageManager.getStorage().remove(filePaths);
+        res.send({
+            success: true,
+        });
+    } catch (error) {
+        next(error);
+    }
 });
 
 app.get('/api/list', authenticatedRouteLimiter, async (req, res, next) => {
@@ -2304,12 +2636,11 @@ app.get('/api/list', authenticatedRouteLimiter, async (req, res, next) => {
         return;
     }
     try {
-        const data = (await fs.readdir(path.join(savePath))).map((v) => {
-            return Buffer.from(v, 'hex').toString('utf-8')
-        })
+        const storage = assetStorageManager.getStorage();
+        const content = await storage.list();
         res.send({
             success: true,
-            content: data
+            content
         });
     } catch (error) {
         next(error);
@@ -2336,7 +2667,7 @@ app.post('/api/write', authenticatedRouteLimiter, async (req, res, next) => {
     }
 
     try {
-        await fs.writeFile(path.join(savePath, filePath), fileContent);
+        await assetStorageManager.getStorage().write(filePath, fileContent);
         res.send({
             success: true
         });
@@ -2568,6 +2899,7 @@ function setupProxyStreamWebSocket(server) {
 async function startServer() {
     try {
         await postgresStorage.initialize();
+        await assetStorageManager.init();
         if (!postgresManagedByEnvironment && !postgresConfigExists && postgresBootstrapUrl) {
             await persistPostgresServerConfig(postgresServerConfig);
         }
