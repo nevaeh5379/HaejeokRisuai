@@ -662,6 +662,8 @@ export const languageKorean = {
     "postgresDbExplorerTableView": "표 뷰",
     "postgresDbExplorerBackToTables": "테이블 목록",
     "postgresDbExplorerActions": "작업",
+    "postgresDbExplorerAllSchemas": "전체",
+    "postgresDbExplorerSchema": "스키마",
     "searchByTag": "태그로 검색...",
     "formatingOrder": "포맷 순서",
     "authorNote": "작가의 노트",

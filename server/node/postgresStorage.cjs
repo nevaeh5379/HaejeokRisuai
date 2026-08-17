@@ -28,27 +28,27 @@ const POSTGRES_SCHEMA_VERSION = 2;
 const MAX_SYNC_ROWS = 250000;
 const MAX_COLD_STORAGE_KEYS = 250000;
 const AUDITED_TABLES = [
-    'risu_settings', 'risu_setting_values', 'risu_characters',
+    'system.settings', 'system.setting_values', 'character.characters',
     ...SETTING_RELATION_DEFINITIONS.map((definition) => definition.table),
-    'risu_character_attributes', 'risu_character_tags',
-    'risu_character_greetings', 'risu_character_biases', 'risu_character_emotions',
-    'risu_character_modules', 'risu_group_members', 'risu_chat_folders',
-    'risu_character_scripts', 'risu_character_sd_data', 'risu_character_assets',
-    'risu_character_lore_entries', 'risu_chats', 'risu_chat_attributes',
-    'risu_chat_suggestions', 'risu_chat_modules', 'risu_chat_script_state',
-    'risu_chat_bookmarks', 'risu_chat_memory', 'risu_chat_lore_entries', 'risu_messages',
-    'risu_message_attributes', 'risu_message_generation', 'risu_message_prompt_info',
-    'risu_message_prompt_toggles', 'risu_message_prompt_items', 'risu_cold_archives',
-    'risu_cold_archive_attributes', 'risu_cold_field_presence', 'risu_cold_character_tags',
-    'risu_cold_character_greetings', 'risu_cold_character_biases',
-    'risu_cold_character_emotions', 'risu_cold_character_modules', 'risu_cold_group_members',
-    'risu_cold_chat_folders', 'risu_cold_character_scripts', 'risu_cold_character_sd_data',
-    'risu_cold_character_assets', 'risu_cold_character_lore_entries', 'risu_cold_chats',
-    'risu_cold_chat_attributes', 'risu_cold_chat_suggestions', 'risu_cold_chat_modules',
-    'risu_cold_chat_script_state', 'risu_cold_chat_bookmarks', 'risu_cold_chat_memory',
-    'risu_cold_chat_lore_entries', 'risu_cold_messages', 'risu_cold_message_attributes',
-    'risu_cold_message_generation', 'risu_cold_message_prompt_info',
-    'risu_cold_message_prompt_toggles', 'risu_cold_message_prompt_items',
+    'character.attributes', 'character.tags',
+    'character.greetings', 'character.biases', 'character.emotions',
+    'character.modules', 'character.group_members', 'character.chat_folders',
+    'character.scripts', 'character.sd_data', 'character.assets',
+    'character.lore_entries', 'chat.chats', 'chat.attributes',
+    'chat.suggestions', 'chat.modules', 'chat.script_state',
+    'chat.bookmarks', 'chat.memory', 'chat.lore_entries', 'chat.messages',
+    'chat.message_attributes', 'chat.message_generation', 'chat.message_prompt_info',
+    'chat.message_prompt_toggles', 'chat.message_prompt_items', 'cold.archives',
+    'cold.archive_attributes', 'cold.field_presence', 'cold.character_tags',
+    'cold.character_greetings', 'cold.character_biases',
+    'cold.character_emotions', 'cold.character_modules', 'cold.group_members',
+    'cold.chat_folders', 'cold.character_scripts', 'cold.character_sd_data',
+    'cold.character_assets', 'cold.character_lore_entries', 'cold.chats',
+    'cold.chat_attributes', 'cold.chat_suggestions', 'cold.chat_modules',
+    'cold.chat_script_state', 'cold.chat_bookmarks', 'cold.chat_memory',
+    'cold.chat_lore_entries', 'cold.messages', 'cold.message_attributes',
+    'cold.message_generation', 'cold.message_prompt_info',
+    'cold.message_prompt_toggles', 'cold.message_prompt_items',
 ];
 const COLD_STORAGE_PATH_PATTERN = /^coldstorage\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 const COLD_STORAGE_KEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -95,11 +95,17 @@ function assertPosition(value, field) {
 }
 
 function assertDbExplorerIdentifier(value, field) {
-    if (typeof value !== 'string' || value.length === 0 || value.length > 63 ||
-        !DB_EXPLORER_IDENTIFIER_PATTERN.test(value)) {
+    if (typeof value !== 'string' || value.length === 0 || value.length > 128) {
         throw new PostgresPayloadError(`${field} must be a valid table or column name`);
     }
-    return value;
+    const parts = value.split('.');
+    if (parts.length === 1 && DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0])) {
+        return value;
+    }
+    if (parts.length === 2 && DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0]) && DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[1])) {
+        return value;
+    }
+    throw new PostgresPayloadError(`${field} must be a valid table or column name`);
 }
 
 function dbExplorerSelectExpression(columnName, dataType) {
@@ -250,83 +256,96 @@ function assertData(row, field) {
 
 function validateSyncPayload(payload) {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-        throw new PostgresPayloadError('Request body must be an object');
+        throw new PostgresPayloadError('Sync payload must be an object');
     }
     if (!Number.isSafeInteger(payload.baseRevision) || payload.baseRevision < 0) {
         throw new PostgresPayloadError('baseRevision must be a non-negative integer');
     }
 
-    const rootUpserts = asArray(payload.root?.upserts, 'root.upserts');
-    const rootDeletes = asArray(payload.root?.deletes, 'root.deletes');
-    const characters = asArray(payload.characters, 'characters');
-    const chats = asArray(payload.chats, 'chats');
-    const messages = asArray(payload.messages, 'messages');
-    const chatManifests = asArray(payload.chatManifests, 'chatManifests');
-    const messageManifests = asArray(payload.messageManifests, 'messageManifests');
+    let rootUpserts = [];
+    let rootDeletes = [];
+    if (payload.root !== undefined) {
+        if (!payload.root || typeof payload.root !== 'object' || Array.isArray(payload.root)) {
+            throw new PostgresPayloadError('root must be an object');
+        }
+        rootUpserts = asArray(payload.root.upserts, 'root.upserts').map((item, index) => {
+            if (!item || typeof item !== 'object' || Array.isArray(item)) {
+                throw new PostgresPayloadError(`root.upserts[${index}] must be an object`);
+            }
+            assertId(item.key, `root.upserts[${index}].key`);
+            return { key: item.key, value: item.value };
+        });
+        rootDeletes = asArray(payload.root.deletes, 'root.deletes').map((key, index) => {
+            assertId(key, `root.deletes[${index}]`);
+            return key;
+        });
+    }
+
+    const characters = asArray(payload.characters, 'characters').map((row, index) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) {
+            throw new PostgresPayloadError(`characters[${index}] must be an object`);
+        }
+        assertId(row.id, `characters[${index}].id`);
+        assertPosition(row.position, `characters[${index}].position`);
+        assertData(row, `characters[${index}].data`);
+        return { id: row.id, position: row.position, data: row.data };
+    });
+
+    const chats = asArray(payload.chats, 'chats').map((row, index) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) {
+            throw new PostgresPayloadError(`chats[${index}] must be an object`);
+        }
+        assertId(row.id, `chats[${index}].id`);
+        assertId(row.characterId, `chats[${index}].characterId`);
+        assertPosition(row.position, `chats[${index}].position`);
+        assertData(row, `chats[${index}].data`);
+        return { id: row.id, characterId: row.characterId, position: row.position, data: row.data };
+    });
+
+    const messages = asArray(payload.messages, 'messages').map((row, index) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) {
+            throw new PostgresPayloadError(`messages[${index}] must be an object`);
+        }
+        assertId(row.id, `messages[${index}].id`);
+        assertId(row.chatId, `messages[${index}].chatId`);
+        assertPosition(row.position, `messages[${index}].position`);
+        assertData(row, `messages[${index}].data`);
+        return { id: row.id, chatId: row.chatId, position: row.position, data: row.data };
+    });
+
+    const chatManifests = asArray(payload.chatManifests, 'chatManifests').map((item, index) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+            throw new PostgresPayloadError(`chatManifests[${index}] must be an object`);
+        }
+        assertId(item.characterId, `chatManifests[${index}].characterId`);
+        const ids = asArray(item.ids, `chatManifests[${index}].ids`).map((id, idIndex) => {
+            assertId(id, `chatManifests[${index}].ids[${idIndex}]`);
+            return id;
+        });
+        return { characterId: item.characterId, ids };
+    });
+
+    const messageManifests = asArray(payload.messageManifests, 'messageManifests').map((item, index) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+            throw new PostgresPayloadError(`messageManifests[${index}] must be an object`);
+        }
+        assertId(item.chatId, `messageManifests[${index}].chatId`);
+        const ids = asArray(item.ids, `messageManifests[${index}].ids`).map((id, idIndex) => {
+            assertId(id, `messageManifests[${index}].ids[${idIndex}]`);
+            return id;
+        });
+        return { chatId: item.chatId, ids };
+    });
 
     const characterIds = payload.characterIds === undefined
         ? undefined
-        : asArray(payload.characterIds, 'characterIds');
-    const manifestIdCount = chatManifests.reduce(
-        (count, manifest) => count + (Array.isArray(manifest?.ids) ? manifest.ids.length : 0),
-        0
-    ) + messageManifests.reduce(
-        (count, manifest) => count + (Array.isArray(manifest?.ids) ? manifest.ids.length : 0),
-        0
-    );
-    const rowCount = rootUpserts.length + rootDeletes.length + characters.length + chats.length +
-        messages.length + chatManifests.length + messageManifests.length + manifestIdCount +
-        (characterIds?.length || 0);
-    if (rowCount > MAX_SYNC_ROWS) {
-        throw new PostgresPayloadError(`Sync payload exceeds the ${MAX_SYNC_ROWS} row limit`);
-    }
-
-    for (const row of rootUpserts) {
-        assertId(row?.key, 'root.upserts[].key');
-        if (!Object.prototype.hasOwnProperty.call(row, 'value')) {
-            throw new PostgresPayloadError('root.upserts[].value is required');
-        }
-    }
-    for (const key of rootDeletes) {
-        assertId(key, 'root.deletes[]');
-    }
-    for (const row of characters) {
-        assertId(row?.id, 'characters[].id');
-        assertPosition(row?.position, 'characters[].position');
-        assertData(row, 'characters[].data');
-    }
-    for (const row of chats) {
-        assertId(row?.id, 'chats[].id');
-        assertId(row?.characterId, 'chats[].characterId');
-        assertPosition(row?.position, 'chats[].position');
-        assertData(row, 'chats[].data');
-    }
-    for (const row of messages) {
-        assertId(row?.id, 'messages[].id');
-        assertId(row?.chatId, 'messages[].chatId');
-        assertPosition(row?.position, 'messages[].position');
-        assertData(row, 'messages[].data');
-    }
-    for (const manifest of chatManifests) {
-        assertId(manifest?.characterId, 'chatManifests[].characterId');
-        for (const id of asArray(manifest?.ids, 'chatManifests[].ids')) {
-            assertId(id, 'chatManifests[].ids[]');
-        }
-    }
-    for (const manifest of messageManifests) {
-        assertId(manifest?.chatId, 'messageManifests[].chatId');
-        for (const id of asArray(manifest?.ids, 'messageManifests[].ids')) {
-            assertId(id, 'messageManifests[].ids[]');
-        }
-    }
-    if (characterIds !== undefined) {
-        for (const id of characterIds) {
-            assertId(id, 'characterIds[]');
-        }
-    }
+        : asArray(payload.characterIds, 'characterIds').map((id, index) => {
+            assertId(id, `characterIds[${index}]`);
+            return id;
+        });
 
     return {
-        replaceAll: payload.replaceAll === true,
+        replaceAll: Boolean(payload.replaceAll),
         baseRevision: payload.baseRevision,
         rootUpserts,
         rootDeletes,
@@ -340,16 +359,23 @@ function validateSyncPayload(payload) {
 }
 
 function assertSqlIdentifier(value) {
-    if (!/^[a-z][a-z0-9_]*$/.test(value)) {
+    if (typeof value !== 'string') {
         throw new Error(`Unsafe SQL identifier: ${value}`);
     }
-    return `"${value}"`;
+    const parts = value.split('.');
+    if (parts.length === 1 && /^[a-z][a-z0-9_]*$/i.test(parts[0])) {
+        return `"${parts[0]}"`;
+    }
+    if (parts.length === 2 && /^[a-z][a-z0-9_]*$/i.test(parts[0]) && /^[a-z][a-z0-9_]*$/i.test(parts[1])) {
+        return `"${parts[0]}"."${parts[1]}"`;
+    }
+    throw new Error(`Unsafe SQL identifier: ${value}`);
 }
 
 async function bulkInsert(client, table, columns, columnTypes, rows, suffix = '') {
     if (rows.length === 0) return;
     const quotedTable = assertSqlIdentifier(table);
-    const quotedColumns = columns.map(assertSqlIdentifier);
+    const quotedColumns = columns.map((col) => `"${col}"`);
     const parameters = columns.map((column, columnIndex) => rows.map((row) => {
         const value = row[column];
         if (columnTypes[columnIndex] === 'jsonb') {
@@ -396,7 +422,7 @@ async function beginAuditRevision(client, {
     restoredFrom = null,
 }) {
     const result = await client.query(
-        `INSERT INTO risu_revisions
+        `INSERT INTO system.revisions
             (storage_revision, database_initialized, scope, action, restored_from_revision)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING id`,
@@ -408,11 +434,11 @@ async function beginAuditRevision(client, {
 }
 
 async function deleteMessageChildren(client, pairs, tables = [
-    'risu_message_attributes',
-    'risu_message_generation',
-    'risu_message_prompt_info',
-    'risu_message_prompt_toggles',
-    'risu_message_prompt_items',
+    'chat.message_attributes',
+    'chat.message_generation',
+    'chat.message_prompt_info',
+    'chat.message_prompt_toggles',
+    'chat.message_prompt_items',
 ]) {
     if (pairs.length === 0) return;
     const chatIds = pairs.map((row) => row.chatId);
@@ -456,14 +482,14 @@ class PostgresStorage {
             const schema = await fs.readFile(path.join(__dirname, 'postgres-schema.sql'), 'utf8');
             await pool.query(schema);
             const result = await pool.query(
-                'SELECT schema_version, schema_layout FROM risu_storage_meta WHERE singleton = TRUE'
+                'SELECT schema_version, schema_layout FROM system.storage_meta WHERE singleton = TRUE'
             );
             const schemaVersion = result.rows[0]?.schema_version;
             const schemaLayout = result.rows[0]?.schema_layout;
-            if (schemaVersion !== POSTGRES_SCHEMA_VERSION || schemaLayout !== 'relational-v1') {
+            if (schemaVersion !== POSTGRES_SCHEMA_VERSION || schemaLayout !== 'relational-schema-v1') {
                 throw new Error(
                     `Unsupported PostgreSQL schema ${schemaVersion}/${schemaLayout}; ` +
-                    `expected ${POSTGRES_SCHEMA_VERSION}/relational-v1`
+                    `expected ${POSTGRES_SCHEMA_VERSION}/relational-schema-v1`
                 );
             }
             return pool;
@@ -510,7 +536,7 @@ class PostgresStorage {
     async getState() {
         this.assertEnabled();
         const result = await this.pool.query(
-            'SELECT revision, initialized FROM risu_storage_meta WHERE singleton = TRUE'
+            'SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE'
         );
         return {
             revision: Number(result.rows[0].revision),
@@ -526,8 +552,8 @@ class PostgresStorage {
             `SELECT revision.id, revision.storage_revision, revision.database_initialized,
                     revision.scope, revision.action, revision.restored_from_revision,
                     revision.created_at, COUNT(audit.sequence)::integer AS change_count
-             FROM risu_revisions AS revision
-             LEFT JOIN risu_audit_log AS audit ON audit.revision_id = revision.id
+             FROM system.revisions AS revision
+             LEFT JOIN system.audit_log AS audit ON audit.revision_id = revision.id
              GROUP BY revision.id
              ORDER BY revision.id DESC
              LIMIT $1`,
@@ -544,7 +570,7 @@ class PostgresStorage {
 
     async getRestoreMetadata(client) {
         const result = await client.query(
-            `SELECT class.relname AS table_name,
+            `SELECT (namespace.nspname || '.' || class.relname) AS table_name,
                     attribute.attname AS column_name,
                     format_type(attribute.atttypid, attribute.atttypmod) AS column_type,
                     attribute.attnum AS ordinal,
@@ -559,11 +585,10 @@ class PostgresStorage {
              FROM pg_class AS class
              JOIN pg_namespace AS namespace ON namespace.oid = class.relnamespace
              JOIN pg_attribute AS attribute ON attribute.attrelid = class.oid
-             WHERE namespace.nspname = current_schema()
-               AND class.relname = ANY($1::text[])
+             WHERE (namespace.nspname || '.' || class.relname) = ANY($1::text[])
                AND attribute.attnum > 0
                AND NOT attribute.attisdropped
-             ORDER BY class.relname, attribute.attnum`,
+             ORDER BY namespace.nspname, class.relname, attribute.attnum`,
             [AUDITED_TABLES]
         );
         const metadata = new Map();
@@ -591,16 +616,16 @@ class PostgresStorage {
             await client.query('BEGIN');
             await client.query('SET CONSTRAINTS ALL DEFERRED');
             const target = await client.query(
-                'SELECT id FROM risu_revisions WHERE id = $1 FOR SHARE', [targetRevisionId]
+                'SELECT id FROM system.revisions WHERE id = $1 FOR SHARE', [targetRevisionId]
             );
             if (target.rowCount === 0) throw new PostgresPayloadError('The requested revision does not exist');
             const metaResult = await client.query(
-                'SELECT revision FROM risu_storage_meta WHERE singleton = TRUE FOR UPDATE'
+                'SELECT revision FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE'
             );
             const nextStorageRevision = Number(metaResult.rows[0].revision) + 1;
             const initializedResult = await client.query(
                 `SELECT database_initialized
-                 FROM risu_revisions
+                 FROM system.revisions
                  WHERE id <= $1 AND database_initialized IS NOT NULL
                  ORDER BY id DESC LIMIT 1`,
                 [targetRevisionId]
@@ -615,7 +640,7 @@ class PostgresStorage {
             });
             const auditResult = await client.query(
                 `SELECT sequence, table_name, operation, before_row, after_row
-                 FROM risu_audit_log
+                 FROM system.audit_log
                  WHERE revision_id > $1 AND revision_id < $2
                  ORDER BY sequence DESC`,
                 [targetRevisionId, restoreRevisionId]
@@ -630,7 +655,7 @@ class PostgresStorage {
                 if (event.operation === 'INSERT') {
                     const source = event.after_row;
                     const where = table.primary.map((column, index) =>
-                        `${assertSqlIdentifier(column)} = $${index + 1}`).join(' AND ');
+                        `"${column}" = $${index + 1}`).join(' AND ');
                     await client.query(
                         `DELETE FROM ${quotedTable} WHERE ${where}`,
                         table.primary.map((column) => source[column])
@@ -651,16 +676,16 @@ class PostgresStorage {
                 const conflictAction = updateColumns.length === 0
                     ? 'DO NOTHING'
                     : `DO UPDATE SET ${updateColumns.map((column) =>
-                        `${assertSqlIdentifier(column)} = EXCLUDED.${assertSqlIdentifier(column)}`).join(', ')}`;
+                        `"${column}" = EXCLUDED."${column}"`).join(', ')}`;
                 await client.query(
-                    `INSERT INTO ${quotedTable} (${columns.map(assertSqlIdentifier).join(', ')})
+                    `INSERT INTO ${quotedTable} (${columns.map((c) => `"${c}"`).join(', ')})
                      VALUES (${placeholders})
-                     ON CONFLICT (${table.primary.map(assertSqlIdentifier).join(', ')}) ${conflictAction}`,
+                     ON CONFLICT (${table.primary.map((c) => `"${c}"`).join(', ')}) ${conflictAction}`,
                     values
                 );
             }
             await client.query(
-                `UPDATE risu_storage_meta
+                `UPDATE system.storage_meta
                  SET revision = $1, initialized = $2, updated_at = NOW()
                  WHERE singleton = TRUE`,
                 [nextStorageRevision, databaseInitialized]
@@ -687,7 +712,7 @@ class PostgresStorage {
         try {
             await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
             const archiveResult = await client.query(
-                'SELECT * FROM risu_cold_archives WHERE id = $1::uuid', [normalizedKey]
+                'SELECT * FROM cold.archives WHERE id = $1::uuid', [normalizedKey]
             );
             const archive = archiveResult.rows[0];
             if (!archive) {
@@ -695,18 +720,18 @@ class PostgresStorage {
                 return null;
             }
             const tableNames = [
-                'risu_cold_archive_attributes', 'risu_cold_field_presence', 'risu_cold_character_tags',
-                'risu_cold_character_greetings', 'risu_cold_character_biases',
-                'risu_cold_character_emotions', 'risu_cold_character_modules',
-                'risu_cold_group_members', 'risu_cold_chat_folders',
-                'risu_cold_character_scripts', 'risu_cold_character_sd_data',
-                'risu_cold_character_assets', 'risu_cold_character_lore_entries',
-                'risu_cold_chats', 'risu_cold_chat_attributes', 'risu_cold_chat_suggestions',
-                'risu_cold_chat_modules', 'risu_cold_chat_script_state',
-                'risu_cold_chat_bookmarks', 'risu_cold_chat_memory', 'risu_cold_chat_lore_entries',
-                'risu_cold_messages', 'risu_cold_message_attributes',
-                'risu_cold_message_generation', 'risu_cold_message_prompt_info',
-                'risu_cold_message_prompt_toggles', 'risu_cold_message_prompt_items',
+                'cold.archive_attributes', 'cold.field_presence', 'cold.character_tags',
+                'cold.character_greetings', 'cold.character_biases',
+                'cold.character_emotions', 'cold.character_modules',
+                'cold.group_members', 'cold.chat_folders',
+                'cold.character_scripts', 'cold.character_sd_data',
+                'cold.character_assets', 'cold.character_lore_entries',
+                'cold.chats', 'cold.chat_attributes', 'cold.chat_suggestions',
+                'cold.chat_modules', 'cold.chat_script_state',
+                'cold.chat_bookmarks', 'cold.chat_memory', 'cold.chat_lore_entries',
+                'cold.messages', 'cold.message_attributes',
+                'cold.message_generation', 'cold.message_prompt_info',
+                'cold.message_prompt_toggles', 'cold.message_prompt_items',
             ];
             await client.query(`SELECT set_config('risu.archive_id', $1, TRUE)`, [normalizedKey]);
             const loaded = await client.query(tableNames.map((table) =>
@@ -716,11 +741,11 @@ class PostgresStorage {
             const rows = Object.fromEntries(tableNames.map((table, index) => [table, loaded[index].rows]));
             let data;
             if (archive.kind === 'legacy') {
-                const legacy = rows.risu_cold_archive_attributes.find((item) => item.key === 'legacy');
+                const legacy = rows['cold.archive_attributes'].find((item) => item.key === 'legacy');
                 data = legacy ? decodePostgresJsonValue(legacy.value) : [];
             } else {
                 const presence = (entityType, chatPosition, entityPosition) => new Set(
-                    rows.risu_cold_field_presence
+                    rows['cold.field_presence']
                         .filter((item) => item.entity_type === entityType &&
                             item.chat_position === chatPosition && item.entity_position === entityPosition)
                         .map((item) => item.field_name)
@@ -730,14 +755,14 @@ class PostgresStorage {
                     for (const field of Object.keys(value)) if (!fields.has(field)) delete value[field];
                     return value;
                 };
-                const chatAttributes = groupRows(rows.risu_cold_chat_attributes, 'chat_position');
-                const chatSuggestions = groupRows(rows.risu_cold_chat_suggestions, 'chat_position');
-                const chatModules = groupRows(rows.risu_cold_chat_modules, 'chat_position');
-                const chatScriptState = groupRows(rows.risu_cold_chat_script_state, 'chat_position');
-                const chatBookmarks = groupRows(rows.risu_cold_chat_bookmarks, 'chat_position');
-                const chatMemory = groupRows(rows.risu_cold_chat_memory, 'chat_position');
-                const chatLore = groupRows(rows.risu_cold_chat_lore_entries, 'chat_position');
-                const messagesByPosition = groupRows(rows.risu_cold_messages, 'chat_position');
+                const chatAttributes = groupRows(rows['cold.chat_attributes'], 'chat_position');
+                const chatSuggestions = groupRows(rows['cold.chat_suggestions'], 'chat_position');
+                const chatModules = groupRows(rows['cold.chat_modules'], 'chat_position');
+                const chatScriptState = groupRows(rows['cold.chat_script_state'], 'chat_position');
+                const chatBookmarks = groupRows(rows['cold.chat_bookmarks'], 'chat_position');
+                const chatMemory = groupRows(rows['cold.chat_memory'], 'chat_position');
+                const chatLore = groupRows(rows['cold.chat_lore_entries'], 'chat_position');
+                const messagesByPosition = groupRows(rows['cold.messages'], 'chat_position');
                 const messageKey = (chatPosition, messagePosition) => `${chatPosition}\0${messagePosition}`;
                 const groupColdMessages = (items) => new Map(items.reduce((entries, item) => {
                     const key = messageKey(item.chat_position, item.message_position);
@@ -745,12 +770,12 @@ class PostgresStorage {
                     if (value) value[1].push(item); else entries.push([key, [item]]);
                     return entries;
                 }, []));
-                const messageAttributes = groupColdMessages(rows.risu_cold_message_attributes);
-                const messageGenerations = new Map(rows.risu_cold_message_generation.map((item) => [messageKey(item.chat_position, item.message_position), item]));
-                const messagePromptInfos = new Map(rows.risu_cold_message_prompt_info.map((item) => [messageKey(item.chat_position, item.message_position), item]));
-                const messagePromptToggles = groupColdMessages(rows.risu_cold_message_prompt_toggles);
-                const messagePromptItems = groupColdMessages(rows.risu_cold_message_prompt_items);
-                const rebuiltChats = rows.risu_cold_chats.map((chatRow) => {
+                const messageAttributes = groupColdMessages(rows['cold.message_attributes']);
+                const messageGenerations = new Map(rows['cold.message_generation'].map((item) => [messageKey(item.chat_position, item.message_position), item]));
+                const messagePromptInfos = new Map(rows['cold.message_prompt_info'].map((item) => [messageKey(item.chat_position, item.message_position), item]));
+                const messagePromptToggles = groupColdMessages(rows['cold.message_prompt_toggles']);
+                const messagePromptItems = groupColdMessages(rows['cold.message_prompt_items']);
+                const rebuiltChats = rows['cold.chats'].map((chatRow) => {
                     const messages = (messagesByPosition.get(chatRow.position) || []).map((messageRow) => {
                         const relationKey = messageKey(messageRow.chat_position, messageRow.position);
                         return retainPresentFields(rebuildMessage({ ...messageRow, id: messageRow.original_message_id || `cold-message-${messageRow.position}` }, {
@@ -782,18 +807,18 @@ class PostgresStorage {
                     }
                     characterRow.kind = archive.character_kind || 'character';
                     data = { character: retainPresentFields(rebuildCharacter(characterRow, {
-                        attributes: rows.risu_cold_archive_attributes.filter((item) => item.key !== 'legacy'),
-                        tags: rows.risu_cold_character_tags,
-                        greetings: rows.risu_cold_character_greetings,
-                        biases: rows.risu_cold_character_biases,
-                        emotions: rows.risu_cold_character_emotions,
-                        modules: rows.risu_cold_character_modules,
-                        groupMembers: rows.risu_cold_group_members,
-                        chatFolders: rows.risu_cold_chat_folders,
-                        scripts: rows.risu_cold_character_scripts,
-                        sdData: rows.risu_cold_character_sd_data,
-                        assets: rows.risu_cold_character_assets,
-                        lore: rows.risu_cold_character_lore_entries,
+                        attributes: rows['cold.archive_attributes'].filter((item) => item.key !== 'legacy'),
+                        tags: rows['cold.character_tags'],
+                        greetings: rows['cold.character_greetings'],
+                        biases: rows['cold.character_biases'],
+                        emotions: rows['cold.character_emotions'],
+                        modules: rows['cold.character_modules'],
+                        groupMembers: rows['cold.group_members'],
+                        chatFolders: rows['cold.chat_folders'],
+                        scripts: rows['cold.character_scripts'],
+                        sdData: rows['cold.character_sd_data'],
+                        assets: rows['cold.character_assets'],
+                        lore: rows['cold.character_lore_entries'],
                         chats: rebuiltChats,
                     }), presence('character', -1, -1)) };
                 }
@@ -812,7 +837,7 @@ class PostgresStorage {
         this.assertEnabled();
         const result = await this.pool.query(
             `SELECT id::text AS key, kind, updated_at
-             FROM risu_cold_archives
+             FROM cold.archives
              ORDER BY updated_at DESC, id`
         );
         return result.rows;
@@ -865,23 +890,22 @@ class PostgresStorage {
                 if (!['id', 'position'].includes(column)) archive[`character_${column}`] = value;
             }
         }
-        const result = await bulkInsert(
-            client, 'risu_cold_archives', archiveColumns,
+        await bulkInsert(
+            client, 'cold.archives', archiveColumns,
             ['uuid', 'text', ...Array(17).fill('text'), 'integer', 'integer', 'boolean', 'boolean',
                 ...Array(7).fill('text'), 'bigint', 'bigint', 'bigint', 'bigint'],
             [archive],
             `ON CONFLICT (id) DO UPDATE SET ${archiveColumns.slice(1).map((column) =>
-                `${assertSqlIdentifier(column)} = EXCLUDED.${assertSqlIdentifier(column)}`).join(', ')},
-                revision = risu_cold_archives.revision + 1, updated_at = NOW()
-             RETURNING id::text AS key, kind, revision, updated_at`
+                `"${column}" = EXCLUDED."${column}"`).join(', ')},
+                revision = cold.archives.revision + 1, updated_at = NOW()`
         );
 
         const childTables = [
-            'risu_cold_archive_attributes', 'risu_cold_field_presence', 'risu_cold_character_tags',
-            'risu_cold_character_greetings', 'risu_cold_character_biases',
-            'risu_cold_character_emotions', 'risu_cold_character_modules', 'risu_cold_group_members',
-            'risu_cold_chat_folders', 'risu_cold_character_scripts', 'risu_cold_character_sd_data',
-            'risu_cold_character_assets', 'risu_cold_character_lore_entries', 'risu_cold_chats',
+            'cold.archive_attributes', 'cold.field_presence', 'cold.character_tags',
+            'cold.character_greetings', 'cold.character_biases',
+            'cold.character_emotions', 'cold.character_modules', 'cold.group_members',
+            'cold.chat_folders', 'cold.character_scripts', 'cold.character_sd_data',
+            'cold.character_assets', 'cold.character_lore_entries', 'cold.chats',
         ];
         for (const table of childTables) {
             await client.query(`DELETE FROM ${assertSqlIdentifier(table)} WHERE archive_id = $1::uuid`, [key]);
@@ -893,7 +917,7 @@ class PostgresStorage {
         } else if (character) {
             archiveAttributes = character.attributes.map((item) => ({ ...item, archive_id: key }));
         }
-        await bulkInsert(client, 'risu_cold_archive_attributes', ['archive_id', 'key', 'value'], ['uuid', 'text', 'jsonb'], archiveAttributes);
+        await bulkInsert(client, 'cold.archive_attributes', ['archive_id', 'key', 'value'], ['uuid', 'text', 'jsonb'], archiveAttributes);
         const presenceRows = [
             ...(splitValue.characterFields || []).map((fieldName) => ({
                 archive_id: key, entity_type: 'character', chat_position: -1,
@@ -908,7 +932,7 @@ class PostgresStorage {
                 entity_position: message.position, field_name: fieldName,
             }))),
         ];
-        await bulkInsert(client, 'risu_cold_field_presence',
+        await bulkInsert(client, 'cold.field_presence',
             ['archive_id', 'entity_type', 'chat_position', 'entity_position', 'field_name'],
             ['uuid', 'text', 'integer', 'integer', 'text'], presenceRows);
         const mapCharacterRows = (name) => (character?.[name] || []).map((item) => {
@@ -917,17 +941,17 @@ class PostgresStorage {
             delete mapped.group_id;
             return mapped;
         });
-        await bulkInsert(client, 'risu_cold_character_tags', ['archive_id', 'position', 'tag'], ['uuid', 'integer', 'text'], mapCharacterRows('tags'));
-        await bulkInsert(client, 'risu_cold_character_greetings', ['archive_id', 'greeting_type', 'position', 'content'], ['uuid', 'text', 'integer', 'text'], mapCharacterRows('greetings'));
-        await bulkInsert(client, 'risu_cold_character_biases', ['archive_id', 'position', 'phrase', 'bias'], ['uuid', 'integer', 'text', 'double precision'], mapCharacterRows('biases'));
-        await bulkInsert(client, 'risu_cold_character_emotions', ['archive_id', 'position', 'emotion', 'asset'], ['uuid', 'integer', 'text', 'text'], mapCharacterRows('emotions'));
-        await bulkInsert(client, 'risu_cold_character_modules', ['archive_id', 'position', 'module_id'], ['uuid', 'integer', 'text'], mapCharacterRows('modules'));
-        await bulkInsert(client, 'risu_cold_group_members', ['archive_id', 'position', 'character_id', 'talk_weight', 'active'], ['uuid', 'integer', 'text', 'double precision', 'boolean'], mapCharacterRows('groupMembers'));
-        await bulkInsert(client, 'risu_cold_chat_folders', ['archive_id', 'position', 'folder_id', 'name', 'color', 'folded'], ['uuid', 'integer', 'text', 'text', 'text', 'boolean'], mapCharacterRows('chatFolders'));
-        await bulkInsert(client, 'risu_cold_character_scripts', ['archive_id', 'script_kind', 'position', 'comment', 'input_text', 'output_text', 'script_type', 'flag', 'able_flag', 'trigger_payload'], ['uuid', 'text', 'integer', 'text', 'text', 'text', 'text', 'text', 'boolean', 'jsonb'], mapCharacterRows('scripts'));
-        await bulkInsert(client, 'risu_cold_character_sd_data', ['archive_id', 'position', 'key', 'value'], ['uuid', 'integer', 'text', 'text'], mapCharacterRows('sdData'));
-        await bulkInsert(client, 'risu_cold_character_assets', ['archive_id', 'position', 'asset_source', 'asset_type', 'uri', 'name', 'extension', 'extra_value'], ['uuid', 'integer', 'text', 'text', 'text', 'text', 'text', 'text'], mapCharacterRows('assets'));
-        await bulkInsert(client, 'risu_cold_character_lore_entries', ['archive_id', 'position', 'lore_id', 'primary_key', 'secondary_key', 'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], ['uuid', 'integer', 'text', 'text', 'text', 'integer', 'text', 'text', 'text', 'boolean', 'boolean', 'boolean', 'double precision', 'boolean', 'integer', 'text', 'jsonb'], mapCharacterRows('lore'));
+        await bulkInsert(client, 'cold.character_tags', ['archive_id', 'position', 'tag'], ['uuid', 'integer', 'text'], mapCharacterRows('tags'));
+        await bulkInsert(client, 'cold.character_greetings', ['archive_id', 'greeting_type', 'position', 'content'], ['uuid', 'text', 'integer', 'text'], mapCharacterRows('greetings'));
+        await bulkInsert(client, 'cold.character_biases', ['archive_id', 'position', 'phrase', 'bias'], ['uuid', 'integer', 'text', 'double precision'], mapCharacterRows('biases'));
+        await bulkInsert(client, 'cold.character_emotions', ['archive_id', 'position', 'emotion', 'asset'], ['uuid', 'integer', 'text', 'text'], mapCharacterRows('emotions'));
+        await bulkInsert(client, 'cold.character_modules', ['archive_id', 'position', 'module_id'], ['uuid', 'integer', 'text'], mapCharacterRows('modules'));
+        await bulkInsert(client, 'cold.group_members', ['archive_id', 'position', 'character_id', 'talk_weight', 'active'], ['uuid', 'integer', 'text', 'double precision', 'boolean'], mapCharacterRows('groupMembers'));
+        await bulkInsert(client, 'cold.chat_folders', ['archive_id', 'position', 'folder_id', 'name', 'color', 'folded'], ['uuid', 'integer', 'text', 'text', 'text', 'boolean'], mapCharacterRows('chatFolders'));
+        await bulkInsert(client, 'cold.character_scripts', ['archive_id', 'script_kind', 'position', 'comment', 'input_text', 'output_text', 'script_type', 'flag', 'able_flag', 'trigger_payload'], ['uuid', 'text', 'integer', 'text', 'text', 'text', 'text', 'text', 'boolean', 'jsonb'], mapCharacterRows('scripts'));
+        await bulkInsert(client, 'cold.character_sd_data', ['archive_id', 'position', 'key', 'value'], ['uuid', 'integer', 'text', 'text'], mapCharacterRows('sdData'));
+        await bulkInsert(client, 'cold.character_assets', ['archive_id', 'position', 'asset_source', 'asset_type', 'uri', 'name', 'extension', 'extra_value'], ['uuid', 'integer', 'text', 'text', 'text', 'text', 'text', 'text'], mapCharacterRows('assets'));
+        await bulkInsert(client, 'cold.character_lore_entries', ['archive_id', 'position', 'lore_id', 'primary_key', 'secondary_key', 'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], ['uuid', 'integer', 'text', 'text', 'text', 'integer', 'text', 'text', 'text', 'boolean', 'boolean', 'boolean', 'double precision', 'boolean', 'integer', 'text', 'jsonb'], mapCharacterRows('lore'));
 
         const chatInputs = splitValue.kind === 'chat'
             ? [{ position: 0, data: splitValue.data }]
@@ -954,19 +978,19 @@ class PostgresStorage {
             folder_id: item.core.folder_id,
             last_message_time: item.core.last_message_time,
         }));
-        await bulkInsert(client, 'risu_cold_chats', ['archive_id', 'position', 'original_chat_id', 'name', 'note', 'sd_data', 'supa_memory_data', 'last_memory', 'is_streaming', 'streaming_optimization_mode', 'bound_persona_id', 'first_message_index', 'folder_id', 'last_message_time'], ['uuid', 'integer', 'text', 'text', 'text', 'text', 'text', 'text', 'boolean', 'text', 'text', 'integer', 'text', 'bigint'], coldChats);
+        await bulkInsert(client, 'cold.chats', ['archive_id', 'position', 'original_chat_id', 'name', 'note', 'sd_data', 'supa_memory_data', 'last_memory', 'is_streaming', 'streaming_optimization_mode', 'bound_persona_id', 'first_message_index', 'folder_id', 'last_message_time'], ['uuid', 'integer', 'text', 'text', 'text', 'text', 'text', 'text', 'boolean', 'text', 'text', 'integer', 'text', 'bigint'], coldChats);
         const mapChatRows = (name) => splitChats.flatMap((item) => item[name].map((row) => {
             const mapped = { ...row, archive_id: key, chat_position: item.core.position };
             delete mapped.chat_id;
             return mapped;
         }));
-        await bulkInsert(client, 'risu_cold_chat_attributes', ['archive_id', 'chat_position', 'key', 'value'], ['uuid', 'integer', 'text', 'jsonb'], splitChats.flatMap((item) => item.attributes.map((row) => ({ ...row, archive_id: key, chat_position: item.core.position }))));
-        await bulkInsert(client, 'risu_cold_chat_suggestions', ['archive_id', 'chat_position', 'position', 'content'], ['uuid', 'integer', 'integer', 'text'], mapChatRows('suggestions'));
-        await bulkInsert(client, 'risu_cold_chat_modules', ['archive_id', 'chat_position', 'position', 'module_id'], ['uuid', 'integer', 'integer', 'text'], mapChatRows('modules'));
-        await bulkInsert(client, 'risu_cold_chat_script_state', ['archive_id', 'chat_position', 'key', 'value_type', 'text_value', 'number_value', 'boolean_value'], ['uuid', 'integer', 'text', 'text', 'text', 'double precision', 'boolean'], mapChatRows('scriptState'));
-        await bulkInsert(client, 'risu_cold_chat_bookmarks', ['archive_id', 'chat_position', 'position', 'message_id', 'name'], ['uuid', 'integer', 'integer', 'text', 'text'], mapChatRows('bookmarks'));
-        await bulkInsert(client, 'risu_cold_chat_memory', ['archive_id', 'chat_position', 'memory_type', 'payload'], ['uuid', 'integer', 'text', 'jsonb'], mapChatRows('memory'));
-        await bulkInsert(client, 'risu_cold_chat_lore_entries', ['archive_id', 'chat_position', 'position', 'lore_id', 'primary_key', 'secondary_key', 'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], ['uuid', 'integer', 'integer', 'text', 'text', 'text', 'integer', 'text', 'text', 'text', 'boolean', 'boolean', 'boolean', 'double precision', 'boolean', 'integer', 'text', 'jsonb'], mapChatRows('lore'));
+        await bulkInsert(client, 'cold.chat_attributes', ['archive_id', 'chat_position', 'key', 'value'], ['uuid', 'integer', 'text', 'jsonb'], splitChats.flatMap((item) => item.attributes.map((row) => ({ ...row, archive_id: key, chat_position: item.core.position }))));
+        await bulkInsert(client, 'cold.chat_suggestions', ['archive_id', 'chat_position', 'position', 'content'], ['uuid', 'integer', 'integer', 'text'], mapChatRows('suggestions'));
+        await bulkInsert(client, 'cold.chat_modules', ['archive_id', 'chat_position', 'position', 'module_id'], ['uuid', 'integer', 'integer', 'text'], mapChatRows('modules'));
+        await bulkInsert(client, 'cold.chat_script_state', ['archive_id', 'chat_position', 'key', 'value_type', 'text_value', 'number_value', 'boolean_value'], ['uuid', 'integer', 'text', 'text', 'text', 'double precision', 'boolean'], mapChatRows('scriptState'));
+        await bulkInsert(client, 'cold.chat_bookmarks', ['archive_id', 'chat_position', 'position', 'message_id', 'name'], ['uuid', 'integer', 'integer', 'text', 'text'], mapChatRows('bookmarks'));
+        await bulkInsert(client, 'cold.chat_memory', ['archive_id', 'chat_position', 'memory_type', 'payload'], ['uuid', 'integer', 'text', 'jsonb'], mapChatRows('memory'));
+        await bulkInsert(client, 'cold.chat_lore_entries', ['archive_id', 'chat_position', 'position', 'lore_id', 'primary_key', 'secondary_key', 'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], ['uuid', 'integer', 'integer', 'text', 'text', 'text', 'integer', 'text', 'text', 'text', 'boolean', 'boolean', 'boolean', 'double precision', 'boolean', 'integer', 'text', 'jsonb'], mapChatRows('lore'));
 
         const splitMessages = splitValue.messages.map((message) => splitMessage({
             id: message.data.chatId || `cold-message-${message.position}`,
@@ -989,15 +1013,15 @@ class PostgresStorage {
             disabled_scope: item.core.disabled_scope,
             is_comment: item.core.is_comment,
         }));
-        await bulkInsert(client, 'risu_cold_messages', ['archive_id', 'chat_position', 'position', 'original_message_id', 'role', 'content_text', 'content_binary', 'saying_character_id', 'sent_time', 'sender_name', 'other_user', 'disabled_scope', 'is_comment'], ['uuid', 'integer', 'integer', 'text', 'text', 'text', 'bytea', 'text', 'bigint', 'text', 'boolean', 'text', 'boolean'], coldMessages);
+        await bulkInsert(client, 'cold.messages', ['archive_id', 'chat_position', 'position', 'original_message_id', 'role', 'content_text', 'content_binary', 'saying_character_id', 'sent_time', 'sender_name', 'other_user', 'disabled_scope', 'is_comment'], ['uuid', 'integer', 'integer', 'text', 'text', 'text', 'bytea', 'text', 'bigint', 'text', 'boolean', 'text', 'boolean'], coldMessages);
         const messageOwner = (item, index) => ({ archive_id: key, chat_position: splitValue.messages[index].chatPosition, message_position: item.core.position });
-        await bulkInsert(client, 'risu_cold_message_attributes', ['archive_id', 'chat_position', 'message_position', 'key', 'value'], ['uuid', 'integer', 'integer', 'text', 'jsonb'], splitMessages.flatMap((item, index) => item.attributes.map((row) => ({ ...row, ...messageOwner(item, index) }))));
-        await bulkInsert(client, 'risu_cold_message_generation', ['archive_id', 'chat_position', 'message_position', 'model', 'generation_id', 'input_tokens', 'output_tokens', 'max_context', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time'], ['uuid', 'integer', 'integer', 'text', 'text', 'integer', 'integer', 'integer', 'double precision', 'double precision', 'double precision', 'double precision'], splitMessages.flatMap((item, index) => item.generation ? [{ ...item.generation, ...messageOwner(item, index) }] : []));
-        await bulkInsert(client, 'risu_cold_message_prompt_info', ['archive_id', 'chat_position', 'message_position', 'prompt_name'], ['uuid', 'integer', 'integer', 'text'], splitMessages.flatMap((item, index) => item.prompt ? [{ ...item.prompt.info, ...messageOwner(item, index) }] : []));
-        await bulkInsert(client, 'risu_cold_message_prompt_toggles', ['archive_id', 'chat_position', 'message_position', 'position', 'toggle_key', 'toggle_value'], ['uuid', 'integer', 'integer', 'integer', 'text', 'text'], splitMessages.flatMap((item, index) => (item.prompt?.toggles || []).map((row) => ({ ...row, ...messageOwner(item, index) }))));
-        await bulkInsert(client, 'risu_cold_message_prompt_items', ['archive_id', 'chat_position', 'message_position', 'position', 'payload'], ['uuid', 'integer', 'integer', 'integer', 'jsonb'], splitMessages.flatMap((item, index) => (item.prompt?.items || []).map((row) => ({ ...row, ...messageOwner(item, index) }))));
+        await bulkInsert(client, 'cold.message_attributes', ['archive_id', 'chat_position', 'message_position', 'key', 'value'], ['uuid', 'integer', 'integer', 'text', 'jsonb'], splitMessages.flatMap((item, index) => item.attributes.map((row) => ({ ...row, ...messageOwner(item, index) }))));
+        await bulkInsert(client, 'cold.message_generation', ['archive_id', 'chat_position', 'message_position', 'model', 'generation_id', 'input_tokens', 'output_tokens', 'max_context', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time'], ['uuid', 'integer', 'integer', 'text', 'text', 'integer', 'integer', 'integer', 'double precision', 'double precision', 'double precision', 'double precision'], splitMessages.flatMap((item, index) => item.generation ? [{ ...item.generation, ...messageOwner(item, index) }] : []));
+        await bulkInsert(client, 'cold.message_prompt_info', ['archive_id', 'chat_position', 'message_position', 'prompt_name'], ['uuid', 'integer', 'integer', 'text'], splitMessages.flatMap((item, index) => item.prompt ? [{ ...item.prompt.info, ...messageOwner(item, index) }] : []));
+        await bulkInsert(client, 'cold.message_prompt_toggles', ['archive_id', 'chat_position', 'message_position', 'position', 'toggle_key', 'toggle_value'], ['uuid', 'integer', 'integer', 'integer', 'text', 'text'], splitMessages.flatMap((item, index) => (item.prompt?.toggles || []).map((row) => ({ ...row, ...messageOwner(item, index) }))));
+        await bulkInsert(client, 'cold.message_prompt_items', ['archive_id', 'chat_position', 'message_position', 'position', 'payload'], ['uuid', 'integer', 'integer', 'integer', 'jsonb'], splitMessages.flatMap((item, index) => (item.prompt?.items || []).map((row) => ({ ...row, ...messageOwner(item, index) }))));
         const archiveResult = await client.query(
-            'SELECT id::text AS key, kind, revision, updated_at FROM risu_cold_archives WHERE id = $1::uuid',
+            'SELECT id::text AS key, kind, revision, updated_at FROM cold.archives WHERE id = $1::uuid',
             [key]
         );
         return archiveResult.rows[0];
@@ -1014,7 +1038,7 @@ class PostgresStorage {
             await client.query('BEGIN');
             await beginAuditRevision(client, { scope: 'cold-storage', action: 'delete' });
             const result = await client.query(
-                'DELETE FROM risu_cold_archives WHERE id = ANY($1::uuid[])', [keys]
+                'DELETE FROM cold.archives WHERE id = ANY($1::uuid[])', [keys]
             );
             await client.query('COMMIT');
             return { deleted: result.rowCount };
@@ -1034,7 +1058,7 @@ class PostgresStorage {
             await client.query('BEGIN');
             await beginAuditRevision(client, { scope: 'cold-storage', action: 'prune' });
             const result = await client.query(
-                'DELETE FROM risu_cold_archives WHERE NOT (id = ANY($1::uuid[]))', [retainedKeys]
+                'DELETE FROM cold.archives WHERE NOT (id = ANY($1::uuid[]))', [retainedKeys]
             );
             await client.query('COMMIT');
             return { deleted: result.rowCount };
@@ -1054,7 +1078,7 @@ class PostgresStorage {
         }
 
         const importedResult = await this.pool.query(
-            'SELECT id::text AS key FROM risu_cold_storage_legacy_imports WHERE id = ANY($1::uuid[])',
+            'SELECT id::text AS key FROM cold.legacy_imports WHERE id = ANY($1::uuid[])',
             [candidates.map((candidate) => candidate.key)]
         );
         const imported = new Set(importedResult.rows.map((row) => row.key));
@@ -1076,14 +1100,14 @@ class PostgresStorage {
                     const decoded = JSON.parse((await unzipAsync(compressed)).toString('utf8'));
                     const splitValue = splitColdStorageValue(decoded);
                     const existing = await client.query(
-                        'SELECT 1 FROM risu_cold_archives WHERE id = $1::uuid',
+                        'SELECT 1 FROM cold.archives WHERE id = $1::uuid',
                         [candidate.key]
                     );
                     if (existing.rowCount === 0) {
                         await this.upsertColdStorageWithClient(client, candidate.key, splitValue);
                     }
                     await client.query(
-                        `INSERT INTO risu_cold_storage_legacy_imports (id)
+                        `INSERT INTO cold.legacy_imports (id)
                          VALUES ($1::uuid)
                          ON CONFLICT (id) DO NOTHING`,
                         [candidate.key]
@@ -1155,7 +1179,7 @@ class PostgresStorage {
         try {
             await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
             const metaResult = await client.query(
-                'SELECT revision, initialized FROM risu_storage_meta WHERE singleton = TRUE'
+                'SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE'
             );
             const revision = Number(metaResult.rows[0].revision);
             const initialized = metaResult.rows[0].initialized;
@@ -1165,35 +1189,35 @@ class PostgresStorage {
             }
 
             const loadQueries = [
-                'SELECT * FROM risu_settings ORDER BY key',
-                'SELECT * FROM risu_setting_values ORDER BY setting_key, node_id',
-                'SELECT * FROM risu_characters ORDER BY position, id',
-                'SELECT * FROM risu_character_attributes ORDER BY character_id, key',
-                'SELECT * FROM risu_character_tags ORDER BY character_id, position',
-                'SELECT * FROM risu_character_greetings ORDER BY character_id, greeting_type, position',
-                'SELECT * FROM risu_character_biases ORDER BY character_id, position',
-                'SELECT * FROM risu_character_emotions ORDER BY character_id, position',
-                'SELECT * FROM risu_character_modules ORDER BY character_id, position',
-                'SELECT * FROM risu_group_members ORDER BY group_id, position',
-                'SELECT * FROM risu_chat_folders ORDER BY character_id, position',
-                'SELECT * FROM risu_character_scripts ORDER BY character_id, script_kind, position',
-                'SELECT * FROM risu_character_sd_data ORDER BY character_id, position',
-                'SELECT * FROM risu_character_assets ORDER BY character_id, position',
-                'SELECT * FROM risu_character_lore_entries ORDER BY character_id, position',
-                'SELECT * FROM risu_chats ORDER BY character_id, position, id',
-                'SELECT * FROM risu_chat_attributes ORDER BY chat_id, key',
-                'SELECT * FROM risu_chat_suggestions ORDER BY chat_id, position',
-                'SELECT * FROM risu_chat_modules ORDER BY chat_id, position',
-                'SELECT * FROM risu_chat_script_state ORDER BY chat_id, key',
-                'SELECT * FROM risu_chat_bookmarks ORDER BY chat_id, position',
-                'SELECT * FROM risu_chat_memory ORDER BY chat_id, memory_type',
-                'SELECT * FROM risu_chat_lore_entries ORDER BY chat_id, position',
-                'SELECT * FROM risu_messages ORDER BY chat_id, position, id',
-                'SELECT * FROM risu_message_attributes ORDER BY chat_id, message_id, key',
-                'SELECT * FROM risu_message_generation',
-                'SELECT * FROM risu_message_prompt_info',
-                'SELECT * FROM risu_message_prompt_toggles ORDER BY chat_id, message_id, position',
-                'SELECT * FROM risu_message_prompt_items ORDER BY chat_id, message_id, position',
+                'SELECT * FROM system.settings ORDER BY key',
+                'SELECT * FROM system.setting_values ORDER BY setting_key, node_id',
+                'SELECT * FROM character.characters ORDER BY position, id',
+                'SELECT * FROM character.attributes ORDER BY character_id, key',
+                'SELECT * FROM character.tags ORDER BY character_id, position',
+                'SELECT * FROM character.greetings ORDER BY character_id, greeting_type, position',
+                'SELECT * FROM character.biases ORDER BY character_id, position',
+                'SELECT * FROM character.emotions ORDER BY character_id, position',
+                'SELECT * FROM character.modules ORDER BY character_id, position',
+                'SELECT * FROM character.group_members ORDER BY group_id, position',
+                'SELECT * FROM character.chat_folders ORDER BY character_id, position',
+                'SELECT * FROM character.scripts ORDER BY character_id, script_kind, position',
+                'SELECT * FROM character.sd_data ORDER BY character_id, position',
+                'SELECT * FROM character.assets ORDER BY character_id, position',
+                'SELECT * FROM character.lore_entries ORDER BY character_id, position',
+                'SELECT * FROM chat.chats ORDER BY character_id, position, id',
+                'SELECT * FROM chat.attributes ORDER BY chat_id, key',
+                'SELECT * FROM chat.suggestions ORDER BY chat_id, position',
+                'SELECT * FROM chat.modules ORDER BY chat_id, position',
+                'SELECT * FROM chat.script_state ORDER BY chat_id, key',
+                'SELECT * FROM chat.bookmarks ORDER BY chat_id, position',
+                'SELECT * FROM chat.memory ORDER BY chat_id, memory_type',
+                'SELECT * FROM chat.lore_entries ORDER BY chat_id, position',
+                'SELECT * FROM chat.messages ORDER BY chat_id, position, id',
+                'SELECT * FROM chat.message_attributes ORDER BY chat_id, message_id, key',
+                'SELECT * FROM chat.message_generation',
+                'SELECT * FROM chat.message_prompt_info',
+                'SELECT * FROM chat.message_prompt_toggles ORDER BY chat_id, message_id, position',
+                'SELECT * FROM chat.message_prompt_items ORDER BY chat_id, message_id, position',
             ];
             const results = await client.query(loadQueries.join(';\n'));
             const [settings, settingValues, characters, characterAttributes, tags, greetings, biases, emotions,
@@ -1282,7 +1306,7 @@ class PostgresStorage {
         try {
             await client.query('BEGIN');
             const metaResult = await client.query(
-                'SELECT revision FROM risu_storage_meta WHERE singleton = TRUE FOR UPDATE'
+                'SELECT revision FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE'
             );
             const currentRevision = Number(metaResult.rows[0].revision);
             if (payload.baseRevision !== currentRevision) {
@@ -1298,8 +1322,8 @@ class PostgresStorage {
             });
 
             if (payload.replaceAll) {
-                await client.query('DELETE FROM risu_settings');
-                await client.query('DELETE FROM risu_characters');
+                await client.query('DELETE FROM system.settings');
+                await client.query('DELETE FROM character.characters');
             }
 
             let splitSettings;
@@ -1324,7 +1348,7 @@ class PostgresStorage {
             }
             await bulkInsert(
                 client,
-                'risu_settings',
+                'system.settings',
                 ['key'],
                 ['text'],
                 splitSettings.map((item) => item.setting),
@@ -1333,13 +1357,13 @@ class PostgresStorage {
             const changedSettingKeys = splitSettings.map((item) => item.setting.key);
             if (changedSettingKeys.length > 0) {
                 await client.query(
-                    'DELETE FROM risu_setting_values WHERE setting_key = ANY($1::text[])',
+                    'DELETE FROM system.setting_values WHERE setting_key = ANY($1::text[])',
                     [changedSettingKeys]
                 );
             }
             await bulkInsert(
                 client,
-                'risu_setting_values',
+                'system.setting_values',
                 [
                     'setting_key', 'node_id', 'parent_node_id', 'member_key', 'encoded_member_key',
                     'position', 'value_type', 'text_value', 'encoded_text_value', 'number_value',
@@ -1375,7 +1399,7 @@ class PostgresStorage {
                 );
             }
             if (payload.rootDeletes.length > 0) {
-                await client.query('DELETE FROM risu_settings WHERE key = ANY($1::text[])', [payload.rootDeletes]);
+                await client.query('DELETE FROM system.settings WHERE key = ANY($1::text[])', [payload.rootDeletes]);
             }
 
             const splitCharacters = payload.characters.map(splitCharacter);
@@ -1388,102 +1412,102 @@ class PostgresStorage {
                 'background_css', 'creation_time', 'modification_time', 'last_interaction_time', 'trash_time',
             ];
             await bulkInsert(
-                client, 'risu_characters', characterColumns,
+                client, 'character.characters', characterColumns,
                 ['text', 'integer', 'text', ...Array(15).fill('text'), 'integer', 'integer', 'boolean', 'boolean',
                     'text', 'text', 'text', 'text', 'text', 'text', 'text', 'bigint', 'bigint', 'bigint', 'bigint'],
                 splitCharacters.map((item) => item.core),
                 `ON CONFLICT (id) DO UPDATE SET ${characterColumns.slice(1).map((column) =>
-                    `${assertSqlIdentifier(column)} = EXCLUDED.${assertSqlIdentifier(column)}`).join(', ')}, updated_at = NOW()`
+                    `"${column}" = EXCLUDED."${column}"`).join(', ')}, updated_at = NOW()`
             );
             const changedCharacterIds = payload.characters.map((row) => row.id);
             const characterChildTables = [
-                'risu_character_attributes', 'risu_character_tags', 'risu_character_greetings',
-                'risu_character_biases', 'risu_character_emotions', 'risu_character_modules',
-                'risu_group_members', 'risu_chat_folders', 'risu_character_scripts',
-                'risu_character_sd_data', 'risu_character_assets', 'risu_character_lore_entries',
+                'character.attributes', 'character.tags', 'character.greetings',
+                'character.biases', 'character.emotions', 'character.modules',
+                'character.group_members', 'character.chat_folders', 'character.scripts',
+                'character.sd_data', 'character.assets', 'character.lore_entries',
             ];
             if (changedCharacterIds.length > 0) {
                 for (const table of characterChildTables) {
-                    const ownerColumn = table === 'risu_group_members' ? 'group_id' : 'character_id';
+                    const ownerColumn = table === 'character.group_members' ? 'group_id' : 'character_id';
                     await client.query(
-                        `DELETE FROM ${assertSqlIdentifier(table)} WHERE ${assertSqlIdentifier(ownerColumn)} = ANY($1::text[])`,
+                        `DELETE FROM ${assertSqlIdentifier(table)} WHERE "${ownerColumn}" = ANY($1::text[])`,
                         [changedCharacterIds]
                     );
                 }
             }
             const characterRows = (name) => splitCharacters.flatMap((item) => item[name]);
-            await bulkInsert(client, 'risu_character_attributes', ['character_id', 'key', 'value'], ['text', 'text', 'jsonb'],
+            await bulkInsert(client, 'character.attributes', ['character_id', 'key', 'value'], ['text', 'text', 'jsonb'],
                 splitCharacters.flatMap((item) => item.attributes.map((row) => ({ ...row, character_id: item.core.id }))));
-            await bulkInsert(client, 'risu_character_tags', ['character_id', 'position', 'tag'], ['text', 'integer', 'text'], characterRows('tags'));
-            await bulkInsert(client, 'risu_character_greetings', ['character_id', 'greeting_type', 'position', 'content'], ['text', 'text', 'integer', 'text'], characterRows('greetings'));
-            await bulkInsert(client, 'risu_character_biases', ['character_id', 'position', 'phrase', 'bias'], ['text', 'integer', 'text', 'double precision'], characterRows('biases'));
-            await bulkInsert(client, 'risu_character_emotions', ['character_id', 'position', 'emotion', 'asset'], ['text', 'integer', 'text', 'text'], characterRows('emotions'));
-            await bulkInsert(client, 'risu_character_modules', ['character_id', 'position', 'module_id'], ['text', 'integer', 'text'], characterRows('modules'));
-            await bulkInsert(client, 'risu_group_members', ['group_id', 'position', 'character_id', 'talk_weight', 'active'], ['text', 'integer', 'text', 'double precision', 'boolean'], characterRows('groupMembers'));
-            await bulkInsert(client, 'risu_chat_folders', ['character_id', 'position', 'folder_id', 'name', 'color', 'folded'], ['text', 'integer', 'text', 'text', 'text', 'boolean'], characterRows('chatFolders'));
-            await bulkInsert(client, 'risu_character_scripts', ['character_id', 'script_kind', 'position', 'comment', 'input_text', 'output_text', 'script_type', 'flag', 'able_flag', 'trigger_payload'], ['text', 'text', 'integer', 'text', 'text', 'text', 'text', 'text', 'boolean', 'jsonb'], characterRows('scripts'));
-            await bulkInsert(client, 'risu_character_sd_data', ['character_id', 'position', 'key', 'value'], ['text', 'integer', 'text', 'text'], characterRows('sdData'));
-            await bulkInsert(client, 'risu_character_assets', ['character_id', 'position', 'asset_source', 'asset_type', 'uri', 'name', 'extension', 'extra_value'], ['text', 'integer', 'text', 'text', 'text', 'text', 'text', 'text'], characterRows('assets'));
-            await bulkInsert(client, 'risu_character_lore_entries', ['character_id', 'position', 'lore_id', 'primary_key', 'secondary_key', 'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], ['text', 'integer', 'text', 'text', 'text', 'integer', 'text', 'text', 'text', 'boolean', 'boolean', 'boolean', 'double precision', 'boolean', 'integer', 'text', 'jsonb'], characterRows('lore'));
+            await bulkInsert(client, 'character.tags', ['character_id', 'position', 'tag'], ['text', 'integer', 'text'], characterRows('tags'));
+            await bulkInsert(client, 'character.greetings', ['character_id', 'greeting_type', 'position', 'content'], ['text', 'text', 'integer', 'text'], characterRows('greetings'));
+            await bulkInsert(client, 'character.biases', ['character_id', 'position', 'phrase', 'bias'], ['text', 'integer', 'text', 'double precision'], characterRows('biases'));
+            await bulkInsert(client, 'character.emotions', ['character_id', 'position', 'emotion', 'asset'], ['text', 'integer', 'text', 'text'], characterRows('emotions'));
+            await bulkInsert(client, 'character.modules', ['character_id', 'position', 'module_id'], ['text', 'integer', 'text'], characterRows('modules'));
+            await bulkInsert(client, 'character.group_members', ['group_id', 'position', 'character_id', 'talk_weight', 'active'], ['text', 'integer', 'text', 'double precision', 'boolean'], characterRows('groupMembers'));
+            await bulkInsert(client, 'character.chat_folders', ['character_id', 'position', 'folder_id', 'name', 'color', 'folded'], ['text', 'integer', 'text', 'text', 'text', 'boolean'], characterRows('chatFolders'));
+            await bulkInsert(client, 'character.scripts', ['character_id', 'script_kind', 'position', 'comment', 'input_text', 'output_text', 'script_type', 'flag', 'able_flag', 'trigger_payload'], ['text', 'text', 'integer', 'text', 'text', 'text', 'text', 'text', 'boolean', 'jsonb'], characterRows('scripts'));
+            await bulkInsert(client, 'character.sd_data', ['character_id', 'position', 'key', 'value'], ['text', 'integer', 'text', 'text'], characterRows('sdData'));
+            await bulkInsert(client, 'character.assets', ['character_id', 'position', 'asset_source', 'asset_type', 'uri', 'name', 'extension', 'extra_value'], ['text', 'integer', 'text', 'text', 'text', 'text', 'text', 'text'], characterRows('assets'));
+            await bulkInsert(client, 'character.lore_entries', ['character_id', 'position', 'lore_id', 'primary_key', 'secondary_key', 'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], ['text', 'integer', 'text', 'text', 'text', 'integer', 'text', 'text', 'text', 'boolean', 'boolean', 'boolean', 'double precision', 'boolean', 'integer', 'text', 'jsonb'], characterRows('lore'));
 
             const splitChats = payload.chats.map(splitChat);
             const chatColumns = ['id', 'character_id', 'position', 'name', 'note', 'sd_data', 'supa_memory_data', 'last_memory', 'is_streaming', 'streaming_optimization_mode', 'bound_persona_id', 'first_message_index', 'folder_id', 'last_message_time'];
-            await bulkInsert(client, 'risu_chats', chatColumns,
+            await bulkInsert(client, 'chat.chats', chatColumns,
                 ['text', 'text', 'integer', 'text', 'text', 'text', 'text', 'text', 'boolean', 'text', 'text', 'integer', 'text', 'bigint'],
                 splitChats.map((item) => item.core),
                 `ON CONFLICT (id) DO UPDATE SET ${chatColumns.slice(1).map((column) =>
-                    `${assertSqlIdentifier(column)} = EXCLUDED.${assertSqlIdentifier(column)}`).join(', ')}, updated_at = NOW()`);
+                    `"${column}" = EXCLUDED."${column}"`).join(', ')}, updated_at = NOW()`);
             const changedChatIds = payload.chats.map((row) => row.id);
-            const chatChildTables = ['risu_chat_attributes', 'risu_chat_suggestions', 'risu_chat_modules', 'risu_chat_script_state', 'risu_chat_bookmarks', 'risu_chat_memory', 'risu_chat_lore_entries'];
+            const chatChildTables = ['chat.attributes', 'chat.suggestions', 'chat.modules', 'chat.script_state', 'chat.bookmarks', 'chat.memory', 'chat.lore_entries'];
             if (changedChatIds.length > 0) {
                 for (const table of chatChildTables) await client.query(`DELETE FROM ${assertSqlIdentifier(table)} WHERE chat_id = ANY($1::text[])`, [changedChatIds]);
             }
             const chatRows = (name) => splitChats.flatMap((item) => item[name]);
-            await bulkInsert(client, 'risu_chat_attributes', ['chat_id', 'key', 'value'], ['text', 'text', 'jsonb'], splitChats.flatMap((item) => item.attributes.map((row) => ({ ...row, chat_id: item.core.id }))));
-            await bulkInsert(client, 'risu_chat_suggestions', ['chat_id', 'position', 'content'], ['text', 'integer', 'text'], chatRows('suggestions'));
-            await bulkInsert(client, 'risu_chat_modules', ['chat_id', 'position', 'module_id'], ['text', 'integer', 'text'], chatRows('modules'));
-            await bulkInsert(client, 'risu_chat_script_state', ['chat_id', 'key', 'value_type', 'text_value', 'number_value', 'boolean_value'], ['text', 'text', 'text', 'text', 'double precision', 'boolean'], chatRows('scriptState'));
-            await bulkInsert(client, 'risu_chat_bookmarks', ['chat_id', 'position', 'message_id', 'name'], ['text', 'integer', 'text', 'text'], chatRows('bookmarks'));
-            await bulkInsert(client, 'risu_chat_memory', ['chat_id', 'memory_type', 'payload'], ['text', 'text', 'jsonb'], chatRows('memory'));
-            await bulkInsert(client, 'risu_chat_lore_entries', ['chat_id', 'position', 'lore_id', 'primary_key', 'secondary_key', 'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], ['text', 'integer', 'text', 'text', 'text', 'integer', 'text', 'text', 'text', 'boolean', 'boolean', 'boolean', 'double precision', 'boolean', 'integer', 'text', 'jsonb'], chatRows('lore'));
+            await bulkInsert(client, 'chat.attributes', ['chat_id', 'key', 'value'], ['text', 'text', 'jsonb'], splitChats.flatMap((item) => item.attributes.map((row) => ({ ...row, chat_id: item.core.id }))));
+            await bulkInsert(client, 'chat.suggestions', ['chat_id', 'position', 'content'], ['text', 'integer', 'text'], chatRows('suggestions'));
+            await bulkInsert(client, 'chat.modules', ['chat_id', 'position', 'module_id'], ['text', 'integer', 'text'], chatRows('modules'));
+            await bulkInsert(client, 'chat.script_state', ['chat_id', 'key', 'value_type', 'text_value', 'number_value', 'boolean_value'], ['text', 'text', 'text', 'text', 'double precision', 'boolean'], chatRows('scriptState'));
+            await bulkInsert(client, 'chat.bookmarks', ['chat_id', 'position', 'message_id', 'name'], ['text', 'integer', 'text', 'text'], chatRows('bookmarks'));
+            await bulkInsert(client, 'chat.memory', ['chat_id', 'memory_type', 'payload'], ['text', 'text', 'jsonb'], chatRows('memory'));
+            await bulkInsert(client, 'chat.lore_entries', ['chat_id', 'position', 'lore_id', 'primary_key', 'secondary_key', 'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], ['text', 'integer', 'text', 'text', 'text', 'integer', 'text', 'text', 'text', 'boolean', 'boolean', 'boolean', 'double precision', 'boolean', 'integer', 'text', 'jsonb'], chatRows('lore'));
 
             const splitMessages = payload.messages.map(splitMessage);
             const messageColumns = ['chat_id', 'id', 'position', 'role', 'content_text', 'content_binary', 'saying_character_id', 'sent_time', 'sender_name', 'other_user', 'disabled_scope', 'is_comment'];
-            await bulkInsert(client, 'risu_messages', messageColumns,
+            await bulkInsert(client, 'chat.messages', messageColumns,
                 ['text', 'text', 'integer', 'text', 'text', 'bytea', 'text', 'bigint', 'text', 'boolean', 'text', 'boolean'],
                 splitMessages.map((item) => item.core),
                 `ON CONFLICT (chat_id, id) DO UPDATE SET ${messageColumns.slice(2).map((column) =>
-                    `${assertSqlIdentifier(column)} = EXCLUDED.${assertSqlIdentifier(column)}`).join(', ')}, updated_at = NOW()`);
+                    `"${column}" = EXCLUDED."${column}"`).join(', ')}, updated_at = NOW()`);
             await deleteMessageChildren(client, payload.messages);
-            await bulkInsert(client, 'risu_message_attributes', ['chat_id', 'message_id', 'key', 'value'], ['text', 'text', 'text', 'jsonb'], splitMessages.flatMap((item) => item.attributes.map((row) => ({ ...row, chat_id: item.core.chat_id, message_id: item.core.id }))));
-            await bulkInsert(client, 'risu_message_generation', ['chat_id', 'message_id', 'model', 'generation_id', 'input_tokens', 'output_tokens', 'max_context', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time'], ['text', 'text', 'text', 'text', 'integer', 'integer', 'integer', 'double precision', 'double precision', 'double precision', 'double precision'], splitMessages.flatMap((item) => item.generation ? [item.generation] : []));
-            await bulkInsert(client, 'risu_message_prompt_info', ['chat_id', 'message_id', 'prompt_name'], ['text', 'text', 'text'], splitMessages.flatMap((item) => item.prompt ? [item.prompt.info] : []));
-            await bulkInsert(client, 'risu_message_prompt_toggles', ['chat_id', 'message_id', 'position', 'toggle_key', 'toggle_value'], ['text', 'text', 'integer', 'text', 'text'], splitMessages.flatMap((item) => item.prompt?.toggles || []));
-            await bulkInsert(client, 'risu_message_prompt_items', ['chat_id', 'message_id', 'position', 'payload'], ['text', 'text', 'integer', 'jsonb'], splitMessages.flatMap((item) => item.prompt?.items || []));
+            await bulkInsert(client, 'chat.message_attributes', ['chat_id', 'message_id', 'key', 'value'], ['text', 'text', 'text', 'jsonb'], splitMessages.flatMap((item) => item.attributes.map((row) => ({ ...row, chat_id: item.core.chat_id, message_id: item.core.id }))));
+            await bulkInsert(client, 'chat.message_generation', ['chat_id', 'message_id', 'model', 'generation_id', 'input_tokens', 'output_tokens', 'max_context', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time'], ['text', 'text', 'text', 'text', 'integer', 'integer', 'integer', 'double precision', 'double precision', 'double precision', 'double precision'], splitMessages.flatMap((item) => item.generation ? [item.generation] : []));
+            await bulkInsert(client, 'chat.message_prompt_info', ['chat_id', 'message_id', 'prompt_name'], ['text', 'text', 'text'], splitMessages.flatMap((item) => item.prompt ? [item.prompt.info] : []));
+            await bulkInsert(client, 'chat.message_prompt_toggles', ['chat_id', 'message_id', 'position', 'toggle_key', 'toggle_value'], ['text', 'text', 'integer', 'text', 'text'], splitMessages.flatMap((item) => item.prompt?.toggles || []));
+            await bulkInsert(client, 'chat.message_prompt_items', ['chat_id', 'message_id', 'position', 'payload'], ['text', 'text', 'integer', 'jsonb'], splitMessages.flatMap((item) => item.prompt?.items || []));
 
             if (payload.characterIds !== undefined) {
                 await client.query(
-                    'DELETE FROM risu_characters WHERE NOT (id = ANY($1::text[]))',
+                    'DELETE FROM character.characters WHERE NOT (id = ANY($1::text[]))',
                     [payload.characterIds]
                 );
             }
             for (const manifest of payload.chatManifests) {
                 await client.query(
-                    `DELETE FROM risu_chats
+                    `DELETE FROM chat.chats
                      WHERE character_id = $1 AND NOT (id = ANY($2::text[]))`,
                     [manifest.characterId, manifest.ids]
                 );
             }
             for (const manifest of payload.messageManifests) {
                 await client.query(
-                    `DELETE FROM risu_messages
+                    `DELETE FROM chat.messages
                      WHERE chat_id = $1 AND NOT (id = ANY($2::text[]))`,
                     [manifest.chatId, manifest.ids]
                 );
             }
 
             await client.query(
-                `UPDATE risu_storage_meta
+                `UPDATE system.storage_meta
                  SET revision = $1, initialized = TRUE, updated_at = NOW()
                  WHERE singleton = TRUE`,
                 [nextRevision]
@@ -1534,11 +1558,11 @@ class PostgresStorage {
                  m.sender_name,
                  ts_headline('simple', m.content_text, websearch_to_tsquery('simple', $1),
                      'StartSel=<mark>, StopSel=</mark>, MaxWords=40, MinWords=12') AS snippet
-             FROM risu_all_messages AS m
-             LEFT JOIN risu_chats AS ch
+             FROM chat.all_messages AS m
+             LEFT JOIN chat.chats AS ch
                  ON m.storage_state = 'active' AND ch.id = m.chat_id
-             LEFT JOIN risu_characters AS c ON c.id = ch.character_id
-             LEFT JOIN risu_cold_archives AS a
+             LEFT JOIN character.characters AS c ON c.id = ch.character_id
+             LEFT JOIN cold.archives AS a
                  ON m.storage_state = 'cold' AND a.id = m.archive_id
              WHERE m.content_text IS NOT NULL
                AND to_tsvector('simple', m.content_text) @@ websearch_to_tsquery('simple', $1)
@@ -1572,9 +1596,9 @@ class PostgresStorage {
                     COALESCE(SUM(input_tokens), 0)::bigint AS total_input_tokens,
                     COALESCE(SUM(output_tokens), 0)::bigint AS total_output_tokens
              FROM (
-                 SELECT model, input_tokens, output_tokens FROM risu_message_generation
+                 SELECT model, input_tokens, output_tokens FROM chat.message_generation
                  UNION ALL
-                 SELECT model, input_tokens, output_tokens FROM risu_cold_message_generation
+                 SELECT model, input_tokens, output_tokens FROM cold.message_generation
              ) AS generation
              WHERE model IS NOT NULL
              GROUP BY model
@@ -1601,8 +1625,8 @@ class PostgresStorage {
         const limit = Number.isSafeInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 500) : 100;
         const result = await this.pool.query(
             `SELECT c.id, c.name, c.image, c.kind
-             FROM risu_character_tags AS t
-             JOIN risu_characters AS c ON c.id = t.character_id
+             FROM character.tags AS t
+             JOIN character.characters AS c ON c.id = t.character_id
              WHERE t.tag ILIKE '%' || $1 || '%'
              ORDER BY c.name
              LIMIT $2`,
@@ -1629,7 +1653,7 @@ class PostgresStorage {
         const limit = Number.isSafeInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 500) : 100;
         const result = await this.pool.query(
             `SELECT id, name, image, kind
-             FROM risu_characters
+             FROM character.characters
              WHERE LOWER(name) LIKE '%' || LOWER($1) || '%'
              ORDER BY name
              LIMIT $2`,
@@ -1646,16 +1670,16 @@ class PostgresStorage {
     async listDbExplorerTables() {
         this.assertEnabled();
         const result = await this.pool.query(
-            `SELECT table_name
+            `SELECT (table_schema || '.' || table_name) AS table_name
              FROM information_schema.tables
-             WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-             ORDER BY table_name`
+             WHERE table_schema IN ('system', 'character', 'chat', 'cold') AND table_type = 'BASE TABLE'
+             ORDER BY table_schema, table_name`
         );
         const tables = result.rows.map((row) => assertDbExplorerIdentifier(row.table_name, 'table name'));
         const counts = new Map();
         for (let i = 0; i < tables.length; i += 25) {
             const union = tables.slice(i, i + 25).map(
-                (name) => `SELECT '${name}' AS table_name, COUNT(*)::text AS row_count FROM "${name}"`
+                (name) => `SELECT '${name}' AS table_name, COUNT(*)::text AS row_count FROM ${assertSqlIdentifier(name)}`
             ).join(' UNION ALL ');
             const countResult = await this.pool.query(union);
             for (const row of countResult.rows) {
@@ -1670,12 +1694,16 @@ class PostgresStorage {
 
     async getDbExplorerTableColumns(table) {
         this.assertEnabled();
-        assertDbExplorerIdentifier(table, 'table name');
+        const validated = assertDbExplorerIdentifier(table, 'table name');
+        const parts = validated.split('.');
+        const schemaName = parts.length === 2 ? parts[0] : 'public';
+        const tableName = parts.length === 2 ? parts[1] : parts[0];
+
         const exists = await this.pool.query(
             `SELECT 1
              FROM information_schema.tables
-             WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name = $1`,
-            [table]
+             WHERE table_schema = $1 AND table_type = 'BASE TABLE' AND table_name = $2`,
+            [schemaName, tableName]
         );
         if (exists.rows.length === 0) {
             throw new PostgresPayloadError('table was not found');
@@ -1683,17 +1711,19 @@ class PostgresStorage {
         const columns = await this.pool.query(
             `SELECT column_name, data_type, is_nullable
              FROM information_schema.columns
-             WHERE table_schema = 'public' AND table_name = $1
+             WHERE table_schema = $1 AND table_name = $2
              ORDER BY ordinal_position`,
-            [table]
+            [schemaName, tableName]
         );
         const primaryKeyResult = await this.pool.query(
             `SELECT a.attname AS column_name
              FROM pg_index AS i
+             JOIN pg_class AS c ON c.oid = i.indrelid
+             JOIN pg_namespace AS n ON n.oid = c.relnamespace
              JOIN pg_attribute AS a
-                 ON a.attrelid = i.indrelid AND a.attnum = ANY (i.indkey)
-             WHERE i.indrelid = $1::regclass AND i.indisprimary`,
-            [table]
+                 ON a.attrelid = c.oid AND a.attnum = ANY (i.indkey)
+             WHERE n.nspname = $1 AND c.relname = $2 AND i.indisprimary`,
+            [schemaName, tableName]
         );
         const primaryKeys = new Set(primaryKeyResult.rows.map((row) => row.column_name));
         return columns.rows.map((row) => ({
@@ -1706,7 +1736,8 @@ class PostgresStorage {
 
     async getDbExplorerTableRows(table, rawOffset = 0, rawLimit = 50, rawSortColumn = null, rawSortOrder = 'asc', rawSearch = '', rawColumns = null) {
         this.assertEnabled();
-        assertDbExplorerIdentifier(table, 'table name');
+        const validated = assertDbExplorerIdentifier(table, 'table name');
+        const quotedTable = assertSqlIdentifier(validated);
         const columns = await this.getDbExplorerTableColumns(table);
         if (columns.length === 0) {
             throw new PostgresPayloadError('table has no columns');
@@ -1719,13 +1750,13 @@ class PostgresStorage {
             }
             const visibleNames = [];
             for (const name of rawColumns) {
-                const validated = assertDbExplorerIdentifier(name, 'column name');
-                const match = columns.find((column) => column.name === validated);
+                const validatedCol = assertDbExplorerIdentifier(name, 'column name');
+                const match = columns.find((column) => column.name === validatedCol);
                 if (!match) {
                     throw new PostgresPayloadError('column was not found in the table');
                 }
-                if (!visibleNames.includes(validated)) {
-                    visibleNames.push(validated);
+                if (!visibleNames.includes(validatedCol)) {
+                    visibleNames.push(validatedCol);
                 }
             }
             visibleColumns = columns.filter((column) => visibleNames.includes(column.name));
@@ -1764,13 +1795,13 @@ class PostgresStorage {
         const rowParams = [...searchTerms, limit, offset];
         const rows = await this.pool.query(
             `SELECT ${selectList}
-             FROM "${table}"${whereClause}
+             FROM ${quotedTable}${whereClause}
              ORDER BY "${sortColumn}" ${sortOrder} NULLS LAST
              LIMIT $${rowParams.length - 1} OFFSET $${rowParams.length}`,
             rowParams
         );
         const count = await this.pool.query(
-            `SELECT COUNT(*)::text AS total FROM "${table}"${whereClause}`,
+            `SELECT COUNT(*)::text AS total FROM ${quotedTable}${whereClause}`,
             searchTerms
         );
         return {

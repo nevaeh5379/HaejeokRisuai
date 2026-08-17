@@ -66,7 +66,7 @@ describe('PostgreSQL sync payload validation', () => {
         expect(() => validateSyncPayload({
             baseRevision: 0,
             characters: [{ id: '', position: 0, data: {} }],
-        })).toThrow('characters[].id')
+        })).toThrow(/characters.*\.id/)
     })
 
     it('normalizes and deduplicates PostgreSQL cold storage UUIDs', () => {

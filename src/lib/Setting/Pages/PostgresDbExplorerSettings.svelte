@@ -4,12 +4,16 @@
         ArrowDownIcon,
         ArrowUpIcon,
         CheckIcon,
+        ChevronDownIcon,
         ChevronLeftIcon,
+        ChevronRightIcon,
         Columns3Icon,
         CopyIcon,
         EyeIcon,
         EyeOffIcon,
         FileTextIcon,
+        FolderIcon,
+        FolderOpenIcon,
         LayoutGridIcon,
         RefreshCwIcon,
         SearchIcon,
@@ -44,11 +48,18 @@
         tableName?: string
     }
 
+    interface ParsedTableInfo extends NodePostgresTableInfo {
+        schema: string
+        shortName: string
+    }
+
     let { close = () => {} }: Props = $props()
 
     let configEnabled = $state<boolean|null>(null)
     let tables = $state<NodePostgresTableInfo[]>([])
     let tableFilter = $state('')
+    let selectedSchema = $state<string>('all')
+    let collapsedSchemas = $state<Record<string, boolean>>({})
     let selectedTable = $state('')
     let tableData = $state<NodePostgresTableData|null>(null)
     let sortColumn = $state('')
@@ -81,9 +92,85 @@
     let toastMessage = $state('')
     let toastTimer: ReturnType<typeof setTimeout>|null = null
 
-    const filteredTables = $derived(
-        tables.filter((table) => table.name.toLowerCase().includes(tableFilter.toLowerCase()))
+    const SCHEMA_ORDER = ['system', 'character', 'chat', 'cold']
+
+    const parsedTables = $derived<ParsedTableInfo[]>(
+        tables.map((table) => {
+            const dotIndex = table.name.indexOf('.')
+            if (dotIndex !== -1) {
+                return {
+                    ...table,
+                    schema: table.name.slice(0, dotIndex),
+                    shortName: table.name.slice(dotIndex + 1),
+                }
+            }
+            return {
+                ...table,
+                schema: 'public',
+                shortName: table.name,
+            }
+        })
     )
+
+    const availableSchemas = $derived.by(() => {
+        const set = new Set(parsedTables.map((t) => t.schema))
+        const ordered: string[] = []
+        for (const s of SCHEMA_ORDER) {
+            if (set.has(s)) {
+                ordered.push(s)
+                set.delete(s)
+            }
+        }
+        const remaining = Array.from(set).sort()
+        return [...ordered, ...remaining]
+    })
+
+    const schemaStats = $derived.by(() => {
+        const stats: Record<string, { count: number; rowCount: number }> = {}
+        for (const t of parsedTables) {
+            if (!stats[t.schema]) {
+                stats[t.schema] = { count: 0, rowCount: 0 }
+            }
+            stats[t.schema].count++
+            stats[t.schema].rowCount += t.rowCount
+        }
+        return stats
+    })
+
+    const filteredTables = $derived<ParsedTableInfo[]>(
+        parsedTables.filter((table) => {
+            if (selectedSchema !== 'all' && table.schema !== selectedSchema) {
+                return false
+            }
+            if (!tableFilter) {
+                return true
+            }
+            const query = tableFilter.toLowerCase()
+            return table.name.toLowerCase().includes(query) || table.shortName.toLowerCase().includes(query)
+        })
+    )
+
+    const groupedTables = $derived.by(() => {
+        const groups: { schema: string; tables: ParsedTableInfo[] }[] = []
+        const schemaMap = new Map<string, ParsedTableInfo[]>()
+        for (const t of filteredTables) {
+            const list = schemaMap.get(t.schema) || []
+            list.push(t)
+            schemaMap.set(t.schema, list)
+        }
+        const schemasToIterate = selectedSchema === 'all' ? availableSchemas : [selectedSchema]
+        for (const s of schemasToIterate) {
+            const tbls = schemaMap.get(s)
+            if (tbls && tbls.length > 0) {
+                groups.push({ schema: s, tables: tbls })
+            }
+        }
+        return groups
+    })
+
+    function toggleSchemaCollapse(schema: string) {
+        collapsedSchemas[schema] = !collapsedSchemas[schema]
+    }
     const allColumns = $derived<NodePostgresColumnInfo[]>(
         tableData ? (tableData.allColumns ?? tableData.columns) : []
     )
@@ -510,6 +597,29 @@
                 <div class="grid flex-1 min-h-0 gap-2 sm:gap-3 md:grid-cols-[minmax(14rem,1fr)_2.5fr]">
                     <!-- Left Column / Mobile Table List View -->
                     <div class="flex min-h-0 flex-col rounded-lg border border-darkborderc bg-darkbg/40 {mobileView === 'data' ? 'hidden md:flex' : 'flex'}">
+                        <!-- Schema Filter Tabs -->
+                        {#if availableSchemas.length > 1}
+                            <div class="flex items-center gap-1 border-b border-darkborderc p-1.5 overflow-x-auto no-scrollbar shrink-0">
+                                <button
+                                    class="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs whitespace-nowrap transition-colors {selectedSchema === 'all' ? 'bg-selected text-textcolor font-medium shadow-xs' : 'text-textcolor2 hover:bg-darkbutton hover:text-textcolor'}"
+                                    onclick={() => selectedSchema = 'all'}
+                                >
+                                    <span>{language.postgresDbExplorerAllSchemas ?? 'All'}</span>
+                                    <span class="rounded-full bg-darkbutton/80 px-1.5 py-0.2 text-[10px] opacity-80">{parsedTables.length}</span>
+                                </button>
+                                {#each availableSchemas as schema (schema)}
+                                    {@const stats = schemaStats[schema]}
+                                    <button
+                                        class="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs whitespace-nowrap font-mono transition-colors {selectedSchema === schema ? 'bg-selected text-textcolor font-medium shadow-xs' : 'text-textcolor2 hover:bg-darkbutton hover:text-textcolor'}"
+                                        onclick={() => selectedSchema = schema}
+                                    >
+                                        <span>{schema}</span>
+                                        <span class="rounded-full bg-darkbutton/80 px-1.5 py-0.2 text-[10px] opacity-80 font-sans">{stats?.count ?? 0}</span>
+                                    </button>
+                                {/each}
+                            </div>
+                        {/if}
+
                         <div class="border-b border-darkborderc p-2 shrink-0">
                             <TextInput
                                 bind:value={tableFilter}
@@ -518,29 +628,97 @@
                                 placeholder={language.postgresDbExplorerFilterTables}
                             />
                         </div>
+
                         <div class="flex-1 overflow-y-auto p-1 divide-y divide-darkborderc/30">
-                            {#each filteredTables as table (table.name)}
-                                <button
-                                    class="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors {selectedTable === table.name ? 'bg-selected text-textcolor' : 'text-textcolor2 hover:bg-darkbutton'}"
-                                    onclick={() => selectTable(table.name)}
-                                    oncontextmenu={(e) => openTableContextMenu(e, table.name)}
-                                >
-                                    <span class="truncate font-mono text-xs sm:text-sm" title={table.name}>{table.name}</span>
-                                    <span class="shrink-0 rounded-full bg-darkbutton/60 px-2 py-0.5 font-mono text-[11px] opacity-80">{table.rowCount.toLocaleString()}</span>
-                                </button>
+                            {#if selectedSchema === 'all'}
+                                {#each groupedTables as group (group.schema)}
+                                    {@const isCollapsed = collapsedSchemas[group.schema]}
+                                    <div class="py-1">
+                                        <!-- Schema Group Header -->
+                                        <button
+                                            class="flex w-full items-center justify-between gap-1.5 rounded-md px-2 py-1.5 text-left text-xs font-semibold text-textcolor2 hover:bg-darkbutton hover:text-textcolor transition-colors"
+                                            onclick={() => toggleSchemaCollapse(group.schema)}
+                                        >
+                                            <div class="flex items-center gap-1.5 min-w-0">
+                                                {#if isCollapsed}
+                                                    <ChevronRightIcon size={14} class="shrink-0 text-textcolor2" />
+                                                    <FolderIcon size={14} class="shrink-0 text-textcolor2" />
+                                                {:else}
+                                                    <ChevronDownIcon size={14} class="shrink-0 text-textcolor2" />
+                                                    <FolderOpenIcon size={14} class="shrink-0 text-textcolor2" />
+                                                {/if}
+                                                <span class="font-mono text-xs text-textcolor uppercase tracking-wider">{group.schema}</span>
+                                            </div>
+                                            <span class="shrink-0 rounded-full bg-darkbutton/80 px-1.5 py-0.5 font-mono text-[10px] text-textcolor2">
+                                                {group.tables.length}
+                                            </span>
+                                        </button>
+
+                                        {#if !isCollapsed}
+                                            <div class="mt-0.5 space-y-0.5 pl-2">
+                                                {#each group.tables as table (table.name)}
+                                                    <button
+                                                        class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs sm:text-sm transition-colors {selectedTable === table.name ? 'bg-selected text-textcolor' : 'text-textcolor2 hover:bg-darkbutton'}"
+                                                        onclick={() => selectTable(table.name)}
+                                                        oncontextmenu={(e) => openTableContextMenu(e, table.name)}
+                                                    >
+                                                        <div class="flex items-center gap-1.5 min-w-0">
+                                                            <TableIcon size={13} class="shrink-0 opacity-60" />
+                                                            <span class="truncate font-mono text-xs sm:text-sm" title={table.name}>{table.shortName}</span>
+                                                        </div>
+                                                        <span class="shrink-0 rounded-full bg-darkbutton/60 px-1.5 py-0.5 font-mono text-[10px] sm:text-[11px] opacity-80">
+                                                            {table.rowCount.toLocaleString()}
+                                                        </span>
+                                                    </button>
+                                                {/each}
+                                            </div>
+                                        {/if}
+                                    </div>
+                                {:else}
+                                    <p class="p-4 text-center text-xs text-textcolor2">{language.postgresDbExplorerNoTables}</p>
+                                {/each}
                             {:else}
-                                <p class="p-4 text-center text-xs text-textcolor2">{language.postgresDbExplorerNoTables}</p>
-                            {/each}
+                                <!-- Single Schema View -->
+                                <div class="space-y-0.5 p-0.5">
+                                    {#each filteredTables as table (table.name)}
+                                        <button
+                                            class="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors {selectedTable === table.name ? 'bg-selected text-textcolor' : 'text-textcolor2 hover:bg-darkbutton'}"
+                                            onclick={() => selectTable(table.name)}
+                                            oncontextmenu={(e) => openTableContextMenu(e, table.name)}
+                                        >
+                                            <div class="flex items-center gap-1.5 min-w-0">
+                                                <TableIcon size={14} class="shrink-0 opacity-60" />
+                                                <span class="truncate font-mono text-xs sm:text-sm" title={table.name}>{table.shortName}</span>
+                                            </div>
+                                            <span class="shrink-0 rounded-full bg-darkbutton/60 px-2 py-0.5 font-mono text-[11px] opacity-80">
+                                                {table.rowCount.toLocaleString()}
+                                            </span>
+                                        </button>
+                                    {:else}
+                                        <p class="p-4 text-center text-xs text-textcolor2">{language.postgresDbExplorerNoTables}</p>
+                                    {/each}
+                                </div>
+                            {/if}
                         </div>
                     </div>
 
                     <!-- Right Column / Mobile Data View -->
                     <div class="flex min-h-0 flex-col rounded-lg border border-darkborderc bg-darkbg/40 {mobileView === 'tables' ? 'hidden md:flex' : 'flex'}">
                         {#if tableData}
+                            {@const dotIdx = tableData.table.indexOf('.')}
                             <!-- Table Toolbar -->
                             <div class="flex flex-wrap items-center gap-2 border-b border-darkborderc p-2 shrink-0">
-                                <div class="flex items-center gap-2 min-w-0">
-                                    <span class="font-mono text-xs sm:text-sm font-semibold truncate" title={tableData.table}>{tableData.table}</span>
+                                <div class="flex items-center gap-1.5 min-w-0">
+                                    {#if dotIdx !== -1}
+                                        <span class="font-mono text-xs px-1.5 py-0.5 rounded-md bg-darkbutton text-textcolor2 font-medium shrink-0">
+                                            {tableData.table.slice(0, dotIdx)}
+                                        </span>
+                                        <span class="font-mono text-xs sm:text-sm font-semibold truncate" title={tableData.table}>
+                                            {tableData.table.slice(dotIdx + 1)}
+                                        </span>
+                                    {:else}
+                                        <span class="font-mono text-xs sm:text-sm font-semibold truncate" title={tableData.table}>{tableData.table}</span>
+                                    {/if}
                                     <span class="text-[11px] sm:text-xs text-textcolor2 shrink-0">
                                         {tableData.total.toLocaleString()} {language.postgresDbExplorerRows}
                                         {#if activeSearch}

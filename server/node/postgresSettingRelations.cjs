@@ -2,7 +2,7 @@ const { canUsePostgresText } = require('./postgresSettingsCodec.cjs');
 
 const DEFINITIONS = [
     {
-        table: 'risu_bot_presets',
+        table: 'system.bot_presets',
         columns: [
             'setting_key', 'position', 'name', 'api_type', 'ai_model', 'sub_model', 'main_prompt',
             'jailbreak', 'global_note', 'temperature', 'max_context', 'max_response',
@@ -16,7 +16,7 @@ const DEFINITIONS = [
         ],
     },
     {
-        table: 'risu_personas',
+        table: 'system.personas',
         columns: [
             'setting_key', 'position', 'persona_id', 'name', 'prompt', 'icon', 'large_portrait',
             'note', 'embedded_module_id',
@@ -24,7 +24,7 @@ const DEFINITIONS = [
         types: ['text', 'integer', 'text', 'text', 'text', 'text', 'boolean', 'text', 'text'],
     },
     {
-        table: 'risu_modules',
+        table: 'system.modules',
         columns: [
             'setting_key', 'position', 'module_id', 'name', 'description', 'cjs',
             'low_level_access', 'hide_icon', 'background_embedding', 'namespace',
@@ -36,7 +36,7 @@ const DEFINITIONS = [
         ],
     },
     {
-        table: 'risu_plugins',
+        table: 'system.plugins',
         columns: [
             'setting_key', 'position', 'name', 'display_name', 'script', 'api_version',
             'plugin_version', 'update_url', 'enabled',
@@ -44,12 +44,12 @@ const DEFINITIONS = [
         types: ['text', 'integer', 'text', 'text', 'text', 'text', 'text', 'text', 'boolean'],
     },
     {
-        table: 'risu_global_lorebooks',
+        table: 'system.global_lorebooks',
         columns: ['setting_key', 'position', 'name'],
         types: ['text', 'integer', 'text'],
     },
     {
-        table: 'risu_global_lore_entries',
+        table: 'system.global_lore_entries',
         columns: [
             'setting_key', 'book_position', 'position', 'lore_id', 'primary_key', 'secondary_key',
             'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective',
@@ -63,22 +63,22 @@ const DEFINITIONS = [
         ],
     },
     {
-        table: 'risu_global_lore_cache_items',
+        table: 'system.global_lore_cache_items',
         columns: ['setting_key', 'book_position', 'lore_position', 'position', 'value'],
         types: ['text', 'integer', 'integer', 'integer', 'text'],
     },
     {
-        table: 'risu_translator_presets',
+        table: 'system.translator_presets',
         columns: ['setting_key', 'position', 'name', 'prompt', 'max_response'],
         types: ['text', 'integer', 'text', 'text', 'integer'],
     },
     {
-        table: 'risu_hotkeys',
+        table: 'system.hotkeys',
         columns: ['setting_key', 'position', 'key', 'control', 'shift', 'alt', 'action'],
         types: ['text', 'integer', 'text', 'boolean', 'boolean', 'boolean', 'text'],
     },
     {
-        table: 'risu_custom_models',
+        table: 'system.custom_models',
         columns: [
             'setting_key', 'position', 'id', 'internal_id', 'url', 'format', 'tokenizer',
             'api_key', 'name', 'params',
@@ -86,12 +86,12 @@ const DEFINITIONS = [
         types: ['text', 'integer', 'text', 'text', 'text', 'integer', 'integer', 'text', 'text', 'text'],
     },
     {
-        table: 'risu_custom_model_flags',
+        table: 'system.custom_model_flags',
         columns: ['setting_key', 'model_position', 'position', 'flag'],
         types: ['text', 'integer', 'integer', 'integer'],
     },
     {
-        table: 'risu_loadouts',
+        table: 'system.loadouts',
         columns: [
             'setting_key', 'position', 'id', 'name', 'last_used', 'favorite', 'preset_name',
             'persona_id', 'icons_present',
@@ -99,62 +99,62 @@ const DEFINITIONS = [
         types: ['text', 'integer', 'text', 'text', 'bigint', 'boolean', 'text', 'text', 'boolean'],
     },
     {
-        table: 'risu_loadout_character_refs',
+        table: 'system.loadout_character_refs',
         columns: ['setting_key', 'loadout_position', 'position', 'character_id'],
         types: ['text', 'integer', 'integer', 'text'],
     },
     {
-        table: 'risu_loadout_module_refs',
+        table: 'system.loadout_module_refs',
         columns: ['setting_key', 'loadout_position', 'position', 'module_id'],
         types: ['text', 'integer', 'integer', 'text'],
     },
     {
-        table: 'risu_loadout_variables',
+        table: 'system.loadout_variables',
         columns: ['setting_key', 'loadout_position', 'key', 'value'],
         types: ['text', 'integer', 'text', 'text'],
     },
     {
-        table: 'risu_loadout_icons',
+        table: 'system.loadout_icons',
         columns: ['setting_key', 'loadout_position', 'position', 'asset_id'],
         types: ['text', 'integer', 'integer', 'text'],
     },
     {
-        table: 'risu_custom_sidebar_items',
+        table: 'system.custom_sidebar_items',
         columns: ['setting_key', 'position', 'id', 'item_type', 'subtype', 'label'],
         types: ['text', 'integer', 'text', 'text', 'text', 'text'],
     },
     {
-        table: 'risu_ordered_text_settings',
+        table: 'system.ordered_text_settings',
         columns: ['setting_key', 'position', 'value'],
         types: ['text', 'integer', 'text'],
     },
     {
-        table: 'risu_ordered_number_settings',
+        table: 'system.ordered_number_settings',
         columns: ['setting_key', 'position', 'value'],
         types: ['text', 'integer', 'double precision'],
     },
     {
-        table: 'risu_string_map_settings',
+        table: 'system.string_map_settings',
         columns: ['setting_key', 'key', 'value'],
         types: ['text', 'text', 'text'],
     },
     {
-        table: 'risu_bias_entries',
+        table: 'system.bias_entries',
         columns: ['setting_key', 'position', 'phrase', 'bias'],
         types: ['text', 'integer', 'text', 'double precision'],
     },
     {
-        table: 'risu_additional_parameters',
+        table: 'system.additional_parameters',
         columns: ['setting_key', 'position', 'key', 'value'],
         types: ['text', 'integer', 'text', 'text'],
     },
     {
-        table: 'risu_fallback_models',
+        table: 'system.fallback_models',
         columns: ['setting_key', 'category', 'position', 'model'],
         types: ['text', 'text', 'integer', 'text'],
     },
     {
-        table: 'risu_openrouter_provider_rules',
+        table: 'system.openrouter_provider_rules',
         columns: ['setting_key', 'rule_type', 'position', 'provider'],
         types: ['text', 'text', 'integer', 'text'],
     },
@@ -165,30 +165,30 @@ const ORDERED_TEXT_KEYS = new Set([
 ]);
 const STRING_MAP_KEYS = new Set(['globalChatVariables', 'OaiCompAPIKeys', 'seperateModels']);
 const TABLE_SETTING_KEYS = {
-    risu_bot_presets: ['botPresets'],
-    risu_personas: ['personas'],
-    risu_modules: ['modules'],
-    risu_plugins: ['plugins', 'pluginV2'],
-    risu_global_lorebooks: ['loreBook'],
-    risu_global_lore_entries: ['loreBook'],
-    risu_global_lore_cache_items: ['loreBook'],
-    risu_translator_presets: ['translatorPresets'],
-    risu_hotkeys: ['hotkeys'],
-    risu_custom_models: ['customModels'],
-    risu_custom_model_flags: ['customModels'],
-    risu_loadouts: ['loadouts'],
-    risu_loadout_character_refs: ['loadouts'],
-    risu_loadout_module_refs: ['loadouts'],
-    risu_loadout_variables: ['loadouts'],
-    risu_loadout_icons: ['loadouts'],
-    risu_custom_sidebar_items: ['customSidebarItems'],
-    risu_ordered_text_settings: [...ORDERED_TEXT_KEYS],
-    risu_ordered_number_settings: ['customFlags'],
-    risu_string_map_settings: [...STRING_MAP_KEYS],
-    risu_bias_entries: ['bias'],
-    risu_additional_parameters: ['additionalParams'],
-    risu_fallback_models: ['fallbackModels'],
-    risu_openrouter_provider_rules: ['openrouterProvider'],
+    'system.bot_presets': ['botPresets'],
+    'system.personas': ['personas'],
+    'system.modules': ['modules'],
+    'system.plugins': ['plugins', 'pluginV2'],
+    'system.global_lorebooks': ['loreBook'],
+    'system.global_lore_entries': ['loreBook'],
+    'system.global_lore_cache_items': ['loreBook'],
+    'system.translator_presets': ['translatorPresets'],
+    'system.hotkeys': ['hotkeys'],
+    'system.custom_models': ['customModels'],
+    'system.custom_model_flags': ['customModels'],
+    'system.loadouts': ['loadouts'],
+    'system.loadout_character_refs': ['loadouts'],
+    'system.loadout_module_refs': ['loadouts'],
+    'system.loadout_variables': ['loadouts'],
+    'system.loadout_icons': ['loadouts'],
+    'system.custom_sidebar_items': ['customSidebarItems'],
+    'system.ordered_text_settings': [...ORDERED_TEXT_KEYS],
+    'system.ordered_number_settings': ['customFlags'],
+    'system.string_map_settings': [...STRING_MAP_KEYS],
+    'system.bias_entries': ['bias'],
+    'system.additional_parameters': ['additionalParams'],
+    'system.fallback_models': ['fallbackModels'],
+    'system.openrouter_provider_rules': ['openrouterProvider'],
 };
 
 for (const definition of DEFINITIONS) {
@@ -226,7 +226,7 @@ function projectSettings(upserts) {
         if (key === 'botPresets') {
             for (const [position, rawPreset] of array(value).entries()) {
                 const preset = record(rawPreset);
-                rows.risu_bot_presets.push({
+                rows['system.bot_presets'].push({
                     setting_key: key,
                     position,
                     name: text(preset.name),
@@ -253,7 +253,7 @@ function projectSettings(upserts) {
             for (const [position, rawPersona] of array(value).entries()) {
                 const persona = record(rawPersona);
                 const embeddedModule = record(persona.embeddedModule);
-                rows.risu_personas.push({
+                rows['system.personas'].push({
                     setting_key: key, position, persona_id: text(persona.id), name: text(persona.name),
                     prompt: text(persona.personaPrompt), icon: text(persona.icon),
                     large_portrait: boolean(persona.largePortrait), note: text(persona.note),
@@ -266,7 +266,7 @@ function projectSettings(upserts) {
             for (const [position, rawModule] of array(value).entries()) {
                 const module = record(rawModule);
                 const mcp = record(module.mcp);
-                rows.risu_modules.push({
+                rows['system.modules'].push({
                     setting_key: key, position, module_id: text(module.id), name: text(module.name),
                     description: text(module.description), cjs: text(module.cjs),
                     low_level_access: boolean(module.lowLevelAccess), hide_icon: boolean(module.hideIcon),
@@ -280,7 +280,7 @@ function projectSettings(upserts) {
         if (key === 'plugins' || key === 'pluginV2') {
             for (const [position, rawPlugin] of array(value).entries()) {
                 const plugin = record(rawPlugin);
-                rows.risu_plugins.push({
+                rows['system.plugins'].push({
                     setting_key: key, position, name: text(plugin.name),
                     display_name: text(plugin.displayName), script: text(plugin.script),
                     api_version: scalarText(plugin.version), plugin_version: text(plugin.versionOfPlugin),
@@ -292,14 +292,14 @@ function projectSettings(upserts) {
         if (key === 'loreBook') {
             for (const [bookPosition, rawBook] of array(value).entries()) {
                 const book = record(rawBook);
-                rows.risu_global_lorebooks.push({
+                rows['system.global_lorebooks'].push({
                     setting_key: key, position: bookPosition, name: text(book.name),
                 });
                 for (const [lorePosition, rawLore] of array(book.data).entries()) {
                     const lore = record(rawLore);
                     const extensions = record(lore.extentions);
                     const cache = record(lore.loreCache);
-                    rows.risu_global_lore_entries.push({
+                    rows['system.global_lore_entries'].push({
                         setting_key: key,
                         book_position: bookPosition,
                         position: lorePosition,
@@ -322,7 +322,7 @@ function projectSettings(upserts) {
                     for (const [cachePosition, cacheValue] of array(cache.data).entries()) {
                         const projected = text(cacheValue);
                         if (projected === null) continue;
-                        rows.risu_global_lore_cache_items.push({
+                        rows['system.global_lore_cache_items'].push({
                             setting_key: key,
                             book_position: bookPosition,
                             lore_position: lorePosition,
@@ -337,7 +337,7 @@ function projectSettings(upserts) {
         if (key === 'translatorPresets') {
             for (const [position, rawPreset] of array(value).entries()) {
                 const preset = record(rawPreset);
-                rows.risu_translator_presets.push({
+                rows['system.translator_presets'].push({
                     setting_key: key, position, name: text(preset.name), prompt: text(preset.prompt),
                     max_response: number(preset.maxResponse),
                 });
@@ -347,7 +347,7 @@ function projectSettings(upserts) {
         if (key === 'hotkeys') {
             for (const [position, rawHotkey] of array(value).entries()) {
                 const hotkey = record(rawHotkey);
-                rows.risu_hotkeys.push({
+                rows['system.hotkeys'].push({
                     setting_key: key, position, key: text(hotkey.key), control: boolean(hotkey.ctrl),
                     shift: boolean(hotkey.shift), alt: boolean(hotkey.alt), action: text(hotkey.action),
                 });
@@ -357,7 +357,7 @@ function projectSettings(upserts) {
         if (key === 'customModels') {
             for (const [position, rawModel] of array(value).entries()) {
                 const model = record(rawModel);
-                rows.risu_custom_models.push({
+                rows['system.custom_models'].push({
                     setting_key: key, position, id: text(model.id), internal_id: text(model.internalId),
                     url: text(model.url), format: number(model.format), tokenizer: number(model.tokenizer),
                     api_key: text(model.key), name: text(model.name), params: text(model.params),
@@ -365,7 +365,7 @@ function projectSettings(upserts) {
                 for (const [flagPosition, flag] of array(model.flags).entries()) {
                     const projected = number(flag);
                     if (projected === null) continue;
-                    rows.risu_custom_model_flags.push({
+                    rows['system.custom_model_flags'].push({
                         setting_key: key, model_position: position, position: flagPosition, flag: projected,
                     });
                 }
@@ -375,7 +375,7 @@ function projectSettings(upserts) {
         if (key === 'loadouts') {
             for (const [position, rawLoadout] of array(value).entries()) {
                 const loadout = record(rawLoadout);
-                rows.risu_loadouts.push({
+                rows['system.loadouts'].push({
                     setting_key: key, position, id: text(loadout.id), name: text(loadout.name),
                     last_used: number(loadout.lastUsed), favorite: boolean(loadout.favorite),
                     preset_name: text(loadout.presetName), persona_id: text(loadout.personaId),
@@ -383,14 +383,14 @@ function projectSettings(upserts) {
                 });
                 for (const [refPosition, characterId] of array(loadout.characterIds).entries()) {
                     const projected = text(characterId);
-                    if (projected !== null) rows.risu_loadout_character_refs.push({
+                    if (projected !== null) rows['system.loadout_character_refs'].push({
                         setting_key: key, loadout_position: position, position: refPosition,
                         character_id: projected,
                     });
                 }
                 for (const [refPosition, moduleId] of array(loadout.modules).entries()) {
                     const projected = text(moduleId);
-                    if (projected !== null) rows.risu_loadout_module_refs.push({
+                    if (projected !== null) rows['system.loadout_module_refs'].push({
                         setting_key: key, loadout_position: position, position: refPosition,
                         module_id: projected,
                     });
@@ -398,14 +398,14 @@ function projectSettings(upserts) {
                 for (const [variableKey, variableValue] of Object.entries(record(loadout.globalVariables))) {
                     const projectedKey = text(variableKey);
                     const projectedValue = text(variableValue);
-                    if (projectedKey !== null && projectedValue !== null) rows.risu_loadout_variables.push({
+                    if (projectedKey !== null && projectedValue !== null) rows['system.loadout_variables'].push({
                         setting_key: key, loadout_position: position, key: projectedKey,
                         value: projectedValue,
                     });
                 }
                 for (const [iconPosition, assetId] of array(loadout.icons).entries()) {
                     const projected = text(assetId);
-                    if (projected !== null) rows.risu_loadout_icons.push({
+                    if (projected !== null) rows['system.loadout_icons'].push({
                         setting_key: key, loadout_position: position, position: iconPosition,
                         asset_id: projected,
                     });
@@ -416,7 +416,7 @@ function projectSettings(upserts) {
         if (key === 'customSidebarItems') {
             for (const [position, rawItem] of array(value).entries()) {
                 const item = record(rawItem);
-                rows.risu_custom_sidebar_items.push({
+                rows['system.custom_sidebar_items'].push({
                     setting_key: key, position, id: text(item.id), item_type: text(item.type),
                     subtype: text(item.subType), label: text(item.label),
                 });
@@ -426,7 +426,7 @@ function projectSettings(upserts) {
         if (ORDERED_TEXT_KEYS.has(key)) {
             for (const [position, item] of array(value).entries()) {
                 const projected = text(item);
-                if (projected !== null) rows.risu_ordered_text_settings.push({
+                if (projected !== null) rows['system.ordered_text_settings'].push({
                     setting_key: key, position, value: projected,
                 });
             }
@@ -435,7 +435,7 @@ function projectSettings(upserts) {
         if (key === 'customFlags') {
             for (const [position, item] of array(value).entries()) {
                 const projected = number(item);
-                if (projected !== null) rows.risu_ordered_number_settings.push({
+                if (projected !== null) rows['system.ordered_number_settings'].push({
                     setting_key: key, position, value: projected,
                 });
             }
@@ -445,7 +445,7 @@ function projectSettings(upserts) {
             for (const [mapKey, mapValue] of Object.entries(record(value))) {
                 const projectedKey = text(mapKey);
                 const projectedValue = text(mapValue);
-                if (projectedKey !== null && projectedValue !== null) rows.risu_string_map_settings.push({
+                if (projectedKey !== null && projectedValue !== null) rows['system.string_map_settings'].push({
                     setting_key: key, key: projectedKey, value: projectedValue,
                 });
             }
@@ -455,7 +455,7 @@ function projectSettings(upserts) {
             for (const [position, item] of array(value).entries()) {
                 const phrase = text(array(item)[0]);
                 const bias = number(array(item)[1]);
-                if (phrase !== null && bias !== null) rows.risu_bias_entries.push({
+                if (phrase !== null && bias !== null) rows['system.bias_entries'].push({
                     setting_key: key, position, phrase, bias,
                 });
             }
@@ -465,7 +465,7 @@ function projectSettings(upserts) {
             for (const [position, item] of array(value).entries()) {
                 const parameterKey = text(array(item)[0]);
                 const parameterValue = text(array(item)[1]);
-                if (parameterKey !== null && parameterValue !== null) rows.risu_additional_parameters.push({
+                if (parameterKey !== null && parameterValue !== null) rows['system.additional_parameters'].push({
                     setting_key: key, position, key: parameterKey, value: parameterValue,
                 });
             }
@@ -477,7 +477,7 @@ function projectSettings(upserts) {
                 if (projectedCategory === null) continue;
                 for (const [position, model] of array(models).entries()) {
                     const projectedModel = text(model);
-                    if (projectedModel !== null) rows.risu_fallback_models.push({
+                    if (projectedModel !== null) rows['system.fallback_models'].push({
                         setting_key: key, category: projectedCategory, position, model: projectedModel,
                     });
                 }
@@ -491,7 +491,7 @@ function projectSettings(upserts) {
                 if (projectedType === null) continue;
                 for (const [position, provider] of array(providers).entries()) {
                     const projectedProvider = text(provider);
-                    if (projectedProvider !== null) rows.risu_openrouter_provider_rules.push({
+                    if (projectedProvider !== null) rows['system.openrouter_provider_rules'].push({
                         setting_key: key, rule_type: projectedType, position,
                         provider: projectedProvider,
                     });

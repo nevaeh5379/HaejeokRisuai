@@ -800,6 +800,8 @@ export const languageEnglish = {
     postgresDbExplorerTableView: "Table view",
     postgresDbExplorerBackToTables: "Tables",
     postgresDbExplorerActions: "Actions",
+    postgresDbExplorerAllSchemas: "All",
+    postgresDbExplorerSchema: "Schema",
     searchByTag: "Search by tag...",
     formatingOrder: "Formatting Order",
     authorNote: "Author's Note",
