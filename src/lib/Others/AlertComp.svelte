@@ -385,7 +385,7 @@
                     {#each DBState.db.characters as char, i}
                         {#if char.type !== 'group'}
                             {#if char.image}
-                                {#await getCharImage(DBState.db.characters[i].image, 'css')}
+                                {#await getCharImage(DBState.db.characters[i].image, 'css', { thumbnail: true })}
                                     <BarIcon onClick={() => {
                                         alertStore.set({type: 'none',msg: char.chaId})
                                     }}>

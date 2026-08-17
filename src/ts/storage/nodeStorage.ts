@@ -64,6 +64,26 @@ export class NodeStorage{
         return this.JSONStringlifyAndbase64Url(header) + "." + this.JSONStringlifyAndbase64Url(payload) + "." + sigString
     }
 
+    private cachedAuthToken: string = ''
+    private cachedAuthTokenExpiresAt: number = 0
+
+    async getCachedAuth(): Promise<string> {
+        const now = Math.floor(Date.now() / 1000)
+        if (!this.cachedAuthToken || this.cachedAuthTokenExpiresAt - now < 60) {
+            await this.checkAuth()
+            this.cachedAuthToken = await this.createAuth()
+            this.cachedAuthTokenExpiresAt = now + 4 * 60
+        }
+        return this.cachedAuthToken
+    }
+
+    async getDirectUrl(key: string, options?: { thumbnail?: boolean }): Promise<string> {
+        const auth = await this.getCachedAuth()
+        const hex = Buffer.from(key, 'utf-8').toString('hex')
+        const thumbParam = options?.thumbnail ? '&thumb=1' : ''
+        return `/api/read?path=${hex}${thumbParam}&auth=${encodeURIComponent(auth)}`
+    }
+
     async getProxyAuth() {
         await this.checkAuth()
         const auth = await this.createAuth()
@@ -115,14 +135,18 @@ export class NodeStorage{
             throw data.error
         }
     }
-    async getItem(key:string):Promise<Buffer> {
+    async getItem(key:string, options?: { thumbnail?: boolean }):Promise<Buffer> {
         await this.checkAuth()
-        const da = await fetch('/api/read', {
+        const headers: Record<string, string> = {
+            'file-path': Buffer.from(key, 'utf-8').toString('hex'),
+            'risu-auth': await this.createAuth()
+        }
+        if (options?.thumbnail) {
+            headers['x-thumbnail'] = 'true'
+        }
+        const da = await fetch('/api/read' + (options?.thumbnail ? '?thumb=1' : ''), {
             method: "GET",
-            headers: {
-                'file-path': Buffer.from(key, 'utf-8').toString('hex'),
-                'risu-auth': await this.createAuth()
-            }
+            headers
         })
         if(da.status < 200 || da.status >= 300){
             throw "getItem Error"

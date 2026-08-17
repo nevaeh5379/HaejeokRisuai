@@ -51,7 +51,7 @@ export function createNewGroup(){
     return DBState.db.characters.length - 1
 }
 
-export async function getCharImage(loc:string, type:'plain'|'css'|'contain'|'lgcss') {
+export async function getCharImage(loc:string, type:'plain'|'css'|'contain'|'lgcss', options?: { thumbnail?: boolean }) {
     const db = DBState.db
     
     // Return placeholder when hideAllImages is enabled
@@ -68,7 +68,7 @@ export async function getCharImage(loc:string, type:'plain'|'css'|'contain'|'lgc
         }
         return null
     }
-    const filesrc = await getFileSrc(loc)
+    const filesrc = await getFileSrc(loc, options)
     if(type === 'plain'){
         return filesrc
     }

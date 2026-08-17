@@ -22,6 +22,7 @@ const {
 const {
     AssetStorageManager,
     S3AssetStorage,
+    keyToHex,
 } = require('./assetStorage.cjs');
 const defaultJsonParser = express.json({ limit: '100mb' });
 const postgresJsonBodyLimit = process.env.RISU_POSTGRES_JSON_BODY_LIMIT || '1gb';
@@ -800,7 +801,7 @@ app.get('/', async (req, res, next) => {
 
 async function checkAuth(req, res, returnOnlyStatus = false){
     try {
-        const authHeader = normalizeAuthHeader(req.headers['risu-auth']);
+        const authHeader = normalizeAuthHeader(req.headers['risu-auth'] || req.query.auth || req.query['risu-auth']);
 
         if(!authHeader){
             console.log('No auth header')
@@ -1976,7 +1977,8 @@ app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;
     }
-    const filePath = req.headers['file-path'];
+    let filePath = req.headers['file-path'] || req.query.path || req.query['file-path'] || req.query.filePath;
+    const isThumb = req.query.thumb === '1' || req.query.thumb === 'true' || req.headers['x-thumbnail'] === 'true';
     if (!filePath) {
         res.status(400).send({
             error:'File path required'
@@ -1985,24 +1987,26 @@ app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
     }
 
     if(!isHex(filePath)){
-        res.status(400).send({
-            error:'Invaild Path'
-        });
-        return;
+        filePath = keyToHex(filePath);
     }
     try {
         const storage = assetStorageManager.getStorage();
-        const result = await storage.read(filePath);
+        const result = isThumb && typeof storage.readThumbnail === 'function'
+            ? await storage.readThumbnail(filePath)
+            : await storage.read(filePath);
         if(!result.exists){
             res.send();
         }
         else{
             res.setHeader('Content-Type', result.contentType || 'application/octet-stream');
+            res.setHeader('Cache-Control', isThumb ? 'public, max-age=604800, immutable' : 'public, max-age=86400');
             if (result.contentLength) {
                 res.setHeader('Content-Length', result.contentLength);
             }
             if (result.filePath) {
                 res.sendFile(result.filePath);
+            } else if (result.buffer) {
+                res.send(result.buffer);
             } else if (result.stream) {
                 result.stream.pipe(res);
             } else {

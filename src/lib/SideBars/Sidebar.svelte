@@ -601,7 +601,7 @@
           >
           {#if char.type === 'normal'}
             <SidebarAvatar 
-              src={char.img ? getCharImage(char.img, "plain") : "/none.webp"} 
+              src={char.img ? getCharImage(char.img, "plain", { thumbnail: true }) : "/none.webp"} 
               size="56" 
               rounded={IconRounded} 
               name={char.name}
@@ -610,7 +610,7 @@
           {:else if char.type === "folder"}
             {#key char.color}
             {#key char.name}
-              <SidebarAvatar src="slot" size="56" rounded={IconRounded} bordered name={char.name} color={char.color} backgroundimg={char.img ? getCharImage(char.img, "plain") : ""}
+              <SidebarAvatar src="slot" size="56" rounded={IconRounded} bordered name={char.name} color={char.color} backgroundimg={char.img ? getCharImage(char.img, "plain", { thumbnail: true }) : ""}
               oncontextmenu={async (e) => {
                 e.preventDefault()
                 const sel = parseInt(await alertSelect([language.renameFolder,language.changeFolderColor,language.changeFolderImage,language.cancel]))
@@ -763,7 +763,7 @@
                   }}
                 >
                 <SidebarAvatar 
-                  src={char2.img ? getCharImage(char2.img, "plain") : "/none.webp"} 
+                  src={char2.img ? getCharImage(char2.img, "plain", { thumbnail: true }) : "/none.webp"} 
                   size="56" 
                   rounded={IconRounded} 
                   name={char2.name}

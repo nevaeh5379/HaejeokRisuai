@@ -284,7 +284,7 @@
                 <div class="text-center">{language.talkness}</div>
                 <div class="text-center">{language.active}</div>
                 {#each (DBState.db.characters[$selectedCharID] as groupChat).characters as char, i}
-                    {#await getCharImage(findCharacterbyId(char).image, 'css')}
+                    {#await getCharImage(findCharacterbyId(char).image, 'css', { thumbnail: true })}
                         <BarIcon onClick={() => {
                             rmCharFromGroup(i)
                         }}>

@@ -22,9 +22,9 @@ export class AutoStorage{
         await this.realStorage.setItem(key, value)
         return null
     }
-    async getItem(key:string):Promise<Buffer> {
+    async getItem(key:string, options?: { thumbnail?: boolean }):Promise<Buffer> {
         await this.Init()
-        return await this.realStorage.getItem(key)
+        return await (this.realStorage as any).getItem(key, options)
 
     }
     async keys():Promise<string[]>{

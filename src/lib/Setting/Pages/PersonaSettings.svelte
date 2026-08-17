@@ -76,7 +76,7 @@
             {#if persona.icon === ''}
                 <div class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500" class:ring-3={i === DBState.db.selectedPersona}></div>
             {:else}
-                {#await getCharImage(persona.icon, 'css')}
+                {#await getCharImage(persona.icon, 'css', { thumbnail: true })}
                     <div class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500" class:ring-3={i === DBState.db.selectedPersona}></div>
                 {:then im} 
                     <div class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500" style={im} class:ring-3={i === DBState.db.selectedPersona}></div>                

@@ -62,6 +62,17 @@
         return hash;
     }
 
+    const clearChatBody = () => {
+        hashes.clear();
+        mountInstances.forEach((inst) => {
+            try { unmount(inst); } catch (e) {}
+        });
+        mountInstances.clear();
+        if (chatBody) {
+            chatBody.innerHTML = '';
+        }
+    };
+
     const updateChatBody = () => {
         if(!chatBody){
             return
@@ -69,8 +80,8 @@
 
         let nextHash = 0;
         let currentHashes: Set<number> = new Set();
-        const charImage = getCharImage(currentCharacter.image, 'css')
-        const userImage = getCharImage(userIcon, 'css')
+        const charImage = getCharImage(currentCharacter.image, 'css', { thumbnail: true })
+        const userImage = getCharImage(userIcon, 'css', { thumbnail: true })
         const simpleChar = createSimpleCharacter(currentCharacter);
         let loadStart = messages.length - 1
         let loadEnd = messages.length - loadPages
@@ -148,12 +159,16 @@
             
         }
 
-        //@ts-expect-error Set<T> requires type arg, and Set.difference needs 'esnext' lib (polyfilled by Core-js)
-        const toRemove:Set = hashes.difference(currentHashes);
+        const toRemove: number[] = [];
+        for (const hash of hashes) {
+            if (!currentHashes.has(hash)) {
+                toRemove.push(hash);
+            }
+        }
         toRemove.forEach((hash) => {
             const inst = mountInstances.get(hash);
             if(inst){
-                unmount(inst);
+                try { unmount(inst); } catch (e) {}
                 mountInstances.delete(hash);
             }
             const element = chatBody.querySelector(`[x-hashed="${hash}"]`);
@@ -168,11 +183,7 @@
 
     onDestroy(() => {
         console.log('Unmounting Chats');
-        hashes.clear();
-        mountInstances.forEach((inst) => {
-            unmount(inst);
-        });
-        mountInstances.clear();
+        clearChatBody();
     })
 
     function checkIfAtBottom() {
@@ -200,11 +211,13 @@
     $effect(() => {
         console.log('Updating Chats');
         void $ReloadChatPointer; // Make $effect track ReloadChatPointer changes
-        const wasAtBottom = checkIfAtBottom();
-        updateChatBody()
-        
         const currentChatRoomId = getCurrentChatRoomId();
         const isSameChat = currentChatRoomId === previousChatRoomId;
+        if (!isSameChat) {
+            clearChatBody();
+        }
+        const wasAtBottom = checkIfAtBottom();
+        updateChatBody()
         
         // Only auto-scroll if it's the same chat and new messages were added
         if(isSameChat && messages.length > previousLength){

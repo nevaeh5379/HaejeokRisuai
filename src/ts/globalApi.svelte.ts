@@ -50,6 +50,7 @@ import {
     NodePostgresRevisionConflictError,
     NodeStorage,
 } from "./storage/nodeStorage";
+import { generateClientThumbnail } from "./media/thumbnail";
 
 export const forageStorage = new AutoStorage()
 
@@ -117,18 +118,38 @@ let checkedPaths: string[] = []
  * @param {string} loc - The location of the file.
  * @returns {Promise<string>} - A promise that resolves to the source URL of the file.
  */
-export async function getFileSrc(loc: string) {
+const registeredSwCaches = new Set<string>()
+
+export async function getFileSrc(loc: string, options?: { thumbnail?: boolean }) {
+    if (!loc || loc === '') {
+        return ''
+    }
+    const isThumb = options?.thumbnail ?? false
     if (isTauri) {
         if (loc.startsWith('assets')) {
             if (appDataDirPath === '') {
                 appDataDirPath = await appDataDir();
             }
-            const cached = pathCache[loc]
+            const pathKey = isThumb ? `thumb_${loc}` : loc
+            const cached = pathCache[pathKey]
             if (cached) {
                 return convertFileSrc(cached)
             }
             else {
                 const joined = await join(appDataDirPath, loc)
+                if (isThumb) {
+                    try {
+                        const originalData = await readFile(joined)
+                        const thumbData = await generateClientThumbnail(originalData, 128)
+                        const blob = new Blob([thumbData as any], { type: 'image/webp' })
+                        const url = URL.createObjectURL(blob)
+                        pathCache[pathKey] = url
+                        return url
+                    } catch (e) {
+                        pathCache[pathKey] = joined
+                        return convertFileSrc(joined)
+                    }
+                }
                 pathCache[loc] = joined
                 return convertFileSrc(joined)
             }
@@ -136,31 +157,44 @@ export async function getFileSrc(loc: string) {
         return convertFileSrc(loc)
     }
     if (forageStorage.isAccount && loc.startsWith('assets')) {
-        return hubURL + `/rs/` + loc
+        return hubURL + `/rs/` + loc + (isThumb ? '?thumb=1' : '')
+    }
+    if (isNodeServer || (forageStorage.realStorage instanceof NodeStorage)) {
+        const nodeStorage = forageStorage.realStorage as NodeStorage
+        return await nodeStorage.getDirectUrl(loc, options)
     }
     try {
+        const cacheKey = isThumb ? `thumb_${loc}` : loc
         if (usingSw) {
-            const encoded = Buffer.from(loc, 'utf-8').toString('hex')
-            let ind = fileCache.origin.indexOf(loc)
+            const encoded = Buffer.from(cacheKey, 'utf-8').toString('hex')
+            if (registeredSwCaches.has(cacheKey)) {
+                return "/sw/img/" + encoded
+            }
+            let ind = fileCache.origin.indexOf(cacheKey)
             if (ind === -1) {
                 ind = fileCache.origin.length
-                fileCache.origin.push(loc)
+                fileCache.origin.push(cacheKey)
                 fileCache.res.push('loading')
                 try {
-                    const hasCache: boolean = (await (await fetch("/sw/check/" + encoded)).json()).able
-                    if (hasCache) {
-                        fileCache.res[ind] = 'done'
-                        return "/sw/img/" + encoded
+                    const raw = await forageStorage.getItem(loc) as unknown as Uint8Array
+                    let f: Uint8Array | null = raw
+                    let contentType = 'image/png'
+                    if (isThumb && raw) {
+                        f = await generateClientThumbnail(raw, 128)
+                        contentType = 'image/webp'
                     }
-                    else {
-                        const f: Uint8Array = await forageStorage.getItem(loc) as unknown as Uint8Array
+
+                    if (f) {
                         await fetch("/sw/register/" + encoded, {
                             method: "POST",
+                            headers: {
+                                'content-type': contentType
+                            },
                             body: f as any
                         })
-                        fileCache.res[ind] = 'done'
-                        await sleep(10)
+                        registeredSwCaches.add(cacheKey)
                     }
+                    fileCache.res[ind] = 'done'
                     return "/sw/img/" + encoded
                 } catch (error) {
 
@@ -177,14 +211,23 @@ export async function getFileSrc(loc: string) {
             }
         }
         else {
-            let ind = fileCache.origin.indexOf(loc)
+            let ind = fileCache.origin.indexOf(cacheKey)
             if (ind === -1) {
                 ind = fileCache.origin.length
-                fileCache.origin.push(loc)
+                fileCache.origin.push(cacheKey)
                 fileCache.res.push('loading')
-                const f: Uint8Array = await forageStorage.getItem(loc) as unknown as Uint8Array
-                fileCache.res[ind] = f
-                return `data:image/png;base64,${Buffer.from(f).toString('base64')}`
+                let f: Uint8Array | null = null
+                const raw = await forageStorage.getItem(loc) as unknown as Uint8Array
+                if (raw) {
+                    if (isThumb) {
+                        f = await generateClientThumbnail(raw, 128)
+                    } else {
+                        f = raw
+                    }
+                }
+                fileCache.res[ind] = f as any
+                if (!f) return ''
+                return `data:image/webp;base64,${Buffer.from(f).toString('base64')}`
             }
             else {
                 const f = fileCache.res[ind]
@@ -192,9 +235,12 @@ export async function getFileSrc(loc: string) {
                     while (fileCache.res[ind] === 'loading') {
                         await sleep(10)
                     }
-                    return `data:image/png;base64,${Buffer.from(fileCache.res[ind]).toString('base64')}`
+                    const resData = fileCache.res[ind] as Uint8Array
+                    if (!resData) return ''
+                    return `data:image/webp;base64,${Buffer.from(resData).toString('base64')}`
                 }
-                return `data:image/png;base64,${Buffer.from(f).toString('base64')}`
+                if (!f || f === 'done') return ''
+                return `data:image/webp;base64,${Buffer.from(f as Uint8Array).toString('base64')}`
             }
         }
     } catch (error) {

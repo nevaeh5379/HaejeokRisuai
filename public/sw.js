@@ -28,8 +28,9 @@ self.addEventListener('fetch', (event) => {
                         targetUrl.pathname = decodeURIComponent(headerUrl)
                     }
                     const noContentType = headers.get('x-no-content-type') === 'true'
+                    const customContentType = headers.get('content-type') || headers.get('x-content-type')
                     event.respondWith(
-                        registerCache(targetUrl, event.request.arrayBuffer(), noContentType)
+                        registerCache(targetUrl, event.request.arrayBuffer(), noContentType, customContentType)
                     )
                     break
                 }
@@ -108,7 +109,7 @@ async function check(){
 
 }
 
-async function registerCache(urlr, buffer, noContentType = false){
+async function registerCache(urlr, buffer, noContentType = false, customContentType = null){
     const cache = await caches.open('risuCache')
     const url = new URL(urlr)
     if(!noContentType){
@@ -119,7 +120,7 @@ async function registerCache(urlr, buffer, noContentType = false){
     const buf = new Uint8Array(await buffer)
     let headers = {
         "cache-control": "max-age=604800",
-        "content-type": "image/png"
+        "content-type": customContentType || "image/png"
     }
     if(noContentType){
         delete headers["content-type"]
