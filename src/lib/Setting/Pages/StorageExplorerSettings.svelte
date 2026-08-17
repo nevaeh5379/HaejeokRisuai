@@ -33,6 +33,7 @@
     import { forageStorage, readImage } from 'src/ts/globalApi.svelte'
     import { DBState, MobileGUI } from 'src/ts/stores.svelte'
     import { NodeStorage } from 'src/ts/storage/nodeStorage'
+    import { getMimeType } from 'src/ts/media'
     import type {
         NodeS3ProgressEvent,
         NodeS3ServerConfig,
@@ -370,7 +371,7 @@
         try {
             const data = await readImage(key)
             if (data && data.length > 0) {
-                const blob = new Blob([data as unknown as BlobPart], { type: 'image/png' })
+                const blob = new Blob([data as unknown as BlobPart], { type: getMimeType(key) })
                 const url = URL.createObjectURL(blob)
                 thumbnailUrls.set(key, url)
                 thumbnailUrls = new Map(thumbnailUrls)
@@ -578,7 +579,7 @@
         try {
             const data = await readImage(key)
             if (data && data.length > 0) {
-                const blob = new Blob([data as unknown as BlobPart], { type: 'image/png' })
+                const blob = new Blob([data as unknown as BlobPart], { type: getMimeType(key) })
                 previewImageUrl = URL.createObjectURL(blob)
             }
         } catch {

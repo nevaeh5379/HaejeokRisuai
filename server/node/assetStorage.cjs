@@ -36,7 +36,7 @@ function keyToHex(key) {
 
 function isImageKey(key) {
     const ext = key.split('.').pop()?.toLowerCase();
-    return ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'bmp', 'svg'].includes(ext);
+    return ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'apng', 'bmp', 'svg', 'ico', 'tiff', 'tif'].includes(ext);
 }
 
 async function createThumbnailBuffer(buffer, width = 128, height = 128) {
@@ -61,16 +61,50 @@ async function createThumbnailBuffer(buffer, width = 128, height = 128) {
 function getContentType(key) {
     const ext = key.split('.').pop()?.toLowerCase();
     switch (ext) {
+        // Images
         case 'png': return 'image/png';
         case 'jpg':
         case 'jpeg': return 'image/jpeg';
         case 'webp': return 'image/webp';
         case 'gif': return 'image/gif';
         case 'svg': return 'image/svg+xml';
+        case 'avif': return 'image/avif';
+        case 'apng': return 'image/apng';
+        case 'bmp': return 'image/bmp';
+        case 'ico': return 'image/x-icon';
+        case 'tiff':
+        case 'tif': return 'image/tiff';
+
+        // Videos
+        case 'webm': return 'video/webm';
+        case 'mp4': return 'video/mp4';
+        case 'mkv': return 'video/x-matroska';
+        case 'mov': return 'video/quicktime';
+        case 'avi': return 'video/x-msvideo';
+        case 'm4v': return 'video/x-m4v';
+        case 'ogv': return 'video/ogg';
+
+        // Audios
         case 'mp3': return 'audio/mpeg';
         case 'wav': return 'audio/wav';
-        case 'ogg': return 'audio/ogg';
+        case 'ogg':
+        case 'oga': return 'audio/ogg';
+        case 'opus': return 'audio/opus';
+        case 'flac': return 'audio/flac';
+        case 'aac': return 'audio/aac';
+        case 'm4a': return 'audio/mp4';
+        case 'weba': return 'audio/webm';
+
+        // Fonts
+        case 'woff': return 'font/woff';
+        case 'woff2': return 'font/woff2';
+        case 'ttf': return 'font/ttf';
+        case 'otf': return 'font/otf';
+
+        // Documents & Data
         case 'json': return 'application/json';
+        case 'txt': return 'text/plain';
+        case 'css': return 'text/css';
         case 'bin': return 'application/octet-stream';
         default: return 'application/octet-stream';
     }
@@ -93,12 +127,13 @@ class LocalFsStorage {
         if (!fs.existsSync(fullPath)) {
             return { exists: false };
         }
+        const key = hexToKey(hexPath);
         return {
             exists: true,
             filePath: fullPath,
             stream: fs.createReadStream(fullPath),
             contentLength: (await fs.promises.stat(fullPath)).size,
-            contentType: 'application/octet-stream'
+            contentType: getContentType(key)
         };
     }
 

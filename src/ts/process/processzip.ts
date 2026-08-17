@@ -393,10 +393,10 @@ export class CharXImporter{
         let acquired = false
         try {
             await this.semaphore.acquire()
-            acquired = true
+            const ext = asset.id.split('.').pop() || 'png'
             const assetSaveId = this.skipSaving
-                ? `assets/${await hasher(asset.data)}.png`
-                : await saveAsset(asset.data)
+                ? `assets/${await hasher(asset.data)}.${ext}`
+                : await saveAsset(asset.data, '', asset.id)
 
             this.assets[asset.id] = assetSaveId
         } catch (error) {

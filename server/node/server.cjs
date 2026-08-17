@@ -1998,8 +1998,37 @@ app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
             res.send();
         }
         else{
-            res.setHeader('Content-Type', result.contentType || 'application/octet-stream');
+            const contentType = result.contentType || 'application/octet-stream';
+            const totalLength = result.contentLength || (result.buffer ? result.buffer.length : 0);
+            const rangeHeader = req.headers.range;
+
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Accept-Ranges', 'bytes');
             res.setHeader('Cache-Control', isThumb ? 'public, max-age=604800, immutable' : 'public, max-age=86400');
+
+            if (rangeHeader && totalLength > 0 && !isThumb) {
+                const parts = rangeHeader.replace(/bytes=/, '').split('-');
+                const start = parseInt(parts[0], 10);
+                const end = parts[1] ? parseInt(parts[1], 10) : totalLength - 1;
+
+                if (!isNaN(start) && start < totalLength) {
+                    const chunkEnd = Math.min(end, totalLength - 1);
+                    const chunkSize = (chunkEnd - start) + 1;
+
+                    res.status(206);
+                    res.setHeader('Content-Range', `bytes ${start}-${chunkEnd}/${totalLength}`);
+                    res.setHeader('Content-Length', chunkSize);
+
+                    if (result.filePath) {
+                        fs.createReadStream(result.filePath, { start, end: chunkEnd }).pipe(res);
+                        return;
+                    } else if (result.buffer) {
+                        res.send(result.buffer.subarray(start, chunkEnd + 1));
+                        return;
+                    }
+                }
+            }
+
             if (result.contentLength) {
                 res.setHeader('Content-Length', result.contentLength);
             }

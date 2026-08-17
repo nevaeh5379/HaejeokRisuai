@@ -20,6 +20,7 @@ import katex from 'katex'
 import { getModelInfo } from '../model/modellist';
 import { registerCBS, type matcherArg, type RegisterCallback } from '../cbs';
 import cssSelectorParser from 'postcss-selector-parser'
+import { getMimeType } from '../media/mimeType';
 
 const markdownItOptions = {
     html: true,
@@ -559,11 +560,11 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
             case 'image':
                 return `<div class="risu-inlay-image"><img src="${p}" alt="${p}" style="${assetWidthString}"/></div>\n`
             case 'video':
-                return `<video controls autoplay loop><source src="${p}" type="video/mp4"></video>\n`
+                return `<video controls autoplay loop><source src="${p}" type="${getMimeType(pSrc)}"></video>\n`
             case 'video-img':
-                return `<video autoplay muted loop><source src="${p}" type="video/mp4"></video>\n`
+                return `<video autoplay muted loop><source src="${p}" type="${getMimeType(pSrc)}"></video>\n`
             case 'audio':
-                return `<audio controls autoplay loop><source src="${p}" type="audio/mpeg"></audio>\n`
+                return `<audio controls autoplay loop><source src="${p}" type="${getMimeType(pSrc)}"></audio>\n`
             case 'bg':
                 if(mode === 'back'){
                     return `<div style="width:100%;height:100%;background: linear-gradient(rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.8)),url(${p}); background-size: cover;"></div>`
@@ -571,7 +572,7 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
                 break
             case 'asset':{
                 if(match.ext && videoExtensions.includes(match.ext)){
-                    return `<video autoplay muted loop><source src="${p}" type="video/mp4"></video>\n`
+                    return `<video autoplay muted loop><source src="${p}" type="${getMimeType(pSrc)}"></video>\n`
                 }
                 return `<img src="${p}" alt="${p}" style="${assetWidthString} "/>\n`
             }
@@ -687,12 +688,16 @@ async function parseInlayAssets(data:string){
                     }
                     data = data.replace(inlay, `${prefix}<img src="${url}"/>${postfix}`)
                     break
-                case 'video':
-                    data = data.replace(inlay, `${prefix}<video controls><source src="${url}" type="video/mp4"></video>${postfix}`)
+                case 'video': {
+                    const videoMime = asset?.name ? getMimeType(asset.name) : 'video/mp4'
+                    data = data.replace(inlay, `${prefix}<video controls><source src="${url}" type="${videoMime}"></video>${postfix}`)
                     break
-                case 'audio':
-                    data = data.replace(inlay, `${prefix}<audio controls><source src="${url}" type="audio/mpeg"></audio>${postfix}`)
+                }
+                case 'audio': {
+                    const audioMime = asset?.name ? getMimeType(asset.name) : 'audio/mpeg'
+                    data = data.replace(inlay, `${prefix}<audio controls><source src="${url}" type="${audioMime}"></audio>${postfix}`)
                     break
+                }
             }
             
         }

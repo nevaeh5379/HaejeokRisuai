@@ -51,6 +51,7 @@ import {
     NodeStorage,
 } from "./storage/nodeStorage";
 import { generateClientThumbnail } from "./media/thumbnail";
+import { getMimeType } from "./media/mimeType";
 
 export const forageStorage = new AutoStorage()
 
@@ -178,7 +179,7 @@ export async function getFileSrc(loc: string, options?: { thumbnail?: boolean })
                 try {
                     const raw = await forageStorage.getItem(loc) as unknown as Uint8Array
                     let f: Uint8Array | null = raw
-                    let contentType = 'image/png'
+                    let contentType = isThumb ? 'image/webp' : getMimeType(loc)
                     if (isThumb && raw) {
                         f = await generateClientThumbnail(raw, 128)
                         contentType = 'image/webp'
@@ -227,7 +228,8 @@ export async function getFileSrc(loc: string, options?: { thumbnail?: boolean })
                 }
                 fileCache.res[ind] = f as any
                 if (!f) return ''
-                return `data:image/webp;base64,${Buffer.from(f).toString('base64')}`
+                const mime = isThumb ? 'image/webp' : getMimeType(loc)
+                return `data:${mime};base64,${Buffer.from(f).toString('base64')}`
             }
             else {
                 const f = fileCache.res[ind]
@@ -237,10 +239,12 @@ export async function getFileSrc(loc: string, options?: { thumbnail?: boolean })
                     }
                     const resData = fileCache.res[ind] as Uint8Array
                     if (!resData) return ''
-                    return `data:image/webp;base64,${Buffer.from(resData).toString('base64')}`
+                    const mime = isThumb ? 'image/webp' : getMimeType(loc)
+                    return `data:${mime};base64,${Buffer.from(resData).toString('base64')}`
                 }
                 if (!f || f === 'done') return ''
-                return `data:image/webp;base64,${Buffer.from(f as Uint8Array).toString('base64')}`
+                const mime = isThumb ? 'image/webp' : getMimeType(loc)
+                return `data:${mime};base64,${Buffer.from(f as Uint8Array).toString('base64')}`
             }
         }
     } catch (error) {
@@ -293,8 +297,12 @@ export async function saveAsset(data: Uint8Array, customId: string = '', fileNam
         }
     }
     let fileExtension: string = 'png'
-    if (fileName && fileName.split('.').length > 0) {
-        fileExtension = fileName.split('.').pop()
+    const nameSource = fileName || customId
+    if (nameSource && nameSource.includes('.')) {
+        const ext = nameSource.split('?')[0].split('.').pop()
+        if (ext) {
+            fileExtension = ext
+        }
     }
     if (isTauri) {
         await writeFile(`assets/${id}.${fileExtension}`, data, {

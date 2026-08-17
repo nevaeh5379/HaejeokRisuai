@@ -36,8 +36,16 @@ describe('AssetStorage utilities', () => {
         expect(getContentType('assets/image.png')).toBe('image/png')
         expect(getContentType('assets/image.jpg')).toBe('image/jpeg')
         expect(getContentType('assets/image.webp')).toBe('image/webp')
+        expect(getContentType('assets/image.avif')).toBe('image/avif')
+        expect(getContentType('assets/image.gif')).toBe('image/gif')
+        expect(getContentType('assets/video.webm')).toBe('video/webm')
+        expect(getContentType('assets/video.mp4')).toBe('video/mp4')
+        expect(getContentType('assets/video.mkv')).toBe('video/x-matroska')
         expect(getContentType('assets/audio.mp3')).toBe('audio/mpeg')
         expect(getContentType('assets/audio.wav')).toBe('audio/wav')
+        expect(getContentType('assets/audio.flac')).toBe('audio/flac')
+        expect(getContentType('assets/audio.ogg')).toBe('audio/ogg')
+        expect(getContentType('assets/font.woff2')).toBe('font/woff2')
         expect(getContentType('database/database.bin')).toBe('application/octet-stream')
         expect(getContentType('data.json')).toBe('application/json')
     })
@@ -92,6 +100,20 @@ describe('LocalFsStorage', () => {
 
         await storage.remove(hex)
         expect(await storage.exists(hex)).toBe(false)
+    })
+
+    it('correctly reads video assets with proper video MIME type', async () => {
+        await storage.init()
+        const key = 'assets/clip.webm'
+        const hex = keyToHex(key)
+        const videoData = Buffer.from('mock webm video bytes')
+
+        await storage.write(hex, videoData)
+        const readResult = await storage.read(hex)
+        expect(readResult.exists).toBe(true)
+        expect(readResult.contentType).toBe('video/webm')
+        expect(readResult.contentLength).toBe(videoData.length)
+        expect(readResult.stream).toBeDefined()
     })
 
     it('generates, caches, and deletes thumbnails for image assets', async () => {

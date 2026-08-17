@@ -28,6 +28,7 @@
     import NanoGPTDashboard from "src/lib/UI/NanoGPTDashboard.svelte";
     import NanoGPTProviderPicker from "src/lib/UI/NanoGPTProviderPicker.svelte";
     import type { ModelGridPinnedItem } from "src/ts/model/modelGrid";
+    import { getMimeType } from "src/ts/media";
     import OobaSettings from "./OobaSettings.svelte";
     import Accordion from "src/lib/UI/Accordion.svelte";
     import OpenrouterSettings from "./OpenrouterSettings.svelte";
@@ -808,7 +809,7 @@
             const ctx = canvas.getContext('2d')
             const img = new Image()
             //@ts-expect-error Uint8Array buffer type (ArrayBufferLike) is incompatible with BlobPart's ArrayBuffer
-            const blob = new Blob([sel.data], {type: "image/png"})
+            const blob = new Blob([sel.data], {type: getMimeType(sel.name)})
             img.src = URL.createObjectURL(blob)
             await img.decode()
             canvas.width = 48
