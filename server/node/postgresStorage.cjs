@@ -8,8 +8,6 @@ const {
     encodePostgresJsonValue,
 } = require('./postgresJsonCodec.cjs');
 const {
-    decodeSetting,
-    encodeSetting,
     rebuildCharacter,
     rebuildChat,
     rebuildMessage,
@@ -17,12 +15,22 @@ const {
     splitChat,
     splitMessage,
 } = require('./postgresRelationalCodec.cjs');
+const {
+    rebuildSettings,
+    splitSetting,
+} = require('./postgresSettingsCodec.cjs');
+const {
+    projectSettings,
+    SETTING_RELATION_DEFINITIONS,
+} = require('./postgresSettingRelations.cjs');
 
 const POSTGRES_SCHEMA_VERSION = 2;
 const MAX_SYNC_ROWS = 250000;
 const MAX_COLD_STORAGE_KEYS = 250000;
 const AUDITED_TABLES = [
-    'risu_settings', 'risu_characters', 'risu_character_attributes', 'risu_character_tags',
+    'risu_settings', 'risu_setting_values', 'risu_characters',
+    ...SETTING_RELATION_DEFINITIONS.map((definition) => definition.table),
+    'risu_character_attributes', 'risu_character_tags',
     'risu_character_greetings', 'risu_character_biases', 'risu_character_emotions',
     'risu_character_modules', 'risu_group_members', 'risu_chat_folders',
     'risu_character_scripts', 'risu_character_sd_data', 'risu_character_assets',
@@ -1134,6 +1142,7 @@ class PostgresStorage {
 
             const loadQueries = [
                 'SELECT * FROM risu_settings ORDER BY key',
+                'SELECT * FROM risu_setting_values ORDER BY setting_key, node_id',
                 'SELECT * FROM risu_characters ORDER BY position, id',
                 'SELECT * FROM risu_character_attributes ORDER BY character_id, key',
                 'SELECT * FROM risu_character_tags ORDER BY character_id, position',
@@ -1163,14 +1172,13 @@ class PostgresStorage {
                 'SELECT * FROM risu_message_prompt_items ORDER BY chat_id, message_id, position',
             ];
             const results = await client.query(loadQueries.join(';\n'));
-            const [settings, characters, characterAttributes, tags, greetings, biases, emotions,
+            const [settings, settingValues, characters, characterAttributes, tags, greetings, biases, emotions,
                 characterModules, groupMembers, chatFolders, scripts, sdData, assets, characterLore,
                 chats, chatAttributes, suggestions, chatModules, scriptState, bookmarks, memory,
                 chatLore, messages, messageAttributes, generations, promptInfos, promptToggles,
                 promptItems] = results.map((result) => result.rows);
 
-            const database = {};
-            for (const row of settings) database[row.key] = decodeSetting(row);
+            const database = rebuildSettings(settings, settingValues);
 
             const characterRelations = {
                 attributes: groupRows(characterAttributes, 'character_id'),
@@ -1270,20 +1278,78 @@ class PostgresStorage {
                 await client.query('DELETE FROM risu_characters');
             }
 
+            let splitSettings;
+            try {
+                splitSettings = payload.rootUpserts.map((row) => splitSetting(row.key, row.value, {
+                    maxRows: MAX_SYNC_ROWS,
+                    maxDepth: 128,
+                }));
+            } catch (error) {
+                throw new PostgresPayloadError(
+                    error instanceof Error ? error.message : 'PostgreSQL setting decomposition failed'
+                );
+            }
+            const settingValueCount = splitSettings.reduce(
+                (count, setting) => count + setting.values.length,
+                0
+            );
+            if (settingValueCount > MAX_SYNC_ROWS) {
+                throw new PostgresPayloadError(
+                    `Structured settings exceed the ${MAX_SYNC_ROWS} row limit`
+                );
+            }
             await bulkInsert(
                 client,
                 'risu_settings',
-                ['key', 'value_type', 'text_value', 'number_value', 'boolean_value', 'json_value'],
-                ['text', 'text', 'text', 'double precision', 'boolean', 'jsonb'],
-                payload.rootUpserts.map((row) => encodeSetting(row.key, row.value)),
-                `ON CONFLICT (key) DO UPDATE SET
-                    value_type = EXCLUDED.value_type,
-                    text_value = EXCLUDED.text_value,
-                    number_value = EXCLUDED.number_value,
-                    boolean_value = EXCLUDED.boolean_value,
-                    json_value = EXCLUDED.json_value,
-                    updated_at = NOW()`
+                ['key'],
+                ['text'],
+                splitSettings.map((item) => item.setting),
+                'ON CONFLICT (key) DO UPDATE SET updated_at = NOW()'
             );
+            const changedSettingKeys = splitSettings.map((item) => item.setting.key);
+            if (changedSettingKeys.length > 0) {
+                await client.query(
+                    'DELETE FROM risu_setting_values WHERE setting_key = ANY($1::text[])',
+                    [changedSettingKeys]
+                );
+            }
+            await bulkInsert(
+                client,
+                'risu_setting_values',
+                [
+                    'setting_key', 'node_id', 'parent_node_id', 'member_key', 'encoded_member_key',
+                    'position', 'value_type', 'text_value', 'encoded_text_value', 'number_value',
+                    'boolean_value',
+                ],
+                [
+                    'text', 'bigint', 'bigint', 'text', 'text', 'integer', 'text', 'text', 'text',
+                    'double precision', 'boolean',
+                ],
+                splitSettings.flatMap((item) => item.values)
+            );
+            const projectedSettings = projectSettings(payload.rootUpserts);
+            if (changedSettingKeys.length > 0) {
+                const changedSettingKeySet = new Set(changedSettingKeys);
+                for (const definition of SETTING_RELATION_DEFINITIONS) {
+                    const projectedKeys = definition.settingKeys.filter((key) =>
+                        changedSettingKeySet.has(key));
+                    if (projectedKeys.length === 0) continue;
+                    await client.query(
+                        `DELETE FROM ${assertSqlIdentifier(definition.table)}
+                         WHERE setting_key = ANY($1::text[])`,
+                        [projectedKeys]
+                    );
+                }
+            }
+            for (const definition of SETTING_RELATION_DEFINITIONS) {
+                await bulkInsert(
+                    client,
+                    definition.table,
+                    definition.columns,
+                    definition.types,
+                    projectedSettings[definition.table]
+                );
+            }
             if (payload.rootDeletes.length > 0) {
                 await client.query('DELETE FROM risu_settings WHERE key = ANY($1::text[])', [payload.rootDeletes]);
             }

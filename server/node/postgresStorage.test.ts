@@ -22,6 +22,16 @@ const {
         messages:unknown[]
     }
 }
+const {
+    rebuildSettings,
+    splitSetting,
+} = require('./postgresSettingsCodec.cjs') as {
+    rebuildSettings:(settings:{key:string}[], values:Record<string, any>[]) => Record<string, any>
+    splitSetting:(key:string, value:unknown) => {
+        setting:{key:string}
+        values:Record<string, any>[]
+    }
+}
 
 describe('PostgreSQL sync payload validation', () => {
     it('accepts a normalized incremental payload', () => {
@@ -95,5 +105,25 @@ describe('PostgreSQL sync payload validation', () => {
 
         expect(encodePostgresJsonValue(ordinary)).toBe(ordinary)
         expect(decodePostgresJsonValue(ordinary)).toBe(ordinary)
+    })
+
+    it('decomposes structured settings into typed relational rows without JSON payloads', () => {
+        const value = {
+            theme: { name: 'night', opacity: 0.75, enabled: true },
+            ordered: ['first', null, { source: 'before\0after' }],
+            ['key\0suffix']: `unpaired-\ud800`,
+            ['__proto__']: { retained: true },
+        }
+        const split = splitSetting('complexSetting', value)
+
+        expect(split.values.every((row) => !Object.hasOwn(row, 'json_value'))).toBe(true)
+        expect(split.values.find((row) => row.member_key === 'theme')).toMatchObject({
+            value_type: 'object',
+        })
+        expect(split.values.find((row) => row.text_value === 'night')).toMatchObject({
+            value_type: 'text',
+        })
+        expect(split.values.some((row) => row.value_type === 'encoded-text')).toBe(true)
+        expect(rebuildSettings([split.setting], split.values)).toEqual({ complexSetting: value })
     })
 })

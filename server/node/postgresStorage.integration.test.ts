@@ -68,6 +68,31 @@ describePostgres('PostgreSQL structured storage integration', () => {
                     { key: 'username', value: 'user' },
                     { key: 'optionalValue', value: null },
                     { key: 'sourceWithNul', value: { code: 'tool\0separator' } },
+                    { key: 'translatorPresets', value: [{ name: 'Korean', prompt: 'Translate', maxResponse: 2048 }] },
+                    { key: 'globalChatVariables', value: { player: 'Jihoon' } },
+                    { key: 'botPresets', value: [{
+                        name: 'SQL preset', apiType: 'openai', aiModel: 'model-sql',
+                        mainPrompt: 'Main', jailbreak: '', globalNote: '', temperature: 0.8,
+                        maxContext: 8192, maxResponse: 1024, frequencyPenalty: 0,
+                        PresensePenalty: 0, promptPreprocess: true,
+                    }] },
+                    { key: 'personas', value: [{
+                        id: 'persona-sql', name: 'Persona', personaPrompt: 'Prompt', icon: 'asset://persona',
+                    }] },
+                    { key: 'modules', value: [{
+                        id: 'module-sql', name: 'Module', description: 'Description', mcp: { url: 'https://mcp.test' },
+                    }] },
+                    { key: 'plugins', value: [{
+                        name: 'plugin-sql', displayName: 'Plugin', script: 'return true', version: '3.0',
+                    }] },
+                    { key: 'loreBook', value: [{
+                        name: 'World',
+                        data: [{
+                            id: 'lore-1', key: 'city', secondkey: 'capital', insertorder: 1,
+                            comment: 'place', content: 'Queryable lore', mode: 'normal',
+                            alwaysActive: false, selective: true,
+                        }],
+                    }] },
                 ],
                 deletes: [],
             },
@@ -102,6 +127,8 @@ describePostgres('PostgreSQL structured storage integration', () => {
                 username: 'user',
                 optionalValue: null,
                 sourceWithNul: { code: 'tool\0separator' },
+                translatorPresets: [{ name: 'Korean', prompt: 'Translate', maxResponse: 2048 }],
+                globalChatVariables: { player: 'Jihoon' },
                 characters: [{
                     chaId: 'character-1',
                     name: 'Character',
@@ -117,6 +144,43 @@ describePostgres('PostgreSQL structured storage integration', () => {
                 }],
             },
         })
+        expect(await storage.pool.query(
+            `SELECT
+                NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'risu_settings' AND column_name = 'json_value'
+                ) AS no_settings_json,
+                (SELECT count(*)::int FROM risu_setting_values
+                    WHERE setting_key = 'sourceWithNul' AND value_type = 'encoded-text') AS encoded_texts,
+                (SELECT count(*)::int FROM risu_setting_values
+                    WHERE setting_key = 'sourceWithNul' AND member_key = 'code') AS queryable_members,
+                (SELECT count(*)::int FROM risu_translator_presets
+                    WHERE name = 'Korean' AND max_response = 2048) AS translator_presets,
+                (SELECT count(*)::int FROM risu_string_map_settings
+                    WHERE setting_key = 'globalChatVariables' AND key = 'player'
+                        AND value = 'Jihoon') AS global_variables,
+                (SELECT count(*)::int FROM risu_global_lore_entries
+                    WHERE primary_key = 'city' AND content = 'Queryable lore') AS global_lore,
+                (SELECT count(*)::int FROM risu_bot_presets
+                    WHERE name = 'SQL preset' AND ai_model = 'model-sql') AS bot_presets,
+                (SELECT count(*)::int FROM risu_personas
+                    WHERE persona_id = 'persona-sql') AS personas,
+                (SELECT count(*)::int FROM risu_modules
+                    WHERE module_id = 'module-sql' AND mcp_url = 'https://mcp.test') AS modules,
+                (SELECT count(*)::int FROM risu_plugins
+                    WHERE name = 'plugin-sql' AND api_version = '3.0') AS plugins`
+        )).toMatchObject({ rows: [{
+            no_settings_json: true,
+            encoded_texts: 1,
+            queryable_members: 1,
+            translator_presets: 1,
+            global_variables: 1,
+            global_lore: 1,
+            bot_presets: 1,
+            personas: 1,
+            modules: 1,
+            plugins: 1,
+        }] })
 
         const second = await storage.sync({
             baseRevision: 1,
@@ -355,12 +419,29 @@ describePostgres('PostgreSQL structured storage integration', () => {
         await storage.sync({
             baseRevision: 0,
             replaceAll: true,
-            root: { upserts: [{ key: 'username', value: 'first' }], deletes: [] },
+            root: { upserts: [
+                { key: 'username', value: 'first' },
+                { key: 'translatorPresets', value: [{ name: 'Old', prompt: 'old', maxResponse: 100 }] },
+                { key: 'loadouts', value: [{
+                    id: 'loadout-old', name: 'Old loadout', lastUsed: 1000, favorite: true,
+                    characterIds: ['character-old'], modules: ['module-old'],
+                    globalVariables: { route: 'old' }, presetName: 'Old', personaId: 'persona-old',
+                    icons: ['asset://old'],
+                }] },
+            ], deletes: [] },
             characterIds: [], characters: [], chats: [], chatManifests: [], messages: [], messageManifests: [],
         })
         await storage.sync({
             baseRevision: 1,
-            root: { upserts: [{ key: 'username', value: 'second' }], deletes: [] },
+            root: { upserts: [
+                { key: 'username', value: 'second' },
+                { key: 'translatorPresets', value: [{ name: 'New', prompt: 'new', maxResponse: 200 }] },
+                { key: 'loadouts', value: [{
+                    id: 'loadout-new', name: 'New loadout', lastUsed: 2000, favorite: false,
+                    characterIds: ['character-new'], modules: [], globalVariables: {},
+                    presetName: 'New', personaId: 'persona-new',
+                }] },
+            ], deletes: [] },
             characters: [], chats: [], chatManifests: [], messages: [], messageManifests: [],
         })
 
@@ -368,8 +449,10 @@ describePostgres('PostgreSQL structured storage integration', () => {
             `SELECT
                 NOT EXISTS (
                     SELECT 1 FROM information_schema.columns
-                    WHERE table_name IN ('risu_characters', 'risu_chats', 'risu_messages')
-                      AND column_name = 'data'
+                    WHERE (
+                        table_name IN ('risu_characters', 'risu_chats', 'risu_messages')
+                        AND column_name = 'data'
+                    ) OR (table_name = 'risu_settings' AND column_name = 'json_value')
                 ) AS no_document_columns,
                 to_regclass('risu_character_assets') IS NOT NULL AS has_assets,
                 to_regclass('risu_message_generation') IS NOT NULL AS has_generation`
@@ -379,6 +462,24 @@ describePostgres('PostgreSQL structured storage integration', () => {
         expect(history.map((revision) => revision.id)).toEqual([2, 1])
         await storage.restoreRevision(1)
         expect((await storage.loadDatabase()).database?.username).toBe('first')
+        expect((await storage.loadDatabase()).database?.translatorPresets).toEqual([
+            { name: 'Old', prompt: 'old', maxResponse: 100 },
+        ])
+        expect(await storage.pool.query(
+            `SELECT
+                (SELECT name FROM risu_translator_presets ORDER BY position LIMIT 1) AS preset_name,
+                (SELECT character_id FROM risu_loadout_character_refs
+                    ORDER BY loadout_position, position LIMIT 1) AS character_id,
+                (SELECT module_id FROM risu_loadout_module_refs
+                    ORDER BY loadout_position, position LIMIT 1) AS module_id,
+                (SELECT value FROM risu_loadout_variables
+                    WHERE key = 'route' LIMIT 1) AS variable_value,
+                (SELECT asset_id FROM risu_loadout_icons
+                    ORDER BY loadout_position, position LIMIT 1) AS asset_id`
+        )).toMatchObject({ rows: [{
+            preset_name: 'Old', character_id: 'character-old', module_id: 'module-old',
+            variable_value: 'old', asset_id: 'asset://old',
+        }] })
         expect((await storage.listRevisions())[0]).toMatchObject({
             scope: 'restore',
             restored_from_revision: 1,

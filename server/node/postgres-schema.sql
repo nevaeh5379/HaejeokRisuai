@@ -10,6 +10,16 @@ BEGIN
         RAISE EXCEPTION 'The unreleased JSON-document PostgreSQL layout is incompatible with the relational layout'
             USING HINT = 'Back up if needed, then recreate the development PostgreSQL volume before restarting Risuai.';
     END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'risu_settings'
+          AND column_name = 'json_value'
+    ) THEN
+        RAISE EXCEPTION 'The unreleased JSON settings layout is incompatible with relational settings'
+            USING HINT = 'Recreate the development PostgreSQL volume before restarting Risuai.';
+    END IF;
 END $$;
 
 CREATE TABLE IF NOT EXISTS risu_storage_meta (
@@ -79,20 +89,417 @@ END $$;
 
 CREATE TABLE IF NOT EXISTS risu_settings (
     key TEXT PRIMARY KEY,
-    value_type TEXT NOT NULL CHECK (value_type IN ('null', 'text', 'number', 'boolean', 'json')),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS risu_setting_values (
+    setting_key TEXT NOT NULL REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    node_id BIGINT NOT NULL CHECK (node_id >= 0),
+    parent_node_id BIGINT,
+    member_key TEXT,
+    encoded_member_key TEXT,
+    position INTEGER CHECK (position >= 0),
+    value_type TEXT NOT NULL CHECK (
+        value_type IN ('null', 'text', 'encoded-text', 'number', 'boolean', 'object', 'array')
+    ),
     text_value TEXT,
+    encoded_text_value TEXT,
     number_value DOUBLE PRECISION,
     boolean_value BOOLEAN,
-    json_value JSONB,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (setting_key, node_id),
+    FOREIGN KEY (setting_key, parent_node_id)
+        REFERENCES risu_setting_values(setting_key, node_id)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
     CHECK (
-        (value_type = 'null' AND text_value IS NULL AND number_value IS NULL AND boolean_value IS NULL AND json_value IS NULL)
-        OR (value_type = 'text' AND text_value IS NOT NULL AND number_value IS NULL AND boolean_value IS NULL AND json_value IS NULL)
-        OR (value_type = 'number' AND text_value IS NULL AND number_value IS NOT NULL AND boolean_value IS NULL AND json_value IS NULL)
-        OR (value_type = 'boolean' AND text_value IS NULL AND number_value IS NULL AND boolean_value IS NOT NULL AND json_value IS NULL)
-        OR (value_type = 'json' AND text_value IS NULL AND number_value IS NULL AND boolean_value IS NULL AND json_value IS NOT NULL)
+        (node_id = 0 AND parent_node_id IS NULL AND member_key IS NULL
+            AND encoded_member_key IS NULL AND position IS NULL)
+        OR
+        (node_id > 0 AND parent_node_id IS NOT NULL AND (
+            (position IS NOT NULL AND member_key IS NULL AND encoded_member_key IS NULL)
+            OR
+            (position IS NULL AND (
+                (member_key IS NOT NULL AND encoded_member_key IS NULL)
+                OR (member_key IS NULL AND encoded_member_key IS NOT NULL)
+            ))
+        ))
+    ),
+    CHECK (
+        (value_type IN ('null', 'object', 'array') AND text_value IS NULL
+            AND encoded_text_value IS NULL AND number_value IS NULL AND boolean_value IS NULL)
+        OR (value_type = 'text' AND text_value IS NOT NULL
+            AND encoded_text_value IS NULL AND number_value IS NULL AND boolean_value IS NULL)
+        OR (value_type = 'encoded-text' AND text_value IS NULL
+            AND encoded_text_value IS NOT NULL AND number_value IS NULL AND boolean_value IS NULL)
+        OR (value_type = 'number' AND text_value IS NULL
+            AND encoded_text_value IS NULL AND number_value IS NOT NULL AND boolean_value IS NULL)
+        OR (value_type = 'boolean' AND text_value IS NULL
+            AND encoded_text_value IS NULL AND number_value IS NULL AND boolean_value IS NOT NULL)
     )
 );
+
+CREATE INDEX IF NOT EXISTS risu_setting_values_parent_idx
+ON risu_setting_values (setting_key, parent_node_id, position);
+
+CREATE INDEX IF NOT EXISTS risu_setting_values_member_idx
+ON risu_setting_values (setting_key, member_key)
+WHERE member_key IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS risu_setting_values_text_idx
+ON risu_setting_values (setting_key, text_value)
+WHERE text_value IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS risu_bot_presets (
+    setting_key TEXT NOT NULL DEFAULT 'botPresets' CHECK (setting_key = 'botPresets'),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    name TEXT,
+    api_type TEXT,
+    ai_model TEXT,
+    sub_model TEXT,
+    main_prompt TEXT,
+    jailbreak TEXT,
+    global_note TEXT,
+    temperature DOUBLE PRECISION,
+    max_context INTEGER,
+    max_response INTEGER,
+    frequency_penalty DOUBLE PRECISION,
+    presence_penalty DOUBLE PRECISION,
+    prompt_preprocess BOOLEAN,
+    proxy_model TEXT,
+    openrouter_model TEXT,
+    image TEXT,
+    PRIMARY KEY (setting_key, position),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX IF NOT EXISTS risu_bot_presets_model_idx
+ON risu_bot_presets (api_type, ai_model);
+
+CREATE TABLE IF NOT EXISTS risu_personas (
+    setting_key TEXT NOT NULL DEFAULT 'personas' CHECK (setting_key = 'personas'),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    persona_id TEXT,
+    name TEXT,
+    prompt TEXT,
+    icon TEXT,
+    large_portrait BOOLEAN,
+    note TEXT,
+    embedded_module_id TEXT,
+    PRIMARY KEY (setting_key, position),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX IF NOT EXISTS risu_personas_id_idx
+ON risu_personas (persona_id) WHERE persona_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS risu_modules (
+    setting_key TEXT NOT NULL DEFAULT 'modules' CHECK (setting_key = 'modules'),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    module_id TEXT,
+    name TEXT,
+    description TEXT,
+    cjs TEXT,
+    low_level_access BOOLEAN,
+    hide_icon BOOLEAN,
+    background_embedding TEXT,
+    namespace TEXT,
+    custom_toggle TEXT,
+    mcp_url TEXT,
+    icon TEXT,
+    PRIMARY KEY (setting_key, position),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX IF NOT EXISTS risu_modules_id_idx
+ON risu_modules (module_id) WHERE module_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS risu_plugins (
+    setting_key TEXT NOT NULL CHECK (setting_key IN ('plugins', 'pluginV2')),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    name TEXT,
+    display_name TEXT,
+    script TEXT,
+    api_version TEXT,
+    plugin_version TEXT,
+    update_url TEXT,
+    enabled BOOLEAN,
+    PRIMARY KEY (setting_key, position),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX IF NOT EXISTS risu_plugins_name_idx ON risu_plugins (name);
+
+CREATE TABLE IF NOT EXISTS risu_global_lorebooks (
+    setting_key TEXT NOT NULL DEFAULT 'loreBook' CHECK (setting_key = 'loreBook'),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    name TEXT,
+    PRIMARY KEY (setting_key, position),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE TABLE IF NOT EXISTS risu_global_lore_entries (
+    setting_key TEXT NOT NULL DEFAULT 'loreBook' CHECK (setting_key = 'loreBook'),
+    book_position INTEGER NOT NULL,
+    position INTEGER NOT NULL CHECK (position >= 0),
+    lore_id TEXT,
+    primary_key TEXT,
+    secondary_key TEXT,
+    insert_order INTEGER,
+    comment TEXT,
+    content TEXT,
+    mode TEXT,
+    always_active BOOLEAN,
+    selective BOOLEAN,
+    case_sensitive BOOLEAN,
+    activation_percent DOUBLE PRECISION,
+    use_regex BOOLEAN,
+    book_version INTEGER,
+    folder TEXT,
+    cache_key TEXT,
+    PRIMARY KEY (setting_key, book_position, position),
+    FOREIGN KEY (setting_key, book_position)
+        REFERENCES risu_global_lorebooks(setting_key, position)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX IF NOT EXISTS risu_global_lore_primary_idx
+ON risu_global_lore_entries (primary_key);
+
+CREATE INDEX IF NOT EXISTS risu_global_lore_content_fts_idx
+ON risu_global_lore_entries USING GIN (to_tsvector('simple', COALESCE(content, '')));
+
+CREATE TABLE IF NOT EXISTS risu_global_lore_cache_items (
+    setting_key TEXT NOT NULL DEFAULT 'loreBook' CHECK (setting_key = 'loreBook'),
+    book_position INTEGER NOT NULL,
+    lore_position INTEGER NOT NULL,
+    position INTEGER NOT NULL CHECK (position >= 0),
+    value TEXT NOT NULL,
+    PRIMARY KEY (setting_key, book_position, lore_position, position),
+    FOREIGN KEY (setting_key, book_position, lore_position)
+        REFERENCES risu_global_lore_entries(setting_key, book_position, position)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE TABLE IF NOT EXISTS risu_translator_presets (
+    setting_key TEXT NOT NULL DEFAULT 'translatorPresets' CHECK (setting_key = 'translatorPresets'),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    name TEXT,
+    prompt TEXT,
+    max_response INTEGER,
+    PRIMARY KEY (setting_key, position),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE TABLE IF NOT EXISTS risu_hotkeys (
+    setting_key TEXT NOT NULL DEFAULT 'hotkeys' CHECK (setting_key = 'hotkeys'),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    key TEXT,
+    control BOOLEAN,
+    shift BOOLEAN,
+    alt BOOLEAN,
+    action TEXT,
+    PRIMARY KEY (setting_key, position),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX IF NOT EXISTS risu_hotkeys_action_idx ON risu_hotkeys (action);
+
+CREATE TABLE IF NOT EXISTS risu_custom_models (
+    setting_key TEXT NOT NULL DEFAULT 'customModels' CHECK (setting_key = 'customModels'),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    id TEXT,
+    internal_id TEXT,
+    url TEXT,
+    format INTEGER,
+    tokenizer INTEGER,
+    api_key TEXT,
+    name TEXT,
+    params TEXT,
+    PRIMARY KEY (setting_key, position),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX IF NOT EXISTS risu_custom_models_id_idx
+ON risu_custom_models (id) WHERE id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS risu_custom_model_flags (
+    setting_key TEXT NOT NULL DEFAULT 'customModels' CHECK (setting_key = 'customModels'),
+    model_position INTEGER NOT NULL,
+    position INTEGER NOT NULL CHECK (position >= 0),
+    flag INTEGER NOT NULL,
+    PRIMARY KEY (setting_key, model_position, position),
+    FOREIGN KEY (setting_key, model_position)
+        REFERENCES risu_custom_models(setting_key, position)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE TABLE IF NOT EXISTS risu_loadouts (
+    setting_key TEXT NOT NULL DEFAULT 'loadouts' CHECK (setting_key = 'loadouts'),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    id TEXT,
+    name TEXT,
+    last_used BIGINT,
+    favorite BOOLEAN,
+    preset_name TEXT,
+    persona_id TEXT,
+    icons_present BOOLEAN NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (setting_key, position),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX IF NOT EXISTS risu_loadouts_last_used_idx
+ON risu_loadouts (last_used DESC) WHERE last_used IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS risu_loadout_character_refs (
+    setting_key TEXT NOT NULL DEFAULT 'loadouts' CHECK (setting_key = 'loadouts'),
+    loadout_position INTEGER NOT NULL,
+    position INTEGER NOT NULL CHECK (position >= 0),
+    character_id TEXT NOT NULL,
+    PRIMARY KEY (setting_key, loadout_position, position),
+    FOREIGN KEY (setting_key, loadout_position)
+        REFERENCES risu_loadouts(setting_key, position)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX IF NOT EXISTS risu_loadout_character_idx
+ON risu_loadout_character_refs (character_id);
+
+CREATE TABLE IF NOT EXISTS risu_loadout_module_refs (
+    setting_key TEXT NOT NULL DEFAULT 'loadouts' CHECK (setting_key = 'loadouts'),
+    loadout_position INTEGER NOT NULL,
+    position INTEGER NOT NULL CHECK (position >= 0),
+    module_id TEXT NOT NULL,
+    PRIMARY KEY (setting_key, loadout_position, position),
+    FOREIGN KEY (setting_key, loadout_position)
+        REFERENCES risu_loadouts(setting_key, position)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX IF NOT EXISTS risu_loadout_module_idx ON risu_loadout_module_refs (module_id);
+
+CREATE TABLE IF NOT EXISTS risu_loadout_variables (
+    setting_key TEXT NOT NULL DEFAULT 'loadouts' CHECK (setting_key = 'loadouts'),
+    loadout_position INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (setting_key, loadout_position, key),
+    FOREIGN KEY (setting_key, loadout_position)
+        REFERENCES risu_loadouts(setting_key, position)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE TABLE IF NOT EXISTS risu_loadout_icons (
+    setting_key TEXT NOT NULL DEFAULT 'loadouts' CHECK (setting_key = 'loadouts'),
+    loadout_position INTEGER NOT NULL,
+    position INTEGER NOT NULL CHECK (position >= 0),
+    asset_id TEXT NOT NULL,
+    PRIMARY KEY (setting_key, loadout_position, position),
+    FOREIGN KEY (setting_key, loadout_position)
+        REFERENCES risu_loadouts(setting_key, position)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE TABLE IF NOT EXISTS risu_custom_sidebar_items (
+    setting_key TEXT NOT NULL DEFAULT 'customSidebarItems' CHECK (setting_key = 'customSidebarItems'),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    id TEXT,
+    item_type TEXT,
+    subtype TEXT,
+    label TEXT,
+    PRIMARY KEY (setting_key, position),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE TABLE IF NOT EXISTS risu_ordered_text_settings (
+    setting_key TEXT NOT NULL CHECK (setting_key IN (
+        'formatingOrder', 'localStopStrings', 'enabledModules', 'banCharacterset', 'modelTools'
+    )),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    value TEXT NOT NULL,
+    PRIMARY KEY (setting_key, position),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX IF NOT EXISTS risu_ordered_text_value_idx
+ON risu_ordered_text_settings (setting_key, value);
+
+CREATE TABLE IF NOT EXISTS risu_ordered_number_settings (
+    setting_key TEXT NOT NULL CHECK (setting_key = 'customFlags'),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    value DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (setting_key, position),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE TABLE IF NOT EXISTS risu_string_map_settings (
+    setting_key TEXT NOT NULL CHECK (setting_key IN (
+        'globalChatVariables', 'OaiCompAPIKeys', 'seperateModels'
+    )),
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (setting_key, key),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE TABLE IF NOT EXISTS risu_bias_entries (
+    setting_key TEXT NOT NULL DEFAULT 'bias' CHECK (setting_key = 'bias'),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    phrase TEXT NOT NULL,
+    bias DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (setting_key, position),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX IF NOT EXISTS risu_bias_phrase_idx ON risu_bias_entries (phrase);
+
+CREATE TABLE IF NOT EXISTS risu_additional_parameters (
+    setting_key TEXT NOT NULL DEFAULT 'additionalParams' CHECK (setting_key = 'additionalParams'),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (setting_key, position),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE TABLE IF NOT EXISTS risu_fallback_models (
+    setting_key TEXT NOT NULL DEFAULT 'fallbackModels' CHECK (setting_key = 'fallbackModels'),
+    category TEXT NOT NULL,
+    position INTEGER NOT NULL CHECK (position >= 0),
+    model TEXT NOT NULL,
+    PRIMARY KEY (setting_key, category, position),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX IF NOT EXISTS risu_fallback_model_idx ON risu_fallback_models (model);
+
+CREATE TABLE IF NOT EXISTS risu_openrouter_provider_rules (
+    setting_key TEXT NOT NULL DEFAULT 'openrouterProvider' CHECK (setting_key = 'openrouterProvider'),
+    rule_type TEXT NOT NULL CHECK (rule_type IN ('order', 'only', 'ignore')),
+    position INTEGER NOT NULL CHECK (position >= 0),
+    provider TEXT NOT NULL,
+    PRIMARY KEY (setting_key, rule_type, position),
+    FOREIGN KEY (setting_key) REFERENCES risu_settings(key)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX IF NOT EXISTS risu_openrouter_provider_idx
+ON risu_openrouter_provider_rules (provider, rule_type);
 
 CREATE TABLE IF NOT EXISTS risu_characters (
     id TEXT PRIMARY KEY,
@@ -878,6 +1285,31 @@ DECLARE
 BEGIN
     FOREACH audited_table IN ARRAY ARRAY[
         'risu_settings',
+        'risu_setting_values',
+        'risu_bot_presets',
+        'risu_personas',
+        'risu_modules',
+        'risu_plugins',
+        'risu_global_lorebooks',
+        'risu_global_lore_entries',
+        'risu_global_lore_cache_items',
+        'risu_translator_presets',
+        'risu_hotkeys',
+        'risu_custom_models',
+        'risu_custom_model_flags',
+        'risu_loadouts',
+        'risu_loadout_character_refs',
+        'risu_loadout_module_refs',
+        'risu_loadout_variables',
+        'risu_loadout_icons',
+        'risu_custom_sidebar_items',
+        'risu_ordered_text_settings',
+        'risu_ordered_number_settings',
+        'risu_string_map_settings',
+        'risu_bias_entries',
+        'risu_additional_parameters',
+        'risu_fallback_models',
+        'risu_openrouter_provider_rules',
         'risu_characters',
         'risu_character_attributes',
         'risu_character_tags',
