@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, LanguagesIcon, MonitorIcon, Sailboat, UserIcon, CircleXIcon, KeyboardIcon, SparkleIcon } from "@lucide/svelte";
+    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, DatabaseIcon, LanguagesIcon, MonitorIcon, Sailboat, UserIcon, CircleXIcon, KeyboardIcon, SparkleIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import DisplaySettings from "./Pages/DisplaySettings.svelte";
     import UserSettings from "./Pages/UserSettings.svelte";
@@ -23,8 +23,11 @@
   import { isLite } from "src/ts/lite";
     import HotkeySettings from "./Pages/HotkeySettings.svelte";
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
+    import PostgresDbExplorerSettings from "./Pages/PostgresDbExplorerSettings.svelte";
+    import { isNodeServer } from "src/ts/platform";
 
     let openLoreList = $state(false)
+    let dbExplorerOpen = $state(false)
     if(window.innerWidth >= 900 && $SettingsMenuIndex === -1 && !$MobileGUI){
         $SettingsMenuIndex = 1
     }
@@ -143,6 +146,17 @@
                         <ActivityIcon />
                         <span>{language.advancedSettings}</span>
                     </button>
+                    {#if isNodeServer}
+                        <button class="flex gap-2 items-center hover:text-textcolor"
+                            class:text-textcolor={dbExplorerOpen}
+                            class:text-textcolor2={!dbExplorerOpen}
+                            onclick={() => {
+                                dbExplorerOpen = true
+                        }}>
+                            <DatabaseIcon />
+                            <span>{language.postgresDbExplorer}</span>
+                        </button>
+                    {/if}
                     <button class="flex gap-2 items-center hover:text-textcolor"
                         class:text-textcolor={$SettingsMenuIndex === 77}
                         class:text-textcolor2={$SettingsMenuIndex !== 77}
@@ -251,6 +265,9 @@
 </div>
 {#if openLoreList}
     <Lorepreset close={() => {openLoreList = false}} />
+{/if}
+{#if dbExplorerOpen && isNodeServer}
+    <PostgresDbExplorerSettings close={() => {dbExplorerOpen = false}} />
 {/if}
 <style>
     .setting-bg{

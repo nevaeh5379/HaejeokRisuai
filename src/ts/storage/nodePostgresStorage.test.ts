@@ -115,4 +115,50 @@ describe('Node PostgreSQL storage client', () => {
         expect(fetchMock.mock.calls[2][0]).toBe('/api/database-v2/token-usage')
         expect(fetchMock.mock.calls[3][0]).toBe('/api/database-v2/characters/search?tag=fant&limit=100')
     })
+
+    it('lists database tables and pages table rows through the server API', async () => {
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                enabled: true,
+                configured: true,
+                managedByEnvironment: false,
+                connectionDisplay: 'postgresql://localhost/risuai',
+                poolMax: 10,
+                revision: 2,
+                initialized: true,
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                tables: [
+                    { name: 'risu_characters', rowCount: 2 },
+                    { name: 'risu_messages', rowCount: 42 },
+                ],
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                data: {
+                    table: 'risu_characters',
+                    columns: [{ name: 'id', dataType: 'text', nullable: false, primaryKey: true }],
+                    rows: [{ id: 'c1' }],
+                    offset: 50,
+                    limit: 50,
+                    total: 2,
+                },
+            }), { status: 200 }))
+        vi.stubGlobal('fetch', fetchMock)
+
+        const storage = new NodePostgresStorage(async () => 'test-auth')
+        await storage.getServerConfig()
+
+        expect(await storage.listDbTables()).toEqual([
+            { name: 'risu_characters', rowCount: 2 },
+            { name: 'risu_messages', rowCount: 42 },
+        ])
+        expect(await storage.getDbTableData('risu_characters', {
+            offset: 50,
+            limit: 50,
+            sortColumn: 'id',
+            sortOrder: 'desc',
+        })).toMatchObject({ table: 'risu_characters', total: 2, rows: [{ id: 'c1' }] })
+        expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/tables')
+        expect(fetchMock.mock.calls[2][0]).toBe('/api/database-v2/tables/risu_characters/rows?offset=50&limit=50&sort=id&dir=desc')
+    })
 })

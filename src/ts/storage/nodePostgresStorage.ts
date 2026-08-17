@@ -64,6 +64,27 @@ export interface NodePostgresCharacterSearchResult {
     kind:'character'|'group'
 }
 
+export interface NodePostgresTableInfo {
+    name:string
+    rowCount:number
+}
+
+export interface NodePostgresColumnInfo {
+    name:string
+    dataType:string
+    nullable:boolean
+    primaryKey:boolean
+}
+
+export interface NodePostgresTableData {
+    table:string
+    columns:NodePostgresColumnInfo[]
+    rows:Record<string, unknown>[]
+    offset:number
+    limit:number
+    total:number
+}
+
 async function encodeJsonBody(payload:unknown):Promise<{
     body:BodyInit
     contentEncoding?:string
@@ -440,5 +461,66 @@ export class NodePostgresStorage {
         }
         const body:{ results:NodePostgresCharacterSearchResult[] } = await response.json()
         return body.results
+    }
+
+    async listDbTables():Promise<NodePostgresTableInfo[]> {
+        if(!await this.ensureEnabled()){
+            return []
+        }
+        const response = await fetch('/api/database-v2/tables', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if(response.status === 404){
+            this.status = 'disabled'
+            return []
+        }
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL table list load failed')
+        }
+        const body:{ tables:NodePostgresTableInfo[] } = await response.json()
+        return body.tables
+    }
+
+    async getDbTableData(
+        table:string,
+        options:{
+            offset?:number
+            limit?:number
+            sortColumn?:string
+            sortOrder?:'asc'|'desc'
+        } = {}
+    ):Promise<NodePostgresTableData> {
+        if(!await this.ensureEnabled()){
+            throw new Error('PostgreSQL storage is disabled')
+        }
+        const params = new URLSearchParams({
+            offset: String(options.offset ?? 0),
+            limit: String(options.limit ?? 50),
+        })
+        if(options.sortColumn){
+            params.set('sort', options.sortColumn)
+        }
+        if(options.sortOrder){
+            params.set('dir', options.sortOrder)
+        }
+        const response = await fetch(
+            `/api/database-v2/tables/${encodeURIComponent(table)}/rows?${params.toString()}`,
+            {
+                method: 'GET',
+                cache: 'no-cache',
+                headers: await this.authHeaders()
+            }
+        )
+        if(response.status === 404){
+            this.status = 'disabled'
+            throw new Error('PostgreSQL storage is disabled')
+        }
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL table data load failed')
+        }
+        const body:{ data:NodePostgresTableData } = await response.json()
+        return body.data
     }
 }

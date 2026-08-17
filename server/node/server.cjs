@@ -1748,6 +1748,49 @@ app.get('/api/database-v2/characters/search', authenticatedRouteLimiter, async (
     }
 });
 
+app.get('/api/database-v2/tables', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+
+    try {
+        await sendCompressedJson(req, res, { tables: await postgresStorage.listDbExplorerTables() });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/tables/:table/rows', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+
+    try {
+        const data = await postgresStorage.getDbExplorerTableRows(
+            req.params.table,
+            req.query.offset,
+            req.query.limit,
+            req.query.sort,
+            req.query.dir
+        );
+        await sendCompressedJson(req, res, { data });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_table' });
+            return;
+        }
+        next(error);
+    }
+});
+
 app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;

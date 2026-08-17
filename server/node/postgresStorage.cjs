@@ -52,6 +52,8 @@ const AUDITED_TABLES = [
 ];
 const COLD_STORAGE_PATH_PATTERN = /^coldstorage\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 const COLD_STORAGE_KEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DB_EXPLORER_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const DB_EXPLORER_MAX_ROWS = 200;
 const deflateAsync = promisify(deflate);
 const unzipAsync = promisify(unzip);
 
@@ -89,6 +91,28 @@ function assertId(value, field) {
 function assertPosition(value, field) {
     if (!Number.isSafeInteger(value) || value < 0) {
         throw new PostgresPayloadError(`${field} must be a non-negative integer`);
+    }
+}
+
+function assertDbExplorerIdentifier(value, field) {
+    if (typeof value !== 'string' || value.length === 0 || value.length > 63 ||
+        !DB_EXPLORER_IDENTIFIER_PATTERN.test(value)) {
+        throw new PostgresPayloadError(`${field} must be a valid table or column name`);
+    }
+    return value;
+}
+
+function dbExplorerSelectExpression(columnName, dataType) {
+    const column = `"${columnName}"`;
+    switch (dataType) {
+        case 'bigint':
+        case 'numeric':
+        case 'decimal':
+            return `${column}::text`;
+        case 'bytea':
+            return `encode(${column}, 'hex')`;
+        default:
+            return column;
     }
 }
 
@@ -1617,6 +1641,112 @@ class PostgresStorage {
             image: row.image,
             kind: row.kind,
         }));
+    }
+
+    async listDbExplorerTables() {
+        this.assertEnabled();
+        const result = await this.pool.query(
+            `SELECT table_name
+             FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+             ORDER BY table_name`
+        );
+        const tables = result.rows.map((row) => assertDbExplorerIdentifier(row.table_name, 'table name'));
+        const counts = new Map();
+        for (let i = 0; i < tables.length; i += 25) {
+            const union = tables.slice(i, i + 25).map(
+                (name) => `SELECT '${name}' AS table_name, COUNT(*)::text AS row_count FROM "${name}"`
+            ).join(' UNION ALL ');
+            const countResult = await this.pool.query(union);
+            for (const row of countResult.rows) {
+                counts.set(row.table_name, row.row_count);
+            }
+        }
+        return tables.map((name) => ({
+            name,
+            rowCount: Number(counts.get(name) ?? '0'),
+        }));
+    }
+
+    async getDbExplorerTableColumns(table) {
+        this.assertEnabled();
+        assertDbExplorerIdentifier(table, 'table name');
+        const exists = await this.pool.query(
+            `SELECT 1
+             FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name = $1`,
+            [table]
+        );
+        if (exists.rows.length === 0) {
+            throw new PostgresPayloadError('table was not found');
+        }
+        const columns = await this.pool.query(
+            `SELECT column_name, data_type, is_nullable
+             FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = $1
+             ORDER BY ordinal_position`,
+            [table]
+        );
+        const primaryKeyResult = await this.pool.query(
+            `SELECT a.attname AS column_name
+             FROM pg_index AS i
+             JOIN pg_attribute AS a
+                 ON a.attrelid = i.indrelid AND a.attnum = ANY (i.indkey)
+             WHERE i.indrelid = $1::regclass AND i.indisprimary`,
+            [table]
+        );
+        const primaryKeys = new Set(primaryKeyResult.rows.map((row) => row.column_name));
+        return columns.rows.map((row) => ({
+            name: assertDbExplorerIdentifier(row.column_name, 'column name'),
+            dataType: row.data_type,
+            nullable: row.is_nullable === 'YES',
+            primaryKey: primaryKeys.has(row.column_name),
+        }));
+    }
+
+    async getDbExplorerTableRows(table, rawOffset = 0, rawLimit = 50, rawSortColumn = null, rawSortOrder = 'asc') {
+        this.assertEnabled();
+        assertDbExplorerIdentifier(table, 'table name');
+        const columns = await this.getDbExplorerTableColumns(table);
+        if (columns.length === 0) {
+            throw new PostgresPayloadError('table has no columns');
+        }
+        const parsedOffset = Number.parseInt(rawOffset, 10);
+        const offset = Number.isSafeInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
+        const parsedLimit = Number.parseInt(rawLimit, 10);
+        const limit = Number.isSafeInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), DB_EXPLORER_MAX_ROWS) : 50;
+
+        let sortColumn = columns[0].name;
+        if (typeof rawSortColumn === 'string' && rawSortColumn.length > 0) {
+            const match = columns.find((column) => column.name === rawSortColumn);
+            if (!match) {
+                throw new PostgresPayloadError('sort column was not found in the table');
+            }
+            sortColumn = match.name;
+        }
+        const sortOrder = rawSortOrder === 'desc' ? 'DESC' : 'ASC';
+
+        const selectList = columns
+            .map((column) => dbExplorerSelectExpression(column.name, column.dataType))
+            .join(', ');
+        const rows = await this.pool.query(
+            `SELECT ${selectList}
+             FROM "${table}"
+             ORDER BY "${sortColumn}" ${sortOrder} NULLS LAST
+             LIMIT $1 OFFSET $2`,
+            [limit, offset]
+        );
+        const count = await this.pool.query(
+            `SELECT COUNT(*)::text AS total FROM "${table}"`
+        );
+        return {
+            table,
+            columns,
+            rows: rows.rows,
+            offset,
+            limit,
+            total: Number(count.rows[0].total),
+        };
     }
 }
 
