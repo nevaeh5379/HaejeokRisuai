@@ -1905,6 +1905,8 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
         }
         next(error);
     }
+});
+
 app.get('/api/postgres-config', authenticatedRouteLimiter, async (req, res, next) => {
     if (!await checkAuth(req, res)) {
         return;
@@ -1996,7 +1998,6 @@ app.post('/api/postgres-config', authenticatedRouteLimiter, async (req, res, nex
         next(error);
     }
 })
-});
 
 app.get('/api/database-v2', authenticatedRouteLimiter, async (req, res, next) => {
     if (!await checkAuth(req, res)) {
