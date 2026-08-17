@@ -145,9 +145,11 @@ CREATE INDEX IF NOT EXISTS risu_setting_values_member_idx
 ON risu_setting_values (setting_key, member_key)
 WHERE member_key IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS risu_setting_values_text_idx
-ON risu_setting_values (setting_key, text_value)
-WHERE text_value IS NOT NULL;
+-- text_value can hold arbitrarily large setting strings (prompts, jailbreaks,
+-- etc.) that exceed the btree index row limit, so it cannot be indexed directly.
+-- The index is unused by the storage layer; drop any legacy copy that predates
+-- this fix so large values no longer fail to insert.
+DROP INDEX IF EXISTS risu_setting_values_text_idx;
 
 CREATE TABLE IF NOT EXISTS risu_bot_presets (
     setting_key TEXT NOT NULL DEFAULT 'botPresets' CHECK (setting_key = 'botPresets'),

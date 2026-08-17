@@ -1682,6 +1682,72 @@ app.post('/api/database-v2/cold-storage/prune', authenticatedRouteLimiter, async
     }
 });
 
+app.get('/api/database-v2/search', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+
+    try {
+        const results = await postgresStorage.searchMessages(
+            req.query.q,
+            req.query.scope,
+            req.query.limit
+        );
+        await sendCompressedJson(req, res, { results });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_search_query' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/token-usage', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+
+    try {
+        await sendCompressedJson(req, res, { usage: await postgresStorage.getTokenUsage() });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/characters/search', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+
+    try {
+        const tag = req.query.tag;
+        const name = req.query.name;
+        const results = tag
+            ? await postgresStorage.searchCharactersByTag(tag, req.query.limit)
+            : await postgresStorage.searchCharactersByName(name, req.query.limit);
+        await sendCompressedJson(req, res, { results });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_character_search' });
+            return;
+        }
+        next(error);
+    }
+});
+
 app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;

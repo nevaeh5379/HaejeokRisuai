@@ -1481,6 +1481,143 @@ class PostgresStorage {
             client.release();
         }
     }
+
+    async searchMessages(rawQuery, rawScope = 'all', rawLimit = 50) {
+        this.assertEnabled();
+        const query = typeof rawQuery === 'string' ? rawQuery.trim() : '';
+        if (!query) {
+            throw new PostgresPayloadError('search query must be a non-empty string');
+        }
+        if (query.length > 1024) {
+            throw new PostgresPayloadError('search query must be at most 1024 characters');
+        }
+        const scope = rawScope === 'active' || rawScope === 'cold' ? rawScope : 'all';
+        const parsedLimit = Number.parseInt(rawLimit, 10);
+        const limit = Number.isSafeInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 500) : 50;
+
+        const result = await this.pool.query(
+            `SELECT
+                 m.storage_state,
+                 m.archive_id,
+                 COALESCE(ch.character_id, a.owner_character_id) AS character_id,
+                 COALESCE(c.name, a.character_name) AS character_name,
+                 m.chat_id,
+                 COALESCE(ch.name, '') AS chat_name,
+                 m.message_id,
+                 m.position,
+                 m.role,
+                 m.sent_time,
+                 m.sender_name,
+                 ts_headline('simple', m.content_text, websearch_to_tsquery('simple', $1),
+                     'StartSel=<mark>, StopSel=</mark>, MaxWords=40, MinWords=12') AS snippet
+             FROM risu_all_messages AS m
+             LEFT JOIN risu_chats AS ch
+                 ON m.storage_state = 'active' AND ch.id = m.chat_id
+             LEFT JOIN risu_characters AS c ON c.id = ch.character_id
+             LEFT JOIN risu_cold_archives AS a
+                 ON m.storage_state = 'cold' AND a.id = m.archive_id
+             WHERE m.content_text IS NOT NULL
+               AND to_tsvector('simple', m.content_text) @@ websearch_to_tsquery('simple', $1)
+               AND ($2::text = 'all' OR m.storage_state = $2)
+             ORDER BY ts_rank(to_tsvector('simple', m.content_text), websearch_to_tsquery('simple', $1)) DESC,
+                      m.sent_time DESC
+             LIMIT $3`,
+            [query, scope, limit]
+        );
+        return result.rows.map((row) => ({
+            storageState: row.storage_state,
+            archiveId: row.archive_id,
+            characterId: row.character_id,
+            characterName: row.character_name,
+            chatId: row.chat_id,
+            chatName: row.chat_name,
+            messageId: row.message_id,
+            position: row.position,
+            role: row.role,
+            sentTime: row.sent_time === null ? null : Number(row.sent_time),
+            senderName: row.sender_name,
+            snippet: row.snippet,
+        }));
+    }
+
+    async getTokenUsage() {
+        this.assertEnabled();
+        const result = await this.pool.query(
+            `SELECT model,
+                    COUNT(*)::integer AS message_count,
+                    COALESCE(SUM(input_tokens), 0)::bigint AS total_input_tokens,
+                    COALESCE(SUM(output_tokens), 0)::bigint AS total_output_tokens
+             FROM (
+                 SELECT model, input_tokens, output_tokens FROM risu_message_generation
+                 UNION ALL
+                 SELECT model, input_tokens, output_tokens FROM risu_cold_message_generation
+             ) AS generation
+             WHERE model IS NOT NULL
+             GROUP BY model
+             ORDER BY total_output_tokens DESC, total_input_tokens DESC`
+        );
+        return result.rows.map((row) => ({
+            model: row.model,
+            messageCount: row.message_count,
+            totalInputTokens: Number(row.total_input_tokens),
+            totalOutputTokens: Number(row.total_output_tokens),
+        }));
+    }
+
+    async searchCharactersByTag(rawTag, rawLimit = 100) {
+        this.assertEnabled();
+        const tag = typeof rawTag === 'string' ? rawTag.trim() : '';
+        if (!tag) {
+            throw new PostgresPayloadError('tag must be a non-empty string');
+        }
+        if (tag.length > 256) {
+            throw new PostgresPayloadError('tag must be at most 256 characters');
+        }
+        const parsedLimit = Number.parseInt(rawLimit, 10);
+        const limit = Number.isSafeInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 500) : 100;
+        const result = await this.pool.query(
+            `SELECT c.id, c.name, c.image, c.kind
+             FROM risu_character_tags AS t
+             JOIN risu_characters AS c ON c.id = t.character_id
+             WHERE t.tag ILIKE '%' || $1 || '%'
+             ORDER BY c.name
+             LIMIT $2`,
+            [tag, limit]
+        );
+        return result.rows.map((row) => ({
+            id: row.id,
+            name: row.name,
+            image: row.image,
+            kind: row.kind,
+        }));
+    }
+
+    async searchCharactersByName(rawName, rawLimit = 100) {
+        this.assertEnabled();
+        const name = typeof rawName === 'string' ? rawName.trim() : '';
+        if (!name) {
+            throw new PostgresPayloadError('name must be a non-empty string');
+        }
+        if (name.length > 256) {
+            throw new PostgresPayloadError('name must be at most 256 characters');
+        }
+        const parsedLimit = Number.parseInt(rawLimit, 10);
+        const limit = Number.isSafeInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 500) : 100;
+        const result = await this.pool.query(
+            `SELECT id, name, image, kind
+             FROM risu_characters
+             WHERE LOWER(name) LIKE '%' || LOWER($1) || '%'
+             ORDER BY name
+             LIMIT $2`,
+            [name, limit]
+        );
+        return result.rows.map((row) => ({
+            id: row.id,
+            name: row.name,
+            image: row.image,
+            kind: row.kind,
+        }));
+    }
 }
 
 module.exports = {

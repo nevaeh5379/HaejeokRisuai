@@ -10,7 +10,9 @@
     import Button from "../UI/GUI/Button.svelte";
     import { language } from "src/lang";
     import { parseMultilangString } from "src/ts/util";
-    import { checkCharOrder } from "src/ts/globalApi.svelte";
+    import { checkCharOrder, forageStorage } from "src/ts/globalApi.svelte";
+    import { NodeStorage } from "src/ts/storage/nodeStorage";
+    import type { NodePostgresCharacterSearchResult } from "src/ts/storage/nodePostgresStorage";
     import MobileCharacters from "../Mobile/MobileCharacters.svelte";
     interface Props {
         endGrid?: any;
@@ -18,7 +20,42 @@
 
     let { endGrid = () => {} }: Props = $props();
     let search = $state('')
+    let tagSearch = $state('')
+    let tagResults = $state<NodePostgresCharacterSearchResult[]>([])
+    let tagSearching = $state(false)
     let selected = $state(3)
+
+    function getNodeStorage(): NodeStorage | null {
+        if (!(forageStorage.realStorage instanceof NodeStorage)) {
+            return null;
+        }
+        return forageStorage.realStorage;
+    }
+
+    async function runTagSearch() {
+        const tag = tagSearch.trim();
+        if (!tag) {
+            tagResults = [];
+            return;
+        }
+        const storage = getNodeStorage();
+        if (storage && storage.postgres.isEnabled()) {
+            tagSearching = true;
+            try {
+                tagResults = await storage.postgres.searchCharactersByTag(tag, 100);
+            } catch {
+                tagResults = [];
+            } finally {
+                tagSearching = false;
+            }
+            return;
+        }
+        // In-memory fallback
+        const lower = tag.toLowerCase();
+        tagResults = DBState.db.characters
+            .filter((c) => !c.trashTime && ((c as any).tags ?? []).some((t: string) => t.toLowerCase().includes(lower)))
+            .map((c) => ({ id: c.chaId, name: c.name, image: c.image ?? null, kind: c.type === 'group' ? 'group' : 'character' }));
+    }
 
     function formatChars(search:string, db:Database, trash = false){
         let charas:{
@@ -68,6 +105,32 @@
                     <TextInput placeholder="Search" bind:value={search} size="lg" autocomplete="off" fullwidth={true}/>
                 </div>
             </div>
+            <div class="flex items-center gap-2 mt-2">
+                <div class="flex-1">
+                    <TextInput placeholder={language.searchByTag} bind:value={tagSearch} size="sm" autocomplete="off" fullwidth={true}/>
+                </div>
+                <Button size="sm" disabled={tagSearching} onclick={runTagSearch}>
+                    {tagSearching ? '...' : language.search}
+                </Button>
+            </div>
+            {#if tagResults.length > 0}
+                <div class="flex flex-wrap gap-2 mt-2">
+                    {#each tagResults as result (result.id)}
+                        <button
+                            class="flex items-center gap-2 px-2 py-1 rounded-md border border-darkborderc hover:bg-selected transition-colors"
+                            onclick={() => {
+                                const idx = findCharacterIndexbyId(result.id);
+                                if (idx !== -1) {
+                                    changeChar(idx);
+                                    endGrid();
+                                }
+                            }}
+                        >
+                            <span class="text-sm text-textcolor">{result.name}</span>
+                        </button>
+                    {/each}
+                </div>
+            {/if}
             <div class="flex flex-wrap gap-2 mt-2">
                 <Button styled={selected === 3 ? 'primary' : 'outlined'} size="sm" onclick={() => {selected = 3}}>
                     {language.simple}

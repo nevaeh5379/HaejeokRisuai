@@ -35,6 +35,35 @@ export interface NodePostgresRevision {
     change_count:number
 }
 
+export interface NodePostgresMessageSearchResult {
+    storageState:'active'|'cold'
+    archiveId:string|null
+    characterId:string|null
+    characterName:string|null
+    chatId:string|null
+    chatName:string
+    messageId:string
+    position:number
+    role:'user'|'char'
+    sentTime:number|null
+    senderName:string|null
+    snippet:string
+}
+
+export interface NodePostgresTokenUsage {
+    model:string
+    messageCount:number
+    totalInputTokens:number
+    totalOutputTokens:number
+}
+
+export interface NodePostgresCharacterSearchResult {
+    id:string
+    name:string
+    image:string|null
+    kind:'character'|'group'
+}
+
 async function encodeJsonBody(payload:unknown):Promise<{
     body:BodyInit
     contentEncoding?:string
@@ -344,5 +373,72 @@ export class NodePostgresStorage {
         }, {
             forceFull: true,
         })
+    }
+
+    async searchMessages(query:string, scope:'all'|'active'|'cold' = 'all', limit = 50):Promise<NodePostgresMessageSearchResult[]> {
+        if(!await this.ensureEnabled()){
+            return []
+        }
+        const params = new URLSearchParams({ q: query, scope, limit: String(limit) })
+        const response = await fetch(`/api/database-v2/search?${params.toString()}`, {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL message search failed')
+        }
+        const body:{ results:NodePostgresMessageSearchResult[] } = await response.json()
+        return body.results
+    }
+
+    async getTokenUsage():Promise<NodePostgresTokenUsage[]> {
+        if(!await this.ensureEnabled()){
+            return []
+        }
+        const response = await fetch('/api/database-v2/token-usage', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL token usage load failed')
+        }
+        const body:{ usage:NodePostgresTokenUsage[] } = await response.json()
+        return body.usage
+    }
+
+    async searchCharactersByTag(tag:string, limit = 100):Promise<NodePostgresCharacterSearchResult[]> {
+        if(!await this.ensureEnabled()){
+            return []
+        }
+        const params = new URLSearchParams({ tag, limit: String(limit) })
+        const response = await fetch(`/api/database-v2/characters/search?${params.toString()}`, {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL character tag search failed')
+        }
+        const body:{ results:NodePostgresCharacterSearchResult[] } = await response.json()
+        return body.results
+    }
+
+    async searchCharactersByName(name:string, limit = 100):Promise<NodePostgresCharacterSearchResult[]> {
+        if(!await this.ensureEnabled()){
+            return []
+        }
+        const params = new URLSearchParams({ name, limit: String(limit) })
+        const response = await fetch(`/api/database-v2/characters/search?${params.toString()}`, {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL character name search failed')
+        }
+        const body:{ results:NodePostgresCharacterSearchResult[] } = await response.json()
+        return body.results
     }
 }

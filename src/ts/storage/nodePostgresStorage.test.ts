@@ -77,4 +77,42 @@ describe('Node PostgreSQL storage client', () => {
         expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/revisions?limit=20')
         expect(JSON.parse(fetchMock.mock.calls[2][1]?.body as string)).toEqual({ revisionId: 2 })
     })
+
+    it('searches messages, token usage, and characters through the server API', async () => {
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                enabled: true,
+                configured: true,
+                managedByEnvironment: false,
+                connectionDisplay: 'postgresql://localhost/risuai',
+                poolMax: 10,
+                revision: 2,
+                initialized: true,
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                results: [{
+                    storageState: 'active', archiveId: null, characterId: 'c1',
+                    characterName: 'Char', chatId: 'chat1', chatName: 'Chat',
+                    messageId: 'm1', position: 0, role: 'user', sentTime: 1,
+                    senderName: null, snippet: '<mark>hello</mark>',
+                }],
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                usage: [{ model: 'model-a', messageCount: 2, totalInputTokens: 15, totalOutputTokens: 27 }],
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                results: [{ id: 'c1', name: 'Char', image: null, kind: 'character' }],
+            }), { status: 200 }))
+        vi.stubGlobal('fetch', fetchMock)
+
+        const storage = new NodePostgresStorage(async () => 'test-auth')
+        await storage.getServerConfig()
+
+        expect(await storage.searchMessages('hello', 'all', 50)).toMatchObject([{ characterName: 'Char' }])
+        expect(await storage.getTokenUsage()).toMatchObject([{ model: 'model-a', totalOutputTokens: 27 }])
+        expect(await storage.searchCharactersByTag('fant', 100)).toMatchObject([{ id: 'c1' }])
+        expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/search?q=hello&scope=all&limit=50')
+        expect(fetchMock.mock.calls[2][0]).toBe('/api/database-v2/token-usage')
+        expect(fetchMock.mock.calls[3][0]).toBe('/api/database-v2/characters/search?tag=fant&limit=100')
+    })
 })

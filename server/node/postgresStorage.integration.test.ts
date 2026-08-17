@@ -30,6 +30,10 @@ const {
         pruneColdStorage:(keys:string[]) => Promise<{deleted:number}>
         migrateLegacyColdStorage:(savePath:string) => Promise<{migrated:number, skipped:number}>
         exportColdStorageToLegacy:(savePath:string) => Promise<{exported:number, archived:number}>
+        searchMessages:(query:string, scope?:string, limit?:number) => Promise<Record<string, any>[]>
+        getTokenUsage:() => Promise<Record<string, any>[]>
+        searchCharactersByTag:(tag:string, limit?:number) => Promise<Record<string, any>[]>
+        searchCharactersByName:(name:string, limit?:number) => Promise<Record<string, any>[]>
         pool:{ query:(sql:string, params?:unknown[]) => Promise<any>, end:() => Promise<void> }
     }
 }
@@ -571,5 +575,85 @@ describePostgres('PostgreSQL structured storage integration', () => {
         expect(dynamicStorage.enabled).toBe(true)
         await dynamicStorage.reconfigure({ connectionString: '' })
         expect(dynamicStorage.enabled).toBe(false)
+    })
+
+    it('searches active and cold messages with full-text matching', async () => {
+        await storage.sync({
+            baseRevision: 0,
+            replaceAll: true,
+            root: { upserts: [], deletes: [] },
+            characterIds: ['character-search'],
+            characters: [{
+                id: 'character-search', position: 0,
+                data: { name: 'Searchable', tags: ['fantasy', 'rpg'] },
+            }],
+            chatManifests: [{ characterId: 'character-search', ids: ['chat-search'] }],
+            chats: [{ id: 'chat-search', characterId: 'character-search', position: 0, data: { name: 'Search chat' } }],
+            messageManifests: [{ chatId: 'chat-search', ids: ['message-search'] }],
+            messages: [{
+                id: 'message-search', chatId: 'chat-search', position: 0,
+                data: { role: 'user', data: 'the quick brown fox jumps over the lazy dog' },
+            }],
+        })
+        await storage.upsertColdStorage('7be57c70-e119-4b7c-874f-68fd4d0d93c6', {
+            message: [{ role: 'char', data: 'a completely different archived sentence' }],
+        })
+
+        const active = await storage.searchMessages('quick brown fox', 'all', 10)
+        expect(active.some((r) => r.storageState === 'active' && r.characterName === 'Searchable')).toBe(true)
+
+        const cold = await storage.searchMessages('archived sentence', 'cold', 10)
+        expect(cold.some((r) => r.storageState === 'cold')).toBe(true)
+
+        const scoped = await storage.searchMessages('quick brown fox', 'cold', 10)
+        expect(scoped).toHaveLength(0)
+    })
+
+    it('aggregates token usage across active and cold messages', async () => {
+        await storage.sync({
+            baseRevision: 0,
+            replaceAll: true,
+            root: { upserts: [], deletes: [] },
+            characterIds: ['character-tokens'],
+            characters: [{ id: 'character-tokens', position: 0, data: { name: 'Tokens' } }],
+            chatManifests: [{ characterId: 'character-tokens', ids: ['chat-tokens'] }],
+            chats: [{ id: 'chat-tokens', characterId: 'character-tokens', position: 0, data: { name: 'Token chat' } }],
+            messageManifests: [{ chatId: 'chat-tokens', ids: ['message-tokens'] }],
+            messages: [{
+                id: 'message-tokens', chatId: 'chat-tokens', position: 0,
+                data: { role: 'char', data: 'hello', generationInfo: { model: 'model-a', inputTokens: 10, outputTokens: 20 } },
+            }],
+        })
+        await storage.upsertColdStorage('7be57c70-e119-4b7c-874f-68fd4d0d93c6', {
+            message: [{ role: 'char', data: 'world', generationInfo: { model: 'model-a', inputTokens: 5, outputTokens: 7 } }],
+        })
+
+        const usage = await storage.getTokenUsage()
+        const modelA = usage.find((u) => u.model === 'model-a')
+        expect(modelA).toMatchObject({
+            messageCount: 2,
+            totalInputTokens: 15,
+            totalOutputTokens: 27,
+        })
+    })
+
+    it('searches characters by tag and name', async () => {
+        await storage.sync({
+            baseRevision: 0,
+            replaceAll: true,
+            root: { upserts: [], deletes: [] },
+            characterIds: ['character-tag'],
+            characters: [{
+                id: 'character-tag', position: 0,
+                data: { name: 'Tagged Character', tags: ['fantasy', 'rpg'] },
+            }],
+            chats: [], chatManifests: [], messageManifests: [], messages: [],
+        })
+
+        const byTag = await storage.searchCharactersByTag('fant', 10)
+        expect(byTag.some((c) => c.id === 'character-tag')).toBe(true)
+
+        const byName = await storage.searchCharactersByName('tagged', 10)
+        expect(byName.some((c) => c.id === 'character-tag')).toBe(true)
     })
 })

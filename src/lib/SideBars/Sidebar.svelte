@@ -12,7 +12,9 @@
 
     QuickSettings,
 
-    additionalHamburgerMenu
+    additionalHamburgerMenu,
+
+    messageSearchOpen
 
 
   } from "../../ts/stores.svelte";
@@ -30,6 +32,7 @@
     HomeIcon,
     WrenchIcon,
     User2Icon,
+    SearchIcon,
   } from "@lucide/svelte";
     import {
   addCharacter,
@@ -517,6 +520,13 @@
           PlaygroundStore.set(1)
         }}
       ><ShellIcon /></BarIcon>
+      <div class="mt-2"></div>
+      <BarIcon
+        onClick={() => {
+          reseter();
+          messageSearchOpen.set(true);
+        }}><SearchIcon /></BarIcon
+      >
       {#each additionalHamburgerMenu as menu}
         <div class="mt-2"></div>
         <BarIcon
@@ -861,6 +871,13 @@
           PlaygroundStore.set(1)
         }}
       ><ShellIcon /></BarIcon>
+      <div class="mt-2"></div>
+      <BarIcon
+        onClick={() => {
+          reseter();
+          messageSearchOpen.set(true);
+        }}><SearchIcon /></BarIcon
+      >
       {#each additionalHamburgerMenu as menu}
         <div class="mt-2"></div>
         <BarIcon
