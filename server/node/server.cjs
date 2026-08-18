@@ -7,12 +7,14 @@ const http = require('http');
 const path = require('path');
 const net = require('net');
 const htmlparser = require('node-html-parser');
+const fsSync = require('fs');
 const { existsSync, mkdirSync, readFileSync, writeFileSync } = require('fs');
 const fs = require('fs/promises')
 const crypto = require('crypto')
 const rateLimit = require('express-rate-limit');
 const { WebSocketServer } = require('ws');
 const { promisify } = require('util');
+const zlib = require('zlib');
 const { gzip } = require('zlib');
 const {
     PostgresPayloadError,
@@ -27,7 +29,115 @@ const {
 const defaultJsonParser = express.json({ limit: '100mb' });
 const postgresJsonBodyLimit = process.env.RISU_POSTGRES_JSON_BODY_LIMIT || '1gb';
 const postgresJsonParser = express.json({ limit: postgresJsonBodyLimit });
-app.use(express.static(path.join(process.cwd(), 'dist'), {index: false}));
+
+const distDir = path.join(process.cwd(), 'dist');
+const HASHED_ASSET_REGEX = /-[a-zA-Z0-9_-]{8,}\.(js|css|png|jpg|jpeg|gif|webp|svg|woff|woff2|ttf|eot|wasm|ico|json|map)$/;
+const COMPRESSIBLE_EXTENSIONS = new Set(['.js', '.mjs', '.css', '.html', '.json', '.svg', '.txt', '.wasm', '.map']);
+
+const STATIC_MIME_TYPES = {
+    '.js': 'application/javascript; charset=utf-8',
+    '.mjs': 'application/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.html': 'text/html; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.svg': 'image/svg+xml',
+    '.txt': 'text/plain; charset=utf-8',
+    '.wasm': 'application/wasm',
+    '.map': 'application/json; charset=utf-8',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.ico': 'image/x-icon',
+    '.woff': 'font/woff',
+    '.woff2': 'font/woff2',
+    '.ttf': 'font/ttf',
+};
+
+app.use(async (req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+        return next();
+    }
+    if (req.path.startsWith('/api/') || req.path.startsWith('/proxy') || req.path.startsWith('/v1/')) {
+        return next();
+    }
+    if (req.path === '/' || req.path === '') {
+        return next();
+    }
+
+    try {
+        let safePath;
+        try {
+            safePath = decodeURIComponent(req.path);
+        } catch {
+            return next();
+        }
+        const resolvedPath = path.normalize(path.join(distDir, safePath));
+        if (!resolvedPath.startsWith(distDir)) {
+            return next();
+        }
+
+        let stats;
+        try {
+            stats = await fs.stat(resolvedPath);
+        } catch {
+            return next();
+        }
+
+        if (!stats.isFile()) {
+            return next();
+        }
+
+        const fileName = path.basename(resolvedPath);
+        const ext = path.extname(fileName).toLowerCase();
+
+        if (resolvedPath.includes('/assets/') || resolvedPath.includes('\\assets\\') || HASHED_ASSET_REGEX.test(fileName)) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (fileName.endsWith('.html') || fileName === 'sw.js' || fileName === 'manifest.json') {
+            res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+        } else {
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+        }
+
+        const etag = `"${stats.mtimeMs.toString(36)}-${stats.size.toString(36)}"`;
+        res.setHeader('ETag', etag);
+        const ifNoneMatch = String(req.headers['if-none-match'] || '');
+        if (ifNoneMatch && ifNoneMatch.split(',').map((v) => v.trim()).includes(etag)) {
+            res.status(304).end();
+            return;
+        }
+
+        if (STATIC_MIME_TYPES[ext]) {
+            res.setHeader('Content-Type', STATIC_MIME_TYPES[ext]);
+        }
+
+        const acceptEncoding = String(req.headers['accept-encoding'] || '');
+        const canGzip = COMPRESSIBLE_EXTENSIONS.has(ext) && stats.size >= 1024 && /(^|,|\s)gzip(\s|,|;|$)/i.test(acceptEncoding);
+
+        if (req.method === 'HEAD') {
+            res.status(200).end();
+            return;
+        }
+
+        if (canGzip) {
+            res.setHeader('Content-Encoding', 'gzip');
+            res.setHeader('Vary', 'Accept-Encoding');
+            const gzipStream = zlib.createGzip({ level: 6 });
+            const fileStream = fsSync.createReadStream(resolvedPath);
+            fileStream.on('error', (err) => next(err));
+            gzipStream.on('error', (err) => next(err));
+            fileStream.pipe(gzipStream).pipe(res);
+        } else {
+            res.setHeader('Content-Length', stats.size);
+            const fileStream = fsSync.createReadStream(resolvedPath);
+            fileStream.on('error', (err) => next(err));
+            fileStream.pipe(res);
+        }
+    } catch (error) {
+        next(error);
+    }
+});
 app.use((req, res, next) => {
     if (isLargePostgresJsonRequest(req)) {
         next();
@@ -794,7 +904,23 @@ app.get('/', async (req, res, next) => {
         const legalConfigured = process.env.VITE_RISU_LEGAL_CONFIGURED?.trim().toUpperCase() === 'TRUE';
         head.innerHTML = `<script>globalThis.__NODE__ = true;globalThis.__RISU_LEGAL_CONFIGURED__ = ${legalConfigured}</script>` + head.innerHTML
         
-        res.send(root.toString())
+        const html = root.toString();
+        const bodyBuffer = Buffer.from(html, 'utf-8');
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+        res.setHeader('Vary', 'Accept-Encoding');
+
+        const acceptEncoding = String(req.headers['accept-encoding'] || '');
+        if (bodyBuffer.length >= 1024 && /(^|,|\s)gzip(\s|,|;|$)/i.test(acceptEncoding)) {
+            const compressed = await gzipAsync(bodyBuffer, { level: 6 });
+            res.setHeader('Content-Encoding', 'gzip');
+            res.setHeader('Content-Length', compressed.length);
+            res.send(compressed);
+            return;
+        }
+
+        res.setHeader('Content-Length', bodyBuffer.length);
+        res.send(bodyBuffer);
     } catch (error) {
         console.log(error)
         next(error)
