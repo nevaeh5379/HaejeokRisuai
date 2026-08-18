@@ -2019,7 +2019,29 @@ app.get('/api/database-v2', authenticatedRouteLimiter, async (req, res, next) =>
     }
 
     try {
-        const stored = await postgresStorage.loadDatabase();
+        const shallow = req.query.shallow !== 'false';
+        const stored = await postgresStorage.loadDatabase({ shallow });
+        if (stored.database) {
+            console.log(`[GET /api/database-v2 shallow=${shallow}] Breakdown:`);
+            for (const [key, val] of Object.entries(stored.database)) {
+                const len = JSON.stringify(val)?.length ?? 0;
+                if (len > 50000) {
+                    console.log(`  - root.${key}: ${(len / 1024 / 1024).toFixed(2)} MB`);
+                }
+            }
+            if (stored.database.characters) {
+                console.log(`  - characters count: ${stored.database.characters.length}`);
+                let totalCharsSize = 0;
+                let totalChatsSize = 0;
+                for (const char of stored.database.characters) {
+                    const charCopy = { ...char, chats: [] };
+                    totalCharsSize += JSON.stringify(charCopy)?.length ?? 0;
+                    totalChatsSize += JSON.stringify(char.chats)?.length ?? 0;
+                }
+                console.log(`  - total characters metadata size: ${(totalCharsSize / 1024 / 1024).toFixed(2)} MB`);
+                console.log(`  - total chats metadata size: ${(totalChatsSize / 1024 / 1024).toFixed(2)} MB`);
+            }
+        }
         const etag = `"risu-postgres-${stored.revision}"`;
         res.setHeader('ETag', etag);
         res.setHeader('Cache-Control', 'private, no-cache');
@@ -2034,6 +2056,236 @@ app.get('/api/database-v2', authenticatedRouteLimiter, async (req, res, next) =>
             database: stored.database,
         });
     } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/plugins', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({
+            error: 'PostgreSQL storage is not configured',
+            code: 'postgres_disabled',
+        });
+        return;
+    }
+
+    try {
+        const result = await postgresStorage.loadPlugins();
+        const etag = `"risu-plugins-${result.hash}"`;
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
+        if (requestEtag.split(',').map((value) => value.trim()).includes(etag)) {
+            res.status(304).end();
+            return;
+        }
+        await sendCompressedJson(req, res, {
+            plugins: result.plugins,
+            hash: result.hash,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/plugin-custom-storage/keys', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({
+            error: 'PostgreSQL storage is not configured',
+            code: 'postgres_disabled',
+        });
+        return;
+    }
+
+    try {
+        const keys = await postgresStorage.listPluginCustomStorageKeys();
+        await sendCompressedJson(req, res, { keys });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/plugin-custom-storage/keys/:key', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({
+            error: 'PostgreSQL storage is not configured',
+            code: 'postgres_disabled',
+        });
+        return;
+    }
+
+    try {
+        const result = await postgresStorage.loadPluginCustomStorageKey(req.params.key);
+        if (!result.exists) {
+            res.status(404).send({ error: `Plugin custom storage key not found: ${req.params.key}` });
+            return;
+        }
+        const etag = `"risu-plugin-key-${result.hash}"`;
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
+        if (requestEtag.split(',').map((value) => value.trim()).includes(etag)) {
+            res.status(304).end();
+            return;
+        }
+        await sendCompressedJson(req, res, {
+            key: result.key,
+            value: result.value,
+            hash: result.hash,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/plugin-custom-storage', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({
+            error: 'PostgreSQL storage is not configured',
+            code: 'postgres_disabled',
+        });
+        return;
+    }
+
+    try {
+        const result = await postgresStorage.loadPluginCustomStorage();
+        const etag = `"risu-plugin-storage-${result.hash}"`;
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
+        if (requestEtag.split(',').map((value) => value.trim()).includes(etag)) {
+            res.status(304).end();
+            return;
+        }
+        await sendCompressedJson(req, res, {
+            pluginCustomStorage: result.pluginCustomStorage,
+            hash: result.hash,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/plugins-data', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({
+            error: 'PostgreSQL storage is not configured',
+            code: 'postgres_disabled',
+        });
+        return;
+    }
+
+    try {
+        const result = await postgresStorage.loadPluginsData();
+        const etag = `"risu-plugins-data-${result.hash}"`;
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
+        if (requestEtag.split(',').map((value) => value.trim()).includes(etag)) {
+            res.status(304).end();
+            return;
+        }
+        await sendCompressedJson(req, res, {
+            plugins: result.plugins,
+            pluginCustomStorage: result.pluginCustomStorage,
+            hash: result.hash,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/characters/:characterId', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({
+            error: 'PostgreSQL storage is not configured',
+            code: 'postgres_disabled',
+        });
+        return;
+    }
+
+    try {
+        const character = await postgresStorage.loadCharacter(req.params.characterId);
+        if (!character) {
+            res.status(404).send({ error: 'Character not found', code: 'character_not_found' });
+            return;
+        }
+        await sendCompressedJson(req, res, { character });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_character_id' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/chats/:chatId', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({
+            error: 'PostgreSQL storage is not configured',
+            code: 'postgres_disabled',
+        });
+        return;
+    }
+
+    try {
+        const chat = await postgresStorage.loadChat(req.params.chatId);
+        if (!chat) {
+            res.status(404).send({ error: 'Chat not found', code: 'chat_not_found' });
+            return;
+        }
+        await sendCompressedJson(req, res, { chat });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_chat_id' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/chats/:chatId/messages', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({
+            error: 'PostgreSQL storage is not configured',
+            code: 'postgres_disabled',
+        });
+        return;
+    }
+
+    try {
+        const messages = await postgresStorage.loadChatMessages(req.params.chatId);
+        await sendCompressedJson(req, res, { messages });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_chat_id' });
+            return;
+        }
         next(error);
     }
 });

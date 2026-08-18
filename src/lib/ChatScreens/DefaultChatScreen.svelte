@@ -796,7 +796,7 @@
                 </div>
             {/if}
 
-            {#if DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message?.[0]?.data?.startsWith(coldStorageHeader)  }
+            {#if DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message?.[0]?.data?.startsWith(coldStorageHeader) || DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].messagesLoaded === false || DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].detailsLoaded === false }
                 {#await preLoadChat($selectedCharID, DBState.db.characters[$selectedCharID].chatPage)}
                     <div class="w-full flex justify-center text-textcolor2 italic mb-12">
                         {language.loadingChatData}

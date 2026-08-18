@@ -6,14 +6,17 @@ import { checkNullish, findCharacterbyId, findCharacterIndexbyId, getUserName, s
 import { v4 as uuidv4, v4 } from 'uuid';
 import { getImageType } from "./media";
 import { DBState, MobileGUIStack, OpenRealmStore, selectedCharID } from "./stores.svelte";
-import { AppendableBuffer, changeChatTo, checkCharOrder, downloadFile, getFileSrc, requiresFullEncoderReload } from "./globalApi.svelte";
+import { AppendableBuffer, changeChatTo, checkCharOrder, downloadFile, forageStorage, getFileSrc, requiresFullEncoderReload } from "./globalApi.svelte";
 import { updateInlayScreen } from "./process/inlayScreen";
 import { parseMarkdownSafe } from "./parser/parser.svelte";
 import { translateHTML } from "./translator/translator";
 import { doingChat } from "./process/index.svelte";
 import { importCharacter } from "./characterCards";
 import { PngChunk } from "./pngChunk";
-import { getColdStorageItem } from "./process/coldstorage.svelte";
+import { getColdStorageItem, preLoadChat } from "./process/coldstorage.svelte";
+import { isNodeServer } from "./platform";
+import { NodeStorage } from "./storage/nodeStorage";
+import { primeCharacterDetails } from "./storage/nodeDatabaseSync";
 
 export function createNewCharacter() {
     DBState.db.characters.push(createBlankChar())
@@ -891,6 +894,26 @@ export async function changeChar(index: number, arg:{
             return
         }
     }
+    if(DBState.db.characters?.[index]?.detailsLoaded === false && DBState.db.characters?.[index]?.chaId && isNodeServer){
+        if(forageStorage.realStorage instanceof NodeStorage && forageStorage.realStorage.postgres.isEnabled()){
+            try {
+                const fullChar = await forageStorage.realStorage.postgres.loadCharacter(DBState.db.characters[index].chaId)
+                if(fullChar){
+                    const existingChats = DBState.db.characters[index].chats
+                    DBState.db.characters[index] = Object.assign(DBState.db.characters[index], fullChar, {
+                        chats: existingChats,
+                        detailsLoaded: true,
+                    })
+                    primeCharacterDetails(forageStorage.realStorage.postgres.getCache(), DBState.db.characters[index], index)
+                }
+            } catch (error) {
+                console.error(`PostgreSQL loadCharacter failed for character ${DBState.db.characters[index].chaId}:`, error)
+            }
+        }
+    }
+    const currentChar = DBState.db.characters?.[index]
+    const currentChatPage = currentChar?.chatPage ?? 0
+    await preLoadChat(index, currentChatPage)
     characterFormatUpdate(index, {
       updateInteraction: true,
     });

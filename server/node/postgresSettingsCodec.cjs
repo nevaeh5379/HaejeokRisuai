@@ -166,8 +166,41 @@ function rebuildSettings(settingRows, valueRows) {
     return database;
 }
 
+function rebuildSettingSubtree(rootNodeId, rows) {
+    const sorted = [...rows].sort((a, b) => Number(a.node_id) - Number(b.node_id));
+    const valuesById = new Map();
+    for (const row of sorted) {
+        const value = decodeValue(row);
+        const nodeId = Number(row.node_id);
+        valuesById.set(nodeId, value);
+        if (nodeId === rootNodeId) {
+            continue;
+        }
+        const parentNodeId = Number(row.parent_node_id);
+        const parent = valuesById.get(parentNodeId);
+        if (!parent || typeof parent !== 'object') {
+            continue;
+        }
+        const member = decodeMember(row);
+        if (Array.isArray(parent)) {
+            parent[member] = value;
+        } else {
+            Object.defineProperty(parent, member, {
+                value,
+                configurable: true,
+                enumerable: true,
+                writable: true,
+            });
+        }
+    }
+    return valuesById.get(rootNodeId);
+}
+
 module.exports = {
     canUsePostgresText,
+    encodeMember,
+    decodeMember,
     rebuildSettings,
+    rebuildSettingSubtree,
     splitSetting,
 };

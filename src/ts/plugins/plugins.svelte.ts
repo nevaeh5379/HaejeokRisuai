@@ -4,13 +4,15 @@ import { getCurrentCharacter, getDatabase, setDatabase, setDatabaseLite } from "
 import { alertConfirm, alertError, alertPluginConfirm } from "../alert";
 import { selectSingleFile, sleep } from "../util";
 import type { OpenAIChat } from "../process/index.svelte";
-import { fetchNative, globalFetch, readImage, saveAsset, toGetter } from "../globalApi.svelte";
+import { fetchNative, forageStorage, globalFetch, readImage, saveAsset, toGetter } from "../globalApi.svelte";
 import { DBState, hotReloading, pluginAlertModalStore, selectedCharID } from "../stores.svelte";
 import type { ScriptMode } from "../process/scripts";
 import { checkCodeSafety } from "./pluginSafety";
 import { SafeDocument, SafeIdbFactory, SafeLocalStorage } from "./pluginSafeClass";
 import { loadV3Plugins } from "./apiV3/v3.svelte";
 import { pluginCodeTranspiler } from "./apiV3/transpiler";
+import { isNodeServer } from "../platform";
+import { NodeStorage } from "../storage/nodeStorage";
 
 export const customProviderStore = writable([] as string[])
 
@@ -726,12 +728,28 @@ export const getV2PluginAPIs = () => {
             })
         },
         pluginStorage: {
-            getItem: (key: string) => {
+            getItem: async (key: string) => {
                 const db = getDatabase({ snapshot: true });
                 db.pluginCustomStorage ??= {}
+                if (db.pluginCustomStorage[key] !== undefined && db.pluginCustomStorage[key] !== null) {
+                    return db.pluginCustomStorage[key];
+                }
+                if (isNodeServer && forageStorage.realStorage instanceof NodeStorage && forageStorage.realStorage.postgres.isEnabled()) {
+                    try {
+                        const loaded = await forageStorage.realStorage.postgres.loadPluginCustomStorageKey(key);
+                        if (loaded !== undefined && loaded !== null) {
+                            const realDb = getDatabase();
+                            realDb.pluginCustomStorage ??= {}
+                            realDb.pluginCustomStorage[key] = loaded;
+                            return loaded;
+                        }
+                    } catch (err) {
+                        console.error(`Failed to load plugin custom storage key '${key}':`, err);
+                    }
+                }
                 return db.pluginCustomStorage[key] || null;
             },
-            setItem: (key: string, value: string) => {
+            setItem: (key: string, value: any) => {
                 const db = getDatabase();
                 db.pluginCustomStorage ??= {}
                 db.pluginCustomStorage[key] = value;

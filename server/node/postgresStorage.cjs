@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const fs = require('fs/promises');
 const path = require('path');
 const { Pool } = require('pg');
@@ -16,7 +17,10 @@ const {
     splitMessage,
 } = require('./postgresRelationalCodec.cjs');
 const {
+    decodeMember,
+    encodeMember,
     rebuildSettings,
+    rebuildSettingSubtree,
     splitSetting,
 } = require('./postgresSettingsCodec.cjs');
 const {
@@ -1173,7 +1177,8 @@ class PostgresStorage {
         return { exported, archived: staleFiles.length };
     }
 
-    async loadDatabase() {
+    async loadDatabase(options = {}) {
+        const shallow = Boolean(options.shallow);
         this.assertEnabled();
         const client = await this.pool.connect();
         try {
@@ -1186,6 +1191,65 @@ class PostgresStorage {
             if (!initialized) {
                 await client.query('COMMIT');
                 return { revision, initialized, database: null };
+            }
+
+            if (shallow) {
+                const shallowQueries = [
+                    "SELECT * FROM system.settings WHERE key NOT IN ('plugins', 'pluginCustomStorage') ORDER BY key",
+                    "SELECT * FROM system.setting_values WHERE setting_key NOT IN ('plugins', 'pluginCustomStorage') ORDER BY setting_key, node_id",
+                    'SELECT * FROM character.characters ORDER BY position, id',
+                    'SELECT * FROM character.tags ORDER BY character_id, position',
+                    'SELECT * FROM character.group_members ORDER BY group_id, position',
+                    'SELECT * FROM character.chat_folders ORDER BY character_id, position',
+                    'SELECT * FROM chat.chats ORDER BY character_id, position, id',
+                    'SELECT * FROM chat.bookmarks ORDER BY chat_id, position',
+                ];
+                const results = await client.query(shallowQueries.join(';\n'));
+                const [
+                    settings, settingValues, characters, tags, groupMembers, chatFolders, chats, bookmarks
+                ] = results.map((result) => result.rows);
+
+                const database = rebuildSettings(settings, settingValues);
+                database.plugins ??= [];
+                database.pluginCustomStorage ??= {};
+
+                const characterRelations = {
+                    tags: groupRows(tags, 'character_id'),
+                    groupMembers: groupRows(groupMembers, 'group_id'),
+                    chatFolders: groupRows(chatFolders, 'character_id'),
+                };
+                const chatRelations = {
+                    bookmarks: groupRows(bookmarks, 'chat_id'),
+                };
+
+                const chatsByCharacter = new Map();
+                for (const row of chats) {
+                    const related = {
+                        bookmarks: chatRelations.bookmarks.get(row.id) || [],
+                        messages: [],
+                    };
+                    const rebuilt = rebuildChat(row, related, { shallow: true });
+                    rebuilt.messagesLoaded = false;
+                    rebuilt.detailsLoaded = false;
+                    const items = chatsByCharacter.get(row.character_id) || [];
+                    items.push(rebuilt);
+                    chatsByCharacter.set(row.character_id, items);
+                }
+
+                database.characters = characters.map((row) => {
+                    const related = {
+                        tags: characterRelations.tags.get(row.id) || [],
+                        groupMembers: characterRelations.groupMembers.get(row.id) || [],
+                        chatFolders: characterRelations.chatFolders.get(row.id) || [],
+                        chats: chatsByCharacter.get(row.id) || [],
+                    };
+                    const rebuilt = rebuildCharacter(row, related, { shallow: true });
+                    rebuilt.detailsLoaded = false;
+                    return rebuilt;
+                });
+
+                await client.query('COMMIT');
+                return { revision, initialized, database };
             }
 
             const loadQueries = [
@@ -1217,14 +1281,17 @@ class PostgresStorage {
                 'SELECT * FROM chat.message_generation',
                 'SELECT * FROM chat.message_prompt_info',
                 'SELECT * FROM chat.message_prompt_toggles ORDER BY chat_id, message_id, position',
-                'SELECT * FROM chat.message_prompt_items ORDER BY chat_id, message_id, position',
+                'SELECT * FROM chat.message_prompt_items ORDER BY chat_id, message_id, position'
             ];
+
             const results = await client.query(loadQueries.join(';\n'));
-            const [settings, settingValues, characters, characterAttributes, tags, greetings, biases, emotions,
+            const rows = results.map((result) => result.rows);
+            const [
+                settings, settingValues, characters, characterAttributes, tags, greetings, biases, emotions,
                 characterModules, groupMembers, chatFolders, scripts, sdData, assets, characterLore,
                 chats, chatAttributes, suggestions, chatModules, scriptState, bookmarks, memory,
-                chatLore, messages, messageAttributes, generations, promptInfos, promptToggles,
-                promptItems] = results.map((result) => result.rows);
+                chatLore, messages, messageAttributes, generations, promptInfos, promptToggles, promptItems
+            ] = rows;
 
             const database = rebuildSettings(settings, settingValues);
 
@@ -1251,6 +1318,7 @@ class PostgresStorage {
                 memory: groupRows(memory, 'chat_id'),
                 lore: groupRows(chatLore, 'chat_id'),
             };
+
             const messageRelations = {
                 attributes: groupMessageRows(messageAttributes),
                 generation: new Map(generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
@@ -1258,7 +1326,6 @@ class PostgresStorage {
                 promptToggles: groupMessageRows(promptToggles),
                 promptItems: groupMessageRows(promptItems),
             };
-
             const messagesByChat = new Map();
             for (const row of messages) {
                 const key = `${row.chat_id}\0${row.id}`;
@@ -1278,15 +1345,20 @@ class PostgresStorage {
             for (const row of chats) {
                 const related = { messages: messagesByChat.get(row.id) || [] };
                 for (const [name, grouped] of Object.entries(chatRelations)) related[name] = grouped.get(row.id) || [];
+                const rebuilt = rebuildChat(row, related);
+                rebuilt.messagesLoaded = true;
+                rebuilt.detailsLoaded = true;
                 const items = chatsByCharacter.get(row.character_id) || [];
-                items.push(rebuildChat(row, related));
+                items.push(rebuilt);
                 chatsByCharacter.set(row.character_id, items);
             }
 
             database.characters = characters.map((row) => {
                 const related = { chats: chatsByCharacter.get(row.id) || [] };
                 for (const [name, grouped] of Object.entries(characterRelations)) related[name] = grouped.get(row.id) || [];
-                return rebuildCharacter(row, related);
+                const rebuilt = rebuildCharacter(row, related);
+                rebuilt.detailsLoaded = true;
+                return rebuilt;
             });
 
             await client.query('COMMIT');
@@ -1297,6 +1369,300 @@ class PostgresStorage {
         } finally {
             client.release();
         }
+    }
+
+    async loadCharacter(characterId) {
+        this.assertEnabled();
+        assertId(characterId, 'characterId');
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+            const queries = [
+                'SELECT * FROM character.characters WHERE id = $1',
+                'SELECT * FROM character.attributes WHERE character_id = $1 ORDER BY key',
+                'SELECT * FROM character.tags WHERE character_id = $1 ORDER BY position',
+                'SELECT * FROM character.greetings WHERE character_id = $1 ORDER BY greeting_type, position',
+                'SELECT * FROM character.biases WHERE character_id = $1 ORDER BY position',
+                'SELECT * FROM character.emotions WHERE character_id = $1 ORDER BY position',
+                'SELECT * FROM character.modules WHERE character_id = $1 ORDER BY position',
+                'SELECT * FROM character.group_members WHERE group_id = $1 ORDER BY position',
+                'SELECT * FROM character.chat_folders WHERE character_id = $1 ORDER BY position',
+                'SELECT * FROM character.scripts WHERE character_id = $1 ORDER BY script_kind, position',
+                'SELECT * FROM character.sd_data WHERE character_id = $1 ORDER BY position',
+                'SELECT * FROM character.assets WHERE character_id = $1 ORDER BY position',
+                'SELECT * FROM character.lore_entries WHERE character_id = $1 ORDER BY position',
+            ];
+            const results = await Promise.all(queries.map((q) => client.query(q, [characterId])));
+            const [
+                charRes, attributesRes, tagsRes, greetingsRes, biasesRes, emotionsRes,
+                modulesRes, groupMembersRes, chatFoldersRes, scriptsRes, sdDataRes,
+                assetsRes, loreRes
+            ] = results;
+
+            if (charRes.rows.length === 0) {
+                await client.query('COMMIT');
+                return null;
+            }
+
+            const characterRelations = {
+                attributes: attributesRes.rows,
+                tags: tagsRes.rows,
+                greetings: greetingsRes.rows,
+                biases: biasesRes.rows,
+                emotions: emotionsRes.rows,
+                modules: modulesRes.rows,
+                groupMembers: groupMembersRes.rows,
+                chatFolders: chatFoldersRes.rows,
+                scripts: scriptsRes.rows,
+                sdData: sdDataRes.rows,
+                assets: assetsRes.rows,
+                lore: loreRes.rows,
+            };
+
+            const character = rebuildCharacter(charRes.rows[0], characterRelations);
+            character.detailsLoaded = true;
+
+            await client.query('COMMIT');
+            return character;
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async loadChat(chatId) {
+        this.assertEnabled();
+        assertId(chatId, 'chatId');
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+            const queries = [
+                'SELECT * FROM chat.chats WHERE id = $1',
+                'SELECT * FROM chat.attributes WHERE chat_id = $1 ORDER BY key',
+                'SELECT * FROM chat.suggestions WHERE chat_id = $1 ORDER BY position',
+                'SELECT * FROM chat.modules WHERE chat_id = $1 ORDER BY position',
+                'SELECT * FROM chat.script_state WHERE chat_id = $1 ORDER BY key',
+                'SELECT * FROM chat.bookmarks WHERE chat_id = $1 ORDER BY position',
+                'SELECT * FROM chat.memory WHERE chat_id = $1 ORDER BY memory_type',
+                'SELECT * FROM chat.lore_entries WHERE chat_id = $1 ORDER BY position',
+                'SELECT * FROM chat.messages WHERE chat_id = $1 ORDER BY position, id',
+                'SELECT * FROM chat.message_attributes WHERE chat_id = $1 ORDER BY chat_id, message_id, key',
+                'SELECT * FROM chat.message_generation WHERE chat_id = $1',
+                'SELECT * FROM chat.message_prompt_info WHERE chat_id = $1',
+                'SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 ORDER BY chat_id, message_id, position',
+                'SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 ORDER BY chat_id, message_id, position',
+            ];
+            const [
+                chatRes, attributesRes, suggestionsRes, modulesRes, scriptStateRes,
+                bookmarksRes, memoryRes, loreRes, messagesRes, messageAttributesRes,
+                generationsRes, promptInfosRes, promptTogglesRes, promptItemsRes
+            ] = await Promise.all(queries.map((q) => client.query(q, [chatId])));
+
+            if (chatRes.rows.length === 0) {
+                await client.query('COMMIT');
+                return null;
+            }
+
+            const messageRelations = {
+                attributes: groupMessageRows(messageAttributesRes.rows),
+                generation: new Map(generationsRes.rows.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+                promptInfo: new Map(promptInfosRes.rows.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+                promptToggles: groupMessageRows(promptTogglesRes.rows),
+                promptItems: groupMessageRows(promptItemsRes.rows),
+            };
+
+            const messages = [];
+            for (const row of messagesRes.rows) {
+                const key = `${row.chat_id}\0${row.id}`;
+                const related = {
+                    attributes: messageRelations.attributes.get(key),
+                    generation: messageRelations.generation.get(key),
+                    promptInfo: messageRelations.promptInfo.get(key),
+                    promptToggles: messageRelations.promptToggles.get(key),
+                    promptItems: messageRelations.promptItems.get(key),
+                };
+                messages.push(rebuildMessage(row, related));
+            }
+
+            const chatRelations = {
+                attributes: attributesRes.rows,
+                suggestions: suggestionsRes.rows,
+                modules: modulesRes.rows,
+                scriptState: scriptStateRes.rows,
+                bookmarks: bookmarksRes.rows,
+                memory: memoryRes.rows,
+                lore: loreRes.rows,
+                messages,
+            };
+
+            const chat = rebuildChat(chatRes.rows[0], chatRelations);
+            chat.messagesLoaded = true;
+            chat.detailsLoaded = true;
+
+            await client.query('COMMIT');
+            return chat;
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async loadChatMessages(chatId) {
+        const chat = await this.loadChat(chatId);
+        return chat ? chat.message : [];
+    }
+
+    async loadPlugins() {
+        this.assertEnabled();
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+            const queries = [
+                "SELECT * FROM system.settings WHERE key = 'plugins' ORDER BY key",
+                "SELECT * FROM system.setting_values WHERE setting_key = 'plugins' ORDER BY setting_key, node_id",
+            ];
+            const results = await client.query(queries.join(';\n'));
+            const [settings, settingValues] = results.map((result) => result.rows);
+            const rebuilt = rebuildSettings(settings, settingValues);
+            await client.query('COMMIT');
+
+            const plugins = rebuilt.plugins || [];
+            const serialized = JSON.stringify(plugins);
+            const hash = crypto.createHash('sha256').update(serialized).digest('hex');
+
+            return {
+                plugins,
+                hash,
+            };
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async loadPluginCustomStorage() {
+        this.assertEnabled();
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+            const queries = [
+                "SELECT * FROM system.settings WHERE key = 'pluginCustomStorage' ORDER BY key",
+                "SELECT * FROM system.setting_values WHERE setting_key = 'pluginCustomStorage' ORDER BY setting_key, node_id",
+            ];
+            const results = await client.query(queries.join(';\n'));
+            const [settings, settingValues] = results.map((result) => result.rows);
+            const rebuilt = rebuildSettings(settings, settingValues);
+            await client.query('COMMIT');
+
+            const pluginCustomStorage = rebuilt.pluginCustomStorage || {};
+            const serialized = JSON.stringify(pluginCustomStorage);
+            const hash = crypto.createHash('sha256').update(serialized).digest('hex');
+
+            return {
+                pluginCustomStorage,
+                hash,
+            };
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async listPluginCustomStorageKeys() {
+        this.assertEnabled();
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+            const result = await client.query(
+                `SELECT node_id, member_key, encoded_member_key, position
+                 FROM system.setting_values
+                 WHERE setting_key = 'pluginCustomStorage' AND parent_node_id = 0
+                 ORDER BY node_id`
+            );
+            await client.query('COMMIT');
+            const keys = result.rows.map((row) => decodeMember(row)).filter((key) => key !== null && key !== undefined);
+            return keys;
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async loadPluginCustomStorageKey(storageKey) {
+        this.assertEnabled();
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+            const encoded = encodeMember(storageKey, null);
+            const query = `
+                WITH RECURSIVE key_tree AS (
+                    SELECT node_id, parent_node_id, member_key, encoded_member_key, position,
+                           value_type, text_value, encoded_text_value, number_value, boolean_value
+                    FROM system.setting_values
+                    WHERE setting_key = 'pluginCustomStorage'
+                      AND parent_node_id = 0
+                      AND ((member_key IS NOT NULL AND member_key = $1)
+                           OR (encoded_member_key IS NOT NULL AND encoded_member_key = $2))
+                    UNION ALL
+                    SELECT v.node_id, v.parent_node_id, v.member_key, v.encoded_member_key, v.position,
+                           v.value_type, v.text_value, v.encoded_text_value, v.number_value, v.boolean_value
+                    FROM system.setting_values v
+                    INNER JOIN key_tree kt ON v.parent_node_id = kt.node_id
+                    WHERE v.setting_key = 'pluginCustomStorage'
+                )
+                SELECT * FROM key_tree ORDER BY node_id;
+            `;
+            const result = await client.query(query, [encoded.member_key, encoded.encoded_member_key]);
+            await client.query('COMMIT');
+
+            if (result.rows.length === 0) {
+                return {
+                    key: storageKey,
+                    exists: false,
+                    value: null,
+                    hash: 'null',
+                };
+            }
+
+            const rootNodeId = Number(result.rows[0].node_id);
+            const value = rebuildSettingSubtree(rootNodeId, result.rows);
+            const serialized = JSON.stringify(value);
+            const hash = crypto.createHash('sha256').update(serialized).digest('hex');
+
+            return {
+                key: storageKey,
+                exists: true,
+                value,
+                hash,
+            };
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async loadPluginsData() {
+        const [pluginsResult, storageResult] = await Promise.all([
+            this.loadPlugins(),
+            this.loadPluginCustomStorage(),
+        ]);
+        return {
+            plugins: pluginsResult.plugins,
+            pluginCustomStorage: storageResult.pluginCustomStorage,
+            hash: `${pluginsResult.hash}:${storageResult.hash}`,
+        };
     }
 
     async sync(rawPayload) {

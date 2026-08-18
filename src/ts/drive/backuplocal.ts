@@ -4,7 +4,7 @@ import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm }
 import { LocalWriter, forageStorage, requiresFullEncoderReload } from "../globalApi.svelte";
 import { isNodeServer, isTauri } from "src/ts/platform"
 import { decodeRisuSave, encodeRisuSaveLegacy } from "../storage/risuSave";
-import { getDatabase, setDatabaseLite } from "../storage/database.svelte";
+import { getDatabase, setDatabaseLite, type Database } from "../storage/database.svelte";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { decryptBuffer, encryptBuffer, sleep } from "../util";
 import { hubURL } from "../characterCards";
@@ -20,9 +20,46 @@ function getBasename(data:string){
     return lasts
 }
 
+export async function ensureAllPostgresChatMessagesLoaded(db: Database) {
+    if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
+        return
+    }
+    const storage = forageStorage.realStorage as NodeStorage
+    if (!storage.postgres.isEnabled()) {
+        return
+    }
+    for (let i = 0; i < (db.characters ?? []).length; i++) {
+        let char = db.characters[i]
+        if (!char) continue
+        if (char.detailsLoaded === false && char.chaId) {
+            const fullChar = await storage.postgres.loadCharacter(char.chaId)
+            if (fullChar) {
+                const existingChats = char.chats
+                db.characters[i] = Object.assign(char, fullChar, {
+                    chats: existingChats,
+                    detailsLoaded: true,
+                })
+                char = db.characters[i]
+            }
+        }
+        for (let j = 0; j < (char.chats ?? []).length; j++) {
+            const chat = char.chats[j]
+            if (chat && (chat.messagesLoaded === false || chat.detailsLoaded === false) && chat.id) {
+                const fullChat = await storage.postgres.loadChat(chat.id)
+                if (fullChat) {
+                    Object.assign(chat, fullChat)
+                    chat.messagesLoaded = true
+                    chat.detailsLoaded = true
+                }
+            }
+        }
+    }
+}
+
 export async function SaveLocalBackup(){
     alertWait("Saving local backup...")
     const db = getDatabase()
+    await ensureAllPostgresChatMessagesLoaded(db)
     const coldStoragePayloads = await collectColdStorageBackupPayloads(db)
     const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
     if(!await confirmIncompleteColdStorageOperation(db, unavailableColdStorageKeys, 'backup')){

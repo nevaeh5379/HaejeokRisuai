@@ -4,6 +4,8 @@ import type { toSaveType } from './risuSave'
 import {
     buildNodeDatabaseSync,
     createNodeDatabaseSyncCache,
+    primeCharacterDetails,
+    primeChatMessages,
     primeNodeDatabaseSyncCache,
 } from './nodeDatabaseSync'
 
@@ -140,5 +142,82 @@ describe('node PostgreSQL database sync', () => {
 
         expect(built?.payload.messages).toHaveLength(1)
         expect(deltaSize).toBeLessThan(fullSize / 100)
+    })
+
+    it('does not send empty message manifests or delete messages for lazy chats', () => {
+        const value = database()
+        value.characters[0].chats[0].message = []
+        value.characters[0].chats[0].messagesLoaded = false
+
+        const cache = primeNodeDatabaseSyncCache(value, 5)
+
+        // User edits character name
+        value.characters[0].name = 'New Name'
+        const built = buildNodeDatabaseSync(value, {
+            ...changes(true),
+            chat: [],
+        }, cache)
+
+        expect(built?.payload.characters).toHaveLength(1)
+        expect(built?.payload.messageManifests).toEqual([])
+        expect(built?.payload.messages).toEqual([])
+    })
+
+    it('syncs messages properly after on-demand priming of lazy chat', () => {
+        const value = database()
+        value.characters[0].chats[0].message = []
+        value.characters[0].chats[0].messagesLoaded = false
+
+        const cache = primeNodeDatabaseSyncCache(value, 5)
+
+        // Dynamic load of messages happens on chat open
+        const loadedMessages = [
+            { chatId: 'message-1', role: 'user' as const, data: 'hello' },
+            { chatId: 'message-2', role: 'char' as const, data: 'hi' },
+        ]
+        value.characters[0].chats[0].message = loadedMessages
+        value.characters[0].chats[0].messagesLoaded = true
+        primeChatMessages(cache, value.characters[0].chats[0])
+
+        // Nothing changed yet
+        expect(buildNodeDatabaseSync(value, changes(true), cache)).toBeNull()
+
+        // User adds a new message
+        value.characters[0].chats[0].message.push({
+            chatId: 'message-3',
+            role: 'user' as const,
+            data: 'how are you?',
+        })
+        const built = buildNodeDatabaseSync(value, changes(true), cache)
+        expect(built?.payload.messageManifests).toEqual([{
+            chatId: 'chat-1',
+            ids: ['message-1', 'message-2', 'message-3'],
+        }])
+        expect(built?.payload.messages).toHaveLength(1)
+        expect(built?.payload.messages[0].id).toBe('message-3')
+    })
+
+    it('syncs character properly after on-demand priming of character details', () => {
+        const value = database()
+        value.characters[0].detailsLoaded = false
+        ;(value.characters[0] as any).globalLore = []
+
+        const cache = primeNodeDatabaseSyncCache(value, 5)
+
+        // Dynamic load of character details happens on character selection
+        ;(value.characters[0] as any).globalLore = [{ key: 'lore-1', content: 'heavy lore' }]
+        ;(value.characters[0] as any).emotionImages = [['happy', 'asset://happy']]
+        value.characters[0].detailsLoaded = true
+        primeCharacterDetails(cache, value.characters[0], 0)
+
+        // Nothing changed yet
+        expect(buildNodeDatabaseSync(value, changes(true), cache)).toBeNull()
+
+        // User edits character desc
+        ;(value.characters[0] as any).desc = 'New description'
+        const built = buildNodeDatabaseSync(value, changes(true), cache)
+        expect(built?.payload.characters).toHaveLength(1)
+        expect(built?.payload.characters[0].id).toBe('character-1')
+        expect((built?.payload.characters[0].data as any).desc).toBe('New description')
     })
 })

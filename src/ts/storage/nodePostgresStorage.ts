@@ -1,4 +1,5 @@
-import type { Database } from './database.svelte'
+import localforage from 'localforage'
+import type { Database, Message, character, groupChat, Chat } from './database.svelte'
 import type { toSaveType } from './risuSave'
 import {
     buildNodeDatabaseSync,
@@ -124,6 +125,11 @@ export class NodePostgresPayloadTooLargeError extends Error {
 export class NodePostgresStorage {
     private status:'unknown'|'enabled'|'disabled' = 'unknown'
     private cache:NodeDatabaseSyncCache = createNodeDatabaseSyncCache()
+    private pluginsCacheForage = localforage.createInstance({ name: 'risuaiPostgresPlugins' })
+    private pluginStorageCacheForage = localforage.createInstance({ name: 'risuaiPostgresPluginStorage' })
+
+    private memoryPluginsCache:{ hash:string, plugins:any[] }|null = null
+    private memoryPluginStorageCache:{ hash:string, pluginCustomStorage:Record<string, any> }|null = null
 
     constructor(private readonly getAuth:() => Promise<string>) {}
 
@@ -155,6 +161,7 @@ export class NodePostgresStorage {
         }
         const config:NodePostgresServerConfig = await response.json()
         this.status = config.enabled ? 'enabled' : 'disabled'
+        this.cache = createNodeDatabaseSyncCache(config.revision ?? 0)
         return config
     }
 
@@ -178,8 +185,175 @@ export class NodePostgresStorage {
         return config
     }
 
-    async loadDatabase():Promise<Database|null> {
-        const response = await fetch('/api/database-v2', {
+    getCache():NodeDatabaseSyncCache {
+        return this.cache
+    }
+
+    async loadPlugins():Promise<any[]|null> {
+        if(!await this.ensureEnabled()){
+            return null
+        }
+        let cached:{ hash:string, plugins:any[] }|null = this.memoryPluginsCache
+        if(!cached){
+            try {
+                cached = await this.pluginsCacheForage.getItem('cache')
+            } catch {
+                cached = null
+            }
+        }
+
+        const headers:Record<string, string> = await this.authHeaders()
+        if(cached?.hash){
+            headers['If-None-Match'] = `"risu-plugins-${cached.hash}"`
+        }
+
+        const response = await fetch('/api/database-v2/plugins', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers,
+        })
+
+        if(response.status === 304 && cached){
+            return cached.plugins ?? []
+        }
+
+        if(response.status === 404){
+            return null
+        }
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL plugins load failed')
+        }
+
+        const body:{ plugins:any[], hash:string } = await response.json()
+        const entry = {
+            hash: body.hash,
+            plugins: body.plugins ?? [],
+        }
+        this.memoryPluginsCache = entry
+        try {
+            await this.pluginsCacheForage.setItem('cache', entry)
+        } catch {}
+        return body.plugins ?? []
+    }
+
+    async loadPluginCustomStorage():Promise<Record<string, any>|null> {
+        if(!await this.ensureEnabled()){
+            return null
+        }
+        let cached:{ hash:string, pluginCustomStorage:Record<string, any> }|null = this.memoryPluginStorageCache
+        if(!cached){
+            try {
+                cached = await this.pluginStorageCacheForage.getItem('cache')
+            } catch {
+                cached = null
+            }
+        }
+
+        const headers:Record<string, string> = await this.authHeaders()
+        if(cached?.hash){
+            headers['If-None-Match'] = `"risu-plugin-storage-${cached.hash}"`
+        }
+
+        const response = await fetch('/api/database-v2/plugin-custom-storage', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers,
+        })
+
+        if(response.status === 304 && cached){
+            return cached.pluginCustomStorage ?? {}
+        }
+
+        if(response.status === 404){
+            return null
+        }
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL plugin custom storage load failed')
+        }
+
+        const body:{ pluginCustomStorage:Record<string, any>, hash:string } = await response.json()
+        const entry = {
+            hash: body.hash,
+            pluginCustomStorage: body.pluginCustomStorage ?? {},
+        }
+        this.memoryPluginStorageCache = entry
+        try {
+            await this.pluginStorageCacheForage.setItem('cache', entry)
+        } catch {}
+        return body.pluginCustomStorage ?? {}
+    }
+
+    private pluginKeyCacheForage = localforage.createInstance({ name: 'risuaiPostgresPluginKeyStorage' })
+    private memoryPluginKeyCache = new Map<string, { hash: string, value: any }>()
+
+    async listPluginCustomStorageKeys():Promise<string[]> {
+        if(!await this.ensureEnabled()){
+            return []
+        }
+        const response = await fetch('/api/database-v2/plugin-custom-storage/keys', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders(),
+        })
+        if(response.status === 404){
+            return []
+        }
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL list plugin custom storage keys failed')
+        }
+        const body:{ keys:string[] } = await response.json()
+        return body.keys ?? []
+    }
+
+    async loadPluginCustomStorageKey(key:string):Promise<any> {
+        if(!await this.ensureEnabled()){
+            return undefined
+        }
+        let cached = this.memoryPluginKeyCache.get(key)
+        if(!cached){
+            try {
+                cached = (await this.pluginKeyCacheForage.getItem(key)) ?? undefined
+            } catch {
+                cached = undefined
+            }
+        }
+
+        const headers:Record<string, string> = await this.authHeaders()
+        if(cached?.hash){
+            headers['If-None-Match'] = `"risu-plugin-key-${cached.hash}"`
+        }
+
+        const response = await fetch(`/api/database-v2/plugin-custom-storage/keys/${encodeURIComponent(key)}`, {
+            method: 'GET',
+            cache: 'no-cache',
+            headers,
+        })
+
+        if(response.status === 304 && cached){
+            return cached.value
+        }
+        if(response.status === 404){
+            return undefined
+        }
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, `PostgreSQL plugin custom storage key '${key}' load failed`)
+        }
+
+        const body:{ key:string, value:any, hash:string } = await response.json()
+        const entry = {
+            hash: body.hash,
+            value: body.value,
+        }
+        this.memoryPluginKeyCache.set(key, entry)
+        try {
+            await this.pluginKeyCacheForage.setItem(key, entry)
+        } catch {}
+        return body.value
+    }
+
+    async loadDatabase(options: { shallow?: boolean } = { shallow: true }):Promise<Database|null> {
+        const shallowParam = options.shallow !== false ? '?shallow=true' : '?shallow=false'
+        const response = await fetch(`/api/database-v2${shallowParam}`, {
             method: 'GET',
             cache: 'no-cache',
             headers: await this.authHeaders()
@@ -199,11 +373,61 @@ export class NodePostgresStorage {
         } = await response.json()
         this.status = 'enabled'
         if(body.status === 'ready' && body.database){
+            if (options.shallow !== false) {
+                const plugins = await this.loadPlugins()
+                if (plugins) {
+                    body.database.plugins = plugins
+                }
+                body.database.pluginCustomStorage ??= {}
+            }
             this.cache = primeNodeDatabaseSyncCache(body.database, body.revision)
             return body.database
         }
         this.cache = createNodeDatabaseSyncCache(body.revision)
         return null
+    }
+
+    async loadCharacter(characterId:string):Promise<character|groupChat|null> {
+        if(!await this.ensureEnabled()){
+            return null
+        }
+        const response = await fetch(`/api/database-v2/characters/${encodeURIComponent(characterId)}`, {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if(response.status === 404){
+            return null
+        }
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL character load failed')
+        }
+        const body:{ character:character|groupChat } = await response.json()
+        return body.character ?? null
+    }
+
+    async loadChat(chatId:string):Promise<Chat|null> {
+        if(!await this.ensureEnabled()){
+            return null
+        }
+        const response = await fetch(`/api/database-v2/chats/${encodeURIComponent(chatId)}`, {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if(response.status === 404){
+            return null
+        }
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL chat load failed')
+        }
+        const body:{ chat:Chat } = await response.json()
+        return body.chat ?? null
+    }
+
+    async loadChatMessages(chatId:string):Promise<Message[]> {
+        const chat = await this.loadChat(chatId)
+        return chat?.message ?? []
     }
 
     async listRevisions(limit = 50):Promise<NodePostgresRevision[]> {

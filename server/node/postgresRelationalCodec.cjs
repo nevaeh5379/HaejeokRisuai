@@ -425,25 +425,47 @@ function applyAttributes(target, rows) {
     for (const row of rows || []) target[row.key] = decodeJson(row.value);
 }
 
-function rebuildCharacter(row, related = {}) {
+const SHALLOW_CHARACTER_SCALARS = {
+    name: 'name',
+    image: 'image',
+    creatorNotes: 'creator_notes',
+    creator: 'creator',
+    characterVersion: 'character_version',
+    nickname: 'nickname',
+    viewScreen: 'view_screen',
+    chatPage: 'chat_page',
+    firstMsgIndex: 'first_message_index',
+    utilityBot: 'utility_bot',
+    private: 'is_private',
+    realmId: 'realm_id',
+    license: 'license',
+    creation_date: 'creation_time',
+    modification_date: 'modification_time',
+    lastInteraction: 'last_interaction_time',
+    trashTime: 'trash_time',
+};
+
+const SHALLOW_CHAT_SCALARS = {
+    name: 'name',
+    note: 'note',
+    folderId: 'folder_id',
+    fmIndex: 'first_message_index',
+    bindedPersona: 'bound_persona_id',
+    lastDate: 'last_message_time',
+};
+
+function rebuildCharacter(row, related = {}, options = {}) {
     const character = {};
     if (row.kind === 'group') character.type = 'group';
-    for (const [property, column] of Object.entries(CHARACTER_SCALARS)) {
+    const scalarMap = options.shallow ? SHALLOW_CHARACTER_SCALARS : CHARACTER_SCALARS;
+    for (const [property, column] of Object.entries(scalarMap)) {
         if (row[column] !== null && row[column] !== undefined) {
             character[property] = CHARACTER_BIGINT_COLUMNS.has(column) ? Number(row[column]) : row[column];
         }
     }
     character.name ??= '';
-    character.firstMessage ??= '';
     character.chatPage ??= 0;
     character.tags = (related.tags || []).map((item) => item.tag);
-    character.alternateGreetings = (related.greetings || []).filter((item) => item.greeting_type === 'alternate').map((item) => item.content);
-    if ((related.greetings || []).some((item) => item.greeting_type === 'group-only')) {
-        character.group_only_greetings = related.greetings.filter((item) => item.greeting_type === 'group-only').map((item) => item.content);
-    }
-    character.bias = (related.biases || []).map((item) => [item.phrase, Number(item.bias)]);
-    character.emotionImages = (related.emotions || []).map((item) => [item.emotion, item.asset]);
-    character.modules = (related.modules || []).map((item) => item.module_id);
     if (row.kind === 'group') {
         character.characters = (related.groupMembers || []).map((item) => item.character_id);
         character.characterTalks = (related.groupMembers || []).map((item) => item.talk_weight === null ? 0 : Number(item.talk_weight));
@@ -453,53 +475,70 @@ function rebuildCharacter(row, related = {}) {
         id: item.folder_id, ...(item.name === null ? {} : { name: item.name }),
         ...(item.color === null ? {} : { color: item.color }), folded: item.folded,
     }));
-    character.customscript = (related.scripts || []).filter((item) => item.script_kind === 'custom').map((item) => ({
-        comment: item.comment ?? '', in: item.input_text ?? '', out: item.output_text ?? '', type: item.script_type ?? '',
-        ...(item.flag === null ? {} : { flag: item.flag }), ...(item.able_flag === null ? {} : { ableFlag: item.able_flag }),
-    }));
-    character.triggerscript = (related.scripts || []).filter((item) => item.script_kind === 'trigger').map((item) => decodeJson(item.trigger_payload));
-    character.sdData = (related.sdData || []).map((item) => [item.key, item.value]);
-    const additionalAssets = (related.assets || []).filter((item) => item.asset_source === 'additional').map((item) => [item.name, item.uri, item.extension]);
-    if (additionalAssets.length) character.additionalAssets = additionalAssets;
-    const ccAssets = (related.assets || []).filter((item) => item.asset_source === 'character-card').map((item) => ({
-        type: item.asset_type, uri: item.uri, name: item.name, ext: item.extension,
-    }));
-    if (ccAssets.length) character.ccAssets = ccAssets;
-    character.globalLore = (related.lore || []).map(rebuildLore);
-    applyAttributes(character, related.attributes);
+
+    if (!options.shallow) {
+        character.firstMessage ??= '';
+        character.alternateGreetings = (related.greetings || []).filter((item) => item.greeting_type === 'alternate').map((item) => item.content);
+        if ((related.greetings || []).some((item) => item.greeting_type === 'group-only')) {
+            character.group_only_greetings = related.greetings.filter((item) => item.greeting_type === 'group-only').map((item) => item.content);
+        }
+        character.bias = (related.biases || []).map((item) => [item.phrase, Number(item.bias)]);
+        character.emotionImages = (related.emotions || []).map((item) => [item.emotion, item.asset]);
+        character.modules = (related.modules || []).map((item) => item.module_id);
+        character.customscript = (related.scripts || []).filter((item) => item.script_kind === 'custom').map((item) => ({
+            comment: item.comment ?? '', in: item.input_text ?? '', out: item.output_text ?? '', type: item.script_type ?? '',
+            ...(item.flag === null ? {} : { flag: item.flag }), ...(item.able_flag === null ? {} : { ableFlag: item.able_flag }),
+        }));
+        character.triggerscript = (related.scripts || []).filter((item) => item.script_kind === 'trigger').map((item) => decodeJson(item.trigger_payload));
+        character.sdData = (related.sdData || []).map((item) => [item.key, item.value]);
+        const additionalAssets = (related.assets || []).filter((item) => item.asset_source === 'additional').map((item) => [item.name, item.uri, item.extension]);
+        if (additionalAssets.length) character.additionalAssets = additionalAssets;
+        const ccAssets = (related.assets || []).filter((item) => item.asset_source === 'character-card').map((item) => ({
+            type: item.asset_type, uri: item.uri, name: item.name, ext: item.extension,
+        }));
+        if (ccAssets.length) character.ccAssets = ccAssets;
+        character.globalLore = (related.lore || []).map(rebuildLore);
+        applyAttributes(character, related.attributes);
+    }
+
     character.chaId = row.id;
     character.chats = related.chats || [];
     return character;
 }
 
-function rebuildChat(row, related = {}) {
+function rebuildChat(row, related = {}, options = {}) {
     const chat = {};
-    for (const [property, column] of Object.entries(CHAT_SCALARS)) {
+    const scalarMap = options.shallow ? SHALLOW_CHAT_SCALARS : CHAT_SCALARS;
+    for (const [property, column] of Object.entries(scalarMap)) {
         if (row[column] !== null && row[column] !== undefined) {
             chat[property] = column === 'last_message_time' ? Number(row[column]) : row[column];
         }
     }
     chat.name ??= '';
     chat.note ??= '';
-    chat.localLore = (related.lore || []).map(rebuildLore);
-    if ((related.suggestions || []).length) chat.suggestMessages = related.suggestions.map((item) => item.content);
-    if ((related.modules || []).length) chat.modules = related.modules.map((item) => item.module_id);
-    if ((related.scriptState || []).length) {
-        chat.scriptstate = {};
-        for (const item of related.scriptState) {
-            chat.scriptstate[item.key] = item.value_type === 'text' ? item.text_value
-                : item.value_type === 'number' ? Number(item.number_value) : item.boolean_value;
-        }
-    }
     if ((related.bookmarks || []).length) {
         chat.bookmarks = related.bookmarks.map((item) => item.message_id);
         chat.bookmarkNames = {};
         for (const item of related.bookmarks) if (item.name !== null) chat.bookmarkNames[item.message_id] = item.name;
     }
-    for (const item of related.memory || []) {
-        chat[item.memory_type === 'hypa-v2' ? 'hypaV2Data' : 'hypaV3Data'] = decodeJson(item.payload);
+
+    if (!options.shallow) {
+        chat.localLore = (related.lore || []).map(rebuildLore);
+        if ((related.suggestions || []).length) chat.suggestMessages = related.suggestions.map((item) => item.content);
+        if ((related.modules || []).length) chat.modules = related.modules.map((item) => item.module_id);
+        if ((related.scriptState || []).length) {
+            chat.scriptstate = {};
+            for (const item of related.scriptState) {
+                chat.scriptstate[item.key] = item.value_type === 'text' ? item.text_value
+                    : item.value_type === 'number' ? Number(item.number_value) : item.boolean_value;
+            }
+        }
+        for (const item of related.memory || []) {
+            chat[item.memory_type === 'hypa-v2' ? 'hypaV2Data' : 'hypaV3Data'] = decodeJson(item.payload);
+        }
+        applyAttributes(chat, related.attributes);
     }
-    applyAttributes(chat, related.attributes);
+
     chat.id = row.id;
     chat.message = related.messages || [];
     return chat;

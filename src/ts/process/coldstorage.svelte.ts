@@ -9,13 +9,14 @@ import {
 import { forageStorage, requiresFullEncoderReload } from "../globalApi.svelte"
 import { isTauri, isNodeServer } from "src/ts/platform"
 import { DBState } from "../stores.svelte"
-import type { NodeStorage } from "../storage/nodeStorage"
+import { NodeStorage } from "../storage/nodeStorage"
 import { compress as fflateCompress, decompress as fflateDecompress } from "fflate"
 import { fetchProtectedResource } from "../sionyw"
 import { alertClear, alertConfirm, alertError, alertWait } from "../alert"
 import { language } from "src/lang"
 import type { Database, character } from "../storage/database.svelte"
 import { coldStorageHeader, getColdStorageAffectedCharacters, getColdStorageBackupName, isColdStorageBackupData, listColdDataKeysFromDb } from "./coldstorageData"
+import { primeChatMessages } from "../storage/nodeDatabaseSync"
 
 export {
     coldStorageHeader,
@@ -559,6 +560,11 @@ async function makeColdDataForChat(i:number, j:number, coldTime:number): Promise
 }
 
 export async function makeColdData(){
+    if(isNodeServer && forageStorage.realStorage instanceof NodeStorage){
+        if(forageStorage.realStorage.postgres.isEnabled()){
+            return
+        }
+    }
 
     if(!DBState.db.coldstorage){
         return
@@ -610,6 +616,23 @@ export async function preLoadChat(characterIndex:number, chatIndex:number){
 
     if(!chat){
         return
+    }
+
+    if((chat.messagesLoaded === false || chat.detailsLoaded === false) && isNodeServer && chat.id){
+        try {
+            if(forageStorage.realStorage instanceof NodeStorage && forageStorage.realStorage.postgres.isEnabled()){
+                const fullChat = await forageStorage.realStorage.postgres.loadChat(chat.id)
+                if(fullChat){
+                    Object.assign(chat, fullChat)
+                    chat.messagesLoaded = true
+                    chat.detailsLoaded = true
+                    primeChatMessages(forageStorage.realStorage.postgres.getCache(), chat)
+                    return
+                }
+            }
+        } catch (error) {
+            console.error(`PostgreSQL loadChat failed for chat ${chat.id}:`, error)
+        }
     }
 
     if(chat.message?.[0]?.data?.startsWith(coldStorageHeader)){

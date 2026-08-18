@@ -64,12 +64,12 @@ function messageKey(chatId: string, messageId: string) {
 }
 
 function characterData(value: character | groupChat) {
-    const { chats: _chats, chaId: _chaId, ...data } = value
+    const { chats: _chats, chaId: _chaId, detailsLoaded: _detailsLoaded, ...data } = value
     return data
 }
 
 function chatData(value: Chat) {
-    const { message: _messages, id: _id, ...data } = value
+    const { message: _messages, id: _id, messagesLoaded: _messagesLoaded, detailsLoaded: _detailsLoaded, ...data } = value
     return data
 }
 
@@ -142,8 +142,51 @@ export function ensureNodeDatabaseIds(database: Database) {
     ensureNodeHierarchyIds(database)
     for (const character of database.characters ?? []) {
         for (const chat of character.chats ?? []) {
-            ensureMessageIds(chat)
+            if (chat.messagesLoaded !== false) {
+                ensureMessageIds(chat)
+            }
         }
+    }
+}
+
+export function primeCharacterDetails(
+    cache: NodeDatabaseSyncCache,
+    character: character | groupChat,
+    characterPosition?: number,
+) {
+    const characterId = character.chaId!
+    let position = characterPosition
+    if (position === undefined) {
+        try {
+            const manifest: string[] = JSON.parse(cache.characterManifest)
+            const idx = manifest.indexOf(characterId)
+            position = idx >= 0 ? idx : 0
+        } catch {
+            position = 0
+        }
+    }
+    cache.characters.set(characterId, fingerprint(serialize({
+        position,
+        data: characterData(character),
+    })!))
+}
+
+export function primeChatMessages(
+    cache: NodeDatabaseSyncCache,
+    chat: Chat,
+) {
+    ensureMessageIds(chat)
+    const chatId = chat.id!
+    const messages = chat.message ?? []
+    cache.messageManifests.set(chatId, JSON.stringify(messages.map((value) => value.chatId)))
+    for (let messagePosition = 0; messagePosition < messages.length; messagePosition++) {
+        const message = messages[messagePosition]
+        const key = messageKey(chatId, message.chatId!)
+        cache.messageParents.set(key, chatId)
+        cache.messages.set(key, fingerprint(serialize({
+            position: messagePosition,
+            data: messageData(message),
+        })!))
     }
 }
 
@@ -182,16 +225,18 @@ export function primeNodeDatabaseSyncCache(database: Database, revision: number)
                 data: chatData(chat),
             })!))
 
-            const messages = chat.message ?? []
-            cache.messageManifests.set(chat.id!, JSON.stringify(messages.map((value) => value.chatId)))
-            for (let messagePosition = 0; messagePosition < messages.length; messagePosition++) {
-                const message = messages[messagePosition]
-                const key = messageKey(chat.id!, message.chatId!)
-                cache.messageParents.set(key, chat.id!)
-                cache.messages.set(key, fingerprint(serialize({
-                    position: messagePosition,
-                    data: messageData(message),
-                })!))
+            if (chat.messagesLoaded !== false) {
+                const messages = chat.message ?? []
+                cache.messageManifests.set(chat.id!, JSON.stringify(messages.map((value) => value.chatId)))
+                for (let messagePosition = 0; messagePosition < messages.length; messagePosition++) {
+                    const message = messages[messagePosition]
+                    const key = messageKey(chat.id!, message.chatId!)
+                    cache.messageParents.set(key, chat.id!)
+                    cache.messages.set(key, fingerprint(serialize({
+                        position: messagePosition,
+                        data: messageData(message),
+                    })!))
+                }
             }
         }
     }
@@ -247,19 +292,21 @@ function buildFullSync(
                 position: chatPosition,
                 data: jsonValue(serialize(chatData(chat))!),
             })
-            const messages = chat.message ?? []
-            payload.messageManifests.push({
-                chatId: chat.id!,
-                ids: messages.map((value) => value.chatId!),
-            })
-            for (let messagePosition = 0; messagePosition < messages.length; messagePosition++) {
-                const message = messages[messagePosition]
-                payload.messages.push({
-                    id: message.chatId!,
+            if (chat.messagesLoaded !== false) {
+                const messages = chat.message ?? []
+                payload.messageManifests.push({
                     chatId: chat.id!,
-                    position: messagePosition,
-                    data: jsonValue(serialize(messageData(message))!),
+                    ids: messages.map((value) => value.chatId!),
                 })
+                for (let messagePosition = 0; messagePosition < messages.length; messagePosition++) {
+                    const message = messages[messagePosition]
+                    payload.messages.push({
+                        id: message.chatId!,
+                        chatId: chat.id!,
+                        position: messagePosition,
+                        data: jsonValue(serialize(messageData(message))!),
+                    })
+                }
             }
         }
     }
@@ -403,7 +450,6 @@ export function buildNodeDatabaseSync(
         for (let chatPosition = 0; chatPosition < chats.length; chatPosition++) {
             const chat = chats[chatPosition]
             const chatId = chat.id!
-            ensureMessageIds(chat)
             const serializedChatData = serialize(chatData(chat))!
             const chatFingerprint = fingerprint(serialize({
                 position: chatPosition,
@@ -420,42 +466,45 @@ export function buildNodeDatabaseSync(
                 nextCache.chatParents.set(chatId, characterId)
             }
 
-            const messages = chat.message ?? []
-            const messageIds = messages.map((value) => value.chatId!)
-            const messageIdSet = new Set(messageIds)
-            const messageManifest = JSON.stringify(messageIds)
-            if (nextCache.messageManifests.get(chatId) !== messageManifest) {
-                payload.messageManifests.push({ chatId, ids: messageIds })
-                nextCache.messageManifests.set(chatId, messageManifest)
-                for (const [key, parent] of nextCache.messageParents) {
-                    if (parent === chatId) {
-                        const messageId = key.slice(chatId.length + 1)
-                        if (!messageIdSet.has(messageId)) {
-                            nextCache.messageParents.delete(key)
-                            nextCache.messages.delete(key)
+            if (chat.messagesLoaded !== false) {
+                ensureMessageIds(chat)
+                const messages = chat.message ?? []
+                const messageIds = messages.map((value) => value.chatId!)
+                const messageIdSet = new Set(messageIds)
+                const messageManifest = JSON.stringify(messageIds)
+                if (nextCache.messageManifests.get(chatId) !== messageManifest) {
+                    payload.messageManifests.push({ chatId, ids: messageIds })
+                    nextCache.messageManifests.set(chatId, messageManifest)
+                    for (const [key, parent] of nextCache.messageParents) {
+                        if (parent === chatId) {
+                            const messageId = key.slice(chatId.length + 1)
+                            if (!messageIdSet.has(messageId)) {
+                                nextCache.messageParents.delete(key)
+                                nextCache.messages.delete(key)
+                            }
                         }
                     }
                 }
-            }
 
-            for (let messagePosition = 0; messagePosition < messages.length; messagePosition++) {
-                const message: Message = messages[messagePosition]
-                const messageId = message.chatId!
-                const key = messageKey(chatId, messageId)
-                const serializedMessageData = serialize(messageData(message))!
-                const messageFingerprint = fingerprint(serialize({
-                    position: messagePosition,
-                    data: jsonValue(serializedMessageData),
-                })!)
-                if (nextCache.messages.get(key) !== messageFingerprint) {
-                    payload.messages.push({
-                        id: messageId,
-                        chatId,
+                for (let messagePosition = 0; messagePosition < messages.length; messagePosition++) {
+                    const message: Message = messages[messagePosition]
+                    const messageId = message.chatId!
+                    const key = messageKey(chatId, messageId)
+                    const serializedMessageData = serialize(messageData(message))!
+                    const messageFingerprint = fingerprint(serialize({
                         position: messagePosition,
                         data: jsonValue(serializedMessageData),
-                    })
-                    nextCache.messages.set(key, messageFingerprint)
-                    nextCache.messageParents.set(key, chatId)
+                    })!)
+                    if (nextCache.messages.get(key) !== messageFingerprint) {
+                        payload.messages.push({
+                            id: messageId,
+                            chatId,
+                            position: messagePosition,
+                            data: jsonValue(serializedMessageData),
+                        })
+                        nextCache.messages.set(key, messageFingerprint)
+                        nextCache.messageParents.set(key, chatId)
+                    }
                 }
             }
         }

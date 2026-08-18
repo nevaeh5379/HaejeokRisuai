@@ -1348,6 +1348,7 @@ export interface character{
     type?:"character"
     name:string
     image?:string
+    detailsLoaded?: boolean
     firstMessage:string
     desc:string
     notes:string
@@ -1514,6 +1515,7 @@ export interface loreSettings{
 export interface groupChat{ 
     type: 'group'
     image?:string
+    detailsLoaded?: boolean
     firstMessage:string
     chats:Chat[]
     chatFolders: ChatFolder[]
@@ -1840,6 +1842,8 @@ export interface Chat{
     lastDate?:number
     bookmarks?: string[];
     bookmarkNames?: { [chatId: string]: string };
+    messagesLoaded?: boolean;
+    detailsLoaded?: boolean;
 }
 
 export interface ChatFolder{

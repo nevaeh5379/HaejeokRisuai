@@ -193,4 +193,126 @@ describe('NodePostgresStorage browser client', () => {
             '/api/database-v2/tables/chat.messages/rows?offset=0&limit=25&search=hello&columns=id%2Ccontent'
         )
     })
+
+    it('loads database with shallow=true by default and supports full loading', async () => {
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                status: 'ready',
+                revision: 10,
+                database: { username: 'test-user', characters: [] },
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                plugins: [{ name: 'test-plugin' }],
+                hash: 'plugin-hash-1',
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                status: 'ready',
+                revision: 10,
+                database: { username: 'test-user', characters: [] },
+            }), { status: 200 }))
+        vi.stubGlobal('fetch', fetchMock)
+
+        const storage = new NodePostgresStorage(async () => 'test-auth')
+        const shallowDb = await storage.loadDatabase()
+        expect(shallowDb?.username).toBe('test-user')
+        expect(shallowDb?.plugins).toHaveLength(1)
+        expect(shallowDb?.pluginCustomStorage).toEqual({})
+        expect(fetchMock.mock.calls[0][0]).toBe('/api/database-v2?shallow=true')
+        expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/plugins')
+
+        const fullDb = await storage.loadDatabase({ shallow: false })
+        expect(fullDb?.username).toBe('test-user')
+        expect(fetchMock.mock.calls[2][0]).toBe('/api/database-v2?shallow=false')
+    })
+
+    it('loads chat details on demand', async () => {
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                status: 'ready',
+                revision: 10,
+                database: { username: 'test-user', characters: [] },
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ plugins: [], hash: 'p-empty' }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                chat: {
+                    id: 'chat-123',
+                    name: 'My Chat',
+                    localLore: [{ key: 'lore1' }],
+                    message: [
+                        { chatId: 'msg-1', role: 'user', data: 'hello' },
+                        { chatId: 'msg-2', role: 'char', data: 'hi there' },
+                    ],
+                },
+            }), { status: 200 }))
+        vi.stubGlobal('fetch', fetchMock)
+
+        const storage = new NodePostgresStorage(async () => 'test-auth')
+        await storage.loadDatabase()
+
+        const chat = await storage.loadChat('chat-123')
+        expect(chat?.id).toBe('chat-123')
+        expect(chat?.message).toHaveLength(2)
+        expect(chat?.localLore).toHaveLength(1)
+        expect(fetchMock.mock.calls[2][0]).toBe('/api/database-v2/chats/chat-123')
+    })
+
+    it('loads character details on demand', async () => {
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                status: 'ready',
+                revision: 10,
+                database: { username: 'test-user', characters: [] },
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ plugins: [], hash: 'p-empty' }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                character: {
+                    chaId: 'char-123',
+                    name: 'Loaded Character',
+                    globalLore: [{ key: 'world-lore' }],
+                    emotionImages: [['happy', 'data:image/png;base64,...']],
+                },
+            }), { status: 200 }))
+        vi.stubGlobal('fetch', fetchMock)
+
+        const storage = new NodePostgresStorage(async () => 'test-auth')
+        await storage.loadDatabase()
+
+        const char = await storage.loadCharacter('char-123')
+        expect(char?.chaId).toBe('char-123')
+        expect(char?.name).toBe('Loaded Character')
+        expect((char as any)?.globalLore).toHaveLength(1)
+        expect((char as any)?.emotionImages).toHaveLength(1)
+        expect(fetchMock.mock.calls[2][0]).toBe('/api/database-v2/characters/char-123')
+    })
+
+    it('loads and caches individual plugin custom storage keys on demand', async () => {
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                keys: ['cache_key_1', 'cache_key_2'],
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                key: 'cache_key_1',
+                value: { count: 42, label: 'test' },
+                hash: 'key-1-hash',
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(null, { status: 304 }))
+        vi.stubGlobal('fetch', fetchMock)
+
+        const storage = new NodePostgresStorage(async () => 'test-auth')
+        ;(storage as any).status = 'enabled'
+
+        const keys = await storage.listPluginCustomStorageKeys()
+        expect(keys).toEqual(['cache_key_1', 'cache_key_2'])
+        expect(fetchMock.mock.calls[0][0]).toBe('/api/database-v2/plugin-custom-storage/keys')
+
+        // First load of key: 200 OK -> saves to local cache
+        const val1 = await storage.loadPluginCustomStorageKey('cache_key_1')
+        expect(val1).toEqual({ count: 42, label: 'test' })
+        expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/plugin-custom-storage/keys/cache_key_1')
+
+        // Second load of key: sends If-None-Match, returns 304 -> uses cached value
+        const val2 = await storage.loadPluginCustomStorageKey('cache_key_1')
+        expect(val2).toEqual({ count: 42, label: 'test' })
+        expect(fetchMock.mock.calls[2][1].headers['If-None-Match']).toBe('"risu-plugin-key-key-1-hash"')
+    })
 })
