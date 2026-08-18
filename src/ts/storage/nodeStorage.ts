@@ -400,7 +400,8 @@ export class NodeStorage{
 
     async getItems(
       keys: string[],
-      onProgress?: (progress: NodeStorageBulkReadProgress) => void
+      onProgress?: (progress: NodeStorageBulkReadProgress) => void,
+      options?: { thumbnail?: boolean }
     ): Promise<Map<string, Buffer>> {
       const results = new Map<string, Buffer>()
       const receivingChunks = new Map<string, Buffer[]>()
@@ -424,7 +425,7 @@ export class NodeStorage{
               results.set(name, Buffer.concat(chunks))
               receivingChunks.delete(name)
           }
-      }, onProgress)
+      }, onProgress, options)
 
       return results
     }
@@ -432,7 +433,8 @@ export class NodeStorage{
     async streamItems(
       keys: string[],
       handlers: NodeStorageBulkReadHandlers,
-      onProgress?: (progress: NodeStorageBulkReadProgress) => void
+      onProgress?: (progress: NodeStorageBulkReadProgress) => void,
+      options?: { thumbnail?: boolean }
     ): Promise<void> {
       await this.checkAuth()
 
@@ -440,9 +442,12 @@ export class NodeStorage{
           Buffer.from(key, "utf8").toString("hex")
       )
 
-      const response = await fetch("/api/read-bulk", {
+      const isThumb = options?.thumbnail ?? false
+      const url = isThumb ? "/api/read-bulk?thumb=1" : "/api/read-bulk"
+
+      const response = await fetch(url, {
           method: "POST",
-          body: JSON.stringify({ filePaths }),
+          body: JSON.stringify({ filePaths, thumb: isThumb }),
           headers: {
               "content-type": "application/json",
               "risu-auth": await this.createAuth()

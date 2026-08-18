@@ -1929,6 +1929,7 @@ app.post('/api/read-bulk', authenticatedRouteLimiter, async(req, res, next) => {
     if (!await checkAuth(req, res)) return;
 
     const filePaths = req.body?.filePaths;
+    const isThumb = req.query.thumb === '1' || req.query.thumb === 'true' || req.body?.thumb === true || req.headers['x-thumbnail'] === 'true';
 
     if (!Array.isArray(filePaths)) {
         res.status(400).send({
@@ -1941,7 +1942,9 @@ app.post('/api/read-bulk', authenticatedRouteLimiter, async(req, res, next) => {
     for (const filePath of filePaths) {
         if (!isHex(filePath)) continue;
         try {
-            const result = await storage.read(filePath);
+            const result = isThumb && typeof storage.readThumbnail === 'function'
+                ? await storage.readThumbnail(filePath)
+                : await storage.read(filePath);
             if (!result.exists) continue;
 
             const name = Buffer.from(filePath, 'hex').toString('utf8');

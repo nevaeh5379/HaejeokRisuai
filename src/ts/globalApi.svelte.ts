@@ -119,6 +119,151 @@ let checkedPaths: string[] = []
  * @param {string} loc - The location of the file.
  * @returns {Promise<string>} - A promise that resolves to the source URL of the file.
  */
+class ThumbnailBatchLoader {
+    private cache = new Map<string, string>()
+    private pending = new Map<string, { promise: Promise<string>; resolve: (url: string) => void; reject: (err: any) => void }>()
+    private queue = new Set<string>()
+    private flushScheduled = false
+
+    load(loc: string): Promise<string> {
+        if (!loc || loc === '') return Promise.resolve('')
+        
+        // 1. Memory cache hit (instant)
+        if (this.cache.has(loc)) {
+            return Promise.resolve(this.cache.get(loc)!)
+        }
+
+        // 2. Already in-flight
+        if (this.pending.has(loc)) {
+            return this.pending.get(loc)!.promise
+        }
+
+        // 3. Queue for batching
+        let resolveFn!: (url: string) => void
+        let rejectFn!: (err: any) => void
+        const promise = new Promise<string>((resolve, reject) => {
+            resolveFn = resolve
+            rejectFn = reject
+        })
+
+        this.pending.set(loc, { promise, resolve: resolveFn, reject: rejectFn })
+        this.queue.add(loc)
+        this.scheduleFlush()
+
+        return promise
+    }
+
+    preload(keys: string[]) {
+        const toLoad = keys.filter(k => k && !this.cache.has(k) && !this.pending.has(k))
+        if (toLoad.length === 0) return
+
+        for (const loc of toLoad) {
+            let resolveFn!: (url: string) => void
+            let rejectFn!: (err: any) => void
+            const promise = new Promise<string>((resolve, reject) => {
+                resolveFn = resolve
+                rejectFn = reject
+            })
+            this.pending.set(loc, { promise, resolve: resolveFn, reject: rejectFn })
+            this.queue.add(loc)
+        }
+        this.scheduleFlush()
+    }
+
+    private scheduleFlush() {
+        if (this.flushScheduled) return
+        this.flushScheduled = true
+
+        // Debounce window (10ms) to coalesce all components mounting in this tick
+        setTimeout(() => {
+            this.flush()
+        }, 10)
+    }
+
+    private async flush() {
+        this.flushScheduled = false
+        if (this.queue.size === 0) return
+
+        const batchKeys = Array.from(this.queue)
+        this.queue.clear()
+
+        try {
+            if (forageStorage.realStorage instanceof NodeStorage) {
+                const nodeStorage = forageStorage.realStorage as NodeStorage
+                const results = await nodeStorage.getItems(batchKeys, undefined, { thumbnail: true })
+
+                for (const loc of batchKeys) {
+                    const buf = results.get(loc)
+                    const pendingItem = this.pending.get(loc)
+                    if (buf && buf.length > 0) {
+                        const blob = new Blob([buf as any], { type: 'image/webp' })
+                        const blobUrl = URL.createObjectURL(blob)
+                        this.cache.set(loc, blobUrl)
+                        pendingItem?.resolve(blobUrl)
+                    } else {
+                        // Fallback to direct URL if thumbnail bulk returned nothing for this key
+                        nodeStorage.getDirectUrl(loc, { thumbnail: true }).then(directUrl => {
+                            pendingItem?.resolve(directUrl)
+                        }).catch(() => {
+                            pendingItem?.resolve('')
+                        })
+                    }
+                    this.pending.delete(loc)
+                }
+            } else {
+                for (const loc of batchKeys) {
+                    const pendingItem = this.pending.get(loc)
+                    this.pending.delete(loc)
+                    pendingItem?.resolve('')
+                }
+            }
+        } catch (err) {
+            // Fallback for all items in batch
+            if (forageStorage.realStorage instanceof NodeStorage) {
+                const nodeStorage = forageStorage.realStorage as NodeStorage
+                for (const loc of batchKeys) {
+                    const pendingItem = this.pending.get(loc)
+                    this.pending.delete(loc)
+                    nodeStorage.getDirectUrl(loc, { thumbnail: true }).then(directUrl => {
+                        pendingItem?.resolve(directUrl)
+                    }).catch(() => {
+                        pendingItem?.resolve('')
+                    })
+                }
+            }
+        }
+    }
+
+    invalidate(loc?: string) {
+        if (loc) {
+            const old = this.cache.get(loc)
+            if (old && old.startsWith('blob:')) {
+                URL.revokeObjectURL(old)
+            }
+            this.cache.delete(loc)
+            this.pending.delete(loc)
+            this.queue.delete(loc)
+        } else {
+            for (const [_, url] of this.cache.entries()) {
+                if (url.startsWith('blob:')) {
+                    URL.revokeObjectURL(url)
+                }
+            }
+            this.cache.clear()
+            this.pending.clear()
+            this.queue.clear()
+        }
+    }
+}
+
+export const thumbnailBatchLoader = new ThumbnailBatchLoader()
+export function preloadThumbnails(keys: string[]) {
+    thumbnailBatchLoader.preload(keys)
+}
+export function invalidateThumbnailCache(loc?: string) {
+    thumbnailBatchLoader.invalidate(loc)
+}
+
 const registeredSwCaches = new Set<string>()
 
 export async function getFileSrc(loc: string, options?: { thumbnail?: boolean }) {
@@ -161,6 +306,9 @@ export async function getFileSrc(loc: string, options?: { thumbnail?: boolean })
         return hubURL + `/rs/` + loc + (isThumb ? '?thumb=1' : '')
     }
     if (isNodeServer || (forageStorage.realStorage instanceof NodeStorage)) {
+        if (isThumb && loc.startsWith('assets')) {
+            return await thumbnailBatchLoader.load(loc)
+        }
         const nodeStorage = forageStorage.realStorage as NodeStorage
         return await nodeStorage.getDirectUrl(loc, options)
     }
@@ -308,12 +456,15 @@ export async function saveAsset(data: Uint8Array, customId: string = '', fileNam
         await writeFile(`assets/${id}.${fileExtension}`, data, {
             baseDir: BaseDirectory.AppData
         });
+        invalidateThumbnailCache(`assets/${id}.${fileExtension}`)
         return `assets/${id}.${fileExtension}`
     }
     else {
         let form = `assets/${id}.${fileExtension}`
+        invalidateThumbnailCache(form)
         const replacer = await forageStorage.setItem(form, data)
         if (replacer) {
+            invalidateThumbnailCache(replacer)
             return replacer
         }
         return form

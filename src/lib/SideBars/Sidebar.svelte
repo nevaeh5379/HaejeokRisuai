@@ -46,7 +46,7 @@
     import BaseRoundedButton from "../UI/BaseRoundedButton.svelte";
     import { getCharacterIndexObject, selectSingleFile } from "src/ts/util";
     import { v4 } from "uuid";
-    import { checkCharOrder, getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
+    import { checkCharOrder, getFileSrc, preloadThumbnails, saveAsset } from "src/ts/globalApi.svelte";
     import { alertInput, alertSelect } from "src/ts/alert";
     import SideChatList from "./SideChatList.svelte";
     import { ConnectionIsHost, ConnectionOpenStore, RoomIdStore } from "src/ts/sync/multiuser";
@@ -126,6 +126,20 @@
     }
     if (!isEqual(charImages, newCharImages)) {
       charImages = newCharImages;
+      const keysToPreload: string[] = [];
+      for (const c of newCharImages) {
+        if (c.type === 'normal') {
+          if (c.img) keysToPreload.push(c.img);
+        } else if (c.type === 'folder') {
+          if (c.img) keysToPreload.push(c.img);
+          for (const fc of c.folder) {
+            if (fc.img) keysToPreload.push(fc.img);
+          }
+        }
+      }
+      if (keysToPreload.length > 0) {
+        preloadThumbnails(keysToPreload);
+      }
     }
     if(IconRounded !== DBState.db.roundIcons){
       IconRounded = DBState.db.roundIcons
