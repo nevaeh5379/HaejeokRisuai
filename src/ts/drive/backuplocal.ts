@@ -558,13 +558,25 @@ export function LoadLocalBackup(){
 
             if(useNodeDirectRestore){
                 const storage = forageStorage.realStorage as NodeStorage
-                const restore = await storage.restoreBackup(file, (uploadedBytes, totalBytes) => {
-                    const progress = totalBytes === 0
-                        ? 100
-                        : Math.floor(uploadedBytes / totalBytes * 100)
-                    alertWait(`Loading local Backup... (${progress}%)`)
-                })
+                const restore = await storage.restoreBackup(
+                    file,
+                    (uploadedBytes, totalBytes) => {
+                        const progress = totalBytes === 0
+                            ? 100
+                            : Math.floor(uploadedBytes / totalBytes * 100)
+                        if(progress >= 100){
+                            alertWait('Uploading local Backup... (100%) - Finalizing on server...')
+                        } else {
+                            alertWait(`Uploading local Backup... (${progress}%)`)
+                        }
+                    },
+                    (completed, total) => {
+                        const percent = total > 0 ? Math.floor((completed / total) * 100) : 100
+                        alertWait(`Saving to storage... (${completed}/${total} files - ${percent}%)`)
+                    }
+                )
                 try {
+                    alertWait('Retrieving restore entries...')
                     for(const name of restore.entries){
                         const data = await storage.getBackupRestoreEntry(restore.restoreId, name)
                         await restoreBackupEntry(name, data)
@@ -725,6 +737,7 @@ export function LoadLocalBackup(){
                     alertError('Failed to decrypt database backup, will attempt to load it without decryption.')
                 }
             }
+            alertWait('Decoding database...')
             const dbData = await decodeRisuSave(db);
             const missingColdStorageKeys:string[] = []
             for(const key of await listColdDataKeys(dbData)){
@@ -751,8 +764,18 @@ export function LoadLocalBackup(){
                 });
             } else {
                 if(isNodeServer && forageStorage.realStorage instanceof NodeStorage && forageStorage.realStorage.postgres.isEnabled()){
-                    await forageStorage.realStorage.postgres.replaceDatabase(dbData)
+                    const totalChars = dbData.characters?.length ?? 0
+                    let totalChats = 0
+                    for(const c of dbData.characters ?? []){
+                        totalChats += c.chats?.length ?? 0
+                    }
+                    const baseMsg = `Syncing PostgreSQL (${totalChars} characters, ${totalChats} chats)`
+                    alertWait(`${baseMsg}...`)
+                    await forageStorage.realStorage.postgres.replaceDatabase(dbData, (step) => {
+                        alertWait(`${baseMsg} - ${step}`)
+                    })
                 }
+                alertWait('Finalizing database...')
                 await forageStorage.setItem('database/database.bin', db);
                 location.search = '';
                 alertStore.set({

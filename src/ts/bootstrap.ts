@@ -527,7 +527,7 @@ async function cleanChunks(options:{
 } = {}) {
     const cleanColdStorage = options.cleanColdStorage ?? false
     const db = getDatabase()
-    if (db.account?.useSync) {
+    if (isNodeServer || db.account?.useSync) {
         return
     }
     if(db.coldstorage && !cleanColdStorage){

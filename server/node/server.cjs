@@ -1583,6 +1583,19 @@ function createBulkProtocolError(message) {
     return error;
 }
 
+async function runConcurrent(items, limit, fn) {
+    if (!items || items.length === 0) return;
+    let index = 0;
+    const workerCount = Math.min(limit, items.length);
+    const workers = new Array(workerCount).fill(0).map(async () => {
+        while (index < items.length) {
+            const current = items[index++];
+            await fn(current);
+        }
+    });
+    await Promise.all(workers);
+}
+
 app.post('/api/restore-backup', authenticatedRouteLimiter, async(req, res, next) => {
     if (!await checkAuth(req, res)) return;
 
@@ -1593,6 +1606,7 @@ app.post('/api/restore-backup', authenticatedRouteLimiter, async(req, res, next)
 
     await cleanExpiredBackupRestoreSessions();
 
+    const storage = assetStorageManager.getStorage();
     const restoreId = crypto.randomUUID();
     const completedFiles = [];
     const entryNames = new Set();
@@ -1609,11 +1623,19 @@ app.post('/api/restore-backup', authenticatedRouteLimiter, async(req, res, next)
 
     const cleanup = async() => {
         if (currentFile) {
-            try {
-                await currentFile.fileHandle.close();
-            } catch {}
+            if (currentFile.fileHandle) {
+                try { await currentFile.fileHandle.close(); } catch {}
+            }
+            if (currentFile.writer) {
+                try { await currentFile.writer.abort(); } catch {}
+            }
         }
-        await removeBackupRestoreFiles(completedFiles);
+        for (const file of completedFiles) {
+            if (file.writer) {
+                try { await file.writer.abort(); } catch {}
+            }
+        }
+        await removeBackupRestoreFiles(completedFiles.filter(f => f.special));
     };
 
     const startEntry = async() => {
@@ -1624,21 +1646,39 @@ app.post('/api/restore-backup', authenticatedRouteLimiter, async(req, res, next)
             throw createBulkProtocolError('Too many backup entries');
         }
 
-        const temporaryPath = path.join(savePath, `__restore-${restoreId}-${crypto.randomUUID()}`);
-        currentFile = {
-            name: entryName,
-            dataLength: entryDataLength,
-            temporaryPath,
-            fileHandle: await fs.open(temporaryPath, 'wx'),
-            special: isBackupRestoreSpecialEntry(entryName)
-        };
+        const special = isBackupRestoreSpecialEntry(entryName);
+        if (special) {
+            const temporaryPath = path.join(savePath, `__restore-${restoreId}-${crypto.randomUUID()}`);
+            currentFile = {
+                name: entryName,
+                dataLength: entryDataLength,
+                temporaryPath,
+                fileHandle: await fs.open(temporaryPath, 'wx'),
+                special: true
+            };
+        } else {
+            const normalizedName = entryName.startsWith('assets/') ? entryName : `assets/${entryName}`;
+            const hexPath = Buffer.from(normalizedName, 'utf8').toString('hex');
+            const writer = storage.createWriteStream(hexPath);
+            currentFile = {
+                name: entryName,
+                dataLength: entryDataLength,
+                writer,
+                special: false
+            };
+        }
         entryNames.add(entryName);
         fileCount += 1;
     };
 
     const finishEntry = async() => {
-        await currentFile.fileHandle.close();
-        delete currentFile.fileHandle;
+        if (currentFile.fileHandle) {
+            await currentFile.fileHandle.close();
+            delete currentFile.fileHandle;
+        }
+        if (currentFile.writer) {
+            currentFile.writer.stream.end();
+        }
         completedFiles.push(currentFile);
         currentFile = null;
         entryName = '';
@@ -1712,10 +1752,15 @@ app.post('/api/restore-backup', authenticatedRouteLimiter, async(req, res, next)
                     entryDataLength - entryDataReceived,
                     incomingChunk.length - chunkOffset
                 );
-                await writeFileChunk(
-                    currentFile.fileHandle,
-                    incomingChunk.subarray(chunkOffset, chunkOffset + copyLength)
-                );
+                const chunkData = incomingChunk.subarray(chunkOffset, chunkOffset + copyLength);
+                if (currentFile.fileHandle) {
+                    await writeFileChunk(
+                        currentFile.fileHandle,
+                        chunkData
+                    );
+                } else if (currentFile.writer) {
+                    currentFile.writer.stream.write(chunkData);
+                }
                 entryDataReceived += copyLength;
                 chunkOffset += copyLength;
                 if (entryDataReceived === entryDataLength) {
@@ -1729,15 +1774,39 @@ app.post('/api/restore-backup', authenticatedRouteLimiter, async(req, res, next)
         }
 
         const specialEntries = new Map();
+        const assetFiles = [];
         for (const file of completedFiles) {
             if (file.special) {
                 specialEntries.set(file.name, file);
-                continue;
+            } else if (file.writer) {
+                assetFiles.push(file);
             }
-            const storageKey = `assets/${file.name}`;
-            const targetPath = path.join(savePath, Buffer.from(storageKey, 'utf8').toString('hex'));
-            await fs.rename(file.temporaryPath, targetPath);
         }
+
+        const totalAssets = assetFiles.length;
+        let completedAssets = 0;
+
+        res.setHeader('Content-Type', 'application/x-ndjson');
+        res.setHeader('Transfer-Encoding', 'chunked');
+
+        const sendProgress = () => {
+            try {
+                res.write(JSON.stringify({
+                    type: 'progress',
+                    completed: completedAssets,
+                    total: totalAssets
+                }) + '\n');
+            } catch {}
+        };
+
+        sendProgress();
+
+        const pendingDone = assetFiles.map(async(file) => {
+            await file.writer.done();
+            completedAssets += 1;
+            sendProgress();
+        });
+        await Promise.all(pendingDone);
 
         const specialFiles = Array.from(specialEntries.values());
         if (specialFiles.length > 0) {
@@ -1755,12 +1824,24 @@ app.post('/api/restore-backup', authenticatedRouteLimiter, async(req, res, next)
             backupRestoreSessions.set(restoreId, session);
         }
 
-        res.send({
+        res.write(JSON.stringify({
+            type: 'done',
             restoreId,
             entries: Array.from(specialEntries.keys())
-        });
+        }) + '\n');
+        res.end();
     } catch (error) {
         await cleanup();
+        if (res.headersSent) {
+            try {
+                res.write(JSON.stringify({
+                    type: 'error',
+                    error: error?.message || 'Backup restore failed'
+                }) + '\n');
+                res.end();
+            } catch {}
+            return;
+        }
         if (error?.statusCode) {
             res.status(error.statusCode).send({ error: error.message });
             return;
@@ -1847,7 +1928,7 @@ async function writeFileChunk(fileHandle, data) {
 app.post('/api/read-bulk', authenticatedRouteLimiter, async(req, res, next) => {
     if (!await checkAuth(req, res)) return;
 
-    const filePaths = req.body?.filePaths
+    const filePaths = req.body?.filePaths;
 
     if (!Array.isArray(filePaths)) {
         res.status(400).send({
@@ -1855,29 +1936,48 @@ app.post('/api/read-bulk', authenticatedRouteLimiter, async(req, res, next) => {
         });
         return;
     }
+    const storage = assetStorageManager.getStorage();
     let fileId = 0;
     for (const filePath of filePaths) {
-        const fileHandle = await fs.open(path.join(savePath, filePath), 'r')
-        const stat = await fileHandle.stat()
-        const name = Buffer.from(filePath, 'hex').toString('utf8')
+        if (!isHex(filePath)) continue;
         try {
-            await writePacket(res, createHeaderPacket(fileId, name, stat.size));
+            const result = await storage.read(filePath);
+            if (!result.exists) continue;
 
-            const stream = fileHandle.createReadStream({autoClose: false})
-            for await (const chunk of stream) {
-                await writePacket(res, createChunkPacket(fileId, chunk))
+            const name = Buffer.from(filePath, 'hex').toString('utf8');
+            const totalSize = result.contentLength || (result.buffer ? result.buffer.length : 0);
+            await writePacket(res, createHeaderPacket(fileId, name, totalSize));
+
+            if (result.filePath) {
+                const fileHandle = await fs.open(result.filePath, 'r');
+                try {
+                    const stream = fileHandle.createReadStream({ autoClose: false });
+                    for await (const chunk of stream) {
+                        await writePacket(res, createChunkPacket(fileId, chunk));
+                    }
+                } finally {
+                    await fileHandle.close();
+                }
+            } else if (result.stream) {
+                for await (const chunk of result.stream) {
+                    await writePacket(res, createChunkPacket(fileId, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+                }
+            } else if (result.buffer) {
+                const chunkSize = 256 * 1024;
+                for (let offset = 0; offset < result.buffer.length; offset += chunkSize) {
+                    const chunk = result.buffer.subarray(offset, Math.min(offset + chunkSize, result.buffer.length));
+                    await writePacket(res, createChunkPacket(fileId, chunk));
+                }
             }
-            await writePacket(res, createEndPacket(fileId))
+            await writePacket(res, createEndPacket(fileId));
             fileId += 1;
-        } catch {
-
-        } finally {
-            await fileHandle.close();
+        } catch (err) {
+            console.error(`Error reading ${filePath} in read-bulk:`, err);
         }
     }
 
     res.end();
-})
+});
 
 app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => {
     if (!await checkAuth(req, res)) return;
@@ -1887,6 +1987,7 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
         return;
     }
 
+    const storage = assetStorageManager.getStorage();
     const receivingFiles = new Map();
     const targetPaths = new Set();
     const completedFiles = [];
@@ -1894,19 +1995,16 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
     let fileCount = 0;
 
     const cleanup = async() => {
-        const temporaryFiles = [];
         for (const file of receivingFiles.values()) {
-            try {
-                await file.fileHandle.close();
-            } catch {}
-            temporaryFiles.push(file.temporaryPath);
+            if (file.writer) {
+                try { await file.writer.abort(); } catch {}
+            }
         }
         for (const file of completedFiles) {
-            temporaryFiles.push(file.temporaryPath);
+            if (file.writer) {
+                try { await file.writer.abort(); } catch {}
+            }
         }
-        await Promise.all(temporaryFiles.map((temporaryPath) =>
-            fs.rm(temporaryPath, { force: true }).catch(() => {})
-        ));
     };
 
     try {
@@ -1943,22 +2041,18 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
                     const name = pending.subarray(nameStart, nameEnd).toString('utf8');
                     const expectedSize = pending.readBigUInt64BE(nameEnd);
                     const encodedName = Buffer.from(name, 'utf8').toString('hex');
-                    const targetPath = path.join(savePath, encodedName);
-                    if (targetPaths.has(targetPath)) {
+                    if (targetPaths.has(encodedName)) {
                         throw createBulkProtocolError(`Duplicate bulk file name: ${name}`);
                     }
 
-                    const temporaryPath = path.join(savePath, `__bulk-${crypto.randomUUID()}`);
-                    const fileHandle = await fs.open(temporaryPath, 'wx');
+                    const writer = storage.createWriteStream(encodedName);
                     receivingFiles.set(fileId, {
                         name,
                         expectedSize,
                         receivedSize: 0n,
-                        targetPath,
-                        temporaryPath,
-                        fileHandle
+                        writer
                     });
-                    targetPaths.add(targetPath);
+                    targetPaths.add(encodedName);
                     fileCount += 1;
                     offset += packetLength;
                     continue;
@@ -1986,8 +2080,7 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
                         throw createBulkProtocolError(`Too much data for bulk file: ${file.name}`);
                     }
 
-                    await writeFileChunk(
-                        file.fileHandle,
+                    file.writer.stream.write(
                         pending.subarray(offset + 9, offset + packetLength)
                     );
                     file.receivedSize = nextSize;
@@ -2007,7 +2100,7 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
                         throw createBulkProtocolError(`Incomplete bulk file: ${file.name}`);
                     }
 
-                    await file.fileHandle.close();
+                    file.writer.stream.end();
                     receivingFiles.delete(fileId);
                     completedFiles.push(file);
                     offset += 5;
@@ -2024,9 +2117,7 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
             throw createBulkProtocolError('Bulk write request ended with an incomplete packet');
         }
 
-        for (const file of completedFiles) {
-            await fs.rename(file.temporaryPath, file.targetPath);
-        }
+        await Promise.all(completedFiles.map((file) => file.writer.done()));
         completedFiles.length = 0;
 
         res.send({ success: true, written: fileCount });
@@ -2034,7 +2125,7 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
         await cleanup();
         if (error?.statusCode) {
             res.status(error.statusCode).send({ error: error.message });
-                 return;
+            return;
         }
         next(error);
     }

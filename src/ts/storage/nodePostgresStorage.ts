@@ -569,17 +569,20 @@ export class NodePostgresStorage {
     async saveDatabase(
         database:Database,
         changes:toSaveType,
-        options:{ forceFull?:boolean } = {}
+        options:{ forceFull?:boolean; onProgress?:(status:string) => void } = {}
     ):Promise<boolean> {
         if(!await this.ensureEnabled()){
             return false
         }
 
+        options.onProgress?.('Building relational sync payload...')
         const built = buildNodeDatabaseSync(database, changes, this.cache, options)
         if(!built){
             return true
         }
+        options.onProgress?.('Compressing database payload...')
         const encodedBody = await encodeJsonBody(built.payload)
+        options.onProgress?.('Writing to PostgreSQL database tables...')
         const response = await fetch('/api/database-v2/sync', {
             method: 'POST',
             body: encodedBody.body,
@@ -607,7 +610,7 @@ export class NodePostgresStorage {
         return true
     }
 
-    async replaceDatabase(database:Database) {
+    async replaceDatabase(database:Database, onProgress?:(status:string) => void) {
         return await this.saveDatabase(database, {
             character: [],
             chat: [],
@@ -618,6 +621,7 @@ export class NodePostgresStorage {
             pluginCustomStorage: false,
         }, {
             forceFull: true,
+            onProgress
         })
     }
 

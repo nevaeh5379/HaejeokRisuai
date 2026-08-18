@@ -250,7 +250,8 @@ export class NodeStorage{
 
     async restoreBackup(
         file: File,
-        onProgress?: (uploadedBytes: number, totalBytes: number) => void
+        onProgress?: (uploadedBytes: number, totalBytes: number) => void,
+        onServerProgress?: (completed: number, total: number) => void
     ): Promise<NodeStorageBackupRestoreResult> {
         await this.checkAuth()
         const auth = await this.createAuth()
@@ -258,23 +259,87 @@ export class NodeStorage{
         return await new Promise<NodeStorageBackupRestoreResult>((resolve, reject) => {
             const request = new XMLHttpRequest()
             request.open('POST', '/api/restore-backup')
-            request.responseType = 'json'
             request.setRequestHeader('content-type', 'application/x-risu-backup')
+            request.setRequestHeader('accept', 'application/x-ndjson, application/json')
             request.setRequestHeader('risu-auth', auth)
+
             request.upload.onprogress = (event) => {
                 onProgress?.(event.loaded, event.lengthComputable ? event.total : file.size)
             }
+
+            let lastOffset = 0
+            const processResponseText = () => {
+                const text = request.responseText || ''
+                if (text.length > lastOffset) {
+                    const lines = text.slice(lastOffset).split('\n')
+                    for (let i = 0; i < lines.length - 1; i++) {
+                        const line = lines[i].trim()
+                        if (line) {
+                            try {
+                                const parsed = JSON.parse(line)
+                                if (parsed.type === 'progress' && typeof parsed.completed === 'number') {
+                                    onServerProgress?.(parsed.completed, parsed.total)
+                                }
+                            } catch {}
+                        }
+                    }
+                    lastOffset = text.lastIndexOf('\n') + 1
+                }
+            }
+
+            request.onprogress = () => {
+                processResponseText()
+            }
+
             request.onerror = () => reject(new Error('Backup restore upload failed'))
             request.onabort = () => reject(new Error('Backup restore upload was aborted'))
             request.onload = () => {
-                if(request.status < 200 || request.status >= 300){
-                    reject(new Error(
-                        request.response?.error
-                        ?? `Backup restore upload failed: ${request.status}`
-                    ))
+                if (request.status < 200 || request.status >= 300) {
+                    let errorMessage = `Backup restore upload failed: ${request.status}`
+                    try {
+                        const errObj = JSON.parse(request.responseText)
+                        if (errObj.error) errorMessage = errObj.error
+                    } catch {}
+                    reject(new Error(errorMessage))
                     return
                 }
-                resolve(request.response as NodeStorageBackupRestoreResult)
+
+                processResponseText()
+
+                if (request.response && typeof request.response === 'object' && (request.response.restoreId || request.response.entries)) {
+                    resolve({
+                        restoreId: request.response.restoreId,
+                        entries: request.response.entries || []
+                    })
+                    return
+                }
+
+                const rawText = (request.responseText || (typeof request.response === 'string' ? request.response : '')).trim()
+                const lines = rawText.split('\n').filter(Boolean)
+                let finalResult: NodeStorageBackupRestoreResult | null = null
+
+                for (let i = lines.length - 1; i >= 0; i--) {
+                    try {
+                        const parsed = JSON.parse(lines[i])
+                        if (parsed.type === 'error' && parsed.error) {
+                            reject(new Error(parsed.error))
+                            return
+                        }
+                        if (parsed.type === 'done' || parsed.restoreId) {
+                            finalResult = {
+                                restoreId: parsed.restoreId,
+                                entries: parsed.entries || []
+                            }
+                            break
+                        }
+                    } catch {}
+                }
+
+                if (finalResult) {
+                    resolve(finalResult)
+                } else {
+                    reject(new Error('Invalid backup restore server response'))
+                }
             }
             request.send(file)
         })

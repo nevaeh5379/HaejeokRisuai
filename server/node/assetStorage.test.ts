@@ -273,3 +273,211 @@ describe('S3AssetStorage readThumbnail', () => {
         expect(missingRes.exists).toBe(false)
     })
 })
+
+describe('writeFromPath support', () => {
+    let tmpDir: string
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-test-writefrompath-'))
+    })
+
+    afterEach(() => {
+        if (fs.existsSync(tmpDir)) {
+            fs.rmSync(tmpDir, { recursive: true, force: true })
+        }
+    })
+
+    it('LocalFsStorage.writeFromPath moves temporary file and invalidates cached thumbnails', async () => {
+        const storage = new LocalFsStorage(tmpDir)
+        await storage.init()
+
+        const tempFile = path.join(tmpDir, '__temp_file_123.bin')
+        fs.writeFileSync(tempFile, Buffer.from('hello-from-backup'))
+
+        const key = 'assets/restored_image.png'
+        const hex = keyToHex(key)
+
+        // Pre-create a thumbnail cache file
+        const thumbDir = path.join(tmpDir, '__thumbs')
+        fs.mkdirSync(thumbDir, { recursive: true })
+        const thumbFile = path.join(thumbDir, `${hex}_128x128.webp`)
+        fs.writeFileSync(thumbFile, Buffer.from('old-thumb'))
+
+        await storage.writeFromPath(hex, tempFile)
+
+        // Temporary file should be moved/unlinked
+        expect(fs.existsSync(tempFile)).toBe(false)
+        // Asset should exist in storage
+        expect(await storage.exists(hex)).toBe(true)
+        const readRes = await storage.read(hex)
+        expect(readRes.exists).toBe(true)
+        expect(readRes.contentLength).toBe(Buffer.from('hello-from-backup').length)
+        // Outdated thumbnail cache should be removed
+        expect(fs.existsSync(thumbFile)).toBe(false)
+    })
+
+    it('S3AssetStorage.writeFromPath streams temporary file to S3 and unlinks temporary file', async () => {
+        const s3Store = new Map<string, Buffer>()
+        const s3Storage = new S3AssetStorage({
+            endpoint: 'http://localhost:9000',
+            region: 'us-east-1',
+            bucket: 'test-bucket',
+            accessKeyId: 'test',
+            secretAccessKey: 'test'
+        })
+
+        const tempFile = path.join(tmpDir, '__temp_s3_file.png')
+        const fileContent = Buffer.from('mock-s3-png-data')
+        fs.writeFileSync(tempFile, fileContent)
+
+        s3Storage.client = {
+            send: async (command: any) => {
+                const cmdName = command.constructor.name
+                const cmdKey = command.input?.Key
+                if (cmdName === 'PutObjectCommand' || cmdName.includes('PutObject')) {
+                    // Read stream to buffer for test verification
+                    const chunks: Buffer[] = []
+                    for await (const chunk of command.input.Body) {
+                        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+                    }
+                    s3Store.set(cmdKey, Buffer.concat(chunks))
+                    expect(command.input.ContentType).toBe('image/png')
+                    expect(command.input.ContentLength).toBe(fileContent.length)
+                    return {}
+                }
+                return {}
+            }
+        } as any
+
+        const key = 'assets/s3_backup_char.png'
+        const hex = keyToHex(key)
+        await s3Storage.writeFromPath(hex, tempFile)
+
+        // Temporary file must be deleted after upload
+        expect(fs.existsSync(tempFile)).toBe(false)
+        // S3 must contain uploaded object
+        expect(s3Store.has(key)).toBe(true)
+        expect(s3Store.get(key)!).toEqual(fileContent)
+    })
+
+    it('AssetStorageManager delegates writeFromPath to activeStorage', async () => {
+        const mgr = new AssetStorageManager(tmpDir)
+        await mgr.init()
+
+        const tempFile = path.join(tmpDir, '__temp_mgr_file.bin')
+        fs.writeFileSync(tempFile, Buffer.from('mgr-data'))
+
+        const key = 'assets/mgr_test.png'
+        const hex = keyToHex(key)
+
+        await mgr.writeFromPath(hex, tempFile)
+        expect(fs.existsSync(tempFile)).toBe(false)
+        expect(await mgr.getStorage().exists(hex)).toBe(true)
+    })
+})
+
+describe('createWriteStream streaming support', () => {
+    let tmpDir: string
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-test-writestream-'))
+    })
+
+    afterEach(() => {
+        if (fs.existsSync(tmpDir)) {
+            fs.rmSync(tmpDir, { recursive: true, force: true })
+        }
+    })
+
+    it('LocalFsStorage.createWriteStream streams data directly and renames upon finish', async () => {
+        const storage = new LocalFsStorage(tmpDir)
+        await storage.init()
+
+        const key = 'assets/streamed_file.png'
+        const hex = keyToHex(key)
+
+        const writer = storage.createWriteStream(hex)
+        writer.stream.write(Buffer.from('chunk-1-'))
+        writer.stream.write(Buffer.from('chunk-2'))
+        writer.stream.end()
+
+        await writer.done()
+
+        expect(await storage.exists(hex)).toBe(true)
+        const readRes = await storage.read(hex)
+        expect(readRes.exists).toBe(true)
+        expect(readRes.contentLength).toBe(Buffer.from('chunk-1-chunk-2').length)
+    })
+
+    it('S3AssetStorage.createWriteStream streams data into S3 Upload pipeline', async () => {
+        const s3Store = new Map<string, Buffer>()
+        const s3Storage = new S3AssetStorage({
+            endpoint: 'http://localhost:9000',
+            region: 'us-east-1',
+            bucket: 'test-bucket',
+            accessKeyId: 'test',
+            secretAccessKey: 'test'
+        })
+
+        s3Storage.client.send = (async (command: any) => {
+                const cmdName = command.constructor.name
+                const cmdKey = command.input?.Key
+                if (cmdName === 'PutObjectCommand' || cmdName.includes('PutObject')) {
+                    const body = command.input.Body
+                    let data: Buffer
+                    if (Buffer.isBuffer(body)) {
+                        data = body
+                    } else if (body && typeof body[Symbol.asyncIterator] === 'function') {
+                        const chunks: Buffer[] = []
+                        for await (const chunk of body) {
+                            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+                        }
+                        data = Buffer.concat(chunks)
+                    } else {
+                        data = Buffer.from(body || '')
+                    }
+                    s3Store.set(cmdKey, data)
+                    return {}
+                }
+                if (cmdName === 'CreateMultipartUploadCommand' || cmdName.includes('CreateMultipartUpload')) {
+                    return { UploadId: 'mock-upload-id' }
+                }
+                if (cmdName === 'UploadPartCommand' || cmdName.includes('UploadPart')) {
+                    return { ETag: 'mock-etag' }
+                }
+                if (cmdName === 'CompleteMultipartUploadCommand' || cmdName.includes('CompleteMultipartUpload')) {
+                    return { Location: 'mock-location', Bucket: command.input.Bucket, Key: command.input.Key }
+                }
+                return {}
+            }) as any
+
+        const key = 'assets/s3_stream_test.png'
+        const hex = keyToHex(key)
+
+        const writer = s3Storage.createWriteStream(hex)
+        writer.stream.write(Buffer.from('stream-part-1-'))
+        writer.stream.write(Buffer.from('stream-part-2'))
+        writer.stream.end()
+
+        await writer.done()
+
+        expect(s3Store.has(key)).toBe(true)
+        expect(s3Store.get(key)!).toEqual(Buffer.from('stream-part-1-stream-part-2'))
+    })
+
+    it('AssetStorageManager.createWriteStream delegates to activeStorage', async () => {
+        const mgr = new AssetStorageManager(tmpDir)
+        await mgr.init()
+
+        const key = 'assets/mgr_stream_test.png'
+        const hex = keyToHex(key)
+
+        const writer = mgr.createWriteStream(hex)
+        writer.stream.write(Buffer.from('mgr-stream-data'))
+        writer.stream.end()
+
+        await writer.done()
+
+        expect(await mgr.getStorage().exists(hex)).toBe(true)
+    })
+})

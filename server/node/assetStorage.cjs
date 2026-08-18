@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const stream = require('stream');
+const crypto = require('crypto');
 const {
     S3Client,
     PutObjectCommand,
@@ -11,6 +13,7 @@ const {
     CreateBucketCommand,
     HeadObjectCommand
 } = require('@aws-sdk/client-s3');
+const { Upload } = require('@aws-sdk/lib-storage');
 
 let sharp = null;
 try {
@@ -189,6 +192,69 @@ class LocalFsStorage {
         const fullPath = path.join(this.savePath, hexPath);
         await fs.promises.writeFile(fullPath, content);
         return { success: true };
+    }
+
+    async writeFromPath(hexPath, sourcePath) {
+        const fullPath = path.join(this.savePath, hexPath);
+        try {
+            await fs.promises.rename(sourcePath, fullPath);
+        } catch (err) {
+            await fs.promises.copyFile(sourcePath, fullPath);
+            await fs.promises.unlink(sourcePath).catch(() => {});
+        }
+        const thumbDir = path.join(this.savePath, '__thumbs');
+        if (fs.existsSync(thumbDir)) {
+            try {
+                const thumbFiles = await fs.promises.readdir(thumbDir);
+                for (const tf of thumbFiles) {
+                    if (tf.startsWith(hexPath)) {
+                        await fs.promises.rm(path.join(thumbDir, tf));
+                    }
+                }
+            } catch (err) {}
+        }
+        return { success: true };
+    }
+
+    createWriteStream(hexPath) {
+        const temporaryPath = path.join(this.savePath, `__stream-${crypto.randomUUID()}`);
+        const fileStream = fs.createWriteStream(temporaryPath);
+        const donePromise = new Promise((resolve, reject) => {
+            fileStream.on('finish', async () => {
+                try {
+                    const fullPath = path.join(this.savePath, hexPath);
+                    try {
+                        await fs.promises.rename(temporaryPath, fullPath);
+                    } catch (err) {
+                        await fs.promises.copyFile(temporaryPath, fullPath);
+                        await fs.promises.unlink(temporaryPath).catch(() => {});
+                    }
+                    const thumbDir = path.join(this.savePath, '__thumbs');
+                    if (fs.existsSync(thumbDir)) {
+                        try {
+                            const thumbFiles = await fs.promises.readdir(thumbDir);
+                            for (const tf of thumbFiles) {
+                                if (tf.startsWith(hexPath)) {
+                                    await fs.promises.rm(path.join(thumbDir, tf));
+                                }
+                            }
+                        } catch (err) {}
+                    }
+                    resolve({ success: true });
+                } catch (err) {
+                    reject(err);
+                }
+            });
+            fileStream.on('error', reject);
+        });
+        return {
+            stream: fileStream,
+            done: () => donePromise,
+            abort: async () => {
+                fileStream.destroy();
+                await fs.promises.unlink(temporaryPath).catch(() => {});
+            }
+        };
     }
 
     async remove(hexPaths) {
@@ -564,6 +630,51 @@ class S3AssetStorage {
         });
         await this.client.send(command);
         return { success: true };
+    }
+
+    async writeFromPath(hexPath, sourcePath) {
+        const key = hexToKey(hexPath);
+        const contentType = getContentType(key);
+        const stat = await fs.promises.stat(sourcePath);
+        const stream = fs.createReadStream(sourcePath);
+        const command = new PutObjectCommand({
+            Bucket: this.config.bucket,
+            Key: key,
+            Body: stream,
+            ContentType: contentType,
+            ContentLength: stat.size
+        });
+        await this.client.send(command);
+        await fs.promises.unlink(sourcePath).catch(() => {});
+        return { success: true };
+    }
+
+    createWriteStream(hexPath) {
+        const key = hexToKey(hexPath);
+        const contentType = getContentType(key);
+        const passThrough = new stream.PassThrough();
+        const upload = new Upload({
+            client: this.client,
+            params: {
+                Bucket: this.config.bucket,
+                Key: key,
+                Body: passThrough,
+                ContentType: contentType
+            },
+            partSize: 5 * 1024 * 1024,
+            leavePartsOnError: false
+        });
+        const donePromise = upload.done().then(() => ({ success: true }));
+        return {
+            stream: passThrough,
+            done: () => donePromise,
+            abort: async () => {
+                passThrough.destroy();
+                try {
+                    await upload.abort();
+                } catch {}
+            }
+        };
     }
 
     async remove(hexPaths) {
@@ -957,6 +1068,14 @@ class AssetStorageManager {
 
     getStorage() {
         return this.activeStorage;
+    }
+
+    createWriteStream(hexPath) {
+        return this.activeStorage.createWriteStream(hexPath);
+    }
+
+    async writeFromPath(hexPath, sourcePath) {
+        return await this.activeStorage.writeFromPath(hexPath, sourcePath);
     }
 
     async getSummary() {
