@@ -385,12 +385,42 @@ export class NodeStorage{
         }
         const da = await fetch('/api/read' + (options?.thumbnail ? '?thumb=1' : ''), {
             method: "GET",
+            cache: 'no-cache',
             headers
         })
         if(da.status < 200 || da.status >= 300){
             throw "getItem Error"
         }
 
+        const data = Buffer.from(await da.arrayBuffer())
+        if (data.length == 0){
+            return null
+        }
+        return data
+    }
+
+    async getItemFromBrowserCache(key:string, options?: { thumbnail?: boolean }):Promise<Buffer|null> {
+        await this.checkAuth()
+        const headers: Record<string, string> = {
+            'file-path': Buffer.from(key, 'utf-8').toString('hex'),
+            'risu-auth': await this.createAuth()
+        }
+        if (options?.thumbnail) {
+            headers['x-thumbnail'] = 'true'
+        }
+        let da: Response
+        try {
+            da = await fetch('/api/read' + (options?.thumbnail ? '?thumb=1' : ''), {
+                method: "GET",
+                cache: 'force-cache',
+                headers
+            })
+        } catch {
+            return null
+        }
+        if(da.status < 200 || da.status >= 300){
+            return null
+        }
         const data = Buffer.from(await da.arrayBuffer())
         if (data.length == 0){
             return null
@@ -448,6 +478,7 @@ export class NodeStorage{
       const response = await fetch(url, {
           method: "POST",
           body: JSON.stringify({ filePaths, thumb: isThumb }),
+          cache: 'no-cache',
           headers: {
               "content-type": "application/json",
               "risu-auth": await this.createAuth()

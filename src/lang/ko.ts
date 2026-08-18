@@ -1684,5 +1684,10 @@ export const languageKorean = {
     nanoGPTSelectFromList: "목록에서 선택",
     nanoGPTManualInput: "수동 입력",
     nanoGPTManualModelSelect: "수동 모델 선택",
-    "resizeTextarea": "textarea 크기 조절 허용"
+    "resizeTextarea": "textarea 크기 조절 허용",
+    "cacheRecoveryPrompt": "서버에 데이터베이스가 없지만 브라우저 캐시에 데이터가 있습니다. 복원할 소스를 선택하거나 새로 시작하세요.",
+    "startFresh": "새로 시작 (빈 데이터베이스)",
+    "cachedDatabaseLabel": "캐시된 database.bin",
+    "backupLabelFormat": (date: string) => `백업 (${date})`,
+    "cacheRecoveryCancelled": "데이터베이스 초기화가 취소되었습니다."
 } satisfies DeepPartial<typeof import('./en').languageEnglish>

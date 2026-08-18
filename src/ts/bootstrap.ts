@@ -15,7 +15,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState } from "./stores.svelte";
 import { loadPlugins } from "./plugins/plugins.svelte";
-import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput } from "./alert";
+import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput, alertSelect } from "./alert";
 import { checkDriverInit } from "./drive/drive";
 import { characterURLImport } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
@@ -138,8 +138,7 @@ export async function loadData() {
                     let gotStorage: Uint8Array = await forageStorage.getItem('database/database.bin') as unknown as Uint8Array
                     LoadingStatusState.text = "Decoding Local Save File..."
                     if (checkNullish(gotStorage)) {
-                        gotStorage = encodeRisuSaveLegacy({})
-                        await forageStorage.setItem('database/database.bin', gotStorage)
+                        gotStorage = await resolveMissingDatabase()
                     }
                     try {
                         const decoded = await decodeRisuSave(gotStorage)
@@ -279,6 +278,82 @@ export async function loadData() {
             alertError(error)
         }
     }
+}
+
+/**
+ * Resolves a missing server-side database by offering the user a choice
+ * between recovering data from the browser HTTP cache (and any server-side
+ * backups) or starting fresh. Only used in the Node legacy file storage mode.
+ */
+async function resolveMissingDatabase(): Promise<Uint8Array> {
+    const nodeStorage = isNodeServer && forageStorage.realStorage instanceof NodeStorage
+        ? forageStorage.realStorage
+        : null
+
+    type Candidate = { label: string, load: () => Promise<Uint8Array | Buffer | null> }
+    const candidates: Candidate[] = []
+
+    if (nodeStorage) {
+        try {
+            const cachedDb = await nodeStorage.getItemFromBrowserCache('database/database.bin')
+            if (cachedDb && cachedDb.length > 0) {
+                candidates.push({
+                    label: language.cachedDatabaseLabel,
+                    load: async () => cachedDb
+                })
+            }
+        } catch (error) {
+            console.error('Browser cache probe failed', error)
+        }
+    }
+
+    let serverBackups: number[] = []
+    try {
+        serverBackups = await getDbBackups()
+    } catch (error) {
+        console.error('Failed to list server backups', error)
+    }
+    for (const backup of serverBackups) {
+        const dateLabel = new Date(backup * 100).toLocaleString()
+        candidates.push({
+            label: language.backupLabelFormat(dateLabel),
+            load: async () => await forageStorage.getItem(`database/dbbackup-${backup}.bin`) as unknown as Uint8Array
+        })
+    }
+
+    if (candidates.length === 0) {
+        const gotStorage = encodeRisuSaveLegacy({})
+        await forageStorage.setItem('database/database.bin', gotStorage)
+        return gotStorage
+    }
+
+    const options = [
+        ...candidates.map((c) => c.label),
+        language.startFresh,
+        language.cancel
+    ]
+    const choice = await alertSelect(options, language.cacheRecoveryPrompt)
+    const choiceIdx = parseInt(choice, 10)
+
+    if (Number.isNaN(choiceIdx) || choiceIdx < 0 || choiceIdx >= candidates.length) {
+        if (choiceIdx === candidates.length) {
+            const gotStorage = encodeRisuSaveLegacy({})
+            await forageStorage.setItem('database/database.bin', gotStorage)
+            return gotStorage
+        }
+        throw new Error(language.cacheRecoveryCancelled)
+    }
+
+    const selected = candidates[choiceIdx]
+    const loaded = await selected.load()
+    if (checkNullish(loaded)) {
+        const gotStorage = encodeRisuSaveLegacy({})
+        await forageStorage.setItem('database/database.bin', gotStorage)
+        return gotStorage
+    }
+    const gotStorage = new Uint8Array(loaded as Uint8Array)
+    await forageStorage.setItem('database/database.bin', gotStorage)
+    return gotStorage
 }
 
 

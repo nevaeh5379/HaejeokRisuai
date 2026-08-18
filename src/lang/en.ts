@@ -1871,7 +1871,12 @@ export const languageEnglish = {
     convertToModule: "Convert to Module",
     skipSavingAssetsOnWebSync: "Skip Saving Assets on Web Sync",
     applyAdditionalParamsToAll: "Apply Additional Parameters to All Models",
-    resizeTextarea: "Allow Textarea Resizing"
+    resizeTextarea: "Allow Textarea Resizing",
+    cacheRecoveryPrompt: "No database found on the server, but cached data is available. Select a source to restore, or start fresh.",
+    startFresh: "Start Fresh (Empty Database)",
+    cachedDatabaseLabel: "Cached database.bin",
+    backupLabelFormat: (date: string) => `Backup (${date})`,
+    cacheRecoveryCancelled: "Database initialization was cancelled."
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;
