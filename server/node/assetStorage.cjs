@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const stream = require('stream');
 const crypto = require('crypto');
 const {
@@ -151,11 +152,11 @@ class LocalFsStorage {
         const thumbDir = path.join(this.savePath, '__thumbs');
         const thumbPath = path.join(thumbDir, `${hexPath}_${width}x${height}.webp`);
         if (fs.existsSync(thumbPath)) {
+            const stat = await fs.promises.stat(thumbPath);
             return {
                 exists: true,
                 filePath: thumbPath,
-                stream: fs.createReadStream(thumbPath),
-                contentLength: (await fs.promises.stat(thumbPath)).size,
+                contentLength: stat.size,
                 contentType: 'image/webp'
             };
         }
@@ -191,6 +192,18 @@ class LocalFsStorage {
     async write(hexPath, content) {
         const fullPath = path.join(this.savePath, hexPath);
         await fs.promises.writeFile(fullPath, content);
+        const key = hexToKey(hexPath);
+        if (isImageKey(key)) {
+            createThumbnailBuffer(content, 128, 128).then(async (thumbBuffer) => {
+                if (thumbBuffer) {
+                    const thumbDir = path.join(this.savePath, '__thumbs');
+                    if (!fs.existsSync(thumbDir)) {
+                        fs.mkdirSync(thumbDir, { recursive: true });
+                    }
+                    await fs.promises.writeFile(path.join(thumbDir, `${hexPath}_128x128.webp`), thumbBuffer);
+                }
+            }).catch(() => {});
+        }
         return { success: true };
     }
 
@@ -212,6 +225,17 @@ class LocalFsStorage {
                     }
                 }
             } catch (err) {}
+        }
+        const key = hexToKey(hexPath);
+        if (isImageKey(key)) {
+            fs.promises.readFile(fullPath).then(data => createThumbnailBuffer(data, 128, 128)).then(async (thumbBuffer) => {
+                if (thumbBuffer) {
+                    if (!fs.existsSync(thumbDir)) {
+                        fs.mkdirSync(thumbDir, { recursive: true });
+                    }
+                    await fs.promises.writeFile(path.join(thumbDir, `${hexPath}_128x128.webp`), thumbBuffer);
+                }
+            }).catch(() => {});
         }
         return { success: true };
     }
@@ -408,7 +432,7 @@ async function getS3BodyBuffer(body) {
 }
 
 class S3AssetStorage {
-    constructor(config) {
+    constructor(config, savePath = '') {
         this.config = {
             endpoint: config.endpoint || '',
             bucket: config.bucket || 'risuai-assets',
@@ -418,6 +442,8 @@ class S3AssetStorage {
             forcePathStyle: config.forcePathStyle !== false,
             autoCreateBucket: config.autoCreateBucket !== false,
         };
+        this.savePath = savePath || config.savePath || path.join(os.tmpdir(), 'risuai-s3-cache');
+        this.thumbDir = path.join(this.savePath, '__s3_thumbs');
         this.type = 's3';
         this.client = S3AssetStorage.createClient(this.config);
     }
@@ -520,6 +546,11 @@ class S3AssetStorage {
     }
 
     async init() {
+        if (!fs.existsSync(this.thumbDir)) {
+            try {
+                fs.mkdirSync(this.thumbDir, { recursive: true });
+            } catch {}
+        }
         if (this.config.autoCreateBucket) {
             try {
                 await this.client.send(new HeadBucketCommand({ Bucket: this.config.bucket }));
@@ -568,6 +599,21 @@ class S3AssetStorage {
             return this.read(hexPath);
         }
 
+        // 1. Check local server disk cache (0 S3 API calls, fastest)
+        const localThumbPath = path.join(this.thumbDir, `${hexPath}_${width}x${height}.webp`);
+        if (fs.existsSync(localThumbPath)) {
+            try {
+                const stat = await fs.promises.stat(localThumbPath);
+                return {
+                    exists: true,
+                    filePath: localThumbPath,
+                    contentLength: stat.size,
+                    contentType: 'image/webp'
+                };
+            } catch {}
+        }
+
+        // 2. Check S3 thumbnail cache
         const thumbKey = `thumbnails/${key}_${width}x${height}.webp`;
         try {
             const command = new GetObjectCommand({
@@ -577,8 +623,16 @@ class S3AssetStorage {
             const response = await this.client.send(command);
             const buffer = await getS3BodyBuffer(response.Body);
             if (buffer && buffer.length > 0) {
+                try {
+                    if (!fs.existsSync(this.thumbDir)) {
+                        fs.mkdirSync(this.thumbDir, { recursive: true });
+                    }
+                    await fs.promises.writeFile(localThumbPath, buffer);
+                } catch {}
+
                 return {
                     exists: true,
+                    filePath: localThumbPath,
                     buffer: buffer,
                     contentType: 'image/webp',
                     contentLength: buffer.length
@@ -588,14 +642,23 @@ class S3AssetStorage {
             // If not found in S3, proceed to generate from original
         }
 
+        // 3. Not in S3 thumbnail cache: read original from S3
         const original = await this.read(hexPath);
         if (!original.exists || !original.buffer || original.buffer.length === 0) {
             return { exists: false };
         }
 
+        // 4. Generate thumbnail, cache locally and upload to S3
         try {
             const thumbBuffer = await createThumbnailBuffer(original.buffer, width, height);
             if (thumbBuffer && thumbBuffer.length > 0) {
+                try {
+                    if (!fs.existsSync(this.thumbDir)) {
+                        fs.mkdirSync(this.thumbDir, { recursive: true });
+                    }
+                    await fs.promises.writeFile(localThumbPath, thumbBuffer);
+                } catch {}
+
                 this.client.send(new PutObjectCommand({
                     Bucket: this.config.bucket,
                     Key: thumbKey,
@@ -607,6 +670,7 @@ class S3AssetStorage {
 
                 return {
                     exists: true,
+                    filePath: localThumbPath,
                     buffer: thumbBuffer,
                     contentLength: thumbBuffer.length,
                     contentType: 'image/webp'
@@ -619,6 +683,31 @@ class S3AssetStorage {
         return original;
     }
 
+    async eagerGenerateThumbnail(hexPath, key, buffer, width = 128, height = 128) {
+        try {
+            const thumbBuffer = await createThumbnailBuffer(buffer, width, height);
+            if (thumbBuffer && thumbBuffer.length > 0) {
+                const thumbKey = `thumbnails/${key}_${width}x${height}.webp`;
+                const localThumbPath = path.join(this.thumbDir, `${hexPath}_${width}x${height}.webp`);
+                try {
+                    if (!fs.existsSync(this.thumbDir)) {
+                        fs.mkdirSync(this.thumbDir, { recursive: true });
+                    }
+                    await fs.promises.writeFile(localThumbPath, thumbBuffer);
+                } catch {}
+
+                await this.client.send(new PutObjectCommand({
+                    Bucket: this.config.bucket,
+                    Key: thumbKey,
+                    Body: thumbBuffer,
+                    ContentType: 'image/webp'
+                }));
+            }
+        } catch (err) {
+            // Eager thumbnail generation is best-effort
+        }
+    }
+
     async write(hexPath, content) {
         const key = hexToKey(hexPath);
         const contentType = getContentType(key);
@@ -629,6 +718,11 @@ class S3AssetStorage {
             ContentType: contentType
         });
         await this.client.send(command);
+
+        if (isImageKey(key) && (Buffer.isBuffer(content) || content instanceof Uint8Array)) {
+            this.eagerGenerateThumbnail(hexPath, key, Buffer.from(content)).catch(() => {});
+        }
+
         return { success: true };
     }
 
@@ -636,6 +730,13 @@ class S3AssetStorage {
         const key = hexToKey(hexPath);
         const contentType = getContentType(key);
         const stat = await fs.promises.stat(sourcePath);
+        let fileBuffer = null;
+        if (isImageKey(key)) {
+            try {
+                fileBuffer = await fs.promises.readFile(sourcePath);
+            } catch {}
+        }
+
         const stream = fs.createReadStream(sourcePath);
         const command = new PutObjectCommand({
             Bucket: this.config.bucket,
@@ -646,6 +747,11 @@ class S3AssetStorage {
         });
         await this.client.send(command);
         await fs.promises.unlink(sourcePath).catch(() => {});
+
+        if (fileBuffer) {
+            this.eagerGenerateThumbnail(hexPath, key, fileBuffer).catch(() => {});
+        }
+
         return { success: true };
     }
 
@@ -653,6 +759,14 @@ class S3AssetStorage {
         const key = hexToKey(hexPath);
         const contentType = getContentType(key);
         const passThrough = new stream.PassThrough();
+        const chunks = isImageKey(key) ? [] : null;
+        if (chunks) {
+            passThrough.on('data', (chunk) => {
+                if (chunks.length < 50) {
+                    chunks.push(chunk);
+                }
+            });
+        }
         const upload = new Upload({
             client: this.client,
             params: {
@@ -664,7 +778,13 @@ class S3AssetStorage {
             partSize: 5 * 1024 * 1024,
             leavePartsOnError: false
         });
-        const donePromise = upload.done().then(() => ({ success: true }));
+        const donePromise = upload.done().then(() => {
+            if (chunks && chunks.length > 0) {
+                const fullBuffer = Buffer.concat(chunks);
+                this.eagerGenerateThumbnail(hexPath, key, fullBuffer).catch(() => {});
+            }
+            return { success: true };
+        });
         return {
             stream: passThrough,
             done: () => donePromise,
@@ -680,6 +800,20 @@ class S3AssetStorage {
     async remove(hexPaths) {
         const paths = Array.isArray(hexPaths) ? hexPaths : [hexPaths];
         if (paths.length === 0) return { success: true };
+
+        // Clean local thumbnail cache
+        if (fs.existsSync(this.thumbDir)) {
+            try {
+                const thumbFiles = await fs.promises.readdir(this.thumbDir);
+                for (const hp of paths) {
+                    for (const tf of thumbFiles) {
+                        if (tf.startsWith(hp)) {
+                            await fs.promises.rm(path.join(this.thumbDir, tf)).catch(() => {});
+                        }
+                    }
+                }
+            } catch {}
+        }
 
         const originalKeys = paths.map(p => hexToKey(p));
         const thumbKeys = originalKeys.map(k => `thumbnails/${k}_128x128.webp`);
@@ -710,6 +844,89 @@ class S3AssetStorage {
             }));
         }
         return { success: true };
+    }
+
+    async generateMissingThumbnails(onProgress) {
+        const allImageKeys = [];
+        const existingThumbs = new Set();
+        let continuationToken = undefined;
+
+        do {
+            const command = new ListObjectsV2Command({
+                Bucket: this.config.bucket,
+                ContinuationToken: continuationToken
+            });
+            const response = await this.client.send(command);
+            if (response.Contents) {
+                for (const item of response.Contents) {
+                    if (!item.Key) continue;
+                    if (item.Key.startsWith('thumbnails/')) {
+                        existingThumbs.add(item.Key);
+                    } else if (isImageKey(item.Key)) {
+                        allImageKeys.push(item.Key);
+                    }
+                }
+            }
+            continuationToken = response.NextContinuationToken;
+        } while (continuationToken);
+
+        const total = allImageKeys.length;
+        let created = 0;
+        let skipped = 0;
+        const errors = [];
+
+        for (let i = 0; i < allImageKeys.length; i++) {
+            const key = allImageKeys[i];
+            const hexPath = keyToHex(key);
+            const thumbKey = `thumbnails/${key}_128x128.webp`;
+
+            if (existingThumbs.has(thumbKey)) {
+                skipped++;
+            } else {
+                try {
+                    const original = await this.read(hexPath);
+                    if (original.exists && original.buffer && original.buffer.length > 0) {
+                        const thumbBuffer = await createThumbnailBuffer(original.buffer, 128, 128);
+                        if (thumbBuffer && thumbBuffer.length > 0) {
+                            await this.client.send(new PutObjectCommand({
+                                Bucket: this.config.bucket,
+                                Key: thumbKey,
+                                Body: thumbBuffer,
+                                ContentType: 'image/webp'
+                            }));
+                            const localThumbPath = path.join(this.thumbDir, `${hexPath}_128x128.webp`);
+                            try {
+                                if (!fs.existsSync(this.thumbDir)) {
+                                    fs.mkdirSync(this.thumbDir, { recursive: true });
+                                }
+                                await fs.promises.writeFile(localThumbPath, thumbBuffer);
+                            } catch {}
+                            created++;
+                        } else {
+                            errors.push(`Failed to generate thumbnail for ${key}`);
+                        }
+                    } else {
+                        errors.push(`Could not read original file for ${key}`);
+                    }
+                } catch (err) {
+                    errors.push(`Error generating thumbnail for ${key}: ${err.message}`);
+                }
+            }
+
+            if (onProgress && (i % 5 === 0 || i === allImageKeys.length - 1)) {
+                onProgress({
+                    type: 'progress',
+                    current: i + 1,
+                    total,
+                    created,
+                    skipped,
+                    percentage: total > 0 ? Math.round(((i + 1) / total) * 100) : 100,
+                    currentKey: key
+                });
+            }
+        }
+
+        return { total, created, skipped, errors };
     }
 
     async list() {
@@ -1005,7 +1222,7 @@ class AssetStorageManager {
         await this.localFs.init();
         if (this.config.enabled && (this.config.endpoint || this.config.bucket)) {
             try {
-                this.s3Storage = new S3AssetStorage(this.config);
+                this.s3Storage = new S3AssetStorage(this.config, this.savePath);
                 await this.s3Storage.init();
                 this.activeStorage = this.s3Storage;
                 console.log(`[Storage] Initialized S3 storage (${this.config.endpoint || 'AWS Standard'} -> ${this.config.bucket})`);
@@ -1038,7 +1255,7 @@ class AssetStorageManager {
                 throw new Error(testResult.message);
             }
             this.saveStoredConfig(mergedConfig);
-            this.s3Storage = new S3AssetStorage(this.config);
+            this.s3Storage = new S3AssetStorage(this.config, this.savePath);
             await this.s3Storage.init();
             this.activeStorage = this.s3Storage;
         } else {
@@ -1118,6 +1335,13 @@ class AssetStorageManager {
             await this.activeStorage.remove(hexPaths);
         }
         return { deleted: keys.length };
+    }
+
+    async generateMissingThumbnails(onProgress) {
+        if (!this.s3Storage) {
+            throw new Error('S3 storage is not active');
+        }
+        return await this.s3Storage.generateMissingThumbnails(onProgress);
     }
 
     async cleanLocalAssets() {

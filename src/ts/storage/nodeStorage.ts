@@ -15,6 +15,7 @@ export {
     type NodeS3TestResult,
     type NodeS3MigrationResult,
     type NodeS3RollbackResult,
+    type NodeS3ThumbnailsResult,
     type NodeS3ProgressEvent,
     type NodeStorageAssetItem,
     type NodeStorageAssetDetails,

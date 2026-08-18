@@ -196,6 +196,18 @@ describe('AssetStorageManager', () => {
 })
 
 describe('S3AssetStorage readThumbnail', () => {
+    let tmpDir: string
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-test-s3thumb-'))
+    })
+
+    afterEach(() => {
+        if (fs.existsSync(tmpDir)) {
+            fs.rmSync(tmpDir, { recursive: true, force: true })
+        }
+    })
+
     it('fetches original, creates thumbnail, saves to S3, and returns buffer', async () => {
         const sharp = require('sharp')
         const originalImageBuffer = await sharp({
@@ -214,7 +226,8 @@ describe('S3AssetStorage readThumbnail', () => {
             bucket: 'test-bucket',
             accessKeyId: 'test',
             secretAccessKey: 'test'
-        })
+        }, tmpDir)
+        await s3Storage.init()
 
         // Put original image into mock S3 store
         const key = 'assets/s3_char.png'
@@ -260,12 +273,16 @@ describe('S3AssetStorage readThumbnail', () => {
         const thumbKey = `thumbnails/${key}_128x128.webp`
         expect(s3Store.has(thumbKey)).toBe(true)
 
-        // 2. Second thumbnail request -> fetches existing thumbnail directly from S3
+        // 2. Second thumbnail request -> fetches from local disk cache or S3
         const res2 = await s3Storage.readThumbnail(hex, { width: 128, height: 128 })
         expect(res2.exists).toBe(true)
         expect(res2.contentType).toBe('image/webp')
-        expect(res2.buffer).toBeDefined()
-        expect(res2.buffer.length).toBe(s3Store.get(thumbKey)!.length)
+        expect(res2.filePath || res2.buffer).toBeDefined()
+        if (res2.buffer) {
+            expect(res2.buffer.length).toBe(s3Store.get(thumbKey)!.length)
+        } else if (res2.filePath) {
+            expect(fs.existsSync(res2.filePath)).toBe(true)
+        }
 
         // 3. Requesting non-existent key returns exists: false
         const missingHex = keyToHex('assets/does_not_exist.png')
@@ -479,5 +496,135 @@ describe('createWriteStream streaming support', () => {
         await writer.done()
 
         expect(await mgr.getStorage().exists(hex)).toBe(true)
+    })
+
+    it('S3AssetStorage eager thumbnail generation on write and local disk caching', async () => {
+        const sharp = require('sharp')
+        const imageBuffer = await sharp({
+            create: {
+                width: 200,
+                height: 200,
+                channels: 4,
+                background: { r: 255, g: 128, b: 0, alpha: 1 }
+            }
+        }).png().toBuffer()
+
+        const s3Store = new Map<string, Buffer>()
+        const s3Storage = new S3AssetStorage({
+            endpoint: 'http://localhost:9000',
+            region: 'us-east-1',
+            bucket: 'test-bucket',
+            accessKeyId: 'test',
+            secretAccessKey: 'test'
+        }, tmpDir)
+        await s3Storage.init()
+
+        s3Storage.client = {
+            send: async (command: any) => {
+                const cmdName = command.constructor.name
+                const cmdKey = command.input?.Key
+                if (cmdName.includes('PutObject')) {
+                    s3Store.set(cmdKey, Buffer.from(command.input.Body))
+                    return {}
+                }
+                if (cmdName.includes('GetObject')) {
+                    if (s3Store.has(cmdKey)) {
+                        const buf = s3Store.get(cmdKey)!
+                        return {
+                            Body: { transformToByteArray: async () => new Uint8Array(buf) },
+                            ContentType: cmdKey.endsWith('.webp') ? 'image/webp' : 'image/png',
+                            ContentLength: buf.length
+                        }
+                    }
+                    const err: any = new Error('NoSuchKey')
+                    err.name = 'NoSuchKey'
+                    throw err
+                }
+                if (cmdName.includes('ListObjectsV2')) {
+                    const contents = Array.from(s3Store.keys()).map(k => ({ Key: k, Size: s3Store.get(k)!.length }))
+                    return { Contents: contents }
+                }
+                return {}
+            }
+        } as any
+
+        const key = 'assets/eager_bot.png'
+        const hex = keyToHex(key)
+
+        // Write original image
+        await s3Storage.write(hex, imageBuffer)
+        expect(s3Store.has(key)).toBe(true)
+
+        // Give async eager generation a brief tick
+        await new Promise(r => setTimeout(r, 100))
+
+        const thumbKey = `thumbnails/${key}_128x128.webp`
+        expect(s3Store.has(thumbKey)).toBe(true)
+
+        // Read thumbnail -> should serve from local disk cache
+        const thumbRes = await s3Storage.readThumbnail(hex)
+        expect(thumbRes.exists).toBe(true)
+        expect(thumbRes.contentType).toBe('image/webp')
+        expect(thumbRes.filePath).toBeDefined()
+        expect(fs.existsSync(thumbRes.filePath)).toBe(true)
+    })
+
+    it('S3AssetStorage.generateMissingThumbnails batches thumbnails for images without thumbnails', async () => {
+        const sharp = require('sharp')
+        const img1 = await sharp({ create: { width: 150, height: 150, channels: 4, background: { r: 10, g: 20, b: 30, alpha: 1 } } }).png().toBuffer()
+        const img2 = await sharp({ create: { width: 150, height: 150, channels: 4, background: { r: 40, g: 50, b: 60, alpha: 1 } } }).png().toBuffer()
+
+        const s3Store = new Map<string, Buffer>()
+        s3Store.set('assets/bot1.png', img1)
+        s3Store.set('assets/bot2.png', img2)
+        // bot1 already has a thumbnail
+        s3Store.set('thumbnails/assets/bot1.png_128x128.webp', Buffer.from('thumb-1'))
+
+        const s3Storage = new S3AssetStorage({
+            endpoint: 'http://localhost:9000',
+            region: 'us-east-1',
+            bucket: 'test-bucket'
+        }, tmpDir)
+        await s3Storage.init()
+
+        s3Storage.client = {
+            send: async (command: any) => {
+                const cmdName = command.constructor.name
+                const cmdKey = command.input?.Key
+                if (cmdName.includes('PutObject')) {
+                    s3Store.set(cmdKey, Buffer.from(command.input.Body))
+                    return {}
+                }
+                if (cmdName.includes('GetObject')) {
+                    if (s3Store.has(cmdKey)) {
+                        const buf = s3Store.get(cmdKey)!
+                        return {
+                            Body: { transformToByteArray: async () => new Uint8Array(buf) },
+                            ContentType: cmdKey.endsWith('.webp') ? 'image/webp' : 'image/png',
+                            ContentLength: buf.length
+                        }
+                    }
+                    const err: any = new Error('NoSuchKey')
+                    err.name = 'NoSuchKey'
+                    throw err
+                }
+                if (cmdName.includes('ListObjectsV2')) {
+                    const contents = Array.from(s3Store.keys()).map(k => ({ Key: k, Size: s3Store.get(k)!.length }))
+                    return { Contents: contents }
+                }
+                return {}
+            }
+        } as any
+
+        const progressEvents: any[] = []
+        const result = await s3Storage.generateMissingThumbnails((p) => {
+            progressEvents.push(p)
+        })
+
+        expect(result.total).toBe(2)
+        expect(result.skipped).toBe(1) // bot1 was skipped
+        expect(result.created).toBe(1) // bot2 thumbnail was created
+        expect(s3Store.has('thumbnails/assets/bot2.png_128x128.webp')).toBe(true)
+        expect(progressEvents.length).toBeGreaterThan(0)
     })
 })

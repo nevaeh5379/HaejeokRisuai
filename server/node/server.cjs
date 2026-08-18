@@ -3153,6 +3153,35 @@ app.post('/api/s3-rollback', authenticatedRouteLimiter, async (req, res, next) =
     }
 });
 
+app.post('/api/s3-generate-thumbnails', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+
+    if (assetStorageManager.getStorage().type !== 's3') {
+        res.status(400).send({ error: 'S3 storage is not currently active' });
+        return;
+    }
+
+    res.setHeader('Content-Type', 'application/x-ndjson');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    try {
+        const result = await assetStorageManager.getStorage().generateMissingThumbnails((progress) => {
+            res.write(JSON.stringify(progress) + '\n');
+        });
+
+        res.write(JSON.stringify({ type: 'done', ...result }) + '\n');
+        res.end();
+    } catch (error) {
+        if (!res.headersSent) {
+            res.status(500).send({ error: error.message });
+        } else {
+            res.write(JSON.stringify({ type: 'error', error: error.message }) + '\n');
+            res.end();
+        }
+    }
+});
+
 app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;
@@ -3184,7 +3213,7 @@ app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
 
             res.setHeader('Content-Type', contentType);
             res.setHeader('Accept-Ranges', 'bytes');
-            res.setHeader('Cache-Control', isThumb ? 'public, max-age=604800, immutable' : 'public, max-age=86400');
+            res.setHeader('Cache-Control', isThumb ? 'public, max-age=31536000, immutable' : 'public, max-age=86400');
 
             if (rangeHeader && totalLength > 0 && !isThumb) {
                 const parts = rangeHeader.replace(/bytes=/, '').split('-');

@@ -25,7 +25,8 @@
     let testingConnection = $state(false)
     let migrating = $state(false)
     let rollingBack = $state(false)
-    let activeTask = $state<'migrate' | 'rollback' | null>(null)
+    let generatingThumbnails = $state(false)
+    let activeTask = $state<'migrate' | 'rollback' | 'thumbnails' | null>(null)
     let progressData = $state<NodeS3ProgressEvent | null>(null)
 
     function getNodeStorage() {
@@ -191,6 +192,42 @@
         }
     }
 
+    async function generateThumbnails() {
+        if (!config?.enabled) {
+            alertError(language.s3MustBeEnabledToMigrate)
+            return
+        }
+        if (!await alertConfirm(language.s3GenerateThumbnailsConfirm)) {
+            return
+        }
+
+        generatingThumbnails = true
+        activeTask = 'thumbnails'
+        progressData = {
+            type: 'progress',
+            current: 0,
+            total: 0,
+            percentage: 0,
+            created: 0,
+            skipped: 0
+        }
+
+        try {
+            const storage = getNodeStorage()
+            const result = await storage.s3.generateMissingThumbnails((event) => {
+                progressData = event
+            })
+            alertNormal(language.s3GenerateThumbnailsSuccess(result.created, result.skipped, result.total))
+            await refresh()
+        } catch (error) {
+            alertError(error)
+        } finally {
+            generatingThumbnails = false
+            activeTask = null
+            progressData = null
+        }
+    }
+
     onMount(refresh)
 </script>
 
@@ -234,7 +271,7 @@
                     bind:value={endpoint}
                     fullwidth={true}
                     disabled={config.managedByEnvironment}
-                    placeholder="http://127.0.0.1:9000 (RustFS/MinIO)"
+                    placeholder="http://127.0.0.1:9000 (RustFS / MinIO)"
                     className="mt-1"
                 />
                 <p class="mt-1 text-xs text-textcolor2">{language.s3EndpointHint}</p>
@@ -352,6 +389,10 @@
                 <Button disabled={rollingBack || !config.enabled} onclick={rollbackToLocal}>
                     {rollingBack ? language.s3RollingBack : language.s3RollbackToLocal}
                 </Button>
+
+                <Button disabled={generatingThumbnails || !config.enabled} onclick={generateThumbnails}>
+                    {generatingThumbnails ? language.s3GeneratingThumbnails : language.s3GenerateThumbnails}
+                </Button>
             </div>
         </div>
     {/if}
@@ -366,7 +407,7 @@
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
                 </svg>
                 <h5 class="text-sm font-semibold">
-                    {activeTask === 'migrate' ? language.s3MigratingTitle : language.s3RollingBackTitle}
+                    {activeTask === 'migrate' ? language.s3MigratingTitle : (activeTask === 'thumbnails' ? language.s3GenerateThumbnailsTitle : language.s3RollingBackTitle)}
                 </h5>
             </div>
             <span class="text-sm font-bold text-blue-400">
@@ -390,6 +431,10 @@
             {#if activeTask === 'migrate'}
                 <div>
                     업로드: <span class="font-medium text-textcolor">{progressData.migrated ?? 0}</span> · 건너뜀: <span class="font-medium text-textcolor">{progressData.skipped ?? 0}</span>
+                </div>
+            {:else if activeTask === 'thumbnails'}
+                <div>
+                    생성: <span class="font-medium text-textcolor">{progressData.created ?? 0}</span> · 건너뜀: <span class="font-medium text-textcolor">{progressData.skipped ?? 0}</span>
                 </div>
             {:else}
                 <div>

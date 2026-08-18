@@ -83,6 +83,7 @@
     "postcss-selector-parser": "^7.1.1",
     "pyodide": "^0.27.7",
     "rfdc": "^1.4.1",
+    "sharp": "^0.33.5",
     "sortablejs": "^1.15.6",
     "streamsaver": "^2.0.6",
     "sucrase": "^3.35.1",
@@ -128,10 +129,5 @@
     "vite": "^8.0.3",
     "vite-plugin-wasm": "3.6.0",
     "vitest": "^4.1.0"
-  },
-  "pnpm": {
-    "neverBuiltDependencies": [
-      "sharp"
-    ]
   }
 }

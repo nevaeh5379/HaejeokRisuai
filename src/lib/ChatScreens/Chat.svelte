@@ -626,7 +626,7 @@
                 let hasValidImage = false
                 
                 try {
-                    const iconImage = (await getFileSrc(DBState.db.characters[selIdState.selId].image ?? '')) ?? ''
+                    const iconImage = (await getFileSrc(DBState.db.characters[selIdState.selId].image ?? '', { thumbnail: true })) ?? ''
                     
                     if(iconImage && (iconImage.startsWith('http://asset.localhost') || iconImage.startsWith('https://asset.localhost') || iconImage.startsWith('https://sv.risuai') || iconImage.startsWith('data:') || iconImage.startsWith('http') || iconImage.startsWith('/'))){
                         if(iconImage.startsWith('data:')){

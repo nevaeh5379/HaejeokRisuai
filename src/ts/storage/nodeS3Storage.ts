@@ -50,6 +50,13 @@ export interface NodeS3RollbackResult {
     errors: string[]
 }
 
+export interface NodeS3ThumbnailsResult {
+    total: number
+    created: number
+    skipped: number
+    errors: string[]
+}
+
 export interface NodeStorageSummary {
     activeType: 'fs' | 's3'
     localFs: NodeS3Stats
@@ -79,6 +86,7 @@ export interface NodeS3ProgressEvent {
     migrated?: number
     skipped?: number
     downloaded?: number
+    created?: number
     percentage: number
     currentKey?: string
 }
@@ -244,6 +252,58 @@ export class NodeS3Storage {
                         finalResult = {
                             total: parsed.total,
                             downloaded: parsed.downloaded,
+                            errors: parsed.errors || []
+                        }
+                    } else if (parsed.type === 'error') {
+                        throw new Error(parsed.error)
+                    }
+                } catch (err: any) {
+                    if (err?.message && !err.message.includes('JSON')) {
+                        throw err
+                    }
+                }
+            }
+        }
+
+        return finalResult
+    }
+
+    async generateMissingThumbnails(onProgress?: (event: NodeS3ProgressEvent) => void): Promise<NodeS3ThumbnailsResult> {
+        const response = await fetch('/api/s3-generate-thumbnails', {
+            method: 'POST',
+            headers: await this.authHeaders()
+        })
+        if (response.status < 200 || response.status >= 300) {
+            throw await responseError(response, 'S3 thumbnail generation failed')
+        }
+
+        const reader = response.body?.getReader()
+        if (!reader) {
+            return await response.json()
+        }
+
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let finalResult: NodeS3ThumbnailsResult = { total: 0, created: 0, skipped: 0, errors: [] }
+
+        while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+
+            for (const line of lines) {
+                if (!line.trim()) continue
+                try {
+                    const parsed = JSON.parse(line)
+                    if (parsed.type === 'progress') {
+                        onProgress?.(parsed)
+                    } else if (parsed.type === 'done') {
+                        finalResult = {
+                            total: parsed.total,
+                            created: parsed.created,
+                            skipped: parsed.skipped,
                             errors: parsed.errors || []
                         }
                     } else if (parsed.type === 'error') {
