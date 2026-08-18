@@ -107,6 +107,9 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
     chatProcessStage.set(0)
     const abortSignal = arg.signal ?? (new AbortController()).signal
+    if ((DBState.db as any)?.ensureLoaded) {
+        await (DBState.db as any).ensureLoaded()
+    }
     
     // NOTE: `throwError()` can be called before these are populated (e.g. HypaV3 early validation errors).
     // Keep them declared up-front to avoid TDZ ReferenceErrors in production builds.

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const {
+    DEFERRED_SETTING_KEYS,
     decodePostgresJsonValue,
     encodePostgresJsonValue,
     PostgresPayloadError,
@@ -11,6 +12,7 @@ const {
     validateColdStorageValue,
     validateSyncPayload,
 } = require('./postgresStorage.cjs') as {
+    DEFERRED_SETTING_KEYS:string[]
     decodePostgresJsonValue:(value:unknown) => unknown
     encodePostgresJsonValue:(value:unknown) => unknown
     PostgresPayloadError:new (message:string) => Error
@@ -126,4 +128,15 @@ describe('PostgreSQL sync payload validation', () => {
         expect(split.values.some((row) => row.value_type === 'encoded-text')).toBe(true)
         expect(rebuildSettings([split.setting], split.values)).toEqual({ complexSetting: value })
     })
+
+    it('exports DEFERRED_SETTING_KEYS including heavy domains and prompt keys', () => {
+        expect(DEFERRED_SETTING_KEYS).toContain('personas')
+        expect(DEFERRED_SETTING_KEYS).toContain('botPresets')
+        expect(DEFERRED_SETTING_KEYS).toContain('loreBook')
+        expect(DEFERRED_SETTING_KEYS).toContain('modules')
+        expect(DEFERRED_SETTING_KEYS).toContain('globalscript')
+        expect(DEFERRED_SETTING_KEYS).toContain('mainPrompt')
+        expect(DEFERRED_SETTING_KEYS).toContain('plugins')
+    })
 })
+

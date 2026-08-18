@@ -61,6 +61,38 @@ const DB_EXPLORER_MAX_ROWS = 200;
 const deflateAsync = promisify(deflate);
 const unzipAsync = promisify(unzip);
 
+const DEFERRED_SETTING_KEYS = [
+    'plugins',
+    'pluginCustomStorage',
+    'personas',
+    'botPresets',
+    'loreBook',
+    'modules',
+    'globalscript',
+    'promptTemplate',
+    'promptSettings',
+    'mainPrompt',
+    'jailbreak',
+    'globalNote',
+    'additionalPrompt',
+    'supaMemoryPrompt',
+    'personaPrompt',
+    'emotionPrompt',
+    'emotionPrompt2',
+    'autoSuggestPrompt',
+    'translatorPrompt',
+    'instructChatTemplate',
+    'JinjaTemplate',
+    'customTokenizer',
+    'customPromptTemplateToggle',
+    'customModels',
+    'translatorPresets',
+    'loadouts',
+    'customBackground',
+];
+
+const DEFERRED_KEYS_SQL_LITERAL = DEFERRED_SETTING_KEYS.map((k) => `'${k}'`).join(', ');
+
 class PostgresRevisionConflictError extends Error {
     constructor(revision) {
         super('PostgreSQL storage revision conflict');
@@ -1195,8 +1227,8 @@ class PostgresStorage {
 
             if (shallow) {
                 const shallowQueries = [
-                    "SELECT * FROM system.settings WHERE key NOT IN ('plugins', 'pluginCustomStorage') ORDER BY key",
-                    "SELECT * FROM system.setting_values WHERE setting_key NOT IN ('plugins', 'pluginCustomStorage') ORDER BY setting_key, node_id",
+                    `SELECT * FROM system.settings WHERE key NOT IN (${DEFERRED_KEYS_SQL_LITERAL}) ORDER BY key`,
+                    `SELECT * FROM system.setting_values WHERE setting_key NOT IN (${DEFERRED_KEYS_SQL_LITERAL}) ORDER BY setting_key, node_id`,
                     'SELECT * FROM character.characters ORDER BY position, id',
                     'SELECT * FROM character.tags ORDER BY character_id, position',
                     'SELECT * FROM character.group_members ORDER BY group_id, position',
@@ -1662,6 +1694,100 @@ class PostgresStorage {
             plugins: pluginsResult.plugins,
             pluginCustomStorage: storageResult.pluginCustomStorage,
             hash: `${pluginsResult.hash}:${storageResult.hash}`,
+        };
+    }
+
+    async loadSettingKeys(keys) {
+        this.assertEnabled();
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+            const settingsResult = await client.query(
+                'SELECT * FROM system.settings WHERE key = ANY($1::text[]) ORDER BY key',
+                [keys]
+            );
+            const valuesResult = await client.query(
+                'SELECT * FROM system.setting_values WHERE setting_key = ANY($1::text[]) ORDER BY setting_key, node_id',
+                [keys]
+            );
+            await client.query('COMMIT');
+            const rebuilt = rebuildSettings(settingsResult.rows, valuesResult.rows);
+            const serialized = JSON.stringify(rebuilt);
+            const hash = crypto.createHash('sha256').update(serialized).digest('hex');
+            return {
+                settings: rebuilt,
+                hash,
+            };
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async loadPersonas() {
+        const { settings, hash } = await this.loadSettingKeys(['personas']);
+        return {
+            personas: settings.personas || [],
+            hash,
+        };
+    }
+
+    async loadBotPresets() {
+        const { settings, hash } = await this.loadSettingKeys(['botPresets']);
+        return {
+            botPresets: settings.botPresets || [],
+            hash,
+        };
+    }
+
+    async loadLorebooks() {
+        const { settings, hash } = await this.loadSettingKeys(['loreBook']);
+        return {
+            loreBook: settings.loreBook || [],
+            hash,
+        };
+    }
+
+    async loadModules() {
+        const { settings, hash } = await this.loadSettingKeys(['modules']);
+        return {
+            modules: settings.modules || [],
+            hash,
+        };
+    }
+
+    async loadPrompts() {
+        const promptKeys = [
+            'mainPrompt', 'jailbreak', 'globalNote', 'additionalPrompt',
+            'supaMemoryPrompt', 'personaPrompt', 'emotionPrompt', 'emotionPrompt2',
+            'autoSuggestPrompt', 'translatorPrompt', 'instructChatTemplate',
+            'JinjaTemplate', 'customTokenizer', 'promptTemplate', 'promptSettings',
+            'customPromptTemplateToggle',
+        ];
+        const { settings, hash } = await this.loadSettingKeys(promptKeys);
+        return {
+            prompts: settings,
+            hash,
+        };
+    }
+
+    async loadScripts() {
+        const { settings, hash } = await this.loadSettingKeys(['globalscript']);
+        return {
+            globalscript: settings.globalscript || [],
+            hash,
+        };
+    }
+
+    async loadSettingKey(key) {
+        const { settings, hash } = await this.loadSettingKeys([key]);
+        return {
+            key,
+            value: settings[key] !== undefined ? settings[key] : null,
+            exists: settings[key] !== undefined,
+            hash,
         };
     }
 
@@ -2183,6 +2309,7 @@ class PostgresStorage {
 }
 
 module.exports = {
+    DEFERRED_SETTING_KEYS,
     PostgresPayloadError,
     PostgresRevisionConflictError,
     PostgresStorage,

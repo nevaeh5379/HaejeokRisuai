@@ -1,5 +1,6 @@
 import localforage from 'localforage'
-import type { Database, Message, character, groupChat, Chat } from './database.svelte'
+import type { Database, Message, character, groupChat, Chat, RisuPersona, botPreset, loreBook, customscript } from './database.svelte'
+import type { RisuModule } from '../process/modules'
 import type { toSaveType } from './risuSave'
 import {
     buildNodeDatabaseSync,
@@ -7,6 +8,7 @@ import {
     primeNodeDatabaseSyncCache,
     type NodeDatabaseSyncCache,
 } from './nodeDatabaseSync'
+import { createPostgresDatabaseAdapter } from './databaseAdapters.svelte'
 
 export interface NodePostgresServerConfig {
     enabled:boolean
@@ -128,8 +130,21 @@ export class NodePostgresStorage {
     private pluginsCacheForage = localforage.createInstance({ name: 'risuaiPostgresPlugins' })
     private pluginStorageCacheForage = localforage.createInstance({ name: 'risuaiPostgresPluginStorage' })
 
+    private personasCacheForage = localforage.createInstance({ name: 'risuaiPostgresPersonas' })
+    private botPresetsCacheForage = localforage.createInstance({ name: 'risuaiPostgresBotPresets' })
+    private loreBookCacheForage = localforage.createInstance({ name: 'risuaiPostgresLoreBook' })
+    private modulesCacheForage = localforage.createInstance({ name: 'risuaiPostgresModules' })
+    private promptsCacheForage = localforage.createInstance({ name: 'risuaiPostgresPrompts' })
+    private scriptsCacheForage = localforage.createInstance({ name: 'risuaiPostgresScripts' })
+
     private memoryPluginsCache:{ hash:string, plugins:any[] }|null = null
     private memoryPluginStorageCache:{ hash:string, pluginCustomStorage:Record<string, any> }|null = null
+    private memoryPersonasCache:{ hash:string, personas:RisuPersona[] }|null = null
+    private memoryBotPresetsCache:{ hash:string, botPresets:botPreset[] }|null = null
+    private memoryLoreBookCache:{ hash:string, loreBook:{ name:string, data:loreBook[] }[] }|null = null
+    private memoryModulesCache:{ hash:string, modules:RisuModule[] }|null = null
+    private memoryPromptsCache:{ hash:string, prompts:Record<string, any> }|null = null
+    private memoryScriptsCache:{ hash:string, globalscript:customscript[] }|null = null
 
     constructor(private readonly getAuth:() => Promise<string>) {}
 
@@ -351,6 +366,232 @@ export class NodePostgresStorage {
         return body.value
     }
 
+    async loadPersonas(): Promise<RisuPersona[]> {
+        if (!await this.ensureEnabled()) return []
+        let cached = this.memoryPersonasCache
+        if (!cached) {
+            try {
+                cached = await this.personasCacheForage.getItem('cache')
+            } catch {
+                cached = null
+            }
+        }
+        const headers: Record<string, string> = await this.authHeaders()
+        if (cached?.hash) {
+            headers['If-None-Match'] = `"risu-personas-${cached.hash}"`
+        }
+        const response = await fetch('/api/database-v2/personas', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers,
+        })
+        if (response.status === 304 && cached) {
+            return cached.personas ?? []
+        }
+        if (response.status === 404) return []
+        if (response.status < 200 || response.status >= 300) {
+            throw await responseError(response, 'PostgreSQL personas load failed')
+        }
+        const body: { personas: RisuPersona[], hash: string } = await response.json()
+        const entry = { hash: body.hash, personas: body.personas ?? [] }
+        this.memoryPersonasCache = entry
+        try {
+            await this.personasCacheForage.setItem('cache', entry)
+        } catch {}
+        return body.personas ?? []
+    }
+
+    async loadBotPresets(): Promise<botPreset[]> {
+        if (!await this.ensureEnabled()) return []
+        let cached = this.memoryBotPresetsCache
+        if (!cached) {
+            try {
+                cached = await this.botPresetsCacheForage.getItem('cache')
+            } catch {
+                cached = null
+            }
+        }
+        const headers: Record<string, string> = await this.authHeaders()
+        if (cached?.hash) {
+            headers['If-None-Match'] = `"risu-bot-presets-${cached.hash}"`
+        }
+        const response = await fetch('/api/database-v2/bot-presets', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers,
+        })
+        if (response.status === 304 && cached) {
+            return cached.botPresets ?? []
+        }
+        if (response.status === 404) return []
+        if (response.status < 200 || response.status >= 300) {
+            throw await responseError(response, 'PostgreSQL bot presets load failed')
+        }
+        const body: { botPresets: botPreset[], hash: string } = await response.json()
+        const entry = { hash: body.hash, botPresets: body.botPresets ?? [] }
+        this.memoryBotPresetsCache = entry
+        try {
+            await this.botPresetsCacheForage.setItem('cache', entry)
+        } catch {}
+        return body.botPresets ?? []
+    }
+
+    async loadLorebooks(): Promise<{ name: string, data: loreBook[] }[]> {
+        if (!await this.ensureEnabled()) return []
+        let cached = this.memoryLoreBookCache
+        if (!cached) {
+            try {
+                cached = await this.loreBookCacheForage.getItem('cache')
+            } catch {
+                cached = null
+            }
+        }
+        const headers: Record<string, string> = await this.authHeaders()
+        if (cached?.hash) {
+            headers['If-None-Match'] = `"risu-lorebooks-${cached.hash}"`
+        }
+        const response = await fetch('/api/database-v2/lorebooks', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers,
+        })
+        if (response.status === 304 && cached) {
+            return cached.loreBook ?? []
+        }
+        if (response.status === 404) return []
+        if (response.status < 200 || response.status >= 300) {
+            throw await responseError(response, 'PostgreSQL global lorebooks load failed')
+        }
+        const body: { loreBook: { name: string, data: loreBook[] }[], hash: string } = await response.json()
+        const entry = { hash: body.hash, loreBook: body.loreBook ?? [] }
+        this.memoryLoreBookCache = entry
+        try {
+            await this.loreBookCacheForage.setItem('cache', entry)
+        } catch {}
+        return body.loreBook ?? []
+    }
+
+    async loadModules(): Promise<RisuModule[]> {
+        if (!await this.ensureEnabled()) return []
+        let cached = this.memoryModulesCache
+        if (!cached) {
+            try {
+                cached = await this.modulesCacheForage.getItem('cache')
+            } catch {
+                cached = null
+            }
+        }
+        const headers: Record<string, string> = await this.authHeaders()
+        if (cached?.hash) {
+            headers['If-None-Match'] = `"risu-modules-${cached.hash}"`
+        }
+        const response = await fetch('/api/database-v2/modules', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers,
+        })
+        if (response.status === 304 && cached) {
+            return cached.modules ?? []
+        }
+        if (response.status === 404) return []
+        if (response.status < 200 || response.status >= 300) {
+            throw await responseError(response, 'PostgreSQL modules load failed')
+        }
+        const body: { modules: RisuModule[], hash: string } = await response.json()
+        const entry = { hash: body.hash, modules: body.modules ?? [] }
+        this.memoryModulesCache = entry
+        try {
+            await this.modulesCacheForage.setItem('cache', entry)
+        } catch {}
+        return body.modules ?? []
+    }
+
+    async loadPrompts(): Promise<Record<string, any>> {
+        if (!await this.ensureEnabled()) return {}
+        let cached = this.memoryPromptsCache
+        if (!cached) {
+            try {
+                cached = await this.promptsCacheForage.getItem('cache')
+            } catch {
+                cached = null
+            }
+        }
+        const headers: Record<string, string> = await this.authHeaders()
+        if (cached?.hash) {
+            headers['If-None-Match'] = `"risu-prompts-${cached.hash}"`
+        }
+        const response = await fetch('/api/database-v2/prompts', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers,
+        })
+        if (response.status === 304 && cached) {
+            return cached.prompts ?? {}
+        }
+        if (response.status === 404) return {}
+        if (response.status < 200 || response.status >= 300) {
+            throw await responseError(response, 'PostgreSQL prompts load failed')
+        }
+        const body: { prompts: Record<string, any>, hash: string } = await response.json()
+        const entry = { hash: body.hash, prompts: body.prompts ?? {} }
+        this.memoryPromptsCache = entry
+        try {
+            await this.promptsCacheForage.setItem('cache', entry)
+        } catch {}
+        return body.prompts ?? {}
+    }
+
+    async loadScripts(): Promise<customscript[]> {
+        if (!await this.ensureEnabled()) return []
+        let cached = this.memoryScriptsCache
+        if (!cached) {
+            try {
+                cached = await this.scriptsCacheForage.getItem('cache')
+            } catch {
+                cached = null
+            }
+        }
+        const headers: Record<string, string> = await this.authHeaders()
+        if (cached?.hash) {
+            headers['If-None-Match'] = `"risu-scripts-${cached.hash}"`
+        }
+        const response = await fetch('/api/database-v2/scripts', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers,
+        })
+        if (response.status === 304 && cached) {
+            return cached.globalscript ?? []
+        }
+        if (response.status === 404) return []
+        if (response.status < 200 || response.status >= 300) {
+            throw await responseError(response, 'PostgreSQL scripts load failed')
+        }
+        const body: { globalscript: customscript[], hash: string } = await response.json()
+        const entry = { hash: body.hash, globalscript: body.globalscript ?? [] }
+        this.memoryScriptsCache = entry
+        try {
+            await this.scriptsCacheForage.setItem('cache', entry)
+        } catch {}
+        return body.globalscript ?? []
+    }
+
+    async loadSettingKey(key: string): Promise<any> {
+        if (!await this.ensureEnabled()) return undefined
+        const headers: Record<string, string> = await this.authHeaders()
+        const response = await fetch(`/api/database-v2/settings/${encodeURIComponent(key)}`, {
+            method: 'GET',
+            cache: 'no-cache',
+            headers,
+        })
+        if (response.status === 404) return undefined
+        if (response.status < 200 || response.status >= 300) {
+            throw await responseError(response, `PostgreSQL load setting key '${key}' failed`)
+        }
+        const body: { key: string, value: any, hash: string } = await response.json()
+        return body.value
+    }
+
     async loadDatabase(options: { shallow?: boolean } = { shallow: true }):Promise<Database|null> {
         const shallowParam = options.shallow !== false ? '?shallow=true' : '?shallow=false'
         const response = await fetch(`/api/database-v2${shallowParam}`, {
@@ -379,6 +620,8 @@ export class NodePostgresStorage {
                     body.database.plugins = plugins
                 }
                 body.database.pluginCustomStorage ??= {}
+                this.cache = primeNodeDatabaseSyncCache(body.database, body.revision)
+                return createPostgresDatabaseAdapter(body.database, this)
             }
             this.cache = primeNodeDatabaseSyncCache(body.database, body.revision)
             return body.database

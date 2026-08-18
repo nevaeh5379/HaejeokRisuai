@@ -190,6 +190,17 @@ export function primeChatMessages(
     }
 }
 
+export function primeRootSetting(
+    cache: NodeDatabaseSyncCache,
+    key: string,
+    value: unknown,
+) {
+    const serialized = serialize(value)
+    if (serialized !== null) {
+        cache.root.set(key, fingerprint(serialized))
+    }
+}
+
 export function primeNodeDatabaseSyncCache(database: Database, revision: number): NodeDatabaseSyncCache {
     ensureNodeDatabaseIds(database)
     const cache = createNodeDatabaseSyncCache(revision)

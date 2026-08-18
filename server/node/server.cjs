@@ -2427,6 +2427,164 @@ app.get('/api/database-v2/plugins-data', authenticatedRouteLimiter, async (req, 
     }
 });
 
+app.get('/api/database-v2/personas', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    try {
+        const result = await postgresStorage.loadPersonas();
+        const etag = `"risu-personas-${result.hash}"`;
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
+        if (requestEtag.split(',').map((v) => v.trim()).includes(etag)) {
+            res.status(304).end();
+            return;
+        }
+        await sendCompressedJson(req, res, { personas: result.personas, hash: result.hash });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/bot-presets', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    try {
+        const result = await postgresStorage.loadBotPresets();
+        const etag = `"risu-bot-presets-${result.hash}"`;
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
+        if (requestEtag.split(',').map((v) => v.trim()).includes(etag)) {
+            res.status(304).end();
+            return;
+        }
+        await sendCompressedJson(req, res, { botPresets: result.botPresets, hash: result.hash });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/lorebooks', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    try {
+        const result = await postgresStorage.loadLorebooks();
+        const etag = `"risu-lorebooks-${result.hash}"`;
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
+        if (requestEtag.split(',').map((v) => v.trim()).includes(etag)) {
+            res.status(304).end();
+            return;
+        }
+        await sendCompressedJson(req, res, { loreBook: result.loreBook, hash: result.hash });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/modules', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    try {
+        const result = await postgresStorage.loadModules();
+        const etag = `"risu-modules-${result.hash}"`;
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
+        if (requestEtag.split(',').map((v) => v.trim()).includes(etag)) {
+            res.status(304).end();
+            return;
+        }
+        await sendCompressedJson(req, res, { modules: result.modules, hash: result.hash });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/prompts', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    try {
+        const result = await postgresStorage.loadPrompts();
+        const etag = `"risu-prompts-${result.hash}"`;
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
+        if (requestEtag.split(',').map((v) => v.trim()).includes(etag)) {
+            res.status(304).end();
+            return;
+        }
+        await sendCompressedJson(req, res, { prompts: result.prompts, hash: result.hash });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/scripts', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    try {
+        const result = await postgresStorage.loadScripts();
+        const etag = `"risu-scripts-${result.hash}"`;
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
+        if (requestEtag.split(',').map((v) => v.trim()).includes(etag)) {
+            res.status(304).end();
+            return;
+        }
+        await sendCompressedJson(req, res, { globalscript: result.globalscript, hash: result.hash });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/settings/:key', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    try {
+        const result = await postgresStorage.loadSettingKey(req.params.key);
+        if (!result.exists) {
+            res.status(404).send({ error: `Setting key not found: ${req.params.key}` });
+            return;
+        }
+        const etag = `"risu-setting-${encodeURIComponent(result.key)}-${result.hash}"`;
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
+        if (requestEtag.split(',').map((v) => v.trim()).includes(etag)) {
+            res.status(304).end();
+            return;
+        }
+        await sendCompressedJson(req, res, { key: result.key, value: result.value, hash: result.hash });
+    } catch (error) {
+        next(error);
+    }
+});
+
 app.get('/api/database-v2/characters/:characterId', authenticatedRouteLimiter, async (req, res, next) => {
     if (!await checkAuth(req, res)) {
         return;
