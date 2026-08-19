@@ -45,6 +45,7 @@ __pycache__/
 dist.zip
 /scripts/
 .env
+.env.oracle
 /server/node/ssl/certificate
 .codegraph/
 

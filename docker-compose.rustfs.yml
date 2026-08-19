@@ -46,30 +46,20 @@ services:
     environment:
       RISU_POSTGRES_BOOTSTRAP_URL: postgresql://risuai:${POSTGRES_PASSWORD}@postgres:5432/risuai
       RISU_POSTGRES_POOL_MAX: 10
+      RISUAI_MIGRATE_CONCURRENCY: 128
       RISU_STORAGE_TYPE: s3
       RISU_S3_BOOTSTRAP_ENDPOINT: http://rustfs:9000
       RISU_S3_BOOTSTRAP_BUCKET: risuai-assets
       RISU_S3_BOOTSTRAP_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
       RISU_S3_BOOTSTRAP_SECRET: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      TRUST_PROXY: 1
     ports:
       - 6001:6001
     volumes:
       - ./save:/app/save
 
-  cloudbeaver:
-    image: dbeaver/cloudbeaver:${CLOUDBEAVER_VERSION:-latest}
-    container_name: risuai-cloudbeaver
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "${CLOUDBEAVER_BIND_ADDRESS:-127.0.0.1}:${CLOUDBEAVER_PORT:-8978}:8978"
-    volumes:
-      - cloudbeaver-workspace:/opt/cloudbeaver/workspace
 
 volumes:
   rustfs-data:
   risuai-save:
   risuai-postgres:
-  cloudbeaver-workspace:

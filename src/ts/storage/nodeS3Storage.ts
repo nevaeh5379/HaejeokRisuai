@@ -91,6 +91,13 @@ export interface NodeS3ProgressEvent {
     currentKey?: string
 }
 
+export interface NodeDatabaseBinHashes {
+    activeType: 'fs' | 's3'
+    local: { exists: boolean; hash: string | null; size: number; error?: string } | null
+    s3: { exists: boolean; hash: string | null; size: number; error?: string } | null
+    same: boolean | null
+}
+
 async function responseError(response: Response, fallback: string) {
     const body = await response.json().catch(() => null)
     return new Error(body?.error || `${fallback} (${response.status})`)
@@ -161,6 +168,29 @@ export class NodeS3Storage {
         })
         if (response.status < 200 || response.status >= 300) {
             throw await responseError(response, 'Failed to fetch storage stats')
+        }
+        return await response.json()
+    }
+
+    async getDatabaseBinHashes(): Promise<NodeDatabaseBinHashes> {
+        const response = await fetch('/api/db-hash', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if (response.status < 200 || response.status >= 300) {
+            throw await responseError(response, 'Failed to fetch database.bin hashes')
+        }
+        return await response.json()
+    }
+
+    async resolveDatabaseBinConflict(keep: 'local' | 's3'): Promise<{ ok: boolean; size: number; error?: string }> {
+        const response = await fetch(`/api/db-resolve?keep=${keep}`, {
+            method: 'POST',
+            headers: await this.authHeaders()
+        })
+        if (response.status < 200 || response.status >= 300) {
+            throw await responseError(response, 'Failed to resolve database.bin conflict')
         }
         return await response.json()
     }

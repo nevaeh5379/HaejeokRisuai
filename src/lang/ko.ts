@@ -1689,5 +1689,8 @@ export const languageKorean = {
     "startFresh": "새로 시작 (빈 데이터베이스)",
     "cachedDatabaseLabel": "캐시된 database.bin",
     "backupLabelFormat": (date: string) => `백업 (${date})`,
-    "cacheRecoveryCancelled": "데이터베이스 초기화가 취소되었습니다."
+    "cacheRecoveryCancelled": "데이터베이스 초기화가 취소되었습니다.",
+    "dbConflictPrompt": "로컬과 S3의 database.bin 복사본이 서로 다릅니다. 유지할 복사본을 선택하세요 (다른 쪽은 덮어씌워집니다).",
+    "dbConflictUseLocal": (size: number, hash: string) => `로컬 복사본 사용 (${(size / 1024).toFixed(1)} KiB, sha256 ${hash}…)`,
+    "dbConflictUseS3": (size: number, hash: string) => `S3 복사본 사용 (${(size / 1024).toFixed(1)} KiB, sha256 ${hash}…)`
 } satisfies DeepPartial<typeof import('./en').languageEnglish>

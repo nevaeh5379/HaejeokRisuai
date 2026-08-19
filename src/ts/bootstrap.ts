@@ -134,6 +134,11 @@ export async function loadData() {
                 }
 
                 if(!loadedFromPostgres){
+                    // If S3 is active and local vs. S3 database.bin differ, let
+                    // the user pick which copy to keep before loading. The
+                    // server synchronises both sides; we just need to read
+                    // again afterwards.
+                    await resolveDatabaseBinConflict()
                     LoadingStatusState.text = "Loading Local Save File..."
                     let gotStorage: Uint8Array = await forageStorage.getItem('database/database.bin') as unknown as Uint8Array
                     LoadingStatusState.text = "Decoding Local Save File..."
@@ -278,6 +283,80 @@ export async function loadData() {
             alertError(error)
         }
     }
+}
+
+/**
+ * When S3 storage is active and both the local FS and S3 hold a
+ * `database/database.bin` whose SHA-256 hashes differ, prompt the user to
+ * choose which copy to keep. The non-chosen copy is overwritten so both
+ * locations agree afterwards. Returns the chosen bytes (or null when there
+ * is no conflict / S3 isn't active / the user cancels).
+ */
+async function resolveDatabaseBinConflict(): Promise<boolean> {
+    if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
+        return false
+    }
+    const nodeStorage = forageStorage.realStorage
+    let hashes
+    try {
+        hashes = await nodeStorage.s3.getDatabaseBinHashes()
+    } catch (error) {
+        console.error('db-hash probe failed', error)
+        return false
+    }
+    // Only S3-backed setups can diverge; s3 === null means S3 is disabled.
+    if (!hashes.s3 || hashes.same === null || hashes.same === true) {
+        return false
+    }
+    const localExists = hashes.local?.exists === true
+    const s3Exists = hashes.s3.exists === true
+    if (!localExists && !s3Exists) {
+        return false
+    }
+    if (!localExists || !s3Exists) {
+        // One side is missing — no content conflict to ask about; the loader
+        // will simply read whichever side has data.
+        return false
+    }
+
+    const localSize = hashes.local?.size ?? 0
+    const s3Size = hashes.s3.size ?? 0
+    const localHashShort = (hashes.local?.hash || '').slice(0, 12)
+    const s3HashShort = (hashes.s3.hash || '').slice(0, 12)
+
+    const options = [
+        language.dbConflictUseLocal(localSize, localHashShort),
+        language.dbConflictUseS3(s3Size, s3HashShort),
+        language.cancel
+    ]
+    const choice = await alertSelect(options, language.dbConflictPrompt)
+    const idx = parseInt(choice, 10)
+
+    if (idx === 0) {
+        // Keep local -> server overwrites S3 copy with local bytes.
+        try {
+            await nodeStorage.s3.resolveDatabaseBinConflict('local')
+        } catch (error) {
+            console.error('db-resolve (local) failed', error)
+            alertError(error)
+            return false
+        }
+        // Clear any cached database.bin so the next read reflects the
+        // freshly-synchronised S3 copy.
+        return true
+    } else if (idx === 1) {
+        // Keep S3 -> server overwrites local copy with S3 bytes.
+        try {
+            await nodeStorage.s3.resolveDatabaseBinConflict('s3')
+        } catch (error) {
+            console.error('db-resolve (s3) failed', error)
+            alertError(error)
+            return false
+        }
+        return true
+    }
+    // Cancel: fall through to normal load (uses active storage = S3 by default).
+    return false
 }
 
 /**

@@ -193,7 +193,163 @@ describe('AssetStorageManager', () => {
         expect(mgr.getStorage().type).toBe('fs')
         expect(mgr.getPublicConfig().enabled).toBe(false)
     })
+
+    it('getDatabaseBinHashes reports matching hashes when local and S3 agree', async () => {
+        const mgr = new AssetStorageManager(tmpDir)
+        await mgr.init()
+        const s3Store = new Map<string, Buffer>()
+        const s3 = new S3AssetStorage({
+            endpoint: 'http://localhost:9000',
+            region: 'us-east-1',
+            bucket: 'test-bucket',
+            accessKeyId: 'test',
+            secretAccessKey: 'test'
+        }, tmpDir)
+        await s3.init()
+        s3.client = makeMockClientForMgr(s3Store) as any
+        mgr.s3Storage = s3
+        mgr.activeStorage = s3
+
+        const payload = Buffer.from('same-db-payload')
+        const hex = keyToHex('database/database.bin')
+        fs.writeFileSync(path.join(tmpDir, hex), payload)
+        s3Store.set('database/database.bin', payload)
+
+        const result = await mgr.getDatabaseBinHashes()
+        expect(result.local?.exists).toBe(true)
+        expect(result.s3?.exists).toBe(true)
+        expect(result.local?.hash).toBe(result.s3?.hash)
+        expect(result.same).toBe(true)
+    })
+
+    it('getDatabaseBinHashes detects divergence between local and S3', async () => {
+        const mgr = new AssetStorageManager(tmpDir)
+        await mgr.init()
+        const s3Store = new Map<string, Buffer>()
+        const s3 = new S3AssetStorage({
+            endpoint: 'http://localhost:9000',
+            region: 'us-east-1',
+            bucket: 'test-bucket',
+            accessKeyId: 'test',
+            secretAccessKey: 'test'
+        }, tmpDir)
+        await s3.init()
+        s3.client = makeMockClientForMgr(s3Store) as any
+        mgr.s3Storage = s3
+        mgr.activeStorage = s3
+
+        const hex = keyToHex('database/database.bin')
+        fs.writeFileSync(path.join(tmpDir, hex), Buffer.from('local-version'))
+        s3Store.set('database/database.bin', Buffer.from('s3-version'))
+
+        const result = await mgr.getDatabaseBinHashes()
+        expect(result.local?.exists).toBe(true)
+        expect(result.s3?.exists).toBe(true)
+        expect(result.same).toBe(false)
+    })
+
+    it('resolveDatabaseBinConflict(keep=local) overwrites S3 with local bytes', async () => {
+        const mgr = new AssetStorageManager(tmpDir)
+        await mgr.init()
+        const s3Store = new Map<string, Buffer>()
+        const s3 = new S3AssetStorage({
+            endpoint: 'http://localhost:9000',
+            region: 'us-east-1',
+            bucket: 'test-bucket',
+            accessKeyId: 'test',
+            secretAccessKey: 'test'
+        }, tmpDir)
+        await s3.init()
+        s3.client = makeMockClientForMgr(s3Store) as any
+        mgr.s3Storage = s3
+        mgr.activeStorage = s3
+
+        const localPayload = Buffer.from('local-wins')
+        const hex = keyToHex('database/database.bin')
+        fs.writeFileSync(path.join(tmpDir, hex), localPayload)
+        s3Store.set('database/database.bin', Buffer.from('s3-loses'))
+
+        const res = await mgr.resolveDatabaseBinConflict('local')
+        expect(res.error).toBeUndefined()
+        expect(res.bytes).toEqual(localPayload)
+        // S3 copy now matches local.
+        expect(s3Store.get('database/database.bin')).toEqual(localPayload)
+    })
+
+    it('resolveDatabaseBinConflict(keep=s3) overwrites local with S3 bytes', async () => {
+        const mgr = new AssetStorageManager(tmpDir)
+        await mgr.init()
+        const s3Store = new Map<string, Buffer>()
+        const s3 = new S3AssetStorage({
+            endpoint: 'http://localhost:9000',
+            region: 'us-east-1',
+            bucket: 'test-bucket',
+            accessKeyId: 'test',
+            secretAccessKey: 'test'
+        }, tmpDir)
+        await s3.init()
+        s3.client = makeMockClientForMgr(s3Store) as any
+        mgr.s3Storage = s3
+        mgr.activeStorage = s3
+
+        const s3Payload = Buffer.from('s3-wins')
+        const hex = keyToHex('database/database.bin')
+        fs.writeFileSync(path.join(tmpDir, hex), Buffer.from('local-loses'))
+        s3Store.set('database/database.bin', s3Payload)
+
+        const res = await mgr.resolveDatabaseBinConflict('s3')
+        expect(res.error).toBeUndefined()
+        expect(res.bytes).toEqual(s3Payload)
+        // Local copy now matches S3.
+        expect(fs.readFileSync(path.join(tmpDir, hex))).toEqual(s3Payload)
+    })
 })
+
+// Mock client used by AssetStorageManager-level tests (kept here to avoid
+// coupling the manager tests to the S3AssetStorage describe block).
+function makeMockClientForMgr(s3Store: Map<string, Buffer>) {
+    return {
+        send: async (command: any) => {
+            const cmdName = command.constructor.name
+            const cmdKey = command.input?.Key
+            if (cmdName.includes('PutObject')) {
+                const body = command.input.Body
+                let data: Buffer
+                if (Buffer.isBuffer(body)) {
+                    data = body
+                } else if (body && typeof body[Symbol.asyncIterator] === 'function') {
+                    const chunks: Buffer[] = []
+                    for await (const chunk of body) {
+                        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+                    }
+                    data = Buffer.concat(chunks)
+                } else {
+                    data = Buffer.from(body || '')
+                }
+                s3Store.set(cmdKey, data)
+                return {}
+            }
+            if (cmdName.includes('GetObject')) {
+                if (s3Store.has(cmdKey)) {
+                    const buf = s3Store.get(cmdKey)!
+                    return {
+                        Body: { transformToByteArray: async () => new Uint8Array(buf) },
+                        ContentType: 'application/octet-stream',
+                        ContentLength: buf.length
+                    }
+                }
+                const err: any = new Error('NoSuchKey')
+                err.name = 'NoSuchKey'
+                throw err
+            }
+            if (cmdName.includes('ListObjectsV2')) {
+                const keys = Array.from(s3Store.keys()).filter(k => !k.startsWith('thumbnails/'))
+                return { Contents: keys.map(k => ({ Key: k, Size: s3Store.get(k)!.length })) }
+            }
+            return {}
+        }
+    }
+}
 
 describe('S3AssetStorage readThumbnail', () => {
     let tmpDir: string
@@ -626,5 +782,209 @@ describe('createWriteStream streaming support', () => {
         expect(result.created).toBe(1) // bot2 thumbnail was created
         expect(s3Store.has('thumbnails/assets/bot2.png_128x128.webp')).toBe(true)
         expect(progressEvents.length).toBeGreaterThan(0)
+    })
+})
+
+describe('S3AssetStorage parallel migrate / rollback', () => {
+    let tmpDir: string
+    let localDir: string
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-test-s3par-'))
+        localDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-test-s3par-local-'))
+    })
+
+    afterEach(() => {
+        if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true })
+        if (fs.existsSync(localDir)) fs.rmSync(localDir, { recursive: true, force: true })
+    })
+
+    const makeMockClient = (s3Store: Map<string, Buffer>) => ({
+        send: async (command: any) => {
+            const cmdName = command.constructor.name
+            const cmdKey = command.input?.Key
+            if (cmdName.includes('PutObject')) {
+                const body = command.input.Body
+                let data: Buffer
+                if (Buffer.isBuffer(body)) {
+                    data = body
+                } else if (body && typeof body[Symbol.asyncIterator] === 'function') {
+                    const chunks: Buffer[] = []
+                    for await (const chunk of body) {
+                        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+                    }
+                    data = Buffer.concat(chunks)
+                } else {
+                    data = Buffer.from(body || '')
+                }
+                s3Store.set(cmdKey, data)
+                return {}
+            }
+            if (cmdName.includes('GetObject')) {
+                if (s3Store.has(cmdKey)) {
+                    const buf = s3Store.get(cmdKey)!
+                    return {
+                        Body: { transformToByteArray: async () => new Uint8Array(buf) },
+                        ContentType: 'application/octet-stream',
+                        ContentLength: buf.length
+                    }
+                }
+                const err: any = new Error('NoSuchKey')
+                err.name = 'NoSuchKey'
+                throw err
+            }
+            if (cmdName.includes('ListObjectsV2')) {
+                // Exclude thumbnails from migration/rollback list (matches S3AssetStorage.list)
+                const keys = Array.from(s3Store.keys()).filter(k => !k.startsWith('thumbnails/'))
+                return { Contents: keys.map(k => ({ Key: k, Size: s3Store.get(k)!.length })) }
+            }
+            return {}
+        }
+    })
+
+    it('migrateFromLocal uploads all local files in parallel and reports progress', async () => {
+        const s3Store = new Map<string, Buffer>()
+        const s3Storage = new S3AssetStorage({
+            endpoint: 'http://localhost:9000',
+            region: 'us-east-1',
+            bucket: 'test-bucket',
+            accessKeyId: 'test',
+            secretAccessKey: 'test'
+        }, tmpDir)
+        await s3Storage.init()
+        s3Storage.client = makeMockClient(s3Store) as any
+
+        // Seed 30 local asset files
+        const fileCount = 30
+        const expectedKeys: string[] = []
+        for (let i = 0; i < fileCount; i++) {
+            const key = `assets/file_${i}.bin`
+            const hex = keyToHex(key)
+            fs.writeFileSync(path.join(localDir, hex), Buffer.from(`payload-${i}`))
+            expectedKeys.push(key)
+        }
+
+        const progressEvents: any[] = []
+        const result = await s3Storage.migrateFromLocal(localDir, (p) => progressEvents.push(p))
+
+        expect(result.total).toBe(fileCount)
+        expect(result.migrated).toBe(fileCount)
+        expect(result.skipped).toBe(0)
+        expect(result.errors).toEqual([])
+        for (const key of expectedKeys) {
+            expect(s3Store.has(key)).toBe(true)
+        }
+        // Progress is throttled but at least one event should fire.
+        expect(progressEvents.length).toBeGreaterThan(0)
+        // Final progress should reach 100%.
+        const last = progressEvents[progressEvents.length - 1]
+        expect(last.percentage).toBe(100)
+        // Local files must be preserved (not deleted by migration).
+        for (let i = 0; i < fileCount; i++) {
+            const hex = keyToHex(`assets/file_${i}.bin`)
+            expect(fs.existsSync(path.join(localDir, hex))).toBe(true)
+        }
+    })
+
+    it('migrateFromLocal skips files already present in S3 (batched exists check)', async () => {
+        const s3Store = new Map<string, Buffer>()
+        const s3Storage = new S3AssetStorage({
+            endpoint: 'http://localhost:9000',
+            region: 'us-east-1',
+            bucket: 'test-bucket',
+            accessKeyId: 'test',
+            secretAccessKey: 'test'
+        }, tmpDir)
+        await s3Storage.init()
+        s3Storage.client = makeMockClient(s3Store) as any
+
+        // Pre-seed S3 with one of the three files.
+        s3Store.set('assets/keep.bin', Buffer.from('already-there'))
+
+        for (const key of ['assets/keep.bin', 'assets/new1.bin', 'assets/new2.bin']) {
+            const hex = keyToHex(key)
+            fs.writeFileSync(path.join(localDir, hex), Buffer.from(`data-${key}`))
+        }
+
+        const result = await s3Storage.migrateFromLocal(localDir)
+        expect(result.total).toBe(3)
+        expect(result.migrated).toBe(2)
+        expect(result.skipped).toBe(1)
+        expect(result.errors).toEqual([])
+        expect(s3Store.get('assets/keep.bin')).toEqual(Buffer.from('already-there'))
+        expect(s3Store.has('assets/new1.bin')).toBe(true)
+        expect(s3Store.has('assets/new2.bin')).toBe(true)
+    })
+
+    it('rollbackToLocal downloads all S3 objects in parallel via stream pipeline', async () => {
+        const s3Store = new Map<string, Buffer>()
+        const s3Storage = new S3AssetStorage({
+            endpoint: 'http://localhost:9000',
+            region: 'us-east-1',
+            bucket: 'test-bucket',
+            accessKeyId: 'test',
+            secretAccessKey: 'test'
+        }, tmpDir)
+        await s3Storage.init()
+        s3Storage.client = makeMockClient(s3Store) as any
+
+        const fileCount = 25
+        const expected: { key: string, body: Buffer }[] = []
+        for (let i = 0; i < fileCount; i++) {
+            const key = `assets/rb_${i}.bin`
+            const body = Buffer.from(`rollback-payload-${i}`)
+            s3Store.set(key, body)
+            expected.push({ key, body })
+        }
+
+        const progressEvents: any[] = []
+        const result = await s3Storage.rollbackToLocal(localDir, (p) => progressEvents.push(p))
+
+        expect(result.total).toBe(fileCount)
+        expect(result.downloaded).toBe(fileCount)
+        expect(result.errors).toEqual([])
+        for (const { key, body } of expected) {
+            const hex = keyToHex(key)
+            expect(fs.existsSync(path.join(localDir, hex))).toBe(true)
+            expect(fs.readFileSync(path.join(localDir, hex))).toEqual(body)
+        }
+        expect(progressEvents.length).toBeGreaterThan(0)
+        expect(progressEvents[progressEvents.length - 1].percentage).toBe(100)
+    })
+
+    it('migrateFromLocal skips the exists check entirely when RISUAI_MIGRATE_SKIP_EXISTS_CHECK=1', async () => {
+        const s3Store = new Map<string, Buffer>()
+        const s3Storage = new S3AssetStorage({
+            endpoint: 'http://localhost:9000',
+            region: 'us-east-1',
+            bucket: 'test-bucket',
+            accessKeyId: 'test',
+            secretAccessKey: 'test'
+        }, tmpDir)
+        await s3Storage.init()
+        s3Storage.client = makeMockClient(s3Store) as any
+
+        // Pre-seed S3 with one file that would normally be skipped.
+        s3Store.set('assets/preexist.bin', Buffer.from('old-data'))
+
+        for (const key of ['assets/preexist.bin', 'assets/fresh.bin']) {
+            const hex = keyToHex(key)
+            fs.writeFileSync(path.join(localDir, hex), Buffer.from(`new-${key}`))
+        }
+
+        const prev = process.env.RISUAI_MIGRATE_SKIP_EXISTS_CHECK
+        process.env.RISUAI_MIGRATE_SKIP_EXISTS_CHECK = '1'
+        try {
+            const result = await s3Storage.migrateFromLocal(localDir)
+            expect(result.total).toBe(2)
+            expect(result.migrated).toBe(2)
+            expect(result.skipped).toBe(0)
+            // Both files overwritten with local content despite preexist in S3.
+            expect(s3Store.get('assets/preexist.bin')).toEqual(Buffer.from('new-assets/preexist.bin'))
+            expect(s3Store.get('assets/fresh.bin')).toEqual(Buffer.from('new-assets/fresh.bin'))
+        } finally {
+            if (prev === undefined) delete process.env.RISUAI_MIGRATE_SKIP_EXISTS_CHECK
+            else process.env.RISUAI_MIGRATE_SKIP_EXISTS_CHECK = prev
+        }
     })
 })

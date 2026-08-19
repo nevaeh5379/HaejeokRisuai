@@ -3,6 +3,25 @@ const app = express();
 if (process.env.TRUST_PROXY) {
     app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
 }
+
+// EPIPE / ECONNRESET during large S3 migrations (peer closes the socket
+// mid-write) surface as unhandled 'error' events on the underlying socket and
+// can crash the whole server. Log and swallow them so the migration worker
+// can record the failure and the process stays alive.
+process.on('uncaughtException', (err) => {
+    if (err && (err.code === 'EPIPE' || err.code === 'ECONNRESET' || err.code === 'ECONNABORTED')) {
+        console.warn('[Server] Swallowed socket error:', err.code, err.message);
+        return;
+    }
+    console.error('[Server] Uncaught exception:', err);
+});
+process.on('unhandledRejection', (err) => {
+    if (err && (err.code === 'EPIPE' || err.code === 'ECONNRESET' || err.code === 'ECONNABORTED')) {
+        console.warn('[Server] Swallowed socket rejection:', err.code, err && err.message);
+        return;
+    }
+    console.error('[Server] Unhandled rejection:', err);
+});
 const http = require('http');
 const path = require('path');
 const net = require('net');
@@ -22,9 +41,17 @@ const {
     PostgresStorage,
 } = require('./postgresStorage.cjs');
 const {
+    StoragePayloadError,
+    StorageRevisionConflictError,
+    createServerStorage,
+    loadOracleEnvFile,
+    readOracleConfigFromEnv,
+} = require('./storageDriver.cjs');
+const {
     AssetStorageManager,
     S3AssetStorage,
     keyToHex,
+    runWithConcurrency,
 } = require('./assetStorage.cjs');
 const defaultJsonParser = express.json({ limit: '100mb' });
 const postgresJsonBodyLimit = process.env.RISU_POSTGRES_JSON_BODY_LIMIT || '1gb';
@@ -205,9 +232,11 @@ let postgresServerConfig = postgresManagedByEnvironment
         }
         : storedPostgresConfig);
 
-const postgresStorage = new PostgresStorage({
-    connectionString: postgresServerConfig.enabled ? postgresServerConfig.connectionString : '',
-    poolMax: postgresServerConfig.poolMax,
+// 저장소 드라이버: vendor(postgres/oracle)에 따른 구현체 생성.
+// 기존 postgresStorage 호환성: postgresStorage 변수는 팩토리 결과의 .storage를 가리킴.
+const { storage: postgresStorage, vendor: dbVendor } = createServerStorage(savePath, {
+    // 기존 PostgreSQL 설정 호환성
+    postgresConfig: postgresServerConfig,
 });
 
 const assetStorageManager = new AssetStorageManager(savePath);
@@ -1540,6 +1569,12 @@ const BULK_WRITE_CONTENT_TYPE = 'application/x-risu-bulk';
 const BULK_WRITE_MAX_NAME_BYTES = 64 * 1024;
 const BULK_WRITE_MAX_CHUNK_BYTES = 8 * 1024 * 1024;
 const BULK_WRITE_MAX_FILES = 10000;
+// Bound how many S3 multipart Uploads finalise concurrently. Without this,
+// 10k+ `writer.done()` calls fire at once and exhaust the socket pool.
+const BULK_WRITE_CONCURRENCY = Math.max(
+    1,
+    parseInt(process.env.RISUAI_RESTORE_CONCURRENCY || '32', 10) || 32
+);
 const BACKUP_RESTORE_CONTENT_TYPE = 'application/x-risu-backup';
 const BACKUP_RESTORE_MAX_NAME_BYTES = 1024 * 1024;
 const BACKUP_RESTORE_MAX_FILES = 100000;
@@ -1801,12 +1836,25 @@ app.post('/api/restore-backup', authenticatedRouteLimiter, async(req, res, next)
 
         sendProgress();
 
-        const pendingDone = assetFiles.map(async(file) => {
-            await file.writer.done();
+        // Bound concurrency so 19k+ simultaneous S3 multipart Uploads don't
+        // exhaust the socket pool ("socket usage at capacity") and trigger
+        // EPIPE when RustFS closes a connection mid-write.
+        await runWithConcurrency(assetFiles, async (file) => {
+            try {
+                await file.writer.done();
+            } catch (err) {
+                // Surface via progress channel; don't abort the whole restore.
+                try {
+                    res.write(JSON.stringify({
+                        type: 'error',
+                        entry: file.name,
+                        error: err?.message || 'Upload failed'
+                    }) + '\n');
+                } catch {}
+            }
             completedAssets += 1;
             sendProgress();
-        });
-        await Promise.all(pendingDone);
+        }, BULK_WRITE_CONCURRENCY);
 
         const specialFiles = Array.from(specialEntries.values());
         if (specialFiles.length > 0) {
@@ -2120,7 +2168,9 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
             throw createBulkProtocolError('Bulk write request ended with an incomplete packet');
         }
 
-        await Promise.all(completedFiles.map((file) => file.writer.done()));
+        await runWithConcurrency(completedFiles, async (file) => {
+            await file.writer.done();
+        }, BULK_WRITE_CONCURRENCY);
         completedFiles.length = 0;
 
         res.send({ success: true, written: fileCount });
@@ -3044,6 +3094,39 @@ app.get('/api/s3-stats', authenticatedRouteLimiter, async (req, res, next) => {
     }
 });
 
+app.get('/api/db-hash', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        const hashes = await assetStorageManager.getDatabaseBinHashes();
+        res.send(hashes);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/db-resolve', authenticatedRouteLimiter, async (req, res, next) => {
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    try {
+        const keep = req.query.keep || req.body?.keep;
+        if (keep !== 'local' && keep !== 's3') {
+            res.status(400).send({ error: "keep must be 'local' or 's3'" });
+            return;
+        }
+        const result = await assetStorageManager.resolveDatabaseBinConflict(keep);
+        if (result.error) {
+            res.status(500).send({ error: result.error });
+            return;
+        }
+        res.send({ ok: true, size: result.bytes ? result.bytes.length : 0 });
+    } catch (error) {
+        next(error);
+    }
+});
+
 app.get('/api/storage-summary', authenticatedRouteLimiter, async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;
@@ -3557,11 +3640,15 @@ function setupProxyStreamWebSocket(server) {
 
 async function startServer() {
     try {
+        console.log('[Server] Step 1: initializing storage...');
         await postgresStorage.initialize();
+        console.log('[Server] Step 2: storage initialized, initializing asset storage...');
         await assetStorageManager.init();
+        console.log('[Server] Step 3: asset storage initialized, checking bootstrap config...');
         if (!postgresManagedByEnvironment && !postgresConfigExists && postgresBootstrapUrl) {
             await persistPostgresServerConfig(postgresServerConfig);
         }
+        console.log('[Server] Step 4: checking legacy cold storage migration...');
         if (postgresStorage.enabled) {
             const coldStorageMigration = await postgresStorage.migrateLegacyColdStorage(savePath);
             if (coldStorageMigration.migrated > 0 || coldStorageMigration.skipped > 0) {
@@ -3571,6 +3658,7 @@ async function startServer() {
                 );
             }
         }
+        console.log('[Server] Step 5: starting HTTP/HTTPS server...');
         const port = process.env.PORT || 6001;
         const httpsOptions = await getHttpsOptions();
         let server = null;

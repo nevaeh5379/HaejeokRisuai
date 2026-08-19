@@ -1,6 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const http = require('http');
+const https = require('https');
 const stream = require('stream');
 const crypto = require('crypto');
 const {
@@ -15,6 +17,74 @@ const {
     HeadObjectCommand
 } = require('@aws-sdk/client-s3');
 const { Upload } = require('@aws-sdk/lib-storage');
+const { pipeline } = require('stream/promises');
+
+// Resolve NodeHttpHandler through @aws-sdk/client-s3's module graph so we
+// don't depend on pnpm hoisting @smithy/node-http-handler to the top level.
+const _s3Require = require('module').createRequire(require.resolve('@aws-sdk/client-s3'));
+const { NodeHttpHandler } = _s3Require('@smithy/node-http-handler');
+
+// Shared keep-alive agents so 19k+ sequential S3 requests reuse TCP/TLS
+// connections instead of paying handshake cost per request.
+function createHttpAgents() {
+    const keepAlive = true;
+    const keepAliveMsecs = 30000;
+    // maxSockets should be at least migration concurrency so workers don't
+    // queue on the socket pool. Default to 2x concurrency for headroom.
+    const concurrency = Math.max(MIGRATE_CONCURRENCY, 1);
+    const defaultMaxSockets = Math.max(128, concurrency * 2);
+    const maxSockets = Math.max(
+        defaultMaxSockets,
+        parseInt(process.env.RISUAI_S3_MAX_SOCKETS || String(defaultMaxSockets), 10) || defaultMaxSockets
+    );
+    const agentOpts = { keepAlive, keepAliveMsecs, maxSockets, maxFreeSockets: 64 };
+    const httpAgent = new http.Agent(agentOpts);
+    const httpsAgent = new https.Agent(agentOpts);
+    // Swallow socket-level errors (EPIPE, ECONNRESET, etc.) so an abrupt peer
+    // close does not crash the process via an unhandled 'error' event. The
+    // SDK call that owns the socket surfaces the failure through its own
+    // rejection; the agent only needs to stop Node from throwing here.
+    const swallow = (err) => {
+        if (err && err.code !== 'ECONNRESET' && err.code !== 'EPIPE' && err.code !== 'ECONNABORTED') {
+            console.warn('[S3 Storage] socket error:', err.message);
+        }
+    };
+    httpAgent.on('error', swallow);
+    httpsAgent.on('error', swallow);
+    return { httpAgent, httpsAgent };
+}
+
+// Concurrency for migration/rollback. Override via RISUAI_MIGRATE_CONCURRENCY env.
+// 64 is a good default for many ~1 MB files against a local RustFS/MinIO; for
+// remote S3 with higher latency, 32 may be safer to avoid timeouts.
+const MIGRATE_CONCURRENCY = Math.max(
+    1,
+    parseInt(process.env.RISUAI_MIGRATE_CONCURRENCY || '64', 10) || 64
+);
+// Stream-upload threshold: files larger than this use streaming PutObject instead of buffer.
+// Raised to 16 MiB so typical ~1 MB assets take the fast buffered path.
+const MIGRATE_STREAM_THRESHOLD = 16 * 1024 * 1024;
+// Progress callback throttle in ms (avoids flooding the client on large sets).
+const MIGRATE_PROGRESS_INTERVAL_MS = 200;
+
+// Run an async worker over `items` with bounded concurrency. Worker signature:
+//   (item, index) => Promise<void>. Errors are returned, never thrown, so a single
+//   failure does not abort the whole batch (caller decides via `errors`).
+async function runWithConcurrency(items, worker, concurrency) {
+    const c = Math.max(1, concurrency | 0);
+    let index = 0;
+    const workers = new Array(Math.min(c, items.length)).fill(0).map(async () => {
+        while (index < items.length) {
+            const i = index++;
+            try {
+                await worker(items[i], i);
+            } catch {
+                // Swallow; worker is expected to record its own errors.
+            }
+        }
+    });
+    await Promise.all(workers);
+}
 
 let sharp = null;
 try {
@@ -449,9 +519,25 @@ class S3AssetStorage {
     }
 
     static createClient(config) {
+        const agents = createHttpAgents();
         const clientConfig = {
             region: config.region || 'us-east-1',
             forcePathStyle: config.forcePathStyle !== false,
+            // Reuse a shared keep-alive agent pool so repeated S3 requests do
+            // not pay TCP/TLS handshake cost on every call (critical for
+            // 19k+ file migrations). Pass the agents directly via the handler
+            // config so the SDK wires them onto every outgoing socket.
+            requestHandler: new NodeHttpHandler({
+                httpsAgent: agents.httpsAgent,
+                httpAgent: agents.httpAgent,
+                // Silence the "socket usage at capacity" warning by giving the
+                // SDK more time to acquire a socket before it logs, and let
+                // queued requests wait instead of warning loudly.
+                socketAcquisitionWarningTimeout: 120000,
+                // Hard cap on a single HTTP request; a stalled socket is
+                // abandoned and the worker records an error instead of hanging.
+                requestTimeout: 300000
+            })
         };
 
         if (config.endpoint) {
@@ -1038,42 +1124,106 @@ class S3AssetStorage {
         const entries = await fs.promises.readdir(savePath);
         const hexEntries = entries.filter(e => !e.startsWith('__') && isHex(e));
         const total = hexEntries.length;
+
+        // Skip the exists-check entirely when RISUAI_MIGRATE_SKIP_EXISTS_CHECK is
+        // set, or when the bucket is empty (first migration). S3 PutObject is
+        // idempotent, so re-uploading an existing key is safe and avoids both the
+        // full ListObjectsV2 round-trips (100k keys = 100 pages) and the 100k-key
+        // in-memory Set. This is the single biggest win on large sets.
+        let existingKeys = null;
+        const skipExistsCheck = process.env.RISUAI_MIGRATE_SKIP_EXISTS_CHECK === '1'
+            || process.env.RISUAI_MIGRATE_SKIP_EXISTS_CHECK === 'true';
+        if (!skipExistsCheck) {
+            try {
+                const listed = await this.list();
+                if (listed.length === 0) {
+                    // Empty bucket: no point tracking exists for every file.
+                    existingKeys = null;
+                } else {
+                    existingKeys = new Set(listed);
+                }
+            } catch {
+                existingKeys = null;
+            }
+        }
+
         let migrated = 0;
         let skipped = 0;
+        let completed = 0;
         const errors = [];
+        let lastProgressSent = 0;
 
-        for (let i = 0; i < hexEntries.length; i++) {
-            const hexName = hexEntries[i];
+        const sendProgress = (currentKey) => {
+            if (!onProgress) return;
+            const now = Date.now();
+            const isFinal = completed >= total;
+            if (!isFinal && now - lastProgressSent < MIGRATE_PROGRESS_INTERVAL_MS) return;
+            lastProgressSent = now;
+            onProgress({
+                current: completed,
+                total,
+                migrated,
+                skipped,
+                percentage: total > 0 ? Math.round((completed / total) * 100) : 100,
+                currentKey
+            });
+        };
+
+        const worker = async (hexName) => {
             const key = hexToKey(hexName);
             try {
                 const filePath = path.join(savePath, hexName);
                 const stat = await fs.promises.stat(filePath);
-                if (!stat.isFile()) continue;
+                if (!stat.isFile()) {
+                    // Non-file entries still count toward progress.
+                    return;
+                }
 
-                // Check if already in S3
-                const alreadyExists = await this.exists(hexName);
-                if (alreadyExists) {
+                // Skip if already in S3 (only when we have a populated set).
+                // The database.bin is always re-uploaded so the S3 copy tracks
+                // the latest local state rather than the version present at
+                // migration time.
+                if (existingKeys && existingKeys.has(key) && key !== 'database/database.bin') {
                     skipped++;
+                    return;
+                }
+
+                // Upload directly with PutObjectCommand, bypassing this.write()
+                // so we skip eager thumbnail generation during migration.
+                // Generating thumbnails inline doubles PUT count and adds
+                // sharp CPU contention; thumbnails can be generated on-demand
+                // (readThumbnail) or via the dedicated "generate thumbnails" tool.
+                const contentType = getContentType(key);
+                if (stat.size > MIGRATE_STREAM_THRESHOLD) {
+                    const rs = fs.createReadStream(filePath);
+                    rs.on('error', () => { /* pipeline/send rejects; nothing to do here */ });
+                    await this.client.send(new PutObjectCommand({
+                        Bucket: this.config.bucket,
+                        Key: key,
+                        Body: rs,
+                        ContentType: contentType,
+                        ContentLength: stat.size
+                    }));
                 } else {
                     const data = await fs.promises.readFile(filePath);
-                    await this.write(hexName, data);
-                    migrated++;
+                    await this.client.send(new PutObjectCommand({
+                        Bucket: this.config.bucket,
+                        Key: key,
+                        Body: data,
+                        ContentType: contentType
+                    }));
                 }
+                migrated++;
             } catch (err) {
                 errors.push(`Failed to migrate ${key}: ${err.message}`);
+            } finally {
+                completed++;
+                sendProgress(key);
             }
+        };
 
-            if (onProgress && (i % 5 === 0 || i === hexEntries.length - 1)) {
-                onProgress({
-                    current: i + 1,
-                    total,
-                    migrated,
-                    skipped,
-                    percentage: total > 0 ? Math.round(((i + 1) / total) * 100) : 100,
-                    currentKey: key
-                });
-            }
-        }
+        await runWithConcurrency(hexEntries, worker, MIGRATE_CONCURRENCY);
+        sendProgress('');
 
         return { total, migrated, skipped, errors };
     }
@@ -1084,39 +1234,53 @@ class S3AssetStorage {
         }
         const keys = await this.list();
         const total = keys.length;
+
         let downloaded = 0;
+        let completed = 0;
+        let lastProgressSent = 0;
         const errors = [];
 
-        for (let i = 0; i < keys.length; i++) {
-            const key = keys[i];
+        const sendProgress = (currentKey) => {
+            if (!onProgress) return;
+            const now = Date.now();
+            const isFinal = completed >= total;
+            if (!isFinal && now - lastProgressSent < MIGRATE_PROGRESS_INTERVAL_MS) return;
+            lastProgressSent = now;
+            onProgress({
+                current: completed,
+                total,
+                downloaded,
+                percentage: total > 0 ? Math.round((completed / total) * 100) : 100,
+                currentKey
+            });
+        };
+
+        const worker = async (key) => {
             const hexName = keyToHex(key);
             try {
                 const localFilePath = path.join(savePath, hexName);
                 const result = await this.read(hexName);
-                if (result.exists && result.stream) {
-                    // Stream to buffer
-                    const chunks = [];
-                    for await (const chunk of result.stream) {
-                        chunks.push(chunk);
+                if (result.exists) {
+                    if (result.stream) {
+                        // Stream-to-disk (E): avoids buffering whole body in memory.
+                        const ws = fs.createWriteStream(localFilePath);
+                        ws.on('error', () => { /* pipeline rejects; nothing to do */ });
+                        await pipeline(result.stream, ws);
+                    } else if (result.buffer) {
+                        await fs.promises.writeFile(localFilePath, result.buffer);
                     }
-                    const buffer = Buffer.concat(chunks);
-                    await fs.promises.writeFile(localFilePath, buffer);
                     downloaded++;
                 }
             } catch (err) {
                 errors.push(`Failed to rollback ${key}: ${err.message}`);
+            } finally {
+                completed++;
+                sendProgress(key);
             }
+        };
 
-            if (onProgress && (i % 5 === 0 || i === keys.length - 1)) {
-                onProgress({
-                    current: i + 1,
-                    total,
-                    downloaded,
-                    percentage: total > 0 ? Math.round(((i + 1) / total) * 100) : 100,
-                    currentKey: key
-                });
-            }
-        }
+        await runWithConcurrency(keys, worker, MIGRATE_CONCURRENCY);
+        sendProgress('');
 
         return { total, downloaded, errors };
     }
@@ -1347,6 +1511,136 @@ class AssetStorageManager {
     async cleanLocalAssets() {
         return await this.localFs.cleanLocalAssets();
     }
+
+    /**
+     * Read the raw bytes of database.bin from a specific side.
+     * @param {'local'|'s3'} side
+     * @returns {Promise<Buffer|null>} null if not present
+     */
+    async readDatabaseBin(side) {
+        const DB_KEY = 'database/database.bin';
+        const hexPath = keyToHex(DB_KEY);
+        if (side === 's3') {
+            if (!this.s3Storage) {
+                return null;
+            }
+            const r = await this.s3Storage.read(hexPath);
+            if (!r.exists) {
+                return null;
+            }
+            if (r.buffer) {
+                return r.buffer;
+            }
+            if (r.filePath) {
+                return await fs.promises.readFile(r.filePath);
+            }
+            if (r.stream) {
+                const chunks = [];
+                for await (const chunk of r.stream) {
+                    chunks.push(Buffer.from(chunk));
+                }
+                return Buffer.concat(chunks);
+            }
+            return Buffer.alloc(0);
+        }
+        // local
+        const fullPath = path.join(this.localFs.savePath, hexPath);
+        if (!fs.existsSync(fullPath)) {
+            return null;
+        }
+        return await fs.promises.readFile(fullPath);
+    }
+
+    /**
+     * Resolve a database.bin divergence by overwriting both sides with the
+     * user-chosen copy and returning the chosen bytes.
+     * @param {'local'|'s3'} keep
+     * @returns {Promise<{bytes: Buffer|null, error?: string}>}
+     */
+    async resolveDatabaseBinConflict(keep) {
+        const DB_KEY = 'database/database.bin';
+        const hexPath = keyToHex(DB_KEY);
+
+        const chosen = await this.readDatabaseBin(keep);
+        if (!chosen || chosen.length === 0) {
+            return { bytes: null, error: `Selected side (${keep}) has no database.bin` };
+        }
+
+        // Write chosen bytes to both sides so they agree.
+        // Local FS:
+        try {
+            await this.localFs.write(hexPath, chosen);
+        } catch (err) {
+            return { bytes: chosen, error: `Failed to write local copy: ${err.message}` };
+        }
+        // S3 (if configured):
+        if (this.s3Storage) {
+            try {
+                await this.s3Storage.write(hexPath, chosen);
+            } catch (err) {
+                return { bytes: chosen, error: `Failed to write S3 copy: ${err.message}` };
+            }
+        }
+        return { bytes: chosen };
+    }
+
+    /**
+     * Compute SHA-256 hashes of the database.bin stored on the local FS and
+     * on S3 (when configured), so the client can detect a divergence at boot
+     * and prompt the user for which copy to keep.
+     *
+     * Returns: { activeType, local: { exists, hash, size } | null,
+     *            s3: { exists, hash, size } | null, same: boolean|null }
+     */
+    async getDatabaseBinHashes() {
+        const hashBuffer = (buf) => {
+            const h = crypto.createHash('sha256');
+            h.update(buf);
+            return h.digest('hex');
+        };
+
+        const result = {
+            activeType: this.activeStorage.type,
+            local: null,
+            s3: null,
+            same: null
+        };
+
+        // Local FS hash (always available — localFs is always present).
+        try {
+            const buf = await this.readDatabaseBin('local');
+            if (buf) {
+                result.local = { exists: true, hash: hashBuffer(buf), size: buf.length };
+            } else {
+                result.local = { exists: false, hash: null, size: 0 };
+            }
+        } catch (err) {
+            result.local = { exists: false, hash: null, size: 0, error: err.message };
+        }
+
+        // S3 hash (only when S3 is configured).
+        if (this.s3Storage) {
+            try {
+                const buf = await this.readDatabaseBin('s3');
+                if (buf) {
+                    result.s3 = { exists: true, hash: hashBuffer(buf), size: buf.length };
+                } else {
+                    result.s3 = { exists: false, hash: null, size: 0 };
+                }
+            } catch (err) {
+                result.s3 = { exists: false, hash: null, size: 0, error: err.message };
+            }
+        }
+
+        if (result.local && result.s3) {
+            if (!result.local.exists || !result.s3.exists) {
+                result.same = result.local.exists === result.s3.exists;
+            } else {
+                result.same = result.local.hash === result.s3.hash;
+            }
+        }
+        return result;
+    }
 }
 
 module.exports = {
@@ -1356,6 +1650,7 @@ module.exports = {
     getContentType,
     isImageKey,
     createThumbnailBuffer,
+    runWithConcurrency,
     LocalFsStorage,
     S3AssetStorage,
     AssetStorageManager

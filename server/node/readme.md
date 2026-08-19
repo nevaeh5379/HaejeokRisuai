@@ -104,3 +104,17 @@ When S3 is enabled:
 - **Download S3 Assets to Local**: Exports all objects from the S3 bucket back to the local `save/` directory.
 - During migration, read requests automatically fall back to local disk if an asset hasn't been uploaded yet, ensuring zero broken images.
 
+Migration and rollback run with bounded concurrency to keep round-trip latency from dominating large asset sets. `RISUAI_MIGRATE_CONCURRENCY` controls the parallel worker count (default `64`; lower to `32` for remote S3 with higher latency). Files larger than 16 MiB stream to/from S3 instead of buffering in memory. Progress updates are time-throttled (~200 ms) to avoid flooding the client.
+
+To keep migration fast on large sets (tens of thousands of files):
+
+- Eager thumbnail generation is **skipped** during migration; thumbnails are still produced lazily on first read or via the dedicated **Generate Thumbnails** tool. Generating thumbnails inline would roughly double S3 PUT count and add sharp CPU contention.
+- The S3 client uses a shared HTTP keep-alive agent pool (`keepAlive`, `maxSockets`). `RISUAI_S3_MAX_SOCKETS` (default `2 × concurrency`, min `128`) tunes the per-host socket cap. Socket-level errors (EPIPE, ECONNRESET) are swallowed on the agent and via a process-level `uncaughtException` guard so an abrupt peer close during large migrations does not crash the server.
+- Bulk restore (`/api/restore-backup`) and bulk write (`/api/write-bulk`) bound the number of concurrent S3 multipart Upload finalisations via `RISUAI_RESTORE_CONCURRENCY` (default `32`). Without this, 19k+ `writer.done()` calls fire at once and exhaust the socket pool.
+- When the bucket is empty (first migration) the exists-check is skipped automatically. For non-empty buckets, `RISUAI_MIGRATE_SKIP_EXISTS_CHECK=1` forces skipping it — S3 `PutObject` is idempotent so re-uploading existing keys is safe and avoids the full `ListObjectsV2` round-trips (100k keys = 100 paginated calls) plus the in-memory key set.
+- The `database/database.bin` is always re-uploaded during migration (never skipped) so the S3 copy tracks the latest local state.
+
+### database.bin conflict resolution
+
+When S3 storage is active, the server reports SHA-256 hashes of both the local and S3 `database/database.bin` via `GET /api/db-hash`. On boot, if the two copies exist but their hashes differ, the client prompts the user to choose which copy to keep. `POST /api/db-resolve?keep=local|s3` then overwrites the non-chosen side so both locations agree, after which the database loads normally.
+

@@ -1876,7 +1876,10 @@ export const languageEnglish = {
     startFresh: "Start Fresh (Empty Database)",
     cachedDatabaseLabel: "Cached database.bin",
     backupLabelFormat: (date: string) => `Backup (${date})`,
-    cacheRecoveryCancelled: "Database initialization was cancelled."
+    cacheRecoveryCancelled: "Database initialization was cancelled.",
+    dbConflictPrompt: "The local and S3 copies of database.bin differ. Choose which one to keep (the other will be overwritten).",
+    dbConflictUseLocal: (size: number, hash: string) => `Use local copy (${(size / 1024).toFixed(1)} KiB, sha256 ${hash}…)`,
+    dbConflictUseS3: (size: number, hash: string) => `Use S3 copy (${(size / 1024).toFixed(1)} KiB, sha256 ${hash}…)`
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;
