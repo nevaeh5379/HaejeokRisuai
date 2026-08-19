@@ -2772,7 +2772,7 @@ app.post(
             const result = await postgresStorage.sync(req.body);
             res.send({ success: true, ...result });
         } catch (error) {
-            if (error instanceof PostgresRevisionConflictError) {
+            if (error instanceof PostgresRevisionConflictError || error instanceof StorageRevisionConflictError) {
                 res.status(409).send({
                     error: error.message,
                     code: 'revision_conflict',
@@ -2780,7 +2780,7 @@ app.post(
                 });
                 return;
             }
-            if (error instanceof PostgresPayloadError) {
+            if (error instanceof PostgresPayloadError || error instanceof StoragePayloadError) {
                 res.status(400).send({
                     error: error.message,
                     code: 'invalid_sync_payload',

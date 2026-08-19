@@ -7,16 +7,22 @@
 const fs = require('fs');
 const path = require('path');
 
-// 공통 에러 타입 (구현체 무관)
-class StorageRevisionConflictError extends Error {
+const {
+    PostgresRevisionConflictError,
+    PostgresPayloadError,
+} = require('./postgresStorage.cjs');
+
+// 공통 에러 타입 (구현체 무관 및 server.cjs 핸들러 호환)
+class StorageRevisionConflictError extends PostgresRevisionConflictError {
     constructor(revision, message = 'Storage revision conflict') {
-        super(message);
+        super(revision);
+        this.message = message;
         this.name = 'StorageRevisionConflictError';
         this.revision = revision;
     }
 }
 
-class StoragePayloadError extends Error {
+class StoragePayloadError extends PostgresPayloadError {
     constructor(message) {
         super(message);
         this.name = 'StoragePayloadError';
@@ -24,14 +30,15 @@ class StoragePayloadError extends Error {
 }
 
 // 지원하는 vendor 목록
-const SUPPORTED_VENDORS = ['postgres', 'oracle'];
+const SUPPORTED_VENDORS = ['postgres', 'oracle', 'azure'];
 
 // vendor 결정 우선순위:
 // 1. 명시적 options.vendor
 // 2. 환경 변수 DB_VENDOR
-// 3. 환경 변수 DATABASE_URL 존재 시 postgres
+// 3. 환경 변수 AZURE_HOST / AZURE_DATABASE 존재 시 azure
 // 4. 환경 변수 ORACLE_TNS_ALIAS 존재 시 oracle
-// 5. 기본값 postgres
+// 5. 환경 변수 DATABASE_URL 존재 시 postgres
+// 6. 기본값 postgres
 function resolveVendor(options = {}) {
     if (options.vendor && SUPPORTED_VENDORS.includes(options.vendor)) {
         return options.vendor;
@@ -39,20 +46,66 @@ function resolveVendor(options = {}) {
     if (process.env.DB_VENDOR && SUPPORTED_VENDORS.includes(process.env.DB_VENDOR)) {
         return process.env.DB_VENDOR;
     }
-    if (process.env.DATABASE_URL) {
-        return 'postgres';
+    if (process.env.AZURE_HOST || process.env.AZURE_DATABASE) {
+        return 'azure';
     }
     if (process.env.ORACLE_TNS_ALIAS) {
         return 'oracle';
     }
+    if (process.env.DATABASE_URL) {
+        return 'postgres';
+    }
     return 'postgres';
 }
 
+// 환경에서 Azure SQL 설정 로딩 (.env.azure 자동 로딩 포함)
+function loadAzureEnvFile(customPath = null) {
+    const envCandidates = customPath ? [customPath] : [
+        path.join(__dirname, '.env.azure'),
+        path.join(process.cwd(), '.env.azure'),
+        path.join(__dirname, '../../.env.azure'),
+    ];
+    for (const envPath of envCandidates) {
+        if (!fs.existsSync(envPath)) continue;
+        const content = fs.readFileSync(envPath, 'utf8');
+        for (const line of content.split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) continue;
+            const eqIdx = trimmed.indexOf('=');
+            if (eqIdx <= 0) continue;
+            const key = trimmed.slice(0, eqIdx).trim();
+            let value = trimmed.slice(eqIdx + 1).trim();
+            if ((value.startsWith('"') && value.endsWith('"')) ||
+                (value.startsWith("'") && value.endsWith("'"))) {
+                value = value.slice(1, -1);
+            }
+            if (!(key in process.env)) {
+                process.env[key] = value;
+            }
+        }
+        return envPath;
+    }
+    return null;
+}
+
+// Azure SQL 설정 객체 생성 (환경 변수에서)
+function readAzureConfigFromEnv() {
+    return {
+        server: process.env.AZURE_HOST || '',
+        database: process.env.AZURE_DATABASE || '',
+        user: process.env.AZURE_USERNAME || '',
+        password: process.env.AZURE_PASSWORD || '',
+        port: parseInt(process.env.AZURE_PORT || '1433', 10),
+        poolMax: parseInt(process.env.AZURE_POOL_MAX || '10', 10),
+    };
+}
+
 // 환경에서 Oracle 설정 로딩 (.env.oracle 자동 로딩 포함)
-function loadOracleEnvFile() {
-    const envCandidates = [
+function loadOracleEnvFile(customPath = null) {
+    const envCandidates = customPath ? [customPath] : [
         path.join(__dirname, '.env.oracle'),
         path.join(process.cwd(), '.env.oracle'),
+        path.join(__dirname, '../../.env.oracle'),
     ];
     for (const envPath of envCandidates) {
         if (!fs.existsSync(envPath)) continue;
@@ -126,6 +179,11 @@ function writeStoredDbConfig(savePath, config) {
 function createStorageDriver(options = {}) {
     const vendor = resolveVendor(options);
 
+    if (vendor === 'azure') {
+        const { AzureStorage } = require('./azureStorage.cjs');
+        return new AzureStorage(options);
+    }
+
     if (vendor === 'oracle') {
         const { OracleStorage } = require('./oracleStorage.cjs');
         return new OracleStorage(options);
@@ -139,7 +197,8 @@ function createStorageDriver(options = {}) {
 // 서버 부팅 시 저장소 인스턴스 생성 (server.cjs에서 호출)
 // 환경 변수 + 설정 파일 + 기존 PostgreSQL 설정을 조합하여 적절한 구현체를 반환.
 function createServerStorage(savePath, options = {}) {
-    // Oracle 환경 파일 로딩
+    // 환경 파일 로딩
+    loadAzureEnvFile();
     loadOracleEnvFile();
 
     const storedConfig = readStoredDbConfig(savePath);
@@ -152,7 +211,12 @@ function createServerStorage(savePath, options = {}) {
     let poolMax = parseInt(process.env.RISU_POSTGRES_POOL_MAX || '10', 10);
     if (!Number.isSafeInteger(poolMax) || poolMax <= 0) poolMax = 10;
 
-    if (explicitVendor === 'oracle' || (!explicitVendor && process.env.ORACLE_TNS_ALIAS && !process.env.DATABASE_URL)) {
+    if (explicitVendor === 'azure' || (!explicitVendor && (process.env.AZURE_HOST || process.env.AZURE_DATABASE) && !process.env.DATABASE_URL && !process.env.ORACLE_TNS_ALIAS)) {
+        vendor = 'azure';
+        const azureConfig = readAzureConfigFromEnv();
+        enabled = Boolean(azureConfig.server && azureConfig.database && azureConfig.user && azureConfig.password);
+        poolMax = azureConfig.poolMax || poolMax;
+    } else if (explicitVendor === 'oracle' || (!explicitVendor && process.env.ORACLE_TNS_ALIAS && !process.env.DATABASE_URL)) {
         vendor = 'oracle';
         const oracleConfig = readOracleConfigFromEnv();
         enabled = Boolean(oracleConfig.tnsAlias && oracleConfig.user && oracleConfig.password);
@@ -161,6 +225,11 @@ function createServerStorage(savePath, options = {}) {
         vendor = 'postgres';
         enabled = postgresConfig ? postgresConfig.enabled : (process.env.DATABASE_URL ? true : false);
         poolMax = postgresConfig ? postgresConfig.poolMax : poolMax;
+    } else if (storedConfig.vendor === 'azure') {
+        vendor = 'azure';
+        const azureConfig = readAzureConfigFromEnv();
+        enabled = storedConfig.enabled && Boolean(azureConfig.server && azureConfig.database && azureConfig.user && azureConfig.password);
+        poolMax = storedConfig.poolMax || poolMax;
     } else if (storedConfig.vendor === 'oracle') {
         vendor = 'oracle';
         const oracleConfig = readOracleConfigFromEnv();
@@ -171,6 +240,23 @@ function createServerStorage(savePath, options = {}) {
         vendor = 'postgres';
         enabled = postgresConfig ? postgresConfig.enabled : false;
         poolMax = postgresConfig ? postgresConfig.poolMax : poolMax;
+    }
+
+    if (vendor === 'azure') {
+        const { AzureStorage } = require('./azureStorage.cjs');
+        const azureConfig = readAzureConfigFromEnv();
+        return {
+            vendor: 'azure',
+            storage: new AzureStorage({
+                server: azureConfig.server,
+                database: azureConfig.database,
+                user: azureConfig.user,
+                password: azureConfig.password,
+                port: azureConfig.port,
+                poolMax,
+                enabled,
+            }),
+        };
     }
 
     if (vendor === 'oracle') {
@@ -207,6 +293,8 @@ module.exports = {
     StoragePayloadError,
     SUPPORTED_VENDORS,
     resolveVendor,
+    loadAzureEnvFile,
+    readAzureConfigFromEnv,
     loadOracleEnvFile,
     readOracleConfigFromEnv,
     readStoredDbConfig,
