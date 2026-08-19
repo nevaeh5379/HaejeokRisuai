@@ -59,6 +59,7 @@ const {
 const {
     AssetStorageManager,
     S3AssetStorage,
+    AzureSqlAssetStorage,
     keyToHex,
     runWithConcurrency,
 } = require('./assetStorage.cjs');
@@ -3316,6 +3317,37 @@ app.post('/api/s3-test', authenticatedRouteLimiter, async (req, res, next) => {
     }
     try {
         const body = req.body || {};
+        // Azure SQL asset storage test path: when storageType === 'azuresql',
+        // delegate to AzureSqlAssetStorage.testConnection using the merged
+        // Azure config (server/database/user/password). S3 credentials are
+        // not relevant here, so we keep the two code paths separate.
+        if (body.storageType === 'azuresql') {
+            // The client sends Azure fields with the `azure*` prefix
+            // (azureServer/azureDatabase/azureUser/azurePassword); map them to
+            // the plain server/database/user/password keys that
+            // AzureSqlAssetStorage.testConnection expects.
+            const azureMerged = {
+                ...assetStorageManager.azureConfig,
+                server: (body.azureServer !== undefined && body.azureServer !== '')
+                    ? body.azureServer.trim()
+                    : assetStorageManager.azureConfig.server,
+                database: (body.azureDatabase !== undefined && body.azureDatabase !== '')
+                    ? body.azureDatabase.trim()
+                    : assetStorageManager.azureConfig.database,
+                user: (body.azureUser !== undefined && body.azureUser !== '')
+                    ? body.azureUser.trim()
+                    : assetStorageManager.azureConfig.user,
+                password: (body.azurePassword !== undefined && body.azurePassword !== '')
+                    ? body.azurePassword
+                    : assetStorageManager.azureConfig.password,
+                port: (body.azurePort !== undefined && body.azurePort !== '')
+                    ? parseInt(body.azurePort, 10)
+                    : assetStorageManager.azureConfig.port,
+            };
+            const result = await AzureSqlAssetStorage.testConnection(azureMerged);
+            res.send(result);
+            return;
+        }
         const merged = {
             ...assetStorageManager.config,
             ...body,
@@ -3363,8 +3395,8 @@ app.post('/api/db-resolve', authenticatedRouteLimiter, async (req, res, next) =>
     }
     try {
         const keep = req.query.keep || req.body?.keep;
-        if (keep !== 'local' && keep !== 's3') {
-            res.status(400).send({ error: "keep must be 'local' or 's3'" });
+        if (keep !== 'local' && keep !== 's3' && keep !== 'azuresql') {
+            res.status(400).send({ error: "keep must be 'local', 's3', or 'azuresql'" });
             return;
         }
         const result = await assetStorageManager.resolveDatabaseBinConflict(keep);
@@ -3437,8 +3469,8 @@ app.post('/api/s3-migrate', authenticatedRouteLimiter, async (req, res, next) =>
         return;
     }
     try {
-        if (assetStorageManager.getStorage().type !== 's3') {
-            res.status(400).send({ error: 'S3 storage is not currently active.' });
+        if (assetStorageManager.getStorage().type !== 's3' && assetStorageManager.getStorage().type !== 'azuresql') {
+            res.status(400).send({ error: 'Remote storage (S3 or Azure SQL) is not currently active.' });
             return;
         }
 
@@ -3466,8 +3498,8 @@ app.post('/api/s3-rollback', authenticatedRouteLimiter, async (req, res, next) =
         return;
     }
     try {
-        if (assetStorageManager.getStorage().type !== 's3') {
-            res.status(400).send({ error: 'S3 storage is not currently active.' });
+        if (assetStorageManager.getStorage().type !== 's3' && assetStorageManager.getStorage().type !== 'azuresql') {
+            res.status(400).send({ error: 'Remote storage (S3 or Azure SQL) is not currently active.' });
             return;
         }
 
@@ -3493,8 +3525,8 @@ app.post('/api/s3-rollback', authenticatedRouteLimiter, async (req, res, next) =
 app.post('/api/s3-generate-thumbnails', authenticatedRouteLimiter, async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
 
-    if (assetStorageManager.getStorage().type !== 's3') {
-        res.status(400).send({ error: 'S3 storage is not currently active' });
+    if (assetStorageManager.getStorage().type !== 's3' && assetStorageManager.getStorage().type !== 'azuresql') {
+        res.status(400).send({ error: 'Remote storage (S3 or Azure SQL) is not currently active' });
         return;
     }
 

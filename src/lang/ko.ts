@@ -1727,7 +1727,19 @@ export const languageKorean = {
     "cachedDatabaseLabel": "캐시된 database.bin",
     "backupLabelFormat": (date: string) => `백업 (${date})`,
     "cacheRecoveryCancelled": "데이터베이스 초기화가 취소되었습니다.",
-    "dbConflictPrompt": "로컬과 S3의 database.bin 복사본이 서로 다릅니다. 유지할 복사본을 선택하세요 (다른 쪽은 덮어씌워집니다).",
+    "dbConflictPrompt": "로컬과 원격의 database.bin 복사본이 서로 다릅니다. 유지할 복사본을 선택하세요 (다른 쪽은 덮어씌워집니다).",
     "dbConflictUseLocal": (size: number, hash: string) => `로컬 복사본 사용 (${(size / 1024).toFixed(1)} KiB, sha256 ${hash}…)`,
-    "dbConflictUseS3": (size: number, hash: string) => `S3 복사본 사용 (${(size / 1024).toFixed(1)} KiB, sha256 ${hash}…)`
+    "dbConflictUseS3": (size: number, hash: string) => `S3 복사본 사용 (${(size / 1024).toFixed(1)} KiB, sha256 ${hash}…)`,
+    "dbConflictUseAzureSql": (size: number, hash: string) => `Azure SQL 복사본 사용 (${(size / 1024).toFixed(1)} KiB, sha256 ${hash}…)`,
+    "useAzureSqlStorage": "Azure SQL (MSSQL) 스토리지 사용",
+    "azureSqlHost": "Azure SQL 서버 호스트",
+    "azureSqlDatabase": "데이터�이스 이름",
+    "azureSqlUser": "사용자 이름",
+    "azureSqlPassword": "비밀번호",
+    "azureSqlPort": "포트",
+    "azureSqlConnectionSuccess": "Azure SQL 연결 성공",
+    "azureSqlConnectionFailed": "Azure SQL 연결 실패",
+    "azureSqlStorageMigrateFromLocal": "로컬 FS → Azure SQL 마이그레이션",
+    "azureSqlStorageRollbackToLocal": "Azure SQL → 로컬 FS 롤백",
+    "azureSqlManagedByEnv": "Azure SQL 에셋 스토리지는 환경 변수로 관리되어 여기서 변경할 수 없습니다."
 } satisfies DeepPartial<typeof import('./en').languageEnglish>

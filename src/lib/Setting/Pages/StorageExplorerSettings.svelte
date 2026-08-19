@@ -51,8 +51,8 @@
     type TabType = 'bots' | 'backend' | 'files'
     let currentTab = $state<TabType>('bots')
 
-    // Dual storage target: 's3' or 'fs'
-    let viewTarget = $state<'s3' | 'fs'>('s3')
+    // Dual storage target: 's3', 'azuresql', or 'fs'
+    let viewTarget = $state<'s3' | 'azuresql' | 'fs'>('s3')
 
     let loading = $state(true)
     let busy = $state(false)
@@ -64,6 +64,7 @@
     // Backend config
     let config = $state<NodeS3ServerConfig | null>(null)
     let enabled = $state(false)
+    let storageType = $state<'fs' | 's3' | 'azuresql'>('fs')
     let endpoint = $state('')
     let bucket = $state('risuai-assets')
     let region = $state('us-east-1')
@@ -72,6 +73,12 @@
     let forcePathStyle = $state(true)
     let autoCreateBucket = $state(true)
     let testingConnection = $state(false)
+    // Azure SQL asset storage fields
+    let azureServer = $state('')
+    let azureDatabase = $state('')
+    let azureUser = $state('')
+    let azurePassword = $state('')
+    let azurePort = $state('1433')
 
     // Migration / Rollback / Clean
     let migrating = $state(false)
@@ -150,20 +157,31 @@
                 storageSummary = await storage.s3.getStorageSummary()
                 config = storageSummary.config
                 enabled = config.enabled
+                storageType = config.storageType || 'fs'
                 endpoint = config.endpoint || ''
                 bucket = config.bucket || 'risuai-assets'
                 region = config.region || 'us-east-1'
                 forcePathStyle = config.forcePathStyle
                 autoCreateBucket = config.autoCreateBucket
                 accessKeyId = config.accessKeyId || ''
+                azureServer = config.azureServer || ''
+                azureDatabase = config.azureDatabase || ''
+                azureUser = config.azureUser || ''
+                azurePort = String(config.azurePort || 1433)
                 
-                // If S3 is not enabled, default viewTarget to fs
-                if (!config.enabled && viewTarget === 's3') {
+                // Default viewTarget to the active remote backend (or fs when none).
+                const active = config.storageType
+                if (active === 'azuresql') {
+                    viewTarget = 'azuresql'
+                } else if (active === 's3') {
+                    viewTarget = 's3'
+                } else if (viewTarget === 's3' && !config.enabled) {
                     viewTarget = 'fs'
                 }
             } catch (err) {
                 config = await storage.s3.getServerConfig()
                 enabled = config.enabled
+                storageType = config.storageType || 'fs'
             }
 
             await loadTargetAssets()
@@ -197,7 +215,7 @@
         }
     }
 
-    async function switchViewTarget(target: 's3' | 'fs') {
+    async function switchViewTarget(target: 's3' | 'fs' | 'azuresql') {
         if (viewTarget === target) return
         viewTarget = target
         loading = true
@@ -385,20 +403,38 @@
         testingConnection = true
         try {
             const storage = getNodeStorage()
-            const result = await storage.s3.testConnection({
-                enabled: true,
-                endpoint: endpoint.trim(),
-                bucket: bucket.trim(),
-                region: region.trim(),
-                accessKeyId: accessKeyId.trim(),
-                secretAccessKey: secretAccessKey.trim(),
-                forcePathStyle,
-                autoCreateBucket
-            })
-            if (result.success) {
-                alertNormal(result.message || language.s3ConnectionSuccess)
+            if (storageType === 'azuresql') {
+                const result = await storage.s3.testConnection({
+                    enabled: true,
+                    storageType: 'azuresql',
+                    azureServer: azureServer.trim(),
+                    azureDatabase: azureDatabase.trim(),
+                    azureUser: azureUser.trim(),
+                    azurePassword: azurePassword,
+                    azurePort: parseInt(azurePort, 10) || 1433,
+                })
+                if (result.success) {
+                    alertNormal(result.message || language.azureSqlConnectionSuccess)
+                } else {
+                    alertError(result.message || language.azureSqlConnectionFailed)
+                }
             } else {
-                alertError(result.message || language.s3ConnectionFailed)
+                const result = await storage.s3.testConnection({
+                    enabled: true,
+                    storageType: 's3',
+                    endpoint: endpoint.trim(),
+                    bucket: bucket.trim(),
+                    region: region.trim(),
+                    accessKeyId: accessKeyId.trim(),
+                    secretAccessKey: secretAccessKey.trim(),
+                    forcePathStyle,
+                    autoCreateBucket
+                })
+                if (result.success) {
+                    alertNormal(result.message || language.s3ConnectionSuccess)
+                } else {
+                    alertError(result.message || language.s3ConnectionFailed)
+                }
             }
         } catch (error) {
             alertError(error)
@@ -414,16 +450,35 @@
         busy = true
         try {
             const storage = getNodeStorage()
-            await storage.s3.configureServer({
-                enabled,
-                endpoint: endpoint.trim(),
-                bucket: bucket.trim(),
-                region: region.trim(),
-                accessKeyId: accessKeyId.trim() || undefined,
-                secretAccessKey: secretAccessKey.trim() || undefined,
-                forcePathStyle,
-                autoCreateBucket
-            })
+            if (storageType === 'azuresql') {
+                await storage.s3.configureServer({
+                    enabled,
+                    storageType: 'azuresql',
+                    azureServer: azureServer.trim(),
+                    azureDatabase: azureDatabase.trim(),
+                    azureUser: azureUser.trim(),
+                    azurePassword: azurePassword || undefined,
+                    azurePort: parseInt(azurePort, 10) || 1433,
+                })
+            } else if (storageType === 's3') {
+                await storage.s3.configureServer({
+                    enabled,
+                    storageType: 's3',
+                    endpoint: endpoint.trim(),
+                    bucket: bucket.trim(),
+                    region: region.trim(),
+                    accessKeyId: accessKeyId.trim() || undefined,
+                    secretAccessKey: secretAccessKey.trim() || undefined,
+                    forcePathStyle,
+                    autoCreateBucket
+                })
+            } else {
+                // fs
+                await storage.s3.configureServer({
+                    enabled: false,
+                    storageType: 'fs',
+                })
+            }
             alertNormal(language.s3ApplySuccess)
             setTimeout(() => location.reload(), 300)
         } catch (error) {
@@ -433,7 +488,7 @@
     }
 
     async function migrateToS3() {
-        if (!config?.enabled) {
+        if (storageType === 'fs' || !config?.enabled) {
             alertError(language.s3MustBeEnabledToMigrate)
             return
         }
@@ -617,10 +672,10 @@
             </div>
         </div>
 
-        <!-- Target Storage Toggle Pill (S3 vs Local FS) -->
+        <!-- Target Storage Toggle Pill (S3 / Azure SQL / Local FS) -->
         <div class="flex items-center gap-2">
             <div class="flex items-center rounded-lg border border-darkborderc bg-darkbg/90 p-0.5 text-xs">
-                {#if config?.enabled}
+                {#if config?.enabled && config.storageType !== 'azuresql'}
                     <button
                         type="button"
                         class="flex items-center gap-1.5 rounded-md px-2.5 py-1 transition-all {viewTarget === 's3' ? 'bg-blue-600 text-white font-semibold shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
@@ -629,6 +684,17 @@
                         <ServerIcon class="h-3.5 w-3.5" />
                         <span>S3 (RustFS)</span>
                         <span class="rounded-full bg-black/30 px-1.5 py-0.2 text-[10px]">{formatBytes(storageSummary?.s3?.totalSizeBytes ?? 0)}</span>
+                    </button>
+                {/if}
+                {#if config?.enabled && config.storageType === 'azuresql'}
+                    <button
+                        type="button"
+                        class="flex items-center gap-1.5 rounded-md px-2.5 py-1 transition-all {viewTarget === 'azuresql' ? 'bg-sky-600 text-white font-semibold shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
+                        onclick={() => switchViewTarget('azuresql')}
+                    >
+                        <DatabaseIcon class="h-3.5 w-3.5" />
+                        <span>Azure SQL</span>
+                        <span class="rounded-full bg-black/30 px-1.5 py-0.2 text-[10px]">{formatBytes(storageSummary?.azuresql?.totalSizeBytes ?? 0)}</span>
                     </button>
                 {/if}
 
@@ -662,7 +728,7 @@
 
     <!-- Dual Storage Overview Banner -->
     <div class="border-b border-darkborderc bg-darkbg/50 px-4 py-3">
-        <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-5 sm:gap-3">
             <!-- S3 Object Storage Card -->
             <div class="relative flex flex-col justify-between rounded-xl border border-darkborderc bg-darkbg p-3 shadow-xs">
                 <div class="flex items-center justify-between">
@@ -670,7 +736,7 @@
                         <ServerIcon class="h-3.5 w-3.5 text-blue-400" />
                         <span>S3 객체 스토리지</span>
                     </div>
-                    {#if config?.enabled}
+                    {#if config?.enabled && config.storageType === 's3'}
                         <span class="rounded-full bg-blue-500/20 px-2 py-0.2 text-[10px] font-bold text-blue-300">
                             {storageSummary?.activeType === 's3' ? '메인 활성' : '활성'}
                         </span>
@@ -681,6 +747,27 @@
                 <div class="mt-1 text-base font-bold text-textcolor sm:text-xl">
                     {formatBytes(storageSummary?.s3?.totalSizeBytes ?? 0)}
                     <span class="text-xs font-normal text-textcolor2">({(storageSummary?.s3?.totalObjects ?? 0).toLocaleString()}개)</span>
+                </div>
+            </div>
+
+            <!-- Azure SQL Storage Card -->
+            <div class="relative flex flex-col justify-between rounded-xl border border-darkborderc bg-darkbg p-3 shadow-xs">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-1 text-[11px] font-medium text-textcolor2 sm:text-xs">
+                        <DatabaseIcon class="h-3.5 w-3.5 text-sky-400" />
+                        <span>Azure SQL</span>
+                    </div>
+                    {#if config?.enabled && config.storageType === 'azuresql'}
+                        <span class="rounded-full bg-sky-500/20 px-2 py-0.2 text-[10px] font-bold text-sky-300">
+                            {storageSummary?.activeType === 'azuresql' ? '메인 활성' : '활성'}
+                        </span>
+                    {:else}
+                        <span class="rounded-full bg-darkbutton px-2 py-0.2 text-[10px] text-textcolor2">비활성</span>
+                    {/if}
+                </div>
+                <div class="mt-1 text-base font-bold text-textcolor sm:text-xl">
+                    {formatBytes(storageSummary?.azuresql?.totalSizeBytes ?? 0)}
+                    <span class="text-xs font-normal text-textcolor2">({(storageSummary?.azuresql?.totalObjects ?? 0).toLocaleString()}개)</span>
                 </div>
             </div>
 
@@ -897,7 +984,7 @@
                         </div>
                         {#if config}
                             <span class="rounded-full px-3 py-1 text-xs font-medium {config.enabled ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-darkbutton text-textcolor2'}">
-                                {config.enabled ? 'S3 / RustFS 활성화됨' : 'Local FileSystem 사용 중'}
+                                {config.storageType === 'azuresql' ? 'Azure SQL 활성화됨' : (config.storageType === 's3' ? 'S3 / RustFS 활성화됨' : 'Local FileSystem 사용 중')}
                             </span>
                         {/if}
                     </div>
@@ -908,109 +995,225 @@
                         </div>
                     {/if}
 
+                    <!-- Storage backend selector -->
                     <div class="mt-4">
-                        <CheckInput
-                            bind:check={enabled}
-                            className={config?.managedByEnvironment ? 'pointer-events-none opacity-50' : ''}
-                            name={language.useS3Storage}
-                        />
+                        <label class="block text-xs font-medium text-textcolor2" for="backend-storage-type">
+                            {language.s3StatsStorageType}
+                        </label>
+                        <select
+                            id="backend-storage-type"
+                            class="mt-1 w-full rounded-md border border-darkborderc bg-bgcolor/40 px-3 py-2 text-textcolor {config?.managedByEnvironment ? 'pointer-events-none opacity-60' : ''}"
+                            bind:value={storageType}
+                        >
+                            <option value="fs">Local Filesystem</option>
+                            <option value="s3">S3 / RustFS</option>
+                            <option value="azuresql">Azure SQL (MSSQL)</option>
+                        </select>
+                    </div>
+
+                    <div class="mt-4">
+                        {#if storageType !== 'fs'}
+                            <CheckInput
+                                bind:check={enabled}
+                                className={config?.managedByEnvironment ? 'pointer-events-none opacity-50' : ''}
+                                name={storageType === 'azuresql' ? language.useAzureSqlStorage : language.useS3Storage}
+                            />
+                        {/if}
                     </div>
                 </div>
 
-                <!-- Form Fields -->
-                <div class="rounded-xl border border-darkborderc bg-darkbg p-5 shadow-xs">
-                    <h4 class="text-sm font-semibold text-textcolor">연결 설정</h4>
+                {#if storageType === 's3'}
+                    <!-- Form Fields -->
+                    <div class="rounded-xl border border-darkborderc bg-darkbg p-5 shadow-xs">
+                        <h4 class="text-sm font-semibold text-textcolor">연결 설정</h4>
 
-                    <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <div>
-                            <label class="block text-xs font-medium text-textcolor2" for="s3-endpoint">
-                                {language.s3Endpoint}
-                            </label>
-                            <TextInput
-                                id="s3-endpoint"
-                                bind:value={endpoint}
-                                fullwidth={true}
-                                disabled={config?.managedByEnvironment}
-                                placeholder="http://127.0.0.1:9000"
-                                className="mt-1"
-                            />
+                        <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <div>
+                                <label class="block text-xs font-medium text-textcolor2" for="s3-endpoint">
+                                    {language.s3Endpoint}
+                                </label>
+                                <TextInput
+                                    id="s3-endpoint"
+                                    bind:value={endpoint}
+                                    fullwidth={true}
+                                    disabled={config?.managedByEnvironment}
+                                    placeholder="http://127.0.0.1:9000"
+                                    className="mt-1"
+                                />
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-medium text-textcolor2" for="s3-bucket">
+                                    {language.s3Bucket}
+                                </label>
+                                <TextInput
+                                    id="s3-bucket"
+                                    bind:value={bucket}
+                                    fullwidth={true}
+                                    disabled={config?.managedByEnvironment}
+                                    placeholder="risuai-assets"
+                                    className="mt-1"
+                                />
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-medium text-textcolor2" for="s3-access-key">
+                                    {language.s3AccessKeyId}
+                                </label>
+                                <TextInput
+                                    id="s3-access-key"
+                                    bind:value={accessKeyId}
+                                    fullwidth={true}
+                                    disabled={config?.managedByEnvironment}
+                                    placeholder="rustfsadmin"
+                                    className="mt-1"
+                                />
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-medium text-textcolor2" for="s3-secret-key">
+                                    {language.s3SecretAccessKey}
+                                </label>
+                                <TextInput
+                                    id="s3-secret-key"
+                                    bind:value={secretAccessKey}
+                                    hideText={true}
+                                    fullwidth={true}
+                                    disabled={config?.managedByEnvironment}
+                                    placeholder={config?.hasSecretAccessKey ? '•••••••••••• (저장됨 / 변경 시 입력)' : 'rustfsadmin'}
+                                    className="mt-1"
+                                />
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-medium text-textcolor2" for="s3-region">
+                                    {language.s3Region}
+                                </label>
+                                <TextInput
+                                    id="s3-region"
+                                    bind:value={region}
+                                    fullwidth={true}
+                                    disabled={config?.managedByEnvironment}
+                                    placeholder="us-east-1"
+                                    className="mt-1"
+                                />
+                            </div>
                         </div>
 
-                        <div>
-                            <label class="block text-xs font-medium text-textcolor2" for="s3-bucket">
-                                {language.s3Bucket}
-                            </label>
-                            <TextInput
-                                id="s3-bucket"
-                                bind:value={bucket}
-                                fullwidth={true}
-                                disabled={config?.managedByEnvironment}
-                                placeholder="risuai-assets"
-                                className="mt-1"
-                            />
+                        <div class="mt-4 flex flex-col gap-2">
+                            <CheckInput bind:check={forcePathStyle} name={language.s3ForcePathStyle} />
+                            <CheckInput bind:check={autoCreateBucket} name={language.s3AutoCreateBucket} />
                         </div>
 
-                        <div>
-                            <label class="block text-xs font-medium text-textcolor2" for="s3-access-key">
-                                {language.s3AccessKeyId}
-                            </label>
-                            <TextInput
-                                id="s3-access-key"
-                                bind:value={accessKeyId}
-                                fullwidth={true}
-                                disabled={config?.managedByEnvironment}
-                                placeholder="rustfsadmin"
-                                className="mt-1"
-                            />
-                        </div>
+                        {#if !config?.managedByEnvironment}
+                            <div class="mt-6 flex flex-wrap items-center gap-3">
+                                <Button disabled={busy || testingConnection} onclick={testConnection}>
+                                    {testingConnection ? language.s3Testing : language.s3TestConnection}
+                                </Button>
 
-                        <div>
-                            <label class="block text-xs font-medium text-textcolor2" for="s3-secret-key">
-                                {language.s3SecretAccessKey}
-                            </label>
-                            <TextInput
-                                id="s3-secret-key"
-                                bind:value={secretAccessKey}
-                                hideText={true}
-                                fullwidth={true}
-                                disabled={config?.managedByEnvironment}
-                                placeholder={config?.hasSecretAccessKey ? '•••••••••••• (저장됨 / 변경 시 입력)' : 'rustfsadmin'}
-                                className="mt-1"
-                            />
-                        </div>
-
-                        <div>
-                            <label class="block text-xs font-medium text-textcolor2" for="s3-region">
-                                {language.s3Region}
-                            </label>
-                            <TextInput
-                                id="s3-region"
-                                bind:value={region}
-                                fullwidth={true}
-                                disabled={config?.managedByEnvironment}
-                                placeholder="us-east-1"
-                                className="mt-1"
-                            />
-                        </div>
+                                <Button className="bg-selected hover:opacity-90 font-medium" disabled={busy} onclick={applyConfiguration}>
+                                    {busy ? language.s3Applying : language.s3Apply}
+                                </Button>
+                            </div>
+                        {/if}
                     </div>
+                {:else if storageType === 'azuresql'}
+                    <!-- Azure SQL Form Fields -->
+                    <div class="rounded-xl border border-darkborderc bg-darkbg p-5 shadow-xs">
+                        <h4 class="text-sm font-semibold text-textcolor">Azure SQL 연결 설정</h4>
 
-                    <div class="mt-4 flex flex-col gap-2">
-                        <CheckInput bind:check={forcePathStyle} name={language.s3ForcePathStyle} />
-                        <CheckInput bind:check={autoCreateBucket} name={language.s3AutoCreateBucket} />
-                    </div>
+                        {#if config?.azureManagedByEnvironment}
+                            <p class="mt-3 rounded-md border border-borderc bg-bgcolor/40 p-2 text-sm text-textcolor2">
+                                {language.azureSqlManagedByEnv}
+                            </p>
+                        {/if}
 
-                    {#if !config?.managedByEnvironment}
-                        <div class="mt-6 flex flex-wrap items-center gap-3">
-                            <Button disabled={busy || testingConnection} onclick={testConnection}>
-                                {testingConnection ? language.s3Testing : language.s3TestConnection}
-                            </Button>
+                        <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <div>
+                                <label class="block text-xs font-medium text-textcolor2" for="azure-server">
+                                    {language.azureSqlHost}
+                                </label>
+                                <TextInput
+                                    id="azure-server"
+                                    bind:value={azureServer}
+                                    fullwidth={true}
+                                    disabled={config?.azureManagedByEnvironment}
+                                    placeholder="your-server.database.windows.net"
+                                    className="mt-1"
+                                />
+                            </div>
 
-                            <Button className="bg-selected hover:opacity-90 font-medium" disabled={busy} onclick={applyConfiguration}>
-                                {busy ? language.s3Applying : language.s3Apply}
-                            </Button>
+                            <div>
+                                <label class="block text-xs font-medium text-textcolor2" for="azure-database">
+                                    {language.azureSqlDatabase}
+                                </label>
+                                <TextInput
+                                    id="azure-database"
+                                    bind:value={azureDatabase}
+                                    fullwidth={true}
+                                    disabled={config?.azureManagedByEnvironment}
+                                    placeholder="risuai_assets"
+                                    className="mt-1"
+                                />
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-medium text-textcolor2" for="azure-user">
+                                    {language.azureSqlUser}
+                                </label>
+                                <TextInput
+                                    id="azure-user"
+                                    bind:value={azureUser}
+                                    fullwidth={true}
+                                    disabled={config?.azureManagedByEnvironment}
+                                    placeholder="admin"
+                                    className="mt-1"
+                                />
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-medium text-textcolor2" for="azure-password">
+                                    {language.azureSqlPassword}
+                                </label>
+                                <TextInput
+                                    id="azure-password"
+                                    bind:value={azurePassword}
+                                    hideText={true}
+                                    fullwidth={true}
+                                    disabled={config?.azureManagedByEnvironment}
+                                    placeholder={config?.hasAzurePassword ? '•••••••••••• (저장됨 / 변경 시 입력)' : ''}
+                                    className="mt-1"
+                                />
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-medium text-textcolor2" for="azure-port">
+                                    {language.azureSqlPort}
+                                </label>
+                                <TextInput
+                                    id="azure-port"
+                                    bind:value={azurePort}
+                                    fullwidth={true}
+                                    disabled={config?.azureManagedByEnvironment}
+                                    placeholder="1433"
+                                    className="mt-1"
+                                />
+                            </div>
                         </div>
-                    {/if}
-                </div>
+
+                        {#if !config?.azureManagedByEnvironment}
+                            <div class="mt-6 flex flex-wrap items-center gap-3">
+                                <Button disabled={busy || testingConnection} onclick={testConnection}>
+                                    {testingConnection ? language.s3Testing : language.s3TestConnection}
+                                </Button>
+
+                                <Button className="bg-selected hover:opacity-90 font-medium" disabled={busy} onclick={applyConfiguration}>
+                                    {busy ? language.s3Applying : language.s3Apply}
+                                </Button>
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
 
                 <!-- Migration & Rollback Tools -->
                 <div class="rounded-xl border border-darkborderc bg-darkbg p-5 shadow-xs">
@@ -1018,12 +1221,12 @@
                     <p class="mt-1 text-xs text-textcolor2">{language.s3StatsAndToolsDescription}</p>
 
                     <div class="mt-4 flex flex-wrap items-center gap-3">
-                        <Button disabled={migrating || !config?.enabled} onclick={migrateToS3}>
-                            {migrating ? language.s3Migrating : language.s3MigrateFromLocal}
+                        <Button disabled={migrating || storageType === 'fs' || !config?.enabled} onclick={migrateToS3}>
+                            {migrating ? language.s3Migrating : (storageType === 'azuresql' ? language.azureSqlStorageMigrateFromLocal : language.s3MigrateFromLocal)}
                         </Button>
 
-                        <Button disabled={rollingBack || !config?.enabled} onclick={rollbackToLocal}>
-                            {rollingBack ? language.s3RollingBack : language.s3RollbackToLocal}
+                        <Button disabled={rollingBack || storageType === 'fs' || !config?.enabled} onclick={rollbackToLocal}>
+                            {rollingBack ? language.s3RollingBack : (storageType === 'azuresql' ? language.azureSqlStorageRollbackToLocal : language.s3RollbackToLocal)}
                         </Button>
 
                         {#if config?.enabled && (storageSummary?.localFs?.totalObjects ?? 0) > 0}

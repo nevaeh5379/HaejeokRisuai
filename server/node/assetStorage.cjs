@@ -1260,30 +1260,45 @@ class S3AssetStorage {
     }
 }
 
+// Active storage backend selector. 'fs' is always available; 's3' and
+// 'azuresql' are mutually exclusive in the active role but both configs can
+// coexist on disk so the operator can switch back and forth.
+const STORAGE_TYPES = ['fs', 's3', 'azuresql'];
+
 class AssetStorageManager {
     constructor(savePath) {
         this.savePath = savePath;
-        this.configFile = path.join(savePath, '__s3_config.json');
-        this.managedByEnvironment = Boolean(
+        this.s3ConfigFile = path.join(savePath, '__s3_config.json');
+        this.azureConfigFile = path.join(savePath, '__azure_asset_config.json');
+        this.s3ManagedByEnvironment = Boolean(
             process.env.RISU_S3_ENDPOINT ||
             process.env.S3_ENDPOINT ||
             process.env.RISU_S3_BUCKET ||
             process.env.S3_BUCKET
         );
+        this.azureManagedByEnvironment = Boolean(
+            process.env.AZURE_ASSET_HOST ||
+            process.env.AZURE_ASSET_DATABASE
+        );
+        this.managedByEnvironment = this.s3ManagedByEnvironment || this.azureManagedByEnvironment;
 
         this.localFs = new LocalFsStorage(savePath);
         this.s3Storage = null;
+        this.azureSqlStorage = null;
         this.activeStorage = this.localFs;
-        this.config = this.loadConfig();
+
+        // Load both configs; pick the active backend.
+        this.s3Config = this.loadS3Config();
+        this.azureConfig = this.loadAzureConfig();
+        this.config = this._selectActiveConfig();
     }
 
-    loadConfig() {
+    loadS3Config() {
         const envEndpoint = process.env.RISU_S3_ENDPOINT || process.env.S3_ENDPOINT || '';
         const envBucket = process.env.RISU_S3_BUCKET || process.env.S3_BUCKET || 'risuai-assets';
         const envAccessKey = process.env.RISU_S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || process.env.S3_ACCESS_KEY_ID || process.env.RUSTFS_ACCESS_KEY || '';
         const envSecretKey = process.env.RISU_S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || process.env.S3_SECRET_ACCESS_KEY || process.env.RUSTFS_SECRET_KEY || '';
         const envRegion = process.env.RISU_S3_REGION || process.env.AWS_REGION || process.env.S3_REGION || 'us-east-1';
-        const envEnabled = (process.env.RISU_STORAGE_TYPE === 's3' || process.env.RISU_S3_ENABLED === 'true' || Boolean(envEndpoint));
 
         let stored = {
             enabled: false,
@@ -1296,15 +1311,14 @@ class AssetStorageManager {
             autoCreateBucket: true
         };
 
-        if (fs.existsSync(this.configFile)) {
+        if (fs.existsSync(this.s3ConfigFile)) {
             try {
-                const parsed = JSON.parse(fs.readFileSync(this.configFile, 'utf8'));
+                const parsed = JSON.parse(fs.readFileSync(this.s3ConfigFile, 'utf8'));
                 stored = { ...stored, ...parsed };
             } catch (err) {
-                console.warn(`[S3 Storage] Could not parse ${this.configFile}: ${err.message}`);
+                console.warn(`[S3 Storage] Could not parse ${this.s3ConfigFile}: ${err.message}`);
             }
-        } else if (!this.managedByEnvironment && process.env.RISU_S3_BOOTSTRAP_ENDPOINT) {
-            // Bootstrap seed
+        } else if (!this.s3ManagedByEnvironment && process.env.RISU_S3_BOOTSTRAP_ENDPOINT) {
             stored = {
                 enabled: true,
                 endpoint: process.env.RISU_S3_BOOTSTRAP_ENDPOINT,
@@ -1315,10 +1329,11 @@ class AssetStorageManager {
                 forcePathStyle: true,
                 autoCreateBucket: true
             };
-            this.saveStoredConfig(stored);
+            this.saveS3Config(stored);
         }
 
-        if (this.managedByEnvironment) {
+        if (this.s3ManagedByEnvironment) {
+            const envEnabled = (process.env.RISU_STORAGE_TYPE === 's3' || process.env.RISU_S3_ENABLED === 'true' || Boolean(envEndpoint));
             return {
                 enabled: envEnabled,
                 endpoint: envEndpoint,
@@ -1331,15 +1346,86 @@ class AssetStorageManager {
                 managedByEnvironment: true
             };
         }
-
-        return {
-            ...stored,
-            managedByEnvironment: false
-        };
+        return { ...stored, managedByEnvironment: false };
     }
 
-    saveStoredConfig(config) {
-        if (this.managedByEnvironment) {
+    loadAzureConfig() {
+        const envServer = process.env.AZURE_ASSET_HOST || '';
+        const envDatabase = process.env.AZURE_ASSET_DATABASE || '';
+        const envUser = process.env.AZURE_ASSET_USERNAME || '';
+        const envPassword = process.env.AZURE_ASSET_PASSWORD || '';
+        const envPort = parseInt(process.env.AZURE_ASSET_PORT || '1433', 10);
+        const envPoolMax = parseInt(process.env.AZURE_ASSET_POOL_MAX || '10', 10);
+
+        let stored = {
+            enabled: false,
+            server: '',
+            database: '',
+            user: '',
+            password: '',
+            port: 1433,
+            poolMax: 10
+        };
+
+        if (fs.existsSync(this.azureConfigFile)) {
+            try {
+                const parsed = JSON.parse(fs.readFileSync(this.azureConfigFile, 'utf8'));
+                stored = { ...stored, ...parsed };
+            } catch (err) {
+                console.warn(`[AzureSql Storage] Could not parse ${this.azureConfigFile}: ${err.message}`);
+            }
+        }
+
+        if (this.azureManagedByEnvironment) {
+            const envEnabled = process.env.RISU_STORAGE_TYPE === 'azuresql' || process.env.AZURE_ASSET_ENABLED === 'true' || Boolean(envServer);
+            return {
+                enabled: envEnabled,
+                server: envServer,
+                database: envDatabase,
+                user: envUser,
+                password: envPassword,
+                port: envPort,
+                poolMax: envPoolMax,
+                managedByEnvironment: true
+            };
+        }
+        return { ...stored, managedByEnvironment: false };
+    }
+
+    // Pick the active config, preferring explicit RISU_STORAGE_TYPE, then
+    // azure (if enabled), then s3 (if enabled), then fs. The on-disk configs
+    // for s3 and azuresql are preserved independently so switching keeps
+    // credentials around.
+    _selectActiveConfig() {
+        const explicit = process.env.RISU_STORAGE_TYPE;
+        if (explicit === 'azuresql' && this.azureConfig.enabled) {
+            return { ...this.azureConfig, storageType: 'azuresql' };
+        }
+        if (explicit === 's3' && this.s3Config.enabled) {
+            return { ...this.s3Config, storageType: 's3' };
+        }
+        if (explicit === 'fs') {
+            return { enabled: false, storageType: 'fs', managedByEnvironment: this.managedByEnvironment };
+        }
+        // No explicit type: prefer whichever managed-by-env flag is set,
+        // then fall back to the stored configs.
+        if (this.azureManagedByEnvironment && this.azureConfig.enabled) {
+            return { ...this.azureConfig, storageType: 'azuresql' };
+        }
+        if (this.s3ManagedByEnvironment && this.s3Config.enabled) {
+            return { ...this.s3Config, storageType: 's3' };
+        }
+        if (this.azureConfig.enabled) {
+            return { ...this.azureConfig, storageType: 'azuresql' };
+        }
+        if (this.s3Config.enabled) {
+            return { ...this.s3Config, storageType: 's3' };
+        }
+        return { enabled: false, storageType: 'fs', managedByEnvironment: this.managedByEnvironment };
+    }
+
+    saveS3Config(config) {
+        if (this.s3ManagedByEnvironment) {
             throw new Error('S3 configuration is managed by server environment variables and cannot be modified via API.');
         }
         const dataToSave = {
@@ -1352,13 +1438,31 @@ class AssetStorageManager {
             forcePathStyle: config.forcePathStyle !== false,
             autoCreateBucket: config.autoCreateBucket !== false
         };
-        fs.writeFileSync(this.configFile, JSON.stringify(dataToSave, null, 2), { mode: 0o600 });
-        this.config = { ...dataToSave, managedByEnvironment: false };
+        fs.writeFileSync(this.s3ConfigFile, JSON.stringify(dataToSave, null, 2), { mode: 0o600 });
+        this.s3Config = { ...dataToSave, managedByEnvironment: false };
+    }
+
+    saveAzureConfig(config) {
+        if (this.azureManagedByEnvironment) {
+            throw new Error('Azure SQL asset storage configuration is managed by server environment variables and cannot be modified via API.');
+        }
+        const dataToSave = {
+            enabled: Boolean(config.enabled),
+            server: config.server || '',
+            database: config.database || '',
+            user: config.user || '',
+            password: config.password || '',
+            port: parseInt(config.port || '1433', 10),
+            poolMax: parseInt(config.poolMax || '10', 10)
+        };
+        fs.writeFileSync(this.azureConfigFile, JSON.stringify(dataToSave, null, 2), { mode: 0o600 });
+        this.azureConfig = { ...dataToSave, managedByEnvironment: false };
     }
 
     async init() {
         await this.localFs.init();
-        if (this.config.enabled && (this.config.endpoint || this.config.bucket)) {
+        const type = this.config.storageType;
+        if (type === 's3' && this.config.enabled && (this.config.endpoint || this.config.bucket)) {
             try {
                 this.s3Storage = new S3AssetStorage(this.config, this.savePath);
                 await this.s3Storage.init();
@@ -1368,37 +1472,113 @@ class AssetStorageManager {
                 console.error(`[Storage] S3 initialization failed, falling back to Local FS: ${err.message}`);
                 this.activeStorage = this.localFs;
             }
+        } else if (type === 'azuresql' && this.config.enabled) {
+            try {
+                this.azureSqlStorage = new AzureSqlAssetStorage(this.config, this.savePath);
+                await this.azureSqlStorage.init();
+                this.activeStorage = this.azureSqlStorage;
+                console.log(`[Storage] Initialized Azure SQL asset storage (${this.config.server}/${this.config.database})`);
+            } catch (err) {
+                console.error(`[Storage] Azure SQL initialization failed, falling back to Local FS: ${err.message}`);
+                this.activeStorage = this.localFs;
+            }
         } else {
             this.activeStorage = this.localFs;
             console.log(`[Storage] Using Local FileSystem storage (${this.savePath})`);
         }
     }
 
+    // Accepts a unified update payload. The `storageType` field selects which
+    // backend to activate; omitting it keeps the current backend.
     async setConfig(newConfig) {
-        const mergedConfig = {
-            ...this.config,
-            ...newConfig,
-            accessKeyId: (newConfig.accessKeyId !== undefined && newConfig.accessKeyId !== '')
-                ? newConfig.accessKeyId.trim()
-                : this.config.accessKeyId,
-            secretAccessKey: (newConfig.secretAccessKey !== undefined && newConfig.secretAccessKey !== '')
-                ? newConfig.secretAccessKey.trim()
-                : this.config.secretAccessKey,
-        };
+        const desiredType = newConfig.storageType || this.config.storageType || 'fs';
 
-        if (mergedConfig.enabled) {
-            // Test connection first
-            const testResult = await S3AssetStorage.testConnection(mergedConfig);
-            if (!testResult.success) {
-                throw new Error(testResult.message);
+        if (desiredType === 's3') {
+            const mergedConfig = {
+                ...this.s3Config,
+                ...newConfig,
+                accessKeyId: (newConfig.accessKeyId !== undefined && newConfig.accessKeyId !== '')
+                    ? newConfig.accessKeyId.trim()
+                    : this.s3Config.accessKeyId,
+                secretAccessKey: (newConfig.secretAccessKey !== undefined && newConfig.secretAccessKey !== '')
+                    ? newConfig.secretAccessKey.trim()
+                    : this.s3Config.secretAccessKey,
+            };
+            if (mergedConfig.enabled) {
+                const testResult = await S3AssetStorage.testConnection(mergedConfig);
+                if (!testResult.success) {
+                    throw new Error(testResult.message);
+                }
+                this.saveS3Config(mergedConfig);
+                // Teardown previous azure backend if active.
+                if (this.azureSqlStorage) {
+                    try { await this.azureSqlStorage.close(); } catch {}
+                    this.azureSqlStorage = null;
+                }
+                this.s3Storage = new S3AssetStorage(this.s3Config, this.savePath);
+                await this.s3Storage.init();
+                this.activeStorage = this.s3Storage;
+                this.config = { ...this.s3Config, storageType: 's3' };
+            } else {
+                this.saveS3Config({ ...mergedConfig, enabled: false });
+                if (this.s3Storage) {
+                    this.s3Storage = null;
+                }
+                this.activeStorage = this.localFs;
+                this.config = { ...this.s3Config, storageType: 'fs' };
             }
-            this.saveStoredConfig(mergedConfig);
-            this.s3Storage = new S3AssetStorage(this.config, this.savePath);
-            await this.s3Storage.init();
-            this.activeStorage = this.s3Storage;
+        } else if (desiredType === 'azuresql') {
+            // Map client-sent azure* fields to the internal server/database/
+            // user/password keys that AzureSqlAssetStorage expects.
+            const mergedConfig = {
+                ...this.azureConfig,
+                enabled: newConfig.enabled !== undefined ? Boolean(newConfig.enabled) : this.azureConfig.enabled,
+                server: (newConfig.azureServer !== undefined && newConfig.azureServer !== '')
+                    ? newConfig.azureServer.trim()
+                    : this.azureConfig.server,
+                database: (newConfig.azureDatabase !== undefined && newConfig.azureDatabase !== '')
+                    ? newConfig.azureDatabase.trim()
+                    : this.azureConfig.database,
+                user: (newConfig.azureUser !== undefined && newConfig.azureUser !== '')
+                    ? newConfig.azureUser.trim()
+                    : this.azureConfig.user,
+                password: (newConfig.azurePassword !== undefined && newConfig.azurePassword !== '')
+                    ? newConfig.azurePassword
+                    : this.azureConfig.password,
+                port: (newConfig.azurePort !== undefined && newConfig.azurePort !== '')
+                    ? parseInt(newConfig.azurePort, 10)
+                    : this.azureConfig.port,
+            };
+            if (mergedConfig.enabled) {
+                const testResult = await AzureSqlAssetStorage.testConnection(mergedConfig);
+                if (!testResult.success) {
+                    throw new Error(testResult.message);
+                }
+                this.saveAzureConfig(mergedConfig);
+                // Teardown previous s3 backend if active.
+                this.s3Storage = null;
+                this.azureSqlStorage = new AzureSqlAssetStorage(this.azureConfig, this.savePath);
+                await this.azureSqlStorage.init();
+                this.activeStorage = this.azureSqlStorage;
+                this.config = { ...this.azureConfig, storageType: 'azuresql' };
+            } else {
+                this.saveAzureConfig({ ...mergedConfig, enabled: false });
+                if (this.azureSqlStorage) {
+                    try { await this.azureSqlStorage.close(); } catch {}
+                    this.azureSqlStorage = null;
+                }
+                this.activeStorage = this.localFs;
+                this.config = { ...this.azureConfig, storageType: 'fs' };
+            }
         } else {
-            this.saveStoredConfig({ ...mergedConfig, enabled: false });
+            // fs
+            if (this.s3Storage) this.s3Storage = null;
+            if (this.azureSqlStorage) {
+                try { await this.azureSqlStorage.close(); } catch {}
+                this.azureSqlStorage = null;
+            }
             this.activeStorage = this.localFs;
+            this.config = { enabled: false, storageType: 'fs', managedByEnvironment: this.managedByEnvironment };
         }
         return this.getPublicConfig();
     }
@@ -1407,17 +1587,26 @@ class AssetStorageManager {
         return {
             enabled: Boolean(this.config.enabled),
             storageType: this.activeStorage.type,
-            endpoint: this.config.endpoint || '',
-            bucket: this.config.bucket || 'risuai-assets',
-            region: this.config.region || 'us-east-1',
-            forcePathStyle: this.config.forcePathStyle !== false,
-            autoCreateBucket: this.config.autoCreateBucket !== false,
-            accessKeyId: this.config.accessKeyId || '',
-            hasSecretAccessKey: Boolean(this.config.secretAccessKey),
-            accessKeyDisplay: this.config.accessKeyId
-                ? `${this.config.accessKeyId.slice(0, 4)}****`
+            managedByEnvironment: this.managedByEnvironment,
+            // S3 fields (populated even when inactive so the UI can display them)
+            endpoint: this.s3Config.endpoint || '',
+            bucket: this.s3Config.bucket || 'risuai-assets',
+            region: this.s3Config.region || 'us-east-1',
+            forcePathStyle: this.s3Config.forcePathStyle !== false,
+            autoCreateBucket: this.s3Config.autoCreateBucket !== false,
+            accessKeyId: this.s3Config.accessKeyId || '',
+            hasSecretAccessKey: Boolean(this.s3Config.secretAccessKey),
+            accessKeyDisplay: this.s3Config.accessKeyId
+                ? `${this.s3Config.accessKeyId.slice(0, 4)}****`
                 : '',
-            managedByEnvironment: this.managedByEnvironment
+            // Azure SQL fields
+            azureServer: this.azureConfig.server || '',
+            azureDatabase: this.azureConfig.database || '',
+            azureUser: this.azureConfig.user || '',
+            azurePort: this.azureConfig.port || 1433,
+            hasAzurePassword: Boolean(this.azureConfig.password),
+            azureManagedByEnvironment: this.azureManagedByEnvironment,
+            s3ManagedByEnvironment: this.s3ManagedByEnvironment,
         };
     }
 
@@ -1436,6 +1625,7 @@ class AssetStorageManager {
     async getSummary() {
         const localFsStats = await this.localFs.getStats();
         let s3Stats = null;
+        let azureStats = null;
         if (this.s3Storage) {
             try {
                 s3Stats = await this.s3Storage.getStats();
@@ -1443,10 +1633,18 @@ class AssetStorageManager {
                 // Ignore S3 error
             }
         }
+        if (this.azureSqlStorage) {
+            try {
+                azureStats = await this.azureSqlStorage.getStats();
+            } catch {
+                // Ignore Azure error
+            }
+        }
         return {
             activeType: this.activeStorage.type,
             localFs: localFsStats,
             s3: s3Stats,
+            azuresql: azureStats,
             config: this.getPublicConfig()
         };
     }
@@ -1456,6 +1654,8 @@ class AssetStorageManager {
             return await this.localFs.getAssetDetails();
         } else if (target === 's3' && this.s3Storage) {
             return await this.s3Storage.getAssetDetails();
+        } else if (target === 'azuresql' && this.azureSqlStorage) {
+            return await this.azureSqlStorage.getAssetDetails();
         }
         return await this.activeStorage.getAssetDetails();
     }
@@ -1469,6 +1669,8 @@ class AssetStorageManager {
             await this.localFs.remove(hexPaths);
         } else if (target === 's3' && this.s3Storage) {
             await this.s3Storage.remove(hexPaths);
+        } else if (target === 'azuresql' && this.azureSqlStorage) {
+            await this.azureSqlStorage.remove(hexPaths);
         } else {
             await this.activeStorage.remove(hexPaths);
         }
@@ -1476,29 +1678,36 @@ class AssetStorageManager {
     }
 
     async generateMissingThumbnails(onProgress) {
-        if (!this.s3Storage) {
-            throw new Error('S3 storage is not active');
+        const active = this.activeStorage;
+        if (active.type !== 's3' && active.type !== 'azuresql') {
+            throw new Error('Remote storage (S3 or Azure SQL) is not active');
         }
-        return await this.s3Storage.generateMissingThumbnails(onProgress);
+        return await active.generateMissingThumbnails(onProgress);
     }
 
     async cleanLocalAssets() {
         return await this.localFs.cleanLocalAssets();
     }
 
+    // Resolve the storage instance for a given side identifier.
+    // side ∈ {'local','s3','azuresql'}.
+    _getSideStorage(side) {
+        if (side === 's3') return this.s3Storage;
+        if (side === 'azuresql') return this.azureSqlStorage;
+        return null;
+    }
+
     /**
      * Read the raw bytes of database.bin from a specific side.
-     * @param {'local'|'s3'} side
+     * @param {'local'|'s3'|'azuresql'} side
      * @returns {Promise<Buffer|null>} null if not present
      */
     async readDatabaseBin(side) {
         const DB_KEY = 'database/database.bin';
         const hexPath = keyToHex(DB_KEY);
-        if (side === 's3') {
-            if (!this.s3Storage) {
-                return null;
-            }
-            const r = await this.s3Storage.read(hexPath);
+        const remote = this._getSideStorage(side);
+        if (remote) {
+            const r = await remote.read(hexPath);
             if (!r.exists) {
                 return null;
             }
@@ -1526,9 +1735,9 @@ class AssetStorageManager {
     }
 
     /**
-     * Resolve a database.bin divergence by overwriting both sides with the
-     * user-chosen copy and returning the chosen bytes.
-     * @param {'local'|'s3'} keep
+     * Resolve a database.bin divergence by overwriting all configured sides
+     * with the user-chosen copy and returning the chosen bytes.
+     * @param {'local'|'s3'|'azuresql'} keep
      * @returns {Promise<{bytes: Buffer|null, error?: string}>}
      */
     async resolveDatabaseBinConflict(keep) {
@@ -1540,19 +1749,20 @@ class AssetStorageManager {
             return { bytes: null, error: `Selected side (${keep}) has no database.bin` };
         }
 
-        // Write chosen bytes to both sides so they agree.
-        // Local FS:
+        // Write chosen bytes to local FS.
         try {
             await this.localFs.write(hexPath, chosen);
         } catch (err) {
             return { bytes: chosen, error: `Failed to write local copy: ${err.message}` };
         }
-        // S3 (if configured):
-        if (this.s3Storage) {
+        // Write to any configured remote side.
+        for (const side of ['s3', 'azuresql']) {
+            const remote = this._getSideStorage(side);
+            if (!remote) continue;
             try {
-                await this.s3Storage.write(hexPath, chosen);
+                await remote.write(hexPath, chosen);
             } catch (err) {
-                return { bytes: chosen, error: `Failed to write S3 copy: ${err.message}` };
+                return { bytes: chosen, error: `Failed to write ${side} copy: ${err.message}` };
             }
         }
         return { bytes: chosen };
@@ -1560,11 +1770,13 @@ class AssetStorageManager {
 
     /**
      * Compute SHA-256 hashes of the database.bin stored on the local FS and
-     * on S3 (when configured), so the client can detect a divergence at boot
-     * and prompt the user for which copy to keep.
+     * on each configured remote side (S3 and/or Azure SQL), so the client can
+     * detect a divergence at boot and prompt the user for which copy to keep.
      *
-     * Returns: { activeType, local: { exists, hash, size } | null,
-     *            s3: { exists, hash, size } | null, same: boolean|null }
+     * Returns: {
+     *   activeType, local: {...}|null, s3: {...}|null, azuresql: {...}|null,
+     *   same: boolean|null
+     * }
      */
     async getDatabaseBinHashes() {
         const hashBuffer = (buf) => {
@@ -1577,10 +1789,11 @@ class AssetStorageManager {
             activeType: this.activeStorage.type,
             local: null,
             s3: null,
+            azuresql: null,
             same: null
         };
 
-        // Local FS hash (always available — localFs is always present).
+        // Local FS hash (always available).
         try {
             const buf = await this.readDatabaseBin('local');
             if (buf) {
@@ -1606,14 +1819,682 @@ class AssetStorageManager {
             }
         }
 
-        if (result.local && result.s3) {
-            if (!result.local.exists || !result.s3.exists) {
-                result.same = result.local.exists === result.s3.exists;
+        // Azure SQL hash (only when Azure SQL is configured).
+        if (this.azureSqlStorage) {
+            try {
+                const buf = await this.readDatabaseBin('azuresql');
+                if (buf) {
+                    result.azuresql = { exists: true, hash: hashBuffer(buf), size: buf.length };
+                } else {
+                    result.azuresql = { exists: false, hash: null, size: 0 };
+                }
+            } catch (err) {
+                result.azuresql = { exists: false, hash: null, size: 0, error: err.message };
+            }
+        }
+
+        // Compute `same` across all available sides.
+        const sides = [result.local, result.s3, result.azuresql].filter(Boolean);
+        if (sides.length >= 2) {
+            const allMissing = sides.every(s => !s.exists);
+            if (allMissing) {
+                result.same = true;
+            } else if (sides.some(s => !s.exists)) {
+                result.same = false;
             } else {
-                result.same = result.local.hash === result.s3.hash;
+                const firstHash = sides[0].hash;
+                result.same = sides.every(s => s.hash === firstHash);
             }
         }
         return result;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Azure SQL (Microsoft SQL Server) Asset Storage
+//
+// Stores asset binaries as VARBINARY(MAX) rows in a pair of tables:
+//   asset_files        - original asset blobs (key -> content + meta)
+//   asset_thumbnails  - generated webp thumbnails (key + size -> content)
+//
+// Connection settings are sourced from the AssetStorageManager config
+// (AZURE_ASSET_* environment variables + __azure_asset_config.json) and are
+// intentionally separate from the data-DB azureStorage.cjs which uses the
+// AZURE_* family. This lets operators point asset storage at a different
+// Azure SQL database/server than the structured data storage.
+// ─────────────────────────────────────────────────────────────────────────
+
+function loadMssql() {
+    try {
+        return require('mssql');
+    } catch (err) {
+        throw new Error(`MSSQL support requires the 'mssql' npm package to be installed: ${err.message}`);
+    }
+}
+
+function buildAzureSqlPoolConfig(config) {
+    return {
+        server: config.server,
+        port: parseInt(config.port || '1433', 10),
+        database: config.database,
+        user: config.user,
+        password: config.password,
+        connectionTimeout: 60000,
+        requestTimeout: 300000,
+        options: {
+            encrypt: true,
+            trustServerCertificate: true,
+            enableArithAbort: true,
+        },
+        pool: {
+            max: parseInt(config.poolMax || '10', 10),
+            min: 0,
+            idleTimeoutMillis: 30000,
+        },
+    };
+}
+
+// DDL executed once per init(). IF NOT EXISTS guards keep this idempotent.
+// NVARCHAR(512) primary key accommodates long hex-encoded keys; VARBINARY(MAX)
+// holds up to 2 GiB per row (well beyond typical asset sizes).
+const AZURE_ASSET_SCHEMA_DDL = `
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'asset_files')
+BEGIN
+    CREATE TABLE asset_files (
+        asset_key NVARCHAR(512) NOT NULL CONSTRAINT PK_asset_files PRIMARY KEY,
+        content VARBINARY(MAX) NOT NULL,
+        content_type NVARCHAR(128) NOT NULL DEFAULT 'application/octet-stream',
+        size BIGINT NOT NULL DEFAULT 0,
+        mtime DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+    );
+END
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'asset_thumbnails')
+BEGIN
+    CREATE TABLE asset_thumbnails (
+        asset_key NVARCHAR(512) NOT NULL,
+        width INT NOT NULL,
+        height INT NOT NULL,
+        content VARBINARY(MAX) NOT NULL,
+        content_type NVARCHAR(128) NOT NULL DEFAULT 'image/webp',
+        size BIGINT NOT NULL DEFAULT 0,
+        mtime DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT PK_asset_thumbnails PRIMARY KEY (asset_key, width, height)
+    );
+END
+`;
+
+class AzureSqlAssetStorage {
+    constructor(config, savePath = '') {
+        this.config = {
+            server: config.server || '',
+            database: config.database || '',
+            user: config.user || '',
+            password: config.password || '',
+            port: parseInt(config.port || '1433', 10),
+            poolMax: parseInt(config.poolMax || '10', 10),
+        };
+        this.savePath = savePath || config.savePath || path.join(os.tmpdir(), 'risuai-azuresql-cache');
+        this.thumbDir = path.join(this.savePath, '__azuresql_thumbs');
+        this.type = 'azuresql';
+        this.sql = null;
+        this.pool = null;
+        this.poolPromise = null;
+    }
+
+    static async testConnection(config) {
+        if (!config.server || !config.database || !config.user || !config.password) {
+            return {
+                success: false,
+                bucketExists: false,
+                message: 'Server, database, user, and password are all required.',
+            };
+        }
+        let pool = null;
+        try {
+            const sql = loadMssql();
+            pool = new sql.ConnectionPool(buildAzureSqlPoolConfig({ ...config, poolMax: 1 }));
+            await pool.connect();
+            await pool.request().query('SELECT 1');
+            return {
+                success: true,
+                bucketExists: true,
+                message: `Successfully connected to Azure SQL database "${config.database}" on ${config.server}.`,
+            };
+        } catch (err) {
+            return {
+                success: false,
+                bucketExists: false,
+                message: `Failed to connect to Azure SQL: ${err.message}`,
+            };
+        } finally {
+            if (pool) {
+                try { await pool.close(); } catch {}
+            }
+        }
+    }
+
+    async _getPool() {
+        if (this.pool && this.pool.connected) {
+            return this.pool;
+        }
+        if (this.poolPromise) {
+            return this.poolPromise;
+        }
+        if (!this.sql) {
+            this.sql = loadMssql();
+        }
+        const cfg = buildAzureSqlPoolConfig(this.config);
+        this.poolPromise = (async () => {
+            const p = new this.sql.ConnectionPool(cfg);
+            p.on('error', (err) => {
+                console.error('[AzureSqlAssetStorage] pool error:', err);
+            });
+            await p.connect();
+            this.pool = p;
+            return p;
+        })();
+        try {
+            return await this.poolPromise;
+        } finally {
+            this.poolPromise = null;
+        }
+    }
+
+    async init() {
+        if (!fs.existsSync(this.thumbDir)) {
+            try {
+                fs.mkdirSync(this.thumbDir, { recursive: true });
+            } catch {}
+        }
+        try {
+            const pool = await this._getPool();
+            await pool.request().batch(AZURE_ASSET_SCHEMA_DDL);
+            console.log(`[Storage] Initialized Azure SQL asset storage (${this.config.server}/${this.config.database})`);
+        } catch (err) {
+            console.error(`[Storage] Azure SQL asset init failed: ${err.message}`);
+            throw err;
+        }
+    }
+
+    async close() {
+        if (this.pool) {
+            try { await this.pool.close(); } catch {}
+            this.pool = null;
+        }
+    }
+
+    async read(hexPath) {
+        const key = hexToKey(hexPath);
+        const pool = await this._getPool();
+        const res = await pool.request()
+            .input('key', this.sql.NVarChar(512), key)
+            .query('SELECT content, content_type, size FROM asset_files WHERE asset_key = @key');
+        if (!res.recordset || res.recordset.length === 0) {
+            return { exists: false };
+        }
+        const row = res.recordset[0];
+        const buffer = Buffer.isBuffer(row.content) ? row.content : Buffer.from(row.content);
+        return {
+            exists: true,
+            buffer,
+            contentType: row.content_type || getContentType(key),
+            contentLength: row.size != null ? Number(row.size) : buffer.length,
+        };
+    }
+
+    async readThumbnail(hexPath, options = {}) {
+        const width = options.width || 128;
+        const height = options.height || 128;
+        const key = hexToKey(hexPath);
+        if (!isImageKey(key)) {
+            return this.read(hexPath);
+        }
+
+        // 1. Local disk cache
+        const localThumbPath = path.join(this.thumbDir, `${hexPath}_${width}x${height}.webp`);
+        if (fs.existsSync(localThumbPath)) {
+            try {
+                const stat = await fs.promises.stat(localThumbPath);
+                return {
+                    exists: true,
+                    filePath: localThumbPath,
+                    contentLength: stat.size,
+                    contentType: 'image/webp',
+                };
+            } catch {}
+        }
+
+        // 2. DB thumbnail table
+        const pool = await this._getPool();
+        const thumbRes = await pool.request()
+            .input('key', this.sql.NVarChar(512), key)
+            .input('w', this.sql.Int, width)
+            .input('h', this.sql.Int, height)
+            .query('SELECT content, size FROM asset_thumbnails WHERE asset_key = @key AND width = @w AND height = @h');
+        if (thumbRes.recordset && thumbRes.recordset.length > 0) {
+            const row = thumbRes.recordset[0];
+            const buffer = Buffer.isBuffer(row.content) ? row.content : Buffer.from(row.content);
+            try {
+                if (!fs.existsSync(this.thumbDir)) fs.mkdirSync(this.thumbDir, { recursive: true });
+                await fs.promises.writeFile(localThumbPath, buffer);
+            } catch {}
+            return {
+                exists: true,
+                filePath: localThumbPath,
+                buffer,
+                contentType: 'image/webp',
+                contentLength: buffer.length,
+            };
+        }
+
+        // 3. Generate from original
+        const original = await this.read(hexPath);
+        if (!original.exists || !original.buffer || original.buffer.length === 0) {
+            return { exists: false };
+        }
+        try {
+            const thumbBuffer = await createThumbnailBuffer(original.buffer, width, height);
+            if (thumbBuffer && thumbBuffer.length > 0) {
+                try {
+                    if (!fs.existsSync(this.thumbDir)) fs.mkdirSync(this.thumbDir, { recursive: true });
+                    await fs.promises.writeFile(localThumbPath, thumbBuffer);
+                } catch {}
+                // Persist thumbnail to DB (best-effort)
+                try {
+                    await pool.request()
+                        .input('key', this.sql.NVarChar(512), key)
+                        .input('w', this.sql.Int, width)
+                        .input('h', this.sql.Int, height)
+                        .input('content', this.sql.VarBinary(this.sql.MAX), thumbBuffer)
+                        .input('size', this.sql.BigInt, thumbBuffer.length)
+                        .query(`MERGE asset_thumbnails AS t
+                                USING (SELECT @key AS asset_key, @w AS width, @h AS height) AS s
+                                ON (t.asset_key = s.asset_key AND t.width = s.width AND t.height = s.height)
+                                WHEN MATCHED THEN UPDATE SET content = @content, size = @size, mtime = SYSUTCDATETIME()
+                                WHEN NOT MATCHED THEN INSERT (asset_key, width, height, content, size) VALUES (@key, @w, @h, @content, @size);`);
+                } catch (err) {
+                    console.warn(`[AzureSqlAssetStorage] thumbnail persist failed for "${key}": ${err.message}`);
+                }
+                return {
+                    exists: true,
+                    filePath: localThumbPath,
+                    buffer: thumbBuffer,
+                    contentType: 'image/webp',
+                    contentLength: thumbBuffer.length,
+                };
+            }
+        } catch (err) {
+            console.warn(`[AzureSqlAssetStorage] thumbnail generation error for "${key}":`, err);
+        }
+        return original;
+    }
+
+    async _upsertFile(key, buffer, contentType) {
+        const pool = await this._getPool();
+        await pool.request()
+            .input('key', this.sql.NVarChar(512), key)
+            .input('content', this.sql.VarBinary(this.sql.MAX), buffer)
+            .input('content_type', this.sql.NVarChar(128), contentType)
+            .input('size', this.sql.BigInt, buffer.length)
+            .query(`MERGE asset_files AS t
+                    USING (SELECT @key AS asset_key) AS s
+                    ON (t.asset_key = s.asset_key)
+                    WHEN MATCHED THEN UPDATE SET content = @content, content_type = @content_type, size = @size, mtime = SYSUTCDATETIME()
+                    WHEN NOT MATCHED THEN INSERT (asset_key, content, content_type, size) VALUES (@key, @content, @content_type, @size);`);
+    }
+
+    async write(hexPath, content) {
+        const key = hexToKey(hexPath);
+        const contentType = getContentType(key);
+        const buffer = Buffer.isBuffer(content) || content instanceof Uint8Array
+            ? Buffer.from(content)
+            : Buffer.from(content || '');
+        await this._upsertFile(key, buffer, contentType);
+        if (isImageKey(key)) {
+            this._eagerGenerateThumbnail(hexPath, key, buffer).catch(() => {});
+        }
+        return { success: true };
+    }
+
+    async _eagerGenerateThumbnail(hexPath, key, buffer, width = 128, height = 128) {
+        try {
+            const thumbBuffer = await createThumbnailBuffer(buffer, width, height);
+            if (!thumbBuffer || thumbBuffer.length === 0) return;
+            const localThumbPath = path.join(this.thumbDir, `${hexPath}_${width}x${height}.webp`);
+            try {
+                if (!fs.existsSync(this.thumbDir)) fs.mkdirSync(this.thumbDir, { recursive: true });
+                await fs.promises.writeFile(localThumbPath, thumbBuffer);
+            } catch {}
+            const pool = await this._getPool();
+            await pool.request()
+                .input('key', this.sql.NVarChar(512), key)
+                .input('w', this.sql.Int, width)
+                .input('h', this.sql.Int, height)
+                .input('content', this.sql.VarBinary(this.sql.MAX), thumbBuffer)
+                .input('size', this.sql.BigInt, thumbBuffer.length)
+                .query(`MERGE asset_thumbnails AS t
+                        USING (SELECT @key AS asset_key, @w AS width, @h AS height) AS s
+                        ON (t.asset_key = s.asset_key AND t.width = s.width AND t.height = s.height)
+                        WHEN MATCHED THEN UPDATE SET content = @content, size = @size, mtime = SYSUTCDATETIME()
+                        WHEN NOT MATCHED THEN INSERT (asset_key, width, height, content, size) VALUES (@key, @w, @h, @content, @size);`);
+        } catch {}
+    }
+
+    async writeFromPath(hexPath, sourcePath) {
+        const key = hexToKey(hexPath);
+        const contentType = getContentType(key);
+        let buffer = await fs.promises.readFile(sourcePath);
+        await this._upsertFile(key, buffer, contentType);
+        if (isImageKey(key)) {
+            await this._eagerGenerateThumbnail(hexPath, key, buffer).catch(() => {});
+        }
+        await fs.promises.unlink(sourcePath).catch(() => {});
+        return { success: true };
+    }
+
+    createWriteStream(hexPath) {
+        const key = hexToKey(hexPath);
+        const contentType = getContentType(key);
+        const passThrough = new stream.PassThrough();
+        const chunks = [];
+        passThrough.on('data', (chunk) => {
+            if (chunks.length < 100) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        const donePromise = (async () => {
+            // Drain the stream fully before persisting.
+            await new Promise((resolve, reject) => {
+                passThrough.on('finish', resolve);
+                passThrough.on('error', reject);
+            });
+            const fullBuffer = Buffer.concat(chunks);
+            await this._upsertFile(key, fullBuffer, contentType);
+            if (isImageKey(key) && fullBuffer.length > 0) {
+                await this._eagerGenerateThumbnail(hexPath, key, fullBuffer).catch(() => {});
+            }
+            return { success: true };
+        })();
+        return {
+            stream: passThrough,
+            done: () => donePromise,
+            abort: async () => {
+                passThrough.destroy();
+            },
+        };
+    }
+
+    async remove(hexPaths) {
+        const paths = Array.isArray(hexPaths) ? hexPaths : [hexPaths];
+        if (paths.length === 0) return { success: true };
+
+        // Clean local thumbnail cache
+        if (fs.existsSync(this.thumbDir)) {
+            try {
+                const thumbFiles = await fs.promises.readdir(this.thumbDir);
+                for (const hp of paths) {
+                    for (const tf of thumbFiles) {
+                        if (tf.startsWith(hp)) {
+                            await fs.promises.rm(path.join(this.thumbDir, tf)).catch(() => {});
+                        }
+                    }
+                }
+            } catch {}
+        }
+
+        const keys = paths.map(p => hexToKey(p));
+        const pool = await this._getPool();
+
+        // Build an in-clause with parameters (avoid plain-string interpolation).
+        // MSSQL doesn't support arrays natively; we emit one param per key.
+        if (keys.length === 1) {
+            await pool.request()
+                .input('key', this.sql.NVarChar(512), keys[0])
+                .query('DELETE FROM asset_files WHERE asset_key = @key');
+            await pool.request()
+                .input('key', this.sql.NVarChar(512), keys[0])
+                .query('DELETE FROM asset_thumbnails WHERE asset_key = @key');
+        } else {
+            const placeholders = keys.map((_, i) => `@k${i}`).join(',');
+            const req1 = pool.request();
+            const req2 = pool.request();
+            keys.forEach((k, i) => {
+                req1.input(`k${i}`, this.sql.NVarChar(512), k);
+                req2.input(`k${i}`, this.sql.NVarChar(512), k);
+            });
+            await req1.query(`DELETE FROM asset_files WHERE asset_key IN (${placeholders})`);
+            await req2.query(`DELETE FROM asset_thumbnails WHERE asset_key IN (${placeholders})`);
+        }
+        return { success: true };
+    }
+
+    async list() {
+        const pool = await this._getPool();
+        const res = await pool.request().query('SELECT asset_key FROM asset_files ORDER BY asset_key');
+        return (res.recordset || []).map(r => r.asset_key);
+    }
+
+    async exists(hexPath) {
+        const key = hexToKey(hexPath);
+        const pool = await this._getPool();
+        const res = await pool.request()
+            .input('key', this.sql.NVarChar(512), key)
+            .query('SELECT TOP 1 1 AS hit FROM asset_files WHERE asset_key = @key');
+        return !!(res.recordset && res.recordset.length > 0);
+    }
+
+    async getStats() {
+        const pool = await this._getPool();
+        const res = await pool.request().query('SELECT COUNT(*) AS total_objects, ISNULL(SUM(size), 0) AS total_size FROM asset_files');
+        const row = (res.recordset && res.recordset[0]) || {};
+        return {
+            storageType: 'azuresql',
+            bucketName: this.config.database,
+            endpoint: this.config.server,
+            totalObjects: Number(row.total_objects) || 0,
+            totalSizeBytes: Number(row.total_size) || 0,
+        };
+    }
+
+    async getAssetDetails() {
+        const pool = await this._getPool();
+        const res = await pool.request().query('SELECT asset_key, size, mtime FROM asset_files ORDER BY asset_key');
+        const assets = (res.recordset || []).map(r => ({
+            key: r.asset_key,
+            size: Number(r.size) || 0,
+            mtime: r.mtime ? new Date(r.mtime).getTime() : Date.now(),
+        }));
+        let totalSizeBytes = 0;
+        for (const a of assets) totalSizeBytes += a.size;
+        return {
+            storageType: 'azuresql',
+            bucketName: this.config.database,
+            endpoint: this.config.server,
+            totalObjects: assets.length,
+            totalSizeBytes,
+            assets,
+        };
+    }
+
+    async migrateFromLocal(savePath, onProgress) {
+        if (!fs.existsSync(savePath)) {
+            return { total: 0, migrated: 0, skipped: 0, errors: [] };
+        }
+        const entries = await fs.promises.readdir(savePath);
+        const hexEntries = entries.filter(e => !e.startsWith('__') && isHex(e));
+        const total = hexEntries.length;
+
+        // Fetch existing keys once to skip already-migrated files.
+        let existingKeys = null;
+        const skipExistsCheck = process.env.RISUAI_MIGRATE_SKIP_EXISTS_CHECK === '1'
+            || process.env.RISUAI_MIGRATE_SKIP_EXISTS_CHECK === 'true';
+        if (!skipExistsCheck) {
+            try {
+                const listed = await this.list();
+                existingKeys = listed.length === 0 ? null : new Set(listed);
+            } catch {
+                existingKeys = null;
+            }
+        }
+
+        let migrated = 0;
+        let skipped = 0;
+        let completed = 0;
+        const errors = [];
+        let lastProgressSent = 0;
+
+        const sendProgress = (currentKey) => {
+            if (!onProgress) return;
+            const now = Date.now();
+            const isFinal = completed >= total;
+            if (!isFinal && now - lastProgressSent < MIGRATE_PROGRESS_INTERVAL_MS) return;
+            lastProgressSent = now;
+            onProgress({
+                current: completed,
+                total,
+                migrated,
+                skipped,
+                percentage: total > 0 ? Math.round((completed / total) * 100) : 100,
+                currentKey,
+            });
+        };
+
+        const worker = async (hexName) => {
+            const key = hexToKey(hexName);
+            try {
+                const filePath = path.join(savePath, hexName);
+                const stat = await fs.promises.stat(filePath);
+                if (!stat.isFile()) return;
+                if (existingKeys && existingKeys.has(key) && key !== 'database/database.bin') {
+                    skipped++;
+                    return;
+                }
+                const contentType = getContentType(key);
+                const data = await fs.promises.readFile(filePath);
+                await this._upsertFile(key, data, contentType);
+                migrated++;
+            } catch (err) {
+                errors.push(`Failed to migrate ${key}: ${err.message}`);
+            } finally {
+                completed++;
+                sendProgress(key);
+            }
+        };
+
+        await runWithConcurrency(hexEntries, worker, MIGRATE_CONCURRENCY);
+        sendProgress('');
+        return { total, migrated, skipped, errors };
+    }
+
+    async rollbackToLocal(savePath, onProgress) {
+        if (!fs.existsSync(savePath)) {
+            fs.mkdirSync(savePath, { recursive: true });
+        }
+        const keys = await this.list();
+        const total = keys.length;
+
+        let downloaded = 0;
+        let completed = 0;
+        let lastProgressSent = 0;
+        const errors = [];
+
+        const sendProgress = (currentKey) => {
+            if (!onProgress) return;
+            const now = Date.now();
+            const isFinal = completed >= total;
+            if (!isFinal && now - lastProgressSent < MIGRATE_PROGRESS_INTERVAL_MS) return;
+            lastProgressSent = now;
+            onProgress({
+                current: completed,
+                total,
+                downloaded,
+                percentage: total > 0 ? Math.round((completed / total) * 100) : 100,
+                currentKey,
+            });
+        };
+
+        const worker = async (key) => {
+            const hexName = keyToHex(key);
+            try {
+                const localFilePath = path.join(savePath, hexName);
+                const result = await this.read(hexName);
+                if (result.exists && result.buffer) {
+                    await fs.promises.writeFile(localFilePath, result.buffer);
+                    downloaded++;
+                }
+            } catch (err) {
+                errors.push(`Failed to rollback ${key}: ${err.message}`);
+            } finally {
+                completed++;
+                sendProgress(key);
+            }
+        };
+
+        await runWithConcurrency(keys, worker, MIGRATE_CONCURRENCY);
+        sendProgress('');
+        return { total, downloaded, errors };
+    }
+
+    async generateMissingThumbnails(onProgress) {
+        const pool = await this._getPool();
+        // Image files that have no thumbnail row yet.
+        const imageKeysRes = await pool.request().query(`SELECT f.asset_key
+            FROM asset_files f
+            WHERE (f.content_type LIKE 'image/%' OR f.asset_key LIKE '%.png' OR f.asset_key LIKE '%.jpg'
+                   OR f.asset_key LIKE '%.jpeg' OR f.asset_key LIKE '%.webp' OR f.asset_key LIKE '%.gif'
+                   OR f.asset_key LIKE '%.avif' OR f.asset_key LIKE '%.apng' OR f.asset_key LIKE '%.bmp'
+                   OR f.asset_key LIKE '%.svg' OR f.asset_key LIKE '%.ico' OR f.asset_key LIKE '%.tiff'
+                   OR f.asset_key LIKE '%.tif')
+            ORDER BY f.asset_key`);
+        const allImageKeys = (imageKeysRes.recordset || []).map(r => r.asset_key);
+
+        const thumbRes = await pool.request().query('SELECT DISTINCT asset_key FROM asset_thumbnails');
+        const existingThumbs = new Set((thumbRes.recordset || []).map(r => r.asset_key));
+
+        const total = allImageKeys.length;
+        let created = 0;
+        let skipped = 0;
+        const errors = [];
+
+        for (let i = 0; i < allImageKeys.length; i++) {
+            const key = allImageKeys[i];
+            const hexPath = keyToHex(key);
+            if (existingThumbs.has(key)) {
+                skipped++;
+            } else {
+                try {
+                    const original = await this.read(hexPath);
+                    if (original.exists && original.buffer && original.buffer.length > 0) {
+                        const thumbBuffer = await createThumbnailBuffer(original.buffer, 128, 128);
+                        if (thumbBuffer && thumbBuffer.length > 0) {
+                            await this._eagerGenerateThumbnail(hexPath, key, thumbBuffer, 128, 128).catch(() => {});
+                            try {
+                                const localThumbPath = path.join(this.thumbDir, `${hexPath}_128x128.webp`);
+                                if (!fs.existsSync(this.thumbDir)) fs.mkdirSync(this.thumbDir, { recursive: true });
+                                await fs.promises.writeFile(localThumbPath, thumbBuffer);
+                            } catch {}
+                            created++;
+                        } else {
+                            errors.push(`Failed to generate thumbnail for ${key}`);
+                        }
+                    } else {
+                        errors.push(`Could not read original file for ${key}`);
+                    }
+                } catch (err) {
+                    errors.push(`Error generating thumbnail for ${key}: ${err.message}`);
+                }
+            }
+            if (onProgress && (i % 5 === 0 || i === allImageKeys.length - 1)) {
+                onProgress({
+                    type: 'progress',
+                    current: i + 1,
+                    total,
+                    created,
+                    skipped,
+                    percentage: total > 0 ? Math.round(((i + 1) / total) * 100) : 100,
+                    currentKey: key,
+                });
+            }
+        }
+        return { total, created, skipped, errors };
     }
 }
 
@@ -1627,5 +2508,7 @@ module.exports = {
     runWithConcurrency,
     LocalFsStorage,
     S3AssetStorage,
-    AssetStorageManager
+    AzureSqlAssetStorage,
+    AssetStorageManager,
+    AZURE_ASSET_SCHEMA_DDL,
 };

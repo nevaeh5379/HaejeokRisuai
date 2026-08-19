@@ -1,6 +1,8 @@
+export type AssetStorageType = 'fs' | 's3' | 'azuresql'
+
 export interface NodeS3ServerConfig {
     enabled: boolean
-    storageType: 'fs' | 's3'
+    storageType: AssetStorageType
     endpoint: string
     bucket: string
     region: string
@@ -10,10 +12,20 @@ export interface NodeS3ServerConfig {
     hasSecretAccessKey: boolean
     accessKeyDisplay: string
     managedByEnvironment: boolean
+    // Azure SQL asset storage fields (populated regardless of active backend
+    // so the UI can display/switch to Azure SQL without a round-trip).
+    azureServer: string
+    azureDatabase: string
+    azureUser: string
+    azurePort: number
+    hasAzurePassword: boolean
+    azureManagedByEnvironment: boolean
+    s3ManagedByEnvironment: boolean
 }
 
 export interface NodeS3ServerConfigUpdate {
     enabled: boolean
+    storageType?: AssetStorageType
     endpoint?: string
     bucket?: string
     accessKeyId?: string
@@ -21,6 +33,12 @@ export interface NodeS3ServerConfigUpdate {
     region?: string
     forcePathStyle?: boolean
     autoCreateBucket?: boolean
+    // Azure SQL asset storage fields
+    azureServer?: string
+    azureDatabase?: string
+    azureUser?: string
+    azurePassword?: string
+    azurePort?: number
 }
 
 export interface NodeS3TestResult {
@@ -30,7 +48,7 @@ export interface NodeS3TestResult {
 }
 
 export interface NodeS3Stats {
-    storageType: 'fs' | 's3'
+    storageType: AssetStorageType
     bucketName?: string
     endpoint?: string
     totalObjects: number
@@ -58,9 +76,10 @@ export interface NodeS3ThumbnailsResult {
 }
 
 export interface NodeStorageSummary {
-    activeType: 'fs' | 's3'
+    activeType: AssetStorageType
     localFs: NodeS3Stats
     s3: NodeS3Stats | null
+    azuresql: NodeS3Stats | null
     config: NodeS3ServerConfig
 }
 
@@ -71,7 +90,7 @@ export interface NodeStorageAssetItem {
 }
 
 export interface NodeStorageAssetDetails {
-    storageType: 'fs' | 's3'
+    storageType: AssetStorageType
     bucketName?: string
     endpoint?: string
     totalObjects: number
@@ -92,9 +111,10 @@ export interface NodeS3ProgressEvent {
 }
 
 export interface NodeDatabaseBinHashes {
-    activeType: 'fs' | 's3'
+    activeType: AssetStorageType
     local: { exists: boolean; hash: string | null; size: number; error?: string } | null
     s3: { exists: boolean; hash: string | null; size: number; error?: string } | null
+    azuresql: { exists: boolean; hash: string | null; size: number; error?: string } | null
     same: boolean | null
 }
 
@@ -184,7 +204,7 @@ export class NodeS3Storage {
         return await response.json()
     }
 
-    async resolveDatabaseBinConflict(keep: 'local' | 's3'): Promise<{ ok: boolean; size: number; error?: string }> {
+    async resolveDatabaseBinConflict(keep: 'local' | 's3' | 'azuresql'): Promise<{ ok: boolean; size: number; error?: string }> {
         const response = await fetch(`/api/db-resolve?keep=${keep}`, {
             method: 'POST',
             headers: await this.authHeaders()
@@ -362,7 +382,7 @@ export class NodeS3Storage {
         return await response.json()
     }
 
-    async getAssetDetails(target: 'active' | 'fs' | 's3' = 'active'): Promise<NodeStorageAssetDetails> {
+    async getAssetDetails(target: 'active' | 'fs' | 's3' | 'azuresql' = 'active'): Promise<NodeStorageAssetDetails> {
         const url = target === 'active' ? '/api/s3-asset-details' : `/api/s3-asset-details?target=${target}`
         const response = await fetch(url, {
             method: 'GET',
@@ -375,7 +395,7 @@ export class NodeS3Storage {
         return await response.json()
     }
 
-    async deleteAssetKeys(keys: string[], target: 'active' | 'fs' | 's3' = 'active'): Promise<{ deleted: number }> {
+    async deleteAssetKeys(keys: string[], target: 'active' | 'fs' | 's3' | 'azuresql' = 'active'): Promise<{ deleted: number }> {
         const response = await fetch('/api/storage-assets-delete', {
             method: 'POST',
             body: JSON.stringify({ keys, target }),

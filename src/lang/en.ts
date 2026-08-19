@@ -1914,9 +1914,21 @@ export const languageEnglish = {
     cachedDatabaseLabel: "Cached database.bin",
     backupLabelFormat: (date: string) => `Backup (${date})`,
     cacheRecoveryCancelled: "Database initialization was cancelled.",
-    dbConflictPrompt: "The local and S3 copies of database.bin differ. Choose which one to keep (the other will be overwritten).",
+    dbConflictPrompt: "The local and remote copies of database.bin differ. Choose which one to keep (the other will be overwritten).",
     dbConflictUseLocal: (size: number, hash: string) => `Use local copy (${(size / 1024).toFixed(1)} KiB, sha256 ${hash}…)`,
-    dbConflictUseS3: (size: number, hash: string) => `Use S3 copy (${(size / 1024).toFixed(1)} KiB, sha256 ${hash}…)`
+    dbConflictUseS3: (size: number, hash: string) => `Use S3 copy (${(size / 1024).toFixed(1)} KiB, sha256 ${hash}…)`,
+    dbConflictUseAzureSql: (size: number, hash: string) => `Use Azure SQL copy (${(size / 1024).toFixed(1)} KiB, sha256 ${hash}…)`,
+    useAzureSqlStorage: "Use Azure SQL (MSSQL) Storage",
+    azureSqlHost: "Azure SQL Server Host",
+    azureSqlDatabase: "Database Name",
+    azureSqlUser: "Username",
+    azureSqlPassword: "Password",
+    azureSqlPort: "Port",
+    azureSqlConnectionSuccess: "Azure SQL connection successful",
+    azureSqlConnectionFailed: "Azure SQL connection failed",
+    azureSqlStorageMigrateFromLocal: "Migrate local FS → Azure SQL",
+    azureSqlStorageRollbackToLocal: "Rollback Azure SQL → local FS",
+    azureSqlManagedByEnv: "Azure SQL asset storage is managed by environment variables and cannot be changed here."
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;

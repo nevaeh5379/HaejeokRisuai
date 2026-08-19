@@ -362,58 +362,75 @@ async function resolveDatabaseBinConflict(): Promise<boolean> {
         console.error('db-hash probe failed', error)
         return false
     }
-    // Only S3-backed setups can diverge; s3 === null means S3 is disabled.
-    if (!hashes.s3 || hashes.same === null || hashes.same === true) {
+    // Only remote-backed setups can diverge; both null means no remote is configured.
+    const remoteHashes = [hashes.s3, hashes.azuresql].filter((h): h is NonNullable<typeof h> => Boolean(h))
+    if (remoteHashes.length === 0 || hashes.same === null || hashes.same === true) {
         return false
     }
     const localExists = hashes.local?.exists === true
-    const s3Exists = hashes.s3.exists === true
-    if (!localExists && !s3Exists) {
+    // Collect all sides that have a copy (local + any remote).
+    const sides: { label: string; keep: 'local' | 's3' | 'azuresql'; exists: boolean; size: number; hashShort: string }[] = []
+    {
+        const localSize = hashes.local?.size ?? 0
+        const localHashShort = (hashes.local?.hash || '').slice(0, 12)
+        sides.push({
+            label: language.dbConflictUseLocal(localSize, localHashShort),
+            keep: 'local',
+            exists: localExists,
+            size: localSize,
+            hashShort: localHashShort,
+        })
+    }
+    if (hashes.s3) {
+        const s3Exists = hashes.s3.exists === true
+        const s3Size = hashes.s3.size ?? 0
+        const s3HashShort = (hashes.s3.hash || '').slice(0, 12)
+        sides.push({
+            label: language.dbConflictUseS3(s3Size, s3HashShort),
+            keep: 's3',
+            exists: s3Exists,
+            size: s3Size,
+            hashShort: s3HashShort,
+        })
+    }
+    if (hashes.azuresql) {
+        const azExists = hashes.azuresql.exists === true
+        const azSize = hashes.azuresql.size ?? 0
+        const azHashShort = (hashes.azuresql.hash || '').slice(0, 12)
+        sides.push({
+            label: language.dbConflictUseAzureSql(azSize, azHashShort),
+            keep: 'azuresql',
+            exists: azExists,
+            size: azSize,
+            hashShort: azHashShort,
+        })
+    }
+    const anyExists = sides.some(s => s.exists)
+    if (!anyExists) {
         return false
     }
-    if (!localExists || !s3Exists) {
-        // One side is missing — no content conflict to ask about; the loader
-        // will simply read whichever side has data.
+    // If only one side has data, there is no content conflict to resolve.
+    const existsCount = sides.filter(s => s.exists).length
+    if (existsCount <= 1) {
         return false
     }
 
-    const localSize = hashes.local?.size ?? 0
-    const s3Size = hashes.s3.size ?? 0
-    const localHashShort = (hashes.local?.hash || '').slice(0, 12)
-    const s3HashShort = (hashes.s3.hash || '').slice(0, 12)
-
-    const options = [
-        language.dbConflictUseLocal(localSize, localHashShort),
-        language.dbConflictUseS3(s3Size, s3HashShort),
-        language.cancel
-    ]
+    const options = [...sides.map(s => s.label), language.cancel]
     const choice = await alertSelect(options, language.dbConflictPrompt)
     const idx = parseInt(choice, 10)
 
-    if (idx === 0) {
-        // Keep local -> server overwrites S3 copy with local bytes.
+    if (idx >= 0 && idx < sides.length) {
+        const chosen = sides[idx]
         try {
-            await nodeStorage.s3.resolveDatabaseBinConflict('local')
+            await nodeStorage.s3.resolveDatabaseBinConflict(chosen.keep)
         } catch (error) {
-            console.error('db-resolve (local) failed', error)
-            alertError(error)
-            return false
-        }
-        // Clear any cached database.bin so the next read reflects the
-        // freshly-synchronised S3 copy.
-        return true
-    } else if (idx === 1) {
-        // Keep S3 -> server overwrites local copy with S3 bytes.
-        try {
-            await nodeStorage.s3.resolveDatabaseBinConflict('s3')
-        } catch (error) {
-            console.error('db-resolve (s3) failed', error)
+            console.error(`db-resolve (${chosen.keep}) failed`, error)
             alertError(error)
             return false
         }
         return true
     }
-    // Cancel: fall through to normal load (uses active storage = S3 by default).
+    // Cancel: fall through to normal load.
     return false
 }
 
