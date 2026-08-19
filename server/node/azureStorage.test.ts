@@ -172,6 +172,130 @@ describe('Azure SQL Codec & Relational Mapping Consistency', () => {
     })
 })
 
+// Lightweight mssql mock that records every SQL statement executed against a
+// transaction/pool, so we can assert on the direction of prune DELETEs emitted
+// by AzureStorage.sync() without standing up a real SQL Server.
+function makeRecordingMssqlMock() {
+    const queries: string[] = []
+
+    function record(sqlText: string) {
+        queries.push(sqlText.trim().replace(/\s+/g, ' '))
+        return { recordset: [] }
+    }
+
+    class MockRequest {
+        params: Record<string, any> = {}
+        input(name: string, _t: any, v?: any) {
+            this.params[name] = v !== undefined ? v : _t
+            return this
+        }
+        async query(sqlText: string) { return record(sqlText) }
+        async batch(sqlText: string) { return record(sqlText) }
+    }
+
+    class MockTransaction {
+        constructor(public parent: any) {}
+        async begin() {}
+        async commit() {}
+        async rollback() {}
+        request() { return new MockRequest() }
+    }
+
+    const sql: any = {
+        NVarChar: (len: any) => ({ type: 'NVarChar', length: len }),
+        VarBinary: (len: any) => ({ type: 'VarBinary', length: len }),
+        Int: { type: 'Int' },
+        BigInt: { type: 'BigInt' },
+        Bit: { type: 'Bit' },
+        Float: { type: 'Float' },
+        MAX: 'max',
+        ConnectionPool: class MockConnectionPool {
+            connected = true
+            request() { return new MockRequest() }
+            on() {}
+            async connect() { this.connected = true; return this }
+            async close() { this.connected = false }
+        },
+        Transaction: MockTransaction,
+    }
+
+    return { sql, queries }
+}
+
+describe('AzureStorage.sync() manifest-based pruning', () => {
+    it('prunes characters/chats/messages NOT IN the manifest (not IN it)', async () => {
+        const { sql, queries } = makeRecordingMssqlMock()
+
+        // Patch the module-local `sql` reference by constructing AzureStorage
+        // and overriding its getPool to return a pool that uses our mock.
+        const storage = new AzureStorage({ server: 'dummy.database.windows.net' })
+        // @ts-ignore — inject mock mssql
+        storage.pool = new sql.ConnectionPool({})
+        storage.pool.connected = true
+
+        // withTransaction must run the callback against a mock transaction whose
+        // request() returns a request that (a) returns revision 5 for the meta
+        // SELECT, (b) returns an id for the revision INSERT, and (c) records all
+        // other SQL for our assertions.
+        class RecordingRequest {
+            params: Record<string, any> = {}
+            input(name: string, _t: any, v?: any) { this.params[name] = v !== undefined ? v : _t; return this }
+            async query(q: string) {
+                const t = q.trim().replace(/\s+/g, ' ')
+                queries.push(t)
+                if (/SELECT revision, initialized FROM \[system\]\.\[storage_meta\]/i.test(q)) {
+                    return { recordset: [{ revision: 5, initialized: true }] }
+                }
+                if (/INSERT INTO \[system\]\.\[revisions\]/i.test(q)) {
+                    return { recordset: [{ id: 1 }] }
+                }
+                return { recordset: [] }
+            }
+            async batch(q: string) { queries.push(q.trim().replace(/\s+/g, ' ')); return { recordset: [] } }
+        }
+        class MockTx {
+            request() { return new RecordingRequest() }
+            async begin() {}
+            async commit() {}
+            async rollback() {}
+        }
+        ;(storage as any).withTransaction = async (cb: any) => cb(new MockTx())
+        ;(storage as any).getPool = async () => storage.pool
+
+        const payload = {
+            baseRevision: 5,
+            root: { upserts: [], deletes: [] },
+            characters: [],
+            characterIds: ['char-a', 'char-b'],
+            chats: [],
+            chatManifests: [
+                { characterId: 'char-a', ids: ['chat-1', 'chat-2'] },
+                { characterId: 'char-b', ids: [] },
+            ],
+            messages: [],
+            messageManifests: [
+                { chatId: 'chat-1', ids: ['msg-1'] },
+            ],
+        }
+
+        await storage.sync(payload)
+
+        const joined = queries.join('\n')
+
+        // Character pruning must keep manifest members (NOT IN), never delete them (IN).
+        expect(joined).toMatch(/DELETE FROM \[character\]\.\[characters\] WHERE id NOT IN \('char-a', 'char-b'\)/)
+        expect(joined).not.toMatch(/DELETE FROM \[character\]\.\[characters\] WHERE id IN \('char-a', 'char-b'\)/)
+
+        // Chat pruning uses NOT IN with the manifest ids for each character.
+        expect(joined).toMatch(/DELETE FROM \[chat\]\.\[chats\] WHERE character_id = @chat_manifest_character_id AND id NOT IN \('chat-1', 'chat-2'\)/)
+        // An empty manifest must delete ALL chats for that character (no NOT IN clause).
+        expect(joined).toMatch(/DELETE FROM \[chat\]\.\[chats\] WHERE character_id = @chat_manifest_character_id;/)
+
+        // Message pruning uses NOT IN with the manifest ids for each chat.
+        expect(joined).toMatch(/DELETE FROM \[chat\]\.\[messages\] WHERE chat_id = @msg_manifest_chat_id AND id NOT IN \('msg-1'\)/)
+    })
+})
+
 describe('AzureStorage Server Interface Compatibility', () => {
     it('implements all methods required by server.cjs and storageDriver', () => {
         const storage = new AzureStorage({ server: 'dummy.database.windows.net' })

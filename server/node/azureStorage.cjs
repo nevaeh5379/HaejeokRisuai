@@ -1221,8 +1221,50 @@ class AzureStorage {
             if (payload.replaceAll) {
                 await tx.request().query('DELETE FROM [character].[characters];');
             } else if (payload.characterIds && payload.characterIds.length > 0) {
+                // characterIds is the full manifest of characters that should exist.
+                // Delete characters NOT in the manifest (i.e. removed on the client).
+                // ON DELETE CASCADE on chat.chats.character_id and chat.messages.chat_id
+                // propagates the removal to chats and messages.
                 const charIdsList = payload.characterIds.map((id) => `'${id.replace(/'/g, "''")}'`).join(', ');
-                await tx.request().query(`DELETE FROM [character].[characters] WHERE id IN (${charIdsList});`);
+                await tx.request().query(`DELETE FROM [character].[characters] WHERE id NOT IN (${charIdsList});`);
+            }
+
+            // Prune chats/messages removed on the client using the manifests.
+            // payload.chatManifests / payload.messageManifests carry the full list of
+            // ids that should remain for each parent; anything else must be deleted.
+            if (!payload.replaceAll) {
+                for (const manifest of payload.chatManifests) {
+                    const chatIdsList = manifest.ids.length > 0
+                        ? manifest.ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(', ')
+                        : null;
+                    const chatReq = tx.request();
+                    chatReq.input('chat_manifest_character_id', sql.NVarChar(450), manifest.characterId);
+                    if (chatIdsList) {
+                        await chatReq.query(
+                            `DELETE FROM [chat].[chats] WHERE character_id = @chat_manifest_character_id AND id NOT IN (${chatIdsList});`
+                        );
+                    } else {
+                        await chatReq.query(
+                            `DELETE FROM [chat].[chats] WHERE character_id = @chat_manifest_character_id;`
+                        );
+                    }
+                }
+                for (const manifest of payload.messageManifests) {
+                    const msgIdsList = manifest.ids.length > 0
+                        ? manifest.ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(', ')
+                        : null;
+                    const msgReq = tx.request();
+                    msgReq.input('msg_manifest_chat_id', sql.NVarChar(450), manifest.chatId);
+                    if (msgIdsList) {
+                        await msgReq.query(
+                            `DELETE FROM [chat].[messages] WHERE chat_id = @msg_manifest_chat_id AND id NOT IN (${msgIdsList});`
+                        );
+                    } else {
+                        await msgReq.query(
+                            `DELETE FROM [chat].[messages] WHERE chat_id = @msg_manifest_chat_id;`
+                        );
+                    }
+                }
             }
 
             if (payload.characters && payload.characters.length > 0) {
