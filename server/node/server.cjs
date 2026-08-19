@@ -46,6 +46,15 @@ const {
     createServerStorage,
     loadOracleEnvFile,
     readOracleConfigFromEnv,
+    readStoredDbConfig,
+    writeStoredDbConfig,
+    getDbConfigPath,
+    normalizeVendorParams,
+    isVendorConfigComplete,
+    testConnection,
+    applyDbConfig,
+    isStorageManagedByEnvironment,
+    SUPPORTED_VENDORS,
 } = require('./storageDriver.cjs');
 const {
     AssetStorageManager,
@@ -194,6 +203,9 @@ if(!existsSync(savePath)){
 
 const postgresConfigPath = path.join(savePath, '__postgres_config.json');
 const postgresManagedByEnvironment = Boolean(process.env.DATABASE_URL);
+// 저장소가 환경 변수로 관리되는지 (세 vendor 공통)
+// dbVendor는 아래 createServerStorage 후에 확정되므로, 초기값은 postgresManagedByEnvironment로.
+let storageManagedByEnvironment = postgresManagedByEnvironment;
 const postgresConfigExists = existsSync(postgresConfigPath);
 const postgresBootstrapUrl = process.env.RISU_POSTGRES_BOOTSTRAP_URL || '';
 
@@ -234,10 +246,13 @@ let postgresServerConfig = postgresManagedByEnvironment
 
 // 저장소 드라이버: vendor(postgres/oracle)에 따른 구현체 생성.
 // 기존 postgresStorage 호환성: postgresStorage 변수는 팩토리 결과의 .storage를 가리킴.
-const { storage: postgresStorage, vendor: dbVendor } = createServerStorage(savePath, {
+// applyDbConfig API로 재할당되므로 let 선언.
+let { storage: postgresStorage, vendor: dbVendor } = createServerStorage(savePath, {
     // 기존 PostgreSQL 설정 호환성
     postgresConfig: postgresServerConfig,
 });
+// vendor 확정 후 환경 변수 관리 여부 갱신
+storageManagedByEnvironment = isStorageManagedByEnvironment(dbVendor);
 
 const assetStorageManager = new AssetStorageManager(savePath);
 
@@ -387,7 +402,8 @@ async function getPostgresConfigResponse() {
     return {
         enabled: postgresStorage.enabled,
         configured: Boolean(postgresServerConfig.connectionString),
-        managedByEnvironment: postgresManagedByEnvironment,
+        managedByEnvironment: storageManagedByEnvironment,
+        vendor: dbVendor,
         connectionDisplay: maskPostgresConnectionString(postgresServerConfig.connectionString),
         poolMax: postgresServerConfig.poolMax,
         revision,
@@ -2276,6 +2292,217 @@ app.post('/api/postgres-config', authenticatedRouteLimiter, async (req, res, nex
     }
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 범용 DB 설정 API (postgres / oracle / azure 공통)
+// /api/db-config: 현재 vendor, enabled, 마스킹된 연결 정보 반환
+// /api/db-config POST: vendor + params + migrate 설정 적용 후 storage 재생성
+// /api/db-config/test: 전달된 파라미터로 연결 테스트
+// /api/database-v2/migrate-legacy: 명시적 로컬→SQL 마이그레이션 트리거
+// ─────────────────────────────────────────────────────────────────────────────
+
+function maskSecret(value) {
+    if (!value || typeof value !== 'string') return '';
+    if (value.length <= 8) return '****';
+    return value.slice(0, 4) + '****' + value.slice(-4);
+}
+
+function getDbConfigResponse() {
+    const stored = readStoredDbConfig(savePath);
+    const params = stored.params || {};
+    // vendor별 마스킹된 params 구성
+    const maskedParams = {};
+    if (stored.vendor === 'postgres') {
+        maskedParams.connectionString = maskPostgresConnectionString(params.connectionString || '');
+        maskedParams.poolMax = params.poolMax || 10;
+    } else if (stored.vendor === 'oracle') {
+        maskedParams.user = params.user || '';
+        maskedParams.tnsAlias = params.tnsAlias || '';
+        maskedParams.walletPath = params.walletPath || '';
+        maskedParams.poolMax = params.poolMax || 10;
+        // password/walletPassword는 마스킹
+        maskedParams.hasPassword = Boolean(params.password);
+        maskedParams.hasWalletPassword = Boolean(params.walletPassword);
+    } else if (stored.vendor === 'azure') {
+        maskedParams.server = params.server || '';
+        maskedParams.database = params.database || '';
+        maskedParams.user = params.user || '';
+        maskedParams.port = params.port || 1433;
+        maskedParams.poolMax = params.poolMax || 10;
+        maskedParams.hasPassword = Boolean(params.password);
+    }
+    return {
+        vendor: dbVendor,
+        enabled: postgresStorage.enabled,
+        configured: isVendorConfigComplete(dbVendor, params) || postgresStorage.enabled,
+        managedByEnvironment: storageManagedByEnvironment,
+        revision: null,
+        initialized: false,
+        params: maskedParams,
+        storedVendor: stored.vendor,
+    };
+}
+
+app.get('/api/db-config', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    try {
+        let revision = null;
+        let initialized = false;
+        if (postgresStorage.enabled) {
+            try {
+                const state = await postgresStorage.getState();
+                revision = state.revision;
+                initialized = state.initialized;
+            } catch (e) {
+                // storage가 초기화되지 않았을 수 있음
+            }
+        }
+        const resp = getDbConfigResponse();
+        resp.revision = revision;
+        resp.initialized = initialized;
+        res.send(resp);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/db-config/test', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!isSecurePostgresConfigRequest(req)) {
+        res.status(403).send({
+            error: 'DB configuration test requires HTTPS or a localhost connection',
+            code: 'secure_transport_required',
+        });
+        return;
+    }
+    try {
+        const vendor = req.body?.vendor;
+        const params = req.body?.params || {};
+        if (!SUPPORTED_VENDORS.includes(vendor)) {
+            res.status(400).send({ success: false, error: `Unsupported vendor: ${vendor}` });
+            return;
+        }
+        const result = await testConnection(vendor, params);
+        res.send(result);
+    } catch (error) {
+        res.send({ success: false, error: error.message || String(error) });
+    }
+});
+
+app.post('/api/db-config', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (storageManagedByEnvironment) {
+        res.status(403).send({
+            error: 'Database storage is managed by server environment variables',
+            code: 'storage_environment_managed',
+        });
+        return;
+    }
+    if (!isSecurePostgresConfigRequest(req)) {
+        res.status(403).send({
+            error: 'DB configuration changes require HTTPS or a localhost connection',
+            code: 'secure_transport_required',
+        });
+        return;
+    }
+    try {
+        const vendor = req.body?.vendor;
+        const params = req.body?.params || {};
+        const migrate = req.body?.migrate === true;
+        if (!SUPPORTED_VENDORS.includes(vendor)) {
+            throw new StoragePayloadError(`Unsupported vendor: ${vendor}`);
+        }
+        const normalized = normalizeVendorParams(vendor, params);
+        if (!isVendorConfigComplete(vendor, normalized)) {
+            throw new StoragePayloadError('Required connection parameters are missing');
+        }
+
+        // 기존 storage가 활성 상태면 cold storage를 legacy로 export (롤백 가능하도록)
+        if (postgresStorage.enabled && typeof postgresStorage.exportColdStorageToLegacy === 'function') {
+            try {
+                await postgresStorage.exportColdStorageToLegacy(savePath);
+            } catch (e) {
+                console.warn('[db-config] Cold storage export skipped:', e.message);
+            }
+        }
+
+        // 신규 config 저장 + 신규 storage 인스턴스 생성
+        const result = applyDbConfig(savePath, { vendor, params: normalized, enabled: true });
+        // 기존 storage 풀 정리
+        if (typeof postgresStorage.close === 'function') {
+            try { await postgresStorage.close(); } catch (e) {}
+        }
+        postgresStorage = result.storage;
+        dbVendor = result.vendor;
+        storageManagedByEnvironment = isStorageManagedByEnvironment(dbVendor);
+
+        // 신규 storage 초기화
+        await postgresStorage.initialize();
+
+        // 마이그레이션 명시적 수행
+        if (migrate && postgresStorage.enabled) {
+            try {
+                await postgresStorage.migrateLegacyColdStorage(savePath);
+            } catch (e) {
+                console.warn('[db-config] Legacy cold storage migration skipped:', e.message);
+            }
+        }
+
+        // PostgreSQL 호환 config 파일도 갱신 (기존 /api/postgres-config와 호환성)
+        if (vendor === 'postgres') {
+            await persistPostgresServerConfig({
+                enabled: true,
+                connectionString: normalized.connectionString,
+                poolMax: normalized.poolMax || 10,
+            });
+        }
+
+        const resp = getDbConfigResponse();
+        try {
+            if (postgresStorage.enabled) {
+                const state = await postgresStorage.getState();
+                resp.revision = state.revision;
+                resp.initialized = state.initialized;
+            }
+        } catch (e) {}
+        res.send({ success: true, ...resp });
+    } catch (error) {
+        if (error instanceof StoragePayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_db_configuration' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.post('/api/database-v2/migrate-legacy', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({
+            error: 'SQL storage is not configured',
+            code: 'storage_disabled',
+        });
+        return;
+    }
+    try {
+        const coldResult = await postgresStorage.migrateLegacyColdStorage(savePath);
+        res.send({
+            success: true,
+            migrated: coldResult.migrated,
+            skipped: coldResult.skipped,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
 app.get('/api/database-v2', authenticatedRouteLimiter, async (req, res, next) => {
     if (!await checkAuth(req, res)) {
         return;
@@ -2927,7 +3154,11 @@ app.get('/api/database-v2/search', authenticatedRouteLimiter, async (req, res, n
         return;
     }
     if (!postgresStorage.enabled) {
-        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        res.status(404).send({ error: 'SQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    if (typeof postgresStorage.searchMessages !== 'function') {
+        res.send({ results: [] });
         return;
     }
 
@@ -2952,7 +3183,11 @@ app.get('/api/database-v2/token-usage', authenticatedRouteLimiter, async (req, r
         return;
     }
     if (!postgresStorage.enabled) {
-        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        res.status(404).send({ error: 'SQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    if (typeof postgresStorage.getTokenUsage !== 'function') {
+        res.send({ usage: [] });
         return;
     }
 
@@ -2968,13 +3203,21 @@ app.get('/api/database-v2/characters/search', authenticatedRouteLimiter, async (
         return;
     }
     if (!postgresStorage.enabled) {
-        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        res.status(404).send({ error: 'SQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    const tag = req.query.tag;
+    const name = req.query.name;
+    if (tag && typeof postgresStorage.searchCharactersByTag !== 'function') {
+        res.send({ results: [] });
+        return;
+    }
+    if (!tag && typeof postgresStorage.searchCharactersByName !== 'function') {
+        res.send({ results: [] });
         return;
     }
 
     try {
-        const tag = req.query.tag;
-        const name = req.query.name;
         const results = tag
             ? await postgresStorage.searchCharactersByTag(tag, req.query.limit)
             : await postgresStorage.searchCharactersByName(name, req.query.limit);
@@ -2993,7 +3236,11 @@ app.get('/api/database-v2/tables', authenticatedRouteLimiter, async (req, res, n
         return;
     }
     if (!postgresStorage.enabled) {
-        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        res.status(404).send({ error: 'SQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    if (typeof postgresStorage.listDbExplorerTables !== 'function') {
+        res.send({ tables: [] });
         return;
     }
 
@@ -3009,7 +3256,11 @@ app.get('/api/database-v2/tables/:table/rows', authenticatedRouteLimiter, async 
         return;
     }
     if (!postgresStorage.enabled) {
-        res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+        res.status(404).send({ error: 'SQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    if (typeof postgresStorage.getDbExplorerTableRows !== 'function') {
+        res.send({ data: { columns: [], rows: [], total: 0, offset: 0, limit: 50 } });
         return;
     }
 
@@ -3648,17 +3899,9 @@ async function startServer() {
         if (!postgresManagedByEnvironment && !postgresConfigExists && postgresBootstrapUrl) {
             await persistPostgresServerConfig(postgresServerConfig);
         }
-        console.log('[Server] Step 4: checking legacy cold storage migration...');
-        if (postgresStorage.enabled) {
-            const coldStorageMigration = await postgresStorage.migrateLegacyColdStorage(savePath);
-            if (coldStorageMigration.migrated > 0 || coldStorageMigration.skipped > 0) {
-                console.log(
-                    `[PostgreSQL] Legacy cold storage migration: ` +
-                    `${coldStorageMigration.migrated} migrated, ${coldStorageMigration.skipped} skipped.`
-                );
-            }
-        }
-        console.log('[Server] Step 5: starting HTTP/HTTPS server...');
+        // 자동 마이그레이션 제거: 사용자가 명시적으로 마이그레이션을 승인할 때만 수행.
+        // /api/db-config POST (migrate: true) 또는 /api/database-v2/migrate-legacy 에서 트리거.
+        console.log('[Server] Step 4: starting HTTP/HTTPS server...');
         const port = process.env.PORT || 6001;
         const httpsOptions = await getHttpsOptions();
         let server = null;

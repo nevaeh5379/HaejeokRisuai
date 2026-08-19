@@ -147,11 +147,12 @@ function getDbConfigPath(savePath) {
     return path.join(savePath, '__db_config.json');
 }
 
-// 저장소 설정 파일 읽기 (vendor + 공통 설정)
+// 저장소 설정 파일 읽기 (vendor + 공통 설정 + vendor별 연결 파라미터)
+// 비밀번호 등 민감 정보를 포함하므로 파일 권한은 0600으로 유지.
 function readStoredDbConfig(savePath) {
     const configPath = getDbConfigPath(savePath);
     if (!fs.existsSync(configPath)) {
-        return { vendor: null, enabled: false, poolMax: 10 };
+        return { vendor: null, enabled: false, poolMax: 10, params: {} };
     }
     try {
         const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -159,20 +160,202 @@ function readStoredDbConfig(savePath) {
             vendor: parsed.vendor || null,
             enabled: parsed.enabled === true,
             poolMax: Number.isSafeInteger(parsed.poolMax) && parsed.poolMax > 0 ? parsed.poolMax : 10,
+            params: parsed.params || {},
         };
     } catch (error) {
         throw new Error(`Could not read DB server configuration: ${error.message}`);
     }
 }
 
-// 저장소 설정 파일 쓰기
+// 저장소 설정 파일 쓰기 (0600 권한 - 비밀번호 포함)
 function writeStoredDbConfig(savePath, config) {
     const configPath = getDbConfigPath(savePath);
-    fs.writeFileSync(configPath, JSON.stringify({
+    const payload = JSON.stringify({
         vendor: config.vendor || null,
         enabled: config.enabled === true,
         poolMax: config.poolMax || 10,
-    }), 'utf8');
+        params: config.params || {},
+    });
+    fs.writeFileSync(configPath, payload, { mode: 0o600 });
+    try {
+        fs.chmodSync(configPath, 0o600);
+    } catch (e) {
+        // 권한 변경 실패는 무시 (Windows 등)
+    }
+}
+
+// vendor별 연결 파라미터 정규화 (빈 값 제거)
+function normalizeVendorParams(vendor, rawParams = {}) {
+    const params = {};
+    if (vendor === 'postgres') {
+        if (typeof rawParams.connectionString === 'string' && rawParams.connectionString.trim()) {
+            params.connectionString = rawParams.connectionString.trim();
+        }
+        const poolMax = Number.parseInt(rawParams.poolMax || '10', 10);
+        if (Number.isSafeInteger(poolMax) && poolMax > 0) {
+            params.poolMax = poolMax;
+        }
+    } else if (vendor === 'oracle') {
+        for (const key of ['user', 'password', 'tnsAlias', 'walletPath', 'walletPassword']) {
+            if (typeof rawParams[key] === 'string' && rawParams[key].trim()) {
+                params[key] = rawParams[key].trim();
+            }
+        }
+        const poolMax = Number.parseInt(rawParams.poolMax || '10', 10);
+        if (Number.isSafeInteger(poolMax) && poolMax > 0) {
+            params.poolMax = poolMax;
+        }
+    } else if (vendor === 'azure') {
+        for (const key of ['server', 'database', 'user', 'password']) {
+            if (typeof rawParams[key] === 'string' && rawParams[key].trim()) {
+                params[key] = rawParams[key].trim();
+            }
+        }
+        const port = Number.parseInt(rawParams.port || '1433', 10);
+        if (Number.isSafeInteger(port) && port > 0) {
+            params.port = port;
+        }
+        const poolMax = Number.parseInt(rawParams.poolMax || '10', 10);
+        if (Number.isSafeInteger(poolMax) && poolMax > 0) {
+            params.poolMax = poolMax;
+        }
+    }
+    return params;
+}
+
+// vendor가 활성화 가능한지 (필수 파라미터 모두 존재)
+function isVendorConfigComplete(vendor, params = {}) {
+    if (vendor === 'postgres') {
+        return Boolean(params.connectionString);
+    }
+    if (vendor === 'oracle') {
+        return Boolean(params.tnsAlias && params.user && params.password);
+    }
+    if (vendor === 'azure') {
+        return Boolean(params.server && params.database && params.user && params.password);
+    }
+    return false;
+}
+
+// vendor별 연결 테스트 - 임시 인스턴스를 만들어 getPool/createInitializedPool 시도.
+// throw 또는 error 반환하지 않고 { success, error } 형태로 반환.
+async function testConnection(vendor, rawParams = {}) {
+    const params = normalizeVendorParams(vendor, rawParams);
+    if (!isVendorConfigComplete(vendor, params)) {
+        return { success: false, error: 'Required connection parameters are missing' };
+    }
+    try {
+        if (vendor === 'postgres') {
+            const { PostgresStorage } = require('./postgresStorage.cjs');
+            const tmp = new PostgresStorage({ connectionString: params.connectionString, poolMax: params.poolMax || 10 });
+            // initialize() 내부에서 SELECT 1 + 스키마 확인까지 수행.
+            // 단, 스키마가 없으면 스키마를 생성하려 시도하므로, 테스트 전용으로는
+            // Pool을 직접 만들어 SELECT 1만 수행.
+            const { Pool } = require('pg');
+            const pool = new Pool({
+                connectionString: params.connectionString,
+                max: 1,
+                application_name: 'risuai-test',
+            });
+            try {
+                await pool.query('SELECT 1');
+                return { success: true };
+            } finally {
+                await pool.end().catch(() => {});
+            }
+        }
+        if (vendor === 'oracle') {
+            const oracledb = require('oracledb');
+            const conn = await oracledb.getConnection({
+                user: params.user,
+                password: params.password,
+                connectString: params.tnsAlias,
+                configDir: params.walletPath,
+                walletLocation: params.walletPath,
+                walletPassword: params.walletPassword,
+            });
+            try {
+                await conn.execute('SELECT 1 FROM dual');
+                return { success: true };
+            } finally {
+                try { await conn.close(); } catch (e) {}
+            }
+        }
+        if (vendor === 'azure') {
+            const sql = require('mssql');
+            const pool = new sql.ConnectionPool({
+                server: params.server,
+                port: params.port || 1433,
+                database: params.database,
+                user: params.user,
+                password: params.password,
+                connectionTimeout: 60000,
+                requestTimeout: 10000,
+                options: { encrypt: true, trustServerCertificate: true, enableArithAbort: true },
+                pool: { max: 1, min: 0, idleTimeoutMillis: 30000 },
+            });
+            try {
+                await pool.connect();
+                await pool.request().query('SELECT 1');
+                return { success: true };
+            } finally {
+                try { await pool.close(); } catch (e) {}
+            }
+        }
+        return { success: false, error: `Unsupported vendor: ${vendor}` };
+    } catch (error) {
+        return { success: false, error: error.message || String(error) };
+    }
+}
+
+// 저장소 설정 적용: config 파일에 저장 후 신규 storage 인스턴스 반환.
+// 기존 postgresStorage를 교체해야 하는 경우 server.cjs에서 이 함수로 재생성.
+function applyDbConfig(savePath, { vendor, params, enabled }) {
+    const normalized = normalizeVendorParams(vendor, params);
+    const complete = isVendorConfigComplete(vendor, normalized);
+    const finalEnabled = enabled !== false && complete;
+    const poolMax = normalized.poolMax || 10;
+    writeStoredDbConfig(savePath, {
+        vendor,
+        enabled: finalEnabled,
+        poolMax,
+        params: normalized,
+    });
+    // 환경 변수에도 반영 (createServerStorage가 환경 변수를 읽으므로)
+    if (vendor === 'postgres') {
+        if (normalized.connectionString) process.env.DATABASE_URL = normalized.connectionString;
+    } else if (vendor === 'oracle') {
+        if (normalized.user) process.env.ORACLE_USER = normalized.user;
+        if (normalized.password) process.env.ORACLE_USER_PASSWORD = normalized.password;
+        if (normalized.tnsAlias) process.env.ORACLE_TNS_ALIAS = normalized.tnsAlias;
+        if (normalized.walletPath) process.env.ORACLE_WALLET_PATH = normalized.walletPath;
+        if (normalized.walletPassword) process.env.ORACLE_WALLET_PASSWORD = normalized.walletPassword;
+        if (normalized.poolMax) process.env.ORACLE_POOL_MAX = String(normalized.poolMax);
+    } else if (vendor === 'azure') {
+        if (normalized.server) process.env.AZURE_HOST = normalized.server;
+        if (normalized.database) process.env.AZURE_DATABASE = normalized.database;
+        if (normalized.user) process.env.AZURE_USERNAME = normalized.user;
+        if (normalized.password) process.env.AZURE_PASSWORD = normalized.password;
+        if (normalized.port) process.env.AZURE_PORT = String(normalized.port);
+        if (normalized.poolMax) process.env.AZURE_POOL_MAX = String(normalized.poolMax);
+    }
+    // 신규 인스턴스 반환
+    return createServerStorage(savePath, { vendor, postgresConfig: null });
+}
+
+// 환경 변수 기반 설정인지 (브라우저에서 변경 불가)
+// 세 vendor 모두 환경 변수로 설정된 경우 true.
+function isStorageManagedByEnvironment(vendor) {
+    if (vendor === 'postgres') {
+        return Boolean(process.env.DATABASE_URL);
+    }
+    if (vendor === 'oracle') {
+        return Boolean(process.env.ORACLE_TNS_ALIAS);
+    }
+    if (vendor === 'azure') {
+        return Boolean(process.env.AZURE_HOST || process.env.AZURE_DATABASE);
+    }
+    return false;
 }
 
 // 팩토리: vendor에 따른 저장소 인스턴스 생성
@@ -196,6 +379,7 @@ function createStorageDriver(options = {}) {
 
 // 서버 부팅 시 저장소 인스턴스 생성 (server.cjs에서 호출)
 // 환경 변수 + 설정 파일 + 기존 PostgreSQL 설정을 조합하여 적절한 구현체를 반환.
+// 우선순위: 명시적 options.vendor > __db_config.json > 환경 변수 감지 > 기본 postgres
 function createServerStorage(savePath, options = {}) {
     // 환경 파일 로딩
     loadAzureEnvFile();
@@ -204,27 +388,57 @@ function createServerStorage(savePath, options = {}) {
     const storedConfig = readStoredDbConfig(savePath);
     const explicitVendor = options.vendor || process.env.DB_VENDOR || storedConfig.vendor;
     const postgresConfig = options.postgresConfig || null; // 기존 PostgreSQL 설정 (호환성)
+    const storedParams = storedConfig.params || {};
 
-    // 환경 변수 기반 vendor 감지
+    // vendor 결정
     let vendor = 'postgres';
     let enabled = false;
     let poolMax = parseInt(process.env.RISU_POSTGRES_POOL_MAX || '10', 10);
     if (!Number.isSafeInteger(poolMax) || poolMax <= 0) poolMax = 10;
 
+    // __db_config.json에 저장된 params가 있으면 그것을 사용, 없으면 환경 변수에서 읽기
     if (explicitVendor === 'azure' || (!explicitVendor && (process.env.AZURE_HOST || process.env.AZURE_DATABASE) && !process.env.DATABASE_URL && !process.env.ORACLE_TNS_ALIAS)) {
         vendor = 'azure';
-        const azureConfig = readAzureConfigFromEnv();
+        const azureConfig = (storedConfig.vendor === 'azure' && Object.keys(storedParams).length > 0)
+            ? {
+                server: storedParams.server || process.env.AZURE_HOST || '',
+                database: storedParams.database || process.env.AZURE_DATABASE || '',
+                user: storedParams.user || process.env.AZURE_USERNAME || '',
+                password: storedParams.password || process.env.AZURE_PASSWORD || '',
+                port: storedParams.port || parseInt(process.env.AZURE_PORT || '1433', 10),
+                poolMax: storedParams.poolMax || parseInt(process.env.AZURE_POOL_MAX || '10', 10),
+            }
+            : readAzureConfigFromEnv();
         enabled = Boolean(azureConfig.server && azureConfig.database && azureConfig.user && azureConfig.password);
         poolMax = azureConfig.poolMax || poolMax;
     } else if (explicitVendor === 'oracle' || (!explicitVendor && process.env.ORACLE_TNS_ALIAS && !process.env.DATABASE_URL)) {
         vendor = 'oracle';
-        const oracleConfig = readOracleConfigFromEnv();
+        const oracleConfig = (storedConfig.vendor === 'oracle' && Object.keys(storedParams).length > 0)
+            ? {
+                user: storedParams.user || process.env.ORACLE_USER || '',
+                password: storedParams.password || process.env.ORACLE_USER_PASSWORD || '',
+                tnsAlias: storedParams.tnsAlias || process.env.ORACLE_TNS_ALIAS || '',
+                walletPath: storedParams.walletPath || process.env.ORACLE_WALLET_PATH || '',
+                walletPassword: storedParams.walletPassword || process.env.ORACLE_WALLET_PASSWORD || '',
+                poolMax: storedParams.poolMax || parseInt(process.env.ORACLE_POOL_MAX || '10', 10),
+            }
+            : readOracleConfigFromEnv();
         enabled = Boolean(oracleConfig.tnsAlias && oracleConfig.user && oracleConfig.password);
         poolMax = oracleConfig.poolMax || poolMax;
-    } else if (explicitVendor === 'postgres' || process.env.DATABASE_URL || (postgresConfig && postgresConfig.enabled)) {
+    } else if (explicitVendor === 'postgres' || process.env.DATABASE_URL || (postgresConfig && postgresConfig.enabled) || (storedConfig.vendor === 'postgres' && storedParams.connectionString)) {
         vendor = 'postgres';
-        enabled = postgresConfig ? postgresConfig.enabled : (process.env.DATABASE_URL ? true : false);
-        poolMax = postgresConfig ? postgresConfig.poolMax : poolMax;
+        // 우선순위: postgresConfig(기존) > storedParams > 환경 변수
+        if (postgresConfig && postgresConfig.enabled) {
+            enabled = true;
+            poolMax = postgresConfig.poolMax || poolMax;
+        } else if (storedConfig.vendor === 'postgres' && storedParams.connectionString) {
+            enabled = storedConfig.enabled && Boolean(storedParams.connectionString);
+            poolMax = storedParams.poolMax || poolMax;
+        } else if (process.env.DATABASE_URL) {
+            enabled = true;
+        } else {
+            enabled = false;
+        }
     } else if (storedConfig.vendor === 'azure') {
         vendor = 'azure';
         const azureConfig = readAzureConfigFromEnv();
@@ -244,7 +458,19 @@ function createServerStorage(savePath, options = {}) {
 
     if (vendor === 'azure') {
         const { AzureStorage } = require('./azureStorage.cjs');
-        const azureConfig = readAzureConfigFromEnv();
+        let azureConfig;
+        if (storedConfig.vendor === 'azure' && Object.keys(storedParams).length > 0) {
+            azureConfig = {
+                server: storedParams.server || process.env.AZURE_HOST || '',
+                database: storedParams.database || process.env.AZURE_DATABASE || '',
+                user: storedParams.user || process.env.AZURE_USERNAME || '',
+                password: storedParams.password || process.env.AZURE_PASSWORD || '',
+                port: storedParams.port || parseInt(process.env.AZURE_PORT || '1433', 10),
+                poolMax: storedParams.poolMax || poolMax,
+            };
+        } else {
+            azureConfig = readAzureConfigFromEnv();
+        }
         return {
             vendor: 'azure',
             storage: new AzureStorage({
@@ -261,7 +487,19 @@ function createServerStorage(savePath, options = {}) {
 
     if (vendor === 'oracle') {
         const { OracleStorage } = require('./oracleStorage.cjs');
-        const oracleConfig = readOracleConfigFromEnv();
+        let oracleConfig;
+        if (storedConfig.vendor === 'oracle' && Object.keys(storedParams).length > 0) {
+            oracleConfig = {
+                user: storedParams.user || process.env.ORACLE_USER || '',
+                password: storedParams.password || process.env.ORACLE_USER_PASSWORD || '',
+                tnsAlias: storedParams.tnsAlias || process.env.ORACLE_TNS_ALIAS || '',
+                walletPath: storedParams.walletPath || process.env.ORACLE_WALLET_PATH || '',
+                walletPassword: storedParams.walletPassword || process.env.ORACLE_WALLET_PASSWORD || '',
+                poolMax: storedParams.poolMax || poolMax,
+            };
+        } else {
+            oracleConfig = readOracleConfigFromEnv();
+        }
         return {
             vendor: 'oracle',
             storage: new OracleStorage({
@@ -278,7 +516,14 @@ function createServerStorage(savePath, options = {}) {
 
     // postgres
     const { PostgresStorage } = require('./postgresStorage.cjs');
-    const connectionString = postgresConfig && postgresConfig.enabled ? postgresConfig.connectionString : '';
+    let connectionString = '';
+    if (postgresConfig && postgresConfig.enabled) {
+        connectionString = postgresConfig.connectionString;
+    } else if (storedConfig.vendor === 'postgres' && storedParams.connectionString) {
+        connectionString = storedParams.connectionString;
+    } else if (process.env.DATABASE_URL) {
+        connectionString = process.env.DATABASE_URL;
+    }
     return {
         vendor: 'postgres',
         storage: new PostgresStorage({
@@ -300,6 +545,11 @@ module.exports = {
     readStoredDbConfig,
     writeStoredDbConfig,
     getDbConfigPath,
+    normalizeVendorParams,
+    isVendorConfigComplete,
+    testConnection,
+    applyDbConfig,
+    isStorageManagedByEnvironment,
     createStorageDriver,
     createServerStorage,
 };

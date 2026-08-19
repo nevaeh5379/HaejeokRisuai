@@ -10,10 +10,13 @@ import {
 } from './nodeDatabaseSync'
 import { createPostgresDatabaseAdapter } from './databaseAdapters.svelte'
 
+export type DbVendor = 'postgres' | 'oracle' | 'azure'
+
 export interface NodePostgresServerConfig {
     enabled:boolean
     configured:boolean
     managedByEnvironment:boolean
+    vendor:DbVendor
     connectionDisplay:string
     poolMax:number
     revision:number|null
@@ -198,6 +201,103 @@ export class NodePostgresStorage {
         this.status = config.enabled ? 'enabled' : 'disabled'
         this.cache = createNodeDatabaseSyncCache(config.revision ?? 0)
         return config
+    }
+
+    // ── 범용 DB 설정 API (postgres / oracle / azure 공통) ──
+
+    /**
+     * 현재 DB 설정 조회 (vendor, enabled, 마스킹된 연결 정보).
+     * /api/db-config GET 대응.
+     */
+    async getDatabaseConfig():Promise<NodePostgresServerConfig & {
+        params:Record<string, any>
+        storedVendor:DbVendor|null
+    }> {
+        const response = await fetch('/api/db-config', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'DB configuration load failed')
+        }
+        const config = await response.json()
+        this.status = config.enabled ? 'enabled' : 'disabled'
+        if(config.revision != null){
+            this.cache = createNodeDatabaseSyncCache(config.revision)
+        }
+        return config
+    }
+
+    /**
+     * DB 설정 적용 (vendor + params + migrate). 서버가 storage를 재생성.
+     * /api/db-config POST 대응.
+     */
+    async applyDatabaseConfig(vendor:DbVendor, params:Record<string, any>, migrate:boolean):Promise<NodePostgresServerConfig & {
+        params:Record<string, any>
+        storedVendor:DbVendor|null
+    }> {
+        const encodedBody = await encodeJsonBody({ vendor, params, migrate })
+        const response = await fetch('/api/db-config', {
+            method: 'POST',
+            body: encodedBody.body,
+            headers: {
+                'content-type': 'application/json',
+                ...(encodedBody.contentEncoding ? { 'content-encoding': encodedBody.contentEncoding } : {}),
+                ...await this.authHeaders()
+            }
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'DB configuration update failed')
+        }
+        const body = await response.json()
+        this.status = body.enabled ? 'enabled' : 'disabled'
+        if(body.revision != null){
+            this.cache = createNodeDatabaseSyncCache(body.revision)
+        }
+        return body
+    }
+
+    /**
+     * 연결 테스트 (실제 storage 재생성 없이 연결만 확인).
+     * /api/db-config/test POST 대응.
+     */
+    async testConnection(vendor:DbVendor, params:Record<string, any>):Promise<{ success:boolean, error?:string }> {
+        const encodedBody = await encodeJsonBody({ vendor, params })
+        const response = await fetch('/api/db-config/test', {
+            method: 'POST',
+            body: encodedBody.body,
+            headers: {
+                'content-type': 'application/json',
+                ...(encodedBody.contentEncoding ? { 'content-encoding': encodedBody.contentEncoding } : {}),
+                ...await this.authHeaders()
+            }
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'DB connection test failed')
+        }
+        return await response.json()
+    }
+
+    /**
+     * 명시적 로컬 → SQL 마이그레이션 트리거.
+     * /api/database-v2/migrate-legacy POST 대응.
+     */
+    async migrateLegacyData():Promise<{ success:boolean, migrated:number, skipped:number }> {
+        if(!await this.ensureEnabled()){
+            throw new Error('SQL storage is not enabled')
+        }
+        const response = await fetch('/api/database-v2/migrate-legacy', {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                ...await this.authHeaders()
+            }
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'Legacy migration failed')
+        }
+        return await response.json()
     }
 
     getCache():NodeDatabaseSyncCache {

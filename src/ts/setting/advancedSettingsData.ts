@@ -7,8 +7,8 @@ export const advancedSettingsItems: SettingItem[] = [
     { type: 'header', id: 'adv.warn', labelKey: 'advancedSettingsWarn', options: { level: 'warning' } },
     {
         type: 'custom',
-        id: 'adv.postgresStorage',
-        componentId: 'PostgresStorageSettings',
+        id: 'adv.sqlStorage',
+        componentId: 'SqlStorageSettings',
         condition: () => isNodeServer,
     },
 

@@ -108,6 +108,20 @@ function assertSqlIdentifier(value) {
     throw new Error(`Unsafe SQL identifier: ${value}`);
 }
 
+function assertDbExplorerIdentifier(value, field) {
+    if (typeof value !== 'string' || value.length === 0 || value.length > 128) {
+        throw new StoragePayloadError(`${field} must be a non-empty string of at most 128 characters`);
+    }
+    const parts = value.split('.');
+    if (parts.length === 1 && DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0])) {
+        return value;
+    }
+    if (parts.length === 2 && DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0]) && DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[1])) {
+        return value;
+    }
+    throw new StoragePayloadError(`${field} contains invalid characters`);
+}
+
 function asArray(value, field) {
     if (value === undefined) return [];
     if (!Array.isArray(value)) throw new StoragePayloadError(`${field} must be an array`);
@@ -2350,6 +2364,189 @@ class AzureStorage {
         return {
             total,
             rows: res.recordset,
+        };
+    }
+
+    async getTokenUsage() {
+        this.assertEnabled();
+        const pool = await this.getPool();
+        const res = await pool.request().query(`
+            SELECT model,
+                   COUNT(*) AS message_count,
+                   COALESCE(SUM(input_tokens), 0) AS total_input_tokens,
+                   COALESCE(SUM(output_tokens), 0) AS total_output_tokens
+            FROM (
+                SELECT model, input_tokens, output_tokens FROM [chat].[message_generation]
+                UNION ALL
+                SELECT model, input_tokens, output_tokens FROM [cold].[message_generation]
+            ) AS generation
+            WHERE model IS NOT NULL
+            GROUP BY model
+            ORDER BY total_output_tokens DESC, total_input_tokens DESC
+        `);
+        return res.recordset.map((row) => ({
+            model: row.model,
+            messageCount: parseInt(row.message_count, 10) || 0,
+            totalInputTokens: parseInt(row.total_input_tokens, 10) || 0,
+            totalOutputTokens: parseInt(row.total_output_tokens, 10) || 0,
+        }));
+    }
+
+    async listDbExplorerTables() {
+        this.assertEnabled();
+        const pool = await this.getPool();
+        const res = await pool.request().query(`
+            SELECT TABLE_SCHEMA + '.' + TABLE_NAME AS table_name
+            FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_SCHEMA IN ('system', 'character', 'chat', 'cold') AND TABLE_TYPE = 'BASE TABLE'
+            ORDER BY TABLE_SCHEMA, TABLE_NAME
+        `);
+        const tables = res.recordset.map((row) => assertDbExplorerIdentifier(row.table_name, 'table name'));
+        const counts = new Map();
+        for (let i = 0; i < tables.length; i += 25) {
+            const unionParts = tables.slice(i, i + 25).map(
+                (name) => `SELECT '${name.replace(/'/g, "''")}' AS table_name, CAST(COUNT(*) AS NVARCHAR(20)) AS row_count FROM ${assertSqlIdentifier(name)}`
+            ).join(' UNION ALL ');
+            const countRes = await pool.request().query(unionParts);
+            for (const row of countRes.recordset) {
+                counts.set(row.table_name, row.row_count);
+            }
+        }
+        return tables.map((name) => ({
+            name,
+            rowCount: Number(counts.get(name) ?? '0'),
+        }));
+    }
+
+    async getDbExplorerTableColumns(table) {
+        this.assertEnabled();
+        const pool = await this.getPool();
+        const validated = assertDbExplorerIdentifier(table, 'table name');
+        const parts = validated.split('.');
+        const schemaName = parts.length === 2 ? parts[0] : 'dbo';
+        const tableName = parts.length === 2 ? parts[1] : parts[0];
+
+        const existsRes = await pool.request()
+            .input('schema', sql.NVarChar(128), schemaName)
+            .input('table', sql.NVarChar(128), tableName)
+            .query(`SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @schema AND TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME = @table`);
+        if (existsRes.recordset.length === 0) {
+            throw new StoragePayloadError('table was not found');
+        }
+
+        const colRes = await pool.request()
+            .input('schema', sql.NVarChar(128), schemaName)
+            .input('table', sql.NVarChar(128), tableName)
+            .query(`SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @table
+                    ORDER BY ORDINAL_POSITION`);
+
+        // Primary key via sys indexes
+        const pkRes = await pool.request()
+            .input('schema', sql.NVarChar(128), schemaName)
+            .input('table', sql.NVarChar(128), tableName)
+            .query(`SELECT COL_NAME(ic.object_id, ic.column_id) AS column_name
+                    FROM sys.indexes AS i
+                    JOIN sys.index_columns AS ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                    JOIN sys.tables AS t ON t.object_id = i.object_id
+                    JOIN sys.schemas AS s ON s.schema_id = t.schema_id
+                    WHERE s.name = @schema AND t.name = @table AND i.is_primary_key = 1`);
+        const primaryKeys = new Set(pkRes.recordset.map((row) => row.column_name));
+
+        return colRes.recordset.map((row) => ({
+            name: assertDbExplorerIdentifier(row.COLUMN_NAME, 'column name'),
+            dataType: row.DATA_TYPE,
+            nullable: row.IS_NULLABLE === 'YES',
+            primaryKey: primaryKeys.has(row.COLUMN_NAME),
+        }));
+    }
+
+    async getDbExplorerTableRows(table, rawOffset = 0, rawLimit = 50, rawSortColumn = null, rawSortOrder = 'asc', rawSearch = '', rawColumns = null) {
+        this.assertEnabled();
+        const pool = await this.getPool();
+        const validated = assertDbExplorerIdentifier(table, 'table name');
+        const quotedTable = assertSqlIdentifier(validated);
+        const columns = await this.getDbExplorerTableColumns(table);
+        if (columns.length === 0) {
+            throw new StoragePayloadError('table has no columns');
+        }
+
+        let visibleColumns = columns;
+        if (rawColumns !== null && rawColumns !== undefined) {
+            if (!Array.isArray(rawColumns) || rawColumns.length === 0) {
+                throw new StoragePayloadError('column list must not be empty');
+            }
+            const visibleNames = [];
+            for (const name of rawColumns) {
+                const validatedCol = assertDbExplorerIdentifier(name, 'column name');
+                const match = columns.find((column) => column.name === validatedCol);
+                if (!match) {
+                    throw new StoragePayloadError('column was not found in the table');
+                }
+                if (!visibleNames.includes(validatedCol)) {
+                    visibleNames.push(validatedCol);
+                }
+            }
+            visibleColumns = columns.filter((column) => visibleNames.includes(column.name));
+        }
+
+        const searchTerm = typeof rawSearch === 'string' ? rawSearch.trim().slice(0, 200) : '';
+        const parsedOffset = Number.parseInt(rawOffset, 10);
+        const offset = Number.isSafeInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
+        const parsedLimit = Number.parseInt(rawLimit, 10);
+        const limit = Number.isSafeInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), DB_EXPLORER_MAX_ROWS) : 50;
+
+        const sortColumn = rawSortColumn ? assertDbExplorerIdentifier(rawSortColumn, 'sort column') : null;
+        const sortOrder = rawSortOrder === 'desc' ? 'DESC' : 'ASC';
+
+        const columnList = visibleColumns.map((col) => assertSqlIdentifier(col.name)).join(', ');
+
+        // Total count
+        const countRes = await pool.request().query(`SELECT COUNT(*) AS total FROM ${quotedTable}`);
+        const total = parseInt(countRes.recordset[0]?.total, 10) || 0;
+
+        // Build WHERE for search
+        let whereClause = '';
+        const request = pool.request();
+        if (searchTerm) {
+            const likeParts = visibleColumns.map((col, idx) => {
+                request.input(`search_${idx}`, sql.NVarChar(4000), `%${searchTerm}%`);
+                return `${assertSqlIdentifier(col.name)} LIKE @search_${idx}`;
+            });
+            whereClause = ' WHERE ' + likeParts.join(' OR ');
+        }
+
+        // ORDER BY
+        let orderBy = '';
+        if (sortColumn) {
+            orderBy = ` ORDER BY ${assertSqlIdentifier(sortColumn)} ${sortOrder}`;
+        } else {
+            // Use first column as default sort for deterministic paging
+            orderBy = ` ORDER BY ${assertSqlIdentifier(visibleColumns[0].name)} ASC`;
+        }
+
+        // SQL Server uses OFFSET/FETCH for paging (2012+)
+        request.input('offset', sql.Int, offset);
+        request.input('limit', sql.Int, limit);
+        const rowsRes = await request.query(
+            `SELECT ${columnList} FROM ${quotedTable}${whereClause}${orderBy} OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`
+        );
+
+        const rows = rowsRes.recordset.map((row) => {
+            const obj = {};
+            for (const col of visibleColumns) {
+                obj[col.name] = row[col.name];
+            }
+            return obj;
+        });
+
+        return {
+            columns: visibleColumns.map((col) => ({ name: col.name, dataType: col.dataType })),
+            rows,
+            total,
+            offset,
+            limit,
         };
     }
 

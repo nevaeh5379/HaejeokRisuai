@@ -28,6 +28,7 @@ import CustomBackgroundToggle from 'src/lib/Setting/Pages/Display/CustomBackgrou
 import NullableTextColorToggle from 'src/lib/Setting/Pages/Display/NullableTextColorToggle.svelte';
 import NotificationToggle from 'src/lib/Setting/Pages/Display/NotificationToggle.svelte';
 import PostgresStorageSettings from 'src/lib/Setting/Pages/Advanced/PostgresStorageSettings.svelte';
+import SqlStorageSettings from 'src/lib/Setting/Pages/Advanced/SqlStorageSettings.svelte';
 import S3StorageSettings from 'src/lib/Setting/Pages/Advanced/S3StorageSettings.svelte';
 
 /**
@@ -48,6 +49,7 @@ export const customComponents: Record<string, Component<any>> = {
     'NullableTextColorToggle': NullableTextColorToggle,
     'NotificationToggle': NotificationToggle,
     'PostgresStorageSettings': PostgresStorageSettings,
+    'SqlStorageSettings': SqlStorageSettings,
     'S3StorageSettings': S3StorageSettings,
     // Add more as we migrate complex settings
 } as const;
