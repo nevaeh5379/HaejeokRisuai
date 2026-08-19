@@ -157,7 +157,7 @@ export function getUserIconProtrait(){
             return bindedPersona.largePortrait
         }
         const db = getDatabase()
-        return db.personas[db.selectedPersona].largePortrait       
+        return db?.personas?.[db?.selectedPersona]?.largePortrait ?? false
     } catch (error) {
         return false
     }

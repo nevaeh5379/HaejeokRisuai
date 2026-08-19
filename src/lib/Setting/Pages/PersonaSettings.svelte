@@ -18,12 +18,30 @@
     let ele: HTMLDivElement = $state()
     let sorted = $state(0)
     let selectedId:string = null
+
+    $effect(() => {
+        if (!DBState?.db?.personas || DBState.db.personas.length === 0) {
+            DBState.db.personas = [{
+                name: DBState?.db?.username || 'User',
+                icon: DBState?.db?.userIcon || '',
+                personaPrompt: DBState?.db?.personaPrompt || '',
+                note: DBState?.db?.userNote || '',
+                largePortrait: false
+            }]
+        }
+        if (DBState.db.selectedPersona >= DBState.db.personas.length || DBState.db.selectedPersona < 0) {
+            DBState.db.selectedPersona = 0
+        }
+    })
+
     const createStb = () => {
         stb = Sortable.create(ele, {
             onStart: async () => {
-                DBState.db.personas[DBState.db.selectedPersona].id ??= v4()
-                selectedId = DBState.db.personas[DBState.db.selectedPersona].id
-                saveUserPersona()
+                if (DBState?.db?.personas?.[DBState.db.selectedPersona]) {
+                    DBState.db.personas[DBState.db.selectedPersona].id ??= v4()
+                    selectedId = DBState.db.personas[DBState.db.selectedPersona].id
+                    saveUserPersona()
+                }
             },
             onEnd: async () => {
                 let idx:number[] = []
@@ -121,7 +139,7 @@
             {#if DBState.db.userIcon === ''}
                 <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"></div>
             {:else}
-                {#await getCharImage(DBState.db.userIcon, DBState.db.personas[DBState.db.selectedPersona].largePortrait ? 'lgcss' : 'css')}
+                {#await getCharImage(DBState.db.userIcon, DBState.db.personas[DBState.db.selectedPersona]?.largePortrait ? 'lgcss' : 'css')}
                     <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"></div>
                 {:then im} 
                     <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500" style={im}></div>                
@@ -143,10 +161,10 @@
             <Button onclick={importUserPersona}>{language.import}</Button>
 
             <Button styled="danger" onclick={async () => {
-                if(DBState.db.personas.length === 1){
+                if(DBState.db.personas.length <= 1){
                     return
                 }
-                const d = await alertConfirm(`${language.removeConfirm}${DBState.db.personas[DBState.db.selectedPersona].name}`)
+                const d = await alertConfirm(`${language.removeConfirm}${DBState.db.personas[DBState.db.selectedPersona]?.name ?? ''}`)
                 if(d){
                     saveUserPersona()
                     let personas = DBState.db.personas
@@ -155,7 +173,9 @@
                     changeUserPersona(0, 'noSave')
                 }
             }}>{language.remove}</Button>
-            <Check bind:check={DBState.db.personas[DBState.db.selectedPersona].largePortrait}>{language.largePortrait}</Check>
+            {#if DBState.db.personas[DBState.db.selectedPersona]}
+                <Check bind:check={DBState.db.personas[DBState.db.selectedPersona].largePortrait}>{language.largePortrait}</Check>
+            {/if}
         </div>
     </div>
 </div>

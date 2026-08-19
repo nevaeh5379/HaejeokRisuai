@@ -52,6 +52,12 @@ const {
     StoragePayloadError,
 } = require('./storageDriver.cjs');
 
+// Oracle LOB 컬럼을 자동으로 string 및 Buffer로 가져오도록 글로벌 설정 (성능 최적화 및 스트림 행 방지)
+try {
+    oracledb.fetchAsString = [oracledb.CLOB];
+    oracledb.fetchAsBuffer = [oracledb.BLOB];
+} catch (e) {}
+
 const ORACLE_SCHEMA_VERSION = 2;
 const MAX_SYNC_ROWS = 250000;
 const MAX_COLD_STORAGE_KEYS = 250000;
@@ -147,14 +153,19 @@ async function blobToBuffer(value) {
     if (value === null || value === undefined) return null;
     if (Buffer.isBuffer(value)) return value;
     if (typeof value === 'string') return Buffer.from(value, 'utf8');
-    if (value && typeof value === 'object' && value.read) {
-        return await new Promise((resolve, reject) => {
-            const chunks = [];
-            value.on('data', (chunk) => chunks.push(chunk));
-            value.on('end', () => resolve(Buffer.concat(chunks)));
-            value.on('error', reject);
-            value.read();
-        });
+    if (value && typeof value === 'object') {
+        if (typeof value.getData === 'function') {
+            const data = await value.getData();
+            return Buffer.isBuffer(data) ? data : Buffer.from(data);
+        }
+        if (typeof value.on === 'function') {
+            return await new Promise((resolve, reject) => {
+                const chunks = [];
+                value.on('data', (chunk) => chunks.push(chunk));
+                value.on('end', () => resolve(Buffer.concat(chunks)));
+                value.on('error', reject);
+            });
+        }
     }
     return Buffer.from(value);
 }
@@ -178,10 +189,89 @@ function booleanToNum1(value) {
     return value ? 1 : 0;
 }
 
+// ============================================================
+// Oracle 빈 문자열 처리 (sentinel)
+// Oracle은 VARCHAR2/CLOB의 빈 문자열 ''를 NULL로 저장한다.
+// 이 때문에 NOT NULL / CHECK (... IS NOT NULL ...) 제약이
+// 위반되어 ORA-01400 / ORA-02290이 발생한다 (예:
+// system_setting_values의 value_type/값 일치 CHECK,
+// chat_messages의 content_text XOR CHECK, 빈 캐릭터/채팅 이름).
+// 쓰는 쪽에서 ''를 sentinel '\u0000'으로, 읽는 쪽에서
+// sentinel을 ''로 되돌린다. NUL 1자 문자열은 실제 데이터로
+// 쓰이지 않으므로 안전한 sentinel이다.
+// ============================================================
+const ORACLE_EMPTY_STRING_SENTINEL = '\u0000';
+
+function normalizeEmptyStringBind(value) {
+    return typeof value === 'string' && value === '' ? ORACLE_EMPTY_STRING_SENTINEL : value;
+}
+
+// execute 바인드(플랫 배열/스칼라/객체)와 executeMany 바인드(배열의 배열/객체의 배열) 모두 처리
+function normalizeEmptyStringBinds(binds) {
+    if (binds === undefined || binds === null) return binds;
+    if (!Array.isArray(binds)) {
+        if (typeof binds === 'object' && !Buffer.isBuffer(binds)) {
+            const obj = {};
+            for (const [k, v] of Object.entries(binds)) {
+                obj[k] = normalizeEmptyStringBind(v);
+            }
+            return obj;
+        }
+        return normalizeEmptyStringBind(binds);
+    }
+    return binds.map((entry) => {
+        if (Array.isArray(entry)) return entry.map(normalizeEmptyStringBind);
+        if (entry && typeof entry === 'object' && !Buffer.isBuffer(entry)) {
+            const obj = {};
+            for (const [k, v] of Object.entries(entry)) {
+                obj[k] = normalizeEmptyStringBind(v);
+            }
+            return obj;
+        }
+        return normalizeEmptyStringBind(entry);
+    });
+}
+
+function restoreEmptyStringInRow(row) {
+    if (!row || typeof row !== 'object') return row;
+    for (const key of Object.keys(row)) {
+        if (row[key] === ORACLE_EMPTY_STRING_SENTINEL) row[key] = '';
+    }
+    return row;
+}
+
+// 풀에서 나온 연결의 execute/executeMany에 바인드 정규화를 적용하는 Proxy 래퍼
+// oracledb는 arguments.length로 바인드 전달 여부를 판별하므로
+// (execute: 1~3개, executeMany: 2~3개), undefined를 명시 전달하면
+// NJS-005가 발생한다. 호출 arity를 그대로 보존한다.
+function wrapConnectionForEmptyStrings(connection) {
+    if (!connection || connection.__risuEmptyStringWrapped) return connection;
+    connection.__risuEmptyStringWrapped = true;
+    return new Proxy(connection, {
+        get(target, prop) {
+            const value = target[prop];
+            if (prop === 'execute' || prop === 'executeMany') {
+                return (...args) => {
+                    if (args.length < 2 || args[1] === undefined) {
+                        return target[prop](args[0]);
+                    }
+                    const normalizedBinds = normalizeEmptyStringBinds(args[1]);
+                    if (args.length < 3 || args[2] === undefined) {
+                        return target[prop](args[0], normalizedBinds);
+                    }
+                    return target[prop](args[0], normalizedBinds, args[2]);
+                };
+            }
+            return typeof value === 'function' ? value.bind(target) : value;
+        },
+    });
+}
+
 // 컬럼명 예약어 회피: Oracle 예약어를 안전한 이름으로 매핑
 // (스키마에서 이미 변경했지만, codec에서 소문자 컬럼명을 가정하므로 역매핑 필요)
 const COLUMN_NAME_MAP = {
-    // 스키마에서 변경한 컬럼명 → codec이 기대하는 원래 이름
+    // 스키마에서 변경한 Oracle 컬럼명 → codec이 기대하는 원래 이름 (읽기쪽)
+    'key_value': 'key',
     'comment_text': 'comment',
     'lore_mode': 'mode',
     'primarykey': 'primary_key',
@@ -189,9 +279,17 @@ const COLUMN_NAME_MAP = {
     'control_flag': 'control',
     'shift_flag': 'shift',
     'alt_flag': 'alt',
-    'action_val': 'action',
     'sequence_num': 'sequence',
 };
+
+// 쓰기쪽: codec(=PostgreSQL) 컬럼명 → Oracle 컬럼명
+const ORACLE_COLUMN_NAME_MAP = Object.fromEntries(
+    Object.entries(COLUMN_NAME_MAP).map(([oracleName, codecName]) => [codecName, oracleName])
+);
+
+function toOracleColumn(name) {
+    return ORACLE_COLUMN_NAME_MAP[name] || name;
+}
 
 // row의 컬럼명을 codec 호환 이름으로 역매핑
 function remapRowColumns(row) {
@@ -214,15 +312,20 @@ async function clobToString(value) {
     if (value === null || value === undefined) return null;
     if (typeof value === 'string') return value;
     if (Buffer.isBuffer(value)) return value.toString('utf8');
-    if (value && typeof value === 'object' && value.read) {
-        return await new Promise((resolve, reject) => {
-            const chunks = [];
-            value.setEncoding('utf8');
-            value.on('data', (chunk) => chunks.push(chunk));
-            value.on('end', () => resolve(chunks.join('')));
-            value.on('error', reject);
-            value.read();
-        });
+    if (value && typeof value === 'object') {
+        if (typeof value.getData === 'function') {
+            const data = await value.getData();
+            return typeof data === 'string' ? data : Buffer.from(data).toString('utf8');
+        }
+        if (typeof value.on === 'function') {
+            return await new Promise((resolve, reject) => {
+                const chunks = [];
+                value.setEncoding('utf8');
+                value.on('data', (chunk) => chunks.push(chunk));
+                value.on('end', () => resolve(chunks.join('')));
+                value.on('error', reject);
+            });
+        }
     }
     return String(value);
 }
@@ -266,8 +369,8 @@ async function fetchRows(connection, sql, binds = [], options = {}) {
     if (options.clobColumns && options.clobColumns.length > 0) {
         rows = await Promise.all(rows.map((row) => hydrateLobs(row, options.clobColumns, options.blobColumns || [])));
     }
-    // 컬럼명 소문자 변환 + 예약어 역매핑
-    return rows.map((row) => remapRowColumns(row));
+    // 컬럼명 소문자 변환 + 예약어 역매핑 + Oracle sentinel → '' 복원
+    return rows.map((row) => restoreEmptyStringInRow(remapRowColumns(row)));
 }
 
 // 단일 행 반환
@@ -659,8 +762,12 @@ async function deleteMessageChildren(connection, pairs, tables = [
         // Oracle은 UNNEST 대신 개별 DELETE 사용
         // executemany로 chat_id/message_id 쌍 삭제
         const deleteSql = `DELETE FROM ${assertSqlIdentifier(table)} WHERE chat_id = :1 AND message_id = :2`;
-        const binds = pairs.map((p) => [p.chatId, p.id]);
-        await connection.executeMany(deleteSql, binds);
+        const binds = pairs.map((p) => [String(p.chatId), String(p.id)]);
+        const bindDefs = [
+            { type: oracledb.DB_TYPE_VARCHAR, maxSize: 4000 },
+            { type: oracledb.DB_TYPE_VARCHAR, maxSize: 4000 },
+        ];
+        await connection.executeMany(deleteSql, binds, { bindDefs });
     }
 }
 
@@ -699,13 +806,34 @@ class OracleStorage {
             poolTimeout: 60,
             queueTimeout: 120000,
         });
+        // 모든 연결이 빈 문자열 sentinel 정규화 래퍼를 통과하도록 getConnection 래핑
+        const realGetConnection = pool.getConnection.bind(pool);
+        pool.getConnection = async (...args) => wrapConnectionForEmptyStrings(await realGetConnection(...args));
         try {
             // 연결 테스트
             const testConn = await pool.getConnection();
             await testConn.execute('SELECT 1 FROM dual');
-            // 스키마 적용
-            const schema = await fs.readFile(path.join(__dirname, 'oracle-schema.sql'), 'utf8');
-            await this.applySchema(testConn, schema);
+            // 스키마 기적용 여부 확인
+            let alreadyInitialized = false;
+            try {
+                const checkRes = await testConn.execute(
+                    `SELECT schema_version, schema_layout FROM system_storage_meta WHERE singleton = 1`,
+                    [], { outFormat: oracledb.OUT_FORMAT_OBJECT }
+                );
+                const v = checkRes.rows[0]?.SCHEMA_VERSION;
+                const l = checkRes.rows[0]?.SCHEMA_LAYOUT;
+                if (v === ORACLE_SCHEMA_VERSION && l === 'relational-schema-v1') {
+                    alreadyInitialized = true;
+                }
+            } catch (e) {
+                // meta 테이블이 없으면 applySchema 진행
+            }
+
+            if (!alreadyInitialized) {
+                // 스키마 적용
+                const schema = await fs.readFile(path.join(__dirname, 'oracle-schema.sql'), 'utf8');
+                await this.applySchema(testConn, schema);
+            }
             await testConn.close();
 
             // 스키마 버전 확인
@@ -744,11 +872,11 @@ class OracleStorage {
                 try {
                     await connection.execute(s, [], { autoCommit: false });
                 } catch (err) {
-                    // 이미 존재하는 객체/데이터는 무시
+                    // 이미 존재하는 객체/데이터/잠금은 무시
                     const msg = err.message || '';
                     if (msg.includes('ORA-00955') || msg.includes('ORA-00942') ||
                         msg.includes('ORA-00001') || msg.includes('ORA-01400') ||
-                        msg.includes('ORA-00955')) {
+                        msg.includes('ORA-00054')) {
                         // 무시
                     } else {
                         throw err;
@@ -776,7 +904,34 @@ class OracleStorage {
             }
         }
         await flush();
+
+        // 기존 테이블의 컬럼 타입 마이그레이션 (Oracle은 VARCHAR2 -> CLOB 직접 ALTER 불가하므로 임시 컬럼 교체)
+        await this._migrateVarchar2ToClob(connection, 'SYSTEM_MODULES', 'CUSTOM_TOGGLE');
+
         await connection.commit();
+    }
+
+    // Oracle은 VARCHAR2 -> CLOB 컬럼 타입 직접 변경(ALTER TABLE MODIFY) 시 ORA-22858 발생.
+    // 임시 컬럼을 추가하고 데이터를 복사한 후 기존 컬럼을 교체한다.
+    async _migrateVarchar2ToClob(connection, tableName, columnName) {
+        try {
+            const checkSql = `SELECT data_type FROM user_tab_cols WHERE table_name = UPPER(:1) AND column_name = UPPER(:2)`;
+            const res = await connection.execute(checkSql, [tableName, columnName], { outFormat: oracledb.OUT_FORMAT_OBJECT });
+            const dataType = res.rows?.[0]?.DATA_TYPE;
+            if (dataType === 'VARCHAR2') {
+                console.log(`[Oracle] Migrating ${tableName}.${columnName} from VARCHAR2 to CLOB...`);
+                const tableIdent = assertSqlIdentifier(tableName);
+                const colIdent = assertSqlIdentifier(columnName);
+                const tempCol = assertSqlIdentifier(`${columnName.slice(0, 20)}_clob`);
+                await connection.execute(`ALTER TABLE ${tableIdent} ADD (${tempCol} CLOB)`);
+                await connection.execute(`UPDATE ${tableIdent} SET ${tempCol} = ${colIdent}`);
+                await connection.execute(`ALTER TABLE ${tableIdent} DROP COLUMN ${colIdent}`);
+                await connection.execute(`ALTER TABLE ${tableIdent} RENAME COLUMN ${tempCol} TO ${colIdent}`);
+                console.log(`[Oracle] Migrated ${tableName}.${columnName} to CLOB successfully.`);
+            }
+        } catch (e) {
+            console.error(`[Oracle] Migration error for ${tableName}.${columnName}:`, e.message || e);
+        }
     }
 
     async reconfigure(options = {}) {
@@ -1382,11 +1537,13 @@ class OracleStorage {
     // sync: 변경사항 동기화 (가장 복잡한 메서드)
     // ============================================================
 
-    async sync(rawPayload) {
+    async sync(rawPayload, options = {}) {
         this.assertEnabled();
+        const onProgress = typeof options === 'function' ? options : options?.onProgress;
         const payload = validateSyncPayload(rawPayload);
         const conn = await this.pool.getConnection();
         try {
+            onProgress?.({ stage: 'init', message: 'Oracle 연결 및 잠금 확인 중...', percent: 2 });
             await conn.execute('SET CONSTRAINTS ALL DEFERRED');
             // revision 잠금 (SELECT FOR UPDATE)
             const metaRow = await fetchOne(conn,
@@ -1405,11 +1562,13 @@ class OracleStorage {
             });
 
             if (payload.replaceAll) {
+                onProgress?.({ stage: 'cleanup', message: '기존 데이터 정리 중...', percent: 5 });
                 await conn.execute('DELETE FROM system_settings');
                 await conn.execute('DELETE FROM character_characters');
             }
 
             // 설정 upsert
+            onProgress?.({ stage: 'settings', message: `설정 분해 및 동기화 중... (${payload.rootUpserts.length}개 설정)`, percent: 10 });
             let splitSettings;
             try {
                 splitSettings = payload.rootUpserts.map((row) => splitSetting(row.key, row.value, {
@@ -1443,15 +1602,8 @@ class OracleStorage {
             const allValues = splitSettings.flatMap((s) => s.values);
             if (allValues.length > 0) {
                 const cols = ['setting_key', 'node_id', 'parent_node_id', 'member_key', 'encoded_member_key',
-                    'position', 'value_type', 'text_value', 'encoded_text_value', 'number_value', 'boolean_value'];
-                const insertSql = `INSERT INTO system_setting_values (${cols.map((c) => `${c.toUpperCase()}`).join(', ')})
-                    VALUES (${cols.map((_, i) => `:${i + 1}`).join(', ')})`;
-                const binds = allValues.map((row) => [
-                    row.setting_key, row.node_id, row.parent_node_id, row.member_key, row.encoded_member_key,
-                    row.position, row.value_type, row.text_value, row.encoded_text_value, row.number_value,
-                    row.boolean_value === true ? 1 : (row.boolean_value === false ? 0 : null),
-                ]);
-                await conn.executeMany(insertSql, binds);
+                    'position', 'value_type', 'number_value', 'boolean_value', 'text_value', 'encoded_text_value'];
+                await this._bulkInsertRows(conn, 'system_setting_values', cols, allValues, onProgress);
             }
 
             // 관계형 설정 테이블
@@ -1468,15 +1620,7 @@ class OracleStorage {
             for (const definition of SETTING_RELATION_DEFINITIONS) {
                 const rows = projectedSettings[definition.table];
                 if (rows && rows.length > 0) {
-                    const cols = definition.columns;
-                    const insertSql = `INSERT INTO ${assertSqlIdentifier(definition.table)} (${cols.map((c) => `${c.toUpperCase()}`).join(', ')})
-                        VALUES (${cols.map((_, i) => `:${i + 1}`).join(', ')})`;
-                    const binds = rows.map((row) => cols.map((c) => {
-                        const v = row[c];
-                        if (typeof v === 'boolean') return v ? 1 : 0;
-                        return v ?? null;
-                    }));
-                    await conn.executeMany(insertSql, binds);
+                    await this._bulkInsertRows(conn, definition.table, definition.columns, rows, onProgress);
                 }
             }
             if (payload.rootDeletes.length > 0) {
@@ -1485,6 +1629,7 @@ class OracleStorage {
             }
 
             // 캐릭터 upsert
+            onProgress?.({ stage: 'characters', message: `캐릭터 및 속성 저장 중... (${payload.characters.length}개)`, percent: 25 });
             const splitCharacters = payload.characters.map(splitCharacter);
             const characterColumns = [
                 'id', 'position', 'kind', 'name', 'image', 'first_message', 'description', 'notes',
@@ -1495,18 +1640,32 @@ class OracleStorage {
                 'background_css', 'creation_time', 'modification_time', 'last_interaction_time', 'trash_time',
             ];
             if (splitCharacters.length > 0) {
-                const mergeSql = `MERGE INTO character_characters t
-                    USING (SELECT ${characterColumns.map((c, i) => `:${i + 1} AS ${c.toUpperCase()}`).join(', ')} FROM dual) s
-                    ON (t.id = s.id)
-                    WHEN MATCHED THEN UPDATE SET ${characterColumns.slice(1).map((c) => `t.${c.toUpperCase()} = s.${c.toUpperCase()}`).join(', ')}, t.updated_at = SYSTIMESTAMP
-                    WHEN NOT MATCHED THEN INSERT (${characterColumns.map((c) => `${c.toUpperCase()}`).join(', ')})
-                        VALUES (${characterColumns.map((c) => `s.${c.toUpperCase()}`).join(', ')})`;
-                const binds = splitCharacters.map((item) => characterColumns.map((c) => {
-                    const v = item.core[c];
-                    if (typeof v === 'boolean') return v ? 1 : 0;
-                    return v ?? null;
-                }));
-                await conn.executeMany(mergeSql, binds);
+                const updateCols = characterColumns.slice(1);
+                const upsertSql = `BEGIN
+                    UPDATE character_characters SET
+                        ${updateCols.map((c) => `${c.toUpperCase()} = :${c}`).join(', ')},
+                        updated_at = SYSTIMESTAMP
+                    WHERE id = :id;
+                    IF SQL%ROWCOUNT = 0 THEN
+                        INSERT INTO character_characters (${characterColumns.map((c) => c.toUpperCase()).join(', ')})
+                        VALUES (${characterColumns.map((c) => `:${c}`).join(', ')});
+                    END IF;
+                END;`;
+                const characterBindDefs = {};
+                for (const c of characterColumns) {
+                    const t = this._getColumnBindType('character_characters', c);
+                    characterBindDefs[c] = t === oracledb.DB_TYPE_VARCHAR ? { type: t, maxSize: 4000 } : { type: t };
+                }
+                const binds = splitCharacters.map((item) => {
+                    const row = {};
+                    for (const c of characterColumns) {
+                        const v = item.core[c];
+                        const t = this._getColumnBindType('character_characters', c);
+                        row[c] = this._formatBindValue(v, t, false);
+                    }
+                    return row;
+                });
+                await conn.executeMany(upsertSql, binds, { bindDefs: characterBindDefs });
             }
 
             const changedCharacterIds = payload.characters.map((r) => r.id);
@@ -1527,35 +1686,50 @@ class OracleStorage {
             // 캐릭터 자식 테이블 bulk insert
             const characterRows = (name) => splitCharacters.flatMap((item) => item[name]);
             await this._bulkInsertRows(conn, 'character_attributes', ['character_id', 'key_value', 'value'],
-                splitCharacters.flatMap((item) => item.attributes.map((r) => ({ character_id: item.core.id, key_value: r.key, value: r.value }))));
-            await this._bulkInsertRows(conn, 'character_tags', ['character_id', 'position', 'tag'], characterRows('tags'));
-            await this._bulkInsertRows(conn, 'character_greetings', ['character_id', 'greeting_type', 'position', 'content'], characterRows('greetings'));
-            await this._bulkInsertRows(conn, 'character_biases', ['character_id', 'position', 'phrase', 'bias'], characterRows('biases'));
-            await this._bulkInsertRows(conn, 'character_emotions', ['character_id', 'position', 'emotion', 'asset'], characterRows('emotions'));
-            await this._bulkInsertRows(conn, 'character_modules', ['character_id', 'position', 'module_id'], characterRows('modules'));
-            await this._bulkInsertRows(conn, 'character_group_members', ['group_id', 'position', 'character_id', 'talk_weight', 'active'], characterRows('groupMembers'));
-            await this._bulkInsertRows(conn, 'character_chat_folders', ['character_id', 'position', 'folder_id', 'name', 'color', 'folded'], characterRows('chatFolders'));
-            await this._bulkInsertRows(conn, 'character_scripts', ['character_id', 'script_kind', 'position', 'comment_text', 'input_text', 'output_text', 'script_type', 'flag', 'able_flag', 'trigger_payload'], characterRows('scripts'));
-            await this._bulkInsertRows(conn, 'character_sd_data', ['character_id', 'position', 'key_value', 'value'], characterRows('sdData'));
-            await this._bulkInsertRows(conn, 'character_assets', ['character_id', 'position', 'asset_source', 'asset_type', 'uri', 'name', 'extension', 'extra_value'], characterRows('assets'));
-            await this._bulkInsertRows(conn, 'character_lore_entries', ['character_id', 'position', 'lore_id', 'primarykey', 'secondary_key', 'insert_order', 'comment_text', 'content', 'lore_mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], characterRows('lore'));
+                splitCharacters.flatMap((item) => item.attributes.map((r) => ({ character_id: item.core.id, key_value: r.key, value: r.value }))), onProgress);
+            await this._bulkInsertRows(conn, 'character_tags', ['character_id', 'position', 'tag'], characterRows('tags'), onProgress);
+            await this._bulkInsertRows(conn, 'character_greetings', ['character_id', 'greeting_type', 'position', 'content'], characterRows('greetings'), onProgress);
+            await this._bulkInsertRows(conn, 'character_biases', ['character_id', 'position', 'phrase', 'bias'], characterRows('biases'), onProgress);
+            await this._bulkInsertRows(conn, 'character_emotions', ['character_id', 'position', 'emotion', 'asset'], characterRows('emotions'), onProgress);
+            await this._bulkInsertRows(conn, 'character_modules', ['character_id', 'position', 'module_id'], characterRows('modules'), onProgress);
+            await this._bulkInsertRows(conn, 'character_group_members', ['group_id', 'position', 'character_id', 'talk_weight', 'active'], characterRows('groupMembers'), onProgress);
+            await this._bulkInsertRows(conn, 'character_chat_folders', ['character_id', 'position', 'folder_id', 'name', 'color', 'folded'], characterRows('chatFolders'), onProgress);
+            await this._bulkInsertRows(conn, 'character_scripts', ['character_id', 'script_kind', 'position', 'comment_text', 'input_text', 'output_text', 'script_type', 'flag', 'able_flag', 'trigger_payload'], characterRows('scripts'), onProgress);
+            await this._bulkInsertRows(conn, 'character_sd_data', ['character_id', 'position', 'key_value', 'value'], characterRows('sdData'), onProgress);
+            await this._bulkInsertRows(conn, 'character_assets', ['character_id', 'position', 'asset_source', 'asset_type', 'uri', 'name', 'extension', 'extra_value'], characterRows('assets'), onProgress);
+            await this._bulkInsertRows(conn, 'character_lore_entries', ['character_id', 'position', 'lore_id', 'primarykey', 'secondary_key', 'insert_order', 'comment_text', 'content', 'lore_mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], characterRows('lore'), onProgress);
 
             // 채팅 upsert
+            onProgress?.({ stage: 'chats', message: `채팅 목록 저장 중... (${payload.chats.length}개)`, percent: 45 });
             const splitChats = payload.chats.map(splitChat);
             const chatColumns = ['id', 'character_id', 'position', 'name', 'note', 'sd_data', 'supa_memory_data', 'last_memory', 'is_streaming', 'streaming_optimization_mode', 'bound_persona_id', 'first_message_index', 'folder_id', 'last_message_time'];
             if (splitChats.length > 0) {
-                const mergeSql = `MERGE INTO chat_chats t
-                    USING (SELECT ${chatColumns.map((c, i) => `:${i + 1} AS ${c.toUpperCase()}`).join(', ')} FROM dual) s
-                    ON (t.id = s.id)
-                    WHEN MATCHED THEN UPDATE SET ${chatColumns.slice(1).map((c) => `t.${c.toUpperCase()} = s.${c.toUpperCase()}`).join(', ')}, t.updated_at = SYSTIMESTAMP
-                    WHEN NOT MATCHED THEN INSERT (${chatColumns.map((c) => `${c.toUpperCase()}`).join(', ')})
-                        VALUES (${chatColumns.map((c) => `s.${c.toUpperCase()}`).join(', ')})`;
-                const binds = splitChats.map((item) => chatColumns.map((c) => {
-                    const v = item.core[c];
-                    if (typeof v === 'boolean') return v ? 1 : 0;
-                    return v ?? null;
-                }));
-                await conn.executeMany(mergeSql, binds);
+                const updateCols = chatColumns.slice(1);
+                const upsertSql = `BEGIN
+                    UPDATE chat_chats SET
+                        ${updateCols.map((c) => `${c.toUpperCase()} = :${c}`).join(', ')},
+                        updated_at = SYSTIMESTAMP
+                    WHERE id = :id;
+                    IF SQL%ROWCOUNT = 0 THEN
+                        INSERT INTO chat_chats (${chatColumns.map((c) => c.toUpperCase()).join(', ')})
+                        VALUES (${chatColumns.map((c) => `:${c}`).join(', ')});
+                    END IF;
+                END;`;
+                const chatBindDefs = {};
+                for (const c of chatColumns) {
+                    const t = this._getColumnBindType('chat_chats', c);
+                    chatBindDefs[c] = t === oracledb.DB_TYPE_VARCHAR ? { type: t, maxSize: 4000 } : { type: t };
+                }
+                const binds = splitChats.map((item) => {
+                    const row = {};
+                    for (const c of chatColumns) {
+                        const v = item.core[c];
+                        const t = this._getColumnBindType('chat_chats', c);
+                        row[c] = this._formatBindValue(v, t, false);
+                    }
+                    return row;
+                });
+                await conn.executeMany(upsertSql, binds, { bindDefs: chatBindDefs });
             }
             const changedChatIds = payload.chats.map((r) => r.id);
             const chatChildTables = ['chat_attributes', 'chat_suggestions', 'chat_modules', 'chat_script_state', 'chat_bookmarks', 'chat_memory', 'chat_lore_entries'];
@@ -1566,43 +1740,48 @@ class OracleStorage {
                 }
             }
             const chatRows = (name) => splitChats.flatMap((item) => item[name]);
-            await this._bulkInsertRows(conn, 'chat_attributes', ['chat_id', 'key_value', 'value'], splitChats.flatMap((item) => item.attributes.map((r) => ({ chat_id: item.core.id, key_value: r.key, value: r.value }))));
-            await this._bulkInsertRows(conn, 'chat_suggestions', ['chat_id', 'position', 'content'], chatRows('suggestions'));
-            await this._bulkInsertRows(conn, 'chat_modules', ['chat_id', 'position', 'module_id'], chatRows('modules'));
-            await this._bulkInsertRows(conn, 'chat_script_state', ['chat_id', 'key_value', 'value_type', 'text_value', 'number_value', 'boolean_value'], chatRows('scriptState'));
-            await this._bulkInsertRows(conn, 'chat_bookmarks', ['chat_id', 'position', 'message_id', 'name'], chatRows('bookmarks'));
-            await this._bulkInsertRows(conn, 'chat_memory', ['chat_id', 'memory_type', 'payload'], chatRows('memory'));
-            await this._bulkInsertRows(conn, 'chat_lore_entries', ['chat_id', 'position', 'lore_id', 'primarykey', 'secondary_key', 'insert_order', 'comment_text', 'content', 'lore_mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], chatRows('lore'));
+            await this._bulkInsertRows(conn, 'chat_attributes', ['chat_id', 'key_value', 'value'], splitChats.flatMap((item) => item.attributes.map((r) => ({ chat_id: item.core.id, key_value: r.key, value: r.value }))), onProgress);
+            await this._bulkInsertRows(conn, 'chat_suggestions', ['chat_id', 'position', 'content'], chatRows('suggestions'), onProgress);
+            await this._bulkInsertRows(conn, 'chat_modules', ['chat_id', 'position', 'module_id'], chatRows('modules'), onProgress);
+            await this._bulkInsertRows(conn, 'chat_script_state', ['chat_id', 'key_value', 'value_type', 'text_value', 'number_value', 'boolean_value'], chatRows('scriptState'), onProgress);
+            await this._bulkInsertRows(conn, 'chat_bookmarks', ['chat_id', 'position', 'message_id', 'name'], chatRows('bookmarks'), onProgress);
+            await this._bulkInsertRows(conn, 'chat_memory', ['chat_id', 'memory_type', 'payload'], chatRows('memory'), onProgress);
+            await this._bulkInsertRows(conn, 'chat_lore_entries', ['chat_id', 'position', 'lore_id', 'primarykey', 'secondary_key', 'insert_order', 'comment_text', 'content', 'lore_mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], chatRows('lore'), onProgress);
 
-            // 메시지 upsert
+            // 메시지 upsert / bulk insert
+            onProgress?.({ stage: 'messages', message: `메시지 저장 중... (${payload.messages.length}개)`, percent: 65 });
             const splitMessages = payload.messages.map(splitMessage);
             const messageColumns = ['chat_id', 'id', 'position', 'role', 'content_text', 'content_binary', 'saying_character_id', 'sent_time', 'sender_name', 'other_user', 'disabled_scope', 'is_comment'];
-            if (splitMessages.length > 0) {
-                const mergeSql = `MERGE INTO chat_messages t
-                    USING (SELECT ${messageColumns.map((c, i) => `:${i + 1} AS ${c.toUpperCase()}`).join(', ')} FROM dual) s
-                    ON (t.chat_id = s.chat_id AND t.id = s.id)
-                    WHEN MATCHED THEN UPDATE SET ${messageColumns.slice(2).map((c) => `t.${c.toUpperCase()} = s.${c.toUpperCase()}`).join(', ')}, t.updated_at = SYSTIMESTAMP
-                    WHEN NOT MATCHED THEN INSERT (${messageColumns.map((c) => `${c.toUpperCase()}`).join(', ')})
-                        VALUES (${messageColumns.map((c) => `s.${c.toUpperCase()}`).join(', ')})`;
-                const binds = splitMessages.map((item) => messageColumns.map((c) => {
-                    const v = item.core[c];
-                    if (typeof v === 'boolean') return v ? 1 : 0;
-                    if (Buffer.isBuffer(v)) return v;
-                    return v ?? null;
-                }));
-                await conn.executeMany(mergeSql, binds);
+            const messageChildTables = [
+                'chat_message_attributes', 'chat_message_generation', 'chat_message_prompt_info',
+                'chat_message_prompt_toggles', 'chat_message_prompt_items',
+            ];
+            if (changedChatIds.length > 0) {
+                for (const table of messageChildTables) {
+                    const delSql = `DELETE FROM ${assertSqlIdentifier(table)} WHERE chat_id = :1`;
+                    await conn.executeMany(delSql, changedChatIds.map((id) => [id]));
+                }
+                const delMsgSql = `DELETE FROM chat_messages WHERE chat_id = :1`;
+                await conn.executeMany(delMsgSql, changedChatIds.map((id) => [id]));
+            } else if (payload.messages.length > 0) {
+                await deleteMessageChildren(conn, payload.messages);
+                const delMsgSql = `DELETE FROM chat_messages WHERE chat_id = :1 AND id = :2`;
+                await conn.executeMany(delMsgSql, payload.messages.map((m) => [m.chatId, m.id]));
             }
-            await deleteMessageChildren(conn, payload.messages);
+            if (splitMessages.length > 0) {
+                await this._bulkInsertRows(conn, 'chat_messages', messageColumns, splitMessages.map((m) => m.core), onProgress);
+            }
+            onProgress?.({ stage: 'message_children', message: '메시지 메타데이터 및 프롬프트 토글 저장 중...', percent: 85 });
             await this._bulkInsertRows(conn, 'chat_message_attributes', ['chat_id', 'message_id', 'key_value', 'value'],
-                splitMessages.flatMap((item) => item.attributes.map((r) => ({ chat_id: item.core.chat_id, message_id: item.core.id, key_value: r.key, value: r.value }))));
+                splitMessages.flatMap((item) => item.attributes.map((r) => ({ chat_id: item.core.chat_id, message_id: item.core.id, key_value: r.key, value: r.value }))), onProgress);
             await this._bulkInsertRows(conn, 'chat_message_generation', ['chat_id', 'message_id', 'model', 'generation_id', 'input_tokens', 'output_tokens', 'max_context', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time'],
-                splitMessages.flatMap((item) => item.generation ? [item.generation] : []));
+                splitMessages.flatMap((item) => item.generation ? [item.generation] : []), onProgress);
             await this._bulkInsertRows(conn, 'chat_message_prompt_info', ['chat_id', 'message_id', 'prompt_name'],
-                splitMessages.flatMap((item) => item.prompt ? [item.prompt.info] : []));
+                splitMessages.flatMap((item) => item.prompt ? [item.prompt.info] : []), onProgress);
             await this._bulkInsertRows(conn, 'chat_message_prompt_toggles', ['chat_id', 'message_id', 'position', 'toggle_key', 'toggle_value'],
-                splitMessages.flatMap((item) => item.prompt?.toggles || []));
+                splitMessages.flatMap((item) => item.prompt?.toggles || []), onProgress);
             await this._bulkInsertRows(conn, 'chat_message_prompt_items', ['chat_id', 'message_id', 'position', 'payload'],
-                splitMessages.flatMap((item) => item.prompt?.items || []));
+                splitMessages.flatMap((item) => item.prompt?.items || []), onProgress);
 
             // manifest 기반 삭제
             if (payload.characterIds !== undefined) {
@@ -1636,12 +1815,14 @@ class OracleStorage {
             }
 
             // revision 갱신
+            onProgress?.({ stage: 'commit', message: '오라클 트랜잭션 커밋 중...', percent: 98 });
             await conn.execute(
                 `UPDATE system_storage_meta
                  SET revision = :1, initialized = 1, updated_at = SYSTIMESTAMP
                  WHERE singleton = 1`,
                 [nextRevision]);
             await conn.commit();
+            onProgress?.({ stage: 'done', message: `동기화 완료 (Revision: ${nextRevision})`, percent: 100 });
             return {
                 revision: nextRevision,
                 changed: {
@@ -1659,39 +1840,170 @@ class OracleStorage {
         }
     }
 
+    _getColumnBindType(table, column) {
+        const col = column.toLowerCase();
+        const mappedTable = mapTableName(table);
+        const jsonCols = new Set(this._getJsonColumnsForTable(mappedTable).map((c) => c.toLowerCase()));
+        if (jsonCols.has(col)) {
+            return oracledb.DB_TYPE_CLOB;
+        }
+        const lobCols = new Set(this._getLobColumnsForTable(mappedTable).map((c) => c.toLowerCase()));
+        if (lobCols.has(col)) {
+            if (col === 'content_binary' || col === 'data') {
+                return oracledb.DB_TYPE_BLOB;
+            }
+            return oracledb.DB_TYPE_CLOB;
+        }
+
+        const numberCols = new Set([
+            'position', 'book_position', 'lore_position', 'model_position', 'insert_order', 'activation_percent',
+            'book_version', 'input_tokens', 'output_tokens', 'max_context', 'max_response', 'temperature',
+            'frequency_penalty', 'presence_penalty', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time',
+            'talk_weight', 'active', 'folded', 'able_flag', 'always_active', 'selective', 'case_sensitive',
+            'use_regex', 'number_value', 'boolean_value', 'low_level_access', 'hide_icon', 'enabled',
+            'large_portrait', 'favorite', 'icons_present', 'prompt_preprocess', 'control', 'shift', 'alt',
+            'alt_flag', 'format', 'tokenizer', 'last_used', 'bound_persona_id', 'first_message_index',
+            'last_message_time', 'sent_time', 'is_comment', 'is_streaming', 'streaming_optimization_mode',
+            'node_id', 'parent_node_id', 'bias', 'sd_model', 'use_sd', 'new_chat_on_start',
+            'chat_page', 'utility_bot', 'is_private', 'creation_time', 'modification_time', 'last_interaction_time', 'trash_time',
+            'revision', 'schema_version', 'singleton', 'initialized'
+        ]);
+
+        if (numberCols.has(col) && !(mappedTable === 'character_scripts' && col === 'flag')) {
+            return oracledb.DB_TYPE_NUMBER;
+        }
+        return oracledb.DB_TYPE_VARCHAR;
+    }
+
+    _formatBindValue(v, bindType, isJson) {
+        if (isJson) {
+            if (v === null || v === undefined) return 'null';
+            if (typeof v === 'string') {
+                try { JSON.parse(v); return v; } catch (e) { return JSON.stringify(v); }
+            }
+            return JSON.stringify(v);
+        }
+        if (v === null || v === undefined) return null;
+        if (bindType === oracledb.DB_TYPE_NUMBER) {
+            if (typeof v === 'boolean') return v ? 1 : 0;
+            if (typeof v === 'number') return Number.isNaN(v) ? null : v;
+            if (v === '') return null;
+            const n = Number(v);
+            return Number.isNaN(n) ? null : n;
+        }
+        if (bindType === oracledb.DB_TYPE_BLOB) {
+            if (Buffer.isBuffer(v)) return v;
+            return Buffer.from(v);
+        }
+        if (bindType === oracledb.DB_TYPE_CLOB) {
+            if (typeof v === 'string') return v;
+            return JSON.stringify(v);
+        }
+        // DB_TYPE_VARCHAR
+        if (typeof v === 'boolean') return v ? '1' : '0';
+        return String(v);
+    }
+
     // 범용 bulk insert 헬퍼 (행 객체 배열 → executemany)
-    async _bulkInsertRows(connection, table, columns, rows) {
+    async _bulkInsertRows(connection, table, columns, rows, onProgress) {
         if (!rows || rows.length === 0) return;
-        const quotedTable = assertSqlIdentifier(table);
-        const quotedCols = columns.map((c) => `${c.toUpperCase()}`);
-        const jsonColumns = new Set(this._getJsonColumnsForTable(table));
+        const quotedTable = assertSqlIdentifier(mapTableName(table));
+        const lobCols = new Set(this._getLobColumnsForTable(table).map((c) => c.toLowerCase()));
+        const jsonColumns = new Set(this._getJsonColumnsForTable(table).map((c) => c.toLowerCase()));
+
+        // ORA-24816 방지: Oracle은 LOB/LONG/JSON 컬럼이 non-LOB 컬럼 뒤에 오도록 요구함
+        const orderedColumns = [
+            ...columns.filter((c) => !lobCols.has(c.toLowerCase()) && !jsonColumns.has(c.toLowerCase())),
+            ...columns.filter((c) => lobCols.has(c.toLowerCase()) || jsonColumns.has(c.toLowerCase())),
+        ];
+
+        // SQL 컬럼: Oracle 이름 (codec 이름이 넘어와도 예약어 회피 이름으로 변환)
+        const quotedCols = orderedColumns.map((c) => toOracleColumn(c).toUpperCase());
         // JSON 컬럼은 JSON(:n) 함수로 명시적 변환 (문자열/객체 모두 처리)
-        const bindNames = columns.map((c, i) =>
-            jsonColumns.has(c) ? `JSON(:${i + 1})` : `:${i + 1}`
+        const bindNames = orderedColumns.map((c, i) =>
+            jsonColumns.has(c.toLowerCase()) ? `JSON(:${i + 1})` : `:${i + 1}`
         ).join(', ');
         const insertSql = `INSERT INTO ${quotedTable} (${quotedCols.join(', ')}) VALUES (${bindNames})`;
-        const binds = rows.map((row) => columns.map((c) => {
-            const v = row[c];
-            if (typeof v === 'boolean') return v ? 1 : 0;
-            if (Buffer.isBuffer(v)) return v;
-            if (v === null || v === undefined) return null;
-            // JSON 컬럼: JSON(:n) 함수가 JSON 텍스트를 파싱.
-            // 객체면 JSON.stringify, 문자열이면 JSON.stringify로 JSON 문자열로 변환
-            // ("hello" → '"hello"'), 숫자/불린도 JSON.stringify로 변환
-            if (jsonColumns.has(c)) {
-                if (typeof v === 'object') {
-                    return JSON.stringify(v);
-                }
-                if (typeof v === 'string') {
-                    // 일반 문자열을 JSON 문자열로 변환
-                    // 유효한 JSON이면 그대로, 아니면 stringify
-                    try { JSON.parse(v); return v; } catch (e) { return JSON.stringify(v); }
-                }
-                return JSON.stringify(v);
+
+        const bindTypes = orderedColumns.map((c) => this._getColumnBindType(table, c));
+        const bindDefs = bindTypes.map((t) => {
+            if (t === oracledb.DB_TYPE_VARCHAR) {
+                return { type: t, maxSize: 4000 };
             }
-            return v;
+            return { type: t };
+        });
+
+        const binds = rows.map((row) => orderedColumns.map((c, i) => {
+            // 행 객체는 공용 codec의 컬럼명 프로퍼티를 쓸 수 있음
+            const codecColumn = COLUMN_NAME_MAP[c.toLowerCase()] || c;
+            const v0 = row[c];
+            const v = v0 !== undefined ? v0 : row[codecColumn];
+            const isJson = jsonColumns.has(c.toLowerCase());
+            return this._formatBindValue(v, bindTypes[i], isJson);
         }));
-        await connection.executeMany(insertSql, binds);
+
+        // 500개씩 청킹하여 오라클 소켓 버퍼 및 메모리 과부하 방지
+        const CHUNK_SIZE = 500;
+        for (let i = 0; i < binds.length; i += CHUNK_SIZE) {
+            const chunkBinds = binds.slice(i, i + CHUNK_SIZE);
+            await connection.executeMany(insertSql, chunkBinds, { bindDefs });
+            if (onProgress && binds.length > CHUNK_SIZE) {
+                onProgress({
+                    stage: 'bulk_insert',
+                    table,
+                    current: Math.min(i + chunkBinds.length, binds.length),
+                    total: binds.length,
+                    message: `${table}: ${Math.min(i + chunkBinds.length, binds.length)} / ${binds.length} 저장 중...`,
+                });
+            }
+        }
+    }
+
+    // 테이블별 LOB (CLOB/BLOB) 컬럼 목록 (스키마 기반)
+    _getLobColumnsForTable(table) {
+        const mapped = mapTableName(table);
+        const lobCols = {
+            'system_setting_values': ['text_value', 'encoded_text_value'],
+            'system_bot_presets': ['main_prompt', 'jailbreak', 'global_note', 'image'],
+            'system_personas': ['prompt', 'icon', 'note'],
+            'system_modules': ['description', 'cjs', 'background_embedding', 'custom_toggle', 'icon'],
+            'system_plugins': ['script'],
+            'system_global_lore_entries': ['comment', 'content', 'comment_text'],
+            'system_translator_presets': ['prompt'],
+            'system_custom_models': ['api_key', 'params'],
+            'system_themes': ['value'],
+            'system_custom_plugin_storage': ['value'],
+            'system_client_data': ['value'],
+            'system_loadouts': ['value'],
+            'character_characters': ['image', 'first_message', 'description', 'notes', 'creator_notes', 'system_prompt', 'post_history_instructions', 'personality', 'scenario', 'example_message', 'license', 'default_variables', 'additional_text', 'translator_note', 'background_html', 'background_css'],
+            'character_greetings': ['content'],
+            'character_emotions': ['asset'],
+            'character_scripts': ['comment_text', 'input_text', 'output_text', 'flag'],
+            'character_sd_data': ['value'],
+            'character_assets': ['uri', 'extra_value'],
+            'character_lore_entries': ['comment_text', 'content'],
+            'chat_chats': ['note', 'sd_data', 'supa_memory_data', 'last_memory'],
+            'chat_suggestions': ['content'],
+            'chat_script_state': ['text_value'],
+            'chat_lore_entries': ['comment_text', 'content'],
+            'chat_messages': ['content_text', 'content_binary'],
+            'chat_message_prompt_toggles': ['toggle_value'],
+            'cold_archives': ['data'],
+            'cold_character_characters': ['image', 'first_message', 'description', 'notes', 'creator_notes', 'system_prompt', 'post_history_instructions', 'personality', 'scenario', 'example_message', 'license', 'default_variables', 'additional_text', 'translator_note', 'background_html', 'background_css'],
+            'cold_character_greetings': ['content'],
+            'cold_character_emotions': ['asset'],
+            'cold_character_scripts': ['comment_text', 'input_text', 'output_text', 'flag'],
+            'cold_character_sd_data': ['value'],
+            'cold_character_assets': ['uri', 'extra_value'],
+            'cold_character_lore_entries': ['comment_text', 'content'],
+            'cold_chat_chats': ['note', 'sd_data', 'supa_memory_data', 'last_memory'],
+            'cold_chat_suggestions': ['content'],
+            'cold_chat_script_state': ['text_value'],
+            'cold_chat_lore_entries': ['comment_text', 'content'],
+            'cold_messages': ['content_text', 'content_binary'],
+            'cold_message_prompt_toggles': ['toggle_value'],
+        };
+        return lobCols[mapped] || [];
     }
 
     // 테이블별 JSON 컬럼 목록 (스키마 기반)
@@ -2149,20 +2461,25 @@ class OracleStorage {
                 if (!['id', 'position'].includes(column)) archive[`character_${column}`] = value;
             }
         }
-        // MERGE INTO cold_archives
-        const mergeSql = `MERGE INTO cold_archives t
-            USING (SELECT ${archiveColumns.map((c, i) => `:${i + 1} AS ${c.toUpperCase()}`).join(', ')} FROM dual) s
-            ON (t.id = s.id)
-            WHEN MATCHED THEN UPDATE SET ${archiveColumns.slice(1).map((c) => `t.${c.toUpperCase()} = s.${c.toUpperCase()}`).join(', ')},
-                t.revision = t.revision + 1, t.updated_at = SYSTIMESTAMP
-            WHEN NOT MATCHED THEN INSERT (${archiveColumns.map((c) => `${c.toUpperCase()}`).join(', ')})
-                VALUES (${archiveColumns.map((c) => `s.${c.toUpperCase()}`).join(', ')})`;
-        const archiveBinds = archiveColumns.map((c) => {
+        // cold_archives upsert
+        const updateArchiveCols = archiveColumns.slice(1);
+        const upsertSql = `BEGIN
+            UPDATE cold_archives SET
+                ${updateArchiveCols.map((c) => `${c.toUpperCase()} = :${c}`).join(', ')},
+                revision = revision + 1, updated_at = SYSTIMESTAMP
+            WHERE id = :id;
+            IF SQL%ROWCOUNT = 0 THEN
+                INSERT INTO cold_archives (${archiveColumns.map((c) => c.toUpperCase()).join(', ')})
+                VALUES (${archiveColumns.map((c) => `:${c}`).join(', ')});
+            END IF;
+        END;`;
+        const archiveBinds = {};
+        for (const c of archiveColumns) {
             const v = archive[c];
-            if (typeof v === 'boolean') return v ? 1 : 0;
-            return v ?? null;
-        });
-        await conn.execute(mergeSql, archiveBinds);
+            if (typeof v === 'boolean') archiveBinds[c] = v ? 1 : 0;
+            else archiveBinds[c] = v ?? null;
+        }
+        await conn.execute(upsertSql, archiveBinds);
 
         // 자식 테이블 삭제 후 재삽입
         const childTables = [
@@ -2334,10 +2651,28 @@ class OracleStorage {
             `Full migration will be available after upsertColdStorage implementation.`);
         return { migrated: 0, skipped: candidates.length };
     }
+
+    async close() {
+        if (this.pool) {
+            try {
+                await this.pool.close(0);
+            } catch (e) {}
+            this.pool = null;
+        }
+    }
 }
 
 module.exports = {
     OracleStorage,
     StorageRevisionConflictError,
     StoragePayloadError,
+    // 테스트용: Oracle 빈 문자열 sentinel 정규화
+    ORACLE_EMPTY_STRING_SENTINEL,
+    normalizeEmptyStringBinds,
+    restoreEmptyStringInRow,
+    wrapConnectionForEmptyStrings,
+    // 테스트용: 예약어 회피 컬럼명 매핑
+    COLUMN_NAME_MAP,
+    toOracleColumn,
+    remapRowColumns,
 };

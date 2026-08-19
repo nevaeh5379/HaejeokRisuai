@@ -283,12 +283,14 @@
                                         else{
                                             const confirm = await alertConfirm(language.doYouWantToBindCurrentPersona)
                                             if(confirm){
-                                                if(!DBState.db.personas[DBState.db.selectedPersona].id){
-                                                    DBState.db.personas[DBState.db.selectedPersona].id = v4()
+                                                const currentPersona = DBState?.db?.personas?.[DBState?.db?.selectedPersona]
+                                                if(currentPersona){
+                                                    if(!currentPersona.id){
+                                                        currentPersona.id = v4()
+                                                    }
+                                                    chat.bindedPersona = currentPersona.id
+                                                    alertNormal(language.personaBindedSuccess)
                                                 }
-                                                chat.bindedPersona = DBState.db.personas[DBState.db.selectedPersona].id
-                                                console.log(DBState.db.personas[DBState.db.selectedPersona])
-                                                alertNormal(language.personaBindedSuccess)
                                             }
                                         }
                                         break
@@ -395,12 +397,14 @@
                                 else{
                                     const confirm = await alertConfirm(language.doYouWantToBindCurrentPersona)
                                     if(confirm){
-                                        if(!DBState.db.personas[DBState.db.selectedPersona].id){
-                                            DBState.db.personas[DBState.db.selectedPersona].id = v4()
+                                        const currentPersona = DBState?.db?.personas?.[DBState?.db?.selectedPersona]
+                                        if(currentPersona){
+                                            if(!currentPersona.id){
+                                                currentPersona.id = v4()
+                                            }
+                                            chat.bindedPersona = currentPersona.id
+                                            alertNormal(language.personaBindedSuccess)
                                         }
-                                        chat.bindedPersona = DBState.db.personas[DBState.db.selectedPersona].id
-                                        console.log(DBState.db.personas[DBState.db.selectedPersona])
-                                        alertNormal(language.personaBindedSuccess)
                                     }
                                 }
                                 break

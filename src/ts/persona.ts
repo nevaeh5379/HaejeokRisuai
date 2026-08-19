@@ -16,21 +16,24 @@ export async function selectUserImg() {
     const img = selected.data
     const imgp = await saveImage(img)
     DBState.db.userIcon = imgp
+    const currentPersona = DBState.db.personas[DBState.db.selectedPersona]
     DBState.db.personas[DBState.db.selectedPersona] = {
-        ...DBState.db.personas[DBState.db.selectedPersona],
+        ...currentPersona,
         name: DBState.db.username,
         icon: DBState.db.userIcon,
         personaPrompt: DBState.db.personaPrompt,
         note: DBState.db.userNote,
-        id: v4()
+        id: currentPersona?.id ?? v4()
     }
 }
 
 export function saveUserPersona() {
-    DBState.db.personas[DBState.db.selectedPersona].name = DBState.db.username
-    DBState.db.personas[DBState.db.selectedPersona].icon = DBState.db.userIcon
-    DBState.db.personas[DBState.db.selectedPersona].personaPrompt = DBState.db.personaPrompt
-    DBState.db.personas[DBState.db.selectedPersona].note = DBState.db.userNote
+    if (DBState.db.personas[DBState.db.selectedPersona]) {
+        DBState.db.personas[DBState.db.selectedPersona].name = DBState.db.username
+        DBState.db.personas[DBState.db.selectedPersona].icon = DBState.db.userIcon
+        DBState.db.personas[DBState.db.selectedPersona].personaPrompt = DBState.db.personaPrompt
+        DBState.db.personas[DBState.db.selectedPersona].note = DBState.db.userNote
+    }
 }
 
 export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') {
@@ -38,11 +41,13 @@ export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') 
         saveUserPersona()
     }
     const pr = DBState.db.personas[id]
-    DBState.db.personaPrompt = pr.personaPrompt
-    DBState.db.username = pr.name
-    DBState.db.userIcon = pr.icon
-    DBState.db.userNote = pr.note
-    DBState.db.selectedPersona = id
+    if (pr) {
+        DBState.db.personaPrompt = pr.personaPrompt
+        DBState.db.username = pr.name
+        DBState.db.userIcon = pr.icon
+        DBState.db.userNote = pr.note
+        DBState.db.selectedPersona = id
+    }
 }
 
 interface PersonaCard {

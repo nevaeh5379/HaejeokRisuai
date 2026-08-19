@@ -207,7 +207,7 @@ CREATE TABLE system_modules (
     hide_icon NUMBER(1),
     background_embedding CLOB,
     namespace VARCHAR2(4000),
-    custom_toggle VARCHAR2(4000),
+    custom_toggle CLOB,
     mcp_url VARCHAR2(4000),
     icon CLOB,
     PRIMARY KEY (setting_key, position),

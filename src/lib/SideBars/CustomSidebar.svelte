@@ -66,15 +66,17 @@
                     "text-textcolor": bindedPersona
                 }} onclick={(e) => {
                     e.stopPropagation()
-                    const chatIndex =DBState.db.characters[$selectedCharID].chatPage
-                    if(!DBState.db.personas[DBState.db.selectedPersona].id){
-                        DBState.db.personas[DBState.db.selectedPersona].id = v4()
+                    const chatIndex = DBState.db.characters[$selectedCharID].chatPage
+                    const currentPersona = DBState?.db?.personas?.[DBState?.db?.selectedPersona]
+                    if(!currentPersona) return
+                    if(!currentPersona.id){
+                        currentPersona.id = v4()
                     }
                     if(checkPersonaBinded()) {
                         DBState.db.characters[$selectedCharID].chats[chatIndex].bindedPersona = ''
                     }
                     else{
-                        DBState.db.characters[$selectedCharID].chats[chatIndex].bindedPersona = DBState.db.personas[DBState.db.selectedPersona].id
+                        DBState.db.characters[$selectedCharID].chats[chatIndex].bindedPersona = currentPersona.id
                     }
                 }}>
                     <PinIcon size={20} />

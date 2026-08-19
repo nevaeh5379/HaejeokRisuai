@@ -187,10 +187,16 @@ export function createPostgresDatabaseAdapter(
                 switch (domain) {
                     case 'personas': {
                         const personas = await storage.loadPersonas()
-                        internalState.personas = personas
+                        internalState.personas = (personas && personas.length > 0) ? personas : [{
+                            name: internalState.coreData.username || 'User',
+                            icon: internalState.coreData.userIcon || '',
+                            personaPrompt: '',
+                            note: internalState.coreData.userNote || '',
+                            largePortrait: false,
+                        }]
                         internalState.loadedDomains.add('personas')
-                        primeRootSetting(storage.getCache(), 'personas', personas)
-                        return personas
+                        primeRootSetting(storage.getCache(), 'personas', internalState.personas)
+                        return internalState.personas
                     }
                     case 'botPresets': {
                         const botPresets = await storage.loadBotPresets()
@@ -293,6 +299,15 @@ export function createPostgresDatabaseAdapter(
                         }]
                         triggerLoadDomain('personas')
                     }
+                }
+                if (!internalState.personas || internalState.personas.length === 0) {
+                    internalState.personas = [{
+                        name: internalState.coreData.username || 'User',
+                        icon: internalState.coreData.userIcon || '',
+                        personaPrompt: '',
+                        note: internalState.coreData.userNote || '',
+                        largePortrait: false,
+                    }]
                 }
                 return internalState.personas
             }

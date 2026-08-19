@@ -132,6 +132,14 @@ async function createThumbnailBuffer(buffer, width = 128, height = 128) {
     }
 }
 
+async function removeThumbnailsForHex(thumbDir, hexPath) {
+    if (!fs.existsSync(thumbDir)) return;
+    const standardSizes = ['128x128', '256x256', '512x512', '64x64'];
+    await Promise.all(standardSizes.map(size =>
+        fs.promises.unlink(path.join(thumbDir, `${hexPath}_${size}.webp`)).catch(() => {})
+    ));
+}
+
 function getContentType(key) {
     const ext = key.split('.').pop()?.toLowerCase();
     switch (ext) {
@@ -286,16 +294,7 @@ class LocalFsStorage {
             await fs.promises.unlink(sourcePath).catch(() => {});
         }
         const thumbDir = path.join(this.savePath, '__thumbs');
-        if (fs.existsSync(thumbDir)) {
-            try {
-                const thumbFiles = await fs.promises.readdir(thumbDir);
-                for (const tf of thumbFiles) {
-                    if (tf.startsWith(hexPath)) {
-                        await fs.promises.rm(path.join(thumbDir, tf));
-                    }
-                }
-            } catch (err) {}
-        }
+        await removeThumbnailsForHex(thumbDir, hexPath);
         const key = hexToKey(hexPath);
         if (isImageKey(key)) {
             fs.promises.readFile(fullPath).then(data => createThumbnailBuffer(data, 128, 128)).then(async (thumbBuffer) => {
@@ -311,29 +310,13 @@ class LocalFsStorage {
     }
 
     createWriteStream(hexPath) {
-        const temporaryPath = path.join(this.savePath, `__stream-${crypto.randomUUID()}`);
-        const fileStream = fs.createWriteStream(temporaryPath);
+        const fullPath = path.join(this.savePath, hexPath);
+        const fileStream = fs.createWriteStream(fullPath);
         const donePromise = new Promise((resolve, reject) => {
             fileStream.on('finish', async () => {
                 try {
-                    const fullPath = path.join(this.savePath, hexPath);
-                    try {
-                        await fs.promises.rename(temporaryPath, fullPath);
-                    } catch (err) {
-                        await fs.promises.copyFile(temporaryPath, fullPath);
-                        await fs.promises.unlink(temporaryPath).catch(() => {});
-                    }
                     const thumbDir = path.join(this.savePath, '__thumbs');
-                    if (fs.existsSync(thumbDir)) {
-                        try {
-                            const thumbFiles = await fs.promises.readdir(thumbDir);
-                            for (const tf of thumbFiles) {
-                                if (tf.startsWith(hexPath)) {
-                                    await fs.promises.rm(path.join(thumbDir, tf));
-                                }
-                            }
-                        } catch (err) {}
-                    }
+                    await removeThumbnailsForHex(thumbDir, hexPath);
                     resolve({ success: true });
                 } catch (err) {
                     reject(err);
@@ -346,7 +329,7 @@ class LocalFsStorage {
             done: () => donePromise,
             abort: async () => {
                 fileStream.destroy();
-                await fs.promises.unlink(temporaryPath).catch(() => {});
+                await fs.promises.unlink(fullPath).catch(() => {});
             }
         };
     }
@@ -363,16 +346,7 @@ class LocalFsStorage {
             } catch (err) {
                 // Ignore removal errors if file is absent
             }
-            if (fs.existsSync(thumbDir)) {
-                try {
-                    const thumbFiles = await fs.promises.readdir(thumbDir);
-                    for (const tf of thumbFiles) {
-                        if (tf.startsWith(hp)) {
-                            await fs.promises.rm(path.join(thumbDir, tf));
-                        }
-                    }
-                } catch (err) {}
-            }
+            await removeThumbnailsForHex(thumbDir, hp);
         }
         return { success: true };
     }

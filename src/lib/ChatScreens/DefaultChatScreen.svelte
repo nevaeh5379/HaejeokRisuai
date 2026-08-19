@@ -353,22 +353,23 @@
     let { userIconPortrait, currentUsername, userIcon } = $derived.by(() => {
         const bindedPersona = DBState?.db?.characters?.[$selectedCharID]?.chats?.[DBState?.db?.characters?.[$selectedCharID]?.chatPage]?.bindedPersona
 
-        if(bindedPersona){
+        if(bindedPersona && DBState?.db?.personas){
             const persona = DBState.db.personas.find((p) => p.id === bindedPersona)
             if(persona){
                 return {
                     currentUsername: persona.name,
-                    userIconPortrait: persona.largePortrait,
+                    userIconPortrait: persona.largePortrait ?? false,
                     userIcon: persona.icon
                 }
             }
         }
 
-        const selectedPersonaIndex = DBState.db.selectedPersona
+        const selectedPersonaIndex = DBState?.db?.selectedPersona ?? 0
+        const selectedPersona = DBState?.db?.personas?.[selectedPersonaIndex]
         return {
-            currentUsername: DBState.db.username,
-            userIconPortrait: DBState.db.personas[selectedPersonaIndex].largePortrait,
-            userIcon: DBState.db.personas[selectedPersonaIndex].icon
+            currentUsername: selectedPersona?.name ?? DBState?.db?.username ?? '',
+            userIconPortrait: selectedPersona?.largePortrait ?? false,
+            userIcon: selectedPersona?.icon ?? DBState?.db?.userIcon ?? ''
         }
     })
 
