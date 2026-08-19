@@ -1424,10 +1424,15 @@ export async function runLuaEditTrigger<T extends string|OpenAIChat[]>(char:char
     try {
         let data = content
 
-        const triggers = char.type === 'group' ? (getModuleTriggers()) : (char.triggerscript.map((v) => {
-            v.lowLevelAccess = false
+        const triggers = char.type === 'group' ? (getModuleTriggers()) : ((char.triggerscript || []).map((v) => {
+            if (typeof v === 'string') {
+                try { v = JSON.parse(v); } catch (e) {}
+            }
+            if (v && typeof v === 'object') {
+                v.lowLevelAccess = false
+            }
             return v
-        }).concat(getModuleTriggers()))
+        }).filter(v => v && typeof v === 'object').concat(getModuleTriggers()))
     
         for(let trigger of triggers){
             if(trigger?.effect?.[0]?.type === 'triggerlua'){

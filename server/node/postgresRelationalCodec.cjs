@@ -62,6 +62,13 @@ function encodeJson(value) {
 }
 
 function decodeJson(value) {
+    if (typeof value === 'string') {
+        try {
+            return decodePostgresJsonValue(JSON.parse(value));
+        } catch (e) {
+            return decodePostgresJsonValue(value);
+        }
+    }
     return decodePostgresJsonValue(value);
 }
 

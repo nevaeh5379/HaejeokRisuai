@@ -326,6 +326,9 @@ async function clobToString(value) {
                 value.on('error', reject);
             });
         }
+        if (Buffer.isBuffer(value)) return value.toString('utf8');
+        // 이미 파싱된 JSON 객체/배열인 경우 "[object Object]"로 강제 변환하지 않고 그대로 유지
+        return value;
     }
     return String(value);
 }
@@ -1114,13 +1117,13 @@ class OracleStorage {
             const groupMembers = await fetchRows(conn, `SELECT * FROM character_group_members ORDER BY group_id, position`);
             const chatFolders = await fetchRows(conn, `SELECT * FROM character_chat_folders ORDER BY character_id, position`);
             const scripts = await fetchRows(conn, `SELECT * FROM character_scripts ORDER BY character_id, script_kind, position`,
-                [], { clobColumns: ['comment_text', 'input_text', 'output_text', 'flag', 'trigger_payload'] });
+                [], { clobColumns: ['comment_text', 'input_text', 'output_text', 'flag'] });
             const sdData = await fetchRows(conn, `SELECT * FROM character_sd_data ORDER BY character_id, position`,
                 [], { clobColumns: ['value'] });
             const assets = await fetchRows(conn, `SELECT * FROM character_assets ORDER BY character_id, position`,
                 [], { clobColumns: ['uri', 'extra_value'] });
             const characterLore = await fetchRows(conn, `SELECT * FROM character_lore_entries ORDER BY character_id, position`,
-                [], { clobColumns: ['comment_text', 'content', 'cache_payload'] });
+                [], { clobColumns: ['comment_text', 'content'] });
             const chats = await fetchRows(conn, `SELECT * FROM chat_chats ORDER BY character_id, position, id`,
                 [], { clobColumns: ['note', 'sd_data', 'supa_memory_data', 'last_memory'] });
             const chatAttributes = await fetchRows(conn, `SELECT * FROM chat_attributes ORDER BY chat_id, key_value`);
@@ -1132,7 +1135,7 @@ class OracleStorage {
             const bookmarks = await fetchRows(conn, `SELECT * FROM chat_bookmarks ORDER BY chat_id, position`);
             const memory = await fetchRows(conn, `SELECT * FROM chat_memory ORDER BY chat_id, memory_type`);
             const chatLore = await fetchRows(conn, `SELECT * FROM chat_lore_entries ORDER BY chat_id, position`,
-                [], { clobColumns: ['comment_text', 'content', 'cache_payload'] });
+                [], { clobColumns: ['comment_text', 'content'] });
             const messages = await fetchRows(conn, `SELECT * FROM chat_messages ORDER BY chat_id, position, id`,
                 [], { clobColumns: ['content_text'], blobColumns: ['content_binary'] });
             const messageAttributes = await fetchRows(conn, `SELECT * FROM chat_message_attributes ORDER BY chat_id, message_id, key_value`);
@@ -1245,10 +1248,10 @@ class OracleStorage {
                 fetchRows(conn, `SELECT * FROM character_modules WHERE character_id = :1 ORDER BY position`, [characterId]),
                 fetchRows(conn, `SELECT * FROM character_group_members WHERE group_id = :1 ORDER BY position`, [characterId]),
                 fetchRows(conn, `SELECT * FROM character_chat_folders WHERE character_id = :1 ORDER BY position`, [characterId]),
-                fetchRows(conn, `SELECT * FROM character_scripts WHERE character_id = :1 ORDER BY script_kind, position`, [characterId], { clobColumns: ['comment_text', 'input_text', 'output_text', 'flag', 'trigger_payload'] }),
+                fetchRows(conn, `SELECT * FROM character_scripts WHERE character_id = :1 ORDER BY script_kind, position`, [characterId], { clobColumns: ['comment_text', 'input_text', 'output_text', 'flag'] }),
                 fetchRows(conn, `SELECT * FROM character_sd_data WHERE character_id = :1 ORDER BY position`, [characterId], { clobColumns: ['value'] }),
                 fetchRows(conn, `SELECT * FROM character_assets WHERE character_id = :1 ORDER BY position`, [characterId], { clobColumns: ['uri', 'extra_value'] }),
-                fetchRows(conn, `SELECT * FROM character_lore_entries WHERE character_id = :1 ORDER BY position`, [characterId], { clobColumns: ['comment_text', 'content', 'cache_payload'] }),
+                fetchRows(conn, `SELECT * FROM character_lore_entries WHERE character_id = :1 ORDER BY position`, [characterId], { clobColumns: ['comment_text', 'content'] }),
             ]);
             const character = rebuildCharacter(charRow, {
                 attributes, tags, greetings, biases, emotions, modules, groupMembers, chatFolders, scripts, sdData, assets, lore,
