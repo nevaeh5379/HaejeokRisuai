@@ -14,7 +14,7 @@ dynv6_token=${DYNV6_TOKEN:-}
 action=install
 
 case "${1:-}" in
-    install|start|stop|restart|status|logs)
+    install|start|stop|restart|rebuild|status|logs)
         action=$1
         shift
         ;;
@@ -38,6 +38,7 @@ Usage:
   ./risuai.sh start
   ./risuai.sh stop
   ./risuai.sh restart
+  ./risuai.sh rebuild
   ./risuai.sh status
   ./risuai.sh logs [service]
 
@@ -46,6 +47,7 @@ Commands:
   start               Start an existing installation
   stop                Stop the server without deleting data
   restart             Restart all server containers
+  rebuild             Rebuild and recreate only the RisuAI application
   status              Show container status
   logs [service]      Follow logs, optionally for one service
 
@@ -104,6 +106,12 @@ if [ "$action" != install ]; then
             [ "$#" -eq 0 ] || die "restart does not accept additional arguments"
             info "Restarting RisuAI"
             compose restart
+            compose ps
+            ;;
+        rebuild)
+            [ "$#" -eq 0 ] || die "rebuild does not accept additional arguments"
+            info "Rebuilding the RisuAI application"
+            compose up -d --build --force-recreate risuai
             compose ps
             ;;
         status)
@@ -351,4 +359,7 @@ View status with:
 
 Stop the server without deleting data:
   ./risuai.sh stop
+
+Rebuild the RisuAI application after updating the source:
+  ./risuai.sh rebuild
 EOF
