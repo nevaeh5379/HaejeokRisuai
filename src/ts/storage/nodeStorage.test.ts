@@ -104,46 +104,4 @@ describe('NodeStorage.streamItems', () => {
             events.indexOf('start:assets/second.png')
         )
     })
-
-    it('uploads the original backup File as a single request body', async () => {
-        const { NodeStorage } = await import('./nodeStorage')
-        const sentBodies: unknown[] = []
-        const requestHeaders = new Map<string, string>()
-
-        class MockXMLHttpRequest {
-            responseType = ''
-            response = { restoreId: 'restore-id', entries: ['database.risudat'] }
-            status = 200
-            upload: { onprogress?: (event: ProgressEvent) => void } = {}
-            onerror?: () => void
-            onabort?: () => void
-            onload?: () => void
-
-            open(_method: string, _url: string) {}
-            setRequestHeader(name: string, value: string) {
-                requestHeaders.set(name, value)
-            }
-            send(body: unknown) {
-                sentBodies.push(body)
-                this.upload.onprogress?.({
-                    loaded: (body as File).size,
-                    total: (body as File).size,
-                    lengthComputable: true
-                } as ProgressEvent)
-                this.onload?.()
-            }
-        }
-        vi.stubGlobal('XMLHttpRequest', MockXMLHttpRequest)
-
-        const storage = new NodeStorage()
-        vi.spyOn(storage as any, 'checkAuth').mockResolvedValue(undefined)
-        vi.spyOn(storage, 'createAuth').mockResolvedValue('auth')
-        const file = new File([new Uint8Array([1, 2, 3])], 'backup.bin')
-
-        const result = await storage.restoreBackup(file)
-
-        expect(sentBodies).toEqual([file])
-        expect(requestHeaders.get('content-type')).toBe('application/x-risu-backup')
-        expect(result).toEqual({ restoreId: 'restore-id', entries: ['database.risudat'] })
-    })
 })

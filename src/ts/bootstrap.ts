@@ -16,11 +16,9 @@ import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, sqlConfiguredStore } from "./stores.svelte";
 import { loadPlugins } from "./plugins/plugins.svelte";
 import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput, alertSelect, alertNormal } from "./alert";
-import { checkDriverInit } from "./drive/drive";
 import { characterURLImport } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { loadRisuAccountData } from "./drive/accounter";
-import { decodeRisuSave, encodeRisuSaveLegacy } from "./storage/risuSave";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
 import { autoServerBackup } from "./kei/backup";
@@ -30,8 +28,6 @@ import { updateGuisize } from "./gui/guisize";
 import { updateLorebooks } from "./characters";
 import { initMobileGesture } from "./hotkey";
 import { moduleUpdate } from "./process/modules";
-import type { AccountStorage } from "./storage/accountStorage";
-import { NodeStorage } from "./storage/nodeStorage";
 import { makeColdData } from "./process/coldstorage.svelte";
 import { getRemoteSaveCleanupAction, getRemoteSavePayloadName } from "./storage/remoteSaveCleanup";
 import {
@@ -47,236 +43,133 @@ import { isNodeServer, isTauri } from "./platform";
 import { registerModelDynamic } from "./model/modellist";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { appDataDir, join } from "@tauri-apps/api/path";
+import { getSqlStorage } from "./storage/sqlStorageFactory";
+import type { ISqlStorage, INodeSqlStorageAdmin } from "./storage/ISqlStorage";
+import { isNodeSqlStorageAdmin } from "./storage/ISqlStorage";
+import { checkAndMigrateLegacyDatabase, migrateLegacyDatabase } from "./storage/migration";
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null
 
 /**
  * Loads the application data.
+ *
+ * SQL-only flow:
+ *   1. Get the environment-appropriate SQL storage backend.
+ *   2. Initialise it (open DB, apply schema).
+ *   3. If SQL DB is empty but a legacy database.bin exists, offer migration.
+ *   4. Load the database (shallow — characters/chats lazy-loaded on demand).
+ *   5. Continue with plugins, format checks, etc.
+ *
+ * If SQL initialisation fails (e.g. browser without OPFS support), the user
+ * is shown an incompatibility warning and the app does not proceed.
  */
 export async function loadData() {
     const loaded = get(loadedStore)
     if (!loaded) {
         try {
-            if (isTauri) {
-                LoadingStatusState.text = "Checking Files..."
-                appWindow.maximize()
-                if (!await exists('', { baseDir: BaseDirectory.AppData })) {
-                    await mkdir('', { baseDir: BaseDirectory.AppData })
-                }
-                if (!await exists('database', { baseDir: BaseDirectory.AppData })) {
-                    await mkdir('database', { baseDir: BaseDirectory.AppData })
-                }
-                if (!await exists('assets', { baseDir: BaseDirectory.AppData })) {
-                    await mkdir('assets', { baseDir: BaseDirectory.AppData })
-                }
-                if (!await exists('database/database.bin', { baseDir: BaseDirectory.AppData })) {
-                    await writeFile('database/database.bin', encodeRisuSaveLegacy({}), { baseDir: BaseDirectory.AppData });
-                }
-                const appDataDirPath = await appDataDir();
-                try {
-                    LoadingStatusState.text = "Reading Save File..."
-                    const dbPath = await join(appDataDirPath, 'database/database.bin');
-                    const assetUrl = convertFileSrc(dbPath);
-                    const response = await fetch(assetUrl);
-                    if (!response.ok) {
-                        throw new Error(`Failed to load database: ${response.status}`);
-                    }
-                    const readed = new Uint8Array(await response.arrayBuffer());
-                    LoadingStatusState.text = "Cleaning Unnecessary Files..."
-                    getDbBackups() //this also cleans the backups
-                    LoadingStatusState.text = "Decoding Save File..."
-                    const decoded = await decodeRisuSave(readed)
-                    setDatabase(decoded)
-                } catch (error) {
-                    LoadingStatusState.text = "Reading Backup Files..."
-                    const backups = await getDbBackups()
-                    let backupLoaded = false
-                    for (const backup of backups) {
-                        if (!backupLoaded) {
-                            try {
-                                LoadingStatusState.text = `Reading Backup File ${backup}...`
-                                const backupPath = await join(appDataDirPath, `database/dbbackup-${backup}.bin`);
-                                const backupAssetUrl = convertFileSrc(backupPath);
-                                const backupResponse = await fetch(backupAssetUrl);
-                                if (!backupResponse.ok) {
-                                    throw new Error(`Failed to load backup ${backup}: ${backupResponse.status}`);
-                                }
-                                const backupData = new Uint8Array(await backupResponse.arrayBuffer());
-                                setDatabase(
-                                    await decodeRisuSave(backupData)
-                                )
-                                backupLoaded = true
-                            } catch (error) {
-                                console.error(error)
-                            }
-                        }
-                    }
-                    if (!backupLoaded) {
-                        throw "Your save file is corrupted"
-                    }
-                }
-                LoadingStatusState.text = "Checking Update..."
-                await checkRisuUpdate()
-                await changeFullscreen()
-
-            }
-            else {
+            // ── Step 0: Initialise forageStorage (needed for asset access
+            // and Node server's NodeStorage which provides the SQL admin) ──
+            if (!isTauri) {
                 await forageStorage.Init()
+            }
 
-                let loadedFromPostgres = false
-                let isSqlActive = false
-                if(isNodeServer && forageStorage.realStorage instanceof NodeStorage){
-                    const nodeStorage = forageStorage.realStorage
-                    // SQL 설정 상태 조회 (vendor 무관)
-                    let sqlConfig = null
-                    try {
-                        sqlConfig = await nodeStorage.postgres.getDatabaseConfig()
-                        sqlConfiguredStore.set(Boolean(sqlConfig.enabled && sqlConfig.configured))
-                    } catch (error) {
-                        console.error('SQL config load failed', error)
-                        sqlConfiguredStore.set(false)
-                    }
-
-                    if(sqlConfig?.enabled){
-                        isSqlActive = true
-                        LoadingStatusState.text = "Loading SQL Save Data..."
-                        try {
-                            const postgresDatabase = await nodeStorage.postgres.loadDatabase()
-                            if(postgresDatabase){
-                                setDatabase(postgresDatabase)
-                                loadedFromPostgres = true
-                            } else {
-                                // SQL은 활성이지만 DB가 비어있음 (최초 초기화 상태).
-                                // 로컬 database.bin이 존재하는 경우 최초 1회 명시적 마이그레이션 여부 확인.
-                                let localDbData: Database | null = null
-                                try {
-                                    const localBytes: Uint8Array = await forageStorage.getItem('database/database.bin') as unknown as Uint8Array
-                                    if (localBytes) {
-                                        localDbData = await decodeRisuSave(localBytes)
-                                    }
-                                } catch {}
-
-                                if (localDbData && localDbData.characters && localDbData.characters.length > 0) {
-                                    const shouldMigrate = await alertConfirm(language.migrateLocalToSqlPrompt)
-                                    if (shouldMigrate) {
-                                        LoadingStatusState.text = "Migrating local data to SQL..."
-                                        await nodeStorage.postgres.replaceDatabase(localDbData)
-                                        try {
-                                            await nodeStorage.postgres.migrateLegacyData()
-                                        } catch (e) {
-                                            console.error('Cold storage migration skipped:', e)
-                                        }
-                                        alertNormal(language.migrateLocalToSqlSuccess)
-                                        const reloaded = await nodeStorage.postgres.loadDatabase()
-                                        if (reloaded) {
-                                            setDatabase(reloaded)
-                                            loadedFromPostgres = true
-                                        }
-                                    }
-                                }
-
-                                if (!loadedFromPostgres) {
-                                    // SQL 모드 격리: database.bin으로 폴백하지 않고 SQL 전용 빈 DB로 초기화
-                                    const emptyDb: Database = {} as any
-                                    setDatabase(emptyDb)
-                                    const cache = nodeStorage.postgres.getCache()
-                                    cache.initialized = true
-                                    loadedFromPostgres = true
-                                }
-                            }
-                        } catch (error) {
-                            console.error('Failed to load SQL database:', error)
-                            alertError(`Failed to connect to SQL storage: ${error instanceof Error ? error.message : String(error)}`)
-                            throw error
-                        }
-                    }
-                }
-
-                if(!isSqlActive && !loadedFromPostgres){
-                    // SQL 스토리지가 비활성화된 경우에만 로컬 database.bin을 로드 (완전 격리)
-                    await resolveDatabaseBinConflict()
-                    LoadingStatusState.text = "Loading Local Save File..."
-                    let gotStorage: Uint8Array = await forageStorage.getItem('database/database.bin') as unknown as Uint8Array
-                    LoadingStatusState.text = "Decoding Local Save File..."
-                    if (checkNullish(gotStorage)) {
-                        gotStorage = await resolveMissingDatabase()
-                    }
-                    try {
-                        const decoded = await decodeRisuSave(gotStorage)
-                        console.log(decoded)
-                        setDatabase(decoded)
-                    } catch (error) {
-                        console.error(error)
-                        const backups = await getDbBackups()
-                        let backupLoaded = false
-                        for (const backup of backups) {
-                            try {
-                                LoadingStatusState.text = `Reading Backup File ${backup}...`
-                                const backupData: Uint8Array = await forageStorage.getItem(`database/dbbackup-${backup}.bin`) as unknown as Uint8Array
-                                setDatabase(
-                                    await decodeRisuSave(backupData)
-                                )
-                                backupLoaded = true
-                            } catch (error) { }
-                        }
-                        if (!backupLoaded) {
-                            throw "Forage: Your save file is corrupted"
-                        }
-                    }
-                }
-
-                if (await forageStorage.checkAccountSync()) {
-                    LoadingStatusState.text = "Checking Account Sync..."
-                    let gotStorage: Uint8Array = await (forageStorage.realStorage as AccountStorage).getItem('database/database.bin', (v) => {
-                        LoadingStatusState.text = `Loading Remote Save File ${(v * 100).toFixed(2)}%`
-                    })
-                    if (checkNullish(gotStorage)) {
-                        gotStorage = encodeRisuSaveLegacy({})
-                        await forageStorage.setItem('database/database.bin', gotStorage)
-                    }
-                    try {
-                        setDatabase(
-                            await decodeRisuSave(gotStorage)
-                        )
-                    } catch (error) {
-                        const backups = await getDbBackups()
-                        let backupLoaded = false
-                        for (const backup of backups) {
-                            try {
-                                LoadingStatusState.text = `Reading Backup File ${backup}...`
-                                const backupData: Uint8Array = await forageStorage.getItem(`database/dbbackup-${backup}.bin`) as unknown as Uint8Array
-                                setDatabase(
-                                    await decodeRisuSave(backupData)
-                                )
-                                backupLoaded = true
-                            } catch (error) { }
-                        }
-                        if (!backupLoaded) {
-                            // throw "Your save file is corrupted"
-                            await autoServerBackup()
-                            await sleep(10000)
-                        }
-                    }
-                }
-                LoadingStatusState.text = "Rechecking Account Sync..."
-                await forageStorage.checkAccountSync()
-                LoadingStatusState.text = "Checking Drive Sync..."
-                const isDriverMode = await checkDriverInit()
-                if (isDriverMode) {
+            // ── Step 1: Initialise SQL storage backend ────────────────────
+            LoadingStatusState.text = "Initialising Database..."
+            const storage = await getSqlStorage()
+            const ok = await storage.init()
+            if (!ok) {
+                // SQL backend could not be initialised.
+                if (isNodeServer && isNodeSqlStorageAdmin(storage)) {
+                    // Node server: show SQL configuration UI
+                    sqlConfiguredStore.set(false)
+                    LoadingStatusState.text = "SQL storage not configured"
+                    // The SQL settings gate UI will be shown by the app
+                    // (loadedStore stays false → app blocked until configured)
                     return
                 }
-                LoadingStatusState.text = "Checking Service Worker..."
-                if (navigator.serviceWorker) {
-                    setUsingSw(true)
-                    await registerSw()
+                // Web/Tauri: SQLite should always work on modern browsers
+                alertError("This browser does not support SQLite WASM (OPFS required). Please use a modern browser.")
+                return
+            }
+
+            // ── Step 2: Load database (shallow) ───────────────────────────
+            LoadingStatusState.text = "Loading Database..."
+            const loadResult = await storage.loadDatabase({ shallow: true })
+
+            if (loadResult && loadResult.status === 'empty') {
+                // ── Step 3: Check for legacy migration ──────────────────────
+                LoadingStatusState.text = "Checking for Legacy Data..."
+                const legacyDb = await checkAndMigrateLegacyDatabase(storage)
+                if (legacyDb) {
+                    const shouldMigrate = await alertConfirm(language.migrateLocalToSqlPrompt)
+                    if (shouldMigrate) {
+                        LoadingStatusState.text = "Migrating Local Data to SQL..."
+                        const success = await migrateLegacyDatabase(storage, legacyDb, (status) => {
+                            LoadingStatusState.text = status
+                        })
+                        if (success) {
+                            alertNormal(language.migrateLocalToSqlSuccess)
+                        } else {
+                            alertError("Migration failed. Your legacy data is preserved.")
+                        }
+                    }
                 }
-                else {
-                    setUsingSw(false)
+                // Reload after potential migration
+                LoadingStatusState.text = "Loading Database..."
+                const reloaded = await storage.loadDatabase({ shallow: true })
+                if (reloaded && reloaded.database) {
+                    setDatabase(reloaded.database)
+                } else {
+                    // Still empty — start with blank DB
+                    setDatabase({} as Database)
                 }
-                if (getDatabase().didFirstSetup) {
-                    characterURLImport()
+            } else if (loadResult && loadResult.database) {
+                setDatabase(loadResult.database)
+            } else {
+                // Load failed entirely
+                setDatabase({} as Database)
+            }
+
+            // ── Node server: update SQL config state ──────────────────────
+            if (isNodeServer && isNodeSqlStorageAdmin(storage)) {
+                try {
+                    const config = await storage.getDatabaseConfig()
+                    sqlConfiguredStore.set(Boolean(config.enabled && config.configured))
+                } catch {
+                    sqlConfiguredStore.set(false)
                 }
             }
+
+            // ── Step 4: Account sync check (Node server only) ─────────────
+            if (isNodeServer && await forageStorage.checkAccountSync()) {
+                LoadingStatusState.text = "Checking Account Sync..."
+                // Account sync for assets only — DB is in SQL
+                LoadingStatusState.text = "Rechecking Account Sync..."
+                await forageStorage.checkAccountSync()
+            }
+
+            // ── Step 5: Drive sync check ──────────────────────────────────
+            LoadingStatusState.text = "Checking Drive Sync..."
+            const { checkDriverInit } = await import("./drive/drive")
+            const isDriverMode = await checkDriverInit()
+            if (isDriverMode) {
+                return
+            }
+
+            // ── Step 6: Service worker (web only) ─────────────────────────
+            LoadingStatusState.text = "Checking Service Worker..."
+            if (navigator.serviceWorker) {
+                setUsingSw(true)
+                await registerSw()
+            }
+            else {
+                setUsingSw(false)
+            }
+            if (getDatabase().didFirstSetup) {
+                characterURLImport()
+            }
+
+            // ── Step 7: Plugins, format checks, state updates ─────────────
             LoadingStatusState.text = "Loading Plugins..."
             try {
                 await loadPlugins()
@@ -340,174 +233,6 @@ export async function loadData() {
         }
     }
 }
-
-/**
- * When S3 storage is active and both the local FS and S3 hold a
- * `database/database.bin` whose SHA-256 hashes differ, prompt the user to
- * choose which copy to keep. The non-chosen copy is overwritten so both
- * locations agree afterwards. Returns the chosen bytes (or null when there
- * is no conflict / S3 isn't active / the user cancels).
- */
-async function resolveDatabaseBinConflict(): Promise<boolean> {
-    if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
-        return false
-    }
-    const nodeStorage = forageStorage.realStorage
-    let hashes
-    try {
-        hashes = await nodeStorage.s3.getDatabaseBinHashes()
-    } catch (error) {
-        console.error('db-hash probe failed', error)
-        return false
-    }
-    // Only remote-backed setups can diverge; both null means no remote is configured.
-    const remoteHashes = [hashes.s3, hashes.azuresql].filter((h): h is NonNullable<typeof h> => Boolean(h))
-    if (remoteHashes.length === 0 || hashes.same === null || hashes.same === true) {
-        return false
-    }
-    const localExists = hashes.local?.exists === true
-    // Collect all sides that have a copy (local + any remote).
-    const sides: { label: string; keep: 'local' | 's3' | 'azuresql'; exists: boolean; size: number; hashShort: string }[] = []
-    {
-        const localSize = hashes.local?.size ?? 0
-        const localHashShort = (hashes.local?.hash || '').slice(0, 12)
-        sides.push({
-            label: language.dbConflictUseLocal(localSize, localHashShort),
-            keep: 'local',
-            exists: localExists,
-            size: localSize,
-            hashShort: localHashShort,
-        })
-    }
-    if (hashes.s3) {
-        const s3Exists = hashes.s3.exists === true
-        const s3Size = hashes.s3.size ?? 0
-        const s3HashShort = (hashes.s3.hash || '').slice(0, 12)
-        sides.push({
-            label: language.dbConflictUseS3(s3Size, s3HashShort),
-            keep: 's3',
-            exists: s3Exists,
-            size: s3Size,
-            hashShort: s3HashShort,
-        })
-    }
-    if (hashes.azuresql) {
-        const azExists = hashes.azuresql.exists === true
-        const azSize = hashes.azuresql.size ?? 0
-        const azHashShort = (hashes.azuresql.hash || '').slice(0, 12)
-        sides.push({
-            label: language.dbConflictUseAzureSql(azSize, azHashShort),
-            keep: 'azuresql',
-            exists: azExists,
-            size: azSize,
-            hashShort: azHashShort,
-        })
-    }
-    const anyExists = sides.some(s => s.exists)
-    if (!anyExists) {
-        return false
-    }
-    // If only one side has data, there is no content conflict to resolve.
-    const existsCount = sides.filter(s => s.exists).length
-    if (existsCount <= 1) {
-        return false
-    }
-
-    const options = [...sides.map(s => s.label), language.cancel]
-    const choice = await alertSelect(options, language.dbConflictPrompt)
-    const idx = parseInt(choice, 10)
-
-    if (idx >= 0 && idx < sides.length) {
-        const chosen = sides[idx]
-        try {
-            await nodeStorage.s3.resolveDatabaseBinConflict(chosen.keep)
-        } catch (error) {
-            console.error(`db-resolve (${chosen.keep}) failed`, error)
-            alertError(error)
-            return false
-        }
-        return true
-    }
-    // Cancel: fall through to normal load.
-    return false
-}
-
-/**
- * Resolves a missing server-side database by offering the user a choice
- * between recovering data from the browser HTTP cache (and any server-side
- * backups) or starting fresh. Only used in the Node legacy file storage mode.
- */
-async function resolveMissingDatabase(): Promise<Uint8Array> {
-    const nodeStorage = isNodeServer && forageStorage.realStorage instanceof NodeStorage
-        ? forageStorage.realStorage
-        : null
-
-    type Candidate = { label: string, load: () => Promise<Uint8Array | Buffer | null> }
-    const candidates: Candidate[] = []
-
-    if (nodeStorage) {
-        try {
-            const cachedDb = await nodeStorage.getItemFromBrowserCache('database/database.bin')
-            if (cachedDb && cachedDb.length > 0) {
-                candidates.push({
-                    label: language.cachedDatabaseLabel,
-                    load: async () => cachedDb
-                })
-            }
-        } catch (error) {
-            console.error('Browser cache probe failed', error)
-        }
-    }
-
-    let serverBackups: number[] = []
-    try {
-        serverBackups = await getDbBackups()
-    } catch (error) {
-        console.error('Failed to list server backups', error)
-    }
-    for (const backup of serverBackups) {
-        const dateLabel = new Date(backup * 100).toLocaleString()
-        candidates.push({
-            label: language.backupLabelFormat(dateLabel),
-            load: async () => await forageStorage.getItem(`database/dbbackup-${backup}.bin`) as unknown as Uint8Array
-        })
-    }
-
-    if (candidates.length === 0) {
-        const gotStorage = encodeRisuSaveLegacy({})
-        await forageStorage.setItem('database/database.bin', gotStorage)
-        return gotStorage
-    }
-
-    const options = [
-        ...candidates.map((c) => c.label),
-        language.startFresh,
-        language.cancel
-    ]
-    const choice = await alertSelect(options, language.cacheRecoveryPrompt)
-    const choiceIdx = parseInt(choice, 10)
-
-    if (Number.isNaN(choiceIdx) || choiceIdx < 0 || choiceIdx >= candidates.length) {
-        if (choiceIdx === candidates.length) {
-            const gotStorage = encodeRisuSaveLegacy({})
-            await forageStorage.setItem('database/database.bin', gotStorage)
-            return gotStorage
-        }
-        throw new Error(language.cacheRecoveryCancelled)
-    }
-
-    const selected = candidates[choiceIdx]
-    const loaded = await selected.load()
-    if (checkNullish(loaded)) {
-        const gotStorage = encodeRisuSaveLegacy({})
-        await forageStorage.setItem('database/database.bin', gotStorage)
-        return gotStorage
-    }
-    const gotStorage = new Uint8Array(loaded as Uint8Array)
-    await forageStorage.setItem('database/database.bin', gotStorage)
-    return gotStorage
-}
-
 
 /**
  * Registers the service worker and initializes it.

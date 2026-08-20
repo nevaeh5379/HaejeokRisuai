@@ -8,7 +8,8 @@ import {
     primeNodeDatabaseSyncCache,
     type NodeDatabaseSyncCache,
 } from './nodeDatabaseSync'
-import { createPostgresDatabaseAdapter } from './databaseAdapters.svelte'
+import { createSqlDatabaseAdapter } from './databaseAdapters.svelte'
+import type { INodeSqlStorageAdmin, SqlLoadDatabaseOptions, SqlLoadDatabaseResult, SqlSaveDatabaseOptions } from './ISqlStorage'
 
 export type DbVendor = 'postgres' | 'oracle' | 'azure'
 
@@ -247,7 +248,8 @@ export class NodePostgresPayloadTooLargeError extends Error {
     }
 }
 
-export class NodePostgresStorage {
+export class NodePostgresStorage implements INodeSqlStorageAdmin {
+    readonly backendKind = 'node' as const
     private status:'unknown'|'enabled'|'disabled' = 'unknown'
     private cache:NodeDatabaseSyncCache = createNodeDatabaseSyncCache()
     private pluginsCacheForage = localforage.createInstance({ name: 'risuaiPostgresPlugins' })
@@ -272,6 +274,18 @@ export class NodePostgresStorage {
     constructor(private readonly getAuth:() => Promise<string>) {}
 
     isEnabled() {
+        return this.status === 'enabled'
+    }
+
+    async init(): Promise<boolean> {
+        if (this.status === 'unknown') {
+            try {
+                await this.loadDatabase()
+            } catch {
+                this.status = 'disabled'
+                return false
+            }
+        }
         return this.status === 'enabled'
     }
 
@@ -814,7 +828,7 @@ export class NodePostgresStorage {
         return body.value
     }
 
-    async loadDatabase(options: { shallow?: boolean } = { shallow: true }):Promise<Database|null> {
+    async loadDatabase(options: SqlLoadDatabaseOptions = { shallow: true }): Promise<SqlLoadDatabaseResult | null> {
         const shallowParam = options.shallow !== false ? '?shallow=true' : '?shallow=false'
         const response = await fetch(`/api/database-v2${shallowParam}`, {
             method: 'GET',
@@ -843,13 +857,14 @@ export class NodePostgresStorage {
                 }
                 body.database.pluginCustomStorage ??= {}
                 this.cache = primeNodeDatabaseSyncCache(body.database, body.revision)
-                return createPostgresDatabaseAdapter(body.database, this)
+                const adapter = createSqlDatabaseAdapter(body.database, this)
+                return { status: 'ready', revision: body.revision, database: adapter }
             }
             this.cache = primeNodeDatabaseSyncCache(body.database, body.revision)
-            return body.database
+            return { status: 'ready', revision: body.revision, database: body.database }
         }
         this.cache = createNodeDatabaseSyncCache(body.revision)
-        return null
+        return { status: 'empty', revision: body.revision, database: null }
     }
 
     async loadCharacter(characterId:string):Promise<character|groupChat|null> {
@@ -1034,7 +1049,7 @@ export class NodePostgresStorage {
     async saveDatabase(
         database:Database,
         changes:toSaveType,
-        options:{ forceFull?:boolean; onProgress?:(status:string) => void } = {}
+        options:SqlSaveDatabaseOptions = {}
     ):Promise<boolean> {
         if(!await this.ensureEnabled()){
             return false

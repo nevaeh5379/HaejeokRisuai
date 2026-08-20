@@ -2,6 +2,7 @@ import type {
     Database,
     character,
     groupChat,
+    Chat,
     RisuPersona,
     botPreset,
     loreBook,
@@ -9,38 +10,14 @@ import type {
 } from './database.svelte'
 import type { RisuModule } from '../process/modules'
 import { defaultAutoSuggestPrompt, defaultJailbreak, defaultMainPrompt } from './defaultPrompts'
-import type { NodePostgresStorage } from './nodePostgresStorage'
-import { primeRootSetting } from './nodeDatabaseSync'
+import type { ISqlStorage } from './ISqlStorage'
+import { primeRootSetting, primeCharacterDetails, primeChatMessages } from './nodeDatabaseSync'
 
 export interface IDatabaseAdapter extends Database {
-    readonly isPostgres?: boolean
+    readonly isSql?: boolean
     ensureLoaded?: (domain?: string) => Promise<void>
     isDomainLoaded?: (domain: string) => boolean
     getLoadedDomains?: () => string[]
-}
-
-export interface LocalDatabaseAdapter extends Database {
-    [key: string]: any
-}
-
-export class LocalDatabaseAdapter implements IDatabaseAdapter {
-    readonly isPostgres = false
-
-    constructor(data: Database) {
-        Object.assign(this, data)
-    }
-
-    async ensureLoaded(_domain?: string): Promise<void> {
-        return
-    }
-
-    isDomainLoaded(_domain: string): boolean {
-        return true
-    }
-
-    getLoadedDomains(): string[] {
-        return ['*']
-    }
 }
 
 export const POSTGRES_DOMAINS = [
@@ -117,12 +94,15 @@ const fallbackBotPreset: botPreset = {
 }
 
 /**
- * Creates a PostgreSQL-dedicated database adapter that handles on-demand domain loading,
- * ETag caching, Svelte 5 reactivity, and save protection.
+ * Creates a SQL-backed database adapter that handles on-demand domain loading,
+ * Svelte 5 reactivity, character/chat/message lazy loading, and save protection.
+ *
+ * Works with any {@link ISqlStorage} backend (Node server, web SQLite WASM,
+ * Tauri SQLite).
  */
-export function createPostgresDatabaseAdapter(
+export function createSqlDatabaseAdapter(
     initialData: Database,
-    storage: NodePostgresStorage,
+    storage: ISqlStorage,
 ): IDatabaseAdapter {
     const internalState = $state<{
         personas: RisuPersona[] | null
@@ -175,6 +155,75 @@ export function createPostgresDatabaseAdapter(
             }
         }
         internalState.loadedDomains.add('prompts')
+    }
+
+    // ── Character / chat detail loading ────────────────────────────────
+    // Characters are stored in coreData as shallow metadata. When a specific
+    // character is accessed for full detail, `loadCharacter` is triggered and
+    // the shallow entry is replaced with the full one. Likewise for chat
+    // messages via `loadChat`.
+
+    const characterDetailPromises = new Map<string, Promise<void>>()
+    const chatDetailPromises = new Map<string, Promise<void>>()
+
+    async function ensureCharacterDetails(chaId: string): Promise<void> {
+        if (characterDetailPromises.has(chaId)) {
+            return characterDetailPromises.get(chaId)
+        }
+        const promise = (async () => {
+            try {
+                const fullChar = await storage.loadCharacter(chaId)
+                if (fullChar) {
+                    const chars = internalState.coreData.characters as (character | groupChat)[]
+                    const idx = chars.findIndex((c) => c.chaId === chaId)
+                    if (idx >= 0) {
+                        const existingChats = chars[idx].chats
+                        chars[idx] = Object.assign(chars[idx], fullChar, {
+                            chats: existingChats,
+                            detailsLoaded: true,
+                        })
+                        primeCharacterDetails(storage.getCache(), chars[idx], idx)
+                    }
+                }
+            } catch (error) {
+                console.error(`SQL loadCharacter failed for ${chaId}:`, error)
+            } finally {
+                characterDetailPromises.delete(chaId)
+            }
+        })()
+        characterDetailPromises.set(chaId, promise)
+        return promise
+    }
+
+    async function ensureChatMessages(chatId: string): Promise<void> {
+        if (chatDetailPromises.has(chatId)) {
+            return chatDetailPromises.get(chatId)
+        }
+        const promise = (async () => {
+            try {
+                const fullChat = await storage.loadChat(chatId)
+                if (fullChat) {
+                    const chars = internalState.coreData.characters as (character | groupChat)[]
+                    for (const char of chars) {
+                        if (!char?.chats) continue
+                        const chatIdx = char.chats.findIndex((c) => c.id === chatId)
+                        if (chatIdx >= 0) {
+                            Object.assign(char.chats[chatIdx], fullChat)
+                            char.chats[chatIdx].messagesLoaded = true
+                            char.chats[chatIdx].detailsLoaded = true
+                            primeChatMessages(storage.getCache(), char.chats[chatIdx])
+                            break
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(`SQL loadChat failed for ${chatId}:`, error)
+            } finally {
+                chatDetailPromises.delete(chatId)
+            }
+        })()
+        chatDetailPromises.set(chatId, promise)
+        return promise
     }
 
     async function triggerLoadDomain(domain: string): Promise<any> {
@@ -243,7 +292,7 @@ export function createPostgresDatabaseAdapter(
                         return null
                 }
             } catch (error) {
-                console.error(`PostgreSQL loadDomain failed for '${domain}':`, error)
+                console.error(`SQL loadDomain failed for '${domain}':`, error)
                 return null
             } finally {
                 loadingPromises.delete(domain)
@@ -255,7 +304,7 @@ export function createPostgresDatabaseAdapter(
     }
 
     const adapterTarget: any = {
-        isPostgres: true,
+        isSql: true,
 
         async ensureLoaded(domain?: string): Promise<void> {
             if (!domain) {
@@ -489,6 +538,10 @@ export function createPostgresDatabaseAdapter(
             return Reflect.getOwnPropertyDescriptor(internalState.coreData, prop)
         },
     })
+
+    // Expose lazy loaders on the adapter for external use (e.g. characters.ts)
+    ;(proxy as any).ensureCharacterDetails = ensureCharacterDetails
+    ;(proxy as any).ensureChatMessages = ensureChatMessages
 
     return proxy as IDatabaseAdapter
 }

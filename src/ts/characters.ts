@@ -900,20 +900,14 @@ export async function changeChar(index: number, arg:{
             return
         }
     }
-    if(DBState.db.characters?.[index]?.detailsLoaded === false && DBState.db.characters?.[index]?.chaId && isNodeServer){
-        if(forageStorage.realStorage instanceof NodeStorage && forageStorage.realStorage.postgres.isEnabled()){
+    if(DBState.db.characters?.[index]?.detailsLoaded === false && DBState.db.characters?.[index]?.chaId){
+        // Use the SQL adapter's lazy character loader (works for all backends)
+        const adapter = DBState.db as any
+        if (adapter.ensureCharacterDetails) {
             try {
-                const fullChar = await forageStorage.realStorage.postgres.loadCharacter(DBState.db.characters[index].chaId)
-                if(fullChar){
-                    const existingChats = DBState.db.characters[index].chats
-                    DBState.db.characters[index] = Object.assign(DBState.db.characters[index], fullChar, {
-                        chats: existingChats,
-                        detailsLoaded: true,
-                    })
-                    primeCharacterDetails(forageStorage.realStorage.postgres.getCache(), DBState.db.characters[index], index)
-                }
+                await adapter.ensureCharacterDetails(DBState.db.characters[index].chaId)
             } catch (error) {
-                console.error(`PostgreSQL loadCharacter failed for character ${DBState.db.characters[index].chaId}:`, error)
+                console.error(`SQL loadCharacter failed for character ${DBState.db.characters[index].chaId}:`, error)
             }
         }
     }

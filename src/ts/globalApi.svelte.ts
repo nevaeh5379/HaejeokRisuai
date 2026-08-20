@@ -493,8 +493,9 @@ export let saving = $state({
 
 /**
  * Saves the current state of the database.
- * 
- * @returns {Promise<void>} - A promise that resolves when the database has been saved.
+ *
+ * SQL-only flow: all saves go through the ISqlStorage backend. The legacy
+ * RisuSaveEncoder / database.bin path has been removed.
  */
 export let requiresFullEncoderReload = $state({
     state: false
@@ -532,17 +533,9 @@ export async function saveDb() {
         pluginCustomStorage: false
     }
 
-    const nodeStorage = isNodeServer && forageStorage.realStorage instanceof NodeStorage
-        ? forageStorage.realStorage
-        : null
-    const usePostgresStorage = nodeStorage?.postgres.isEnabled() ?? false
-    let encoder:RisuSaveEncoder|null = null
-    if(!usePostgresStorage){
-        encoder = new RisuSaveEncoder()
-        await encoder.init(getDatabase(), {
-            compression: forageStorage.isAccount
-        })
-    }
+    // SQL storage is the only save path now
+    const { getSqlStorage } = await import('./storage/sqlStorageFactory')
+    const sqlStorage = await getSqlStorage()
 
     $effect.root(() => {
 
@@ -633,13 +626,6 @@ export async function saveDb() {
         try {
 
             const forceFullSave = requiresFullEncoderReload.state
-            if (forceFullSave && !usePostgresStorage) {
-                encoder = new RisuSaveEncoder()
-                await encoder.init(getDatabase(), {
-                    compression: forageStorage.isAccount,
-                    skipRemoteSavingOnCharacters: false
-                })
-            }
 
             let toSave = safeStructuredClone(changeTracker)
             changeTracker.character = changeTracker.character.length === 0 ? [] : [changeTracker.character[0]]
@@ -663,46 +649,15 @@ export async function saveDb() {
                 continue
             }
 
-            let savedToPostgres = false
-            if (usePostgresStorage && nodeStorage) {
-                savedToPostgres = await nodeStorage.postgres.saveDatabase(db, toSave, {
-                    forceFull: forceFullSave
-                })
-                if (!savedToPostgres) {
-                    throw new Error('Failed to save database to SQL storage')
-                }
-            } else {
-                if(!encoder){
-                    encoder = new RisuSaveEncoder()
-                    await encoder.init(db, {
-                        compression: forageStorage.isAccount
-                    })
-                }
-                await encoder.set(db, toSave)
-                const encoded = encoder.encode()
-                if (!encoded) {
-                    await sleep(1000)
-                    continue
-                }
-                const dbData = new Uint8Array(encoded)
-                if (isTauri) {
-                    await writeFile('database/database.bin', dbData, { baseDir: BaseDirectory.AppData });
-                    await writeFile(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData, { baseDir: BaseDirectory.AppData });
-                }
-                else {
-                    await forageStorage.setItem('database/database.bin', dbData)
-                    if (!forageStorage.isAccount) {
-                        await forageStorage.setItem(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData)
-                    }
-                    if (forageStorage.isAccount) {
-                        await sleep(3000)
-                    }
-                }
+            // SQL-only save path
+            const saved = await sqlStorage.saveDatabase(db, toSave, {
+                forceFull: forceFullSave
+            })
+            if (!saved) {
+                throw new Error('Failed to save database to SQL storage')
             }
+
             requiresFullEncoderReload.state = false
-            if (!forageStorage.isAccount && !savedToPostgres) {
-                await getDbBackups()
-            }
             savetrys = 0
             await saveDbKei()
             await sleep(500)
@@ -735,40 +690,18 @@ export async function saveDb() {
  * @returns {Promise<number[]>} - A promise that resolves to an array of backup timestamps.
  */
 export async function getDbBackups() {
-    let db = getDatabase()
-    if (db?.account?.useSync && !isTauri && !isNodeServer) {
+    // SQL-only: return revision IDs from the SQL backend.
+    // Legacy database.bin backups are no longer created or managed.
+    try {
+        const { getSqlStorage } = await import('./storage/sqlStorageFactory')
+        const storage = await getSqlStorage()
+        if (!storage.isEnabled()) {
+            return []
+        }
+        const revisions = await storage.listRevisions(20)
+        return revisions.map(r => r.id)
+    } catch {
         return []
-    }
-    if (isTauri) {
-        const keys = await readDir('database', { baseDir: BaseDirectory.AppData })
-        let backups: number[] = []
-        for (const key of keys) {
-            if (key.name.startsWith("dbbackup-")) {
-                let da = key.name.substring(9)
-                da = da.substring(0, da.length - 4)
-                backups.push(parseInt(da))
-            }
-        }
-        backups.sort((a, b) => b - a)
-        while (backups.length > 20) {
-            const last = backups.pop()
-            await remove(`database/dbbackup-${last}.bin`, { baseDir: BaseDirectory.AppData })
-        }
-        return backups
-    }
-    else {
-        const keys = await forageStorage.keys()
-
-        const backups = keys
-            .filter(key => key.startsWith('database/dbbackup-'))
-            .map(key => parseInt(key.slice(18, -4)))
-            .sort((a, b) => b - a);
-
-        while (backups.length > 20) {
-            const last = backups.pop()
-            await forageStorage.removeItem(`database/dbbackup-${last}.bin`)
-        }
-        return backups
     }
 }
 

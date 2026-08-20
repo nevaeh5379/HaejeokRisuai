@@ -1248,18 +1248,14 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
     writer?:LocalWriter|VirtualWriter,
     spec?:'v2'|'v3'
 } = {}) {
-    if (char.detailsLoaded === false && isNodeServer && char.chaId && forageStorage.realStorage instanceof NodeStorage && forageStorage.realStorage.postgres.isEnabled()) {
-        try {
-            const fullChar = await forageStorage.realStorage.postgres.loadCharacter(char.chaId)
-            if (fullChar) {
-                const existingChats = char.chats
-                Object.assign(char, fullChar, {
-                    chats: existingChats,
-                    detailsLoaded: true,
-                })
+    if (char.detailsLoaded === false && char.chaId) {
+        const adapter = DBState.db as any
+        if (adapter.ensureCharacterDetails) {
+            try {
+                await adapter.ensureCharacterDetails(char.chaId)
+            } catch (e) {
+                console.error('Failed to load character details for export:', e)
             }
-        } catch (e) {
-            console.error('Failed to load character details for export:', e)
         }
     }
     let img = await readImage(char.image)

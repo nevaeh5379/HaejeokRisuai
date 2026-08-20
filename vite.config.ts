@@ -17,6 +17,24 @@ export default defineConfig(({command, mode}) => {
       }),
       tailwindcss(),
       wasm(),
+      // COOP/COEP headers required for OPFS-based SQLite WASM persistence
+      {
+        name: 'configure-coop-coep-headers',
+        configureServer: (server) => {
+          server.middlewares.use((_req, res, next) => {
+            res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+            res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+            next();
+          });
+        },
+        configurePreviewServer: (server) => {
+          server.middlewares.use((_req, res, next) => {
+            res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+            res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+            next();
+          });
+        },
+      },
       command === 'build' ? strip({
         include: '**/*.(mjs|js|svelte|ts)'
       }) : null
@@ -46,7 +64,8 @@ export default defineConfig(({command, mode}) => {
     
     optimizeDeps:{
       exclude: [
-        "@browsermt/bergamot-translator"
+        "@browsermt/bergamot-translator",
+        "@sqlite.org/sqlite-wasm"
       ],
       needsInterop:[
         "@mlc-ai/web-tokenizers"

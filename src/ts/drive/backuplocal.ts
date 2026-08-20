@@ -21,42 +21,44 @@ function getBasename(data:string){
 }
 
 export async function ensureAllPostgresChatMessagesLoaded(db: Database, onProgress?: (msg: string) => void) {
-    if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
-        return
-    }
-    const storage = forageStorage.realStorage as NodeStorage
-    if (!storage.postgres.isEnabled()) {
-        return
-    }
-    const totalChars = (db.characters ?? []).length
-    for (let i = 0; i < totalChars; i++) {
-        let char = db.characters[i]
-        if (!char) continue
-        if (onProgress) {
-            onProgress(`Loading chat messages from PostgreSQL (${i + 1} / ${totalChars})`)
+    try {
+        const { getSqlStorage } = await import('../storage/sqlStorageFactory')
+        const storage = await getSqlStorage()
+        if (!storage.isEnabled()) {
+            return
         }
-        if (char.detailsLoaded === false && char.chaId) {
-            const fullChar = await storage.postgres.loadCharacter(char.chaId)
-            if (fullChar) {
-                const existingChats = char.chats
-                db.characters[i] = Object.assign(char, fullChar, {
-                    chats: existingChats,
-                    detailsLoaded: true,
-                })
-                char = db.characters[i]
+        const totalChars = (db.characters ?? []).length
+        for (let i = 0; i < totalChars; i++) {
+            let char = db.characters[i]
+            if (!char) continue
+            if (onProgress) {
+                onProgress(`Loading chat messages (${i + 1} / ${totalChars})`)
             }
-        }
-        for (let j = 0; j < (char.chats ?? []).length; j++) {
-            const chat = char.chats[j]
-            if (chat && (chat.messagesLoaded === false || chat.detailsLoaded === false) && chat.id) {
-                const fullChat = await storage.postgres.loadChat(chat.id)
-                if (fullChat) {
-                    Object.assign(chat, fullChat)
-                    chat.messagesLoaded = true
-                    chat.detailsLoaded = true
+            if (char.detailsLoaded === false && char.chaId) {
+                const fullChar = await storage.loadCharacter(char.chaId)
+                if (fullChar) {
+                    const existingChats = char.chats
+                    db.characters[i] = Object.assign(char, fullChar, {
+                        chats: existingChats,
+                        detailsLoaded: true,
+                    })
+                    char = db.characters[i]
+                }
+            }
+            for (let j = 0; j < (char.chats ?? []).length; j++) {
+                const chat = char.chats[j]
+                if (chat && (chat.messagesLoaded === false || chat.detailsLoaded === false) && chat.id) {
+                    const fullChat = await storage.loadChat(chat.id)
+                    if (fullChat) {
+                        Object.assign(chat, fullChat)
+                        chat.messagesLoaded = true
+                        chat.detailsLoaded = true
+                    }
                 }
             }
         }
+    } catch (error) {
+        console.error('ensureAllPostgresChatMessagesLoaded failed:', error)
     }
 }
 
@@ -615,9 +617,28 @@ export function LoadLocalBackup(){
 
             let pendingDatabase: Uint8Array | null = null;
             const restoredColdStorageKeys = new Set<string>();
-            const useNodeDirectRestore = isNodeServer && !forageStorage.isAccount
+            const useNodeBulkRestore = isNodeServer && !forageStorage.isAccount
+            const pendingNodeAssets = new Map<string, Uint8Array>()
+            const nodeBulkMaxFiles = 64
+            const nodeBulkMaxBytes = 64 * 1024 * 1024
+            let pendingNodeAssetBytes = 0
+            let entriesRestored = 0
+            let entriesWritten = 0
+            let currentEntryName = ''
+
+            const flushNodeAssets = async(): Promise<number> => {
+                if(pendingNodeAssets.size === 0){
+                    return 0
+                }
+                const count = pendingNodeAssets.size
+                await (forageStorage.realStorage as NodeStorage).setItems(pendingNodeAssets)
+                pendingNodeAssets.clear()
+                pendingNodeAssetBytes = 0
+                return count
+            }
 
             const restoreBackupEntry = async(name:string, data:Uint8Array) => {
+                currentEntryName = name
                 if(name === 'encryption.risudat') {
                     try {
                         const meta = JSON.parse(new TextDecoder().decode(data)) as typeof encryptionMeta
@@ -662,13 +683,33 @@ export function LoadLocalBackup(){
                     if (!handledAsColdStorage) {
                         if (isTauri) {
                             await writeFile(`assets/` + name, data, { baseDir: BaseDirectory.AppData });
+                        } else if (useNodeBulkRestore) {
+                            const key = 'assets/' + name
+                            const previous = pendingNodeAssets.get(key)
+                            if(previous){
+                                pendingNodeAssetBytes -= previous.byteLength
+                            }
+                            pendingNodeAssets.set(key, data)
+                            pendingNodeAssetBytes += data.byteLength
+
+                            if(
+                                pendingNodeAssets.size >= nodeBulkMaxFiles
+                                || pendingNodeAssetBytes >= nodeBulkMaxBytes
+                            ){
+                                const flushed = await flushNodeAssets()
+                                if(flushed){
+                                    entriesWritten += flushed
+                                }
+                            }
                         } else {
                             await forageStorage.setItem('assets/' + name, data);
                         }
                     }
                 }
 
-                if(!useNodeDirectRestore){
+                entriesRestored++
+                currentEntryName = ''
+                if(!useNodeBulkRestore){
                     await sleep(10);
                 }
                 if (forageStorage.isAccount) {
@@ -676,167 +717,149 @@ export function LoadLocalBackup(){
                 }
             }
 
-            if(useNodeDirectRestore){
-                const storage = forageStorage.realStorage as NodeStorage
-                const restore = await storage.restoreBackup(
-                    file,
-                    (uploadedBytes, totalBytes) => {
-                        const progress = totalBytes === 0
-                            ? 100
-                            : Math.floor(uploadedBytes / totalBytes * 100)
-                        if(progress >= 100){
-                            alertProgress('Uploading local backup... (Finalizing on server)', 100)
-                        } else {
-                            alertProgress(`Uploading local backup...`, progress)
-                        }
-                    },
-                    (completed, total) => {
-                        const percent = total > 0 ? Math.floor((completed / total) * 100) : 100
-                        alertProgress(`Saving to storage... (${completed} / ${total} files)`, percent)
-                    }
-                )
-                try {
-                    alertProgress('Retrieving restore entries...', 90)
-                    for(const name of restore.entries){
-                        const data = await storage.getBackupRestoreEntry(restore.restoreId, name)
-                        await restoreBackupEntry(name, data)
-                    }
-                } finally {
-                    try {
-                        await storage.closeBackupRestore(restore.restoreId)
-                    } catch (error) {
-                        console.error('Failed to clean backup restore session:', error)
-                    }
+            const reader = file.stream().getReader();
+            let bytesRead = 0;
+            let lastUiUpdate = 0;
+            type BackupParserPhase = 'nameLength' | 'name' | 'dataLength' | 'data'
+            let parserPhase: BackupParserPhase = 'nameLength'
+            const lengthBuffer = new Uint8Array(4)
+            let lengthOffset = 0
+            let entryNameBuffer = new Uint8Array()
+            let entryNameOffset = 0
+            let entryName = ''
+            let entryDataLength = 0
+            let entryDataReceived = 0
+            let entryDataChunks: Uint8Array[] = []
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    break;
                 }
-            }
-            else{
-                const reader = file.stream().getReader();
-                let bytesRead = 0;
-                let lastReadProgress = -1;
-                type BackupParserPhase = 'nameLength' | 'name' | 'dataLength' | 'data'
-                let parserPhase: BackupParserPhase = 'nameLength'
-                const lengthBuffer = new Uint8Array(4)
-                let lengthOffset = 0
-                let entryNameBuffer = new Uint8Array()
-                let entryNameOffset = 0
-                let entryName = ''
-                let entryDataLength = 0
-                let entryDataReceived = 0
-                let entryDataChunks: Uint8Array[] = []
 
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) {
-                        break;
+                bytesRead += value.length;
+                const now = Date.now()
+                if(now - lastUiUpdate > 30){
+                    lastUiUpdate = now
+                    const readPercent = file.size === 0
+                        ? 90
+                        : Math.floor(bytesRead / file.size * 90)
+                    let message = `Parsing backup... (${readPercent}%) (${entriesRestored} entries parsed`
+                    if(useNodeBulkRestore && entriesWritten > 0){
+                        message += `, ${entriesWritten} written`
                     }
-
-                    bytesRead += value.length;
-                    const readProgress = file.size === 0
-                        ? 100
-                        : Math.floor(bytesRead / file.size * 100)
-                    if(readProgress !== lastReadProgress){
-                        lastReadProgress = readProgress
-                        alertProgress(`Loading local backup...`, readProgress);
+                    message += ')'
+                    if(currentEntryName){
+                        message += `\n${currentEntryName}`
                     }
+                    alertProgress(message, readPercent);
+                }
 
-                    let chunkOffset = 0
-                    while(chunkOffset < value.length){
-                    if(parserPhase === 'nameLength' || parserPhase === 'dataLength'){
-                        const copyLength = Math.min(
-                            lengthBuffer.length - lengthOffset,
-                            value.length - chunkOffset
-                        )
-                        lengthBuffer.set(
-                            value.subarray(chunkOffset, chunkOffset + copyLength),
-                            lengthOffset
-                        )
-                        lengthOffset += copyLength
-                        chunkOffset += copyLength
-                        if(lengthOffset < lengthBuffer.length){
-                            continue
-                        }
-
-                        const length = new DataView(lengthBuffer.buffer).getUint32(0, true)
-                        lengthOffset = 0
-
-                        if(parserPhase === 'nameLength'){
-                            if(length === 0 || length > 1024 * 1024){
-                                throw new Error('Invalid backup entry name length')
-                            }
-                            entryNameBuffer = new Uint8Array(length)
-                            entryNameOffset = 0
-                            parserPhase = 'name'
-                        }
-                        else{
-                            if(length > file.size){
-                                throw new Error('Invalid backup entry data length')
-                            }
-                            entryDataLength = length
-                            entryDataReceived = 0
-                            entryDataChunks = []
-                            parserPhase = 'data'
-
-                            if(entryDataLength === 0){
-                                await restoreBackupEntry(entryName, new Uint8Array())
-                                entryName = ''
-                                parserPhase = 'nameLength'
-                            }
-                        }
-                        continue
-                    }
-
-                    if(parserPhase === 'name'){
-                        const copyLength = Math.min(
-                            entryNameBuffer.length - entryNameOffset,
-                            value.length - chunkOffset
-                        )
-                        entryNameBuffer.set(
-                            value.subarray(chunkOffset, chunkOffset + copyLength),
-                            entryNameOffset
-                        )
-                        entryNameOffset += copyLength
-                        chunkOffset += copyLength
-
-                        if(entryNameOffset === entryNameBuffer.length){
-                            entryName = new TextDecoder().decode(entryNameBuffer)
-                            parserPhase = 'dataLength'
-                        }
-                        continue
-                    }
-
+                let chunkOffset = 0
+                while(chunkOffset < value.length){
+                if(parserPhase === 'nameLength' || parserPhase === 'dataLength'){
                     const copyLength = Math.min(
-                        entryDataLength - entryDataReceived,
+                        lengthBuffer.length - lengthOffset,
                         value.length - chunkOffset
                     )
-                    entryDataChunks.push(value.subarray(chunkOffset, chunkOffset + copyLength))
-                    entryDataReceived += copyLength
+                    lengthBuffer.set(
+                        value.subarray(chunkOffset, chunkOffset + copyLength),
+                        lengthOffset
+                    )
+                    lengthOffset += copyLength
                     chunkOffset += copyLength
+                    if(lengthOffset < lengthBuffer.length){
+                        continue
+                    }
 
-                    if(entryDataReceived === entryDataLength){
-                        let data: Uint8Array
-                        if(entryDataChunks.length === 1){
-                            data = entryDataChunks[0]
-                        }
-                        else{
-                            data = new Uint8Array(entryDataLength)
-                            let dataOffset = 0
-                            for(const chunk of entryDataChunks){
-                                data.set(chunk, dataOffset)
-                                dataOffset += chunk.length
-                            }
-                        }
+                    const length = new DataView(lengthBuffer.buffer).getUint32(0, true)
+                    lengthOffset = 0
 
-                        await restoreBackupEntry(entryName, data)
-                        entryName = ''
+                    if(parserPhase === 'nameLength'){
+                        if(length === 0 || length > 1024 * 1024){
+                            throw new Error('Invalid backup entry name length')
+                        }
+                        entryNameBuffer = new Uint8Array(length)
+                        entryNameOffset = 0
+                        parserPhase = 'name'
+                    }
+                    else{
+                        if(length > file.size){
+                            throw new Error('Invalid backup entry data length')
+                        }
+                        entryDataLength = length
+                        entryDataReceived = 0
                         entryDataChunks = []
-                        parserPhase = 'nameLength'
+                        parserPhase = 'data'
+
+                        if(entryDataLength === 0){
+                            await restoreBackupEntry(entryName, new Uint8Array())
+                            entryName = ''
+                            parserPhase = 'nameLength'
+                        }
                     }
-                    }
+                    continue
                 }
 
-                if(parserPhase !== 'nameLength' || lengthOffset !== 0){
-                    alertError('Failed, backup file ended with an incomplete entry.')
-                    return
+                if(parserPhase === 'name'){
+                    const copyLength = Math.min(
+                        entryNameBuffer.length - entryNameOffset,
+                        value.length - chunkOffset
+                    )
+                    entryNameBuffer.set(
+                        value.subarray(chunkOffset, chunkOffset + copyLength),
+                        entryNameOffset
+                    )
+                    entryNameOffset += copyLength
+                    chunkOffset += copyLength
+
+                    if(entryNameOffset === entryNameBuffer.length){
+                        entryName = new TextDecoder().decode(entryNameBuffer)
+                        parserPhase = 'dataLength'
+                    }
+                    continue
+                }
+
+                const copyLength = Math.min(
+                    entryDataLength - entryDataReceived,
+                    value.length - chunkOffset
+                )
+                entryDataChunks.push(value.subarray(chunkOffset, chunkOffset + copyLength))
+                entryDataReceived += copyLength
+                chunkOffset += copyLength
+
+                if(entryDataReceived === entryDataLength){
+                    let data: Uint8Array
+                    if(entryDataChunks.length === 1){
+                        data = entryDataChunks[0]
+                    }
+                    else{
+                        data = new Uint8Array(entryDataLength)
+                        let dataOffset = 0
+                        for(const chunk of entryDataChunks){
+                            data.set(chunk, dataOffset)
+                            dataOffset += chunk.length
+                        }
+                    }
+
+                    await restoreBackupEntry(entryName, data)
+                    entryName = ''
+                    entryDataChunks = []
+                    parserPhase = 'nameLength'
+                }
+                }
+            }
+
+            if(parserPhase !== 'nameLength' || lengthOffset !== 0){
+                alertError('Failed, backup file ended with an incomplete entry.')
+                return
+            }
+
+            if(useNodeBulkRestore && pendingNodeAssets.size > 0){
+                alertProgress(`Flushing remaining assets... (${pendingNodeAssets.size} files)`, 90)
+                const flushed = await flushNodeAssets()
+                if(flushed){
+                    entriesWritten += flushed
                 }
             }
 

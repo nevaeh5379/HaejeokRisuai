@@ -618,20 +618,16 @@ export async function preLoadChat(characterIndex:number, chatIndex:number){
         return
     }
 
-    if((chat.messagesLoaded === false || chat.detailsLoaded === false) && isNodeServer && chat.id){
-        try {
-            if(forageStorage.realStorage instanceof NodeStorage && forageStorage.realStorage.postgres.isEnabled()){
-                const fullChat = await forageStorage.realStorage.postgres.loadChat(chat.id)
-                if(fullChat){
-                    Object.assign(chat, fullChat)
-                    chat.messagesLoaded = true
-                    chat.detailsLoaded = true
-                    primeChatMessages(forageStorage.realStorage.postgres.getCache(), chat)
-                    return
-                }
+    if((chat.messagesLoaded === false || chat.detailsLoaded === false) && chat.id){
+        // Use the SQL adapter's lazy chat loader (works for all backends)
+        const adapter = DBState.db as any
+        if (adapter.ensureChatMessages) {
+            try {
+                await adapter.ensureChatMessages(chat.id)
+                return
+            } catch (error) {
+                console.error(`SQL loadChat failed for chat ${chat.id}:`, error)
             }
-        } catch (error) {
-            console.error(`PostgreSQL loadChat failed for chat ${chat.id}:`, error)
         }
     }
 

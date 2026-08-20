@@ -246,14 +246,16 @@ describe('NodePostgresStorage browser client', () => {
         vi.stubGlobal('fetch', fetchMock)
 
         const storage = new NodePostgresStorage(async () => 'test-auth')
-        const shallowDb = await storage.loadDatabase()
+        const shallowResult = await storage.loadDatabase()
+        const shallowDb = shallowResult?.database as any
         expect(shallowDb?.username).toBe('test-user')
         expect(shallowDb?.plugins).toHaveLength(1)
         expect(shallowDb?.pluginCustomStorage).toEqual({})
         expect(fetchMock.mock.calls[0][0]).toBe('/api/database-v2?shallow=true')
         expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/plugins')
 
-        const fullDb = await storage.loadDatabase({ shallow: false })
+        const fullResult = await storage.loadDatabase({ shallow: false })
+        const fullDb = fullResult?.database as any
         expect(fullDb?.username).toBe('test-user')
         expect(fetchMock.mock.calls[2][0]).toBe('/api/database-v2?shallow=false')
     })
@@ -372,9 +374,10 @@ describe('NodePostgresStorage browser client', () => {
         vi.stubGlobal('fetch', fetchMock)
 
         const storage = new NodePostgresStorage(async () => 'test-auth')
-        const db = await storage.loadDatabase() as any
+        const result = await storage.loadDatabase() as any
+        const db = result.database
         expect(db).toBeDefined()
-        expect(db.isPostgres).toBe(true)
+        expect(db.isSql).toBe(true)
 
         // Initial state before accessing domains: not loaded
         expect(db.isDomainLoaded('personas')).toBe(false)
