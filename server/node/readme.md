@@ -114,8 +114,10 @@ Compose network, while RisuAI and the RustFS API/console bind only to localhost.
 Before building, the installer reports and stops for processes or containers that
 already listen on TCP 80/443 or UDP 443.
 Use `./risuai.sh --help` for non-interactive and IPv6 options. After installation,
-manage the stack with `./risuai.sh start|stop|restart|status|logs`. The `stop`
-command keeps all PostgreSQL, RustFS, Caddy, and local save data intact.
+manage the stack with `./risuai.sh start|stop|restart|rebuild|status|logs`. The
+`stop` command keeps all PostgreSQL, RustFS, Caddy, and local save data intact.
+After updating the source, `./risuai.sh rebuild` rebuilds and recreates only the
+RisuAI application while leaving PostgreSQL and RustFS running.
 
 ### Asset Migration & Tools
 

@@ -26,17 +26,13 @@ export let appSubVer = 'preview'
 
 export type StreamingDisplayOptimizationMode = 'off'|'balanced'|'strong'
 
-export function setDatabase(data:Database){
-    // SQL adapters already return the current schema and intentionally expose
-    // deferred domains through lazy getters. Running the legacy monolithic
-    // defaulting pass here would touch every getter and eagerly load all of
-    // those domains, defeating selective SQL reads.
-    if ((data as Database & { isSql?: boolean }).isSql) {
-        data.characters ??= []
-        if (data.language) refreshLanguage(data)
-        setDatabaseLite(data)
-        return
-    }
+/**
+ * Applies schema defaults and migrations without installing the database.
+ * SQL adapters use this on their plain core-data snapshot before adding lazy
+ * domain getters, so a new or sparse SQL database receives the same defaults
+ * as legacy storage without eagerly loading those domains.
+ */
+export function normalizeDatabaseDefaults(data:Database){
     if(checkNullish(data.characters)){
         data.characters = []
     }
@@ -173,6 +169,8 @@ export function setDatabase(data:Database){
     }
     if(Array.isArray(data.promptTemplate)){
         data.promptTemplate = normalizePromptTemplate(data.promptTemplate)
+    } else {
+        data.promptTemplate = []
     }
     if(checkNullish(data.sdProvider)){
         data.sdProvider = ''
@@ -454,6 +452,12 @@ export function setDatabase(data:Database){
         customChainOfThought: false,
         maxThoughtTagDepth: -1
     }
+    data.promptSettings.assistantPrefill ??= ''
+    data.promptSettings.postEndInnerFormat ??= ''
+    data.promptSettings.sendChatAsSystem ??= false
+    data.promptSettings.sendName ??= false
+    data.promptSettings.utilOverride ??= false
+    data.promptSettings.customChainOfThought ??= false
     data.keiServerURL ??= ''
     data.top_k ??= 0
     data.promptSettings.maxThoughtTagDepth ??= -1
@@ -525,6 +529,9 @@ export function setDatabase(data:Database){
         only: [],
         ignore: []
     }
+    data.openrouterProvider.order ??= []
+    data.openrouterProvider.only ??= []
+    data.openrouterProvider.ignore ??= []
     data.useInstructPrompt ??= false
     data.hanuraiEnable ??= false
     data.hanuraiSplit ??= false
@@ -588,6 +595,10 @@ export function setDatabase(data:Database){
         otherAx: {},
         overrides: {}
     }
+    data.seperateParameters.memory ??= {}
+    data.seperateParameters.emotion ??= {}
+    data.seperateParameters.translate ??= {}
+    data.seperateParameters.otherAx ??= {}
     data.seperateParameters.overrides ??= {}
     data.customFlags ??= []
     data.enableCustomFlags ??= false
@@ -634,6 +645,17 @@ export function setDatabase(data:Database){
         model: data.hypaCustomSettings?.model ?? ""     
     }
     data.doNotChangeSeperateModels ??= false
+    data.seperateModelsForAxModels ??= false
+    data.seperateModels ??= {
+        memory: '',
+        emotion: '',
+        translate: '',
+        otherAx: ''
+    }
+    data.seperateModels.memory ??= ''
+    data.seperateModels.emotion ??= ''
+    data.seperateModels.translate ??= ''
+    data.seperateModels.otherAx ??= ''
     data.modelTools ??= []
     data.enableScrollToActiveChar ??= true
     
@@ -660,6 +682,11 @@ export function setDatabase(data:Database){
         otherAx: [],
         model: []
     }
+    data.fallbackModels.model ??= []
+    data.fallbackModels.memory ??= []
+    data.fallbackModels.emotion ??= []
+    data.fallbackModels.translate ??= []
+    data.fallbackModels.otherAx ??= []
     data.fallbackModels = {
         model: data.fallbackModels.model.filter((v) => v !== ''),
         memory: data.fallbackModels.memory.filter((v) => v !== ''),
@@ -728,7 +755,19 @@ export function setDatabase(data:Database){
             chat.activeStreamingDisplayOptimizationMode = undefined
         }
     }
-    refreshLanguage(data)
+    return data
+}
+
+export function setDatabase(data:Database){
+    // SQL adapters normalize their plain core data before creating lazy domain
+    // getters. Re-running normalization here would access those getters and
+    // defeat selective SQL reads.
+    if ((data as Database & { isSql?: boolean }).isSql) {
+        data.characters ??= []
+    } else {
+        normalizeDatabaseDefaults(data)
+    }
+    if (data.language) refreshLanguage(data)
     setDatabaseLite(data)
 }
 

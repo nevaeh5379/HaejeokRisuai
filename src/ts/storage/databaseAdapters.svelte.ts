@@ -1,15 +1,16 @@
-import type {
-    Database,
-    character,
-    groupChat,
-    Chat,
-    RisuPersona,
-    botPreset,
-    loreBook,
-    customscript,
+import {
+    normalizeDatabaseDefaults,
+    type Database,
+    type character,
+    type groupChat,
+    type Chat,
+    type RisuPersona,
+    type botPreset,
+    type loreBook,
+    type customscript,
 } from './database.svelte'
 import type { RisuModule } from '../process/modules'
-import { defaultAutoSuggestPrompt, defaultJailbreak, defaultMainPrompt } from './defaultPrompts'
+import { defaultJailbreak, defaultMainPrompt } from './defaultPrompts'
 import type { ISqlStorage } from './ISqlStorage'
 import { isMemoryConstrainedDevice } from '../memory/deviceMemory'
 import { cancelChatMessageCompaction } from './dataSession.svelte'
@@ -109,6 +110,17 @@ export function createSqlDatabaseAdapter(
     initialData: Database,
     storage: ISqlStorage,
 ): IDatabaseAdapter {
+    // Normalize only the eagerly loaded core snapshot. Deferred SQL domains
+    // must stay out of coreData or their fallback values would mask the real
+    // rows and prevent on-demand loading.
+    const normalizedCoreData = normalizeDatabaseDefaults({ ...initialData } as Database) as Record<string, any>
+    const promptDefaults = Object.fromEntries(
+        PROMPT_SETTING_KEYS.map((key) => [key, normalizedCoreData[key]]),
+    )
+    for (const key of ['personas', 'botPresets', 'loreBook', 'modules', 'globalscript', ...PROMPT_SETTING_KEYS]) {
+        delete normalizedCoreData[key]
+    }
+
     const internalState = $state<{
         personas: RisuPersona[] | null
         botPresets: botPreset[] | null
@@ -126,7 +138,7 @@ export function createSqlDatabaseAdapter(
         globalscript: null,
         prompts: null,
         loadedDomains: new Set<string>(),
-        coreData: { ...initialData },
+        coreData: normalizedCoreData,
     })
 
     const loadingPromises = new Map<string, Promise<any>>()
@@ -153,7 +165,7 @@ export function createSqlDatabaseAdapter(
         internalState.loadedDomains.add('scripts')
     }
     if (initialData.mainPrompt !== undefined) {
-        internalState.prompts = {}
+        internalState.prompts = { ...promptDefaults }
         for (const k of PROMPT_SETTING_KEYS) {
             if ((initialData as any)[k] !== undefined) {
                 internalState.prompts[k] = (initialData as any)[k]
@@ -340,7 +352,7 @@ export function createSqlDatabaseAdapter(
                     }
                     case 'prompts': {
                         const prompts = await storage.loadPrompts()
-                        internalState.prompts = prompts
+                        internalState.prompts = { ...promptDefaults, ...prompts }
                         internalState.loadedDomains.add('prompts')
                         return prompts
                     }
@@ -482,24 +494,7 @@ export function createSqlDatabaseAdapter(
             if (PROMPT_SETTING_KEYS.includes(prop as any)) {
                 if (!internalState.loadedDomains.has('prompts')) {
                     if (internalState.prompts === null) {
-                        internalState.prompts = {
-                            mainPrompt: defaultMainPrompt,
-                            jailbreak: defaultJailbreak,
-                            globalNote: '',
-                            additionalPrompt: 'The assistant must act as {{char}}. user is {{user}}.',
-                            supaMemoryPrompt: '',
-                            personaPrompt: '',
-                            emotionPrompt: '',
-                            emotionPrompt2: '',
-                            autoSuggestPrompt: defaultAutoSuggestPrompt,
-                            translatorPrompt: '',
-                            instructChatTemplate: '',
-                            JinjaTemplate: '',
-                            customTokenizer: '',
-                            promptTemplate: undefined,
-                            promptSettings: undefined,
-                            customPromptTemplateToggle: '',
-                        }
+                        internalState.prompts = { ...promptDefaults }
                         triggerLoadDomain('prompts')
                     }
                 }

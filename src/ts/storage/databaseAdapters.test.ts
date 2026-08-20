@@ -3,6 +3,54 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createSqlDatabaseAdapter } from './databaseAdapters.svelte'
 
+describe('SQL database defaults', () => {
+    it('normalizes an empty core database without eagerly loading deferred domains', async () => {
+        const storage = {
+            loadPrompts: vi.fn(async () => ({})),
+        } as any
+
+        const adapter = createSqlDatabaseAdapter({} as any, storage)
+
+        expect(adapter.google).toEqual({ accessToken: '', projectId: '' })
+        expect(adapter.openrouterProvider).toEqual({ order: [], only: [], ignore: [] })
+        expect(adapter.seperateModels).toEqual({ memory: '', emotion: '', translate: '', otherAx: '' })
+        expect(adapter.promptSettings).toMatchObject({
+            assistantPrefill: '',
+            postEndInnerFormat: '',
+            maxThoughtTagDepth: -1,
+        })
+        expect(adapter.promptTemplate).toEqual([])
+        expect(adapter.getLoadedDomains!()).not.toContain('prompts')
+
+        await vi.waitFor(() => expect(storage.loadPrompts).toHaveBeenCalledOnce())
+        expect(adapter.promptSettings).toMatchObject({ maxThoughtTagDepth: -1 })
+    })
+
+    it('repairs partially populated nested settings', () => {
+        const adapter = createSqlDatabaseAdapter({
+            openrouterProvider: { order: ['anthropic'] },
+            fallbackModels: { model: [''] },
+            seperateParameters: { memory: {} },
+        } as any, {} as any)
+
+        expect(adapter.openrouterProvider).toEqual({ order: ['anthropic'], only: [], ignore: [] })
+        expect(adapter.fallbackModels).toEqual({
+            model: [],
+            memory: [],
+            emotion: [],
+            translate: [],
+            otherAx: [],
+        })
+        expect(adapter.seperateParameters).toEqual({
+            memory: {},
+            emotion: {},
+            translate: {},
+            otherAx: {},
+            overrides: {},
+        })
+    })
+})
+
 describe('SQL chat message paging', () => {
     it('hydrates a recent page, prepends older pages, and can promote to full history', async () => {
         const recent = Array.from({ length: 24 }, (_, index) => ({
