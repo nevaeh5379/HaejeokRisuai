@@ -10,12 +10,10 @@ import type {
     customscript,
 } from './database.svelte'
 import type { RisuModule } from '../process/modules'
-import type { toSaveType } from './risuSave'
 import type {
     ISqlStorage,
     SqlLoadDatabaseOptions,
     SqlLoadDatabaseResult,
-    SqlSaveDatabaseOptions,
 } from './ISqlStorage'
 import type {
     NodePostgresRevision,
@@ -23,16 +21,12 @@ import type {
     NodePostgresTokenUsage,
     NodePostgresCharacterSearchResult,
 } from './nodePostgresStorage'
-import {
-    createNodeDatabaseSyncCache,
-    primeNodeDatabaseSyncCache,
-    buildNodeDatabaseSync,
-    type NodeDatabaseSyncCache,
-} from './nodeDatabaseSync'
 import { createSqlDatabaseAdapter } from './databaseAdapters.svelte'
 import { isTauri } from '../platform'
 import { appDataDir, join } from '@tauri-apps/api/path'
 import sqliteSchemaSql from './sqlite-schema.sql?raw'
+import { buildSqlReplaceCommit, SqlRevisionConflictError, type SqlCommit, type SqlCommitResult } from './sqlCommit'
+import { applySqliteCommit } from './sqliteCommit'
 
 type SqlDatabase = import('@tauri-apps/plugin-sql').default
 
@@ -57,7 +51,7 @@ export class TauriSqliteStorage implements ISqlStorage {
     readonly backendKind = 'tauri-sqlite' as const
 
     private db: SqlDatabase | null = null
-    private cache: NodeDatabaseSyncCache = createNodeDatabaseSyncCache()
+    private revision = 0
     private initialized = false
     private _enabled = false
 
@@ -65,8 +59,8 @@ export class TauriSqliteStorage implements ISqlStorage {
         return this._enabled
     }
 
-    getCache(): NodeDatabaseSyncCache {
-        return this.cache
+    getRevision(): number {
+        return this.revision
     }
 
     async init(): Promise<boolean> {
@@ -92,7 +86,7 @@ export class TauriSqliteStorage implements ISqlStorage {
                 'SELECT initialized, revision FROM system_storage_meta WHERE singleton = 1',
             )
             if (rows && rows.length > 0) {
-                this.cache = createNodeDatabaseSyncCache(Number(rows[0].revision) || 0)
+                this.revision = Number(rows[0].revision) || 0
             }
             this._enabled = true
             this.initialized = true
@@ -202,171 +196,44 @@ export class TauriSqliteStorage implements ISqlStorage {
         const isInitialized = metaRow?.initialized === 1 || characters.length > 0 || settingsRows.length > 0
 
         if (!isInitialized) {
-            return { status: 'empty', revision: this.cache.revision, database: null }
+            return { status: 'empty', revision: this.revision, database: null }
         }
-
-        this.cache = primeNodeDatabaseSyncCache(db, this.cache.revision)
 
         if (shallow) {
             const adapter = createSqlDatabaseAdapter(db, this)
-            return { status: 'ready', revision: this.cache.revision, database: adapter }
+            return { status: 'ready', revision: this.revision, database: adapter }
         }
 
-        return { status: 'ready', revision: this.cache.revision, database: db }
+        return { status: 'ready', revision: this.revision, database: db }
     }
 
-    async saveDatabase(
-        database: DatabaseType,
-        changes: toSaveType,
-        options?: SqlSaveDatabaseOptions,
-    ): Promise<boolean> {
-        if (!this._enabled || !this.db) return false
-
-        const forceFull = options?.forceFull ?? false
-        options?.onProgress?.('Saving to local SQLite...')
-
-        const built = buildNodeDatabaseSync(database, changes, this.cache, { forceFull })
-        if (!built) return true
-
-        const payload = built.payload
-
-        // Save root settings
-        for (const upsert of payload.root.upserts) {
-            await this.execute(
-                "INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))",
-                [upsert.key, JSON.stringify(upsert.value)],
-            )
-        }
-        for (const del of payload.root.deletes) {
-            await this.execute('DELETE FROM system_settings WHERE key = ?', [del])
-        }
-
-        // Save characters
-        for (const charEntry of payload.characters) {
-            const charData = charEntry.data as Record<string, unknown>
-            const chaId = charEntry.id
-            const dataJson = JSON.stringify({
-                ...charData,
-                chaId: undefined,
-                chats: undefined,
-                detailsLoaded: undefined,
-            })
-            await this.execute(
-                `INSERT OR REPLACE INTO characters
-                 (id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded, data, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now'))`,
-                [
-                    chaId,
-                    charEntry.position,
-                    (charData as any).type ?? 'character',
-                    (charData as any).name ?? '',
-                    (charData as any).image ?? null,
-                    (charData as any).trashTime ?? null,
-                    (charData as any).creationDate ?? null,
-                    (charData as any).modificationDate ?? null,
-                    (charData as any).lastInteraction ?? null,
-                    dataJson,
-                ],
-            )
-        }
-        if (payload.characterIds) {
-            const placeholders = payload.characterIds.map(() => '?').join(',')
-            await this.execute(`DELETE FROM characters WHERE id NOT IN (${placeholders})`, payload.characterIds)
-        }
-
-        // Save chats
-        for (const chatEntry of payload.chats) {
-            const chatData = chatEntry.data as Record<string, unknown>
-            const chatId = chatEntry.id
-            const dataJson = JSON.stringify({
-                ...chatData,
-                id: undefined,
-                message: undefined,
-                messagesLoaded: undefined,
-                detailsLoaded: undefined,
-            })
-            await this.execute(
-                `INSERT OR REPLACE INTO chats
-                 (id, character_id, position, name, note, folder_id, last_message_time, messages_loaded, data, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now'))`,
-                [
-                    chatId,
-                    chatEntry.characterId,
-                    chatEntry.position,
-                    (chatData as any).name ?? '',
-                    (chatData as any).note ?? '',
-                    (chatData as any).folderId ?? null,
-                    (chatData as any).lastDate ?? null,
-                    dataJson,
-                ],
-            )
-        }
-        for (const manifest of payload.chatManifests) {
-            if (manifest.ids.length > 0) {
-                const placeholders = manifest.ids.map(() => '?').join(',')
-                await this.execute(
-                    `DELETE FROM chats WHERE character_id = ? AND id NOT IN (${placeholders})`,
-                    [manifest.characterId, ...manifest.ids],
-                )
-            } else {
-                await this.execute('DELETE FROM chats WHERE character_id = ?', [manifest.characterId])
+    async commit(commit: SqlCommit): Promise<SqlCommitResult> {
+        if (!this._enabled || !this.db) throw new Error('SQLite storage is not enabled')
+        await this.execute('BEGIN IMMEDIATE')
+        try {
+            const meta = await this.selectOne<{ revision: number }>('SELECT revision FROM system_storage_meta WHERE singleton = 1')
+            const currentRevision = Number(meta?.revision) || 0
+            if (commit.baseRevision !== currentRevision) throw new SqlRevisionConflictError(currentRevision)
+            if (commit.replaceAll) {
+                await this.execute('DELETE FROM system_settings')
+                await this.execute('DELETE FROM characters')
             }
+            await applySqliteCommit(commit, (sql, bind = []) => this.execute(sql, bind))
+            const revision = currentRevision + 1
+            await this.execute("UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1", [revision])
+            await this.execute('COMMIT')
+            this.revision = revision
+            return { revision }
+        } catch (error) {
+            await this.execute('ROLLBACK').catch(() => undefined)
+            throw error
         }
-
-        // Save messages
-        for (const msgEntry of payload.messages) {
-            const msgData = msgEntry.data as Record<string, unknown>
-            const dataJson = JSON.stringify(msgData)
-            await this.execute(
-                `INSERT OR REPLACE INTO messages (chat_id, id, position, role, sent_time, data) VALUES (?, ?, ?, ?, ?, ?)`,
-                [
-                    msgEntry.chatId,
-                    msgEntry.id,
-                    msgEntry.position,
-                    (msgData as any).role ?? 'char',
-                    (msgData as any).time ?? null,
-                    dataJson,
-                ],
-            )
-        }
-        for (const manifest of payload.messageManifests) {
-            if (manifest.ids.length > 0) {
-                const placeholders = manifest.ids.map(() => '?').join(',')
-                await this.execute(
-                    `DELETE FROM messages WHERE chat_id = ? AND id NOT IN (${placeholders})`,
-                    [manifest.chatId, ...manifest.ids],
-                )
-            } else {
-                await this.execute('DELETE FROM messages WHERE chat_id = ?', [manifest.chatId])
-            }
-        }
-
-        // Update revision
-        const newRevision = this.cache.revision + 1
-        await this.execute(
-            "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
-            [newRevision],
-        )
-        built.nextCache.revision = newRevision
-        built.nextCache.initialized = true
-        this.cache = built.nextCache
-
-        options?.onProgress?.('Save complete')
-        return true
     }
 
     async replaceDatabase(database: DatabaseType, onProgress?: (status: string) => void): Promise<boolean> {
-        onProgress?.('Clearing local database...')
-        await this.execute('DELETE FROM messages')
-        await this.execute('DELETE FROM chats')
-        await this.execute('DELETE FROM characters')
-        await this.execute('DELETE FROM system_settings')
-
-        return this.saveDatabase(
-            database,
-            { character: [], chat: [], botPreset: false, modules: false, loadouts: false, plugins: false, pluginCustomStorage: false },
-            { forceFull: true, onProgress },
-        )
+        onProgress?.('Replacing local database...')
+        await this.commit(buildSqlReplaceCommit(database, this.revision))
+        return true
     }
 
     // ── Per-entity lazy loaders ──────────────────────────────────────────
@@ -556,7 +423,7 @@ export class TauriSqliteStorage implements ISqlStorage {
     }
 
     async restoreRevision(revisionId: number): Promise<{ revision: number; revisionId: number }> {
-        return { revision: this.cache.revision, revisionId }
+        return { revision: this.revision, revisionId }
     }
 
     // ── Search ───────────────────────────────────────────────────────────

@@ -542,7 +542,7 @@ const PROXY_STREAM_MAX_BODY_BASE64_BYTES = 8 * 1024 * 1024;
 const proxyStreamJobs = new Map();
 
 function isLargePostgresJsonRequest(req) {
-    return (req.method === 'POST' && req.path === '/api/database-v2/sync') ||
+    return (req.method === 'POST' && req.path === '/api/database-v2/commit') ||
         (req.method === 'PUT' && req.path.startsWith('/api/database-v2/cold-storage/'));
 }
 
@@ -3159,7 +3159,7 @@ app.post(
 );
 
 app.post(
-    '/api/database-v2/sync',
+    '/api/database-v2/commit',
     authenticatedRouteLimiter,
     requireNodeAuth,
     postgresJsonParser,

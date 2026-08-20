@@ -1,7 +1,4 @@
-import { ReadableStream, WritableStream, TransformStream } from "web-streams-polyfill/ponyfill/es2018";
 import { Buffer as BufferPolyfill } from 'buffer'
-import { polyfill as dragPolyfill} from "mobile-drag-drop"
-import {scrollBehaviourDragImageTranslateOverride} from 'mobile-drag-drop/scroll-behaviour'
 import rfdc from 'rfdc'
 import { isIOS } from "./platform";
 /**
@@ -27,12 +24,15 @@ try {
     
     if((!supports) || isIOS()){
       globalThis.polyfilledDragDrop = true
-      dragPolyfill({
-        // use this to make use of the scroll behaviour
-        dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride,
-        // holdToDrag: 400,
-        forceApply: true
-      });
+      void Promise.all([
+        import('mobile-drag-drop'),
+        import('mobile-drag-drop/scroll-behaviour')
+      ]).then(([{ polyfill }, { scrollBehaviourDragImageTranslateOverride }]) => {
+        polyfill({
+          dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride,
+          forceApply: true
+        })
+      })
     }
 } catch (error) {
     
@@ -41,9 +41,14 @@ try {
 globalThis.safeStructuredClone = safeStructuredClone
 
 globalThis.Buffer = BufferPolyfill
-//@ts-expect-error ponyfill WritableStream type is incompatible with globalThis.WritableStream
-globalThis.WritableStream = globalThis.WritableStream ?? WritableStream
-//@ts-expect-error ponyfill ReadableStream type is incompatible with globalThis.ReadableStream
-globalThis.ReadableStream = globalThis.ReadableStream ?? ReadableStream
-//@ts-expect-error ponyfill TransformStream type is incompatible with globalThis.TransformStream
-globalThis.TransformStream = globalThis.TransformStream ?? TransformStream   
+
+if (!globalThis.ReadableStream || !globalThis.WritableStream || !globalThis.TransformStream) {
+  void import('web-streams-polyfill/ponyfill/es2018').then(({ ReadableStream, WritableStream, TransformStream }) => {
+    // @ts-expect-error ponyfill stream types differ slightly from the DOM declarations
+    globalThis.WritableStream ??= WritableStream
+    // @ts-expect-error ponyfill stream types differ slightly from the DOM declarations
+    globalThis.ReadableStream ??= ReadableStream
+    // @ts-expect-error ponyfill stream types differ slightly from the DOM declarations
+    globalThis.TransformStream ??= TransformStream
+  })
+}

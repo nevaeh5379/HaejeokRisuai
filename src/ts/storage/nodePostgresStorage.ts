@@ -1,15 +1,9 @@
 import localforage from 'localforage'
 import type { Database, Message, character, groupChat, Chat, RisuPersona, botPreset, loreBook, customscript } from './database.svelte'
 import type { RisuModule } from '../process/modules'
-import type { toSaveType } from './risuSave'
-import {
-    buildNodeDatabaseSync,
-    createNodeDatabaseSyncCache,
-    primeNodeDatabaseSyncCache,
-    type NodeDatabaseSyncCache,
-} from './nodeDatabaseSync'
 import { createSqlDatabaseAdapter } from './databaseAdapters.svelte'
-import type { INodeSqlStorageAdmin, SqlLoadDatabaseOptions, SqlLoadDatabaseResult, SqlSaveDatabaseOptions } from './ISqlStorage'
+import type { INodeSqlStorageAdmin, SqlLoadDatabaseOptions, SqlLoadDatabaseResult } from './ISqlStorage'
+import { buildSqlReplaceCommit, type SqlCommit, type SqlCommitResult } from './sqlCommit'
 
 export type DbVendor = 'postgres' | 'oracle' | 'azure'
 
@@ -235,9 +229,11 @@ async function responseError(response:Response, fallback:string) {
 }
 
 export class NodePostgresRevisionConflictError extends Error {
+    readonly currentRevision:number|null
     constructor(revision:unknown) {
         super(`PostgreSQL data changed in another session (server revision ${revision ?? 'unknown'}). Reload before saving again.`)
         this.name = 'NodePostgresRevisionConflictError'
+        this.currentRevision = Number.isSafeInteger(Number(revision)) ? Number(revision) : null
     }
 }
 
@@ -251,7 +247,7 @@ export class NodePostgresPayloadTooLargeError extends Error {
 export class NodePostgresStorage implements INodeSqlStorageAdmin {
     readonly backendKind = 'node' as const
     private status:'unknown'|'enabled'|'disabled' = 'unknown'
-    private cache:NodeDatabaseSyncCache = createNodeDatabaseSyncCache()
+    private revision = 0
     private pluginsCacheForage = localforage.createInstance({ name: 'risuaiPostgresPlugins' })
     private pluginStorageCacheForage = localforage.createInstance({ name: 'risuaiPostgresPluginStorage' })
 
@@ -280,7 +276,8 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     async init(): Promise<boolean> {
         if (this.status === 'unknown') {
             try {
-                await this.loadDatabase()
+                const config = await this.getDatabaseConfig()
+                this.status = config.enabled ? 'enabled' : 'disabled'
             } catch {
                 this.status = 'disabled'
                 return false
@@ -313,7 +310,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
         }
         const config:NodePostgresServerConfig = await response.json()
         this.status = config.enabled ? 'enabled' : 'disabled'
-        this.cache = createNodeDatabaseSyncCache(config.revision ?? 0)
+        this.revision = config.revision ?? 0
         return config
     }
 
@@ -333,7 +330,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
         }
         const config:NodePostgresServerConfig = await response.json()
         this.status = config.enabled ? 'enabled' : 'disabled'
-        this.cache = createNodeDatabaseSyncCache(config.revision ?? 0)
+        this.revision = config.revision ?? 0
         return config
     }
 
@@ -358,7 +355,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
         const config = await response.json()
         this.status = config.enabled ? 'enabled' : 'disabled'
         if(config.revision != null){
-            this.cache = createNodeDatabaseSyncCache(config.revision)
+            this.revision = config.revision
         }
         return config
     }
@@ -387,7 +384,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
         const body = await response.json()
         this.status = body.enabled ? 'enabled' : 'disabled'
         if(body.revision != null){
-            this.cache = createNodeDatabaseSyncCache(body.revision)
+            this.revision = body.revision
         }
         return body
     }
@@ -434,8 +431,8 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
         return await response.json()
     }
 
-    getCache():NodeDatabaseSyncCache {
-        return this.cache
+    getRevision():number {
+        return this.revision
     }
 
     async loadPlugins():Promise<any[]|null> {
@@ -856,14 +853,14 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
                     body.database.plugins = plugins
                 }
                 body.database.pluginCustomStorage ??= {}
-                this.cache = primeNodeDatabaseSyncCache(body.database, body.revision)
+                this.revision = body.revision
                 const adapter = createSqlDatabaseAdapter(body.database, this)
                 return { status: 'ready', revision: body.revision, database: adapter }
             }
-            this.cache = primeNodeDatabaseSyncCache(body.database, body.revision)
+            this.revision = body.revision
             return { status: 'ready', revision: body.revision, database: body.database }
         }
-        this.cache = createNodeDatabaseSyncCache(body.revision)
+        this.revision = body.revision
         return { status: 'empty', revision: body.revision, database: null }
     }
 
@@ -944,7 +941,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
             throw await responseError(response, 'PostgreSQL revision restore failed')
         }
         const result:{revision:number, revisionId:number} = await response.json()
-        this.cache = createNodeDatabaseSyncCache(result.revision)
+        this.revision = result.revision
         return result
     }
 
@@ -1046,24 +1043,12 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
         return body.deleted
     }
 
-    async saveDatabase(
-        database:Database,
-        changes:toSaveType,
-        options:SqlSaveDatabaseOptions = {}
-    ):Promise<boolean> {
+    async commit(commit:SqlCommit):Promise<SqlCommitResult> {
         if(!await this.ensureEnabled()){
-            return false
+            throw new Error('SQL storage is not enabled')
         }
-
-        options.onProgress?.('Building relational sync payload...')
-        const built = buildNodeDatabaseSync(database, changes, this.cache, options)
-        if(!built){
-            return true
-        }
-        options.onProgress?.('Compressing database payload...')
-        const encodedBody = await encodeJsonBody(built.payload)
-        options.onProgress?.('Writing to PostgreSQL database tables...')
-        const response = await fetch('/api/database-v2/sync', {
+        const encodedBody = await encodeJsonBody(commit)
+        const response = await fetch('/api/database-v2/commit', {
             method: 'POST',
             body: encodedBody.body,
             headers: {
@@ -1081,28 +1066,17 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
             throw new NodePostgresPayloadTooLargeError(body?.error)
         }
         if(response.status < 200 || response.status >= 300){
-            throw await responseError(response, 'PostgreSQL database save failed')
+            throw await responseError(response, 'SQL commit failed')
         }
-        const result:{ revision:number } = await response.json()
-        built.nextCache.revision = result.revision
-        built.nextCache.initialized = true
-        this.cache = built.nextCache
-        return true
+        const result = await response.json() as SqlCommitResult
+        this.revision = result.revision
+        return result
     }
 
     async replaceDatabase(database:Database, onProgress?:(status:string) => void) {
-        return await this.saveDatabase(database, {
-            character: [],
-            chat: [],
-            botPreset: false,
-            modules: false,
-            loadouts: false,
-            plugins: false,
-            pluginCustomStorage: false,
-        }, {
-            forceFull: true,
-            onProgress
-        })
+        onProgress?.('Replacing SQL database...')
+        await this.commit(buildSqlReplaceCommit(database, this.revision))
+        return true
     }
 
     async searchMessages(query:string, scope:'all'|'active'|'cold' = 'all', limit = 50):Promise<NodePostgresMessageSearchResult[]> {

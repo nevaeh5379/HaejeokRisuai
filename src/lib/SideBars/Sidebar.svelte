@@ -46,7 +46,7 @@
     import BaseRoundedButton from "../UI/BaseRoundedButton.svelte";
     import { getCharacterIndexObject, selectSingleFile } from "src/ts/util";
     import { v4 } from "uuid";
-    import { checkCharOrder, getFileSrc, preloadThumbnails, saveAsset } from "src/ts/globalApi.svelte";
+    import { checkCharOrder, getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
     import { alertInput, alertSelect } from "src/ts/alert";
     import SideChatList from "./SideChatList.svelte";
     import { ConnectionIsHost, ConnectionOpenStore, RoomIdStore } from "src/ts/sync/multiuser";
@@ -126,20 +126,6 @@
     }
     if (!isEqual(charImages, newCharImages)) {
       charImages = newCharImages;
-      const keysToPreload: string[] = [];
-      for (const c of newCharImages) {
-        if (c.type === 'normal') {
-          if (c.img) keysToPreload.push(c.img);
-        } else if (c.type === 'folder') {
-          if (c.img) keysToPreload.push(c.img);
-          for (const fc of c.folder) {
-            if (fc.img) keysToPreload.push(fc.img);
-          }
-        }
-      }
-      if (keysToPreload.length > 0) {
-        preloadThumbnails(keysToPreload);
-      }
     }
     if(IconRounded !== DBState.db.roundIcons){
       IconRounded = DBState.db.roundIcons
@@ -585,7 +571,7 @@
       }
     }} ondragenter={preventAll}></div>
     {#each charImages as char, ind}
-      <div class="group relative flex items-center px-2"
+      <div class="group relative flex items-center px-2 [content-visibility:auto] [contain-intrinsic-size:64px]"
         role="listitem"
         draggable="true"
         ondragstart={(e) => {avatarDragStart({index:ind}, e)}}
@@ -615,7 +601,7 @@
           >
           {#if char.type === 'normal'}
             <SidebarAvatar 
-              src={char.img ? getCharImage(char.img, "plain", { thumbnail: true }) : "/none.webp"} 
+              src={char.img ? () => getCharImage(char.img, "plain", { thumbnail: true }) : "/none.webp"}
               size="56" 
               rounded={IconRounded} 
               name={char.name}
@@ -624,7 +610,7 @@
           {:else if char.type === "folder"}
             {#key char.color}
             {#key char.name}
-              <SidebarAvatar src="slot" size="56" rounded={IconRounded} bordered name={char.name} color={char.color} backgroundimg={char.img ? getCharImage(char.img, "plain", { thumbnail: true }) : ""}
+              <SidebarAvatar src="slot" size="56" rounded={IconRounded} bordered name={char.name} color={char.color} backgroundimg={char.img ? () => getCharImage(char.img, "plain", { thumbnail: true }) : ""}
               oncontextmenu={async (e) => {
                 e.preventDefault()
                 const sel = parseInt(await alertSelect([language.renameFolder,language.changeFolderColor,language.changeFolderImage,language.cancel]))
@@ -777,7 +763,7 @@
                   }}
                 >
                 <SidebarAvatar 
-                  src={char2.img ? getCharImage(char2.img, "plain", { thumbnail: true }) : "/none.webp"} 
+                  src={char2.img ? () => getCharImage(char2.img, "plain", { thumbnail: true }) : "/none.webp"}
                   size="56" 
                   rounded={IconRounded} 
                   name={char2.name}

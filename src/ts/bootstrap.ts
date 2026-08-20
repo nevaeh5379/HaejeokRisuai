@@ -21,18 +21,14 @@ import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from
 import { loadRisuAccountData } from "./drive/accounter";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
-import { autoServerBackup } from "./kei/backup";
 import { language } from "src/lang";
 import { startObserveDom } from "./observer.svelte";
 import { updateGuisize } from "./gui/guisize";
 import { updateLorebooks } from "./characters";
 import { initMobileGesture } from "./hotkey";
-import { moduleUpdate } from "./process/modules";
-import { makeColdData } from "./process/coldstorage.svelte";
 import { getRemoteSaveCleanupAction, getRemoteSavePayloadName } from "./storage/remoteSaveCleanup";
 import {
     forageStorage,
-    saveDb,
     getDbBackups,
     getUncleanables,
     getBasename,
@@ -47,6 +43,7 @@ import { getSqlStorage } from "./storage/sqlStorageFactory";
 import type { ISqlStorage, INodeSqlStorageAdmin } from "./storage/ISqlStorage";
 import { isNodeSqlStorageAdmin } from "./storage/ISqlStorage";
 import { checkAndMigrateLegacyDatabase, migrateLegacyDatabase } from "./storage/migration";
+import { startDataSession } from './storage/dataSession.svelte'
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null
 
@@ -132,12 +129,7 @@ export async function loadData() {
 
             // ── Node server: update SQL config state ──────────────────────
             if (isNodeServer && isNodeSqlStorageAdmin(storage)) {
-                try {
-                    const config = await storage.getDatabaseConfig()
-                    sqlConfiguredStore.set(Boolean(config.enabled && config.configured))
-                } catch {
-                    sqlConfiguredStore.set(false)
-                }
+                sqlConfiguredStore.set(storage.isEnabled())
             }
 
             // ── Step 4: Account sync check (Node server only) ─────────────
@@ -213,15 +205,13 @@ export async function loadData() {
                 initMobileGesture()
                 MobileGUI.set(true)
             }
-            await makeColdData()
-            loadedStore.set(true)
             selectedCharID.set(-1)
-            startObserveDom()
             assignIds()
+            startDataSession(getDatabase(), storage)
+            startObserveDom()
             registerModelDynamic()
-            saveDb()
-            moduleUpdate()
             cleanChunks()
+            loadedStore.set(true)
             alertTOS().then((a) => {
                 if (a === false) {
                     location.reload()
@@ -299,6 +289,14 @@ function updateHeightMode() {
  */
 async function checkNewFormat(): Promise<void> {
     let db = getDatabase();
+
+    // Legacy file migrations operate on complete snapshots. SQL data is
+    // migrated by the storage schema/codec and may only contain shallow
+    // entities here; walking it would hydrate every deferred domain.
+    if ((db as Database & { isSql?: boolean }).isSql) {
+        checkCharOrder()
+        return
+    }
 
     // Check data integrity
     db.characters = db.characters.map((v) => {
@@ -627,8 +625,10 @@ function assignIds() {
         return
     }
     const assignedIds = new Set<string>()
-    for (let i = 0; i < DBState.db.characters.length; i++) {
-        const cha = DBState.db.characters[i]
+    for (const cha of DBState.db.characters) {
+        if (!cha) {
+            continue
+        }
         if (!cha.chaId) {
             cha.chaId = uuidv4()
         }
@@ -637,8 +637,12 @@ function assignIds() {
             cha.chaId = uuidv4();
         }
         assignedIds.add(cha.chaId)
-        for (let i2 = 0; i2 < cha.chats.length; i2++) {
-            const chat = cha.chats[i2]
+        // SQL startup may expose character metadata before its chats have
+        // been hydrated. IDs are assigned when those rows are loaded/created.
+        for (const chat of cha.chats ?? []) {
+            if (!chat) {
+                continue
+            }
             if (!chat.id) {
                 chat.id = uuidv4()
             }

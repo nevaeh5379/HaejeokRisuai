@@ -1,11 +1,18 @@
-import { sleep } from "./util";
 import { globalFetch } from "./globalApi.svelte";
 
 let bgmElement:HTMLAudioElement|null = null;
+const observedNodes = new WeakSet<HTMLElement>()
 
 function nodeObserve(node:HTMLElement){
+    if(observedNodes.has(node)){
+        return
+    }
     const hlLang = node.getAttribute('x-hl-lang');
     const ctrlName = node.getAttribute('risu-ctrl');
+    if(!hlLang && !ctrlName){
+        return
+    }
+    observedNodes.add(node)
 
     if(hlLang){
         node.addEventListener('contextmenu', (e)=>{
@@ -74,22 +81,29 @@ function nodeObserve(node:HTMLElement){
     }
 }
 
-export async function startObserveDom(){
+export function startObserveDom(){
     //For codeblock we are using MutationObserver since it doesn't appear well
     const observer = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
+            if(mutation.type === 'attributes' && mutation.target instanceof HTMLElement){
+                nodeObserve(mutation.target)
+            }
             mutation.addedNodes.forEach((node) => {
                 if(node instanceof HTMLElement){
                     nodeObserve(node);
+                    node.querySelectorAll<HTMLElement>('[x-hl-lang], [risu-ctrl]').forEach(nodeObserve)
                 }
             })
         })
     })
 
-    while(true){
-        document.querySelectorAll('[x-hl-lang], [risu-ctrl]').forEach(nodeObserve);
-        await sleep(100);
-    }
+    document.querySelectorAll<HTMLElement>('[x-hl-lang], [risu-ctrl]').forEach(nodeObserve)
+    observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['x-hl-lang', 'risu-ctrl']
+    })
 }
 
 

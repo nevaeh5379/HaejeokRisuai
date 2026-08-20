@@ -11,13 +11,13 @@ import type {
 import type { RisuModule } from '../process/modules'
 import { defaultAutoSuggestPrompt, defaultJailbreak, defaultMainPrompt } from './defaultPrompts'
 import type { ISqlStorage } from './ISqlStorage'
-import { primeRootSetting, primeCharacterDetails, primeChatMessages } from './nodeDatabaseSync'
 
 export interface IDatabaseAdapter extends Database {
     readonly isSql?: boolean
     ensureLoaded?: (domain?: string) => Promise<void>
     isDomainLoaded?: (domain: string) => boolean
     getLoadedDomains?: () => string[]
+    getLoadedRootKeys?: () => string[]
 }
 
 export const POSTGRES_DOMAINS = [
@@ -182,7 +182,6 @@ export function createSqlDatabaseAdapter(
                             chats: existingChats,
                             detailsLoaded: true,
                         })
-                        primeCharacterDetails(storage.getCache(), chars[idx], idx)
                     }
                 }
             } catch (error) {
@@ -211,7 +210,6 @@ export function createSqlDatabaseAdapter(
                             Object.assign(char.chats[chatIdx], fullChat)
                             char.chats[chatIdx].messagesLoaded = true
                             char.chats[chatIdx].detailsLoaded = true
-                            primeChatMessages(storage.getCache(), char.chats[chatIdx])
                             break
                         }
                     }
@@ -248,44 +246,36 @@ export function createSqlDatabaseAdapter(
                         }]
                         internalState.personas = mappedPersonas
                         internalState.loadedDomains.add('personas')
-                        primeRootSetting(storage.getCache(), 'personas', internalState.personas)
                         return internalState.personas
                     }
                     case 'botPresets': {
                         const botPresets = await storage.loadBotPresets()
                         internalState.botPresets = botPresets
                         internalState.loadedDomains.add('botPresets')
-                        primeRootSetting(storage.getCache(), 'botPresets', botPresets)
                         return botPresets
                     }
                     case 'loreBook': {
                         const loreBook = await storage.loadLorebooks()
                         internalState.loreBook = loreBook
                         internalState.loadedDomains.add('loreBook')
-                        primeRootSetting(storage.getCache(), 'loreBook', loreBook)
                         return loreBook
                     }
                     case 'modules': {
                         const modules = await storage.loadModules()
                         internalState.modules = modules
                         internalState.loadedDomains.add('modules')
-                        primeRootSetting(storage.getCache(), 'modules', modules)
                         return modules
                     }
                     case 'scripts': {
                         const globalscript = await storage.loadScripts()
                         internalState.globalscript = globalscript
                         internalState.loadedDomains.add('scripts')
-                        primeRootSetting(storage.getCache(), 'globalscript', globalscript)
                         return globalscript
                     }
                     case 'prompts': {
                         const prompts = await storage.loadPrompts()
                         internalState.prompts = prompts
                         internalState.loadedDomains.add('prompts')
-                        for (const [k, v] of Object.entries(prompts)) {
-                            primeRootSetting(storage.getCache(), k, v)
-                        }
                         return prompts
                     }
                     default:
@@ -327,6 +317,19 @@ export function createSqlDatabaseAdapter(
 
         getLoadedDomains(): string[] {
             return Array.from(internalState.loadedDomains)
+        },
+
+        getLoadedRootKeys(): string[] {
+            const keys = new Set(Object.keys(internalState.coreData))
+            if (internalState.loadedDomains.has('personas')) keys.add('personas')
+            if (internalState.loadedDomains.has('botPresets')) keys.add('botPresets')
+            if (internalState.loadedDomains.has('loreBook')) keys.add('loreBook')
+            if (internalState.loadedDomains.has('modules')) keys.add('modules')
+            if (internalState.loadedDomains.has('scripts')) keys.add('globalscript')
+            if (internalState.loadedDomains.has('prompts')) {
+                for (const key of PROMPT_SETTING_KEYS) keys.add(key)
+            }
+            return Array.from(keys)
         },
     }
 

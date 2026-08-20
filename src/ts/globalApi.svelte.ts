@@ -9,7 +9,7 @@ import {
 } from "@tauri-apps/plugin-fs"
 import { changeFullscreen, checkNullish, sleep } from "./util"
 import { convertFileSrc, invoke } from "@tauri-apps/api/core"
-import { v4 as uuidv4, v4 } from 'uuid';
+import { v4 as uuidv4 } from 'uuid';
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { get } from "svelte/store";
 import { open } from '@tauri-apps/plugin-shell'
@@ -17,19 +17,17 @@ import streamSaver from 'streamsaver';
 import { setDatabase, type Database, defaultSdDataFunc, getDatabase, appVer, getCurrentCharacter, type character, type groupChat, appSubVer } from "./storage/database.svelte";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { checkRisuUpdate } from "./update";
-import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore } from "./stores.svelte";
+import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, saving } from "./stores.svelte";
 import { loadPlugins } from "./plugins/plugins.svelte";
-import { alertConfirm, alertError, alertMd, alertNormal, alertNormalWait, alertSelect, alertTOS, waitAlert } from "./alert";
-import { checkDriverInit, syncDrive } from "./drive/drive";
+import { alertConfirm, alertError, alertMd, alertNormal, alertSelect, alertTOS, waitAlert } from "./alert";
 import { hasher } from "./parser/parser.svelte";
 import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { loadRisuAccountData } from "./drive/accounter";
-import { decodeRisuSave, encodeRisuSaveLegacy, RisuSaveEncoder, type toSaveType } from "./storage/risuSave";
+import { decodeRisuSave, encodeRisuSaveLegacy, RisuSaveEncoder } from "./storage/risuSave";
 import { AutoStorage } from "./storage/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
-import { autoServerBackup, saveDbKei } from "./kei/backup";
 import { save } from "@tauri-apps/plugin-dialog";
 import { listen } from '@tauri-apps/api/event'
 import { language } from "src/lang";
@@ -40,18 +38,17 @@ import { initMobileGesture } from "./hotkey";
 import { fetch as TauriHTTPFetch } from '@tauri-apps/plugin-http';
 import { moduleUpdate } from "./process/modules";
 import type { AccountStorage } from "./storage/accountStorage";
-import { getColdStorageItem, makeColdData } from "./process/coldstorage.svelte";
+import { getColdStorageItem } from "./process/coldstorage.svelte";
 import { isTauri, isNodeServer } from "./platform";
 import { isLocalNetworkUrl } from "./network/localNetwork";
 import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from "./network/proxyJobWs";
 import {
     getNodeServerProxyAuth,
-    NodePostgresPayloadTooLargeError,
-    NodePostgresRevisionConflictError,
     NodeStorage,
 } from "./storage/nodeStorage";
 import { generateClientThumbnail } from "./media/thumbnail";
 import { getMimeType } from "./media/mimeType";
+import { BoundedCache } from "./memory/boundedCache";
 
 export const forageStorage = new AutoStorage()
 
@@ -113,6 +110,14 @@ let fileCache: {
 let pathCache: { [key: string]: string } = {}
 let checkedPaths: string[] = []
 
+const revokeObjectUrl = (url: string) => {
+    if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+}
+const tauriThumbnailUrls = new BoundedCache<string, string>({
+    maxEntries: 96,
+    onEvict: revokeObjectUrl
+})
+
 /**
  * Gets the source URL of a file.
  * 
@@ -120,7 +125,16 @@ let checkedPaths: string[] = []
  * @returns {Promise<string>} - A promise that resolves to the source URL of the file.
  */
 class ThumbnailBatchLoader {
-    private cache = new Map<string, string>()
+    private cacheWeights = new Map<string, number>()
+    private cache = new BoundedCache<string, string>({
+        maxEntries: 96,
+        maxWeight: 8 * 1024 * 1024,
+        weigh: (_url, loc) => this.cacheWeights.get(loc) ?? 1,
+        onEvict: (url, loc) => {
+            this.cacheWeights.delete(loc)
+            revokeObjectUrl(url)
+        }
+    })
     private pending = new Map<string, { promise: Promise<string>; resolve: (url: string) => void; reject: (err: any) => void }>()
     private queue = new Set<string>()
     private flushScheduled = false
@@ -198,6 +212,7 @@ class ThumbnailBatchLoader {
                     if (buf && buf.length > 0) {
                         const blob = new Blob([buf as any], { type: 'image/webp' })
                         const blobUrl = URL.createObjectURL(blob)
+                        this.cacheWeights.set(loc, buf.byteLength)
                         this.cache.set(loc, blobUrl)
                         pendingItem?.resolve(blobUrl)
                     } else {
@@ -236,20 +251,12 @@ class ThumbnailBatchLoader {
 
     invalidate(loc?: string) {
         if (loc) {
-            const old = this.cache.get(loc)
-            if (old && old.startsWith('blob:')) {
-                URL.revokeObjectURL(old)
-            }
             this.cache.delete(loc)
             this.pending.delete(loc)
             this.queue.delete(loc)
         } else {
-            for (const [_, url] of this.cache.entries()) {
-                if (url.startsWith('blob:')) {
-                    URL.revokeObjectURL(url)
-                }
-            }
             this.cache.clear()
+            this.cacheWeights.clear()
             this.pending.clear()
             this.queue.clear()
         }
@@ -265,6 +272,16 @@ export function invalidateThumbnailCache(loc?: string) {
 }
 
 const registeredSwCaches = new Set<string>()
+const browserAssetWeights = new Map<string, number>()
+const browserAssetUrls = new BoundedCache<string, string>({
+    maxEntries: 64,
+    maxWeight: 24 * 1024 * 1024,
+    weigh: (_url, key) => browserAssetWeights.get(key) ?? 1,
+    onEvict: (url, key) => {
+        browserAssetWeights.delete(key)
+        revokeObjectUrl(url)
+    }
+})
 
 export async function getFileSrc(loc: string, options?: { thumbnail?: boolean }) {
     if (!loc || loc === '') {
@@ -276,10 +293,9 @@ export async function getFileSrc(loc: string, options?: { thumbnail?: boolean })
             if (appDataDirPath === '') {
                 appDataDirPath = await appDataDir();
             }
-            const pathKey = isThumb ? `thumb_${loc}` : loc
-            const cached = pathCache[pathKey]
+            const cached = isThumb ? tauriThumbnailUrls.get(loc) : pathCache[loc]
             if (cached) {
-                return convertFileSrc(cached)
+                return cached.startsWith('blob:') ? cached : convertFileSrc(cached)
             }
             else {
                 const joined = await join(appDataDirPath, loc)
@@ -289,10 +305,10 @@ export async function getFileSrc(loc: string, options?: { thumbnail?: boolean })
                         const thumbData = await generateClientThumbnail(originalData, 128)
                         const blob = new Blob([thumbData as any], { type: 'image/webp' })
                         const url = URL.createObjectURL(blob)
-                        pathCache[pathKey] = url
+                        tauriThumbnailUrls.set(loc, url)
                         return url
                     } catch (e) {
-                        pathCache[pathKey] = joined
+                        tauriThumbnailUrls.set(loc, joined)
                         return convertFileSrc(joined)
                     }
                 }
@@ -360,40 +376,16 @@ export async function getFileSrc(loc: string, options?: { thumbnail?: boolean })
             }
         }
         else {
-            let ind = fileCache.origin.indexOf(cacheKey)
-            if (ind === -1) {
-                ind = fileCache.origin.length
-                fileCache.origin.push(cacheKey)
-                fileCache.res.push('loading')
-                let f: Uint8Array | null = null
-                const raw = await forageStorage.getItem(loc) as unknown as Uint8Array
-                if (raw) {
-                    if (isThumb) {
-                        f = await generateClientThumbnail(raw, 128)
-                    } else {
-                        f = raw
-                    }
-                }
-                fileCache.res[ind] = f as any
-                if (!f) return ''
-                const mime = isThumb ? 'image/webp' : getMimeType(loc)
-                return `data:${mime};base64,${Buffer.from(f).toString('base64')}`
-            }
-            else {
-                const f = fileCache.res[ind]
-                if (f === 'loading') {
-                    while (fileCache.res[ind] === 'loading') {
-                        await sleep(10)
-                    }
-                    const resData = fileCache.res[ind] as Uint8Array
-                    if (!resData) return ''
-                    const mime = isThumb ? 'image/webp' : getMimeType(loc)
-                    return `data:${mime};base64,${Buffer.from(resData).toString('base64')}`
-                }
-                if (!f || f === 'done') return ''
-                const mime = isThumb ? 'image/webp' : getMimeType(loc)
-                return `data:${mime};base64,${Buffer.from(f as Uint8Array).toString('base64')}`
-            }
+            const cachedUrl = browserAssetUrls.get(cacheKey)
+            if (cachedUrl) return cachedUrl
+            const raw = await forageStorage.getItem(loc) as unknown as Uint8Array
+            if (!raw) return ''
+            const data = isThumb ? await generateClientThumbnail(raw, 128) : raw
+            const mime = isThumb ? 'image/webp' : getMimeType(loc)
+            const url = URL.createObjectURL(new Blob([data as any], { type: mime }))
+            browserAssetWeights.set(cacheKey, data.byteLength)
+            browserAssetUrls.set(cacheKey, url)
+            return url
         }
     } catch (error) {
         console.error(error)
@@ -486,203 +478,7 @@ export async function loadAsset(id: string) {
     }
 }
 
-let lastSave = ''
-export let saving = $state({
-    state: false
-})
-
-/**
- * Saves the current state of the database.
- *
- * SQL-only flow: all saves go through the ISqlStorage backend. The legacy
- * RisuSaveEncoder / database.bin path has been removed.
- */
-export let requiresFullEncoderReload = $state({
-    state: false
-})
-export async function saveDb() {
-    let changed = false
-    syncDrive()
-    let gotChannel = false
-    const sessionID = v4()
-    let channel: BroadcastChannel
-    if (window.BroadcastChannel) {
-        channel = new BroadcastChannel('risu-db')
-    }
-    if (channel) {
-        channel.onmessage = (ev) => {
-            if (ev.data === sessionID) {
-                return
-            }
-            if (!gotChannel) {
-                gotChannel = true
-                alertNormalWait(language.activeTabChange).then(() => {
-                    location.reload()
-                })
-            }
-        }
-    }
-
-    const changeTracker: toSaveType = {
-        character: [],
-        chat: [],
-        botPreset: false,
-        modules: false,
-        loadouts: false,
-        plugins: false,
-        pluginCustomStorage: false
-    }
-
-    // SQL storage is the only save path now
-    const { getSqlStorage } = await import('./storage/sqlStorageFactory')
-    const sqlStorage = await getSqlStorage()
-
-    $effect.root(() => {
-
-        let selIdState = $state(0)
-
-        const debounceTime = 500; // 500 milliseconds
-        let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-
-        selectedCharID.subscribe((v) => {
-            selIdState = v
-        })
-
-        function saveTimeoutExecute() {
-            if (saveTimeout) {
-                clearTimeout(saveTimeout);
-            }
-            saveTimeout = setTimeout(() => {
-                changed = true;
-            }, debounceTime);
-        }
-
-        $effect(() => {
-            DBState.db.botPresetsId
-            DBState.db.botPresets.length
-            changeTracker.botPreset = true
-            saveTimeoutExecute()
-        })
-        $effect(() => {
-            $state.snapshot(DBState.db.modules)
-            changeTracker.modules = true
-            saveTimeoutExecute()
-        })
-        $effect(() => {
-            $state.snapshot(DBState.db.loadouts)
-            changeTracker.loadouts = true
-            saveTimeoutExecute()
-        })
-        $effect(() => {
-            $state.snapshot(DBState.db.plugins)
-            changeTracker.plugins = true
-            saveTimeoutExecute()
-        })
-        $effect(() => {
-            $state.snapshot(DBState.db.pluginCustomStorage)
-            changeTracker.pluginCustomStorage = true
-            saveTimeoutExecute()
-        })
-        $effect(() => {
-            for (const key in DBState.db) {
-                if (
-                    key !== 'characters' && key !== 'botPresets' && key !== 'modules' &&
-                    key !== 'loadouts' && key !== 'plugins' && key !== 'pluginCustomStorage'
-                ) {
-                    $state.snapshot(DBState.db[key])
-                }
-            }
-            if (DBState?.db?.characters?.[selIdState]) {
-                for (const key in DBState.db.characters[selIdState]) {
-                    if (key !== 'chats') {
-                        $state.snapshot(DBState.db.characters[selIdState][key])
-                    }
-                }
-                $state.snapshot(DBState.db.characters[selIdState].chats)
-                if (changeTracker.character[0] !== DBState.db.characters[selIdState]?.chaId) {
-                    changeTracker.character.unshift(DBState.db.characters[selIdState]?.chaId)
-                }
-                if (
-                    changeTracker.chat[0]?.[0] !== DBState.db.characters[selIdState]?.chaId ||
-                    changeTracker.chat[0]?.[1] !== DBState.db.characters[selIdState]?.chats[DBState.db.characters[selIdState]?.chatPage].id
-                ) {
-                    changeTracker.chat.unshift([DBState.db.characters[selIdState]?.chaId, DBState.db.characters[selIdState]?.chats[DBState.db.characters[selIdState]?.chatPage].id])
-                }
-            }
-            saveTimeoutExecute()
-        })
-    })
-
-    let savetrys = 0
-    await sleep(1000)
-    while (true) {
-        if (!changed) {
-            await sleep(500)
-            continue
-        }
-
-        saving.state = true
-        changed = false
-        try {
-
-            const forceFullSave = requiresFullEncoderReload.state
-
-            let toSave = safeStructuredClone(changeTracker)
-            changeTracker.character = changeTracker.character.length === 0 ? [] : [changeTracker.character[0]]
-            changeTracker.chat = changeTracker.chat.length === 0 ? [] : [changeTracker.chat[0]]
-            changeTracker.botPreset = false
-            changeTracker.modules = false
-            changeTracker.loadouts = false
-            changeTracker.plugins = false
-            changeTracker.pluginCustomStorage = false
-            if (gotChannel) {
-                //Data is saved in other tab
-                await sleep(1000)
-                continue
-            }
-            if (channel) {
-                channel.postMessage(sessionID)
-            }
-            let db = getDatabase()
-            if (!db.characters) {
-                await sleep(1000)
-                continue
-            }
-
-            // SQL-only save path
-            const saved = await sqlStorage.saveDatabase(db, toSave, {
-                forceFull: forceFullSave
-            })
-            if (!saved) {
-                throw new Error('Failed to save database to SQL storage')
-            }
-
-            requiresFullEncoderReload.state = false
-            savetrys = 0
-            await saveDbKei()
-            await sleep(500)
-        } catch (error) {
-            savetrys += 1
-            if (
-                error instanceof NodePostgresRevisionConflictError ||
-                error instanceof NodePostgresPayloadTooLargeError
-            ) {
-                savetrys = 5
-                alertError(error)
-            }
-            else if (savetrys > 4) {
-                alertError(error)
-            }
-            else {
-                console.error(error)
-                requiresFullEncoderReload.state = true
-                changed = true
-            }
-        }
-
-        saving.state = false
-    }
-}
+export { saving }
 
 /**
  * Retrieves the database backups.
@@ -2320,8 +2116,6 @@ export async function loadInternalBackup() {
     setDatabase(
         await decodeRisuSave(Buffer.from(data) as unknown as Uint8Array)
     )
-    requiresFullEncoderReload.state = true
-
     alertNormal('Loaded backup')
 
 

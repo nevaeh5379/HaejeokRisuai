@@ -6,7 +6,7 @@ import { checkNullish, findCharacterbyId, findCharacterIndexbyId, getUserName, s
 import { v4 as uuidv4, v4 } from 'uuid';
 import { getImageType } from "./media";
 import { DBState, MobileGUIStack, OpenRealmStore, selectedCharID } from "./stores.svelte";
-import { AppendableBuffer, changeChatTo, checkCharOrder, downloadFile, forageStorage, getFileSrc, requiresFullEncoderReload } from "./globalApi.svelte";
+import { AppendableBuffer, changeChatTo, checkCharOrder, downloadFile, forageStorage, getFileSrc } from "./globalApi.svelte";
 import { updateInlayScreen } from "./process/inlayScreen";
 import { parseMarkdownSafe } from "./parser/parser.svelte";
 import { translateHTML } from "./translator/translator";
@@ -16,7 +16,6 @@ import { PngChunk } from "./pngChunk";
 import { getColdStorageItem, preLoadChat } from "./process/coldstorage.svelte";
 import { isNodeServer } from "./platform";
 import { NodeStorage } from "./storage/nodeStorage";
-import { primeCharacterDetails } from "./storage/nodeDatabaseSync";
 
 export function createNewCharacter() {
     DBState.db.characters.push(createBlankChar())
@@ -844,7 +843,6 @@ export async function removeChar(identifier:string|number,name:string, type:'nor
     }
     checkCharOrder()
     DBState.db.characters = chars
-    requiresFullEncoderReload.state = true
     selectedCharID.set(-1)
 }
 

@@ -67,6 +67,9 @@ export async function importRegex(o?:customscript[]):Promise<customscript[]>{
 
 let bestMatchCache = new Map<string, string>()
 let processScriptCache = new Map<string, string>()
+const SCRIPT_CACHE_MAX_ENTRIES = 128
+const SCRIPT_CACHE_MAX_CHARS = 1024 * 1024
+let processScriptCacheChars = 0
 
 function generateScriptCacheKey(scripts: customscript[], data: string, mode: ScriptMode, chatID = -1, cbsConditions: CbsConditions = {}) {
     let hash = data + '|||' + mode + '|||';
@@ -80,10 +83,17 @@ function generateScriptCacheKey(scripts: customscript[], data: string, mode: Scr
 }
 
 function cacheScript(hash:string, result:string){
+    const previous = processScriptCache.get(hash)
+    if (previous) processScriptCacheChars -= hash.length + previous.length
     processScriptCache.set(hash, result)
+    processScriptCacheChars += hash.length + result.length
 
-    if(processScriptCache.size > 1000){
-        processScriptCache.delete(processScriptCache.keys().next().value)
+    while(processScriptCache.size > SCRIPT_CACHE_MAX_ENTRIES || processScriptCacheChars > SCRIPT_CACHE_MAX_CHARS){
+        const oldest = processScriptCache.keys().next().value
+        if (!oldest) break
+        const value = processScriptCache.get(oldest) ?? ''
+        processScriptCacheChars -= oldest.length + value.length
+        processScriptCache.delete(oldest)
     }
 
 }
@@ -94,6 +104,8 @@ function getScriptCache(hash:string){
 
 export function resetScriptCache(){
     processScriptCache = new Map()
+    processScriptCacheChars = 0
+    bestMatchCache.clear()
 }
 
 export async function processScriptFull(char:character|groupChat|simpleCharacterArgument, data:string, mode:ScriptMode, chatID = -1, cbsConditions:CbsConditions = {}){
@@ -375,6 +387,9 @@ export async function processScriptFull(char:character|groupChat|simpleCharacter
                     if(bestMatch){
                         data = data.replaceAll(match[0], `{{${type}::${bestMatch}}}`)
                         bestMatchCache.set(cacheKey, bestMatch)
+                        if (bestMatchCache.size > 128) {
+                            bestMatchCache.delete(bestMatchCache.keys().next().value!)
+                        }
                     }
                 }
             }

@@ -24,9 +24,10 @@
     let lastBg = $state('')
     $effect.pre(() => {
         (async () =>{
-            if(DBState.db.customBackground !== lastBg){
-                lastBg = DBState.db.customBackground
-                bgImg = await getCustomBackground(DBState.db.customBackground)
+            const customBackground = DBState.db.customBackground ?? ''
+            if(customBackground !== lastBg){
+                lastBg = customBackground
+                bgImg = await getCustomBackground(customBackground)
             }
         })()
     });

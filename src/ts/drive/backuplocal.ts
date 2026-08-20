@@ -1,7 +1,7 @@
 import { BaseDirectory, readFile, readDir, writeFile } from "@tauri-apps/plugin-fs";
 import localforage from "localforage";
 import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm, alertProgress, alertClear } from "../alert";
-import { LocalWriter, forageStorage, requiresFullEncoderReload } from "../globalApi.svelte";
+import { LocalWriter, forageStorage } from "../globalApi.svelte";
 import { isNodeServer, isTauri } from "src/ts/platform"
 import { decodeRisuSave, encodeRisuSaveLegacy, encodeRisuSaveLegacyAsync } from "../storage/risuSave";
 import { getDatabase, setDatabaseLite, type Database } from "../storage/database.svelte";
@@ -897,7 +897,6 @@ export function LoadLocalBackup(){
             }
 
             setDatabaseLite(dbData);
-            requiresFullEncoderReload.state = true;
             if (isTauri) {
                 await writeFile('database/database.bin', db, { baseDir: BaseDirectory.AppData });
                 await relaunch();

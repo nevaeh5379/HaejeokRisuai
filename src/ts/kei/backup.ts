@@ -1,7 +1,6 @@
 import { alertNormal, alertSelect } from "../alert"
 import { keiServerURL } from "./kei"
 import { getDatabase, setDatabase } from "../storage/database.svelte"
-import { requiresFullEncoderReload } from "../globalApi.svelte"
 
 export async function autoServerBackup(){
     const db = getDatabase()
@@ -61,7 +60,6 @@ export async function autoServerBackup(){
                     })
                     if(res.status === 200){
                         setDatabase(await res.json())
-                        requiresFullEncoderReload.state = true
                         alertNormal("Successfully restored!")
                     }
                     else{
@@ -77,28 +75,4 @@ export async function autoServerBackup(){
     else{
         alertNormal("Error: " + res.text())
     }
-}
-
-let lastKeiSave = 0
-export function saveDbKei() {
-    try{
-        let db = getDatabase()
-        if(db.account.kei){
-            if(Date.now() - lastKeiSave < 60000 * 5){
-                return
-            }
-            lastKeiSave = Date.now()
-            fetch(keiServerURL() + '/autobackup/save', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    token: db.account.token,
-                    database: db
-                })
-            })
-        }   
-    }
-    catch(e){}
 }

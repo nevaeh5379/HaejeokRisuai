@@ -1,4 +1,4 @@
-import { writable } from "svelte/store"
+import { AccountWarning } from '../stores.svelte'
 import { getDatabase } from "./database.svelte"
 import localforage from "localforage"
 import { alertLogin, alertNormalWait, alertStore } from "../alert"
@@ -9,7 +9,7 @@ import { language } from "src/lang"
 import { sleep } from "../util"
 import { fetchProtectedResource } from "../sionyw"
 
-export const AccountWarning = writable('')
+export { AccountWarning }
 let risuSession = ''
 const cachedForage = localforage.createInstance({name: "risuaiAccountCached"})
 

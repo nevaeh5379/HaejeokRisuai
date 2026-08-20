@@ -106,6 +106,42 @@ describe('NodePostgresStorage browser client', () => {
         }))
     })
 
+    it('sends bounded row commits to the commit endpoint', async () => {
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                enabled: true,
+                configured: true,
+                managedByEnvironment: false,
+                connectionDisplay: 'postgresql://localhost/risuai',
+                poolMax: 10,
+                revision: 4,
+                initialized: true,
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ revision: 5 }), { status: 200 }))
+        vi.stubGlobal('fetch', fetchMock)
+
+        const storage = new NodePostgresStorage(async () => 'test-auth')
+        await storage.getServerConfig()
+        const result = await storage.commit({
+            baseRevision: 4,
+            root: { upserts: [{ key: 'temperature', value: 80 }], deletes: [] },
+            characters: [],
+            chats: [],
+            chatManifests: [],
+            messages: [],
+            messageManifests: [],
+        })
+
+        expect(result).toEqual({ revision: 5 })
+        expect(storage.getRevision()).toBe(5)
+        expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/commit')
+        expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toMatchObject({
+            baseRevision: 4,
+            root: { upserts: [{ key: 'temperature', value: 80 }] },
+            characters: [],
+        })
+    })
+
     it('fetches revision history from the server API', async () => {
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify({

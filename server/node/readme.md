@@ -39,7 +39,7 @@ Migration is automatic and non-destructive:
 1. Start the Node server and enable PostgreSQL in Advanced Settings, or configure `DATABASE_URL`.
 2. Sign in through the existing Node server login.
 3. The client loads the existing `save/database/database.bin` once.
-4. The first autosave writes a normalized snapshot to PostgreSQL in one transaction.
+4. `DataSession` writes only changed settings or entity rows to PostgreSQL in a transaction; normal saves never rebuild a full database snapshot.
 5. On server startup, legacy `coldstorage/` files are decompressed locally and imported into relational cold-storage tables without browser traffic.
 6. Subsequent loads and saves use PostgreSQL. Legacy BIN and cold-storage files are retained as rollback copies and are not overwritten by PostgreSQL saves.
 
@@ -117,4 +117,3 @@ To keep migration fast on large sets (tens of thousands of files):
 ### database.bin conflict resolution
 
 When S3 storage is active, the server reports SHA-256 hashes of both the local and S3 `database/database.bin` via `GET /api/db-hash`. On boot, if the two copies exist but their hashes differ, the client prompts the user to choose which copy to keep. `POST /api/db-resolve?keep=local|s3` then overwrites the non-chosen side so both locations agree, after which the database loads normally.
-

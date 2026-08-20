@@ -429,6 +429,7 @@ function getEmoSrc(emoArr: string[][], emoPaths: AssetPaths) {
     }
 }
 
+const FILE_SRC_CACHE_LIMIT = 128
 const fileSrcCache = new Map<string, string>()
 
 async function getFileSrcCached(path:string){
@@ -438,6 +439,9 @@ async function getFileSrcCached(path:string){
     }
     const src = await getFileSrc(path)
     fileSrcCache.set(path, src)
+    if (fileSrcCache.size > FILE_SRC_CACHE_LIMIT) {
+        fileSrcCache.delete(fileSrcCache.keys().next().value!)
+    }
     return src
 }
 
@@ -662,6 +666,7 @@ function trimmer(str:string){
     return str.trim().replace(/[_ -.]/g, '')
 }
 
+const INLAY_BLOB_CACHE_LIMIT = 24
 const blobUrlCache = new Map<string, string>()
 
 async function parseInlayAssets(data:string){
@@ -678,6 +683,12 @@ async function parseInlayAssets(data:string){
             if(!url && asset?.data){
                 url = URL.createObjectURL(asset.data)
                 blobUrlCache.set(id, url)
+                if (blobUrlCache.size > INLAY_BLOB_CACHE_LIMIT) {
+                    const oldest = blobUrlCache.keys().next().value!
+                    const oldUrl = blobUrlCache.get(oldest)
+                    if (oldUrl) URL.revokeObjectURL(oldUrl)
+                    blobUrlCache.delete(oldest)
+                }
             } 
             switch(asset?.type){
                 case 'image':

@@ -28,6 +28,16 @@ export let appSubVer = 'preview'
 export type StreamingDisplayOptimizationMode = 'off'|'balanced'|'strong'
 
 export function setDatabase(data:Database){
+    // SQL adapters already return the current schema and intentionally expose
+    // deferred domains through lazy getters. Running the legacy monolithic
+    // defaulting pass here would touch every getter and eagerly load all of
+    // those domains, defeating selective SQL reads.
+    if ((data as Database & { isSql?: boolean }).isSql) {
+        data.characters ??= []
+        if (data.language) changeLanguage(data.language)
+        setDatabaseLite(data)
+        return
+    }
     if(checkNullish(data.characters)){
         data.characters = []
     }
@@ -725,6 +735,9 @@ export function setDatabase(data:Database){
 
 export function setDatabaseLite(data:Database){
     DBState.db = data
+    void import('./dataSession.svelte').then(({ replaceActiveDataSession }) =>
+        replaceActiveDataSession(data)
+    ).catch((error) => console.error('Failed to replace active SQL DataSession:', error))
 }
 
 interface getDatabaseOptions{

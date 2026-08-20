@@ -1,7 +1,6 @@
 import type { Database, character, groupChat, Chat, Message, RisuPersona, botPreset, loreBook, customscript } from './database.svelte'
 import type { RisuModule } from '../process/modules'
-import type { toSaveType } from './risuSave'
-import type { NodeDatabaseSyncCache } from './nodeDatabaseSync'
+import type { SqlCommit, SqlCommitResult } from './sqlCommit'
 import type {
     NodePostgresServerConfig,
     NodePostgresServerConfigUpdate,
@@ -21,15 +20,6 @@ export interface SqlLoadDatabaseResult {
     status: 'ready' | 'empty'
     revision: number
     database: Database | null
-}
-
-export interface SqlSaveDatabaseOptions {
-    forceFull?: boolean
-    onProgress?: (status: string) => void
-}
-
-export interface SqlSaveResult {
-    revision: number
 }
 
 export interface SqlCharacterMetadata {
@@ -70,7 +60,7 @@ export interface ISqlStorage {
     readonly backendKind: SqlBackendKind
 
     isEnabled(): boolean
-    getCache(): NodeDatabaseSyncCache
+    getRevision(): number
 
     // ── Lifecycle / config ──────────────────────────────────────────────
 
@@ -85,11 +75,7 @@ export interface ISqlStorage {
 
     loadDatabase(options?: SqlLoadDatabaseOptions): Promise<SqlLoadDatabaseResult | null>
 
-    saveDatabase(
-        database: Database,
-        changes: toSaveType,
-        options?: SqlSaveDatabaseOptions,
-    ): Promise<boolean>
+    commit(commit: SqlCommit): Promise<SqlCommitResult>
 
     replaceDatabase(database: Database, onProgress?: (status: string) => void): Promise<boolean>
 

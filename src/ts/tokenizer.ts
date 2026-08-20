@@ -11,7 +11,7 @@ import { pluginV2 } from "./plugins/plugins.svelte";
 import type { GemmaTokenizer } from "@huggingface/transformers";
 import { LRUMap } from 'mnemonist';
 
-const MAX_CACHE_SIZE = 1500;
+const MAX_CACHE_SIZE = 128;
 
 const encodeCache = new LRUMap<string, number[] | Uint32Array | Int32Array>(MAX_CACHE_SIZE);
 
@@ -216,7 +216,7 @@ let tokenizersTokenizer:Tokenizer = null
 let tokenizersType:tokenizerType = null
 let lastTikModel = 'cl100k_base'
 
-let googleCloudTokenizedCache = new Map<string, number>()
+const googleCloudTokenizedCache = new LRUMap<string, number>(128)
 
 async function tokenizeGoogleCloud(text:string) {
     const db = getDatabase()
@@ -319,6 +319,8 @@ async function geminiTokenizer(text:string) {
 
 async function tokenizeWebTokenizers(text:string, type:tokenizerType) {
     if(type !== tokenizersType || !tokenizersTokenizer){
+        tokenizersTokenizer?.dispose()
+        tokenizersTokenizer = null
         const webTokenizer = await import('@mlc-ai/web-tokenizers')
         switch(type){
             case "novellist":

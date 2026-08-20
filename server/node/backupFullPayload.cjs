@@ -4,7 +4,7 @@ const crypto = require('crypto');
 
 /**
  * 전체(loaded) database 객체에서 백업용 full sync payload를 구성한다.
- * 클라이언트 buildFullSync(nodeDatabaseSync.ts)와 동일한 payload 형태를
+ * SQL commit/replace payload와 동일한 정규화 형태를
  * 유지하며, replaceAll: true로 백업 DB 전체를 덮어쓴다.
  * baseRevision은 0으로 반환되며, 호출자가 실행 시점의 백업 revision으로 교체한다.
  */

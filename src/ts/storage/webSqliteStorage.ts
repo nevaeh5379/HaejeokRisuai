@@ -10,12 +10,10 @@ import type {
     customscript,
 } from './database.svelte'
 import type { RisuModule } from '../process/modules'
-import type { toSaveType } from './risuSave'
 import type {
     ISqlStorage,
     SqlLoadDatabaseOptions,
     SqlLoadDatabaseResult,
-    SqlSaveDatabaseOptions,
 } from './ISqlStorage'
 import type {
     NodePostgresRevision,
@@ -23,14 +21,10 @@ import type {
     NodePostgresTokenUsage,
     NodePostgresCharacterSearchResult,
 } from './nodePostgresStorage'
-import {
-    createNodeDatabaseSyncCache,
-    primeNodeDatabaseSyncCache,
-    buildNodeDatabaseSync,
-    type NodeDatabaseSyncCache,
-} from './nodeDatabaseSync'
 import { createSqlDatabaseAdapter } from './databaseAdapters.svelte'
 import sqliteSchemaSql from './sqlite-schema.sql?raw'
+import { buildSqlReplaceCommit, SqlRevisionConflictError, type SqlCommit, type SqlCommitResult } from './sqlCommit'
+import { applySqliteCommit } from './sqliteCommit'
 
 interface Sqlite3Module {
     oo1: {
@@ -86,7 +80,7 @@ export class WebSqliteStorage implements ISqlStorage {
     readonly backendKind = 'web-sqlite' as const
 
     private db: SqliteDb | null = null
-    private cache: NodeDatabaseSyncCache = createNodeDatabaseSyncCache()
+    private revision = 0
     private initialized = false
     private _enabled = false
 
@@ -94,8 +88,8 @@ export class WebSqliteStorage implements ISqlStorage {
         return this._enabled
     }
 
-    getCache(): NodeDatabaseSyncCache {
-        return this.cache
+    getRevision(): number {
+        return this.revision
     }
 
     async init(): Promise<boolean> {
@@ -112,7 +106,7 @@ export class WebSqliteStorage implements ISqlStorage {
 
             const rows = this.selectRows('SELECT initialized, revision FROM system_storage_meta WHERE singleton = 1')
             if (rows.length > 0) {
-                this.cache = createNodeDatabaseSyncCache(Number(rows[0].revision) || 0)
+                this.revision = Number(rows[0].revision) || 0
             }
             this._enabled = true
             this.initialized = true
@@ -221,99 +215,41 @@ export class WebSqliteStorage implements ISqlStorage {
 
         const metaRow = this.selectOne('SELECT initialized FROM system_storage_meta WHERE singleton = 1')
         const isInit = metaRow?.initialized === 1 || characters.length > 0 || settingsRows.length > 0
-        if (!isInit) return { status: 'empty', revision: this.cache.revision, database: null }
-
-        this.cache = primeNodeDatabaseSyncCache(db, this.cache.revision)
+        if (!isInit) return { status: 'empty', revision: this.revision, database: null }
         if (shallow) {
             const adapter = createSqlDatabaseAdapter(db, this)
-            return { status: 'ready', revision: this.cache.revision, database: adapter }
+            return { status: 'ready', revision: this.revision, database: adapter }
         }
-        return { status: 'ready', revision: this.cache.revision, database: db }
+        return { status: 'ready', revision: this.revision, database: db }
     }
 
-    async saveDatabase(database: Database, changes: toSaveType, options?: SqlSaveDatabaseOptions): Promise<boolean> {
-        if (!this._enabled) return false
-        const forceFull = options?.forceFull ?? false
-        options?.onProgress?.('Saving to local SQLite...')
-
-        const built = buildNodeDatabaseSync(database, changes, this.cache, { forceFull })
-        if (!built) return true
-        const p = built.payload
-
-        for (const u of p.root.upserts) {
-            this.run("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))",
-                [u.key, JSON.stringify(u.value)])
-        }
-        for (const d of p.root.deletes) {
-            this.run('DELETE FROM system_settings WHERE key = ?', [d])
-        }
-
-        for (const c of p.characters) {
-            const cd = c.data as Record<string, unknown>
-            const dj = JSON.stringify({ ...cd, chaId: undefined, chats: undefined, detailsLoaded: undefined })
-            this.run(`INSERT OR REPLACE INTO characters
-                (id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded, data, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now'))`,
-                [c.id, c.position, (cd as any).type ?? 'character', (cd as any).name ?? '',
-                 (cd as any).image ?? null, (cd as any).trashTime ?? null,
-                 (cd as any).creationDate ?? null, (cd as any).modificationDate ?? null,
-                 (cd as any).lastInteraction ?? null, dj])
-        }
-        if (p.characterIds) {
-            const ph = p.characterIds.map(() => '?').join(',')
-            this.run(`DELETE FROM characters WHERE id NOT IN (${ph})`, p.characterIds)
-        }
-
-        for (const c of p.chats) {
-            const cd = c.data as Record<string, unknown>
-            const dj = JSON.stringify({ ...cd, id: undefined, message: undefined, messagesLoaded: undefined, detailsLoaded: undefined })
-            this.run(`INSERT OR REPLACE INTO chats
-                (id, character_id, position, name, note, folder_id, last_message_time, messages_loaded, data, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now'))`,
-                [c.id, c.characterId, c.position, (cd as any).name ?? '', (cd as any).note ?? '',
-                 (cd as any).folderId ?? null, (cd as any).lastDate ?? null, dj])
-        }
-        for (const m of p.chatManifests) {
-            if (m.ids.length > 0) {
-                const ph = m.ids.map(() => '?').join(',')
-                this.run(`DELETE FROM chats WHERE character_id = ? AND id NOT IN (${ph})`, [m.characterId, ...m.ids])
-            } else {
-                this.run('DELETE FROM chats WHERE character_id = ?', [m.characterId])
+    async commit(commit: SqlCommit): Promise<SqlCommitResult> {
+        if (!this._enabled) throw new Error('SQLite storage is not enabled')
+        this.run('BEGIN IMMEDIATE')
+        try {
+            const meta = this.selectOne('SELECT revision FROM system_storage_meta WHERE singleton = 1')
+            const currentRevision = Number(meta?.revision) || 0
+            if (commit.baseRevision !== currentRevision) throw new SqlRevisionConflictError(currentRevision)
+            if (commit.replaceAll) {
+                this.run('DELETE FROM system_settings')
+                this.run('DELETE FROM characters')
             }
+            await applySqliteCommit(commit, (sql, bind = []) => this.run(sql, bind))
+            const revision = currentRevision + 1
+            this.run("UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1", [revision])
+            this.run('COMMIT')
+            this.revision = revision
+            return { revision }
+        } catch (error) {
+            this.run('ROLLBACK')
+            throw error
         }
-
-        for (const m of p.messages) {
-            const md = m.data as Record<string, unknown>
-            this.run('INSERT OR REPLACE INTO messages (chat_id, id, position, role, sent_time, data) VALUES (?, ?, ?, ?, ?, ?)',
-                [m.chatId, m.id, m.position, (md as any).role ?? 'char', (md as any).time ?? null, JSON.stringify(md)])
-        }
-        for (const m of p.messageManifests) {
-            if (m.ids.length > 0) {
-                const ph = m.ids.map(() => '?').join(',')
-                this.run(`DELETE FROM messages WHERE chat_id = ? AND id NOT IN (${ph})`, [m.chatId, ...m.ids])
-            } else {
-                this.run('DELETE FROM messages WHERE chat_id = ?', [m.chatId])
-            }
-        }
-
-        const newRev = this.cache.revision + 1
-        this.run("UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1", [newRev])
-        built.nextCache.revision = newRev
-        built.nextCache.initialized = true
-        this.cache = built.nextCache
-        options?.onProgress?.('Save complete')
-        return true
     }
 
     async replaceDatabase(database: Database, onProgress?: (status: string) => void): Promise<boolean> {
-        onProgress?.('Clearing local database...')
-        this.run('DELETE FROM messages')
-        this.run('DELETE FROM chats')
-        this.run('DELETE FROM characters')
-        this.run('DELETE FROM system_settings')
-        return this.saveDatabase(database,
-            { character: [], chat: [], botPreset: false, modules: false, loadouts: false, plugins: false, pluginCustomStorage: false },
-            { forceFull: true, onProgress })
+        onProgress?.('Replacing local database...')
+        await this.commit(buildSqlReplaceCommit(database, this.revision))
+        return true
     }
 
     async loadCharacter(characterId: string): Promise<character | groupChat | null> {
@@ -442,7 +378,7 @@ export class WebSqliteStorage implements ISqlStorage {
         }))
     }
     async restoreRevision(revisionId: number): Promise<{ revision: number; revisionId: number }> {
-        return { revision: this.cache.revision, revisionId }
+        return { revision: this.revision, revisionId }
     }
 
     async searchMessages(query: string, scope: 'all' | 'active' | 'cold' = 'all', limit: number = 50): Promise<NodePostgresMessageSearchResult[]> {

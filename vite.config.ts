@@ -60,6 +60,21 @@ export default defineConfig(({command, mode}) => {
       // produce sourcemaps for debug builds
       sourcemap: process.env.TAURI_ENV_DEBUG === 'true',
       chunkSizeWarningLimit: 2000,
+      // Keep the root state module out of Rolldown's large shared feature chunk.
+      // Otherwise every lazy screen causes its parser/model dependencies to be
+      // module-preloaded with the initial HTML through the shared stores chunk.
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            includeDependenciesRecursively: false,
+            groups: [{
+              name: 'app-state',
+              test: /src[\\/]ts[\\/]stores\.svelte\.ts$/,
+              priority: 100,
+            }]
+          }
+        }
+      }
     },
     
     optimizeDeps:{

@@ -229,12 +229,12 @@ export async function changeFullscreen(){
     }
 }
 
-export async function getCustomBackground(db:string){
-    if(db.length < 2){
+export async function getCustomBackground(background:string|null|undefined){
+    if(!background || background.length < 2){
         return ''
     }
     else{
-        const filesrc = await getCharImage(db, 'plain')
+        const filesrc = await getCharImage(background, 'plain')
         return `background: url("${filesrc}"); background-size: cover;`
     }
 }

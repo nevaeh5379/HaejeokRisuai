@@ -13,6 +13,7 @@
     "tauribuild": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "check:bundle": "node scripts/check-initial-bundle.mjs",
     "test": "vitest run",
     "tauri": "tauri",
     "buildsite": "vite build --outDir dist",

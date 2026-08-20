@@ -1,15 +1,18 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { tooltipRight } from "src/ts/gui/tooltip";
+
+  type LazySource = string | Promise<string> | (() => string | Promise<string>);
 
   interface Props {
     rounded: boolean;
-    src: string|Promise<string>;
+    src: LazySource;
     name: string;
     size?: string;
     onClick?: any;
     bordered?: boolean;
     color?: string;
-    backgroundimg?: string|Promise<string>;
+    backgroundimg?: LazySource;
     children?: import('svelte').Snippet;
     oncontextmenu?: (event: MouseEvent & {
         currentTarget: EventTarget & HTMLDivElement;
@@ -30,10 +33,28 @@
     oncontextmenu,
     chaId
   }: Props = $props();
+
+  let avatarElement: HTMLSpanElement;
+  let sourceVisible = $state(false);
+  let resolvedSrc = $derived(typeof src === 'function' ? (sourceVisible ? src() : '') : src);
+  let resolvedBackground = $derived(typeof backgroundimg === 'function' ? (sourceVisible ? backgroundimg() : '') : backgroundimg);
+
+  onMount(() => {
+    if (typeof IntersectionObserver === 'undefined') {
+      sourceVisible = true;
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      sourceVisible = entries.some(entry => entry.isIntersecting);
+    }, { rootMargin: '256px' });
+    observer.observe(avatarElement);
+    return () => observer.disconnect();
+  });
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <span class="flex shrink-0 items-center justify-center avatar"
+      bind:this={avatarElement}
       class:border = {bordered}
       class:border-selected={bordered}
       class:rounded-md={bordered}
@@ -45,7 +66,7 @@
 >
   {#if src}
     {#if src === "slot"}
-      {#await backgroundimg}
+      {#await resolvedBackground}
       <div
         class="bg-skin-border sidebar-avatar rounded-md bg-top flex items-center justify-center {
           color === 'red' ? 'bg-red-700/50' :
@@ -88,27 +109,37 @@
         </div>
     {/await}
     {:else}
-      {#await src}
+      {#if resolvedSrc}
+        {#await resolvedSrc}
+          <div
+            class="bg-skin-border sidebar-avatar rounded-md bg-top"
+            style:width={size + "px"}
+            style:height={size + "px"}
+            style:minWidth={size + "px"}
+            class:rounded-md={!rounded} class:rounded-full={rounded}
+          ></div>
+        {:then img}
+          <img
+            src={img}
+            loading="lazy"
+            decoding="async"
+            class="bg-skin-border sidebar-avatar rounded-md object-cover object-top"
+            style:width={size + "px"}
+            style:height={size + "px"}
+            style:minWidth={size + "px"}
+            class:rounded-md={!rounded} class:rounded-full={rounded}
+            alt="avatar"
+          />
+        {/await}
+      {:else}
         <div
           class="bg-skin-border sidebar-avatar rounded-md bg-top"
           style:width={size + "px"}
           style:height={size + "px"}
           style:minWidth={size + "px"}
-          class:rounded-md={!rounded} class:rounded-full={rounded} 
-></div>
-      {:then img}
-        <img
-          src={img}
-          loading="lazy"
-          decoding="async"
-          class="bg-skin-border sidebar-avatar rounded-md object-cover object-top"
-          style:width={size + "px"}
-          style:height={size + "px"}
-          style:minWidth={size + "px"}
-          class:rounded-md={!rounded} class:rounded-full={rounded} 
-          alt="avatar"
-        />
-      {/await}
+          class:rounded-md={!rounded} class:rounded-full={rounded}
+        ></div>
+      {/if}
     {/if}
   {:else}
     <div
