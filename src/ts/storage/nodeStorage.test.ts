@@ -104,4 +104,41 @@ describe('NodeStorage.streamItems', () => {
             events.indexOf('start:assets/second.png')
         )
     })
+
+    it('streams a server-resolved prefix without sending a large key array', async () => {
+        const { NodeStorage } = await import('./nodeStorage')
+        const payload = Buffer.from('asset')
+        const protocolData = Buffer.concat([
+            createHeaderPacket(0, 'assets/prefix.png', payload.length),
+            createChunkPacket(0, payload),
+            createEndPacket(0),
+        ])
+        let requestBody: any
+        vi.stubGlobal('fetch', vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+            requestBody = JSON.parse(init.body as string)
+            return new Response(protocolData, {
+                headers: {
+                    'x-risu-total-files': '1',
+                    'x-risu-asset-list-source': 'catalog',
+                },
+            })
+        }))
+
+        const storage = new NodeStorage()
+        vi.spyOn(storage as any, 'checkAuth').mockResolvedValue(undefined)
+        vi.spyOn(storage, 'createAuth').mockResolvedValue('auth')
+        const progress: any[] = []
+
+        await storage.streamItems([], {
+            onFileStart: vi.fn(),
+            onFileChunk: vi.fn(),
+        }, (event) => progress.push(event), { prefix: 'assets/' })
+
+        expect(requestBody).toMatchObject({ prefix: 'assets/', thumb: false })
+        expect(requestBody).not.toHaveProperty('filePaths')
+        expect(progress[0]).toMatchObject({
+            totalFiles: 1,
+            assetListSource: 'catalog',
+        })
+    })
 })

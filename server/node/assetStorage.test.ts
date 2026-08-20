@@ -103,6 +103,14 @@ describe('LocalFsStorage', () => {
         expect(await storage.exists(hex)).toBe(false)
     })
 
+    it('filters listed keys by prefix', async () => {
+        await storage.init()
+        await storage.write(keyToHex('assets/avatar.png'), Buffer.from('asset'))
+        await storage.write(keyToHex('database/database.bin'), Buffer.from('database'))
+
+        expect(await storage.list('assets/')).toEqual(['assets/avatar.png'])
+    })
+
     it('correctly reads video assets with proper video MIME type', async () => {
         await storage.init()
         const key = 'assets/clip.webm'
@@ -172,6 +180,33 @@ describe('LocalFsStorage', () => {
 
         const stats = await storage.getStats()
         expect(stats.totalObjects).toBe(1)
+    })
+})
+
+describe('S3AssetStorage prefix listing', () => {
+    it('passes the prefix to ListObjectsV2', async () => {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-test-s3-list-'))
+        try {
+            const storage = new S3AssetStorage({
+                endpoint: 'http://localhost:9000',
+                region: 'us-east-1',
+                bucket: 'test-bucket',
+                accessKeyId: 'test',
+                secretAccessKey: 'test',
+            }, tmpDir)
+            let requestedPrefix: string | undefined
+            storage.client = {
+                send: async (command: any) => {
+                    requestedPrefix = command.input?.Prefix
+                    return { Contents: [{ Key: 'assets/avatar.png', Size: 5 }] }
+                },
+            }
+
+            expect(await storage.list('assets/')).toEqual(['assets/avatar.png'])
+            expect(requestedPrefix).toBe('assets/')
+        } finally {
+            fs.rmSync(tmpDir, { recursive: true, force: true })
+        }
     })
 })
 

@@ -36,8 +36,11 @@
         initialized: boolean
     } | null>(null)
 
+    // 폼에서 선택 중인 vendor (서버의 활성 vendor와 별개)
+    let selectedVendor = $state<DbVendor>('postgres')
+    let migrate = $state(false)
+
     // PostgreSQL 레거시 호환 폼 상태
-    let enabled = $state(false)
     let connectionString = $state('')
     let poolMax = $state(10)
 
@@ -103,12 +106,12 @@
             const storage = getNodeStorage()
             // 레거시 /api/postgres-config (호환성)
             config = await storage.postgres.getServerConfig()
-            enabled = config.enabled
             poolMax = config.poolMax
             // 범용 /api/db-config
             try {
                 dbConfig = await storage.postgres.getDatabaseConfig()
                 vendorPoolMax = dbConfig.params?.poolMax || 10
+                selectedVendor = dbConfig.vendor || dbConfig.storedVendor || 'postgres'
                 // vendor별 폼 채우기 (마스킹된 값은 그대로 표시, 비밀번호는 빈 칸)
                 if (dbConfig.params) {
                     if (dbConfig.vendor === 'oracle' || dbConfig.storedVendor === 'oracle') {
@@ -120,6 +123,8 @@
                         azureDatabase = dbConfig.params.database || ''
                         azureUsername = dbConfig.params.user || ''
                         azurePort = dbConfig.params.port || 1433
+                    } else if (dbConfig.vendor === 'postgres' || !dbConfig.vendor) {
+                        connectionString = dbConfig.params.connectionString || ''
                     }
                 }
             } catch (e) {
@@ -165,19 +170,28 @@
         return buildSqlVendorParams(vendor, values)
     }
 
-    // vendor별 라벨/설명
-    const vendorLabel = $derived(
-        config?.vendor === 'oracle' ? language.sqlVendorOracle :
-        config?.vendor === 'azure' ? language.sqlVendorAzure :
-        language.sqlVendorPostgres
-    )
-
     async function applyConfiguration() {
         if(!config || config.managedByEnvironment || busy){
             return
         }
-        const vendor: DbVendor = config.vendor || 'postgres'
+        const vendor: DbVendor = selectedVendor
         const params = buildParams(vendor)
+
+        if(!isSqlVendorParamsComplete(vendor, {
+            connectionString,
+            server: azureHost,
+            database: azureDatabase,
+            user: vendor === 'oracle' ? oracleUser : azureUsername,
+            password: vendor === 'oracle' ? oraclePassword : azurePassword,
+            tnsAlias: oracleTnsAlias,
+            walletPath: oracleWalletPath,
+            walletPassword: oracleWalletPassword,
+            port: azurePort,
+            poolMax: vendor === 'postgres' ? poolMax : vendorPoolMax,
+        })){
+            alertError(language.sqlConfigIncomplete)
+            return
+        }
 
         // 비밀번호 필드가 빈 값이면 기존 비밀번호 유지 안 됨 - 사용자가 다시 입력해야 함
         // (보안: 마스킹된 값을 클라이언트에 내려주지 않으므로)
@@ -204,12 +218,12 @@
 
             // 범용 API가 있으면 사용, 없으면 레거시 configureServer로 폴백
             try {
-                await storage.postgres.applyDatabaseConfig(vendor, params, false)
+                await storage.postgres.applyDatabaseConfig(vendor, params, migrate)
             } catch (e) {
                 // 폴백: PostgreSQL 레거시 API
                 if (vendor === 'postgres') {
                     await storage.postgres.configureServer({
-                        enabled,
+                        enabled: true,
                         connectionString: connectionString.trim() || undefined,
                         poolMax,
                         legacySnapshotReady,
@@ -230,8 +244,23 @@
         if(busy || !config){
             return
         }
-        const vendor: DbVendor = config.vendor || 'postgres'
+        const vendor: DbVendor = selectedVendor
         const params = buildParams(vendor)
+        if(!isSqlVendorParamsComplete(vendor, {
+            connectionString,
+            server: azureHost,
+            database: azureDatabase,
+            user: vendor === 'oracle' ? oracleUser : azureUsername,
+            password: vendor === 'oracle' ? oraclePassword : azurePassword,
+            tnsAlias: oracleTnsAlias,
+            walletPath: oracleWalletPath,
+            walletPassword: oracleWalletPassword,
+            port: azurePort,
+            poolMax: vendor === 'postgres' ? poolMax : vendorPoolMax,
+        })){
+            alertError(language.sqlConfigIncomplete)
+            return
+        }
         busy = true
         try {
             const result = await getNodeStorage().postgres.testConnection(vendor, params)
@@ -424,9 +453,11 @@
             <p class="mt-1 text-sm text-textcolor2">{language.sqlStorageDescription}</p>
         </div>
         <div class="flex items-center gap-2">
-            {#if config?.vendor}
+            {#if config?.enabled}
                 <span class="rounded-full bg-bgcolor/60 px-2 py-1 text-xs text-textcolor2">
-                    {vendorLabel}
+                    {config.vendor === 'oracle' ? language.sqlVendorOracle :
+                     config.vendor === 'azure' ? language.sqlVendorAzure :
+                     language.sqlVendorPostgres}
                 </span>
             {/if}
             {#if config}
@@ -448,12 +479,34 @@
             </p>
         {/if}
 
-        <div class="mt-4 {config.managedByEnvironment ? 'pointer-events-none opacity-60' : ''}">
-            <CheckInput bind:check={enabled} name={language.useSqlStorage} />
+        <!-- ── 데이터베이스 제공자 선택 ── -->
+        <p class="mt-4 text-sm font-medium">{language.sqlQuickSetupChooseVendor}</p>
+        <div class="mt-2 grid gap-2 sm:grid-cols-3">
+            <button
+                class="rounded-lg border p-3 text-left transition {selectedVendor === 'postgres' ? 'border-selected bg-selected/10' : 'border-darkborderc bg-darkbg hover:border-selected hover:bg-selected/10'} {config.managedByEnvironment ? 'pointer-events-none opacity-60' : ''}"
+                onclick={() => selectedVendor = 'postgres'}
+            >
+                <div class="text-sm font-semibold">{language.sqlVendorPostgres}</div>
+                <div class="mt-1 text-xs text-textcolor2">{language.sqlVendorPostgresDesc}</div>
+            </button>
+            <button
+                class="rounded-lg border p-3 text-left transition {selectedVendor === 'oracle' ? 'border-selected bg-selected/10' : 'border-darkborderc bg-darkbg hover:border-selected hover:bg-selected/10'} {config.managedByEnvironment ? 'pointer-events-none opacity-60' : ''}"
+                onclick={() => selectedVendor = 'oracle'}
+            >
+                <div class="text-sm font-semibold">{language.sqlVendorOracle}</div>
+                <div class="mt-1 text-xs text-textcolor2">{language.sqlVendorOracleDesc}</div>
+            </button>
+            <button
+                class="rounded-lg border p-3 text-left transition {selectedVendor === 'azure' ? 'border-selected bg-selected/10' : 'border-darkborderc bg-darkbg hover:border-selected hover:bg-selected/10'} {config.managedByEnvironment ? 'pointer-events-none opacity-60' : ''}"
+                onclick={() => selectedVendor = 'azure'}
+            >
+                <div class="text-sm font-semibold">{language.sqlVendorAzure}</div>
+                <div class="mt-1 text-xs text-textcolor2">{language.sqlVendorAzureDesc}</div>
+            </button>
         </div>
 
         <!-- ── PostgreSQL 폼 ── -->
-        {#if config.vendor === 'postgres' || !config.vendor}
+        {#if selectedVendor === 'postgres'}
             <label class="mt-4 block text-sm text-textcolor2" for="postgres-connection-string">
                 {language.postgresConnectionString}
             </label>
@@ -483,7 +536,7 @@
         {/if}
 
         <!-- ── Oracle 폼 ── -->
-        {#if config.vendor === 'oracle'}
+        {#if selectedVendor === 'oracle'}
             <label class="mt-4 block text-sm text-textcolor2" for="oracle-user">
                 {language.oracleUser}
             </label>
@@ -556,7 +609,7 @@
         {/if}
 
         <!-- ── Azure 폼 ── -->
-        {#if config.vendor === 'azure'}
+        {#if selectedVendor === 'azure'}
             <label class="mt-4 block text-sm text-textcolor2" for="azure-host">
                 {language.azureHost}
             </label>
@@ -637,12 +690,18 @@
         {/if}
 
         {#if !config.managedByEnvironment}
+            <!-- 마이그레이션 옵션 -->
+            <div class="mt-4 rounded-md border border-borderc bg-bgcolor/30 p-3">
+                <CheckInput bind:check={migrate} name={language.sqlQuickSetupMigration} />
+                <p class="mt-1 pl-7 text-xs text-textcolor2">{language.sqlQuickSetupMigrationDescription}</p>
+            </div>
+
             <div class="mt-4 flex flex-wrap gap-2">
                 <Button disabled={busy} onclick={testConnection}>
                     {busy ? language.sqlTesting : language.sqlTestConnection}
                 </Button>
                 <Button disabled={busy} onclick={applyConfiguration}>
-                    {busy ? language.postgresApplying : language.postgresApply}
+                    {busy ? language.postgresApplying : language.sqlApplyAndConnect}
                 </Button>
             </div>
         {/if}

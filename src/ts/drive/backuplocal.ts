@@ -12,6 +12,145 @@ import { language } from "src/lang";
 import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupKey, getColdStorageItem, isColdStorageBackupData, listColdDataKeys, setColdStorageItem } from "../process/coldstorage.svelte";
 import { DBState } from "../stores.svelte";
 import { NodeStorage } from "../storage/nodeStorage";
+import { PROMPT_SETTING_KEYS, POSTGRES_DOMAINS } from "../storage/databaseAdapters.svelte";
+
+const SQL_DOMAIN_ROOT_KEYS: Record<(typeof POSTGRES_DOMAINS)[number], string[]> = {
+    personas: ['personas'],
+    botPresets: ['botPresets'],
+    loreBook: ['loreBook'],
+    modules: ['modules'],
+    prompts: [...PROMPT_SETTING_KEYS],
+    scripts: ['globalscript'],
+}
+
+function formatBackupElapsed(startedAt: number) {
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
+    const minutes = Math.floor(elapsedSeconds / 60)
+    const seconds = elapsedSeconds % 60
+    return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
+}
+
+async function initializeLocalBackupWriter(writer: LocalWriter, partial = false) {
+    const label = partial ? 'Saving partial local backup...' : 'Saving local backup...'
+    const startedAt = Date.now()
+    const waitingDetail = isTauri
+        ? 'Waiting for the system Save dialog. Choose a file or cancel to continue.'
+        : 'Preparing the browser download stream.'
+    const update = () => alertProgress(
+        `${label} (Selecting destination)\n${waitingDetail}\nElapsed: ${formatBackupElapsed(startedAt)}`,
+        1,
+    )
+    update()
+    const timer = setInterval(update, 1000)
+    try {
+        const initialized = await writer.init()
+        if (initialized) {
+            alertProgress(`${label} (Destination ready; preparing asset list)`, 2)
+        }
+        return initialized
+    } finally {
+        clearInterval(timer)
+    }
+}
+
+/**
+ * Merge a transactionally consistent full SQL snapshot into the lazy adapter
+ * without replacing values that are already loaded (and may still be dirty).
+ */
+export function hydrateLazyDatabaseFromSnapshot(db: Database, snapshot: Database) {
+    const adapter = db as Database & {
+        isDomainLoaded?: (domain: string) => boolean
+    }
+
+    for (const domain of POSTGRES_DOMAINS) {
+        if (adapter.isDomainLoaded?.(domain)) continue
+        for (const key of SQL_DOMAIN_ROOT_KEYS[domain]) {
+            if (Object.prototype.hasOwnProperty.call(snapshot, key)) {
+                ;(db as any)[key] = (snapshot as any)[key]
+            }
+        }
+    }
+
+    // Plugin custom storage is not one of the adapter's deferred domains.
+    // A shallow Node load initializes it to an empty object, so fill it from
+    // the full snapshot unless the in-memory value already contains data.
+    if (snapshot.pluginCustomStorage &&
+        Object.keys(db.pluginCustomStorage ?? {}).length === 0) {
+        db.pluginCustomStorage = snapshot.pluginCustomStorage
+    }
+
+    const snapshotCharacters = new Map(
+        (snapshot.characters ?? [])
+            .filter((char) => char?.chaId)
+            .map((char) => [char.chaId, char]),
+    )
+
+    for (const char of db.characters ?? []) {
+        if (!char?.chaId) continue
+        const snapshotChar = snapshotCharacters.get(char.chaId)
+        if (!snapshotChar) continue
+
+        const currentChats = char.chats ?? []
+        if (char.detailsLoaded === false) {
+            Object.assign(char, snapshotChar, {
+                chats: currentChats,
+                detailsLoaded: true,
+            })
+        }
+
+        const snapshotChats = new Map(
+            (snapshotChar.chats ?? [])
+                .filter((chat) => chat?.id)
+                .map((chat) => [chat.id, chat]),
+        )
+        for (const chat of currentChats) {
+            const needsFullChat = chat && (
+                chat.messagesLoaded === false ||
+                chat.detailsLoaded === false ||
+                chat.messagesFullyLoaded === false
+            )
+            if (!needsFullChat || !chat.id) continue
+            const snapshotChat = snapshotChats.get(chat.id)
+            if (!snapshotChat) continue
+            Object.assign(chat, snapshotChat, {
+                messagesLoaded: true,
+                detailsLoaded: true,
+                messagesFullyLoaded: true,
+                messageOffset: 0,
+                messageTotal: snapshotChat.message?.length ?? 0,
+            })
+        }
+    }
+}
+
+async function hydrateNodeDatabaseForBackup(db: Database, onProgress?: (msg: string) => void) {
+    try {
+        const { getSqlStorage } = await import('../storage/sqlStorageFactory')
+        const storage = await getSqlStorage()
+        if (storage.backendKind !== 'node' || !await storage.init()) return false
+
+        const startedAt = Date.now()
+        const update = () => onProgress?.(
+            `Downloading full SQL snapshot (one request, elapsed ${formatBackupElapsed(startedAt)})`,
+        )
+        update()
+        const timer = setInterval(update, 1000)
+        let loaded
+        try {
+            loaded = await storage.loadDatabase({ shallow: false })
+        } finally {
+            clearInterval(timer)
+        }
+        if (loaded?.status !== 'ready' || !loaded.database) return false
+        onProgress?.('Merging SQL snapshot into backup data...')
+        hydrateLazyDatabaseFromSnapshot(db, loaded.database)
+        return true
+    } catch (error) {
+        // Older/self-modified servers can still use the per-entity fallback.
+        console.warn('Bulk SQL backup load failed; falling back to lazy loaders:', error)
+        return false
+    }
+}
 
 function getBasename(data:string){
     const baseNameRegex = /\\/g
@@ -54,6 +193,9 @@ export async function ensureAllPostgresChatMessagesLoaded(db: Database, onProgre
                         Object.assign(chat, fullChat)
                         chat.messagesLoaded = true
                         chat.detailsLoaded = true
+                        chat.messagesFullyLoaded = true
+                        chat.messageOffset = 0
+                        chat.messageTotal = fullChat.message?.length ?? 0
                     }
                 }
             }
@@ -64,11 +206,14 @@ export async function ensureAllPostgresChatMessagesLoaded(db: Database, onProgre
 }
 
 export async function ensureDatabaseFullyLoaded(db: Database, onProgress?: (msg: string) => void) {
-    if (typeof (db as any).ensureLoaded === 'function') {
+    const bulkLoaded = await hydrateNodeDatabaseForBackup(db, onProgress)
+    if (!bulkLoaded && typeof (db as any).ensureLoaded === 'function') {
         if (onProgress) onProgress('Loading database from storage...')
         await (db as any).ensureLoaded()
     }
-    await ensureAllPostgresChatMessagesLoaded(db, onProgress)
+    if (!bulkLoaded) {
+        await ensureAllPostgresChatMessagesLoaded(db, onProgress)
+    }
     if (!db.personas || db.personas.length === 0) {
         db.personas = [{
             name: db.username || 'User',
@@ -98,17 +243,18 @@ export async function SaveLocalBackup(){
     })
     alertProgress("Saving local backup... (Checking cold storage)", 0)
     await sleep(10)
-    const coldStoragePayloads = await collectColdStorageBackupPayloads(db)
+    const coldStoragePayloads = await collectColdStorageBackupPayloads(db, (current, total, key) => {
+        const item = key ? `\nCurrent item: ${key}` : ''
+        alertProgress(`Saving local backup... (Checking cold storage ${current} / ${total})${item}`, 0)
+    })
     const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
     if(!await confirmIncompleteColdStorageOperation(db, unavailableColdStorageKeys, 'backup')){
         alertClear()
         return
     }
 
-    alertProgress("Saving local backup... (Selecting destination)", 0)
-    await sleep(10)
     const writer = new LocalWriter()
-    const r = await writer.init()
+    const r = await initializeLocalBackupWriter(writer)
     if(!r){
         alertClear()
         return
@@ -205,15 +351,20 @@ export async function SaveLocalBackup(){
         }
     }
     else{
-        const keys = await forageStorage.keys()
-        const assetKeys = keys.filter((key) => key?.startsWith('assets/'))
-
-        if(isNodeServer && !forageStorage.isAccount){
-            let lastProgress = -1
-            if(assetKeys.length > 0){
+        if (isNodeServer && !forageStorage.isAccount) {
+            const startedAt = Date.now()
+            const update = () => alertProgress(
+                `Saving local backup... (S3/storage server is listing assets)\n` +
+                `The download will start as soon as the listing is ready. Elapsed: ${formatBackupElapsed(startedAt)}`,
+                2,
+            )
+            update()
+            const timer = setInterval(update, 1000)
+            let streamStarted = false
+            try {
                 writer.setBufferSize(64 * 1024 * 1024)
-
-                await (forageStorage.realStorage as NodeStorage).streamItems(assetKeys, {
+                let lastProgress = -1
+                await (forageStorage.realStorage as NodeStorage).streamItems([], {
                     onFileStart: async(key, size) => {
                         await writer.startBackup(key, size)
                     },
@@ -221,6 +372,22 @@ export async function SaveLocalBackup(){
                         await writer.write(chunk)
                     }
                 }, (progress) => {
+                    if (!streamStarted) {
+                        streamStarted = true
+                        clearInterval(timer)
+                    }
+                    if (progress.completedFiles === 0 && !progress.currentFile) {
+                        const sourceLabel = progress.assetListSource === 'catalog'
+                            ? 'Loaded asset list from SQL catalog'
+                            : progress.assetListSource === 'storage-sync'
+                                ? 'Initialized SQL asset catalog from storage'
+                                : 'Loaded asset list from storage'
+                        alertProgress(
+                            `Saving local backup... (${sourceLabel}: ${progress.totalFiles.toLocaleString()} assets)`,
+                            2,
+                        )
+                        return
+                    }
                     const currentRatio = progress.currentFile
                         ? progress.totalBytes === 0n
                             ? 1
@@ -238,10 +405,13 @@ export async function SaveLocalBackup(){
                         `Saving local backup... (Streaming assets ${percent}%, ${progress.completedFiles} / ${progress.totalFiles})`,
                         percent
                     )
-                })
+                }, { prefix: 'assets/' })
+            } finally {
+                clearInterval(timer)
             }
-        }
-        else{
+        } else {
+            const keys = await forageStorage.keys()
+            const assetKeys = keys.filter((key) => key?.startsWith('assets/'))
             const totalAssets = assetKeys.length
             let lastUiUpdate = 0
 
@@ -383,17 +553,18 @@ export async function SavePartialLocalBackup(){
     })
     alertProgress("Saving partial local backup... (Checking cold storage)", 0)
     await sleep(10)
-    const coldStoragePayloads = await collectColdStorageBackupPayloads(db)
+    const coldStoragePayloads = await collectColdStorageBackupPayloads(db, (current, total, key) => {
+        const item = key ? `\nCurrent item: ${key}` : ''
+        alertProgress(`Saving partial local backup... (Checking cold storage ${current} / ${total})${item}`, 0)
+    })
     const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
     if(!await confirmIncompleteColdStorageOperation(db, unavailableColdStorageKeys, 'backup')){
         alertClear()
         return
     }
 
-    alertProgress("Saving partial local backup... (Selecting destination)", 0)
-    await sleep(10)
     const writer = new LocalWriter()
-    const r = await writer.init()
+    const r = await initializeLocalBackupWriter(writer, true)
     if(!r){
         alertClear()
         return

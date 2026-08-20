@@ -16,6 +16,30 @@ INSERT INTO system.storage_meta (singleton, schema_version, schema_layout)
 VALUES (TRUE, 2, 'relational-schema-v1')
 ON CONFLICT (singleton) DO NOTHING;
 
+CREATE TABLE IF NOT EXISTS system.asset_catalog_state (
+    singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+    initialized BOOLEAN NOT NULL DEFAULT FALSE,
+    source_id TEXT,
+    synced_at TIMESTAMPTZ
+);
+
+ALTER TABLE system.asset_catalog_state
+ADD COLUMN IF NOT EXISTS source_id TEXT;
+
+INSERT INTO system.asset_catalog_state (singleton)
+VALUES (TRUE)
+ON CONFLICT (singleton) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS system.asset_catalog (
+    asset_key TEXT PRIMARY KEY,
+    size_bytes BIGINT,
+    etag TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS asset_catalog_updated_idx
+ON system.asset_catalog (updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS system.revisions (
     id BIGSERIAL PRIMARY KEY,
     storage_revision BIGINT,

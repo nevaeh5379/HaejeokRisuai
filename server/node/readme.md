@@ -99,12 +99,30 @@ This stack starts:
 - **RisuAI Server**: Pre-configured to communicate with both PostgreSQL and RustFS.
 - **CloudBeaver**: Database explorer on port 8978.
 
+For a public installation using a dynv6 hostname and automatic HTTPS, create the
+hostname and HTTP token at dynv6 first, then run:
+
+```bash
+chmod +x install-rustfs.sh
+./install-rustfs.sh
+```
+
+The installer securely prompts for the hostname and token, generates database and
+storage credentials, starts a dynv6 updater, and puts Caddy in front of RisuAI.
+Ports 80 and 443 must be forwarded to the server. PostgreSQL is kept inside the
+Compose network, while RisuAI and the RustFS API/console bind only to localhost.
+Before building, the installer reports and stops for processes or containers that
+already listen on TCP 80/443 or UDP 443.
+Use `./install-rustfs.sh --help` for non-interactive and IPv6 options.
+
 ### Asset Migration & Tools
 
 When S3 is enabled:
 - **Migrate Local Assets to S3**: Copies all existing local asset files in `save/` to the S3 bucket.
 - **Download S3 Assets to Local**: Exports all objects from the S3 bucket back to the local `save/` directory.
 - During migration, read requests automatically fall back to local disk if an asset hasn't been uploaded yet, ensuring zero broken images.
+
+When structured SQL storage and S3 are both active, RisuAI maintains an `asset_catalog` containing S3 asset keys. The first backup performs one full `assets/` listing to initialize it; later uploads and deletes update it incrementally, so subsequent backups query SQL instead of running `ListObjectsV2`. The catalog is scoped to the configured endpoint and bucket. Use `POST /api/asset-catalog/resync` after modifying the bucket outside RisuAI or whenever an explicit reconciliation is required.
 
 Migration and rollback use a memory-first bounded concurrency. `RISUAI_MIGRATE_CONCURRENCY` controls the worker count (default `4`; raise it only when more throughput is worth the extra memory). Files larger than 512 KiB stream to/from S3 instead of buffering in memory. Progress updates are time-throttled (~200 ms) to avoid flooding the client.
 

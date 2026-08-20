@@ -373,7 +373,7 @@ class LocalFsStorage {
         return { success: true };
     }
 
-    async list() {
+    async list(prefix = '') {
         if (!fs.existsSync(this.savePath)) {
             return [];
         }
@@ -384,7 +384,10 @@ class LocalFsStorage {
                 continue;
             }
             if (isHex(entry)) {
-                result.push(hexToKey(entry));
+                const key = hexToKey(entry);
+                if (!prefix || key.startsWith(prefix)) {
+                    result.push(key);
+                }
             }
         }
         return result;
@@ -1013,13 +1016,14 @@ class S3AssetStorage {
         return { total, created, skipped, errors };
     }
 
-    async list() {
+    async list(prefix = '') {
         const keys = [];
         let continuationToken = undefined;
 
         do {
             const command = new ListObjectsV2Command({
                 Bucket: this.config.bucket,
+                ...(prefix ? { Prefix: prefix } : {}),
                 ContinuationToken: continuationToken
             });
             const response = await this.client.send(command);
@@ -2279,10 +2283,11 @@ class AzureSqlAssetStorage {
         return { success: true };
     }
 
-    async list() {
+    async list(prefix = '') {
         const pool = await this._getPool();
         const res = await pool.request().query('SELECT asset_key FROM asset_files ORDER BY asset_key');
-        return (res.recordset || []).map(r => r.asset_key);
+        const keys = (res.recordset || []).map(r => r.asset_key);
+        return prefix ? keys.filter(key => key.startsWith(prefix)) : keys;
     }
 
     async exists(hexPath) {

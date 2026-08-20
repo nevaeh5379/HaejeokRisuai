@@ -354,7 +354,10 @@ export type ColdStorageBackupPayload = {
     encoded: Uint8Array
 }
 
-export async function collectColdStorageBackupPayloads(db: Pick<Database, 'characters'> = DBState.db): Promise<{
+export async function collectColdStorageBackupPayloads(
+    db: Pick<Database, 'characters'> = DBState.db,
+    onProgress?: (current: number, total: number, key?: string) => void,
+): Promise<{
     payloads: ColdStorageBackupPayload[]
     missingKeys: string[]
     invalidKeys: string[]
@@ -364,7 +367,10 @@ export async function collectColdStorageBackupPayloads(db: Pick<Database, 'chara
     const missingKeys: string[] = []
     const invalidKeys: string[] = []
 
-    for (const key of coldKeys) {
+    onProgress?.(0, coldKeys.length)
+    for (let index = 0; index < coldKeys.length; index++) {
+        const key = coldKeys[index]
+        onProgress?.(index, coldKeys.length, key)
         try {
             const value = await getColdStorageItem(key)
             if (!value) {
@@ -386,6 +392,8 @@ export async function collectColdStorageBackupPayloads(db: Pick<Database, 'chara
         } catch (error) {
             console.error(`Failed to read cold storage item ${key}:`, error)
             missingKeys.push(key)
+        } finally {
+            onProgress?.(index + 1, coldKeys.length, key)
         }
     }
 

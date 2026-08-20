@@ -12,8 +12,8 @@ services:
       RUSTFS_ADDRESS: ":9000"
       RUSTFS_CONSOLE_ADDRESS: ":9001"
     ports:
-      - "${RUSTFS_API_PORT:-9000}:9000"
-      - "${RUSTFS_CONSOLE_PORT:-9001}:9001"
+      - "${RUSTFS_BIND_ADDRESS:-0.0.0.0}:${RUSTFS_API_PORT:-9000}:9000"
+      - "${RUSTFS_BIND_ADDRESS:-0.0.0.0}:${RUSTFS_CONSOLE_PORT:-9001}:9001"
     volumes:
       - rustfs-data:/data
 
@@ -54,7 +54,7 @@ services:
       RISU_S3_BOOTSTRAP_SECRET: ${RUSTFS_SECRET_KEY:-rustfsadmin}
       TRUST_PROXY: 1
     ports:
-      - 6001:6001
+      - "${RISUAI_BIND_ADDRESS:-0.0.0.0}:${RISUAI_PORT:-6001}:6001"
     volumes:
       - ./save:/app/save
 

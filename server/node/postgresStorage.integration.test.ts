@@ -34,6 +34,11 @@ const {
         getTokenUsage:() => Promise<Record<string, any>[]>
         searchCharactersByTag:(tag:string, limit?:number) => Promise<Record<string, any>[]>
         searchCharactersByName:(name:string, limit?:number) => Promise<Record<string, any>[]>
+        isAssetCatalogInitialized:(sourceId:string) => Promise<boolean>
+        listAssetCatalog:(prefix?:string) => Promise<string[]>
+        upsertAssetCatalog:(entries:{key:string, size?:number|null, etag?:string|null}[]) => Promise<number>
+        removeAssetCatalog:(keys:string[]) => Promise<number>
+        replaceAssetCatalog:(prefix:string, entries:{key:string, size?:number|null, etag?:string|null}[], sourceId:string) => Promise<number>
         pool:{ query:(sql:string, params?:unknown[]) => Promise<any>, end:() => Promise<void> }
     }
 }
@@ -57,10 +62,39 @@ describePostgres('PostgreSQL structured storage integration', () => {
         await storage.pool.query(
             'UPDATE system.storage_meta SET revision = 0, initialized = FALSE WHERE singleton = TRUE'
         )
+        await storage.pool.query('TRUNCATE system.asset_catalog')
+        await storage.pool.query(
+            'UPDATE system.asset_catalog_state SET initialized = FALSE, source_id = NULL, synced_at = NULL WHERE singleton = TRUE'
+        )
     })
 
     afterAll(async () => {
         await storage.pool.end()
+    })
+
+    it('maintains an S3 asset catalog scoped to its storage source', async () => {
+        const source = JSON.stringify({ type: 's3', endpoint: 'http://rustfs:9000', bucket: 'risuai-assets' })
+        const otherSource = JSON.stringify({ type: 's3', endpoint: 'http://other:9000', bucket: 'risuai-assets' })
+
+        expect(await storage.isAssetCatalogInitialized(source)).toBe(false)
+        await storage.replaceAssetCatalog('assets/', [
+            { key: 'assets/a.png', size: 10 },
+            { key: 'assets/b.webp', size: 20 },
+        ], source)
+
+        expect(await storage.isAssetCatalogInitialized(source)).toBe(true)
+        expect(await storage.isAssetCatalogInitialized(otherSource)).toBe(false)
+        expect(await storage.listAssetCatalog('assets/')).toEqual([
+            'assets/a.png',
+            'assets/b.webp',
+        ])
+
+        await storage.upsertAssetCatalog([{ key: 'assets/c.mp3', size: 30 }])
+        await storage.removeAssetCatalog(['assets/a.png'])
+        expect(await storage.listAssetCatalog('assets/')).toEqual([
+            'assets/b.webp',
+            'assets/c.mp3',
+        ])
     })
 
     it('imports, reconstructs, and incrementally updates normalized data', async () => {

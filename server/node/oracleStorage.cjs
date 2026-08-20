@@ -636,6 +636,7 @@ class OracleStorage extends SqlStorageBase {
                 const schema = await fs.readFile(path.join(__dirname, 'oracle-schema.sql'), 'utf8');
                 await this.applySchema(testConn, schema);
             }
+            await this.ensureAssetCatalogSchema(testConn);
             await testConn.close();
 
             // 스키마 버전 확인
@@ -658,6 +659,44 @@ class OracleStorage extends SqlStorageBase {
             try { await pool.close(0); } catch (e) {}
             throw error;
         }
+    }
+
+    async ensureAssetCatalogSchema(connection) {
+        const statements = [
+            `CREATE TABLE system_asset_catalog_state (
+                singleton NUMBER(1) DEFAULT 1 PRIMARY KEY,
+                initialized NUMBER(1) DEFAULT 0 NOT NULL,
+                source_id VARCHAR2(2048),
+                synced_at TIMESTAMP WITH TIME ZONE,
+                CONSTRAINT asset_catalog_state_singleton CHECK (singleton = 1))`,
+            `CREATE TABLE system_asset_catalog (
+                asset_key VARCHAR2(1024) PRIMARY KEY,
+                size_bytes NUMBER,
+                etag VARCHAR2(1024),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL)`,
+            `CREATE INDEX asset_catalog_updated_idx ON system_asset_catalog (updated_at DESC)`,
+        ];
+        for (const statement of statements) {
+            try {
+                await connection.execute(statement);
+            } catch (error) {
+                if (!String(error?.message || '').includes('ORA-00955')) throw error;
+            }
+        }
+        try {
+            await connection.execute(
+                `ALTER TABLE system_asset_catalog_state ADD source_id VARCHAR2(2048)`
+            );
+        } catch (error) {
+            if (!String(error?.message || '').includes('ORA-01430')) throw error;
+        }
+        await connection.execute(
+            `MERGE INTO system_asset_catalog_state target
+             USING (SELECT 1 AS singleton FROM dual) src
+             ON (target.singleton = src.singleton)
+             WHEN NOT MATCHED THEN INSERT (singleton, initialized) VALUES (1, 0)`,
+            [], { autoCommit: true }
+        );
     }
 
     // 스키마 SQL을 분할하여 순차 실행 (/ 구분자 + 세미콜론)
@@ -787,6 +826,126 @@ class OracleStorage extends SqlStorageBase {
                 revision: Number(row.revision),
                 initialized: num1ToBool(row.initialized),
             };
+        } finally {
+            await conn.close();
+        }
+    }
+
+    async isAssetCatalogInitialized(sourceId) {
+        this.assertEnabled();
+        const conn = await this.pool.getConnection();
+        try {
+            const row = await fetchOne(conn,
+                `SELECT initialized, source_id FROM system_asset_catalog_state WHERE singleton = 1`);
+            return num1ToBool(row?.initialized) && row?.source_id === sourceId;
+        } finally {
+            await conn.close();
+        }
+    }
+
+    async listAssetCatalog(prefix = '') {
+        this.assertEnabled();
+        const conn = await this.pool.getConnection();
+        try {
+            const rows = prefix
+                ? await fetchRows(conn,
+                    `SELECT asset_key FROM system_asset_catalog
+                     WHERE SUBSTR(asset_key, 1, :1) = :2 ORDER BY asset_key`,
+                    [prefix.length, prefix])
+                : await fetchRows(conn,
+                    `SELECT asset_key FROM system_asset_catalog ORDER BY asset_key`);
+            return rows.map((row) => row.asset_key);
+        } finally {
+            await conn.close();
+        }
+    }
+
+    async upsertAssetCatalog(entries) {
+        this.assertEnabled();
+        if (!Array.isArray(entries) || entries.length === 0) return 0;
+        const conn = await this.pool.getConnection();
+        try {
+            await conn.executeMany(
+                `MERGE INTO system_asset_catalog target
+                 USING (SELECT :1 AS asset_key, :2 AS size_bytes, :3 AS etag FROM dual) src
+                 ON (target.asset_key = src.asset_key)
+                 WHEN MATCHED THEN UPDATE SET
+                    target.size_bytes = COALESCE(src.size_bytes, target.size_bytes),
+                    target.etag = COALESCE(src.etag, target.etag),
+                    target.updated_at = SYSTIMESTAMP
+                 WHEN NOT MATCHED THEN INSERT (asset_key, size_bytes, etag)
+                    VALUES (src.asset_key, src.size_bytes, src.etag)`,
+                entries.map((entry) => [entry.key, entry.size ?? null, entry.etag ?? null]),
+                {
+                    autoCommit: true,
+                    bindDefs: [
+                        { type: oracledb.STRING, maxSize: 1024 },
+                        { type: oracledb.NUMBER },
+                        { type: oracledb.STRING, maxSize: 1024 },
+                    ],
+                }
+            );
+            return entries.length;
+        } finally {
+            await conn.close();
+        }
+    }
+
+    async removeAssetCatalog(keys) {
+        this.assertEnabled();
+        if (!Array.isArray(keys) || keys.length === 0) return 0;
+        const conn = await this.pool.getConnection();
+        try {
+            const result = await conn.executeMany(
+                `DELETE FROM system_asset_catalog WHERE asset_key = :1`,
+                keys.map((key) => [key]),
+                { autoCommit: true }
+            );
+            return result.rowsAffected || 0;
+        } finally {
+            await conn.close();
+        }
+    }
+
+    async replaceAssetCatalog(prefix, entries, sourceId) {
+        this.assertEnabled();
+        const conn = await this.pool.getConnection();
+        try {
+            if (prefix) {
+                await conn.execute(
+                    `DELETE FROM system_asset_catalog WHERE SUBSTR(asset_key, 1, :1) = :2`,
+                    [prefix.length, prefix]
+                );
+            } else {
+                await conn.execute(`DELETE FROM system_asset_catalog`);
+            }
+            if (entries.length > 0) {
+                await conn.executeMany(
+                    `INSERT INTO system_asset_catalog (asset_key, size_bytes, etag)
+                     VALUES (:1, :2, :3)`,
+                    entries.map((entry) => [entry.key, entry.size ?? null, entry.etag ?? null]),
+                    {
+                        bindDefs: [
+                            { type: oracledb.STRING, maxSize: 1024 },
+                            { type: oracledb.NUMBER },
+                            { type: oracledb.STRING, maxSize: 1024 },
+                        ],
+                    }
+                );
+            }
+            await conn.execute(
+                `UPDATE system_asset_catalog_state
+                 SET initialized = 1, synced_at = SYSTIMESTAMP WHERE singleton = 1`,
+                [], { autoCommit: false }
+            );
+            await conn.execute(
+                `UPDATE system_asset_catalog_state SET source_id = :1 WHERE singleton = 1`,
+                [sourceId], { autoCommit: true }
+            );
+            return entries.length;
+        } catch (error) {
+            await conn.rollback().catch(() => {});
+            throw error;
         } finally {
             await conn.close();
         }

@@ -537,6 +537,76 @@ loadBackupStorageFromConfig();
 
 const assetStorageManager = new AssetStorageManager(savePath);
 
+function getAssetCatalogSourceId() {
+    const storage = assetStorageManager.getStorage();
+    if (storage.type !== 's3') return null;
+    const config = assetStorageManager.s3Config || assetStorageManager.config || {};
+    return JSON.stringify({
+        type: 's3',
+        endpoint: config.endpoint || 'aws',
+        bucket: config.bucket || 'risuai-assets',
+    });
+}
+
+function canUseAssetCatalog() {
+    return Boolean(
+        postgresStorage?.enabled &&
+        typeof postgresStorage.isAssetCatalogInitialized === 'function' &&
+        typeof postgresStorage.listAssetCatalog === 'function' &&
+        typeof postgresStorage.replaceAssetCatalog === 'function'
+    );
+}
+
+async function resolveCatalogedAssetKeys(storage, prefix = 'assets/', forceResync = false) {
+    const sourceId = getAssetCatalogSourceId();
+    if (!sourceId || !canUseAssetCatalog()) {
+        return { keys: await storage.list(prefix), source: 'storage' };
+    }
+    try {
+        const initialized = !forceResync &&
+            await postgresStorage.isAssetCatalogInitialized(sourceId);
+        if (initialized) {
+            return { keys: await postgresStorage.listAssetCatalog(prefix), source: 'catalog' };
+        }
+        const keys = await storage.list(prefix);
+        await postgresStorage.replaceAssetCatalog(
+            prefix,
+            keys.map((key) => ({ key })),
+            sourceId
+        );
+        return { keys, source: 'storage-sync' };
+    } catch (error) {
+        console.warn('[asset-catalog] SQL catalog unavailable; falling back to storage listing:', error?.message || error);
+        return { keys: await storage.list(prefix), source: 'storage-fallback' };
+    }
+}
+
+async function upsertAssetCatalogEntries(entries) {
+    const assetEntries = entries.filter((entry) => entry?.key?.startsWith('assets/'));
+    if (assetEntries.length === 0 || !canUseAssetCatalog() ||
+        typeof postgresStorage.upsertAssetCatalog !== 'function') return;
+    try {
+        await postgresStorage.upsertAssetCatalog(assetEntries);
+    } catch (error) {
+        console.warn('[asset-catalog] Failed to record uploaded assets:', error?.message || error);
+    }
+}
+
+async function upsertAssetCatalogKey(key, size = null) {
+    await upsertAssetCatalogEntries([{ key, size }]);
+}
+
+async function removeAssetCatalogKeys(keys) {
+    const assetKeys = keys.filter((key) => key?.startsWith('assets/'));
+    if (assetKeys.length === 0 || !canUseAssetCatalog() ||
+        typeof postgresStorage.removeAssetCatalog !== 'function') return;
+    try {
+        await postgresStorage.removeAssetCatalog(assetKeys);
+    } catch (error) {
+        console.warn('[asset-catalog] Failed to remove keys:', error?.message || error);
+    }
+}
+
 const passwordPath = path.join(savePath, '__password')
 if(existsSync(passwordPath)){
     password = readFileSync(passwordPath, 'utf-8')
@@ -1962,16 +2032,31 @@ async function writeFileChunk(fileHandle, data) {
 app.post('/api/read-bulk', authenticatedRouteLimiter, async(req, res, next) => {
     if (!await checkAuth(req, res)) return;
 
-    const filePaths = req.body?.filePaths;
+    let filePaths = req.body?.filePaths;
+    const prefix = typeof req.body?.prefix === 'string'
+        ? req.body.prefix.slice(0, 1024)
+        : '';
     const isThumb = req.query.thumb === '1' || req.query.thumb === 'true' || req.body?.thumb === true || req.headers['x-thumbnail'] === 'true';
 
-    if (!Array.isArray(filePaths)) {
+    if (!Array.isArray(filePaths) && !prefix) {
         res.status(400).send({
-            error: "filePaths isn't an array."
+            error: "filePaths isn't an array and prefix is missing."
         });
         return;
     }
     const storage = assetStorageManager.getStorage();
+    if (prefix) {
+        const resolved = prefix === 'assets/' && storage.type === 's3'
+            ? await resolveCatalogedAssetKeys(storage, prefix)
+            : { keys: await storage.list(prefix), source: 'storage' };
+        const keys = resolved.keys;
+        res.setHeader('x-risu-asset-list-source', resolved.source);
+        filePaths = keys
+            .filter((key) => typeof key === 'string' && key.startsWith(prefix))
+            .map((key) => Buffer.from(key, 'utf8').toString('hex'));
+    }
+    res.setHeader('x-risu-total-files', String(filePaths.length));
+    res.setHeader('Access-Control-Expose-Headers', 'x-risu-total-files, x-risu-asset-list-source');
     let fileId = 0;
     for (const filePath of filePaths) {
         if (!isHex(filePath)) continue;
@@ -2030,6 +2115,7 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
     let pending = Buffer.alloc(0);
     let activeChunk = null;
     let fileCount = 0;
+    const completedCatalogEntries = [];
 
     const cleanup = async() => {
         for (const file of receivingFiles.values()) {
@@ -2151,6 +2237,7 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
                     // Apply request backpressure so completed multipart uploads are not
                     // retained until the entire restore body has arrived.
                     await file.writer.done();
+                    completedCatalogEntries.push({ key: file.name, size: Number(file.expectedSize) });
                     continue;
                 }
 
@@ -2164,6 +2251,7 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
             throw createBulkProtocolError('Bulk write request ended with an incomplete packet');
         }
 
+        await upsertAssetCatalogEntries(completedCatalogEntries);
         res.send({ success: true, written: fileCount });
     } catch (error) {
         await cleanup();
@@ -3710,6 +3798,9 @@ app.post('/api/storage-assets-delete', authenticatedRouteLimiter, async (req, re
             return;
         }
         const result = await assetStorageManager.deleteAssetKeys(keys, target);
+        if (target === 's3' || (target === 'active' && assetStorageManager.getStorage().type === 's3')) {
+            await removeAssetCatalogKeys(keys);
+        }
         res.send(result);
     } catch (error) {
         next(error);
@@ -3744,6 +3835,10 @@ app.post('/api/s3-migrate', authenticatedRouteLimiter, async (req, res, next) =>
         const result = await assetStorageManager.getStorage().migrateFromLocal(savePath, (progress) => {
             res.write(JSON.stringify({ type: 'progress', ...progress }) + '\n');
         });
+
+        if (assetStorageManager.getStorage().type === 's3' && canUseAssetCatalog()) {
+            await resolveCatalogedAssetKeys(assetStorageManager.getStorage(), 'assets/', true);
+        }
 
         res.write(JSON.stringify({ type: 'done', ...result }) + '\n');
         res.end();
@@ -3912,6 +4007,9 @@ app.get('/api/remove', authenticatedRouteLimiter, async (req, res, next) => {
 
     try {
         await assetStorageManager.getStorage().remove(filePaths);
+        await removeAssetCatalogKeys(
+            filePaths.map((filePath) => Buffer.from(filePath, 'hex').toString('utf8'))
+        );
         res.send({
             success: true,
         });
@@ -3926,11 +4024,45 @@ app.get('/api/list', authenticatedRouteLimiter, async (req, res, next) => {
     }
     try {
         const storage = assetStorageManager.getStorage();
-        const content = await storage.list();
+        const prefix = typeof req.query.prefix === 'string'
+            ? req.query.prefix.slice(0, 1024)
+            : '';
+        const resolved = prefix === 'assets/' && storage.type === 's3'
+            ? await resolveCatalogedAssetKeys(storage, prefix)
+            : { keys: await storage.list(prefix), source: 'storage' };
+        const listed = resolved.keys;
+        // Keep filtering here as a compatibility guard for custom storage
+        // implementations that have not added prefix-aware listing yet.
+        const content = prefix
+            ? listed.filter((key) => typeof key === 'string' && key.startsWith(prefix))
+            : listed;
         res.send({
             success: true,
-            content
+            content,
+            source: resolved.source,
         });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/asset-catalog/resync', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    const storage = assetStorageManager.getStorage();
+    if (storage.type !== 's3') {
+        res.status(400).send({ error: 'S3 storage is not active', code: 's3_not_active' });
+        return;
+    }
+    if (!canUseAssetCatalog()) {
+        res.status(400).send({ error: 'SQL asset catalog is unavailable', code: 'asset_catalog_unavailable' });
+        return;
+    }
+    try {
+        const result = await resolveCatalogedAssetKeys(storage, 'assets/', true);
+        if (result.source !== 'storage-sync') {
+            throw new Error('Asset catalog resync fell back to direct storage listing');
+        }
+        res.send({ success: true, count: result.keys.length, source: result.source });
     } catch (error) {
         next(error);
     }
@@ -3980,6 +4112,7 @@ app.post('/api/write', authenticatedRouteLimiter, async (req, res, next) => {
         }
         writer.stream.end();
         await writer.done();
+        await upsertAssetCatalogKey(Buffer.from(filePath, 'hex').toString('utf8'), received);
         res.send({
             success: true
         });

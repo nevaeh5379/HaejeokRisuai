@@ -28,6 +28,31 @@ BEGIN
     VALUES (1, 2, 'relational-schema-v1');
 END;
 
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[system].[asset_catalog_state]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE [system].[asset_catalog_state] (
+        singleton BIT PRIMARY KEY DEFAULT 1 CHECK (singleton = 1),
+        initialized BIT NOT NULL DEFAULT 0,
+        source_id NVARCHAR(900),
+        synced_at DATETIMEOFFSET
+    );
+    INSERT INTO [system].[asset_catalog_state] (singleton, initialized) VALUES (1, 0);
+END;
+
+IF COL_LENGTH('system.asset_catalog_state', 'source_id') IS NULL
+    ALTER TABLE [system].[asset_catalog_state] ADD source_id NVARCHAR(900);
+
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[system].[asset_catalog]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE [system].[asset_catalog] (
+        asset_key NVARCHAR(900) PRIMARY KEY,
+        size_bytes BIGINT,
+        etag NVARCHAR(900),
+        updated_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+    );
+    CREATE INDEX asset_catalog_updated_idx ON [system].[asset_catalog] (updated_at DESC);
+END;
+
 IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[system].[revisions]') AND type in (N'U'))
 BEGIN
     CREATE TABLE [system].[revisions] (

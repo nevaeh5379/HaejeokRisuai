@@ -306,6 +306,92 @@ class PostgresStorage extends SqlStorageBase {
         };
     }
 
+    async isAssetCatalogInitialized(sourceId) {
+        this.assertEnabled();
+        const result = await this.pool.query(
+            'SELECT initialized, source_id FROM system.asset_catalog_state WHERE singleton = TRUE'
+        );
+        return Boolean(result.rows[0]?.initialized) && result.rows[0]?.source_id === sourceId;
+    }
+
+    async listAssetCatalog(prefix = '') {
+        this.assertEnabled();
+        const result = prefix
+            ? await this.pool.query(
+                'SELECT asset_key FROM system.asset_catalog WHERE LEFT(asset_key, $1) = $2 ORDER BY asset_key',
+                [prefix.length, prefix]
+            )
+            : await this.pool.query('SELECT asset_key FROM system.asset_catalog ORDER BY asset_key');
+        return result.rows.map((row) => row.asset_key);
+    }
+
+    async upsertAssetCatalog(entries) {
+        this.assertEnabled();
+        if (!Array.isArray(entries) || entries.length === 0) return 0;
+        const keys = entries.map((entry) => entry.key);
+        const sizes = entries.map((entry) => entry.size ?? null);
+        const etags = entries.map((entry) => entry.etag ?? null);
+        await this.pool.query(
+            `INSERT INTO system.asset_catalog (asset_key, size_bytes, etag)
+             SELECT * FROM UNNEST($1::text[], $2::bigint[], $3::text[])
+             ON CONFLICT (asset_key) DO UPDATE SET
+                size_bytes = COALESCE(EXCLUDED.size_bytes, system.asset_catalog.size_bytes),
+                etag = COALESCE(EXCLUDED.etag, system.asset_catalog.etag),
+                updated_at = NOW()`,
+            [keys, sizes, etags]
+        );
+        return entries.length;
+    }
+
+    async removeAssetCatalog(keys) {
+        this.assertEnabled();
+        if (!Array.isArray(keys) || keys.length === 0) return 0;
+        const result = await this.pool.query(
+            'DELETE FROM system.asset_catalog WHERE asset_key = ANY($1::text[])',
+            [keys]
+        );
+        return result.rowCount;
+    }
+
+    async replaceAssetCatalog(prefix, entries, sourceId) {
+        this.assertEnabled();
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+            if (prefix) {
+                await client.query(
+                    'DELETE FROM system.asset_catalog WHERE LEFT(asset_key, $1) = $2',
+                    [prefix.length, prefix]
+                );
+            } else {
+                await client.query('DELETE FROM system.asset_catalog');
+            }
+            if (entries.length > 0) {
+                const keys = entries.map((entry) => entry.key);
+                const sizes = entries.map((entry) => entry.size ?? null);
+                const etags = entries.map((entry) => entry.etag ?? null);
+                await client.query(
+                    `INSERT INTO system.asset_catalog (asset_key, size_bytes, etag)
+                     SELECT * FROM UNNEST($1::text[], $2::bigint[], $3::text[])`,
+                    [keys, sizes, etags]
+                );
+            }
+            await client.query(
+                `UPDATE system.asset_catalog_state
+                 SET initialized = TRUE, source_id = $1, synced_at = NOW()
+                 WHERE singleton = TRUE`
+                , [sourceId]
+            );
+            await client.query('COMMIT');
+            return entries.length;
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
     async listRevisions(rawLimit = 50) {
         this.assertEnabled();
         const parsedLimit = Number.parseInt(rawLimit, 10);

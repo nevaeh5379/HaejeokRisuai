@@ -1,0 +1,4 @@
+{$RISUAI_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy risuai:6001
+}

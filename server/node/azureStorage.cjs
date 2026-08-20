@@ -374,6 +374,110 @@ class AzureStorage extends SqlStorageBase {
         };
     }
 
+    async isAssetCatalogInitialized(sourceId) {
+        const pool = await this.getPool();
+        const result = await pool.request().query(
+            'SELECT initialized, source_id FROM [system].[asset_catalog_state] WHERE singleton = 1'
+        );
+        return Boolean(result.recordset[0]?.initialized) && result.recordset[0]?.source_id === sourceId;
+    }
+
+    async listAssetCatalog(prefix = '') {
+        const pool = await this.getPool();
+        const request = pool.request();
+        let query = 'SELECT asset_key FROM [system].[asset_catalog]';
+        if (prefix) {
+            request.input('prefix_length', sql.Int, prefix.length);
+            request.input('prefix', sql.NVarChar(900), prefix);
+            query += ' WHERE LEFT(asset_key, @prefix_length) = @prefix';
+        }
+        query += ' ORDER BY asset_key';
+        const result = await request.query(query);
+        return result.recordset.map((row) => row.asset_key);
+    }
+
+    async upsertAssetCatalog(entries) {
+        if (!Array.isArray(entries) || entries.length === 0) return 0;
+        const pool = await this.getPool();
+        const batchSize = 400;
+        for (let offset = 0; offset < entries.length; offset += batchSize) {
+            const chunk = entries.slice(offset, offset + batchSize);
+            const request = pool.request();
+            const values = chunk.map((entry, index) => {
+                request.input(`key_${index}`, sql.NVarChar(900), entry.key);
+                request.input(`size_${index}`, sql.BigInt, entry.size ?? null);
+                request.input(`etag_${index}`, sql.NVarChar(900), entry.etag ?? null);
+                return `(@key_${index}, @size_${index}, @etag_${index})`;
+            });
+            await request.query(`MERGE [system].[asset_catalog] AS target
+                USING (VALUES ${values.join(',')}) AS source (asset_key, size_bytes, etag)
+                ON target.asset_key = source.asset_key
+                WHEN MATCHED THEN UPDATE SET
+                    size_bytes = COALESCE(source.size_bytes, target.size_bytes),
+                    etag = COALESCE(source.etag, target.etag),
+                    updated_at = SYSDATETIMEOFFSET()
+                WHEN NOT MATCHED THEN INSERT (asset_key, size_bytes, etag)
+                    VALUES (source.asset_key, source.size_bytes, source.etag);`);
+        }
+        return entries.length;
+    }
+
+    async removeAssetCatalog(keys) {
+        if (!Array.isArray(keys) || keys.length === 0) return 0;
+        const pool = await this.getPool();
+        let removed = 0;
+        const batchSize = 500;
+        for (let offset = 0; offset < keys.length; offset += batchSize) {
+            const chunk = keys.slice(offset, offset + batchSize);
+            const request = pool.request();
+            const placeholders = chunk.map((key, index) => {
+                request.input(`key_${index}`, sql.NVarChar(900), key);
+                return `@key_${index}`;
+            });
+            const result = await request.query(
+                `DELETE FROM [system].[asset_catalog] WHERE asset_key IN (${placeholders.join(',')})`
+            );
+            removed += result.rowsAffected?.[0] || 0;
+        }
+        return removed;
+    }
+
+    async replaceAssetCatalog(prefix, entries, sourceId) {
+        return await this.withTransaction(async (transaction) => {
+            if (prefix) {
+                await transaction.request()
+                    .input('prefix_length', sql.Int, prefix.length)
+                    .input('prefix', sql.NVarChar(900), prefix)
+                    .query('DELETE FROM [system].[asset_catalog] WHERE LEFT(asset_key, @prefix_length) = @prefix');
+            } else {
+                await transaction.request().query('DELETE FROM [system].[asset_catalog]');
+            }
+
+            const batchSize = 500;
+            for (let offset = 0; offset < entries.length; offset += batchSize) {
+                const chunk = entries.slice(offset, offset + batchSize);
+                const request = transaction.request();
+                const values = chunk.map((entry, index) => {
+                    request.input(`key_${index}`, sql.NVarChar(900), entry.key);
+                    request.input(`size_${index}`, sql.BigInt, entry.size ?? null);
+                    request.input(`etag_${index}`, sql.NVarChar(900), entry.etag ?? null);
+                    return `(@key_${index}, @size_${index}, @etag_${index})`;
+                });
+                await request.query(
+                    `INSERT INTO [system].[asset_catalog] (asset_key, size_bytes, etag) VALUES ${values.join(',')}`
+                );
+            }
+            await transaction.request()
+                .input('source_id', sql.NVarChar(900), sourceId)
+                .query(
+                `UPDATE [system].[asset_catalog_state]
+                 SET initialized = 1, source_id = @source_id, synced_at = SYSDATETIMEOFFSET()
+                 WHERE singleton = 1`
+            );
+            return entries.length;
+        });
+    }
+
     async getStatus() {
         const pool = await this.getPool();
         const state = await this.getState();

@@ -1,0 +1,41 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: risuai-caddy
+    restart: always
+    depends_on:
+      risuai:
+        condition: service_started
+    environment:
+      RISUAI_DOMAIN: ${RISUAI_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/rustfs/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  dynv6:
+    image: curlimages/curl:latest
+    container_name: risuai-dynv6
+    restart: always
+    user: "0:0"
+    entrypoint: ["/bin/sh", "/usr/local/bin/update-dynv6"]
+    environment:
+      DYNV6_ZONE: ${DYNV6_ZONE}
+      DYNV6_IPV6: ${DYNV6_IPV6:-false}
+      DYNV6_UPDATE_INTERVAL: ${DYNV6_UPDATE_INTERVAL:-300}
+    secrets:
+      - dynv6_token
+    volumes:
+      - ./deploy/rustfs/update-dynv6.sh:/usr/local/bin/update-dynv6:ro
+
+volumes:
+  caddy-data:
+  caddy-config:
+
+secrets:
+  dynv6_token:
+    file: ${DYNV6_TOKEN_FILE:-./.risuai/dynv6-token}

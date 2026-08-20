@@ -46,6 +46,7 @@ dist.zip
 /scripts/
 .env
 .env.oracle
+/.risuai/
 /server/node/ssl/certificate
 .codegraph/
 

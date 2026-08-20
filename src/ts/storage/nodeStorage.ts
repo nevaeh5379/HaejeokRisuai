@@ -28,6 +28,7 @@ export type NodeStorageBulkReadProgress = {
     currentFile: string | null
     receivedBytes: number
     totalBytes: bigint
+    assetListSource?: string
 }
 
 export type NodeStorageBulkReadHandlers = {
@@ -334,7 +335,7 @@ export class NodeStorage{
       keys: string[],
       handlers: NodeStorageBulkReadHandlers,
       onProgress?: (progress: NodeStorageBulkReadProgress) => void,
-      options?: { thumbnail?: boolean }
+      options?: { thumbnail?: boolean, prefix?: string }
     ): Promise<void> {
       await this.checkAuth()
 
@@ -347,7 +348,10 @@ export class NodeStorage{
 
       const response = await fetch(url, {
           method: "POST",
-          body: JSON.stringify({ filePaths, thumb: isThumb }),
+          body: JSON.stringify({
+              ...(options?.prefix ? { prefix: options.prefix } : { filePaths }),
+              thumb: isThumb,
+          }),
           cache: 'no-cache',
           headers: {
               "content-type": "application/json",
@@ -363,6 +367,10 @@ export class NodeStorage{
           throw new Error("getItems Error: response body is missing")
       }
 
+      const responseTotal = Number.parseInt(response.headers.get('x-risu-total-files') ?? '', 10)
+      const totalFiles = Number.isFinite(responseTotal) ? responseTotal : keys.length
+      const assetListSource = response.headers.get('x-risu-asset-list-source') ?? undefined
+
       type ReceivingFile = {
           name: string
           expectedSize: bigint
@@ -377,10 +385,11 @@ export class NodeStorage{
 
       onProgress?.({
           completedFiles,
-          totalFiles: keys.length,
+          totalFiles,
           currentFile: null,
           receivedBytes: 0,
-          totalBytes: 0n
+          totalBytes: 0n,
+          assetListSource,
       })
 
       while (true) {
@@ -428,10 +437,11 @@ export class NodeStorage{
 
                   onProgress?.({
                       completedFiles,
-                      totalFiles: keys.length,
+                      totalFiles,
                       currentFile: name,
                       receivedBytes: 0,
-                      totalBytes: expectedSize
+                      totalBytes: expectedSize,
+                      assetListSource,
                   })
 
                   offset += packetLength
@@ -472,10 +482,11 @@ export class NodeStorage{
 
                   onProgress?.({
                       completedFiles,
-                      totalFiles: keys.length,
+                      totalFiles,
                       currentFile: file.name,
                       receivedBytes: file.receivedSize,
-                      totalBytes: file.expectedSize
+                      totalBytes: file.expectedSize,
+                      assetListSource,
                   })
 
                   offset += packetLength
@@ -508,10 +519,11 @@ export class NodeStorage{
                   completedFiles += 1
                   onProgress?.({
                       completedFiles,
-                      totalFiles: keys.length,
+                      totalFiles,
                       currentFile: null,
                       receivedBytes: 0,
-                      totalBytes: 0n
+                      totalBytes: 0n,
+                      assetListSource,
                   })
                   offset += 5
                   continue
@@ -533,16 +545,17 @@ export class NodeStorage{
           throw new Error("Bulk response ended before all files were completed")
       }
 
-      if (completedFiles !== keys.length) {
+      if (completedFiles !== totalFiles) {
           throw new Error(
-              `Bulk response completed ${completedFiles} of ${keys.length} files`
+              `Bulk response completed ${completedFiles} of ${totalFiles} files`
           )
       }
   }
 
-    async keys():Promise<string[]>{
+    async keys(prefix = ''):Promise<string[]>{
         await this.checkAuth()
-        const da = await fetch('/api/list', {
+        const search = prefix ? `?prefix=${encodeURIComponent(prefix)}` : ''
+        const da = await fetch(`/api/list${search}`, {
             method: "GET",
             headers:{
                 'risu-auth': await this.createAuth()

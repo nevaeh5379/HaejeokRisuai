@@ -29,6 +29,28 @@ ON (target.singleton = src.singleton)
 WHEN NOT MATCHED THEN INSERT (singleton, schema_version, schema_layout)
     VALUES (src.singleton, src.schema_version, src.schema_layout);
 
+CREATE TABLE system_asset_catalog_state (
+    singleton NUMBER(1) DEFAULT 1 PRIMARY KEY,
+    initialized NUMBER(1) DEFAULT 0 NOT NULL,
+    source_id VARCHAR2(2048),
+    synced_at TIMESTAMP WITH TIME ZONE,
+    CONSTRAINT asset_catalog_state_singleton CHECK (singleton = 1)
+);
+
+MERGE INTO system_asset_catalog_state target
+USING (SELECT 1 AS singleton FROM dual) src
+ON (target.singleton = src.singleton)
+WHEN NOT MATCHED THEN INSERT (singleton, initialized) VALUES (1, 0);
+
+CREATE TABLE system_asset_catalog (
+    asset_key VARCHAR2(1024) PRIMARY KEY,
+    size_bytes NUMBER,
+    etag VARCHAR2(1024),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL
+);
+
+CREATE INDEX asset_catalog_updated_idx ON system_asset_catalog (updated_at DESC);
+
 CREATE TABLE system_revisions (
     id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     storage_revision NUMBER,
