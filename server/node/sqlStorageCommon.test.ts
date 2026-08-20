@@ -35,6 +35,15 @@ describe('shared SQL storage helpers', () => {
             key: 'theme', value: 'theme-value', exists: true, hash: 'hash',
         })
         await expect(storage.loadPrompts()).resolves.toMatchObject({ hash: 'hash' })
+
+        expect(storage.pluginsCache).toBeNull()
+        expect(storage.pluginCustomStorageCache).toBeNull()
+        storage.pluginsCache = { plugins: [{ name: 'test' }], hash: 'abc' }
+        storage.pluginCustomStorageCache = { pluginCustomStorage: { k: 'v' }, hash: 'def' }
+        storage.invalidatePluginsCache()
+        expect(storage.pluginsCache).toBeNull()
+        storage.invalidatePluginCustomStorageCache()
+        expect(storage.pluginCustomStorageCache).toBeNull()
     })
 
     it('keeps the deferred settings list in one provider-independent definition', () => {

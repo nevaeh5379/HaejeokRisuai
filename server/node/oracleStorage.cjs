@@ -1063,6 +1063,9 @@ class OracleStorage extends SqlStorageBase {
 
     async loadPlugins() {
         this.assertEnabled();
+        if (this.pluginsCache) {
+            return this.pluginsCache;
+        }
         const conn = await this.pool.getConnection();
         try {
             await conn.execute('SET TRANSACTION READ ONLY');
@@ -1076,7 +1079,9 @@ class OracleStorage extends SqlStorageBase {
             const plugins = rebuilt.plugins || [];
             const serialized = JSON.stringify(plugins);
             const hash = crypto.createHash('sha256').update(serialized).digest('hex');
-            return { plugins, hash };
+            const result = { plugins, hash };
+            this.pluginsCache = result;
+            return result;
         } catch (error) {
             try { await conn.rollback(); } catch (e) {}
             throw error;
@@ -1087,6 +1092,9 @@ class OracleStorage extends SqlStorageBase {
 
     async loadPluginCustomStorage() {
         this.assertEnabled();
+        if (this.pluginCustomStorageCache) {
+            return this.pluginCustomStorageCache;
+        }
         const conn = await this.pool.getConnection();
         try {
             await conn.execute('SET TRANSACTION READ ONLY');
@@ -1100,7 +1108,9 @@ class OracleStorage extends SqlStorageBase {
             const pluginCustomStorage = rebuilt.pluginCustomStorage || {};
             const serialized = JSON.stringify(pluginCustomStorage);
             const hash = crypto.createHash('sha256').update(serialized).digest('hex');
-            return { pluginCustomStorage, hash };
+            const result = { pluginCustomStorage, hash };
+            this.pluginCustomStorageCache = result;
+            return result;
         } catch (error) {
             try { await conn.rollback(); } catch (e) {}
             throw error;
@@ -1489,6 +1499,14 @@ class OracleStorage extends SqlStorageBase {
                  WHERE singleton = 1`,
                 [nextRevision]);
             await conn.commit();
+            const changedKeys = splitSettings.map((s) => s.setting.key);
+            const rootDeletes = payload.rootDeletes || [];
+            if (changedKeys.includes('plugins') || rootDeletes.includes('plugins')) {
+                this.pluginsCache = null;
+            }
+            if (changedKeys.includes('pluginCustomStorage') || rootDeletes.includes('pluginCustomStorage')) {
+                this.pluginCustomStorageCache = null;
+            }
             onProgress?.({ stage: 'done', message: `동기화 완료 (Revision: ${nextRevision})`, percent: 100 });
             return {
                 revision: nextRevision,
@@ -2059,6 +2077,8 @@ class OracleStorage extends SqlStorageBase {
                  WHERE singleton = 1`,
                 [nextStorageRevision, databaseInitialized ? 1 : 0]);
             await conn.commit();
+            this.pluginsCache = null;
+            this.pluginCustomStorageCache = null;
             return {
                 revisionId: restoreRevisionId,
                 restoredFromRevisionId: targetRevisionId,

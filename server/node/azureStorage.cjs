@@ -705,19 +705,29 @@ class AzureStorage extends SqlStorageBase {
     }
 
     async loadPlugins() {
+        if (this.pluginsCache) {
+            return this.pluginsCache;
+        }
         const { settings, hash } = await this.loadSettingKeys(['plugins']);
-        return {
+        const result = {
             plugins: settings.plugins || [],
             hash,
         };
+        this.pluginsCache = result;
+        return result;
     }
 
     async loadPluginCustomStorage() {
+        if (this.pluginCustomStorageCache) {
+            return this.pluginCustomStorageCache;
+        }
         const { settings, hash } = await this.loadSettingKeys(['pluginCustomStorage']);
-        return {
+        const result = {
             pluginCustomStorage: settings.pluginCustomStorage || {},
             hash,
         };
+        this.pluginCustomStorageCache = result;
+        return result;
     }
 
     async listPluginCustomStorageKeys() {
@@ -1242,6 +1252,17 @@ class AzureStorage extends SqlStorageBase {
                 revisionId: String(revisionId),
             };
         });
+
+        const changedSettingKeys = payload.rootUpserts?.map((row) => row.key) || [];
+        const rootDeletes = payload.rootDeletes || [];
+        if (changedSettingKeys.includes('plugins') || rootDeletes.includes('plugins')) {
+            this.pluginsCache = null;
+        }
+        if (changedSettingKeys.includes('pluginCustomStorage') || rootDeletes.includes('pluginCustomStorage')) {
+            this.pluginCustomStorageCache = null;
+        }
+
+        return syncResult;
     }
 
     async commitDatabaseSync(payload, options = {}) {
@@ -2043,6 +2064,9 @@ class AzureStorage extends SqlStorageBase {
 
             return { revision: nextRevision, revisionId };
         });
+        this.pluginsCache = null;
+        this.pluginCustomStorageCache = null;
+        return result;
     }
 
     // ============================================================

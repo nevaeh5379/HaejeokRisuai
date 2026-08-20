@@ -449,6 +449,7 @@ export class NodePostgresStorage {
         })
 
         if(response.status === 304 && cached){
+            this.memoryPluginsCache = cached
             return cached.plugins ?? []
         }
 
@@ -496,6 +497,7 @@ export class NodePostgresStorage {
         })
 
         if(response.status === 304 && cached){
+            this.memoryPluginStorageCache = cached
             return cached.pluginCustomStorage ?? {}
         }
 

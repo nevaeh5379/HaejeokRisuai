@@ -25,6 +25,19 @@ const PROMPT_SETTING_KEYS = [
 ];
 
 class SqlStorageBase {
+    constructor() {
+        this.pluginsCache = null;
+        this.pluginCustomStorageCache = null;
+    }
+
+    invalidatePluginsCache() {
+        this.pluginsCache = null;
+    }
+
+    invalidatePluginCustomStorageCache() {
+        this.pluginCustomStorageCache = null;
+    }
+
     async loadChatMessages(chatId) {
         const chat = await this.loadChat(chatId);
         return chat ? chat.message : [];

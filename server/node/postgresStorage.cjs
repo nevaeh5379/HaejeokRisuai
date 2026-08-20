@@ -443,6 +443,8 @@ class PostgresStorage extends SqlStorageBase {
                 [nextStorageRevision, databaseInitialized]
             );
             await client.query('COMMIT');
+            this.pluginsCache = null;
+            this.pluginCustomStorageCache = null;
             return {
                 revisionId: restoreRevisionId,
                 restoredFromRevisionId: targetRevisionId,
@@ -1196,6 +1198,9 @@ class PostgresStorage extends SqlStorageBase {
 
     async loadPlugins() {
         this.assertEnabled();
+        if (this.pluginsCache) {
+            return this.pluginsCache;
+        }
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
@@ -1212,10 +1217,12 @@ class PostgresStorage extends SqlStorageBase {
             const serialized = JSON.stringify(plugins);
             const hash = crypto.createHash('sha256').update(serialized).digest('hex');
 
-            return {
+            const result = {
                 plugins,
                 hash,
             };
+            this.pluginsCache = result;
+            return result;
         } catch (error) {
             await client.query('ROLLBACK').catch(() => {});
             throw error;
@@ -1226,6 +1233,9 @@ class PostgresStorage extends SqlStorageBase {
 
     async loadPluginCustomStorage() {
         this.assertEnabled();
+        if (this.pluginCustomStorageCache) {
+            return this.pluginCustomStorageCache;
+        }
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
@@ -1242,10 +1252,12 @@ class PostgresStorage extends SqlStorageBase {
             const serialized = JSON.stringify(pluginCustomStorage);
             const hash = crypto.createHash('sha256').update(serialized).digest('hex');
 
-            return {
+            const result = {
                 pluginCustomStorage,
                 hash,
             };
+            this.pluginCustomStorageCache = result;
+            return result;
         } catch (error) {
             await client.query('ROLLBACK').catch(() => {});
             throw error;
@@ -1581,6 +1593,12 @@ class PostgresStorage extends SqlStorageBase {
                 [nextRevision]
             );
             await client.query('COMMIT');
+            if (changedSettingKeys.includes('plugins') || payload.rootDeletes.includes('plugins')) {
+                this.pluginsCache = null;
+            }
+            if (changedSettingKeys.includes('pluginCustomStorage') || payload.rootDeletes.includes('pluginCustomStorage')) {
+                this.pluginCustomStorageCache = null;
+            }
             return {
                 revision: nextRevision,
                 changed: {
