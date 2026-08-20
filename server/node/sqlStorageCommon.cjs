@@ -26,6 +26,7 @@ const PROMPT_SETTING_KEYS = [
 
 class SqlStorageBase {
     constructor() {
+        this.objectCacheEnabled = process.env.RISUAI_SQL_OBJECT_CACHE === '1';
         this.pluginsCache = null;
         this.pluginCustomStorageCache = null;
     }

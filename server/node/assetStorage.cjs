@@ -5,24 +5,40 @@ const http = require('http');
 const https = require('https');
 const stream = require('stream');
 const crypto = require('crypto');
-const {
-    S3Client,
-    PutObjectCommand,
-    GetObjectCommand,
-    DeleteObjectCommand,
-    DeleteObjectsCommand,
-    ListObjectsV2Command,
-    HeadBucketCommand,
-    CreateBucketCommand,
-    HeadObjectCommand
-} = require('@aws-sdk/client-s3');
-const { Upload } = require('@aws-sdk/lib-storage');
 const { pipeline } = require('stream/promises');
 
-// Resolve NodeHttpHandler through @aws-sdk/client-s3's module graph so we
-// don't depend on pnpm hoisting @smithy/node-http-handler to the top level.
-const _s3Require = require('module').createRequire(require.resolve('@aws-sdk/client-s3'));
-const { NodeHttpHandler } = _s3Require('@smithy/node-http-handler');
+let S3Client;
+let PutObjectCommand;
+let GetObjectCommand;
+let DeleteObjectCommand;
+let DeleteObjectsCommand;
+let ListObjectsV2Command;
+let HeadBucketCommand;
+let CreateBucketCommand;
+let HeadObjectCommand;
+let Upload;
+let NodeHttpHandler;
+let s3SdkLoaded = false;
+
+function loadS3Sdk() {
+    if (s3SdkLoaded) return;
+    const clientSdk = require('@aws-sdk/client-s3');
+    ({
+        S3Client,
+        PutObjectCommand,
+        GetObjectCommand,
+        DeleteObjectCommand,
+        DeleteObjectsCommand,
+        ListObjectsV2Command,
+        HeadBucketCommand,
+        CreateBucketCommand,
+        HeadObjectCommand,
+    } = clientSdk);
+    ({ Upload } = require('@aws-sdk/lib-storage'));
+    const s3Require = require('module').createRequire(require.resolve('@aws-sdk/client-s3'));
+    ({ NodeHttpHandler } = s3Require('@smithy/node-http-handler'));
+    s3SdkLoaded = true;
+}
 
 // Shared keep-alive agents so 19k+ sequential S3 requests reuse TCP/TLS
 // connections instead of paying handshake cost per request.
@@ -32,12 +48,12 @@ function createHttpAgents() {
     // maxSockets should be at least migration concurrency so workers don't
     // queue on the socket pool. Default to 2x concurrency for headroom.
     const concurrency = Math.max(MIGRATE_CONCURRENCY, 1);
-    const defaultMaxSockets = Math.max(128, concurrency * 2);
+    const defaultMaxSockets = Math.max(16, concurrency * 2);
     const maxSockets = Math.max(
         defaultMaxSockets,
         parseInt(process.env.RISUAI_S3_MAX_SOCKETS || String(defaultMaxSockets), 10) || defaultMaxSockets
     );
-    const agentOpts = { keepAlive, keepAliveMsecs, maxSockets, maxFreeSockets: 64 };
+    const agentOpts = { keepAlive, keepAliveMsecs, maxSockets, maxFreeSockets: 8 };
     const httpAgent = new http.Agent(agentOpts);
     const httpsAgent = new https.Agent(agentOpts);
     // Swallow socket-level errors (EPIPE, ECONNRESET, etc.) so an abrupt peer
@@ -55,15 +71,13 @@ function createHttpAgents() {
 }
 
 // Concurrency for migration/rollback. Override via RISUAI_MIGRATE_CONCURRENCY env.
-// 64 is a good default for many ~1 MB files against a local RustFS/MinIO; for
-// remote S3 with higher latency, 32 may be safer to avoid timeouts.
+// The memory-first default keeps only a few file bodies/uploads live at once.
 const MIGRATE_CONCURRENCY = Math.max(
     1,
-    parseInt(process.env.RISUAI_MIGRATE_CONCURRENCY || '64', 10) || 64
+    parseInt(process.env.RISUAI_MIGRATE_CONCURRENCY || '4', 10) || 4
 );
-// Stream-upload threshold: files larger than this use streaming PutObject instead of buffer.
-// Raised to 16 MiB so typical ~1 MB assets take the fast buffered path.
-const MIGRATE_STREAM_THRESHOLD = 16 * 1024 * 1024;
+// Keep only genuinely small files on the faster buffered path.
+const MIGRATE_STREAM_THRESHOLD = 512 * 1024;
 // Progress callback throttle in ms (avoids flooding the client on large sets).
 const MIGRATE_PROGRESS_INTERVAL_MS = 200;
 
@@ -86,11 +100,18 @@ async function runWithConcurrency(items, worker, concurrency) {
     await Promise.all(workers);
 }
 
-let sharp = null;
-try {
-    sharp = require('sharp');
-} catch (err) {
-    // sharp optional / not available in certain lightweight envs
+let sharp;
+let sharpLoadAttempted = false;
+function loadSharp() {
+    if (!sharpLoadAttempted) {
+        sharpLoadAttempted = true;
+        try {
+            sharp = require('sharp');
+        } catch {
+            sharp = null;
+        }
+    }
+    return sharp;
 }
 
 function isHex(str) {
@@ -114,11 +135,12 @@ function isImageKey(key) {
 }
 
 async function createThumbnailBuffer(buffer, width = 128, height = 128) {
-    if (!sharp) {
+    const sharpInstance = loadSharp();
+    if (!sharpInstance) {
         return null;
     }
     try {
-        return await sharp(buffer)
+        return await sharpInstance(buffer)
             .resize({
                 width,
                 height,
@@ -477,6 +499,7 @@ async function getS3BodyBuffer(body) {
 
 class S3AssetStorage {
     constructor(config, savePath = '') {
+        loadS3Sdk();
         this.config = {
             endpoint: config.endpoint || '',
             bucket: config.bucket || 'risuai-assets',
@@ -493,6 +516,7 @@ class S3AssetStorage {
     }
 
     static createClient(config) {
+        loadS3Sdk();
         const agents = createHttpAgents();
         const clientConfig = {
             region: config.region || 'us-east-1',
@@ -2193,31 +2217,20 @@ class AzureSqlAssetStorage {
     }
 
     createWriteStream(hexPath) {
-        const key = hexToKey(hexPath);
-        const contentType = getContentType(key);
-        const passThrough = new stream.PassThrough();
-        const chunks = [];
-        passThrough.on('data', (chunk) => {
-            if (chunks.length < 100) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        if (!fs.existsSync(this.savePath)) fs.mkdirSync(this.savePath, { recursive: true });
+        const temporaryPath = path.join(this.savePath, `.__azuresql-upload-${crypto.randomUUID()}.tmp`);
+        const fileStream = fs.createWriteStream(temporaryPath, { mode: 0o600 });
+        const finished = new Promise((resolve, reject) => {
+            fileStream.once('finish', resolve);
+            fileStream.once('error', reject);
         });
-        const donePromise = (async () => {
-            // Drain the stream fully before persisting.
-            await new Promise((resolve, reject) => {
-                passThrough.on('finish', resolve);
-                passThrough.on('error', reject);
-            });
-            const fullBuffer = Buffer.concat(chunks);
-            await this._upsertFile(key, fullBuffer, contentType);
-            if (isImageKey(key) && fullBuffer.length > 0) {
-                await this._eagerGenerateThumbnail(hexPath, key, fullBuffer).catch(() => {});
-            }
-            return { success: true };
-        })();
+        const donePromise = finished.then(() => this.writeFromPath(hexPath, temporaryPath));
         return {
-            stream: passThrough,
+            stream: fileStream,
             done: () => donePromise,
             abort: async () => {
-                passThrough.destroy();
+                fileStream.destroy();
+                await fs.promises.unlink(temporaryPath).catch(() => {});
             },
         };
     }

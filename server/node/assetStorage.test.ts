@@ -14,6 +14,7 @@ const {
     createThumbnailBuffer,
     LocalFsStorage,
     S3AssetStorage,
+    AzureSqlAssetStorage,
     AssetStorageManager
 } = require('./assetStorage.cjs')
 
@@ -636,6 +637,31 @@ describe('createWriteStream streaming support', () => {
 
         expect(s3Store.has(key)).toBe(true)
         expect(s3Store.get(key)!).toEqual(Buffer.from('stream-part-1-stream-part-2'))
+    })
+
+    it('AzureSqlAssetStorage.createWriteStream preserves uploads with more than 100 chunks', async () => {
+        const storage = new AzureSqlAssetStorage({
+            server: 'mock.database.windows.net',
+            database: 'risuai',
+            user: 'test',
+            password: 'test'
+        }, tmpDir)
+        let persisted: Buffer | null = null
+        storage.writeFromPath = async (_hex: string, sourcePath: string) => {
+            persisted = await fs.promises.readFile(sourcePath)
+            await fs.promises.unlink(sourcePath)
+            return { success: true }
+        }
+
+        const chunks = Array.from({ length: 150 }, (_, index) =>
+            Buffer.from(`chunk-${index.toString().padStart(3, '0')}|`))
+        const writer = storage.createWriteStream(keyToHex('assets/large.bin'))
+        for (const chunk of chunks) writer.stream.write(chunk)
+        writer.stream.end()
+        await writer.done()
+
+        expect(persisted).toEqual(Buffer.concat(chunks))
+        expect(fs.readdirSync(tmpDir).some((name) => name.startsWith('.__azuresql-upload-'))).toBe(false)
     })
 
     it('AssetStorageManager.createWriteStream delegates to activeStorage', async () => {

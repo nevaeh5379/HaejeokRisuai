@@ -184,7 +184,10 @@ async function bulkInsert(reqOrTx, table, columns, columnTypes, rows, mergeKeyCo
         }
     }
 
-    const CHUNK_SIZE = 5000;
+    const CHUNK_SIZE = Math.max(
+        1,
+        Number.parseInt(process.env.RISUAI_SQL_BATCH_ROWS || '1000', 10) || 1000
+    );
     for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
         const chunk = rows.slice(i, i + CHUNK_SIZE);
         const preparedChunk = chunk.map((row) => {
@@ -713,7 +716,7 @@ class AzureStorage extends SqlStorageBase {
             plugins: settings.plugins || [],
             hash,
         };
-        this.pluginsCache = result;
+        if (this.objectCacheEnabled) this.pluginsCache = result;
         return result;
     }
 
@@ -726,7 +729,7 @@ class AzureStorage extends SqlStorageBase {
             pluginCustomStorage: settings.pluginCustomStorage || {},
             hash,
         };
-        this.pluginCustomStorageCache = result;
+        if (this.objectCacheEnabled) this.pluginCustomStorageCache = result;
         return result;
     }
 

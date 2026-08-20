@@ -35,6 +35,7 @@ const { WebSocketServer } = require('ws');
 const { promisify } = require('util');
 const zlib = require('zlib');
 const { gzip } = require('zlib');
+const { createJsonStream } = require('./streamJson.cjs');
 const {
     PostgresPayloadError,
     PostgresRevisionConflictError,
@@ -66,11 +67,15 @@ const {
     S3AssetStorage,
     AzureSqlAssetStorage,
     keyToHex,
-    runWithConcurrency,
 } = require('./assetStorage.cjs');
 const defaultJsonParser = express.json({ limit: '100mb' });
 const postgresJsonBodyLimit = process.env.RISU_POSTGRES_JSON_BODY_LIMIT || '1gb';
 const postgresJsonParser = express.json({ limit: postgresJsonBodyLimit });
+const rawBodyParser = express.raw({ type: 'application/octet-stream', limit: '100mb' });
+
+function isStreamingAssetWriteRequest(req) {
+    return req.method === 'POST' && req.path === '/api/write' && req.is('application/octet-stream');
+}
 
 const distDir = path.join(process.cwd(), 'dist');
 const HASHED_ASSET_REGEX = /-[a-zA-Z0-9_-]{8,}\.(js|css|png|jpg|jpeg|gif|webp|svg|woff|woff2|ttf|eot|wasm|ico|json|map)$/;
@@ -187,14 +192,21 @@ app.use((req, res, next) => {
     }
     defaultJsonParser(req, res, next);
 });
-app.use(express.raw({ type: 'application/octet-stream', limit: '100mb' }));
+app.use((req, res, next) => {
+    if (isStreamingAssetWriteRequest(req)) return next();
+    rawBodyParser(req, res, next);
+});
 app.use(express.text({ limit: '100mb' }));
 const {pipeline} = require('stream/promises')
 const {once} = require('events')
 const https = require('https');
 const sslPath = path.join(process.cwd(), 'server/node/ssl/certificate');
 const hubURL = 'https://sv.risuai.xyz'; 
-const openid = require('openid-client');
+let openidClient = null;
+function getOpenidClient() {
+    openidClient ||= require('openid-client');
+    return openidClient;
+}
 const gzipAsync = promisify(gzip);
 
 let password = ''
@@ -341,6 +353,15 @@ function enqueueBackupWrite(task, label = 'write') {
             // 재투하 안 함: 큐의 다음 작업은 계속 진행
         });
     });
+}
+
+async function awaitBackgroundMirror(task) {
+    try {
+        await enqueueBackupWrite(task, 'mirror');
+    } catch {
+        // The primary write already succeeded. Waiting is for bounded memory and
+        // ordering; backup failure remains observable through backupRuntime.
+    }
 }
 
 // 메인 sync payload를 백업에 미러 (baseRevision은 백업 현재 revision으로 교체)
@@ -534,16 +555,45 @@ const PROXY_STREAM_DEFAULT_HEARTBEAT_SEC = 15;
 const PROXY_STREAM_HEARTBEAT_MIN_SEC = 5;
 const PROXY_STREAM_HEARTBEAT_MAX_SEC = 60;
 const PROXY_STREAM_GC_INTERVAL_MS = 60000;
-const PROXY_STREAM_DONE_GRACE_MS = 30000;
-const PROXY_STREAM_MAX_ACTIVE_JOBS = 64;
-const PROXY_STREAM_MAX_PENDING_EVENTS = 512;
-const PROXY_STREAM_MAX_PENDING_BYTES = 2 * 1024 * 1024;
+const PROXY_STREAM_DONE_GRACE_MS = 10000;
+const PROXY_STREAM_MAX_ACTIVE_JOBS = Math.max(
+    1,
+    Number.parseInt(process.env.RISUAI_PROXY_MAX_JOBS || '16', 10) || 16
+);
+const PROXY_STREAM_MAX_PENDING_EVENTS = Math.max(
+    1,
+    Number.parseInt(process.env.RISUAI_PROXY_PENDING_EVENTS || '128', 10) || 128
+);
+const PROXY_STREAM_MAX_PENDING_BYTES = Math.max(
+    64 * 1024,
+    Number.parseInt(process.env.RISUAI_PROXY_PENDING_BYTES || String(512 * 1024), 10) || 512 * 1024
+);
 const PROXY_STREAM_MAX_BODY_BASE64_BYTES = 8 * 1024 * 1024;
 const proxyStreamJobs = new Map();
 
 function isLargePostgresJsonRequest(req) {
     return (req.method === 'POST' && req.path === '/api/database-v2/commit') ||
-        (req.method === 'PUT' && req.path.startsWith('/api/database-v2/cold-storage/'));
+        (req.method === 'PUT' && req.path.startsWith('/api/database-v2/cold-storage/')) ||
+        (req.method === 'DELETE' && req.path === '/api/database-v2/cold-storage') ||
+        (req.method === 'POST' && req.path === '/api/database-v2/cold-storage/prune');
+}
+
+let largeJsonRequestTail = Promise.resolve();
+function serializeLargeJsonRequests(req, res, next) {
+    let release;
+    const previous = largeJsonRequestTail;
+    largeJsonRequestTail = new Promise((resolve) => { release = resolve; });
+    previous.then(() => {
+        let released = false;
+        const releaseOnce = () => {
+            if (released) return;
+            released = true;
+            release();
+        };
+        res.once('finish', releaseOnce);
+        res.once('close', releaseOnce);
+        next();
+    }, next);
 }
 
 const authenticatedRouteLimiter = rateLimit({
@@ -572,19 +622,15 @@ function isHex(str) {
 }
 
 async function sendCompressedJson(req, res, payload) {
-    const body = Buffer.from(JSON.stringify(payload));
     const acceptEncoding = normalizeAuthHeader(req.headers['accept-encoding']);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Vary', 'Accept-Encoding');
-    if (body.length >= 1024 && /(^|,|\s)gzip(\s|,|;|$)/i.test(acceptEncoding)) {
-        const compressed = await gzipAsync(body, { level: 6 });
+    if (/(^|,|\s)gzip(\s|,|;|$)/i.test(acceptEncoding)) {
         res.setHeader('Content-Encoding', 'gzip');
-        res.setHeader('Content-Length', compressed.length);
-        res.send(compressed);
+        await pipeline(createJsonStream(payload), zlib.createGzip({ level: 6 }), res);
         return;
     }
-    res.setHeader('Content-Length', body.length);
-    res.send(body);
+    await pipeline(createJsonStream(payload), res);
 }
 
 function validatePostgresConnectionString(value) {
@@ -1869,11 +1915,9 @@ const BULK_WRITE_CONTENT_TYPE = 'application/x-risu-bulk';
 const BULK_WRITE_MAX_NAME_BYTES = 64 * 1024;
 const BULK_WRITE_MAX_CHUNK_BYTES = 8 * 1024 * 1024;
 const BULK_WRITE_MAX_FILES = 10000;
-// Bound how many S3 multipart Uploads finalise concurrently. Without this,
-// 10k+ `writer.done()` calls fire at once and exhaust the socket pool.
-const BULK_WRITE_CONCURRENCY = Math.max(
+const BULK_WRITE_MAX_OPEN_FILES = Math.max(
     1,
-    parseInt(process.env.RISUAI_RESTORE_CONCURRENCY || '32', 10) || 32
+    parseInt(process.env.RISUAI_RESTORE_MAX_OPEN_FILES || '64', 10) || 64
 );
 function createBulkProtocolError(message) {
     const error = new Error(message);
@@ -1982,8 +2026,8 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
     const storage = assetStorageManager.getStorage();
     const receivingFiles = new Map();
     const targetPaths = new Set();
-    const completedFiles = [];
     let pending = Buffer.alloc(0);
+    let activeChunk = null;
     let fileCount = 0;
 
     const cleanup = async() => {
@@ -1992,20 +2036,30 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
                 try { await file.writer.abort(); } catch {}
             }
         }
-        for (const file of completedFiles) {
-            if (file.writer) {
-                try { await file.writer.abort(); } catch {}
-            }
-        }
     };
 
     try {
         for await (const incomingChunk of req) {
-            pending = Buffer.concat([pending, incomingChunk]);
+            pending = pending.length === 0
+                ? incomingChunk
+                : Buffer.concat([pending, incomingChunk], pending.length + incomingChunk.length);
             let offset = 0;
 
             while (offset < pending.length) {
                 const available = pending.length - offset;
+
+                if (activeChunk) {
+                    const writeLength = Math.min(available, activeChunk.remaining);
+                    if (!activeChunk.file.writer.stream.write(pending.subarray(offset, offset + writeLength))) {
+                        await once(activeChunk.file.writer.stream, 'drain');
+                    }
+                    activeChunk.file.receivedSize += BigInt(writeLength);
+                    activeChunk.remaining -= writeLength;
+                    offset += writeLength;
+                    if (activeChunk.remaining === 0) activeChunk = null;
+                    continue;
+                }
+
                 if (available < 1) break;
 
                 const type = pending.readUInt8(offset);
@@ -2026,6 +2080,9 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
                     }
                     if (fileCount >= BULK_WRITE_MAX_FILES) {
                         throw createBulkProtocolError('Too many files in bulk write request');
+                    }
+                    if (receivingFiles.size >= BULK_WRITE_MAX_OPEN_FILES) {
+                        throw createBulkProtocolError(`Too many simultaneously open bulk files (maximum ${BULK_WRITE_MAX_OPEN_FILES})`);
                     }
 
                     const nameStart = offset + 9;
@@ -2059,9 +2116,6 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
                         throw createBulkProtocolError('Bulk file chunk is too large');
                     }
 
-                    const packetLength = 1 + 4 + 4 + chunkSize;
-                    if (available < packetLength) break;
-
                     const file = receivingFiles.get(fileId);
                     if (!file) {
                         throw createBulkProtocolError(`Chunk for unknown bulk file ID: ${fileId}`);
@@ -2072,11 +2126,9 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
                         throw createBulkProtocolError(`Too much data for bulk file: ${file.name}`);
                     }
 
-                    file.writer.stream.write(
-                        pending.subarray(offset + 9, offset + packetLength)
-                    );
-                    file.receivedSize = nextSize;
-                    offset += packetLength;
+                    offset += 9;
+                    activeChunk = { file, remaining: chunkSize };
+                    if (chunkSize === 0) activeChunk = null;
                     continue;
                 }
 
@@ -2094,25 +2146,22 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
 
                     file.writer.stream.end();
                     receivingFiles.delete(fileId);
-                    completedFiles.push(file);
                     offset += 5;
+                    // Apply request backpressure so completed multipart uploads are not
+                    // retained until the entire restore body has arrived.
+                    await file.writer.done();
                     continue;
                 }
 
                 throw createBulkProtocolError(`Unknown bulk packet type: ${type}`);
             }
 
-            pending = pending.subarray(offset);
+            pending = offset === pending.length ? Buffer.alloc(0) : pending.subarray(offset);
         }
 
-        if (pending.length !== 0 || receivingFiles.size !== 0) {
+        if (pending.length !== 0 || activeChunk || receivingFiles.size !== 0) {
             throw createBulkProtocolError('Bulk write request ended with an incomplete packet');
         }
-
-        await runWithConcurrency(completedFiles, async (file) => {
-            await file.writer.done();
-        }, BULK_WRITE_CONCURRENCY);
-        completedFiles.length = 0;
 
         res.send({ success: true, written: fileCount });
     } catch (error) {
@@ -2586,11 +2635,11 @@ app.post('/api/db-backup', authenticatedRouteLimiter, async (req, res, next) => 
         syncBackupSnapshotTimer();
 
         // 최초 전체 백업: 메인 DB에서 백업 DB로 전체 적요 (직렬 큐)
-        enqueueBackupWrite(() => mirrorFullBackupToBackup().then((result) => {
+        void enqueueBackupWrite(() => mirrorFullBackupToBackup().then((result) => {
             backupRuntime.lastFullSyncAt = new Date().toISOString();
             backupRuntime.lastFullSyncError = null;
             return result;
-        }), 'full');
+        }), 'full').catch(() => {});
 
         const resp = await getBackupConfigResponse();
         res.send({ success: true, ...resp });
@@ -2685,32 +2734,19 @@ app.get('/api/database-v2', authenticatedRouteLimiter, async (req, res, next) =>
 
     try {
         const shallow = req.query.shallow !== 'false';
-        const stored = await postgresStorage.loadDatabase({ shallow });
-        if (stored.database) {
-            console.log(`[GET /api/database-v2 shallow=${shallow}] Breakdown:`);
-            for (const [key, val] of Object.entries(stored.database)) {
-                const len = JSON.stringify(val)?.length ?? 0;
-                if (len > 50000) {
-                    console.log(`  - root.${key}: ${(len / 1024 / 1024).toFixed(2)} MB`);
-                }
-            }
-            if (stored.database.characters) {
-                console.log(`  - characters count: ${stored.database.characters.length}`);
-                let totalCharsSize = 0;
-                let totalChatsSize = 0;
-                for (const char of stored.database.characters) {
-                    const charCopy = { ...char, chats: [] };
-                    totalCharsSize += JSON.stringify(charCopy)?.length ?? 0;
-                    totalChatsSize += JSON.stringify(char.chats)?.length ?? 0;
-                }
-                console.log(`  - total characters metadata size: ${(totalCharsSize / 1024 / 1024).toFixed(2)} MB`);
-                console.log(`  - total chats metadata size: ${(totalChatsSize / 1024 / 1024).toFixed(2)} MB`);
-            }
+        const state = await postgresStorage.getState();
+        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
+        const stateEtag = `"risu-postgres-${state.revision}"`;
+        if (state.initialized && requestEtag.split(',').map((value) => value.trim()).includes(stateEtag)) {
+            res.setHeader('ETag', stateEtag);
+            res.setHeader('Cache-Control', 'private, no-cache');
+            res.status(304).end();
+            return;
         }
+        const stored = await postgresStorage.loadDatabase({ shallow });
         const etag = `"risu-postgres-${stored.revision}"`;
         res.setHeader('ETag', etag);
         res.setHeader('Cache-Control', 'private, no-cache');
-        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
         if (stored.initialized && requestEtag.split(',').map((value) => value.trim()).includes(etag)) {
             res.status(304).end();
             return;
@@ -3141,11 +3177,11 @@ app.post(
             const result = await postgresStorage.restoreRevision(req.body?.revisionId);
             // 메인 DB 상태가 통째로 바뀌므로 백업에는 전체 재동기를 트리거.
             if (backupStorage?.enabled && backupConfig.mirroring?.enabled) {
-                enqueueBackupWrite(() => mirrorFullBackupToBackup().then((r) => {
+                await awaitBackgroundMirror(() => mirrorFullBackupToBackup().then((r) => {
                     backupRuntime.lastMirrorAt = new Date().toISOString();
                     backupRuntime.lastMirrorError = null;
                     return r;
-                }), 'mirror');
+                }));
             }
             res.send({ success: true, ...result });
         } catch (error) {
@@ -3162,6 +3198,7 @@ app.post(
     '/api/database-v2/commit',
     authenticatedRouteLimiter,
     requireNodeAuth,
+    serializeLargeJsonRequests,
     postgresJsonParser,
     async (req, res, next) => {
         if (!postgresStorage.enabled) {
@@ -3174,14 +3211,14 @@ app.post(
 
         try {
             const result = await postgresStorage.sync(req.body);
-            // 실시간 미러링: 백업이 활성 상태면 동일한 payload를 백업 DB에 적요.
-            // (직렬 큐에서 비동기 수행, 메인 저장 응답에는 영향 없음)
+            // Keep at most one large parsed mutation alive: wait for the serial
+            // mirror, while preserving primary-write success if the backup fails.
             if (backupStorage?.enabled && backupConfig.mirroring?.enabled) {
-                enqueueBackupWrite(() => mirrorSyncPayloadToBackup(req.body).then((r) => {
+                await awaitBackgroundMirror(() => mirrorSyncPayloadToBackup(req.body).then((r) => {
                     backupRuntime.lastMirrorAt = new Date().toISOString();
                     backupRuntime.lastMirrorError = null;
                     return r;
-                }), 'mirror');
+                }));
             }
             res.send({ success: true, ...result });
         } catch (error) {
@@ -3264,6 +3301,7 @@ app.put(
     '/api/database-v2/cold-storage/:key',
     authenticatedRouteLimiter,
     requireNodeAuth,
+    serializeLargeJsonRequests,
     postgresJsonParser,
     async (req, res, next) => {
         if (!postgresStorage.enabled) {
@@ -3277,11 +3315,11 @@ app.put(
         try {
             const item = await postgresStorage.upsertColdStorage(req.params.key, req.body?.data);
             if (backupStorage?.enabled && backupConfig.mirroring?.enabled) {
-                enqueueBackupWrite(() => backupStorage.upsertColdStorage(req.params.key, req.body?.data).then((r) => {
+                await awaitBackgroundMirror(() => backupStorage.upsertColdStorage(req.params.key, req.body?.data).then((r) => {
                     backupRuntime.lastMirrorAt = new Date().toISOString();
                     backupRuntime.lastMirrorError = null;
                     return r;
-                }), 'mirror');
+                }));
             }
             res.send({
                 success: true,
@@ -3302,7 +3340,7 @@ app.put(
     }
 );
 
-app.delete('/api/database-v2/cold-storage', authenticatedRouteLimiter, async (req, res, next) => {
+app.delete('/api/database-v2/cold-storage', authenticatedRouteLimiter, serializeLargeJsonRequests, postgresJsonParser, async (req, res, next) => {
     if (!await checkAuth(req, res)) {
         return;
     }
@@ -3314,11 +3352,11 @@ app.delete('/api/database-v2/cold-storage', authenticatedRouteLimiter, async (re
     try {
         const result = await postgresStorage.deleteColdStorage(req.body?.keys);
         if (backupStorage?.enabled && backupConfig.mirroring?.enabled) {
-            enqueueBackupWrite(() => backupStorage.deleteColdStorage(req.body?.keys).then((r) => {
+            await awaitBackgroundMirror(() => backupStorage.deleteColdStorage(req.body?.keys).then((r) => {
                 backupRuntime.lastMirrorAt = new Date().toISOString();
                 backupRuntime.lastMirrorError = null;
                 return r;
-            }), 'mirror');
+            }));
         }
         res.send({ success: true, ...result });
     } catch (error) {
@@ -3330,7 +3368,7 @@ app.delete('/api/database-v2/cold-storage', authenticatedRouteLimiter, async (re
     }
 });
 
-app.post('/api/database-v2/cold-storage/prune', authenticatedRouteLimiter, async (req, res, next) => {
+app.post('/api/database-v2/cold-storage/prune', authenticatedRouteLimiter, serializeLargeJsonRequests, postgresJsonParser, async (req, res, next) => {
     if (!await checkAuth(req, res)) {
         return;
     }
@@ -3342,11 +3380,11 @@ app.post('/api/database-v2/cold-storage/prune', authenticatedRouteLimiter, async
     try {
         const result = await postgresStorage.pruneColdStorage(req.body?.retainedKeys);
         if (backupStorage?.enabled && backupConfig.mirroring?.enabled) {
-            enqueueBackupWrite(() => backupStorage.pruneColdStorage(req.body?.retainedKeys).then((r) => {
+            await awaitBackgroundMirror(() => backupStorage.pruneColdStorage(req.body?.retainedKeys).then((r) => {
                 backupRuntime.lastMirrorAt = new Date().toISOString();
                 backupRuntime.lastMirrorError = null;
                 return r;
-            }), 'mirror');
+            }));
         }
         res.send({ success: true, ...result });
     } catch (error) {
@@ -3885,8 +3923,7 @@ app.post('/api/write', authenticatedRouteLimiter, async (req, res, next) => {
         return;
     }
     const filePath = req.headers['file-path'];
-    const fileContent = req.body
-    if (!filePath || !fileContent) {
+    if (!filePath) {
         res.status(400).send({
             error:'File path required'
         });
@@ -3899,12 +3936,41 @@ app.post('/api/write', authenticatedRouteLimiter, async (req, res, next) => {
         return;
     }
 
+    if (!req.is('application/octet-stream')) {
+        res.status(415).send({ error: 'Content-Type must be application/octet-stream' });
+        return;
+    }
+
+    const maxBytes = 100 * 1024 * 1024;
+    const declaredLength = Number.parseInt(req.headers['content-length'] || '', 10);
+    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+        res.status(413).send({ error: 'Asset exceeds the 100 MB upload limit' });
+        return;
+    }
+
+    const writer = assetStorageManager.getStorage().createWriteStream(filePath);
     try {
-        await assetStorageManager.getStorage().write(filePath, fileContent);
+        let received = 0;
+        for await (const chunk of req) {
+            received += chunk.length;
+            if (received > maxBytes) {
+                const error = new Error('Asset exceeds the 100 MB upload limit');
+                error.statusCode = 413;
+                throw error;
+            }
+            if (!writer.stream.write(chunk)) await once(writer.stream, 'drain');
+        }
+        writer.stream.end();
+        await writer.done();
         res.send({
             success: true
         });
     } catch (error) {
+        await writer.abort().catch(() => {});
+        if (error?.statusCode === 413) {
+            res.status(413).send({ error: error.message });
+            return;
+        }
         next(error);
     }
 });
@@ -3924,7 +3990,7 @@ app.get('/api/oauth_login', async (req, res) => {
         return
     }
     if(!oauthData.client_id || !oauthData.client_secret){
-        const discovery = await openid.discovery('https://account.sionyw.com/','','');
+        const discovery = await getOpenidClient().discovery('https://account.sionyw.com/','','');
         oauthData.config = discovery;
 
         //oauth dynamic client registration
@@ -3966,6 +4032,7 @@ app.get('/api/oauth_login', async (req, res) => {
 
         //now lets request
 
+        const openid = getOpenidClient();
         let code_verifier = openid.randomPKCECodeVerifier();
         let code_challenge = await openid.calculatePKCECodeChallenge(code_verifier);
 
@@ -4002,7 +4069,7 @@ app.get('/api/oauth_callback', async (req, res) => {
         return
     }
 
-    let tokens = await openid.authorizationCodeGrant(
+    let tokens = await getOpenidClient().authorizationCodeGrant(
         oauthData.config,   
         getCurrentUrl(),
         {

@@ -41,6 +41,10 @@ const {
 
 const POSTGRES_SCHEMA_VERSION = 2;
 const MAX_SYNC_ROWS = 250000;
+const BULK_INSERT_BATCH_ROWS = Math.max(
+    1,
+    Number.parseInt(process.env.RISUAI_SQL_BATCH_ROWS || '1000', 10) || 1000
+);
 const AUDITED_TABLES = [
     'system.settings', 'system.setting_values', 'character.characters',
     ...SETTING_RELATION_DEFINITIONS.map((definition) => definition.table),
@@ -149,20 +153,26 @@ async function bulkInsert(client, table, columns, columnTypes, rows, suffix = ''
     if (rows.length === 0) return;
     const quotedTable = assertSqlIdentifier(table);
     const quotedColumns = columns.map((col) => `"${col}"`);
-    const parameters = columns.map((column, columnIndex) => rows.map((row) => {
-        const value = row[column];
-        if (columnTypes[columnIndex] === 'jsonb') {
-            return value === undefined ? null : JSON.stringify(value);
-        }
-        return value ?? null;
-    }));
     const unnest = columns.map((_, index) => `$${index + 1}::${columnTypes[index]}[]`).join(', ');
-    await client.query(
-        `INSERT INTO ${quotedTable} (${quotedColumns.join(', ')})
+    const query = `INSERT INTO ${quotedTable} (${quotedColumns.join(', ')})
          SELECT * FROM UNNEST(${unnest}) AS item(${quotedColumns.join(', ')})
-         ${suffix}`,
-        parameters
-    );
+         ${suffix}`;
+
+    // Keep only one column-major parameter batch alive during large restores.
+    for (let start = 0; start < rows.length; start += BULK_INSERT_BATCH_ROWS) {
+        const end = Math.min(rows.length, start + BULK_INSERT_BATCH_ROWS);
+        const parameters = columns.map((column, columnIndex) => {
+            const values = new Array(end - start);
+            for (let rowIndex = start; rowIndex < end; rowIndex++) {
+                const value = rows[rowIndex][column];
+                values[rowIndex - start] = columnTypes[columnIndex] === 'jsonb'
+                    ? (value === undefined ? null : JSON.stringify(value))
+                    : (value ?? null);
+            }
+            return values;
+        });
+        await client.query(query, parameters);
+    }
 }
 
 async function beginAuditRevision(client, {
@@ -1221,7 +1231,7 @@ class PostgresStorage extends SqlStorageBase {
                 plugins,
                 hash,
             };
-            this.pluginsCache = result;
+            if (this.objectCacheEnabled) this.pluginsCache = result;
             return result;
         } catch (error) {
             await client.query('ROLLBACK').catch(() => {});
@@ -1256,7 +1266,7 @@ class PostgresStorage extends SqlStorageBase {
                 pluginCustomStorage,
                 hash,
             };
-            this.pluginCustomStorageCache = result;
+            if (this.objectCacheEnabled) this.pluginCustomStorageCache = result;
             return result;
         } catch (error) {
             await client.query('ROLLBACK').catch(() => {});

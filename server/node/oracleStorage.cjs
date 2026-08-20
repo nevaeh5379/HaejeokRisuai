@@ -447,6 +447,10 @@ async function bulkInsert(connection, table, columns, columnTypes, rows, conflic
     if (rows.length === 0) return;
     const quotedTable = assertSqlIdentifier(table);
     const quotedColumns = columns.map((col) => `${col.toUpperCase()}`);
+    const batchRows = Math.max(
+        1,
+        Number.parseInt(process.env.RISUAI_SQL_BATCH_ROWS || '1000', 10) || 1000
+    );
 
     // Oracle 바인드 변수명 생성 (:1, :2, ...)
     const bindNames = columns.map((_, i) => `:${i + 1}`).join(', ');
@@ -461,12 +465,18 @@ async function bulkInsert(connection, table, columns, columnTypes, rows, conflic
                  VALUES (${bindNames})`;
         // 단순 INSERT로 fallback (conflictAction은 호출부에서 MERGE로 직접 구현)
         const insertSql = `INSERT INTO ${quotedTable} (${quotedColumns.join(', ')}) VALUES (${bindNames})`;
-        const binds = rows.map((row) => columns.map((col) => prepareBindValue(row[col], columnTypes[columns.indexOf(col)])));
-        await connection.executeMany(insertSql, binds);
+        for (let start = 0; start < rows.length; start += batchRows) {
+            const binds = rows.slice(start, start + batchRows).map((row) =>
+                columns.map((col, index) => prepareBindValue(row[col], columnTypes[index])));
+            await connection.executeMany(insertSql, binds);
+        }
     } else {
         const insertSql = `INSERT INTO ${quotedTable} (${quotedColumns.join(', ')}) VALUES (${bindNames})`;
-        const binds = rows.map((row) => columns.map((col) => prepareBindValue(row[col], columnTypes[columns.indexOf(col)])));
-        await connection.executeMany(insertSql, binds);
+        for (let start = 0; start < rows.length; start += batchRows) {
+            const binds = rows.slice(start, start + batchRows).map((row) =>
+                columns.map((col, index) => prepareBindValue(row[col], columnTypes[index])));
+            await connection.executeMany(insertSql, binds);
+        }
     }
 }
 
@@ -1080,7 +1090,7 @@ class OracleStorage extends SqlStorageBase {
             const serialized = JSON.stringify(plugins);
             const hash = crypto.createHash('sha256').update(serialized).digest('hex');
             const result = { plugins, hash };
-            this.pluginsCache = result;
+            if (this.objectCacheEnabled) this.pluginsCache = result;
             return result;
         } catch (error) {
             try { await conn.rollback(); } catch (e) {}
@@ -1109,7 +1119,7 @@ class OracleStorage extends SqlStorageBase {
             const serialized = JSON.stringify(pluginCustomStorage);
             const hash = crypto.createHash('sha256').update(serialized).digest('hex');
             const result = { pluginCustomStorage, hash };
-            this.pluginCustomStorageCache = result;
+            if (this.objectCacheEnabled) this.pluginCustomStorageCache = result;
             return result;
         } catch (error) {
             try { await conn.rollback(); } catch (e) {}

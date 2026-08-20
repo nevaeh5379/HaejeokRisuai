@@ -18,6 +18,8 @@ DATABASE_URL=postgresql://risuai:password@127.0.0.1:5432/risuai pnpm runserver
 
 Large initial migrations and cold-storage writes use an authenticated PostgreSQL-only JSON parser with a `1gb` decompressed-body limit. Set `RISU_POSTGRES_JSON_BODY_LIMIT` (for example, `512mb` or `2gb`) to tune this for the available server memory. Other Node API routes retain the existing `100mb` limit.
 
+Large relational mutations are serialized before body parsing so concurrent clients cannot hold multiple migration payloads in the Node heap. SQL inserts use bounded batches (`RISUAI_SQL_BATCH_ROWS`, default `1000`), and plugin/custom-storage objects are not retained in a process-wide cache by default. Set `RISUAI_SQL_OBJECT_CACHE=1` only when lower database latency matters more than minimum resident memory.
+
 `RISU_POSTGRES_BOOTSTRAP_URL` can seed an editable server-side configuration on the first start. The provided Docker Compose example uses this mode. `RISU_SAVE_PATH` optionally changes the Node server save directory and defaults to `<working directory>/save`.
 
 If PostgreSQL is disabled, the Node server continues to use the legacy files in `save/`.
@@ -104,13 +106,13 @@ When S3 is enabled:
 - **Download S3 Assets to Local**: Exports all objects from the S3 bucket back to the local `save/` directory.
 - During migration, read requests automatically fall back to local disk if an asset hasn't been uploaded yet, ensuring zero broken images.
 
-Migration and rollback run with bounded concurrency to keep round-trip latency from dominating large asset sets. `RISUAI_MIGRATE_CONCURRENCY` controls the parallel worker count (default `64`; lower to `32` for remote S3 with higher latency). Files larger than 16 MiB stream to/from S3 instead of buffering in memory. Progress updates are time-throttled (~200 ms) to avoid flooding the client.
+Migration and rollback use a memory-first bounded concurrency. `RISUAI_MIGRATE_CONCURRENCY` controls the worker count (default `4`; raise it only when more throughput is worth the extra memory). Files larger than 512 KiB stream to/from S3 instead of buffering in memory. Progress updates are time-throttled (~200 ms) to avoid flooding the client.
 
 To keep migration fast on large sets (tens of thousands of files):
 
 - Eager thumbnail generation is **skipped** during migration; thumbnails are still produced lazily on first read or via the dedicated **Generate Thumbnails** tool. Generating thumbnails inline would roughly double S3 PUT count and add sharp CPU contention.
-- The S3 client uses a shared HTTP keep-alive agent pool (`keepAlive`, `maxSockets`). `RISUAI_S3_MAX_SOCKETS` (default `2 × concurrency`, min `128`) tunes the per-host socket cap. Socket-level errors (EPIPE, ECONNRESET) are swallowed on the agent and via a process-level `uncaughtException` guard so an abrupt peer close during large migrations does not crash the server.
-- Bulk restore (`/api/restore-backup`) and bulk write (`/api/write-bulk`) bound the number of concurrent S3 multipart Upload finalisations via `RISUAI_RESTORE_CONCURRENCY` (default `32`). Without this, 19k+ `writer.done()` calls fire at once and exhaust the socket pool.
+- The S3 client uses HTTP keep-alive agents (`keepAlive`, `maxSockets`). `RISUAI_S3_MAX_SOCKETS` (default `2 × concurrency`, min `16`) tunes the per-host socket cap. Socket-level errors (EPIPE, ECONNRESET) are swallowed on the agent and via a process-level `uncaughtException` guard so an abrupt peer close during large migrations does not crash the server.
+- Bulk write (`/api/write-bulk`) streams packet payloads with writable backpressure and finalizes each object before accepting more body data. `RISUAI_RESTORE_MAX_OPEN_FILES` (default `64`) bounds intentionally interleaved files; ordinary sequential backups keep only one writer open.
 - When the bucket is empty (first migration) the exists-check is skipped automatically. For non-empty buckets, `RISUAI_MIGRATE_SKIP_EXISTS_CHECK=1` forces skipping it — S3 `PutObject` is idempotent so re-uploading existing keys is safe and avoids the full `ListObjectsV2` round-trips (100k keys = 100 paginated calls) plus the in-memory key set.
 - The `database/database.bin` is always re-uploaded during migration (never skipped) so the S3 copy tracks the latest local state.
 
