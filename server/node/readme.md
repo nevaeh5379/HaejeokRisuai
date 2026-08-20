@@ -103,8 +103,8 @@ For a public installation using a dynv6 hostname and automatic HTTPS, create the
 hostname and HTTP token at dynv6 first, then run:
 
 ```bash
-chmod +x install-rustfs.sh
-./install-rustfs.sh
+chmod +x risuai.sh
+./risuai.sh install
 ```
 
 The installer securely prompts for the hostname and token, generates database and
@@ -113,7 +113,9 @@ Ports 80 and 443 must be forwarded to the server. PostgreSQL is kept inside the
 Compose network, while RisuAI and the RustFS API/console bind only to localhost.
 Before building, the installer reports and stops for processes or containers that
 already listen on TCP 80/443 or UDP 443.
-Use `./install-rustfs.sh --help` for non-interactive and IPv6 options.
+Use `./risuai.sh --help` for non-interactive and IPv6 options. After installation,
+manage the stack with `./risuai.sh start|stop|restart|status|logs`. The `stop`
+command keeps all PostgreSQL, RustFS, Caddy, and local save data intact.
 
 ### Asset Migration & Tools
 

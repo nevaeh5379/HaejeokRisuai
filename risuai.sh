@@ -11,6 +11,14 @@ assume_yes=false
 enable_ipv6=false
 domain=${RISUAI_DOMAIN:-${DYNV6_ZONE:-}}
 dynv6_token=${DYNV6_TOKEN:-}
+action=install
+
+case "${1:-}" in
+    install|start|stop|restart|status|logs)
+        action=$1
+        shift
+        ;;
+esac
 
 info() {
     printf '\n\033[1;34m==>\033[0m %s\n' "$*"
@@ -23,12 +31,25 @@ die() {
 
 usage() {
     cat <<'EOF'
-RisuAI + PostgreSQL + RustFS + dynv6 one-click installer
+RisuAI server installer and manager
 
 Usage:
-  ./install-rustfs.sh [options]
+  ./risuai.sh [install] [options]
+  ./risuai.sh start
+  ./risuai.sh stop
+  ./risuai.sh restart
+  ./risuai.sh status
+  ./risuai.sh logs [service]
 
-Options:
+Commands:
+  install             Install RisuAI with PostgreSQL, RustFS, dynv6, and HTTPS
+  start               Start an existing installation
+  stop                Stop the server without deleting data
+  restart             Restart all server containers
+  status              Show container status
+  logs [service]      Follow logs, optionally for one service
+
+Install options:
   --domain HOSTNAME   dynv6 hostname (for example, my-risu.dynv6.net)
   --token TOKEN       dynv6 HTTP token (prompted securely when omitted)
   --ipv6              Update both IPv4 and IPv6 records
@@ -38,6 +59,64 @@ Options:
 The server must be reachable from the internet on TCP ports 80 and 443.
 EOF
 }
+
+compose() {
+    docker compose \
+        --project-directory "$script_dir" \
+        --env-file "$env_file" \
+        -f "$compose_base" \
+        -f "$compose_public" \
+        "$@"
+}
+
+require_docker() {
+    if ! command -v docker >/dev/null 2>&1; then
+        die "Docker is not installed. Install Docker Engine with the Compose plugin, then rerun this script."
+    fi
+    if ! docker compose version >/dev/null 2>&1; then
+        die "The Docker Compose plugin is not installed"
+    fi
+    if ! docker info >/dev/null 2>&1; then
+        die "Cannot access the Docker daemon. Start Docker or run this script with appropriate permissions."
+    fi
+}
+
+if [ "$action" != install ]; then
+    [ -f "$compose_base" ] || die "Missing $compose_base"
+    [ -f "$compose_public" ] || die "Missing $compose_public"
+    [ -f "$env_file" ] || die "No installation found. Run ./risuai.sh install first."
+    [ -f "$token_file" ] || die "The dynv6 token file is missing. Run ./risuai.sh install again."
+    require_docker
+
+    case "$action" in
+        start)
+            [ "$#" -eq 0 ] || die "start does not accept additional arguments"
+            info "Starting RisuAI"
+            compose up -d
+            compose ps
+            ;;
+        stop)
+            [ "$#" -eq 0 ] || die "stop does not accept additional arguments"
+            info "Stopping RisuAI without deleting data"
+            compose stop
+            ;;
+        restart)
+            [ "$#" -eq 0 ] || die "restart does not accept additional arguments"
+            info "Restarting RisuAI"
+            compose restart
+            compose ps
+            ;;
+        status)
+            [ "$#" -eq 0 ] || die "status does not accept additional arguments"
+            compose ps
+            ;;
+        logs)
+            [ "$#" -le 1 ] || die "logs accepts at most one service name"
+            compose logs --tail 200 --follow "$@"
+            ;;
+    esac
+    exit 0
+fi
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -84,15 +163,7 @@ if [ "${#domain}" -gt 253 ] || ! printf '%s\n' "$domain" | grep -Eq \
     die "Invalid fully qualified hostname: $domain"
 fi
 
-if ! command -v docker >/dev/null 2>&1; then
-    die "Docker is not installed. Install Docker Engine with the Compose plugin, then rerun this script."
-fi
-if ! docker compose version >/dev/null 2>&1; then
-    die "The Docker Compose plugin is not installed"
-fi
-if ! docker info >/dev/null 2>&1; then
-    die "Cannot access the Docker daemon. Start Docker or run this script with appropriate permissions."
-fi
+require_docker
 
 kernel_socket_details() {
     protocol=$1
@@ -228,15 +299,6 @@ DYNV6_UPDATE_INTERVAL=300
 EOF
 chmod 600 "$env_file" "$token_file"
 
-compose() {
-    docker compose \
-        --project-directory "$script_dir" \
-        --env-file "$env_file" \
-        -f "$compose_base" \
-        -f "$compose_public" \
-        "$@"
-}
-
 info "Validating the Compose configuration"
 compose config --quiet
 
@@ -285,5 +347,8 @@ RisuAI is running.
 
 DNS propagation and the first TLS certificate can take a few minutes.
 View status with:
-  docker compose --env-file '$env_file' -f '$compose_base' -f '$compose_public' ps
+  ./risuai.sh status
+
+Stop the server without deleting data:
+  ./risuai.sh stop
 EOF
