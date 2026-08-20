@@ -28,9 +28,9 @@ export type StreamingDisplayOptimizationMode = 'off'|'balanced'|'strong'
 
 /**
  * Applies schema defaults and migrations without installing the database.
- * SQL adapters use this on their plain core-data snapshot before adding lazy
- * domain getters, so a new or sparse SQL database receives the same defaults
- * as legacy storage without eagerly loading those domains.
+ * SQL adapters use this on their plain core-data snapshot without accessing
+ * lazy domain getters, so a new or sparse SQL database receives the same
+ * defaults as legacy storage without eagerly loading those domains.
  */
 export function normalizeDatabaseDefaults(data:Database){
     if(checkNullish(data.characters)){
@@ -759,11 +759,14 @@ export function normalizeDatabaseDefaults(data:Database){
 }
 
 export function setDatabase(data:Database){
-    // SQL adapters normalize their plain core data before creating lazy domain
-    // getters. Re-running normalization here would access those getters and
-    // defeat selective SQL reads.
+    // Normalize the adapter's plain core snapshot. Running normalization on
+    // the adapter proxy itself would access lazy getters and defeat selective
+    // SQL reads.
     if ((data as Database & { isSql?: boolean }).isSql) {
         data.characters ??= []
+        ;(data as Database & {
+            applyCoreDefaults?: (normalize: (coreData: Database) => Database) => void
+        }).applyCoreDefaults?.(normalizeDatabaseDefaults)
     } else {
         normalizeDatabaseDefaults(data)
     }

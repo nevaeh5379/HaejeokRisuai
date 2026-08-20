@@ -1,16 +1,15 @@
-import {
-    normalizeDatabaseDefaults,
-    type Database,
-    type character,
-    type groupChat,
-    type Chat,
-    type RisuPersona,
-    type botPreset,
-    type loreBook,
-    type customscript,
+import type {
+    Database,
+    character,
+    groupChat,
+    Chat,
+    RisuPersona,
+    botPreset,
+    loreBook,
+    customscript,
 } from './database.svelte'
 import type { RisuModule } from '../process/modules'
-import { defaultJailbreak, defaultMainPrompt } from './defaultPrompts'
+import { defaultAutoSuggestPrompt, defaultJailbreak, defaultMainPrompt } from './defaultPrompts'
 import type { ISqlStorage } from './ISqlStorage'
 import { isMemoryConstrainedDevice } from '../memory/deviceMemory'
 import { cancelChatMessageCompaction } from './dataSession.svelte'
@@ -21,6 +20,7 @@ export interface IDatabaseAdapter extends Database {
     isDomainLoaded?: (domain: string) => boolean
     getLoadedDomains?: () => string[]
     getLoadedRootKeys?: () => string[]
+    applyCoreDefaults?: (normalize: (coreData: Database) => Database) => void
     ensureCharacterDetails?: (characterId: string) => Promise<void>
     ensureChatMessages?: (chatId: string, options?: { full?: boolean }) => Promise<void>
     loadOlderChatMessages?: (chatId: string, limit?: number) => Promise<number>
@@ -110,15 +110,35 @@ export function createSqlDatabaseAdapter(
     initialData: Database,
     storage: ISqlStorage,
 ): IDatabaseAdapter {
-    // Normalize only the eagerly loaded core snapshot. Deferred SQL domains
-    // must stay out of coreData or their fallback values would mask the real
-    // rows and prevent on-demand loading.
-    const normalizedCoreData = normalizeDatabaseDefaults({ ...initialData } as Database) as Record<string, any>
-    const promptDefaults = Object.fromEntries(
-        PROMPT_SETTING_KEYS.map((key) => [key, normalizedCoreData[key]]),
-    )
+    const coreData = { ...initialData } as Record<string, any>
     for (const key of ['personas', 'botPresets', 'loreBook', 'modules', 'globalscript', ...PROMPT_SETTING_KEYS]) {
-        delete normalizedCoreData[key]
+        delete coreData[key]
+    }
+    let promptDefaults: Record<string, any> = {
+        mainPrompt: defaultMainPrompt,
+        jailbreak: defaultJailbreak,
+        globalNote: '',
+        additionalPrompt: 'The assistant must act as {{char}}. user is {{user}}.',
+        supaMemoryPrompt: '',
+        personaPrompt: '',
+        emotionPrompt: '',
+        emotionPrompt2: '',
+        autoSuggestPrompt: defaultAutoSuggestPrompt,
+        translatorPrompt: '',
+        instructChatTemplate: '',
+        JinjaTemplate: '',
+        customTokenizer: '',
+        promptTemplate: [],
+        promptSettings: {
+            assistantPrefill: '',
+            postEndInnerFormat: '',
+            sendChatAsSystem: false,
+            sendName: false,
+            utilOverride: false,
+            customChainOfThought: false,
+            maxThoughtTagDepth: -1,
+        },
+        customPromptTemplateToggle: '',
     }
 
     const internalState = $state<{
@@ -138,7 +158,7 @@ export function createSqlDatabaseAdapter(
         globalscript: null,
         prompts: null,
         loadedDomains: new Set<string>(),
-        coreData: normalizedCoreData,
+        coreData,
     })
 
     const loadingPromises = new Map<string, Promise<any>>()
@@ -165,7 +185,7 @@ export function createSqlDatabaseAdapter(
         internalState.loadedDomains.add('scripts')
     }
     if (initialData.mainPrompt !== undefined) {
-        internalState.prompts = { ...promptDefaults }
+        internalState.prompts = {}
         for (const k of PROMPT_SETTING_KEYS) {
             if ((initialData as any)[k] !== undefined) {
                 internalState.prompts[k] = (initialData as any)[k]
@@ -373,6 +393,19 @@ export function createSqlDatabaseAdapter(
 
     const adapterTarget: any = {
         isSql: true,
+
+        applyCoreDefaults(normalize: (coreData: Database) => Database): void {
+            normalize(internalState.coreData as Database)
+            promptDefaults = Object.fromEntries(
+                PROMPT_SETTING_KEYS.map((key) => [key, internalState.coreData[key]]),
+            )
+            if (internalState.prompts) {
+                internalState.prompts = { ...promptDefaults, ...internalState.prompts }
+            }
+            for (const key of ['personas', 'botPresets', 'loreBook', 'modules', 'globalscript', ...PROMPT_SETTING_KEYS]) {
+                delete internalState.coreData[key]
+            }
+        },
 
         async ensureLoaded(domain?: string): Promise<void> {
             if (!domain) {

@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { createSqlDatabaseAdapter } from './databaseAdapters.svelte'
+import { normalizeDatabaseDefaults } from './database.svelte'
 
 describe('SQL database defaults', () => {
     it('normalizes an empty core database without eagerly loading deferred domains', async () => {
@@ -10,6 +11,7 @@ describe('SQL database defaults', () => {
         } as any
 
         const adapter = createSqlDatabaseAdapter({} as any, storage)
+        adapter.applyCoreDefaults!(normalizeDatabaseDefaults)
 
         expect(adapter.google).toEqual({ accessToken: '', projectId: '' })
         expect(adapter.openrouterProvider).toEqual({ order: [], only: [], ignore: [] })
@@ -20,6 +22,8 @@ describe('SQL database defaults', () => {
             maxThoughtTagDepth: -1,
         })
         expect(adapter.promptTemplate).toEqual([])
+        expect(adapter.instructChatTemplate).toBe('chatml')
+        expect(adapter.customTokenizer).toBe('tik')
         expect(adapter.getLoadedDomains!()).not.toContain('prompts')
 
         await vi.waitFor(() => expect(storage.loadPrompts).toHaveBeenCalledOnce())
@@ -32,6 +36,7 @@ describe('SQL database defaults', () => {
             fallbackModels: { model: [''] },
             seperateParameters: { memory: {} },
         } as any, {} as any)
+        adapter.applyCoreDefaults!(normalizeDatabaseDefaults)
 
         expect(adapter.openrouterProvider).toEqual({ order: ['anthropic'], only: [], ignore: [] })
         expect(adapter.fallbackModels).toEqual({
