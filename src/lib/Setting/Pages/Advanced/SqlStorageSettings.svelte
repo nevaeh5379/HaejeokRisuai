@@ -22,6 +22,7 @@
         type SqlVendorFormValues,
     } from 'src/ts/storage/nodePostgresStorage'
     import { encodeRisuSaveLegacy } from 'src/ts/storage/risuSave'
+    import { ensureDatabaseFullyLoaded } from 'src/ts/drive/backuplocal'
 
     let config = $state<NodePostgresServerConfig|null>(null)
     let dbConfig = $state<{
@@ -191,8 +192,10 @@
             // 로컬 database.bin 스냅샷 준비 (레거시 호환)
             let legacySnapshotReady = false
             if(config.enabled){
+                const db = getDatabase()
+                await ensureDatabaseFullyLoaded(db)
                 const snapshot = encodeRisuSaveLegacy(
-                    getDatabase({ snapshot: true }),
+                    db,
                     'compression'
                 )
                 await storage.setItem('database/database.bin', snapshot)

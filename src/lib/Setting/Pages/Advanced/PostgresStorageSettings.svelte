@@ -11,6 +11,7 @@
     import { NodeStorage } from 'src/ts/storage/nodeStorage'
     import type { NodePostgresRevision, NodePostgresServerConfig, NodePostgresTokenUsage } from 'src/ts/storage/nodePostgresStorage'
     import { encodeRisuSaveLegacy } from 'src/ts/storage/risuSave'
+    import { ensureDatabaseFullyLoaded } from 'src/ts/drive/backuplocal'
 
     let config = $state<NodePostgresServerConfig|null>(null)
     let enabled = $state(false)
@@ -72,8 +73,10 @@
             const storage = getNodeStorage()
             let legacySnapshotReady = false
             if(config.enabled){
+                const db = getDatabase()
+                await ensureDatabaseFullyLoaded(db)
                 const snapshot = encodeRisuSaveLegacy(
-                    getDatabase({ snapshot: true }),
+                    db,
                     'compression'
                 )
                 await storage.setItem('database/database.bin', snapshot)

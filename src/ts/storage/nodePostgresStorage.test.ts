@@ -398,5 +398,15 @@ describe('NodePostgresStorage browser client', () => {
         expect(db.isDomainLoaded('loreBook')).toBe(true)
         expect(db.loreBook).toHaveLength(1)
         expect(db.loreBook[0].name).toBe('World Lore')
+
+        // Spread operator preserves personas and other domains
+        const spreadDb = { ...db }
+        expect(spreadDb.personas).toBeDefined()
+        expect(spreadDb.personas).toHaveLength(1)
+        expect(spreadDb.personas[0].largePortrait).toBe(false)
+        expect(spreadDb.botPresets).toBeDefined()
+        expect(spreadDb.loreBook).toBeDefined()
+        expect(spreadDb.modules).toBeDefined()
+        expect(spreadDb.globalscript).toBeDefined()
     })
 })

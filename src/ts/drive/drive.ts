@@ -10,6 +10,7 @@ import { hubURL } from "../characterCards";
 import { decodeRisuSave, encodeRisuSaveLegacy } from "../storage/risuSave";
 import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupName, isColdStorageBackupData, listColdDataKeys, setColdStorageItem } from "../process/coldstorage.svelte";
 import { NodeStorage } from "../storage/nodeStorage";
+import { ensureDatabaseFullyLoaded } from "./backuplocal";
 
 export async function checkDriver(type:'save'|'load'|'loadtauri'|'savetauri'|'reftoken'){
     const CLIENT_ID = '580075990041-l26k2d3c0nemmqiu3d3aag01npfrkn76.apps.googleusercontent.com';
@@ -184,7 +185,9 @@ async function backupDrive(ACCESS_TOKEN:string) {
         await createFileInFolder(ACCESS_TOKEN, payload.backupName, payload.encoded)
     }
 
-    const dbData = encodeRisuSaveLegacy(getDatabase(), 'compression')
+    const db = getDatabase()
+    await ensureDatabaseFullyLoaded(db)
+    const dbData = encodeRisuSaveLegacy(db, 'compression')
 
     alertStore.set({
         type: "wait",

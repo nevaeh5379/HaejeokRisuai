@@ -56,10 +56,35 @@ export async function ensureAllPostgresChatMessagesLoaded(db: Database) {
     }
 }
 
+export async function ensureDatabaseFullyLoaded(db: Database) {
+    if (typeof (db as any).ensureLoaded === 'function') {
+        await (db as any).ensureLoaded()
+    }
+    await ensureAllPostgresChatMessagesLoaded(db)
+    if (!db.personas || db.personas.length === 0) {
+        db.personas = [{
+            name: db.username || 'User',
+            icon: db.userIcon || '',
+            personaPrompt: '',
+            note: db.userNote || '',
+            largePortrait: false,
+        }]
+    } else {
+        for (const p of db.personas) {
+            if (p) {
+                p.largePortrait ??= false
+            }
+        }
+    }
+    if (typeof db.selectedPersona !== 'number' || db.selectedPersona < 0 || db.selectedPersona >= db.personas.length) {
+        db.selectedPersona = 0
+    }
+}
+
 export async function SaveLocalBackup(){
     alertWait("Saving local backup...")
     const db = getDatabase()
-    await ensureAllPostgresChatMessagesLoaded(db)
+    await ensureDatabaseFullyLoaded(db)
     const coldStoragePayloads = await collectColdStorageBackupPayloads(db)
     const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
     if(!await confirmIncompleteColdStorageOperation(db, unavailableColdStorageKeys, 'backup')){
@@ -112,6 +137,13 @@ export async function SaveLocalBackup(){
     }
     if (db.customBackground) {
         assetMap.set(db.customBackground, { charName: 'User Settings', assetName: 'Custom Background' })
+    }
+    if (db.personas) {
+        for (const persona of db.personas) {
+            if (persona && persona.icon) {
+                assetMap.set(persona.icon, { charName: 'Persona', assetName: `${persona.name} Icon` })
+            }
+        }
     }
     const missingAssets: string[] = []
 
@@ -289,6 +321,7 @@ export async function SavePartialLocalBackup(){
     
     alertWait("Saving partial local backup...")
     const db = getDatabase()
+    await ensureDatabaseFullyLoaded(db)
     const coldStoragePayloads = await collectColdStorageBackupPayloads(db)
     const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
     if(!await confirmIncompleteColdStorageOperation(db, unavailableColdStorageKeys, 'backup')){

@@ -187,13 +187,17 @@ export function createPostgresDatabaseAdapter(
                 switch (domain) {
                     case 'personas': {
                         const personas = await storage.loadPersonas()
-                        internalState.personas = (personas && personas.length > 0) ? personas : [{
+                        const mappedPersonas = (personas && personas.length > 0) ? personas.map((p) => ({
+                            ...p,
+                            largePortrait: p.largePortrait ?? false,
+                        })) : [{
                             name: internalState.coreData.username || 'User',
                             icon: internalState.coreData.userIcon || '',
                             personaPrompt: '',
                             note: internalState.coreData.userNote || '',
                             largePortrait: false,
                         }]
+                        internalState.personas = mappedPersonas
                         internalState.loadedDomains.add('personas')
                         primeRootSetting(storage.getCache(), 'personas', internalState.personas)
                         return internalState.personas
@@ -447,13 +451,13 @@ export function createPostgresDatabaseAdapter(
 
         ownKeys(target) {
             const keys = new Set<string>([...Object.keys(target), ...Object.keys(internalState.coreData)])
-            if (internalState.loadedDomains.has('personas')) keys.add('personas')
-            if (internalState.loadedDomains.has('botPresets')) keys.add('botPresets')
-            if (internalState.loadedDomains.has('loreBook')) keys.add('loreBook')
-            if (internalState.loadedDomains.has('modules')) keys.add('modules')
-            if (internalState.loadedDomains.has('scripts')) keys.add('globalscript')
-            if (internalState.loadedDomains.has('prompts') && internalState.prompts) {
-                for (const k of Object.keys(internalState.prompts)) keys.add(k)
+            keys.add('personas')
+            keys.add('botPresets')
+            keys.add('loreBook')
+            keys.add('modules')
+            keys.add('globalscript')
+            for (const k of PROMPT_SETTING_KEYS) {
+                keys.add(k)
             }
             return Array.from(keys)
         },
@@ -463,23 +467,23 @@ export function createPostgresDatabaseAdapter(
                 return Reflect.getOwnPropertyDescriptor(target, prop)
             }
             if (typeof prop === 'string') {
-                if (prop === 'personas' && internalState.loadedDomains.has('personas')) {
-                    return { value: internalState.personas, writable: true, enumerable: true, configurable: true }
+                if (prop === 'personas') {
+                    return { value: (proxy as any).personas, writable: true, enumerable: true, configurable: true }
                 }
-                if (prop === 'botPresets' && internalState.loadedDomains.has('botPresets')) {
-                    return { value: internalState.botPresets, writable: true, enumerable: true, configurable: true }
+                if (prop === 'botPresets') {
+                    return { value: (proxy as any).botPresets, writable: true, enumerable: true, configurable: true }
                 }
-                if (prop === 'loreBook' && internalState.loadedDomains.has('loreBook')) {
-                    return { value: internalState.loreBook, writable: true, enumerable: true, configurable: true }
+                if (prop === 'loreBook') {
+                    return { value: (proxy as any).loreBook, writable: true, enumerable: true, configurable: true }
                 }
-                if (prop === 'modules' && internalState.loadedDomains.has('modules')) {
-                    return { value: internalState.modules, writable: true, enumerable: true, configurable: true }
+                if (prop === 'modules') {
+                    return { value: (proxy as any).modules, writable: true, enumerable: true, configurable: true }
                 }
-                if (prop === 'globalscript' && internalState.loadedDomains.has('scripts')) {
-                    return { value: internalState.globalscript, writable: true, enumerable: true, configurable: true }
+                if (prop === 'globalscript') {
+                    return { value: (proxy as any).globalscript, writable: true, enumerable: true, configurable: true }
                 }
-                if (PROMPT_SETTING_KEYS.includes(prop as any) && internalState.loadedDomains.has('prompts') && internalState.prompts) {
-                    return { value: internalState.prompts[prop], writable: true, enumerable: true, configurable: true }
+                if (PROMPT_SETTING_KEYS.includes(prop as any)) {
+                    return { value: (proxy as any)[prop], writable: true, enumerable: true, configurable: true }
                 }
             }
             return Reflect.getOwnPropertyDescriptor(internalState.coreData, prop)

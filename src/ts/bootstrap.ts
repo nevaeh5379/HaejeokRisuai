@@ -667,10 +667,25 @@ async function checkNewFormat(): Promise<void> {
 
     db.personas = (db.personas ?? []).map((v) => {
         v.id ??= uuidv4()
+        v.largePortrait ??= false
         return v
     }).filter((v) => {
         return v !== null && v !== undefined;
     });
+
+    if (db.personas.length === 0) {
+        db.personas.push({
+            name: db.username || 'User',
+            icon: db.userIcon || '',
+            personaPrompt: '',
+            note: db.userNote || '',
+            largePortrait: false,
+            id: uuidv4()
+        })
+    }
+    if (typeof db.selectedPersona !== 'number' || db.selectedPersona < 0 || db.selectedPersona >= db.personas.length) {
+        db.selectedPersona = 0
+    }
 
     if (!db.formatversion) {
         function checkClean(data: string) {
