@@ -34,12 +34,7 @@
     User2Icon,
     SearchIcon,
   } from "@lucide/svelte";
-    import {
-  addCharacter,
-    changeChar,
-    getCharImage,
-  } from "../../ts/characters";
-    import CharConfig from "./CharConfig.svelte";
+    import { getCharImage } from '../../ts/characterImage';
     import { language } from "../../lang";
     import isEqual from "lodash/isEqual";
     import SidebarAvatar from "./SidebarAvatar.svelte";
@@ -48,17 +43,30 @@
     import { v4 } from "uuid";
     import { checkCharOrder, getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
     import { alertInput, alertSelect } from "src/ts/alert";
-    import SideChatList from "./SideChatList.svelte";
-    import { ConnectionIsHost, ConnectionOpenStore, RoomIdStore } from "src/ts/sync/multiuser";
+    import { ConnectionIsHost, ConnectionOpenStore, RoomIdStore } from 'src/ts/sync/multiuserState';
   import { sideBarSize } from "src/ts/gui/guisize";
-  import DevTool from "./DevTool.svelte";
-    import QuickSettingsGui from "../Others/QuickSettingsGUI.svelte";
+    import LazyComponent from '../Others/LazyComponent.svelte';
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
   let sideBarMode = $state(0);
   let editMode = $state(false);
   let menuMode = $state(0);
   let devTool = $state(false)
+
+  const sideChatListLoader = () => import('./SideChatListForCurrent.svelte')
+  const charConfigLoader = () => import('./CharConfig.svelte')
+  const devToolLoader = () => import('./DevTool.svelte')
+  const quickSettingsLoader = () => import('../Others/QuickSettingsGUI.svelte')
+
+  async function changeCharacter(index: number) {
+    const { changeChar } = await import('../../ts/characters')
+    changeChar(index, { reseter })
+  }
+
+  async function addNewCharacter() {
+    const { addCharacter } = await import('../../ts/characters')
+    addCharacter({ reseter })
+  }
 
   function reseter() {
     menuMode = 0;
@@ -588,13 +596,13 @@
             role="button" tabindex="0"
             onclick={() => {
               if(char.type === "normal"){
-                changeChar(char.index, {reseter});
+                void changeCharacter(char.index);
               }
             }}
             onkeydown={(e) => {
               if (e.key === "Enter") {
                 if(char.type === "normal"){
-                  changeChar(char.index, {reseter});
+                  void changeCharacter(char.index);
                 }
               }
             }}
@@ -751,13 +759,13 @@
                   role="button" tabindex="0"
                   onclick={() => {
                     if(char2.type === "normal"){
-                      changeChar(char2.index, {reseter});
+                      void changeCharacter(char2.index);
                     }
                   }}
                   onkeydown={(e) => {
                     if (e.key === "Enter") {
                       if(char2.type === "normal"){
-                        changeChar(char2.index, {reseter});
+                        void changeCharacter(char2.index);
                       }
                     }
                   }}
@@ -821,7 +829,7 @@
     <div class="flex flex-col items-center gap-2 px-2">
       <BaseRoundedButton
         onClick={async () => {
-          addCharacter({reseter}) 
+          void addNewCharacter()
         }}
         ><svg viewBox="0 0 24 24" width="1.2em" height="1.2em"
           ><path
@@ -950,7 +958,7 @@
         <span class="text-xs text-textcolor2">Select a bot to start chatting</span>
       </div>
     {:else if DBState.db.characters[$selectedCharID]?.chaId === '§playground'}
-      <SideChatList bind:chara={ DBState.db.characters[$selectedCharID]} />
+      <LazyComponent loader={sideChatListLoader} />
     {:else if $ConnectionOpenStore}
       <div class="flex flex-col">
         <h1 class="text-xl">{language.connectionOpen}</h1>
@@ -986,13 +994,13 @@
         {/if}
       </div>
       {#if QuickSettings.open}
-        <QuickSettingsGui />
+        <LazyComponent loader={quickSettingsLoader} />
       {:else if devTool}
-        <DevTool />
+        <LazyComponent loader={devToolLoader} />
       {:else if $botMakerMode}
-        <CharConfig />
+        <LazyComponent loader={charConfigLoader} />
       {:else}
-        <SideChatList bind:chara={ DBState.db.characters[$selectedCharID]} />
+        <LazyComponent loader={sideChatListLoader} />
       {/if}
     {/if}
   {/if}

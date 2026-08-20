@@ -83,7 +83,17 @@ export function sqlCharacterData(value: character | groupChat): unknown {
 }
 
 export function sqlChatData(value: Chat): unknown {
-    const { message: _messages, id: _id, messagesLoaded: _messagesLoaded, detailsLoaded: _detailsLoaded, ...data } = value
+    const {
+        message: _messages,
+        id: _id,
+        messagesLoaded: _messagesLoaded,
+        messageOffset: _messageOffset,
+        messageTotal: _messageTotal,
+        messagesFullyLoaded: _messagesFullyLoaded,
+        preventMessageCompaction: _preventMessageCompaction,
+        detailsLoaded: _detailsLoaded,
+        ...data
+    } = value
     return data
 }
 

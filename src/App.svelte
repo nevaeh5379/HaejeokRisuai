@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, saving, AccountWarning } from './ts/stores.svelte';
+    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, saving, AccountWarning, selectedCharID, PlaygroundStore } from './ts/stores.svelte';
     import { DBState } from './ts/stores.svelte';
     import { showRealmInfoStore } from './ts/realmStore';
     import { isNodeServer } from './ts/platform';
@@ -30,6 +30,7 @@
     const gridLoader = () => import('./lib/Others/GridCatalog.svelte')
     const sidebarLoader = () => import('./lib/SideBars/Sidebar.svelte')
     const chatScreenLoader = () => import('./lib/ChatScreens/ChatScreen.svelte')
+    const mainMenuLoader = () => import('./lib/UI/HomeScreen.svelte')
     const alertLoader = () => import('./lib/Others/AlertComp.svelte')
     const realmFrameLoader = () => import('./lib/UI/Realm/RealmFrame.svelte')
     const botPresetLoader = () => import('./lib/Setting/botpreset.svelte')
@@ -253,7 +254,11 @@
 
                 </div>
             {/if}
-            <LazyComponent loader={chatScreenLoader} />
+            {#if $selectedCharID < 0 && $PlaygroundStore === 0}
+                <LazyComponent loader={mainMenuLoader} />
+            {:else}
+                <LazyComponent loader={chatScreenLoader} />
+            {/if}
         {/if}
     {/if}
     {#if $alertStore.type !== 'none'}

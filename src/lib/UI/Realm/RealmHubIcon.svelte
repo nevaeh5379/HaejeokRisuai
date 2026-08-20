@@ -1,7 +1,8 @@
 <script lang="ts">
     import { BookIcon, ImageIcon, SmileIcon } from "@lucide/svelte";
     import { alertNormal } from "src/ts/alert";
-    import { hubURL, type hubType } from "src/ts/characterCards";
+    import { hubURL } from 'src/ts/hub';
+    import type { hubType } from 'src/ts/hubCatalog';
     import { DBState } from "src/ts/stores.svelte";
     import { parseMultilangString } from "src/ts/util";
 

@@ -1,6 +1,6 @@
 import { showRealmInfoStore } from './realmStore'
 import { alertCardExport, alertConfirm, alertError, alertInput, alertMd, alertNormal, alertStore, alertTOS, alertWait } from "./alert"
-import { defaultSdDataFunc, type character, setDatabase, type customscript, type loreSettings, type loreBook, type triggerscript, importPreset, type groupChat, setCurrentCharacter, getCurrentCharacter, getDatabase, setDatabaseLite, appVer } from "./storage/database.svelte"
+import { defaultSdDataFunc, type character, setDatabase, type customscript, type loreSettings, type loreBook, type triggerscript, importPreset, type groupChat, setCurrentCharacter, getCurrentCharacter, getDatabase, setDatabaseLite } from "./storage/database.svelte"
 import { checkNullish, decryptBuffer, isKnownUri, selectFileByDom, sleep } from "./util"
 import { language } from "src/lang"
 import { v4 as uuidv4, v4 } from 'uuid';
@@ -9,7 +9,7 @@ import { AppendableBuffer, BlankWriter, checkCharOrder, downloadFile, forageStor
 import { isTauri, isNodeServer } from "src/ts/platform"
 import { compressImage, getImageType } from "./media"
 import { DBState, SettingsMenuIndex, ShowRealmFrameStore, selectedCharID, settingsOpen } from "./stores.svelte"
-import { hasher } from "./parser/parser.svelte"
+import { hasher } from "./hash"
 import { type CharacterCardV3, type LorebookEntry } from '@risuai/ccardlib'
 import { reencodeImage } from "./process/files/inlays"
 import { PngChunk } from "./pngChunk"
@@ -20,15 +20,9 @@ import { readFile } from "@tauri-apps/plugin-fs"
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { AccountStorage } from "./storage/accountStorage"
 import { NodeStorage } from "./storage/nodeStorage"
+import { hubURL } from './hub'
 
-
-const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz';
-const NIGHTLY_HUB_URL = 'https://nightly.sv.risuai.xyz'
-export const hubURL = isNodeServer
-    ? '/hub-proxy'
-    : ((typeof window !== 'undefined' && window.location?.hostname === 'nightly.risuai.xyz') || (typeof localStorage !== 'undefined' && localStorage?.getItem('hub') === 'nightly'))
-    ? NIGHTLY_HUB_URL 
-    : EXTERNAL_HUB_URL;
+export { hubURL }
 
 export async function importCharacter() {
     try {
@@ -1760,57 +1754,8 @@ export async function shareRisuHub2(char:character, arg:{
 
 }
 
-export type hubType = {
-    name:string
-    desc: string
-    download: string,
-    id: string,
-    img: string
-    tags: string[],
-    viewScreen: "none" | "emotion" | "imggen"
-    hasLore:boolean
-    hasEmotion:boolean
-    hasAsset:boolean
-    creator?:string
-    creatorName?:string
-    hot:number
-    license:string
-    authorname?:string
-    original?:string
-    type:string
-    hidden?:boolean
-}
-
-export let hubAdditionalHTML = ''
-
-export async function getRisuHub(arg:{
-    search:string,
-    page:number,
-    nsfw:boolean
-    sort:string
-}):Promise<hubType[]> {
-    try {
-        arg.search += ' __shared'
-        const stringArg = `search==${arg.search}&&page==${arg.page}&&nsfw==${arg.nsfw}&&sort==${arg.sort}&&web==${(!isNodeServer && !isTauri) ? 'web' : 'other'}`
-
-        const da = await fetch(hubURL + '/realm/' + encodeURIComponent(stringArg) + "?cache=30", {
-            headers: {
-                "x-risuai-info": appVer + ';' + (isNodeServer ? 'node' : (isTauri ? 'tauri' : 'web'))
-            }
-        })
-        if(da.status !== 200){
-            return []
-        }
-        const jso = await da.json()
-        if(Array.isArray(jso)){
-            return jso
-        }
-        hubAdditionalHTML = jso.additionalHTML || hubAdditionalHTML
-        return jso.cards
-    } catch (error) {
-        return[]
-    }
-}
+export { getRisuHub, hubAdditionalHTML } from './hubCatalog'
+export type { hubType } from './hubCatalog'
 
 export async function downloadRisuHub(id:string, arg:{
     forceRedirect?: boolean

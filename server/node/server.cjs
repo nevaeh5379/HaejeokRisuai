@@ -36,6 +36,7 @@ const { promisify } = require('util');
 const zlib = require('zlib');
 const { gzip } = require('zlib');
 const { createJsonStream } = require('./streamJson.cjs');
+const { normalizePageInteger, paginateMessages } = require('./messagePagination.cjs');
 const {
     PostgresPayloadError,
     PostgresRevisionConflictError,
@@ -3115,6 +3116,15 @@ app.get('/api/database-v2/chats/:chatId', authenticatedRouteLimiter, async (req,
             res.status(404).send({ error: 'Chat not found', code: 'chat_not_found' });
             return;
         }
+        if (req.query.messageLimit !== undefined) {
+            const page = paginateMessages(chat.message, {
+                limit: normalizePageInteger(req.query.messageLimit, undefined),
+            });
+            chat.message = page.messages;
+            chat.messageOffset = page.offset;
+            chat.messageTotal = page.total;
+            chat.messagesFullyLoaded = !page.hasMore;
+        }
         await sendCompressedJson(req, res, { chat });
     } catch (error) {
         if (error instanceof PostgresPayloadError) {
@@ -3139,6 +3149,14 @@ app.get('/api/database-v2/chats/:chatId/messages', authenticatedRouteLimiter, as
 
     try {
         const messages = await postgresStorage.loadChatMessages(req.params.chatId);
+        if (req.query.limit !== undefined || req.query.before !== undefined) {
+            const page = paginateMessages(messages, {
+                before: normalizePageInteger(req.query.before, undefined),
+                limit: normalizePageInteger(req.query.limit, undefined),
+            });
+            await sendCompressedJson(req, res, page);
+            return;
+        }
         await sendCompressedJson(req, res, { messages });
     } catch (error) {
         if (error instanceof PostgresPayloadError) {

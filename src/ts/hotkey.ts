@@ -5,7 +5,6 @@ import { alertStore, DBState, loadoutModalStore, MobileGUIStack, MobileSideBar, 
 import { language } from "src/lang"
 import { updateTextThemeAndCSS } from "./gui/colorscheme"
 import { defaultHotkeys } from "./defaulthotkeys"
-import { doingChat, previewBody, sendChat } from "./process/index.svelte"
 import { RISU_SIDEBAR_DRAG_TYPE } from "./dragTypes"
 
 export function initHotkey(){
@@ -126,20 +125,21 @@ export function initHotkey(){
                     break
                 }
                 case 'previewRequest':{
-                    if(get(doingChat) && get(selectedCharID) !== -1){
+                    const process = await import('./process/index.svelte')
+                    if(get(process.doingChat) && get(selectedCharID) !== -1){
                         return false
                     }
                     alertWait("Loading...")
                     ev.preventDefault()
                     ev.stopPropagation()
-                    await sendChat(-1, {
+                    await process.sendChat(-1, {
                         previewPrompt: true
                     })
 
                     let md = ''
                     md += '### Prompt\n'
-                    md += '```json\n' + JSON.stringify(JSON.parse(previewBody), null, 2).replaceAll('```', '\\`\\`\\`') + '\n```\n'
-                    doingChat.set(false)
+                    md += '```json\n' + JSON.stringify(JSON.parse(process.previewBody), null, 2).replaceAll('```', '\\`\\`\\`') + '\n```\n'
+                    process.doingChat.set(false)
                     alertMd(md)
                     return
                 }

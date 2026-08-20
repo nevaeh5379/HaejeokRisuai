@@ -18,10 +18,9 @@ import { setDatabase, type Database, defaultSdDataFunc, getDatabase, appVer, get
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, saving } from "./stores.svelte";
-import { loadPlugins } from "./plugins/plugins.svelte";
 import { alertConfirm, alertError, alertMd, alertNormal, alertSelect, alertTOS, waitAlert } from "./alert";
-import { hasher } from "./parser/parser.svelte";
-import { characterURLImport, hubURL } from "./characterCards";
+import { hasher } from "./hash";
+import { hubURL } from './hub';
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { loadRisuAccountData } from "./drive/accounter";
 import { decodeRisuSave, encodeRisuSaveLegacy, RisuSaveEncoder } from "./storage/risuSave";
@@ -33,12 +32,9 @@ import { listen } from '@tauri-apps/api/event'
 import { language } from "src/lang";
 import { startObserveDom } from "./observer.svelte";
 import { updateGuisize } from "./gui/guisize";
-import { updateLorebooks } from "./characters";
 import { initMobileGesture } from "./hotkey";
 import { fetch as TauriHTTPFetch } from '@tauri-apps/plugin-http';
-import { moduleUpdate } from "./process/modules";
 import type { AccountStorage } from "./storage/accountStorage";
-import { getColdStorageItem } from "./process/coldstorage.svelte";
 import { isTauri, isNodeServer } from "./platform";
 import { isLocalNetworkUrl } from "./network/localNetwork";
 import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from "./network/proxyJobWs";
@@ -49,6 +45,8 @@ import {
 import { generateClientThumbnail } from "./media/thumbnail";
 import { getMimeType } from "./media/mimeType";
 import { BoundedCache } from "./memory/boundedCache";
+import { releaseInactiveChatMessages } from "./storage/dataSession.svelte";
+import { isMemoryConstrainedDevice } from "./memory/deviceMemory";
 
 export const forageStorage = new AutoStorage()
 
@@ -113,8 +111,9 @@ let checkedPaths: string[] = []
 const revokeObjectUrl = (url: string) => {
     if (url.startsWith('blob:')) URL.revokeObjectURL(url)
 }
+const constrainedMemory = isMemoryConstrainedDevice()
 const tauriThumbnailUrls = new BoundedCache<string, string>({
-    maxEntries: 96,
+    maxEntries: constrainedMemory ? 24 : 96,
     onEvict: revokeObjectUrl
 })
 
@@ -127,8 +126,8 @@ const tauriThumbnailUrls = new BoundedCache<string, string>({
 class ThumbnailBatchLoader {
     private cacheWeights = new Map<string, number>()
     private cache = new BoundedCache<string, string>({
-        maxEntries: 96,
-        maxWeight: 8 * 1024 * 1024,
+        maxEntries: constrainedMemory ? 24 : 96,
+        maxWeight: (constrainedMemory ? 3 : 8) * 1024 * 1024,
         weigh: (_url, loc) => this.cacheWeights.get(loc) ?? 1,
         onEvict: (url, loc) => {
             this.cacheWeights.delete(loc)
@@ -274,8 +273,8 @@ export function invalidateThumbnailCache(loc?: string) {
 const registeredSwCaches = new Set<string>()
 const browserAssetWeights = new Map<string, number>()
 const browserAssetUrls = new BoundedCache<string, string>({
-    maxEntries: 64,
-    maxWeight: 24 * 1024 * 1024,
+    maxEntries: constrainedMemory ? 16 : 64,
+    maxWeight: (constrainedMemory ? 8 : 24) * 1024 * 1024,
     weigh: (_url, key) => browserAssetWeights.get(key) ?? 1,
     onEvict: (url, key) => {
         browserAssetWeights.delete(key)
@@ -884,6 +883,7 @@ export async function getUncleanables(db: Database, uptype: 'basename' | 'pure' 
     if (db.characters) {
         for(let cha of db.characters){
             if(cha?.coldstorage){
+                const { getColdStorageItem } = await import('./process/coldstorage.svelte')
                 const coldData = await getColdStorageItem(cha.coldstorage!)
                 if(coldData?.character && coldData.character.chaId === cha.chaId){
                     cha = coldData.character
@@ -2465,8 +2465,10 @@ export function changeChatTo(IdOrIndex: string | number) {
         return
     }
 
+    const nextChat = DBState.db.characters[selIdState.selId].chats[index]
     DBState.db.characters[selIdState.selId].chatPage = index
     ReloadGUIPointer.set(Math.random())
+    releaseInactiveChatMessages(nextChat?.id)
 }
 
 export function createChatCopyName(originalName: string,type:'Copy'|'Branch'): string {

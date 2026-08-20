@@ -2,9 +2,11 @@ import { getDatabase } from "./database.svelte";
 import { downloadFile } from "../globalApi.svelte";
 import { alertNormal } from "../alert";
 import { language } from "src/lang";
+import { ensureDatabaseFullyLoaded } from "../drive/backuplocal";
 
 export async function exportAsDataset(){
     const db = getDatabase()
+    await ensureDatabaseFullyLoaded(db)
 
     let dataset = []
     for(const char of db.characters){

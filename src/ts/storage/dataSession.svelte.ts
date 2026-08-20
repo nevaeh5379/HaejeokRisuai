@@ -15,6 +15,7 @@ import {
     type SqlMessageUpsert,
 } from './sqlCommit'
 import { saving } from '../stores.svelte'
+import { isMemoryConstrainedDevice } from '../memory/deviceMemory'
 
 type Disposer = () => void
 
@@ -47,6 +48,20 @@ function snapshotWithout(value: Record<string, any>, excluded: Set<string>): Rec
         if (!excluded.has(key)) result[key] = $state.snapshot(value[key])
     }
     return result
+}
+
+function snapshotFingerprint(value: Record<string, unknown>): string {
+    try {
+        const serialized = JSON.stringify(value)
+        let hash = 2166136261
+        for (let index = 0; index < serialized.length; index++) {
+            hash ^= serialized.charCodeAt(index)
+            hash = Math.imul(hash, 16777619)
+        }
+        return `${serialized.length}:${hash >>> 0}`
+    } catch {
+        return ''
+    }
 }
 
 function trackDeep(value: unknown, seen = new WeakSet<object>()): void {
@@ -128,6 +143,9 @@ export class DataSession {
         deleteMessage: (chatId: string, messageId: string) => {
             const found = this.findChat(chatId)
             if (!found) throw new Error(`Unknown chat: ${chatId}`)
+            if (found.chat.messagesFullyLoaded === false) {
+                throw new Error(`Chat must be fully loaded before deleting messages: ${chatId}`)
+            }
             found.chat.message = (found.chat.message ?? []).filter((message) => message.chatId !== messageId)
             this.queueMessageManifest(found.chat)
         },
@@ -138,6 +156,8 @@ export class DataSession {
     private flushTimer: ReturnType<typeof setTimeout> | null = null
     private flushPromise: Promise<void> | null = null
     private disposed = false
+    private releaseRequestId = 0
+    private compactionRequestIds = new Map<string, number>()
     private rootDispose: Disposer | null = null
     private rootWatchers = new Map<string, Disposer>()
     private characterWatchers = new Map<string, { value: character | groupChat, dispose: Disposer }>()
@@ -194,6 +214,69 @@ export class DataSession {
             if (!conflicted && this.hasPending()) this.scheduleFlush()
         })
         return this.flushPromise
+    }
+
+    /**
+     * Drops message bodies for chats that are no longer visible. SQL-backed
+     * chats can hydrate them again on demand, so retaining every chat visited
+     * during a session only grows the browser heap. Flush first so legacy
+     * reactive edits have been snapshotted before their objects are released.
+     */
+    async releaseInactiveChatMessages(activeChatId?: string): Promise<void> {
+        const requestId = ++this.releaseRequestId
+        await this.flush()
+        if (this.disposed || requestId !== this.releaseRequestId) return
+
+        for (const character of this.database.characters ?? []) {
+            for (const chat of character.chats ?? []) {
+                if (!chat.id || chat.id === activeChatId || chat.messagesLoaded === false) continue
+
+                for (const [key, watcher] of this.messageWatchers) {
+                    if (watcher.chatId === chat.id) {
+                        watcher.dispose()
+                        this.messageWatchers.delete(key)
+                    }
+                }
+
+                // Mark unloaded before clearing: the chat observer must not
+                // interpret this memory eviction as deleting every message.
+                chat.messagesLoaded = false
+                chat.messageOffset = undefined
+                chat.messageTotal = undefined
+                chat.messagesFullyLoaded = false
+                chat.message = []
+            }
+        }
+    }
+
+    async compactChatMessages(chatId: string, keep = isMemoryConstrainedDevice() ? 24 : 60): Promise<void> {
+        const requestId = (this.compactionRequestIds.get(chatId) ?? 0) + 1
+        this.compactionRequestIds.set(chatId, requestId)
+        await this.flush()
+        if (this.disposed || this.compactionRequestIds.get(chatId) !== requestId) return
+
+        const found = this.findChat(chatId)
+        const chat = found?.chat
+        if (!chat || chat.preventMessageCompaction || chat.messagesFullyLoaded === false || chat.message.length <= keep) return
+
+        const removed = chat.message.slice(0, -keep)
+        const removedIds = new Set(removed.map((message) => message.chatId).filter(Boolean))
+        for (const [key, watcher] of this.messageWatchers) {
+            if (watcher.chatId === chatId && removedIds.has(watcher.value.chatId)) {
+                watcher.dispose()
+                this.messageWatchers.delete(key)
+            }
+        }
+
+        const total = chat.message.length
+        chat.message = chat.message.slice(-keep)
+        chat.messageOffset = total - chat.message.length
+        chat.messageTotal = total
+        chat.messagesFullyLoaded = false
+    }
+
+    cancelChatMessageCompaction(chatId: string): void {
+        this.compactionRequestIds.set(chatId, (this.compactionRequestIds.get(chatId) ?? 0) + 1)
     }
 
     dispose(): void {
@@ -262,7 +345,8 @@ export class DataSession {
         const keys = adapter.getLoadedRootKeys?.() ?? Object.keys(this.database)
         return keys.filter((key) => key !== 'characters' && key !== 'isSql' &&
             key !== 'ensureLoaded' && key !== 'isDomainLoaded' && key !== 'getLoadedDomains' &&
-            key !== 'getLoadedRootKeys' && key !== 'ensureCharacterDetails' && key !== 'ensureChatMessages')
+            key !== 'getLoadedRootKeys' && key !== 'ensureCharacterDetails' && key !== 'ensureChatMessages' &&
+            key !== 'loadOlderChatMessages')
     }
 
     private watchRoot(key: string): void {
@@ -287,34 +371,47 @@ export class DataSession {
 
         let initial = true
         let chatManifestInitial = true
+        let previousChatIds: string[] = []
+        let previousCharacterData = ''
         const dispose = $effect.root(() => {
             $effect(() => {
                 if (value.detailsLoaded === false) return
+                const data = snapshotWithout(value, new Set(['chats', 'chaId', 'detailsLoaded']))
+                const fingerprint = snapshotFingerprint(data)
                 if (initial) {
                     trackWithout(value, new Set(['chats', 'chaId', 'detailsLoaded']))
+                    previousCharacterData = fingerprint
                     initial = false
                     return
                 }
-                const data = snapshotWithout(value, new Set(['chats', 'chaId', 'detailsLoaded']))
-                this.queueCharacterData(value, data)
+                if (fingerprint !== previousCharacterData) {
+                    previousCharacterData = fingerprint
+                    this.queueCharacterData(value, data)
+                }
             })
             $effect(() => {
                 const chats = value.chats ?? []
                 for (const chat of chats) chat.id ||= uuidv4()
                 const ids = chats.map((chat) => chat.id!)
+                const manifestChanged = ids.length !== previousChatIds.length ||
+                    ids.some((id, index) => id !== previousChatIds[index])
                 const current = new Set(ids)
-                for (const chat of chats) this.watchChat(value, chat, isNew && chatManifestInitial)
+                for (const chat of chats) {
+                    const shouldQueueAsNew = (isNew && chatManifestInitial) ||
+                        (!chatManifestInitial && !this.chatWatchers.has(chat.id!))
+                    this.watchChat(value, chat, shouldQueueAsNew)
+                }
                 for (const [chatId, watcher] of this.chatWatchers) {
                     if (watcher.parentId === id && !current.has(chatId)) {
                         watcher.dispose()
                         this.chatWatchers.delete(chatId)
                     }
                 }
-                if (!chatManifestInitial) {
+                if (!chatManifestInitial && manifestChanged) {
                     this.pending.chatManifests.set(id, [...ids])
-                    for (const chat of chats) this.queueChat(value, chat)
                     this.scheduleFlush()
                 }
+                previousChatIds = [...ids]
                 chatManifestInitial = false
             })
         })
@@ -330,25 +427,40 @@ export class DataSession {
 
         let initial = true
         let messagesWereLoaded = chat.messagesLoaded !== false
+        let messagesWereFullyLoaded = chat.messagesFullyLoaded !== false
+        let previousMessageOffset = chat.messageOffset ?? 0
         let messageManifestInitial = true
+        let previousChatData = ''
+        const transientChatKeys = new Set([
+            'message', 'id', 'messagesLoaded', 'messageOffset', 'messageTotal',
+            'messagesFullyLoaded', 'preventMessageCompaction', 'detailsLoaded',
+        ])
         const dispose = $effect.root(() => {
             $effect(() => {
+                const data = snapshotWithout(chat, transientChatKeys)
+                const fingerprint = snapshotFingerprint(data)
                 if (initial) {
-                    trackWithout(chat, new Set(['message', 'id', 'messagesLoaded', 'detailsLoaded']))
+                    trackWithout(chat, transientChatKeys)
+                    previousChatData = fingerprint
                     initial = false
                     return
                 }
-                const data = snapshotWithout(chat, new Set(['message', 'id', 'messagesLoaded', 'detailsLoaded']))
-                this.queueChatData(parent, chat, data)
+                if (fingerprint !== previousChatData) {
+                    previousChatData = fingerprint
+                    this.queueChatData(parent, chat, data)
+                }
             })
             $effect(() => {
                 const loaded = chat.messagesLoaded !== false
+                const fullyLoaded = chat.messagesFullyLoaded !== false
+                const messageOffset = chat.messageOffset ?? 0
                 const messages = loaded ? (chat.message ?? []) : []
                 for (const message of messages) message.chatId ||= uuidv4()
                 const ids = messages.map((message) => message.chatId!)
                 const current = new Set(ids)
                 if (loaded) {
-                    const hydrating = !messagesWereLoaded
+                    const hydrating = !messagesWereLoaded || (messagesWereFullyLoaded !== fullyLoaded) ||
+                        (!fullyLoaded && messageOffset < previousMessageOffset)
                     for (const message of messages) this.watchMessage(chat, message, isNew && messageManifestInitial)
                     for (const [key, watcher] of this.messageWatchers) {
                         if (watcher.chatId === id && !current.has(key.slice(id.length + 1))) {
@@ -357,13 +469,15 @@ export class DataSession {
                         }
                     }
                     if (!messageManifestInitial && !hydrating) {
-                        this.pending.messageManifests.set(id, [...ids])
+                        if (fullyLoaded) this.pending.messageManifests.set(id, [...ids])
                         for (const message of messages) this.queueMessage(chat, message)
                         this.scheduleFlush()
                     }
                     messageManifestInitial = false
                 }
                 messagesWereLoaded = loaded
+                messagesWereFullyLoaded = fullyLoaded
+                previousMessageOffset = messageOffset
             })
         })
         this.chatWatchers.set(id, { value: chat, parentId: parent.chaId, dispose })
@@ -431,14 +545,16 @@ export class DataSession {
     }
 
     private queueMessageData(chat: Chat, message: Message, data: unknown): void {
-        const position = chat.message?.findIndex((item) => item.chatId === message.chatId) ?? -1
-        if (position < 0) return
+        const localPosition = chat.message?.findIndex((item) => item.chatId === message.chatId) ?? -1
+        if (localPosition < 0) return
+        const position = (chat.messagesFullyLoaded === false ? (chat.messageOffset ?? 0) : 0) + localPosition
         const key = messageKey(chat.id!, message.chatId!)
         this.pending.messages.set(key, { id: message.chatId!, chatId: chat.id!, position, data })
         this.scheduleFlush()
     }
 
     private queueMessageManifest(chat: Chat): void {
+        if (chat.messagesFullyLoaded === false) return
         this.pending.messageManifests.set(chat.id!, (chat.message ?? []).map((message) => message.chatId!))
         this.scheduleFlush()
     }
@@ -526,4 +642,16 @@ export function replaceActiveDataSession(database: Database): Promise<void> {
 
 export async function flushDataSession(): Promise<void> {
     await activeDataSession?.flush()
+}
+
+export function releaseInactiveChatMessages(activeChatId?: string): void {
+    void activeDataSession?.releaseInactiveChatMessages(activeChatId)
+}
+
+export function compactChatMessages(chatId: string): void {
+    void activeDataSession?.compactChatMessages(chatId)
+}
+
+export function cancelChatMessageCompaction(chatId: string): void {
+    activeDataSession?.cancelChatMessageCompaction(chatId)
 }

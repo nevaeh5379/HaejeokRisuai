@@ -261,7 +261,10 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
     nowChatroom.lastInteraction = Date.now()
     selectedChat = nowChatroom.chatPage
-    await preLoadChat(selectedChar, selectedChat)
+    // Prompt construction, scripts, and memory systems require absolute chat
+    // history. The chat screen itself stays paged, but generation hydrates the
+    // complete message list immediately before processing.
+    await preLoadChat(selectedChar, selectedChat, { full: true })
     nowChatroom.chats[nowChatroom.chatPage].message = nowChatroom.chats[nowChatroom.chatPage].message.map((v) => {
         v.chatId = v.chatId ?? v4()
         return v

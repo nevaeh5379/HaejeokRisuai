@@ -268,7 +268,7 @@ export class TauriSqliteStorage implements ISqlStorage {
         return fullChar
     }
 
-    async loadChat(chatId: string): Promise<Chat | null> {
+    async loadChat(chatId: string, options?: { messageLimit?: number }): Promise<Chat | null> {
         const chatRow = await this.selectOne<{
             id: string; name: string; note: string; folder_id: string | null;
             last_message_time: number | null; data: string | null
@@ -282,10 +282,17 @@ export class TauriSqliteStorage implements ISqlStorage {
         chatData.folderId = chatRow.folder_id ?? undefined
         chatData.lastDate = chatRow.last_message_time ?? undefined
 
-        const msgRows = await this.selectRows<{ data: string }>(
-            'SELECT data FROM messages WHERE chat_id = ? ORDER BY position', [chatId],
-        )
+        const totalRow = await this.selectOne<{ total: number }>('SELECT COUNT(*) AS total FROM messages WHERE chat_id = ?', [chatId])
+        const total = Number(totalRow?.total ?? 0)
+        const limit = options?.messageLimit
+        const offset = limit === undefined ? 0 : Math.max(0, total - Math.max(1, Math.floor(limit)))
+        const msgRows = limit === undefined
+            ? await this.selectRows<{ data: string }>('SELECT data FROM messages WHERE chat_id = ? ORDER BY position', [chatId])
+            : await this.selectRows<{ data: string }>('SELECT data FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?', [chatId, limit, offset])
         chatData.message = msgRows.map((r) => JSON.parse(r.data))
+        chatData.messageOffset = offset
+        chatData.messageTotal = total
+        chatData.messagesFullyLoaded = offset === 0
         chatData.messagesLoaded = true
         chatData.detailsLoaded = true
         return chatData
@@ -296,6 +303,23 @@ export class TauriSqliteStorage implements ISqlStorage {
             'SELECT data FROM messages WHERE chat_id = ? ORDER BY position', [chatId],
         )
         return msgRows.map((r) => JSON.parse(r.data))
+    }
+
+    async loadChatMessagePage(chatId: string, before: number | undefined, limit: number) {
+        const totalRow = await this.selectOne<{ total: number }>('SELECT COUNT(*) AS total FROM messages WHERE chat_id = ?', [chatId])
+        const total = Number(totalRow?.total ?? 0)
+        const end = Math.min(total, Math.max(0, before ?? total))
+        const offset = Math.max(0, end - Math.max(1, Math.floor(limit)))
+        const msgRows = await this.selectRows<{ data: string }>(
+            'SELECT data FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?',
+            [chatId, end - offset, offset],
+        )
+        return {
+            messages: msgRows.map((row) => JSON.parse(row.data)),
+            offset,
+            total,
+            hasMore: offset > 0,
+        }
     }
 
     // ── Domain loaders ───────────────────────────────────────────────────

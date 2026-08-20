@@ -18,6 +18,9 @@ describe('SQL row commits', () => {
                     id: 'chat-1',
                     name: 'Chat',
                     messagesLoaded: true,
+                    messageOffset: 0,
+                    messageTotal: 1,
+                    messagesFullyLoaded: true,
                     message: [{ chatId: 'message-1', role: 'user', data: 'hello' }],
                 }],
             }],
@@ -32,6 +35,9 @@ describe('SQL row commits', () => {
         expect(commit.characters[0].data).not.toHaveProperty('chats')
         expect(commit.chats).toHaveLength(1)
         expect(commit.chats[0].data).not.toHaveProperty('message')
+        expect(commit.chats[0].data).not.toHaveProperty('messageOffset')
+        expect(commit.chats[0].data).not.toHaveProperty('messageTotal')
+        expect(commit.chats[0].data).not.toHaveProperty('messagesFullyLoaded')
         expect(commit.messages).toEqual([{
             id: 'message-1',
             chatId: 'chat-1',

@@ -16,15 +16,13 @@ import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, sqlConfiguredStore } from "./stores.svelte";
 import { loadPlugins } from "./plugins/plugins.svelte";
 import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput, alertSelect, alertNormal } from "./alert";
-import { characterURLImport } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { loadRisuAccountData } from "./drive/accounter";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
-import { language } from "src/lang";
+import { changeLanguage, language } from "src/lang";
 import { startObserveDom } from "./observer.svelte";
 import { updateGuisize } from "./gui/guisize";
-import { updateLorebooks } from "./characters";
 import { initMobileGesture } from "./hotkey";
 import { getRemoteSaveCleanupAction, getRemoteSavePayloadName } from "./storage/remoteSaveCleanup";
 import {
@@ -127,6 +125,11 @@ export async function loadData() {
                 setDatabase({} as Database)
             }
 
+            // Non-English dictionaries are separate chunks. Resolve the one
+            // selected by this database before mounting the application so
+            // every component sees the final language on its first render.
+            await changeLanguage(getDatabase().language)
+
             // ── Node server: update SQL config state ──────────────────────
             if (isNodeServer && isNodeSqlStorageAdmin(storage)) {
                 sqlConfiguredStore.set(storage.isEnabled())
@@ -158,7 +161,11 @@ export async function loadData() {
                 setUsingSw(false)
             }
             if (getDatabase().didFirstSetup) {
-                characterURLImport()
+                const urlParams = new URLSearchParams(location.search)
+                if (urlParams.has('realm') || urlParams.has('charahub')) {
+                    const { characterURLImport } = await import('./characterCards')
+                    void characterURLImport()
+                }
             }
 
             // ── Step 7: Plugins, format checks, state updates ─────────────
@@ -376,6 +383,7 @@ async function checkNewFormat(): Promise<void> {
                     console.warn('User chose to keep corrupted lorebook data');
                 }
             } else {
+                const { updateLorebooks } = await import('./characters')
                 v.lorebook = updateLorebooks(v.lorebook);
             }
         }

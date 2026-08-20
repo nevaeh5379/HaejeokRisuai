@@ -85,7 +85,7 @@
         }
 
         changeChatTo(chatIndex);
-        await preLoadChat(charIndex, chatIndex);
+        await preLoadChat(charIndex, chatIndex, { full: true });
         ScrollToMessageStore.value = result.position;
     }
 

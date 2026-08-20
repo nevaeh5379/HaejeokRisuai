@@ -15,9 +15,10 @@ import { get } from "svelte/store";
 import { registerMCPModule, unregisterMCPModule } from "src/ts/process/mcp/pluginmcp";
 import { getInlayAsset } from "src/ts/process/files/inlays";
 import { getLLMCache, searchLLMCache } from "src/ts/translator/translator";
-import { hasher } from "src/ts/parser/parser.svelte";
+import { hasher } from "src/ts/hash";
 import localforage from "localforage";
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, type LLMModel } from "src/ts/model/types";
+import { customV3ProviderMetaStore } from './providerStore'
 import { sendChat as processSendChat, doingChat } from "src/ts/process/index.svelte";
 import { getModelInfo } from "src/ts/model/modellist";
 import type { ModelModeExtended } from "src/ts/process/request/shared";
@@ -34,6 +35,8 @@ import {
     type AfterTTSResult,
     type TTSHookFn,
 } from "src/ts/process/ttsHooks";
+
+export { customV3ProviderMetaStore } from './providerStore'
 
 /*
     V3 API for RisuAI Plugins
@@ -562,7 +565,6 @@ type PluginV3ProviderOptions = PluginV2ProviderOptions & {
     model?: LLMModel
 }
 
-export const customV3ProviderMetaStore:LLMModel[] = []
 
 const getPluginPermission = async (pluginName: string, permissionDesc: 'fetchLogs'|'db'|'mainDom'|'replacer'|'provider'|'sendChat', reconfirm: boolean|'periodically' = false) => {
     if(permissionGivenPlugins.has(pluginName)){
@@ -1381,8 +1383,13 @@ export async function loadV3Plugins(plugins:RisuPlugin[]){
     }
     documentEventListeners.length = 0;
 
-    const loadPromises = plugins.map(plugin => executePluginV3(plugin));
-    await Promise.all(loadPromises);
+    // Each sandbox creates an independent JavaScript realm. Starting every
+    // iframe in the same task causes a large transient memory/CPU spike on
+    // older mobile browsers, so let one document finish loading before the
+    // next sandbox is created.
+    for (const plugin of plugins) {
+        await executePluginV3(plugin);
+    }
 }
 
 export async function executePluginV3(plugin:RisuPlugin){
@@ -1395,13 +1402,21 @@ export async function executePluginV3(plugin:RisuPlugin){
 
     const iframe = document.createElement('iframe');
     iframe.style.display = "none";
-    document.body.appendChild(iframe);
+    const loaded = new Promise<void>((resolve) => {
+        const timeout = setTimeout(resolve, 3000);
+        iframe.addEventListener('load', () => {
+            clearTimeout(timeout);
+            resolve();
+        }, { once: true });
+    });
     const host = new SandboxHost(makeRisuaiAPIV3(iframe, plugin));
     v3PluginInstances.push({
         name: plugin.name,
         host
     });
     host.run(iframe, plugin.script);
+    document.body.appendChild(iframe);
+    await loaded;
     console.log(`[RisuAI Plugin: ${plugin.name}] Loaded API V3 plugin.`);
 }
 

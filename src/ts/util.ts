@@ -5,7 +5,7 @@ import { DBState, selectedCharID } from "./stores.svelte"
 import {open} from '@tauri-apps/plugin-dialog'
 import { readFile } from "@tauri-apps/plugin-fs"
 import { basename } from "@tauri-apps/api/path"
-import { createBlankChar, getCharImage } from "./characters"
+import { createBlankChar } from './characterDefaults'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { isIOS, isTauri } from "src/ts/platform"
 import type { Attachment } from "svelte/attachments"
@@ -234,6 +234,7 @@ export async function getCustomBackground(background:string|null|undefined){
         return ''
     }
     else{
+        const { getCharImage } = await import('./characterImage')
         const filesrc = await getCharImage(background, 'plain')
         return `background: url("${filesrc}"); background-size: cover;`
     }
@@ -289,6 +290,7 @@ export function defaultEmotion(em:[string,string][]){
 }
 
 export async function getEmotion(db:Database,chaEmotion:{[key:string]: [string, string, number][]}, type:'contain'|'plain'|'css'){
+    const { getCharImage } = await import('./characterImage')
     const selectedChar = get(selectedCharID)
     const currentDat = db.characters[selectedChar]
     if(!currentDat){

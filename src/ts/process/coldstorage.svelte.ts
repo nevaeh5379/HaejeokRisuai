@@ -419,19 +419,24 @@ export async function confirmIncompleteColdStorageOperation(
     return await alertConfirm(message)
 }
 
-export async function preLoadChat(characterIndex:number, chatIndex:number){
+export async function preLoadChat(
+    characterIndex: number,
+    chatIndex: number,
+    options: { full?: boolean } = {},
+){
     const chat = DBState.db?.characters?.[characterIndex]?.chats?.[chatIndex]   
 
     if(!chat){
         return
     }
 
-    if((chat.messagesLoaded === false || chat.detailsLoaded === false) && chat.id){
+    if((chat.messagesLoaded === false || chat.detailsLoaded === false ||
+        (options.full && chat.messagesFullyLoaded === false)) && chat.id){
         // Use the SQL adapter's lazy chat loader (works for all backends)
         const adapter = DBState.db as any
         if (adapter.ensureChatMessages) {
             try {
-                await adapter.ensureChatMessages(chat.id)
+                await adapter.ensureChatMessages(chat.id, options)
                 return
             } catch (error) {
                 console.error(`SQL loadChat failed for chat ${chat.id}:`, error)

@@ -266,7 +266,7 @@
                                 switch(option){
                                     case 0:{
                                         const chatIdx = chara.chats.indexOf(chat)
-                                        await preLoadChat($selectedCharID, chatIdx)
+                                        await preLoadChat($selectedCharID, chatIdx, { full: true })
                                         const newChat = $state.snapshot(chara.chats[chatIdx])
                                         newChat.name = createChatCopyName(newChat.name, 'Copy')
                                         newChat.id = v4()
@@ -380,7 +380,7 @@
                         const option = await alertChatOptions()
                         switch(option){
                             case 0:{
-                                await preLoadChat($selectedCharID, i)
+                                await preLoadChat($selectedCharID, i, { full: true })
                                 const newChat = $state.snapshot(chara.chats[i])
                                 newChat.name = createChatCopyName(newChat.name, 'Copy')
                                 newChat.id = v4()

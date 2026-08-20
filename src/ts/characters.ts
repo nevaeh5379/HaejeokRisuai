@@ -16,6 +16,12 @@ import { PngChunk } from "./pngChunk";
 import { getColdStorageItem, preLoadChat } from "./process/coldstorage.svelte";
 import { isNodeServer } from "./platform";
 import { NodeStorage } from "./storage/nodeStorage";
+import { releaseInactiveChatMessages } from "./storage/dataSession.svelte";
+import { createBlankChar } from './characterDefaults'
+import { getCharImage } from './characterImage'
+
+export { createBlankChar } from './characterDefaults'
+export { getCharImage } from './characterImage'
 
 export function createNewCharacter() {
     DBState.db.characters.push(createBlankChar())
@@ -51,40 +57,6 @@ export function createNewGroup(){
     })
     checkCharOrder()
     return DBState.db.characters.length - 1
-}
-
-export async function getCharImage(loc:string, type:'plain'|'css'|'contain'|'lgcss', options?: { thumbnail?: boolean }) {
-    const db = DBState.db
-    
-    // Return placeholder when hideAllImages is enabled
-    if(db.hideAllImages){
-        if(type === 'plain'){
-            return '/none.webp'
-        }
-        return ''  // For CSS types, return empty to show default ? icon
-    }
-    
-    if(!loc || loc === ''){
-        if(type ==='css'){
-            return ''
-        }
-        return null
-    }
-    const filesrc = await getFileSrc(loc, options)
-    if(type === 'plain'){
-        return filesrc
-    }
-    else if(type ==='css'){
-        return `background: url("${filesrc}");background-size: cover;`
-    }
-    else if(type === 'lgcss'){
-        return `background: url("${filesrc}");background-size: cover;height: 10.66rem;`
-
-    }
-
-    else{
-        return `background: url("${filesrc}");background-size: contain;background-repeat: no-repeat;background-position: center;`
-    }
 }
 
 export async function selectCharImg(charIndex:number) {
@@ -198,7 +170,7 @@ export async function exportChat(page:number){
         const doTranslate = (mode === '2' || mode === '3') ? (await alertSelect([language.translateContent, language.doNotTranslate])) === '0' : false
         const anonymous = (mode === '2' || mode === '3') ? ((await alertSelect([language.includePersonaName, language.hidePersonaName])) === '1') : false
         const selectedID = get(selectedCharID)
-        await preLoadChat(selectedID, page)
+        await preLoadChat(selectedID, page, { full: true })
         const db = DBState.db
         const chat = db.characters[selectedID].chats[page]
         const char = db.characters[selectedID]
@@ -514,7 +486,7 @@ export async function exportAllChats() {
         const char = db.characters[selectedID]
         if (char && Array.isArray(char.chats)) {
             for (let i = 0; i < char.chats.length; i++) {
-                await preLoadChat(selectedID, i)
+                await preLoadChat(selectedID, i, { full: true })
             }
         }
         const date = new Date().toISOString().replace(/[:.]/g, "-")
@@ -671,61 +643,6 @@ export function updateLorebooks(book:loreBook[]){
     })
 
 }
-
-export function createBlankChar():character{
-    return {
-        name: '',
-        firstMessage: '',
-        desc: '',
-        notes: '',
-        chats: [{
-            message: [],
-            note: '',
-            name: 'Chat 1',
-            localLore: []
-        }],
-        chatFolders: [],
-        chatPage: 0,
-        emotionImages: [],
-        bias: [],
-        viewScreen: 'none',
-        globalLore: [],
-        chaId: uuidv4(),
-        type: 'character',
-        sdData: defaultSdDataFunc(),
-        utilityBot: false,
-        customscript: [],
-        exampleMessage: '',
-        creatorNotes:'',
-        systemPrompt:'',
-        postHistoryInstructions:'',
-        alternateGreetings:[],
-        tags:[],
-        creator:"",
-        characterVersion: '',
-        personality:"",
-        scenario:"",
-        firstMsgIndex: -1,
-        replaceGlobalNote: "",
-        triggerscript: [{
-            comment: "",
-            type: "manual",
-            conditions: [],
-            effect: [{
-                type: "v2Header",
-                code: "",
-                indent: 0
-            }]
-        }, {
-            comment: "New Event",
-            type: 'manual',
-            conditions: [],
-            effect: []
-        }],
-        additionalText: ''
-    }
-}
-
 
 export async function makeGroupImage() {
     try {
@@ -916,4 +833,5 @@ export async function changeChar(index: number, arg:{
       updateInteraction: true,
     });
     selectedCharID.set(index);
+    releaseInactiveChatMessages(currentChar?.chats?.[currentChatPage]?.id)
 }

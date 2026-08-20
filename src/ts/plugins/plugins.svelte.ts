@@ -9,8 +9,6 @@ import { DBState, hotReloading, pluginAlertModalStore, selectedCharID } from "..
 import type { ScriptMode } from "../process/scripts";
 import { checkCodeSafety } from "./pluginSafety";
 import { SafeDocument, SafeIdbFactory, SafeLocalStorage } from "./pluginSafeClass";
-import { loadV3Plugins } from "./apiV3/v3.svelte";
-import { pluginCodeTranspiler } from "./apiV3/transpiler";
 import { isNodeServer } from "../platform";
 import { NodeStorage } from "../storage/nodeStorage";
 
@@ -336,6 +334,7 @@ export async function importPlugin(code:string|null = null, argu:{
         
         if(isTypescript){
             try {
+                const { pluginCodeTranspiler } = await import('./apiV3/transpiler')
                 jsFile = await pluginCodeTranspiler(jsFile)                
             } catch (error) {
                 showError('Failed to transpile TypeScript code: ' + error.message)
@@ -441,7 +440,10 @@ export async function loadPlugins() {
     const pluginV3 = enabledPlugins.filter((a: RisuPlugin) => a.version === '3.0')
 
     await loadV2Plugin(pluginV2)
-    await loadV3Plugins(pluginV3)
+    if (pluginV3.length > 0) {
+        const { loadV3Plugins } = await import('./apiV3/v3.svelte')
+        await loadV3Plugins(pluginV3)
+    }
 }
 
 export type PluginV2ProviderArgument = {

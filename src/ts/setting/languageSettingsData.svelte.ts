@@ -53,7 +53,7 @@ export const languageSettingsItems: SettingItem[] = [
                 if (parseInt(j) === 0) {
                     const langs = ['de', 'ko', 'cn', 'vi', 'zh-Hant'];
                     const lang = parseInt(await alertSelect(langs));
-                    changeLanguage(langs[lang]);
+                    await changeLanguage(langs[lang]);
                     downloadFile(
                         'lang.json',
                         new TextEncoder().encode(JSON.stringify(language, null, 4)),
@@ -75,7 +75,7 @@ export const languageSettingsItems: SettingItem[] = [
             }
 
             await sleep(10);
-            changeLanguage(ctx.db.language);
+            await changeLanguage(ctx.db.language);
             langState.changed = true;
         },
     },

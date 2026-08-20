@@ -1,5 +1,6 @@
 <script lang="ts">
-    import { downloadRisuHub, getRisuHub, hubAdditionalHTML, type hubType } from "src/ts/characterCards";
+    import { downloadRisuHub } from 'src/ts/characterCards';
+    import { getRisuHub, hubAdditionalHTML, type hubType } from 'src/ts/hubCatalog';
     import { ArrowLeft, ArrowRight, MenuIcon, SearchIcon, XIcon } from "@lucide/svelte";
     import { alertInput } from "src/ts/alert";
     import { language } from "src/lang";

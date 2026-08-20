@@ -17,7 +17,7 @@ type Character = import('./storage/database.svelte').character
 type GroupChat = import('./storage/database.svelte').groupChat
 type Database = import('./storage/database.svelte').Database
 type SimpleCharacter = import('./parser/parser.svelte').simpleCharacterArgument
-type HubType = import('./characterCards').hubType
+type HubType = import('./hubCatalog').hubType
 
 function updateSize(){
     SizeStore.set({

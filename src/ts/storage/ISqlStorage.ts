@@ -22,6 +22,17 @@ export interface SqlLoadDatabaseResult {
     database: Database | null
 }
 
+export interface SqlChatLoadOptions {
+    messageLimit?: number
+}
+
+export interface SqlMessagePage {
+    messages: Message[]
+    offset: number
+    total: number
+    hasMore: boolean
+}
+
 export interface SqlCharacterMetadata {
     chaId: string
     name: string
@@ -82,8 +93,9 @@ export interface ISqlStorage {
     // ── Per-entity lazy loaders ──────────────────────────────────────────
 
     loadCharacter(characterId: string): Promise<character | groupChat | null>
-    loadChat(chatId: string): Promise<Chat | null>
+    loadChat(chatId: string, options?: SqlChatLoadOptions): Promise<Chat | null>
     loadChatMessages(chatId: string): Promise<Message[]>
+    loadChatMessagePage(chatId: string, before: number | undefined, limit: number): Promise<SqlMessagePage>
 
     // ── Domain loaders (deferred by the adapter) ─────────────────────────
 

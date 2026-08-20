@@ -327,6 +327,23 @@ describe('NodePostgresStorage browser client', () => {
         expect(fetchMock.mock.calls[2][0]).toBe('/api/database-v2/chats/chat-123')
     })
 
+    it('requests bounded chat pages with absolute offsets', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            messages: [{ chatId: 'msg-40', role: 'char', data: 'older' }],
+            offset: 40,
+            total: 100,
+            hasMore: true,
+        }), { status: 200 }))
+        vi.stubGlobal('fetch', fetchMock)
+        const storage = new NodePostgresStorage(async () => 'test-auth')
+        ;(storage as any).status = 'enabled'
+
+        const page = await storage.loadChatMessagePage('chat-123', 60, 20)
+
+        expect(page).toMatchObject({ offset: 40, total: 100, hasMore: true })
+        expect(fetchMock.mock.calls[0][0]).toBe('/api/database-v2/chats/chat-123/messages?limit=20&before=60')
+    })
+
     it('loads character details on demand', async () => {
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify({

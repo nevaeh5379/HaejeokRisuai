@@ -9,7 +9,7 @@
     import { runTrigger } from 'src/ts/process/triggers'
     import { sayTTS } from "src/ts/process/tts"
     import { DBState, ReloadChatPointer, CurrentTriggerIdStore, popupStore } from 'src/ts/stores.svelte'
-    import { ConnectionOpenStore } from "src/ts/sync/multiuser"
+    import { ConnectionOpenStore } from 'src/ts/sync/multiuserState'
     import { capitalize, getUserIcon, getUserName, sleep } from "src/ts/util"
     import { onDestroy, onMount } from "svelte"
     import { type Unsubscriber } from "svelte/store"
@@ -25,6 +25,7 @@
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
     import { getLLMCache, setLLMCache } from "../../ts/translator/translator"
+    import { preLoadChat } from "../../ts/process/coldstorage.svelte"
 
     let translating = $state(false)
     let editMode = $state(false)
@@ -97,10 +98,25 @@
         rawStreamingText = state.rawStreamingText
     }
 
+    async function ensureFullMessageIndex(): Promise<number> {
+        const characterIndex = selIdState.selId
+        const character = DBState.db.characters[characterIndex]
+        const chatIndex = character?.chatPage
+        const chat = character?.chats?.[chatIndex]
+        const messageId = chat?.message?.[idx]?.chatId
+        if (!chat || chat.messagesFullyLoaded !== false) return idx
+
+        await preLoadChat(characterIndex, chatIndex, { full: true })
+        if (!messageId) return idx
+        return chat.message.findIndex((item) => item.chatId === messageId)
+    }
+
     async function rm(e:MouseEvent, rec?:boolean){
+        const targetIndex = await ensureFullMessageIndex()
+        if (targetIndex < 0) return
         if(e.shiftKey){
             let msg = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message
-            msg = msg.slice(0, idx)
+            msg = msg.slice(0, targetIndex)
             DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message = msg
             return
         }
@@ -111,16 +127,16 @@
                 const r = await alertConfirm(language.instantRemoveConfirm)
                 let msg = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message
                 if(!r){
-                    msg = msg.slice(0, idx)
+                    msg = msg.slice(0, targetIndex)
                 }
                 else{
-                    msg.splice(idx, 1)
+                    msg.splice(targetIndex, 1)
                 }
                 DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message = msg
             }
             else{
                 let msg = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message
-                msg.splice(idx, 1)
+                msg.splice(targetIndex, 1)
                 DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message = msg
             }
         }
@@ -229,6 +245,7 @@
     }
 
     async function handleButtonTriggerWithin(event: UIEvent) {
+        await preLoadChat(selIdState.selId, DBState.db.characters[selIdState.selId].chatPage, { full: true })
         const currentChar = getCurrentCharacter()
         if(!currentChar || currentChar.type === 'group'){
             return
@@ -852,6 +869,8 @@
 
     <button class="flex items-center hover:text-blue-500 transition-colors" onclick={async () => {
         await sleep(1)
+        const targetIndex = await ensureFullMessageIndex()
+        if (targetIndex < 0) return
         const currentChat = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
         
         if(DBState.db.createFolderOnBranch && !currentChat.folderId){
@@ -865,11 +884,11 @@
             currentChat.folderId = folderId
         }
         
-        const currentMessage = currentChat.message[idx]
+        const currentMessage = currentChat.message[targetIndex]
         const newChat = $state.snapshot(currentChat)
         newChat.name = createChatCopyName(newChat.name, 'Branch')
         newChat.id = v4()
-        newChat.message = newChat.message.slice(0, idx + 1)
+        newChat.message = newChat.message.slice(0, targetIndex + 1)
         newChat.message.push({
             role: 'char',
             data: '{{specialcomment::branchedfrom::' + currentChat.id + '::' + currentChat.name + '::' + currentMessage.chatId + '::}}',

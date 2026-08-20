@@ -3,7 +3,6 @@ import { checkNullish, decryptBuffer, encryptBuffer, selectSingleFile } from '..
 import { changeLanguage, language } from '../../lang';
 import type { RisuPlugin } from '../plugins/plugins.svelte';
 import type {triggerscript as triggerscriptMain} from '../process/triggers';
-import { downloadFile, saveAsset as saveImageGlobal } from '../globalApi.svelte';
 import { defaultAutoSuggestPrompt, defaultJailbreak, defaultMainPrompt } from './defaultPrompts';
 import { alertNormal } from '../alert';
 import type { NAISettings } from '../process/models/nai';
@@ -11,7 +10,7 @@ import { prebuiltNAIpresets, prebuiltPresets } from '../process/templates/templa
 import { defaultColorScheme, type ColorScheme } from '../gui/colorscheme';
 import type { PromptItem, PromptSettings } from '../process/prompt';
 import type { OobaChatCompletionRequestParams } from '../model/ooba';
-import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../process/memory/hypav3'
+import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../process/memory/hypav3Preset'
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
 import { isTauri, isNodeServer } from "src/ts/platform"
 import { safeStructuredClone } from '../polyfill';
@@ -34,7 +33,7 @@ export function setDatabase(data:Database){
     // those domains, defeating selective SQL reads.
     if ((data as Database & { isSql?: boolean }).isSql) {
         data.characters ??= []
-        if (data.language) changeLanguage(data.language)
+        if (data.language) refreshLanguage(data)
         setDatabaseLite(data)
         return
     }
@@ -729,8 +728,17 @@ export function setDatabase(data:Database){
             chat.activeStreamingDisplayOptimizationMode = undefined
         }
     }
-    changeLanguage(data.language)
+    refreshLanguage(data)
     setDatabaseLite(data)
+}
+
+function refreshLanguage(data: Database): void {
+    void changeLanguage(data.language).then(() => {
+        // Dynamic locale chunks resolve after setDatabase returns. Reassign
+        // the current root so Svelte consumers render the newly selected
+        // dictionary even when setDatabase is called outside bootstrap.
+        if (DBState.db === data) DBState.db = data
+    })
 }
 
 export function setDatabaseLite(data:Database){
@@ -1856,6 +1864,12 @@ export interface Chat{
     bookmarks?: string[];
     bookmarkNames?: { [chatId: string]: string };
     messagesLoaded?: boolean;
+    /** Absolute index of message[0] when only a recent SQL page is hydrated. */
+    messageOffset?: number;
+    messageTotal?: number;
+    messagesFullyLoaded?: boolean;
+    /** Transient guard while generation needs the complete message array. */
+    preventMessageCompaction?: boolean;
     detailsLoaded?: boolean;
 }
 
@@ -1956,7 +1970,10 @@ export interface OobaSettings{
 }
 
 
-export const saveImage = saveImageGlobal
+export async function saveImage(data: Uint8Array, customId = '', fileName = '') {
+    const { saveAsset } = await import('../globalApi.svelte')
+    return saveAsset(data, customId, fileName)
+}
 
 export const defaultAIN:AINsettings = {
     top_p: 0.7,
@@ -2302,7 +2319,7 @@ import type { RisuModule } from '../process/modules';
 import type { SerializableHypaV2Data } from '../process/memory/hypav2';
 import { decodeRPack, encodeRPack } from '../rpack/rpack_js';
 import { DBState, selectedCharID } from '../stores.svelte';
-import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/modellist';
+import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/types';
 import type { HypaModel } from '../process/memory/hypamemory';
 import type { SerializableHypaV3Data } from '../process/memory/hypav3';
 import { defaultHotkeys, type Hotkey } from '../defaulthotkeys';
@@ -2322,7 +2339,8 @@ export async function downloadPreset(id:number, type:'json'|'risupreset'|'return
     pres.textgenWebUIBlockingURL=  ''
 
     if(type === 'json'){
-        downloadFile(pres.name + "_preset.json", Buffer.from(JSON.stringify(pres, null, 2)))
+        const { downloadFile } = await import('../globalApi.svelte')
+        await downloadFile(pres.name + "_preset.json", Buffer.from(JSON.stringify(pres, null, 2)))
     }
     else if(type === 'risupreset' || type === 'return'){
         const buf = fflate.compressSync(encodeMsgpack({
@@ -2337,7 +2355,8 @@ export async function downloadPreset(id:number, type:'json'|'risupreset'|'return
         const buf2 = await encodeRPack(buf)
 
         if(type === 'risupreset'){
-            downloadFile(pres.name + "_preset.risup", buf2)
+            const { downloadFile } = await import('../globalApi.svelte')
+            await downloadFile(pres.name + "_preset.risup", buf2)
         }
         else{
             return {

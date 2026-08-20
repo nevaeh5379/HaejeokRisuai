@@ -21,12 +21,19 @@
         const browserLangShort = browserLang.split('-')[0]
         const usableLangs = ['de', 'en', 'ko', 'cn', 'vi', 'zh-Hant']
         if(usableLangs.includes(browserLangShort)){
-            changeLanguage(browserLangShort)
             DBState.db.language = browserLangShort
-            step = 1
+            void changeLanguage(browserLangShort).then(() => {
+                step = 1
+            })
         }
     }
     let start = $state(false)
+
+    async function selectUiLanguage(lang: string) {
+        DBState.db.language = lang
+        await changeLanguage(lang)
+        step = 1
+    }
 
     function send(){
         switch(step){
@@ -175,36 +182,12 @@
                 {#if step === 0}
                     <h2 class="animate-bounce">Choose your language</h2>
                     <div class="flex flex-col items-start ml-2">
-                        <button class="hover:text-green-500 transition-colors" onclick={() => {
-                            changeLanguage('de')
-                            DBState.db.language='de'
-                            step = 1
-                        }}>• Deutsch</button>
-                        <button class="hover:text-green-500 transition-colors" onclick={() => {
-                            changeLanguage('en')
-                            DBState.db.language='en'
-                            step = 1
-                        }}>• English</button>
-                        <button class="hover:text-green-500 transition-colors" onclick={() => {
-                            changeLanguage('ko')
-                            DBState.db.language='ko'
-                            step = 1
-                        }}>• 한국어</button>
-                        <button class="hover:text-green-500 transition-colors" onclick={() => {
-                            changeLanguage('cn')
-                            DBState.db.language='cn'
-                            step = 1
-                        }}>• 中文</button>
-                        <button class="hover:text-green-500 transition-colors" onclick={() => {
-                            changeLanguage('zh-Hant')
-                            DBState.db.language='zh-Hant'
-                            step = 1
-                        }}>• 中文(繁體)</button>
-                        <button class="hover:text-green-500 transition-colors" onclick={() => {
-                            changeLanguage('vi')
-                            DBState.db.language='vi'
-                            step = 1
-                        }}>• Tiếng Việt</button>
+                        <button class="hover:text-green-500 transition-colors" onclick={() => selectUiLanguage('de')}>• Deutsch</button>
+                        <button class="hover:text-green-500 transition-colors" onclick={() => selectUiLanguage('en')}>• English</button>
+                        <button class="hover:text-green-500 transition-colors" onclick={() => selectUiLanguage('ko')}>• 한국어</button>
+                        <button class="hover:text-green-500 transition-colors" onclick={() => selectUiLanguage('cn')}>• 中文</button>
+                        <button class="hover:text-green-500 transition-colors" onclick={() => selectUiLanguage('zh-Hant')}>• 中文(繁體)</button>
+                        <button class="hover:text-green-500 transition-colors" onclick={() => selectUiLanguage('vi')}>• Tiếng Việt</button>
                     </div>
 
                 {:else}

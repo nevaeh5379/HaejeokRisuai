@@ -1,12 +1,15 @@
 import { v4 } from 'uuid';
 import { alertError, alertInput, alertNormal, alertStore, alertWait } from '../alert';
-import { get, writable } from 'svelte/store';
+import { get } from 'svelte/store';
 import { setDatabase, type character, saveImage, type Chat, getCurrentChat, setCurrentChat, getDatabase } from '../storage/database.svelte';
 import { selectedCharID } from '../stores.svelte';
 import { findCharacterIndexbyId, sleep } from '../util';
 import type { DataConnection, Peer } from 'peerjs';
 import { readImage } from '../globalApi.svelte';
 import { doingChat } from '../process/index.svelte';
+import { ConnectionIsHost, ConnectionOpenStore, RoomIdStore } from './multiuserState'
+
+export { ConnectionIsHost, ConnectionOpenStore, RoomIdStore } from './multiuserState'
 
 async function importPeerJS(){
     return await import('peerjs');
@@ -53,9 +56,6 @@ let peer:Peer
 let connections:DataConnection[] = []
 export let connectionOpen = false
 let requestChatSafeQueue = new Map<string, {remaining:number,safe:boolean,conn?:DataConnection}>()
-export let ConnectionOpenStore = writable(false)
-export let ConnectionIsHost = writable(false)
-export let RoomIdStore = writable('')
 
 export async function createMultiuserRoom(){
     //create a room with webrtc

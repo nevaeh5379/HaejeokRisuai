@@ -47,7 +47,8 @@ export async function ensureAllPostgresChatMessagesLoaded(db: Database, onProgre
             }
             for (let j = 0; j < (char.chats ?? []).length; j++) {
                 const chat = char.chats[j]
-                if (chat && (chat.messagesLoaded === false || chat.detailsLoaded === false) && chat.id) {
+                if (chat && (chat.messagesLoaded === false || chat.detailsLoaded === false ||
+                    chat.messagesFullyLoaded === false) && chat.id) {
                     const fullChat = await storage.loadChat(chat.id)
                     if (fullChat) {
                         Object.assign(chat, fullChat)

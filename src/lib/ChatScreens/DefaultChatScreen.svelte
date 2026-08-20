@@ -26,13 +26,14 @@
     import { processMultiCommand } from 'src/ts/process/command';
     import { postChatFile } from 'src/ts/process/files/multisend';
     import { getInlayAsset } from 'src/ts/process/files/inlays';
-    import { ConnectionOpenStore } from 'src/ts/sync/multiuser';
+    import { ConnectionOpenStore } from 'src/ts/sync/multiuserState';
     import { coldStorageHeader, preLoadChat } from 'src/ts/process/coldstorage.svelte';
     import Chats from './Chats.svelte';
     import Button from '../UI/GUI/Button.svelte';
     import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte';
     import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages';
     import { getMimeType } from 'src/ts/media';
+    import { compactChatMessages } from 'src/ts/storage/dataSession.svelte';
 
     const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then(m => m.default);
     
@@ -56,12 +57,34 @@
     let showNewMessageButton = $state(false)
     let chatsInstance: any = $state()
     let isScrollingToMessage = $state(false)
+    let loadingOlderMessages = $state(false)
     let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props();
     let currentCharacter = $derived(DBState.db.characters[$selectedCharID])
     let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
 
     function scrollToBottom() {
         chatsInstance?.scrollToLatestMessage();
+    }
+
+    async function loadOlderMessages() {
+        if (loadingOlderMessages) return
+        const chat = currentCharacter?.chats?.[currentCharacter.chatPage]
+        if (!chat?.id || !chat.messageOffset) return
+        const adapter = DBState.db as typeof DBState.db & {
+            loadOlderChatMessages?: (chatId: string, limit?: number) => Promise<number>
+        }
+        if (!adapter.loadOlderChatMessages) return
+
+        loadingOlderMessages = true
+        try {
+            const added = await adapter.loadOlderChatMessages(
+                chat.id,
+                Math.max(getAdditionalChatLoadPages(DBState.db), 24),
+            )
+            if (added > 0) loadPages += getAdditionalChatLoadPages(DBState.db)
+        } finally {
+            loadingOlderMessages = false
+        }
     }
     $effect(() => {
         if(ScrollToMessageStore.value !== -1){
@@ -147,17 +170,20 @@
         if($doingChat){
             return
         }
+        await preLoadChat(selectedChar, DBState.db.characters[selectedChar].chatPage, { full: true })
         if(lastCharId !== $selectedCharID){
             rerolls = []
             rerollid = -1
         }
 
-        let cha = DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage].message
+        const activeChat = DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
+        let cha = activeChat.message
 
         if(messageInput.startsWith('/')){
             const commandProcessed = await processMultiCommand(messageInput)
             if(commandProcessed !== false){
                 messageInput = ''
+                if (activeChat.id) void compactChatMessages(activeChat.id)
                 return
             }
         }
@@ -217,6 +243,7 @@
     }
 
     async function reroll() {
+        await preLoadChat($selectedCharID, DBState.db.characters[$selectedCharID].chatPage, { full: true })
         if($doingChat){
             return
         }
@@ -272,6 +299,7 @@
     }
 
     async function unReroll() {
+        await preLoadChat($selectedCharID, DBState.db.characters[$selectedCharID].chatPage, { full: true })
         if($doingChat){
             return
         }
@@ -305,7 +333,9 @@
 
     async function sendChatMain(continued:boolean = false) {
 
-        let previousLength = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length
+        const targetChat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+        targetChat.preventMessageCompaction = true
+        let previousLength = targetChat.message.length
         messageInput = ''
         abortController = new AbortController()
         try {
@@ -320,9 +350,12 @@
         } catch (error) {
             console.error(error)
             alertError(error)
+        } finally {
+            targetChat.preventMessageCompaction = false
         }
         lastCharId = $selectedCharID
         $doingChat = false
+        if (targetChat.id) compactChatMessages(targetChat.id)
         if(DBState.db.playMessage){
             const audio = new Audio(sendSound);
             audio.play().catch(() => {});
@@ -571,11 +604,16 @@
             {/await}
         {/if}
     {:else}
-        <div class="h-full w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen" onscroll={(e) => {
+        <div class="h-full w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen" onscroll={async (e) => {
             //@ts-expect-error scrollHeight/clientHeight/scrollTop don't exist on EventTarget, but target is HTMLElement here
             const scrolled = (e.target.scrollHeight - e.target.clientHeight + e.target.scrollTop)
-            if(scrolled < 100 && DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length > loadPages){
-                loadPages += getAdditionalChatLoadPages(DBState.db)
+            if(scrolled < 100){
+                const chat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+                if(chat.message.length > loadPages){
+                    loadPages += getAdditionalChatLoadPages(DBState.db)
+                } else if ((chat.messageOffset ?? 0) > 0) {
+                    await loadOlderMessages()
+                }
             }
             const chatTarget = e.target as HTMLElement;
             const chatsContainer = (DBState.db.fixedChatTextarea && chatTarget.children[1]) ? chatTarget.children[1] : chatTarget.children[0];
@@ -831,7 +869,8 @@
                 bind:hasNewUnreadMessage={showNewMessageButton}
             />
 
-            {#if DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length <= loadPages}
+            {#if DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length <= loadPages &&
+                (DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].messageOffset ?? 0) === 0}
                 {#if DBState.db.characters[$selectedCharID].type !== 'group' }
                     <Chat
                         character={createSimpleCharacter(DBState.db.characters[$selectedCharID])}

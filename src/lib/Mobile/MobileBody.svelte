@@ -1,17 +1,17 @@
 <script lang="ts">
     import { MobileGUIStack, MobileSideBar, selectedCharID } from "src/ts/stores.svelte";
-    import Settings from "../Setting/Settings.svelte";
-    import RealmMain from "../UI/Realm/RealmMain.svelte";
-    import MobileCharacters from "./MobileCharacters.svelte";
-    import ChatScreen from "../ChatScreens/ChatScreen.svelte";
-    import CharConfig from "../SideBars/CharConfig.svelte";
     import { WrenchIcon } from "@lucide/svelte";
     import { language } from "src/lang";
-    import SideChatList from "../SideBars/SideChatList.svelte";
-    import DevTool from "../SideBars/DevTool.svelte";
     import { isLite } from "src/ts/lite";
+    import LazyComponent from '../Others/LazyComponent.svelte'
     
-    import { DBState } from 'src/ts/stores.svelte';
+    const settingsLoader = () => import('../Setting/Settings.svelte')
+    const realmLoader = () => import('../UI/Realm/RealmMain.svelte')
+    const charactersLoader = () => import('./MobileCharacters.svelte')
+    const chatLoader = () => import('../ChatScreens/ChatScreen.svelte')
+    const charConfigLoader = () => import('../SideBars/CharConfig.svelte')
+    const devToolLoader = () => import('../SideBars/DevTool.svelte')
+    const sideChatListLoader = () => import('../SideBars/SideChatListForCurrent.svelte')
 </script>
 
 {#if $MobileSideBar > 0 && !$isLite}
@@ -37,20 +37,20 @@
     {#if $MobileSideBar > 0}
         <div class="w-full flex flex-col p-2 mt-2 h-full">
             {#if $MobileSideBar === 1}
-                <SideChatList bind:chara={DBState.db.characters[$selectedCharID]} />
+                <LazyComponent loader={sideChatListLoader} />
             {:else if $MobileSideBar === 2}
-                <CharConfig />
+                <LazyComponent loader={charConfigLoader} />
             {:else if $MobileSideBar === 3}
-                <DevTool />
+                <LazyComponent loader={devToolLoader} />
             {/if}
         </div>
     {:else if $selectedCharID !== -1}
-        <ChatScreen />
+        <LazyComponent loader={chatLoader} />
     {:else if $MobileGUIStack === 0}
-        <RealmMain />
+        <LazyComponent loader={realmLoader} />
     {:else if $MobileGUIStack === 1}
-        <MobileCharacters />
+        <LazyComponent loader={charactersLoader} />
     {:else if $MobileGUIStack === 2}
-        <Settings />
+        <LazyComponent loader={settingsLoader} />
     {/if}
 </div>

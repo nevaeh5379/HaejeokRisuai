@@ -883,11 +883,14 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
         return body.character ?? null
     }
 
-    async loadChat(chatId:string):Promise<Chat|null> {
+    async loadChat(chatId:string, options?: { messageLimit?: number }):Promise<Chat|null> {
         if(!await this.ensureEnabled()){
             return null
         }
-        const response = await fetch(`/api/database-v2/chats/${encodeURIComponent(chatId)}`, {
+        const search = options?.messageLimit !== undefined
+            ? `?messageLimit=${encodeURIComponent(options.messageLimit)}`
+            : ''
+        const response = await fetch(`/api/database-v2/chats/${encodeURIComponent(chatId)}${search}`, {
             method: 'GET',
             cache: 'no-cache',
             headers: await this.authHeaders()
@@ -905,6 +908,21 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     async loadChatMessages(chatId:string):Promise<Message[]> {
         const chat = await this.loadChat(chatId)
         return chat?.message ?? []
+    }
+
+    async loadChatMessagePage(chatId: string, before: number | undefined, limit: number) {
+        if (!await this.ensureEnabled()) return { messages: [], offset: 0, total: 0, hasMore: false }
+        const params = new URLSearchParams({ limit: String(limit) })
+        if (before !== undefined) params.set('before', String(before))
+        const response = await fetch(`/api/database-v2/chats/${encodeURIComponent(chatId)}/messages?${params}`, {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders(),
+        })
+        if (response.status < 200 || response.status >= 300) {
+            throw await responseError(response, 'PostgreSQL chat message page load failed')
+        }
+        return await response.json()
     }
 
     async listRevisions(limit = 50):Promise<NodePostgresRevision[]> {

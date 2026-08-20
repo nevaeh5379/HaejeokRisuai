@@ -1,4 +1,4 @@
-import { hubURL } from "./characterCards";
+import { hubURL } from './hub';
 import { fetchNative } from "./globalApi.svelte";
 import { DBState } from "./stores.svelte";
 import { readFile, BaseDirectory, writeFile } from "@tauri-apps/plugin-fs";

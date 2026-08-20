@@ -20,35 +20,10 @@ import { chatCompletion, unloadEngine } from "../webllm";
 import { hypaV3ProgressStore } from "src/ts/stores.svelte";
 import { type ChatTokenizer } from "src/ts/tokenizer";
 import { inlayTokenRegex } from "src/ts/util/inlayTokens";
+import { type HypaV3Preset, type HypaV3Settings } from './hypav3Preset'
 
-export interface HypaV3Preset {
-    name: string;
-    settings: HypaV3Settings;
-}
-
-export interface HypaV3Settings {
-    summarizationModel: string;
-    summarizationPrompt: string;
-    reSummarizationPrompt: string;
-    memoryTokensRatio: number;
-    extraSummarizationRatio: number;
-    maxChatsPerSummary: number;
-    recentMemoryRatio: number;
-    similarMemoryRatio: number;
-    enableSimilarityCorrection: boolean;
-    preserveOrphanedMemory: boolean;
-    processRegexScript: boolean;
-    doNotSummarizeUserMessage: boolean;
-    summaryChunkSeparator: string;
-    // Experimental
-    useExperimentalImpl: boolean;
-    summarizationRequestsPerMinute: number;
-    summarizationMaxConcurrent: number;
-    embeddingRequestsPerMinute: number;
-    embeddingMaxConcurrent: number;
-    alwaysToggleOn: boolean;
-    queryChatCount: number;
-}
+export { createHypaV3Preset } from './hypav3Preset'
+export type { HypaV3Preset, HypaV3Settings } from './hypav3Preset'
 
 interface HypaV3Data {
     summaries: Summary[];
@@ -1781,52 +1756,6 @@ export function getCurrentHypaV3Preset(): HypaV3Preset {
     }
 
     return preset;
-}
-
-export function createHypaV3Preset(
-    name = "New Preset",
-    existingSettings = {}
-): HypaV3Preset {
-    const settings: HypaV3Settings = {
-        summarizationModel: "subModel",
-        summarizationPrompt: "",
-        reSummarizationPrompt: "",
-        memoryTokensRatio: 0.2,
-        extraSummarizationRatio: 0,
-        maxChatsPerSummary: 6,
-        recentMemoryRatio: 0.4,
-        similarMemoryRatio: 0.4,
-        enableSimilarityCorrection: false,
-        preserveOrphanedMemory: false,
-        processRegexScript: false,
-        doNotSummarizeUserMessage: false,
-        summaryChunkSeparator: "\\n\\n",
-        // Experimental
-        useExperimentalImpl: false,
-        summarizationRequestsPerMinute: 20,
-        summarizationMaxConcurrent: 1,
-        embeddingRequestsPerMinute: 100,
-        embeddingMaxConcurrent: 1,
-        alwaysToggleOn: false,
-        queryChatCount: 3,
-    };
-
-    if (
-        existingSettings &&
-        typeof existingSettings === "object" &&
-        !Array.isArray(existingSettings)
-    ) {
-        for (const [key, value] of Object.entries(existingSettings)) {
-            if (key in settings && typeof value === typeof settings[key]) {
-                settings[key] = value;
-            }
-        }
-    }
-
-    return {
-        name,
-        settings,
-    };
 }
 
 function simpleCC<T>(

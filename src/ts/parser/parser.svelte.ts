@@ -21,6 +21,7 @@ import { getModelInfo } from '../model/modellist';
 import { registerCBS, type matcherArg, type RegisterCallback } from '../cbs';
 import cssSelectorParser from 'postcss-selector-parser'
 import { getMimeType } from '../media/mimeType';
+import { isMemoryConstrainedDevice } from '../memory/deviceMemory';
 
 const markdownItOptions = {
     html: true,
@@ -666,7 +667,7 @@ function trimmer(str:string){
     return str.trim().replace(/[_ -.]/g, '')
 }
 
-const INLAY_BLOB_CACHE_LIMIT = 24
+const INLAY_BLOB_CACHE_LIMIT = isMemoryConstrainedDevice() ? 8 : 24
 const blobUrlCache = new Map<string, string>()
 
 async function parseInlayAssets(data:string){
@@ -983,9 +984,7 @@ function decodeStyle(text:string){
     })
 }
 
-export async function hasher(data:Uint8Array){
-    return Buffer.from(await crypto.subtle.digest("SHA-256", data as any)).toString('hex');
-}
+export { hasher } from '../hash'
 
 export type CbsConditions = {
     firstmsg?:boolean

@@ -11,6 +11,8 @@ import type {
 import type { RisuModule } from '../process/modules'
 import { defaultAutoSuggestPrompt, defaultJailbreak, defaultMainPrompt } from './defaultPrompts'
 import type { ISqlStorage } from './ISqlStorage'
+import { isMemoryConstrainedDevice } from '../memory/deviceMemory'
+import { cancelChatMessageCompaction } from './dataSession.svelte'
 
 export interface IDatabaseAdapter extends Database {
     readonly isSql?: boolean
@@ -18,6 +20,9 @@ export interface IDatabaseAdapter extends Database {
     isDomainLoaded?: (domain: string) => boolean
     getLoadedDomains?: () => string[]
     getLoadedRootKeys?: () => string[]
+    ensureCharacterDetails?: (characterId: string) => Promise<void>
+    ensureChatMessages?: (chatId: string, options?: { full?: boolean }) => Promise<void>
+    loadOlderChatMessages?: (chatId: string, limit?: number) => Promise<number>
 }
 
 export const POSTGRES_DOMAINS = [
@@ -165,6 +170,16 @@ export function createSqlDatabaseAdapter(
 
     const characterDetailPromises = new Map<string, Promise<void>>()
     const chatDetailPromises = new Map<string, Promise<void>>()
+    const olderChatPromises = new Map<string, Promise<number>>()
+    const initialMessagePageSize = isMemoryConstrainedDevice() ? 24 : 60
+
+    function findChat(chatId: string): Chat | undefined {
+        const chars = internalState.coreData.characters as (character | groupChat)[]
+        for (const char of chars) {
+            const chat = char?.chats?.find((value) => value.id === chatId)
+            if (chat) return chat
+        }
+    }
 
     async function ensureCharacterDetails(chaId: string): Promise<void> {
         if (characterDetailPromises.has(chaId)) {
@@ -194,13 +209,35 @@ export function createSqlDatabaseAdapter(
         return promise
     }
 
-    async function ensureChatMessages(chatId: string): Promise<void> {
+    async function ensureChatMessages(chatId: string, options: { full?: boolean } = {}): Promise<void> {
+        cancelChatMessageCompaction(chatId)
+        const existing = findChat(chatId)
+        if (existing?.messagesLoaded !== false && existing?.detailsLoaded !== false &&
+            (!options.full || existing.messagesFullyLoaded !== false)) return
+
         if (chatDetailPromises.has(chatId)) {
-            return chatDetailPromises.get(chatId)
+            await chatDetailPromises.get(chatId)
+            if (options.full && findChat(chatId)?.messagesFullyLoaded === false) {
+                await ensureChatMessages(chatId, options)
+            }
+            return
         }
         const promise = (async () => {
             try {
-                const fullChat = await storage.loadChat(chatId)
+                const current = findChat(chatId)
+                if (options.full && current?.detailsLoaded !== false && current?.messagesLoaded !== false) {
+                    const messages = await storage.loadChatMessages(chatId)
+                    current.message = messages
+                    current.messageOffset = 0
+                    current.messageTotal = messages.length
+                    current.messagesFullyLoaded = true
+                    return
+                }
+
+                const fullChat = await storage.loadChat(
+                    chatId,
+                    options.full ? undefined : { messageLimit: initialMessagePageSize },
+                )
                 if (fullChat) {
                     const chars = internalState.coreData.characters as (character | groupChat)[]
                     for (const char of chars) {
@@ -209,6 +246,9 @@ export function createSqlDatabaseAdapter(
                         if (chatIdx >= 0) {
                             Object.assign(char.chats[chatIdx], fullChat)
                             char.chats[chatIdx].messagesLoaded = true
+                            char.chats[chatIdx].messageOffset ??= 0
+                            char.chats[chatIdx].messageTotal ??= char.chats[chatIdx].message.length
+                            char.chats[chatIdx].messagesFullyLoaded ??= char.chats[chatIdx].messageOffset === 0
                             char.chats[chatIdx].detailsLoaded = true
                             break
                         }
@@ -221,6 +261,32 @@ export function createSqlDatabaseAdapter(
             }
         })()
         chatDetailPromises.set(chatId, promise)
+        return promise
+    }
+
+    async function loadOlderChatMessages(chatId: string, limit = initialMessagePageSize): Promise<number> {
+        const currentPromise = olderChatPromises.get(chatId)
+        if (currentPromise) return currentPromise
+
+        const promise = (async () => {
+            await ensureChatMessages(chatId)
+            const chat = findChat(chatId)
+            if (!chat || chat.messagesFullyLoaded !== false || !chat.messageOffset) return 0
+
+            const before = chat.messageOffset
+            const page = await storage.loadChatMessagePage(chatId, before, limit)
+            if (findChat(chatId) !== chat || chat.messageOffset !== before) return 0
+
+            const known = new Set(chat.message.map((message) => message.chatId).filter(Boolean))
+            const older = page.messages.filter((message) => !message.chatId || !known.has(message.chatId))
+            chat.message = older.concat(chat.message)
+            chat.messageOffset = page.offset
+            chat.messageTotal = page.total
+            chat.messagesFullyLoaded = !page.hasMore
+            return older.length
+        })().finally(() => olderChatPromises.delete(chatId))
+
+        olderChatPromises.set(chatId, promise)
         return promise
     }
 
@@ -545,6 +611,7 @@ export function createSqlDatabaseAdapter(
     // Expose lazy loaders on the adapter for external use (e.g. characters.ts)
     ;(proxy as any).ensureCharacterDetails = ensureCharacterDetails
     ;(proxy as any).ensureChatMessages = ensureChatMessages
+    ;(proxy as any).loadOlderChatMessages = loadOlderChatMessages
 
     return proxy as IDatabaseAdapter
 }

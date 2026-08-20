@@ -271,15 +271,22 @@ export class WebSqliteStorage implements ISqlStorage {
         return fc
     }
 
-    async loadChat(chatId: string): Promise<Chat | null> {
+    async loadChat(chatId: string, options?: { messageLimit?: number }): Promise<Chat | null> {
         const cr = this.selectOne('SELECT id, name, note, folder_id, last_message_time, data FROM chats WHERE id = ?', [chatId])
         if (!cr) return null
         const cd = cr.data ? JSON.parse(cr.data as string) : {}
         cd.id = cr.id; cd.name = (cr.name as string) ?? ''; cd.note = (cr.note as string) ?? ''
         cd.folderId = (cr.folder_id as string) ?? undefined
         cd.lastDate = (cr.last_message_time as number) ?? undefined
-        const mr = this.selectRows('SELECT data FROM messages WHERE chat_id = ? ORDER BY position', [chatId])
+        const totalRow = this.selectOne('SELECT COUNT(*) AS total FROM messages WHERE chat_id = ?', [chatId])
+        const total = Number(totalRow?.total ?? 0)
+        const limit = options?.messageLimit
+        const offset = limit === undefined ? 0 : Math.max(0, total - Math.max(1, Math.floor(limit)))
+        const mr = limit === undefined
+            ? this.selectRows('SELECT data FROM messages WHERE chat_id = ? ORDER BY position', [chatId])
+            : this.selectRows('SELECT data FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?', [chatId, limit, offset])
         cd.message = mr.map((r) => JSON.parse(r.data as string))
+        cd.messageOffset = offset; cd.messageTotal = total; cd.messagesFullyLoaded = offset === 0
         cd.messagesLoaded = true; cd.detailsLoaded = true
         return cd
     }
@@ -287,6 +294,23 @@ export class WebSqliteStorage implements ISqlStorage {
     async loadChatMessages(chatId: string): Promise<Message[]> {
         return this.selectRows('SELECT data FROM messages WHERE chat_id = ? ORDER BY position', [chatId])
             .map((r) => JSON.parse(r.data as string))
+    }
+
+    async loadChatMessagePage(chatId: string, before: number | undefined, limit: number) {
+        const totalRow = this.selectOne('SELECT COUNT(*) AS total FROM messages WHERE chat_id = ?', [chatId])
+        const total = Number(totalRow?.total ?? 0)
+        const end = Math.min(total, Math.max(0, before ?? total))
+        const offset = Math.max(0, end - Math.max(1, Math.floor(limit)))
+        const rows = this.selectRows(
+            'SELECT data FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?',
+            [chatId, end - offset, offset],
+        )
+        return {
+            messages: rows.map((row) => JSON.parse(row.data as string)),
+            offset,
+            total,
+            hasMore: offset > 0,
+        }
     }
 
     async loadPersonas(): Promise<RisuPersona[]> {

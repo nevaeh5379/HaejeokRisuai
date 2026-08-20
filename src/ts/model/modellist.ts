@@ -17,7 +17,7 @@ import { fetchNative } from "../globalApi.svelte"
 import { DBState } from "../stores.svelte"
 import { customProviderStore, pluginV2 } from "../plugins/plugins.svelte"
 import { get } from "svelte/store"
-import { customV3ProviderMetaStore } from "../plugins/apiV3/v3.svelte"
+import { customV3ProviderMetaStore } from '../plugins/apiV3/providerStore'
 
 // Re-export types for backwards compatibility
 export { LLMFlags, LLMProvider, LLMFormat, LLMTokenizer, ProviderNames, OpenAIParameters, ClaudeParameters }

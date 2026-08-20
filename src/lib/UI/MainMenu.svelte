@@ -1,13 +1,15 @@
 <script lang="ts">
     import { DBState } from 'src/ts/stores.svelte';
-    import Hub from "./Realm/RealmMain.svelte";
     import { OpenRealmStore, RealmInitialOpenChar } from "src/ts/stores.svelte";
     import { ArrowLeft, ArrowRight, FolderCodeIcon, GlobeIcon, MailIcon, Send } from "@lucide/svelte";
     import { getVersionString, openURL } from "src/ts/globalApi.svelte";
     import { language } from "src/lang";
-    import { getRisuHub, hubAdditionalHTML } from "src/ts/characterCards";
+    import { getRisuHub, hubAdditionalHTML } from 'src/ts/hubCatalog';
     import RisuHubIcon from "./Realm/RealmHubIcon.svelte";
     import Title from "./Title.svelte";
+    import LazyComponent from '../Others/LazyComponent.svelte'
+
+    const realmLoader = () => import('./Realm/RealmMain.svelte')
 
     type RelatedLink = {
       title: string;
@@ -120,7 +122,7 @@
             <ArrowLeft/>
           </button>
         </div>
-        <Hub />
+        <LazyComponent loader={realmLoader} />
       {/if}
   </div>
 </div>
