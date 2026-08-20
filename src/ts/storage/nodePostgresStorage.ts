@@ -12,6 +12,57 @@ import { createPostgresDatabaseAdapter } from './databaseAdapters.svelte'
 
 export type DbVendor = 'postgres' | 'oracle' | 'azure'
 
+export interface SqlVendorFormValues {
+    connectionString?:string
+    server?:string
+    database?:string
+    user?:string
+    password?:string
+    tnsAlias?:string
+    walletPath?:string
+    walletPassword?:string
+    port?:number
+    poolMax:number
+}
+
+export function buildSqlVendorParams(vendor:DbVendor, values:SqlVendorFormValues):Record<string, unknown> {
+    if(vendor === 'postgres'){
+        return {
+            connectionString: values.connectionString?.trim() || '',
+            poolMax: values.poolMax,
+        }
+    }
+    if(vendor === 'oracle'){
+        return {
+            user: values.user?.trim() || '',
+            password: values.password || '',
+            tnsAlias: values.tnsAlias?.trim() || '',
+            walletPath: values.walletPath?.trim() || undefined,
+            walletPassword: values.walletPassword || undefined,
+            poolMax: values.poolMax,
+        }
+    }
+    return {
+        server: values.server?.trim() || '',
+        database: values.database?.trim() || '',
+        user: values.user?.trim() || '',
+        password: values.password || '',
+        port: values.port || 1433,
+        poolMax: values.poolMax,
+    }
+}
+
+export function isSqlVendorParamsComplete(vendor:DbVendor, values:SqlVendorFormValues):boolean {
+    const params = buildSqlVendorParams(vendor, values)
+    if(vendor === 'postgres'){
+        return Boolean(params.connectionString)
+    }
+    if(vendor === 'oracle'){
+        return Boolean(params.user && params.password && params.tnsAlias)
+    }
+    return Boolean(params.server && params.database && params.user && params.password)
+}
+
 export interface NodePostgresServerConfig {
     enabled:boolean
     configured:boolean

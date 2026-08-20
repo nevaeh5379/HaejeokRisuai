@@ -1,5 +1,38 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { NodePostgresStorage } from './nodePostgresStorage'
+import {
+    buildSqlVendorParams,
+    isSqlVendorParamsComplete,
+    NodePostgresStorage,
+} from './nodePostgresStorage'
+
+describe('SQL vendor form normalization', () => {
+    it('normalizes provider fields without duplicating form logic', () => {
+        expect(buildSqlVendorParams('oracle', {
+            user: ' risu ',
+            password: 'secret',
+            tnsAlias: ' db_high ',
+            walletPath: ' ',
+            poolMax: 12,
+        })).toEqual({
+            user: 'risu',
+            password: 'secret',
+            tnsAlias: 'db_high',
+            walletPath: undefined,
+            walletPassword: undefined,
+            poolMax: 12,
+        })
+    })
+
+    it('checks only the fields required by each provider', () => {
+        expect(isSqlVendorParamsComplete('postgres', {
+            connectionString: 'postgres://localhost/risu',
+            poolMax: 10,
+        })).toBe(true)
+        expect(isSqlVendorParamsComplete('azure', {
+            server: 'server', database: 'database', user: 'user', password: '', poolMax: 10,
+        })).toBe(false)
+    })
+})
 
 describe('NodePostgresStorage browser client', () => {
     beforeEach(() => {
@@ -367,4 +400,3 @@ describe('NodePostgresStorage browser client', () => {
         expect(db.loreBook[0].name).toBe('World Lore')
     })
 })
-

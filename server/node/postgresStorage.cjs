@@ -27,10 +27,20 @@ const {
     projectSettings,
     SETTING_RELATION_DEFINITIONS,
 } = require('./postgresSettingRelations.cjs');
+const {
+    DEFERRED_SETTING_KEYS,
+    SqlStorageBase,
+    createSqlStorageHelpers,
+    groupRows,
+    groupMessageRows,
+    createCharacterRelations,
+    createChatRelations,
+    createMessageRelations,
+    rebuildDatabaseGraph,
+} = require('./sqlStorageCommon.cjs');
 
 const POSTGRES_SCHEMA_VERSION = 2;
 const MAX_SYNC_ROWS = 250000;
-const MAX_COLD_STORAGE_KEYS = 250000;
 const AUDITED_TABLES = [
     'system.settings', 'system.setting_values', 'character.characters',
     ...SETTING_RELATION_DEFINITIONS.map((definition) => definition.table),
@@ -54,42 +64,11 @@ const AUDITED_TABLES = [
     'cold.message_generation', 'cold.message_prompt_info',
     'cold.message_prompt_toggles', 'cold.message_prompt_items',
 ];
-const COLD_STORAGE_PATH_PATTERN = /^coldstorage\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
-const COLD_STORAGE_KEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DB_EXPLORER_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const DB_EXPLORER_MAX_ROWS = 200;
 const deflateAsync = promisify(deflate);
 const unzipAsync = promisify(unzip);
 
-const DEFERRED_SETTING_KEYS = [
-    'plugins',
-    'pluginCustomStorage',
-    'personas',
-    'botPresets',
-    'loreBook',
-    'modules',
-    'globalscript',
-    'promptTemplate',
-    'promptSettings',
-    'mainPrompt',
-    'jailbreak',
-    'globalNote',
-    'additionalPrompt',
-    'supaMemoryPrompt',
-    'personaPrompt',
-    'emotionPrompt',
-    'emotionPrompt2',
-    'autoSuggestPrompt',
-    'translatorPrompt',
-    'instructChatTemplate',
-    'JinjaTemplate',
-    'customTokenizer',
-    'customPromptTemplateToggle',
-    'customModels',
-    'translatorPresets',
-    'loadouts',
-    'customBackground',
-];
 
 const DEFERRED_KEYS_SQL_LITERAL = DEFERRED_SETTING_KEYS.map((k) => `'${k}'`).join(', ');
 
@@ -108,27 +87,21 @@ class PostgresPayloadError extends Error {
     }
 }
 
-function asArray(value, field) {
-    if (value === undefined) {
-        return [];
-    }
-    if (!Array.isArray(value)) {
-        throw new PostgresPayloadError(`${field} must be an array`);
-    }
-    return value;
-}
-
-function assertId(value, field) {
-    if (typeof value !== 'string' || value.length === 0 || value.length > 1024) {
-        throw new PostgresPayloadError(`${field} must be a non-empty string of at most 1024 characters`);
-    }
-}
-
-function assertPosition(value, field) {
-    if (!Number.isSafeInteger(value) || value < 0) {
-        throw new PostgresPayloadError(`${field} must be a non-negative integer`);
-    }
-}
+const {
+    asArray,
+    assertId,
+    assertPosition,
+    assertData,
+    normalizeColdStorageKey,
+    validateColdStorageValue,
+    splitColdStorageValue,
+    validateColdStorageKeys,
+    findLegacyColdStorageFiles,
+    validateSyncPayload,
+} = createSqlStorageHelpers({
+    PayloadError: PostgresPayloadError,
+    maxIdLength: 1024,
+});
 
 function assertDbExplorerIdentifier(value, field) {
     if (typeof value !== 'string' || value.length === 0 || value.length > 128) {
@@ -156,242 +129,6 @@ function dbExplorerSelectExpression(columnName, dataType) {
         default:
             return column;
     }
-}
-
-function normalizeColdStorageKey(value, field = 'coldStorageKey') {
-    if (typeof value !== 'string' || !COLD_STORAGE_KEY_PATTERN.test(value)) {
-        throw new PostgresPayloadError(`${field} must be a UUID`);
-    }
-    return value.toLowerCase();
-}
-
-function validateColdStorageValue(value) {
-    if (Array.isArray(value)) {
-        return value;
-    }
-    if (!value || typeof value !== 'object') {
-        throw new PostgresPayloadError(
-            'Cold storage data must be an array or an object containing character or message data'
-        );
-    }
-    if ('character' in value) {
-        const character = value.character;
-        if (!character || typeof character !== 'object' || Array.isArray(character) ||
-            (character.chats !== undefined && !Array.isArray(character.chats))) {
-            throw new PostgresPayloadError('Cold storage character data is invalid');
-        }
-        for (const chat of character.chats || []) {
-            if (!chat || typeof chat !== 'object' || Array.isArray(chat) ||
-                (chat.message !== undefined && !Array.isArray(chat.message))) {
-                throw new PostgresPayloadError('Cold storage character chat data is invalid');
-            }
-            for (const message of chat.message || []) {
-                if (!message || typeof message !== 'object' || Array.isArray(message)) {
-                    throw new PostgresPayloadError('Cold storage message data is invalid');
-                }
-            }
-        }
-        return value;
-    }
-    if (!('message' in value) || !Array.isArray(value.message)) {
-        throw new PostgresPayloadError(
-            'Cold storage data must be an array or an object containing character or message data'
-        );
-    }
-    for (const message of value.message) {
-        if (!message || typeof message !== 'object' || Array.isArray(message)) {
-            throw new PostgresPayloadError('Cold storage message data is invalid');
-        }
-    }
-    return value;
-}
-
-function splitColdStorageValue(rawValue) {
-    const value = validateColdStorageValue(rawValue);
-    if (Array.isArray(value)) {
-        return { kind: 'legacy', data: value, chats: [], messages: [], characterFields: [] };
-    }
-
-    if ('character' in value) {
-        const { chats = [], ...characterData } = value.character;
-        const normalizedChats = [];
-        const normalizedMessages = [];
-        for (let chatPosition = 0; chatPosition < chats.length; chatPosition++) {
-            const { message = [], ...chatData } = chats[chatPosition];
-            normalizedChats.push({
-                position: chatPosition,
-                data: chatData,
-                fields: Object.keys(chats[chatPosition]),
-            });
-            for (let messagePosition = 0; messagePosition < message.length; messagePosition++) {
-                normalizedMessages.push({
-                    chatPosition,
-                    position: messagePosition,
-                    data: message[messagePosition],
-                    fields: Object.keys(message[messagePosition]),
-                });
-            }
-        }
-        return {
-            kind: 'character',
-            data: { ...value, character: characterData },
-            chats: normalizedChats,
-            messages: normalizedMessages,
-            characterFields: Object.keys(value.character),
-        };
-    }
-
-    const { message, ...chatData } = value;
-    return {
-        kind: 'chat',
-        data: chatData,
-        chats: [{ position: 0, data: {}, fields: Object.keys(value) }],
-        messages: message.map((item, position) => ({
-            chatPosition: 0,
-            position,
-            data: item,
-            fields: Object.keys(item),
-        })),
-        characterFields: [],
-    };
-}
-
-function validateColdStorageKeys(value, field = 'keys') {
-    const keys = asArray(value, field);
-    if (keys.length > MAX_COLD_STORAGE_KEYS) {
-        throw new PostgresPayloadError(`${field} exceeds the ${MAX_COLD_STORAGE_KEYS} key limit`);
-    }
-    return Array.from(new Set(keys.map((key) => normalizeColdStorageKey(key, `${field}[]`))));
-}
-
-async function findLegacyColdStorageFiles(savePath) {
-    const entries = await fs.readdir(savePath, { withFileTypes: true });
-    const candidates = [];
-    for (const entry of entries) {
-        if (!entry.isFile() || !/^(?:[0-9a-f]{2})+$/i.test(entry.name)) {
-            continue;
-        }
-        const logicalPath = Buffer.from(entry.name, 'hex').toString('utf8');
-        if (Buffer.from(logicalPath, 'utf8').toString('hex') !== entry.name.toLowerCase()) {
-            continue;
-        }
-        const match = logicalPath.match(COLD_STORAGE_PATH_PATTERN);
-        if (match) {
-            candidates.push({ filename: entry.name, key: match[1].toLowerCase() });
-        }
-    }
-    return candidates;
-}
-
-function assertData(row, field) {
-    if (!row || !Object.prototype.hasOwnProperty.call(row, 'data') || row.data === null ||
-        typeof row.data !== 'object' || Array.isArray(row.data)) {
-        throw new PostgresPayloadError(`${field} must be a JSON object`);
-    }
-}
-
-function validateSyncPayload(payload) {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-        throw new PostgresPayloadError('Sync payload must be an object');
-    }
-    if (!Number.isSafeInteger(payload.baseRevision) || payload.baseRevision < 0) {
-        throw new PostgresPayloadError('baseRevision must be a non-negative integer');
-    }
-
-    let rootUpserts = [];
-    let rootDeletes = [];
-    if (payload.root !== undefined) {
-        if (!payload.root || typeof payload.root !== 'object' || Array.isArray(payload.root)) {
-            throw new PostgresPayloadError('root must be an object');
-        }
-        rootUpserts = asArray(payload.root.upserts, 'root.upserts').map((item, index) => {
-            if (!item || typeof item !== 'object' || Array.isArray(item)) {
-                throw new PostgresPayloadError(`root.upserts[${index}] must be an object`);
-            }
-            assertId(item.key, `root.upserts[${index}].key`);
-            return { key: item.key, value: item.value };
-        });
-        rootDeletes = asArray(payload.root.deletes, 'root.deletes').map((key, index) => {
-            assertId(key, `root.deletes[${index}]`);
-            return key;
-        });
-    }
-
-    const characters = asArray(payload.characters, 'characters').map((row, index) => {
-        if (!row || typeof row !== 'object' || Array.isArray(row)) {
-            throw new PostgresPayloadError(`characters[${index}] must be an object`);
-        }
-        assertId(row.id, `characters[${index}].id`);
-        assertPosition(row.position, `characters[${index}].position`);
-        assertData(row, `characters[${index}].data`);
-        return { id: row.id, position: row.position, data: row.data };
-    });
-
-    const chats = asArray(payload.chats, 'chats').map((row, index) => {
-        if (!row || typeof row !== 'object' || Array.isArray(row)) {
-            throw new PostgresPayloadError(`chats[${index}] must be an object`);
-        }
-        assertId(row.id, `chats[${index}].id`);
-        assertId(row.characterId, `chats[${index}].characterId`);
-        assertPosition(row.position, `chats[${index}].position`);
-        assertData(row, `chats[${index}].data`);
-        return { id: row.id, characterId: row.characterId, position: row.position, data: row.data };
-    });
-
-    const messages = asArray(payload.messages, 'messages').map((row, index) => {
-        if (!row || typeof row !== 'object' || Array.isArray(row)) {
-            throw new PostgresPayloadError(`messages[${index}] must be an object`);
-        }
-        assertId(row.id, `messages[${index}].id`);
-        assertId(row.chatId, `messages[${index}].chatId`);
-        assertPosition(row.position, `messages[${index}].position`);
-        assertData(row, `messages[${index}].data`);
-        return { id: row.id, chatId: row.chatId, position: row.position, data: row.data };
-    });
-
-    const chatManifests = asArray(payload.chatManifests, 'chatManifests').map((item, index) => {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) {
-            throw new PostgresPayloadError(`chatManifests[${index}] must be an object`);
-        }
-        assertId(item.characterId, `chatManifests[${index}].characterId`);
-        const ids = asArray(item.ids, `chatManifests[${index}].ids`).map((id, idIndex) => {
-            assertId(id, `chatManifests[${index}].ids[${idIndex}]`);
-            return id;
-        });
-        return { characterId: item.characterId, ids };
-    });
-
-    const messageManifests = asArray(payload.messageManifests, 'messageManifests').map((item, index) => {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) {
-            throw new PostgresPayloadError(`messageManifests[${index}] must be an object`);
-        }
-        assertId(item.chatId, `messageManifests[${index}].chatId`);
-        const ids = asArray(item.ids, `messageManifests[${index}].ids`).map((id, idIndex) => {
-            assertId(id, `messageManifests[${index}].ids[${idIndex}]`);
-            return id;
-        });
-        return { chatId: item.chatId, ids };
-    });
-
-    const characterIds = payload.characterIds === undefined
-        ? undefined
-        : asArray(payload.characterIds, 'characterIds').map((id, index) => {
-            assertId(id, `characterIds[${index}]`);
-            return id;
-        });
-
-    return {
-        replaceAll: Boolean(payload.replaceAll),
-        baseRevision: payload.baseRevision,
-        rootUpserts,
-        rootDeletes,
-        characters,
-        chats,
-        messages,
-        chatManifests,
-        messageManifests,
-        characterIds,
-    };
 }
 
 function assertSqlIdentifier(value) {
@@ -426,28 +163,6 @@ async function bulkInsert(client, table, columns, columnTypes, rows, suffix = ''
          ${suffix}`,
         parameters
     );
-}
-
-function groupRows(rows, key) {
-    const grouped = new Map();
-    for (const row of rows) {
-        const id = row[key];
-        const items = grouped.get(id) || [];
-        items.push(row);
-        grouped.set(id, items);
-    }
-    return grouped;
-}
-
-function groupMessageRows(rows) {
-    const grouped = new Map();
-    for (const row of rows) {
-        const key = `${row.chat_id}\0${row.message_id}`;
-        const items = grouped.get(key) || [];
-        items.push(row);
-        grouped.set(key, items);
-    }
-    return grouped;
 }
 
 async function beginAuditRevision(client, {
@@ -489,8 +204,9 @@ async function deleteMessageChildren(client, pairs, tables = [
     }
 }
 
-class PostgresStorage {
+class PostgresStorage extends SqlStorageBase {
     constructor(options = {}) {
+        super();
         this.connectionString = options.connectionString || '';
         this.poolMax = Number.parseInt(options.poolMax || '10', 10);
         this.enabled = Boolean(this.connectionString);
@@ -1254,32 +970,12 @@ class PostgresStorage {
                     bookmarks: groupRows(bookmarks, 'chat_id'),
                 };
 
-                const chatsByCharacter = new Map();
-                for (const row of chats) {
-                    const related = {
-                        bookmarks: chatRelations.bookmarks.get(row.id) || [],
-                        messages: [],
-                    };
-                    const rebuilt = rebuildChat(row, related, { shallow: true });
-                    rebuilt.messagesLoaded = false;
-                    rebuilt.detailsLoaded = false;
-                    const items = chatsByCharacter.get(row.character_id) || [];
-                    items.push(rebuilt);
-                    chatsByCharacter.set(row.character_id, items);
-                }
-
-                database.characters = characters.map((row) => {
-                    const related = {
-                        tags: characterRelations.tags.get(row.id) || [],
-                        groupMembers: characterRelations.groupMembers.get(row.id) || [],
-                        chatFolders: characterRelations.chatFolders.get(row.id) || [],
-                        chats: chatsByCharacter.get(row.id) || [],
-                    };
-                    const rebuilt = rebuildCharacter(row, related, { shallow: true });
-                    rebuilt.detailsLoaded = false;
-                    return rebuilt;
+                rebuildDatabaseGraph({
+                    database, characters, chats,
+                    characterRelations, chatRelations,
+                    rebuildCharacter, rebuildChat, rebuildMessage,
+                    shallow: true,
                 });
-
                 await client.query('COMMIT');
                 return { revision, initialized, database };
             }
@@ -1327,72 +1023,27 @@ class PostgresStorage {
 
             const database = rebuildSettings(settings, settingValues);
 
-            const characterRelations = {
-                attributes: groupRows(characterAttributes, 'character_id'),
-                tags: groupRows(tags, 'character_id'),
-                greetings: groupRows(greetings, 'character_id'),
-                biases: groupRows(biases, 'character_id'),
-                emotions: groupRows(emotions, 'character_id'),
-                modules: groupRows(characterModules, 'character_id'),
-                groupMembers: groupRows(groupMembers, 'group_id'),
-                chatFolders: groupRows(chatFolders, 'character_id'),
-                scripts: groupRows(scripts, 'character_id'),
-                sdData: groupRows(sdData, 'character_id'),
-                assets: groupRows(assets, 'character_id'),
-                lore: groupRows(characterLore, 'character_id'),
-            };
-            const chatRelations = {
-                attributes: groupRows(chatAttributes, 'chat_id'),
-                suggestions: groupRows(suggestions, 'chat_id'),
-                modules: groupRows(chatModules, 'chat_id'),
-                scriptState: groupRows(scriptState, 'chat_id'),
-                bookmarks: groupRows(bookmarks, 'chat_id'),
-                memory: groupRows(memory, 'chat_id'),
-                lore: groupRows(chatLore, 'chat_id'),
-            };
-
-            const messageRelations = {
-                attributes: groupMessageRows(messageAttributes),
-                generation: new Map(generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
-                promptInfo: new Map(promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
-                promptToggles: groupMessageRows(promptToggles),
-                promptItems: groupMessageRows(promptItems),
-            };
-            const messagesByChat = new Map();
-            for (const row of messages) {
-                const key = `${row.chat_id}\0${row.id}`;
-                const related = {
-                    attributes: messageRelations.attributes.get(key),
-                    generation: messageRelations.generation.get(key),
-                    promptInfo: messageRelations.promptInfo.get(key),
-                    promptToggles: messageRelations.promptToggles.get(key),
-                    promptItems: messageRelations.promptItems.get(key),
-                };
-                const items = messagesByChat.get(row.chat_id) || [];
-                items.push(rebuildMessage(row, related));
-                messagesByChat.set(row.chat_id, items);
-            }
-
-            const chatsByCharacter = new Map();
-            for (const row of chats) {
-                const related = { messages: messagesByChat.get(row.id) || [] };
-                for (const [name, grouped] of Object.entries(chatRelations)) related[name] = grouped.get(row.id) || [];
-                const rebuilt = rebuildChat(row, related);
-                rebuilt.messagesLoaded = true;
-                rebuilt.detailsLoaded = true;
-                const items = chatsByCharacter.get(row.character_id) || [];
-                items.push(rebuilt);
-                chatsByCharacter.set(row.character_id, items);
-            }
-
-            database.characters = characters.map((row) => {
-                const related = { chats: chatsByCharacter.get(row.id) || [] };
-                for (const [name, grouped] of Object.entries(characterRelations)) related[name] = grouped.get(row.id) || [];
-                const rebuilt = rebuildCharacter(row, related);
-                rebuilt.detailsLoaded = true;
-                return rebuilt;
+            const characterRelations = createCharacterRelations({
+                attributes: characterAttributes, tags, greetings, biases, emotions,
+                modules: characterModules, groupMembers, chatFolders, scripts,
+                sdData, assets, lore: characterLore,
             });
-
+            const chatRelations = createChatRelations({
+                attributes: chatAttributes, suggestions, modules: chatModules,
+                scriptState, bookmarks, memory, lore: chatLore,
+            });
+            const messageRelations = createMessageRelations({
+                attributes: messageAttributes,
+                generations,
+                promptInfos,
+                promptToggles,
+                promptItems,
+            });
+            rebuildDatabaseGraph({
+                database, characters, chats, messages,
+                characterRelations, chatRelations, messageRelations,
+                rebuildCharacter, rebuildChat, rebuildMessage,
+            });
             await client.query('COMMIT');
             return { revision, initialized, database };
         } catch (error) {
@@ -1543,11 +1194,6 @@ class PostgresStorage {
         }
     }
 
-    async loadChatMessages(chatId) {
-        const chat = await this.loadChat(chatId);
-        return chat ? chat.message : [];
-    }
-
     async loadPlugins() {
         this.assertEnabled();
         const client = await this.pool.connect();
@@ -1685,18 +1331,6 @@ class PostgresStorage {
         }
     }
 
-    async loadPluginsData() {
-        const [pluginsResult, storageResult] = await Promise.all([
-            this.loadPlugins(),
-            this.loadPluginCustomStorage(),
-        ]);
-        return {
-            plugins: pluginsResult.plugins,
-            pluginCustomStorage: storageResult.pluginCustomStorage,
-            hash: `${pluginsResult.hash}:${storageResult.hash}`,
-        };
-    }
-
     async loadSettingKeys(keys) {
         this.assertEnabled();
         const client = await this.pool.connect();
@@ -1724,71 +1358,6 @@ class PostgresStorage {
         } finally {
             client.release();
         }
-    }
-
-    async loadPersonas() {
-        const { settings, hash } = await this.loadSettingKeys(['personas']);
-        return {
-            personas: settings.personas || [],
-            hash,
-        };
-    }
-
-    async loadBotPresets() {
-        const { settings, hash } = await this.loadSettingKeys(['botPresets']);
-        return {
-            botPresets: settings.botPresets || [],
-            hash,
-        };
-    }
-
-    async loadLorebooks() {
-        const { settings, hash } = await this.loadSettingKeys(['loreBook']);
-        return {
-            loreBook: settings.loreBook || [],
-            hash,
-        };
-    }
-
-    async loadModules() {
-        const { settings, hash } = await this.loadSettingKeys(['modules']);
-        return {
-            modules: settings.modules || [],
-            hash,
-        };
-    }
-
-    async loadPrompts() {
-        const promptKeys = [
-            'mainPrompt', 'jailbreak', 'globalNote', 'additionalPrompt',
-            'supaMemoryPrompt', 'personaPrompt', 'emotionPrompt', 'emotionPrompt2',
-            'autoSuggestPrompt', 'translatorPrompt', 'instructChatTemplate',
-            'JinjaTemplate', 'customTokenizer', 'promptTemplate', 'promptSettings',
-            'customPromptTemplateToggle',
-        ];
-        const { settings, hash } = await this.loadSettingKeys(promptKeys);
-        return {
-            prompts: settings,
-            hash,
-        };
-    }
-
-    async loadScripts() {
-        const { settings, hash } = await this.loadSettingKeys(['globalscript']);
-        return {
-            globalscript: settings.globalscript || [],
-            hash,
-        };
-    }
-
-    async loadSettingKey(key) {
-        const { settings, hash } = await this.loadSettingKeys([key]);
-        return {
-            key,
-            value: settings[key] !== undefined ? settings[key] : null,
-            exists: settings[key] !== undefined,
-            hash,
-        };
     }
 
     async sync(rawPayload) {

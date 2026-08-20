@@ -58,12 +58,11 @@ function resolveVendor(options = {}) {
     return 'postgres';
 }
 
-// 환경에서 Azure SQL 설정 로딩 (.env.azure 자동 로딩 포함)
-function loadAzureEnvFile(customPath = null) {
+function loadVendorEnvFile(filename, customPath = null) {
     const envCandidates = customPath ? [customPath] : [
-        path.join(__dirname, '.env.azure'),
-        path.join(process.cwd(), '.env.azure'),
-        path.join(__dirname, '../../.env.azure'),
+        path.join(__dirname, filename),
+        path.join(process.cwd(), filename),
+        path.join(__dirname, '../..', filename),
     ];
     for (const envPath of envCandidates) {
         if (!fs.existsSync(envPath)) continue;
@@ -86,6 +85,11 @@ function loadAzureEnvFile(customPath = null) {
         return envPath;
     }
     return null;
+}
+
+// 환경에서 Azure SQL 설정 로딩 (.env.azure 자동 로딩 포함)
+function loadAzureEnvFile(customPath = null) {
+    return loadVendorEnvFile('.env.azure', customPath);
 }
 
 // Azure SQL 설정 객체 생성 (환경 변수에서)
@@ -102,32 +106,7 @@ function readAzureConfigFromEnv() {
 
 // 환경에서 Oracle 설정 로딩 (.env.oracle 자동 로딩 포함)
 function loadOracleEnvFile(customPath = null) {
-    const envCandidates = customPath ? [customPath] : [
-        path.join(__dirname, '.env.oracle'),
-        path.join(process.cwd(), '.env.oracle'),
-        path.join(__dirname, '../../.env.oracle'),
-    ];
-    for (const envPath of envCandidates) {
-        if (!fs.existsSync(envPath)) continue;
-        const content = fs.readFileSync(envPath, 'utf8');
-        for (const line of content.split('\n')) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#')) continue;
-            const eqIdx = trimmed.indexOf('=');
-            if (eqIdx <= 0) continue;
-            const key = trimmed.slice(0, eqIdx).trim();
-            let value = trimmed.slice(eqIdx + 1).trim();
-            if ((value.startsWith('"') && value.endsWith('"')) ||
-                (value.startsWith("'") && value.endsWith("'"))) {
-                value = value.slice(1, -1);
-            }
-            if (!(key in process.env)) {
-                process.env[key] = value;
-            }
-        }
-        return envPath;
-    }
-    return null;
+    return loadVendorEnvFile('.env.oracle', customPath);
 }
 
 // Oracle 설정 객체 생성 (환경 변수에서)
@@ -246,8 +225,6 @@ async function testConnection(vendor, rawParams = {}) {
     }
     try {
         if (vendor === 'postgres') {
-            const { PostgresStorage } = require('./postgresStorage.cjs');
-            const tmp = new PostgresStorage({ connectionString: params.connectionString, poolMax: params.poolMax || 10 });
             // initialize() 내부에서 SELECT 1 + 스키마 확인까지 수행.
             // 단, 스키마가 없으면 스키마를 생성하려 시도하므로, 테스트 전용으로는
             // Pool을 직접 만들어 SELECT 1만 수행.

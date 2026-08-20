@@ -9,7 +9,14 @@
     import { forageStorage } from 'src/ts/globalApi.svelte'
     import { getDatabase } from 'src/ts/storage/database.svelte'
     import { NodeStorage } from 'src/ts/storage/nodeStorage'
-    import type { NodePostgresRevision, NodePostgresServerConfig, NodePostgresTokenUsage, DbVendor } from 'src/ts/storage/nodePostgresStorage'
+    import {
+        buildSqlVendorParams,
+        type DbVendor,
+        type NodePostgresRevision,
+        type NodePostgresServerConfig,
+        type NodePostgresTokenUsage,
+        type SqlVendorFormValues,
+    } from 'src/ts/storage/nodePostgresStorage'
     import { encodeRisuSaveLegacy } from 'src/ts/storage/risuSave'
 
     let config = $state<NodePostgresServerConfig|null>(null)
@@ -111,35 +118,20 @@
         }
     }
 
-    // vendor에 따라 params 객체 구성
-    function buildParams(vendor: DbVendor): Record<string, any> {
-        if (vendor === 'postgres') {
-            return {
-                connectionString: connectionString.trim(),
-                poolMax,
-            }
+    function buildParams(vendor: DbVendor): Record<string, unknown> {
+        const values: SqlVendorFormValues = {
+            connectionString,
+            server: azureHost,
+            database: azureDatabase,
+            user: vendor === 'oracle' ? oracleUser : azureUsername,
+            password: vendor === 'oracle' ? oraclePassword : azurePassword,
+            tnsAlias: oracleTnsAlias,
+            walletPath: oracleWalletPath,
+            walletPassword: oracleWalletPassword,
+            port: azurePort,
+            poolMax: vendor === 'postgres' ? poolMax : vendorPoolMax,
         }
-        if (vendor === 'oracle') {
-            return {
-                user: oracleUser.trim(),
-                password: oraclePassword,
-                tnsAlias: oracleTnsAlias.trim(),
-                walletPath: oracleWalletPath.trim() || undefined,
-                walletPassword: oracleWalletPassword || undefined,
-                poolMax: vendorPoolMax,
-            }
-        }
-        if (vendor === 'azure') {
-            return {
-                server: azureHost.trim(),
-                database: azureDatabase.trim(),
-                user: azureUsername.trim(),
-                password: azurePassword,
-                port: azurePort,
-                poolMax: vendorPoolMax,
-            }
-        }
-        return {}
+        return buildSqlVendorParams(vendor, values)
     }
 
     // vendor별 라벨/설명

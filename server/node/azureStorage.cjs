@@ -39,10 +39,37 @@ const {
     StorageRevisionConflictError,
     StoragePayloadError,
 } = require('./storageDriver.cjs');
+const {
+    DEFERRED_SETTING_KEYS,
+    SqlStorageBase,
+    createSqlStorageHelpers,
+    groupRows,
+    groupMessageRows,
+    createCharacterRelations,
+    createChatRelations,
+    createMessageRelations,
+    rebuildDatabaseGraph,
+} = require('./sqlStorageCommon.cjs');
+
+const {
+    asArray,
+    assertId,
+    assertPosition,
+    assertData,
+    normalizeColdStorageKey,
+    validateColdStorageValue,
+    splitColdStorageValue,
+    validateColdStorageKeys,
+    findLegacyColdStorageFiles,
+    validateSyncPayload,
+} = createSqlStorageHelpers({
+    PayloadError: StoragePayloadError,
+    allowShortColdStorageKeys: true,
+    suppressLegacyReadErrors: true,
+});
 
 const AZURE_SCHEMA_VERSION = 2;
 const MAX_SYNC_ROWS = 250000;
-const MAX_COLD_STORAGE_KEYS = 250000;
 
 const AUDITED_TABLES = [
     'system.settings', 'system.setting_values', 'system.bot_presets',
@@ -77,22 +104,11 @@ const AUDITED_TABLES = [
     'cold.message_prompt_info', 'cold.message_prompt_toggles', 'cold.message_prompt_items',
 ];
 
-const COLD_STORAGE_PATH_PATTERN = /^coldstorage\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{6,12})$/i;
-const COLD_STORAGE_KEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{6,12}$/i;
 const DB_EXPLORER_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const DB_EXPLORER_MAX_ROWS = 200;
 const deflateAsync = promisify(deflate);
 const unzipAsync = promisify(unzip);
 
-const DEFERRED_SETTING_KEYS = [
-    'plugins', 'pluginCustomStorage', 'personas', 'botPresets', 'loreBook',
-    'modules', 'globalscript', 'promptTemplate', 'promptSettings', 'mainPrompt',
-    'jailbreak', 'globalNote', 'additionalPrompt', 'supaMemoryPrompt',
-    'personaPrompt', 'emotionPrompt', 'emotionPrompt2', 'autoSuggestPrompt',
-    'translatorPrompt', 'instructChatTemplate', 'JinjaTemplate', 'customTokenizer',
-    'customPromptTemplateToggle', 'customModels', 'translatorPresets', 'loadouts',
-    'customBackground',
-];
 
 function assertSqlIdentifier(value) {
     if (typeof value !== 'string') {
@@ -120,250 +136,6 @@ function assertDbExplorerIdentifier(value, field) {
         return value;
     }
     throw new StoragePayloadError(`${field} contains invalid characters`);
-}
-
-function asArray(value, field) {
-    if (value === undefined) return [];
-    if (!Array.isArray(value)) throw new StoragePayloadError(`${field} must be an array`);
-    return value;
-}
-
-function assertId(value, field) {
-    if (typeof value !== 'string' || value.length === 0 || value.length > 4000) {
-        throw new StoragePayloadError(`${field} must be a non-empty string of at most 4000 characters`);
-    }
-}
-
-function assertPosition(value, field) {
-    if (!Number.isSafeInteger(value) || value < 0) {
-        throw new StoragePayloadError(`${field} must be a non-negative integer`);
-    }
-}
-
-function assertData(row, field) {
-    if (!row || !Object.prototype.hasOwnProperty.call(row, 'data') || row.data === null ||
-        typeof row.data !== 'object' || Array.isArray(row.data)) {
-        throw new StoragePayloadError(`${field} must be a JSON object`);
-    }
-}
-
-function normalizeColdStorageKey(value, field = 'coldStorageKey') {
-    if (typeof value !== 'string' || !COLD_STORAGE_KEY_PATTERN.test(value)) {
-        throw new StoragePayloadError(`${field} must be a UUID`);
-    }
-    return value.toLowerCase();
-}
-
-function validateColdStorageValue(rawValue) {
-    if (Array.isArray(rawValue)) return rawValue;
-    if (!rawValue || typeof rawValue !== 'object') {
-        throw new StoragePayloadError('Cold storage data must be an array or an object containing character or message data');
-    }
-    if ('character' in rawValue) {
-        const character = rawValue.character;
-        if (!character || typeof character !== 'object' || Array.isArray(character) ||
-            (character.chats !== undefined && !Array.isArray(character.chats))) {
-            throw new StoragePayloadError('Cold storage character data is invalid');
-        }
-        for (const chat of character.chats || []) {
-            if (!chat || typeof chat !== 'object' || Array.isArray(chat) ||
-                (chat.message !== undefined && !Array.isArray(chat.message))) {
-                throw new StoragePayloadError('Cold storage character chat data is invalid');
-            }
-            for (const message of chat.message || []) {
-                if (!message || typeof message !== 'object' || Array.isArray(message)) {
-                    throw new StoragePayloadError('Cold storage message data is invalid');
-                }
-            }
-        }
-        return rawValue;
-    }
-    if (!('message' in rawValue) || !Array.isArray(rawValue.message)) {
-        throw new StoragePayloadError('Cold storage data must be an array or an object containing character or message data');
-    }
-    return rawValue;
-}
-
-function splitColdStorageValue(rawValue) {
-    const value = validateColdStorageValue(rawValue);
-    if (Array.isArray(value)) {
-        return { kind: 'legacy', data: value, chats: [], messages: [], characterFields: [] };
-    }
-    if ('character' in value) {
-        const { chats = [], ...characterData } = value.character;
-        const normalizedChats = [];
-        const normalizedMessages = [];
-        for (let chatPosition = 0; chatPosition < chats.length; chatPosition++) {
-            const { message = [], ...chatData } = chats[chatPosition];
-            normalizedChats.push({ position: chatPosition, data: chatData, fields: Object.keys(chats[chatPosition]) });
-            for (let messagePosition = 0; messagePosition < message.length; messagePosition++) {
-                normalizedMessages.push({
-                    chatPosition, position: messagePosition,
-                    data: message[messagePosition], fields: Object.keys(message[messagePosition]),
-                });
-            }
-        }
-        return {
-            kind: 'character',
-            data: { ...value, character: characterData },
-            chats: normalizedChats, messages: normalizedMessages,
-            characterFields: Object.keys(value.character),
-        };
-    }
-    const { message, ...chatData } = value;
-    return {
-        kind: 'chat',
-        data: chatData,
-        chats: [{ position: 0, data: {}, fields: Object.keys(value) }],
-        messages: message.map((item, position) => ({
-            chatPosition: 0, position, data: item, fields: Object.keys(item),
-        })),
-        characterFields: [],
-    };
-}
-
-function validateColdStorageKeys(value, field = 'keys') {
-    const keys = asArray(value, field);
-    if (keys.length > MAX_COLD_STORAGE_KEYS) {
-        throw new StoragePayloadError(`${field} exceeds the ${MAX_COLD_STORAGE_KEYS} key limit`);
-    }
-    return Array.from(new Set(keys.map((key) => normalizeColdStorageKey(key, `${field}[]`))));
-}
-
-async function findLegacyColdStorageFiles(savePath) {
-    try {
-        const entries = await fs.readdir(savePath, { withFileTypes: true });
-        const candidates = [];
-        for (const entry of entries) {
-            if (!entry.isFile() || !/^(?:[0-9a-f]{2})+$/i.test(entry.name)) {
-                continue;
-            }
-            const logicalPath = Buffer.from(entry.name, 'hex').toString('utf8');
-            if (Buffer.from(logicalPath, 'utf8').toString('hex') !== entry.name.toLowerCase()) {
-                continue;
-            }
-            const match = logicalPath.match(COLD_STORAGE_PATH_PATTERN);
-            if (match) {
-                candidates.push({ filename: entry.name, key: match[1].toLowerCase() });
-            }
-        }
-        return candidates;
-    } catch (e) {
-        return [];
-    }
-}
-
-function validateSyncPayload(payload) {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-        throw new StoragePayloadError('Sync payload must be an object');
-    }
-    if (!Number.isSafeInteger(payload.baseRevision) || payload.baseRevision < 0) {
-        throw new StoragePayloadError('baseRevision must be a non-negative integer');
-    }
-    let rootUpserts = [];
-    let rootDeletes = [];
-    if (payload.root !== undefined) {
-        if (!payload.root || typeof payload.root !== 'object' || Array.isArray(payload.root)) {
-            throw new StoragePayloadError('root must be an object');
-        }
-        rootUpserts = asArray(payload.root.upserts, 'root.upserts').map((item, index) => {
-            if (!item || typeof item !== 'object' || Array.isArray(item)) {
-                throw new StoragePayloadError(`root.upserts[${index}] must be an object`);
-            }
-            assertId(item.key, `root.upserts[${index}].key`);
-            return { key: item.key, value: item.value };
-        });
-        rootDeletes = asArray(payload.root.deletes, 'root.deletes').map((key, index) => {
-            assertId(key, `root.deletes[${index}]`);
-            return key;
-        });
-    }
-    const characters = asArray(payload.characters, 'characters').map((row, index) => {
-        if (!row || typeof row !== 'object' || Array.isArray(row)) {
-            throw new StoragePayloadError(`characters[${index}] must be an object`);
-        }
-        assertId(row.id, `characters[${index}].id`);
-        assertPosition(row.position, `characters[${index}].position`);
-        assertData(row, `characters[${index}].data`);
-        return { id: row.id, position: row.position, data: row.data };
-    });
-    const chats = asArray(payload.chats, 'chats').map((row, index) => {
-        if (!row || typeof row !== 'object' || Array.isArray(row)) {
-            throw new StoragePayloadError(`chats[${index}] must be an object`);
-        }
-        assertId(row.id, `chats[${index}].id`);
-        assertId(row.characterId, `chats[${index}].characterId`);
-        assertPosition(row.position, `chats[${index}].position`);
-        assertData(row, `chats[${index}].data`);
-        return { id: row.id, characterId: row.characterId, position: row.position, data: row.data };
-    });
-    const messages = asArray(payload.messages, 'messages').map((row, index) => {
-        if (!row || typeof row !== 'object' || Array.isArray(row)) {
-            throw new StoragePayloadError(`messages[${index}] must be an object`);
-        }
-        assertId(row.id, `messages[${index}].id`);
-        assertId(row.chatId, `messages[${index}].chatId`);
-        assertPosition(row.position, `messages[${index}].position`);
-        assertData(row, `messages[${index}].data`);
-        return { id: row.id, chatId: row.chatId, position: row.position, data: row.data };
-    });
-    const chatManifests = asArray(payload.chatManifests, 'chatManifests').map((item, index) => {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) {
-            throw new StoragePayloadError(`chatManifests[${index}] must be an object`);
-        }
-        assertId(item.characterId, `chatManifests[${index}].characterId`);
-        const ids = asArray(item.ids, `chatManifests[${index}].ids`).map((id, idIndex) => {
-            assertId(id, `chatManifests[${index}].ids[${idIndex}]`);
-            return id;
-        });
-        return { characterId: item.characterId, ids };
-    });
-    const messageManifests = asArray(payload.messageManifests, 'messageManifests').map((item, index) => {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) {
-            throw new StoragePayloadError(`messageManifests[${index}] must be an object`);
-        }
-        assertId(item.chatId, `messageManifests[${index}].chatId`);
-        const ids = asArray(item.ids, `messageManifests[${index}].ids`).map((id, idIndex) => {
-            assertId(id, `messageManifests[${index}].ids[${idIndex}]`);
-            return id;
-        });
-        return { chatId: item.chatId, ids };
-    });
-    const characterIds = payload.characterIds === undefined
-        ? undefined
-        : asArray(payload.characterIds, 'characterIds').map((id, index) => {
-            assertId(id, `characterIds[${index}]`);
-            return id;
-        });
-    return {
-        replaceAll: Boolean(payload.replaceAll),
-        baseRevision: payload.baseRevision,
-        rootUpserts, rootDeletes,
-        characters, chats, messages,
-        chatManifests, messageManifests, characterIds,
-    };
-}
-
-function groupRows(rows, key) {
-    const grouped = new Map();
-    for (const row of rows) {
-        const id = row[key];
-        const items = grouped.get(id) || [];
-        items.push(row);
-        grouped.set(id, items);
-    }
-    return grouped;
-}
-
-function groupMessageRows(rows) {
-    const grouped = new Map();
-    for (const row of rows) {
-        const key = `${row.chat_id}\0${row.message_id}`;
-        const items = grouped.get(key) || [];
-        items.push(row);
-        grouped.set(key, items);
-    }
-    return grouped;
 }
 
 function groupColdMessageRows(rows) {
@@ -479,8 +251,9 @@ async function bulkInsert(reqOrTx, table, columns, columnTypes, rows, mergeKeyCo
     }
 }
 
-class AzureStorage {
+class AzureStorage extends SqlStorageBase {
     constructor(options = {}) {
+        super();
         this.options = { ...options };
         this.server = options.server || process.env.AZURE_HOST || '';
         this.database = options.database || process.env.AZURE_DATABASE || '';
@@ -750,34 +523,34 @@ class AzureStorage {
             charsRes = cRes;
             chatsRes = chRes;
 
-            characterRelations = {
-                attributes: groupRows(charAttrsRes.recordset, 'character_id'),
-                tags: groupRows(charTagsRes.recordset, 'character_id'),
-                greetings: groupRows(charGreetingsRes.recordset, 'character_id'),
-                biases: groupRows(charBiasesRes.recordset, 'character_id'),
-                emotions: groupRows(charEmotionsRes.recordset, 'character_id'),
-                modules: groupRows(charModulesRes.recordset, 'character_id'),
-                groupMembers: groupRows(charGroupMembersRes.recordset, 'group_id'),
-                chatFolders: groupRows(charFoldersRes.recordset, 'character_id'),
-                scripts: groupRows(charScriptsRes.recordset, 'character_id'),
-                sdData: groupRows(charSdDataRes.recordset, 'character_id'),
-                assets: groupRows(charAssetsRes.recordset, 'character_id'),
-                lore: groupRows(charLoreEntriesRes.recordset, 'character_id'),
-            };
-
-            chatRelations = {
-                attributes: groupRows(chatAttrsRes.recordset, 'chat_id'),
-                suggestions: groupRows(chatSuggestionsRes.recordset, 'chat_id'),
-                modules: groupRows(chatModulesRes.recordset, 'chat_id'),
-                scriptState: groupRows(chatScriptStateRes.recordset, 'chat_id'),
-                bookmarks: groupRows(chatBookmarksRes.recordset, 'chat_id'),
-                memory: groupRows(chatMemoryRes.recordset, 'chat_id'),
-                lore: groupRows(chatLoreEntriesRes.recordset, 'chat_id'),
-            };
+            characterRelations = createCharacterRelations({
+                attributes: charAttrsRes.recordset,
+                tags: charTagsRes.recordset,
+                greetings: charGreetingsRes.recordset,
+                biases: charBiasesRes.recordset,
+                emotions: charEmotionsRes.recordset,
+                modules: charModulesRes.recordset,
+                groupMembers: charGroupMembersRes.recordset,
+                chatFolders: charFoldersRes.recordset,
+                scripts: charScriptsRes.recordset,
+                sdData: charSdDataRes.recordset,
+                assets: charAssetsRes.recordset,
+                lore: charLoreEntriesRes.recordset,
+            });
+            chatRelations = createChatRelations({
+                attributes: chatAttrsRes.recordset,
+                suggestions: chatSuggestionsRes.recordset,
+                modules: chatModulesRes.recordset,
+                scriptState: chatScriptStateRes.recordset,
+                bookmarks: chatBookmarksRes.recordset,
+                memory: chatMemoryRes.recordset,
+                lore: chatLoreEntriesRes.recordset,
+            });
         }
 
         // 4. Messages (if not shallow)
-        const messagesByChat = new Map();
+        let messages = [];
+        let messageRelations = null;
 
         if (!shallow) {
             const [
@@ -792,51 +565,28 @@ class AzureStorage {
                 pool.request().query('SELECT * FROM [chat].[message_prompt_items] ORDER BY chat_id, message_id, position'),
             ]);
 
-            const messageRelations = {
-                attributes: groupMessageRows(msgAttrsRes.recordset),
-                generation: new Map(msgGenRes.recordset.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
-                promptInfo: new Map(msgPromptInfoRes.recordset.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
-                promptToggles: groupMessageRows(msgPromptTogglesRes.recordset),
-                promptItems: groupMessageRows(msgPromptItemsRes.recordset),
-            };
-
-            for (const row of msgsRes.recordset) {
-                const key = `${row.chat_id}\0${row.id}`;
-                const related = {
-                    attributes: messageRelations.attributes.get(key) || [],
-                    generation: messageRelations.generation.get(key) || null,
-                    promptInfo: messageRelations.promptInfo.get(key) || null,
-                    promptToggles: messageRelations.promptToggles.get(key) || [],
-                    promptItems: messageRelations.promptItems.get(key) || [],
-                };
-                const items = messagesByChat.get(row.chat_id) || [];
-                items.push(rebuildMessage(row, related));
-                messagesByChat.set(row.chat_id, items);
-            }
+            messages = msgsRes.recordset;
+            messageRelations = createMessageRelations({
+                attributes: msgAttrsRes.recordset,
+                generations: msgGenRes.recordset,
+                promptInfos: msgPromptInfoRes.recordset,
+                promptToggles: msgPromptTogglesRes.recordset,
+                promptItems: msgPromptItemsRes.recordset,
+            });
         }
 
-        const chatsByCharacter = new Map();
-        for (const row of chatsRes.recordset) {
-            const related = { messages: messagesByChat.get(row.id) || [] };
-            for (const [name, grouped] of Object.entries(chatRelations)) {
-                related[name] = grouped.get(row.id) || [];
-            }
-            const rebuilt = rebuildChat(row, related, { shallow });
-            rebuilt.messagesLoaded = !shallow;
-            rebuilt.detailsLoaded = !shallow;
-            const items = chatsByCharacter.get(row.character_id) || [];
-            items.push(rebuilt);
-            chatsByCharacter.set(row.character_id, items);
-        }
-
-        database.characters = charsRes.recordset.map((row) => {
-            const related = { chats: chatsByCharacter.get(row.id) || [] };
-            for (const [name, grouped] of Object.entries(characterRelations)) {
-                related[name] = grouped.get(row.id) || [];
-            }
-            const rebuilt = rebuildCharacter(row, related, { shallow });
-            rebuilt.detailsLoaded = !shallow;
-            return rebuilt;
+        rebuildDatabaseGraph({
+            database,
+            characters: charsRes.recordset,
+            chats: chatsRes.recordset,
+            messages,
+            characterRelations,
+            chatRelations,
+            messageRelations,
+            rebuildCharacter,
+            rebuildChat,
+            rebuildMessage,
+            shallow,
         });
 
         return {
@@ -954,11 +704,6 @@ class AzureStorage {
         return chat;
     }
 
-    async loadChatMessages(chatId) {
-        const chat = await this.loadChat(chatId);
-        return chat ? chat.message : [];
-    }
-
     async loadPlugins() {
         const { settings, hash } = await this.loadSettingKeys(['plugins']);
         return {
@@ -1000,18 +745,6 @@ class AzureStorage {
         };
     }
 
-    async loadPluginsData() {
-        const [pluginsResult, storageResult] = await Promise.all([
-            this.loadPlugins(),
-            this.loadPluginCustomStorage(),
-        ]);
-        return {
-            plugins: pluginsResult.plugins,
-            pluginCustomStorage: storageResult.pluginCustomStorage,
-            hash: `${pluginsResult.hash}:${storageResult.hash}`,
-        };
-    }
-
     async loadSettingKeys(keys) {
         const pool = await this.getPool();
         if (!Array.isArray(keys) || keys.length === 0) {
@@ -1027,53 +760,6 @@ class AzureStorage {
         const hash = crypto.createHash('sha256').update(serialized).digest('hex');
         return {
             settings: rebuilt,
-            hash,
-        };
-    }
-
-    async loadPersonas() {
-        const { settings, hash } = await this.loadSettingKeys(['personas']);
-        return { personas: settings.personas || [], hash };
-    }
-
-    async loadBotPresets() {
-        const { settings, hash } = await this.loadSettingKeys(['botPresets']);
-        return { botPresets: settings.botPresets || [], hash };
-    }
-
-    async loadLorebooks() {
-        const { settings, hash } = await this.loadSettingKeys(['loreBook']);
-        return { loreBook: settings.loreBook || [], hash };
-    }
-
-    async loadModules() {
-        const { settings, hash } = await this.loadSettingKeys(['modules']);
-        return { modules: settings.modules || [], hash };
-    }
-
-    async loadPrompts() {
-        const promptKeys = [
-            'mainPrompt', 'jailbreak', 'globalNote', 'additionalPrompt',
-            'supaMemoryPrompt', 'personaPrompt', 'emotionPrompt', 'emotionPrompt2',
-            'autoSuggestPrompt', 'translatorPrompt', 'instructChatTemplate',
-            'JinjaTemplate', 'customTokenizer', 'promptTemplate', 'promptSettings',
-            'customPromptTemplateToggle',
-        ];
-        const { settings, hash } = await this.loadSettingKeys(promptKeys);
-        return { prompts: settings, hash };
-    }
-
-    async loadScripts() {
-        const { settings, hash } = await this.loadSettingKeys(['globalscript']);
-        return { globalscript: settings.globalscript || [], hash };
-    }
-
-    async loadSettingKey(key) {
-        const { settings, hash } = await this.loadSettingKeys([key]);
-        return {
-            key,
-            value: settings[key] !== undefined ? settings[key] : null,
-            exists: settings[key] !== undefined,
             hash,
         };
     }

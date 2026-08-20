@@ -8,7 +8,12 @@
     import { alertError, alertNormal } from 'src/ts/alert'
     import { forageStorage } from 'src/ts/globalApi.svelte'
     import { NodeStorage } from 'src/ts/storage/nodeStorage'
-    import type { DbVendor } from 'src/ts/storage/nodePostgresStorage'
+    import {
+        buildSqlVendorParams,
+        isSqlVendorParamsComplete,
+        type DbVendor,
+        type SqlVendorFormValues,
+    } from 'src/ts/storage/nodePostgresStorage'
     import { sqlConfiguredStore } from 'src/ts/stores.svelte'
     import { get } from 'svelte/store'
 
@@ -49,48 +54,27 @@
         return forageStorage.realStorage
     }
 
-    function buildParams(vendor: DbVendor): Record<string, any> {
-        if (vendor === 'postgres') {
-            return {
-                connectionString: pgConnectionString.trim(),
-                poolMax: pgPoolMax,
-            }
+    function getFormValues(vendor: DbVendor): SqlVendorFormValues {
+        return {
+            connectionString: pgConnectionString,
+            server: azureHost,
+            database: azureDatabase,
+            user: vendor === 'oracle' ? oracleUser : azureUsername,
+            password: vendor === 'oracle' ? oraclePassword : azurePassword,
+            tnsAlias: oracleTnsAlias,
+            walletPath: oracleWalletPath,
+            walletPassword: oracleWalletPassword,
+            port: azurePort,
+            poolMax: vendor === 'azure' ? azurePoolMax : pgPoolMax,
         }
-        if (vendor === 'oracle') {
-            return {
-                user: oracleUser.trim(),
-                password: oraclePassword,
-                tnsAlias: oracleTnsAlias.trim(),
-                walletPath: oracleWalletPath.trim() || undefined,
-                walletPassword: oracleWalletPassword || undefined,
-                poolMax: pgPoolMax,
-            }
-        }
-        if (vendor === 'azure') {
-            return {
-                server: azureHost.trim(),
-                database: azureDatabase.trim(),
-                user: azureUsername.trim(),
-                password: azurePassword,
-                port: azurePort,
-                poolMax: azurePoolMax,
-            }
-        }
-        return {}
+    }
+
+    function buildParams(vendor: DbVendor): Record<string, unknown> {
+        return buildSqlVendorParams(vendor, getFormValues(vendor))
     }
 
     function isParamsComplete(vendor: DbVendor): boolean {
-        if (vendor === 'postgres') {
-            return pgConnectionString.trim().length > 0
-        }
-        if (vendor === 'oracle') {
-            return oracleUser.trim().length > 0 && oraclePassword.length > 0 && oracleTnsAlias.trim().length > 0
-        }
-        if (vendor === 'azure') {
-            return azureHost.trim().length > 0 && azureDatabase.trim().length > 0 &&
-                azureUsername.trim().length > 0 && azurePassword.length > 0
-        }
-        return false
+        return isSqlVendorParamsComplete(vendor, getFormValues(vendor))
     }
 
     async function testConnection() {
