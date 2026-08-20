@@ -339,7 +339,7 @@ export function updateTextThemeAndCSS(){
         return
     }
     let textTheme = get(isLite) ? 'standard' : db.textTheme
-    let colorScheme = get(isLite) ? 'dark' : db.colorScheme.type
+    let colorScheme = get(isLite) ? 'dark' : (db.colorScheme?.type ?? 'dark')
     switch(textTheme){
         case "standard":{
             if(colorScheme === 'dark'){
