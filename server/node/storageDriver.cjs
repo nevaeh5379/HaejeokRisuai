@@ -126,12 +126,12 @@ function getDbConfigPath(savePath) {
     return path.join(savePath, '__db_config.json');
 }
 
-// 저장소 설정 파일 읽기 (vendor + 공통 설정 + vendor별 연결 파라미터)
+// 저장소 설정 파일 읽기 (vendor + 공통 설정 + vendor별 연결 파라미터 + 선택적 백업 설정)
 // 비밀번호 등 민감 정보를 포함하므로 파일 권한은 0600으로 유지.
 function readStoredDbConfig(savePath) {
     const configPath = getDbConfigPath(savePath);
     if (!fs.existsSync(configPath)) {
-        return { vendor: null, enabled: false, poolMax: 10, params: {} };
+        return { vendor: null, enabled: false, poolMax: 10, params: {}, backup: null };
     }
     try {
         const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -140,6 +140,7 @@ function readStoredDbConfig(savePath) {
             enabled: parsed.enabled === true,
             poolMax: Number.isSafeInteger(parsed.poolMax) && parsed.poolMax > 0 ? parsed.poolMax : 10,
             params: parsed.params || {},
+            backup: normalizeBackupConfigSection(parsed.backup),
         };
     } catch (error) {
         throw new Error(`Could not read DB server configuration: ${error.message}`);
@@ -154,6 +155,7 @@ function writeStoredDbConfig(savePath, config) {
         enabled: config.enabled === true,
         poolMax: config.poolMax || 10,
         params: config.params || {},
+        ...(config.backup !== undefined ? { backup: config.backup ?? null } : {}),
     });
     fs.writeFileSync(configPath, payload, { mode: 0o600 });
     try {
@@ -161,6 +163,115 @@ function writeStoredDbConfig(savePath, config) {
     } catch (e) {
         // 권한 변경 실패는 무시 (Windows 등)
     }
+}
+
+// ── 백업 데이터베이스 설정 ─────────────────────────────────────────────────
+
+const MIN_BACKUP_SNAPSHOT_INTERVAL_MINUTES = 5;
+const MAX_BACKUP_SNAPSHOT_INTERVAL_MINUTES = 1440;
+const DEFAULT_BACKUP_SNAPSHOT_INTERVAL_MINUTES = 60;
+
+// 백업 설정 섹션 정규화 (부족한 필드는 기본값으로 채움).
+// 지원 vendor가 없으면 null (비활성 섹션).
+function normalizeBackupConfigSection(raw) {
+    if (!raw || typeof raw !== 'object') {
+        return null;
+    }
+    if (!SUPPORTED_VENDORS.includes(raw.vendor)) {
+        return null;
+    }
+    const rawInterval = Number.parseInt(raw.snapshot?.intervalMinutes, 10);
+    const intervalMinutes = Number.isFinite(rawInterval) && rawInterval > 0
+        ? Math.min(MAX_BACKUP_SNAPSHOT_INTERVAL_MINUTES, Math.max(MIN_BACKUP_SNAPSHOT_INTERVAL_MINUTES, rawInterval))
+        : DEFAULT_BACKUP_SNAPSHOT_INTERVAL_MINUTES;
+    return {
+        vendor: raw.vendor,
+        enabled: raw.enabled === true,
+        poolMax: Number.isSafeInteger(raw.poolMax) && raw.poolMax > 0 ? raw.poolMax : 10,
+        params: raw.params && typeof raw.params === 'object' ? raw.params : {},
+        mirroring: {
+            enabled: raw.mirroring?.enabled === true,
+        },
+        snapshot: {
+            enabled: raw.snapshot?.enabled === true,
+            intervalMinutes,
+        },
+    };
+}
+
+// vendor별 저장소 인스턴스를 명시적 파라미터로 직접 생성 (primary/backup 공용)
+function instantiateVendorStorage(vendor, params = {}, options = {}) {
+    const poolMax = Number.isSafeInteger(options.poolMax) && options.poolMax > 0 ? options.poolMax : 10;
+    if (vendor === 'azure') {
+        const { AzureStorage } = require('./azureStorage.cjs');
+        return new AzureStorage({
+            server: params.server || '',
+            database: params.database || '',
+            user: params.user || '',
+            password: params.password || '',
+            port: Number.isSafeInteger(params.port) && params.port > 0 ? params.port : 1433,
+            poolMax,
+            enabled: options.enabled !== false,
+        });
+    }
+    if (vendor === 'oracle') {
+        const { OracleStorage } = require('./oracleStorage.cjs');
+        return new OracleStorage({
+            user: params.user || '',
+            password: params.password || '',
+            tnsAlias: params.tnsAlias || '',
+            walletPath: params.walletPath || undefined,
+            walletPassword: params.walletPassword || undefined,
+            poolMax,
+            enabled: options.enabled !== false,
+        });
+    }
+    const { PostgresStorage } = require('./postgresStorage.cjs');
+    return new PostgresStorage({
+        connectionString: params.connectionString || '',
+        poolMax,
+    });
+}
+
+// 백업 설정 적용: config 파일에 backup 섹션 기록 후 신규 백업 storage 인스턴스 반환.
+// storage.initialize()는 호출자(server.cjs)가 연결 확인과 함께 수행.
+function applyBackupConfig(savePath, { vendor, params, mirroring, snapshot }) {
+    const normalized = normalizeVendorParams(vendor, params);
+    const complete = isVendorConfigComplete(vendor, normalized);
+    const backupConfig = complete
+        ? normalizeBackupConfigSection({
+            vendor,
+            enabled: true,
+            poolMax: normalized.poolMax,
+            params: normalized,
+            mirroring: mirroring || {},
+            snapshot: snapshot || {},
+        })
+        : null;
+    const stored = readStoredDbConfig(savePath);
+    writeStoredDbConfig(savePath, {
+        vendor: stored.vendor,
+        enabled: stored.enabled,
+        poolMax: stored.poolMax,
+        params: stored.params,
+        backup: backupConfig,
+    });
+    const storage = backupConfig
+        ? instantiateVendorStorage(vendor, normalized, { poolMax: backupConfig.poolMax })
+        : null;
+    return { backup: backupConfig, storage };
+}
+
+// 백업 설정 제거 (config 파일에서 backup 섹션 삭제)
+function removeBackupConfig(savePath) {
+    const stored = readStoredDbConfig(savePath);
+    writeStoredDbConfig(savePath, {
+        vendor: stored.vendor,
+        enabled: stored.enabled,
+        poolMax: stored.poolMax,
+        params: stored.params,
+        backup: null,
+    });
 }
 
 // vendor별 연결 파라미터 정규화 (빈 값 제거)
@@ -529,4 +640,11 @@ module.exports = {
     isStorageManagedByEnvironment,
     createStorageDriver,
     createServerStorage,
+    normalizeBackupConfigSection,
+    instantiateVendorStorage,
+    applyBackupConfig,
+    removeBackupConfig,
+    MIN_BACKUP_SNAPSHOT_INTERVAL_MINUTES,
+    MAX_BACKUP_SNAPSHOT_INTERVAL_MINUTES,
+    DEFAULT_BACKUP_SNAPSHOT_INTERVAL_MINUTES,
 };

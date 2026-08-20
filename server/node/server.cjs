@@ -55,6 +55,11 @@ const {
     applyDbConfig,
     isStorageManagedByEnvironment,
     SUPPORTED_VENDORS,
+    normalizeBackupConfigSection,
+    instantiateVendorStorage,
+    applyBackupConfig,
+    removeBackupConfig,
+    MIN_BACKUP_SNAPSHOT_INTERVAL_MINUTES,
 } = require('./storageDriver.cjs');
 const {
     AssetStorageManager,
@@ -254,6 +259,186 @@ let { storage: postgresStorage, vendor: dbVendor } = createServerStorage(savePat
 });
 // vendor 확정 후 환경 변수 관리 여부 갱신
 storageManagedByEnvironment = isStorageManagedByEnvironment(dbVendor);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 백업 데이터베이스 (메인 SQL DB → 백업 SQL DB 미러링/스냅샷)
+// - 실시간 미러링: 메인 sync 성공 시 동일한 payload를 백업 DB에 적요 (직렬 큐)
+// - 주기적 스냅샷: 간격마다 메인 전체를 백업 DB에 replaceAll 적요
+// - 수동 전체 백업: /api/db-backup/resync
+// 백업은 패시브 레플라이카이며, 단일 writer(이 서버)만 쓰기 때문에
+// baseRevision은 실행 시점의 백업 revision으로 교체한다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+let backupStorage = null;
+let backupConfig = {
+    vendor: null,
+    enabled: false,
+    poolMax: 10,
+    params: {},
+    mirroring: { enabled: false },
+    snapshot: { enabled: false, intervalMinutes: 60 },
+};
+const backupRuntime = {
+    initialized: false,
+    lastMirrorAt: null,
+    lastMirrorError: null,
+    lastSnapshotAt: null,
+    lastSnapshotError: null,
+    lastFullSyncAt: null,
+    lastFullSyncError: null,
+    inFlight: false,
+};
+let backupSnapshotTimer = null;
+let backupMirrorChain = Promise.resolve();
+
+function delayMs(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// 전체 payload 구성은 backupFullPayload.cjs 모듈에서 (테스트 가능성)
+const { buildFullBackupPayload } = require('./backupFullPayload.cjs');
+
+// 직렬 큐: 백업 DB로의 모든 쓰기는 순서를 보장하며 하나씩 수행.
+// 실패는 재시도(백오프) 후 상태 기록만 남기고 큐는 계속 진행 (메인 저장에는 영향 없음).
+// 반환되는 promise는 task별 결과를 전달: 성공 시 resolve, 최종 실패 시 reject.
+function enqueueBackupWrite(task, label = 'write') {
+    const execute = async () => {
+        if (!backupStorage?.enabled) return null;
+        backupRuntime.inFlight = true;
+        const backoffs = [1000, 5000, 15000];
+        let lastError = null;
+        for (let attempt = 0; attempt <= backoffs.length; attempt++) {
+            try {
+                const result = await task();
+                return result;
+            } catch (error) {
+                lastError = error;
+                console.error(`[db-backup] ${label} failed (attempt ${attempt + 1}):`, error?.message || error);
+                if (attempt < backoffs.length) {
+                    await delayMs(backoffs[attempt]);
+                }
+            }
+        }
+        throw lastError;
+    };
+    return new Promise((resolve, reject) => {
+        backupMirrorChain = backupMirrorChain.then(async () => {
+            try {
+                const result = await execute();
+                resolve(result);
+            } catch (error) {
+                if (label === 'mirror') {
+                    backupRuntime.lastMirrorError = error?.message || String(error);
+                } else if (label === 'snapshot') {
+                    backupRuntime.lastSnapshotError = error?.message || String(error);
+                } else {
+                    backupRuntime.lastFullSyncError = error?.message || String(error);
+                }
+                reject(error);
+            } finally {
+                backupRuntime.inFlight = false;
+            }
+            // 재투하 안 함: 큐의 다음 작업은 계속 진행
+        });
+    });
+}
+
+// 메인 sync payload를 백업에 미러 (baseRevision은 백업 현재 revision으로 교체)
+async function mirrorSyncPayloadToBackup(payload) {
+    const state = await backupStorage.getState();
+    await backupStorage.sync({
+        ...payload,
+        baseRevision: state.revision ?? 0,
+    });
+}
+
+async function mirrorFullBackupToBackup() {
+    const loaded = await postgresStorage.loadDatabase({ shallow: false });
+    if (!loaded?.database) {
+        return { skipped: 'primary_not_initialized' };
+    }
+    const payload = buildFullBackupPayload(loaded.database);
+    const state = await backupStorage.getState();
+    return await backupStorage.sync({ ...payload, baseRevision: state.revision ?? 0 });
+}
+
+async function runBackupSnapshot() {
+    return await mirrorFullBackupToBackup();
+}
+
+// 백업 DB 스키마 초기화(없으면 생성) 후 인스턴스 활성화
+async function activateBackupStorage(storage) {
+    await storage.initialize();
+    backupStorage = storage;
+    backupRuntime.initialized = true;
+    backupRuntime.lastFullSyncError = null;
+}
+
+// 부팅 시 설정 파일의 backup 섹션으로 백업 storage 생성 (실패해도 서버 기동은 유지)
+function loadBackupStorageFromConfig() {
+    try {
+        const stored = readStoredDbConfig(savePath);
+        if (!stored.backup || !stored.backup.vendor || !stored.backup.enabled) {
+            return;
+        }
+        if (!isVendorConfigComplete(stored.backup.vendor, stored.backup.params)) {
+            console.warn('[db-backup] Stored backup configuration is incomplete; skipping backup storage.');
+            return;
+        }
+        backupConfig = stored.backup;
+        const storage = instantiateVendorStorage(stored.backup.vendor, stored.backup.params, {
+            poolMax: stored.backup.poolMax,
+        });
+        activateBackupStorage(storage).then(() => {
+            console.log(`[db-backup] Backup storage ready (vendor: ${backupConfig.vendor}).`);
+            syncBackupSnapshotTimer();
+        }).catch((error) => {
+            console.error('[db-backup] Failed to initialize backup storage at startup:', error?.message || error);
+            backupStorage = null;
+            backupRuntime.initialized = false;
+            backupRuntime.lastFullSyncError = `startup: ${error?.message || error}`;
+        });
+    } catch (error) {
+        console.error('[db-backup] Failed to read backup configuration:', error?.message || error);
+    }
+}
+
+// 스냅샷 타이머를 현재 설정에 맞게 (재)설정
+function syncBackupSnapshotTimer() {
+    if (backupSnapshotTimer) {
+        clearInterval(backupSnapshotTimer);
+        backupSnapshotTimer = null;
+    }
+    if (!backupStorage?.enabled || !backupConfig.snapshot?.enabled) {
+        return;
+    }
+    const intervalMinutes = Math.max(MIN_BACKUP_SNAPSHOT_INTERVAL_MINUTES, backupConfig.snapshot.intervalMinutes || 60);
+    backupSnapshotTimer = setInterval(() => {
+        enqueueBackupWrite(() => runBackupSnapshot().then((result) => {
+            backupRuntime.lastSnapshotAt = new Date().toISOString();
+            backupRuntime.lastSnapshotError = null;
+            return result;
+        }), 'snapshot');
+    }, intervalMinutes * 60 * 1000);
+    backupSnapshotTimer.unref?.();
+}
+
+// 백업 설정 해제: 타이머 정지, 풀 close, 설정 섹션 제거
+async function deactivateBackupStorage() {
+    if (backupSnapshotTimer) {
+        clearInterval(backupSnapshotTimer);
+        backupSnapshotTimer = null;
+    }
+    const previous = backupStorage;
+    backupStorage = null;
+    backupConfig = { vendor: null, enabled: false, poolMax: 10, params: {}, mirroring: { enabled: false }, snapshot: { enabled: false, intervalMinutes: 60 } };
+    backupRuntime.initialized = false;
+    if (previous && typeof previous.close === 'function') {
+        try { await previous.close(); } catch (e) {}
+    }
+}
+
+loadBackupStorageFromConfig();
 
 const assetStorageManager = new AssetStorageManager(savePath);
 
@@ -2504,6 +2689,226 @@ app.post('/api/database-v2/migrate-legacy', authenticatedRouteLimiter, async (re
     }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 백업 데이터베이스 API
+// /api/db-backup:         백업 설정 + 실시간 상태(revision lag, 마지막 미러/스냅샷)
+// /api/db-backup/test:    전달된 백업 연결 파라미터로 연결 테스트
+// /api/db-backup POST:    백업 설정 적용 + 초기화 + 최초 전체 백업
+// /api/db-backup/resync:  수동 전체 백업 (메인 전체 → 백업 replaceAll)
+// /api/db-backup DELETE:  백업 설정 해제
+// ─────────────────────────────────────────────────────────────────────────────
+
+function maskBackupParams(vendor, params = {}) {
+    const masked = {};
+    if (vendor === 'postgres') {
+        masked.connectionString = maskPostgresConnectionString(params.connectionString || '');
+        masked.poolMax = params.poolMax || 10;
+    } else if (vendor === 'oracle') {
+        masked.user = params.user || '';
+        masked.tnsAlias = params.tnsAlias || '';
+        masked.walletPath = params.walletPath || '';
+        masked.poolMax = params.poolMax || 10;
+        masked.hasPassword = Boolean(params.password);
+        masked.hasWalletPassword = Boolean(params.walletPassword);
+    } else if (vendor === 'azure') {
+        masked.server = params.server || '';
+        masked.database = params.database || '';
+        masked.user = params.user || '';
+        masked.port = params.port || 1433;
+        masked.poolMax = params.poolMax || 10;
+        masked.hasPassword = Boolean(params.password);
+    }
+    return masked;
+}
+
+async function getBackupConfigResponse() {
+    const configured = Boolean(backupConfig.vendor && backupConfig.enabled);
+    const active = Boolean(backupStorage?.enabled);
+    let primaryRevision = null;
+    let backupRevision = null;
+    let backupInitialized = false;
+    try {
+        if (postgresStorage.enabled) {
+            const primaryState = await postgresStorage.getState();
+            primaryRevision = primaryState.revision;
+        }
+    } catch (e) {}
+    if (active) {
+        try {
+            const backupState = await backupStorage.getState();
+            backupRevision = backupState.revision;
+            backupInitialized = Boolean(backupState.initialized);
+        } catch (e) {}
+    }
+    return {
+        configured,
+        enabled: active,
+        vendor: configured ? backupConfig.vendor : null,
+        managedByEnvironment: false,
+        mirroring: { enabled: Boolean(backupConfig.mirroring?.enabled) },
+        snapshot: {
+            enabled: Boolean(backupConfig.snapshot?.enabled),
+            intervalMinutes: backupConfig.snapshot?.intervalMinutes || 60,
+        },
+        params: configured ? maskBackupParams(backupConfig.vendor, backupConfig.params) : {},
+        primaryRevision,
+        backupRevision,
+        lag: (primaryRevision !== null && backupRevision !== null) ? Math.max(0, primaryRevision - backupRevision) : null,
+        backupInitialized,
+        inFlight: backupRuntime.inFlight,
+        lastMirrorAt: backupRuntime.lastMirrorAt,
+        lastMirrorError: backupRuntime.lastMirrorError,
+        lastSnapshotAt: backupRuntime.lastSnapshotAt,
+        lastSnapshotError: backupRuntime.lastSnapshotError,
+        lastFullSyncAt: backupRuntime.lastFullSyncAt,
+        lastFullSyncError: backupRuntime.lastFullSyncError,
+    };
+}
+
+app.get('/api/db-backup', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    try {
+        res.send(await getBackupConfigResponse());
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/db-backup/test', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!isSecurePostgresConfigRequest(req)) {
+        res.status(403).send({
+            error: 'Backup database connection test requires HTTPS or a localhost connection',
+            code: 'secure_transport_required',
+        });
+        return;
+    }
+    try {
+        const vendor = req.body?.vendor;
+        const params = req.body?.params || {};
+        if (!SUPPORTED_VENDORS.includes(vendor)) {
+            res.status(400).send({ success: false, error: `Unsupported vendor: ${vendor}` });
+            return;
+        }
+        const result = await testConnection(vendor, params);
+        res.send(result);
+    } catch (error) {
+        res.send({ success: false, error: error.message || String(error) });
+    }
+});
+
+app.post('/api/db-backup', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!isSecurePostgresConfigRequest(req)) {
+        res.status(403).send({
+            error: 'Backup database configuration changes require HTTPS or a localhost connection',
+            code: 'secure_transport_required',
+        });
+        return;
+    }
+    try {
+        const vendor = req.body?.vendor;
+        const params = req.body?.params || {};
+        if (!SUPPORTED_VENDORS.includes(vendor)) {
+            throw new StoragePayloadError(`Unsupported vendor: ${vendor}`);
+        }
+        const normalized = normalizeVendorParams(vendor, params);
+        if (!isVendorConfigComplete(vendor, normalized)) {
+            throw new StoragePayloadError('Required backup connection parameters are missing');
+        }
+        const mirroring = { enabled: req.body?.mirroring?.enabled === true };
+        const snapshot = {
+            enabled: req.body?.snapshot?.enabled === true,
+            intervalMinutes: req.body?.snapshot?.intervalMinutes,
+        };
+
+        // 기존 백업 풀 정리
+        if (backupStorage && typeof backupStorage.close === 'function') {
+            try { await backupStorage.close(); } catch (e) {}
+        }
+        backupStorage = null;
+        backupRuntime.initialized = false;
+
+        // 설정 저장 + 신규 인스턴스
+        const { backup, storage } = applyBackupConfig(savePath, { vendor, params: normalized, mirroring, snapshot });
+        backupConfig = backup;
+
+        // 초기화 (스키마 생성/확인)
+        await activateBackupStorage(storage);
+        console.log(`[db-backup] Backup storage configured (vendor: ${vendor}).`);
+
+        // 스냅샷 타이머 재설정
+        syncBackupSnapshotTimer();
+
+        // 최초 전체 백업: 메인 DB에서 백업 DB로 전체 적요 (직렬 큐)
+        enqueueBackupWrite(() => mirrorFullBackupToBackup().then((result) => {
+            backupRuntime.lastFullSyncAt = new Date().toISOString();
+            backupRuntime.lastFullSyncError = null;
+            return result;
+        }), 'full');
+
+        const resp = await getBackupConfigResponse();
+        res.send({ success: true, ...resp });
+    } catch (error) {
+        if (error instanceof StoragePayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_backup_configuration' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.post('/api/db-backup/resync', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!backupStorage?.enabled) {
+        res.status(404).send({ error: 'Backup database is not configured', code: 'backup_disabled' });
+        return;
+    }
+    try {
+        // 직렬 큐에서 수행 + 완료 대기 (수동 전체 백업은 결과 반환)
+        const result = await enqueueBackupWrite(() => mirrorFullBackupToBackup().then((r) => {
+            backupRuntime.lastFullSyncAt = new Date().toISOString();
+            backupRuntime.lastFullSyncError = null;
+            return r;
+        }), 'full');
+        res.send({ success: true, ...(result || {}), lastFullSyncAt: backupRuntime.lastFullSyncAt });
+    } catch (error) {
+        res.status(502).send({
+            success: false,
+            error: error?.message || 'Backup full sync failed',
+            code: 'backup_sync_failed',
+        });
+    }
+});
+
+app.delete('/api/db-backup', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!isSecurePostgresConfigRequest(req)) {
+        res.status(403).send({
+            error: 'Backup database removal requires HTTPS or a localhost connection',
+            code: 'secure_transport_required',
+        });
+        return;
+    }
+    try {
+        await deactivateBackupStorage();
+        removeBackupConfig(savePath);
+        res.send({ success: true, ...(await getBackupConfigResponse()) });
+    } catch (error) {
+        next(error);
+    }
+});
+
 app.get('/api/database-v2', authenticatedRouteLimiter, async (req, res, next) => {
     if (!await checkAuth(req, res)) {
         return;
@@ -2971,7 +3376,16 @@ app.post(
             return;
         }
         try {
-            res.send({ success: true, ...await postgresStorage.restoreRevision(req.body?.revisionId) });
+            const result = await postgresStorage.restoreRevision(req.body?.revisionId);
+            // 메인 DB 상태가 통째로 바뀌므로 백업에는 전체 재동기를 트리거.
+            if (backupStorage?.enabled && backupConfig.mirroring?.enabled) {
+                enqueueBackupWrite(() => mirrorFullBackupToBackup().then((r) => {
+                    backupRuntime.lastMirrorAt = new Date().toISOString();
+                    backupRuntime.lastMirrorError = null;
+                    return r;
+                }), 'mirror');
+            }
+            res.send({ success: true, ...result });
         } catch (error) {
             if (error instanceof PostgresPayloadError) {
                 res.status(400).send({ error: error.message, code: 'invalid_revision_restore' });
@@ -2998,6 +3412,15 @@ app.post(
 
         try {
             const result = await postgresStorage.sync(req.body);
+            // 실시간 미러링: 백업이 활성 상태면 동일한 payload를 백업 DB에 적요.
+            // (직렬 큐에서 비동기 수행, 메인 저장 응답에는 영향 없음)
+            if (backupStorage?.enabled && backupConfig.mirroring?.enabled) {
+                enqueueBackupWrite(() => mirrorSyncPayloadToBackup(req.body).then((r) => {
+                    backupRuntime.lastMirrorAt = new Date().toISOString();
+                    backupRuntime.lastMirrorError = null;
+                    return r;
+                }), 'mirror');
+            }
             res.send({ success: true, ...result });
         } catch (error) {
             if (error instanceof PostgresRevisionConflictError || error instanceof StorageRevisionConflictError) {
@@ -3091,6 +3514,13 @@ app.put(
 
         try {
             const item = await postgresStorage.upsertColdStorage(req.params.key, req.body?.data);
+            if (backupStorage?.enabled && backupConfig.mirroring?.enabled) {
+                enqueueBackupWrite(() => backupStorage.upsertColdStorage(req.params.key, req.body?.data).then((r) => {
+                    backupRuntime.lastMirrorAt = new Date().toISOString();
+                    backupRuntime.lastMirrorError = null;
+                    return r;
+                }), 'mirror');
+            }
             res.send({
                 success: true,
                 key: item.key,
@@ -3120,7 +3550,15 @@ app.delete('/api/database-v2/cold-storage', authenticatedRouteLimiter, async (re
     }
 
     try {
-        res.send({ success: true, ...await postgresStorage.deleteColdStorage(req.body?.keys) });
+        const result = await postgresStorage.deleteColdStorage(req.body?.keys);
+        if (backupStorage?.enabled && backupConfig.mirroring?.enabled) {
+            enqueueBackupWrite(() => backupStorage.deleteColdStorage(req.body?.keys).then((r) => {
+                backupRuntime.lastMirrorAt = new Date().toISOString();
+                backupRuntime.lastMirrorError = null;
+                return r;
+            }), 'mirror');
+        }
+        res.send({ success: true, ...result });
     } catch (error) {
         if (error instanceof PostgresPayloadError) {
             res.status(400).send({ error: error.message, code: 'invalid_cold_storage_keys' });
@@ -3140,7 +3578,15 @@ app.post('/api/database-v2/cold-storage/prune', authenticatedRouteLimiter, async
     }
 
     try {
-        res.send({ success: true, ...await postgresStorage.pruneColdStorage(req.body?.retainedKeys) });
+        const result = await postgresStorage.pruneColdStorage(req.body?.retainedKeys);
+        if (backupStorage?.enabled && backupConfig.mirroring?.enabled) {
+            enqueueBackupWrite(() => backupStorage.pruneColdStorage(req.body?.retainedKeys).then((r) => {
+                backupRuntime.lastMirrorAt = new Date().toISOString();
+                backupRuntime.lastMirrorError = null;
+                return r;
+            }), 'mirror');
+        }
+        res.send({ success: true, ...result });
     } catch (error) {
         if (error instanceof PostgresPayloadError) {
             res.status(400).send({ error: error.message, code: 'invalid_cold_storage_keys' });

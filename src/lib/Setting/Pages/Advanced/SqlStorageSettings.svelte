@@ -11,7 +11,9 @@
     import { NodeStorage } from 'src/ts/storage/nodeStorage'
     import {
         buildSqlVendorParams,
+        isSqlVendorParamsComplete,
         type DbVendor,
+        type NodeBackupConfig,
         type NodePostgresRevision,
         type NodePostgresServerConfig,
         type NodePostgresTokenUsage,
@@ -57,6 +59,31 @@
     let loadError = $state('')
     let revisions = $state<NodePostgresRevision[]>([])
     let tokenUsage = $state<NodePostgresTokenUsage[]>([])
+
+    // ── 백업 데이터베이스 상태 ──
+    let backup = $state<NodeBackupConfig | null>(null)
+    let backupLoadError = $state('')
+    let backupTesting = $state(false)
+    let backupResyncing = $state(false)
+    let backupRemoving = $state(false)
+    let backupApplying = $state(false)
+
+    let backupVendor = $state<DbVendor | null>(null)
+    let backupPgConnectionString = $state('')
+    let backupOracleUser = $state('')
+    let backupOraclePassword = $state('')
+    let backupOracleTnsAlias = $state('')
+    let backupOracleWalletPath = $state('')
+    let backupOracleWalletPassword = $state('')
+    let backupAzureHost = $state('')
+    let backupAzureDatabase = $state('')
+    let backupAzureUsername = $state('')
+    let backupAzurePassword = $state('')
+    let backupAzurePort = $state(1433)
+    let backupPoolMax = $state(10)
+    let backupMirroring = $state(true)
+    let backupSnapshotEnabled = $state(false)
+    let backupSnapshotInterval = $state(60)
 
     function getNodeStorage() {
         if(!(forageStorage.realStorage instanceof NodeStorage)){
@@ -214,7 +241,164 @@
         }
     }
 
-    onMount(refresh)
+    // ── 백업 데이터베이스 함수 ──
+
+    function getBackupFormValues(vendor: DbVendor): SqlVendorFormValues {
+        return {
+            connectionString: backupPgConnectionString,
+            server: backupAzureHost,
+            database: backupAzureDatabase,
+            user: vendor === 'oracle' ? backupOracleUser : backupAzureUsername,
+            password: vendor === 'oracle' ? backupOraclePassword : backupAzurePassword,
+            tnsAlias: backupOracleTnsAlias,
+            walletPath: backupOracleWalletPath,
+            walletPassword: backupOracleWalletPassword,
+            port: backupAzurePort,
+            poolMax: backupPoolMax,
+        }
+    }
+
+    function buildBackupParams(vendor: DbVendor): Record<string, unknown> {
+        return buildSqlVendorParams(vendor, getBackupFormValues(vendor))
+    }
+
+    function isBackupParamsComplete(vendor: DbVendor): boolean {
+        return isSqlVendorParamsComplete(vendor, getBackupFormValues(vendor))
+    }
+
+    async function refreshBackup() {
+        backupLoadError = ''
+        try {
+            backup = await getNodeStorage().postgres.getBackupStatus()
+            if (backup.configured && backup.vendor) {
+                backupVendor = backup.vendor
+                const p = backup.params || {}
+                backupPgConnectionString = p.connectionString || ''
+                backupPoolMax = p.poolMax || 10
+                if (backup.vendor === 'oracle') {
+                    backupOracleUser = p.user || ''
+                    backupOracleTnsAlias = p.tnsAlias || ''
+                    backupOracleWalletPath = p.walletPath || ''
+                } else if (backup.vendor === 'azure') {
+                    backupAzureHost = p.server || ''
+                    backupAzureDatabase = p.database || ''
+                    backupAzureUsername = p.user || ''
+                    backupAzurePort = p.port || 1433
+                }
+                backupMirroring = Boolean(backup.mirroring?.enabled)
+                backupSnapshotEnabled = Boolean(backup.snapshot?.enabled)
+                backupSnapshotInterval = backup.snapshot?.intervalMinutes || 60
+            }
+        } catch (error) {
+            // /api/db-backup 미지원(구버전) 서버일 수 있음
+            backup = null
+            backupLoadError = `${error}`
+        }
+    }
+
+    async function testBackupConnection() {
+        if (!backupVendor) {
+            alertError(language.sqlSelectVendorFirst)
+            return
+        }
+        if (!isBackupParamsComplete(backupVendor)) {
+            alertError(language.sqlConfigIncomplete)
+            return
+        }
+        backupTesting = true
+        try {
+            const result = await getNodeStorage().postgres.testBackupConnection(backupVendor, buildBackupParams(backupVendor))
+            if (result.success) {
+                alertNormal(language.sqlConnectionSuccess)
+            } else {
+                alertError(result.error || language.sqlConnectionFailed)
+            }
+        } catch (error) {
+            alertError(error)
+        } finally {
+            backupTesting = false
+        }
+    }
+
+    async function applyBackupConfiguration() {
+        if (!backupVendor) {
+            alertError(language.sqlSelectVendorFirst)
+            return
+        }
+        if (!isBackupParamsComplete(backupVendor)) {
+            alertError(language.sqlConfigIncomplete)
+            return
+        }
+        if (!await alertConfirm(language.sqlBackupApplyConfirm)) {
+            return
+        }
+        backupApplying = true
+        try {
+            backup = await getNodeStorage().postgres.configureBackup({
+                vendor: backupVendor,
+                params: buildBackupParams(backupVendor),
+                mirroring: { enabled: backupMirroring },
+                snapshot: { enabled: backupSnapshotEnabled, intervalMinutes: backupSnapshotInterval },
+            })
+            alertNormal(language.sqlBackupApplySuccess)
+            await refreshBackup()
+        } catch (error) {
+            alertError(error)
+        } finally {
+            backupApplying = false
+        }
+    }
+
+    async function resyncBackupNow() {
+        if (!await alertConfirm(language.sqlBackupResyncConfirm)) {
+            return
+        }
+        backupResyncing = true
+        try {
+            await getNodeStorage().postgres.resyncBackup()
+            alertNormal(language.sqlBackupResyncSuccess)
+            await refreshBackup()
+        } catch (error) {
+            alertError(error)
+        } finally {
+            backupResyncing = false
+        }
+    }
+
+    async function removeBackupConfiguration() {
+        if (!await alertConfirm(language.sqlBackupRemoveConfirm)) {
+            return
+        }
+        backupRemoving = true
+        try {
+            await getNodeStorage().postgres.removeBackup()
+            alertNormal(language.sqlBackupRemoveSuccess)
+            backup = null
+            backupVendor = null
+            await refreshBackup()
+        } catch (error) {
+            alertError(error)
+        } finally {
+            backupRemoving = false
+        }
+    }
+
+    const backupVendorLabel = $derived(
+        backupVendor === 'oracle' ? language.sqlVendorOracle :
+        backupVendor === 'azure' ? language.sqlVendorAzure :
+        backupVendor === 'postgres' ? language.sqlVendorPostgres :
+        ''
+    )
+
+    function formatBackupTime(value: string | null | undefined) {
+        if (!value) return language.sqlBackupNever
+        return new Date(value).toLocaleString()
+    }
+
+    onMount(() => {
+        refresh()
+        refreshBackup()
+    })
 </script>
 
 <section class="mt-5 rounded-lg border border-darkborderc bg-darkbg/40 p-4 text-textcolor">
@@ -499,5 +683,180 @@
                 {/if}
             </div>
         {/if}
+    {/if}
+</section>
+
+<!-- ─────────────────────────────────────────────────────────────
+     백업 데이터베이스
+──────────────────────────────────────────────────────────── -->
+<section class="mt-5 rounded-lg border border-darkborderc bg-darkbg/40 p-4 text-textcolor">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        <div>
+            <h3 class="text-base font-semibold">{language.sqlBackupTitle}</h3>
+            <p class="mt-1 text-sm text-textcolor2">{language.sqlBackupDescription}</p>
+        </div>
+        {#if backup}
+            <span class="rounded-full px-2 py-1 text-xs {backup.enabled ? 'bg-selected text-textcolor' : 'bg-darkbutton text-textcolor2'}">
+                {backup.enabled ? language.sqlBackupStatusEnabled : language.sqlBackupStatusDisabled}
+            </span>
+        {/if}
+    </div>
+
+    {#if backupLoadError}
+        <p class="mt-3 rounded-md border border-draculared/50 bg-draculared/10 p-2 text-sm text-draculared">{backupLoadError}</p>
+    {:else if backup === null}
+        <p class="mt-3 text-sm text-textcolor2">{language.sqlBackupNotConfigured}</p>
+    {:else}
+        <!-- 제공자 선택 -->
+        <p class="mt-4 text-sm font-medium">{language.sqlBackupChooseVendor}</p>
+        <div class="mt-2 grid gap-2 sm:grid-cols-3">
+            <button
+                class="rounded-lg border p-3 text-left transition {backupVendor === 'postgres' ? 'border-selected bg-selected/10' : 'border-darkborderc bg-darkbg hover:border-selected hover:bg-selected/10'}"
+                onclick={() => backupVendor = 'postgres'}
+            >
+                <div class="text-sm font-semibold">{language.sqlVendorPostgres}</div>
+                <div class="mt-1 text-xs text-textcolor2">{language.sqlVendorPostgresDesc}</div>
+            </button>
+            <button
+                class="rounded-lg border p-3 text-left transition {backupVendor === 'oracle' ? 'border-selected bg-selected/10' : 'border-darkborderc bg-darkbg hover:border-selected hover:bg-selected/10'}"
+                onclick={() => backupVendor = 'oracle'}
+            >
+                <div class="text-sm font-semibold">{language.sqlVendorOracle}</div>
+                <div class="mt-1 text-xs text-textcolor2">{language.sqlVendorOracleDesc}</div>
+            </button>
+            <button
+                class="rounded-lg border p-3 text-left transition {backupVendor === 'azure' ? 'border-selected bg-selected/10' : 'border-darkborderc bg-darkbg hover:border-selected hover:bg-selected/10'}"
+                onclick={() => backupVendor = 'azure'}
+            >
+                <div class="text-sm font-semibold">{language.sqlVendorAzure}</div>
+                <div class="mt-1 text-xs text-textcolor2">{language.sqlVendorAzureDesc}</div>
+            </button>
+        </div>
+
+        <!-- 연결 정보 폼 (vendor별) -->
+        {#if backupVendor === 'postgres'}
+            <label class="mt-4 block text-sm text-textcolor2" for="backup-pg-connection-string">
+                {language.postgresConnectionString}
+            </label>
+            <TextInput
+                id="backup-pg-connection-string"
+                bind:value={backupPgConnectionString}
+                hideText={true}
+                fullwidth={true}
+                placeholder="postgresql://user:password@host:5432/database"
+                className="mt-1"
+            />
+        {:else if backupVendor === 'oracle'}
+            <label class="mt-4 block text-sm text-textcolor2" for="backup-oracle-user">{language.oracleUser}</label>
+            <TextInput id="backup-oracle-user" bind:value={backupOracleUser} fullwidth={true} className="mt-1" />
+
+            <label class="mt-4 block text-sm text-textcolor2" for="backup-oracle-password">{language.oraclePassword}</label>
+            <TextInput id="backup-oracle-password" bind:value={backupOraclePassword} hideText={true} fullwidth={true} className="mt-1" />
+
+            <label class="mt-4 block text-sm text-textcolor2" for="backup-oracle-tns">{language.oracleTnsAlias}</label>
+            <TextInput id="backup-oracle-tns" bind:value={backupOracleTnsAlias} fullwidth={true} className="mt-1" />
+
+            <label class="mt-4 block text-sm text-textcolor2" for="backup-oracle-wallet">{language.oracleWalletPath}</label>
+            <TextInput id="backup-oracle-wallet" bind:value={backupOracleWalletPath} fullwidth={true} className="mt-1" />
+
+            <label class="mt-4 block text-sm text-textcolor2" for="backup-oracle-wallet-password">{language.oracleWalletPassword}</label>
+            <TextInput id="backup-oracle-wallet-password" bind:value={backupOracleWalletPassword} hideText={true} fullwidth={true} className="mt-1" />
+        {:else if backupVendor === 'azure'}
+            <label class="mt-4 block text-sm text-textcolor2" for="backup-azure-host">{language.azureHost}</label>
+            <TextInput id="backup-azure-host" bind:value={backupAzureHost} fullwidth={true} placeholder="server.database.windows.net" className="mt-1" />
+
+            <label class="mt-4 block text-sm text-textcolor2" for="backup-azure-database">{language.azureDatabase}</label>
+            <TextInput id="backup-azure-database" bind:value={backupAzureDatabase} fullwidth={true} className="mt-1" />
+
+            <label class="mt-4 block text-sm text-textcolor2" for="backup-azure-username">{language.azureUsername}</label>
+            <TextInput id="backup-azure-username" bind:value={backupAzureUsername} fullwidth={true} className="mt-1" />
+
+            <label class="mt-4 block text-sm text-textcolor2" for="backup-azure-password">{language.azurePassword}</label>
+            <TextInput id="backup-azure-password" bind:value={backupAzurePassword} hideText={true} fullwidth={true} className="mt-1" />
+
+            <label class="mt-4 block text-sm text-textcolor2" for="backup-azure-port">{language.azurePort}</label>
+            <NumberInput id="backup-azure-port" bind:value={backupAzurePort} min={1} max={65535} fullwidth={true} className="mt-1" />
+        {/if}
+
+        {#if backupVendor}
+            <label class="mt-4 block text-sm text-textcolor2" for="backup-pool-size">{language.postgresPoolSize}</label>
+            <NumberInput id="backup-pool-size" bind:value={backupPoolMax} min={1} max={100} fullwidth={true} className="mt-1" />
+        {/if}
+
+        <!-- 백업 옵션 -->
+        <div class="mt-4 rounded-md border border-borderc bg-bgcolor/30 p-3">
+            <CheckInput bind:check={backupMirroring} name={language.sqlBackupMirroring} />
+            <p class="mt-1 pl-7 text-xs text-textcolor2">{language.sqlBackupMirroringDescription}</p>
+            <div class="mt-3">
+                <CheckInput bind:check={backupSnapshotEnabled} name={language.sqlBackupSnapshot} />
+                <p class="mt-1 pl-7 text-xs text-textcolor2">{language.sqlBackupSnapshotDescription}</p>
+            </div>
+            {#if backupSnapshotEnabled}
+                <div class="mt-3 pl-7">
+                    <label class="block text-sm text-textcolor2" for="backup-snapshot-interval">
+                        {language.sqlBackupSnapshotInterval}
+                    </label>
+                    <NumberInput
+                        id="backup-snapshot-interval"
+                        bind:value={backupSnapshotInterval}
+                        min={5}
+                        max={1440}
+                        fullwidth={true}
+                        className="mt-1"
+                    />
+                </div>
+            {/if}
+        </div>
+
+        <!-- 상태 (설정됨) -->
+        {#if backup.configured}
+            <div class="mt-4 rounded-md border border-borderc bg-bgcolor/30 p-3 text-xs text-textcolor2">
+                <div class="flex flex-wrap gap-x-6 gap-y-1">
+                    <span>{language.sqlBackupPrimaryRevision}: {backup.primaryRevision ?? '—'}</span>
+                    <span>{language.sqlBackupBackupRevision}: {backup.backupRevision ?? '—'}</span>
+                    {#if backup.lag !== null}
+                        <span class="flex items-center gap-1">
+                            {language.sqlBackupLag}:
+                            <span class={backup.lag > 0 ? 'text-draculared' : 'text-textcolor'}>{backup.lag}</span>
+                        </span>
+                    {/if}
+                </div>
+                <div class="mt-2 space-y-0.5">
+                    <p>{language.sqlBackupLastMirror}: {formatBackupTime(backup.lastMirrorAt)}</p>
+                    <p>{language.sqlBackupLastSnapshot}: {formatBackupTime(backup.lastSnapshotAt)}</p>
+                    <p>{language.sqlBackupLastFullSync}: {formatBackupTime(backup.lastFullSyncAt)}</p>
+                </div>
+                {#if backup.inFlight}
+                    <p class="mt-2 text-textcolor">{language.sqlBackupInProgress}</p>
+                {/if}
+                {#if backup.lastMirrorError}
+                    <p class="mt-2 text-draculared">{language.sqlBackupLastError}: {backup.lastMirrorError}</p>
+                {/if}
+                {#if backup.lastSnapshotError}
+                    <p class="mt-2 text-draculared">{language.sqlBackupLastError}: {backup.lastSnapshotError}</p>
+                {/if}
+                {#if backup.lastFullSyncError}
+                    <p class="mt-2 text-draculared">{language.sqlBackupLastError}: {backup.lastFullSyncError}</p>
+                {/if}
+            </div>
+        {/if}
+
+        <!-- 버튼 -->
+        <div class="mt-4 flex flex-wrap gap-2">
+            <Button disabled={backupTesting || backupApplying || !backupVendor} onclick={testBackupConnection}>
+                {backupTesting ? language.sqlTesting : language.sqlTestConnection}
+            </Button>
+            <Button disabled={backupApplying || backupResyncing || !backupVendor} onclick={applyBackupConfiguration}>
+                {backupApplying ? language.postgresApplying : language.sqlBackupApply}
+            </Button>
+            {#if backup.configured}
+                <Button disabled={backupResyncing || backupApplying} onclick={resyncBackupNow}>
+                    {backupResyncing ? language.sqlBackupResyncBusy : language.sqlBackupResync}
+                </Button>
+                <Button styled="danger" disabled={backupRemoving || backupResyncing || backupApplying} onclick={removeBackupConfiguration}>
+                    {backupRemoving ? language.postgresApplying : language.sqlBackupRemove}
+                </Button>
+            {/if}
+        </div>
     {/if}
 </section>

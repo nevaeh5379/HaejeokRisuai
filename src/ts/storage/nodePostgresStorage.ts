@@ -143,6 +143,43 @@ export interface NodePostgresTableData {
     total:number
 }
 
+export interface NodeBackupMirroringConfig {
+    enabled:boolean
+}
+
+export interface NodeBackupSnapshotConfig {
+    enabled:boolean
+    intervalMinutes:number
+}
+
+export interface NodeBackupConfig {
+    configured:boolean
+    enabled:boolean
+    vendor:DbVendor|null
+    managedByEnvironment:boolean
+    mirroring:NodeBackupMirroringConfig
+    snapshot:NodeBackupSnapshotConfig
+    params:Record<string, any>
+    primaryRevision:number|null
+    backupRevision:number|null
+    lag:number|null
+    backupInitialized:boolean
+    inFlight:boolean
+    lastMirrorAt:string|null
+    lastMirrorError:string|null
+    lastSnapshotAt:string|null
+    lastSnapshotError:string|null
+    lastFullSyncAt:string|null
+    lastFullSyncError:string|null
+}
+
+export interface NodeBackupConfigUpdate {
+    vendor:DbVendor
+    params:Record<string, any>
+    mirroring:NodeBackupMirroringConfig
+    snapshot:NodeBackupSnapshotConfig
+}
+
 async function encodeJsonBody(payload:unknown):Promise<{
     body:BodyInit
     contentEncoding?:string
@@ -1153,5 +1190,99 @@ export class NodePostgresStorage {
         }
         const body:{ data:NodePostgresTableData } = await response.json()
         return body.data
+    }
+
+    // ── 백업 데이터베이스 API ──
+
+    /**
+     * 백업 DB 설정 + 실시간 상태 조회 (revision lag, 마지막 미러/스냅샷 시점).
+     * /api/db-backup GET 대응.
+     */
+    async getBackupStatus():Promise<NodeBackupConfig> {
+        const response = await fetch('/api/db-backup', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'Backup database status load failed')
+        }
+        return await response.json()
+    }
+
+    /**
+     * 백업 DB 연결 테스트 (실제 저장소 생성 없이 연결만 확인).
+     * /api/db-backup/test POST 대응.
+     */
+    async testBackupConnection(vendor:DbVendor, params:Record<string, any>):Promise<{ success:boolean, error?:string }> {
+        const encodedBody = await encodeJsonBody({ vendor, params })
+        const response = await fetch('/api/db-backup/test', {
+            method: 'POST',
+            body: encodedBody.body,
+            headers: {
+                'content-type': 'application/json',
+                ...(encodedBody.contentEncoding ? { 'content-encoding': encodedBody.contentEncoding } : {}),
+                ...await this.authHeaders()
+            }
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'Backup database connection test failed')
+        }
+        return await response.json()
+    }
+
+    /**
+     * 백업 DB 설정 적용 + 초기화 + 최초 전체 백업 트리거.
+     * /api/db-backup POST 대응.
+     */
+    async configureBackup(update:NodeBackupConfigUpdate):Promise<NodeBackupConfig> {
+        const encodedBody = await encodeJsonBody(update)
+        const response = await fetch('/api/db-backup', {
+            method: 'POST',
+            body: encodedBody.body,
+            headers: {
+                'content-type': 'application/json',
+                ...(encodedBody.contentEncoding ? { 'content-encoding': encodedBody.contentEncoding } : {}),
+                ...await this.authHeaders()
+            }
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'Backup database configuration failed')
+        }
+        return await response.json()
+    }
+
+    /**
+     * 수동 전체 백업: 메인 DB 전체를 백업 DB에 replaceAll 적요 (완료까지 대기).
+     * /api/db-backup/resync POST 대응.
+     */
+    async resyncBackup():Promise<{ success:boolean, lastFullSyncAt?:string }> {
+        const response = await fetch('/api/db-backup/resync', {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                ...await this.authHeaders()
+            }
+        })
+        if(response.status < 200 || response.status >= 300){
+            const body = await response.json().catch(() => null)
+            throw new Error(body?.error || 'Backup full sync failed')
+        }
+        return await response.json()
+    }
+
+    /**
+     * 백업 DB 설정 해제 (풀 close + 설정 제거).
+     * /api/db-backup DELETE 대응.
+     */
+    async removeBackup():Promise<NodeBackupConfig> {
+        const response = await fetch('/api/db-backup', {
+            method: 'DELETE',
+            headers: await this.authHeaders()
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'Backup database removal failed')
+        }
+        return await response.json()
     }
 }
