@@ -283,3 +283,70 @@ describe('instantiateVendorStorage', () => {
         }
     })
 })
+
+describe('isSecurePostgresConfigRequest logic', () => {
+    function testIsSecureRequest(req: { secure?: boolean, headers?: Record<string, string>, socket?: { remoteAddress?: string } }) {
+        if (req.secure) return true
+        const headers = req.headers || {}
+        const forwardedProto = headers['x-forwarded-proto']
+        if (typeof forwardedProto === 'string') {
+            const proto = forwardedProto.split(',')[0].trim().toLowerCase()
+            if (proto === 'https') return true
+        }
+        const forwardedSsl = headers['x-forwarded-ssl']
+        if (typeof forwardedSsl === 'string' && forwardedSsl.toLowerCase() === 'on') return true
+        const frontEndHttps = headers['front-end-https']
+        if (typeof frontEndHttps === 'string' && frontEndHttps.toLowerCase() === 'on') return true
+        const urlScheme = headers['x-url-scheme']
+        if (typeof urlScheme === 'string' && urlScheme.toLowerCase() === 'https') return true
+        const cfVisitor = headers['cf-visitor']
+        if (typeof cfVisitor === 'string' && cfVisitor.includes('"scheme":"https"')) return true
+        const forwarded = headers['forwarded']
+        if (typeof forwarded === 'string' && /proto=https/i.test(forwarded)) return true
+
+        const remoteAddress = req.socket?.remoteAddress || ''
+        return remoteAddress === '127.0.0.1' || remoteAddress === '::1' ||
+            remoteAddress === '::ffff:127.0.0.1' || remoteAddress === 'localhost'
+    }
+
+    it('allows native secure connections and localhost', () => {
+        expect(testIsSecureRequest({ secure: true })).toBe(true)
+        expect(testIsSecureRequest({ socket: { remoteAddress: '127.0.0.1' } })).toBe(true)
+        expect(testIsSecureRequest({ socket: { remoteAddress: '::1' } })).toBe(true)
+        expect(testIsSecureRequest({ socket: { remoteAddress: '::ffff:127.0.0.1' } })).toBe(true)
+    })
+
+    it('allows requests behind HTTPS reverse proxies with headers', () => {
+        // Nginx / Caddy / Traefik
+        expect(testIsSecureRequest({
+            socket: { remoteAddress: '172.18.0.5' },
+            headers: { 'x-forwarded-proto': 'https' },
+        })).toBe(true)
+        // Multi-tier proxy
+        expect(testIsSecureRequest({
+            socket: { remoteAddress: '10.0.0.2' },
+            headers: { 'x-forwarded-proto': 'https, http' },
+        })).toBe(true)
+        // Cloudflare
+        expect(testIsSecureRequest({
+            socket: { remoteAddress: '172.18.0.3' },
+            headers: { 'cf-visitor': '{"scheme":"https"}' },
+        })).toBe(true)
+        // RFC 7239
+        expect(testIsSecureRequest({
+            socket: { remoteAddress: '172.18.0.4' },
+            headers: { 'forwarded': 'for=192.0.2.60;proto=https;by=203.0.113.43' },
+        })).toBe(true)
+    })
+
+    it('rejects unencrypted remote requests without proxy https headers', () => {
+        expect(testIsSecureRequest({
+            socket: { remoteAddress: '192.168.1.100' },
+            headers: { 'x-forwarded-proto': 'http' },
+        })).toBe(false)
+        expect(testIsSecureRequest({
+            socket: { remoteAddress: '203.0.113.1' },
+            headers: {},
+        })).toBe(false)
+    })
+})

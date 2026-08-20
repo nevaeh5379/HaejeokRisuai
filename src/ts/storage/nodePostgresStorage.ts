@@ -180,6 +180,38 @@ export interface NodeBackupConfigUpdate {
     snapshot:NodeBackupSnapshotConfig
 }
 
+export interface NodeBackupProgressEvent {
+    type?: 'progress' | 'done' | 'error'
+    stage?: 'reading' | 'preparing' | 'connecting' | 'settings' | 'characters' | 'chats' | 'messages' | 'finalizing' | 'done' | string
+    message?: string
+    percentage?: number
+    current?: number
+    total?: number
+    settingsCount?: number
+    charactersCount?: number
+    chatsCount?: number
+    messagesCount?: number
+    lastFullSyncAt?: string
+    error?: string
+    [key: string]: unknown
+}
+
+export interface NodeBackupFullSyncResult {
+    success: boolean
+    lastFullSyncAt?: string
+    settingsCount?: number
+    charactersCount?: number
+    chatsCount?: number
+    messagesCount?: number
+    revision?: number
+    changed?: {
+        root?: number
+        characters?: number
+        chats?: number
+        messages?: number
+    }
+}
+
 async function encodeJsonBody(payload:unknown):Promise<{
     body:BodyInit
     contentEncoding?:string
@@ -1253,10 +1285,10 @@ export class NodePostgresStorage {
     }
 
     /**
-     * 수동 전체 백업: 메인 DB 전체를 백업 DB에 replaceAll 적요 (완료까지 대기).
+     * 수동 전체 백업: 메인 DB 전체를 백업 DB에 replaceAll 적요 (실시간 진행상황 콜백 지원).
      * /api/db-backup/resync POST 대응.
      */
-    async resyncBackup():Promise<{ success:boolean, lastFullSyncAt?:string }> {
+    async resyncBackup(onProgress?: (event: NodeBackupProgressEvent) => void): Promise<NodeBackupFullSyncResult> {
         const response = await fetch('/api/db-backup/resync', {
             method: 'POST',
             headers: {
@@ -1264,11 +1296,56 @@ export class NodePostgresStorage {
                 ...await this.authHeaders()
             }
         })
-        if(response.status < 200 || response.status >= 300){
+        if (response.status < 200 || response.status >= 300) {
             const body = await response.json().catch(() => null)
             throw new Error(body?.error || 'Backup full sync failed')
         }
-        return await response.json()
+
+        const reader = response.body?.getReader()
+        if (!reader) {
+            return await response.json()
+        }
+
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let finalResult: NodeBackupFullSyncResult = { success: true }
+
+        while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+
+            for (const line of lines) {
+                if (!line.trim()) continue
+                try {
+                    const parsed = JSON.parse(line)
+                    if (parsed.type === 'progress') {
+                        onProgress?.(parsed)
+                    } else if (parsed.type === 'done') {
+                        finalResult = {
+                            success: parsed.success !== false,
+                            lastFullSyncAt: parsed.lastFullSyncAt,
+                            settingsCount: parsed.settingsCount,
+                            charactersCount: parsed.charactersCount,
+                            chatsCount: parsed.chatsCount,
+                            messagesCount: parsed.messagesCount,
+                            revision: parsed.revision,
+                            changed: parsed.changed,
+                        }
+                    } else if (parsed.type === 'error') {
+                        throw new Error(parsed.error || 'Backup full sync failed')
+                    }
+                } catch (err: any) {
+                    if (err?.message && !err.message.includes('JSON')) {
+                        throw err
+                    }
+                }
+            }
+        }
+
+        return finalResult
     }
 
     /**

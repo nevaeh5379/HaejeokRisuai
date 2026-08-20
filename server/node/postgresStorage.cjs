@@ -1360,11 +1360,13 @@ class PostgresStorage extends SqlStorageBase {
         }
     }
 
-    async sync(rawPayload) {
+    async sync(rawPayload, options = {}) {
         this.assertEnabled();
+        const onProgress = typeof options === 'function' ? options : options?.onProgress;
         const payload = validateSyncPayload(rawPayload);
         const client = await this.pool.connect();
         try {
+            onProgress?.({ stage: 'start', message: 'Starting transaction' });
             await client.query('BEGIN');
             const metaResult = await client.query(
                 'SELECT revision FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE'
@@ -1387,6 +1389,7 @@ class PostgresStorage extends SqlStorageBase {
                 await client.query('DELETE FROM character.characters');
             }
 
+            onProgress?.({ stage: 'settings', message: `Syncing settings (${payload.rootUpserts.length})`, count: payload.rootUpserts.length });
             let splitSettings;
             try {
                 splitSettings = payload.rootUpserts.map((row) => splitSetting(row.key, row.value, {
@@ -1463,6 +1466,7 @@ class PostgresStorage extends SqlStorageBase {
                 await client.query('DELETE FROM system.settings WHERE key = ANY($1::text[])', [payload.rootDeletes]);
             }
 
+            onProgress?.({ stage: 'characters', message: `Syncing characters (${payload.characters.length})`, count: payload.characters.length });
             const splitCharacters = payload.characters.map(splitCharacter);
             const characterColumns = [
                 'id', 'position', 'kind', 'name', 'image', 'first_message', 'description', 'notes',
@@ -1511,6 +1515,7 @@ class PostgresStorage extends SqlStorageBase {
             await bulkInsert(client, 'character.assets', ['character_id', 'position', 'asset_source', 'asset_type', 'uri', 'name', 'extension', 'extra_value'], ['text', 'integer', 'text', 'text', 'text', 'text', 'text', 'text'], characterRows('assets'));
             await bulkInsert(client, 'character.lore_entries', ['character_id', 'position', 'lore_id', 'primary_key', 'secondary_key', 'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], ['text', 'integer', 'text', 'text', 'text', 'integer', 'text', 'text', 'text', 'boolean', 'boolean', 'boolean', 'double precision', 'boolean', 'integer', 'text', 'jsonb'], characterRows('lore'));
 
+            onProgress?.({ stage: 'chats', message: `Syncing chats (${payload.chats.length})`, count: payload.chats.length });
             const splitChats = payload.chats.map(splitChat);
             const chatColumns = ['id', 'character_id', 'position', 'name', 'note', 'sd_data', 'supa_memory_data', 'last_memory', 'is_streaming', 'streaming_optimization_mode', 'bound_persona_id', 'first_message_index', 'folder_id', 'last_message_time'];
             await bulkInsert(client, 'chat.chats', chatColumns,
@@ -1532,6 +1537,7 @@ class PostgresStorage extends SqlStorageBase {
             await bulkInsert(client, 'chat.memory', ['chat_id', 'memory_type', 'payload'], ['text', 'text', 'jsonb'], chatRows('memory'));
             await bulkInsert(client, 'chat.lore_entries', ['chat_id', 'position', 'lore_id', 'primary_key', 'secondary_key', 'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], ['text', 'integer', 'text', 'text', 'text', 'integer', 'text', 'text', 'text', 'boolean', 'boolean', 'boolean', 'double precision', 'boolean', 'integer', 'text', 'jsonb'], chatRows('lore'));
 
+            onProgress?.({ stage: 'messages', message: `Syncing messages (${payload.messages.length})`, count: payload.messages.length });
             const splitMessages = payload.messages.map(splitMessage);
             const messageColumns = ['chat_id', 'id', 'position', 'role', 'content_text', 'content_binary', 'saying_character_id', 'sent_time', 'sender_name', 'other_user', 'disabled_scope', 'is_comment'];
             await bulkInsert(client, 'chat.messages', messageColumns,
@@ -1567,6 +1573,7 @@ class PostgresStorage extends SqlStorageBase {
                 );
             }
 
+            onProgress?.({ stage: 'finalizing', message: 'Updating metadata and committing' });
             await client.query(
                 `UPDATE system.storage_meta
                  SET revision = $1, initialized = TRUE, updated_at = NOW()

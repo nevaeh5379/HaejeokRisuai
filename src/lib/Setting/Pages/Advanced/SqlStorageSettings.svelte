@@ -14,6 +14,8 @@
         isSqlVendorParamsComplete,
         type DbVendor,
         type NodeBackupConfig,
+        type NodeBackupProgressEvent,
+        type NodeBackupFullSyncResult,
         type NodePostgresRevision,
         type NodePostgresServerConfig,
         type NodePostgresTokenUsage,
@@ -65,6 +67,7 @@
     let backupLoadError = $state('')
     let backupTesting = $state(false)
     let backupResyncing = $state(false)
+    let backupProgressData = $state<NodeBackupProgressEvent | null>(null)
     let backupRemoving = $state(false)
     let backupApplying = $state(false)
 
@@ -354,14 +357,24 @@
             return
         }
         backupResyncing = true
+        backupProgressData = {
+            stage: 'reading',
+            percentage: 5,
+            message: language.sqlBackupProgressReading,
+        }
         try {
-            await getNodeStorage().postgres.resyncBackup()
+            const result = await getNodeStorage().postgres.resyncBackup((event) => {
+                backupProgressData = event
+            })
             alertNormal(language.sqlBackupResyncSuccess)
             await refreshBackup()
         } catch (error) {
             alertError(error)
         } finally {
             backupResyncing = false
+            setTimeout(() => {
+                backupProgressData = null
+            }, 1200)
         }
     }
 
@@ -826,7 +839,7 @@
                     <p>{language.sqlBackupLastSnapshot}: {formatBackupTime(backup.lastSnapshotAt)}</p>
                     <p>{language.sqlBackupLastFullSync}: {formatBackupTime(backup.lastFullSyncAt)}</p>
                 </div>
-                {#if backup.inFlight}
+                {#if backup.inFlight && !backupResyncing}
                     <p class="mt-2 text-textcolor">{language.sqlBackupInProgress}</p>
                 {/if}
                 {#if backup.lastMirrorError}
@@ -837,6 +850,72 @@
                 {/if}
                 {#if backup.lastFullSyncError}
                     <p class="mt-2 text-draculared">{language.sqlBackupLastError}: {backup.lastFullSyncError}</p>
+                {/if}
+            </div>
+        {/if}
+
+        <!-- 실시간 백업 진행 상황 표시 -->
+        {#if backupResyncing && backupProgressData}
+            <div class="mt-4 rounded-lg border border-selected/40 bg-selected/10 p-4 text-textcolor shadow-md transition-all duration-300">
+                <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                        <svg class="h-4 w-4 animate-spin text-selected" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                        </svg>
+                        <span class="text-sm font-semibold text-textcolor">
+                            {#if backupProgressData.stage === 'reading'}
+                                {language.sqlBackupProgressReading}
+                            {:else if backupProgressData.stage === 'preparing'}
+                                {language.sqlBackupProgressPreparing}
+                            {:else if backupProgressData.stage === 'connecting'}
+                                {language.sqlBackupProgressConnecting}
+                            {:else if backupProgressData.stage === 'settings'}
+                                {language.sqlBackupProgressSettings}
+                            {:else if backupProgressData.stage === 'characters'}
+                                {language.sqlBackupProgressCharacters}
+                            {:else if backupProgressData.stage === 'chats'}
+                                {language.sqlBackupProgressChats}
+                            {:else if backupProgressData.stage === 'messages'}
+                                {language.sqlBackupProgressMessages}
+                            {:else if backupProgressData.stage === 'finalizing'}
+                                {language.sqlBackupProgressFinalizing}
+                            {:else if backupProgressData.stage === 'done'}
+                                {language.sqlBackupProgressDone}
+                            {:else}
+                                {backupProgressData.message || language.sqlBackupInProgress}
+                            {/if}
+                        </span>
+                    </div>
+                    <span class="text-sm font-bold text-selected">
+                        {backupProgressData.percentage ?? 0}%
+                    </span>
+                </div>
+
+                <!-- Progress bar track -->
+                <div class="mt-3 h-2.5 w-full overflow-hidden rounded-full border border-darkborderc bg-bgcolor/50">
+                    <div
+                        class="h-full bg-selected transition-all duration-300"
+                        style="width: {backupProgressData.percentage ?? 0}%"
+                    ></div>
+                </div>
+
+                <!-- Details / Stats -->
+                {#if backupProgressData.settingsCount !== undefined || backupProgressData.charactersCount !== undefined || backupProgressData.chatsCount !== undefined || backupProgressData.messagesCount !== undefined}
+                    <div class="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-textcolor2">
+                        {#if backupProgressData.settingsCount !== undefined}
+                            <span>{language.sqlBackupStatsSettings}: <span class="font-medium text-textcolor">{backupProgressData.settingsCount}</span></span>
+                        {/if}
+                        {#if backupProgressData.charactersCount !== undefined}
+                            <span>{language.sqlBackupStatsCharacters}: <span class="font-medium text-textcolor">{backupProgressData.charactersCount}</span></span>
+                        {/if}
+                        {#if backupProgressData.chatsCount !== undefined}
+                            <span>{language.sqlBackupStatsChats}: <span class="font-medium text-textcolor">{backupProgressData.chatsCount}</span></span>
+                        {/if}
+                        {#if backupProgressData.messagesCount !== undefined}
+                            <span>{language.sqlBackupStatsMessages}: <span class="font-medium text-textcolor">{backupProgressData.messagesCount.toLocaleString()}</span></span>
+                        {/if}
+                    </div>
                 {/if}
             </div>
         {/if}

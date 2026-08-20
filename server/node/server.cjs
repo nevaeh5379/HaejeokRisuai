@@ -352,14 +352,87 @@ async function mirrorSyncPayloadToBackup(payload) {
     });
 }
 
-async function mirrorFullBackupToBackup() {
+async function mirrorFullBackupToBackup(onProgress) {
+    onProgress?.({ stage: 'reading', message: 'Reading data from main database...', percentage: 10 });
     const loaded = await postgresStorage.loadDatabase({ shallow: false });
     if (!loaded?.database) {
         return { skipped: 'primary_not_initialized' };
     }
     const payload = buildFullBackupPayload(loaded.database);
+    const settingsCount = payload.root?.upserts?.length ?? payload.rootUpserts?.length ?? 0;
+    const charactersCount = payload.characters?.length || 0;
+    const chatsCount = payload.chats?.length || 0;
+    const messagesCount = payload.messages?.length || 0;
+    const totalItems = settingsCount + charactersCount + chatsCount + messagesCount;
+
+    onProgress?.({
+        stage: 'preparing',
+        message: 'Preparing backup data...',
+        percentage: 30,
+        settingsCount,
+        charactersCount,
+        chatsCount,
+        messagesCount,
+        total: totalItems,
+    });
+
     const state = await backupStorage.getState();
-    return await backupStorage.sync({ ...payload, baseRevision: state.revision ?? 0 });
+
+    const handleStorageProgress = (subProgress) => {
+        if (!subProgress) return;
+        let mappedPercentage = 40;
+        const subStage = subProgress.stage;
+        let subMessage = subProgress.message;
+        if (subStage === 'settings') {
+            mappedPercentage = 45;
+            subMessage = subMessage || `Syncing settings (${settingsCount})`;
+        } else if (subStage === 'characters') {
+            mappedPercentage = 60;
+            subMessage = subMessage || `Syncing characters (${charactersCount})`;
+        } else if (subStage === 'chats') {
+            mappedPercentage = 75;
+            subMessage = subMessage || `Syncing chats (${chatsCount})`;
+        } else if (subStage === 'messages') {
+            mappedPercentage = 90;
+            subMessage = subMessage || `Syncing messages (${messagesCount})`;
+        } else if (subStage === 'finalizing') {
+            mappedPercentage = 98;
+            subMessage = subMessage || 'Finalizing backup database...';
+        }
+        onProgress?.({
+            stage: subStage || 'syncing',
+            message: subMessage,
+            percentage: mappedPercentage,
+            settingsCount,
+            charactersCount,
+            chatsCount,
+            messagesCount,
+            total: totalItems,
+        });
+    };
+
+    const syncResult = await backupStorage.sync(
+        { ...payload, baseRevision: state.revision ?? 0 },
+        { onProgress: handleStorageProgress }
+    );
+
+    const finalResult = {
+        success: true,
+        ...(syncResult || {}),
+        settingsCount,
+        charactersCount,
+        chatsCount,
+        messagesCount,
+    };
+
+    onProgress?.({
+        stage: 'done',
+        message: 'Backup complete',
+        percentage: 100,
+        ...finalResult,
+    });
+
+    return finalResult;
 }
 
 async function runBackupSnapshot() {
@@ -565,9 +638,34 @@ function isSecurePostgresConfigRequest(req) {
     if (req.secure) {
         return true;
     }
+    const forwardedProto = req.headers['x-forwarded-proto'];
+    if (typeof forwardedProto === 'string') {
+        const proto = forwardedProto.split(',')[0].trim().toLowerCase();
+        if (proto === 'https') return true;
+    }
+    const forwardedSsl = req.headers['x-forwarded-ssl'];
+    if (typeof forwardedSsl === 'string' && forwardedSsl.toLowerCase() === 'on') {
+        return true;
+    }
+    const frontEndHttps = req.headers['front-end-https'];
+    if (typeof frontEndHttps === 'string' && frontEndHttps.toLowerCase() === 'on') {
+        return true;
+    }
+    const urlScheme = req.headers['x-url-scheme'];
+    if (typeof urlScheme === 'string' && urlScheme.toLowerCase() === 'https') {
+        return true;
+    }
+    const cfVisitor = req.headers['cf-visitor'];
+    if (typeof cfVisitor === 'string' && cfVisitor.includes('"scheme":"https"')) {
+        return true;
+    }
+    const forwarded = req.headers['forwarded'];
+    if (typeof forwarded === 'string' && /proto=https/i.test(forwarded)) {
+        return true;
+    }
     const remoteAddress = req.socket?.remoteAddress || '';
     return remoteAddress === '127.0.0.1' || remoteAddress === '::1' ||
-        remoteAddress === '::ffff:127.0.0.1';
+        remoteAddress === '::ffff:127.0.0.1' || remoteAddress === 'localhost';
 }
 
 async function persistPostgresServerConfig(config) {
@@ -2873,19 +2971,42 @@ app.post('/api/db-backup/resync', authenticatedRouteLimiter, async (req, res, ne
         return;
     }
     try {
-        // 직렬 큐에서 수행 + 완료 대기 (수동 전체 백업은 결과 반환)
-        const result = await enqueueBackupWrite(() => mirrorFullBackupToBackup().then((r) => {
+        res.setHeader('Content-Type', 'application/x-ndjson');
+        res.setHeader('Transfer-Encoding', 'chunked');
+
+        const sendProgress = (event) => {
+            if (res.writableEnded || res.closed) return;
+            res.write(JSON.stringify({ type: 'progress', ...event }) + '\n');
+        };
+
+        const result = await enqueueBackupWrite(() => mirrorFullBackupToBackup(sendProgress).then((r) => {
             backupRuntime.lastFullSyncAt = new Date().toISOString();
             backupRuntime.lastFullSyncError = null;
             return r;
         }), 'full');
-        res.send({ success: true, ...(result || {}), lastFullSyncAt: backupRuntime.lastFullSyncAt });
+
+        res.write(JSON.stringify({
+            type: 'done',
+            success: true,
+            ...(result || {}),
+            lastFullSyncAt: backupRuntime.lastFullSyncAt,
+        }) + '\n');
+        res.end();
     } catch (error) {
-        res.status(502).send({
-            success: false,
-            error: error?.message || 'Backup full sync failed',
-            code: 'backup_sync_failed',
-        });
+        if (!res.headersSent) {
+            res.status(502).send({
+                success: false,
+                error: error?.message || 'Backup full sync failed',
+                code: 'backup_sync_failed',
+            });
+        } else {
+            res.write(JSON.stringify({
+                type: 'error',
+                error: error?.message || 'Backup full sync failed',
+                code: 'backup_sync_failed',
+            }) + '\n');
+            res.end();
+        }
     }
 });
 
