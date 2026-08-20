@@ -98,11 +98,18 @@ export class NodeStorage{
         return this.cachedAuthToken
     }
 
-    async getDirectUrl(key: string, options?: { thumbnail?: boolean }): Promise<string> {
+    async getDirectUrl(key: string, options?: { thumbnail?: boolean, target?: 'active' | 'fs' | 's3' | 'azuresql' }): Promise<string> {
         const auth = await this.getCachedAuth()
         const hex = Buffer.from(key, 'utf-8').toString('hex')
-        const thumbParam = options?.thumbnail ? '&thumb=1' : ''
-        return `/api/read?path=${hex}${thumbParam}&auth=${encodeURIComponent(auth)}`
+        const params: string[] = []
+        if (options?.thumbnail) {
+            params.push('thumb=1')
+        }
+        if (options?.target && options.target !== 'active') {
+            params.push(`target=${options.target}`)
+        }
+        params.push(`auth=${encodeURIComponent(auth)}`)
+        return `/api/read?path=${hex}&${params.join('&')}`
     }
 
     async getProxyAuth() {
@@ -245,7 +252,7 @@ export class NodeStorage{
         })
     }
 
-    async getItem(key:string, options?: { thumbnail?: boolean }):Promise<Buffer> {
+    async getItem(key:string, options?: { thumbnail?: boolean, target?: 'active' | 'fs' | 's3' | 'azuresql' }):Promise<Buffer> {
         await this.checkAuth()
         const headers: Record<string, string> = {
             'file-path': Buffer.from(key, 'utf-8').toString('hex'),
@@ -254,7 +261,14 @@ export class NodeStorage{
         if (options?.thumbnail) {
             headers['x-thumbnail'] = 'true'
         }
-        const da = await fetch('/api/read' + (options?.thumbnail ? '?thumb=1' : ''), {
+        if (options?.target && options.target !== 'active') {
+            headers['x-storage-target'] = options.target
+        }
+        const targetParam = options?.target && options.target !== 'active' ? `&target=${options.target}` : ''
+        const thumbParam = options?.thumbnail ? '?thumb=1' : ''
+        const query = [thumbParam, targetParam].filter(Boolean).join('&')
+        const queryStr = query ? `?${query}` : ''
+        const da = await fetch('/api/read' + queryStr, {
             method: "GET",
             cache: 'no-cache',
             headers
@@ -270,7 +284,7 @@ export class NodeStorage{
         return data
     }
 
-    async getItemFromBrowserCache(key:string, options?: { thumbnail?: boolean }):Promise<Buffer|null> {
+    async getItemFromBrowserCache(key:string, options?: { thumbnail?: boolean, target?: 'active' | 'fs' | 's3' | 'azuresql' }):Promise<Buffer|null> {
         await this.checkAuth()
         const headers: Record<string, string> = {
             'file-path': Buffer.from(key, 'utf-8').toString('hex'),
@@ -279,9 +293,16 @@ export class NodeStorage{
         if (options?.thumbnail) {
             headers['x-thumbnail'] = 'true'
         }
+        if (options?.target && options.target !== 'active') {
+            headers['x-storage-target'] = options.target
+        }
+        const targetParam = options?.target && options.target !== 'active' ? `&target=${options.target}` : ''
+        const thumbParam = options?.thumbnail ? '?thumb=1' : ''
+        const query = [thumbParam, targetParam].filter(Boolean).join('&')
+        const queryStr = query ? `?${query}` : ''
         let da: Response
         try {
-            da = await fetch('/api/read' + (options?.thumbnail ? '?thumb=1' : ''), {
+            da = await fetch('/api/read' + queryStr, {
                 method: "GET",
                 cache: 'force-cache',
                 headers

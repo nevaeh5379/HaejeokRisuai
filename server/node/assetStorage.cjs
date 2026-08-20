@@ -1642,6 +1642,19 @@ class AssetStorageManager {
         return this.activeStorage;
     }
 
+    getStorageByType(type) {
+        if (type === 'fs') {
+            return this.localFs;
+        }
+        if (type === 's3') {
+            return this.s3Storage;
+        }
+        if (type === 'azuresql') {
+            return this.azureSqlStorage;
+        }
+        return null;
+    }
+
     createWriteStream(hexPath) {
         return this.activeStorage.createWriteStream(hexPath);
     }

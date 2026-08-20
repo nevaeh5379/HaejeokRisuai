@@ -1,14 +1,10 @@
 <script lang="ts">
     import { onMount } from 'svelte'
     import {
-        ArrowDownIcon,
-        ArrowUpIcon,
-        CheckIcon,
         ChevronLeftIcon,
         CircleAlertIcon,
         DatabaseIcon,
         HardDriveIcon,
-        Image as ImageIcon,
         LayersIcon,
         MusicIcon,
         RefreshCwIcon,
@@ -16,21 +12,15 @@
         Trash2Icon,
         UserIcon,
         XIcon,
-        SlidersHorizontalIcon,
-        SparklesIcon,
-        ExternalLinkIcon,
         ServerIcon,
-        FolderArchiveIcon,
-        FolderSyncIcon,
-        FolderXIcon
+        FolderArchiveIcon
     } from '@lucide/svelte'
     import { language } from 'src/lang'
     import Button from 'src/lib/UI/GUI/Button.svelte'
     import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
-    import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
     import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
     import { alertConfirm, alertError, alertNormal } from 'src/ts/alert'
-    import { forageStorage, readImage } from 'src/ts/globalApi.svelte'
+    import { forageStorage } from 'src/ts/globalApi.svelte'
     import { DBState, MobileGUI } from 'src/ts/stores.svelte'
     import { NodeStorage } from 'src/ts/storage/nodeStorage'
     import { getMimeType } from 'src/ts/media'
@@ -108,6 +98,7 @@
         assets: BotAssetItem[]
         emotionsCount: number
         additionalAssetsCount: number
+        ccAssetsCount: number
         audioCount: number
     }
 
@@ -136,6 +127,12 @@
             throw new Error('Node storage is not available')
         }
         return forageStorage.realStorage
+    }
+
+    async function readImageFromTarget(key: string): Promise<Uint8Array | null> {
+        const storage = getNodeStorage()
+        // viewTarget-aware read: fetch from the currently selected backend
+        return await storage.getItem(key, { target: viewTarget })
     }
 
     function formatBytes(bytes: number): string {
@@ -221,6 +218,11 @@
         loading = true
         selectedFileKeys.clear()
         selectedFileKeys = new Set(selectedFileKeys)
+        // Clear thumbnail cache so previews are re-fetched from the new target
+        for (const url of thumbnailUrls.values()) {
+            URL.revokeObjectURL(url)
+        }
+        thumbnailUrls = new Map()
         await loadTargetAssets()
         loading = false
     }
@@ -237,19 +239,47 @@
 
             function addAsset(key: string | undefined, type: BotAssetItem['type'], label: string) {
                 if (!key || typeof key !== 'string') return
-                let normalizedKey = key
-                if (!normalizedKey.startsWith('assets/') && !normalizedKey.includes('/')) {
-                    normalizedKey = `assets/${key}`
+                // Build a list of candidate keys to try against the asset map.
+                // DB fields may store: "assets/xxx.png", bare "xxx.png", or a
+                // fully-qualified path. The storage layer uses the original
+                // key (hexToKey), so we try multiple normalizations.
+                const candidates: string[] = []
+                const stripped = key.replace(/^assets\//, '')
+                if (key.startsWith('assets/')) {
+                    candidates.push(key)
+                    candidates.push(stripped)
+                } else if (key.includes('/')) {
+                    // Already a full path (e.g. "thumbnails/..." or other prefix)
+                    candidates.push(key)
+                } else {
+                    // Bare key — try with and without the assets/ prefix
+                    candidates.push(`assets/${key}`)
+                    candidates.push(key)
                 }
-                let item = assetMap.get(normalizedKey) || assetMap.get(key)
+
+                let item: NodeStorageAssetItem | undefined
+                let matchedKey = key
+                for (const candidate of candidates) {
+                    const found = assetMap.get(candidate)
+                    if (found) {
+                        item = found
+                        matchedKey = candidate
+                        break
+                    }
+                }
                 const size = item?.size ?? 0
 
-                if (!seenKeys.has(normalizedKey)) {
-                    seenKeys.add(normalizedKey)
-                    referencedKeys.add(normalizedKey)
+                if (!seenKeys.has(matchedKey)) {
+                    seenKeys.add(matchedKey)
+                    referencedKeys.add(matchedKey)
+                    // Also register all candidate forms so orphan detection
+                    // doesn't flag assets that are actually referenced.
+                    for (const c of candidates) {
+                        referencedKeys.add(c)
+                    }
                     referencedKeys.add(key)
                     botAssets.push({
-                        key: normalizedKey,
+                        key: matchedKey,
                         type,
                         label,
                         size
@@ -286,13 +316,14 @@
                 }
             }
 
-            // Character Card Assets (charx)
+            // Character Card Assets (charx) — tracked separately
+            let ccAssetsCount = 0
             const ccAssetsList = (char as any).ccAssets
             if (Array.isArray(ccAssetsList)) {
                 for (const cca of ccAssetsList) {
                     if (cca?.uri) {
                         addAsset(cca.uri, 'ccAsset', cca.name || cca.type || 'CC Asset')
-                        additionalCount++
+                        ccAssetsCount++
                     }
                 }
             }
@@ -322,6 +353,7 @@
                 assets: botAssets,
                 emotionsCount,
                 additionalAssetsCount: additionalCount,
+                ccAssetsCount,
                 audioCount
             })
         }
@@ -333,7 +365,8 @@
         let orphanSize = 0
         if (assetDetails?.assets) {
             for (const asset of assetDetails.assets) {
-                if (!referencedKeys.has(asset.key) && !referencedKeys.has(asset.key.replace(/^assets\//, ''))) {
+                const strippedKey = asset.key.replace(/^assets\//, '')
+                if (!referencedKeys.has(asset.key) && !referencedKeys.has(strippedKey)) {
                     orphans.push(asset)
                     orphanSize += asset.size
                 }
@@ -387,7 +420,7 @@
     async function loadThumbnail(key: string) {
         if (!key || thumbnailUrls.has(key)) return
         try {
-            const data = await readImage(key)
+            const data = await readImageFromTarget(key)
             if (data && data.length > 0) {
                 const blob = new Blob([data as unknown as BlobPart], { type: getMimeType(key) })
                 const url = URL.createObjectURL(blob)
@@ -632,7 +665,7 @@
     async function openPreview(key: string) {
         previewAssetKey = key
         try {
-            const data = await readImage(key)
+            const data = await readImageFromTarget(key)
             if (data && data.length > 0) {
                 const blob = new Blob([data as unknown as BlobPart], { type: getMimeType(key) })
                 previewImageUrl = URL.createObjectURL(blob)
@@ -682,7 +715,7 @@
                         onclick={() => switchViewTarget('s3')}
                     >
                         <ServerIcon class="h-3.5 w-3.5" />
-                        <span>S3 (RustFS)</span>
+                        <span>{language.storageS3Rustfs}</span>
                         <span class="rounded-full bg-black/30 px-1.5 py-0.2 text-[10px]">{formatBytes(storageSummary?.s3?.totalSizeBytes ?? 0)}</span>
                     </button>
                 {/if}
@@ -693,7 +726,7 @@
                         onclick={() => switchViewTarget('azuresql')}
                     >
                         <DatabaseIcon class="h-3.5 w-3.5" />
-                        <span>Azure SQL</span>
+                        <span>{language.storageAzureSql}</span>
                         <span class="rounded-full bg-black/30 px-1.5 py-0.2 text-[10px]">{formatBytes(storageSummary?.azuresql?.totalSizeBytes ?? 0)}</span>
                     </button>
                 {/if}
@@ -704,7 +737,7 @@
                     onclick={() => switchViewTarget('fs')}
                 >
                     <FolderArchiveIcon class="h-3.5 w-3.5" />
-                    <span>로컬 FS</span>
+                    <span>{language.storageLocalFs}</span>
                     <span class="rounded-full bg-black/30 px-1.5 py-0.2 text-[10px]">{formatBytes(storageSummary?.localFs?.totalSizeBytes ?? 0)}</span>
                 </button>
             </div>
@@ -715,7 +748,7 @@
                 onclick={loadData}
             >
                 <RefreshCwIcon class="h-3.5 w-3.5 {loading ? 'animate-spin' : ''}" />
-                <span class="hidden sm:inline">새로고침</span>
+                <span class="hidden sm:inline">{language.storageRefresh}</span>
             </button>
             <button
                 class="flex h-9 w-9 items-center justify-center rounded-lg text-textcolor2 hover:bg-darkborderc/50 hover:text-textcolor transition-colors"
@@ -734,19 +767,19 @@
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-1 text-[11px] font-medium text-textcolor2 sm:text-xs">
                         <ServerIcon class="h-3.5 w-3.5 text-blue-400" />
-                        <span>S3 객체 스토리지</span>
+                        <span>{language.storageTargetS3}</span>
                     </div>
                     {#if config?.enabled && config.storageType === 's3'}
                         <span class="rounded-full bg-blue-500/20 px-2 py-0.2 text-[10px] font-bold text-blue-300">
-                            {storageSummary?.activeType === 's3' ? '메인 활성' : '활성'}
+                            {storageSummary?.activeType === 's3' ? language.storageMainActive : language.storageActive}
                         </span>
                     {:else}
-                        <span class="rounded-full bg-darkbutton px-2 py-0.2 text-[10px] text-textcolor2">비활성</span>
+                        <span class="rounded-full bg-darkbutton px-2 py-0.2 text-[10px] text-textcolor2">{language.storageInactive}</span>
                     {/if}
                 </div>
                 <div class="mt-1 text-base font-bold text-textcolor sm:text-xl">
                     {formatBytes(storageSummary?.s3?.totalSizeBytes ?? 0)}
-                    <span class="text-xs font-normal text-textcolor2">({(storageSummary?.s3?.totalObjects ?? 0).toLocaleString()}개)</span>
+                    <span class="text-xs font-normal text-textcolor2">({(storageSummary?.s3?.totalObjects ?? 0).toLocaleString()})</span>
                 </div>
             </div>
 
@@ -755,19 +788,19 @@
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-1 text-[11px] font-medium text-textcolor2 sm:text-xs">
                         <DatabaseIcon class="h-3.5 w-3.5 text-sky-400" />
-                        <span>Azure SQL</span>
+                        <span>{language.storageAzureSql}</span>
                     </div>
                     {#if config?.enabled && config.storageType === 'azuresql'}
                         <span class="rounded-full bg-sky-500/20 px-2 py-0.2 text-[10px] font-bold text-sky-300">
-                            {storageSummary?.activeType === 'azuresql' ? '메인 활성' : '활성'}
+                            {storageSummary?.activeType === 'azuresql' ? language.storageMainActive : language.storageActive}
                         </span>
                     {:else}
-                        <span class="rounded-full bg-darkbutton px-2 py-0.2 text-[10px] text-textcolor2">비활성</span>
+                        <span class="rounded-full bg-darkbutton px-2 py-0.2 text-[10px] text-textcolor2">{language.storageInactive}</span>
                     {/if}
                 </div>
                 <div class="mt-1 text-base font-bold text-textcolor sm:text-xl">
                     {formatBytes(storageSummary?.azuresql?.totalSizeBytes ?? 0)}
-                    <span class="text-xs font-normal text-textcolor2">({(storageSummary?.azuresql?.totalObjects ?? 0).toLocaleString()}개)</span>
+                    <span class="text-xs font-normal text-textcolor2">({(storageSummary?.azuresql?.totalObjects ?? 0).toLocaleString()})</span>
                 </div>
             </div>
 
@@ -776,21 +809,21 @@
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-1 text-[11px] font-medium text-textcolor2 sm:text-xs">
                         <FolderArchiveIcon class="h-3.5 w-3.5 text-indigo-400" />
-                        <span>로컬 FS 스토리지</span>
+                        <span>{language.storageLocalFsStorage}</span>
                     </div>
                     <div class="flex items-center gap-1">
                         {#if storageSummary?.activeType === 'fs'}
-                            <span class="rounded-full bg-green-500/20 px-2 py-0.2 text-[10px] font-bold text-green-300">메인 활성</span>
+                            <span class="rounded-full bg-green-500/20 px-2 py-0.2 text-[10px] font-bold text-green-300">{language.storageMainActive}</span>
                         {:else}
-                            <span class="rounded-full bg-darkbutton px-2 py-0.2 text-[10px] text-textcolor2">대기</span>
+                            <span class="rounded-full bg-darkbutton px-2 py-0.2 text-[10px] text-textcolor2">{language.storageStandbyBadge}</span>
                             {#if (storageSummary?.localFs?.totalObjects ?? 0) > 0}
                                 <button
                                     class="rounded-md bg-rose-500/20 px-1.5 py-0.2 text-[10px] font-semibold text-rose-300 hover:bg-rose-500/30 transition-colors"
                                     disabled={purgingLocal || busy}
                                     onclick={purgeLocalFsAssets}
-                                    title="S3로 옮긴 후 남아있는 로컬 디스크 에셋을 삭제하여 로컬 디스크 공간 확보"
+                                    title={language.storagePurgeLocalFs}
                                 >
-                                    {purgingLocal ? '비우는 중...' : '로컬 비우기'}
+                                    {purgingLocal ? language.storagePurging : language.storagePurgeLocal}
                                 </button>
                             {/if}
                         {/if}
@@ -798,7 +831,7 @@
                 </div>
                 <div class="mt-1 text-base font-bold text-textcolor sm:text-xl">
                     {formatBytes(storageSummary?.localFs?.totalSizeBytes ?? 0)}
-                    <span class="text-xs font-normal text-textcolor2">({(storageSummary?.localFs?.totalObjects ?? 0).toLocaleString()}개)</span>
+                    <span class="text-xs font-normal text-textcolor2">({(storageSummary?.localFs?.totalObjects ?? 0).toLocaleString()})</span>
                 </div>
             </div>
 
@@ -806,7 +839,7 @@
             <div class="rounded-xl border border-darkborderc bg-darkbg p-3 shadow-xs">
                 <div class="text-[11px] font-medium text-textcolor2 sm:text-xs">{language.storageTotalBots}</div>
                 <div class="mt-1 text-base font-bold text-textcolor sm:text-xl">
-                    {botAnalysis.length} <span class="text-xs font-normal text-textcolor2">캐릭터</span>
+                    {botAnalysis.length} <span class="text-xs font-normal text-textcolor2">{language.storageCharacters}</span>
                 </div>
             </div>
 
@@ -822,7 +855,7 @@
                             disabled={cleaningOrphans || busy}
                             onclick={cleanOrphanAssets}
                         >
-                            {cleaningOrphans ? '정리 중...' : language.storageCleanOrphan}
+                            {cleaningOrphans ? language.storagePurging : language.storageCleanOrphan}
                         </button>
                     {/if}
                 </div>
@@ -887,7 +920,7 @@
                     </div>
 
                     <div class="flex items-center gap-2">
-                        <span class="text-xs text-textcolor2 hidden sm:inline">정렬:</span>
+                        <span class="text-xs text-textcolor2 hidden sm:inline">{language.storageSort}:</span>
                         <select
                             bind:value={botSort}
                             class="rounded-lg border border-darkborderc bg-darkbg px-3 py-2 text-xs font-medium text-textcolor focus:border-blue-500 focus:outline-hidden"
@@ -941,7 +974,7 @@
                                                 {formatBytes(bot.totalSizeBytes)}
                                             </span>
                                             <span class="text-xs text-textcolor2">
-                                                {bot.totalAssets}개 에셋
+                                                {bot.totalAssets} {language.storageAssets}
                                             </span>
                                         </div>
                                     </div>
@@ -957,6 +990,11 @@
                                     {#if bot.additionalAssetsCount > 0}
                                         <span class="rounded-md bg-darkbutton/60 px-2 py-0.5">
                                             {language.storageAdditional}: {bot.additionalAssetsCount}
+                                        </span>
+                                    {/if}
+                                    {#if bot.ccAssetsCount > 0}
+                                        <span class="rounded-md bg-darkbutton/60 px-2 py-0.5">
+                                            {language.storageCcAssets}: {bot.ccAssetsCount}
                                         </span>
                                     {/if}
                                     {#if bot.audioCount > 0}
@@ -975,16 +1013,16 @@
         <!-- TAB 2: STORAGE BACKEND (S3 / FS) -->
         {#if currentTab === 'backend'}
             <div class="max-w-3xl space-y-6">
-                <!-- Status & Mode Switch -->
+                <!-- Backend Selector: Segment Cards -->
                 <div class="rounded-xl border border-darkborderc bg-darkbg p-5 shadow-xs">
                     <div class="flex items-center justify-between">
                         <div>
-                            <h3 class="text-base font-semibold text-textcolor">{language.s3Storage}</h3>
-                            <p class="mt-1 text-xs text-textcolor2">{language.s3StorageDescription}</p>
+                            <h3 class="text-base font-semibold text-textcolor">{language.storageBackendSelect}</h3>
+                            <p class="mt-1 text-xs text-textcolor2">{language.storageBackendSelectDescription}</p>
                         </div>
                         {#if config}
                             <span class="rounded-full px-3 py-1 text-xs font-medium {config.enabled ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-darkbutton text-textcolor2'}">
-                                {config.storageType === 'azuresql' ? 'Azure SQL 활성화됨' : (config.storageType === 's3' ? 'S3 / RustFS 활성화됨' : 'Local FileSystem 사용 중')}
+                                {config.storageType === 'azuresql' ? language.storageBackendAzureSql : (config.storageType === 's3' ? language.storageBackendS3 : language.storageBackendLocalFs)}
                             </span>
                         {/if}
                     </div>
@@ -995,37 +1033,56 @@
                         </div>
                     {/if}
 
-                    <!-- Storage backend selector -->
-                    <div class="mt-4">
-                        <label class="block text-xs font-medium text-textcolor2" for="backend-storage-type">
-                            {language.s3StatsStorageType}
-                        </label>
-                        <select
-                            id="backend-storage-type"
-                            class="mt-1 w-full rounded-md border border-darkborderc bg-bgcolor/40 px-3 py-2 text-textcolor {config?.managedByEnvironment ? 'pointer-events-none opacity-60' : ''}"
-                            bind:value={storageType}
+                    <!-- Segment Cards -->
+                    <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <!-- Local FS Card -->
+                        <button
+                            type="button"
+                            class="flex flex-col items-start rounded-xl border p-4 text-left transition-all {storageType === 'fs' ? 'border-indigo-500 bg-indigo-500/10 ring-1 ring-indigo-500/40' : 'border-darkborderc bg-bgcolor/40 hover:border-darkborderc/80 hover:bg-darkbg'} {config?.managedByEnvironment ? 'pointer-events-none opacity-60' : ''}"
+                            onclick={() => { storageType = 'fs'; enabled = false }}
+                            disabled={config?.managedByEnvironment}
                         >
-                            <option value="fs">Local Filesystem</option>
-                            <option value="s3">S3 / RustFS</option>
-                            <option value="azuresql">Azure SQL (MSSQL)</option>
-                        </select>
-                    </div>
+                            <div class="flex items-center gap-2">
+                                <FolderArchiveIcon class="h-5 w-5 text-indigo-400" />
+                                <span class="text-sm font-semibold text-textcolor">{language.storageBackendLocalFs}</span>
+                            </div>
+                            <p class="mt-1.5 text-[11px] text-textcolor2">{language.storageBackendFsDesc}</p>
+                        </button>
 
-                    <div class="mt-4">
-                        {#if storageType !== 'fs'}
-                            <CheckInput
-                                bind:check={enabled}
-                                className={config?.managedByEnvironment ? 'pointer-events-none opacity-50' : ''}
-                                name={storageType === 'azuresql' ? language.useAzureSqlStorage : language.useS3Storage}
-                            />
-                        {/if}
+                        <!-- S3 Card -->
+                        <button
+                            type="button"
+                            class="flex flex-col items-start rounded-xl border p-4 text-left transition-all {storageType === 's3' ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/40' : 'border-darkborderc bg-bgcolor/40 hover:border-darkborderc/80 hover:bg-darkbg'} {config?.managedByEnvironment ? 'pointer-events-none opacity-60' : ''}"
+                            onclick={() => { storageType = 's3'; enabled = true }}
+                            disabled={config?.managedByEnvironment}
+                        >
+                            <div class="flex items-center gap-2">
+                                <ServerIcon class="h-5 w-5 text-blue-400" />
+                                <span class="text-sm font-semibold text-textcolor">{language.storageBackendS3}</span>
+                            </div>
+                            <p class="mt-1.5 text-[11px] text-textcolor2">{language.storageBackendS3Desc}</p>
+                        </button>
+
+                        <!-- Azure SQL Card -->
+                        <button
+                            type="button"
+                            class="flex flex-col items-start rounded-xl border p-4 text-left transition-all {storageType === 'azuresql' ? 'border-sky-500 bg-sky-500/10 ring-1 ring-sky-500/40' : 'border-darkborderc bg-bgcolor/40 hover:border-darkborderc/80 hover:bg-darkbg'} {config?.azureManagedByEnvironment ? 'pointer-events-none opacity-60' : ''}"
+                            onclick={() => { storageType = 'azuresql'; enabled = true }}
+                            disabled={config?.azureManagedByEnvironment}
+                        >
+                            <div class="flex items-center gap-2">
+                                <DatabaseIcon class="h-5 w-5 text-sky-400" />
+                                <span class="text-sm font-semibold text-textcolor">{language.storageBackendAzureSql}</span>
+                            </div>
+                            <p class="mt-1.5 text-[11px] text-textcolor2">{language.storageBackendAzureSqlDesc}</p>
+                        </button>
                     </div>
                 </div>
 
                 {#if storageType === 's3'}
                     <!-- Form Fields -->
                     <div class="rounded-xl border border-darkborderc bg-darkbg p-5 shadow-xs">
-                        <h4 class="text-sm font-semibold text-textcolor">연결 설정</h4>
+                        <h4 class="text-sm font-semibold text-textcolor">{language.storageConnectionSettings}</h4>
 
                         <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                             <div>
@@ -1120,7 +1177,7 @@
                 {:else if storageType === 'azuresql'}
                     <!-- Azure SQL Form Fields -->
                     <div class="rounded-xl border border-darkborderc bg-darkbg p-5 shadow-xs">
-                        <h4 class="text-sm font-semibold text-textcolor">Azure SQL 연결 설정</h4>
+                        <h4 class="text-sm font-semibold text-textcolor">{language.storageAzureSqlConnectionSettings}</h4>
 
                         {#if config?.azureManagedByEnvironment}
                             <p class="mt-3 rounded-md border border-borderc bg-bgcolor/40 p-2 text-sm text-textcolor2">
@@ -1235,7 +1292,7 @@
                                 disabled={purgingLocal || busy}
                                 onclick={purgeLocalFsAssets}
                             >
-                                {purgingLocal ? '로컬 비우는 중...' : '로컬 FS 잔여 에셋 일괄 비우기'}
+                                {purgingLocal ? language.storagePurging : language.storagePurgeLocalFs}
                             </Button>
                         {/if}
                     </div>
@@ -1311,10 +1368,10 @@
                                             class="rounded-sm border-darkborderc"
                                         />
                                     </th>
-                                    <th class="px-3 py-2.5">미리보기</th>
-                                    <th class="px-3 py-2.5">에셋 키 / 파일명</th>
-                                    <th class="px-3 py-2.5 text-right">용량</th>
-                                    <th class="px-3 py-2.5 text-center">작업</th>
+                                    <th class="px-3 py-2.5">{language.storagePreview}</th>
+                                    <th class="px-3 py-2.5">{language.storageAssetKey}</th>
+                                    <th class="px-3 py-2.5 text-right">{language.storageSize}</th>
+                                    <th class="px-3 py-2.5 text-center">{language.storageAction}</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-darkborderc/40">
@@ -1371,7 +1428,7 @@
                                                     class="rounded-md p-1 text-textcolor2 hover:bg-rose-500/20 hover:text-rose-300 transition-colors"
                                                     title="Delete"
                                                     onclick={async () => {
-                                                        if (await alertConfirm(`Delete ${file.key}?`)) {
+                                                        if (await alertConfirm(language.storageDeleteConfirm(1))) {
                                                             const storage = getNodeStorage()
                                                             await storage.s3.deleteAssetKeys([file.key], viewTarget)
                                                             await loadData()
@@ -1411,7 +1468,7 @@
                     <div>
                         <h3 class="text-base font-bold">{selectedBot.name}</h3>
                         <div class="flex items-center gap-2 text-xs text-textcolor2">
-                            <span>총 {selectedBot.totalAssets}개 에셋</span>
+                            <span>{selectedBot.totalAssets} {language.storageAssets}</span>
                             <span>·</span>
                             <span class="font-semibold text-blue-400">{formatBytes(selectedBot.totalSizeBytes)}</span>
                         </div>
@@ -1475,7 +1532,7 @@
 
             <!-- Modal Footer -->
             <div class="flex justify-end border-t border-darkborderc px-5 py-3 bg-darkbg/50">
-                <Button onclick={() => selectedBot = null}>닫기</Button>
+                <Button onclick={() => selectedBot = null}>{language.storageClose}</Button>
             </div>
         </div>
     </div>
@@ -1496,7 +1553,7 @@
             {#if previewImageUrl}
                 <img src={previewImageUrl} alt={previewAssetKey} class="max-h-[80vh] max-w-[85vw] object-contain rounded-lg" />
             {:else}
-                <div class="p-12 text-center text-sm text-textcolor2">Loading preview...</div>
+                <div class="p-12 text-center text-sm text-textcolor2">{language.storageLoadingPreview}</div>
             {/if}
             <div class="mt-2 truncate px-2 text-center font-mono text-xs text-textcolor2">
                 {previewAssetKey}
@@ -1534,15 +1591,15 @@
         <!-- Details -->
         <div class="mt-2.5 flex items-center justify-between text-xs text-textcolor2">
             <div>
-                {progressData.current.toLocaleString()} / {progressData.total.toLocaleString()} 파일
+                {progressData.current.toLocaleString()} / {progressData.total.toLocaleString()} {language.storageFiles}
             </div>
             {#if activeTask === 'migrate'}
                 <div>
-                    업로드: <span class="font-medium text-textcolor">{progressData.migrated ?? 0}</span> · 건너뜀: <span class="font-medium text-textcolor">{progressData.skipped ?? 0}</span>
+                    {language.storageUpload}: <span class="font-medium text-textcolor">{progressData.migrated ?? 0}</span> · {language.storageSkip}: <span class="font-medium text-textcolor">{progressData.skipped ?? 0}</span>
                 </div>
             {:else}
                 <div>
-                    다운로드: <span class="font-medium text-textcolor">{progressData.downloaded ?? 0}</span>
+                    {language.storageDownload}: <span class="font-medium text-textcolor">{progressData.downloaded ?? 0}</span>
                 </div>
             {/if}
         </div>

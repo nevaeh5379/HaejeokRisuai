@@ -3916,6 +3916,7 @@ app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
     }
     let filePath = req.headers['file-path'] || req.query.path || req.query['file-path'] || req.query.filePath;
     const isThumb = req.query.thumb === '1' || req.query.thumb === 'true' || req.headers['x-thumbnail'] === 'true';
+    const target = req.query.target || req.headers['x-storage-target'] || 'active';
     if (!filePath) {
         res.status(400).send({
             error:'File path required'
@@ -3927,7 +3928,16 @@ app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
         filePath = keyToHex(filePath);
     }
     try {
-        const storage = assetStorageManager.getStorage();
+        let storage;
+        if (target && target !== 'active') {
+            storage = assetStorageManager.getStorageByType(target);
+            if (!storage) {
+                res.status(400).send({ error: `Unknown or unavailable storage target: ${target}` });
+                return;
+            }
+        } else {
+            storage = assetStorageManager.getStorage();
+        }
         const result = isThumb && typeof storage.readThumbnail === 'function'
             ? await storage.readThumbnail(filePath)
             : await storage.read(filePath);
