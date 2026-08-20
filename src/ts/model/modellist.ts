@@ -617,7 +617,7 @@ export async function registerModelDynamic(){
     }
     //google
     try {
-        if(DBState.db.google.accessToken){
+        if(DBState.db.google?.accessToken){
             const res = await fetchNative(`https://generativelanguage.googleapis.com/v1beta/models?key=${DBState.db.google.accessToken}`, {
                 method: 'GET',
             })
