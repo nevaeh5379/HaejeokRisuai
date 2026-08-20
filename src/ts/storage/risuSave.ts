@@ -66,6 +66,31 @@ export function encodeRisuSaveLegacy(data:any, compression:'noCompression'|'comp
     }
 }
 
+export async function encodeRisuSaveLegacyAsync(data:any, compression:'noCompression'|'compression' = 'noCompression'): Promise<Uint8Array> {
+    let encoded:Uint8Array = packr.encode(data)
+    if(compression === 'compression'){
+        const compressed = await new Promise<Uint8Array>((resolve, reject) => {
+            fflate.compress(encoded, (err, res) => {
+                if (err) {
+                    reject(err)
+                } else {
+                    resolve(res)
+                }
+            })
+        })
+        const result = new Uint8Array(compressed.length + magicCompressedHeader.length);
+        result.set(magicCompressedHeader, 0)
+        result.set(compressed, magicCompressedHeader.length)
+        return result
+    }
+    else{
+        const result = new Uint8Array(encoded.length + magicHeader.length);
+        result.set(magicHeader, 0)
+        result.set(encoded, magicHeader.length)
+        return result
+    }
+}
+
 export async function encodeRisuSaveCompressionStream(data:any) {
     await checkCompressionStreams()
     let encoded:Uint8Array = packr.encode(data)

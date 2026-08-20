@@ -1,4 +1,4 @@
-import { alertError, alertInput, alertNormal, alertSelect, alertStore } from "../alert";
+import { alertError, alertInput, alertNormal, alertSelect, alertStore, alertProgress } from "../alert";
 import { getDatabase, type Database } from "../storage/database.svelte";
 import { forageStorage, getUncleanables, openURL } from "../globalApi.svelte";
 import { isNodeServer, isTauri } from "src/ts/platform"
@@ -7,7 +7,7 @@ import { language } from "../../lang";
 import { relaunch } from '@tauri-apps/plugin-process';
 import { sleep } from "../util";
 import { hubURL } from "../characterCards";
-import { decodeRisuSave, encodeRisuSaveLegacy } from "../storage/risuSave";
+import { decodeRisuSave, encodeRisuSaveLegacy, encodeRisuSaveLegacyAsync } from "../storage/risuSave";
 import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupName, isColdStorageBackupData, listColdDataKeys, setColdStorageItem } from "../process/coldstorage.svelte";
 import { NodeStorage } from "../storage/nodeStorage";
 import { ensureDatabaseFullyLoaded } from "./backuplocal";
@@ -118,10 +118,8 @@ export function syncDrive() {
 
 
 async function backupDrive(ACCESS_TOKEN:string) {
-    alertStore.set({
-        type: "wait",
-        msg: "Uploading Backup..."
-    })
+    alertProgress("Preparing Google Drive Backup...", 0)
+    await sleep(10)
 
     const files:DriveFile[] = await getFilesInFolder(ACCESS_TOKEN)
 
@@ -137,13 +135,12 @@ async function backupDrive(ACCESS_TOKEN:string) {
 
     if(isTauri){
         const assets = await readDir('assets', {baseDir: BaseDirectory.AppData})
+        const totalAssets = assets.length
         let i = 0;
         for(let asset of assets){
             i += 1;
-            alertStore.set({
-                type: "wait",
-                msg: `Uploading Backup... (${i} / ${assets.length})`
-            })
+            const percent = totalAssets > 0 ? (i / totalAssets) * 80 : 80
+            alertProgress(`Uploading Backup to Drive... (${i} / ${totalAssets})`, percent)
             const key = asset.name
             if(!key || !key.endsWith('.png')){
                 continue
@@ -156,12 +153,11 @@ async function backupDrive(ACCESS_TOKEN:string) {
     }
     else{
         const keys = await forageStorage.keys()
+        const totalKeys = keys.length
 
-        for(let i=0;i<keys.length;i++){
-            alertStore.set({
-                type: "wait",
-                msg: `Uploading Backup... (${i} / ${keys.length})`
-            })
+        for(let i=0;i<totalKeys;i++){
+            const percent = totalKeys > 0 ? ((i + 1) / totalKeys) * 80 : 80
+            alertProgress(`Uploading Backup to Drive... (${i + 1} / ${totalKeys})`, percent)
             const key = keys[i]
             if(!key.endsWith('.png')){
                 continue
@@ -173,12 +169,11 @@ async function backupDrive(ACCESS_TOKEN:string) {
         }
     }
 
-    for(let i=0;i<coldStoragePayloads.payloads.length;i++){
+    const totalCold = coldStoragePayloads.payloads.length
+    for(let i=0;i<totalCold;i++){
         const payload = coldStoragePayloads.payloads[i]
-        alertStore.set({
-            type: "wait",
-            msg: `Uploading Cold Storage... (${i + 1} / ${coldStoragePayloads.payloads.length})`
-        })
+        const percent = totalCold > 0 ? 80 + ((i + 1) / totalCold) * 10 : 80
+        alertProgress(`Uploading Cold Storage... (${i + 1} / ${totalCold})`, percent)
         if(fileNames.includes(payload.backupName)){
             continue
         }
@@ -187,15 +182,14 @@ async function backupDrive(ACCESS_TOKEN:string) {
 
     const db = getDatabase()
     await ensureDatabaseFullyLoaded(db)
-    const dbData = encodeRisuSaveLegacy(db, 'compression')
+    alertProgress(`Uploading Backup... (Compressing database)`, 92)
+    await sleep(20)
+    const dbData = await encodeRisuSaveLegacyAsync(db, 'compression')
 
-    alertStore.set({
-        type: "wait",
-        msg: `Uploading Backup... (Saving database)`
-    })
+    alertProgress(`Uploading Backup... (Saving database)`, 96)
+    await sleep(10)
 
     await createFileInFolder(ACCESS_TOKEN, `${(Date.now() / 1000).toFixed(0)}-database.risudat`, dbData)
-
 
     alertNormal('Success')
 }

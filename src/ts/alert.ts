@@ -155,7 +155,7 @@ export function alertMd(msg:string){
 }
 
 export function doingAlert(){
-    return get(alertStoreImported).type !== 'none' && get(alertStoreImported).type !== 'toast' && get(alertStoreImported).type !== 'wait'
+    return get(alertStoreImported).type !== 'none' && get(alertStoreImported).type !== 'toast' && get(alertStoreImported).type !== 'wait' && get(alertStoreImported).type !== 'progress'
 }
 
 export function alertToast(msg:string){
@@ -171,6 +171,17 @@ export function alertWait(msg:string){
         'msg': msg
     })
 
+}
+
+export function alertProgress(msg:string, progress:number|string){
+    const percentStr = typeof progress === 'number'
+        ? Math.min(100, Math.max(0, progress)).toFixed(1)
+        : progress
+    alertStoreImported.set({
+        'type': 'progress',
+        'msg': msg,
+        'submsg': percentStr
+    })
 }
 
 

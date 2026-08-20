@@ -1,9 +1,9 @@
 import { BaseDirectory, readFile, readDir, writeFile } from "@tauri-apps/plugin-fs";
 import localforage from "localforage";
-import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm } from "../alert";
+import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm, alertProgress, alertClear } from "../alert";
 import { LocalWriter, forageStorage, requiresFullEncoderReload } from "../globalApi.svelte";
 import { isNodeServer, isTauri } from "src/ts/platform"
-import { decodeRisuSave, encodeRisuSaveLegacy } from "../storage/risuSave";
+import { decodeRisuSave, encodeRisuSaveLegacy, encodeRisuSaveLegacyAsync } from "../storage/risuSave";
 import { getDatabase, setDatabaseLite, type Database } from "../storage/database.svelte";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { decryptBuffer, encryptBuffer, sleep } from "../util";
@@ -20,7 +20,7 @@ function getBasename(data:string){
     return lasts
 }
 
-export async function ensureAllPostgresChatMessagesLoaded(db: Database) {
+export async function ensureAllPostgresChatMessagesLoaded(db: Database, onProgress?: (msg: string) => void) {
     if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
         return
     }
@@ -28,9 +28,13 @@ export async function ensureAllPostgresChatMessagesLoaded(db: Database) {
     if (!storage.postgres.isEnabled()) {
         return
     }
-    for (let i = 0; i < (db.characters ?? []).length; i++) {
+    const totalChars = (db.characters ?? []).length
+    for (let i = 0; i < totalChars; i++) {
         let char = db.characters[i]
         if (!char) continue
+        if (onProgress) {
+            onProgress(`Loading chat messages from PostgreSQL (${i + 1} / ${totalChars})`)
+        }
         if (char.detailsLoaded === false && char.chaId) {
             const fullChar = await storage.postgres.loadCharacter(char.chaId)
             if (fullChar) {
@@ -56,11 +60,12 @@ export async function ensureAllPostgresChatMessagesLoaded(db: Database) {
     }
 }
 
-export async function ensureDatabaseFullyLoaded(db: Database) {
+export async function ensureDatabaseFullyLoaded(db: Database, onProgress?: (msg: string) => void) {
     if (typeof (db as any).ensureLoaded === 'function') {
+        if (onProgress) onProgress('Loading database from storage...')
         await (db as any).ensureLoaded()
     }
-    await ensureAllPostgresChatMessagesLoaded(db)
+    await ensureAllPostgresChatMessagesLoaded(db, onProgress)
     if (!db.personas || db.personas.length === 0) {
         db.personas = [{
             name: db.username || 'User',
@@ -82,19 +87,27 @@ export async function ensureDatabaseFullyLoaded(db: Database) {
 }
 
 export async function SaveLocalBackup(){
-    alertWait("Saving local backup...")
+    alertProgress("Saving local backup... (Preparing database)", 0)
+    await sleep(10)
     const db = getDatabase()
-    await ensureDatabaseFullyLoaded(db)
+    await ensureDatabaseFullyLoaded(db, (msg) => {
+        alertProgress(`Saving local backup... (${msg})`, 0)
+    })
+    alertProgress("Saving local backup... (Checking cold storage)", 0)
+    await sleep(10)
     const coldStoragePayloads = await collectColdStorageBackupPayloads(db)
     const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
     if(!await confirmIncompleteColdStorageOperation(db, unavailableColdStorageKeys, 'backup')){
+        alertClear()
         return
     }
 
+    alertProgress("Saving local backup... (Selecting destination)", 0)
+    await sleep(10)
     const writer = new LocalWriter()
     const r = await writer.init()
     if(!r){
-        alertError('Failed')
+        alertClear()
         return
     }
 
@@ -148,25 +161,38 @@ export async function SaveLocalBackup(){
     const missingAssets: string[] = []
 
     if(isTauri){
+        alertProgress("Saving local backup... (Scanning assets)", 0)
+        await sleep(10)
         const assets = (await readDir('assets', {baseDir: BaseDirectory.AppData}))
             .filter((asset) => asset.isFile)
-        let i = 0;
-        for(let asset of assets){
-            i += 1;
-            let message = `Saving local Backup... (${i} / ${assets.length})`
-            if (missingAssets.length > 0) {
-                const skippedItems = missingAssets.map(key => {
-                    const assetInfo = assetMap.get(key);
-                    return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-                }).join(', ');
-                message += `\n(Skipping... ${skippedItems})`;
-            }
-            alertWait(message)
+        const totalAssets = assets.length
+        let lastUiUpdate = 0
 
+        for(let i=0; i<assets.length; i++){
+            const asset = assets[i]
             const key = asset.name
             if(!key){
                 continue
             }
+
+            const percent = totalAssets > 0 ? ((i + 1) / totalAssets) * 80 : 80
+            const now = Date.now()
+            if(now - lastUiUpdate > 30 || i === 0 || i === totalAssets - 1){
+                lastUiUpdate = now
+                const assetInfo = assetMap.get(key) || assetMap.get('assets/' + key)
+                let message = `Saving local backup... (${i + 1} / ${totalAssets})`
+                if (assetInfo) {
+                    message += `\n${assetInfo.charName} - ${assetInfo.assetName}`
+                } else {
+                    message += `\n${key}`
+                }
+                if (missingAssets.length > 0) {
+                    message += `\n(Skipped ${missingAssets.length} missing assets)`
+                }
+                alertProgress(message, percent)
+                await sleep(0)
+            }
+
             const data = await readFile('assets/' + asset.name, {baseDir: BaseDirectory.AppData})
             if (data) {
                 await writer.writeBackup(key, data)
@@ -198,32 +224,43 @@ export async function SaveLocalBackup(){
                             : Number(BigInt(progress.receivedBytes) * 1000n / progress.totalBytes) / 1000
                         : 0
                     const percent = progress.totalFiles === 0
-                        ? 100
-                        : Math.floor((progress.completedFiles + currentRatio) / progress.totalFiles * 100)
+                        ? 80
+                        : Math.floor((progress.completedFiles + currentRatio) / progress.totalFiles * 80)
 
                     if(percent === lastProgress){
                         return
                     }
                     lastProgress = percent
-                    alertWait(
-                        `Saving local Backup... (Streaming assets ${percent}%, ` +
-                        `${progress.completedFiles} / ${progress.totalFiles})`
+                    alertProgress(
+                        `Saving local backup... (Streaming assets ${percent}%, ${progress.completedFiles} / ${progress.totalFiles})`,
+                        percent
                     )
                 })
             }
         }
         else{
-            for(let i=0;i<assetKeys.length;i++){
+            const totalAssets = assetKeys.length
+            let lastUiUpdate = 0
+
+            for(let i=0; i<assetKeys.length; i++){
                 const key = assetKeys[i]
-                let message = `Saving local Backup... (${i + 1} / ${assetKeys.length})`
-                if (missingAssets.length > 0) {
-                    const skippedItems = missingAssets.map(key => {
-                        const assetInfo = assetMap.get(key);
-                        return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-                    }).join(', ');
-                    message += `\n(Skipping... ${skippedItems})`;
+                const percent = totalAssets > 0 ? ((i + 1) / totalAssets) * 80 : 80
+                const now = Date.now()
+                if(now - lastUiUpdate > 30 || i === 0 || i === totalAssets - 1){
+                    lastUiUpdate = now
+                    const assetInfo = assetMap.get(key) || assetMap.get(key.replace(/^assets\//, ''))
+                    let message = `Saving local backup... (${i + 1} / ${totalAssets})`
+                    if (assetInfo) {
+                        message += `\n${assetInfo.charName} - ${assetInfo.assetName}`
+                    } else {
+                        message += `\n${key}`
+                    }
+                    if (missingAssets.length > 0) {
+                        message += `\n(Skipped ${missingAssets.length} missing assets)`
+                    }
+                    alertProgress(message, percent)
+                    await sleep(0)
                 }
-                alertWait(message)
 
                 let data: Uint8Array | undefined;
                 let isCached = false;
@@ -255,17 +292,28 @@ export async function SaveLocalBackup(){
         }
     }
 
-    for(let i=0;i<coldStoragePayloads.payloads.length;i++){
+    const totalCold = coldStoragePayloads.payloads.length
+    for(let i=0; i<totalCold; i++){
         const payload = coldStoragePayloads.payloads[i]
-        let message = `Saving local Backup Cold data... (${i + 1} / ${coldStoragePayloads.payloads.length})`
-        alertWait(message)
+        const percent = totalCold > 0 ? 80 + ((i + 1) / totalCold) * 10 : 80
+        let message = `Saving local backup cold data... (${i + 1} / ${totalCold})`
+        if (payload.backupName) {
+            message += `\n${payload.backupName}`
+        }
+        alertProgress(message, percent)
+        await sleep(0)
         await writer.writeBackup(payload.backupName, payload.encoded)
     }
 
+    alertProgress(`Saving local backup... (Compressing database)`, 92)
+    await sleep(30)
+
     const dbWithoutAccount = { ...db, account: undefined }
-    let dbData = encodeRisuSaveLegacy(dbWithoutAccount, 'compression')
+    let dbData = await encodeRisuSaveLegacyAsync(dbWithoutAccount, 'compression')
 
     if(forageStorage.isAccount && location.origin.endsWith('risuai.xyz')){
+        alertProgress(`Saving local backup... (Encrypting database)`, 96)
+        await sleep(20)
         const time = Date.now()
         const key = (await (await fetch(`https://sv.risuai.xyz/cryptokey?key=${time}`)).json()).key
         const encrypted = await encryptBuffer(dbData, key)
@@ -273,15 +321,20 @@ export async function SaveLocalBackup(){
         dbData = new Uint8Array(encrypted)
     }
 
-    alertWait(`Saving local Backup... (Saving database)`) 
+    alertProgress(`Saving local backup... (Writing database)`, 98)
+    await sleep(10)
 
     await writer.writeBackup('database.risudat', dbData)
+
+    alertProgress(`Saving local backup... (Finalizing)`, 100)
+    await sleep(10)
+
     await writer.close()
 
     if (missingAssets.length > 0) {
         let message = 'Backup Successful, but the following assets were missing and skipped:\n\n'
         for (const key of missingAssets) {
-            const assetInfo = assetMap.get(key)
+            const assetInfo = assetMap.get(key) || assetMap.get('assets/' + key)
             if (assetInfo) {
                 message += `* **${assetInfo.assetName}** (from *${assetInfo.charName}*)  \n  *File: ${key}*\n`
             } else {
@@ -319,19 +372,27 @@ export async function SavePartialLocalBackup(){
         return
     }
     
-    alertWait("Saving partial local backup...")
+    alertProgress("Saving partial local backup... (Preparing database)", 0)
+    await sleep(10)
     const db = getDatabase()
-    await ensureDatabaseFullyLoaded(db)
+    await ensureDatabaseFullyLoaded(db, (msg) => {
+        alertProgress(`Saving partial local backup... (${msg})`, 0)
+    })
+    alertProgress("Saving partial local backup... (Checking cold storage)", 0)
+    await sleep(10)
     const coldStoragePayloads = await collectColdStorageBackupPayloads(db)
     const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
     if(!await confirmIncompleteColdStorageOperation(db, unavailableColdStorageKeys, 'backup')){
+        alertClear()
         return
     }
 
+    alertProgress("Saving partial local backup... (Selecting destination)", 0)
+    await sleep(10)
     const writer = new LocalWriter()
     const r = await writer.init()
     if(!r){
-        alertError('Failed')
+        alertClear()
         return
     }
 
@@ -394,34 +455,40 @@ export async function SavePartialLocalBackup(){
     const missingAssets: string[] = []
 
     if(isTauri){
+        alertProgress("Saving partial local backup... (Scanning assets)", 0)
+        await sleep(10)
         // readDir returns entries without 'assets/' prefix, unlike forageStorage.keys()
         const assets = await readDir('assets', {baseDir: BaseDirectory.AppData})
-        let i = 0;
-        for(let asset of assets){
-            if(!asset.name){
-                continue
-            }
-
+        const matchingAssets = assets.filter((asset) => {
+            if(!asset.name || !asset.isFile) return false
             const keyWithPrefix = asset.name.startsWith('assets/') ? asset.name : `assets/${asset.name}`
-            if(!keyWithPrefix.endsWith('.png')){
-                continue
+            if(!keyWithPrefix.endsWith('.png')) return false
+            return assetMap.has(keyWithPrefix) || assetMap.has(asset.name)
+        })
+        const totalAssets = matchingAssets.length
+        let lastUiUpdate = 0
+
+        for(let i=0; i<matchingAssets.length; i++){
+            const asset = matchingAssets[i]
+            const keyWithPrefix = asset.name.startsWith('assets/') ? asset.name : `assets/${asset.name}`
+            const percent = totalAssets > 0 ? ((i + 1) / totalAssets) * 80 : 80
+            const now = Date.now()
+
+            if(now - lastUiUpdate > 30 || i === 0 || i === totalAssets - 1){
+                lastUiUpdate = now
+                const assetInfo = assetMap.get(keyWithPrefix) || assetMap.get(asset.name)
+                let message = `Saving partial local backup... (${i + 1} / ${totalAssets})`
+                if (assetInfo) {
+                    message += `\n${assetInfo.charName} - ${assetInfo.assetName}`
+                } else {
+                    message += `\n${asset.name}`
+                }
+                if (missingAssets.length > 0) {
+                    message += `\n(Skipped ${missingAssets.length} missing assets)`
+                }
+                alertProgress(message, percent)
+                await sleep(0)
             }
-            
-            // Only process if this asset is in our map (profile images only)
-            if(!assetMap.has(keyWithPrefix)){
-                continue
-            }
-            
-            i += 1;
-            let message = `Saving partial local backup... (${i} / ${assetMap.size})`
-            if (missingAssets.length > 0) {
-                const skippedItems = missingAssets.map(key => {
-                    const assetInfo = assetMap.get(key);
-                    return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-                }).join(', ');
-                message += `\n(Skipping... ${skippedItems})`;
-            }
-            alertWait(message)
 
             const data = await readFile(keyWithPrefix, {baseDir: BaseDirectory.AppData})
             if (data) {
@@ -432,23 +499,29 @@ export async function SavePartialLocalBackup(){
         }
     }
     else{
-        const keys = await forageStorage.keys()
-        const assetKeys = Array.from(assetMap.keys())
+        const assetKeys = Array.from(assetMap.keys()).filter((key) => key && key.endsWith('.png'))
+        const totalAssets = assetKeys.length
+        let lastUiUpdate = 0
 
-        for(let i=0;i<assetKeys.length;i++){
+        for(let i=0; i<assetKeys.length; i++){
             const key = assetKeys[i]
-            let message = `Saving partial local backup... (${i + 1} / ${assetKeys.length})`
-            if (missingAssets.length > 0) {
-                const skippedItems = missingAssets.map(key => {
-                    const assetInfo = assetMap.get(key);
-                    return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-                }).join(', ');
-                message += `\n(Skipping... ${skippedItems})`;
-            }
-            alertWait(message)
+            const percent = totalAssets > 0 ? ((i + 1) / totalAssets) * 80 : 80
+            const now = Date.now()
 
-            if(!key || !key.endsWith('.png')){
-                continue
+            if(now - lastUiUpdate > 30 || i === 0 || i === totalAssets - 1){
+                lastUiUpdate = now
+                const assetInfo = assetMap.get(key)
+                let message = `Saving partial local backup... (${i + 1} / ${totalAssets})`
+                if (assetInfo) {
+                    message += `\n${assetInfo.charName} - ${assetInfo.assetName}`
+                } else {
+                    message += `\n${key}`
+                }
+                if (missingAssets.length > 0) {
+                    message += `\n(Skipped ${missingAssets.length} missing assets)`
+                }
+                alertProgress(message, percent)
+                await sleep(0)
             }
             
             let data: Uint8Array | undefined;
@@ -476,25 +549,39 @@ export async function SavePartialLocalBackup(){
         }
     }
 
-    for(let i=0;i<coldStoragePayloads.payloads.length;i++){
+    const totalCold = coldStoragePayloads.payloads.length
+    for(let i=0; i<totalCold; i++){
         const payload = coldStoragePayloads.payloads[i]
-        let message = `Saving partial local Backup Cold data... (${i + 1} / ${coldStoragePayloads.payloads.length})`
-        alertWait(message)
+        const percent = totalCold > 0 ? 80 + ((i + 1) / totalCold) * 10 : 80
+        let message = `Saving partial local backup cold data... (${i + 1} / ${totalCold})`
+        if (payload.backupName) {
+            message += `\n${payload.backupName}`
+        }
+        alertProgress(message, percent)
+        await sleep(0)
         await writer.writeBackup(payload.backupName, payload.encoded)
     }
 
-    const dbWithoutAccount = { ...db, account: undefined }
-    const dbData = encodeRisuSaveLegacy(dbWithoutAccount, 'compression')
+    alertProgress(`Saving partial local backup... (Compressing database)`, 92)
+    await sleep(30)
 
-    alertWait(`Saving partial local backup... (Saving database)`) 
+    const dbWithoutAccount = { ...db, account: undefined }
+    const dbData = await encodeRisuSaveLegacyAsync(dbWithoutAccount, 'compression')
+
+    alertProgress(`Saving partial local backup... (Writing database)`, 98)
+    await sleep(10)
 
     await writer.writeBackup('database.risudat', dbData)
+
+    alertProgress(`Saving partial local backup... (Finalizing)`, 100)
+    await sleep(10)
+
     await writer.close()
 
     if (missingAssets.length > 0) {
         let message = 'Partial backup successful, but the following profile images were missing and skipped:\n\n'
         for (const key of missingAssets) {
-            const assetInfo = assetMap.get(key)
+            const assetInfo = assetMap.get(key) || assetMap.get('assets/' + key)
             if (assetInfo) {
                 message += `* **${assetInfo.assetName}** (from *${assetInfo.charName}*)  \n  *File: ${key}*\n`
             } else {
@@ -598,18 +685,18 @@ export function LoadLocalBackup(){
                             ? 100
                             : Math.floor(uploadedBytes / totalBytes * 100)
                         if(progress >= 100){
-                            alertWait('Uploading local Backup... (100%) - Finalizing on server...')
+                            alertProgress('Uploading local backup... (Finalizing on server)', 100)
                         } else {
-                            alertWait(`Uploading local Backup... (${progress}%)`)
+                            alertProgress(`Uploading local backup...`, progress)
                         }
                     },
                     (completed, total) => {
                         const percent = total > 0 ? Math.floor((completed / total) * 100) : 100
-                        alertWait(`Saving to storage... (${completed}/${total} files - ${percent}%)`)
+                        alertProgress(`Saving to storage... (${completed} / ${total} files)`, percent)
                     }
                 )
                 try {
-                    alertWait('Retrieving restore entries...')
+                    alertProgress('Retrieving restore entries...', 90)
                     for(const name of restore.entries){
                         const data = await storage.getBackupRestoreEntry(restore.restoreId, name)
                         await restoreBackupEntry(name, data)
@@ -649,7 +736,7 @@ export function LoadLocalBackup(){
                         : Math.floor(bytesRead / file.size * 100)
                     if(readProgress !== lastReadProgress){
                         lastReadProgress = readProgress
-                        alertWait(`Loading local Backup... (${readProgress}%)`);
+                        alertProgress(`Loading local backup...`, readProgress);
                     }
 
                     let chunkOffset = 0
@@ -770,7 +857,7 @@ export function LoadLocalBackup(){
                     alertError('Failed to decrypt database backup, will attempt to load it without decryption.')
                 }
             }
-            alertWait('Decoding database...')
+            alertProgress('Decoding database...', 95)
             const dbData = await decodeRisuSave(db);
             const missingColdStorageKeys:string[] = []
             for(const key of await listColdDataKeys(dbData)){
@@ -803,12 +890,12 @@ export function LoadLocalBackup(){
                         totalChats += c.chats?.length ?? 0
                     }
                     const baseMsg = `Syncing SQL (${totalChars} characters, ${totalChats} chats)`
-                    alertWait(`${baseMsg}...`)
+                    alertProgress(`${baseMsg}...`, 98)
                     await forageStorage.realStorage.postgres.replaceDatabase(dbData, (step) => {
                         alertWait(`${baseMsg} - ${step}`)
                     })
                 } else {
-                    alertWait('Finalizing database...')
+                    alertProgress('Finalizing database...', 98)
                     await forageStorage.setItem('database/database.bin', db);
                 }
                 location.search = '';
