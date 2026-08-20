@@ -664,13 +664,14 @@ export async function saveDb() {
             }
 
             let savedToPostgres = false
-            if(usePostgresStorage && nodeStorage){
+            if (usePostgresStorage && nodeStorage) {
                 savedToPostgres = await nodeStorage.postgres.saveDatabase(db, toSave, {
                     forceFull: forceFullSave
                 })
-            }
-
-            if(!savedToPostgres){
+                if (!savedToPostgres) {
+                    throw new Error('Failed to save database to SQL storage')
+                }
+            } else {
                 if(!encoder){
                     encoder = new RisuSaveEncoder()
                     await encoder.init(db, {

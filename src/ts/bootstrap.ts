@@ -10,10 +10,10 @@ import {
 import { changeFullscreen, checkNullish, sleep } from "./util"
 import { v4 as uuidv4 } from 'uuid';
 import { get } from "svelte/store";
-import { setDatabase, defaultSdDataFunc, getDatabase } from "./storage/database.svelte";
+import { setDatabase, defaultSdDataFunc, getDatabase, type Database } from "./storage/database.svelte";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { checkRisuUpdate } from "./update";
-import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, sqlConfiguredStore, sqlPromptMigrationStore } from "./stores.svelte";
+import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, sqlConfiguredStore } from "./stores.svelte";
 import { loadPlugins } from "./plugins/plugins.svelte";
 import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput, alertSelect, alertNormal } from "./alert";
 import { checkDriverInit } from "./drive/drive";
@@ -124,8 +124,8 @@ export async function loadData() {
                 await forageStorage.Init()
 
                 let loadedFromPostgres = false
+                let isSqlActive = false
                 if(isNodeServer && forageStorage.realStorage instanceof NodeStorage){
-                    LoadingStatusState.text = "Loading SQL Save Data..."
                     const nodeStorage = forageStorage.realStorage
                     // SQL 설정 상태 조회 (vendor 무관)
                     let sqlConfig = null
@@ -138,24 +138,62 @@ export async function loadData() {
                     }
 
                     if(sqlConfig?.enabled){
-                        const postgresDatabase = await nodeStorage.postgres.loadDatabase()
-                        if(postgresDatabase){
-                            setDatabase(postgresDatabase)
-                            loadedFromPostgres = true
-                        } else {
-                            // SQL은 활성이지만 DB가 비어있음 (초기 상태).
-                            // 로컬 database.bin을 먼저 로드한 뒤 마이그레이션 여부 질문.
-                            // 플래그 세팅 - 아래 로컬 로드 후 처리.
-                            sqlPromptMigrationStore.set(true)
+                        isSqlActive = true
+                        LoadingStatusState.text = "Loading SQL Save Data..."
+                        try {
+                            const postgresDatabase = await nodeStorage.postgres.loadDatabase()
+                            if(postgresDatabase){
+                                setDatabase(postgresDatabase)
+                                loadedFromPostgres = true
+                            } else {
+                                // SQL은 활성이지만 DB가 비어있음 (최초 초기화 상태).
+                                // 로컬 database.bin이 존재하는 경우 최초 1회 명시적 마이그레이션 여부 확인.
+                                let localDbData: Database | null = null
+                                try {
+                                    const localBytes: Uint8Array = await forageStorage.getItem('database/database.bin') as unknown as Uint8Array
+                                    if (localBytes) {
+                                        localDbData = await decodeRisuSave(localBytes)
+                                    }
+                                } catch {}
+
+                                if (localDbData && localDbData.characters && localDbData.characters.length > 0) {
+                                    const shouldMigrate = await alertConfirm(language.migrateLocalToSqlPrompt)
+                                    if (shouldMigrate) {
+                                        LoadingStatusState.text = "Migrating local data to SQL..."
+                                        await nodeStorage.postgres.replaceDatabase(localDbData)
+                                        try {
+                                            await nodeStorage.postgres.migrateLegacyData()
+                                        } catch (e) {
+                                            console.error('Cold storage migration skipped:', e)
+                                        }
+                                        alertNormal(language.migrateLocalToSqlSuccess)
+                                        const reloaded = await nodeStorage.postgres.loadDatabase()
+                                        if (reloaded) {
+                                            setDatabase(reloaded)
+                                            loadedFromPostgres = true
+                                        }
+                                    }
+                                }
+
+                                if (!loadedFromPostgres) {
+                                    // SQL 모드 격리: database.bin으로 폴백하지 않고 SQL 전용 빈 DB로 초기화
+                                    const emptyDb: Database = {} as any
+                                    setDatabase(emptyDb)
+                                    const cache = nodeStorage.postgres.getCache()
+                                    cache.initialized = true
+                                    loadedFromPostgres = true
+                                }
+                            }
+                        } catch (error) {
+                            console.error('Failed to load SQL database:', error)
+                            alertError(`Failed to connect to SQL storage: ${error instanceof Error ? error.message : String(error)}`)
+                            throw error
                         }
                     }
                 }
 
-                if(!loadedFromPostgres){
-                    // If S3 is active and local vs. S3 database.bin differ, let
-                    // the user pick which copy to keep before loading. The
-                    // server synchronises both sides; we just need to read
-                    // again afterwards.
+                if(!isSqlActive && !loadedFromPostgres){
+                    // SQL 스토리지가 비활성화된 경우에만 로컬 database.bin을 로드 (완전 격리)
                     await resolveDatabaseBinConflict()
                     LoadingStatusState.text = "Loading Local Save File..."
                     let gotStorage: Uint8Array = await forageStorage.getItem('database/database.bin') as unknown as Uint8Array
@@ -181,50 +219,10 @@ export async function loadData() {
                                 backupLoaded = true
                             } catch (error) { }
                         }
-                    if (!backupLoaded) {
-                        throw "Forage: Your save file is corrupted"
-                    }
-                }
-
-                // SQL은 활성이지만 DB가 비어있는 경우: 로컬 데이터 마이그레이션 여부 질문.
-                // 사용자가 "아니오" 선택 시 로컬 database.bin을 계속 사용하고 SQL은 빈 상태로 둠.
-                if (get(sqlPromptMigrationStore) && !loadedFromPostgres) {
-                    sqlPromptMigrationStore.set(false)
-                    const db = getDatabase()
-                    const hasLocalData = db && db.characters && db.characters.length > 0
-                    if (hasLocalData && forageStorage.realStorage instanceof NodeStorage) {
-                        try {
-                            const migrate = await alertConfirm(language.migrateLocalToSqlPrompt)
-                            if (migrate) {
-                                LoadingStatusState.text = "Migrating local data to SQL..."
-                                // 전체 DB를 SQL로 밀어넣기 (forceFull)
-                                await forageStorage.realStorage.postgres.replaceDatabase(db)
-                                // cold storage 마이그레이션
-                                try {
-                                    await forageStorage.realStorage.postgres.migrateLegacyData()
-                                } catch (e) {
-                                    console.error('Cold storage migration skipped:', e)
-                                }
-                                alertNormal(language.migrateLocalToSqlSuccess)
-                                // 마이그레이션 완료 후 SQL에서 다시 로드
-                                const reloaded = await forageStorage.realStorage.postgres.loadDatabase()
-                                if (reloaded) {
-                                    setDatabase(reloaded)
-                                    loadedFromPostgres = true
-                                }
-                            } else {
-                                // 거부: 로컬 database.bin 계속 사용.
-                                // SQL cache를 initialized 상태로 강제 세팅하여
-                                // 향후 첫 save 시 자동 전체 마이그레이션이 발생하지 않도록 함.
-                                const cache = forageStorage.realStorage.postgres.getCache()
-                                cache.initialized = true
-                            }
-                        } catch (error) {
-                            console.error('Migration prompt failed:', error)
-                            alertError(error)
+                        if (!backupLoaded) {
+                            throw "Forage: Your save file is corrupted"
                         }
                     }
-                }
                 }
 
                 if (await forageStorage.checkAccountSync()) {

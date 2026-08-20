@@ -379,8 +379,9 @@ async function loadDrive(ACCESS_TOKEN:string, mode: 'backup'|'sync'):Promise<voi
         else{
             if(isNodeServer && forageStorage.realStorage instanceof NodeStorage && forageStorage.realStorage.postgres.isEnabled()){
                 await forageStorage.realStorage.postgres.replaceDatabase(db)
+            } else {
+                await forageStorage.setItem('database/database.bin', dbData)
             }
-            await forageStorage.setItem('database/database.bin', dbData)
             lastSaved = Date.now()
             localStorage.setItem('risu_lastsaved', `${lastSaved}`)
             location.search = ''

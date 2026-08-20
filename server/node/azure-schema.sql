@@ -1437,12 +1437,13 @@ END;
 -- 뷰: [chat].[all_messages]
 -- ============================================================
 
-IF EXISTS (SELECT * FROM sys.views WHERE object_id = OBJECT_ID(N'[chat].[all_messages]'))
-BEGIN
-    DROP VIEW [chat].[all_messages];
-END;
+IF OBJECT_ID(N'[chat].[all_messages]', 'V') IS NOT NULL DROP VIEW [chat].[all_messages];
+IF OBJECT_ID(N'[chat].[all_messages]', 'U') IS NOT NULL DROP TABLE [chat].[all_messages];
+IF OBJECT_ID(N'[dbo].[all_messages]', 'V') IS NOT NULL DROP VIEW [dbo].[all_messages];
+IF OBJECT_ID(N'[dbo].[all_messages]', 'U') IS NOT NULL DROP TABLE [dbo].[all_messages];
+
 EXEC('
-CREATE VIEW [chat].[all_messages] AS
+CREATE OR ALTER VIEW [chat].[all_messages] AS
 SELECT
     ''active'' AS storage_state,
     CAST(NULL AS NVARCHAR(64)) AS archive_id,

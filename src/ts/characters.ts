@@ -199,6 +199,7 @@ export async function exportChat(page:number){
         const doTranslate = (mode === '2' || mode === '3') ? (await alertSelect([language.translateContent, language.doNotTranslate])) === '0' : false
         const anonymous = (mode === '2' || mode === '3') ? ((await alertSelect([language.includePersonaName, language.hidePersonaName])) === '1') : false
         const selectedID = get(selectedCharID)
+        await preLoadChat(selectedID, page)
         const db = DBState.db
         const chat = db.characters[selectedID].chats[page]
         const char = db.characters[selectedID]
@@ -512,6 +513,11 @@ export async function exportAllChats() {
         const selectedID = get(selectedCharID)
         const db = getDatabase()
         const char = db.characters[selectedID]
+        if (char && Array.isArray(char.chats)) {
+            for (let i = 0; i < char.chats.length; i++) {
+                await preLoadChat(selectedID, i)
+            }
+        }
         const date = new Date().toISOString().replace(/[:.]/g, "-")
         const allChats = char.chats
         const allFolders = char.chatFolders

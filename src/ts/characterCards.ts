@@ -19,6 +19,7 @@ import { exportModuleLegacy, readModule, type RisuModule } from "./process/modul
 import { readFile } from "@tauri-apps/plugin-fs"
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { AccountStorage } from "./storage/accountStorage"
+import { NodeStorage } from "./storage/nodeStorage"
 
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz';
@@ -1247,6 +1248,20 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
     writer?:LocalWriter|VirtualWriter,
     spec?:'v2'|'v3'
 } = {}) {
+    if (char.detailsLoaded === false && isNodeServer && char.chaId && forageStorage.realStorage instanceof NodeStorage && forageStorage.realStorage.postgres.isEnabled()) {
+        try {
+            const fullChar = await forageStorage.realStorage.postgres.loadCharacter(char.chaId)
+            if (fullChar) {
+                const existingChats = char.chats
+                Object.assign(char, fullChar, {
+                    chats: existingChats,
+                    detailsLoaded: true,
+                })
+            }
+        } catch (e) {
+            console.error('Failed to load character details for export:', e)
+        }
+    }
     let img = await readImage(char.image)
     const spec:'v2'|'v3' = arg.spec ?? 'v2' //backward compatibility
     try{

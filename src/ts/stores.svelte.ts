@@ -180,9 +180,7 @@ export const hotReloading = $state<string[]>([])
 
 // SQL 데이터베이스 설정 상태 (Node 서버 환경에서 사용)
 // - configured: DB vendor가 설정되어 활성화됨
-// - promptMigration: SQL은 활성이지만 DB가 비어있어 로컬 데이터 마이그레이션 여부를 물어야 함
 export const sqlConfiguredStore = writable<boolean | null>(null)
-export const sqlPromptMigrationStore = writable<boolean>(false)
 
 ReloadGUIPointer.subscribe(() => {
     ReloadChatPointer.set({})

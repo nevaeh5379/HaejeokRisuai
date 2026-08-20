@@ -33,6 +33,7 @@ import { hypaMemoryV3 } from "./memory/hypav3";
 import { getModuleAssets, getModuleToggles } from "./modules";
 import { readImage } from "../globalApi.svelte";
 import { pluginV2 } from "../plugins/plugins.svelte";
+import { preLoadChat } from "./coldstorage.svelte";
 
 export interface OpenAIChat{
     role: 'system'|'user'|'assistant'|'function'
@@ -254,8 +255,13 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     DBState.db.statics.messages += 1
     selectedChar = get(selectedCharID)
     const nowChatroom = DBState.db.characters[selectedChar]
+    if (!nowChatroom) {
+        doingChat.set(false)
+        return false
+    }
     nowChatroom.lastInteraction = Date.now()
     selectedChat = nowChatroom.chatPage
+    await preLoadChat(selectedChar, selectedChat)
     nowChatroom.chats[nowChatroom.chatPage].message = nowChatroom.chats[nowChatroom.chatPage].message.map((v) => {
         v.chatId = v.chatId ?? v4()
         return v

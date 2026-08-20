@@ -20,6 +20,7 @@
     import { language } from "src/lang";
     import Toggles from "./Toggles.svelte";
     import { changeChatTo, createChatCopyName } from "src/ts/globalApi.svelte";
+    import { preLoadChat } from "src/ts/process/coldstorage.svelte";
 
     interface Props {
         chara: character|groupChat;
@@ -264,7 +265,9 @@
                                 const option = await alertChatOptions()
                                 switch(option){
                                     case 0:{
-                                        const newChat = $state.snapshot(chara.chats[chara.chats.indexOf(chat)])
+                                        const chatIdx = chara.chats.indexOf(chat)
+                                        await preLoadChat($selectedCharID, chatIdx)
+                                        const newChat = $state.snapshot(chara.chats[chatIdx])
                                         newChat.name = createChatCopyName(newChat.name, 'Copy')
                                         newChat.id = v4()
                                         chara.chats.unshift(newChat)
@@ -377,6 +380,7 @@
                         const option = await alertChatOptions()
                         switch(option){
                             case 0:{
+                                await preLoadChat($selectedCharID, i)
                                 const newChat = $state.snapshot(chara.chats[i])
                                 newChat.name = createChatCopyName(newChat.name, 'Copy')
                                 newChat.id = v4()

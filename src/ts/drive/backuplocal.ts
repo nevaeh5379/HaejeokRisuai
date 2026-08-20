@@ -802,14 +802,15 @@ export function LoadLocalBackup(){
                     for(const c of dbData.characters ?? []){
                         totalChats += c.chats?.length ?? 0
                     }
-                    const baseMsg = `Syncing PostgreSQL (${totalChars} characters, ${totalChats} chats)`
+                    const baseMsg = `Syncing SQL (${totalChars} characters, ${totalChats} chats)`
                     alertWait(`${baseMsg}...`)
                     await forageStorage.realStorage.postgres.replaceDatabase(dbData, (step) => {
                         alertWait(`${baseMsg} - ${step}`)
                     })
+                } else {
+                    alertWait('Finalizing database...')
+                    await forageStorage.setItem('database/database.bin', db);
                 }
-                alertWait('Finalizing database...')
-                await forageStorage.setItem('database/database.bin', db);
                 location.search = '';
                 alertStore.set({
                     type: "wait",
