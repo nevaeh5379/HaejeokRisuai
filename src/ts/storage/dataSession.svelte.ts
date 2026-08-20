@@ -307,7 +307,9 @@ export class DataSession {
             $effect(() => {
                 const keys = this.loadedRootKeys()
                 const keySet = new Set(keys)
-                for (const key of keys) this.watchRoot(key)
+                for (const key of keys) {
+                    this.watchRoot(key, !initialRoots && !this.rootWatchers.has(key))
+                }
                 for (const [key, dispose] of this.rootWatchers) {
                     if (!keySet.has(key)) {
                         dispose()
@@ -345,18 +347,22 @@ export class DataSession {
         const keys = adapter.getLoadedRootKeys?.() ?? Object.keys(this.database)
         return keys.filter((key) => key !== 'characters' && key !== 'isSql' &&
             key !== 'ensureLoaded' && key !== 'isDomainLoaded' && key !== 'getLoadedDomains' &&
-            key !== 'getLoadedRootKeys' && key !== 'ensureCharacterDetails' && key !== 'ensureChatMessages' &&
+            key !== 'getLoadedRootKeys' && key !== 'applyCoreDefaults' && key !== 'ensureCharacterDetails' && key !== 'ensureChatMessages' &&
             key !== 'loadOlderChatMessages')
     }
 
-    private watchRoot(key: string): void {
+    private watchRoot(key: string, isNew: boolean): void {
         if (this.rootWatchers.has(key)) return
         let initial = true
         const dispose = $effect.root(() => {
             $effect(() => {
                 const value = (this.database as any)[key]
-                if (initial) trackDeep(value)
-                else this.queueRoot(key, $state.snapshot(value))
+                if (initial) {
+                    trackDeep(value)
+                    if (isNew) this.queueRoot(key, $state.snapshot(value))
+                } else {
+                    this.queueRoot(key, $state.snapshot(value))
+                }
                 initial = false
             })
         })

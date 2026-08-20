@@ -245,15 +245,21 @@
     }
 
     async function handleButtonTriggerWithin(event: UIEvent) {
-        await preLoadChat(selIdState.selId, DBState.db.characters[selIdState.selId].chatPage, { full: true })
-        const currentChar = getCurrentCharacter()
-        if(!currentChar || currentChar.type === 'group'){
-            return
-        }
-
         const target = event.target as HTMLElement
         const origin = target.closest('[risu-trigger], [risu-btn]')
         if (!origin) {
+            return
+        }
+
+        const characterIndex = selIdState.selId
+        const character = DBState.db.characters?.[characterIndex]
+        if (!character) {
+            return
+        }
+
+        await preLoadChat(characterIndex, character.chatPage, { full: true })
+        const currentChar = getCurrentCharacter()
+        if(!currentChar || currentChar.type === 'group'){
             return
         }
 

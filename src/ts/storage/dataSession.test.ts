@@ -14,6 +14,27 @@ afterEach(() => {
 })
 
 describe('DataSession commands', () => {
+    it('commits a root setting added after observation starts', async () => {
+        const commits: SqlCommit[] = []
+        const storage = {
+            getRevision: () => 1,
+            commit: async (commit: SqlCommit) => {
+                commits.push(commit)
+                return { revision: 2 }
+            },
+        } as any
+        const database = createSqlDatabaseAdapter({ characters: [] } as any, storage)
+        session = new DataSession(database, storage)
+
+        await tick()
+        database.didFirstSetup = true
+        await tick()
+        await session.flush()
+
+        expect(commits).toHaveLength(1)
+        expect(commits[0].root.upserts).toContainEqual({ key: 'didFirstSetup', value: true })
+    })
+
     it('commits an appended message without serializing unrelated database state', async () => {
         const commits: SqlCommit[] = []
         const storage = {

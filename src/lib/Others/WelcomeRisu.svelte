@@ -7,6 +7,7 @@
     import { prebuiltPresets } from "src/ts/process/templates/templates";
     import { updateTextThemeAndCSS } from "src/ts/gui/colorscheme";
     import { alertError } from "src/ts/alert";
+    import { getDataSession } from "src/ts/storage/dataSession.svelte";
     import Airisu from '../../etc/Airisu.webp'
 
     const airisuStyle = `background: url("${Airisu}");background-size: cover;`
@@ -79,7 +80,7 @@
 
     $effect.pre(() => {
         if(step === 10){
-            setTimeout(() => {
+            setTimeout(async () => {
                 DBState.db = setPreset(DBState.db, prebuiltPresets.OAI2)
                 DBState.db.textTheme = 'highcontrast'
                 updateTextThemeAndCSS()
@@ -160,7 +161,10 @@
                     DBState.db.useAutoTranslateInput = true
                 }
 
-                DBState.db.didFirstSetup = true
+                const dataSession = getDataSession()
+                await dataSession.transaction(() => {
+                    dataSession.settings.set('didFirstSetup', true)
+                })
             }, 1000);
 
             DBState.db.claudeCachingExperimental = true
