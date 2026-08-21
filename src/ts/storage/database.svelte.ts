@@ -702,6 +702,7 @@ export function normalizeDatabaseDefaults(data:Database){
     data.streamGeminiThoughts ??= false
     data.settingsCloseButtonSize ??= 24
     data.hideAllImages ??= false
+    data.blurHiddenCharacters ??= true
     data.ImagenModel ??= 'imagen-4.0-generate-001'
     data.ImagenImageSize ??= '1K'
     data.ImagenAspectRatio ??= '1:1'
@@ -1314,6 +1315,7 @@ export interface Database{
     promptDiffPrefs:PromptDiffPrefs
     enableBookmark?: boolean
     hideAllImages?: boolean
+    blurHiddenCharacters?: boolean
     autoScrollToNewMessage?: boolean
     alwaysScrollToNewMessage?: boolean
     newMessageButtonStyle?: string
@@ -1564,6 +1566,8 @@ export interface character{
     coldstorage?:string
     coldStoragedChats?:string[]
     customModuleToggle?:string
+    favorite?:boolean
+    hidden?:boolean
 }
 
 
@@ -1646,6 +1650,8 @@ export interface groupChat{
     modules?:string[]
     coldstorage?:string
     coldStoragedChats?:string[]
+    favorite?:boolean
+    hidden?:boolean
 }
 
 export interface botPreset{
