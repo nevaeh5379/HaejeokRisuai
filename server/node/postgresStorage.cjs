@@ -222,23 +222,65 @@ async function beginAuditRevision(client, {
     return revisionId;
 }
 
-async function deleteMessageChildren(client, pairs, tables = [
-    'chat.message_attributes',
-    'chat.message_generation',
-    'chat.message_prompt_info',
-    'chat.message_prompt_toggles',
-    'chat.message_prompt_items',
-]) {
-    if (pairs.length === 0) return;
-    const chatIds = pairs.map((row) => row.chatId);
-    const messageIds = pairs.map((row) => row.id);
-    for (const table of tables) {
+function buildUpsertClause(table, pkColumns, valueColumns, updateTimestamp = false) {
+    if (valueColumns.length === 0) {
+        return `ON CONFLICT (${pkColumns.map((c) => `"${c}"`).join(', ')}) DO NOTHING`;
+    }
+    const quotedTable = assertSqlIdentifier(table);
+    const sets = valueColumns.map((c) => `"${c}" = EXCLUDED."${c}"`);
+    if (updateTimestamp) {
+        sets.push('"updated_at" = NOW()');
+    }
+    const leftCols = valueColumns.map((c) => `${quotedTable}."${c}"`).join(', ');
+    const rightCols = valueColumns.map((c) => `EXCLUDED."${c}"`).join(', ');
+    return `ON CONFLICT (${pkColumns.map((c) => `"${c}"`).join(', ')}) DO UPDATE SET
+        ${sets.join(', ')}
+        WHERE (${leftCols}) IS DISTINCT FROM (${rightCols})`;
+}
+
+async function prunePositionalChildren(client, table, ownerColumn, lengthsByOwner, subKindColumn = null) {
+    if (lengthsByOwner.length === 0) return;
+    const quotedTable = assertSqlIdentifier(table);
+    const ownerCol = `"${ownerColumn}"`;
+
+    if (subKindColumn) {
+        const subKindCol = `"${subKindColumn}"`;
+        const owners = lengthsByOwner.map((item) => item.ownerId);
+        const subKinds = lengthsByOwner.map((item) => item.subKind);
+        const lengths = lengthsByOwner.map((item) => item.length);
         await client.query(
-            `DELETE FROM ${assertSqlIdentifier(table)} AS child
-             USING UNNEST($1::text[], $2::text[]) AS changed(chat_id, message_id)
-             WHERE child.chat_id = changed.chat_id AND child.message_id = changed.message_id`,
-            [chatIds, messageIds]
+            `DELETE FROM ${quotedTable} AS target
+             USING UNNEST($1::text[], $2::text[], $3::integer[]) AS spec(owner_id, sub_kind, target_len)
+             WHERE target.${ownerCol} = spec.owner_id
+               AND target.${subKindCol} = spec.sub_kind
+               AND target."position" >= spec.target_len`,
+            [owners, subKinds, lengths]
         );
+    } else {
+        const owners = lengthsByOwner.map((item) => item.ownerId);
+        const lengths = lengthsByOwner.map((item) => item.length);
+        await client.query(
+            `DELETE FROM ${quotedTable} AS target
+             USING UNNEST($1::text[], $2::integer[]) AS spec(owner_id, target_len)
+             WHERE target.${ownerCol} = spec.owner_id
+               AND target."position" >= spec.target_len`,
+            [owners, lengths]
+        );
+    }
+}
+
+async function pruneKeyedChildren(client, table, ownerColumn, keyColumn, keysByOwner) {
+    if (keysByOwner.length === 0) return;
+    const quotedTable = assertSqlIdentifier(table);
+    const ownerCol = `"${ownerColumn}"`;
+    const keyCol = `"${keyColumn}"`;
+
+    for (const { ownerId, keys } of keysByOwner) {
+        if (!keys || keys.length === 0) {
+            await client.query(`DELETE FROM ${quotedTable} WHERE ${ownerCol} = $1`, [ownerId]);
+        } else {
+            await client.query(`DELETE FROM ${quotedTable} WHERE ${ownerCol} = $1 AND NOT (${keyCol} = ANY($2::text[]))`, [ownerId, keys]);
+        }
     }
 }
 
@@ -1714,15 +1756,47 @@ class PostgresStorage extends SqlStorageBase {
             await bulkInsert(client, 'chat.messages', messageColumns,
                 ['text', 'text', 'integer', 'text', 'text', 'bytea', 'text', 'bigint', 'text', 'boolean', 'text', 'boolean'],
                 [split.core],
-                `ON CONFLICT (chat_id, id) DO UPDATE SET ${messageColumns.slice(2).map((column) =>
-                    `"${column}" = EXCLUDED."${column}"`).join(', ')}, updated_at = NOW()`);
-            await deleteMessageChildren(client, [{ id: split.core.id, chatId }]);
+                buildUpsertClause('chat.messages', ['chat_id', 'id'], messageColumns.slice(2), true));
             if (split.attributes.length > 0) {
-                await bulkInsert(client, 'chat.message_attributes', ['chat_id', 'message_id', 'key', 'value'], ['text', 'text', 'text', 'jsonb'], split.attributes.map((r) => ({ ...r, chat_id: chatId, message_id: split.core.id })));
+                await bulkInsert(client, 'chat.message_attributes', ['chat_id', 'message_id', 'key', 'value'], ['text', 'text', 'text', 'jsonb'],
+                    split.attributes.map((r) => ({ ...r, chat_id: chatId, message_id: split.core.id })),
+                    buildUpsertClause('chat.message_attributes', ['chat_id', 'message_id', 'key'], ['value']));
             }
+            await pruneKeyedChildren(client, 'chat.message_attributes', 'chat_id', 'key',
+                [{ ownerId: chatId, keys: split.attributes.map((r) => r.key) }]);
+
             if (split.generation) {
-                await bulkInsert(client, 'chat.message_generation', ['chat_id', 'message_id', 'model', 'generation_id', 'input_tokens', 'output_tokens', 'max_context', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time'], ['text', 'text', 'text', 'text', 'integer', 'integer', 'integer', 'double precision', 'double precision', 'double precision', 'double precision'], [split.generation]);
+                await bulkInsert(client, 'chat.message_generation', ['chat_id', 'message_id', 'model', 'generation_id', 'input_tokens', 'output_tokens', 'max_context', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time'], ['text', 'text', 'text', 'text', 'integer', 'integer', 'integer', 'double precision', 'double precision', 'double precision', 'double precision'],
+                    [split.generation],
+                    buildUpsertClause('chat.message_generation', ['chat_id', 'message_id'], ['model', 'generation_id', 'input_tokens', 'output_tokens', 'max_context', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time']));
+            } else {
+                await client.query('DELETE FROM chat.message_generation WHERE chat_id = $1 AND message_id = $2', [chatId, split.core.id]);
             }
+
+            if (split.prompt?.info) {
+                await bulkInsert(client, 'chat.message_prompt_info', ['chat_id', 'message_id', 'prompt_name'], ['text', 'text', 'text'],
+                    [split.prompt.info],
+                    buildUpsertClause('chat.message_prompt_info', ['chat_id', 'message_id'], ['prompt_name']));
+            } else {
+                await client.query('DELETE FROM chat.message_prompt_info WHERE chat_id = $1 AND message_id = $2', [chatId, split.core.id]);
+            }
+
+            if (split.prompt?.toggles?.length > 0) {
+                await bulkInsert(client, 'chat.message_prompt_toggles', ['chat_id', 'message_id', 'position', 'toggle_key', 'toggle_value'], ['text', 'text', 'integer', 'text', 'text'],
+                    split.prompt.toggles,
+                    buildUpsertClause('chat.message_prompt_toggles', ['chat_id', 'message_id', 'position'], ['toggle_key', 'toggle_value']));
+            }
+            await client.query('DELETE FROM chat.message_prompt_toggles WHERE chat_id = $1 AND message_id = $2 AND position >= $3',
+                [chatId, split.core.id, (split.prompt?.toggles || []).length]);
+
+            if (split.prompt?.items?.length > 0) {
+                await bulkInsert(client, 'chat.message_prompt_items', ['chat_id', 'message_id', 'position', 'payload'], ['text', 'text', 'integer', 'jsonb'],
+                    split.prompt.items,
+                    buildUpsertClause('chat.message_prompt_items', ['chat_id', 'message_id', 'position'], ['payload']));
+            }
+            await client.query('DELETE FROM chat.message_prompt_items WHERE chat_id = $1 AND message_id = $2 AND position >= $3',
+                [chatId, split.core.id, (split.prompt?.items || []).length]);
+
             return { id: split.core.id, chatId };
         });
     }
@@ -1775,11 +1849,7 @@ class PostgresStorage extends SqlStorageBase {
                     ['key', 'text_val', 'num_val', 'bool_val'],
                     ['text', 'text', 'double precision', 'boolean'],
                     settingRows,
-                    `ON CONFLICT (key) DO UPDATE SET
-                        text_val = EXCLUDED.text_val,
-                        num_val = EXCLUDED.num_val,
-                        bool_val = EXCLUDED.bool_val,
-                        updated_at = NOW()`
+                    buildUpsertClause('system.settings', ['key'], ['text_val', 'num_val', 'bool_val'], true)
                 );
             }
             const changedSettingKeys = payload.rootUpserts.map((item) => item.key);
@@ -1825,39 +1895,89 @@ class PostgresStorage extends SqlStorageBase {
                 ['text', 'integer', 'text', ...Array(15).fill('text'), 'integer', 'integer', 'boolean', 'boolean',
                     'text', 'text', 'text', 'text', 'text', 'text', 'text', 'bigint', 'bigint', 'bigint', 'bigint'],
                 splitCharacters.map((item) => item.core),
-                `ON CONFLICT (id) DO UPDATE SET ${characterColumns.slice(1).map((column) =>
-                    `"${column}" = EXCLUDED."${column}"`).join(', ')}, updated_at = NOW()`
+                buildUpsertClause('character.characters', ['id'], characterColumns.slice(1), true)
             );
-            const changedCharacterIds = payload.characters.map((row) => row.id);
-            const characterChildTables = [
-                'character.attributes', 'character.tags', 'character.greetings',
-                'character.biases', 'character.emotions', 'character.modules',
-                'character.group_members', 'character.chat_folders', 'character.scripts',
-                'character.sd_data', 'character.assets', 'character.lore_entries',
-            ];
-            if (changedCharacterIds.length > 0) {
-                for (const table of characterChildTables) {
-                    const ownerColumn = table === 'character.group_members' ? 'group_id' : 'character_id';
-                    await client.query(
-                        `DELETE FROM ${assertSqlIdentifier(table)} WHERE "${ownerColumn}" = ANY($1::text[])`,
-                        [changedCharacterIds]
-                    );
-                }
-            }
+
             const characterRows = (name) => splitCharacters.flatMap((item) => item[name]);
-            await bulkInsert(client, 'character.attributes', ['character_id', 'key', 'value'], ['text', 'text', 'jsonb'],
-                splitCharacters.flatMap((item) => item.attributes.map((row) => ({ ...row, character_id: item.core.id }))));
-            await bulkInsert(client, 'character.tags', ['character_id', 'position', 'tag'], ['text', 'integer', 'text'], characterRows('tags'));
-            await bulkInsert(client, 'character.greetings', ['character_id', 'greeting_type', 'position', 'content'], ['text', 'text', 'integer', 'text'], characterRows('greetings'));
-            await bulkInsert(client, 'character.biases', ['character_id', 'position', 'phrase', 'bias'], ['text', 'integer', 'text', 'double precision'], characterRows('biases'));
-            await bulkInsert(client, 'character.emotions', ['character_id', 'position', 'emotion', 'asset'], ['text', 'integer', 'text', 'text'], characterRows('emotions'));
-            await bulkInsert(client, 'character.modules', ['character_id', 'position', 'module_id'], ['text', 'integer', 'text'], characterRows('modules'));
-            await bulkInsert(client, 'character.group_members', ['group_id', 'position', 'character_id', 'talk_weight', 'active'], ['text', 'integer', 'text', 'double precision', 'boolean'], characterRows('groupMembers'));
-            await bulkInsert(client, 'character.chat_folders', ['character_id', 'position', 'folder_id', 'name', 'color', 'folded'], ['text', 'integer', 'text', 'text', 'text', 'boolean'], characterRows('chatFolders'));
-            await bulkInsert(client, 'character.scripts', ['character_id', 'script_kind', 'position', 'comment', 'input_text', 'output_text', 'script_type', 'flag', 'able_flag', 'trigger_payload'], ['text', 'text', 'integer', 'text', 'text', 'text', 'text', 'text', 'boolean', 'jsonb'], characterRows('scripts'));
-            await bulkInsert(client, 'character.sd_data', ['character_id', 'position', 'key', 'value'], ['text', 'integer', 'text', 'text'], characterRows('sdData'));
-            await bulkInsert(client, 'character.assets', ['character_id', 'position', 'asset_source', 'asset_type', 'uri', 'name', 'extension', 'extra_value'], ['text', 'integer', 'text', 'text', 'text', 'text', 'text', 'text'], characterRows('assets'));
-            await bulkInsert(client, 'character.lore_entries', ['character_id', 'position', 'lore_id', 'primary_key', 'secondary_key', 'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], ['text', 'integer', 'text', 'text', 'text', 'integer', 'text', 'text', 'text', 'boolean', 'boolean', 'boolean', 'double precision', 'boolean', 'integer', 'text', 'jsonb'], characterRows('lore'));
+
+            // 1. attributes (PK: character_id, key)
+            const charAttrRows = splitCharacters.flatMap((item) => item.attributes.map((row) => ({ ...row, character_id: item.core.id })));
+            await bulkInsert(client, 'character.attributes', ['character_id', 'key', 'value'], ['text', 'text', 'jsonb'], charAttrRows,
+                buildUpsertClause('character.attributes', ['character_id', 'key'], ['value']));
+            await pruneKeyedChildren(client, 'character.attributes', 'character_id', 'key',
+                splitCharacters.map((c) => ({ ownerId: c.core.id, keys: (c.attributes || []).map((a) => a.key) })));
+
+            // 2. tags (PK: character_id, position)
+            await bulkInsert(client, 'character.tags', ['character_id', 'position', 'tag'], ['text', 'integer', 'text'], characterRows('tags'),
+                buildUpsertClause('character.tags', ['character_id', 'position'], ['tag']));
+            await prunePositionalChildren(client, 'character.tags', 'character_id',
+                splitCharacters.map((c) => ({ ownerId: c.core.id, length: (c.tags || []).length })));
+
+            // 3. greetings (PK: character_id, greeting_type, position)
+            await bulkInsert(client, 'character.greetings', ['character_id', 'greeting_type', 'position', 'content'], ['text', 'text', 'integer', 'text'], characterRows('greetings'),
+                buildUpsertClause('character.greetings', ['character_id', 'greeting_type', 'position'], ['content']));
+            await prunePositionalChildren(client, 'character.greetings', 'character_id',
+                splitCharacters.flatMap((c) => [
+                    { ownerId: c.core.id, subKind: 'alternate', length: (c.greetings || []).filter((g) => g.greeting_type === 'alternate').length },
+                    { ownerId: c.core.id, subKind: 'group-only', length: (c.greetings || []).filter((g) => g.greeting_type === 'group-only').length },
+                ]), 'greeting_type');
+
+            // 4. biases (PK: character_id, position)
+            await bulkInsert(client, 'character.biases', ['character_id', 'position', 'phrase', 'bias'], ['text', 'integer', 'text', 'double precision'], characterRows('biases'),
+                buildUpsertClause('character.biases', ['character_id', 'position'], ['phrase', 'bias']));
+            await prunePositionalChildren(client, 'character.biases', 'character_id',
+                splitCharacters.map((c) => ({ ownerId: c.core.id, length: (c.biases || []).length })));
+
+            // 5. emotions (PK: character_id, position)
+            await bulkInsert(client, 'character.emotions', ['character_id', 'position', 'emotion', 'asset'], ['text', 'integer', 'text', 'text'], characterRows('emotions'),
+                buildUpsertClause('character.emotions', ['character_id', 'position'], ['emotion', 'asset']));
+            await prunePositionalChildren(client, 'character.emotions', 'character_id',
+                splitCharacters.map((c) => ({ ownerId: c.core.id, length: (c.emotions || []).length })));
+
+            // 6. modules (PK: character_id, position)
+            await bulkInsert(client, 'character.modules', ['character_id', 'position', 'module_id'], ['text', 'integer', 'text'], characterRows('modules'),
+                buildUpsertClause('character.modules', ['character_id', 'position'], ['module_id']));
+            await prunePositionalChildren(client, 'character.modules', 'character_id',
+                splitCharacters.map((c) => ({ ownerId: c.core.id, length: (c.modules || []).length })));
+
+            // 7. group_members (PK: group_id, position)
+            await bulkInsert(client, 'character.group_members', ['group_id', 'position', 'character_id', 'talk_weight', 'active'], ['text', 'integer', 'text', 'double precision', 'boolean'], characterRows('groupMembers'),
+                buildUpsertClause('character.group_members', ['group_id', 'position'], ['character_id', 'talk_weight', 'active']));
+            await prunePositionalChildren(client, 'character.group_members', 'group_id',
+                splitCharacters.map((c) => ({ ownerId: c.core.id, length: (c.groupMembers || []).length })));
+
+            // 8. chat_folders (PK: character_id, position)
+            await bulkInsert(client, 'character.chat_folders', ['character_id', 'position', 'folder_id', 'name', 'color', 'folded'], ['text', 'integer', 'text', 'text', 'text', 'boolean'], characterRows('chatFolders'),
+                buildUpsertClause('character.chat_folders', ['character_id', 'position'], ['folder_id', 'name', 'color', 'folded']));
+            await prunePositionalChildren(client, 'character.chat_folders', 'character_id',
+                splitCharacters.map((c) => ({ ownerId: c.core.id, length: (c.chatFolders || []).length })));
+
+            // 9. scripts (PK: character_id, script_kind, position)
+            await bulkInsert(client, 'character.scripts', ['character_id', 'script_kind', 'position', 'comment', 'input_text', 'output_text', 'script_type', 'flag', 'able_flag', 'trigger_payload'], ['text', 'text', 'integer', 'text', 'text', 'text', 'text', 'text', 'boolean', 'jsonb'], characterRows('scripts'),
+                buildUpsertClause('character.scripts', ['character_id', 'script_kind', 'position'], ['comment', 'input_text', 'output_text', 'script_type', 'flag', 'able_flag', 'trigger_payload']));
+            await prunePositionalChildren(client, 'character.scripts', 'character_id',
+                splitCharacters.flatMap((c) => [
+                    { ownerId: c.core.id, subKind: 'custom', length: (c.scripts || []).filter((s) => s.script_kind === 'custom').length },
+                    { ownerId: c.core.id, subKind: 'trigger', length: (c.scripts || []).filter((s) => s.script_kind === 'trigger').length },
+                ]), 'script_kind');
+
+            // 10. sd_data (PK: character_id, position)
+            await bulkInsert(client, 'character.sd_data', ['character_id', 'position', 'key', 'value'], ['text', 'integer', 'text', 'text'], characterRows('sdData'),
+                buildUpsertClause('character.sd_data', ['character_id', 'position'], ['key', 'value']));
+            await prunePositionalChildren(client, 'character.sd_data', 'character_id',
+                splitCharacters.map((c) => ({ ownerId: c.core.id, length: (c.sdData || []).length })));
+
+            // 11. assets (PK: character_id, position)
+            await bulkInsert(client, 'character.assets', ['character_id', 'position', 'asset_source', 'asset_type', 'uri', 'name', 'extension', 'extra_value'], ['text', 'integer', 'text', 'text', 'text', 'text', 'text', 'text'], characterRows('assets'),
+                buildUpsertClause('character.assets', ['character_id', 'position'], ['asset_source', 'asset_type', 'uri', 'name', 'extension', 'extra_value']));
+            await prunePositionalChildren(client, 'character.assets', 'character_id',
+                splitCharacters.map((c) => ({ ownerId: c.core.id, length: (c.assets || []).length })));
+
+            // 12. lore_entries (PK: character_id, position)
+            await bulkInsert(client, 'character.lore_entries', ['character_id', 'position', 'lore_id', 'primary_key', 'secondary_key', 'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], ['text', 'integer', 'text', 'text', 'text', 'integer', 'text', 'text', 'text', 'boolean', 'boolean', 'boolean', 'double precision', 'boolean', 'integer', 'text', 'jsonb'], characterRows('lore'),
+                buildUpsertClause('character.lore_entries', ['character_id', 'position'], ['lore_id', 'primary_key', 'secondary_key', 'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload']));
+            await prunePositionalChildren(client, 'character.lore_entries', 'character_id',
+                splitCharacters.map((c) => ({ ownerId: c.core.id, length: (c.lore || []).length })));
 
             onProgress?.({ stage: 'chats', message: `Syncing chats (${payload.chats.length})`, count: payload.chats.length });
             const splitChats = payload.chats.map(splitChat);
@@ -1865,21 +1985,52 @@ class PostgresStorage extends SqlStorageBase {
             await bulkInsert(client, 'chat.chats', chatColumns,
                 ['text', 'text', 'integer', 'text', 'text', 'text', 'text', 'text', 'boolean', 'text', 'text', 'integer', 'text', 'bigint'],
                 splitChats.map((item) => item.core),
-                `ON CONFLICT (id) DO UPDATE SET ${chatColumns.slice(1).map((column) =>
-                    `"${column}" = EXCLUDED."${column}"`).join(', ')}, updated_at = NOW()`);
-            const changedChatIds = payload.chats.map((row) => row.id);
-            const chatChildTables = ['chat.attributes', 'chat.suggestions', 'chat.modules', 'chat.script_state', 'chat.bookmarks', 'chat.memory', 'chat.lore_entries'];
-            if (changedChatIds.length > 0) {
-                for (const table of chatChildTables) await client.query(`DELETE FROM ${assertSqlIdentifier(table)} WHERE chat_id = ANY($1::text[])`, [changedChatIds]);
-            }
+                buildUpsertClause('chat.chats', ['id'], chatColumns.slice(1), true));
+
             const chatRows = (name) => splitChats.flatMap((item) => item[name]);
-            await bulkInsert(client, 'chat.attributes', ['chat_id', 'key', 'value'], ['text', 'text', 'jsonb'], splitChats.flatMap((item) => item.attributes.map((row) => ({ ...row, chat_id: item.core.id }))));
-            await bulkInsert(client, 'chat.suggestions', ['chat_id', 'position', 'content'], ['text', 'integer', 'text'], chatRows('suggestions'));
-            await bulkInsert(client, 'chat.modules', ['chat_id', 'position', 'module_id'], ['text', 'integer', 'text'], chatRows('modules'));
-            await bulkInsert(client, 'chat.script_state', ['chat_id', 'key', 'value_type', 'text_value', 'number_value', 'boolean_value'], ['text', 'text', 'text', 'text', 'double precision', 'boolean'], chatRows('scriptState'));
-            await bulkInsert(client, 'chat.bookmarks', ['chat_id', 'position', 'message_id', 'name'], ['text', 'integer', 'text', 'text'], chatRows('bookmarks'));
-            await bulkInsert(client, 'chat.memory', ['chat_id', 'memory_type', 'payload'], ['text', 'text', 'jsonb'], chatRows('memory'));
-            await bulkInsert(client, 'chat.lore_entries', ['chat_id', 'position', 'lore_id', 'primary_key', 'secondary_key', 'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], ['text', 'integer', 'text', 'text', 'text', 'integer', 'text', 'text', 'text', 'boolean', 'boolean', 'boolean', 'double precision', 'boolean', 'integer', 'text', 'jsonb'], chatRows('lore'));
+
+            // 1. attributes (PK: chat_id, key)
+            const chatAttrRows = splitChats.flatMap((item) => item.attributes.map((row) => ({ ...row, chat_id: item.core.id })));
+            await bulkInsert(client, 'chat.attributes', ['chat_id', 'key', 'value'], ['text', 'text', 'jsonb'], chatAttrRows,
+                buildUpsertClause('chat.attributes', ['chat_id', 'key'], ['value']));
+            await pruneKeyedChildren(client, 'chat.attributes', 'chat_id', 'key',
+                splitChats.map((c) => ({ ownerId: c.core.id, keys: (c.attributes || []).map((a) => a.key) })));
+
+            // 2. suggestions (PK: chat_id, position)
+            await bulkInsert(client, 'chat.suggestions', ['chat_id', 'position', 'content'], ['text', 'integer', 'text'], chatRows('suggestions'),
+                buildUpsertClause('chat.suggestions', ['chat_id', 'position'], ['content']));
+            await prunePositionalChildren(client, 'chat.suggestions', 'chat_id',
+                splitChats.map((c) => ({ ownerId: c.core.id, length: (c.suggestions || []).length })));
+
+            // 3. modules (PK: chat_id, position)
+            await bulkInsert(client, 'chat.modules', ['chat_id', 'position', 'module_id'], ['text', 'integer', 'text'], chatRows('modules'),
+                buildUpsertClause('chat.modules', ['chat_id', 'position'], ['module_id']));
+            await prunePositionalChildren(client, 'chat.modules', 'chat_id',
+                splitChats.map((c) => ({ ownerId: c.core.id, length: (c.modules || []).length })));
+
+            // 4. script_state (PK: chat_id, key)
+            await bulkInsert(client, 'chat.script_state', ['chat_id', 'key', 'value_type', 'text_value', 'number_value', 'boolean_value'], ['text', 'text', 'text', 'text', 'double precision', 'boolean'], chatRows('scriptState'),
+                buildUpsertClause('chat.script_state', ['chat_id', 'key'], ['value_type', 'text_value', 'number_value', 'boolean_value']));
+            await pruneKeyedChildren(client, 'chat.script_state', 'chat_id', 'key',
+                splitChats.map((c) => ({ ownerId: c.core.id, keys: (c.scriptState || []).map((s) => s.key) })));
+
+            // 5. bookmarks (PK: chat_id, position)
+            await bulkInsert(client, 'chat.bookmarks', ['chat_id', 'position', 'message_id', 'name'], ['text', 'integer', 'text', 'text'], chatRows('bookmarks'),
+                buildUpsertClause('chat.bookmarks', ['chat_id', 'position'], ['message_id', 'name']));
+            await prunePositionalChildren(client, 'chat.bookmarks', 'chat_id',
+                splitChats.map((c) => ({ ownerId: c.core.id, length: (c.bookmarks || []).length })));
+
+            // 6. memory (PK: chat_id, memory_type)
+            await bulkInsert(client, 'chat.memory', ['chat_id', 'memory_type', 'payload'], ['text', 'text', 'jsonb'], chatRows('memory'),
+                buildUpsertClause('chat.memory', ['chat_id', 'memory_type'], ['payload']));
+            await pruneKeyedChildren(client, 'chat.memory', 'chat_id', 'memory_type',
+                splitChats.map((c) => ({ ownerId: c.core.id, keys: (c.memory || []).map((m) => m.memory_type) })));
+
+            // 7. lore_entries (PK: chat_id, position)
+            await bulkInsert(client, 'chat.lore_entries', ['chat_id', 'position', 'lore_id', 'primary_key', 'secondary_key', 'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], ['text', 'integer', 'text', 'text', 'text', 'integer', 'text', 'text', 'text', 'boolean', 'boolean', 'boolean', 'double precision', 'boolean', 'integer', 'text', 'jsonb'], chatRows('lore'),
+                buildUpsertClause('chat.lore_entries', ['chat_id', 'position'], ['lore_id', 'primary_key', 'secondary_key', 'insert_order', 'comment', 'content', 'mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload']));
+            await prunePositionalChildren(client, 'chat.lore_entries', 'chat_id',
+                splitChats.map((c) => ({ ownerId: c.core.id, length: (c.lore || []).length })));
 
             onProgress?.({ stage: 'messages', message: `Syncing messages (${payload.messages.length})`, count: payload.messages.length });
             const splitMessages = payload.messages.map(splitMessage);
@@ -1887,14 +2038,82 @@ class PostgresStorage extends SqlStorageBase {
             await bulkInsert(client, 'chat.messages', messageColumns,
                 ['text', 'text', 'integer', 'text', 'text', 'bytea', 'text', 'bigint', 'text', 'boolean', 'text', 'boolean'],
                 splitMessages.map((item) => item.core),
-                `ON CONFLICT (chat_id, id) DO UPDATE SET ${messageColumns.slice(2).map((column) =>
-                    `"${column}" = EXCLUDED."${column}"`).join(', ')}, updated_at = NOW()`);
-            await deleteMessageChildren(client, payload.messages);
-            await bulkInsert(client, 'chat.message_attributes', ['chat_id', 'message_id', 'key', 'value'], ['text', 'text', 'text', 'jsonb'], splitMessages.flatMap((item) => item.attributes.map((row) => ({ ...row, chat_id: item.core.chat_id, message_id: item.core.id }))));
-            await bulkInsert(client, 'chat.message_generation', ['chat_id', 'message_id', 'model', 'generation_id', 'input_tokens', 'output_tokens', 'max_context', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time'], ['text', 'text', 'text', 'text', 'integer', 'integer', 'integer', 'double precision', 'double precision', 'double precision', 'double precision'], splitMessages.flatMap((item) => item.generation ? [item.generation] : []));
-            await bulkInsert(client, 'chat.message_prompt_info', ['chat_id', 'message_id', 'prompt_name'], ['text', 'text', 'text'], splitMessages.flatMap((item) => item.prompt ? [item.prompt.info] : []));
-            await bulkInsert(client, 'chat.message_prompt_toggles', ['chat_id', 'message_id', 'position', 'toggle_key', 'toggle_value'], ['text', 'text', 'integer', 'text', 'text'], splitMessages.flatMap((item) => item.prompt?.toggles || []));
-            await bulkInsert(client, 'chat.message_prompt_items', ['chat_id', 'message_id', 'position', 'payload'], ['text', 'text', 'integer', 'jsonb'], splitMessages.flatMap((item) => item.prompt?.items || []));
+                buildUpsertClause('chat.messages', ['chat_id', 'id'], messageColumns.slice(2), true));
+
+            // 1. message_attributes
+            const msgAttrRows = splitMessages.flatMap((item) => item.attributes.map((row) => ({ ...row, chat_id: item.core.chat_id, message_id: item.core.id })));
+            await bulkInsert(client, 'chat.message_attributes', ['chat_id', 'message_id', 'key', 'value'], ['text', 'text', 'text', 'jsonb'], msgAttrRows,
+                buildUpsertClause('chat.message_attributes', ['chat_id', 'message_id', 'key'], ['value']));
+            for (const item of splitMessages) {
+                const keys = (item.attributes || []).map((a) => a.key);
+                if (keys.length === 0) {
+                    await client.query('DELETE FROM chat.message_attributes WHERE chat_id = $1 AND message_id = $2', [item.core.chat_id, item.core.id]);
+                } else {
+                    await client.query('DELETE FROM chat.message_attributes WHERE chat_id = $1 AND message_id = $2 AND NOT (key = ANY($3::text[]))', [item.core.chat_id, item.core.id, keys]);
+                }
+            }
+
+            // 2. message_generation
+            const genRows = splitMessages.flatMap((item) => item.generation ? [item.generation] : []);
+            await bulkInsert(client, 'chat.message_generation', ['chat_id', 'message_id', 'model', 'generation_id', 'input_tokens', 'output_tokens', 'max_context', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time'], ['text', 'text', 'text', 'text', 'integer', 'integer', 'integer', 'double precision', 'double precision', 'double precision', 'double precision'], genRows,
+                buildUpsertClause('chat.message_generation', ['chat_id', 'message_id'], ['model', 'generation_id', 'input_tokens', 'output_tokens', 'max_context', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time']));
+            const msgsWithoutGen = splitMessages.filter((m) => !m.generation);
+            if (msgsWithoutGen.length > 0) {
+                await client.query(
+                    `DELETE FROM chat.message_generation AS target
+                     USING UNNEST($1::text[], $2::text[]) AS spec(chat_id, message_id)
+                     WHERE target.chat_id = spec.chat_id AND target.message_id = spec.message_id`,
+                    [msgsWithoutGen.map((m) => m.core.chat_id), msgsWithoutGen.map((m) => m.core.id)]
+                );
+            }
+
+            // 3. message_prompt_info
+            const promptInfoRows = splitMessages.flatMap((item) => item.prompt ? [item.prompt.info] : []);
+            await bulkInsert(client, 'chat.message_prompt_info', ['chat_id', 'message_id', 'prompt_name'], ['text', 'text', 'text'], promptInfoRows,
+                buildUpsertClause('chat.message_prompt_info', ['chat_id', 'message_id'], ['prompt_name']));
+            const msgsWithoutPrompt = splitMessages.filter((m) => !m.prompt?.info);
+            if (msgsWithoutPrompt.length > 0) {
+                await client.query(
+                    `DELETE FROM chat.message_prompt_info AS target
+                     USING UNNEST($1::text[], $2::text[]) AS spec(chat_id, message_id)
+                     WHERE target.chat_id = spec.chat_id AND target.message_id = spec.message_id`,
+                    [msgsWithoutPrompt.map((m) => m.core.chat_id), msgsWithoutPrompt.map((m) => m.core.id)]
+                );
+            }
+
+            // 4. message_prompt_toggles
+            const toggleRows = splitMessages.flatMap((item) => item.prompt?.toggles || []);
+            await bulkInsert(client, 'chat.message_prompt_toggles', ['chat_id', 'message_id', 'position', 'toggle_key', 'toggle_value'], ['text', 'text', 'integer', 'text', 'text'], toggleRows,
+                buildUpsertClause('chat.message_prompt_toggles', ['chat_id', 'message_id', 'position'], ['toggle_key', 'toggle_value']));
+            if (splitMessages.length > 0) {
+                await client.query(
+                    `DELETE FROM chat.message_prompt_toggles AS target
+                     USING UNNEST($1::text[], $2::text[], $3::integer[]) AS spec(chat_id, message_id, target_len)
+                     WHERE target.chat_id = spec.chat_id AND target.message_id = spec.message_id AND target.position >= spec.target_len`,
+                    [
+                        splitMessages.map((m) => m.core.chat_id),
+                        splitMessages.map((m) => m.core.id),
+                        splitMessages.map((m) => (m.prompt?.toggles || []).length),
+                    ]
+                );
+            }
+
+            // 5. message_prompt_items
+            const promptItemRows = splitMessages.flatMap((item) => item.prompt?.items || []);
+            await bulkInsert(client, 'chat.message_prompt_items', ['chat_id', 'message_id', 'position', 'payload'], ['text', 'text', 'integer', 'jsonb'], promptItemRows,
+                buildUpsertClause('chat.message_prompt_items', ['chat_id', 'message_id', 'position'], ['payload']));
+            if (splitMessages.length > 0) {
+                await client.query(
+                    `DELETE FROM chat.message_prompt_items AS target
+                     USING UNNEST($1::text[], $2::text[], $3::integer[]) AS spec(chat_id, message_id, target_len)
+                     WHERE target.chat_id = spec.chat_id AND target.message_id = spec.message_id AND target.position >= spec.target_len`,
+                    [
+                        splitMessages.map((m) => m.core.chat_id),
+                        splitMessages.map((m) => m.core.id),
+                        splitMessages.map((m) => (m.prompt?.items || []).length),
+                    ]
+                );
+            }
 
             if (payload.characterIds !== undefined) {
                 await client.query(
@@ -2310,6 +2529,7 @@ module.exports = {
     PostgresPayloadError,
     PostgresRevisionConflictError,
     PostgresStorage,
+    buildUpsertClause,
     decodePostgresJsonValue,
     encodePostgresJsonValue,
     normalizeColdStorageKey,

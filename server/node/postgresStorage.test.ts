@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 const require = createRequire(import.meta.url)
 const {
     DEFERRED_SETTING_KEYS,
+    buildUpsertClause,
     decodePostgresJsonValue,
     encodePostgresJsonValue,
     PostgresPayloadError,
@@ -13,6 +14,7 @@ const {
     validateSyncPayload,
 } = require('./postgresStorage.cjs') as {
     DEFERRED_SETTING_KEYS:string[]
+    buildUpsertClause:(table:string, pkColumns:string[], valueColumns:string[], updateTimestamp?:boolean) => string
     decodePostgresJsonValue:(value:unknown) => unknown
     encodePostgresJsonValue:(value:unknown) => unknown
     PostgresPayloadError:new (message:string) => Error
@@ -137,6 +139,27 @@ describe('PostgreSQL sync payload validation', () => {
         expect(DEFERRED_SETTING_KEYS).toContain('globalscript')
         expect(DEFERRED_SETTING_KEYS).toContain('mainPrompt')
         expect(DEFERRED_SETTING_KEYS).toContain('plugins')
+    })
+
+    it('generates diff-based upsert clauses with IS DISTINCT FROM conditions', () => {
+        const clause = buildUpsertClause('character.lore_entries', ['character_id', 'position'], ['lore_id', 'primary_key', 'content'])
+        expect(clause).toContain('ON CONFLICT ("character_id", "position") DO UPDATE SET')
+        expect(clause).toContain('"lore_id" = EXCLUDED."lore_id"')
+        expect(clause).toContain('"primary_key" = EXCLUDED."primary_key"')
+        expect(clause).toContain('"content" = EXCLUDED."content"')
+        expect(clause).toContain('WHERE ("character"."lore_entries"."lore_id", "character"."lore_entries"."primary_key", "character"."lore_entries"."content") IS DISTINCT FROM (EXCLUDED."lore_id", EXCLUDED."primary_key", EXCLUDED."content")')
+    })
+
+    it('appends updated_at timestamp update when requested in upsert clauses', () => {
+        const clause = buildUpsertClause('character.characters', ['id'], ['name', 'description'], true)
+        expect(clause).toContain('ON CONFLICT ("id") DO UPDATE SET')
+        expect(clause).toContain('"updated_at" = NOW()')
+        expect(clause).toContain('WHERE ("character"."characters"."name", "character"."characters"."description") IS DISTINCT FROM (EXCLUDED."name", EXCLUDED."description")')
+    })
+
+    it('returns DO NOTHING when valueColumns is empty', () => {
+        const clause = buildUpsertClause('character.tags', ['character_id', 'position'], [])
+        expect(clause).toBe('ON CONFLICT ("character_id", "position") DO NOTHING')
     })
 })
 
