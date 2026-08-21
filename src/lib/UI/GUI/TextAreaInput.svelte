@@ -198,8 +198,8 @@ bind:this={textareaInput}
     let autoCompleteDom: HTMLDivElement = $state()
     let autocompleteContents:string[] = $state([])
     let inputDom: HTMLDivElement = $state()
-    let textareaInput: HTMLDivElement;
-    let resizeHandle: HTMLDivElement;
+    let textareaInput = $state<HTMLDivElement>()
+    let resizeHandle = $state<HTMLDivElement>()
 
     const autoComplete = () => {
         if(isMobile){

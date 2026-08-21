@@ -2471,13 +2471,12 @@ app.post('/api/postgres-config', authenticatedRouteLimiter, async (req, res, nex
 
         const connectionChanged = connectionString !== previousConfig.connectionString;
         const mustExportLegacy = postgresStorage.enabled && (!req.body.enabled || connectionChanged);
-        if (mustExportLegacy && req.body.legacySnapshotReady !== true) {
-            throw new PostgresPayloadError(
-                'A current database.bin snapshot is required before changing active PostgreSQL storage'
-            );
-        }
-        if (mustExportLegacy) {
-            await postgresStorage.exportColdStorageToLegacy(savePath);
+        if (mustExportLegacy && typeof postgresStorage.exportColdStorageToLegacy === 'function') {
+            try {
+                await postgresStorage.exportColdStorageToLegacy(savePath);
+            } catch (e) {
+                console.warn('[postgres-config] Legacy cold storage export skipped:', e.message);
+            }
         }
 
         const needsReconfigure = postgresStorage.enabled !== req.body.enabled ||
@@ -4117,38 +4116,7 @@ app.get('/api/s3-stats', authenticatedRouteLimiter, async (req, res, next) => {
     }
 });
 
-app.get('/api/db-hash', authenticatedRouteLimiter, async (req, res, next) => {
-    if(!await checkAuth(req, res)){
-        return;
-    }
-    try {
-        const hashes = await assetStorageManager.getDatabaseBinHashes();
-        res.send(hashes);
-    } catch (error) {
-        next(error);
-    }
-});
 
-app.post('/api/db-resolve', authenticatedRouteLimiter, async (req, res, next) => {
-    if(!await checkAuth(req, res)){
-        return;
-    }
-    try {
-        const keep = req.query.keep || req.body?.keep;
-        if (keep !== 'local' && keep !== 's3' && keep !== 'azuresql') {
-            res.status(400).send({ error: "keep must be 'local', 's3', or 'azuresql'" });
-            return;
-        }
-        const result = await assetStorageManager.resolveDatabaseBinConflict(keep);
-        if (result.error) {
-            res.status(500).send({ error: result.error });
-            return;
-        }
-        res.send({ ok: true, size: result.bytes ? result.bytes.length : 0 });
-    } catch (error) {
-        next(error);
-    }
-});
 
 app.get('/api/storage-summary', authenticatedRouteLimiter, async (req, res, next) => {
     if(!await checkAuth(req, res)){

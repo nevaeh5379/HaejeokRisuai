@@ -182,14 +182,6 @@
         busy = true
         try {
             const storage = getNodeStorage()
-            let legacySnapshotReady = false
-            if (config.enabled) {
-                const db = getDatabase()
-                await ensureDatabaseFullyLoaded(db)
-                const snapshot = encodeRisuSaveLegacy(db, 'compression')
-                await storage.setItem('database/database.bin', snapshot)
-                legacySnapshotReady = true
-            }
 
             try {
                 await storage.postgres.applyDatabaseConfig(vendor, params, migrate)
@@ -199,7 +191,6 @@
                         enabled: true,
                         connectionString: connectionString.trim() || undefined,
                         poolMax,
-                        legacySnapshotReady,
                     })
                 } else {
                     throw e

@@ -42,6 +42,7 @@ import type { ISqlStorage, INodeSqlStorageAdmin } from "./storage/ISqlStorage";
 import { isNodeSqlStorageAdmin } from "./storage/ISqlStorage";
 import { checkAndMigrateLegacyDatabase, migrateLegacyDatabase } from "./storage/migration";
 import { moduleStore } from './stores/domain/moduleStore.svelte'
+import { settingsStore } from './stores/domain/settingsStore.svelte'
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null
 
@@ -125,10 +126,14 @@ export async function loadData() {
                 setDatabase({} as Database)
             }
 
+            const activeDb = getDatabase()
+            settingsStore.init(activeDb, storage)
+            moduleStore.init(activeDb.modules ?? [], activeDb.enabledModules ?? [])
+
             // Non-English dictionaries are separate chunks. Resolve the one
             // selected by this database before mounting the application so
             // every component sees the final language on its first render.
-            await changeLanguage(getDatabase().language)
+            await changeLanguage(activeDb.language)
 
             // ── Node server: update SQL config state ──────────────────────
             if (isNodeServer && isNodeSqlStorageAdmin(storage)) {

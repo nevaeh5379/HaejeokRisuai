@@ -647,7 +647,7 @@ export const languageKorean = {
     "sqlQuickSetupDescription": "외부 SQL 데이터베이스를 연결하여 애플리케이션 데이터를 저장하세요. 데이터베이스 제공자를 선택하고 연결 정보를 입력하세요.",
     "sqlQuickSetupChooseVendor": "데이터베이스 선택",
     "sqlQuickSetupMigration": "기존 로컬 데이터를 SQL 데이터베이스로 마이그레이션",
-    "sqlQuickSetupMigrationDescription": "연결 후 현재 로컬 database.bin의 데이터를 SQL 데이터베이스로 복사합니다.",
+    "sqlQuickSetupMigrationDescription": "연결 후 현재 로컬 데이터베이스의 데이터를 SQL 데이터베이스로 복사합니다.",
     "sqlVendorPostgres": "PostgreSQL",
     "sqlVendorOracle": "Oracle Database",
     "sqlVendorAzure": "Azure SQL Database",

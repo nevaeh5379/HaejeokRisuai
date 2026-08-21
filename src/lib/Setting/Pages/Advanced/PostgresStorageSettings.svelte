@@ -71,22 +71,10 @@
         busy = true
         try {
             const storage = getNodeStorage()
-            let legacySnapshotReady = false
-            if(config.enabled){
-                const db = getDatabase()
-                await ensureDatabaseFullyLoaded(db)
-                const snapshot = encodeRisuSaveLegacy(
-                    db,
-                    'compression'
-                )
-                await storage.setItem('database/database.bin', snapshot)
-                legacySnapshotReady = true
-            }
             await storage.postgres.configureServer({
                 enabled,
                 connectionString: connectionString.trim() || undefined,
                 poolMax,
-                legacySnapshotReady,
             })
             alertNormal(language.postgresApplySuccess)
             setTimeout(() => location.reload(), 300)

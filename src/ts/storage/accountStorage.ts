@@ -8,6 +8,7 @@ import { v4 } from "uuid"
 import { language } from "src/lang"
 import { sleep } from "../util"
 import { fetchProtectedResource } from "../sionyw"
+import { getSqlStorage } from "./sqlStorageFactory"
 
 export { AccountWarning }
 let risuSession = ''
@@ -206,7 +207,8 @@ export async function unMigrationAccount() {
     }
 
     db.account = null
-    await MigrationStorage.setItem('database/database.bin', encodeRisuSaveLegacy(db))
+    const storage = await getSqlStorage()
+    await storage.replaceDatabase(db)
 
     alertStore.set({
         type: "none",

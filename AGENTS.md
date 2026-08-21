@@ -170,10 +170,10 @@ You can safely apply Tailwind's opacity modifiers directly to these custom theme
 
 ### Data Layer
 
-- Database abstraction with multiple storage backends:
-  - Tauri FS, LocalForage, Mobile, Node, OPFS
-- Save file format: `.bin` files with encryption support
-- Character cards: Import/export in various formats (.risum, .risup, .charx)
+- Unified SQL storage abstraction (`ISqlStorage`) with multiple backends:
+  - Tauri SQLite (desktop), Web SQLite with OPFS/WASM (browser), Node Multi-SQL (PostgreSQL/Oracle/Azure SQL)
+- Domain Stores (`settingsStore`, `presetStore`, `moduleStore`, `personaStore`, `characterStore`)
+- Character cards & backups: Import/export in various formats (.risum, .risup, .charx, .risubackup)
 
 ### Processing Pipeline
 

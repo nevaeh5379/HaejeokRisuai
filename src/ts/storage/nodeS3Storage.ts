@@ -116,13 +116,7 @@ export interface NodeS3ProgressEvent {
     currentKey?: string
 }
 
-export interface NodeDatabaseBinHashes {
-    activeType: AssetStorageType
-    local: { exists: boolean; hash: string | null; size: number; error?: string } | null
-    s3: { exists: boolean; hash: string | null; size: number; error?: string } | null
-    azuresql: { exists: boolean; hash: string | null; size: number; error?: string } | null
-    same: boolean | null
-}
+
 
 async function responseError(response: Response, fallback: string) {
     const body = await response.json().catch(() => null)
@@ -198,28 +192,7 @@ export class NodeS3Storage {
         return await response.json()
     }
 
-    async getDatabaseBinHashes(): Promise<NodeDatabaseBinHashes> {
-        const response = await fetch('/api/db-hash', {
-            method: 'GET',
-            cache: 'no-cache',
-            headers: await this.authHeaders()
-        })
-        if (response.status < 200 || response.status >= 300) {
-            throw await responseError(response, 'Failed to fetch database.bin hashes')
-        }
-        return await response.json()
-    }
 
-    async resolveDatabaseBinConflict(keep: 'local' | 's3' | 'azuresql'): Promise<{ ok: boolean; size: number; error?: string }> {
-        const response = await fetch(`/api/db-resolve?keep=${keep}`, {
-            method: 'POST',
-            headers: await this.authHeaders()
-        })
-        if (response.status < 200 || response.status >= 300) {
-            throw await responseError(response, 'Failed to resolve database.bin conflict')
-        }
-        return await response.json()
-    }
 
     async migrateLocalToS3(onProgress?: (event: NodeS3ProgressEvent) => void): Promise<NodeS3MigrationResult> {
         const response = await fetch('/api/s3-migrate', {

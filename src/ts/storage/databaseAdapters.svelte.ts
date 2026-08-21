@@ -454,6 +454,34 @@ export function createSqlDatabaseAdapter(
         },
     }
 
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    const pendingUpserts = new Map<string, unknown>()
+    const pendingDeletes = new Set<string>()
+
+    function scheduleCommit() {
+        if (debounceTimer) clearTimeout(debounceTimer)
+        debounceTimer = setTimeout(async () => {
+            if (pendingUpserts.size === 0 && pendingDeletes.size === 0) return
+            const upserts = Array.from(pendingUpserts.entries()).map(([key, value]) => ({ key, value }))
+            const deletes = Array.from(pendingDeletes)
+            pendingUpserts.clear()
+            pendingDeletes.clear()
+            try {
+                await storage.commit({
+                    baseRevision: storage.getRevision(),
+                    root: { upserts, deletes },
+                    characters: [],
+                    chats: [],
+                    chatManifests: [],
+                    messages: [],
+                    messageManifests: [],
+                })
+            } catch (error) {
+                console.error('[createSqlDatabaseAdapter] Failed to commit root changes:', error)
+            }
+        }, 300)
+    }
+
     const proxy = new Proxy(adapterTarget, {
         get(target, prop, receiver) {
             if (typeof prop === 'symbol') {
@@ -558,39 +586,73 @@ export function createSqlDatabaseAdapter(
                 return true
             }
 
+            const propStr = String(prop)
+            pendingDeletes.delete(propStr)
+
             if (prop === 'personas') {
                 internalState.personas = value
                 internalState.loadedDomains.add('personas')
+                pendingUpserts.set('personas', value)
+                scheduleCommit()
                 return true
             }
             if (prop === 'botPresets') {
                 internalState.botPresets = value
                 internalState.loadedDomains.add('botPresets')
+                pendingUpserts.set('botPresets', value)
+                scheduleCommit()
                 return true
             }
             if (prop === 'loreBook') {
                 internalState.loreBook = value
                 internalState.loadedDomains.add('loreBook')
+                pendingUpserts.set('loreBook', value)
+                scheduleCommit()
                 return true
             }
             if (prop === 'modules') {
                 internalState.modules = value
                 internalState.loadedDomains.add('modules')
+                pendingUpserts.set('modules', value)
+                scheduleCommit()
                 return true
             }
             if (prop === 'globalscript') {
                 internalState.globalscript = value
                 internalState.loadedDomains.add('scripts')
+                pendingUpserts.set('globalscript', value)
+                scheduleCommit()
                 return true
             }
             if (PROMPT_SETTING_KEYS.includes(prop as any)) {
                 internalState.prompts ??= {}
                 internalState.prompts[prop] = value
                 internalState.loadedDomains.add('prompts')
+                pendingUpserts.set(propStr, value)
+                scheduleCommit()
                 return true
             }
 
             internalState.coreData[prop] = value
+            pendingUpserts.set(propStr, value)
+            scheduleCommit()
+            return true
+        },
+
+        deleteProperty(target, prop) {
+            if (typeof prop === 'symbol') {
+                return Reflect.deleteProperty(target, prop)
+            }
+            const propStr = String(prop)
+            if (prop in target) {
+                delete target[prop]
+            }
+            if (prop in internalState.coreData) {
+                delete internalState.coreData[prop]
+            }
+            pendingUpserts.delete(propStr)
+            pendingDeletes.add(propStr)
+            scheduleCommit()
             return true
         },
 

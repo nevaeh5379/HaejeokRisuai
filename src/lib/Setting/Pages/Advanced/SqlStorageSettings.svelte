@@ -203,18 +203,6 @@
         busy = true
         try {
             const storage = getNodeStorage()
-            // 로컬 database.bin 스냅샷 준비 (레거시 호환)
-            let legacySnapshotReady = false
-            if(config.enabled){
-                const db = getDatabase()
-                await ensureDatabaseFullyLoaded(db)
-                const snapshot = encodeRisuSaveLegacy(
-                    db,
-                    'compression'
-                )
-                await storage.setItem('database/database.bin', snapshot)
-                legacySnapshotReady = true
-            }
 
             // 범용 API가 있으면 사용, 없으면 레거시 configureServer로 폴백
             try {
@@ -226,7 +214,6 @@
                         enabled: true,
                         connectionString: connectionString.trim() || undefined,
                         poolMax,
-                        legacySnapshotReady,
                     })
                 } else {
                     throw e

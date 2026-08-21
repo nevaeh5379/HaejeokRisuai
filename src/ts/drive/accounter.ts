@@ -5,6 +5,7 @@ import { AppendableBuffer } from "../globalApi.svelte"
 import { decodeRisuSave } from "../storage/risuSave"
 import { language } from "src/lang"
 import { fetchProtectedResource } from "../sionyw"
+import { getSqlStorage } from "../storage/sqlStorageFactory"
 
 export function risuLogin() {
     const win = window.open(hubURL + '/hub/login')
@@ -131,11 +132,12 @@ export async function loadRisuAccountBackup() {
 
         alertWait("Loading backup")
 
-        setDatabase(
-            await decodeRisuSave(buf.buffer)
-        )
-    
+        const restoredDb = await decodeRisuSave(buf.buffer)
+        const storage = await getSqlStorage()
+        await storage.replaceDatabase(restoredDb)
+
         alertNormal('Loaded backup')
+        location.reload()
     }
 
 }

@@ -785,7 +785,7 @@ export const languageEnglish = {
     sqlQuickSetupDescription: "Connect an external SQL database to store your application data. Choose your database provider and enter the connection details.",
     sqlQuickSetupChooseVendor: "Choose your database",
     sqlQuickSetupMigration: "Migrate existing local data to the SQL database",
-    sqlQuickSetupMigrationDescription: "Your current local database.bin will be copied to the SQL database after connection.",
+    sqlQuickSetupMigrationDescription: "Your current local database will be copied to the SQL database after connection.",
     sqlVendorPostgres: "PostgreSQL",
     sqlVendorOracle: "Oracle Database",
     sqlVendorAzure: "Azure SQL Database",

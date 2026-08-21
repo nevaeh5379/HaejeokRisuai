@@ -1,5 +1,6 @@
 import type { SettingItem, SettingContext } from './types';
 import { DBState } from '../stores.svelte';
+import { settingsStore } from '../stores/domain/settingsStore.svelte';
 import { language } from 'src/lang';
 import { accessibilitySettingsItems } from './accessibilitySettingsData';
 import { advancedSettingsItems } from './advancedSettingsData';
@@ -42,6 +43,9 @@ export function getSettingValue(item: SettingItem, ctx: SettingContext): any {
 export function setSettingValue(item: SettingItem, newValue: any, ctx: SettingContext): void {
     if (item.setValue) {
         item.setValue(DBState.db, newValue, ctx);
+        if (item.bindKey) {
+            settingsStore.set(item.bindKey as any, (DBState.db as any)[item.bindKey]);
+        }
     } else if (item.bindPath) {
         const parts = item.bindPath.split('.');
         let obj: any = DBState.db;
@@ -49,8 +53,9 @@ export function setSettingValue(item: SettingItem, newValue: any, ctx: SettingCo
             obj = obj[parts[i]] ??= {};
         }
         obj[parts[parts.length - 1]] = newValue;
+        settingsStore.set(parts[0] as any, (DBState.db as any)[parts[0]]);
     } else if (item.bindKey) {
-        (DBState.db as any)[item.bindKey] = newValue;
+        settingsStore.set(item.bindKey as any, newValue);
     }
     
     if (item.onChange) {

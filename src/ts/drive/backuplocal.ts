@@ -13,6 +13,7 @@ import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation
 import { DBState } from "../stores.svelte";
 import { NodeStorage } from "../storage/nodeStorage";
 import { PROMPT_SETTING_KEYS, POSTGRES_DOMAINS } from "../storage/databaseAdapters.svelte";
+import { getSqlStorage } from "../storage/sqlStorageFactory";
 
 const SQL_DOMAIN_ROOT_KEYS: Record<(typeof POSTGRES_DOMAINS)[number], string[]> = {
     personas: ['personas'],
@@ -1068,35 +1069,31 @@ export function LoadLocalBackup(){
                 return
             }
 
-            setDatabaseLite(dbData);
+            const totalChars = dbData.characters?.length ?? 0;
+            let totalChats = 0;
+            for (const c of dbData.characters ?? []) {
+                totalChats += c.chats?.length ?? 0;
+            }
+            const baseMsg = `Syncing SQL (${totalChars} characters, ${totalChats} chats)`;
+            alertProgress(`${baseMsg}...`, 98);
+            const storage = await getSqlStorage();
+            await storage.replaceDatabase(dbData, (step) => {
+                alertWait(`${baseMsg} - ${step}`);
+            });
+
             if (isTauri) {
-                await writeFile('database/database.bin', db, { baseDir: BaseDirectory.AppData });
                 await relaunch();
                 alertStore.set({
                     type: "wait",
                     msg: "Success, Refreshing your app."
                 });
             } else {
-                if(isNodeServer && forageStorage.realStorage instanceof NodeStorage && forageStorage.realStorage.postgres.isEnabled()){
-                    const totalChars = dbData.characters?.length ?? 0
-                    let totalChats = 0
-                    for(const c of dbData.characters ?? []){
-                        totalChats += c.chats?.length ?? 0
-                    }
-                    const baseMsg = `Syncing SQL (${totalChars} characters, ${totalChats} chats)`
-                    alertProgress(`${baseMsg}...`, 98)
-                    await forageStorage.realStorage.postgres.replaceDatabase(dbData, (step) => {
-                        alertWait(`${baseMsg} - ${step}`)
-                    })
-                } else {
-                    alertProgress('Finalizing database...', 98)
-                    await forageStorage.setItem('database/database.bin', db);
-                }
                 location.search = '';
                 alertStore.set({
                     type: "wait",
                     msg: "Success, Refreshing your app."
                 });
+                location.reload();
             }
 
             alertNormal('Success');

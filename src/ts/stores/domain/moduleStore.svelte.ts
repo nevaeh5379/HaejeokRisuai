@@ -1,5 +1,5 @@
 import type { RisuModule } from '../../process/modules'
-import { directSaveModule, directDeleteModule, directUpdateSetting } from '../../api/client/directClient'
+import { settingsStore } from './settingsStore.svelte'
 import { DBState } from '../../stores.svelte'
 
 class ModuleStore {
@@ -12,57 +12,53 @@ class ModuleStore {
     }
 
     get list(): RisuModule[] {
-        return this.modules
+        return this.modules.length > 0 ? this.modules : (settingsStore.get('modules') ?? DBState.db?.modules ?? [])
     }
 
     get enabledList(): RisuModule[] {
-        const enabledSet = new Set(this.enabledModules)
-        return this.modules.filter((m) => enabledSet.has(m.id))
+        const enabledSet = new Set(this.enabledModules.length > 0 ? this.enabledModules : (settingsStore.get('enabledModules') ?? []))
+        return this.list.filter((m) => enabledSet.has(m.id))
     }
 
     getById(id: string): RisuModule | undefined {
-        return this.modules.find((m) => m.id === id)
+        return this.list.find((m) => m.id === id)
     }
 
     async installModule(module: RisuModule): Promise<void> {
-        const index = this.modules.findIndex((m) => m.id === module.id)
+        const current = [...this.list]
+        const index = current.findIndex((m) => m.id === module.id)
         if (index >= 0) {
-            this.modules[index] = module
+            current[index] = module
         } else {
-            this.modules.push(module)
+            current.push(module)
         }
+        this.modules = current
+        settingsStore.set('modules', current)
         if (DBState.db) {
-            DBState.db.modules = this.modules
+            DBState.db.modules = current
         }
-        await directSaveModule(module)
+        await settingsStore.flush()
     }
 
     async updateModule(id: string, module: RisuModule): Promise<void> {
-        const index = this.modules.findIndex((m) => m.id === id)
-        if (index >= 0) {
-            this.modules[index] = module
-        } else {
-            this.modules.push(module)
-        }
-        if (DBState.db) {
-            DBState.db.modules = this.modules
-        }
-        await directSaveModule(module)
+        return this.installModule(module)
     }
 
     async removeModule(id: string): Promise<void> {
-        this.modules = this.modules.filter((m) => m.id !== id)
-        this.enabledModules = this.enabledModules.filter((mId) => mId !== id)
+        this.modules = this.list.filter((m) => m.id !== id)
+        this.enabledModules = (settingsStore.get('enabledModules') ?? []).filter((mId: string) => mId !== id)
+        settingsStore.set('modules', this.modules)
+        settingsStore.set('enabledModules', this.enabledModules)
         if (DBState.db) {
             DBState.db.modules = this.modules
             DBState.db.enabledModules = this.enabledModules
         }
-        await directDeleteModule(id)
-        await directUpdateSetting('enabledModules', this.enabledModules)
+        await settingsStore.flush()
     }
 
     async toggleModule(id: string, forceEnabled?: boolean): Promise<boolean> {
-        const enabledSet = new Set(this.enabledModules)
+        const currentEnabled = settingsStore.get('enabledModules') ?? this.enabledModules
+        const enabledSet = new Set(currentEnabled)
         const shouldEnable = forceEnabled !== undefined ? forceEnabled : !enabledSet.has(id)
         if (shouldEnable) {
             enabledSet.add(id)
@@ -70,15 +66,17 @@ class ModuleStore {
             enabledSet.delete(id)
         }
         this.enabledModules = Array.from(enabledSet)
+        settingsStore.set('enabledModules', this.enabledModules)
         if (DBState.db) {
             DBState.db.enabledModules = this.enabledModules
         }
-        await directUpdateSetting('enabledModules', this.enabledModules)
+        await settingsStore.flush()
         return shouldEnable
     }
 
     isModuleEnabled(id: string): boolean {
-        return this.enabledModules.includes(id)
+        const enabled = settingsStore.get('enabledModules') ?? this.enabledModules
+        return enabled.includes(id)
     }
 }
 

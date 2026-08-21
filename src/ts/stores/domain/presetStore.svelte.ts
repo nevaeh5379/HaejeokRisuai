@@ -1,14 +1,14 @@
 import type { botPreset } from '../../storage/database.svelte'
-import { directSaveBotPreset, directUpdateSetting } from '../../api/client/directClient'
+import { settingsStore } from './settingsStore.svelte'
 import { DBState } from '../../stores.svelte'
 
 class PresetStore {
     get list(): botPreset[] {
-        return DBState.db?.botPresets ?? []
+        return settingsStore.get('botPresets') ?? DBState.db?.botPresets ?? []
     }
 
     get activeIndex(): number {
-        return DBState.db?.botPresetsId ?? 0
+        return settingsStore.get('botPresetsId') ?? DBState.db?.botPresetsId ?? 0
     }
 
     get activePreset(): botPreset | undefined {
@@ -18,18 +18,29 @@ class PresetStore {
 
     async savePreset(preset: botPreset, position?: number): Promise<void> {
         const targetPos = position !== undefined ? position : this.activeIndex
+        const presets = [...this.list]
+        presets[targetPos] = preset
+        settingsStore.set('botPresets', presets)
         if (DBState.db) {
-            DBState.db.botPresets ??= []
-            DBState.db.botPresets[targetPos] = preset
+            DBState.db.botPresets = presets
         }
-        await directSaveBotPreset(preset, targetPos)
+        await settingsStore.flush()
+    }
+
+    async setPresets(presets: botPreset[]): Promise<void> {
+        settingsStore.set('botPresets', presets)
+        if (DBState.db) {
+            DBState.db.botPresets = presets
+        }
+        await settingsStore.flush()
     }
 
     async setActiveIndex(index: number): Promise<void> {
+        settingsStore.set('botPresetsId', index)
         if (DBState.db) {
             DBState.db.botPresetsId = index
         }
-        await directUpdateSetting('botPresetsId', index)
+        await settingsStore.flush()
     }
 }
 

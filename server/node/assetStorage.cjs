@@ -1182,10 +1182,7 @@ class S3AssetStorage {
                 }
 
                 // Skip if already in S3 (only when we have a populated set).
-                // The database.bin is always re-uploaded so the S3 copy tracks
-                // the latest local state rather than the version present at
-                // migration time.
-                if (existingKeys && existingKeys.has(key) && key !== 'database/database.bin') {
+                if (existingKeys && existingKeys.has(key)) {
                     skipped++;
                     return;
                 }
@@ -1763,157 +1760,6 @@ class AssetStorageManager {
         return null;
     }
 
-    /**
-     * Read the raw bytes of database.bin from a specific side.
-     * @param {'local'|'s3'|'azuresql'} side
-     * @returns {Promise<Buffer|null>} null if not present
-     */
-    async readDatabaseBin(side) {
-        const DB_KEY = 'database/database.bin';
-        const hexPath = keyToHex(DB_KEY);
-        const remote = this._getSideStorage(side);
-        if (remote) {
-            const r = await remote.read(hexPath);
-            if (!r.exists) {
-                return null;
-            }
-            if (r.buffer) {
-                return r.buffer;
-            }
-            if (r.filePath) {
-                return await fs.promises.readFile(r.filePath);
-            }
-            if (r.stream) {
-                const chunks = [];
-                for await (const chunk of r.stream) {
-                    chunks.push(Buffer.from(chunk));
-                }
-                return Buffer.concat(chunks);
-            }
-            return Buffer.alloc(0);
-        }
-        // local
-        const fullPath = path.join(this.localFs.savePath, hexPath);
-        if (!fs.existsSync(fullPath)) {
-            return null;
-        }
-        return await fs.promises.readFile(fullPath);
-    }
-
-    /**
-     * Resolve a database.bin divergence by overwriting all configured sides
-     * with the user-chosen copy and returning the chosen bytes.
-     * @param {'local'|'s3'|'azuresql'} keep
-     * @returns {Promise<{bytes: Buffer|null, error?: string}>}
-     */
-    async resolveDatabaseBinConflict(keep) {
-        const DB_KEY = 'database/database.bin';
-        const hexPath = keyToHex(DB_KEY);
-
-        const chosen = await this.readDatabaseBin(keep);
-        if (!chosen || chosen.length === 0) {
-            return { bytes: null, error: `Selected side (${keep}) has no database.bin` };
-        }
-
-        // Write chosen bytes to local FS.
-        try {
-            await this.localFs.write(hexPath, chosen);
-        } catch (err) {
-            return { bytes: chosen, error: `Failed to write local copy: ${err.message}` };
-        }
-        // Write to any configured remote side.
-        for (const side of ['s3', 'azuresql']) {
-            const remote = this._getSideStorage(side);
-            if (!remote) continue;
-            try {
-                await remote.write(hexPath, chosen);
-            } catch (err) {
-                return { bytes: chosen, error: `Failed to write ${side} copy: ${err.message}` };
-            }
-        }
-        return { bytes: chosen };
-    }
-
-    /**
-     * Compute SHA-256 hashes of the database.bin stored on the local FS and
-     * on each configured remote side (S3 and/or Azure SQL), so the client can
-     * detect a divergence at boot and prompt the user for which copy to keep.
-     *
-     * Returns: {
-     *   activeType, local: {...}|null, s3: {...}|null, azuresql: {...}|null,
-     *   same: boolean|null
-     * }
-     */
-    async getDatabaseBinHashes() {
-        const hashBuffer = (buf) => {
-            const h = crypto.createHash('sha256');
-            h.update(buf);
-            return h.digest('hex');
-        };
-
-        const result = {
-            activeType: this.activeStorage.type,
-            local: null,
-            s3: null,
-            azuresql: null,
-            same: null
-        };
-
-        // Local FS hash (always available).
-        try {
-            const buf = await this.readDatabaseBin('local');
-            if (buf) {
-                result.local = { exists: true, hash: hashBuffer(buf), size: buf.length };
-            } else {
-                result.local = { exists: false, hash: null, size: 0 };
-            }
-        } catch (err) {
-            result.local = { exists: false, hash: null, size: 0, error: err.message };
-        }
-
-        // S3 hash (only when S3 is configured).
-        if (this.s3Storage) {
-            try {
-                const buf = await this.readDatabaseBin('s3');
-                if (buf) {
-                    result.s3 = { exists: true, hash: hashBuffer(buf), size: buf.length };
-                } else {
-                    result.s3 = { exists: false, hash: null, size: 0 };
-                }
-            } catch (err) {
-                result.s3 = { exists: false, hash: null, size: 0, error: err.message };
-            }
-        }
-
-        // Azure SQL hash (only when Azure SQL is configured).
-        if (this.azureSqlStorage) {
-            try {
-                const buf = await this.readDatabaseBin('azuresql');
-                if (buf) {
-                    result.azuresql = { exists: true, hash: hashBuffer(buf), size: buf.length };
-                } else {
-                    result.azuresql = { exists: false, hash: null, size: 0 };
-                }
-            } catch (err) {
-                result.azuresql = { exists: false, hash: null, size: 0, error: err.message };
-            }
-        }
-
-        // Compute `same` across all available sides.
-        const sides = [result.local, result.s3, result.azuresql].filter(Boolean);
-        if (sides.length >= 2) {
-            const allMissing = sides.every(s => !s.exists);
-            if (allMissing) {
-                result.same = true;
-            } else if (sides.some(s => !s.exists)) {
-                result.same = false;
-            } else {
-                const firstHash = sides[0].hash;
-                result.same = sides.every(s => s.hash === firstHash);
-            }
-        }
-        return result;
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -2419,7 +2265,7 @@ class AzureSqlAssetStorage {
                 const filePath = path.join(savePath, hexName);
                 const stat = await fs.promises.stat(filePath);
                 if (!stat.isFile()) return;
-                if (existingKeys && existingKeys.has(key) && key !== 'database/database.bin') {
+                if (existingKeys && existingKeys.has(key)) {
                     skipped++;
                     return;
                 }

@@ -119,13 +119,22 @@ function mapSettingValueToColumns(value) {
     if (value === null || value === undefined) {
         return { text_val: null, num_val: null, bool_val: null };
     }
-    return { text_val: String(value), num_val: null, bool_val: null };
+    return { text_val: JSON.stringify(value), num_val: null, bool_val: null };
 }
 
 function mapColumnsToSettingValue(row) {
     if (row.bool_val !== null && row.bool_val !== undefined) return Boolean(row.bool_val);
     if (row.num_val !== null && row.num_val !== undefined) return Number(row.num_val);
-    if (row.text_val !== null && row.text_val !== undefined) return row.text_val;
+    if (row.text_val !== null && row.text_val !== undefined) {
+        if (row.text_val.startsWith('{') || row.text_val.startsWith('[') || row.text_val === 'null') {
+            try {
+                return JSON.parse(row.text_val);
+            } catch {
+                return row.text_val;
+            }
+        }
+        return row.text_val;
+    }
     return null;
 }
 
@@ -1714,7 +1723,7 @@ class OracleStorage extends SqlStorageBase {
                  WHERE singleton = 1`,
                 [nextRevision]);
             await conn.commit();
-            const changedKeys = splitSettings.map((s) => s.setting.key);
+            const changedKeys = payload.rootUpserts.map((s) => s.key);
             const rootDeletes = payload.rootDeletes || [];
             if (changedKeys.includes('plugins') || rootDeletes.includes('plugins')) {
                 this.pluginsCache = null;

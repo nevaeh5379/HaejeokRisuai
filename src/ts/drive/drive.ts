@@ -11,6 +11,7 @@ import { decodeRisuSave, encodeRisuSaveLegacy, encodeRisuSaveLegacyAsync } from 
 import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupName, isColdStorageBackupData, listColdDataKeys, setColdStorageItem } from "../process/coldstorage.svelte";
 import { NodeStorage } from "../storage/nodeStorage";
 import { ensureDatabaseFullyLoaded } from "./backuplocal";
+import { getSqlStorage } from "../storage/sqlStorageFactory";
 
 export async function checkDriver(type:'save'|'load'|'loadtauri'|'savetauri'|'reftoken'){
     const CLIENT_ID = '580075990041-l26k2d3c0nemmqiu3d3aag01npfrkn76.apps.googleusercontent.com';
@@ -358,12 +359,12 @@ async function loadDrive(ACCESS_TOKEN:string, mode: 'backup'|'sync'):Promise<voi
             }
         }
         db.didFirstSetup = true
-        const dbData = encodeRisuSaveLegacy(db, 'compression')
+        const storage = await getSqlStorage()
+        await storage.replaceDatabase(db)
+        lastSaved = Date.now()
+        localStorage.setItem('risu_lastsaved', `${lastSaved}`)
 
         if(isTauri){
-            await writeFile('database/database.bin', dbData, {baseDir: BaseDirectory.AppData})
-            lastSaved = Date.now()
-            localStorage.setItem('risu_lastsaved', `${lastSaved}`)
             relaunch()
             alertStore.set({
                 type: "wait",
@@ -371,18 +372,12 @@ async function loadDrive(ACCESS_TOKEN:string, mode: 'backup'|'sync'):Promise<voi
             })
         }
         else{
-            if(isNodeServer && forageStorage.realStorage instanceof NodeStorage && forageStorage.realStorage.postgres.isEnabled()){
-                await forageStorage.realStorage.postgres.replaceDatabase(db)
-            } else {
-                await forageStorage.setItem('database/database.bin', dbData)
-            }
-            lastSaved = Date.now()
-            localStorage.setItem('risu_lastsaved', `${lastSaved}`)
             location.search = ''
             alertStore.set({
                 type: "wait",
                 msg: "Success, Refreshing your app."
             })
+            location.reload()
         }
     }
     else if(mode === 'backup'){
