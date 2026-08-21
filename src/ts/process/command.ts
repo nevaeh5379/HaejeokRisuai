@@ -224,7 +224,7 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
         }
         case 'trigger':{
             const currentChar = getCurrentCharacter()
-            if(currentChar.type === 'group'){
+            if(!currentChar || currentChar.type === 'group'){
                 return;
             }
             const triggerResult = await runTrigger(currentChar, 'manual', {

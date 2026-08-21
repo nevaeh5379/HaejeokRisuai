@@ -115,7 +115,7 @@ export async function processScriptFull(char:character|groupChat|simpleCharacter
 
     if(mode === 'editdisplay'){
         const currentChar = getCurrentCharacter()
-        if(currentChar.type !== 'group'){
+        if(currentChar && currentChar.type !== 'group'){
             try{
                 const perf = performance.now()
                 const d = await runTrigger(currentChar, 'display', {

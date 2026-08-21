@@ -163,7 +163,7 @@ export function registerCBS(arg:CBSRegisterArg) {
                     return matcherArg.chara.name
                 }
             }
-            return currentChar.nickname || currentChar.name
+            return currentChar?.nickname || currentChar?.name || 'botname'
         },
         alias: ['bot'],
         description: 'Returns the name or nickname of the current character/bot. In consistent character mode, returns "botname". For group chats, returns the group name.\n\nUsage:: {{char}}',

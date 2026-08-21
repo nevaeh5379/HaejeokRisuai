@@ -1067,6 +1067,9 @@ export async function runTrigger(char:character,mode:triggerMode, arg:{
     displayData?: string
     tempVars?: Record<string, string>
 }){
+    if(!char){
+        return
+    }
     arg.recursiveCount ??= 0
     char = arg.displayMode ? char : safeStructuredClone(char)
     let varChanged = false
