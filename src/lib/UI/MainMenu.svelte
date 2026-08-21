@@ -5,6 +5,7 @@
     import { language } from "src/lang";
     import { getCharImagesBatch } from "src/ts/characterImage";
     import { changeChar } from "src/ts/characters";
+    import { matchCharacterKorean } from "src/ts/util/koreanSearch";
     import Title from "./Title.svelte";
     import LazyComponent from '../Others/LazyComponent.svelte'
 
@@ -58,15 +59,8 @@
         return hidden.includes(char.chaId)
     }
 
-    function charCreator(char: any): string {
-        return (char.creator ?? '').toLowerCase()
-    }
-    function charTags(char: any): string[] {
-        return (char.tags ?? []).map((t: string) => t.toLowerCase())
-    }
-
     let sortedCharacters = $derived.by(() => {
-        let list = allCharacters.map((char, index) => ({ char, index }))
+        let list = allCharacters.map((char, index) => ({ char, index, matchScore: 0 }))
 
         if (!showHidden) {
             list = list.filter(({ char }) => !isHidden(char))
@@ -76,14 +70,16 @@
             list = list.filter(({ char }) => isFavorite(char))
         }
 
-        const q = searchQuery.trim().toLowerCase()
+        const q = searchQuery.trim()
         if (q) {
-            list = list.filter(({ char }) => {
-                const name = (char.name ?? '').toLowerCase()
-                const creator = charCreator(char)
-                const tags = charTags(char)
-                return name.includes(q) || creator.includes(q) || tags.some((t: string) => t.includes(q))
-            })
+            const filtered: typeof list = []
+            for (const item of list) {
+                const res = matchCharacterKorean(item.char, q)
+                if (res.matched) {
+                    filtered.push({ ...item, matchScore: res.score })
+                }
+            }
+            list = filtered
         }
 
         switch (sortMode) {
@@ -102,6 +98,9 @@
                     return bf - af
                 })
             default:
+                if (q) {
+                    return [...list].sort((a, b) => b.matchScore - a.matchScore)
+                }
                 return list
         }
     })
