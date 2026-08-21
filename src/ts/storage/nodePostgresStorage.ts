@@ -1404,6 +1404,70 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     }
 
     /**
+     * 백업 DB에서 데이터를 읽어와 메인 DB로 복원 (덮어쓰기).
+     * /api/db-backup/restore POST 대응.
+     */
+    async restoreFromBackup(onProgress?: (event: NodeBackupProgressEvent) => void): Promise<NodeBackupFullSyncResult> {
+        const response = await fetch('/api/db-backup/restore', {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                ...await this.authHeaders()
+            }
+        })
+        if (response.status < 200 || response.status >= 300) {
+            const body = await response.json().catch(() => null)
+            throw new Error(body?.error || 'Backup restore failed')
+        }
+
+        const reader = response.body?.getReader()
+        if (!reader) {
+            return await response.json()
+        }
+
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let finalResult: NodeBackupFullSyncResult = { success: true }
+
+        while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+
+            for (const line of lines) {
+                if (!line.trim()) continue
+                try {
+                    const parsed = JSON.parse(line)
+                    if (parsed.type === 'progress') {
+                        onProgress?.(parsed)
+                    } else if (parsed.type === 'done') {
+                        finalResult = {
+                            success: parsed.success !== false,
+                            lastFullSyncAt: parsed.lastFullSyncAt,
+                            settingsCount: parsed.settingsCount,
+                            charactersCount: parsed.charactersCount,
+                            chatsCount: parsed.chatsCount,
+                            messagesCount: parsed.messagesCount,
+                            revision: parsed.revision,
+                            changed: parsed.changed,
+                        }
+                    } else if (parsed.type === 'error') {
+                        throw new Error(parsed.error || 'Backup restore failed')
+                    }
+                } catch (err: any) {
+                    if (err?.message && !err.message.includes('JSON')) {
+                        throw err
+                    }
+                }
+            }
+        }
+
+        return finalResult
+    }
+
+    /**
      * 백업 DB 설정 해제 (풀 close + 설정 제거).
      * /api/db-backup DELETE 대응.
      */

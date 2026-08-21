@@ -5,12 +5,6 @@ import { isNodeServer, isTauri } from '../platform';
 export const advancedSettingsItems: SettingItem[] = [
     { type: 'header', id: 'adv.header', labelKey: 'advancedSettings', options: { level: 'h2' }, classes: '!mb-0' },
     { type: 'header', id: 'adv.warn', labelKey: 'advancedSettingsWarn', options: { level: 'warning' } },
-    {
-        type: 'custom',
-        id: 'adv.sqlStorage',
-        componentId: 'SqlStorageSettings',
-        condition: () => isNodeServer,
-    },
 
     // LoreBook Settings
     {

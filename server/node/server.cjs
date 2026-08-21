@@ -461,6 +461,89 @@ async function runBackupSnapshot() {
     return await mirrorFullBackupToBackup();
 }
 
+async function restoreBackupToMainDatabase(onProgress) {
+    onProgress?.({ stage: 'reading', message: 'Reading data from backup database...', percentage: 10 });
+    const loaded = await backupStorage.loadDatabase({ shallow: false });
+    if (!loaded?.database) {
+        throw new Error('Backup database has no valid data to restore');
+    }
+    const payload = buildFullBackupPayload(loaded.database);
+    const settingsCount = payload.root?.upserts?.length ?? payload.rootUpserts?.length ?? 0;
+    const charactersCount = payload.characters?.length || 0;
+    const chatsCount = payload.chats?.length || 0;
+    const messagesCount = payload.messages?.length || 0;
+    const totalItems = settingsCount + charactersCount + chatsCount + messagesCount;
+
+    onProgress?.({
+        stage: 'preparing',
+        message: 'Preparing data for main database restore...',
+        percentage: 30,
+        settingsCount,
+        charactersCount,
+        chatsCount,
+        messagesCount,
+        total: totalItems,
+    });
+
+    const state = await postgresStorage.getState();
+
+    const handleStorageProgress = (subProgress) => {
+        if (!subProgress) return;
+        let mappedPercentage = 40;
+        const subStage = subProgress.stage;
+        let subMessage = subProgress.message;
+        if (subStage === 'settings') {
+            mappedPercentage = 45;
+            subMessage = subMessage || `Restoring settings (${settingsCount})`;
+        } else if (subStage === 'characters') {
+            mappedPercentage = 60;
+            subMessage = subMessage || `Restoring characters (${charactersCount})`;
+        } else if (subStage === 'chats') {
+            mappedPercentage = 75;
+            subMessage = subMessage || `Restoring chats (${chatsCount})`;
+        } else if (subStage === 'messages') {
+            mappedPercentage = 90;
+            subMessage = subMessage || `Restoring messages (${messagesCount})`;
+        } else if (subStage === 'finalizing') {
+            mappedPercentage = 98;
+            subMessage = subMessage || 'Finalizing main database restore...';
+        }
+        onProgress?.({
+            stage: subStage || 'syncing',
+            message: subMessage,
+            percentage: mappedPercentage,
+            settingsCount,
+            charactersCount,
+            chatsCount,
+            messagesCount,
+            total: totalItems,
+        });
+    };
+
+    const syncResult = await postgresStorage.sync(
+        { ...payload, baseRevision: state.revision ?? 0 },
+        { onProgress: handleStorageProgress }
+    );
+
+    const finalResult = {
+        success: true,
+        ...(syncResult || {}),
+        settingsCount,
+        charactersCount,
+        chatsCount,
+        messagesCount,
+    };
+
+    onProgress?.({
+        stage: 'done',
+        message: 'Restore complete',
+        percentage: 100,
+        ...finalResult,
+    });
+
+    return finalResult;
+}
+
 // 백업 DB 스키마 초기화(없으면 생성) 후 인스턴스 활성화
 async function activateBackupStorage(storage) {
     await storage.initialize();
@@ -2865,6 +2948,49 @@ app.post('/api/db-backup/resync', authenticatedRouteLimiter, async (req, res, ne
                 type: 'error',
                 error: error?.message || 'Backup full sync failed',
                 code: 'backup_sync_failed',
+            }) + '\n');
+            res.end();
+        }
+    }
+});
+
+app.post('/api/db-backup/restore', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!backupStorage?.enabled) {
+        res.status(404).send({ error: 'Backup database is not configured', code: 'backup_disabled' });
+        return;
+    }
+    try {
+        res.setHeader('Content-Type', 'application/x-ndjson');
+        res.setHeader('Transfer-Encoding', 'chunked');
+
+        const sendProgress = (event) => {
+            if (res.writableEnded || res.closed) return;
+            res.write(JSON.stringify({ type: 'progress', ...event }) + '\n');
+        };
+
+        const result = await enqueueBackupWrite(() => restoreBackupToMainDatabase(sendProgress), 'full');
+
+        res.write(JSON.stringify({
+            type: 'done',
+            success: true,
+            ...(result || {}),
+        }) + '\n');
+        res.end();
+    } catch (error) {
+        if (!res.headersSent) {
+            res.status(502).send({
+                success: false,
+                error: error?.message || 'Backup restore to main failed',
+                code: 'backup_restore_failed',
+            });
+        } else {
+            res.write(JSON.stringify({
+                type: 'error',
+                error: error?.message || 'Backup restore to main failed',
+                code: 'backup_restore_failed',
             }) + '\n');
             res.end();
         }
