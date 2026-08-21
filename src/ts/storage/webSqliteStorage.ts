@@ -238,6 +238,8 @@ export class WebSqliteStorage implements ISqlStorage {
             await applySqliteCommit(commit, (sql, bind = []) => this.run(sql, bind))
             const revision = currentRevision + 1
             this.run("UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1", [revision])
+            const action = commit.action || (commit.replaceAll ? 'replace-all' : 'sync')
+            this.run("INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', datetime('now'))", [revision, action])
             this.run('COMMIT')
             this.revision = revision
             return { revision }

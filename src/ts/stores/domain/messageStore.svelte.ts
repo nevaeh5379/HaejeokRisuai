@@ -22,14 +22,21 @@ class MessageStore {
         const chat = findChatAcrossCharacters(chatId)
         if (chat) {
             chat.message ??= []
-            chat.message.push(message)
+            const existingIndex = chat.message.findIndex((m) => m.chatId === message.chatId)
+            if (existingIndex >= 0) {
+                chat.message[existingIndex] = message
+            } else {
+                chat.message.push(message)
+            }
         }
         try {
             const storage = await getSqlStorage()
             const messages = chat?.message ?? [message]
-            const position = (chat?.messagesFullyLoaded === false ? (chat?.messageOffset ?? 0) : 0) + (chat?.message ? chat.message.length - 1 : 0)
+            const msgIndex = messages.findIndex((m) => m.chatId === message.chatId)
+            const position = (chat?.messagesFullyLoaded === false ? (chat?.messageOffset ?? 0) : 0) + (msgIndex >= 0 ? msgIndex : messages.length - 1)
             await storage.commit({
                 baseRevision: storage.getRevision(),
+                action: 'message',
                 root: { upserts: [], deletes: [] },
                 characters: [],
                 chats: [],
@@ -42,11 +49,49 @@ class MessageStore {
                 }],
                 messageManifests: [{
                     chatId,
-                    ids: messages.map((m) => m.chatId!),
+                    ids: messages.map((m) => m.chatId!).filter(Boolean),
                 }],
             })
         } catch (error) {
             console.error('[MessageStore] Failed to commit appendMessage:', error)
+        }
+    }
+
+    async commitMessages(chatId: string, msgs: Message[]): Promise<void> {
+        if (msgs.length === 0) return
+        const chat = findChatAcrossCharacters(chatId)
+        const allMessages = chat?.message ?? msgs
+        const baseOffset = (chat?.messagesFullyLoaded === false ? (chat?.messageOffset ?? 0) : 0)
+
+        const messageUpserts = msgs.map((m) => {
+            m.chatId ||= uuidv4()
+            const idx = allMessages.findIndex((item) => item.chatId === m.chatId)
+            const position = baseOffset + (idx >= 0 ? idx : allMessages.length - 1)
+            return {
+                id: m.chatId,
+                chatId,
+                position,
+                data: sqlMessageData(m),
+            }
+        })
+
+        try {
+            const storage = await getSqlStorage()
+            await storage.commit({
+                baseRevision: storage.getRevision(),
+                action: 'message',
+                root: { upserts: [], deletes: [] },
+                characters: [],
+                chats: [],
+                chatManifests: [],
+                messages: messageUpserts,
+                messageManifests: [{
+                    chatId,
+                    ids: allMessages.map((m) => m.chatId!).filter(Boolean),
+                }],
+            })
+        } catch (error) {
+            console.error('[MessageStore] Failed to commit messages:', error)
         }
     }
 
@@ -64,6 +109,7 @@ class MessageStore {
             const storage = await getSqlStorage()
             await storage.commit({
                 baseRevision: storage.getRevision(),
+                action: 'message',
                 root: { upserts: [], deletes: [] },
                 characters: [],
                 chats: [],
@@ -91,6 +137,7 @@ class MessageStore {
             const messages = chat?.message ?? []
             await storage.commit({
                 baseRevision: storage.getRevision(),
+                action: 'message',
                 root: { upserts: [], deletes: [] },
                 characters: [],
                 chats: [],

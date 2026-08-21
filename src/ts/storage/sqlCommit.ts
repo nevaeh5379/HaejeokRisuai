@@ -35,6 +35,7 @@ export interface SqlCommit {
     baseRevision: number
     idempotencyKey?: string
     replaceAll?: boolean
+    action?: string
     root: {
         upserts: SqlSettingUpsert[]
         deletes: string[]
@@ -58,9 +59,10 @@ export class SqlRevisionConflictError extends Error {
     }
 }
 
-export function createEmptySqlCommit(baseRevision: number): SqlCommit {
+export function createEmptySqlCommit(baseRevision: number, action?: string): SqlCommit {
     return {
         baseRevision,
+        action,
         root: { upserts: [], deletes: [] },
         characters: [],
         chats: [],
@@ -104,7 +106,7 @@ export function sqlMessageData(value: Message): unknown {
 
 /** Used only by explicit database import/reset. Normal persistence must not call this. */
 export function buildSqlReplaceCommit(database: Database, baseRevision: number): SqlCommit {
-    const commit = createEmptySqlCommit(baseRevision)
+    const commit = createEmptySqlCommit(baseRevision, 'replace-all')
     commit.replaceAll = true
     commit.characterIds = []
 

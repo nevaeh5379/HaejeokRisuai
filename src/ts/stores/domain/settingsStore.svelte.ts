@@ -114,6 +114,7 @@ class SettingsStore {
         try {
             await storage.commit({
                 baseRevision: storage.getRevision(),
+                action: 'settings',
                 root: {
                     upserts,
                     deletes,

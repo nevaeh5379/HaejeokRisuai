@@ -98,10 +98,12 @@ describe('shared SQL storage helpers', () => {
         const helpers = createSqlStorageHelpers({ PayloadError: TestPayloadError })
         const payload = helpers.validateSyncPayload({
             baseRevision: 2,
+            action: 'character',
             characters: [{ id: 'character-1', position: 0, data: {} }],
             chatManifests: [{ characterId: 'character-1', ids: ['chat-1'] }],
         })
 
+        expect(payload.action).toBe('character')
         expect(payload.characters).toEqual([{ id: 'character-1', position: 0, data: {} }])
         expect(payload.chatManifests).toEqual([{ characterId: 'character-1', ids: ['chat-1'] }])
         expect(() => helpers.validateSyncPayload({

@@ -971,7 +971,7 @@ class AzureStorage extends SqlStorageBase {
             revReq.input('storage_rev', sql.BigInt, nextRevision);
             revReq.input('db_init', sql.Bit, 1);
             revReq.input('scope', sql.NVarChar(32), 'database');
-            revReq.input('action', sql.NVarChar(64), payload.replaceAll ? 'replace_all' : 'sync');
+            revReq.input('action', sql.NVarChar(64), payload.action || (payload.replaceAll ? 'replace-all' : 'sync'));
             const revRes = await revReq.query(`
                 INSERT INTO [system].[revisions] (storage_revision, database_initialized, scope, action)
                 OUTPUT INSERTED.id

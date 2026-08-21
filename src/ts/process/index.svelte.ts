@@ -3,6 +3,7 @@ import { type character, type MessageGenerationInfo, type Chat, type MessagePres
 import { settingsStore } from '../stores/domain/settingsStore.svelte';
 import { characterStore } from '../stores/domain/characterStore.svelte';
 import { presetStore } from '../stores/domain/presetStore.svelte';
+import { messageStore } from '../stores/domain/messageStore.svelte';
 import { CharEmotion, selectedCharID } from "../stores.svelte";
 import { ChatTokenizer, tokenize, tokenizeNum } from "../tokenizer";
 import { language } from "../../lang";
@@ -2213,9 +2214,15 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         generationInfo.stageTiming.stage4 = stageTimings.stage4Duration
     }
     
-    const lastMessageIndex = characterStore.characters[selectedChar].chats[selectedChat].message.length - 1
-    if(lastMessageIndex >= 0 && characterStore.characters[selectedChar].chats[selectedChat].message[lastMessageIndex].generationInfo) {
-        characterStore.characters[selectedChar].chats[selectedChat].message[lastMessageIndex].generationInfo = generationInfo
+    const currentFinishedChat = characterStore.characters[selectedChar]?.chats?.[selectedChat]
+    if (currentFinishedChat?.id) {
+        const msgs = currentFinishedChat.message ?? []
+        const msgsToCommit = msgs.slice(-2)
+        if (msgsToCommit.length > 0) {
+            void messageStore.commitMessages(currentFinishedChat.id, msgsToCommit).catch((err) => {
+                console.error('[requestProcess] Failed to commit chat messages:', err)
+            })
+        }
     }
 
     return true

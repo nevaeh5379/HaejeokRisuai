@@ -99,6 +99,29 @@
         revisions.reduce((acc, r) => acc + (r.change_count || 0), 0)
     )
 
+    function getActionBadgeClass(action: string): string {
+        switch (action) {
+            case 'message':
+                return 'bg-teal-500/20 text-teal-300 border-teal-500/30'
+            case 'character':
+                return 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+            case 'chat':
+                return 'bg-sky-500/20 text-sky-300 border-sky-500/30'
+            case 'settings':
+            case 'root':
+                return 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+            case 'order':
+                return 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+            case 'replace-all':
+            case 'replace_all':
+                return 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+            case 'restore':
+                return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+            default:
+                return 'bg-zinc-500/20 text-zinc-300 border-zinc-500/30'
+        }
+    }
+
     const activeRevisionId = $derived(
         revisions[0]?.id ?? null
     )
@@ -258,7 +281,7 @@
                                         </span>
 
                                         <!-- Action Tag -->
-                                        <span class="font-mono text-xs font-semibold text-textcolor truncate">
+                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wider font-mono border {getActionBadgeClass(revision.action)}">
                                             {revision.action}
                                         </span>
 

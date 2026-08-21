@@ -1755,7 +1755,7 @@ class PostgresStorage extends SqlStorageBase {
                 storageRevision: nextRevision,
                 databaseInitialized: true,
                 scope: 'database',
-                action: payload.replaceAll ? 'replace-all' : 'sync',
+                action: payload.action || (payload.replaceAll ? 'replace-all' : 'sync'),
             });
 
             if (payload.replaceAll) {

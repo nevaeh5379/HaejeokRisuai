@@ -29,6 +29,9 @@ class CharacterStore {
     private pendingChatManifests = new Map<string, string[]>()
     private rootDispose: (() => void) | null = null
     private characterFingerprints = new Map<string, string>()
+    private chatFingerprints = new Map<string, string>()
+    private chatManifestFingerprints = new Map<string, string>()
+    private charIdsFingerprint = ''
     private characterDetailPromises = new Map<string, Promise<void>>()
     private chatDetailPromises = new Map<string, Promise<void>>()
     private olderChatPromises = new Map<string, Promise<number>>()
@@ -50,9 +53,12 @@ class CharacterStore {
         this.storage = storage
         this.rootDispose?.()
         this.characterFingerprints.clear()
+        this.chatFingerprints.clear()
+        this.chatManifestFingerprints.clear()
         this.pendingCharacters.clear()
         this.pendingChats.clear()
         this.pendingChatManifests.clear()
+        this.pendingCharacterIds = undefined
 
         for (const char of characters) {
             char.chaId ||= uuidv4()
@@ -60,6 +66,7 @@ class CharacterStore {
                 chat.id ||= uuidv4()
             }
         }
+        this.charIdsFingerprint = characters.map((c) => c.chaId).join(',')
         this.characters = characters
         this.observe()
     }
@@ -69,42 +76,80 @@ class CharacterStore {
         this.rootDispose = $effect.root(() => {
             $effect(() => {
                 const chars = this.characters
+                const currentCharIds = chars.map((c) => c.chaId || '').join(',')
+                let anyChanges = false
+
                 for (let i = 0; i < chars.length; i++) {
                     const char = chars[i]
                     char.chaId ||= uuidv4()
-                    const snapshot = $state.snapshot(char)
-                    const fp = snapshotFingerprint(snapshot)
+                    const charData = sqlCharacterData($state.snapshot(char))
+                    const charFp = snapshotFingerprint(charData)
+
                     if (initial) {
-                        this.characterFingerprints.set(char.chaId, fp)
+                        this.characterFingerprints.set(char.chaId, charFp)
                     } else {
-                        const prev = this.characterFingerprints.get(char.chaId)
-                        if (prev !== fp) {
-                            this.characterFingerprints.set(char.chaId, fp)
+                        const prevCharFp = this.characterFingerprints.get(char.chaId)
+                        if (prevCharFp !== charFp) {
+                            this.characterFingerprints.set(char.chaId, charFp)
                             this.pendingCharacters.set(char.chaId, {
                                 id: char.chaId,
                                 position: i,
-                                data: sqlCharacterData(char),
+                                data: charData,
                             })
-                            const chats = char.chats ?? []
-                            const chatIds = chats.map((c) => c.id!)
-                            this.pendingChatManifests.set(char.chaId, chatIds)
-                            for (let j = 0; j < chats.length; j++) {
-                                const chat = chats[j]
-                                chat.id ||= uuidv4()
+                            anyChanges = true
+                        }
+                    }
+
+                    const chats = char.chats ?? []
+                    const chatIds = chats.map((c) => c.id || '')
+                    const manifestKey = chatIds.join(',')
+
+                    if (initial) {
+                        this.chatManifestFingerprints.set(char.chaId, manifestKey)
+                    } else {
+                        const prevManifest = this.chatManifestFingerprints.get(char.chaId)
+                        if (prevManifest !== manifestKey) {
+                            this.chatManifestFingerprints.set(char.chaId, manifestKey)
+                            this.pendingChatManifests.set(char.chaId, chatIds.filter(Boolean))
+                            anyChanges = true
+                        }
+                    }
+
+                    for (let j = 0; j < chats.length; j++) {
+                        const chat = chats[j]
+                        chat.id ||= uuidv4()
+                        const chatData = sqlChatData($state.snapshot(chat))
+                        const chatFp = snapshotFingerprint(chatData)
+
+                        if (initial) {
+                            this.chatFingerprints.set(chat.id, chatFp)
+                        } else {
+                            const prevChatFp = this.chatFingerprints.get(chat.id)
+                            if (prevChatFp !== chatFp) {
+                                this.chatFingerprints.set(chat.id, chatFp)
                                 this.pendingChats.set(chat.id, {
                                     id: chat.id,
                                     characterId: char.chaId,
                                     position: j,
-                                    data: sqlChatData(chat),
+                                    data: chatData,
                                 })
+                                anyChanges = true
                             }
-                            this.scheduleCommit()
                         }
                     }
                 }
+
                 if (!initial) {
-                    this.pendingCharacterIds = chars.map((c) => c.chaId)
-                    this.scheduleCommit()
+                    if (currentCharIds !== this.charIdsFingerprint) {
+                        this.charIdsFingerprint = currentCharIds
+                        this.pendingCharacterIds = chars.map((c) => c.chaId)
+                        anyChanges = true
+                    }
+                    if (anyChanges) {
+                        this.scheduleCommit()
+                    }
+                } else {
+                    this.charIdsFingerprint = currentCharIds
                 }
                 initial = false
             })
@@ -140,6 +185,15 @@ class CharacterStore {
         const chats = Array.from(this.pendingChats.values())
         const chatManifests = Array.from(this.pendingChatManifests.entries()).map(([characterId, ids]) => ({ characterId, ids }))
 
+        let action = 'character'
+        if (this.pendingCharacters.size > 0) {
+            action = 'character'
+        } else if (this.pendingChats.size > 0 || this.pendingChatManifests.size > 0) {
+            action = 'chat'
+        } else if (this.pendingCharacterIds !== undefined) {
+            action = 'order'
+        }
+
         this.pendingCharacters.clear()
         this.pendingCharacterIds = undefined
         this.pendingChats.clear()
@@ -148,6 +202,7 @@ class CharacterStore {
         try {
             await storage.commit({
                 baseRevision: storage.getRevision(),
+                action,
                 root: { upserts: [], deletes: [] },
                 characters,
                 characterIds,
@@ -235,6 +290,7 @@ class CharacterStore {
                             chats: existingChats,
                             detailsLoaded: true,
                         })
+                        this.characterFingerprints.set(chaId, snapshotFingerprint(sqlCharacterData(this.characters[idx])))
                     }
                 }
             } catch (error) {
@@ -278,6 +334,7 @@ class CharacterStore {
                     chat.messageTotal ??= chat.message.length
                     chat.messagesFullyLoaded ??= chat.messageOffset === 0
                     chat.detailsLoaded = true
+                    this.chatFingerprints.set(chatId, snapshotFingerprint(sqlChatData(chat)))
                 }
             } catch (error) {
                 console.error(`[CharacterStore] loadChat failed for ${chatId}:`, error)

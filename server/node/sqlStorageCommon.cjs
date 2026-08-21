@@ -356,8 +356,13 @@ function createSqlStorageHelpers({
                 return id;
             });
 
+        const action = typeof payload.action === 'string' && payload.action.length > 0 && payload.action.length <= 64
+            ? payload.action
+            : undefined;
+
         return {
             replaceAll: Boolean(payload.replaceAll),
+            action,
             baseRevision: payload.baseRevision,
             rootUpserts,
             rootDeletes,

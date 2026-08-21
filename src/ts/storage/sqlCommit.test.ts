@@ -46,8 +46,10 @@ describe('SQL row commits', () => {
         }])
     })
 
-    it('recognizes an empty commit without serializing a Database', () => {
-        expect(hasSqlCommitChanges(createEmptySqlCommit(3))).toBe(false)
+    it('recognizes an empty commit without serializing a Database and tracks action', () => {
+        const commit = createEmptySqlCommit(3, 'message')
+        expect(hasSqlCommitChanges(commit)).toBe(false)
+        expect(commit.action).toBe('message')
     })
 
     it('executes only rows included in a bounded commit', async () => {

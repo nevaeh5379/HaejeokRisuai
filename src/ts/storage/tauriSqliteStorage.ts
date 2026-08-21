@@ -222,6 +222,8 @@ export class TauriSqliteStorage implements ISqlStorage {
             await applySqliteCommit(commit, (sql, bind = []) => this.execute(sql, bind))
             const revision = currentRevision + 1
             await this.execute("UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1", [revision])
+            const action = commit.action || (commit.replaceAll ? 'replace-all' : 'sync')
+            await this.execute("INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))", [revision, action])
             await this.execute('COMMIT')
             this.revision = revision
             return { revision }

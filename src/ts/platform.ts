@@ -14,14 +14,14 @@ type BrowserNavigator = Navigator & {
 
 export type RisuEnvironmentLabel = "local" | "node" | "web" | "web(dev)"
 
-const browserNavigator = navigator as BrowserNavigator
+const browserNavigator = typeof navigator !== 'undefined' ? (navigator as BrowserNavigator) : ({} as BrowserNavigator)
 
-export const isTauri: boolean = !!(window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+export const isTauri: boolean = typeof window !== 'undefined' && !!(window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
 export const isNodeServer: boolean = !!(globalThis as typeof globalThis & { __NODE__?: boolean }).__NODE__
-export const isWeb: boolean = !isTauri && !isNodeServer && location.hostname === 'risuai.xyz'
-export const isMobile: boolean = /Android|iPhone|iPad|iPod|webOS/i.test(browserNavigator.userAgent);
+export const isWeb: boolean = typeof location !== 'undefined' && !isTauri && !isNodeServer && location.hostname === 'risuai.xyz'
+export const isMobile: boolean = typeof browserNavigator.userAgent === 'string' && /Android|iPhone|iPad|iPod|webOS/i.test(browserNavigator.userAgent);
 
-export const isFirefox: boolean = browserNavigator.userAgent.includes("Firefox")
+export const isFirefox: boolean = typeof browserNavigator.userAgent === 'string' && browserNavigator.userAgent.includes("Firefox")
 
 function normalizeOSVersion(version?: string | null): string | null {
     if (!version) {
@@ -149,7 +149,9 @@ export async function getDetailedOSLabel(): Promise<string> {
     return joinOSLabel(osName, browserVersion ?? getUserAgentOSVersion(osName))
 }
 
-export const isInStandaloneMode =
-    window.matchMedia("(display-mode: standalone)").matches ||
-    !!browserNavigator.standalone ||
-    document.referrer.includes("android-app://");
+export const isInStandaloneMode: boolean =
+    typeof window !== 'undefined'
+        ? (window.matchMedia?.("(display-mode: standalone)")?.matches ||
+            !!browserNavigator.standalone ||
+            (typeof document !== 'undefined' && Boolean(document.referrer?.includes("android-app://"))))
+        : false;
