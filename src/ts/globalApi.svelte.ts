@@ -46,7 +46,7 @@ import {
 import { generateClientThumbnail } from "./media/thumbnail";
 import { getMimeType } from "./media/mimeType";
 import { BoundedCache } from "./memory/boundedCache";
-import { releaseInactiveChatMessages } from "./storage/dataSession.svelte";
+import { releaseInactiveChatMessages } from "./stores/domain/messageStore.svelte";
 import { isMemoryConstrainedDevice } from "./memory/deviceMemory";
 
 export const forageStorage = new AutoStorage()

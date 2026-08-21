@@ -106,12 +106,18 @@
                 const rawSnippet = lastMsg?.data ?? '';
                 const snippet = cleanSnippet(rawSnippet);
 
-                // Use the message's custom sendDate if available, or fall back to chat's lastInteraction
                 const timestamp =
-                    lastMsg?.sendDate ??
-                    (chat as any).lastInteraction ??
-                    (char as any).lastInteraction ??
+                    chat.lastDate ||
+                    lastMsg?.time ||
+                    (char as any).lastInteraction ||
+                    ('creation_date' in char ? (char as any).creation_date : 0) ||
                     0;
+
+                let folderName: string | undefined = undefined;
+                if (chat.folderId && char.chatFolders) {
+                    const folder = char.chatFolders.find((f) => f.id === chat.folderId);
+                    folderName = folder?.name;
+                }
 
                 sessions.push({
                     charIndex: charIdx,
@@ -121,7 +127,7 @@
                     characterId: char.chaId,
                     isGroup,
                     chatName: chat.name || `${language.Chat} ${chatIdx + 1}`,
-                    folderName: chat.folder,
+                    folderName,
                     lastMessageSnippet: snippet,
                     timestamp,
                     agoText: makeAgoText(timestamp),

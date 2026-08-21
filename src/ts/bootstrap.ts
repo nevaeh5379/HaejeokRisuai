@@ -11,7 +11,9 @@ import { changeFullscreen, checkNullish, sleep } from "./util"
 import { v4 as uuidv4 } from 'uuid';
 import { get } from "svelte/store";
 import { setDatabase, defaultSdDataFunc, getDatabase, type Database } from "./storage/database.svelte";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, LoadingStatusState, sqlConfiguredStore } from "./stores.svelte";
+import { loadPlugins } from "./plugins/plugins.svelte";
 import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput, alertSelect, alertNormal } from "./alert";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { loadRisuAccountData } from "./drive/accounter";
@@ -37,6 +39,7 @@ import { appDataDir, join } from "@tauri-apps/api/path";
 import { getSqlStorage } from "./storage/sqlStorageFactory";
 import type { ISqlStorage, INodeSqlStorageAdmin } from "./storage/ISqlStorage";
 import { isNodeSqlStorageAdmin } from "./storage/ISqlStorage";
+import { checkAndMigrateLegacyDatabase, migrateLegacyDatabase } from "./storage/migration";
 import { moduleStore } from './stores/domain/moduleStore.svelte'
 import { settingsStore } from './stores/domain/settingsStore.svelte'
 import { characterStore } from './stores/domain/characterStore.svelte'

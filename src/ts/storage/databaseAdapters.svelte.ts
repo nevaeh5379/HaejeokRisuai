@@ -12,7 +12,7 @@ import type { RisuModule } from '../process/modules'
 import { defaultAutoSuggestPrompt, defaultJailbreak, defaultMainPrompt } from './defaultPrompts'
 import type { ISqlStorage } from './ISqlStorage'
 import { isMemoryConstrainedDevice } from '../memory/deviceMemory'
-import { cancelChatMessageCompaction } from './dataSession.svelte'
+import { cancelChatMessageCompaction } from '../stores/domain/messageStore.svelte'
 
 export interface IDatabaseAdapter extends Database {
     readonly isSql?: boolean

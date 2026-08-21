@@ -73,7 +73,6 @@
         }
         else if($ShowRealmFrameStore.startsWith('module')){
             const predata = (moduleStore.modules ?? settingsStore.state.modules)[Number($ShowRealmFrameStore.split(':')[1])]
-            //@ts-expect-error adding type field for Realm export, not defined in module type
             predata.type = 'risuModule'
             const encodedPredata = new TextEncoder().encode(JSON.stringify(predata))
             const encodedPredataName = new TextEncoder().encode(predata.name + '.json')

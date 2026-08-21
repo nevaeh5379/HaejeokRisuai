@@ -33,7 +33,7 @@
     import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte';
     import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages';
     import { getMimeType } from 'src/ts/media';
-    import { compactChatMessages } from 'src/ts/storage/dataSession.svelte';
+    import { compactChatMessages } from 'src/ts/stores/domain/messageStore.svelte';
 
     const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then(m => m.default);
     

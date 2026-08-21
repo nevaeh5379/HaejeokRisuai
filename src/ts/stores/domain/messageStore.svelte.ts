@@ -116,3 +116,7 @@ class MessageStore {
 }
 
 export const messageStore = new MessageStore()
+
+export function releaseInactiveChatMessages(_activeChatId?: string): void {}
+export function compactChatMessages(_chatId: string): void {}
+export function cancelChatMessageCompaction(_chatId: string): void {}

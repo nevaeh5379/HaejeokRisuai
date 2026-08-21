@@ -2217,7 +2217,7 @@ export function changeToPreset(id =0, savecurrent = true){
     if(savecurrent){
         saveCurrentPreset()
     }
-    let db = settingsStore.state
+    let db = settingsStore.state as Database
     let pres = db.botPresets
     const newPres = pres[id]
     db.botPresetsId = id

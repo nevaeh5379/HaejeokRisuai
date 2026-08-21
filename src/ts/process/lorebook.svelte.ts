@@ -94,32 +94,30 @@ export async function loadLoreBookV3Prompt(){
     }[] = []
     let matchLog:{
         prompt: string,
-        matches: string[],
-        key: string
-    }[] = []
-    let selectedTokens = 0
-    let selectedCount = 0
-    let addedKeys:string[] = []
-    let logs:{
-        key: string,
-        content: string,
-        comment: string,
-        mode: string,
-        reason: string,
+        source: string
+        activated: string
     }[] = []
 
-    let loreOrder: {
-        order: number,
-        type: 'character'|'chat'|'module',
-        lore: loreBook,
-        index: number
-    }[] = []
-
-    if(currentChat){
-        let sliced = currentChat.slice(-loreDepth)
-        let prompts:{
-            source: string,
-            prompt: string,
+    const searchMatch = (messages:Message[],arg:{
+        keys:string[],
+        searchDepth:number,
+        regex:boolean
+        fullWordMatching:boolean
+        all?:boolean
+        dontSearchWhenRecursive: boolean
+    }) => {
+        const sliced = messages.slice(messages.length - arg.searchDepth,messages.length)
+        const newKeys = []
+        for (const key of arg.keys) {
+            const trimmed = key.trim()
+            if (trimmed.length > 0) {
+                newKeys.push(trimmed)
+            }
+        }
+        arg.keys = newKeys
+        let mList:{
+            source:string
+            prompt:string
             data:string
         }[] = sliced.map((msg, i) => {
             if(msg.role === 'user'){
@@ -143,7 +141,7 @@ export async function loadLoreBookV3Prompt(){
                     prompt: msg.prompt,
                     data: msg.data
                 }
-            }))    
+            }))
 
         if(arg.regex){
             for(const mText of mList){
@@ -229,8 +227,26 @@ export async function loadLoreBookV3Prompt(){
             return true
         }
         return false
-    
+
     }
+
+    let selectedTokens = 0
+    let selectedCount = 0
+    let addedKeys:string[] = []
+    let logs:{
+        key: string,
+        content: string,
+        comment: string,
+        mode: string,
+        reason: string,
+    }[] = []
+
+    let loreOrder: {
+        order: number,
+        type: 'character'|'chat'|'module',
+        lore: loreBook,
+        index: number
+    }[] = []
 
     let matching = true
     let actives:{

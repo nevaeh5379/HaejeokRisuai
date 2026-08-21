@@ -17,7 +17,7 @@ import { PngChunk } from "./pngChunk";
 import { getColdStorageItem, preLoadChat } from "./process/coldstorage.svelte";
 import { isNodeServer } from "./platform";
 import { NodeStorage } from "./storage/nodeStorage";
-import { releaseInactiveChatMessages } from "./storage/dataSession.svelte";
+import { releaseInactiveChatMessages } from "./stores/domain/messageStore.svelte";
 import { createBlankChar } from './characterDefaults'
 import { getCharImage, getCharImagesBatch } from './characterImage'
 
@@ -197,7 +197,7 @@ export async function exportChat(page:number){
         if(mode === '0'){
             let folders = []
             if(chat.folderId) {
-                folders = db.characters[selectedID].chatFolders?.filter(f => f.id === chat.folderId)
+                folders = characterStore.characters[selectedID].chatFolders?.filter(f => f.id === chat.folderId)
             }
             const stringl = Buffer.from(JSON.stringify({
                 type: 'risuChat',
