@@ -230,6 +230,45 @@ describe('AssetStorageManager', () => {
         expect(mgr.getPublicConfig().enabled).toBe(false)
     })
 
+    it('persists enabled: false on disk and switches to Local FS when setConfig({ storageType: "fs" }) is called', async () => {
+        const mgr = new AssetStorageManager(tmpDir)
+        await mgr.init()
+
+        // Simulate existing enabled S3 and Azure configs
+        mgr.saveS3Config({
+            enabled: true,
+            endpoint: 'http://localhost:9000',
+            bucket: 'test-bucket'
+        })
+        mgr.saveAzureConfig({
+            enabled: true,
+            server: 'test.database.windows.net',
+            database: 'test-db'
+        })
+        expect(mgr.s3Config.enabled).toBe(true)
+        expect(mgr.azureConfig.enabled).toBe(true)
+
+        // Switch to fs
+        const res = await mgr.setConfig({ storageType: 'fs' })
+        expect(res.enabled).toBe(false)
+        expect(res.storageType).toBe('fs')
+        expect(mgr.getStorage().type).toBe('fs')
+        expect(mgr.s3Config.enabled).toBe(false)
+        expect(mgr.azureConfig.enabled).toBe(false)
+
+        // Read from disk to ensure persistence across restart
+        const savedS3 = JSON.parse(fs.readFileSync(path.join(tmpDir, '__s3_config.json'), 'utf8'))
+        const savedAzure = JSON.parse(fs.readFileSync(path.join(tmpDir, '__azure_asset_config.json'), 'utf8'))
+        expect(savedS3.enabled).toBe(false)
+        expect(savedAzure.enabled).toBe(false)
+
+        // Verify a new manager instance initializes with Local FS
+        const newMgr = new AssetStorageManager(tmpDir)
+        await newMgr.init()
+        expect(newMgr.getStorage().type).toBe('fs')
+        expect(newMgr.getPublicConfig().enabled).toBe(false)
+    })
+
     it('can build an explorer summary without listing S3', async () => {
         const mgr = new AssetStorageManager(tmpDir)
         await mgr.init()

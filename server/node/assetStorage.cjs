@@ -1599,14 +1599,28 @@ class AssetStorageManager {
                 this.config = { ...this.azureConfig, storageType: 'fs' };
             }
         } else {
-            // fs
-            if (this.s3Storage) this.s3Storage = null;
+            // Local Filesystem
+            if (this.s3Config.enabled && !this.s3ManagedByEnvironment) {
+                this.saveS3Config({ ...this.s3Config, enabled: false });
+            }
+            if (this.azureConfig.enabled && !this.azureManagedByEnvironment) {
+                this.saveAzureConfig({ ...this.azureConfig, enabled: false });
+            }
+
+            if (this.s3Storage) {
+                this.s3Storage = null;
+            }
             if (this.azureSqlStorage) {
                 try { await this.azureSqlStorage.close(); } catch {}
                 this.azureSqlStorage = null;
             }
+
             this.activeStorage = this.localFs;
-            this.config = { enabled: false, storageType: 'fs', managedByEnvironment: this.managedByEnvironment };
+            this.config = {
+                enabled: false,
+                storageType: 'fs',
+                managedByEnvironment: this.managedByEnvironment
+            };
         }
         return this.getPublicConfig();
     }

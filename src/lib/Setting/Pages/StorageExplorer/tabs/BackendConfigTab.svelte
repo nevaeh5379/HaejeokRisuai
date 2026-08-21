@@ -327,6 +327,24 @@
                 </div>
             {/if}
         </div>
+    {:else}
+        <!-- Local FS Info & Apply -->
+        <div class="rounded-xl border border-darkborderc bg-darkbg p-4 sm:p-5 shadow-xs">
+            <h4 class="text-sm font-semibold text-textcolor">{language.storageBackendLocalFs}</h4>
+            <p class="mt-1 text-xs text-textcolor2">{language.storageBackendFsDesc}</p>
+
+            {#if !config?.managedByEnvironment}
+                <div class="mt-6 flex flex-wrap items-center gap-2.5 sm:gap-3">
+                    <Button
+                        className="bg-selected hover:opacity-90 font-medium"
+                        disabled={busy || (!config?.enabled && config?.storageType === 'fs')}
+                        onclick={onApplyConfiguration}
+                    >
+                        {busy ? language.s3Applying : language.s3Apply}
+                    </Button>
+                </div>
+            {/if}
+        </div>
     {/if}
 
     <!-- Migration & Rollback Tools -->
@@ -335,12 +353,12 @@
         <p class="mt-1 text-xs text-textcolor2">{language.s3StatsAndToolsDescription}</p>
 
         <div class="mt-4 flex flex-wrap items-center gap-2.5 sm:gap-3">
-            <Button disabled={migrating || storageType === 'fs' || !config?.enabled} onclick={onMigrateToS3}>
-                {migrating ? language.s3Migrating : (storageType === 'azuresql' ? language.azureSqlStorageMigrateFromLocal : language.s3MigrateFromLocal)}
+            <Button disabled={migrating || !config?.enabled} onclick={onMigrateToS3}>
+                {migrating ? language.s3Migrating : (config?.storageType === 'azuresql' ? language.azureSqlStorageMigrateFromLocal : language.s3MigrateFromLocal)}
             </Button>
 
-            <Button disabled={rollingBack || storageType === 'fs' || !config?.enabled} onclick={onRollbackToLocal}>
-                {rollingBack ? language.s3RollingBack : (storageType === 'azuresql' ? language.azureSqlStorageRollbackToLocal : language.s3RollbackToLocal)}
+            <Button disabled={rollingBack || !config?.enabled} onclick={onRollbackToLocal}>
+                {rollingBack ? language.s3RollingBack : (config?.storageType === 'azuresql' ? language.azureSqlStorageRollbackToLocal : language.s3RollbackToLocal)}
             </Button>
 
             {#if config?.enabled && (storageSummary?.localFs?.totalObjects ?? 0) > 0}

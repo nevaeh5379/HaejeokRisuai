@@ -136,15 +136,22 @@
                 const active = config.storageType
                 if (active === 'azuresql') {
                     viewTarget = 'azuresql'
-                } else if (active === 's3') {
+                } else if (active === 's3' && config.enabled) {
                     viewTarget = 's3'
-                } else if (viewTarget === 's3' && !config.enabled) {
+                } else {
                     viewTarget = 'fs'
                 }
             } catch {
                 config = await storage.s3.getServerConfig()
                 enabled = config.enabled
                 storageType = config.storageType || 'fs'
+                if (storageType === 'azuresql') {
+                    viewTarget = 'azuresql'
+                } else if (storageType === 's3' && config.enabled) {
+                    viewTarget = 's3'
+                } else {
+                    viewTarget = 'fs'
+                }
             }
 
             await loadTargetAssets()
@@ -332,7 +339,7 @@
     }
 
     async function migrateToS3() {
-        if (storageType === 'fs' || !config?.enabled) {
+        if (!config?.enabled) {
             alertError(language.s3MustBeEnabledToMigrate)
             return
         }
