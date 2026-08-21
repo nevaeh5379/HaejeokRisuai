@@ -24,6 +24,9 @@ export interface BotChatStats {
     botMessages: number
     longestSessionMessages: number
     lastActiveDate?: number | null
+    avgBotMessageLen?: number
+    avgUserMessageLen?: number
+    avgMessagesPerSession?: number
 }
 
 export interface DbOverallStats {
@@ -39,6 +42,7 @@ export interface DbOverallStats {
     totalRows: number
 }
 
-export type BotStatsSortType = 'messages_desc' | 'sessions_desc' | 'name_asc'
+export type BotStatsSortType = 'messages_desc' | 'sessions_desc' | 'recent_desc' | 'name_asc'
 export type ModelStatsSortType = 'tokens_desc' | 'requests_desc' | 'name_asc'
 export type HistoryScopeFilter = 'all' | 'database' | 'cold-storage' | 'restore'
+

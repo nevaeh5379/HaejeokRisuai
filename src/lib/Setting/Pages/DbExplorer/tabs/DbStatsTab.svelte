@@ -1,6 +1,7 @@
 <script lang="ts">
     import {
         BotIcon,
+        ClockIcon,
         CpuIcon,
         DatabaseIcon,
         LayersIcon,
@@ -49,6 +50,32 @@
     let modelSearch = $state('')
     let modelSort = $state<ModelStatsSortType>('tokens_desc')
 
+    function formatRelativeDate(timestamp: number | null | undefined): string {
+        if (!timestamp || timestamp <= 0) return '—'
+        try {
+            const date = new Date(timestamp)
+            const now = new Date()
+            const diffMs = now.getTime() - date.getTime()
+            const diffSec = Math.floor(diffMs / 1000)
+            const diffMin = Math.floor(diffSec / 60)
+            const diffHour = Math.floor(diffMin / 60)
+            const diffDay = Math.floor(diffHour / 24)
+
+            if (diffSec < 60) return '방금 전'
+            if (diffMin < 60) return `${diffMin}분 전`
+            if (diffHour < 24) return `${diffHour}시간 전`
+            if (diffDay < 30) return `${diffDay}일 전`
+            return date.toLocaleDateString()
+        } catch {
+            return '—'
+        }
+    }
+
+    function formatFullDate(timestamp: number | null | undefined): string {
+        if (!timestamp || timestamp <= 0) return ''
+        return new Date(timestamp).toLocaleString()
+    }
+
     const filteredBots = $derived.by(() => {
         let list = [...botStats]
         if (botSearch.trim()) {
@@ -59,6 +86,8 @@
             list.sort((a, b) => b.totalMessages - a.totalMessages)
         } else if (botSort === 'sessions_desc') {
             list.sort((a, b) => b.totalSessions - a.totalSessions)
+        } else if (botSort === 'recent_desc') {
+            list.sort((a, b) => (b.lastActiveDate ?? 0) - (a.lastActiveDate ?? 0))
         } else if (botSort === 'name_asc') {
             list.sort((a, b) => a.name.localeCompare(b.name))
         }
@@ -225,6 +254,7 @@
                     >
                         <option value="messages_desc">{language.dbStatsSortMessagesDesc}</option>
                         <option value="sessions_desc">{language.dbStatsSortSessionsDesc}</option>
+                        <option value="recent_desc">{language.dbStatsSortRecentDesc}</option>
                         <option value="name_asc">{language.dbStatsSortNameAsc}</option>
                     </SelectInput>
                 </div>
@@ -238,73 +268,80 @@
             {:else}
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     {#each filteredBots as bot (bot.id)}
-                        {@const totalMsg = bot.totalMessages || 1}
-                        {@const userRatio = Math.round((bot.userMessages / totalMsg) * 100)}
-                        {@const botRatio = 100 - userRatio}
-                        {@const avatarSrc = bot.avatarKey ? thumbnailUrls.get(bot.avatarKey) : null}
+                        {@const avatarSrc = (bot.image?.startsWith('data:') || bot.image?.startsWith('http')) ? bot.image : (bot.avatarKey ? thumbnailUrls.get(bot.avatarKey) : null)}
+                        {@const volumeShare = overallStats.totalMessages > 0 ? ((bot.totalMessages / overallStats.totalMessages) * 100).toFixed(1) : '0'}
+                        {@const avgPerSession = bot.avgMessagesPerSession ?? (bot.totalSessions > 0 ? (bot.totalMessages / bot.totalSessions).toFixed(1) : '0')}
 
                         <div class="flex flex-col justify-between rounded-xl border border-darkborderc bg-darkbg p-4 shadow-xs transition-all hover:border-darkborderc/80">
-                            <!-- Top Info: Avatar + Name + Group Badge -->
-                            <div class="flex items-start gap-3 min-w-0">
-                                <div class="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-darkborderc/60 bg-bgcolor">
-                                    {#if avatarSrc}
-                                        <img src={avatarSrc} alt={bot.name} class="h-full w-full object-cover" />
-                                    {:else}
-                                        <div class="flex h-full w-full items-center justify-center bg-bgcolor text-textcolor2">
-                                            {#if bot.isGroup}
-                                                <UsersIcon size={20} class="opacity-50 text-indigo-400" />
-                                            {:else}
-                                                <BotIcon size={20} class="opacity-50 text-blue-400" />
-                                            {/if}
-                                        </div>
-                                    {/if}
-                                </div>
-
-                                <div class="min-w-0 flex-1">
-                                    <div class="flex items-center gap-1.5">
-                                        <h4 class="font-semibold text-sm text-textcolor truncate" title={bot.name}>
-                                            {bot.name || 'Unnamed Bot'}
-                                        </h4>
-                                        {#if bot.isGroup}
-                                            <span class="rounded bg-indigo-500/20 px-1.5 py-0.2 text-[10px] font-medium text-indigo-300 border border-indigo-500/30 shrink-0">
-                                                {language.group}
-                                            </span>
+                            <!-- Top Info: Avatar + Name + Badges + Last Active -->
+                            <div>
+                                <div class="flex items-start gap-3 min-w-0">
+                                    <div class="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-darkborderc/60 bg-bgcolor">
+                                        {#if avatarSrc}
+                                            <img src={avatarSrc} alt={bot.name} class="h-full w-full object-cover" />
+                                        {:else}
+                                            <div class="flex h-full w-full items-center justify-center bg-bgcolor text-textcolor2">
+                                                {#if bot.isGroup}
+                                                    <UsersIcon size={20} class="opacity-50 text-indigo-400" />
+                                                {:else}
+                                                    <BotIcon size={20} class="opacity-50 text-blue-400" />
+                                                {/if}
+                                            </div>
                                         {/if}
                                     </div>
-                                    <div class="mt-1 flex items-center gap-3 text-xs font-mono text-textcolor2">
-                                        <span>
-                                            <strong class="text-textcolor">{bot.totalSessions.toLocaleString()}</strong> {language.dbStatsSessionsCount}
-                                        </span>
-                                        <span>·</span>
-                                        <span>
-                                            <strong class="text-textcolor">{bot.totalMessages.toLocaleString()}</strong> {language.dbStatsMessagesCount}
-                                        </span>
+
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex items-center justify-between gap-1">
+                                            <div class="flex items-center gap-1.5 min-w-0">
+                                                <h4 class="font-semibold text-sm text-textcolor truncate" title={bot.name}>
+                                                    {bot.name || 'Unnamed Bot'}
+                                                </h4>
+                                                {#if bot.isGroup}
+                                                    <span class="rounded bg-indigo-500/20 px-1.5 py-0.2 text-[10px] font-medium text-indigo-300 border border-indigo-500/30 shrink-0">
+                                                        {language.group}
+                                                    </span>
+                                                {/if}
+                                            </div>
+                                            {#if bot.lastActiveDate}
+                                                <span
+                                                    class="flex items-center gap-1 text-[10px] sm:text-[11px] text-textcolor2 font-mono shrink-0"
+                                                    title="{language.dbStatsLastActive}: {formatFullDate(bot.lastActiveDate)}"
+                                                >
+                                                    <ClockIcon size={11} class="text-textcolor2/70" />
+                                                    {formatRelativeDate(bot.lastActiveDate)}
+                                                </span>
+                                            {/if}
+                                        </div>
+
+                                        <!-- Message and Session Counts & Depth -->
+                                        <div class="mt-1 flex flex-wrap items-center gap-2 text-xs font-mono text-textcolor2">
+                                            <span>
+                                                <strong class="text-textcolor">{bot.totalSessions.toLocaleString()}</strong> {language.dbStatsSessionsCount}
+                                            </span>
+                                            <span>·</span>
+                                            <span>
+                                                <strong class="text-textcolor">{bot.totalMessages.toLocaleString()}</strong> {language.dbStatsMessagesCount}
+                                            </span>
+                                            {#if bot.totalSessions > 0}
+                                                <span class="rounded bg-darkbutton px-1.5 py-0.2 text-[10px] text-textcolor2">
+                                                    {avgPerSession} {language.dbStatsAvgMsgPerSession}
+                                                </span>
+                                            {/if}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Middle: Ratio Bar (User vs Bot) -->
-                            <div class="mt-3.5 pt-3 border-t border-darkborderc/40">
-                                <div class="flex items-center justify-between text-[11px] text-textcolor2 font-mono">
-                                    <span class="flex items-center gap-1 text-emerald-400">
-                                        <UserIcon size={12} /> {language.dbStatsUserMessages}: {bot.userMessages.toLocaleString()} ({userRatio}%)
-                                    </span>
-                                    <span class="flex items-center gap-1 text-blue-400">
-                                        <BotIcon size={12} /> {language.dbStatsBotMessages}: {bot.botMessages.toLocaleString()} ({botRatio}%)
-                                    </span>
-                                </div>
-                                <div class="mt-1.5 flex h-1.5 w-full overflow-hidden rounded-full bg-darkborderc">
-                                    <div class="bg-emerald-500" style="width: {userRatio}%"></div>
-                                    <div class="bg-blue-500" style="width: {botRatio}%"></div>
-                                </div>
-                            </div>
-
-                            <!-- Footer: Longest Session -->
-                            <div class="mt-2.5 flex items-center justify-between text-[11px] text-textcolor2">
-                                <span>{language.dbStatsLongestSession}</span>
-                                <span class="font-mono font-medium text-textcolor">
-                                    {bot.longestSessionMessages.toLocaleString()} {language.dbStatsMessagesCount}
+                            <!-- Footer: Longest Session & Total Chat Share -->
+                            <div class="mt-3 pt-2.5 border-t border-darkborderc/30 flex items-center justify-between text-[11px] text-textcolor2">
+                                <span class="truncate">
+                                    {language.dbStatsLongestSession}: <strong class="font-mono font-medium text-textcolor">{bot.longestSessionMessages.toLocaleString()}</strong>
                                 </span>
+                                {#if overallStats.totalMessages > 0}
+                                    <span class="font-mono text-[10px] text-textcolor2 shrink-0 ml-2">
+                                        {language.dbStatsActivityShare} <strong class="text-textcolor">{volumeShare}%</strong>
+                                    </span>
+                                {/if}
                             </div>
                         </div>
                     {/each}

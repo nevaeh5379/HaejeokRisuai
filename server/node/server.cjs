@@ -3787,6 +3787,26 @@ app.get('/api/database-v2/token-usage', authenticatedRouteLimiter, async (req, r
     }
 });
 
+app.get('/api/database-v2/bot-stats', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'SQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    if (typeof postgresStorage.getBotChatStats !== 'function') {
+        res.send({ stats: [] });
+        return;
+    }
+
+    try {
+        await sendCompressedJson(req, res, { stats: await postgresStorage.getBotChatStats() });
+    } catch (error) {
+        next(error);
+    }
+});
+
 app.get('/api/database-v2/characters/search', authenticatedRouteLimiter, async (req, res, next) => {
     if (!await checkAuth(req, res)) {
         return;

@@ -216,8 +216,13 @@
         tableData ? Math.min((page + 1) * pageSize, tableData.total) : 0
     )
 
+    let remoteBotStats = $state<BotChatStats[] | null>(null)
+
     // ── 봇별 및 전체 통계 계산 ──
     const botStats = $derived.by<BotChatStats[]>(() => {
+        if (remoteBotStats && remoteBotStats.length > 0) {
+            return remoteBotStats
+        }
         const chars = DBState.db.characters || []
         return chars.map((char: any) => {
             const isGroup = char.type === 'group'
@@ -226,35 +231,57 @@
             let userMessages = 0
             let botMessages = 0
             let longestSessionMessages = 0
+            let lastActiveDate: number | null = char.lastInteractionTime ?? null
+            let totalBotLen = 0
+            let totalUserLen = 0
 
             for (const chat of chats) {
+                if (chat?.lastDate && (!lastActiveDate || chat.lastDate > lastActiveDate)) {
+                    lastActiveDate = chat.lastDate
+                }
                 const msgs = Array.isArray(chat.message) ? chat.message : []
-                const msgCount = msgs.length
+                const msgCount = chat.messageTotal ?? msgs.length
                 totalMessages += msgCount
                 if (msgCount > longestSessionMessages) {
                     longestSessionMessages = msgCount
                 }
                 for (const m of msgs) {
+                    if (m?.time && (!lastActiveDate || m.time > lastActiveDate)) {
+                        lastActiveDate = m.time
+                    }
+                    const textLen = typeof m?.data === 'string' ? m.data.length : 0
                     if (m?.role === 'user' || m?.saying === 'user') {
                         userMessages++
+                        totalUserLen += textLen
                     } else {
                         botMessages++
+                        totalBotLen += textLen
                     }
                 }
             }
 
+            // Fallback estimation if messages were lazy loaded and role breakdown not in memory
+            if (totalMessages > 0 && userMessages === 0 && botMessages === 0) {
+                userMessages = Math.floor(totalMessages / 2)
+                botMessages = totalMessages - userMessages
+            }
+
+            const totalSessions = chats.length
             return {
                 id: char.chaId || char.name,
                 name: char.name || (isGroup ? 'Group' : 'Character'),
                 avatarKey: char.image,
                 image: char.image,
                 isGroup,
-                totalSessions: chats.length,
+                totalSessions,
                 totalMessages,
                 userMessages,
                 botMessages,
                 longestSessionMessages,
-                lastActiveDate: null
+                lastActiveDate,
+                avgBotMessageLen: botMessages > 0 ? Math.round(totalBotLen / botMessages) : 0,
+                avgUserMessageLen: userMessages > 0 ? Math.round(totalUserLen / userMessages) : 0,
+                avgMessagesPerSession: totalSessions > 0 ? Number((totalMessages / totalSessions).toFixed(1)) : 0,
             }
         })
     })
@@ -337,9 +364,24 @@
 
     async function loadThumbnail(key: string) {
         if (!key || thumbnailUrls.has(key)) return
+        if (key.startsWith('data:') || key.startsWith('http:') || key.startsWith('https:')) {
+            thumbnailUrls.set(key, key)
+            thumbnailUrls = new Map(thumbnailUrls)
+            return
+        }
         try {
             const storage = getNodeStorage()
             const data = await storage.getItem(key)
+            if (data && data.length > 0) {
+                const blob = new Blob([data as unknown as BlobPart], { type: getMimeType(key) })
+                const url = URL.createObjectURL(blob)
+                thumbnailUrls.set(key, url)
+                thumbnailUrls = new Map(thumbnailUrls)
+                return
+            }
+        } catch {}
+        try {
+            const data = await forageStorage.getItem(key)
             if (data && data.length > 0) {
                 const blob = new Blob([data as unknown as BlobPart], { type: getMimeType(key) })
                 const url = URL.createObjectURL(blob)
@@ -367,6 +409,7 @@
             tables = config.enabled ? await storage.listDbTables() : []
             revisions = config.enabled ? await storage.listRevisions(30) : []
             tokenUsage = config.enabled ? await storage.getTokenUsage() : []
+            remoteBotStats = config.enabled && typeof storage.getBotChatStats === 'function' ? await storage.getBotChatStats() : null
 
             if (config.enabled) {
                 if (tables.length === 0) {

@@ -8,6 +8,7 @@ import type {
     NodePostgresMessageSearchResult,
     NodePostgresTokenUsage,
     NodePostgresCharacterSearchResult,
+    NodePostgresBotChatStats,
 } from './nodePostgresStorage'
 
 export type SqlBackendKind = 'node' | 'web-sqlite' | 'tauri-sqlite'
@@ -136,6 +137,7 @@ export interface ISqlStorage {
         limit?: number,
     ): Promise<NodePostgresMessageSearchResult[]>
     getTokenUsage(): Promise<NodePostgresTokenUsage[]>
+    getBotChatStats(): Promise<NodePostgresBotChatStats[]>
     searchCharactersByTag(tag: string, limit?: number): Promise<NodePostgresCharacterSearchResult[]>
     searchCharactersByName(name: string, limit?: number): Promise<NodePostgresCharacterSearchResult[]>
 }

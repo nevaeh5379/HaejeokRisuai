@@ -462,4 +462,56 @@ describe('NodePostgresStorage browser client', () => {
         expect(spreadDb.modules).toBeDefined()
         expect(spreadDb.globalscript).toBeDefined()
     })
+
+    it('loads bot chat stats from /api/database-v2/bot-stats', async () => {
+        const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+            if (url === '/api/postgres-config') {
+                return {
+                    status: 200,
+                    json: async () => ({ enabled: true, configured: true, managedByEnvironment: false, connectionDisplay: 'postgres', poolMax: 10, revision: 1, initialized: true }),
+                }
+            }
+            if (url === '/api/database-v2/bot-stats') {
+                return {
+                    status: 200,
+                    json: async () => ({
+                        stats: [
+                            {
+                                id: 'char-1',
+                                name: 'Test Bot',
+                                isGroup: false,
+                                totalSessions: 3,
+                                totalMessages: 42,
+                                userMessages: 21,
+                                botMessages: 21,
+                                longestSessionMessages: 20,
+                                lastActiveDate: 1724234567890,
+                                avgBotMessageLen: 350,
+                                avgUserMessageLen: 45,
+                                avgMessagesPerSession: 14,
+                            }
+                        ]
+                    }),
+                }
+            }
+            return { status: 404, json: async () => ({}) }
+        })
+        vi.stubGlobal('fetch', fetchMock)
+
+        const storage = new NodePostgresStorage(async () => 'test-auth')
+        ;(storage as any).status = 'enabled'
+        const stats = await storage.getBotChatStats()
+
+        expect(stats).toHaveLength(1)
+        expect(stats[0]).toMatchObject({
+            id: 'char-1',
+            name: 'Test Bot',
+            totalSessions: 3,
+            totalMessages: 42,
+            avgBotMessageLen: 350,
+            avgUserMessageLen: 45,
+            avgMessagesPerSession: 14,
+        })
+    })
 })
+

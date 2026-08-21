@@ -109,6 +109,23 @@ export interface NodePostgresTokenUsage {
     totalOutputTokens:number
 }
 
+export interface NodePostgresBotChatStats {
+    id: string
+    name: string
+    avatarKey?: string
+    image?: string
+    isGroup: boolean
+    totalSessions: number
+    totalMessages: number
+    userMessages: number
+    botMessages: number
+    longestSessionMessages: number
+    lastActiveDate?: number | null
+    avgBotMessageLen?: number
+    avgUserMessageLen?: number
+    avgMessagesPerSession?: number
+}
+
 export interface NodePostgresCharacterSearchResult {
     id:string
     name:string
@@ -1174,6 +1191,22 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
         }
         const body:{ usage:NodePostgresTokenUsage[] } = await response.json()
         return body.usage
+    }
+
+    async getBotChatStats():Promise<NodePostgresBotChatStats[]> {
+        if(!await this.ensureEnabled()){
+            return []
+        }
+        const response = await fetch('/api/database-v2/bot-stats', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if(response.status < 200 || response.status >= 300){
+            throw await responseError(response, 'PostgreSQL bot stats load failed')
+        }
+        const body:{ stats:NodePostgresBotChatStats[] } = await response.json()
+        return body.stats
     }
 
     async searchCharactersByTag(tag:string, limit = 100):Promise<NodePostgresCharacterSearchResult[]> {

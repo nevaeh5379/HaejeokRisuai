@@ -1833,6 +1833,73 @@ class PostgresStorage extends SqlStorageBase {
         }));
     }
 
+    async getBotChatStats() {
+        this.assertEnabled();
+        const result = await this.pool.query(
+            `WITH session_counts AS (
+                SELECT
+                    ch.character_id,
+                    ch.id AS chat_id,
+                    COUNT(m.id)::integer AS session_msgs,
+                    MAX(m.sent_time)::bigint AS max_sent_time,
+                    MAX(ch.last_message_time)::bigint AS last_msg_time
+                FROM chat.chats ch
+                LEFT JOIN chat.messages m ON m.chat_id = ch.id
+                GROUP BY ch.character_id, ch.id
+            ),
+            char_msg_stats AS (
+                SELECT
+                    ch.character_id,
+                    COUNT(m.id)::integer AS total_messages,
+                    COUNT(CASE WHEN m.role = 'user' THEN 1 END)::integer AS user_messages,
+                    COUNT(CASE WHEN m.role = 'char' THEN 1 END)::integer AS bot_messages,
+                    AVG(CASE WHEN m.role = 'char' AND m.content_text IS NOT NULL THEN LENGTH(m.content_text) END)::double precision AS avg_bot_len,
+                    AVG(CASE WHEN m.role = 'user' AND m.content_text IS NOT NULL THEN LENGTH(m.content_text) END)::double precision AS avg_user_len
+                FROM chat.chats ch
+                JOIN chat.messages m ON m.chat_id = ch.id
+                GROUP BY ch.character_id
+            )
+            SELECT
+                c.id,
+                c.name,
+                c.image,
+                c.kind,
+                COUNT(sc.chat_id)::integer AS total_sessions,
+                COALESCE(cms.total_messages, 0)::integer AS total_messages,
+                COALESCE(cms.user_messages, 0)::integer AS user_messages,
+                COALESCE(cms.bot_messages, 0)::integer AS bot_messages,
+                COALESCE(MAX(sc.session_msgs), 0)::integer AS longest_session_messages,
+                COALESCE(MAX(sc.max_sent_time), MAX(sc.last_msg_time), c.last_interaction_time)::bigint AS last_active_date,
+                ROUND(COALESCE(cms.avg_bot_len, 0))::integer AS avg_bot_message_len,
+                ROUND(COALESCE(cms.avg_user_len, 0))::integer AS avg_user_message_len
+            FROM character.characters c
+            LEFT JOIN session_counts sc ON sc.character_id = c.id
+            LEFT JOIN char_msg_stats cms ON cms.character_id = c.id
+            GROUP BY c.id, c.name, c.image, c.kind, c.position, c.last_interaction_time, cms.total_messages, cms.user_messages, cms.bot_messages, cms.avg_bot_len, cms.avg_user_len
+            ORDER BY c.position ASC`
+        );
+        return result.rows.map((row) => {
+            const totalSessions = Number(row.total_sessions || 0);
+            const totalMessages = Number(row.total_messages || 0);
+            return {
+                id: row.id,
+                name: row.name || (row.kind === 'group' ? 'Group' : 'Character'),
+                avatarKey: row.image || undefined,
+                image: row.image || undefined,
+                isGroup: row.kind === 'group',
+                totalSessions,
+                totalMessages,
+                userMessages: Number(row.user_messages || 0),
+                botMessages: Number(row.bot_messages || 0),
+                longestSessionMessages: Number(row.longest_session_messages || 0),
+                lastActiveDate: row.last_active_date != null ? Number(row.last_active_date) : null,
+                avgBotMessageLen: Number(row.avg_bot_message_len || 0),
+                avgUserMessageLen: Number(row.avg_user_message_len || 0),
+                avgMessagesPerSession: Number(totalSessions > 0 ? (totalMessages / totalSessions).toFixed(1) : 0),
+            };
+        });
+    }
+
     async searchCharactersByTag(rawTag, rawLimit = 100) {
         this.assertEnabled();
         const tag = typeof rawTag === 'string' ? rawTag.trim() : '';

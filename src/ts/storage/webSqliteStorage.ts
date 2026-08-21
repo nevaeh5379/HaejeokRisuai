@@ -20,6 +20,7 @@ import type {
     NodePostgresMessageSearchResult,
     NodePostgresTokenUsage,
     NodePostgresCharacterSearchResult,
+    NodePostgresBotChatStats,
 } from './nodePostgresStorage'
 import { createSqlDatabaseAdapter } from './databaseAdapters.svelte'
 import sqliteSchemaSql from './sqlite-schema.sql?raw'
@@ -434,6 +435,91 @@ export class WebSqliteStorage implements ISqlStorage {
             } catch {}
         }
         return Object.values(u)
+    }
+    async getBotChatStats(): Promise<NodePostgresBotChatStats[]> {
+        const chars = this.selectRows('SELECT id, name, image, kind, last_interaction_time FROM characters ORDER BY position ASC') as { id: string; name: string; image: string | null; kind: string; last_interaction_time: number | null }[]
+        const chatRows = this.selectRows('SELECT id, character_id, last_message_time FROM chats') as { id: string; character_id: string; last_message_time: number | null }[]
+        const msgRows = this.selectRows('SELECT chat_id, role, sent_time, data FROM messages') as { chat_id: string; role: string; sent_time: number | null; data: string }[]
+
+        const chatsByChar = new Map<string, { id: string; lastMessageTime: number | null }[]>()
+        for (const ch of chatRows) {
+            let list = chatsByChar.get(ch.character_id)
+            if (!list) {
+                list = []
+                chatsByChar.set(ch.character_id, list)
+            }
+            list.push({ id: ch.id, lastMessageTime: ch.last_message_time != null ? Number(ch.last_message_time) : null })
+        }
+
+        const msgsByChat = new Map<string, { role: string; sentTime: number | null; len: number }[]>()
+        for (const m of msgRows) {
+            let list = msgsByChat.get(m.chat_id)
+            if (!list) {
+                list = []
+                msgsByChat.set(m.chat_id, list)
+            }
+            let len = 0
+            try {
+                const parsed = JSON.parse(m.data)
+                len = typeof parsed.data === 'string' ? parsed.data.length : 0
+            } catch {
+                len = (m.data || '').length
+            }
+            list.push({ role: m.role, sentTime: m.sent_time != null ? Number(m.sent_time) : null, len })
+        }
+
+        return chars.map((c) => {
+            const charChats = chatsByChar.get(c.id) || []
+            let totalMessages = 0
+            let userMessages = 0
+            let botMessages = 0
+            let longestSessionMessages = 0
+            let lastActiveDate: number | null = c.last_interaction_time != null ? Number(c.last_interaction_time) : null
+            let totalBotLen = 0
+            let totalUserLen = 0
+
+            for (const ch of charChats) {
+                if (ch.lastMessageTime != null && (lastActiveDate == null || ch.lastMessageTime > lastActiveDate)) {
+                    lastActiveDate = ch.lastMessageTime
+                }
+                const msgs = msgsByChat.get(ch.id) || []
+                if (msgs.length > longestSessionMessages) {
+                    longestSessionMessages = msgs.length
+                }
+                totalMessages += msgs.length
+                for (const m of msgs) {
+                    if (m.sentTime != null && (lastActiveDate == null || m.sentTime > lastActiveDate)) {
+                        lastActiveDate = m.sentTime
+                    }
+                    if (m.role === 'user') {
+                        userMessages++
+                        totalUserLen += m.len
+                    } else {
+                        botMessages++
+                        totalBotLen += m.len
+                    }
+                }
+            }
+
+            const isGroup = c.kind === 'group'
+            const totalSessions = charChats.length
+            return {
+                id: c.id,
+                name: c.name || (isGroup ? 'Group' : 'Character'),
+                avatarKey: c.image ?? undefined,
+                image: c.image ?? undefined,
+                isGroup,
+                totalSessions,
+                totalMessages,
+                userMessages,
+                botMessages,
+                longestSessionMessages,
+                lastActiveDate,
+                avgBotMessageLen: botMessages > 0 ? Math.round(totalBotLen / botMessages) : 0,
+                avgUserMessageLen: userMessages > 0 ? Math.round(totalUserLen / userMessages) : 0,
+                avgMessagesPerSession: totalSessions > 0 ? Number((totalMessages / totalSessions).toFixed(1)) : 0,
+            }
+        })
     }
     async searchCharactersByTag(tag: string, limit: number = 100): Promise<NodePostgresCharacterSearchResult[]> {
         const rows = this.selectRows('SELECT id, name, image, kind FROM characters WHERE data LIKE ? LIMIT ?', [`%${tag}%`, limit])

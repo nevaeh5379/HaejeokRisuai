@@ -32,6 +32,7 @@ const {
         exportColdStorageToLegacy:(savePath:string) => Promise<{exported:number, archived:number}>
         searchMessages:(query:string, scope?:string, limit?:number) => Promise<Record<string, any>[]>
         getTokenUsage:() => Promise<Record<string, any>[]>
+        getBotChatStats:() => Promise<Record<string, any>[]>
         searchCharactersByTag:(tag:string, limit?:number) => Promise<Record<string, any>[]>
         searchCharactersByName:(name:string, limit?:number) => Promise<Record<string, any>[]>
         isAssetCatalogInitialized:(sourceId:string) => Promise<boolean>
