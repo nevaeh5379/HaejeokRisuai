@@ -1,4 +1,5 @@
 import "./ts/polyfill";
+import "katex/dist/katex.min.css";
 import App from "./App.svelte";
 import { preLoadCheck } from "./preload";
 import { mount } from "svelte";

@@ -13,7 +13,8 @@
         UserIcon,
         XIcon,
         ServerIcon,
-        FolderArchiveIcon
+        FolderArchiveIcon,
+        PackageIcon
     } from '@lucide/svelte'
     import { language } from 'src/lang'
     import Button from 'src/lib/UI/GUI/Button.svelte'
@@ -38,7 +39,7 @@
 
     const { close }: Props = $props()
 
-    type TabType = 'bots' | 'backend' | 'files'
+    type TabType = 'bots' | 'modules' | 'backend' | 'files'
     let currentTab = $state<TabType>('bots')
 
     // Dual storage target: 's3', 'azuresql', or 'fs'
@@ -84,7 +85,7 @@
     // Bot asset analysis
     interface BotAssetItem {
         key: string
-        type: 'avatar' | 'emotion' | 'additional' | 'ccAsset' | 'background' | 'audio' | 'other'
+        type: 'avatar' | 'emotion' | 'additional' | 'ccAsset' | 'background' | 'audio' | 'moduleIcon' | 'moduleAsset' | 'other'
         label: string
         size: number
     }
@@ -106,6 +107,20 @@
     let selectedBot = $state<BotStorageInfo | null>(null)
     let botSearch = $state('')
     let botSort = $state<'size_desc' | 'size_asc' | 'count_desc' | 'name_asc'>('size_desc')
+
+    interface ModuleStorageInfo {
+        id: string
+        name: string
+        iconKey?: string
+        totalAssets: number
+        totalSizeBytes: number
+        assets: BotAssetItem[]
+    }
+
+    let moduleAnalysis = $state<ModuleStorageInfo[]>([])
+    let selectedModule = $state<ModuleStorageInfo | null>(null)
+    let moduleSearch = $state('')
+    let moduleSort = $state<'size_desc' | 'size_asc' | 'count_desc' | 'name_asc'>('size_desc')
 
     // Orphan assets
     let orphanAssets = $state<NodeStorageAssetItem[]>([])
@@ -266,6 +281,31 @@
         const referencedKeys = new Set<string>()
         const bots: BotStorageInfo[] = []
 
+        function resolveAsset(key: string | undefined) {
+            if (!key || typeof key !== 'string') return
+            const candidates: string[] = []
+            const stripped = key.replace(/^assets\//, '')
+            const pushCandidate = (candidate: string) => {
+                if (candidate && !candidates.includes(candidate)) candidates.push(candidate)
+            }
+            pushCandidate(key)
+            pushCandidate(`assets/${stripped}`)
+            if (stripped !== key) pushCandidate(stripped)
+
+            let item: NodeStorageAssetItem | undefined
+            let matchedKey = key
+            for (const candidate of candidates) {
+                const found = assetMap.get(candidate)
+                if (found) {
+                    item = found
+                    matchedKey = candidate
+                    break
+                }
+            }
+            for (const candidate of candidates) referencedKeys.add(candidate)
+            return { matchedKey, size: item?.size ?? 0 }
+        }
+
         for (const char of characters) {
             if (!char) continue
             const botAssets: BotAssetItem[] = []
@@ -273,50 +313,15 @@
             let avatarKey: string | undefined
 
             function addAsset(key: string | undefined, type: BotAssetItem['type'], label: string): string | undefined {
-                if (!key || typeof key !== 'string') return
-                // Build a list of candidate keys to try against the asset map.
-                // DB fields may store: "assets/xxx.png", bare "xxx.png", a
-                // full path, or a full path without the assets/ prefix. The
-                // storage layer uses the original key (hexToKey), so we try
-                // every reasonable normalization and use the one that exists.
-                const candidates: string[] = []
-                const stripped = key.replace(/^assets\//, '')
-                const pushCandidate = (c: string) => {
-                    if (c && !candidates.includes(c)) candidates.push(c)
-                }
-                pushCandidate(key)
-                pushCandidate(`assets/${stripped}`)
-                if (stripped !== key) pushCandidate(stripped)
-
-                let item: NodeStorageAssetItem | undefined
-                let matchedKey = key
-                for (const candidate of candidates) {
-                    const found = assetMap.get(candidate)
-                    if (found) {
-                        item = found
-                        matchedKey = candidate
-                        break
-                    }
-                }
-                const size = item?.size ?? 0
+                const resolved = resolveAsset(key)
+                if (!resolved) return
+                const { matchedKey, size } = resolved
 
                 if (!seenKeys.has(matchedKey)) {
                     seenKeys.add(matchedKey)
-                    referencedKeys.add(matchedKey)
-                    // Also register all candidate forms so orphan detection
-                    // doesn't flag assets that are actually referenced.
-                    for (const c of candidates) {
-                        referencedKeys.add(c)
-                    }
-        referencedKeys.add(key)
-        botAssets.push({
-            key: matchedKey,
-            type,
-            label,
-            size
-        })
-    }
-    return matchedKey
+                    botAssets.push({ key: matchedKey, type, label, size })
+                }
+                return matchedKey
             }
 
             // Main avatar
@@ -392,12 +397,66 @@
 
         botAnalysis = bots
 
+        const modules: ModuleStorageInfo[] = []
+        const moduleEntries = (DBState.db.modules || []).map((module, index) => ({
+            module,
+            storageId: module.id || `module:${index}`,
+            displayName: module.name
+        }))
+        for (const [index, persona] of (DBState.db.personas || []).entries()) {
+            if (!persona?.embeddedModule) continue
+            moduleEntries.push({
+                module: persona.embeddedModule,
+                storageId: `persona:${persona.id || index}:embedded`,
+                displayName: `${persona.embeddedModule.name || persona.name} (${language.storageEmbeddedModule})`
+            })
+        }
+
+        for (const { module, storageId, displayName } of moduleEntries) {
+            if (!module) continue
+            const moduleAssets: BotAssetItem[] = []
+            const seenKeys = new Set<string>()
+
+            const addModuleAsset = (key: string | undefined, type: BotAssetItem['type'], label: string) => {
+                const resolved = resolveAsset(key)
+                if (!resolved || seenKeys.has(resolved.matchedKey)) return resolved?.matchedKey
+                seenKeys.add(resolved.matchedKey)
+                moduleAssets.push({
+                    key: resolved.matchedKey,
+                    type,
+                    label,
+                    size: resolved.size
+                })
+                return resolved.matchedKey
+            }
+
+            const iconKey = addModuleAsset(module.icon, 'moduleIcon', language.storageModuleIcon)
+            for (const asset of module.assets || []) {
+                if (Array.isArray(asset) && asset[1]) {
+                    addModuleAsset(asset[1], 'moduleAsset', asset[0] || asset[2] || language.storageModuleAsset)
+                }
+            }
+
+            modules.push({
+                id: storageId,
+                name: displayName || language.storageUnnamedModule,
+                iconKey: iconKey || module.icon,
+                totalAssets: moduleAssets.length,
+                totalSizeBytes: moduleAssets.reduce((sum, asset) => sum + asset.size, 0),
+                assets: moduleAssets
+            })
+        }
+        moduleAnalysis = modules
+
         // Pre-load bot avatars so cards render with images immediately,
         // instead of relying on lazy {@const} triggers during render.
         for (const bot of bots) {
             if (bot.avatarKey) {
                 loadThumbnail(bot.avatarKey).catch(() => {})
             }
+        }
+        for (const module of modules) {
+            if (module.iconKey) loadThumbnail(module.iconKey).catch(() => {})
         }
 
         // Identify orphan assets on currently viewed storage
@@ -432,6 +491,19 @@
         } else if (botSort === 'name_asc') {
             list.sort((a, b) => a.name.localeCompare(b.name))
         }
+        return list
+    })
+
+    const filteredModules = $derived(() => {
+        let list = [...moduleAnalysis]
+        if (moduleSearch.trim()) {
+            const query = moduleSearch.trim().toLowerCase()
+            list = list.filter(module => module.name.toLowerCase().includes(query))
+        }
+        if (moduleSort === 'size_desc') list.sort((a, b) => b.totalSizeBytes - a.totalSizeBytes)
+        else if (moduleSort === 'size_asc') list.sort((a, b) => a.totalSizeBytes - b.totalSizeBytes)
+        else if (moduleSort === 'count_desc') list.sort((a, b) => b.totalAssets - a.totalAssets)
+        else list.sort((a, b) => a.name.localeCompare(b.name))
         return list
     })
 
@@ -908,11 +980,13 @@
                 </div>
             </div>
 
-            <!-- Managed Bots Count -->
+            <!-- Managed content count -->
             <div class="rounded-xl border border-darkborderc bg-darkbg p-3 shadow-xs">
-                <div class="text-[11px] font-medium text-textcolor2 sm:text-xs">{language.storageTotalBots}</div>
+                <div class="text-[11px] font-medium text-textcolor2 sm:text-xs">{language.storageManagedContent}</div>
                 <div class="mt-1 text-base font-bold text-textcolor sm:text-xl">
                     {botAnalysis.length} <span class="text-xs font-normal text-textcolor2">{language.storageCharacters}</span>
+                    <span class="text-xs font-normal text-textcolor2">·</span>
+                    {moduleAnalysis.length} <span class="text-xs font-normal text-textcolor2">{language.storageModules}</span>
                 </div>
             </div>
 
@@ -940,7 +1014,7 @@
     </div>
 
     <!-- Navigation Tabs -->
-    <div class="flex shrink-0 border-b border-darkborderc bg-darkbg px-4">
+    <div class="flex shrink-0 overflow-x-auto border-b border-darkborderc bg-darkbg px-4">
         <button
             class="flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors {currentTab === 'bots' ? 'border-blue-500 text-blue-400 font-semibold' : 'border-transparent text-textcolor2 hover:text-textcolor'}"
             onclick={() => currentTab = 'bots'}
@@ -948,6 +1022,15 @@
             <UserIcon class="h-4 w-4" />
             <span>{language.storageTabBots}</span>
             <span class="rounded-full bg-darkbutton px-1.5 py-0.2 text-[11px]">{botAnalysis.length}</span>
+        </button>
+
+        <button
+            class="flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors {currentTab === 'modules' ? 'border-violet-500 text-violet-400 font-semibold' : 'border-transparent text-textcolor2 hover:text-textcolor'}"
+            onclick={() => currentTab = 'modules'}
+        >
+            <PackageIcon class="h-4 w-4" />
+            <span>{language.storageTabModules}</span>
+            <span class="rounded-full bg-darkbutton px-1.5 py-0.2 text-[11px]">{moduleAnalysis.length}</span>
         </button>
 
         <button
@@ -1083,7 +1166,82 @@
             </div>
         {/if}
 
-        <!-- TAB 2: STORAGE BACKEND (S3 / FS) -->
+        <!-- TAB 2: MODULE BREAKDOWN -->
+        {#if currentTab === 'modules'}
+            <div class="flex flex-col gap-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="relative min-w-[240px] flex-1 max-w-md">
+                        <SearchIcon class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-textcolor2" />
+                        <input
+                            type="text"
+                            bind:value={moduleSearch}
+                            placeholder={language.storageSearchModules}
+                            class="w-full rounded-lg border border-darkborderc bg-darkbg py-2 pl-9 pr-3 text-sm text-textcolor placeholder-textcolor2 focus:border-violet-500 focus:outline-hidden"
+                        />
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <span class="hidden text-xs text-textcolor2 sm:inline">{language.storageSort}:</span>
+                        <select
+                            bind:value={moduleSort}
+                            class="rounded-lg border border-darkborderc bg-darkbg px-3 py-2 text-xs font-medium text-textcolor focus:border-violet-500 focus:outline-hidden"
+                        >
+                            <option value="size_desc">{language.storageSortSizeDesc}</option>
+                            <option value="size_asc">{language.storageSortSizeAsc}</option>
+                            <option value="count_desc">{language.storageSortCountDesc}</option>
+                            <option value="name_asc">{language.storageSortModuleNameAsc}</option>
+                        </select>
+                    </div>
+                </div>
+
+                {#if filteredModules().length === 0}
+                    <div class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-darkborderc py-16 text-textcolor2">
+                        <PackageIcon class="h-12 w-12 opacity-30" />
+                        <p class="mt-2 text-sm">{language.storageNoModulesFound}</p>
+                    </div>
+                {:else}
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        {#each filteredModules() as module (module.id)}
+                            <button
+                                type="button"
+                                class="group relative flex w-full cursor-pointer flex-col justify-between rounded-xl border border-darkborderc bg-darkbg/70 p-4 text-left transition-all hover:border-darkborderc/80 hover:bg-darkbg hover:shadow-lg"
+                                onclick={() => selectedModule = module}
+                            >
+                                <div class="flex w-full items-start gap-3">
+                                    <div class="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-darkborderc bg-darkbutton">
+                                        {#if module.iconKey}
+                                            {@const _ = loadThumbnail(module.iconKey)}
+                                            {#if thumbnailUrls.has(module.iconKey)}
+                                                <img src={thumbnailUrls.get(module.iconKey)} alt={module.name} class="h-full w-full object-cover" />
+                                            {:else}
+                                                <PackageIcon class="h-6 w-6 text-textcolor2" />
+                                            {/if}
+                                        {:else}
+                                            <PackageIcon class="h-6 w-6 text-textcolor2" />
+                                        {/if}
+                                    </div>
+                                    <div class="min-w-0 flex-1">
+                                        <h4 class="truncate text-sm font-bold text-textcolor transition-colors group-hover:text-violet-400">{module.name}</h4>
+                                        <div class="mt-1 flex items-center gap-2">
+                                            <span class="rounded-md bg-violet-500/15 px-2 py-0.5 text-xs font-semibold text-violet-300">{formatBytes(module.totalSizeBytes)}</span>
+                                            <span class="text-xs text-textcolor2">{module.totalAssets} {language.storageAssets}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-3 border-t border-darkborderc/50 pt-2.5 text-[11px] text-textcolor2">
+                                    {language.storageModuleAssets}: {module.assets.filter(asset => asset.type === 'moduleAsset').length}
+                                    {#if module.assets.some(asset => asset.type === 'moduleIcon')}
+                                        <span> · {language.storageModuleIcon}</span>
+                                    {/if}
+                                </div>
+                            </button>
+                        {/each}
+                    </div>
+                {/if}
+            </div>
+        {/if}
+
+        <!-- TAB 3: STORAGE BACKEND (S3 / FS) -->
         {#if currentTab === 'backend'}
             <div class="max-w-3xl space-y-6">
                 <!-- Backend Selector: Segment Cards -->
@@ -1373,7 +1531,7 @@
             </div>
         {/if}
 
-        <!-- TAB 3: ALL FILES EXPLORER -->
+        <!-- TAB 4: ALL FILES EXPLORER -->
         {#if currentTab === 'files'}
             <div class="flex flex-col gap-4">
                 <!-- Controls: Search & Filter & Bulk Actions -->
@@ -1628,6 +1786,85 @@
             <!-- Modal Footer -->
             <div class="flex justify-end border-t border-darkborderc px-5 py-3 bg-darkbg/50">
                 <Button onclick={() => selectedBot = null}>{language.storageClose}</Button>
+            </div>
+        </div>
+    </div>
+{/if}
+
+<!-- MODULE ASSET INSPECTOR MODAL / DRAWER -->
+{#if selectedModule}
+    <div class="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-in fade-in duration-200">
+        <div class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-darkborderc bg-darkbg text-textcolor shadow-2xl">
+            <div class="flex items-center justify-between border-b border-darkborderc px-5 py-3.5">
+                <div class="flex items-center gap-3">
+                    <div class="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border border-darkborderc bg-darkbutton">
+                        {#if selectedModule.iconKey}
+                            {@const _ = loadThumbnail(selectedModule.iconKey)}
+                            {#if thumbnailUrls.has(selectedModule.iconKey)}
+                                <img src={thumbnailUrls.get(selectedModule.iconKey)} alt="" class="h-full w-full object-cover" />
+                            {:else}
+                                <PackageIcon class="h-5 w-5 text-textcolor2" />
+                            {/if}
+                        {:else}
+                            <PackageIcon class="h-5 w-5 text-textcolor2" />
+                        {/if}
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold">{selectedModule.name}</h3>
+                        <div class="flex items-center gap-2 text-xs text-textcolor2">
+                            <span>{selectedModule.totalAssets} {language.storageAssets}</span>
+                            <span>·</span>
+                            <span class="font-semibold text-violet-400">{formatBytes(selectedModule.totalSizeBytes)}</span>
+                        </div>
+                    </div>
+                </div>
+                <button class="rounded-lg p-1.5 text-textcolor2 hover:bg-darkborderc/50 hover:text-textcolor" onclick={() => selectedModule = null}>
+                    <XIcon class="h-5 w-5" />
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-5">
+                {#if selectedModule.assets.length === 0}
+                    <div class="py-10 text-center text-sm text-textcolor2">{language.storageNoAssetsFound}</div>
+                {:else}
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        {#each selectedModule.assets as asset (asset.key)}
+                            <div class="flex items-center gap-3 rounded-xl border border-darkborderc bg-bgcolor/40 p-2.5">
+                                <button
+                                    type="button"
+                                    class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-darkborderc bg-darkbutton transition-opacity hover:opacity-80"
+                                    onclick={() => openPreview(asset.key)}
+                                    title={language.storagePreview}
+                                >
+                                    {#if /\.(png|jpe?g|webp|gif|svg|avif)$/i.test(asset.key)}
+                                        {@const _ = loadThumbnail(asset.key)}
+                                        {#if thumbnailUrls.has(asset.key)}
+                                            <img src={thumbnailUrls.get(asset.key)} alt="" class="h-full w-full object-cover" />
+                                        {:else}
+                                            <PackageIcon class="h-5 w-5 text-textcolor2" />
+                                        {/if}
+                                    {:else}
+                                        <LayersIcon class="h-5 w-5 text-textcolor2" />
+                                    {/if}
+                                </button>
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <span class="rounded-md bg-darkbutton px-1.5 py-0.5 text-[10px] font-medium text-textcolor2">
+                                            {asset.type === 'moduleIcon' ? language.storageModuleIcon : language.storageModuleAsset}
+                                        </span>
+                                        <span class="text-xs font-semibold text-violet-300">{formatBytes(asset.size)}</span>
+                                    </div>
+                                    <h5 class="mt-1 truncate text-xs font-medium text-textcolor" title={asset.label}>{asset.label}</h5>
+                                    <div class="truncate font-mono text-[10px] text-textcolor2/70" title={asset.key}>{asset.key}</div>
+                                </div>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+            </div>
+
+            <div class="flex justify-end border-t border-darkborderc bg-darkbg/50 px-5 py-3">
+                <Button onclick={() => selectedModule = null}>{language.storageClose}</Button>
             </div>
         </div>
     </div>

@@ -67,11 +67,21 @@ export default defineConfig(({command, mode}) => {
         output: {
           codeSplitting: {
             includeDependenciesRecursively: false,
-            groups: [{
-              name: 'app-state',
-              test: /src[\\/]ts[\\/]stores\.svelte\.ts$/,
-              priority: 100,
-            }]
+            groups: [
+              {
+                name: 'app-state',
+                test: /src[\\/]ts[\\/]stores\.svelte\.ts$/,
+                priority: 100,
+              },
+              {
+                // Lucide icons are shared by many lazy Svelte screens. Leaving
+                // them to automatic splitting creates one sub-kilobyte request
+                // per icon as soon as the first screens mount.
+                name: 'lucide-icons',
+                test: /node_modules[\\/]@lucide[\\/]svelte[\\/]dist[\\/]icons[\\/]/,
+                priority: 90,
+              },
+            ]
           }
         }
       }
