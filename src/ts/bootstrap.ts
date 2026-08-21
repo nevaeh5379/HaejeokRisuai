@@ -240,9 +240,12 @@ export async function loadData() {
  * Registers the service worker and initializes it.
  */
 async function registerSw() {
-    await navigator.serviceWorker.register("/sw.js", {
+    const reg = await navigator.serviceWorker.register("/sw.js", {
         scope: "/"
     });
+    try {
+        await reg.update();
+    } catch {}
     await sleep(100);
     const da = await fetch('/sw/init');
     if (!(da.status >= 200 && da.status < 300)) {

@@ -1,4 +1,45 @@
-// @ts-nocheck
+self.addEventListener('install', () => {
+    self.skipWaiting()
+})
+
+self.addEventListener('activate', (event) => {
+    event.waitUntil(self.clients.claim())
+})
+
+const downloadStreams = new Map()
+
+self.addEventListener('message', (event) => {
+    if (event.data?.type === 'REGISTER_STREAM_DOWNLOAD') {
+        const { id, filename } = event.data
+        const streamPort = event.ports?.[0]
+        if (streamPort && id) {
+            const readable = new ReadableStream({
+                start(controller) {
+                    streamPort.onmessage = (e) => {
+                        if (e.data?.done) {
+                            try { controller.close() } catch {}
+                            try { streamPort.close() } catch {}
+                            downloadStreams.delete(id)
+                        } else if (e.data?.error) {
+                            try { controller.error(new Error(e.data.error)) } catch {}
+                            try { streamPort.close() } catch {}
+                            downloadStreams.delete(id)
+                        } else if (e.data instanceof Uint8Array || e.data instanceof ArrayBuffer) {
+                            const chunk = e.data instanceof ArrayBuffer ? new Uint8Array(e.data) : e.data
+                            controller.enqueue(chunk)
+                        }
+                    }
+                },
+                cancel() {
+                    try { streamPort.postMessage({ cancel: true }) } catch {}
+                    try { streamPort.close() } catch {}
+                    downloadStreams.delete(id)
+                }
+            })
+            downloadStreams.set(id, { readable, filename })
+        }
+    }
+})
 
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url)
@@ -6,6 +47,25 @@ self.addEventListener('fetch', (event) => {
     if(path[1] === 'sw'){
         try {
             switch (path[2]){
+                case "download": {
+                    const id = url.searchParams.get('id')
+                    const item = downloadStreams.get(id)
+                    if (item) {
+                        downloadStreams.delete(id)
+                        const rawFilename = item.filename || 'backup.bin'
+                        const encodedFilename = encodeURIComponent(rawFilename)
+                        event.respondWith(new Response(item.readable, {
+                            headers: {
+                                'Content-Type': 'application/octet-stream',
+                                'Content-Disposition': `attachment; filename="${rawFilename.replace(/"/g, '')}"; filename*=UTF-8''${encodedFilename}`,
+                                'Cache-Control': 'no-store'
+                            }
+                        }))
+                    } else {
+                        event.respondWith(new Response("Download stream not found or expired", { status: 404 }))
+                    }
+                    break
+                }
                 case "check":{
                     let targetUrl = url
                     const headers = event.request.headers

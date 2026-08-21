@@ -44,7 +44,9 @@ async function initializeLocalBackupWriter(writer: LocalWriter, partial = false)
     update()
     const timer = setInterval(update, 1000)
     try {
-        const initialized = await writer.init()
+        const dateStr = new Date().toISOString().slice(0, 10)
+        const defaultName = partial ? `risu_partial_backup_${dateStr}` : `risu_backup_${dateStr}`
+        const initialized = await writer.init(defaultName, ['bin', 'risubackup'])
         if (initialized) {
             alertProgress(`${label} (Destination ready; preparing asset list)`, 2)
         }
@@ -80,59 +82,68 @@ export function hydrateLazyDatabaseFromSnapshot(db: Database, snapshot: Database
         db.pluginCustomStorage = snapshot.pluginCustomStorage
     }
 
+    // Merge root settings from snapshot if missing in db
+    for (const [key, value] of Object.entries(snapshot)) {
+        if (key === 'characters' || key === 'account') continue
+        if ((db as any)[key] === undefined || (db as any)[key] === null) {
+            ;(db as any)[key] = value
+        }
+    }
+
     const snapshotCharacters = new Map(
         (snapshot.characters ?? [])
             .filter((char) => char?.chaId)
             .map((char) => [char.chaId, char]),
     )
 
-    for (const char of db.characters ?? []) {
+    if (!db.characters || db.characters.length === 0) {
+        db.characters = snapshot.characters ?? []
+        return
+    }
+
+    for (let i = 0; i < db.characters.length; i++) {
+        const char = db.characters[i]
         if (!char?.chaId) continue
         const snapshotChar = snapshotCharacters.get(char.chaId)
         if (!snapshotChar) continue
 
-        const currentChats = char.chats ?? []
-        if (char.detailsLoaded === false) {
-            Object.assign(char, snapshotChar, {
-                chats: currentChats,
-                detailsLoaded: true,
-            })
-        }
+        const existingChats = (char.chats && char.chats.length > 0) ? char.chats : (snapshotChar.chats ?? [])
+        Object.assign(char, snapshotChar, {
+            chats: existingChats,
+            detailsLoaded: true,
+        })
 
         const snapshotChats = new Map(
             (snapshotChar.chats ?? [])
                 .filter((chat) => chat?.id)
                 .map((chat) => [chat.id, chat]),
         )
-        for (const chat of currentChats) {
-            const needsFullChat = chat && (
-                chat.messagesLoaded === false ||
-                chat.detailsLoaded === false ||
-                chat.messagesFullyLoaded === false
-            )
-            if (!needsFullChat || !chat.id) continue
+        for (const chat of existingChats) {
+            if (!chat || !chat.id) continue
             const snapshotChat = snapshotChats.get(chat.id)
             if (!snapshotChat) continue
-            Object.assign(chat, snapshotChat, {
-                messagesLoaded: true,
-                detailsLoaded: true,
-                messagesFullyLoaded: true,
-                messageOffset: 0,
-                messageTotal: snapshotChat.message?.length ?? 0,
-            })
+            if (!chat.message || chat.message.length === 0 || chat.messagesLoaded === false || chat.messagesFullyLoaded === false) {
+                Object.assign(chat, snapshotChat, {
+                    messagesLoaded: true,
+                    detailsLoaded: true,
+                    messagesFullyLoaded: true,
+                    messageOffset: 0,
+                    messageTotal: snapshotChat.message?.length ?? 0,
+                })
+            }
         }
     }
 }
 
-async function hydrateNodeDatabaseForBackup(db: Database, onProgress?: (msg: string) => void) {
+async function hydrateDatabaseFromSqlStorage(db: Database, onProgress?: (msg: string) => void) {
     try {
         const { getSqlStorage } = await import('../storage/sqlStorageFactory')
         const storage = await getSqlStorage()
-        if (storage.backendKind !== 'node' || !await storage.init()) return false
+        if (!await storage.init()) return false
 
         const startedAt = Date.now()
         const update = () => onProgress?.(
-            `Downloading full SQL snapshot (one request, elapsed ${formatBackupElapsed(startedAt)})`,
+            `Loading full database snapshot (elapsed ${formatBackupElapsed(startedAt)})`,
         )
         update()
         const timer = setInterval(update, 1000)
@@ -143,12 +154,11 @@ async function hydrateNodeDatabaseForBackup(db: Database, onProgress?: (msg: str
             clearInterval(timer)
         }
         if (loaded?.status !== 'ready' || !loaded.database) return false
-        onProgress?.('Merging SQL snapshot into backup data...')
+        onProgress?.('Merging database snapshot into backup data...')
         hydrateLazyDatabaseFromSnapshot(db, loaded.database)
         return true
     } catch (error) {
-        // Older/self-modified servers can still use the per-entity fallback.
-        console.warn('Bulk SQL backup load failed; falling back to lazy loaders:', error)
+        console.warn('Bulk SQL backup load failed; falling back to per-entity loaders:', error)
         return false
     }
 }
@@ -177,7 +187,7 @@ export async function ensureAllPostgresChatMessagesLoaded(db: Database, onProgre
             if (char.detailsLoaded === false && char.chaId) {
                 const fullChar = await storage.loadCharacter(char.chaId)
                 if (fullChar) {
-                    const existingChats = char.chats
+                    const existingChats = (char.chats && char.chats.length > 0) ? char.chats : (fullChar.chats ?? [])
                     db.characters[i] = Object.assign(char, fullChar, {
                         chats: existingChats,
                         detailsLoaded: true,
@@ -207,7 +217,7 @@ export async function ensureAllPostgresChatMessagesLoaded(db: Database, onProgre
 }
 
 export async function ensureDatabaseFullyLoaded(db: Database, onProgress?: (msg: string) => void) {
-    const bulkLoaded = await hydrateNodeDatabaseForBackup(db, onProgress)
+    const bulkLoaded = await hydrateDatabaseFromSqlStorage(db, onProgress)
     if (!bulkLoaded && typeof (db as any).ensureLoaded === 'function') {
         if (onProgress) onProgress('Loading database from storage...')
         await (db as any).ensureLoaded()
@@ -236,194 +246,453 @@ export async function ensureDatabaseFullyLoaded(db: Database, onProgress?: (msg:
 }
 
 export async function SaveLocalBackup(){
-    alertProgress("Saving local backup... (Preparing database)", 0)
-    await sleep(10)
-    const db = getDatabase()
-    await ensureDatabaseFullyLoaded(db, (msg) => {
-        alertProgress(`Saving local backup... (${msg})`, 0)
-    })
-    alertProgress("Saving local backup... (Checking cold storage)", 0)
-    await sleep(10)
-    const coldStoragePayloads = await collectColdStorageBackupPayloads(db, (current, total, key) => {
-        const item = key ? `\nCurrent item: ${key}` : ''
-        alertProgress(`Saving local backup... (Checking cold storage ${current} / ${total})${item}`, 0)
-    })
-    const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
-    if(!await confirmIncompleteColdStorageOperation(db, unavailableColdStorageKeys, 'backup')){
-        alertClear()
-        return
-    }
+    try {
+        alertProgress("Saving local backup... (Preparing database)", 0)
+        await sleep(10)
+        const db = getDatabase()
+        await ensureDatabaseFullyLoaded(db, (msg) => {
+            alertProgress(`Saving local backup... (${msg})`, 0)
+        })
+        alertProgress("Saving local backup... (Checking cold storage)", 0)
+        await sleep(10)
+        const coldStoragePayloads = await collectColdStorageBackupPayloads(db, (current, total, key) => {
+            const item = key ? `\nCurrent item: ${key}` : ''
+            alertProgress(`Saving local backup... (Checking cold storage ${current} / ${total})${item}`, 0)
+        })
+        const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
+        if(!await confirmIncompleteColdStorageOperation(db, unavailableColdStorageKeys, 'backup')){
+            alertClear()
+            return
+        }
 
-    const writer = new LocalWriter()
-    const r = await initializeLocalBackupWriter(writer)
-    if(!r){
-        alertClear()
-        return
-    }
+        const writer = new LocalWriter()
+        const r = await initializeLocalBackupWriter(writer)
+        if(!r){
+            alertClear()
+            return
+        }
 
-    const assetMap = new Map<string, { charName: string, assetName: string }>()
-    if (db.characters) {
-        for (const char of db.characters) {
-            if (!char) continue
-            const charName = char.name ?? 'Unknown Character'
-            
-            if (char.image) assetMap.set(char.image, { charName: charName, assetName: 'Main Image' })
-            
-            if (char.emotionImages) {
-                for (const em of char.emotionImages) {
-                    if (em && em[1]) assetMap.set(em[1], { charName: charName, assetName: em[0] })
-                }
-            }
-            if (char.type !== 'group') {
-                if (char.additionalAssets) {
-                    for (const em of char.additionalAssets) {
+        const assetMap = new Map<string, { charName: string, assetName: string }>()
+        if (db.characters) {
+            for (const char of db.characters) {
+                if (!char) continue
+                const charName = char.name ?? 'Unknown Character'
+                
+                if (char.image) assetMap.set(char.image, { charName: charName, assetName: 'Main Image' })
+                
+                if (char.emotionImages) {
+                    for (const em of char.emotionImages) {
                         if (em && em[1]) assetMap.set(em[1], { charName: charName, assetName: em[0] })
                     }
                 }
-                if (char.vits) {
-                    const keys = Object.keys(char.vits.files)
-                    for (const key of keys) {
-                        const vit = char.vits.files[key]
-                        if (vit) assetMap.set(vit, { charName: charName, assetName: key })
+                if (char.type !== 'group') {
+                    if (char.additionalAssets) {
+                        for (const em of char.additionalAssets) {
+                            if (em && em[1]) assetMap.set(em[1], { charName: charName, assetName: em[0] })
+                        }
                     }
-                }
-                if (char.ccAssets) {
-                    for (const asset of char.ccAssets) {
-                        if (asset && asset.uri) assetMap.set(asset.uri, { charName: charName, assetName: asset.name })
+                    if (char.vits) {
+                        const keys = Object.keys(char.vits.files)
+                        for (const key of keys) {
+                            const vit = char.vits.files[key]
+                            if (vit) assetMap.set(vit, { charName: charName, assetName: key })
+                        }
+                    }
+                    if (char.ccAssets) {
+                        for (const asset of char.ccAssets) {
+                            if (asset && asset.uri) assetMap.set(asset.uri, { charName: charName, assetName: asset.name })
+                        }
                     }
                 }
             }
         }
-    }
-    if (db.userIcon) {
-        assetMap.set(db.userIcon, { charName: 'User Settings', assetName: 'User Icon' })
-    }
-    if (db.customBackground) {
-        assetMap.set(db.customBackground, { charName: 'User Settings', assetName: 'Custom Background' })
-    }
-    if (db.personas) {
-        for (const persona of db.personas) {
-            if (persona && persona.icon) {
-                assetMap.set(persona.icon, { charName: 'Persona', assetName: `${persona.name} Icon` })
+        if (db.userIcon) {
+            assetMap.set(db.userIcon, { charName: 'User Settings', assetName: 'User Icon' })
+        }
+        if (db.customBackground) {
+            assetMap.set(db.customBackground, { charName: 'User Settings', assetName: 'Custom Background' })
+        }
+        if (db.personas) {
+            for (const persona of db.personas) {
+                if (persona && persona.icon) {
+                    assetMap.set(persona.icon, { charName: 'Persona', assetName: `${persona.name} Icon` })
+                }
             }
         }
-    }
-    const missingAssets: string[] = []
+        const missingAssets: string[] = []
 
-    if(isTauri){
-        alertProgress("Saving local backup... (Scanning assets)", 0)
-        await sleep(10)
-        const assets = (await readDir('assets', {baseDir: BaseDirectory.AppData}))
-            .filter((asset) => asset.isFile)
-        const totalAssets = assets.length
-        let lastUiUpdate = 0
-
-        for(let i=0; i<assets.length; i++){
-            const asset = assets[i]
-            const key = asset.name
-            if(!key){
-                continue
-            }
-
-            const percent = totalAssets > 0 ? ((i + 1) / totalAssets) * 80 : 80
-            const now = Date.now()
-            if(now - lastUiUpdate > 30 || i === 0 || i === totalAssets - 1){
-                lastUiUpdate = now
-                const assetInfo = assetMap.get(key) || assetMap.get('assets/' + key)
-                let message = `Saving local backup... (${i + 1} / ${totalAssets})`
-                if (assetInfo) {
-                    message += `\n${assetInfo.charName} - ${assetInfo.assetName}`
-                } else {
-                    message += `\n${key}`
-                }
-                if (missingAssets.length > 0) {
-                    message += `\n(Skipped ${missingAssets.length} missing assets)`
-                }
-                alertProgress(message, percent)
-                await sleep(0)
-            }
-
-            const data = await readFile('assets/' + asset.name, {baseDir: BaseDirectory.AppData})
-            if (data) {
-                await writer.writeBackup(key, data)
-            } else {
-                missingAssets.push(key)
-            }
-        }
-    }
-    else{
-        if (isNodeServer && !forageStorage.isAccount) {
-            const startedAt = Date.now()
-            const update = () => alertProgress(
-                `Saving local backup... (S3/storage server is listing assets)\n` +
-                `The download will start as soon as the listing is ready. Elapsed: ${formatBackupElapsed(startedAt)}`,
-                2,
-            )
-            update()
-            const timer = setInterval(update, 1000)
-            let streamStarted = false
-            try {
-                writer.setBufferSize(64 * 1024 * 1024)
-                let lastProgress = -1
-                await (forageStorage.realStorage as NodeStorage).streamItems([], {
-                    onFileStart: async(key, size) => {
-                        await writer.startBackup(key, size)
-                    },
-                    onFileChunk: async(_key, chunk) => {
-                        await writer.write(chunk)
-                    }
-                }, (progress) => {
-                    if (!streamStarted) {
-                        streamStarted = true
-                        clearInterval(timer)
-                    }
-                    if (progress.completedFiles === 0 && !progress.currentFile) {
-                        const sourceLabel = progress.assetListSource === 'catalog'
-                            ? 'Loaded asset list from SQL catalog'
-                            : progress.assetListSource === 'storage-sync'
-                                ? 'Initialized SQL asset catalog from storage'
-                                : 'Loaded asset list from storage'
-                        alertProgress(
-                            `Saving local backup... (${sourceLabel}: ${progress.totalFiles.toLocaleString()} assets)`,
-                            2,
-                        )
-                        return
-                    }
-                    const currentRatio = progress.currentFile
-                        ? progress.totalBytes === 0n
-                            ? 1
-                            : Number(BigInt(progress.receivedBytes) * 1000n / progress.totalBytes) / 1000
-                        : 0
-                    const percent = progress.totalFiles === 0
-                        ? 80
-                        : Math.floor((progress.completedFiles + currentRatio) / progress.totalFiles * 80)
-
-                    if(percent === lastProgress){
-                        return
-                    }
-                    lastProgress = percent
-                    alertProgress(
-                        `Saving local backup... (Streaming assets ${percent}%, ${progress.completedFiles} / ${progress.totalFiles})`,
-                        percent
-                    )
-                }, { prefix: 'assets/' })
-            } finally {
-                clearInterval(timer)
-            }
-        } else {
-            const keys = await forageStorage.keys()
-            const assetKeys = keys.filter((key) => key?.startsWith('assets/'))
-            const totalAssets = assetKeys.length
+        if(isTauri){
+            alertProgress("Saving local backup... (Scanning assets)", 0)
+            await sleep(10)
+            const assets = (await readDir('assets', {baseDir: BaseDirectory.AppData}))
+                .filter((asset) => asset.isFile)
+            const totalAssets = assets.length
             let lastUiUpdate = 0
 
-            for(let i=0; i<assetKeys.length; i++){
-                const key = assetKeys[i]
+            for(let i=0; i<assets.length; i++){
+                const asset = assets[i]
+                const key = asset.name
+                if(!key){
+                    continue
+                }
+
+                const percent = totalAssets > 0 ? ((i + 1) / totalAssets) * 80 : 80
+                const now = Date.now()
+                if(now - lastUiUpdate > 30 || i === 0 || i === totalAssets - 1){
+                    lastUiUpdate = now
+                    const assetInfo = assetMap.get(key) || assetMap.get('assets/' + key)
+                    let message = `Saving local backup... (${i + 1} / ${totalAssets})`
+                    if (assetInfo) {
+                        message += `\n${assetInfo.charName} - ${assetInfo.assetName}`
+                    } else {
+                        message += `\n${key}`
+                    }
+                    if (missingAssets.length > 0) {
+                        message += `\n(Skipped ${missingAssets.length} missing assets)`
+                    }
+                    alertProgress(message, percent)
+                    await sleep(0)
+                }
+
+                const data = await readFile('assets/' + asset.name, {baseDir: BaseDirectory.AppData})
+                if (data) {
+                    await writer.writeBackup(key, data)
+                } else {
+                    missingAssets.push(key)
+                }
+            }
+        }
+        else{
+            if (isNodeServer && !forageStorage.isAccount) {
+                const startedAt = Date.now()
+                const update = () => alertProgress(
+                    `Saving local backup... (S3/storage server is listing assets)\n` +
+                    `The download will start as soon as the listing is ready. Elapsed: ${formatBackupElapsed(startedAt)}`,
+                    2,
+                )
+                update()
+                const timer = setInterval(update, 1000)
+                let streamStarted = false
+                try {
+                    writer.setBufferSize(64 * 1024 * 1024)
+                    let lastProgress = -1
+                    await (forageStorage.realStorage as NodeStorage).streamItems([], {
+                        onFileStart: async(key, size) => {
+                            await writer.startBackup(key, size)
+                        },
+                        onFileChunk: async(_key, chunk) => {
+                            await writer.write(chunk)
+                        }
+                    }, (progress) => {
+                        if (!streamStarted) {
+                            streamStarted = true
+                            clearInterval(timer)
+                        }
+                        if (progress.completedFiles === 0 && !progress.currentFile) {
+                            const sourceLabel = progress.assetListSource === 'catalog'
+                                ? 'Loaded asset list from SQL catalog'
+                                : progress.assetListSource === 'storage-sync'
+                                    ? 'Initialized SQL asset catalog from storage'
+                                    : 'Loaded asset list from storage'
+                            alertProgress(
+                                `Saving local backup... (${sourceLabel}: ${progress.totalFiles.toLocaleString()} assets)`,
+                                2,
+                            )
+                            return
+                        }
+                        const currentRatio = progress.currentFile
+                            ? progress.totalBytes === 0n
+                                ? 1
+                                : Number(BigInt(progress.receivedBytes) * 1000n / progress.totalBytes) / 1000
+                            : 0
+                        const percent = progress.totalFiles === 0
+                            ? 80
+                            : Math.floor((progress.completedFiles + currentRatio) / progress.totalFiles * 80)
+
+                        if(percent === lastProgress){
+                            return
+                        }
+                        lastProgress = percent
+                        alertProgress(
+                            `Saving local backup... (Streaming assets ${percent}%, ${progress.completedFiles} / ${progress.totalFiles})`,
+                            percent
+                        )
+                    }, { prefix: 'assets/' })
+                } finally {
+                    clearInterval(timer)
+                }
+            } else {
+                const keys = await forageStorage.keys()
+                const assetKeys = keys.filter((key) => key?.startsWith('assets/'))
+                const totalAssets = assetKeys.length
+                let lastUiUpdate = 0
+
+                for(let i=0; i<assetKeys.length; i++){
+                    const key = assetKeys[i]
+                    const percent = totalAssets > 0 ? ((i + 1) / totalAssets) * 80 : 80
+                    const now = Date.now()
+                    if(now - lastUiUpdate > 30 || i === 0 || i === totalAssets - 1){
+                        lastUiUpdate = now
+                        const assetInfo = assetMap.get(key) || assetMap.get(key.replace(/^assets\//, ''))
+                        let message = `Saving local backup... (${i + 1} / ${totalAssets})`
+                        if (assetInfo) {
+                            message += `\n${assetInfo.charName} - ${assetInfo.assetName}`
+                        } else {
+                            message += `\n${key}`
+                        }
+                        if (missingAssets.length > 0) {
+                            message += `\n(Skipped ${missingAssets.length} missing assets)`
+                        }
+                        alertProgress(message, percent)
+                        await sleep(0)
+                    }
+
+                    let data: Uint8Array | undefined;
+                    let isCached = false;
+                    if(forageStorage.isAccount && key.startsWith('assets/')){
+                        if(DBState.db.skipSavingAssetsOnWebSync){
+                            continue
+                        }
+
+                        const cached = await localforage.getItem(key) as ArrayBuffer;
+                        if(cached) {
+                            isCached = true;
+                            data = new Uint8Array(cached);
+                        }
+                    }
+                    
+                    if (!data) {
+                        data = await forageStorage.getItem(key) as unknown as Uint8Array
+                    }
+
+                    if (data) {
+                        await writer.writeBackup(key, data)
+                    } else {
+                        missingAssets.push(key)
+                    }
+                    if(forageStorage.isAccount && !isCached){
+                        await sleep(1000)
+                    }
+                }
+            }
+        }
+
+        const totalCold = coldStoragePayloads.payloads.length
+        for(let i=0; i<totalCold; i++){
+            const payload = coldStoragePayloads.payloads[i]
+            const percent = totalCold > 0 ? 80 + ((i + 1) / totalCold) * 10 : 80
+            let message = `Saving local backup cold data... (${i + 1} / ${totalCold})`
+            if (payload.backupName) {
+                message += `\n${payload.backupName}`
+            }
+            alertProgress(message, percent)
+            await sleep(0)
+            await writer.writeBackup(payload.backupName, payload.encoded)
+        }
+
+        alertProgress(`Saving local backup... (Compressing database)`, 92)
+        await sleep(30)
+
+        const cleanDb: Record<string, any> = {}
+        for (const [key, value] of Object.entries(db)) {
+            if (key === 'account' || typeof value === 'function') continue
+            cleanDb[key] = value
+        }
+        let dbData = await encodeRisuSaveLegacyAsync(cleanDb, 'compression')
+
+        if(forageStorage.isAccount && location.origin.endsWith('risuai.xyz')){
+            alertProgress(`Saving local backup... (Encrypting database)`, 96)
+            await sleep(20)
+            const time = Date.now()
+            const key = (await (await fetch(`https://sv.risuai.xyz/cryptokey?key=${time}`)).json()).key
+            const encrypted = await encryptBuffer(dbData, key)
+            await writer.writeBackup('encryption.risudat', new TextEncoder().encode(JSON.stringify({ time, type: 'account' })))
+            dbData = new Uint8Array(encrypted)
+        }
+
+        alertProgress(`Saving local backup... (Writing database)`, 98)
+        await sleep(10)
+
+        await writer.writeBackup('database.risudat', dbData)
+
+        alertProgress(`Saving local backup... (Finalizing)`, 100)
+        await sleep(10)
+
+        await writer.close()
+
+        if (missingAssets.length > 0) {
+            let message = 'Backup Successful, but the following assets were missing and skipped:\n\n'
+            for (const key of missingAssets) {
+                const assetInfo = assetMap.get(key) || assetMap.get('assets/' + key)
+                if (assetInfo) {
+                    message += `* **${assetInfo.assetName}** (from *${assetInfo.charName}*)  \n  *File: ${key}*\n`
+                } else {
+                    message += `* **Unknown Asset**  \n  *File: ${key}*\n`
+                }
+            }
+            alertMd(message)
+        } else {
+            alertNormal('Success')
+        }
+    } catch (error) {
+        console.error('SaveLocalBackup failed:', error)
+        alertError(error)
+    }
+}
+
+/**
+ * Saves a partial local backup with only critical assets.
+ * 
+ * Differences from SaveLocalBackup:
+ * - Only includes profile images for characters/groups (excludes emotion images, additional assets, VITS files, CC assets)
+ * - Additionally includes: persona icons, folder images, bot preset images
+ * - Processes only assets in assetMap (selective) instead of all .png files in assets folder
+ * - Faster and more efficient for quick backups
+ * - Ideal for backing up core visual identity without bulk data
+ */
+export async function SavePartialLocalBackup(){
+    try {
+        const firstConfirm = await alertConfirm(language.partialBackupFirstConfirm)
+        if (!firstConfirm) return
+        
+        const secondConfirm = await alertConfirm(language.partialBackupSecondConfirm)
+        if (!secondConfirm) return
+        
+        alertProgress("Saving partial local backup... (Preparing database)", 0)
+        await sleep(10)
+        const db = getDatabase()
+        await ensureDatabaseFullyLoaded(db, (msg) => {
+            alertProgress(`Saving partial local backup... (${msg})`, 0)
+        })
+        alertProgress("Saving partial local backup... (Checking cold storage)", 0)
+        await sleep(10)
+        const coldStoragePayloads = await collectColdStorageBackupPayloads(db, (current, total, key) => {
+            const item = key ? `\nCurrent item: ${key}` : ''
+            alertProgress(`Saving partial local backup... (Checking cold storage ${current} / ${total})${item}`, 0)
+        })
+        const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
+        if(!await confirmIncompleteColdStorageOperation(db, unavailableColdStorageKeys, 'backup')){
+            alertClear()
+            return
+        }
+
+        const writer = new LocalWriter()
+        const r = await initializeLocalBackupWriter(writer, true)
+        if(!r){
+            alertClear()
+            return
+        }
+
+        const assetMap = new Map<string, { charName: string, assetName: string }>()
+        
+        if (db.characters) {
+            for (const char of db.characters) {
+                if (!char) continue
+                const charName = char.name ?? 'Unknown Character'
+                if (char.image) {
+                    assetMap.set(char.image, { charName: charName, assetName: 'Profile Image' })
+                }
+            }
+        }
+        
+        if (db.userIcon) {
+            assetMap.set(db.userIcon, { charName: 'User Settings', assetName: 'User Icon' })
+        }
+        
+        if (db.personas) {
+            for (const persona of db.personas) {
+                if (persona && persona.icon) {
+                    assetMap.set(persona.icon, { charName: 'Persona', assetName: `${persona.name} Icon` })
+                }
+            }
+        }
+        
+        if (db.customBackground) {
+            assetMap.set(db.customBackground, { charName: 'User Settings', assetName: 'Custom Background' })
+        }
+        
+        if (db.characterOrder) {
+            for (const item of db.characterOrder) {
+                if (typeof item !== 'string' && item.img) {
+                    assetMap.set(item.img, { charName: 'Folder', assetName: `${item.name} Folder Image` })
+                }
+                if (typeof item !== 'string' && item.imgFile) {
+                    assetMap.set(item.imgFile, { charName: 'Folder', assetName: `${item.name} Folder Image File` })
+                }
+            }
+        }
+        
+        if (db.botPresets) {
+            for (const preset of db.botPresets) {
+                if (preset && preset.image) {
+                    assetMap.set(preset.image, { charName: 'Preset', assetName: `${preset.name} Preset Image` })
+                }
+            }
+        }
+        
+        const missingAssets: string[] = []
+
+        if(isTauri){
+            alertProgress("Saving partial local backup... (Scanning assets)", 0)
+            await sleep(10)
+            const assets = await readDir('assets', {baseDir: BaseDirectory.AppData})
+            const matchingAssets = assets.filter((asset) => {
+                if(!asset.name || !asset.isFile) return false
+                const keyWithPrefix = asset.name.startsWith('assets/') ? asset.name : `assets/${asset.name}`
+                if(!keyWithPrefix.endsWith('.png')) return false
+                return assetMap.has(keyWithPrefix) || assetMap.has(asset.name)
+            })
+            const totalAssets = matchingAssets.length
+            let lastUiUpdate = 0
+
+            for(let i=0; i<matchingAssets.length; i++){
+                const asset = matchingAssets[i]
+                const keyWithPrefix = asset.name.startsWith('assets/') ? asset.name : `assets/${asset.name}`
+                const percent = totalAssets > 0 ? ((i + 1) / totalAssets) * 80 : 80
+                const now = Date.now()
+                if(now - lastUiUpdate > 30 || i === 0 || i === totalAssets - 1){
+                    lastUiUpdate = now
+                    const assetInfo = assetMap.get(keyWithPrefix) || assetMap.get(asset.name)
+                    let message = `Saving partial local backup... (${i + 1} / ${totalAssets})`
+                    if (assetInfo) {
+                        message += `\n${assetInfo.charName} - ${assetInfo.assetName}`
+                    } else {
+                        message += `\n${asset.name}`
+                    }
+                    if (missingAssets.length > 0) {
+                        message += `\n(Skipped ${missingAssets.length} missing assets)`
+                    }
+                    alertProgress(message, percent)
+                    await sleep(0)
+                }
+
+                const data = await readFile('assets/' + asset.name, {baseDir: BaseDirectory.AppData})
+                if (data) {
+                    await writer.writeBackup(asset.name, data)
+                } else {
+                    missingAssets.push(asset.name)
+                }
+            }
+        }
+        else{
+            const keys = await forageStorage.keys()
+            const matchingKeys = keys.filter((key) => {
+                if (!key || !key.startsWith('assets/')) return false
+                if (!key.endsWith('.png')) return false
+                const keyWithoutPrefix = key.replace(/^assets\//, '')
+                return assetMap.has(key) || assetMap.has(keyWithoutPrefix)
+            })
+            const totalAssets = matchingKeys.length
+            let lastUiUpdate = 0
+
+            for(let i=0; i<matchingKeys.length; i++){
+                const key = matchingKeys[i]
                 const percent = totalAssets > 0 ? ((i + 1) / totalAssets) * 80 : 80
                 const now = Date.now()
                 if(now - lastUiUpdate > 30 || i === 0 || i === totalAssets - 1){
                     lastUiUpdate = now
                     const assetInfo = assetMap.get(key) || assetMap.get(key.replace(/^assets\//, ''))
-                    let message = `Saving local backup... (${i + 1} / ${totalAssets})`
+                    let message = `Saving partial local backup... (${i + 1} / ${totalAssets})`
                     if (assetInfo) {
                         message += `\n${assetInfo.charName} - ${assetInfo.assetName}`
                     } else {
@@ -460,312 +729,61 @@ export async function SaveLocalBackup(){
                     missingAssets.push(key)
                 }
                 if(forageStorage.isAccount && !isCached){
-                    await sleep(1000)
+                    await sleep(100)
                 }
             }
         }
-    }
 
-    const totalCold = coldStoragePayloads.payloads.length
-    for(let i=0; i<totalCold; i++){
-        const payload = coldStoragePayloads.payloads[i]
-        const percent = totalCold > 0 ? 80 + ((i + 1) / totalCold) * 10 : 80
-        let message = `Saving local backup cold data... (${i + 1} / ${totalCold})`
-        if (payload.backupName) {
-            message += `\n${payload.backupName}`
-        }
-        alertProgress(message, percent)
-        await sleep(0)
-        await writer.writeBackup(payload.backupName, payload.encoded)
-    }
-
-    alertProgress(`Saving local backup... (Compressing database)`, 92)
-    await sleep(30)
-
-    const dbWithoutAccount = { ...db, account: undefined }
-    let dbData = await encodeRisuSaveLegacyAsync(dbWithoutAccount, 'compression')
-
-    if(forageStorage.isAccount && location.origin.endsWith('risuai.xyz')){
-        alertProgress(`Saving local backup... (Encrypting database)`, 96)
-        await sleep(20)
-        const time = Date.now()
-        const key = (await (await fetch(`https://sv.risuai.xyz/cryptokey?key=${time}`)).json()).key
-        const encrypted = await encryptBuffer(dbData, key)
-        await writer.writeBackup('encryption.risudat', new TextEncoder().encode(JSON.stringify({ time, type: 'account' })))
-        dbData = new Uint8Array(encrypted)
-    }
-
-    alertProgress(`Saving local backup... (Writing database)`, 98)
-    await sleep(10)
-
-    await writer.writeBackup('database.risudat', dbData)
-
-    alertProgress(`Saving local backup... (Finalizing)`, 100)
-    await sleep(10)
-
-    await writer.close()
-
-    if (missingAssets.length > 0) {
-        let message = 'Backup Successful, but the following assets were missing and skipped:\n\n'
-        for (const key of missingAssets) {
-            const assetInfo = assetMap.get(key) || assetMap.get('assets/' + key)
-            if (assetInfo) {
-                message += `* **${assetInfo.assetName}** (from *${assetInfo.charName}*)  \n  *File: ${key}*\n`
-            } else {
-                message += `* **Unknown Asset**  \n  *File: ${key}*\n`
+        const totalCold = coldStoragePayloads.payloads.length
+        for(let i=0; i<totalCold; i++){
+            const payload = coldStoragePayloads.payloads[i]
+            const percent = totalCold > 0 ? 80 + ((i + 1) / totalCold) * 10 : 80
+            let message = `Saving partial local backup cold data... (${i + 1} / ${totalCold})`
+            if (payload.backupName) {
+                message += `\n${payload.backupName}`
             }
+            alertProgress(message, percent)
+            await sleep(0)
+            await writer.writeBackup(payload.backupName, payload.encoded)
         }
-        alertMd(message)
-    } else {
-        alertNormal('Success')
-    }
-}
 
-/**
- * Saves a partial local backup with only critical assets.
- * 
- * Differences from SaveLocalBackup:
- * - Only includes profile images for characters/groups (excludes emotion images, additional assets, VITS files, CC assets)
- * - Additionally includes: persona icons, folder images, bot preset images
- * - Processes only assets in assetMap (selective) instead of all .png files in assets folder
- * - Faster and more efficient for quick backups
- * - Ideal for backing up core visual identity without bulk data
- */
-export async function SavePartialLocalBackup(){
-    // First confirmation: Explain the difference from regular backup
-    const firstConfirm = await alertConfirm(language.partialBackupFirstConfirm)
-    
-    if (!firstConfirm) {
-        return
-    }
-    
-    // Second confirmation: Final warning about not saving assets
-    const secondConfirm = await alertConfirm(language.partialBackupSecondConfirm)
-    
-    if (!secondConfirm) {
-        return
-    }
-    
-    alertProgress("Saving partial local backup... (Preparing database)", 0)
-    await sleep(10)
-    const db = getDatabase()
-    await ensureDatabaseFullyLoaded(db, (msg) => {
-        alertProgress(`Saving partial local backup... (${msg})`, 0)
-    })
-    alertProgress("Saving partial local backup... (Checking cold storage)", 0)
-    await sleep(10)
-    const coldStoragePayloads = await collectColdStorageBackupPayloads(db, (current, total, key) => {
-        const item = key ? `\nCurrent item: ${key}` : ''
-        alertProgress(`Saving partial local backup... (Checking cold storage ${current} / ${total})${item}`, 0)
-    })
-    const unavailableColdStorageKeys = [...coldStoragePayloads.missingKeys, ...coldStoragePayloads.invalidKeys]
-    if(!await confirmIncompleteColdStorageOperation(db, unavailableColdStorageKeys, 'backup')){
-        alertClear()
-        return
-    }
+        alertProgress(`Saving partial local backup... (Compressing database)`, 92)
+        await sleep(30)
 
-    const writer = new LocalWriter()
-    const r = await initializeLocalBackupWriter(writer, true)
-    if(!r){
-        alertClear()
-        return
-    }
+        const cleanDb: Record<string, any> = {}
+        for (const [key, value] of Object.entries(db)) {
+            if (key === 'account' || typeof value === 'function') continue
+            cleanDb[key] = value
+        }
+        const dbData = await encodeRisuSaveLegacyAsync(cleanDb, 'compression')
 
-    const assetMap = new Map<string, { charName: string, assetName: string }>()
-    
-    // Only collect main profile images for both characters and groups
-    if (db.characters) {
-        for (const char of db.characters) {
-            if (!char) continue
-            const charName = char.name ?? 'Unknown Character'
-            
-            // Save the main profile image (supports both character and group types)
-            // Note: emotionImages are intentionally excluded from partial backup
-            if (char.image) {
-                assetMap.set(char.image, { charName: charName, assetName: 'Profile Image' })
-            }
-        }
-    }
-    
-    // User icon
-    if (db.userIcon) {
-        assetMap.set(db.userIcon, { charName: 'User Settings', assetName: 'User Icon' })
-    }
-    
-    // Persona icons
-    if (db.personas) {
-        for (const persona of db.personas) {
-            if (persona && persona.icon) {
-                assetMap.set(persona.icon, { charName: 'Persona', assetName: `${persona.name} Icon` })
-            }
-        }
-    }
-    
-    // Custom background
-    if (db.customBackground) {
-        assetMap.set(db.customBackground, { charName: 'User Settings', assetName: 'Custom Background' })
-    }
-    
-    // Folder images in characterOrder
-    if (db.characterOrder) {
-        for (const item of db.characterOrder) {
-            if (typeof item !== 'string' && item.img) {
-                assetMap.set(item.img, { charName: 'Folder', assetName: `${item.name} Folder Image` })
-            }
-            if (typeof item !== 'string' && item.imgFile) {
-                assetMap.set(item.imgFile, { charName: 'Folder', assetName: `${item.name} Folder Image File` })
-            }
-        }
-    }
-    
-    // Bot preset images
-    if (db.botPresets) {
-        for (const preset of db.botPresets) {
-            if (preset && preset.image) {
-                assetMap.set(preset.image, { charName: 'Preset', assetName: `${preset.name} Preset Image` })
-            }
-        }
-    }
-    
-    const missingAssets: string[] = []
-
-    if(isTauri){
-        alertProgress("Saving partial local backup... (Scanning assets)", 0)
+        alertProgress(`Saving partial local backup... (Writing database)`, 98)
         await sleep(10)
-        // readDir returns entries without 'assets/' prefix, unlike forageStorage.keys()
-        const assets = await readDir('assets', {baseDir: BaseDirectory.AppData})
-        const matchingAssets = assets.filter((asset) => {
-            if(!asset.name || !asset.isFile) return false
-            const keyWithPrefix = asset.name.startsWith('assets/') ? asset.name : `assets/${asset.name}`
-            if(!keyWithPrefix.endsWith('.png')) return false
-            return assetMap.has(keyWithPrefix) || assetMap.has(asset.name)
-        })
-        const totalAssets = matchingAssets.length
-        let lastUiUpdate = 0
 
-        for(let i=0; i<matchingAssets.length; i++){
-            const asset = matchingAssets[i]
-            const keyWithPrefix = asset.name.startsWith('assets/') ? asset.name : `assets/${asset.name}`
-            const percent = totalAssets > 0 ? ((i + 1) / totalAssets) * 80 : 80
-            const now = Date.now()
+        await writer.writeBackup('database.risudat', dbData)
 
-            if(now - lastUiUpdate > 30 || i === 0 || i === totalAssets - 1){
-                lastUiUpdate = now
-                const assetInfo = assetMap.get(keyWithPrefix) || assetMap.get(asset.name)
-                let message = `Saving partial local backup... (${i + 1} / ${totalAssets})`
+        alertProgress(`Saving partial local backup... (Finalizing)`, 100)
+        await sleep(10)
+
+        await writer.close()
+
+        if (missingAssets.length > 0) {
+            let message = 'Partial backup successful, but the following profile images were missing and skipped:\n\n'
+            for (const key of missingAssets) {
+                const assetInfo = assetMap.get(key) || assetMap.get('assets/' + key)
                 if (assetInfo) {
-                    message += `\n${assetInfo.charName} - ${assetInfo.assetName}`
+                    message += `* **${assetInfo.assetName}** (from *${assetInfo.charName}*)  \n  *File: ${key}*\n`
                 } else {
-                    message += `\n${asset.name}`
+                    message += `* **Unknown Asset**  \n  *File: ${key}*\n`
                 }
-                if (missingAssets.length > 0) {
-                    message += `\n(Skipped ${missingAssets.length} missing assets)`
-                }
-                alertProgress(message, percent)
-                await sleep(0)
             }
-
-            const data = await readFile(keyWithPrefix, {baseDir: BaseDirectory.AppData})
-            if (data) {
-                await writer.writeBackup(keyWithPrefix, data)
-            } else {
-                missingAssets.push(keyWithPrefix)
-            }
+            alertMd(message)
+        } else {
+            alertNormal('Success')
         }
-    }
-    else{
-        const assetKeys = Array.from(assetMap.keys()).filter((key) => key && key.endsWith('.png'))
-        const totalAssets = assetKeys.length
-        let lastUiUpdate = 0
-
-        for(let i=0; i<assetKeys.length; i++){
-            const key = assetKeys[i]
-            const percent = totalAssets > 0 ? ((i + 1) / totalAssets) * 80 : 80
-            const now = Date.now()
-
-            if(now - lastUiUpdate > 30 || i === 0 || i === totalAssets - 1){
-                lastUiUpdate = now
-                const assetInfo = assetMap.get(key)
-                let message = `Saving partial local backup... (${i + 1} / ${totalAssets})`
-                if (assetInfo) {
-                    message += `\n${assetInfo.charName} - ${assetInfo.assetName}`
-                } else {
-                    message += `\n${key}`
-                }
-                if (missingAssets.length > 0) {
-                    message += `\n(Skipped ${missingAssets.length} missing assets)`
-                }
-                alertProgress(message, percent)
-                await sleep(0)
-            }
-            
-            let data: Uint8Array | undefined;
-            let isCached = false;
-            if(forageStorage.isAccount && key.startsWith('assets/')){
-                const cached = await localforage.getItem(key) as ArrayBuffer;
-                if(cached) {
-                    isCached = true;
-                    data = new Uint8Array(cached);
-                }
-            }
-            
-            if (!data) {
-                data = await forageStorage.getItem(key) as unknown as Uint8Array
-            }
-
-            if (data) {
-                await writer.writeBackup(key, data)
-            } else {
-                missingAssets.push(key)
-            }
-            if(forageStorage.isAccount && !isCached){
-                await sleep(100)
-            }
-        }
-    }
-
-    const totalCold = coldStoragePayloads.payloads.length
-    for(let i=0; i<totalCold; i++){
-        const payload = coldStoragePayloads.payloads[i]
-        const percent = totalCold > 0 ? 80 + ((i + 1) / totalCold) * 10 : 80
-        let message = `Saving partial local backup cold data... (${i + 1} / ${totalCold})`
-        if (payload.backupName) {
-            message += `\n${payload.backupName}`
-        }
-        alertProgress(message, percent)
-        await sleep(0)
-        await writer.writeBackup(payload.backupName, payload.encoded)
-    }
-
-    alertProgress(`Saving partial local backup... (Compressing database)`, 92)
-    await sleep(30)
-
-    const dbWithoutAccount = { ...db, account: undefined }
-    const dbData = await encodeRisuSaveLegacyAsync(dbWithoutAccount, 'compression')
-
-    alertProgress(`Saving partial local backup... (Writing database)`, 98)
-    await sleep(10)
-
-    await writer.writeBackup('database.risudat', dbData)
-
-    alertProgress(`Saving partial local backup... (Finalizing)`, 100)
-    await sleep(10)
-
-    await writer.close()
-
-    if (missingAssets.length > 0) {
-        let message = 'Partial backup successful, but the following profile images were missing and skipped:\n\n'
-        for (const key of missingAssets) {
-            const assetInfo = assetMap.get(key) || assetMap.get('assets/' + key)
-            if (assetInfo) {
-                message += `* **${assetInfo.assetName}** (from *${assetInfo.charName}*)  \n  *File: ${key}*\n`
-            } else {
-                message += `* **Unknown Asset**  \n  *File: ${key}*\n`
-            }
-        }
-        alertMd(message)
-    } else {
-        alertNormal('Success')
+    } catch (error) {
+        console.error('SavePartialLocalBackup failed:', error)
+        alertError(error)
     }
 }
 

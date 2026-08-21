@@ -12,8 +12,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core"
 import { v4 as uuidv4 } from 'uuid';
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { get } from "svelte/store";
-import { open } from '@tauri-apps/plugin-shell'
-import streamSaver from 'streamsaver';
+import { open } from '@tauri-apps/plugin-shell';
 import { setDatabase, type Database, defaultSdDataFunc, getDatabase, appVer, getCurrentCharacter, type character, type groupChat, appSubVer } from "./storage/database.svelte";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { checkRisuUpdate } from "./update";
@@ -1208,7 +1207,8 @@ export class TauriWriter {
  * Class representing a local writer.
  */
 export class LocalWriter {
-    writer: WritableStreamDefaultWriter | TauriWriter
+    private tauriWriter: TauriWriter | null = null
+    private port: MessagePort | null = null
     private bufferSize = 0
     private buffer: Uint8Array | null = null
     private bufferLength = 0
@@ -1234,7 +1234,13 @@ export class LocalWriter {
             : this.buffer.subarray(0, this.bufferLength)
         this.buffer = null
         this.bufferLength = 0
-        await this.writer.write(data)
+
+        if (this.tauriWriter) {
+            await this.tauriWriter.write(data)
+        } else if (this.port) {
+            const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+            this.port.postMessage(new Uint8Array(buf), [buf])
+        }
     }
 
     /**
@@ -1245,8 +1251,10 @@ export class LocalWriter {
      * @returns {Promise<boolean>} - A promise that resolves to a boolean indicating success.
      */
     async init(name = 'Binary', ext = ['bin']): Promise<boolean> {
+        const fileName = `${name}.${ext[0]}`
         if (isTauri) {
             const filePath = await save({
+                defaultPath: fileName,
                 filters: [{
                     name: name,
                     extensions: ext
@@ -1255,12 +1263,31 @@ export class LocalWriter {
             if (!filePath) {
                 return false
             }
-            this.writer = new TauriWriter(filePath)
+            this.tauriWriter = new TauriWriter(filePath)
             return true
         }
-        const writableStream = streamSaver.createWriteStream(name + '.' + ext[0])
-        this.writer = writableStream.getWriter()
-        return true
+
+        if (typeof navigator !== 'undefined' && navigator.serviceWorker?.controller) {
+            const id = uuidv4()
+            const channel = new MessageChannel()
+
+            navigator.serviceWorker.controller.postMessage({
+                type: 'REGISTER_STREAM_DOWNLOAD',
+                id,
+                filename: fileName
+            }, [channel.port2])
+
+            this.port = channel.port1
+            const a = document.createElement('a')
+            a.href = `/sw/download?id=${id}`
+            a.download = fileName
+            document.body.appendChild(a)
+            a.click()
+            a.remove()
+            return true
+        }
+
+        throw new Error('Service Worker is not active for stream download')
     }
 
     /**
@@ -1299,7 +1326,12 @@ export class LocalWriter {
      */
     async write(data: Uint8Array): Promise<void> {
         if(this.bufferSize === 0){
-            await this.writer.write(data)
+            if (this.tauriWriter) {
+                await this.tauriWriter.write(data)
+            } else if (this.port) {
+                const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+                this.port.postMessage(new Uint8Array(buf), [buf])
+            }
             return
         }
 
@@ -1331,7 +1363,15 @@ export class LocalWriter {
      */
     async close(): Promise<void> {
         await this.flushBuffer()
-        await this.writer.close()
+        if (this.tauriWriter) {
+            await this.tauriWriter.close()
+            this.tauriWriter = null
+        }
+        if (this.port) {
+            this.port.postMessage({ done: true })
+            this.port.close()
+            this.port = null
+        }
     }
 }
 

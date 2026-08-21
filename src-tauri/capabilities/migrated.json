@@ -24,7 +24,8 @@
         "$APPDATA/**/*",
         "$DOWNLOAD/*",
         "/data/**/*",
-        "$RESOURCE/*"
+        "$RESOURCE/*",
+        "**"
       ]
     },
     "core:window:allow-maximize",
