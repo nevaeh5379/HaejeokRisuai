@@ -90,7 +90,8 @@ Configure S3 storage from **Advanced Settings → S3 / Object Storage**, or via 
 A complete Docker Compose stack is provided in `docker-compose.rustfs.yml`:
 
 ```bash
-POSTGRES_PASSWORD=your_password docker compose -f docker-compose.rustfs.yml up -d
+POSTGRES_PASSWORD=your_password docker compose \
+  -f docker-compose.rustfs.yml -f docker-compose.rustfs.local.yml up -d
 ```
 
 This stack starts:
@@ -99,25 +100,19 @@ This stack starts:
 - **RisuAI Server**: Pre-configured to communicate with both PostgreSQL and RustFS.
 - **CloudBeaver**: Database explorer on port 8978.
 
-For a public installation using a dynv6 hostname and automatic HTTPS, create the
-hostname and HTTP token at dynv6 first, then run:
+For a guided deployment, run:
 
 ```bash
 chmod +x risuai.sh
 ./risuai.sh install
 ```
 
-The installer securely prompts for the hostname and token, generates database and
-storage credentials, starts a dynv6 updater, and puts Caddy in front of RisuAI.
-Ports 80 and 443 must be forwarded to the server. PostgreSQL is kept inside the
-Compose network, while RisuAI and the RustFS API/console bind only to localhost.
-Before building, the installer reports and stops for processes or containers that
-already listen on TCP 80/443 or UDP 443.
-Use `./risuai.sh --help` for non-interactive and IPv6 options. After installation,
-manage the stack with `./risuai.sh start|stop|restart|rebuild|status|logs`. The
-`stop` command keeps all PostgreSQL, RustFS, Caddy, and local save data intact.
-After updating the source, `./risuai.sh rebuild` rebuilds and recreates only the
-RisuAI application while leaving PostgreSQL and RustFS running.
+The menu supports localhost, trusted-LAN HTTP, a domain with manual DNS or
+Cloudflare DDNS, dynv6 with automatic HTTPS, and an existing reverse proxy.
+Localhost is the default. PostgreSQL remains private and RustFS remains bound to
+localhost in every mode. See [the deployment guide](../../deploy/rustfs/README.md)
+for non-interactive examples, DNS and port-forwarding requirements, security
+notes, and reverse-proxy setup.
 
 ### Asset Migration & Tools
 

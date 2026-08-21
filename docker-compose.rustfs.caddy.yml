@@ -1,0 +1,26 @@
+services:
+  risuai:
+    ports:
+      - "127.0.0.1:${RISUAI_PORT:-6001}:6001"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: risuai-caddy
+    restart: always
+    depends_on:
+      risuai:
+        condition: service_started
+    environment:
+      RISUAI_DOMAIN: ${RISUAI_DOMAIN:?Set RISUAI_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/rustfs/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:

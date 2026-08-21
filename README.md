@@ -77,3 +77,8 @@ docker compose -f docker-compose.build.yml up --build -d
 ```
 
 2. Access Risuai at `http://localhost:6001` in your web browser.
+
+For a PostgreSQL + RustFS installation with local, LAN, HTTPS/DDNS, or existing
+reverse-proxy networking, use the interactive `./risuai.sh install` workflow.
+See the [deployment guide](deploy/rustfs/README.md) for automated examples and
+security requirements.

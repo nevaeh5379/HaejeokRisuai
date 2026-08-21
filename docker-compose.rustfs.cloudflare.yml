@@ -1,0 +1,20 @@
+services:
+  cloudflare-ddns:
+    image: node:22-alpine
+    container_name: risuai-cloudflare-ddns
+    restart: always
+    user: "0:0"
+    entrypoint: ["node", "/usr/local/bin/update-cloudflare.mjs"]
+    environment:
+      CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:?Set CLOUDFLARE_ZONE_ID}
+      CLOUDFLARE_RECORD_NAME: ${RISUAI_DOMAIN:?Set RISUAI_DOMAIN}
+      CLOUDFLARE_IPV6: ${CLOUDFLARE_IPV6:-false}
+      CLOUDFLARE_UPDATE_INTERVAL: ${CLOUDFLARE_UPDATE_INTERVAL:-300}
+    secrets:
+      - cloudflare_token
+    volumes:
+      - ./deploy/rustfs/update-cloudflare.mjs:/usr/local/bin/update-cloudflare.mjs:ro
+
+secrets:
+  cloudflare_token:
+    file: ${CLOUDFLARE_TOKEN_FILE:-./.risuai/cloudflare-token}

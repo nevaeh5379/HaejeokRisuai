@@ -1,0 +1,10 @@
+services:
+  risuai:
+    networks:
+      - default
+      - proxy
+
+networks:
+  proxy:
+    name: ${RISUAI_PROXY_NETWORK:?Set RISUAI_PROXY_NETWORK}
+    external: true

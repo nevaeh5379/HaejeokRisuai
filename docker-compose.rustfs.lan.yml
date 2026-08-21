@@ -1,0 +1,4 @@
+services:
+  risuai:
+    ports:
+      - "0.0.0.0:${RISUAI_PORT:-6001}:6001"

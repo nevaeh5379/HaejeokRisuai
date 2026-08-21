@@ -81,6 +81,70 @@ export default defineConfig(({command, mode}) => {
                 test: /node_modules[\\/]@lucide[\\/]svelte[\\/]dist[\\/]icons[\\/]/,
                 priority: 90,
               },
+              {
+                // Monaco editor is large and only needed for code/script editing.
+                // Group all monaco modules into a single chunk to avoid ~80
+                // per-language worker requests on initial load.
+                name: 'monaco',
+                test: /node_modules[\\/]monaco-editor/,
+                priority: 80,
+              },
+              {
+                // highlight.js ships ~80 language definitions as separate
+                // entry points; without grouping each becomes its own request.
+                name: 'highlightjs',
+                test: /node_modules[\\/]highlight\.js/,
+                priority: 80,
+              },
+              {
+                // PDF.js worker + viewer — large, only needed for PDF inlays.
+                name: 'pdfjs',
+                test: /node_modules[\\/]pdfjs-dist/,
+                priority: 80,
+              },
+              {
+                // SQLite WASM — only needed for OPFS-backed storage.
+                name: 'sqlite',
+                test: /node_modules[\\/]@sqlite\.org[\\/]sqlite-wasm/,
+                priority: 80,
+              },
+              {
+                // Hugging Face transformers — large model inference lib.
+                name: 'transformers',
+                test: /node_modules[\\/]@huggingface[\\/]transformers/,
+                priority: 80,
+              },
+              {
+                // Web LLM — large, only needed for in-browser LLM inference.
+                name: 'webllm',
+                test: /node_modules[\\/]@mlc-ai[\\/]web-llm/,
+                priority: 80,
+              },
+              {
+                // Three.js — 3D rendering, only used by visual novel mode.
+                name: 'three',
+                test: /node_modules[\\/]three/,
+                priority: 80,
+              },
+              {
+                // Bergamot translator — WASM-based translation, lazy-loaded.
+                name: 'bergamot',
+                test: /node_modules[\\/]@browsermt[\\/]bergamot-translator/,
+                priority: 80,
+              },
+              {
+                // Web tokenizers — large tokenizer data, lazy-loaded.
+                name: 'tokenizers',
+                test: /node_modules[\\/]@mlc-ai[\\/]web-tokenizers/,
+                priority: 80,
+              },
+              {
+                // Catch-all for remaining node_modules — consolidates the long
+                // tail of small dependency chunks into a single vendor chunk.
+                name: 'vendor',
+                test: /node_modules/,
+                priority: 1,
+              },
             ]
           }
         }
