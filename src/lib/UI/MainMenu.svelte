@@ -3,15 +3,21 @@
     import { ArrowLeft, StarIcon, SortAscIcon, SearchIcon } from "@lucide/svelte";
     import { getVersionString } from "src/ts/globalApi.svelte";
     import { language } from "src/lang";
-    import { getCharImagesBatch } from "src/ts/characterImage";
+    import { getCharImagesBatch, fullImageBlobCache } from "src/ts/characterImage";
     import { changeChar } from "src/ts/characters";
     import { matchCharacterKorean } from "src/ts/util/koreanSearch";
     import Title from "./Title.svelte";
     import LazyComponent from '../Others/LazyComponent.svelte'
+    import { onDestroy } from "svelte";
 
     const realmLoader = () => import('./Realm/RealmMain.svelte')
 
     type SortMode = 'default' | 'name' | 'recent' | 'favorite'
+
+    let isMounted = true
+    onDestroy(() => {
+        isMounted = false
+    })
 
     let sortMode = $state<SortMode>('default')
     let showFavoritesOnly = $state(false)
@@ -37,8 +43,8 @@
 
     // Image URL cache — keyed by chaId, survives re-sort/filter without re-fetch
     let imageUrlCache = $state(new Map<string, string | null>())
-    // Non-reactive set to track which chaIds have been requested — prevents duplicate fetches
-    let requestedIds = new Set<string>()
+    // Non-reactive set to track which chaIds currently have a fetch in-flight
+    let inFlightIds = new Set<string>()
 
     let columnCount = $derived.by(() => {
         if (innerWidth >= 1280) return 6
@@ -143,38 +149,73 @@
     // Preload image URLs for visible items in single high-DPI display WebP batch request
     $effect(() => {
         const items = visibleCharacters
-        const toLoad = items.filter(({ char }) =>
-            char.image && !DBState.db.hideAllImages && !requestedIds.has(char.chaId)
-        )
+        if (DBState.db.hideAllImages) return
+
+        const toLoad: typeof items = []
+        let cacheUpdated = false
+
+        for (const item of items) {
+            const { char } = item
+            if (!char.image) continue
+            if (imageUrlCache.has(char.chaId)) continue
+
+            const cached = fullImageBlobCache.get(`display_${char.image}`) ?? fullImageBlobCache.get(char.image)
+            if (cached) {
+                imageUrlCache.set(char.chaId, cached)
+                cacheUpdated = true
+                continue
+            }
+
+            if (!inFlightIds.has(char.chaId)) {
+                toLoad.push(item)
+            }
+        }
+
+        if (cacheUpdated) {
+            imageUrlCache = new Map(imageUrlCache)
+        }
+
         if (toLoad.length === 0) return
 
         for (const { char } of toLoad) {
-            requestedIds.add(char.chaId)
+            inFlightIds.add(char.chaId)
         }
 
-        let cancelled = false
         const locs = toLoad.map(({ char }) => char.image)
         getCharImagesBatch(locs, { size: 'display' }).then((batchMap) => {
-            if (cancelled) return
             for (const { char } of toLoad) {
+                inFlightIds.delete(char.chaId)
                 const src = batchMap.get(char.image) ?? null
                 imageUrlCache.set(char.chaId, src)
             }
-            imageUrlCache = new Map(imageUrlCache)
+            if (isMounted) {
+                imageUrlCache = new Map(imageUrlCache)
+            }
         }).catch((err) => {
-            if (cancelled) return
-            console.error(err)
+            console.error('Failed to batch load character images', err)
             for (const { char } of toLoad) {
+                inFlightIds.delete(char.chaId)
                 imageUrlCache.set(char.chaId, null)
             }
-            imageUrlCache = new Map(imageUrlCache)
+            if (isMounted) {
+                imageUrlCache = new Map(imageUrlCache)
+            }
         })
-
-        return () => { cancelled = true }
     })
 
-    function getImageUrl(chaId: string): string | null | undefined {
-        return imageUrlCache.get(chaId)
+    function getImageUrl(charOrId: any): string | null | undefined {
+        const char = typeof charOrId === 'object' && charOrId !== null
+            ? charOrId
+            : DBState.db.characters?.find((c: any) => c.chaId === charOrId)
+        if (!char?.image || DBState.db.hideAllImages) return null
+        if (imageUrlCache.has(char.chaId)) {
+            return imageUrlCache.get(char.chaId)
+        }
+        const cached = fullImageBlobCache.get(`display_${char.image}`) ?? fullImageBlobCache.get(char.image)
+        if (cached) {
+            return cached
+        }
+        return undefined
     }
 
     function toggleFavorite(index: number) {
@@ -312,7 +353,7 @@
                   }}
                 >
                   {#if char.image && !DBState.db.hideAllImages}
-                    {@const url = getImageUrl(char.chaId)}
+                    {@const url = getImageUrl(char)}
                     <div class="relative w-full overflow-hidden bg-darkbutton/50 rounded-xl min-h-[140px] flex items-center justify-center">
                       {#if url === undefined}
                         <div class="w-full aspect-[3/4] bg-darkbutton animate-pulse"></div>
