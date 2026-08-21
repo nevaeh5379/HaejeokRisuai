@@ -56,34 +56,41 @@ class SettingsStore {
         delete (settingsCopy as any).characters
         delete (settingsCopy as any).isSql
 
+        for (const [key, val] of Object.entries(settingsCopy)) {
+            if (key === 'characters' || key === 'isSql') continue
+            this.previousFingerprints.set(key, snapshotFingerprint($state.snapshot(val)))
+        }
+
         this.state = settingsCopy
         this.observe()
     }
 
     private observe(): void {
-        let initial = true
         this.rootDispose = $effect.root(() => {
             $effect(() => {
                 const keys = Object.keys(this.state)
                 for (const key of keys) {
                     if (key === 'characters' || key === 'isSql') continue
                     const val = this.state[key]
+                    trackDeep(val)
                     const snapshot = $state.snapshot(val)
                     const fp = snapshotFingerprint(snapshot)
-                    if (initial) {
-                        trackDeep(val)
+                    const prev = this.previousFingerprints.get(key)
+                    if (prev !== fp) {
                         this.previousFingerprints.set(key, fp)
-                    } else {
-                        const prev = this.previousFingerprints.get(key)
-                        if (prev !== fp) {
-                            this.previousFingerprints.set(key, fp)
-                            this.pendingDeletes.delete(key)
-                            this.pendingUpserts.set(key, snapshot)
-                            this.scheduleCommit()
-                        }
+                        this.pendingDeletes.delete(key)
+                        this.pendingUpserts.set(key, snapshot)
+                        this.scheduleCommit()
                     }
                 }
-                initial = false
+                for (const prevKey of this.previousFingerprints.keys()) {
+                    if (!keys.includes(prevKey)) {
+                        this.previousFingerprints.delete(prevKey)
+                        this.pendingUpserts.delete(prevKey)
+                        this.pendingDeletes.add(prevKey)
+                        this.scheduleCommit()
+                    }
+                }
             })
         })
     }

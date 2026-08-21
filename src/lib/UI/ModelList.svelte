@@ -89,7 +89,7 @@
             {#if settingsStore.state.customModels?.length > 0}
                 <Accordion name={language.customModels}>
                     {#each settingsStore.state.customModels as model}
-                        <button class="hover:bg-selected px-6 py-2 text-lg" onclick={() => {changeModel(model.id)}}>{model.name ?? "Unnamed"}</button>
+                        <button class="hover:bg-selected px-6 py-2 text-lg" onclick={() => {changeModel(model.id)}}>{model.name || "Unnamed"}</button>
                     {/each}
                 </Accordion>
 

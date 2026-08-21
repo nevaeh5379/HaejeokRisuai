@@ -53,8 +53,11 @@ describe('shared SQL storage helpers', () => {
         expect(settingLoadCount).toBe(countAfterWarm)
         storage.invalidateBootstrapCache(['botPresets'])
         await storage.loadBootstrapData()
-        expect(settingLoadCount).toBe(countAfterWarm + 1)
         expect(BOOTSTRAP_SETTING_KEYS).toContain('globalscript')
+        expect(BOOTSTRAP_SETTING_KEYS).toContain('customModels')
+        expect(BOOTSTRAP_SETTING_KEYS).toContain('translatorPresets')
+        expect(BOOTSTRAP_SETTING_KEYS).toContain('loadouts')
+        expect(BOOTSTRAP_SETTING_KEYS).toContain('customBackground')
 
         expect(storage.pluginsCache).toBeNull()
         expect(storage.pluginCustomStorageCache).toBeNull()

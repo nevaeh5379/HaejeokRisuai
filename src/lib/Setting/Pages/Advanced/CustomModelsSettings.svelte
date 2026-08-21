@@ -19,20 +19,24 @@
 </script>
 
 {#snippet CustomFlagButton(index:number,name:string,flag:LLMFlags)}
+    {@const flags = settingsStore.state.customModels[index]?.flags ?? []}
     <Button className="mt-2" onclick={(e) => {
+        if(!settingsStore.state.customModels[index].flags){
+            settingsStore.state.customModels[index].flags = []
+        }
         if(settingsStore.state.customModels[index].flags.includes(flag)){
             settingsStore.state.customModels[index].flags = settingsStore.state.customModels[index].flags.filter((f: LLMFlags) => f !== flag)
         }
         else{
             settingsStore.state.customModels[index].flags.push(flag)
         }
-    }} styled={settingsStore.state.customModels[index].flags.includes(flag) ? 'primary' : 'outlined'}>
+    }} styled={flags.includes(flag) ? 'primary' : 'outlined'}>
         {name}
     </Button>
 {/snippet}
 
 {#snippet mainBody()}
-    {#each settingsStore.state.customModels as model, index (model.id)}
+    {#each settingsStore.state.customModels ?? [] as model, index (model.id)}
         <div class="flex flex-col mt-2">
             <button class="hover:bg-selected px-6 py-2 text-lg rounded-t-md border-selected border flex justify-between items-center"
                 class:bg-selected={openedModels.has(model.id)}
@@ -46,7 +50,7 @@
                     openedModels = new Set(openedModels)
                 }}
             >
-                <span class="text-left">{model.name ?? "Unnamed"}</span>
+                <span class="text-left">{model.name || "Unnamed"}</span>
                 <div class="flex items-center gap-1">
                     <Button size="sm" styled="outlined" onclick={(e) => {
                         e.stopPropagation()
@@ -172,6 +176,7 @@
     {/each}
     <div class="flex flex-col mt-2">
         <button class="hover:bg-selected px-6 py-2 text-lg rounded-md border-selected border flex justify-center items-center cursor-pointer" onclick={() => {
+            settingsStore.state.customModels ??= []
             settingsStore.state.customModels.push({
                 internalId: "",
                 url: "",

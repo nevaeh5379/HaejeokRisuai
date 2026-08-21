@@ -271,7 +271,10 @@ describe('NodePostgresStorage browser client', () => {
                 database: { username: 'test-user', characters: [] },
             }), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
-                database: { plugins: [{ name: 'test-plugin' }] },
+                database: {
+                    plugins: [{ name: 'test-plugin' }],
+                    customModels: [{ id: 'xcustom:::test', name: 'My Custom' }],
+                },
                 hash: 'bootstrap-hash-1',
             }), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -286,6 +289,7 @@ describe('NodePostgresStorage browser client', () => {
         const shallowDb = shallowResult?.database as any
         expect(shallowDb?.username).toBe('test-user')
         expect(shallowDb?.plugins).toHaveLength(1)
+        expect(shallowDb?.customModels).toEqual([{ id: 'xcustom:::test', name: 'My Custom' }])
         expect(shallowDb?.pluginCustomStorage).toEqual({})
         expect(fetchMock.mock.calls[0][0]).toBe('/api/database-v2?shallow=true')
         expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/bootstrap')

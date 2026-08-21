@@ -29,6 +29,7 @@ const PROMPT_SETTING_KEYS = [
 // every lazy domain at the same time.
 const BOOTSTRAP_SETTING_KEYS = [
     'plugins', 'personas', 'botPresets', 'loreBook', 'modules', 'globalscript',
+    'customModels', 'translatorPresets', 'loadouts', 'customBackground',
     ...PROMPT_SETTING_KEYS,
 ];
 
