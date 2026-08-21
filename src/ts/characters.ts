@@ -18,10 +18,10 @@ import { isNodeServer } from "./platform";
 import { NodeStorage } from "./storage/nodeStorage";
 import { releaseInactiveChatMessages } from "./storage/dataSession.svelte";
 import { createBlankChar } from './characterDefaults'
-import { getCharImage } from './characterImage'
+import { getCharImage, getCharImagesBatch } from './characterImage'
 
 export { createBlankChar } from './characterDefaults'
-export { getCharImage } from './characterImage'
+export { getCharImage, getCharImagesBatch } from './characterImage'
 
 export function createNewCharacter() {
     DBState.db.characters.push(createBlankChar())

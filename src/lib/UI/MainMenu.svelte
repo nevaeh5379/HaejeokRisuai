@@ -3,7 +3,7 @@
     import { ArrowLeft, StarIcon, SortAscIcon, SearchIcon } from "@lucide/svelte";
     import { getVersionString } from "src/ts/globalApi.svelte";
     import { language } from "src/lang";
-    import { getCharImage } from "src/ts/characterImage";
+    import { getCharImagesBatch } from "src/ts/characterImage";
     import { changeChar } from "src/ts/characters";
     import Title from "./Title.svelte";
     import LazyComponent from '../Others/LazyComponent.svelte'
@@ -15,7 +15,18 @@
     let sortMode = $state<SortMode>('default')
     let showFavoritesOnly = $state(false)
     let showHidden = $state(false)
+    let searchInput = $state('')
     let searchQuery = $state('')
+    let innerWidth = $state(typeof window !== 'undefined' ? window.innerWidth : 1024)
+
+    // Debounce search query to prevent unnecessary intermediate network fetches
+    $effect(() => {
+        const query = searchInput
+        const timer = setTimeout(() => {
+            searchQuery = query
+        }, 200)
+        return () => clearTimeout(timer)
+    })
 
     let contextMenu = $state<{ x: number; y: number; index: number } | null>(null)
 
@@ -28,9 +39,17 @@
     // Non-reactive set to track which chaIds have been requested — prevents duplicate fetches
     let requestedIds = new Set<string>()
 
-    // Progressive loading — only render items visible (or near) the viewport
-    const PAGE_SIZE = 24
-    let visibleCount = $state(PAGE_SIZE)
+    let columnCount = $derived.by(() => {
+        if (innerWidth >= 1280) return 6
+        if (innerWidth >= 1024) return 5
+        if (innerWidth >= 768) return 4
+        if (innerWidth >= 640) return 3
+        return 2
+    })
+
+    // Fold-aware progressive loading: only render items visible in viewport
+    let pageSize = $derived(Math.max(12, columnCount * 3))
+    let visibleCount = $state(18)
 
     function isFavorite(char: any): boolean {
         return favorites.includes(char.chaId)
@@ -89,11 +108,19 @@
 
     let visibleCharacters = $derived(sortedCharacters.slice(0, visibleCount))
 
+    let columns = $derived.by(() => {
+        const cols: typeof visibleCharacters[] = Array.from({ length: columnCount }, () => [])
+        for (let i = 0; i < visibleCharacters.length; i++) {
+            cols[i % columnCount].push(visibleCharacters[i])
+        }
+        return cols
+    })
+
     // Reset paging when filter/sort/search changes
     $effect(() => {
         // Touch reactive deps to track changes
         void showHidden; void showFavoritesOnly; void searchQuery; void sortMode
-        visibleCount = PAGE_SIZE
+        visibleCount = pageSize
     })
 
     // IntersectionObserver sentinel — loads next page when sentinel enters view
@@ -106,15 +133,15 @@
         observer = new IntersectionObserver((entries) => {
             for (const entry of entries) {
                 if (entry.isIntersecting && visibleCount < sortedCharacters.length) {
-                    visibleCount = Math.min(visibleCount + PAGE_SIZE, sortedCharacters.length)
+                    visibleCount = Math.min(visibleCount + pageSize, sortedCharacters.length)
                 }
             }
-        }, { rootMargin: '300px' })
+        }, { rootMargin: '600px' })
         observer.observe(sentinelEl)
         return () => observer?.disconnect()
     })
 
-    // Preload image URLs for visible items in batch (parallel)
+    // Preload image URLs for visible items in single high-DPI display WebP batch request
     $effect(() => {
         const items = visibleCharacters
         const toLoad = items.filter(({ char }) =>
@@ -127,17 +154,23 @@
         }
 
         let cancelled = false
-        for (const { char } of toLoad) {
-            getCharImage(char.image, 'plain').then((src) => {
-                if (cancelled) return
-                imageUrlCache.set(char.chaId, src ?? null)
-                imageUrlCache = new Map(imageUrlCache)
-            }).catch(() => {
-                if (cancelled) return
+        const locs = toLoad.map(({ char }) => char.image)
+        getCharImagesBatch(locs, { size: 'display' }).then((batchMap) => {
+            if (cancelled) return
+            for (const { char } of toLoad) {
+                const src = batchMap.get(char.image) ?? null
+                imageUrlCache.set(char.chaId, src)
+            }
+            imageUrlCache = new Map(imageUrlCache)
+        }).catch((err) => {
+            if (cancelled) return
+            console.error(err)
+            for (const { char } of toLoad) {
                 imageUrlCache.set(char.chaId, null)
-                imageUrlCache = new Map(imageUrlCache)
-            })
-        }
+            }
+            imageUrlCache = new Map(imageUrlCache)
+        })
+
         return () => { cancelled = true }
     })
 
@@ -195,7 +228,7 @@
         favorite: 'Favorites First',
     }
 </script>
-<svelte:window on:click={closeContextMenu} on:contextmenu|preventDefault={closeContextMenu} />
+<svelte:window bind:innerWidth on:click={closeContextMenu} on:contextmenu|preventDefault={closeContextMenu} />
 <div class="h-full w-full flex flex-col overflow-y-auto items-center">
     {#if !$OpenRealmStore}
       <Title />
@@ -217,7 +250,7 @@
             type="text"
             placeholder="Search characters..."
             class="bg-transparent text-textcolor outline-none text-sm w-full placeholder:text-textcolor2/60"
-            bind:value={searchQuery}
+            bind:value={searchInput}
           />
         </div>
         <button
@@ -247,70 +280,76 @@
         </div>
       </div>
       {#if visibleCharacters.length > 0}
-        <div class="columns-2 sm:columns-3 md:columns-4 lg:columns-5 xl:columns-6 gap-3">
-          {#each visibleCharacters as { char, index } (char.chaId)}
-            <button
-              class="group relative w-full mb-3 break-inside-avoid overflow-hidden rounded-xl bg-darkbg block transition-all duration-300 hover:-translate-y-1 hover:ring-2 hover:ring-selected/50 hover:shadow-xl hover:shadow-darkbg/50"
-              onclick={() => changeChar(index)}
-              oncontextmenu={(e) => openContextMenu(index, e)}
-              ontouchstart={(e) => {
-                let timer: ReturnType<typeof setTimeout>
-                let moved = false
-                const start = { x: e.touches[0].clientX, y: e.touches[0].clientY }
-                const onStart = (ev: TouchEvent) => {
-                    if (Math.abs(ev.touches[0].clientX - start.x) > 10 || Math.abs(ev.touches[0].clientY - start.y) > 10) {
-                        moved = true
-                        clearTimeout(timer)
+        <div class="flex gap-3 w-full items-start">
+          {#each columns as col}
+            <div class="flex-1 flex flex-col gap-3 min-w-0">
+              {#each col as { char, index } (char.chaId)}
+                <button
+                  class="group relative w-full break-inside-avoid overflow-hidden rounded-xl bg-darkbg block transition-all duration-300 hover:-translate-y-1 hover:ring-2 hover:ring-selected/50 hover:shadow-xl hover:shadow-darkbg/50"
+                  onclick={() => changeChar(index)}
+                  oncontextmenu={(e) => openContextMenu(index, e)}
+                  ontouchstart={(e) => {
+                    let timer: ReturnType<typeof setTimeout>
+                    let moved = false
+                    const start = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+                    const onStart = (ev: TouchEvent) => {
+                        if (Math.abs(ev.touches[0].clientX - start.x) > 10 || Math.abs(ev.touches[0].clientY - start.y) > 10) {
+                            moved = true
+                            clearTimeout(timer)
+                        }
                     }
-                }
-                const onEnd = () => {
-                    clearTimeout(timer)
-                    e.target.removeEventListener('touchmove', onStart)
-                    e.target.removeEventListener('touchend', onEnd)
-                }
-                timer = setTimeout(() => {
-                    if (!moved) openContextMenuTouch(index, e)
-                    e.target.removeEventListener('touchmove', onStart)
-                    e.target.removeEventListener('touchend', onEnd)
-                }, 500)
-                e.target.addEventListener('touchmove', onStart, { passive: true })
-                e.target.addEventListener('touchend', onEnd, { passive: true })
-              }}
-            >
-              {#if char.image && !DBState.db.hideAllImages}
-                {@const url = getImageUrl(char.chaId)}
-                {#if url === undefined}
-                  <div class="w-full aspect-square bg-darkbutton animate-pulse"></div>
-                {:else if url}
-                  <img
-                    src={url}
-                    alt={char.name}
-                    class="w-full h-auto block transition-transform duration-300 group-hover:scale-105 {isHidden(char) && DBState.db.blurHiddenCharacters ? 'blur-xl' : ''}"
-                    loading="lazy"
-                    decoding="async"
-                    draggable="false"
-                  />
-                {:else}
-                  <div class="w-full aspect-square flex items-center justify-center bg-darkbutton text-textcolor2 text-4xl font-bold">
-                    {char.name?.charAt(0)?.toUpperCase() ?? '?'}
+                    const onEnd = () => {
+                        clearTimeout(timer)
+                        e.target.removeEventListener('touchmove', onStart)
+                        e.target.removeEventListener('touchend', onEnd)
+                    }
+                    timer = setTimeout(() => {
+                        if (!moved) openContextMenuTouch(index, e)
+                        e.target.removeEventListener('touchmove', onStart)
+                        e.target.removeEventListener('touchend', onEnd)
+                    }, 500)
+                    e.target.addEventListener('touchmove', onStart, { passive: true })
+                    e.target.addEventListener('touchend', onEnd, { passive: true })
+                  }}
+                >
+                  {#if char.image && !DBState.db.hideAllImages}
+                    {@const url = getImageUrl(char.chaId)}
+                    <div class="relative w-full overflow-hidden bg-darkbutton/50 rounded-xl min-h-[140px] flex items-center justify-center">
+                      {#if url === undefined}
+                        <div class="w-full aspect-[3/4] bg-darkbutton animate-pulse"></div>
+                      {:else if url}
+                        <img
+                          src={url}
+                          alt={char.name}
+                          class="w-full h-auto block transition-all duration-300 group-hover:scale-105 {isHidden(char) && DBState.db.blurHiddenCharacters ? 'blur-xl' : ''}"
+                          loading="lazy"
+                          decoding="async"
+                          draggable="false"
+                        />
+                      {:else}
+                        <div class="w-full aspect-[3/4] flex items-center justify-center bg-darkbutton text-textcolor2 text-4xl font-bold">
+                          {char.name?.charAt(0)?.toUpperCase() ?? '?'}
+                        </div>
+                      {/if}
+                    </div>
+                  {:else}
+                    <div class="w-full aspect-square flex items-center justify-center bg-darkbutton text-textcolor2 text-4xl font-bold">
+                      {char.name?.charAt(0)?.toUpperCase() ?? '?'}
+                    </div>
+                  {/if}
+                  {#if isFavorite(char)}
+                    <div class="absolute top-2 right-2 z-10 flex gap-1">
+                      <div class="p-1 rounded-full bg-black/40 backdrop-blur-sm text-yellow-400 pointer-events-none">
+                        <StarIcon class="w-3 h-3" fill="currentColor" />
+                      </div>
+                    </div>
+                  {/if}
+                  <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 pt-8 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    <span class="text-white text-sm font-medium truncate block">{char.name}</span>
                   </div>
-                {/if}
-              {:else}
-                <div class="w-full aspect-square flex items-center justify-center bg-darkbutton text-textcolor2 text-4xl font-bold">
-                  {char.name?.charAt(0)?.toUpperCase() ?? '?'}
-                </div>
-              {/if}
-              {#if isFavorite(char)}
-                <div class="absolute top-2 right-2 z-10 flex gap-1">
-                  <div class="p-1 rounded-full bg-black/40 backdrop-blur-sm text-yellow-400 pointer-events-none">
-                    <StarIcon class="w-3 h-3" fill="currentColor" />
-                  </div>
-                </div>
-              {/if}
-              <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 pt-8 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                <span class="text-white text-sm font-medium truncate block">{char.name}</span>
-              </div>
-            </button>
+                </button>
+              {/each}
+            </div>
           {/each}
         </div>
         {#if visibleCount < sortedCharacters.length}

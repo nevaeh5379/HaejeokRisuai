@@ -98,12 +98,21 @@ export class NodeStorage{
         return this.cachedAuthToken
     }
 
-    async getDirectUrl(key: string, options?: { thumbnail?: boolean, target?: 'active' | 'fs' | 's3' | 'azuresql' }): Promise<string> {
+    async getDirectUrl(key: string, options?: { thumbnail?: boolean, size?: 'thumb' | 'display' | 'full', width?: number, height?: number, target?: 'active' | 'fs' | 's3' | 'azuresql' }): Promise<string> {
         const auth = await this.getCachedAuth()
         const hex = Buffer.from(key, 'utf-8').toString('hex')
         const params: string[] = []
         if (options?.thumbnail) {
             params.push('thumb=1')
+        }
+        if (options?.size === 'display') {
+            params.push('size=display')
+        }
+        if (options?.width) {
+            params.push(`width=${options.width}`)
+        }
+        if (options?.height) {
+            params.push(`height=${options.height}`)
         }
         if (options?.target && options.target !== 'active') {
             params.push(`target=${options.target}`)
@@ -330,7 +339,7 @@ export class NodeStorage{
     async getItems(
       keys: string[],
       onProgress?: (progress: NodeStorageBulkReadProgress) => void,
-      options?: { thumbnail?: boolean }
+      options?: { thumbnail?: boolean, size?: 'thumb' | 'display' | 'full', width?: number, height?: number }
     ): Promise<Map<string, Buffer>> {
       const results = new Map<string, Buffer>()
       const receivingChunks = new Map<string, Buffer[]>()
@@ -363,7 +372,7 @@ export class NodeStorage{
       keys: string[],
       handlers: NodeStorageBulkReadHandlers,
       onProgress?: (progress: NodeStorageBulkReadProgress) => void,
-      options?: { thumbnail?: boolean, prefix?: string }
+      options?: { thumbnail?: boolean, prefix?: string, size?: 'thumb' | 'display' | 'full', width?: number, height?: number }
     ): Promise<void> {
       await this.checkAuth()
 
@@ -372,13 +381,23 @@ export class NodeStorage{
       )
 
       const isThumb = options?.thumbnail ?? false
-      const url = isThumb ? "/api/read-bulk?thumb=1" : "/api/read-bulk"
+      const isDisplay = options?.size === 'display'
+      const params: string[] = []
+      if (isThumb) params.push('thumb=1')
+      if (isDisplay) params.push('size=display')
+      if (options?.width) params.push(`width=${options.width}`)
+      if (options?.height) params.push(`height=${options.height}`)
+      const queryStr = params.length > 0 ? `?${params.join('&')}` : ''
+      const url = `/api/read-bulk${queryStr}`
 
       const response = await fetch(url, {
           method: "POST",
           body: JSON.stringify({
               ...(options?.prefix ? { prefix: options.prefix } : { filePaths }),
               thumb: isThumb,
+              size: options?.size,
+              width: options?.width,
+              height: options?.height
           }),
           cache: 'no-cache',
           headers: {

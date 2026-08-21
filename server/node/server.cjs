@@ -2107,6 +2107,11 @@ app.post('/api/read-bulk', authenticatedRouteLimiter, async(req, res, next) => {
         ? req.body.prefix.slice(0, 1024)
         : '';
     const isThumb = req.query.thumb === '1' || req.query.thumb === 'true' || req.body?.thumb === true || req.headers['x-thumbnail'] === 'true';
+    const isDisplay = req.query.size === 'display' || req.body?.size === 'display';
+    const reqWidth = parseInt(req.query.width || req.body?.width) || (isDisplay ? 512 : (isThumb ? 128 : undefined));
+    const reqHeight = parseInt(req.query.height || req.body?.height) || (isDisplay ? 768 : (isThumb ? 128 : undefined));
+    const useThumb = isThumb || isDisplay || Boolean(reqWidth && reqHeight);
+    const thumbOptions = useThumb ? { width: reqWidth, height: reqHeight } : undefined;
 
     if (!Array.isArray(filePaths) && !prefix) {
         res.status(400).send({
@@ -2131,8 +2136,8 @@ app.post('/api/read-bulk', authenticatedRouteLimiter, async(req, res, next) => {
     for (const filePath of filePaths) {
         if (!isHex(filePath)) continue;
         try {
-            const result = isThumb && typeof storage.readThumbnail === 'function'
-                ? await storage.readThumbnail(filePath)
+            const result = useThumb && typeof storage.readThumbnail === 'function'
+                ? await storage.readThumbnail(filePath, thumbOptions)
                 : await storage.read(filePath);
             if (!result.exists) continue;
 
@@ -4068,6 +4073,11 @@ app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
     }
     let filePath = req.headers['file-path'] || req.query.path || req.query['file-path'] || req.query.filePath;
     const isThumb = req.query.thumb === '1' || req.query.thumb === 'true' || req.headers['x-thumbnail'] === 'true';
+    const isDisplay = req.query.size === 'display';
+    const reqWidth = parseInt(req.query.width) || (isDisplay ? 512 : (isThumb ? 128 : undefined));
+    const reqHeight = parseInt(req.query.height) || (isDisplay ? 768 : (isThumb ? 128 : undefined));
+    const useThumb = isThumb || isDisplay || Boolean(reqWidth && reqHeight);
+    const thumbOptions = useThumb ? { width: reqWidth, height: reqHeight } : undefined;
     const target = req.query.target || req.headers['x-storage-target'] || 'active';
     if (!filePath) {
         res.status(400).send({
@@ -4090,8 +4100,8 @@ app.get('/api/read', authenticatedRouteLimiter, async (req, res, next) => {
         } else {
             storage = assetStorageManager.getStorage();
         }
-        const result = isThumb && typeof storage.readThumbnail === 'function'
-            ? await storage.readThumbnail(filePath)
+        const result = useThumb && typeof storage.readThumbnail === 'function'
+            ? await storage.readThumbnail(filePath, thumbOptions)
             : await storage.read(filePath);
         if(!result.exists){
             res.send();
