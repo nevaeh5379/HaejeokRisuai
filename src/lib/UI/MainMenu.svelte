@@ -1,120 +1,74 @@
 <script lang="ts">
-    import { DBState } from 'src/ts/stores.svelte';
-    import { OpenRealmStore, RealmInitialOpenChar } from "src/ts/stores.svelte";
-    import { ArrowLeft, ArrowRight, FolderCodeIcon, GlobeIcon, MailIcon, Send } from "@lucide/svelte";
-    import { getVersionString, openURL } from "src/ts/globalApi.svelte";
+    import { DBState, OpenRealmStore } from "src/ts/stores.svelte";
+    import { ArrowLeft } from "@lucide/svelte";
+    import { getVersionString } from "src/ts/globalApi.svelte";
     import { language } from "src/lang";
-    import { getRisuHub, hubAdditionalHTML } from 'src/ts/hubCatalog';
-    import RisuHubIcon from "./Realm/RealmHubIcon.svelte";
+    import { getCharImage } from "src/ts/characterImage";
+    import { changeChar } from "src/ts/characters";
     import Title from "./Title.svelte";
     import LazyComponent from '../Others/LazyComponent.svelte'
 
     const realmLoader = () => import('./Realm/RealmMain.svelte')
 
-    type RelatedLink = {
-      title: string;
-      description: string;
-      href: string;
-      logoIcon: "source" | "globe" | "mail" | "paper-airplane";
-    };
-
-    const relatedLinkIconClass =
-      "h-40 w-40 md:h-44 md:w-44 origin-right -rotate-12 opacity-[0.12] transition-all duration-500 group-hover:scale-105 group-hover:opacity-[0.22]";
-
-    const relatedLinks: RelatedLink[] = [
-      {
-        title: "Discord",
-        description: "Join our Discord server to chat with other users and the developer.",
-        href: "https://discord.gg/Exy3NrqkGm",
-        logoIcon: "paper-airplane"
-      },
-      {
-        title: "Website",
-        description: "See the official website for the project.",
-        href: "https://risuai.net",
-        logoIcon: "globe"
-      },
-      {
-        title: "GitHub",
-        description: "View the source code and contribute to the project.",
-        href: "https://github.com/kwaroran/RisuAI",
-        logoIcon: "source"
-      },
-      {
-        title: "Email",
-        description: "Contact the developer directly.",
-        href: "mailto:support@risuai.net",
-        logoIcon: "mail"
-      }
-    ];
+    let characters = $derived(DBState.db.characters ?? [])
 </script>
 <div class="h-full w-full flex flex-col overflow-y-auto items-center">
     {#if !$OpenRealmStore}
       <Title />
       <h3 class="text-textcolor2 mt-1">Version {getVersionString()}</h3>
     {/if}
-    <div class="w-full flex p-4 flex-col text-textcolor max-w-4xl">
+    <div class="w-full flex p-4 flex-col text-textcolor max-w-6xl">
       {#if !$OpenRealmStore}
       <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
-      <h1 class="text-2xl font-bold">Recently Uploaded<button class="text-base font-medium float-right p-1 bg-darkbg rounded-md hover:ring-3" onclick={() => {
-        $OpenRealmStore = true
-      }}>Get More</button></h1>
-          {#if !DBState.db.hideRealm}
-            {#await getRisuHub({
-                  search: '',
-                  page: 0,
-                  nsfw: false,
-                  sort: 'recommended'
-              }) then charas}
-            {#if charas.length > 0}
-              {@html hubAdditionalHTML}
-              <div class="w-full flex gap-4 p-2 flex-wrap justify-center">
-                  {#each charas as chara}
-                      <RisuHubIcon onClick={() => {
-                        $OpenRealmStore = true
-                        if(DBState.db.realmDirectOpen){
-                            $RealmInitialOpenChar = chara
-                        }
-                      }} chara={chara} />
-                  {/each}
-              </div>
-            {:else}
-              <div class="text-textcolor2">Failed to load {language.hub}...</div>
-            {/if}
-          {/await}
-        {:else}
-          <div class="text-textcolor2">{language.hideRealm}</div>
-        {/if}
-      <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
-      <h1 class="text-2xl font-bold mb-4">
-        Related Links
-      </h1>
-        <div class="grid w-full grid-cols-1 gap-4 p-2 md:grid-cols-2">
-          {#each relatedLinks as relatedLink}
-            <button class="group relative flex min-h-[140px] flex-col justify-center overflow-hidden rounded-2xl border border-borderc/10 bg-darkbg p-6 text-left transition-all duration-300 hover:-translate-y-1 hover:border-borderc/30 hover:bg-selected/50 hover:shadow-xl hover:shadow-darkbg/50" onclick={() => {
-              openURL(relatedLink.href)
-            }}>
-              <div class="relative z-10 w-[68%] sm:w-[70%]">
-                  <h2 class="text-2xl font-bold tracking-tight text-textcolor">{relatedLink.title}</h2>
-                  <span class="mt-2 block text-base leading-relaxed text-textcolor2">
-                    {relatedLink.description}
-                  </span>
-              </div>
-              
-              <div aria-hidden="true" class="pointer-events-none absolute -right-12 top-1/2 -translate-y-1/2 text-textcolor">
-                  {#if relatedLink.logoIcon === "globe"}
-                    <GlobeIcon class={relatedLinkIconClass} strokeWidth={1} />
-                  {:else if relatedLink.logoIcon === "mail"}
-                    <MailIcon class={relatedLinkIconClass} strokeWidth={1} />
-                  {:else if relatedLink.logoIcon === "paper-airplane"}
-                    <Send class={relatedLinkIconClass} strokeWidth={1} />
-                  {:else if relatedLink.logoIcon === "source"}
-                    <FolderCodeIcon class={relatedLinkIconClass} strokeWidth={1} />
+      <div class="flex items-center justify-between mb-4">
+        <h1 class="text-2xl font-bold">{language.character}</h1>
+        <button class="text-sm font-medium px-3 py-1.5 bg-darkbg rounded-md hover:bg-selected transition-colors" onclick={() => {
+          $OpenRealmStore = true
+        }}>Get More</button>
+      </div>
+      {#if characters.length > 0}
+        <div class="columns-2 sm:columns-3 md:columns-4 lg:columns-5 xl:columns-6 gap-3">
+          {#each characters as char, index (char.chaId)}
+            <button
+              class="group relative w-full mb-3 break-inside-avoid overflow-hidden rounded-xl bg-darkbg block transition-all duration-300 hover:-translate-y-1 hover:ring-2 hover:ring-selected/50 hover:shadow-xl hover:shadow-darkbg/50"
+              onclick={() => changeChar(index)}
+            >
+              {#if char.image && !DBState.db.hideAllImages}
+                {#await getCharImage(char.image, 'plain') then src}
+                  {#if src}
+                    <img
+                      src={src}
+                      alt={char.name}
+                      class="w-full h-auto block transition-transform duration-300 group-hover:scale-105"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  {:else}
+                    <div class="w-full aspect-square flex items-center justify-center bg-darkbutton text-textcolor2 text-4xl font-bold">
+                      {char.name?.charAt(0)?.toUpperCase() ?? '?'}
+                    </div>
                   {/if}
+                {:catch}
+                  <div class="w-full aspect-square flex items-center justify-center bg-darkbutton text-textcolor2 text-4xl font-bold">
+                    {char.name?.charAt(0)?.toUpperCase() ?? '?'}
+                  </div>
+                {/await}
+              {:else}
+                <div class="w-full aspect-square flex items-center justify-center bg-darkbutton text-textcolor2 text-4xl font-bold">
+                  {char.name?.charAt(0)?.toUpperCase() ?? '?'}
+                </div>
+              {/if}
+              <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 pt-8 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                <span class="text-white text-sm font-medium truncate block">{char.name}</span>
               </div>
             </button>
           {/each}
-      </div>
+        </div>
+      {:else}
+        <div class="text-textcolor2 text-center py-12">
+          No characters yet. Click "Get More" to browse the {language.hub}.
+        </div>
+      {/if}
 
       {:else}
         <div class="flex items-center mt-4">
