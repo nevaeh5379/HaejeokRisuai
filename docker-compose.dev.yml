@@ -1,0 +1,41 @@
+name: risuai-dev-storage
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: risuai-dev-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: risuai
+      POSTGRES_USER: risuai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-risuai}
+    ports:
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - risuai-dev-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U risuai -d risuai"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: risuai-dev-rustfs
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+    ports:
+      - "${RUSTFS_BIND_ADDRESS:-127.0.0.1}:${RUSTFS_API_PORT:-9000}:9000"
+      - "${RUSTFS_BIND_ADDRESS:-127.0.0.1}:${RUSTFS_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - risuai-dev-rustfs:/data
+
+
+volumes:
+  risuai-dev-postgres:
+  risuai-dev-rustfs:

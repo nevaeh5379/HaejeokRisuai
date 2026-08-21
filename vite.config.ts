@@ -35,6 +35,19 @@ export default defineConfig(({command, mode}) => {
           });
         },
       },
+      // Inject globalThis.__NODE__ for local node-server development when VITE_NODE_SERVER is true
+      {
+        name: 'node-server-dev-inject',
+        transformIndexHtml(html) {
+          if (process.env.VITE_NODE_SERVER === 'true' || process.env.NODE_SERVER === 'true') {
+            return html.replace(
+              '<head>',
+              '<head>\n    <script>globalThis.__NODE__ = true; globalThis.__RISU_LEGAL_CONFIGURED__ = true;</script>'
+            );
+          }
+          return html;
+        },
+      },
       command === 'build' ? strip({
         include: '**/*.(mjs|js|svelte|ts)'
       }) : null
@@ -49,6 +62,30 @@ export default defineConfig(({command, mode}) => {
       port: 5174,
       strictPort: true,
       // hmr: false,
+      proxy: {
+        '/api': {
+          target: process.env.VITE_BACKEND_URL || 'http://127.0.0.1:6001',
+          changeOrigin: true,
+          ws: true,
+        },
+        '/proxy': {
+          target: process.env.VITE_BACKEND_URL || 'http://127.0.0.1:6001',
+          changeOrigin: true,
+        },
+        '/proxy2': {
+          target: process.env.VITE_BACKEND_URL || 'http://127.0.0.1:6001',
+          changeOrigin: true,
+          ws: true,
+        },
+        '/hub-proxy': {
+          target: process.env.VITE_BACKEND_URL || 'http://127.0.0.1:6001',
+          changeOrigin: true,
+        },
+        '/v1': {
+          target: process.env.VITE_BACKEND_URL || 'http://127.0.0.1:6001',
+          changeOrigin: true,
+        },
+      },
     },
     // to make use of `TAURI_ENV_DEBUG` and other env variables
     // https://v2.tauri.app/reference/environment-variables/

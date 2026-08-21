@@ -666,15 +666,36 @@ export class NodeStorage{
     private async checkAuth(){
 
         if(!this.authChecked){
-            const data = await (await fetch('/api/test_auth',{
-                headers: {
-                    'risu-auth': await this.createAuth()
-                }
-            })).json()
+            let response: Response
+            try {
+                response = await fetch('/api/test_auth',{
+                    headers: {
+                        'risu-auth': await this.createAuth()
+                    }
+                })
+            } catch (error) {
+                alertError(language.errors.networkFetch || 'Failed to connect to backend server.')
+                throw error
+            }
 
-            if(data.status === 'unset'){
+            if(!response.ok){
+                const message = `Backend server responded with status ${response.status}. Please make sure the backend server (pnpm dev:server) is running.`
+                alertError(message)
+                throw new Error(message)
+            }
+
+            let data: any
+            try {
+                data = await response.json()
+            } catch (error) {
+                const message = 'Invalid JSON response from backend server.'
+                alertError(message)
+                throw new Error(message)
+            }
+
+            if(data?.status === 'unset'){
                 const input = await digestPassword(await alertInput(language.setNodePassword))
-                const response = await fetch('/api/set_password',{
+                const setRes = await fetch('/api/set_password',{
                     method: "POST",
                     body:JSON.stringify({
                         password: input 
@@ -683,12 +704,12 @@ export class NodeStorage{
                         'content-type': 'application/json'
                     }
                 })
-                if(response.status < 200 || response.status >= 300){
-                    throw new Error(`Setting the Node server password failed (${response.status})`)
+                if(setRes.status < 200 || setRes.status >= 300){
+                    throw new Error(`Setting the Node server password failed (${setRes.status})`)
                 }
                 await this.authorizeKey(input)
             }
-            else if(data.status === 'incorrect'){
+            else if(data?.status === 'incorrect'){
                 const input = await digestPassword(await alertInput(language.inputNodePassword))
                 await this.authorizeKey(input)
             }
