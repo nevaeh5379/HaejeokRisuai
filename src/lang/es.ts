@@ -1471,4 +1471,8 @@ export const languageSpanish = {
     nanoGPTSelectFromList: "Seleccionar de la lista",
     nanoGPTManualInput: "Entrada manual",
     nanoGPTManualModelSelect: "Selección manual de modelo",
+    recentSessions: "Sesiones Recientes",
+    noRecentSessions: "Sin sesiones recientes",
+    searchSessions: "Buscar sesiones...",
+    noMatchingSessions: "No se encontraron sesiones"
 } satisfies DeepPartial<typeof import('./en').languageEnglish>;

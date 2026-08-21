@@ -1836,5 +1836,9 @@ export const languageKorean = {
     "azureSqlConnectionFailed": "Azure SQL 연결 실패",
     "azureSqlStorageMigrateFromLocal": "로컬 FS → Azure SQL 마이그레이션",
     "azureSqlStorageRollbackToLocal": "Azure SQL → 로컬 FS 롤백",
-    "azureSqlManagedByEnv": "Azure SQL 에셋 스토리지는 환경 변수로 관리되어 여기서 변경할 수 없습니다."
+    "azureSqlManagedByEnv": "Azure SQL 에셋 스토리지는 환경 변수로 관리되어 여기서 변경할 수 없습니다.",
+    "recentSessions": "최근 대화 목록",
+    "noRecentSessions": "최근 대화가 없습니다",
+    "searchSessions": "대화 검색...",
+    "noMatchingSessions": "검색 결과와 일치하는 대화가 없습니다"
 } satisfies DeepPartial<typeof import('./en').languageEnglish>

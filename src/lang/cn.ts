@@ -1472,4 +1472,8 @@ export const languageChinese = {
     nanoGPTSelectFromList: "从列表中选择",
     nanoGPTManualInput: "手动输入",
     nanoGPTManualModelSelect: "手动模式选择",
+    recentSessions: "最近对话列表",
+    noRecentSessions: "暂无最近对话",
+    searchSessions: "搜索对话...",
+    noMatchingSessions: "没有找到匹配的对话"
 } satisfies DeepPartial<typeof import('./en').languageEnglish>;

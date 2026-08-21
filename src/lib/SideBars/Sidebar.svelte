@@ -54,6 +54,7 @@
   let devTool = $state(false)
 
   const sideChatListLoader = () => import('./SideChatListForCurrent.svelte')
+  const recentSessionsLoader = () => import('./RecentSessionsList.svelte')
   const charConfigLoader = () => import('./CharConfig.svelte')
   const devToolLoader = () => import('./DevTool.svelte')
   const quickSettingsLoader = () => import('../Others/QuickSettingsGUI.svelte')
@@ -953,10 +954,7 @@
   </button>
   {#if sideBarMode === 0}
     {#if $selectedCharID < 0 || $settingsOpen}
-      <div>
-        <h1 class="text-xl">Welcome to RisuAI!</h1>
-        <span class="text-xs text-textcolor2">Select a bot to start chatting</span>
-      </div>
+      <LazyComponent loader={recentSessionsLoader} props={{ reseter }} />
     {:else if DBState.db.characters[$selectedCharID]?.chaId === '§playground'}
       <LazyComponent loader={sideChatListLoader} />
     {:else if $ConnectionOpenStore}

@@ -2023,7 +2023,11 @@ export const languageEnglish = {
     azureSqlConnectionFailed: "Azure SQL connection failed",
     azureSqlStorageMigrateFromLocal: "Migrate local FS → Azure SQL",
     azureSqlStorageRollbackToLocal: "Rollback Azure SQL → local FS",
-    azureSqlManagedByEnv: "Azure SQL asset storage is managed by environment variables and cannot be changed here."
+    azureSqlManagedByEnv: "Azure SQL asset storage is managed by environment variables and cannot be changed here.",
+    recentSessions: "Recent Sessions",
+    noRecentSessions: "No recent sessions",
+    searchSessions: "Search sessions...",
+    noMatchingSessions: "No sessions found matching your search"
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;
