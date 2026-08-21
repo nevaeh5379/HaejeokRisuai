@@ -172,6 +172,18 @@ export class WebSqliteStorage implements ISqlStorage {
             catch { (db as any)[row.key as string] = row.value }
         }
 
+        // Also merge plugin_custom_storage table if present
+        if (!db.pluginCustomStorage || Object.keys(db.pluginCustomStorage).length === 0) {
+            const pluginStorageRows = this.selectRows('SELECT key, value FROM plugin_custom_storage')
+            if (pluginStorageRows.length > 0) {
+                db.pluginCustomStorage = {}
+                for (const row of pluginStorageRows) {
+                    try { db.pluginCustomStorage[row.key as string] = JSON.parse(row.value as string) }
+                    catch { db.pluginCustomStorage[row.key as string] = row.value }
+                }
+            }
+        }
+
         const charRows = this.selectRows(
             'SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded, data FROM characters ORDER BY position',
         )
@@ -218,7 +230,11 @@ export class WebSqliteStorage implements ISqlStorage {
         const isInit = metaRow?.initialized === 1 || characters.length > 0 || settingsRows.length > 0
         if (!isInit) return { status: 'empty', revision: this.revision, database: null }
         if (shallow) {
-            const adapter = createSqlDatabaseAdapter(db, this)
+            const adapter = createSqlDatabaseAdapter(
+                db,
+                this,
+                ['personas', 'botPresets', 'loreBook', 'modules', 'prompts', 'scripts'],
+            )
             return { status: 'ready', revision: this.revision, database: adapter }
         }
         return { status: 'ready', revision: this.revision, database: db }
@@ -233,6 +249,7 @@ export class WebSqliteStorage implements ISqlStorage {
             if (commit.baseRevision !== currentRevision) throw new SqlRevisionConflictError(currentRevision)
             if (commit.replaceAll) {
                 this.run('DELETE FROM system_settings')
+                this.run('DELETE FROM plugin_custom_storage')
                 this.run('DELETE FROM characters')
             }
             await applySqliteCommit(commit, (sql, bind = []) => this.run(sql, bind))
@@ -356,6 +373,15 @@ export class WebSqliteStorage implements ISqlStorage {
         try { return JSON.parse(r.data as string) } catch { return [] }
     }
     async loadPluginCustomStorage(): Promise<Record<string, any> | null> {
+        const settingRow = this.selectOne("SELECT value FROM system_settings WHERE key = 'pluginCustomStorage'")
+        if (settingRow && settingRow.value) {
+            try {
+                const parsed = JSON.parse(settingRow.value as string)
+                if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+                    return parsed
+                }
+            } catch {}
+        }
         const rows = this.selectRows('SELECT key, value FROM plugin_custom_storage')
         if (rows.length === 0) return null
         const s: Record<string, any> = {}

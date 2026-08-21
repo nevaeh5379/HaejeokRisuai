@@ -99,6 +99,49 @@ const fallbackBotPreset: botPreset = {
     verbosity: 1,
 }
 
+interface DomainConfig {
+    domainName: PostgresDomainName
+    getDefault: (coreData: Record<string, any>) => any
+    normalizeInitial?: (val: any) => any
+}
+
+const DEFERRED_DOMAINS: Record<string, DomainConfig> = {
+    personas: {
+        domainName: 'personas',
+        getDefault: (core) => [{
+            name: core.username || 'User',
+            icon: core.userIcon || '',
+            personaPrompt: '',
+            note: core.userNote || '',
+            largePortrait: false,
+        }],
+        normalizeInitial: (personas) => (personas ?? []).map((persona: any) => ({
+            ...persona,
+            largePortrait: persona?.largePortrait ?? false,
+        })),
+    },
+    botPresets: {
+        domainName: 'botPresets',
+        getDefault: () => [{ ...fallbackBotPreset }],
+        normalizeInitial: (val) => val ?? [],
+    },
+    loreBook: {
+        domainName: 'loreBook',
+        getDefault: () => [{ name: 'Default', data: [] }],
+        normalizeInitial: (val) => val ?? [],
+    },
+    modules: {
+        domainName: 'modules',
+        getDefault: () => [],
+        normalizeInitial: (val) => val ?? [],
+    },
+    globalscript: {
+        domainName: 'scripts',
+        getDefault: () => [],
+        normalizeInitial: (val) => val ?? [],
+    },
+}
+
 /**
  * Creates a SQL-backed database adapter that handles on-demand domain loading,
  * Svelte 5 reactivity, character/chat/message lazy loading, and save protection.
@@ -112,7 +155,7 @@ export function createSqlDatabaseAdapter(
     initialLoadedDomains: readonly PostgresDomainName[] = [],
 ): IDatabaseAdapter {
     const coreData = { ...initialData } as Record<string, any>
-    for (const key of ['personas', 'botPresets', 'loreBook', 'modules', 'globalscript', ...PROMPT_SETTING_KEYS]) {
+    for (const key of [...Object.keys(DEFERRED_DOMAINS), ...PROMPT_SETTING_KEYS]) {
         delete coreData[key]
     }
     let promptDefaults: Record<string, any> = {
@@ -167,30 +210,12 @@ export function createSqlDatabaseAdapter(
     const wasInitiallyLoaded = (domain: PostgresDomainName, key: string) =>
         initialLoadedDomains.includes(domain) || Object.prototype.hasOwnProperty.call(initialData, key)
 
-    // Check if initialData already contained a full domain, including an empty
-    // collection supplied by the batched Node bootstrap endpoint.
-    if (wasInitiallyLoaded('personas', 'personas')) {
-        internalState.personas = (initialData.personas ?? []).map((persona) => ({
-            ...persona,
-            largePortrait: persona.largePortrait ?? false,
-        }))
-        internalState.loadedDomains.add('personas')
-    }
-    if (wasInitiallyLoaded('botPresets', 'botPresets')) {
-        internalState.botPresets = initialData.botPresets ?? []
-        internalState.loadedDomains.add('botPresets')
-    }
-    if (wasInitiallyLoaded('loreBook', 'loreBook')) {
-        internalState.loreBook = initialData.loreBook ?? []
-        internalState.loadedDomains.add('loreBook')
-    }
-    if (wasInitiallyLoaded('modules', 'modules')) {
-        internalState.modules = initialData.modules ?? []
-        internalState.loadedDomains.add('modules')
-    }
-    if (wasInitiallyLoaded('scripts', 'globalscript')) {
-        internalState.globalscript = initialData.globalscript ?? []
-        internalState.loadedDomains.add('scripts')
+    for (const [key, config] of Object.entries(DEFERRED_DOMAINS)) {
+        if (wasInitiallyLoaded(config.domainName, key)) {
+            const raw = (initialData as any)[key]
+            ;(internalState as any)[key] = config.normalizeInitial ? config.normalizeInitial(raw) : raw
+            internalState.loadedDomains.add(config.domainName)
+        }
     }
     if (initialLoadedDomains.includes('prompts') || PROMPT_SETTING_KEYS.some((key) =>
         Object.prototype.hasOwnProperty.call(initialData, key))) {
@@ -412,20 +437,17 @@ export function createSqlDatabaseAdapter(
             if (internalState.prompts) {
                 internalState.prompts = { ...promptDefaults, ...internalState.prompts }
             }
-            for (const key of ['personas', 'botPresets', 'loreBook', 'modules', 'globalscript', ...PROMPT_SETTING_KEYS]) {
+            for (const key of [...Object.keys(DEFERRED_DOMAINS), ...PROMPT_SETTING_KEYS]) {
                 delete internalState.coreData[key]
             }
         },
 
         async ensureLoaded(domain?: string): Promise<void> {
             if (!domain) {
+                const domainNames = Array.from(new Set(Object.values(DEFERRED_DOMAINS).map((d) => d.domainName)))
                 await Promise.all([
-                    triggerLoadDomain('personas'),
-                    triggerLoadDomain('botPresets'),
-                    triggerLoadDomain('loreBook'),
-                    triggerLoadDomain('modules'),
+                    ...domainNames.map((d) => triggerLoadDomain(d)),
                     triggerLoadDomain('prompts'),
-                    triggerLoadDomain('scripts'),
                 ])
                 return
             }
@@ -442,11 +464,9 @@ export function createSqlDatabaseAdapter(
 
         getLoadedRootKeys(): string[] {
             const keys = new Set(Object.keys(internalState.coreData))
-            if (internalState.loadedDomains.has('personas')) keys.add('personas')
-            if (internalState.loadedDomains.has('botPresets')) keys.add('botPresets')
-            if (internalState.loadedDomains.has('loreBook')) keys.add('loreBook')
-            if (internalState.loadedDomains.has('modules')) keys.add('modules')
-            if (internalState.loadedDomains.has('scripts')) keys.add('globalscript')
+            for (const [key, config] of Object.entries(DEFERRED_DOMAINS)) {
+                if (internalState.loadedDomains.has(config.domainName)) keys.add(key)
+            }
             if (internalState.loadedDomains.has('prompts')) {
                 for (const key of PROMPT_SETTING_KEYS) keys.add(key)
             }
@@ -492,77 +512,21 @@ export function createSqlDatabaseAdapter(
                 return target[prop]
             }
 
-            // Deferred domain: personas
-            if (prop === 'personas') {
-                if (!internalState.loadedDomains.has('personas')) {
-                    if (internalState.personas === null) {
-                        internalState.personas = [{
-                            name: internalState.coreData.username || 'User',
-                            icon: internalState.coreData.userIcon || '',
-                            personaPrompt: '',
-                            note: internalState.coreData.userNote || '',
-                            largePortrait: false,
-                        }]
-                        triggerLoadDomain('personas')
+            const domainConfig = DEFERRED_DOMAINS[prop as string]
+            if (domainConfig) {
+                const domainKey = prop as string
+                if (!internalState.loadedDomains.has(domainConfig.domainName)) {
+                    if ((internalState as any)[domainKey] === null) {
+                        (internalState as any)[domainKey] = domainConfig.getDefault(internalState.coreData)
+                        triggerLoadDomain(domainConfig.domainName)
                     }
                 }
-                if (!internalState.personas || internalState.personas.length === 0) {
-                    internalState.personas = [{
-                        name: internalState.coreData.username || 'User',
-                        icon: internalState.coreData.userIcon || '',
-                        personaPrompt: '',
-                        note: internalState.coreData.userNote || '',
-                        largePortrait: false,
-                    }]
+                if (domainKey === 'personas' && (!(internalState as any).personas || (internalState as any).personas.length === 0)) {
+                    (internalState as any).personas = domainConfig.getDefault(internalState.coreData)
                 }
-                return internalState.personas
+                return (internalState as any)[domainKey]
             }
 
-            // Deferred domain: botPresets
-            if (prop === 'botPresets') {
-                if (!internalState.loadedDomains.has('botPresets')) {
-                    if (internalState.botPresets === null) {
-                        internalState.botPresets = [{ ...fallbackBotPreset }]
-                        triggerLoadDomain('botPresets')
-                    }
-                }
-                return internalState.botPresets
-            }
-
-            // Deferred domain: loreBook
-            if (prop === 'loreBook') {
-                if (!internalState.loadedDomains.has('loreBook')) {
-                    if (internalState.loreBook === null) {
-                        internalState.loreBook = [{ name: 'Default', data: [] }]
-                        triggerLoadDomain('loreBook')
-                    }
-                }
-                return internalState.loreBook
-            }
-
-            // Deferred domain: modules
-            if (prop === 'modules') {
-                if (!internalState.loadedDomains.has('modules')) {
-                    if (internalState.modules === null) {
-                        internalState.modules = []
-                        triggerLoadDomain('modules')
-                    }
-                }
-                return internalState.modules
-            }
-
-            // Deferred domain: globalscript
-            if (prop === 'globalscript') {
-                if (!internalState.loadedDomains.has('scripts')) {
-                    if (internalState.globalscript === null) {
-                        internalState.globalscript = []
-                        triggerLoadDomain('scripts')
-                    }
-                }
-                return internalState.globalscript
-            }
-
-            // Deferred domain: prompts
             if (PROMPT_SETTING_KEYS.includes(prop as any)) {
                 if (!internalState.loadedDomains.has('prompts')) {
                     if (internalState.prompts === null) {
@@ -590,41 +554,15 @@ export function createSqlDatabaseAdapter(
             const propStr = String(prop)
             pendingDeletes.delete(propStr)
 
-            if (prop === 'personas') {
-                internalState.personas = value
-                internalState.loadedDomains.add('personas')
-                pendingUpserts.set('personas', value)
+            const domainConfig = DEFERRED_DOMAINS[propStr]
+            if (domainConfig) {
+                (internalState as any)[propStr] = value
+                internalState.loadedDomains.add(domainConfig.domainName)
+                pendingUpserts.set(propStr, value)
                 scheduleCommit()
                 return true
             }
-            if (prop === 'botPresets') {
-                internalState.botPresets = value
-                internalState.loadedDomains.add('botPresets')
-                pendingUpserts.set('botPresets', value)
-                scheduleCommit()
-                return true
-            }
-            if (prop === 'loreBook') {
-                internalState.loreBook = value
-                internalState.loadedDomains.add('loreBook')
-                pendingUpserts.set('loreBook', value)
-                scheduleCommit()
-                return true
-            }
-            if (prop === 'modules') {
-                internalState.modules = value
-                internalState.loadedDomains.add('modules')
-                pendingUpserts.set('modules', value)
-                scheduleCommit()
-                return true
-            }
-            if (prop === 'globalscript') {
-                internalState.globalscript = value
-                internalState.loadedDomains.add('scripts')
-                pendingUpserts.set('globalscript', value)
-                scheduleCommit()
-                return true
-            }
+
             if (PROMPT_SETTING_KEYS.includes(prop as any)) {
                 internalState.prompts ??= {}
                 internalState.prompts[prop] = value
@@ -659,25 +597,17 @@ export function createSqlDatabaseAdapter(
 
         has(target, prop) {
             if (prop in target) return true
-            if (prop === 'personas') return true
-            if (prop === 'botPresets') return true
-            if (prop === 'loreBook') return true
-            if (prop === 'modules') return true
-            if (prop === 'globalscript') return true
-            if (typeof prop === 'string' && PROMPT_SETTING_KEYS.includes(prop as any)) return true
+            if (typeof prop === 'string' && (prop in DEFERRED_DOMAINS || PROMPT_SETTING_KEYS.includes(prop as any))) return true
             return prop in internalState.coreData
         },
 
         ownKeys(target) {
-            const keys = new Set<string>([...Object.keys(target), ...Object.keys(internalState.coreData)])
-            keys.add('personas')
-            keys.add('botPresets')
-            keys.add('loreBook')
-            keys.add('modules')
-            keys.add('globalscript')
-            for (const k of PROMPT_SETTING_KEYS) {
-                keys.add(k)
-            }
+            const keys = new Set<string>([
+                ...Object.keys(target),
+                ...Object.keys(internalState.coreData),
+                ...Object.keys(DEFERRED_DOMAINS),
+                ...PROMPT_SETTING_KEYS,
+            ])
             return Array.from(keys)
         },
 
@@ -685,25 +615,8 @@ export function createSqlDatabaseAdapter(
             if (prop in target) {
                 return Reflect.getOwnPropertyDescriptor(target, prop)
             }
-            if (typeof prop === 'string') {
-                if (prop === 'personas') {
-                    return { value: (proxy as any).personas, writable: true, enumerable: true, configurable: true }
-                }
-                if (prop === 'botPresets') {
-                    return { value: (proxy as any).botPresets, writable: true, enumerable: true, configurable: true }
-                }
-                if (prop === 'loreBook') {
-                    return { value: (proxy as any).loreBook, writable: true, enumerable: true, configurable: true }
-                }
-                if (prop === 'modules') {
-                    return { value: (proxy as any).modules, writable: true, enumerable: true, configurable: true }
-                }
-                if (prop === 'globalscript') {
-                    return { value: (proxy as any).globalscript, writable: true, enumerable: true, configurable: true }
-                }
-                if (PROMPT_SETTING_KEYS.includes(prop as any)) {
-                    return { value: (proxy as any)[prop], writable: true, enumerable: true, configurable: true }
-                }
+            if (typeof prop === 'string' && (prop in DEFERRED_DOMAINS || PROMPT_SETTING_KEYS.includes(prop as any))) {
+                return { value: (proxy as any)[prop], writable: true, enumerable: true, configurable: true }
             }
             return Reflect.getOwnPropertyDescriptor(internalState.coreData, prop)
         },

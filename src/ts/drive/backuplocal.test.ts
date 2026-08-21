@@ -71,4 +71,22 @@ describe('hydrateLazyDatabaseFromSnapshot', () => {
         expect(db.botPresets).toEqual([{ name: 'Stored preset' }])
         expect(db.pluginCustomStorage).toEqual({ plugin: { enabled: true } })
     })
+
+    it('hydrates unloaded modules and personas when not present in db', () => {
+        const db = {
+            characters: [],
+            pluginCustomStorage: {},
+        } as unknown as Database
+        const snapshot = {
+            personas: [{ name: 'Restored persona' }],
+            modules: [{ id: 'mod-1', name: 'Restored module' }],
+            pluginCustomStorage: { myPlugin: { key: 'value' } },
+        } as unknown as Database
+
+        hydrateLazyDatabaseFromSnapshot(db, snapshot)
+
+        expect((db as any).personas).toEqual([{ name: 'Restored persona' }])
+        expect((db as any).modules).toEqual([{ id: 'mod-1', name: 'Restored module' }])
+        expect(db.pluginCustomStorage).toEqual({ myPlugin: { key: 'value' } })
+    })
 })

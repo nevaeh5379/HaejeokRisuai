@@ -72,4 +72,27 @@ describe('SQL row commits', () => {
         expect(statements[1].sql).toContain('messages')
         expect(statements.every(({ sql }) => !sql.includes('DELETE FROM characters'))).toBe(true)
     })
+
+    it('syncs pluginCustomStorage upserts and deletions to plugin_custom_storage table', async () => {
+        const commit = createEmptySqlCommit(1)
+        commit.replaceAll = true
+        commit.root.upserts.push({
+            key: 'pluginCustomStorage',
+            value: {
+                'my-plugin': { setting1: 'val1' },
+            },
+        })
+        const statements: { sql: string; bind: unknown[] }[] = []
+
+        await applySqliteCommit(commit, (sql, bind = []) => {
+            statements.push({ sql, bind })
+        })
+
+        expect(statements.some((s) => s.sql.includes('DELETE FROM plugin_custom_storage'))).toBe(true)
+        expect(statements.some((s) => s.sql.includes('INSERT OR REPLACE INTO system_settings'))).toBe(true)
+        const pluginStorageStmt = statements.find((s) => s.sql.includes('INSERT OR REPLACE INTO plugin_custom_storage'))
+        expect(pluginStorageStmt).toBeDefined()
+        expect(pluginStorageStmt?.bind[0]).toBe('my-plugin')
+        expect(pluginStorageStmt?.bind[1]).toBe(JSON.stringify({ setting1: 'val1' }))
+    })
 })

@@ -140,6 +140,20 @@ export class TauriSqliteStorage implements ISqlStorage {
             }
         }
 
+        // Also merge plugin_custom_storage table if present
+        if (!db.pluginCustomStorage || Object.keys(db.pluginCustomStorage).length === 0) {
+            const pluginStorageRows = await this.selectRows<{ key: string; value: string }>(
+                'SELECT key, value FROM plugin_custom_storage',
+            )
+            if (pluginStorageRows.length > 0) {
+                db.pluginCustomStorage = {}
+                for (const row of pluginStorageRows) {
+                    try { db.pluginCustomStorage[row.key] = JSON.parse(row.value) }
+                    catch { db.pluginCustomStorage[row.key] = row.value }
+                }
+            }
+        }
+
         // Load characters
         const charRows = await this.selectRows<{
             id: string; position: number; kind: string; name: string; image: string | null;
@@ -201,7 +215,11 @@ export class TauriSqliteStorage implements ISqlStorage {
         }
 
         if (shallow) {
-            const adapter = createSqlDatabaseAdapter(db, this)
+            const adapter = createSqlDatabaseAdapter(
+                db,
+                this,
+                ['personas', 'botPresets', 'loreBook', 'modules', 'prompts', 'scripts'],
+            )
             return { status: 'ready', revision: this.revision, database: adapter }
         }
 
@@ -217,6 +235,7 @@ export class TauriSqliteStorage implements ISqlStorage {
             if (commit.baseRevision !== currentRevision) throw new SqlRevisionConflictError(currentRevision)
             if (commit.replaceAll) {
                 await this.execute('DELETE FROM system_settings')
+                await this.execute('DELETE FROM plugin_custom_storage')
                 await this.execute('DELETE FROM characters')
             }
             await applySqliteCommit(commit, (sql, bind = []) => this.execute(sql, bind))
@@ -377,6 +396,15 @@ export class TauriSqliteStorage implements ISqlStorage {
     }
 
     async loadPluginCustomStorage(): Promise<Record<string, any> | null> {
+        const settingRow = await this.selectOne<{ value: string }>("SELECT value FROM system_settings WHERE key = 'pluginCustomStorage'")
+        if (settingRow && settingRow.value) {
+            try {
+                const parsed = JSON.parse(settingRow.value)
+                if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+                    return parsed
+                }
+            } catch {}
+        }
         const rows = await this.selectRows<{ key: string; value: string }>(
             'SELECT key, value FROM plugin_custom_storage',
         )

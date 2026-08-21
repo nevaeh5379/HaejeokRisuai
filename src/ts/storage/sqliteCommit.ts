@@ -3,11 +3,26 @@ import type { SqlCommit } from './sqlCommit'
 export type SqliteExecute = (sql: string, bind?: unknown[]) => void | Promise<void>
 
 export async function applySqliteCommit(commit: SqlCommit, execute: SqliteExecute): Promise<void> {
+    if (commit.replaceAll) {
+        await execute('DELETE FROM plugin_custom_storage')
+    }
+
     for (const upsert of commit.root.upserts) {
         await execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))", [upsert.key, JSON.stringify(upsert.value)])
+        if (upsert.key === 'pluginCustomStorage' && upsert.value && typeof upsert.value === 'object') {
+            for (const [pluginKey, pluginVal] of Object.entries(upsert.value)) {
+                await execute(
+                    "INSERT OR REPLACE INTO plugin_custom_storage (key, value, updated_at) VALUES (?, ?, datetime('now'))",
+                    [pluginKey, JSON.stringify(pluginVal)],
+                )
+            }
+        }
     }
     for (const key of commit.root.deletes) {
         await execute('DELETE FROM system_settings WHERE key = ?', [key])
+        if (key === 'pluginCustomStorage') {
+            await execute('DELETE FROM plugin_custom_storage')
+        }
     }
 
     for (const entry of commit.characters) {

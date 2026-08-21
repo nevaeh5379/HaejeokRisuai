@@ -225,6 +225,18 @@ export async function ensureDatabaseFullyLoaded(db: Database, onProgress?: (msg:
     if (!bulkLoaded) {
         await ensureAllPostgresChatMessagesLoaded(db, onProgress)
     }
+
+    try {
+        const { getSqlStorage } = await import('../storage/sqlStorageFactory')
+        const storage = await getSqlStorage()
+        if (storage.isEnabled() && (!db.pluginCustomStorage || Object.keys(db.pluginCustomStorage).length === 0)) {
+            const pluginStorage = await storage.loadPluginCustomStorage()
+            if (pluginStorage && Object.keys(pluginStorage).length > 0) {
+                db.pluginCustomStorage = pluginStorage
+            }
+        }
+    } catch {}
+
     if (!db.personas || db.personas.length === 0) {
         db.personas = [{
             name: db.username || 'User',
