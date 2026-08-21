@@ -24,11 +24,25 @@ const PROMPT_SETTING_KEYS = [
     'customPromptTemplateToggle',
 ];
 
+// These domains are touched during application bootstrap. Loading them in one
+// snapshot avoids opening a transaction (and consuming a pool connection) for
+// every lazy domain at the same time.
+const BOOTSTRAP_SETTING_KEYS = [
+    'plugins', 'personas', 'botPresets', 'loreBook', 'modules', 'globalscript',
+    ...PROMPT_SETTING_KEYS,
+];
+
 class SqlStorageBase {
     constructor() {
         this.objectCacheEnabled = process.env.RISUAI_SQL_OBJECT_CACHE === '1';
         this.pluginsCache = null;
         this.pluginCustomStorageCache = null;
+        // Bootstrap is on every application's critical path, so keep this
+        // compact settings snapshot regardless of the optional general object
+        // cache. It is invalidated only by writes to bootstrap setting keys.
+        this.bootstrapCache = null;
+        this.bootstrapCachePromise = null;
+        this.bootstrapCacheGeneration = 0;
     }
 
     invalidatePluginsCache() {
@@ -37,6 +51,14 @@ class SqlStorageBase {
 
     invalidatePluginCustomStorageCache() {
         this.pluginCustomStorageCache = null;
+    }
+
+    invalidateBootstrapCache(changedKeys) {
+        if (Array.isArray(changedKeys) &&
+            !changedKeys.some((key) => BOOTSTRAP_SETTING_KEYS.includes(key))) return;
+        this.bootstrapCacheGeneration += 1;
+        this.bootstrapCache = null;
+        this.bootstrapCachePromise = null;
     }
 
     async loadChatMessages(chatId) {
@@ -54,6 +76,27 @@ class SqlStorageBase {
             pluginCustomStorage: storageResult.pluginCustomStorage,
             hash: `${pluginsResult.hash}:${storageResult.hash}`,
         };
+    }
+
+    async loadBootstrapData() {
+        if (this.bootstrapCache) return this.bootstrapCache;
+        if (this.bootstrapCachePromise) return this.bootstrapCachePromise;
+
+        const generation = this.bootstrapCacheGeneration;
+        const pending = this.loadSettingKeys(BOOTSTRAP_SETTING_KEYS).then(({ settings, hash }) => {
+            const result = { database: settings, hash };
+            if (generation === this.bootstrapCacheGeneration) this.bootstrapCache = result;
+            return result;
+        }).finally(() => {
+            if (this.bootstrapCachePromise === pending) this.bootstrapCachePromise = null;
+        });
+        this.bootstrapCachePromise = pending;
+        return pending;
+    }
+
+    async warmBootstrapCache() {
+        if (!this.enabled) return;
+        await this.loadBootstrapData();
     }
 
     async loadPersonas() {
@@ -485,6 +528,7 @@ function rebuildDatabaseGraph({
 module.exports = {
     DEFERRED_SETTING_KEYS,
     PROMPT_SETTING_KEYS,
+    BOOTSTRAP_SETTING_KEYS,
     SqlStorageBase,
     createSqlStorageHelpers,
     groupRows,

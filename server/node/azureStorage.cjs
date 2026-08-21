@@ -914,6 +914,7 @@ class AzureStorage extends SqlStorageBase {
     }
 
     async reconfigure(options = {}) {
+        this.invalidateBootstrapCache();
         if (this.pool) {
             try { await this.pool.close(); } catch (e) {}
             this.pool = null;
@@ -1400,6 +1401,10 @@ class AzureStorage extends SqlStorageBase {
         if (changedSettingKeys.includes('pluginCustomStorage') || rootDeletes.includes('pluginCustomStorage')) {
             this.pluginCustomStorageCache = null;
         }
+        this.invalidateBootstrapCache([...changedSettingKeys, ...rootDeletes]);
+        void this.warmBootstrapCache().catch((error) => {
+            console.warn('[Azure SQL] Bootstrap cache refresh failed:', error.message);
+        });
 
         return syncResult;
     }
@@ -2205,6 +2210,10 @@ class AzureStorage extends SqlStorageBase {
         });
         this.pluginsCache = null;
         this.pluginCustomStorageCache = null;
+        this.invalidateBootstrapCache();
+        void this.warmBootstrapCache().catch((error) => {
+            console.warn('[Azure SQL] Bootstrap cache refresh failed:', error.message);
+        });
         return result;
     }
 

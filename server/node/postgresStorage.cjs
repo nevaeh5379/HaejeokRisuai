@@ -183,14 +183,17 @@ async function beginAuditRevision(client, {
     restoredFrom = null,
 }) {
     const result = await client.query(
-        `INSERT INTO system.revisions
-            (storage_revision, database_initialized, scope, action, restored_from_revision)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id`,
+        `WITH inserted AS (
+            INSERT INTO system.revisions
+                (storage_revision, database_initialized, scope, action, restored_from_revision)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id
+         )
+         SELECT id, set_config('risu.revision_id', id::text, TRUE)
+         FROM inserted`,
         [storageRevision, databaseInitialized, scope, action, restoredFrom]
     );
     const revisionId = Number(result.rows[0].id);
-    await client.query(`SELECT set_config('risu.revision_id', $1, TRUE)`, [String(revisionId)]);
     return revisionId;
 }
 
@@ -262,6 +265,7 @@ class PostgresStorage extends SqlStorageBase {
     }
 
     async reconfigure(options = {}) {
+        this.invalidateBootstrapCache();
         const connectionString = options.connectionString || '';
         const parsedPoolMax = Number.parseInt(options.poolMax || '10', 10);
         const poolMax = Number.isSafeInteger(parsedPoolMax) && parsedPoolMax > 0 ? parsedPoolMax : 10;
@@ -568,6 +572,10 @@ class PostgresStorage extends SqlStorageBase {
             await client.query('COMMIT');
             this.pluginsCache = null;
             this.pluginCustomStorageCache = null;
+            this.invalidateBootstrapCache();
+            void this.warmBootstrapCache().catch((error) => {
+                console.warn('[PostgreSQL] Bootstrap cache refresh failed:', error.message);
+            });
             return {
                 revisionId: restoreRevisionId,
                 restoredFromRevisionId: targetRevisionId,
@@ -1722,6 +1730,10 @@ class PostgresStorage extends SqlStorageBase {
             if (changedSettingKeys.includes('pluginCustomStorage') || payload.rootDeletes.includes('pluginCustomStorage')) {
                 this.pluginCustomStorageCache = null;
             }
+            this.invalidateBootstrapCache([...changedSettingKeys, ...payload.rootDeletes]);
+            void this.warmBootstrapCache().catch((error) => {
+                console.warn('[PostgreSQL] Bootstrap cache refresh failed:', error.message);
+            });
             return {
                 revision: nextRevision,
                 changed: {

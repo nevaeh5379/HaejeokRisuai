@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const {
+    BOOTSTRAP_SETTING_KEYS,
     DEFERRED_SETTING_KEYS,
     SqlStorageBase,
     createSqlStorageHelpers,
@@ -11,6 +12,7 @@ const {
     groupMessageRows,
     rebuildDatabaseGraph,
 } = require('./sqlStorageCommon.cjs') as {
+    BOOTSTRAP_SETTING_KEYS: string[]
     DEFERRED_SETTING_KEYS: string[]
     SqlStorageBase: new () => Record<string, (...args: any[]) => any>
     createSqlStorageHelpers: (options: Record<string, unknown>) => Record<string, (...args: any[]) => any>
@@ -25,16 +27,34 @@ class TestPayloadError extends Error {}
 describe('shared SQL storage helpers', () => {
     it('provides provider-independent setting loaders through the base class', async () => {
         const storage = new SqlStorageBase()
-        storage.loadSettingKeys = async (keys: string[]) => ({
-            settings: Object.fromEntries(keys.map((key) => [key, `${key}-value`])),
-            hash: 'hash',
-        })
+        let settingLoadCount = 0
+        storage.loadSettingKeys = async (keys: string[]) => {
+            settingLoadCount += 1
+            return {
+                settings: Object.fromEntries(keys.map((key) => [key, `${key}-value`])),
+                hash: 'hash',
+            }
+        }
 
         await expect(storage.loadPersonas()).resolves.toEqual({ personas: 'personas-value', hash: 'hash' })
         await expect(storage.loadSettingKey('theme')).resolves.toEqual({
             key: 'theme', value: 'theme-value', exists: true, hash: 'hash',
         })
         await expect(storage.loadPrompts()).resolves.toMatchObject({ hash: 'hash' })
+        await expect(storage.loadBootstrapData()).resolves.toMatchObject({
+            database: { plugins: 'plugins-value', botPresets: 'botPresets-value' },
+            hash: 'hash',
+        })
+        const countAfterWarm = settingLoadCount
+        await storage.loadBootstrapData()
+        expect(settingLoadCount).toBe(countAfterWarm)
+        storage.invalidateBootstrapCache(['characters'])
+        await storage.loadBootstrapData()
+        expect(settingLoadCount).toBe(countAfterWarm)
+        storage.invalidateBootstrapCache(['botPresets'])
+        await storage.loadBootstrapData()
+        expect(settingLoadCount).toBe(countAfterWarm + 1)
+        expect(BOOTSTRAP_SETTING_KEYS).toContain('globalscript')
 
         expect(storage.pluginsCache).toBeNull()
         expect(storage.pluginCustomStorageCache).toBeNull()

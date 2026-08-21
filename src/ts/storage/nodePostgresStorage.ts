@@ -249,6 +249,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     private status:'unknown'|'enabled'|'disabled' = 'unknown'
     private revision = 0
     private pluginsCacheForage = localforage.createInstance({ name: 'risuaiPostgresPlugins' })
+    private bootstrapCacheForage = localforage.createInstance({ name: 'risuaiPostgresBootstrap' })
     private pluginStorageCacheForage = localforage.createInstance({ name: 'risuaiPostgresPluginStorage' })
 
     private personasCacheForage = localforage.createInstance({ name: 'risuaiPostgresPersonas' })
@@ -259,6 +260,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     private scriptsCacheForage = localforage.createInstance({ name: 'risuaiPostgresScripts' })
 
     private memoryPluginsCache:{ hash:string, plugins:any[] }|null = null
+    private memoryBootstrapCache:{ hash:string, database:Partial<Database> }|null = null
     private memoryPluginStorageCache:{ hash:string, pluginCustomStorage:Record<string, any> }|null = null
     private memoryPersonasCache:{ hash:string, personas:RisuPersona[] }|null = null
     private memoryBotPresetsCache:{ hash:string, botPresets:botPreset[] }|null = null
@@ -481,6 +483,43 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
             await this.pluginsCacheForage.setItem('cache', entry)
         } catch {}
         return body.plugins ?? []
+    }
+
+    private async loadBootstrapData():Promise<Partial<Database>|null> {
+        let cached:{ hash:string, database:Partial<Database> }|null = this.memoryBootstrapCache
+        if (!cached) {
+            try {
+                cached = await this.bootstrapCacheForage.getItem('cache')
+            } catch {
+                cached = null
+            }
+        }
+
+        const headers:Record<string, string> = await this.authHeaders()
+        if (cached?.hash) {
+            headers['If-None-Match'] = `"risu-bootstrap-${cached.hash}"`
+        }
+        const response = await fetch('/api/database-v2/bootstrap', {
+            method: 'GET',
+            cache: 'no-cache',
+            headers,
+        })
+        // Allow a newer web client to keep working during a rolling server
+        // update. The caller falls back to the dedicated plugins endpoint.
+        if (response.status === 404) return null
+        if (response.status === 304 && cached) {
+            this.memoryBootstrapCache = cached
+            return cached.database
+        }
+        if (response.status < 200 || response.status >= 300) {
+            throw await responseError(response, 'SQL bootstrap data load failed')
+        }
+
+        const body:{ database:Partial<Database>, hash:string } = await response.json()
+        const entry = { hash: body.hash, database: body.database ?? {} }
+        this.memoryBootstrapCache = entry
+        void this.bootstrapCacheForage.setItem('cache', entry).catch(() => {})
+        return entry.database
     }
 
     async loadPluginCustomStorage():Promise<Record<string, any>|null> {
@@ -848,13 +887,20 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
         this.status = 'enabled'
         if(body.status === 'ready' && body.database){
             if (options.shallow !== false) {
-                const plugins = await this.loadPlugins()
-                if (plugins) {
-                    body.database.plugins = plugins
+                const bootstrapData = await this.loadBootstrapData()
+                if (bootstrapData) {
+                    Object.assign(body.database, bootstrapData)
+                } else {
+                    const plugins = await this.loadPlugins()
+                    if (plugins) body.database.plugins = plugins
                 }
                 body.database.pluginCustomStorage ??= {}
                 this.revision = body.revision
-                const adapter = createSqlDatabaseAdapter(body.database, this)
+                const adapter = createSqlDatabaseAdapter(
+                    body.database,
+                    this,
+                    bootstrapData ? ['personas', 'botPresets', 'loreBook', 'modules', 'prompts', 'scripts'] : [],
+                )
                 return { status: 'ready', revision: body.revision, database: adapter }
             }
             this.revision = body.revision

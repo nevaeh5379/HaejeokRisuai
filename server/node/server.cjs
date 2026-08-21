@@ -2414,6 +2414,7 @@ app.post('/api/postgres-config', authenticatedRouteLimiter, async (req, res, nex
 
         if (postgresStorage.enabled) {
             await postgresStorage.migrateLegacyColdStorage(savePath);
+            await postgresStorage.warmBootstrapCache();
         }
         res.send({ success: true, ...await getPostgresConfigResponse() });
     } catch (error) {
@@ -2585,6 +2586,7 @@ app.post('/api/db-config', authenticatedRouteLimiter, async (req, res, next) => 
                 console.warn('[db-config] Legacy cold storage migration skipped:', e.message);
             }
         }
+        await postgresStorage.warmBootstrapCache();
 
         // PostgreSQL 호환 config 파일도 갱신 (기존 /api/postgres-config와 호환성)
         if (vendor === 'postgres') {
@@ -2946,6 +2948,34 @@ app.get('/api/database-v2/plugins', authenticatedRouteLimiter, async (req, res, 
             plugins: result.plugins,
             hash: result.hash,
         });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/bootstrap', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({
+            error: 'PostgreSQL storage is not configured',
+            code: 'postgres_disabled',
+        });
+        return;
+    }
+
+    try {
+        const result = await postgresStorage.loadBootstrapData();
+        const etag = `"risu-bootstrap-${result.hash}"`;
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
+        if (requestEtag.split(',').map((value) => value.trim()).includes(etag)) {
+            res.status(304).end();
+            return;
+        }
+        await sendCompressedJson(req, res, result);
     } catch (error) {
         next(error);
     }
@@ -4477,6 +4507,7 @@ async function startServer() {
     try {
         console.log('[Server] Step 1: initializing storage...');
         await postgresStorage.initialize();
+        await postgresStorage.warmBootstrapCache();
         console.log('[Server] Step 2: storage initialized, initializing asset storage...');
         await assetStorageManager.init();
         console.log('[Server] Step 3: asset storage initialized, checking bootstrap config...');

@@ -135,7 +135,9 @@
     async function readImageFromTarget(key: string): Promise<Uint8Array | null> {
         const storage = getNodeStorage()
         // viewTarget-aware read: fetch from the currently selected backend
-        return await storage.getItem(key, { target: viewTarget })
+        const data = await storage.getItem(key, { target: viewTarget })
+        console.error('[STORAGE-DEBUG] read', { key, viewTarget, len: data ? data.length : 0 })
+        return data
     }
 
     function formatBytes(bytes: number): string {
@@ -268,26 +270,23 @@
             if (!char) continue
             const botAssets: BotAssetItem[] = []
             const seenKeys = new Set<string>()
+            let avatarKey: string | undefined
 
-            function addAsset(key: string | undefined, type: BotAssetItem['type'], label: string) {
+            function addAsset(key: string | undefined, type: BotAssetItem['type'], label: string): string | undefined {
                 if (!key || typeof key !== 'string') return
                 // Build a list of candidate keys to try against the asset map.
-                // DB fields may store: "assets/xxx.png", bare "xxx.png", or a
-                // fully-qualified path. The storage layer uses the original
-                // key (hexToKey), so we try multiple normalizations.
+                // DB fields may store: "assets/xxx.png", bare "xxx.png", a
+                // full path, or a full path without the assets/ prefix. The
+                // storage layer uses the original key (hexToKey), so we try
+                // every reasonable normalization and use the one that exists.
                 const candidates: string[] = []
                 const stripped = key.replace(/^assets\//, '')
-                if (key.startsWith('assets/')) {
-                    candidates.push(key)
-                    candidates.push(stripped)
-                } else if (key.includes('/')) {
-                    // Already a full path (e.g. "thumbnails/..." or other prefix)
-                    candidates.push(key)
-                } else {
-                    // Bare key — try with and without the assets/ prefix
-                    candidates.push(`assets/${key}`)
-                    candidates.push(key)
+                const pushCandidate = (c: string) => {
+                    if (c && !candidates.includes(c)) candidates.push(c)
                 }
+                pushCandidate(key)
+                pushCandidate(`assets/${stripped}`)
+                if (stripped !== key) pushCandidate(stripped)
 
                 let item: NodeStorageAssetItem | undefined
                 let matchedKey = key
@@ -309,19 +308,20 @@
                     for (const c of candidates) {
                         referencedKeys.add(c)
                     }
-                    referencedKeys.add(key)
-                    botAssets.push({
-                        key: matchedKey,
-                        type,
-                        label,
-                        size
-                    })
-                }
+        referencedKeys.add(key)
+        botAssets.push({
+            key: matchedKey,
+            type,
+            label,
+            size
+        })
+    }
+    return matchedKey
             }
 
             // Main avatar
             if (char.image) {
-                addAsset(char.image, 'avatar', 'Main Avatar')
+                avatarKey = addAsset(char.image, 'avatar', 'Main Avatar')
             }
 
             // Emotion sprites
@@ -379,7 +379,7 @@
             bots.push({
                 id: (char as any).id || (char as any).chaId || char.name,
                 name: char.name || 'Unnamed Bot',
-                avatarKey: char.image,
+                avatarKey: avatarKey || char.image,
                 totalAssets: botAssets.length,
                 totalSizeBytes: totalSize,
                 assets: botAssets,
@@ -391,6 +391,14 @@
         }
 
         botAnalysis = bots
+
+        // Pre-load bot avatars so cards render with images immediately,
+        // instead of relying on lazy {@const} triggers during render.
+        for (const bot of bots) {
+            if (bot.avatarKey) {
+                loadThumbnail(bot.avatarKey).catch(() => {})
+            }
+        }
 
         // Identify orphan assets on currently viewed storage
         const orphans: NodeStorageAssetItem[] = []
@@ -451,16 +459,32 @@
 
     async function loadThumbnail(key: string) {
         if (!key || thumbnailUrls.has(key)) return
-        try {
-            const data = await readImageFromTarget(key)
-            if (data && data.length > 0) {
-                const blob = new Blob([data as unknown as BlobPart], { type: getMimeType(key) })
-                const url = URL.createObjectURL(blob)
-                thumbnailUrls.set(key, url)
-                thumbnailUrls = new Map(thumbnailUrls)
+        // The DB may store the image path in a different form than the key
+        // actually present in storage (bare name vs assets/ prefixed vs full
+        // path). Try every normalization and cache under the original key so
+        // the template lookup below resolves regardless of the stored form.
+        const stripped = key.replace(/^assets\//, '')
+        const candidates: string[] = []
+        const pushCandidate = (c: string) => {
+            if (c && !candidates.includes(c)) candidates.push(c)
+        }
+        pushCandidate(key)
+        pushCandidate(`assets/${stripped}`)
+        if (stripped !== key) pushCandidate(stripped)
+
+        for (const candidate of candidates) {
+            try {
+                const data = await readImageFromTarget(candidate)
+                if (data && data.length > 0) {
+                    const blob = new Blob([data as unknown as BlobPart], { type: getMimeType(candidate) })
+                    const url = URL.createObjectURL(blob)
+                    thumbnailUrls.set(key, url)
+                    thumbnailUrls = new Map(thumbnailUrls)
+                    return
+                }
+            } catch {
+                // Try the next candidate key form
             }
-        } catch {
-            // Ignore thumbnail error
         }
     }
 

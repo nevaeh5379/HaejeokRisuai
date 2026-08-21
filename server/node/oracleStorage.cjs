@@ -776,6 +776,7 @@ class OracleStorage extends SqlStorageBase {
     }
 
     async reconfigure(options = {}) {
+        this.invalidateBootstrapCache();
         const tnsAlias = options.tnsAlias || '';
         const parsedPoolMax = Number.parseInt(options.poolMax || '10', 10);
         const poolMax = Number.isSafeInteger(parsedPoolMax) && parsedPoolMax > 0 ? parsedPoolMax : 10;
@@ -1714,6 +1715,10 @@ class OracleStorage extends SqlStorageBase {
             if (changedKeys.includes('pluginCustomStorage') || rootDeletes.includes('pluginCustomStorage')) {
                 this.pluginCustomStorageCache = null;
             }
+            this.invalidateBootstrapCache([...changedKeys, ...rootDeletes]);
+            void this.warmBootstrapCache().catch((error) => {
+                console.warn('[Oracle] Bootstrap cache refresh failed:', error.message);
+            });
             onProgress?.({ stage: 'done', message: `동기화 완료 (Revision: ${nextRevision})`, percent: 100 });
             return {
                 revision: nextRevision,
@@ -2286,6 +2291,10 @@ class OracleStorage extends SqlStorageBase {
             await conn.commit();
             this.pluginsCache = null;
             this.pluginCustomStorageCache = null;
+            this.invalidateBootstrapCache();
+            void this.warmBootstrapCache().catch((error) => {
+                console.warn('[Oracle] Bootstrap cache refresh failed:', error.message);
+            });
             return {
                 revisionId: restoreRevisionId,
                 restoredFromRevisionId: targetRevisionId,

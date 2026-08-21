@@ -109,6 +109,7 @@ const fallbackBotPreset: botPreset = {
 export function createSqlDatabaseAdapter(
     initialData: Database,
     storage: ISqlStorage,
+    initialLoadedDomains: readonly PostgresDomainName[] = [],
 ): IDatabaseAdapter {
     const coreData = { ...initialData } as Record<string, any>
     for (const key of ['personas', 'botPresets', 'loreBook', 'modules', 'globalscript', ...PROMPT_SETTING_KEYS]) {
@@ -163,28 +164,36 @@ export function createSqlDatabaseAdapter(
 
     const loadingPromises = new Map<string, Promise<any>>()
 
-    // Check if initialData already contained any full domain (e.g. from shallow=false)
-    if (initialData.personas && initialData.personas.length > 0) {
-        internalState.personas = initialData.personas
+    const wasInitiallyLoaded = (domain: PostgresDomainName, key: string) =>
+        initialLoadedDomains.includes(domain) || Object.prototype.hasOwnProperty.call(initialData, key)
+
+    // Check if initialData already contained a full domain, including an empty
+    // collection supplied by the batched Node bootstrap endpoint.
+    if (wasInitiallyLoaded('personas', 'personas')) {
+        internalState.personas = (initialData.personas ?? []).map((persona) => ({
+            ...persona,
+            largePortrait: persona.largePortrait ?? false,
+        }))
         internalState.loadedDomains.add('personas')
     }
-    if (initialData.botPresets && initialData.botPresets.length > 0) {
-        internalState.botPresets = initialData.botPresets
+    if (wasInitiallyLoaded('botPresets', 'botPresets')) {
+        internalState.botPresets = initialData.botPresets ?? []
         internalState.loadedDomains.add('botPresets')
     }
-    if (initialData.loreBook && initialData.loreBook.length > 0) {
-        internalState.loreBook = initialData.loreBook
+    if (wasInitiallyLoaded('loreBook', 'loreBook')) {
+        internalState.loreBook = initialData.loreBook ?? []
         internalState.loadedDomains.add('loreBook')
     }
-    if (initialData.modules && initialData.modules.length > 0) {
-        internalState.modules = initialData.modules
+    if (wasInitiallyLoaded('modules', 'modules')) {
+        internalState.modules = initialData.modules ?? []
         internalState.loadedDomains.add('modules')
     }
-    if (initialData.globalscript && initialData.globalscript.length > 0) {
-        internalState.globalscript = initialData.globalscript
+    if (wasInitiallyLoaded('scripts', 'globalscript')) {
+        internalState.globalscript = initialData.globalscript ?? []
         internalState.loadedDomains.add('scripts')
     }
-    if (initialData.mainPrompt !== undefined) {
+    if (initialLoadedDomains.includes('prompts') || PROMPT_SETTING_KEYS.some((key) =>
+        Object.prototype.hasOwnProperty.call(initialData, key))) {
         internalState.prompts = {}
         for (const k of PROMPT_SETTING_KEYS) {
             if ((initialData as any)[k] !== undefined) {
@@ -323,6 +332,7 @@ export function createSqlDatabaseAdapter(
     }
 
     async function triggerLoadDomain(domain: string): Promise<any> {
+        if (internalState.loadedDomains.has(domain)) return null
         if (loadingPromises.has(domain)) {
             return await loadingPromises.get(domain)
         }

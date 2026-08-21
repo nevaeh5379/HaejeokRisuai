@@ -271,8 +271,8 @@ describe('NodePostgresStorage browser client', () => {
                 database: { username: 'test-user', characters: [] },
             }), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
-                plugins: [{ name: 'test-plugin' }],
-                hash: 'plugin-hash-1',
+                database: { plugins: [{ name: 'test-plugin' }] },
+                hash: 'bootstrap-hash-1',
             }), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
                 status: 'ready',
@@ -288,7 +288,7 @@ describe('NodePostgresStorage browser client', () => {
         expect(shallowDb?.plugins).toHaveLength(1)
         expect(shallowDb?.pluginCustomStorage).toEqual({})
         expect(fetchMock.mock.calls[0][0]).toBe('/api/database-v2?shallow=true')
-        expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/plugins')
+        expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/bootstrap')
 
         const fullResult = await storage.loadDatabase({ shallow: false })
         const fullDb = fullResult?.database as any
@@ -303,7 +303,7 @@ describe('NodePostgresStorage browser client', () => {
                 revision: 10,
                 database: { username: 'test-user', characters: [] },
             }), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({ plugins: [], hash: 'p-empty' }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ database: { plugins: [] }, hash: 'b-empty' }), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
                 chat: {
                     id: 'chat-123',
@@ -351,7 +351,7 @@ describe('NodePostgresStorage browser client', () => {
                 revision: 10,
                 database: { username: 'test-user', characters: [] },
             }), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({ plugins: [], hash: 'p-empty' }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ database: { plugins: [] }, hash: 'b-empty' }), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
                 character: {
                     chaId: 'char-123',
@@ -404,25 +404,23 @@ describe('NodePostgresStorage browser client', () => {
         expect(fetchMock.mock.calls[2][1].headers['If-None-Match']).toBe('"risu-plugin-key-key-1-hash"')
     })
 
-    it('loads deferred domains on demand via PostgresDatabaseAdapter', async () => {
+    it('hydrates startup domains in one bootstrap request', async () => {
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify({
                 status: 'ready',
                 revision: 10,
                 database: { username: 'test-user', characters: [] },
             }), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({ plugins: [], hash: 'p-empty' }), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
-                personas: [{ name: 'Persona 1', icon: '', personaPrompt: 'Hello' }],
-                hash: 'persona-hash-1',
-            }), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({
-                botPresets: [{ name: 'Preset Alpha', temperature: 75 }],
-                hash: 'preset-hash-1',
-            }), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({
-                loreBook: [{ name: 'World Lore', data: [] }],
-                hash: 'lore-hash-1',
+                database: {
+                    plugins: [],
+                    personas: [{ name: 'Persona 1', icon: '', personaPrompt: 'Hello' }],
+                    botPresets: [{ name: 'Preset Alpha', temperature: 75 }],
+                    loreBook: [{ name: 'World Lore', data: [] }],
+                    modules: [],
+                    globalscript: [],
+                },
+                hash: 'bootstrap-hash-1',
             }), { status: 200 }))
         vi.stubGlobal('fetch', fetchMock)
 
@@ -432,28 +430,27 @@ describe('NodePostgresStorage browser client', () => {
         expect(db).toBeDefined()
         expect(db.isSql).toBe(true)
 
-        // Initial state before accessing domains: not loaded
-        expect(db.isDomainLoaded('personas')).toBe(false)
-        expect(db.isDomainLoaded('botPresets')).toBe(false)
-        expect(db.isDomainLoaded('loreBook')).toBe(false)
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/bootstrap')
+        expect(db.isDomainLoaded('personas')).toBe(true)
+        expect(db.isDomainLoaded('botPresets')).toBe(true)
+        expect(db.isDomainLoaded('loreBook')).toBe(true)
 
-        // Ensure loaded on personas
         await db.ensureLoaded('personas')
         expect(db.isDomainLoaded('personas')).toBe(true)
         expect(db.personas).toHaveLength(1)
         expect(db.personas[0].name).toBe('Persona 1')
 
-        // Ensure loaded on botPresets
         await db.ensureLoaded('botPresets')
         expect(db.isDomainLoaded('botPresets')).toBe(true)
         expect(db.botPresets).toHaveLength(1)
         expect(db.botPresets[0].name).toBe('Preset Alpha')
 
-        // Accessing loreBook directly triggers loading
         await db.ensureLoaded('loreBook')
         expect(db.isDomainLoaded('loreBook')).toBe(true)
         expect(db.loreBook).toHaveLength(1)
         expect(db.loreBook[0].name).toBe('World Lore')
+        expect(fetchMock).toHaveBeenCalledTimes(2)
 
         // Spread operator preserves personas and other domains
         const spreadDb = { ...db }
