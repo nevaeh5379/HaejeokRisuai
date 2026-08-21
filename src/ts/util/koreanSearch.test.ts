@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
     matchKoreanText,
     matchCharacterKorean,
-    buildKoreanSearchRegex
+    buildKoreanSearchRegex,
+    normalizePhonetic
 } from './koreanSearch'
 
 describe('koreanSearch unit tests', () => {
@@ -57,6 +58,18 @@ describe('koreanSearch unit tests', () => {
             expect(matchKoreanText('GPT-4o Assistant', 'gpt-4o').matched).toBe(true)
             expect(matchKoreanText('2B (NieR:Automata)', '2b').matched).toBe(true)
         })
+
+        it('handles searching English bot names with Korean pronunciation (한글 발음으로 영문 봇 이름 검색)', () => {
+            expect(matchKoreanText('Arona', '아로나').matched).toBe(true)
+            expect(matchKoreanText('Sakura Matou', '사쿠라').matched).toBe(true)
+            expect(matchKoreanText('Rem', '렘').matched).toBe(true)
+            expect(matchKoreanText('Megumin', '메구밍').matched).toBe(true)
+            expect(matchKoreanText('Karin Kakudate', '카린').matched).toBe(true)
+            expect(matchKoreanText('Makima', '마키마').matched).toBe(true)
+            expect(matchKoreanText('Hina', '히나').matched).toBe(true)
+            expect(matchKoreanText('Shiroko', '시로코').matched).toBe(true)
+            expect(matchKoreanText('Alice', '앨리스').matched).toBe(true)
+        })
     })
 
     describe('matchCharacterKorean', () => {
@@ -66,15 +79,17 @@ describe('koreanSearch unit tests', () => {
             tags: ['조선', '의적', '도술']
         }
         const char2 = {
-            name: '메이드 로봇 아로나',
+            name: 'Arona',
             creator: 'ShittimChest',
-            tags: ['블루아카이브', '인공지능', '메이드']
+            tags: ['Blue Archive', 'AI', 'Maid']
         }
 
         it('matches by character name', () => {
             expect(matchCharacterKorean(char1, '홍길동').matched).toBe(true)
             expect(matchCharacterKorean(char1, 'ㅎㄱㄷ').matched).toBe(true)
             expect(matchCharacterKorean(char1, 'ghdrlfehd').matched).toBe(true)
+            // English bot with Korean query
+            expect(matchCharacterKorean(char2, '아로나').matched).toBe(true)
         })
 
         it('matches by creator', () => {
@@ -86,8 +101,6 @@ describe('koreanSearch unit tests', () => {
         it('matches by tags', () => {
             expect(matchCharacterKorean(char1, '의적').matched).toBe(true)
             expect(matchCharacterKorean(char1, 'ㅇㅈ').matched).toBe(true)
-            expect(matchCharacterKorean(char2, 'ㅂㄹㅇㅋㅇㅂ').matched).toBe(true)
-            expect(matchCharacterKorean(char2, '인공지능').matched).toBe(true)
         })
 
         it('ranks name match higher than creator or tag match', () => {

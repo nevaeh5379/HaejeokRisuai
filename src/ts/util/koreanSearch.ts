@@ -2,6 +2,7 @@ import {
     getChoseong,
     disassemble,
     convertQwertyToHangul,
+    romanize,
     canBeChoseong
 } from 'es-hangul'
 
@@ -106,10 +107,34 @@ export function buildKoreanSearchRegex(query: string, flags = 'i'): RegExp | nul
     }
 }
 
+/**
+ * Normalizes phonetic variants between English and Korean Romanization
+ * (e.g. l/r, soft/hard c/k, sh/s, ee/i, oo/u, double consonants, loanword filler vowels).
+ */
+export function normalizePhonetic(str: string): string {
+    return str
+        .toLowerCase()
+        .replace(/[\s\-_.]+/g, '')
+        .replace(/c(?=[eiy])/g, 's')   // soft c -> s (e.g. Alice -> Alise)
+        .replace(/c/g, 'k')            // hard c -> k (e.g. Cat -> Kat)
+        .replace(/q/g, 'k')
+        .replace(/r/g, 'l')            // r and l interchangeability
+        .replace(/sh/g, 's')           // sh -> s (Shiroko -> Siroko)
+        .replace(/z/g, 'j')            // z -> j
+        .replace(/oo/g, 'u')           // oo -> u
+        .replace(/ee/g, 'i')           // ee -> i
+        .replace(/ae/g, 'a')           // ae -> a (e.g. aelriseu / Alice)
+        .replace(/eu$/g, '')           // trailing 'eu' in Korean loanword endings
+        .replace(/e$/g, '')            // trailing silent 'e' in English words (e.g. Alice -> Alis)
+        .replace(/ng$/g, 'n')          // trailing ng/n variance (Meguming -> Megumin)
+        .replace(/([a-z])\1+/g, '$1')  // collapse double consonants (ll -> l, ss -> s, etc.)
+}
+
 export interface MatchResult {
     matched: boolean
     score: number
     isQwertyConverted?: boolean
+    isRomanized?: boolean
 }
 
 /**
@@ -142,8 +167,8 @@ export function matchKoreanText(target: string | undefined | null, query: string
     }
 
     // 4. Whitespace-insensitive Match
-    const targetNoSpace = targetLower.replace(/\s+/g, '')
-    const queryNoSpace = queryLower.replace(/\s+/g, '')
+    const targetNoSpace = targetLower.replace(/[\s\-_]+/g, '')
+    const queryNoSpace = queryLower.replace(/[\s\-_]+/g, '')
     if (targetNoSpace.includes(queryNoSpace)) {
         return { matched: true, score: 550 }
     }
@@ -178,7 +203,42 @@ export function matchKoreanText(target: string | undefined | null, query: string
         // Fallthrough
     }
 
-    // 8. QWERTY-to-Hangul Conversion Fallback (영한 오타 자동 변환)
+    // 8. Hangul -> Romanization Matching (한글 발음으로 영문 봇 이름 검색: "아로나" -> "Arona", "사쿠라" -> "Sakura")
+    if (/[가-힣]/.test(queryNorm)) {
+        try {
+            const romanizedQuery = romanize(queryNorm).toLowerCase().replace(/\s+/g, '')
+            if (romanizedQuery) {
+                if (targetNoSpace === romanizedQuery) {
+                    return { matched: true, score: 480, isRomanized: true }
+                }
+                if (targetNoSpace.startsWith(romanizedQuery)) {
+                    return { matched: true, score: 440, isRomanized: true }
+                }
+                if (targetNoSpace.includes(romanizedQuery)) {
+                    return { matched: true, score: 400, isRomanized: true }
+                }
+
+                // Phonetic comparison
+                const phonTarget = normalizePhonetic(targetNoSpace)
+                const phonQuery = normalizePhonetic(romanizedQuery)
+                if (phonTarget && phonQuery) {
+                    if (phonTarget === phonQuery) {
+                        return { matched: true, score: 460, isRomanized: true }
+                    }
+                    if (phonTarget.startsWith(phonQuery)) {
+                        return { matched: true, score: 420, isRomanized: true }
+                    }
+                    if (phonTarget.includes(phonQuery)) {
+                        return { matched: true, score: 380, isRomanized: true }
+                    }
+                }
+            }
+        } catch {
+            // Fallthrough
+        }
+    }
+
+    // 9. QWERTY-to-Hangul Conversion Fallback (영한 오타 자동 변환: "fltn" -> "리수")
     if (/[a-zA-Z]/.test(queryNorm)) {
         try {
             const convertedQuery = convertQwertyToHangul(queryNorm)
@@ -240,6 +300,7 @@ export function matchCharacterKorean(
     return {
         matched: true,
         score: finalScore,
-        isQwertyConverted: nameResult.isQwertyConverted || creatorResult.isQwertyConverted
+        isQwertyConverted: nameResult.isQwertyConverted || creatorResult.isQwertyConverted,
+        isRomanized: nameResult.isRomanized || creatorResult.isRomanized
     }
 }
