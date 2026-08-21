@@ -1,7 +1,9 @@
 import DOMPurify from 'dompurify';
 import markdownit from 'markdown-it'
 import { appVer, getCurrentCharacter, getDatabase, type Database, type character, type customscript, type groupChat, type triggerscript } from '../storage/database.svelte';
-import { DBState, selIdState } from '../stores.svelte';
+import { selIdState } from '../stores.svelte';
+import { settingsStore } from '../stores/domain/settingsStore.svelte';
+import { characterStore } from '../stores/domain/characterStore.svelte';
 import { aiWatermarkingLawApplies, getFileSrc } from '../globalApi.svelte';
 import { isTauri, isNodeServer } from "src/ts/platform"
 import { getChatVar, setChatVar, getGlobalChatVar } from './chatVar.svelte';
@@ -54,7 +56,7 @@ DOMPurify.addHook("uponSanitizeElement", (node: HTMLElement, data) => {
     }
     if(data.tagName === 'img'){
         // Hide external images when hideAllImages is enabled
-        if(DBState.db?.hideAllImages){
+        if(settingsStore.state?.hideAllImages){
             const src = node.getAttribute("src") || "";
             // Replace with placeholder if it's an external/loaded image
             if(src && !src.startsWith('data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP')){
@@ -79,7 +81,7 @@ DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
     switch(data.attrName){
         case 'style':{
             // Remove background-image URLs when hideAllImages is enabled
-            if(DBState.db?.hideAllImages && data.attrValue){
+            if(settingsStore.state?.hideAllImages && data.attrValue){
                 // Remove background-image property from inline styles
                 data.attrValue = data.attrValue.replace(/background(-image)?:\s*url\([^)]*\);?/gi, '')
                 // Also remove background property if it contains url()
@@ -153,8 +155,8 @@ export function risuEscape(text:string){
 
 function renderMarkdown(md:markdownit, data:string){
     let quotes = ['“', '”', '‘', '’']
-    if(DBState.db?.customQuotes){
-        quotes = DBState.db.customQuotesData ?? quotes
+    if(settingsStore.state?.customQuotes){
+        quotes = settingsStore.state.customQuotesData ?? quotes
     }
     data = data.replace(/\$\$(.*?)\$\$/gs, (
         match:string,
@@ -180,11 +182,11 @@ function renderMarkdown(md:markdownit, data:string){
     })
     let text = risuUnescape(md.render(data.replace(/“|”/g, '"').replace(/‘|’/g, "'")))
 
-    if(DBState.db?.unformatQuotes){
+    if(settingsStore.state?.unformatQuotes){
         text = text.replace(/\uE9b0/gu, quotes[0]).replace(/\uE9b1/gu, quotes[1])
         text = text.replace(/\uE9b2/gu, quotes[2]).replace(/\uE9b3/gu, quotes[3])
     }
-    else if(DBState.db?.blockquoteStyling){
+    else if(settingsStore.state?.blockquoteStyling){
         text = text.replace(/\uE9b0(.+?)\uE9b1/gum, (full, content) => {
             content = content.replace(/\uE9b2/gu, '<mark risu-mark="quote1">' + quotes[2]).replace(/\uE9b3/gu, quotes[3] + '</mark>')
             return `<br><br><mark risu-mark="blockquote2">${quotes[0]}${content}${quotes[1]}</mark><br><br>`
@@ -469,7 +471,7 @@ export function resetAssetsCache(charAssets: string[][], emoAssets: string[][], 
 $effect.root(() => {
     $effect(() => {
         const charId = selIdState.selId
-        const char = DBState.db.characters?.[charId]
+        const char = characterStore.characters?.[charId]
         if (!char || char.type !== 'character') {
             return
         }
@@ -486,7 +488,7 @@ const imageCBS = ['img', 'image', 'emotion', 'asset', 'bg', 'raw', 'path']
 const videoExtensions = ['mp4', 'webm', 'avi', 'm4p', 'm4v']
 
 async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|character, mode:'normal'|'back', arg:{ch:number}){
-    const assetWidthString = (DBState.db.assetWidth && DBState.db.assetWidth !== -1 || DBState.db.assetWidth === 0) ? `max-width:${DBState.db.assetWidth}rem;` : ''
+    const assetWidthString = (settingsStore.state.assetWidth && settingsStore.state.assetWidth !== -1 || settingsStore.state.assetWidth === 0) ? `max-width:${settingsStore.state.assetWidth}rem;` : ''
 
     if (char.type === 'character' && (!assetsCache || !emoAssetsCache)) {
         resetAssetsCache(char.additionalAssets ?? [], char.emotionImages, getModuleAssets())
@@ -503,7 +505,7 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
 
         // Skip image-related assets when hideAllImages is enabled
         // raw and path are also included as they're used in CSS background-image
-        if(DBState.db.hideAllImages && imageCBS.includes(type)){
+        if(settingsStore.state.hideAllImages && imageCBS.includes(type)){
             return ''  // Hide the image asset
         }
 
@@ -531,7 +533,7 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
         let match = assetPaths?.[name]
 
         if(!match){
-            if(DBState.db.legacyMediaFindings){
+            if(settingsStore.state.legacyMediaFindings){
                 return ''
             }
 
@@ -622,7 +624,7 @@ function getClosestMatch(char: simpleCharacterArgument|character, name:string, a
         }
     }
     
-    if(closestDist > DBState.db.assetMaxDifference){
+    if(closestDist > settingsStore.state.assetMaxDifference){
         return null
     }
 
@@ -694,7 +696,7 @@ async function parseInlayAssets(data:string){
             switch(asset?.type){
                 case 'image':
                     // Hide inlay images when hideAllImages is enabled
-                    if(DBState.db.hideAllImages){
+                    if(settingsStore.state.hideAllImages){
                         data = data.replace(inlay, '')
                         break
                     }
@@ -976,7 +978,7 @@ function decodeStyle(text:string){
             })}</style>`
 
         } catch (error) {
-            if(DBState.db.returnCSSError){
+            if(settingsStore.state.returnCSSError){
                 return `CSS ERROR: ${error}`
             }
             return ""
@@ -1566,7 +1568,7 @@ export function risuChatParser(da:string, arg:{
     cbsConditions?:CbsConditions
 } = {}):string{
     const chatID = arg.chatID ?? -1
-    const db = arg.db ?? DBState.db
+    const db = arg.db ?? getDatabase()
     const aChara = arg.chara
     let chara:character|string = null
 
@@ -1587,7 +1589,7 @@ export function risuChatParser(da:string, arg:{
         }
     }
     if(arg.tokenizeAccurate){
-        const db = arg.db ?? DBState.db
+        const db = arg.db ?? getDatabase()
         const selchar = chara ?? db.characters[get(selectedCharID)]
         if(!selchar){
             chara = 'bot'

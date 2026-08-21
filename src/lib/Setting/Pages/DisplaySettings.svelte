@@ -1,6 +1,6 @@
 <script lang="ts">
     import { language } from "src/lang";
-    import { DBState } from "src/ts/stores.svelte";
+    import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
     import SettingRenderer from "../SettingRenderer.svelte";
     import {
         displayOtherSettingsItems,
@@ -8,7 +8,7 @@
         displayThemeSettingsItems,
     } from "src/ts/setting/displaySettingsData.svelte";
 
-    let submenu = $state(DBState.db.useLegacyGUI ? -1 : 0);
+    let submenu = $state(settingsStore.state.useLegacyGUI ? -1 : 0);
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.display}</h2>

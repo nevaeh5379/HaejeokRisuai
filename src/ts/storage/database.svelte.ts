@@ -19,6 +19,8 @@ import {
     DEFAULT_CHAT_LOAD_INITIAL_PAGES,
     normalizeChatLoadPages,
 } from '../chatLoadPages';
+import { settingsStore } from '../stores/domain/settingsStore.svelte';
+import { characterStore } from '../stores/domain/characterStore.svelte';
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = "2026.8.160" //<APP_VERSION_POINT>
@@ -779,15 +781,15 @@ export function setDatabase(data:Database){
 
 function refreshLanguage(data: Database): void {
     void changeLanguage(data.language).then(() => {
-        // Dynamic locale chunks resolve after setDatabase returns. Reassign
-        // the current root so Svelte consumers render the newly selected
-        // dictionary even when setDatabase is called outside bootstrap.
-        if (DBState.db === data) DBState.db = data
+        if (settingsStore.state.language === data.language) {
+            settingsStore.state.language = data.language
+        }
     })
 }
 
 export function setDatabaseLite(data:Database){
-    DBState.db = data
+    characterStore.init(data.characters ?? [], null as any)
+    settingsStore.init(data, null as any)
 }
 
 interface getDatabaseOptions{
@@ -795,53 +797,38 @@ interface getDatabaseOptions{
 }
 
 export function getDatabase(options:getDatabaseOptions = {}):Database{
-    if(options.snapshot){
-        return $state.snapshot(DBState.db) as Database
+    const combined: any = {
+        ...settingsStore.state,
+        characters: characterStore.characters,
     }
-    return DBState.db as Database
+    if(options.snapshot){
+        return $state.snapshot(combined) as Database
+    }
+    return combined as Database
 }
 
-export function getCurrentCharacter(options:getDatabaseOptions = {}):character|groupChat{
-    const db = getDatabase(options)
-    if(!db.characters){
-        db.characters = []
-    }
-    const char = db.characters?.[get(selectedCharID)]
-    return char
+export function getCurrentCharacter(options:getDatabaseOptions = {}):character|groupChat|undefined{
+    return characterStore.getCurrentCharacter(options)
 }
 
 export function setCurrentCharacter(char:character|groupChat){
-    if(!DBState.db.characters){
-        DBState.db.characters = []
-    }
-    DBState.db.characters[get(selectedCharID)] = char
+    characterStore.setCurrentCharacter(char)
 }
 
-export function getCharacterByIndex(index:number,options:getDatabaseOptions = {}):character|groupChat{
-    const db = getDatabase(options)
-    if(!db.characters){
-        db.characters = []
-    }
-    const char = db.characters?.[index]
-    return char
+export function getCharacterByIndex(index:number,options:getDatabaseOptions = {}):character|groupChat|undefined{
+    return characterStore.getCharacterByIndex(index, options)
 }
 
 export function setCharacterByIndex(index:number,char:character|groupChat){
-    if(!DBState.db.characters){
-        DBState.db.characters = []
-    }
-    DBState.db.characters[index] = char
+    characterStore.setCharacterByIndex(index, char)
 }
 
 export function getCurrentChat(){
-    const char = getCurrentCharacter()
-    return char?.chats[char.chatPage]
+    return characterStore.getCurrentChat()
 }
 
 export function setCurrentChat(chat:Chat){
-    const char = getCurrentCharacter()
-    char.chats[char.chatPage] = chat
-    setCurrentCharacter(char)
+    characterStore.setCurrentChat(chat)
 }
 
 export interface DynamicOutput {
@@ -2117,7 +2104,7 @@ export const defaultSdDataFunc = () =>{
 }
 
 export function saveCurrentPreset(){
-    let db = DBState.db
+    let db = settingsStore.state
     let pres = db.botPresets
 
     if(db.botPresetsId === -1){
@@ -2219,7 +2206,7 @@ export function saveCurrentPreset(){
 
 export function copyPreset(id:number){
     saveCurrentPreset()
-    let db = DBState.db
+    let db = settingsStore.state
     let pres = db.botPresets
     const newPres = safeStructuredClone(pres[id])
     newPres.name += " Copy"
@@ -2230,7 +2217,7 @@ export function changeToPreset(id =0, savecurrent = true){
     if(savecurrent){
         saveCurrentPreset()
     }
-    let db = DBState.db
+    let db = settingsStore.state
     let pres = db.botPresets
     const newPres = pres[id]
     db.botPresetsId = id
@@ -2363,7 +2350,7 @@ import type { OnnxModelFiles } from '../process/transformers';
 import type { RisuModule } from '../process/modules';
 import type { SerializableHypaV2Data } from '../process/memory/hypav2';
 import { decodeRPack, encodeRPack } from '../rpack/rpack_js';
-import { DBState, selectedCharID } from '../stores.svelte';
+import { selectedCharID } from '../stores.svelte';
 import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/types';
 import type { HypaModel } from '../process/memory/hypamemory';
 import type { SerializableHypaV3Data } from '../process/memory/hypav3';
@@ -2451,7 +2438,7 @@ export async function importPreset(f:{
     if(pre?.promptTemplate !== undefined){
         pre.promptTemplate = normalizePromptTemplate(pre.promptTemplate)
     }
-    let db = DBState.db
+    let db = settingsStore.state
     if(pre.presetVersion && pre.presetVersion >= 3){
         //NAI preset
         const pr = safeStructuredClone(prebuiltPresets.NAI)

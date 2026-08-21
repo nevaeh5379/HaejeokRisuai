@@ -4,7 +4,8 @@
     getCurrentHypaV3Preset,
   } from "src/ts/process/memory/hypav3";
   import { type Message } from "src/ts/storage/database.svelte";
-  import { DBState, selectedCharID } from "src/ts/stores.svelte";
+  import { selectedCharID } from "src/ts/stores.svelte";
+  import { characterStore } from "src/ts/stores/domain";
   import { language } from "src/lang";
   import { getFirstMessage, processRegexScript } from "./utils";
 
@@ -15,8 +16,8 @@
   let { hypaV3Data }: Props = $props();
 
   async function getNextSummarizationTarget(): Promise<Message | null> {
-    const char = DBState.db.characters[$selectedCharID];
-    const chat = char.chats[DBState.db.characters[$selectedCharID].chatPage];
+    const char = characterStore.characters[$selectedCharID];
+    const chat = char.chats[characterStore.characters[$selectedCharID].chatPage];
     const shouldProcess = getCurrentHypaV3Preset().settings.processRegexScript;
 
     // Summaries exist

@@ -5,7 +5,8 @@ import { alertConfirm, alertError, alertPluginConfirm } from "../alert";
 import { selectSingleFile, sleep } from "../util";
 import type { OpenAIChat } from "../process/index.svelte";
 import { fetchNative, forageStorage, globalFetch, readImage, saveAsset, toGetter } from "../globalApi.svelte";
-import { DBState, hotReloading, pluginAlertModalStore, selectedCharID } from "../stores.svelte";
+import { hotReloading, pluginAlertModalStore, selectedCharID } from "../stores.svelte";
+import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import type { ScriptMode } from "../process/scripts";
 import { checkCodeSafety } from "./pluginSafety";
 import { SafeDocument, SafeIdbFactory, SafeLocalStorage } from "./pluginSafeClass";
@@ -686,7 +687,7 @@ export const getV2PluginAPIs = () => {
         apiVersion: "2.1",
         apiVersionCompatibleWith: ["2.0","2.1"],
         getDatabase: () => {
-            const db = DBState?.db
+            const db = getDatabase()
             if(!db){
                 return {}
             }
@@ -793,7 +794,6 @@ export const getV2PluginAPIs = () => {
                     db.pluginCustomStorage[key] = newDb[key];
                 }
             }
-            DBState.db = db;
         },
         setDatabase: async (newDb: any) => {
             const db = getDatabase();
@@ -965,7 +965,7 @@ export async function handlePluginInstallViaPlugin(plugins: RisuPlugin[]){
 
     const trimmedPlugins: RisuPlugin[] = []
     for(const plugin of plugins){
-        if(!DBState.db.plugins.find((p: RisuPlugin) => p.name === plugin.name && p.script === plugin.script)){
+        if(!settingsStore.state.plugins?.find((p: RisuPlugin) => p.name === plugin.name && p.script === plugin.script)){
 
             if(plugin.version !== '3.0'){
                 console.warn(`Plugin "${plugin.name}" has version "${plugin.version}", which is not supported for installation via plugin. Only API version 3.0 plugins can be installed via plugin. Skipping installation of this plugin.`)

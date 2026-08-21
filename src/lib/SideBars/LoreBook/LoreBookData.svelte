@@ -10,7 +10,7 @@
     import NumberInput from "../../UI/GUI/NumberInput.svelte";
     import TextAreaInput from "../../UI/GUI/TextAreaInput.svelte";
     import { tokenizeAccurate } from "src/ts/tokenizer";
-    import { DBState } from "src/ts/stores.svelte";
+    import { settingsStore } from "src/ts/stores/domain";
     import LoreBookList from "./LoreBookList.svelte";
 
     interface Props {
@@ -264,7 +264,7 @@
             <div class="flex items-center mt-4">
                 <Check bind:check={value.alwaysActive} name={language.alwaysActive}/>
             </div>
-            {#if !value.alwaysActive && getCurrentCharacter()?.globalLore?.includes(value) && DBState.db.localActivationInGlobalLorebook}
+            {#if !value.alwaysActive && getCurrentCharacter()?.globalLore?.includes(value) && settingsStore.state.localActivationInGlobalLorebook}
                 <div class="flex items-center mt-2">
                     <Check check={isLocallyActivated(value)} onChange={(check: boolean) => toggleLocalActive(check, value)} name={language.alwaysActiveInChat}/>
                 </div>

@@ -9,7 +9,7 @@
     import FilesSettings from "./Pages/FilesSettings.svelte";
     import AdvancedSettings from "./Pages/AdvancedSettings.svelte";
     import { additionalSettingsMenu, easyPanelStore, MobileGUI, SettingsMenuIndex, settingsOpen } from "src/ts/stores.svelte";
-    import { DBState } from "src/ts/stores.svelte";
+    import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
     import Communities from "./Pages/Communities.svelte";
     import GlobalLoreBookSettings from "./Pages/GlobalLoreBookSettings.svelte";
     import Lorepreset from "./lorepreset.svelte";
@@ -187,7 +187,7 @@
                         </button>
                     {/each}
 
-                    {#if DBState.db.enableRisuaiProTools}
+                    {#if settingsStore.state.enableRisuaiProTools}
                         <button class="flex gap-2 items-center hover:text-textcolor"
                             class:text-textcolor={$SettingsMenuIndex === 16}
                             class:text-textcolor2={$SettingsMenuIndex !== 16}
@@ -211,7 +211,7 @@
                 {#if window.innerWidth < 700 && !$MobileGUI}
                     <button class="absolute top-2 right-2 hover:text-green-500 text-textcolor" onclick={() => {
                         settingsOpen.set(false)
-                    }}> <CircleXIcon size={DBState.db.settingsCloseButtonSize} /> </button>
+                    }}> <CircleXIcon size={settingsStore.state.settingsCloseButtonSize} /> </button>
                 {/if}
             </div>
         {/if}
@@ -268,7 +268,7 @@
                         $SettingsMenuIndex = -1
                     }
                 }}>
-                    <CircleXIcon size={DBState.db.settingsCloseButtonSize} />
+                    <CircleXIcon size={settingsStore.state.settingsCloseButtonSize} />
                 </button>
             {/if}
         {/if}

@@ -3,7 +3,8 @@
     import DOMPurify from 'dompurify';
     import { XIcon, SearchIcon } from "@lucide/svelte";
     import { language } from "src/lang";
-    import { messageSearchOpen, DBState, selectedCharID, ScrollToMessageStore } from "src/ts/stores.svelte";
+    import { messageSearchOpen, selectedCharID, ScrollToMessageStore } from "src/ts/stores.svelte";
+    import { characterStore } from "src/ts/stores/domain";
     import { forageStorage } from "src/ts/globalApi.svelte";
     import { NodeStorage } from "src/ts/storage/nodeStorage";
     import type { NodePostgresMessageSearchResult } from "src/ts/storage/nodePostgresStorage";
@@ -67,7 +68,7 @@
         close();
         await changeChar(charIndex, {});
 
-        const char = DBState.db.characters[charIndex];
+        const char = characterStore.characters[charIndex];
         if (!char) {
             return;
         }

@@ -1,5 +1,4 @@
 import type { SettingItem, SettingContext } from './types';
-import { DBState } from '../stores.svelte';
 import { settingsStore } from '../stores/domain/settingsStore.svelte';
 import { language } from 'src/lang';
 import { accessibilitySettingsItems } from './accessibilitySettingsData';
@@ -24,36 +23,36 @@ export function getLabel(item: SettingItem): string {
 
 export function getSettingValue(item: SettingItem, ctx: SettingContext): any {
     if (item.getValue) {
-        return item.getValue(DBState.db, ctx);
+        return item.getValue(settingsStore.state as any, ctx);
     }
     if (item.bindPath) {
         const parts = item.bindPath.split('.');
-        let value: any = DBState.db;
+        let value: any = settingsStore.state;
         for (const part of parts) {
             value = value?.[part];
         }
         return value;
     }
     if (item.bindKey) {
-        return (DBState.db as any)[item.bindKey];
+        return (settingsStore.state as any)[item.bindKey];
     }
     return undefined;
 }
 
 export function setSettingValue(item: SettingItem, newValue: any, ctx: SettingContext): void {
     if (item.setValue) {
-        item.setValue(DBState.db, newValue, ctx);
+        item.setValue(settingsStore.state as any, newValue, ctx);
         if (item.bindKey) {
-            settingsStore.set(item.bindKey as any, (DBState.db as any)[item.bindKey]);
+            settingsStore.set(item.bindKey as any, (settingsStore.state as any)[item.bindKey]);
         }
     } else if (item.bindPath) {
         const parts = item.bindPath.split('.');
-        let obj: any = DBState.db;
+        let obj: any = settingsStore.state;
         for (let i = 0; i < parts.length - 1; i++) {
             obj = obj[parts[i]] ??= {};
         }
         obj[parts[parts.length - 1]] = newValue;
-        settingsStore.set(parts[0] as any, (DBState.db as any)[parts[0]]);
+        settingsStore.set(parts[0] as any, (settingsStore.state as any)[parts[0]]);
     } else if (item.bindKey) {
         settingsStore.set(item.bindKey as any, newValue);
     }

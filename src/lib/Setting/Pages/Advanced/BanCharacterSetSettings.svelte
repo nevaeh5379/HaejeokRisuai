@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { DBState } from 'src/ts/stores.svelte';
+    import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
     import { language } from "src/lang";
     import Button from "src/lib/UI/GUI/Button.svelte";
     import Accordion from "src/lib/UI/Accordion.svelte";
@@ -19,11 +19,11 @@
 
 <Accordion styled name={language.banCharacterset}>
     {#each characterSets as set}
-        <Button styled={DBState.db.banCharacterset.includes(set) ? 'primary' : "outlined"} onclick={(e) => {
-            if (DBState.db.banCharacterset.includes(set)) {
-                DBState.db.banCharacterset = DBState.db.banCharacterset.filter((item) => item !== set)
+        <Button styled={settingsStore.state.banCharacterset.includes(set) ? 'primary' : "outlined"} onclick={(e) => {
+            if (settingsStore.state.banCharacterset.includes(set)) {
+                settingsStore.state.banCharacterset = settingsStore.state.banCharacterset.filter((item: string) => item !== set)
             } else {
-                DBState.db.banCharacterset.push(set)
+                settingsStore.state.banCharacterset.push(set)
             }
         }}>
             {new Intl.DisplayNames([navigator.language,'en'], { type: 'script' }).of(set)} ({characterSetsPreview[set]})

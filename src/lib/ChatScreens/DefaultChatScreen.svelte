@@ -6,7 +6,7 @@
     import { tick } from 'svelte';
     import Chat from "./Chat.svelte";
     import { type Message } from "../../ts/storage/database.svelte";
-    import { DBState } from 'src/ts/stores.svelte';
+    import { characterStore, settingsStore, personaStore } from 'src/ts/stores/domain';
     import { getCharImage } from "../../ts/characters";
     import { chatProcessStage, doingChat, sendChat } from "../../ts/process/index.svelte";
     import { sleep } from "../../ts/util";
@@ -46,7 +46,7 @@
     let messageInput:string = $state('')
     let messageInputTranslate:string = $state('')
     let openMenu = $state(false)
-    let loadPages = $state(getInitialChatLoadPages(DBState.db))
+    let loadPages = $state(getInitialChatLoadPages(settingsStore.state))
     let autoMode = $state(false)
     let rerolls:Message[][] = []
     let rerollid = -1
@@ -59,7 +59,7 @@
     let isScrollingToMessage = $state(false)
     let loadingOlderMessages = $state(false)
     let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props();
-    let currentCharacter = $derived(DBState.db.characters[$selectedCharID])
+    let currentCharacter = $derived(characterStore.characters[$selectedCharID])
     let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
 
     function scrollToBottom() {
@@ -70,18 +70,14 @@
         if (loadingOlderMessages) return
         const chat = currentCharacter?.chats?.[currentCharacter.chatPage]
         if (!chat?.id || !chat.messageOffset) return
-        const adapter = DBState.db as typeof DBState.db & {
-            loadOlderChatMessages?: (chatId: string, limit?: number) => Promise<number>
-        }
-        if (!adapter.loadOlderChatMessages) return
 
         loadingOlderMessages = true
         try {
-            const added = await adapter.loadOlderChatMessages(
+            const added = await characterStore.loadOlderChatMessages(
                 chat.id,
-                Math.max(getAdditionalChatLoadPages(DBState.db), 24),
+                Math.max(getAdditionalChatLoadPages(settingsStore.state), 24),
             )
-            if (added > 0) loadPages += getAdditionalChatLoadPages(DBState.db)
+            if (added > 0) loadPages += getAdditionalChatLoadPages(settingsStore.state)
         } finally {
             loadingOlderMessages = false
         }
@@ -170,13 +166,13 @@
         if($doingChat){
             return
         }
-        await preLoadChat(selectedChar, DBState.db.characters[selectedChar].chatPage, { full: true })
+        await preLoadChat(selectedChar, characterStore.characters[selectedChar].chatPage, { full: true })
         if(lastCharId !== $selectedCharID){
             rerolls = []
             rerollid = -1
         }
 
-        const activeChat = DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
+        const activeChat = characterStore.characters[selectedChar].chats[characterStore.characters[selectedChar].chatPage]
         let cha = activeChat.message
 
         if(messageInput.startsWith('/')){
@@ -196,20 +192,20 @@
         }
 
         if(messageInput === ''){
-            if(DBState.db.characters[selectedChar].type !== 'group'){
+            if(characterStore.characters[selectedChar].type !== 'group'){
                 if(cha.length === 0 || cha[cha.length - 1].role !== 'user'){
-                    if(DBState.db.useSayNothing){
+                    if(settingsStore.state.useSayNothing){
                         cha.push({
                             role: 'user',
                             data: '*says nothing*',
-                            name: $ConnectionOpenStore ? DBState.db.username : null
+                            name: $ConnectionOpenStore ? settingsStore.state.username : null
                         })
                     }
                 }
             }
         }
         else{
-            const char = DBState.db.characters[selectedChar]
+            const char = characterStore.characters[selectedChar]
             if(char.type === 'character'){
                 let triggerResult = await runTrigger(char,'input', {chat: char.chats[char.chatPage]})
                 if(triggerResult){
@@ -220,7 +216,7 @@
                     role: 'user',
                     data: await processScript(char,messageInput,'editinput'),
                     time: Date.now(),
-                    name: $ConnectionOpenStore ? DBState.db.username : null
+                    name: $ConnectionOpenStore ? settingsStore.state.username : null
                 })
             }
             else{
@@ -228,13 +224,13 @@
                     role: 'user',
                     data: messageInput,
                     time: Date.now(),
-                    name: $ConnectionOpenStore ? DBState.db.username : null
+                    name: $ConnectionOpenStore ? settingsStore.state.username : null
                 })
             }
         }
         messageInput = ''
         messageInputTranslate = ''
-        DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage].message = cha
+        characterStore.characters[selectedChar].chats[characterStore.characters[selectedChar].chatPage].message = cha
         rerolls = []
         await sleep(10)
         updateInputSizeAll()
@@ -243,7 +239,7 @@
     }
 
     async function reroll() {
-        await preLoadChat($selectedCharID, DBState.db.characters[$selectedCharID].chatPage, { full: true })
+        await preLoadChat($selectedCharID, characterStore.characters[$selectedCharID].chatPage, { full: true })
         if($doingChat){
             return
         }
@@ -251,11 +247,11 @@
             rerolls = []
             rerollid = -1
         }
-        const genId = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.at(-1)?.generationInfo?.generationId
+        const genId = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.at(-1)?.generationInfo?.generationId
         if(genId){
             const r = Prereroll(genId)
             if(r){
-                DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length - 1].data = r
+                characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message[characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.length - 1].data = r
                 return
             }
         }
@@ -263,19 +259,19 @@
             if(Array.isArray(rerolls[rerollid + 1])){
                 rerollid += 1
                 let rerollData = safeStructuredClone(rerolls[rerollid])
-                let msgs = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message
+                let msgs = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message
                 for(let i = 0; i < rerollData.length; i++){
                     msgs[msgs.length - rerollData.length + i] = rerollData[i]
                 }
-                DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message = msgs
+                characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message = msgs
             }
             return
         }
         if(rerolls.length === 0){
-            rerolls.push(safeStructuredClone([DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.at(-1)]))
+            rerolls.push(safeStructuredClone([characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.at(-1)]))
             rerollid = rerolls.length - 1
         }
-        let cha = safeStructuredClone(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message)
+        let cha = safeStructuredClone(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message)
         if(cha.length === 0 ){
             return
         }
@@ -294,12 +290,12 @@
                 return
             }
         }
-        DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message = cha
+        characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message = cha
         await sendChatMain()
     }
 
     async function unReroll() {
-        await preLoadChat($selectedCharID, DBState.db.characters[$selectedCharID].chatPage, { full: true })
+        await preLoadChat($selectedCharID, characterStore.characters[$selectedCharID].chatPage, { full: true })
         if($doingChat){
             return
         }
@@ -307,11 +303,11 @@
             rerolls = []
             rerollid = -1
         }
-        const genId = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.at(-1)?.generationInfo?.generationId
+        const genId = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.at(-1)?.generationInfo?.generationId
         if(genId){
             const r = PreUnreroll(genId)
             if(r){
-                DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length - 1].data = r
+                characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message[characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.length - 1].data = r
                 return
             }
         }
@@ -321,11 +317,11 @@
         if(Array.isArray(rerolls[rerollid - 1])){
             rerollid -= 1
             let rerollData = safeStructuredClone(rerolls[rerollid])
-            let msgs = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message
+            let msgs = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message
             for(let i = 0; i < rerollData.length; i++){
                 msgs[msgs.length - rerollData.length + i] = rerollData[i]
             }
-            DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message = msgs
+            characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message = msgs
         }
     }
 
@@ -333,7 +329,7 @@
 
     async function sendChatMain(continued:boolean = false) {
 
-        const targetChat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+        const targetChat = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage]
         targetChat.preventMessageCompaction = true
         let previousLength = targetChat.message.length
         messageInput = ''
@@ -343,8 +339,8 @@
                 signal:abortController.signal,
                 continue:continued
             })
-            if(previousLength < DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length){
-                rerolls.push(safeStructuredClone(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message).slice(previousLength))
+            if(previousLength < characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.length){
+                rerolls.push(safeStructuredClone(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message).slice(previousLength))
                 rerollid = rerolls.length - 1
             }
         } catch (error) {
@@ -356,7 +352,7 @@
         lastCharId = $selectedCharID
         $doingChat = false
         if (targetChat.id) compactChatMessages(targetChat.id)
-        if(DBState.db.playMessage){
+        if(settingsStore.state.playMessage){
             const audio = new Audio(sendSound);
             audio.play().catch(() => {});
         }
@@ -384,10 +380,10 @@
     }
 
     let { userIconPortrait, currentUsername, userIcon } = $derived.by(() => {
-        const bindedPersona = DBState?.db?.characters?.[$selectedCharID]?.chats?.[DBState?.db?.characters?.[$selectedCharID]?.chatPage]?.bindedPersona
+        const bindedPersona = characterStore.characters?.[$selectedCharID]?.chats?.[characterStore.characters?.[$selectedCharID]?.chatPage]?.bindedPersona
 
-        if(bindedPersona && DBState?.db?.personas){
-            const persona = DBState.db.personas.find((p) => p.id === bindedPersona)
+        if(bindedPersona && (personaStore.list ?? settingsStore.state?.personas)){
+            const persona = (personaStore.list ?? settingsStore.state?.personas)?.find((p: any) => p.id === bindedPersona)
             if(persona){
                 return {
                     currentUsername: persona.name,
@@ -397,12 +393,12 @@
             }
         }
 
-        const selectedPersonaIndex = DBState?.db?.selectedPersona ?? 0
-        const selectedPersona = DBState?.db?.personas?.[selectedPersonaIndex]
+        const selectedPersonaIndex = personaStore.activeIndex ?? settingsStore.state?.selectedPersona ?? 0
+        const selectedPersona = (personaStore.list ?? settingsStore.state?.personas)?.[selectedPersonaIndex]
         return {
-            currentUsername: selectedPersona?.name ?? DBState?.db?.username ?? '',
+            currentUsername: selectedPersona?.name ?? settingsStore.state?.username ?? '',
             userIconPortrait: selectedPersona?.largePortrait ?? false,
-            userIcon: selectedPersona?.icon ?? DBState?.db?.userIcon ?? ''
+            userIcon: selectedPersona?.icon ?? settingsStore.state?.userIcon ?? ''
         }
     })
 
@@ -436,7 +432,7 @@
     });
 
     async function updateInputTransateMessage(reverse: boolean) {
-        if(!DBState.db.useAutoTranslateInput){
+        if(!settingsStore.state.useAutoTranslateInput){
             return
         }
         if(isExpTranslator()){
@@ -530,7 +526,7 @@
                 mergedCanvas.remove();
             }
             alertNormal(language.screenshotSaved)
-            loadPages = getInitialChatLoadPages(DBState.db)
+            loadPages = getInitialChatLoadPages(settingsStore.state)
         } catch (error) {
             console.error(error)
             alertError("Error while taking screenshot")
@@ -549,41 +545,41 @@
 }}>
     
     {#if showNewMessageButton}
-        {#if (DBState.db.newMessageButtonStyle === 'bottom-center' || !DBState.db.newMessageButtonStyle)}
+        {#if (settingsStore.state.newMessageButtonStyle === 'bottom-center' || !settingsStore.state.newMessageButtonStyle)}
             <button class="absolute bottom-16 left-1/2 -translate-x-1/2 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors" onclick={scrollToBottom}>
                 <ArrowDown size={16} />
                 <span>{language.newMessage}</span>
             </button>
         {/if}
 
-        {#if DBState.db.newMessageButtonStyle === 'bottom-right'}
+        {#if settingsStore.state.newMessageButtonStyle === 'bottom-right'}
             <button class="absolute bottom-20 right-4 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors" onclick={scrollToBottom}>
                 <ArrowDown size={16} />
                 <span>{language.newMessage}</span>
             </button>
         {/if}
 
-        {#if DBState.db.newMessageButtonStyle === 'bottom-left'}
+        {#if settingsStore.state.newMessageButtonStyle === 'bottom-left'}
             <button class="absolute bottom-20 left-4 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors" onclick={scrollToBottom}>
                 <ArrowDown size={16} />
                 <span>{language.newMessage}</span>
             </button>
         {/if}
 
-        {#if DBState.db.newMessageButtonStyle === 'floating-circle'}
+        {#if settingsStore.state.newMessageButtonStyle === 'floating-circle'}
             <button class="absolute bottom-36 right-4 bg-blue-500 text-white w-12 h-12 rounded-full shadow-lg z-50 flex items-center justify-center hover:bg-blue-600 transition-colors" onclick={scrollToBottom} title="4. 원형 (우하단)">
                 <ArrowDown size={20} />
             </button>
         {/if}
 
-        {#if DBState.db.newMessageButtonStyle === 'right-center'}
+        {#if settingsStore.state.newMessageButtonStyle === 'right-center'}
             <button class="absolute top-1/2 right-2 -translate-y-1/2 bg-blue-500 text-white px-2 py-3 rounded-l-lg shadow-lg z-50 flex flex-col items-center gap-1 hover:bg-blue-600 transition-colors" onclick={scrollToBottom}>
                 <ArrowDown size={14} />
                 <span class="text-xs writing-mode-vertical">{language.newMessage}</span>
             </button>
         {/if}
 
-        {#if DBState.db.newMessageButtonStyle === 'top-bar'}
+        {#if settingsStore.state.newMessageButtonStyle === 'top-bar'}
             <button class="absolute top-2 left-1/2 -translate-x-1/2 bg-blue-500 text-white px-6 py-1.5 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors text-sm" onclick={scrollToBottom}>
                 <ArrowDown size={14} />
                 <span>{language.newMessage}</span>
@@ -608,15 +604,15 @@
             //@ts-expect-error scrollHeight/clientHeight/scrollTop don't exist on EventTarget, but target is HTMLElement here
             const scrolled = (e.target.scrollHeight - e.target.clientHeight + e.target.scrollTop)
             if(scrolled < 100){
-                const chat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+                const chat = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage]
                 if(chat.message.length > loadPages){
-                    loadPages += getAdditionalChatLoadPages(DBState.db)
+                    loadPages += getAdditionalChatLoadPages(settingsStore.state)
                 } else if ((chat.messageOffset ?? 0) > 0) {
                     await loadOlderMessages()
                 }
             }
             const chatTarget = e.target as HTMLElement;
-            const chatsContainer = (DBState.db.fixedChatTextarea && chatTarget.children[1]) ? chatTarget.children[1] : chatTarget.children[0];
+            const chatsContainer = (settingsStore.state.fixedChatTextarea && chatTarget.children[1]) ? chatTarget.children[1] : chatTarget.children[0];
             const lastEl = chatsContainer?.firstElementChild;
             const isAtBottom = lastEl ? lastEl.getBoundingClientRect().top <= chatTarget.getBoundingClientRect().bottom + 100 : true;
             if(isAtBottom){
@@ -624,10 +620,10 @@
             }
         }}>
             <div
-                    class="{DBState.db.fixedChatTextarea ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor' : 'mt-2 mb-2'} flex items-stretch w-full"
-                    style="{DBState.db.fixedChatTextarea ? 'z-index:29;' : ''}"
+                    class="{settingsStore.state.fixedChatTextarea ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor' : 'mt-2 mb-2'} flex items-stretch w-full"
+                    style="{settingsStore.state.fixedChatTextarea ? 'z-index:29;' : ''}"
             >
-                {#if DBState.db.useChatSticker && currentCharacter.type !== 'group'}
+                {#if settingsStore.state.useChatSticker && currentCharacter.type !== 'group'}
                     <div onclick={()=>{toggleStickers = !toggleStickers}}
                          class={"ml-4 bg-textcolor2 flex justify-center items-center  w-12 h-12 rounded-md hover:bg-blue-500 transition-colors "+(toggleStickers ? 'text-green-500':'text-textcolor')}>
                         <Laugh/>
@@ -639,10 +635,10 @@
                           bind:this={inputEle}
                           onkeydown={(e) => {
                         if(e.key.toLocaleLowerCase() === "enter" && !e.isComposing){
-                            if(DBState.db.sendWithEnter && (!e.shiftKey)){
+                            if(settingsStore.state.sendWithEnter && (!e.shiftKey)){
                                 send()
                                 e.preventDefault()
-                            }else if(!DBState.db.sendWithEnter && e.shiftKey){
+                            }else if(!settingsStore.state.sendWithEnter && e.shiftKey){
                                 send()
                                 e.preventDefault()
                             }
@@ -713,7 +709,7 @@
                         <Send />
                     </button>
                 {/if}
-                {#if DBState.db.characters[$selectedCharID]?.chaId !== '§playground'}
+                {#if characterStore.characters[$selectedCharID]?.chaId !== '§playground'}
                     <button
                             onclick={(e) => {
                             openMenu = !openMenu
@@ -726,11 +722,11 @@
                     </button>
                 {:else}
                     <div onclick={(e) => {
-                        DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.push({
+                        characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.push({
                             role: 'char',
                             data: ''
                         })
-                        DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage] = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+                        characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage] = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage]
                     }}
                          class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
                          style:height={inputHeight}
@@ -739,7 +735,7 @@
                     </div>
                 {/if}
             </div>
-            {#if DBState.db.useAutoTranslateInput && DBState.db.characters[$selectedCharID]?.chaId !== '§playground'}
+            {#if settingsStore.state.useAutoTranslateInput && characterStore.characters[$selectedCharID]?.chaId !== '§playground'}
                 <div class="flex items-center mt-2 mb-2">
                     <label for='messageInputTranslate' class="text-textcolor ml-4">
                         <LanguagesIcon />
@@ -749,7 +745,7 @@
                               bind:this={inputTranslateEle}
                               onkeydown={(e) => {
                             if(e.key.toLocaleLowerCase() === "enter" && (!e.shiftKey)){
-                                if(DBState.db.sendWithEnter){
+                                if(settingsStore.state.sendWithEnter){
                                     send()
                                     e.preventDefault()
                                 }
@@ -817,9 +813,9 @@
                 </div>
             {/if}
 
-            {#if DBState.db.useAutoSuggestions}
+            {#if settingsStore.state.useAutoSuggestions}
                 <Suggestion messageInput={(msg)=>messageInput=(
-                    (DBState.db.subModel === "textgen_webui" || DBState.db.subModel === "mancer" || DBState.db.subModel.startsWith('local_')) && DBState.db.autoSuggestClean
+                    (settingsStore.state.subModel === "textgen_webui" || settingsStore.state.subModel === "mancer" || settingsStore.state.subModel.startsWith('local_')) && settingsStore.state.autoSuggestClean
                     ? msg.replace(/ +\(.+?\) *$| - [^"'*]*?$/, '')
                     : msg
                 )} {send}/>
@@ -835,8 +831,8 @@
                 </div>
             {/if}
 
-            {#if DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message?.[0]?.data?.startsWith(coldStorageHeader) || DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].messagesLoaded === false || DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].detailsLoaded === false }
-                {#await preLoadChat($selectedCharID, DBState.db.characters[$selectedCharID].chatPage)}
+            {#if characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message?.[0]?.data?.startsWith(coldStorageHeader) || characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].messagesLoaded === false || characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].detailsLoaded === false }
+                {#await preLoadChat($selectedCharID, characterStore.characters[$selectedCharID].chatPage)}
                     <div class="w-full flex justify-center text-textcolor2 italic mb-12">
                         {language.loadingChatData}
                     </div>
@@ -869,23 +865,23 @@
                 bind:hasNewUnreadMessage={showNewMessageButton}
             />
 
-            {#if DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length <= loadPages &&
-                (DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].messageOffset ?? 0) === 0}
-                {#if DBState.db.characters[$selectedCharID].type !== 'group' }
+            {#if characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.length <= loadPages &&
+                (characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].messageOffset ?? 0) === 0}
+                {#if characterStore.characters[$selectedCharID].type !== 'group' }
                     <Chat
-                        character={createSimpleCharacter(DBState.db.characters[$selectedCharID])}
-                        name={DBState.db.characters[$selectedCharID].name}
-                        message={DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].fmIndex === -1 ? DBState.db.characters[$selectedCharID].firstMessage :
-                            DBState.db.characters[$selectedCharID].alternateGreetings[DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].fmIndex]}
+                        character={createSimpleCharacter(characterStore.characters[$selectedCharID])}
+                        name={characterStore.characters[$selectedCharID].name}
+                        message={characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].fmIndex === -1 ? characterStore.characters[$selectedCharID].firstMessage :
+                            characterStore.characters[$selectedCharID].alternateGreetings[characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].fmIndex]}
                         role='char'
-                        img={getCharImage(DBState.db.characters[$selectedCharID].image, 'css')}
+                        img={getCharImage(characterStore.characters[$selectedCharID].image, 'css')}
                         idx={-1}
-                        altGreeting={DBState.db.characters[$selectedCharID].alternateGreetings.length > 0}
-                        largePortrait={DBState.db.characters[$selectedCharID].largePortrait}
+                        altGreeting={characterStore.characters[$selectedCharID].alternateGreetings.length > 0}
+                        largePortrait={characterStore.characters[$selectedCharID].largePortrait}
                         firstMessage={true}
                         onReroll={() => {
-                            const cha = DBState.db.characters[$selectedCharID]
-                            const chat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+                            const cha = characterStore.characters[$selectedCharID]
+                            const chat = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage]
                             if(cha.type !== 'group'){
                                 if (chat.fmIndex >= (cha.alternateGreetings.length - 1)){
                                     chat.fmIndex = -1
@@ -894,11 +890,11 @@
                                     chat.fmIndex += 1
                                 }
                             }
-                            DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage] = chat
+                            characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage] = chat
                         }}
                         unReroll={() => {
-                            const cha = DBState.db.characters[$selectedCharID]
-                            const chat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+                            const cha = characterStore.characters[$selectedCharID]
+                            const chat = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage]
                             if(cha.type !== 'group'){
                                 if (chat.fmIndex === -1){
                                     chat.fmIndex = (cha.alternateGreetings.length - 1)
@@ -907,25 +903,25 @@
                                     chat.fmIndex -= 1
                                 }
                             }
-                            DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage] = chat
+                            characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage] = chat
                         }}
                         isLastMemory={false}
-                        currentPage={(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].fmIndex ?? -1) + 2}
-                        totalPages={DBState.db.characters[$selectedCharID].alternateGreetings.length + 1}
+                        currentPage={(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].fmIndex ?? -1) + 2}
+                        totalPages={characterStore.characters[$selectedCharID].alternateGreetings.length + 1}
 
                     />
-                    {#if (aiLawApplies() && DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length === 0)}
+                    {#if (aiLawApplies() && characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.length === 0)}
                         <div class="ml-auto mr-auto mt-4 text-textcolor2 italic max-w-2/3 wrap-break-word text-center">
                             {language.aiGenerationWarning}
                         </div>
                     {/if}
-                    {#if !DBState.db.characters[$selectedCharID].removedQuotes && DBState.db.characters[$selectedCharID].creatorNotes.length >= 2}
-                        <CreatorQuote quote={DBState.db.characters[$selectedCharID].creatorNotes} onRemove={() => {
-                            const cha = DBState.db.characters[$selectedCharID]
+                    {#if !characterStore.characters[$selectedCharID].removedQuotes && characterStore.characters[$selectedCharID].creatorNotes.length >= 2}
+                        <CreatorQuote quote={characterStore.characters[$selectedCharID].creatorNotes} onRemove={() => {
+                            const cha = characterStore.characters[$selectedCharID]
                             if(cha.type !== 'group'){
                                 cha.removedQuotes = true
                             }
-                            DBState.db.characters[$selectedCharID] = cha
+                            characterStore.characters[$selectedCharID] = cha
                         }} />
                     {/if}
                 {/if}
@@ -934,10 +930,10 @@
             {/if}
 
             {#if openMenu}
-                <div class="{DBState.db.fixedChatTextarea ? 'fixed' : 'absolute'} right-2 bottom-16 p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md" onclick={(e) => {
+                <div class="{settingsStore.state.fixedChatTextarea ? 'fixed' : 'absolute'} right-2 bottom-16 p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md" onclick={(e) => {
                     e.stopPropagation()
                 }}>
-                    {#if DBState.db.characters[$selectedCharID].type === 'group'}
+                    {#if characterStore.characters[$selectedCharID].type === 'group'}
                         <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={runAutoMode}>
                             <DicesIcon />
                             <span class="ml-2">{language.autoMode}</span>
@@ -946,7 +942,7 @@
 
                     
                     <!-- svelte-ignore block_empty -->
-                    {#if DBState.db.characters[$selectedCharID].ttsMode === 'webspeech' || DBState.db.characters[$selectedCharID].ttsMode === 'elevenlab'}
+                    {#if characterStore.characters[$selectedCharID].ttsMode === 'webspeech' || characterStore.characters[$selectedCharID].ttsMode === 'elevenlab'}
                         <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => {
                             stopTTS()
                         }}>
@@ -956,9 +952,9 @@
                     {/if}
 
                     <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
-                        class:text-textcolor2={(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length < 2) || (DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length - 1].role !== 'char')}
+                        class:text-textcolor2={(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.length < 2) || (characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message[characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.length - 1].role !== 'char')}
                         onclick={() => {
-                            if((DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length < 2) || (DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length - 1].role !== 'char')){
+                            if((characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.length < 2) || (characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message[characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.length - 1].role !== 'char')){
                                 return
                             }
                             sendContinue();
@@ -969,7 +965,7 @@
                     </div>
 
 
-                    {#if DBState.db.showMenuChatList}
+                    {#if settingsStore.state.showMenuChatList}
                         <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => {
                             openChatList = true
                             openMenu = false
@@ -980,7 +976,7 @@
                     {/if}
 
                     
-                    {#if DBState.db.enableRisuaiProTools}
+                    {#if settingsStore.state.enableRisuaiProTools}
                         <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => {
                             easyPanelStore.open = !easyPanelStore.open
                         }}>
@@ -999,17 +995,17 @@
                         </div>
                     {/each}
 
-                    {#if DBState.db.showMenuHypaMemoryModal}
-                        {#if (DBState.db.supaModelType !== 'none' && DBState.db.hypav2) || DBState.db.hypaV3}
+                    {#if settingsStore.state.showMenuHypaMemoryModal}
+                        {#if (settingsStore.state.supaModelType !== 'none' && settingsStore.state.hypav2) || settingsStore.state.hypaV3}
                             <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => {
-                                if (DBState.db.hypav2) {
-                                    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].hypaV2Data ??= {
+                                if (settingsStore.state.hypav2) {
+                                    characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].hypaV2Data ??= {
                                         lastMainChunkID: 0,
                                         mainChunks: [],
                                         chunks: [],
                                     }
                                     showHypaV2Alert();
-                                } else if (DBState.db.hypaV3) {
+                                } else if (settingsStore.state.hypaV3) {
                                     $hypaV3ModalOpen = true
                                 }
 
@@ -1017,15 +1013,15 @@
                             }}>
                                 <BrainIcon />
                                 <span class="ml-2">
-                                    {DBState.db.hypav2 ? language.hypaMemoryV2Modal : language.hypaMemoryV3Modal}
+                                    {settingsStore.state.hypav2 ? language.hypaMemoryV2Modal : language.hypaMemoryV3Modal}
                                 </span>
                             </div>
                         {/if}
                     {/if}
                     
-                    {#if DBState.db.translator !== ''}
-                        <div class={"flex items-center cursor-pointer "+ (DBState.db.useAutoTranslateInput ? 'text-green-500':'lg:hover:text-green-500')} onclick={() => {
-                            DBState.db.useAutoTranslateInput = !DBState.db.useAutoTranslateInput
+                    {#if settingsStore.state.translator !== ''}
+                        <div class={"flex items-center cursor-pointer "+ (settingsStore.state.useAutoTranslateInput ? 'text-green-500':'lg:hover:text-green-500')} onclick={() => {
+                            settingsStore.state.useAutoTranslateInput = !settingsStore.state.useAutoTranslateInput
                         }}>
                             <GlobeIcon />
                             <span class="ml-2">{language.autoTranslateInput}</span>
@@ -1059,8 +1055,8 @@
                     </div>
 
 
-                    <div class={"flex items-center cursor-pointer "+ (DBState.db.useAutoSuggestions ? 'text-green-500':'lg:hover:text-green-500')} onclick={async () => {
-                        DBState.db.useAutoSuggestions = !DBState.db.useAutoSuggestions
+                    <div class={"flex items-center cursor-pointer "+ (settingsStore.state.useAutoSuggestions ? 'text-green-500':'lg:hover:text-green-500')} onclick={async () => {
+                        settingsStore.state.useAutoSuggestions = !settingsStore.state.useAutoSuggestions
                     }}>
                         <ReplyIcon />
                         <span class="ml-2">{language.autoSuggest}</span>
@@ -1068,7 +1064,7 @@
 
 
                     <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => {
-                        DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules ??= []
+                        characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules ??= []
                         openModuleList = true
                         openMenu = false
                     }}>
@@ -1076,7 +1072,7 @@
                         <span class="ml-2">{language.modules}</span>
                     </div>
 
-                    {#if DBState.db.sideMenuRerollButton}
+                    {#if settingsStore.state.sideMenuRerollButton}
                         <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={reroll}>
                             <RefreshCcwIcon />
                             <span class="ml-2">{language.reroll}</span>

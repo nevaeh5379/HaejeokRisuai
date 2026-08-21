@@ -5,7 +5,7 @@
     import SelectInput from "../UI/GUI/SelectInput.svelte";
     import Button from "../UI/GUI/Button.svelte";
     import { HypaProcesser } from "src/ts/process/memory/hypamemory";
-    import { DBState } from "src/ts/stores.svelte"
+    import { settingsStore } from "src/ts/stores/domain";
 
     let query = $state("");
     let model = $state("MiniLM");
@@ -51,16 +51,16 @@
 
 {#if model === 'openai3small' || model === 'openai3large' || model === 'ada'}
     <span class="text-textcolor text-lg">OpenAI API Key</span>
-    <TextInput size="sm" marginBottom bind:value={DBState.db.supaMemoryKey}/>
+    <TextInput size="sm" marginBottom bind:value={settingsStore.state.supaMemoryKey}/>
 {/if}
 
 {#if model === "custom"}
     <span class="text-textcolor text-lg">URL</span>
-    <TextInput size="sm" marginBottom bind:value={DBState.db.hypaCustomSettings.url}/>
+    <TextInput size="sm" marginBottom bind:value={settingsStore.state.hypaCustomSettings.url}/>
     <span class="text-textcolor text-lg">Key/Password</span>
-    <TextInput size="sm" marginBottom bind:value={DBState.db.hypaCustomSettings.key}/>
+    <TextInput size="sm" marginBottom bind:value={settingsStore.state.hypaCustomSettings.key}/>
     <span class="text-textcolor text-lg">Request Model</span>
-    <TextInput size="sm" marginBottom bind:value={DBState.db.hypaCustomSettings.model}/>
+    <TextInput size="sm" marginBottom bind:value={settingsStore.state.hypaCustomSettings.model}/>
 {/if}
 
 <div class="mb-4"></div>

@@ -3,7 +3,9 @@ import { SandboxHost } from "./factory";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { SafeLocalPluginStorage, tagWhitelist } from "../pluginSafeClass";
 import DOMPurify from 'dompurify';
-import { additionalChatMenu, additionalFloatingActionButtons, additionalHamburgerMenu, additionalSettingsMenu, bodyIntercepterStore, chatPanelStore, DBState, selectedCharID, type MenuDef } from "src/ts/stores.svelte";
+import { additionalChatMenu, additionalFloatingActionButtons, additionalHamburgerMenu, additionalSettingsMenu, bodyIntercepterStore, chatPanelStore, selectedCharID, type MenuDef } from "src/ts/stores.svelte";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { v4 } from "uuid";
 import { sleep } from "src/ts/util";
 import { alertConfirm, alertError, alertNormal } from "src/ts/alert";
@@ -591,7 +593,7 @@ const getPluginPermission = async (pluginName: string, permissionDesc: 'fetchLog
 
     pluginHash = await hasher(
         new TextEncoder().encode(
-            DBState.db.plugins.find(p => p.name === pluginName)?.script
+            settingsStore.state.plugins?.find(p => p.name === pluginName)?.script
         )
     ) + `_${permissionDesc}`;
 
@@ -748,7 +750,7 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             if(!conf){
                 return null;
             }
-            const db = DBState.db
+            const db = getDatabase()
             let liteDB = {}
             for(const key of allowedDbKeys){
                 if(includeOnly !== 'all' && !includeOnly.includes(key)){
@@ -775,17 +777,15 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             if (scheme.type !== 'light' && scheme.type !== 'dark') {
                 throw new Error('Invalid color scheme type: must be "light" or "dark"')
             }
-            const db = DBState.db
-            db.colorSchemeName = 'custom'
-            db.customColorScheme = scheme
-            db.colorScheme = scheme
+            settingsStore.state.colorSchemeName = 'custom'
+            settingsStore.state.customColorScheme = scheme
+            settingsStore.state.colorScheme = scheme
             updateColorScheme()
         },
         getColorScheme: () => {
-            const db = DBState.db
             return {
-                name: db.colorSchemeName,
-                scheme: $state.snapshot(db.colorScheme)
+                name: settingsStore.state.colorSchemeName,
+                scheme: $state.snapshot(settingsStore.state.colorScheme)
             }
         },
 
@@ -794,8 +794,7 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             if (!['standard','highcontrast'].includes(name)) {
                 throw new Error(`Invalid text theme: ${name}`)
             }
-            const db = DBState.db
-            db.textTheme = name
+            settingsStore.state.textTheme = name
             updateTextThemeAndCSS()
         },
         setCustomTextTheme: (theme: {
@@ -812,16 +811,14 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                     throw new Error(`Invalid text theme: missing or invalid '${key}'`)
                 }
             }
-            const db = DBState.db
-            db.textTheme = 'custom'
-            db.customTextTheme = theme
+            settingsStore.state.textTheme = 'custom'
+            settingsStore.state.customTextTheme = theme
             updateTextThemeAndCSS()
         },
         getTextTheme: () => {
-            const db = DBState.db
             return {
-                name: db.textTheme,
-                customTheme: $state.snapshot(db.customTextTheme)
+                name: settingsStore.state.textTheme,
+                customTheme: $state.snapshot(settingsStore.state.customTextTheme)
             }
         },
 
@@ -848,28 +845,21 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             }
         },
         getCharacterFromIndex: (index:number) => {
-            const db = DBState.db
-            const charIds = Object.keys(db.characters);
-            const charId = charIds[index];
-            if(charId){
-                return $state.snapshot(db.characters[charId]);
+            const char = characterStore.characters[index];
+            if(char){
+                return $state.snapshot(char);
             }
             return null;
         },
         setCharacterToIndex: (index:number, char:any) => {
-            const db = DBState.db
-            const charIds = Object.keys(db.characters);
-            const charId = charIds[index];
-            if(charId){
-                DBState.db.characters[charId] = char
+            if(characterStore.characters[index]){
+                characterStore.characters[index] = char
             }
         },
         getChatFromIndex: (characterIndex:number, chatIndex:number) => {
-            const db = DBState.db
-            const charIds = Object.keys(db.characters);
-            const charId = charIds[characterIndex];
-            if(charId){
-                const chats = db.characters[charId].chats;
+            const char = characterStore.characters[characterIndex];
+            if(char){
+                const chats = char.chats;
                 if(chats && chats[chatIndex]){
                     return $state.snapshot(chats[chatIndex]);
                 }
@@ -877,13 +867,11 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             return null;
         },
         setChatToIndex: (characterIndex:number, chatIndex:number, chat:any) => {
-            const db = DBState.db
-            const charIds = Object.keys(db.characters);
-            const charId = charIds[characterIndex];
-            if(charId){
-                const chats = db.characters[charId].chats;
+            const char = characterStore.characters[characterIndex];
+            if(char){
+                const chats = char.chats;
                 if(chats && chats[chatIndex]){
-                    DBState.db.characters[charId].chats[chatIndex] = chat
+                    char.chats[chatIndex] = chat
                 }
             }
         },
@@ -891,13 +879,12 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             return get(selectedCharID)
         },
         getCurrentChatIndex: () => {
-            const db = DBState.db
             const charId = get(selectedCharID)
-            return db.characters[charId].chatPage
+            return characterStore.characters[charId]?.chatPage ?? 0
         },
         getCurrentLorebookEntries: () => {
             const charId = get(selectedCharID)
-            const char = DBState.db.characters[charId]
+            const char = characterStore.characters[charId]
             if(!char){
                 return []
             }
@@ -1289,13 +1276,13 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                 throw new Error("A chat is already in progress");
             }
 
-            if(getModelInfo(DBState.db.aiModel).id.startsWith('pluginmodel:::')){
+            if(getModelInfo(settingsStore.state.aiModel).id.startsWith('pluginmodel:::')){
                 // Executing plugin provider is block because it can be used for loopholes for ipc right now.
                 throw new Error("Sending chat with plugin-based model is currently blocked");
             }
 
             const charId = get(selectedCharID);
-            const char = DBState.db.characters[charId];
+            const char = characterStore.characters[charId];
             if(!char){
                 throw new Error("No character selected");
             }
@@ -1332,7 +1319,7 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
         postPluginChannelMessage: (pluginName: string, channelName: string, message: any) => {
 
             const currentPluginName = plugin.name;
-            const receiverPlugin = DBState.db.plugins.find(p => p.name === pluginName);
+            const receiverPlugin = settingsStore.state.plugins?.find(p => p.name === pluginName);
 
             if(!receiverPlugin){
                 console.warn(`[RisuAI Plugin: ${currentPluginName}] Attempted to send message to non-existent plugin '${pluginName}' on channel '${channelName}'.`);

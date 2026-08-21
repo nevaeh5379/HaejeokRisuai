@@ -4,12 +4,13 @@ import { alertConfirm, alertError, alertSelectChar } from "../alert";
 import { language } from "src/lang";
 import { get } from "svelte/store";
 import { getDatabase, setDatabase } from "../storage/database.svelte";
-import { DBState, selectedCharID } from "../stores.svelte";
+import { selectedCharID } from "../stores.svelte";
+import { characterStore } from "../stores/domain/characterStore.svelte";
 
 export async function addGroupChar(){
     let selectedId = get(selectedCharID)
-    let group = DBState.db.characters[selectedId]
-    if(group.type === 'group'){
+    let group = characterStore.characters[selectedId]
+    if(group && group.type === 'group'){
         const res = await alertSelectChar()
         if(res){
             if(group.characters.includes(res)){
@@ -35,8 +36,8 @@ export async function addGroupChar(){
 
 export function rmCharFromGroup(index:number){
     let selectedId = get(selectedCharID)
-    let group = DBState.db.characters[selectedId]
-    if(group.type === 'group'){
+    let group = characterStore.characters[selectedId]
+    if(group && group.type === 'group'){
         group.characters.splice(index, 1)
         group.characterTalks.splice(index, 1)
         group.characterActive.splice(index, 1)

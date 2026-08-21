@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { DBState } from 'src/ts/stores.svelte';
+    import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import {
         changeColorSchemeType,
         exportColorScheme,
@@ -23,11 +23,11 @@
     ] as const;
 </script>
 
-{#if DBState.db.colorSchemeName === 'custom'}
+{#if settingsStore.state.colorSchemeName === 'custom'}
     <div class="border border-darkborderc p-2 m-2 rounded-md">
         <SelectInput
             className="mt-2"
-            value={DBState.db.customColorScheme.type}
+            value={settingsStore.state.customColorScheme.type}
             onchange={(e) => {
                 changeColorSchemeType((e.target as HTMLInputElement).value as 'light' | 'dark');
             }}
@@ -42,7 +42,7 @@
                     type="color"
                     class="native-color-input"
                     aria-label={color[1]}
-                    bind:value={DBState.db.customColorScheme[color[0]]}
+                    bind:value={settingsStore.state.customColorScheme[color[0]]}
                     oninput={updateCustomColorScheme}
                 />
                 <span class="ml-2">{color[1]}</span>

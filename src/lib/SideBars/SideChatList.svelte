@@ -5,7 +5,8 @@
     import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon } from "@lucide/svelte";
 
     import type { Chat, ChatFolder, character, groupChat } from "src/ts/storage/database.svelte";
-    import { DBState, ReloadGUIPointer } from 'src/ts/stores.svelte';
+    import { ReloadGUIPointer } from 'src/ts/stores.svelte';
+    import { characterStore, settingsStore, personaStore } from 'src/ts/stores/domain';
     import { selectedCharID } from "src/ts/stores.svelte";
 
     import CheckInput from "../UI/GUI/CheckInput.svelte";
@@ -286,7 +287,7 @@
                                         else{
                                             const confirm = await alertConfirm(language.doYouWantToBindCurrentPersona)
                                             if(confirm){
-                                                const currentPersona = DBState?.db?.personas?.[DBState?.db?.selectedPersona]
+                                                const currentPersona = personaStore.list?.[personaStore.activeIndex] ?? settingsStore.state.personas?.[settingsStore.state.selectedPersona]
                                                 if(currentPersona){
                                                     if(!currentPersona.id){
                                                         currentPersona.id = v4()
@@ -401,7 +402,7 @@
                                 else{
                                     const confirm = await alertConfirm(language.doYouWantToBindCurrentPersona)
                                     if(confirm){
-                                        const currentPersona = DBState?.db?.personas?.[DBState?.db?.selectedPersona]
+                                        const currentPersona = personaStore.list?.[personaStore.activeIndex] ?? settingsStore.state.personas?.[settingsStore.state.selectedPersona]
                                         if(currentPersona){
                                             if(!currentPersona.id){
                                                 currentPersona.id = v4()
@@ -517,7 +518,7 @@
             </button>
         </div>
 
-        {#if DBState.db.characters[$selectedCharID]?.chaId !== '§playground'}            
+        {#if characterStore.characters[$selectedCharID]?.chaId !== '§playground'}            
             <Toggles bind:chara={chara} />
         {/if}
     </div>

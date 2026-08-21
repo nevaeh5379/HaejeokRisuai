@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { DBState, popUpEditorStore } from '../../ts/stores.svelte';
+    import { popUpEditorStore } from '../../ts/stores.svelte';
+    import { settingsStore } from 'src/ts/stores/domain';
     import type MonacoEditorType from './MonacoEditor.svelte';
     import { language } from 'src/lang';
     import { ParseMarkdown, risuChatParser } from "src/ts/parser/parser.svelte";
@@ -20,7 +21,7 @@
         }
 
         try {
-            $state.snapshot(DBState.db.globalChatVariables)
+            $state.snapshot(settingsStore.state.globalChatVariables)
         } catch (error) {
             
         }

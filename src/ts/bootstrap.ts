@@ -11,10 +11,7 @@ import { changeFullscreen, checkNullish, sleep } from "./util"
 import { v4 as uuidv4 } from 'uuid';
 import { get } from "svelte/store";
 import { setDatabase, defaultSdDataFunc, getDatabase, type Database } from "./storage/database.svelte";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { checkRisuUpdate } from "./update";
-import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, sqlConfiguredStore } from "./stores.svelte";
-import { loadPlugins } from "./plugins/plugins.svelte";
+import { MobileGUI, botMakerMode, selectedCharID, loadedStore, LoadingStatusState, sqlConfiguredStore } from "./stores.svelte";
 import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput, alertSelect, alertNormal } from "./alert";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { loadRisuAccountData } from "./drive/accounter";
@@ -40,9 +37,9 @@ import { appDataDir, join } from "@tauri-apps/api/path";
 import { getSqlStorage } from "./storage/sqlStorageFactory";
 import type { ISqlStorage, INodeSqlStorageAdmin } from "./storage/ISqlStorage";
 import { isNodeSqlStorageAdmin } from "./storage/ISqlStorage";
-import { checkAndMigrateLegacyDatabase, migrateLegacyDatabase } from "./storage/migration";
 import { moduleStore } from './stores/domain/moduleStore.svelte'
 import { settingsStore } from './stores/domain/settingsStore.svelte'
+import { characterStore } from './stores/domain/characterStore.svelte'
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null
 
@@ -127,6 +124,7 @@ export async function loadData() {
             }
 
             const activeDb = getDatabase()
+            characterStore.init(activeDb.characters ?? [], storage)
             settingsStore.init(activeDb, storage)
             moduleStore.init(activeDb.modules ?? [], activeDb.enabledModules ?? [])
 
@@ -637,11 +635,12 @@ async function cleanChunks(options:{
  * Assigns unique IDs to characters and chats.
  */
 function assignIds() {
-    if (!DBState?.db?.characters) {
+    const characters = characterStore.characters
+    if (!characters) {
         return
     }
     const assignedIds = new Set<string>()
-    for (const cha of DBState.db.characters) {
+    for (const cha of characters) {
         if (!cha) {
             continue
         }

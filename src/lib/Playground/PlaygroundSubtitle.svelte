@@ -4,7 +4,7 @@
     import TextInput from "../UI/GUI/TextInput.svelte";
     import TextAreaInput from "../UI/GUI/TextAreaInput.svelte";
     import Button from "../UI/GUI/Button.svelte";
-    import { DBState } from "src/ts/stores.svelte";
+    import { settingsStore } from 'src/ts/stores/domain';
     import { getModelInfo, LLMFlags } from "src/ts/model/modellist";
     import { requestChatData } from "src/ts/process/request/request";
     import { asBuffer, selectFileByDom, selectSingleFile, sleep } from "src/ts/util";
@@ -20,9 +20,9 @@
     let LLMModePrompt ="Transcribe and create a caption and timestamp of it, according to the user's audio or video input. inside a markdown code block. (prefix ```webvtt / postfix ```)\n\nFormat\n```\n[TIME] CONTENT\n```\n\nExample\n```\n[00:00] Hildy!\n[00:01] How are you?\n[00:03] Tell me, is the lord of the universe in?\n[00:07] Somebody must've stolen the crown jewels\n```\n\nStep 2. Generate another subtitle, this time, as a translation to {{slot}}, with same format with Step 1., using step 1 as ref.\n\n The translation must be in natural {{slot}}.\n\n Now, start (Hint: media length is {{slot::time}})"
     let WhisperModePrompt = "```\n{{slot::data}}\n``` Translate the following WEBVTT to natural {{slot}}, with keeping the timestamp and header, inside a markdown code block. (prefix ``` / postfix ```)"
 
-    let selLang = $state(DBState.db.language)
+    let selLang = $state(settingsStore.state.language)
     let prompt = $state(LLMModePrompt)
-    let modelInfo = $derived(getModelInfo(DBState.db.aiModel))
+    let modelInfo = $derived(getModelInfo(settingsStore.state.aiModel))
     let outputText = $state('')
     let fileB64 = $state('')
     let vttB64 = $state('')
@@ -287,7 +287,7 @@
             const d = await fetch('https://api.openai.com/v1/audio/transcriptions', {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${DBState.db.openAIKey}`
+                    'Authorization': `Bearer ${settingsStore.state.openAIKey}`
                 },
                 body: formData
 
@@ -463,7 +463,7 @@
 {#if !(modelInfo.flags.includes(LLMFlags.hasAudioInput) && modelInfo.flags.includes(LLMFlags.hasVideoInput)) && mode === 'llm'}
     <span class="text-draculared text-lg mt-4">{language.subtitlesWarning1}</span>
 {/if}
-{#if !(modelInfo.flags.includes(LLMFlags.hasStreaming) && DBState.db.useStreaming)}
+{#if !(modelInfo.flags.includes(LLMFlags.hasStreaming) && settingsStore.state.useStreaming)}
     <span class="text-draculared text-lg mt-4">{language.subtitlesWarning2}</span>
 {/if}
 {#if !('gpu' in navigator) && mode === 'whisperLocal'}

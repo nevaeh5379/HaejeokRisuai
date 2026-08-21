@@ -4,7 +4,8 @@
     import { alertConfirm, alertMd, alertSelect } from "src/ts/alert";
     import { TriangleAlert } from '@lucide/svelte';
 
-    import { DBState, hotReloading } from "src/ts/stores.svelte";
+    import { hotReloading } from "src/ts/stores.svelte";
+    import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
     import { checkPluginUpdate, createBlankPlugin, importPlugin, loadPlugins, updatePlugin } from "src/ts/plugins/plugins.svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import NumberInput from "src/lib/UI/GUI/NumberInput.svelte";
@@ -22,10 +23,10 @@
 <span class="text-draculared text-xs mb-4">{language.pluginWarn}</span>
 
 <div class="border-solid border-darkborderc p-2 flex flex-col border-1">
-    {#if !DBState.db.plugins || DBState.db.plugins?.length === 0}
+    {#if !settingsStore.state.plugins || settingsStore.state.plugins?.length === 0}
         <span class="text-textcolor2">{language.noPlugins}</span>
     {/if}
-    {#each DBState.db.plugins as plugin, i}
+    {#each settingsStore.state.plugins as plugin, i}
         {#if i!==0}
         <div
             class="border-darkborderc mt-2 mb-2 w-full border-solid border-b-1 seperator"
@@ -98,7 +99,7 @@
                 class="textcolor2 hover:gray-200 cursor-pointer"
                 onclick={async (e) => {
                     plugin.enabled = !plugin.enabled
-                    DBState.db.plugins[i] = plugin
+                    settingsStore.state.plugins[i] = plugin
                     loadPlugins()
                     e.preventDefault()
                 }}
@@ -119,12 +120,12 @@
                             (plugin.displayName ?? plugin.name),
                     );
                     if (v) {
-                        if (DBState.db.currentPluginProvider === plugin.name) {
-                            DBState.db.currentPluginProvider = "";
+                        if (settingsStore.state.currentPluginProvider === plugin.name) {
+                            settingsStore.state.currentPluginProvider = "";
                         }
-                        let plugins = DBState.db.plugins ?? [];
+                        let plugins = settingsStore.state.plugins ?? [];
                         plugins.splice(i, 1);
-                        DBState.db.plugins = plugins;
+                        settingsStore.state.plugins = plugins;
                         loadPlugins()
                     }
                 }}
@@ -164,7 +165,7 @@
                             <SelectInput
                                 className="mt-2 mb-4"
                                 bind:value={
-                                    DBState.db.plugins[i].realArg[arg] as string
+                                    settingsStore.state.plugins[i].realArg[arg] as string
                                 }
                             >
                                 {#each plugin.arguments[arg] as a}
@@ -176,17 +177,17 @@
                             {#if plugin?.argMeta?.[arg]?.textarea}
                                 <TextAreaInput
                                     bind:value={
-                                        DBState.db.plugins[i].realArg[arg] as string
+                                        settingsStore.state.plugins[i].realArg[arg] as string
                                     }
                                     placeholder={plugin?.argMeta?.[arg]?.placeholder}
                                 />
                             {:else if plugin?.argMeta?.[arg]?.radio}
                                 {#each plugin?.argMeta?.[arg]?.radio?.split(",") as radioOption}
                                     <CheckInput
-                                        check={DBState.db.plugins[i].realArg[arg] === (radioOption.split('|').at(-1))}
+                                        check={settingsStore.state.plugins[i].realArg[arg] === (radioOption.split('|').at(-1))}
                                         onChange={(e) => {
                                             if(e){
-                                                DBState.db.plugins[i].realArg[arg] = (radioOption.split('|').at(-1))
+                                                settingsStore.state.plugins[i].realArg[arg] = (radioOption.split('|').at(-1))
                                             }
                                         }}
                                         margin={false}
@@ -196,7 +197,7 @@
                             {:else}
                                 <TextInput
                                     bind:value={
-                                        DBState.db.plugins[i].realArg[arg] as string
+                                        settingsStore.state.plugins[i].realArg[arg] as string
                                     }
                                     placeholder={plugin?.argMeta?.[arg]?.placeholder}
                                 />
@@ -204,9 +205,9 @@
                         {:else if plugin.arguments[arg] === "int"}
                             {#if plugin?.argMeta?.[arg]?.checkbox}
                                 <CheckInput
-                                    check={DBState.db.plugins[i].realArg[arg] === '1'}
+                                    check={settingsStore.state.plugins[i].realArg[arg] === '1'}
                                     onChange={(e) => {
-                                        DBState.db.plugins[i].realArg[arg] = e ? '1' : '0'
+                                        settingsStore.state.plugins[i].realArg[arg] = e ? '1' : '0'
                                     }}
                                     margin={false}
                                     name={
@@ -216,10 +217,10 @@
                             {:else if plugin?.argMeta?.[arg]?.radio}
                                 {#each plugin?.argMeta?.[arg]?.radio?.split(",") as radioOption}
                                     <CheckInput
-                                        check={DBState.db.plugins[i].realArg[arg] === parseInt(radioOption.split('|').at(-1))}
+                                        check={settingsStore.state.plugins[i].realArg[arg] === parseInt(radioOption.split('|').at(-1))}
                                         onChange={(e) => {
                                             if(e){
-                                                DBState.db.plugins[i].realArg[arg] = parseInt(radioOption.split('|').at(-1))
+                                                settingsStore.state.plugins[i].realArg[arg] = parseInt(radioOption.split('|').at(-1))
                                             }
                                         }}
                                         margin={false}
@@ -229,7 +230,7 @@
                             {:else}
                                 <NumberInput
                                     bind:value={
-                                        DBState.db.plugins[i].realArg[arg] as number
+                                        settingsStore.state.plugins[i].realArg[arg] as number
                                     }
                                     placeholder={plugin?.argMeta?.[arg]?.placeholder}
                                 />

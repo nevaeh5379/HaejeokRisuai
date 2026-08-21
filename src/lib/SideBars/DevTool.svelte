@@ -9,7 +9,7 @@
     import { getCharToken, getChatToken } from "src/ts/tokenizer";
     import { tokenizePreset } from "src/ts/process/prompt";
     
-    import { DBState } from 'src/ts/stores.svelte';
+    import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import TextAreaInput from "../UI/GUI/TextAreaInput.svelte";
     import { HardDriveUploadIcon, PlusIcon, TrashIcon } from "@lucide/svelte";
     import { selectSingleFile } from "src/ts/util";
@@ -110,15 +110,15 @@
 
 <Accordion styled name={"Variables"}>
     <div class="rounded-md border border-darkborderc grid grid-cols-2 gap-2 p-2">
-        {#if DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].scriptstate &&  Object.keys(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].scriptstate).length > 0}
-            {#each Object.keys(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].scriptstate) as key}
+        {#if characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].scriptstate &&  Object.keys(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].scriptstate).length > 0}
+            {#each Object.keys(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].scriptstate) as key}
                 <span>{key}</span>
-                {#if typeof DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].scriptstate[key] === "object"}
+                {#if typeof characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].scriptstate[key] === "object"}
                     <div class="p-2 text-center">Object</div>
-                {:else if typeof DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].scriptstate[key] === "string"}
-                    <TextInput bind:value={DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].scriptstate[key] as string} />
-                {:else if typeof DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].scriptstate[key] === "number"}
-                    <NumberInput bind:value={DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].scriptstate[key] as number} />
+                {:else if typeof characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].scriptstate[key] === "string"}
+                    <TextInput bind:value={characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].scriptstate[key] as string} />
+                {:else if typeof characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].scriptstate[key] === "number"}
+                    <NumberInput bind:value={characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].scriptstate[key] as number} />
                 {/if}
             {/each}
         {:else}
@@ -129,7 +129,7 @@
 
 <Accordion styled name={"Tokens"}>
     <div class="rounded-md border border-darkborderc grid grid-cols-2 gap-2 p-2">
-        {#await getCharToken(DBState.db.characters[$selectedCharID])}
+        {#await getCharToken(characterStore.characters[$selectedCharID])}
             <span>Character Persistant</span>
             <div class="p-2 text-center">Loading...</div>
             <span>Character Dynamic</span>
@@ -140,15 +140,15 @@
             <span>Character Dynamic</span>
             <div class="p-2 text-center">{token.dynamic} Tokens</div>
         {/await}
-        {#await getChatToken(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage])}
+        {#await getChatToken(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage])}
             <span>Current Chat</span>
             <div class="p-2 text-center">Loading...</div>
         {:then token}
             <span>Current Chat</span>
             <div class="p-2 text-center">{token} Tokens</div>
         {/await}
-        {#if DBState.db.promptTemplate}
-            {#await tokenizePreset(DBState.db.promptTemplate)}
+        {#if settingsStore.state.promptTemplate}
+            {#await tokenizePreset(settingsStore.state.promptTemplate)}
                 <span>Prompt Template</span>
                 <div class="p-2 text-center">Loading...</div>
             {:then token}
@@ -215,23 +215,22 @@
             return
         }
         for(let i=0;i<autopilot.length;i++){
-            const db = (DBState.db)
-            let currentChar = db.characters[$selectedCharID]
+            let currentChar = characterStore.characters[$selectedCharID]
             let currentChat = currentChar.chats[currentChar.chatPage]
             currentChat.message.push({
                 role: 'user',
                 data: autopilot[i]
             })
             currentChar.chats[currentChar.chatPage] = currentChat
-            db.characters[$selectedCharID] = currentChar
+            characterStore.characters[$selectedCharID] = currentChar
             if($doingChat){
                 return
             }
             currentChar.chats[currentChar.chatPage] = currentChat
-            db.characters[$selectedCharID] = currentChar
+            characterStore.characters[$selectedCharID] = currentChar
             doingChat.set(false)
             await sendChat(i);
-            currentChar = db.characters[$selectedCharID]
+            currentChar = characterStore.characters[$selectedCharID]
             currentChat = currentChar.chats[currentChar.chatPage]
         }
         doingChat.set(false)

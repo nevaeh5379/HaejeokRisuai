@@ -1,6 +1,7 @@
 <script lang="ts">
     import { Cog, PinIcon } from '@lucide/svelte'
-    import { DBState, loadoutModalStore, openPersonaList, openPresetList, selectedCharID } from 'src/ts/stores.svelte';
+    import { loadoutModalStore, openPersonaList, openPresetList, selectedCharID } from 'src/ts/stores.svelte';
+    import { characterStore, settingsStore, personaStore } from 'src/ts/stores/domain';
     import Button from '../UI/GUI/Button.svelte';
     import type { CustomSideBarItem } from 'src/ts/storage/database.svelte';
     import { language } from 'src/lang';
@@ -16,7 +17,7 @@
 
     let bindedPersona = $derived.by(() => {
 
-        DBState.db.characters[$selectedCharID].chatPage
+        characterStore.characters[$selectedCharID].chatPage
         return checkPersonaBinded()
     })
 
@@ -24,28 +25,28 @@
         if(bindedPersona){
             return bindedPersona?.name
         }
-        return DBState.db.username
+        return settingsStore.state.username
     })
 </script>
 
 
 <div class="rounded-sm flex flex-col w-full gap-2">
 
-    {#each DBState.db.customSidebarItems as item}
+    {#each settingsStore.state.customSidebarItems as item}
         {#if item.type === 'model'}
-            <ModelList bind:value={DBState.db.aiModel} noMargin />
+            <ModelList bind:value={settingsStore.state.aiModel} noMargin />
         {:else if item.type === 'preset'}
             <Button onclick={() => {
                 openPresetList.set(!get(openPresetList))
             }}>{
-                DBState.db.botPresets?.[DBState.db.botPresetsId]?.name
+                settingsStore.state.botPresets?.[settingsStore.state.botPresetsId]?.name
                 ||
                 language.presets
             }</Button>
         {:else if item.type === 'loadout'}
             <Button onclick={() => {
                 loadoutModalStore.open = !loadoutModalStore.open
-            }}>{DBState.db.lastLoadedLoadoutName || language.loadouts}</Button>
+            }}>{settingsStore.state.lastLoadedLoadoutName || language.loadouts}</Button>
         {:else if item.type === 'persona'}
             <Button className="flex" onclick={() => {
                 if(bindedPersona){
@@ -66,17 +67,17 @@
                     "text-textcolor": bindedPersona
                 }} onclick={(e) => {
                     e.stopPropagation()
-                    const chatIndex = DBState.db.characters[$selectedCharID].chatPage
-                    const currentPersona = DBState?.db?.personas?.[DBState?.db?.selectedPersona]
+                    const chatIndex = characterStore.characters[$selectedCharID].chatPage
+                    const currentPersona = personaStore.list?.[personaStore.activeIndex] ?? settingsStore.state.personas?.[settingsStore.state.selectedPersona]
                     if(!currentPersona) return
                     if(!currentPersona.id){
                         currentPersona.id = v4()
                     }
                     if(checkPersonaBinded()) {
-                        DBState.db.characters[$selectedCharID].chats[chatIndex].bindedPersona = ''
+                        characterStore.characters[$selectedCharID].chats[chatIndex].bindedPersona = ''
                     }
                     else{
-                        DBState.db.characters[$selectedCharID].chats[chatIndex].bindedPersona = currentPersona.id
+                        characterStore.characters[$selectedCharID].chats[chatIndex].bindedPersona = currentPersona.id
                     }
                 }}>
                     <PinIcon size={20} />

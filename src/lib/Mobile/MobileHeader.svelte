@@ -1,8 +1,7 @@
 <script lang="ts">
     import { ArrowLeft, MenuIcon, SearchIcon } from "@lucide/svelte";
     import { language } from "src/lang";
-    
-    import { DBState } from 'src/ts/stores.svelte';
+    import { characterStore } from 'src/ts/stores/domain';
     import { MobileGUIStack, MobileSearch, selectedCharID, SettingsMenuIndex, MobileSideBar, messageSearchOpen } from "src/ts/stores.svelte";
 
 </script>
@@ -20,7 +19,7 @@
         }}>
             <ArrowLeft />
         </button>
-        <span class="font-bold text-lg w-2/3 truncate">{DBState.db.characters[$selectedCharID].name}</span>
+        <span class="font-bold text-lg w-2/3 truncate">{characterStore.characters[$selectedCharID].name}</span>
         <div class="flex-1 flex justify-end">
             <button onclick={() => {
                 MobileSideBar.set(1)

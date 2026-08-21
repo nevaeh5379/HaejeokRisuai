@@ -1,4 +1,4 @@
-import { DBState } from './stores.svelte'
+import { settingsStore } from './stores/domain/settingsStore.svelte'
 import { forageStorage, getFileSrc } from './globalApi.svelte'
 import { NodeStorage } from './storage/nodeStorage'
 import { getMimeType } from './media/mimeType'
@@ -11,7 +11,7 @@ export async function getCharImage(
     type: 'plain' | 'css' | 'contain' | 'lgcss',
     options?: { thumbnail?: boolean },
 ) {
-    if (DBState.db.hideAllImages) return type === 'plain' ? '/none.webp' : ''
+    if (settingsStore.state.hideAllImages) return type === 'plain' ? '/none.webp' : ''
     if (!loc) return type === 'css' ? '' : null
 
     if (!options?.thumbnail && fullImageBlobCache.has(loc)) {
@@ -45,7 +45,7 @@ export async function getCharImagesBatch(
 ): Promise<Map<string, string>> {
     const result = new Map<string, string>()
     if (!locs || locs.length === 0) return result
-    if (DBState.db.hideAllImages) {
+    if (settingsStore.state.hideAllImages) {
         for (const loc of locs) {
             result.set(loc, '/none.webp')
         }

@@ -1,7 +1,7 @@
 import { language } from 'src/lang'
 import { alertConfirm } from 'src/ts/alert'
 import { type character, type groupChat, type loreBook } from 'src/ts/storage/database.svelte'
-import { DBState } from 'src/ts/stores.svelte'
+import { characterStore } from 'src/ts/stores/domain/characterStore.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
 import { getCharacter } from './utils'
@@ -1093,7 +1093,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (count < 1) count = 1
     if (offset < 0) offset = 0
 
-    const characters = DBState.db.characters.slice(offset, offset + count).map((char) => ({
+    const characters = characterStore.characters.slice(offset, offset + count).map((char) => ({
       id: char.chaId,
       name: char.name || 'Unnamed',
       type: char.type,

@@ -14,7 +14,7 @@ import { OpenAIModels } from './providers/openai'
 import { AnthropicModels } from './providers/anthropic'
 import { GoogleModels } from './providers/google'
 import { fetchNative } from "../globalApi.svelte"
-import { DBState } from "../stores.svelte"
+import { settingsStore } from "../stores/domain/settingsStore.svelte"
 import { customProviderStore, pluginV2 } from "../plugins/plugins.svelte"
 import { get } from "svelte/store"
 import { customV3ProviderMetaStore } from '../plugins/apiV3/providerStore'
@@ -612,13 +612,13 @@ for(let i=0; i<LLMModels.length; i++){
 
 export async function registerModelDynamic(){
 
-    if(!DBState.db.dynamicModelRegistry){
+    if(!settingsStore.state.dynamicModelRegistry){
         return
     }
     //google
     try {
-        if(DBState.db.google?.accessToken){
-            const res = await fetchNative(`https://generativelanguage.googleapis.com/v1beta/models?key=${DBState.db.google.accessToken}`, {
+        if(settingsStore.state.google?.accessToken){
+            const res = await fetchNative(`https://generativelanguage.googleapis.com/v1beta/models?key=${settingsStore.state.google.accessToken}`, {
                 method: 'GET',
             })
             const json = await res.json()
@@ -658,12 +658,12 @@ export async function registerModelDynamic(){
 
     //Anthropic
     try {
-        if(DBState.db.claudeAPIKey){
+        if(settingsStore.state.claudeAPIKey){
             const res = await fetchNative('https://api.anthropic.com/v1/models', {
                 method: 'GET',
                 headers: {
                     'anthropic-version': '2023-06-01',
-                    "x-api-key": DBState.db.claudeAPIKey,
+                    "x-api-key": settingsStore.state.claudeAPIKey,
                 }
             })
 
@@ -705,11 +705,11 @@ export async function registerModelDynamic(){
 
 
     try {
-        if(DBState.db.openAIKey){
+        if(settingsStore.state.openAIKey){
             const res = await fetchNative(`https://api.openai.com/v1/models`, {
                 method: 'GET',
                 headers: {
-                    "Authorization": 'Bearer ' + DBState.db.openAIKey
+                    "Authorization": 'Bearer ' + settingsStore.state.openAIKey
                 }
             })
             const json = await res.json()

@@ -1,6 +1,8 @@
 import { get, writable } from "svelte/store";
 import { type character, type MessageGenerationInfo, type Chat, type MessagePresetInfo, changeToPreset, setCurrentChat, type Message, type StreamingDisplayOptimizationMode } from "../storage/database.svelte";
-import { DBState } from '../stores.svelte';
+import { settingsStore } from '../stores/domain/settingsStore.svelte';
+import { characterStore } from '../stores/domain/characterStore.svelte';
+import { presetStore } from '../stores/domain/presetStore.svelte';
 import { CharEmotion, selectedCharID } from "../stores.svelte";
 import { ChatTokenizer, tokenize, tokenizeNum } from "../tokenizer";
 import { language } from "../../lang";
@@ -108,8 +110,8 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
     chatProcessStage.set(0)
     const abortSignal = arg.signal ?? (new AbortController()).signal
-    if ((DBState.db as any)?.ensureLoaded) {
-        await (DBState.db as any).ensureLoaded()
+    if ((characterStore as any)?.ensureLoaded) {
+        await (characterStore as any).ensureLoaded()
     }
     
     // NOTE: `throwError()` can be called before these are populated (e.g. HypaV3 early validation errors).
@@ -161,17 +163,17 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
 
     function throwError(error:string){
-        if(!DBState?.db?.inlayErrorResponse){
+        if(!settingsStore.state?.inlayErrorResponse){
             alertError(error)
             return
         }
 
         try{
-            const db = DBState.db
+            const characters = characterStore.characters
 
             // Prefer already-resolved selection, but fall back to current store/db pointers.
             const sc = selectedChar >= 0 ? selectedChar : get(selectedCharID)
-            const charRoom = db.characters?.[sc]
+            const charRoom = characters?.[sc]
             if(!charRoom){
                 alertError(error)
                 return
@@ -222,12 +224,12 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
     doingChat.set(true)
 
-    if(chatProcessIndex === -1 && DBState.db.presetChain){
-        const names = DBState.db.presetChain.split(',').map((v) => v.trim())
+    if(chatProcessIndex === -1 && settingsStore.state.presetChain){
+        const names = settingsStore.state.presetChain.split(',').map((v) => v.trim())
         const randomSelect = Math.floor(Math.random() * names.length)
         const ele = names[randomSelect]
 
-        const findId = DBState.db.botPresets.findIndex((v) => {
+        const findId = settingsStore.state.botPresets.findIndex((v) => {
             return v.name === ele
         })
 
@@ -252,9 +254,9 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         chatProcessStage.set(0)
     }
 
-    DBState.db.statics.messages += 1
+    settingsStore.state.statics.messages += 1
     selectedChar = get(selectedCharID)
-    const nowChatroom = DBState.db.characters[selectedChar]
+    const nowChatroom = characterStore.characters[selectedChar]
     if (!nowChatroom) {
         doingChat.set(false)
         return false
@@ -276,11 +278,11 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         key: string,
         value: string,
     }[] = []
-    if(DBState.db.promptInfoInsideChat){
-        initialPresetNameForPromptInfo = DBState.db.botPresets[DBState.db.botPresetsId]?.name ?? ''
-        initialPromptTogglesForPromptInfo = parseToggleSyntax(DBState.db.customPromptTemplateToggle + getModuleToggles())
+    if(settingsStore.state.promptInfoInsideChat){
+        initialPresetNameForPromptInfo = settingsStore.state.botPresets[settingsStore.state.botPresetsId]?.name ?? ''
+        initialPromptTogglesForPromptInfo = parseToggleSyntax(settingsStore.state.customPromptTemplateToggle + getModuleToggles())
             .flatMap(toggle => {
-                const raw = DBState.db.globalChatVariables[`toggle_${toggle.key}`]
+                const raw = settingsStore.state.globalChatVariables[`toggle_${toggle.key}`]
                 if (toggle.type === 'select' || toggle.type === 'text') {
                     return [{ key: toggle.value, value: toggle.options[raw] }];
                 }
@@ -297,7 +299,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
 
     let caculatedChatTokens = 0
-    if(DBState.db.aiModel.startsWith('gpt')){
+    if(settingsStore.state.aiModel.startsWith('gpt')){
         caculatedChatTokens += 5
     }
     else{
@@ -351,10 +353,10 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
 
     let chatAdditonalTokens = arg.chatAdditonalTokens ?? caculatedChatTokens
-    const tokenizer = new ChatTokenizer(chatAdditonalTokens, DBState.db.aiModel.startsWith('gpt') ? 'noName' : 'name')
+    const tokenizer = new ChatTokenizer(chatAdditonalTokens, settingsStore.state.aiModel.startsWith('gpt') ? 'noName' : 'name')
     let currentChat = runCurrentChatFunction(nowChatroom.chats[selectedChat])
     nowChatroom.chats[selectedChat] = currentChat
-    let maxContextTokens = DBState.db.maxContext
+    let maxContextTokens = settingsStore.state.maxContext
 
     chatProcessStage.set(1)
     stageTimings.stage1Start = Date.now()
@@ -371,7 +373,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         'personaPrompt':([] as OpenAIChat[])
     }
 
-    let promptTemplate = safeStructuredClone(DBState.db.promptTemplate)
+    let promptTemplate = safeStructuredClone(settingsStore.state.promptTemplate)
     const usingPromptTemplate = !!promptTemplate
     if(promptTemplate){
         let hasPostEverything = false
@@ -388,7 +390,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             })
         }
     }
-    if(currentChar.utilityBot && (!(usingPromptTemplate && DBState.db.promptSettings.utilOverride))){
+    if(currentChar.utilityBot && (!(usingPromptTemplate && settingsStore.state.promptSettings.utilOverride))){
         promptTemplate = [
             {
               "type": "plain",
@@ -420,7 +422,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
 
     if((!currentChar.utilityBot) && (!promptTemplate)){
-        const mainp = currentChar.systemPrompt?.replaceAll('{{original}}', DBState.db.mainPrompt) || DBState.db.mainPrompt
+        const mainp = currentChar.systemPrompt?.replaceAll('{{original}}', settingsStore.state.mainPrompt) || settingsStore.state.mainPrompt
 
 
         function formatPrompt(data:string){
@@ -442,13 +444,13 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             return chatObjects;
         }
 
-        unformated.main.push(...formatPrompt(risuChatParser(mainp + ((DBState.db.additionalPrompt === '' || (!DBState.db.promptPreprocess)) ? '' : `\n${DBState.db.additionalPrompt}`), {chara: currentChar})))
+        unformated.main.push(...formatPrompt(risuChatParser(mainp + ((settingsStore.state.additionalPrompt === '' || (!settingsStore.state.promptPreprocess)) ? '' : `\n${settingsStore.state.additionalPrompt}`), {chara: currentChar})))
     
-        if(DBState.db.jailbreakToggle){
-            unformated.jailbreak.push(...formatPrompt(risuChatParser(DBState.db.jailbreak, {chara: currentChar})))
+        if(settingsStore.state.jailbreakToggle){
+            unformated.jailbreak.push(...formatPrompt(risuChatParser(settingsStore.state.jailbreak, {chara: currentChar})))
         }
     
-        unformated.globalNote.push(...formatPrompt(risuChatParser(currentChar.replaceGlobalNote?.replaceAll('{{original}}', DBState.db.globalNote) || DBState.db.globalNote, {chara:currentChar})))
+        unformated.globalNote.push(...formatPrompt(risuChatParser(currentChar.replaceGlobalNote?.replaceAll('{{original}}', settingsStore.state.globalNote) || settingsStore.state.globalNote, {chara:currentChar})))
     }
 
     let baseDescriptionPrompt:OpenAIChat|null = null
@@ -468,7 +470,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         })
     }
 
-    if(DBState.db.chainOfThought && (!(usingPromptTemplate && DBState.db.promptSettings.customChainOfThought))){
+    if(settingsStore.state.chainOfThought && (!(usingPromptTemplate && settingsStore.state.promptSettings.customChainOfThought))){
         unformated.postEverything.push({
             role: 'system',
             content: `<instruction> - before respond everything, Think step by step as a ai assistant how would you respond inside <Thoughts> xml tag. this must be less than 5 paragraphs.</instruction>`
@@ -476,7 +478,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
 
     {
-        let description = risuChatParser((DBState.db.promptPreprocess ? DBState.db.descriptionPrefix: '') + currentChar.desc, {chara: currentChar})
+        let description = risuChatParser((settingsStore.state.promptPreprocess ? settingsStore.state.descriptionPrefix: '') + currentChar.desc, {chara: currentChar})
 
         const additionalInfo = await additionalInformations(currentChar, currentChat)
 
@@ -569,7 +571,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         }
     }
 
-    if(DBState.db.personaPrompt){
+    if(settingsStore.state.personaPrompt){
         unformated.personaPrompt.push({
             role: 'system',
             content: risuChatParser(getPersonaPrompt(), {chara: currentChar})
@@ -623,7 +625,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
 
     //await tokenize currernt
-    let currentTokens = DBState.db.maxResponse
+    let currentTokens = settingsStore.state.maxResponse
     let supaMemoryCardUsed = false
     
     //for unexpected error
@@ -738,10 +740,10 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                 }
                 case 'postEverything':{
                     await tokenizeChatArray(unformated.postEverything)
-                    if(usingPromptTemplate && DBState.db.promptSettings.postEndInnerFormat){
+                    if(usingPromptTemplate && settingsStore.state.promptSettings.postEndInnerFormat){
                         await tokenizeChatArray([{
                             role: 'system',
-                            content: DBState.db.promptSettings.postEndInnerFormat
+                            content: settingsStore.state.promptSettings.postEndInnerFormat
                         }])
                     }
                     break
@@ -749,10 +751,10 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                 case 'plain':
                 case 'jailbreak':
                 case 'cot':{
-                    if((!DBState.db.jailbreakToggle) && (card.type === 'jailbreak')){
+                    if((!settingsStore.state.jailbreakToggle) && (card.type === 'jailbreak')){
                         continue
                     }
-                    if((!DBState.db.chainOfThought) && (card.type === 'cot')){
+                    if((!settingsStore.state.chainOfThought) && (card.type === 'cot')){
                         continue
                     }
 
@@ -814,7 +816,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                     }
                     let chats = unformated.chats.slice(start, end)
 
-                    if(usingPromptTemplate && DBState.db.promptSettings.sendChatAsSystem && (!card.chatAsOriginalOnSystem)){
+                    if(usingPromptTemplate && settingsStore.state.promptSettings.sendChatAsSystem && (!card.chatAsOriginalOnSystem)){
                         chats = systemizeChat(chats)
                     }
                     await tokenizeChatArray(chats)
@@ -848,7 +850,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
     let chats:OpenAIChat[] = examples
 
-    if(!DBState.db.aiModel.startsWith('novelai') && !DBState.db?.promptSettings?.trimStartNewChat){
+    if(!settingsStore.state.aiModel.startsWith('novelai') && !settingsStore.state?.promptSettings?.trimStartNewChat){
         chats.push({
             role: 'system',
             content: '[Start a new chat]',
@@ -887,7 +889,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             'editprocess'))
         }
 
-        if(usingPromptTemplate && DBState.db.promptSettings.sendName){
+        if(usingPromptTemplate && settingsStore.state.promptSettings.sendName){
             chat.content = `${currentChar.name}: ${chat.content}`
             chat.attr = ['nameAdded']
         }
@@ -952,7 +954,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         }
 
         let multimodal:MultiModal[] = []
-        const modelinfo = getModelInfo(DBState.db.aiModel)
+        const modelinfo = getModelInfo(settingsStore.state.aiModel)
         if(inlays.length > 0){
             for(const inlay of inlays){
                 const inlayName = inlay.replace('{{inlayed::', '').replace('{{inlay::', '').replace('}}', '').replace('{{inlayeddata::', '')
@@ -994,16 +996,16 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
         if(
             (nowChatroom.type === 'group' && findCharacterbyIdwithCache(msg.saying).chaId !== currentChar.chaId) ||
-            (nowChatroom.type === 'group' && DBState.db.groupOtherBotRole === 'assistant') ||
-            (usingPromptTemplate && DBState.db.promptSettings.sendName)
+            (nowChatroom.type === 'group' && settingsStore.state.groupOtherBotRole === 'assistant') ||
+            (usingPromptTemplate && settingsStore.state.promptSettings.sendName)
         ){
-            const form = DBState.db.groupTemplate || `<{{char}}\'s Message>\n{{slot}}\n</{{char}}\'s Message>`
+            const form = settingsStore.state.groupTemplate || `<{{char}}\'s Message>\n{{slot}}\n</{{char}}\'s Message>`
             formatedChat = risuChatParser(form, {chara: findCharacterbyIdwithCache(msg.saying).name}).replace('{{slot}}', formatedChat)
-            switch(DBState.db.groupOtherBotRole){
+            switch(settingsStore.state.groupOtherBotRole){
                 case 'user':
                 case 'assistant':
                 case 'system':
-                    role = DBState.db.groupOtherBotRole
+                    role = settingsStore.state.groupOtherBotRole
                     break
                 default:
                     role = 'assistant'
@@ -1011,7 +1013,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             }
         }
         let thoughts:string[] = []
-        const maxThoughtDepth = DBState.db.promptSettings?.maxThoughtTagDepth ?? -1
+        const maxThoughtDepth = settingsStore.state.promptSettings?.maxThoughtTagDepth ?? -1
         formatedChat = formatedChat.replace(/<Thoughts>(.+)<\/Thoughts>/gms, (match, p1) => {
             if(maxThoughtDepth === -1 || (maxThoughtDepth - ms.length) <= index){
                 thoughts.push(p1)
@@ -1077,11 +1079,11 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         currentTokens += await tokenizer.tokenizeChat(chat)
     }
     
-    if(nowChatroom.supaMemory && (DBState.db.supaModelType !== 'none' || DBState.db.hanuraiEnable || DBState.db.hypav2 || DBState.db.hypaV3)){
+    if(nowChatroom.supaMemory && (settingsStore.state.supaModelType !== 'none' || settingsStore.state.hanuraiEnable || settingsStore.state.hypav2 || settingsStore.state.hypaV3)){
         stageTimings.stage1Duration = Date.now() - stageTimings.stage1Start
         chatProcessStage.set(2)
         stageTimings.stage2Start = Date.now()
-        if(DBState.db.hanuraiEnable){
+        if(settingsStore.state.hanuraiEnable){
             const hn = await hanuraiMemory(chats, {
                 currentTokens,
                 maxContextTokens,
@@ -1095,7 +1097,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             chats = hn.chats
             currentTokens = hn.tokens
         }
-        else if(DBState.db.hypav2){
+        else if(settingsStore.state.hypav2){
             console.log("Current chat's hypaV2 Data: ", currentChat.hypaV2Data)
             const sp = await hypaMemoryV2(chats, currentTokens, maxContextTokens, currentChat, nowChatroom, tokenizer)
             if(sp.error){
@@ -1106,19 +1108,19 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             chats = sp.chats
             currentTokens = sp.currentTokens
             currentChat.hypaV2Data = sp.memory ?? currentChat.hypaV2Data
-            DBState.db.characters[selectedChar].chats[selectedChat].hypaV2Data = currentChat.hypaV2Data
+            characterStore.characters[selectedChar].chats[selectedChat].hypaV2Data = currentChat.hypaV2Data
 
-            currentChat = DBState.db.characters[selectedChar].chats[selectedChat];
+            currentChat = characterStore.characters[selectedChar].chats[selectedChat];
             console.log("[Expected to be updated] chat's HypaV2Data: ", currentChat.hypaV2Data)
         }
-        else if(DBState.db.hypaV3){
+        else if(settingsStore.state.hypaV3){
             console.log("Current chat's hypaV3 Data: ", currentChat.hypaV3Data)
             const sp = await hypaMemoryV3(chats, currentTokens, maxContextTokens, currentChat, nowChatroom, tokenizer)
             if(sp.error){
                 // Save new summary
                 if (sp.memory) {
                     currentChat.hypaV3Data = sp.memory
-                    DBState.db.characters[selectedChar].chats[selectedChat].hypaV3Data = currentChat.hypaV3Data
+                    characterStore.characters[selectedChar].chats[selectedChat].hypaV3Data = currentChat.hypaV3Data
                 }
                 console.log(sp)
                 throwError(sp.error)
@@ -1127,14 +1129,14 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             chats = sp.chats
             currentTokens = sp.currentTokens
             currentChat.hypaV3Data = sp.memory ?? currentChat.hypaV3Data
-            DBState.db.characters[selectedChar].chats[selectedChat].hypaV3Data = currentChat.hypaV3Data
+            characterStore.characters[selectedChar].chats[selectedChat].hypaV3Data = currentChat.hypaV3Data
     
-            currentChat = DBState.db.characters[selectedChar].chats[selectedChat];
+            currentChat = characterStore.characters[selectedChar].chats[selectedChat];
             console.log("[Expected to be updated] chat's HypaV3Data: ", currentChat.hypaV3Data)
         }
         else{
             const sp = await supaMemory(chats, currentTokens, maxContextTokens, currentChat, nowChatroom, tokenizer, {
-                asHyper: DBState.db.hypaMemory
+                asHyper: settingsStore.state.hypaMemory
             })
             if(sp.error){
                 throwError(sp.error)
@@ -1143,7 +1145,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             chats = sp.chats
             currentTokens = sp.currentTokens
             currentChat.supaMemoryData = sp.memory ?? currentChat.supaMemoryData
-            DBState.db.characters[selectedChar].chats[selectedChat].supaMemoryData = currentChat.supaMemoryData
+            characterStore.characters[selectedChar].chats[selectedChat].supaMemoryData = currentChat.supaMemoryData
             console.log(currentChat.supaMemoryData)
             currentChat.lastMemory = sp.lastId ?? currentChat.lastMemory;
         }
@@ -1165,7 +1167,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         currentChat.lastMemory = chats[0].memo
     }
 
-    let biases:[string,number][] = DBState.db.bias.concat(currentChar.bias).map((v) => {
+    let biases:[string,number][] = settingsStore.state.bias.concat(currentChar.bias).map((v) => {
         return [risuChatParser(v[0].replaceAll("\\n","\n").replaceAll("\\r","\r").replaceAll("\\\\","\\"), {chara: currentChar}),v[1]]
     })
 
@@ -1231,13 +1233,13 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     //make into one
 
     let formated:OpenAIChat[] = []
-    const formatOrder = safeStructuredClone(DBState.db.formatingOrder)
+    const formatOrder = safeStructuredClone(settingsStore.state.formatingOrder)
     if(formatOrder){
         formatOrder.push('postEverything')
     }
 
     //continue chat model
-    if(arg.continue && (DBState.db.aiModel.startsWith('claude') || DBState.db.aiModel.startsWith('gpt') || DBState.db.aiModel.startsWith('openrouter') || DBState.db.aiModel.startsWith('reverse_proxy'))){
+    if(arg.continue && (settingsStore.state.aiModel.startsWith('claude') || settingsStore.state.aiModel.startsWith('gpt') || settingsStore.state.aiModel.startsWith('openrouter') || settingsStore.state.aiModel.startsWith('reverse_proxy'))){
         unformated.postEverything.push({
             role: 'system',
             content: '[Continue the last response]'
@@ -1249,7 +1251,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             if(!chat.content.trim() && !(chat.multimodals && chat.multimodals.length > 0)){
                 continue
             }
-            if(!(DBState.db.aiModel.startsWith('gpt') || DBState.db.aiModel.startsWith('claude') || DBState.db.aiModel === 'openrouter' || DBState.db.aiModel === 'reverse_proxy')){
+            if(!(settingsStore.state.aiModel.startsWith('gpt') || settingsStore.state.aiModel.startsWith('claude') || settingsStore.state.aiModel === 'openrouter' || settingsStore.state.aiModel === 'reverse_proxy')){
                 formated.push(chat)
                 continue
             }
@@ -1292,7 +1294,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                         for(let i=0;i<pmt.length;i++){
                             pmt[i].content = risuChatParser(positionParser(card.innerFormat,card.type), {chara: currentChar}).replace('{{slot}}', pmt[i].content)
 
-                            if(DBState.db.promptInfoInsideChat && DBState.db.promptTextInfoInsideChat){
+                            if(settingsStore.state.promptInfoInsideChat && settingsStore.state.promptTextInfoInsideChat){
                                 pushPromptInfoBody(pmt[i].role, card.innerFormat, promptBodyformatedForChatStore)
                             }
                         }
@@ -1307,7 +1309,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                         for(let i=0;i<pmt.length;i++){
                             pmt[i].content = risuChatParser(positionParser(card.innerFormat,card.type), {chara: currentChar}).replace('{{slot}}', pmt[i].content)
                             
-                            if(DBState.db.promptInfoInsideChat && DBState.db.promptTextInfoInsideChat){
+                            if(settingsStore.state.promptInfoInsideChat && settingsStore.state.promptTextInfoInsideChat){
                                 pushPromptInfoBody(pmt[i].role, card.innerFormat, promptBodyformatedForChatStore)
                             }
                         }
@@ -1323,7 +1325,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                         for(let i=0;i<pmt.length;i++){
                             pmt[i].content = risuChatParser(positionParser(card.innerFormat,card.type), {chara: currentChar}).replace('{{slot}}', pmt[i].content || card.defaultText || '')
                             
-                            if(DBState.db.promptInfoInsideChat && DBState.db.promptTextInfoInsideChat){
+                            if(settingsStore.state.promptInfoInsideChat && settingsStore.state.promptTextInfoInsideChat){
                                 pushPromptInfoBody(pmt[i].role, card.innerFormat, promptBodyformatedForChatStore)
                             }
                         }
@@ -1338,10 +1340,10 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                 }
                 case 'postEverything':{
                     pushPrompts(unformated.postEverything)
-                    if(usingPromptTemplate && DBState.db.promptSettings.postEndInnerFormat){
+                    if(usingPromptTemplate && settingsStore.state.promptSettings.postEndInnerFormat){
                         pushPrompts([{
                             role: 'system',
-                            content: DBState.db.promptSettings.postEndInnerFormat
+                            content: settingsStore.state.promptSettings.postEndInnerFormat
                         }])
                     }
                     break
@@ -1349,10 +1351,10 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                 case 'plain':
                 case 'jailbreak':
                 case 'cot':{
-                    if((!DBState.db.jailbreakToggle) && (card.type === 'jailbreak')){
+                    if((!settingsStore.state.jailbreakToggle) && (card.type === 'jailbreak')){
                         continue
                     }
-                    if((!DBState.db.chainOfThought) && (card.type === 'cot')){
+                    if((!settingsStore.state.chainOfThought) && (card.type === 'cot')){
                         continue
                     }
 
@@ -1380,7 +1382,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                         content: content
                     }
 
-                    if(DBState.db.promptInfoInsideChat && DBState.db.promptTextInfoInsideChat && card.type2 !== 'globalNote'){
+                    if(settingsStore.state.promptInfoInsideChat && settingsStore.state.promptTextInfoInsideChat && card.type2 !== 'globalNote'){
                         pushPromptInfoBody(prompt.role, prompt.content, promptBodyformatedForChatStore)
                     }
 
@@ -1417,12 +1419,12 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                     }
 
                     let chats = unformated.chats.slice(start, end)
-                    if(usingPromptTemplate && DBState.db.promptSettings.sendChatAsSystem && (!card.chatAsOriginalOnSystem)){
+                    if(usingPromptTemplate && settingsStore.state.promptSettings.sendChatAsSystem && (!card.chatAsOriginalOnSystem)){
                         chats = systemizeChat(chats)
                     }
                     pushPrompts(chats)
 
-                    if(DBState.db.automaticCachePoint && !hasCachePoint){
+                    if(settingsStore.state.automaticCachePoint && !hasCachePoint){
                         let pointer = formated.length - 1
                         let depthRemaining = 3
                         while(pointer >= 0){
@@ -1445,7 +1447,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                         for(let i=0;i<pmt.length;i++){
                             pmt[i].content = risuChatParser(card.innerFormat, {chara: currentChar}).replace('{{slot}}', pmt[i].content)
 
-                            if(DBState.db.promptInfoInsideChat && DBState.db.promptTextInfoInsideChat){
+                            if(settingsStore.state.promptInfoInsideChat && settingsStore.state.promptTextInfoInsideChat){
                                 pushPromptInfoBody(pmt[i].role, card.innerFormat, promptBodyformatedForChatStore)
                             }
                         }
@@ -1485,7 +1487,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         return v
     })
 
-    if(DBState.db.promptInfoInsideChat && DBState.db.promptTextInfoInsideChat){
+    if(settingsStore.state.promptInfoInsideChat && settingsStore.state.promptTextInfoInsideChat){
         promptBodyformatedForChatStore = promptBodyformatedForChatStore.map((v) => {
             v.content = v.content.trim()
             return v
@@ -1504,7 +1506,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
     formated = await runLuaEditTrigger(currentChar, 'editRequest', formated)
 
-    if(DBState.db.promptInfoInsideChat && DBState.db.promptTextInfoInsideChat){
+    if(settingsStore.state.promptInfoInsideChat && settingsStore.state.promptTextInfoInsideChat){
         promptBodyformatedForChatStore = await runLuaEditTrigger(currentChar, 'editRequest', promptBodyformatedForChatStore)
         promptInfo.promptText = promptBodyformatedForChatStore
     }
@@ -1535,7 +1537,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
 
     //estimate tokens
-    let outputTokens = DBState.db.maxResponse
+    let outputTokens = settingsStore.state.maxResponse
     if(inputTokens + outputTokens > maxContextTokens){
         outputTokens = maxContextTokens - inputTokens
     }
@@ -1572,10 +1574,10 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         bias: {},
         continue: arg.continue,
         chatId: generationId,
-        imageResponse: DBState.db.outputImageModal,
+        imageResponse: settingsStore.state.outputImageModal,
         previewBody: arg.previewPrompt,
         escape: nowChatroom.type === 'character' && nowChatroom.escapeOutput,
-        rememberToolUsage: DBState.db.rememberToolUsage,
+        rememberToolUsage: settingsStore.state.rememberToolUsage,
     }, 'model', abortSignal)
 
     console.log(req)
@@ -1602,15 +1604,15 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
     else if(req.type === 'streaming'){
         const reader = req.result.getReader()
-        let msgIndex = DBState.db.characters[selectedChar].chats[selectedChat].message.length
+        let msgIndex = characterStore.characters[selectedChar].chats[selectedChat].message.length
         let prefix = ''
         if(arg.continue){
             msgIndex -= 1
-            const outputMessage = DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex]
+            const outputMessage = characterStore.characters[selectedChar].chats[selectedChat].message[msgIndex]
             prefix = outputMessage.data
         }
         else{
-            DBState.db.characters[selectedChar].chats[selectedChat].message.push({
+            characterStore.characters[selectedChar].chats[selectedChat].message.push({
                 role: 'char',
                 data: "",
                 saying: currentChar.chaId,
@@ -1620,11 +1622,11 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                 chatId: generationId,
             })
         }
-        const outputMessageId = DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex]?.chatId
-        const performanceMode: StreamingDisplayOptimizationMode = DBState.db.streamingDisplayOptimizationMode ?? 'off'
-        DBState.db.characters[selectedChar].chats[selectedChat].isStreaming = true
-        DBState.db.characters[selectedChar].chats[selectedChat].activeStreamingDisplayOptimizationMode = performanceMode
-        DBState.db.characters[selectedChar].reloadKeys += 1
+        const outputMessageId = characterStore.characters[selectedChar].chats[selectedChat].message[msgIndex]?.chatId
+        const performanceMode: StreamingDisplayOptimizationMode = settingsStore.state.streamingDisplayOptimizationMode ?? 'off'
+        characterStore.characters[selectedChar].chats[selectedChat].isStreaming = true
+        characterStore.characters[selectedChar].chats[selectedChat].activeStreamingDisplayOptimizationMode = performanceMode
+        characterStore.characters[selectedChar].reloadKeys += 1
         let lastResponseChunk:{[key:string]:string} = {}
         let streamAborted:boolean = abortSignal.aborted
         let receivedStreamingResult = false
@@ -1662,14 +1664,14 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                         continue
                     }
                     if(deferStreamingPostProcessing){
-                        DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data = reformatContent(prefix + nextResult)
-                        DBState.db.characters[selectedChar].reloadKeys += 1
+                        characterStore.characters[selectedChar].chats[selectedChat].message[msgIndex].data = reformatContent(prefix + nextResult)
+                        characterStore.characters[selectedChar].reloadKeys += 1
                         continue
                     }
                     let result2 = await processScriptFull(nowChatroom, reformatContent(prefix + nextResult), 'editoutput', msgIndex)
-                    DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data = result2.data
+                    characterStore.characters[selectedChar].chats[selectedChat].message[msgIndex].data = result2.data
                     emoChanged = result2.emoChanged
-                    DBState.db.characters[selectedChar].reloadKeys += 1
+                    characterStore.characters[selectedChar].reloadKeys += 1
                 } while(streamingFlushQueued || pendingStreamingResult !== null)
             })().finally(() => {
                 streamingFlushPromise = null
@@ -1717,7 +1719,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                     if(!result){
                         result = ''
                     }
-                    if(DBState.db.removeIncompleteResponse){
+                    if(settingsStore.state.removeIncompleteResponse){
                         result = trimUntilPunctuation(result)
                     }
                     if(coalesceStreamingDisplay){
@@ -1726,9 +1728,9 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                     }
                     else{
                         let result2 = await processScriptFull(nowChatroom, reformatContent(prefix + result), 'editoutput', msgIndex)
-                        DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data = result2.data
+                        characterStore.characters[selectedChar].chats[selectedChat].message[msgIndex].data = result2.data
                         emoChanged = result2.emoChanged
-                        DBState.db.characters[selectedChar].reloadKeys += 1
+                        characterStore.characters[selectedChar].reloadKeys += 1
                     }
                 }
                 if(readed.done){
@@ -1752,14 +1754,14 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                 }
                 if(deferStreamingPostProcessing && receivedStreamingResult){
                     let result2 = await processScriptFull(nowChatroom, reformatContent(prefix + result), 'editoutput', msgIndex)
-                    DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data = result2.data
+                    characterStore.characters[selectedChar].chats[selectedChat].message[msgIndex].data = result2.data
                     emoChanged = result2.emoChanged
                 }
             }
             finally {
-                DBState.db.characters[selectedChar].chats[selectedChat].isStreaming = false
-                DBState.db.characters[selectedChar].chats[selectedChat].activeStreamingDisplayOptimizationMode = undefined
-                DBState.db.characters[selectedChar].reloadKeys += 1
+                characterStore.characters[selectedChar].chats[selectedChat].isStreaming = false
+                characterStore.characters[selectedChar].chats[selectedChat].activeStreamingDisplayOptimizationMode = undefined
+                characterStore.characters[selectedChar].reloadKeys += 1
                 void reader.cancel().catch(() => {})
             }
         }
@@ -1770,8 +1772,8 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
         addRerolls(generationId, Object.values(lastResponseChunk))
 
-        DBState.db.characters[selectedChar].chats[selectedChat] = runCurrentChatFunction(DBState.db.characters[selectedChar].chats[selectedChat])
-        currentChat = DBState.db.characters[selectedChar].chats[selectedChat]        
+        characterStore.characters[selectedChar].chats[selectedChat] = runCurrentChatFunction(characterStore.characters[selectedChar].chats[selectedChat])
+        currentChat = characterStore.characters[selectedChar].chats[selectedChat]        
         const triggerResult = await runTrigger(currentChar, 'output', {chat:currentChat})
         if(triggerResult && triggerResult.chat){
             currentChat = triggerResult.chat
@@ -1779,28 +1781,28 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         if(triggerResult && triggerResult.sendAIprompt){
             resendChat = true
         }
-        DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
-        currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+        characterStore.characters[selectedChar].chats[selectedChat] = currentChat
+        currentChat = characterStore.characters[selectedChar].chats[selectedChat]
         const inlayMessageIndex = findMessageIndexByChatId(currentChat, outputMessageId)
         const outputMessage = currentChat.message[inlayMessageIndex]
         if(outputMessage){
             const inlayr = runInlayScreen(currentChar, outputMessage.data)
             outputMessage.data = inlayr.text
-            DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
+            characterStore.characters[selectedChar].chats[selectedChat] = currentChat
             if(inlayr.promise){
                 const t = await inlayr.promise
-                currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+                currentChat = characterStore.characters[selectedChar].chats[selectedChat]
                 const asyncInlayMessageIndex = findMessageIndexByChatId(currentChat, outputMessageId)
                 if(asyncInlayMessageIndex !== -1){
                     currentChat.message[asyncInlayMessageIndex].data = t
-                    DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
+                    characterStore.characters[selectedChar].chats[selectedChat] = currentChat
                 }
             }
         }
-        currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+        currentChat = characterStore.characters[selectedChar].chats[selectedChat]
         const listenerMessageIndex = findMessageIndexByChatId(currentChat, outputMessageId)
         await runChatOutputListeners(currentChar, currentChat, selectedChar, selectedChat, listenerMessageIndex)
-        if(DBState.db.ttsAutoSpeech){
+        if(settingsStore.state.ttsAutoSpeech){
             await sayTTS(currentChar, result)
         }
     }
@@ -1814,14 +1816,14 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         for(let i=0;i<msgs.length;i++){
             let msg = msgs[i]
             let mess = msg[1]
-            let msgIndex = DBState.db.characters[selectedChar].chats[selectedChat].message.length
+            let msgIndex = characterStore.characters[selectedChar].chats[selectedChat].message.length
             let result2 = await processScriptFull(nowChatroom, reformatContent(mess), 'editoutput', msgIndex)
             if(i === 0 && arg.continue){
                 msgIndex -= 1
-                let beforeChat = DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex]
+                let beforeChat = characterStore.characters[selectedChar].chats[selectedChat].message[msgIndex]
                 result2 = await processScriptFull(nowChatroom, reformatContent(beforeChat.data + mess), 'editoutput', msgIndex)
             }
-            if(DBState.db.removeIncompleteResponse){
+            if(settingsStore.state.removeIncompleteResponse){
                 result2.data = trimUntilPunctuation(result2.data)
             }
             result = result2.data
@@ -1829,7 +1831,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             result = inlayResult.text
             emoChanged = result2.emoChanged
             if(i === 0 && arg.continue){
-                DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex] = {
+                characterStore.characters[selectedChar].chats[selectedChat].message[msgIndex] = {
                     role: 'char',
                     data: result,
                     saying: currentChar.chaId,
@@ -1840,13 +1842,13 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                 }       
                 if(inlayResult.promise){
                     const p = await inlayResult.promise
-                    DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data = p
+                    characterStore.characters[selectedChar].chats[selectedChat].message[msgIndex].data = p
                 }
                 outputMessageIndex = msgIndex
-                outputMessageId = DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex]?.chatId
+                outputMessageId = characterStore.characters[selectedChar].chats[selectedChat].message[msgIndex]?.chatId
             }
             else if(i===0){
-                DBState.db.characters[selectedChar].chats[selectedChat].message.push({
+                characterStore.characters[selectedChar].chats[selectedChat].message.push({
                     role: msg[0],
                     data: result,
                     saying: currentChar.chaId,
@@ -1855,20 +1857,20 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                     promptInfo,
                     chatId: generationId,
                 })
-                const ind = DBState.db.characters[selectedChar].chats[selectedChat].message.length - 1
+                const ind = characterStore.characters[selectedChar].chats[selectedChat].message.length - 1
                 if(inlayResult.promise){
                     const p = await inlayResult.promise
-                    DBState.db.characters[selectedChar].chats[selectedChat].message[ind].data = p
+                    characterStore.characters[selectedChar].chats[selectedChat].message[ind].data = p
                 }
                 mrerolls.push(result)
                 outputMessageIndex = ind
-                outputMessageId = DBState.db.characters[selectedChar].chats[selectedChat].message[ind]?.chatId
+                outputMessageId = characterStore.characters[selectedChar].chats[selectedChat].message[ind]?.chatId
             }
             else{
                 mrerolls.push(result)
             }
-            DBState.db.characters[selectedChar].reloadKeys += 1
-            if(DBState.db.ttsAutoSpeech){
+            characterStore.characters[selectedChar].reloadKeys += 1
+            if(settingsStore.state.ttsAutoSpeech){
                 await sayTTS(currentChar, result)
             }
         }
@@ -1877,17 +1879,17 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             addRerolls(generationId, mrerolls)
         }
 
-        DBState.db.characters[selectedChar].chats[selectedChat] = runCurrentChatFunction(DBState.db.characters[selectedChar].chats[selectedChat])
-        currentChat = DBState.db.characters[selectedChar].chats[selectedChat]        
+        characterStore.characters[selectedChar].chats[selectedChat] = runCurrentChatFunction(characterStore.characters[selectedChar].chats[selectedChat])
+        currentChat = characterStore.characters[selectedChar].chats[selectedChat]        
 
         const triggerResult = await runTrigger(currentChar, 'output', {chat:currentChat})
         if(triggerResult && triggerResult.chat){
-            DBState.db.characters[selectedChar].chats[selectedChat] = triggerResult.chat
+            characterStore.characters[selectedChar].chats[selectedChat] = triggerResult.chat
         }
         if(triggerResult && triggerResult.sendAIprompt){
             resendChat = true
         }
-        currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+        currentChat = characterStore.characters[selectedChar].chats[selectedChat]
         if(outputMessageId){
             outputMessageIndex = findMessageIndexByChatId(currentChat, outputMessageId)
             await runChatOutputListeners(currentChar, currentChat, selectedChar, selectedChat, outputMessageIndex)
@@ -1896,11 +1898,11 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
     let needsAutoContinue = false
     const resultTokens = await tokenize(result) + (arg.usedContinueTokens || 0)
-    if(DBState.db.autoContinueMinTokens > 0 && resultTokens < DBState.db.autoContinueMinTokens){
+    if(settingsStore.state.autoContinueMinTokens > 0 && resultTokens < settingsStore.state.autoContinueMinTokens){
         needsAutoContinue = true
     }
 
-    if(DBState.db.autoContinueChat && (!isLastCharPunctuation(result))){
+    if(settingsStore.state.autoContinueChat && (!isLastCharPunctuation(result))){
         //if result doesn't end with punctuation or special characters, auto continue
         needsAutoContinue = true
     }
@@ -1915,7 +1917,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         })
     }
 
-    const igp = risuChatParser(DBState.db.igpPrompt ?? "")
+    const igp = risuChatParser(settingsStore.state.igpPrompt ?? "")
 
     if(igp){
         const igpFormated = parseChatML(igp)
@@ -1924,7 +1926,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             bias: {}
         },'emotion', abortSignal)
 
-        DBState.db.characters[selectedChar].chats[selectedChat].message[DBState.db.characters[selectedChar].chats[selectedChat].message.length - 1].data += rq
+        characterStore.characters[selectedChar].chats[selectedChat].message[characterStore.characters[selectedChar].chats[selectedChat].message.length - 1].data += rq
     }
 
     stageTimings.stage3Duration = Date.now() - stageTimings.stage3Start
@@ -1945,9 +1947,9 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             generationInfo.stageTiming.stage4 = stageTimings.stage4Duration
         }
         
-        const lastMessageIndex = DBState.db.characters[selectedChar].chats[selectedChat].message.length - 1
-        if(lastMessageIndex >= 0 && DBState.db.characters[selectedChar].chats[selectedChat].message[lastMessageIndex].generationInfo) {
-            DBState.db.characters[selectedChar].chats[selectedChat].message[lastMessageIndex].generationInfo = generationInfo
+        const lastMessageIndex = characterStore.characters[selectedChar].chats[selectedChat].message.length - 1
+        if(lastMessageIndex >= 0 && characterStore.characters[selectedChar].chats[selectedChat].message[lastMessageIndex].generationInfo) {
+            characterStore.characters[selectedChar].chats[selectedChat].message[lastMessageIndex].generationInfo = generationInfo
         }
         
         doingChat.set(false)
@@ -1956,7 +1958,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         })
     }
 
-    if(DBState.db.notification){
+    if(settingsStore.state.notification){
         try {
             const permission = await Notification.requestPermission()
             if(permission === 'granted'){
@@ -2017,7 +2019,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                 tempEmotion.splice(0, 1)
             }
 
-            if(DBState.db.emotionProcesser === 'embedding'){
+            if(settingsStore.state.emotionProcesser === 'embedding'){
                 const hypaProcesser = new HypaProcesser()
                 await hypaProcesser.addText(emotionList.map((v) => 'emotion:' + v))
                 let searched = (await hypaProcesser.similaritySearchScored(result)).map((v) => {
@@ -2096,7 +2098,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             const promptbody:OpenAIChat[] = [
                 {
                     role:'system',
-                    content: `${DBState.db.emotionPrompt2 || "From the list below, choose a word that best represents a character's outfit description, action, or emotion in their dialogue. Prioritize selecting words related to outfit first, then action, and lastly emotion. Print out the chosen word."}\n\n list: ${shuffleArray(emotionList).join(', ')} \noutput only one word.`
+                    content: `${settingsStore.state.emotionPrompt2 || "From the list below, choose a word that best represents a character's outfit description, action, or emotion in their dialogue. Prioritize selecting words related to outfit first, then action, and lastly emotion. Print out the chosen word."}\n\n list: ${shuffleArray(emotionList).join(', ')} \noutput only one word.`
                 },
                 {
                     role: 'user',
@@ -2185,7 +2187,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                 throwError("Stable diffusion in group chat is not supported")
             }
 
-            const msgs = DBState.db.characters[selectedChar].chats[selectedChat].message
+            const msgs = characterStore.characters[selectedChar].chats[selectedChat].message
             let msgStr = ''
             for(let i = (msgs.length - 1);i>=0;i--){
                 if(msgs[i].role === 'char'){
@@ -2211,9 +2213,9 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         generationInfo.stageTiming.stage4 = stageTimings.stage4Duration
     }
     
-    const lastMessageIndex = DBState.db.characters[selectedChar].chats[selectedChat].message.length - 1
-    if(lastMessageIndex >= 0 && DBState.db.characters[selectedChar].chats[selectedChat].message[lastMessageIndex].generationInfo) {
-        DBState.db.characters[selectedChar].chats[selectedChat].message[lastMessageIndex].generationInfo = generationInfo
+    const lastMessageIndex = characterStore.characters[selectedChar].chats[selectedChat].message.length - 1
+    if(lastMessageIndex >= 0 && characterStore.characters[selectedChar].chats[selectedChat].message[lastMessageIndex].generationInfo) {
+        characterStore.characters[selectedChar].chats[selectedChat].message[lastMessageIndex].generationInfo = generationInfo
     }
 
     return true

@@ -1,7 +1,7 @@
 <script lang="ts">
     import { changeChar, getCharImage, removeChar } from "../../ts/characters";
-    import { type Database } from "../../ts/storage/database.svelte";
-    import { DBState } from 'src/ts/stores.svelte';
+    import { type Database, type character, type groupChat } from "../../ts/storage/database.svelte";
+    import { characterStore } from 'src/ts/stores/domain';
     import { findCharacterIndexbyId } from "../../ts/util";
     import BarIcon from "../SideBars/BarIcon.svelte";
     import { ArrowLeft, User, Users, SquareMousePointer, TrashIcon, Undo2Icon } from "@lucide/svelte";
@@ -52,12 +52,12 @@
         }
         // In-memory fallback
         const lower = tag.toLowerCase();
-        tagResults = DBState.db.characters
+        tagResults = characterStore.characters
             .filter((c) => !c.trashTime && ((c as any).tags ?? []).some((t: string) => t.toLowerCase().includes(lower)))
             .map((c) => ({ id: c.chaId, name: c.name, image: c.image ?? null, kind: c.type === 'group' ? 'group' : 'character' }));
     }
 
-    function formatChars(search:string, db:Database, trash = false){
+    function formatChars(search:string, chars: (character|groupChat)[] = characterStore.characters, trash = false){
         let charas:{
             image:string
             index:number
@@ -67,8 +67,8 @@
             chaId:string
         }[] = []
 
-        for(let i=0;i<db.characters.length;i++){
-            const c = db.characters[i]
+        for(let i=0;i<chars.length;i++){
+            const c = chars[i]
             if(c.trashTime && !trash){
                 continue
             }
@@ -146,14 +146,14 @@
                 </Button>
                 <div class="grow"></div>
                 <span class="text-textcolor2 text-sm">
-                    {formatChars(search, DBState.db).length} {language.character}
+                    {formatChars(search).length} {language.character}
                 </span>
             </div>
         </div>
         {#if selected === 0}
             <div class="w-full flex justify-center">
                 <div class="flex flex-wrap gap-2 w-full justify-center">
-                    {#each formatChars(search, DBState.db) as char}
+                    {#each formatChars(search) as char}
                         <div class="flex items-center text-textcolor">
                             {#if char.image}
                                 <BarIcon onClick={() => {changeChar(char.index)}} additionalStyle={getCharImage(char.image, 'css', { thumbnail: true })}></BarIcon>
@@ -171,7 +171,7 @@
                 </div>
             </div>
         {:else if selected === 1}
-            {#each formatChars(search, DBState.db) as char}
+            {#each formatChars(search) as char}
                 <div class="flex p-2 border border-darkborderc rounded-md mb-2">
                     <BarIcon onClick={() => {changeChar(char.index)}} additionalStyle={getCharImage(char.image, 'css', { thumbnail: true })}></BarIcon>
                     <div class="flex-1 flex flex-col ml-2">
@@ -194,7 +194,7 @@
             {/each}
         {:else if selected === 2}
             <span class="text-textcolor2 text-sm mb-2">{language.trashDesc}</span>
-            {#each formatChars(search, DBState.db, true) as char}
+            {#each formatChars(search, characterStore.characters, true) as char}
                 <div class="flex p-2 border border-darkborderc rounded-md mb-2">
                     <BarIcon onClick={() => {changeChar(char.index)}} additionalStyle={getCharImage(char.image, 'css', { thumbnail: true })}></BarIcon>
                     <div class="flex-1 flex flex-col ml-2">
@@ -204,7 +204,7 @@
                             <button class="hover:text-textcolor text-textcolor2" onclick={() => {
                                 const restoreIdx = findCharacterIndexbyId(char.chaId)
                                 if (restoreIdx !== -1) {
-                                    DBState.db.characters[restoreIdx].trashTime = undefined
+                                    characterStore.characters[restoreIdx].trashTime = undefined
                                     checkCharOrder()
                                 }
                             }}>

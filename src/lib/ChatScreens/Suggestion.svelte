@@ -2,7 +2,7 @@
 	import { requestChatData } from "src/ts/process/request/request";
     import { doingChat, type OpenAIChat } from "../../ts/process/index.svelte";
     import { type character, type Message, type groupChat } from "../../ts/storage/database.svelte";
-	import { DBState } from 'src/ts/stores.svelte';
+    import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import { selectedCharID } from "../../ts/stores.svelte";
     import { isTauri } from 'src/ts/platform';
     import { translate } from "src/ts/translator/translator";
@@ -20,9 +20,9 @@
     }
 
     let { send, messageInput }: Props = $props();
-    let suggestMessages:string[] = $state(DBState.db.characters[$selectedCharID]?.chats[DBState.db.characters[$selectedCharID].chatPage]?.suggestMessages)
+    let suggestMessages:string[] = $state(characterStore.characters[$selectedCharID]?.chats[characterStore.characters[$selectedCharID].chatPage]?.suggestMessages)
     let suggestMessagesTranslated:string[] = $state()
-    let toggleTranslate:boolean = $state(DBState.db.autoTranslate)
+    let toggleTranslate:boolean = $state(settingsStore.state.autoTranslate)
     let progress:boolean = $state();
     let progressChatPage=-1;
     let abortController:AbortController|undefined;
@@ -41,7 +41,7 @@
             if(progressChatPage > 0 && progressChatPage != chatPage){
                 cancelSuggestionRequest()
             }
-            let currentChar = DBState.db.characters[$selectedCharID];
+            let currentChar = characterStore.characters[$selectedCharID];
             suggestMessages = currentChar?.chats[currentChar.chatPage].suggestMessages
         }
     }
@@ -52,7 +52,7 @@
         }
 
         const requestCharId = $selectedCharID
-        const currentChar:character|groupChat = DBState.db.characters[requestCharId];
+        const currentChar:character|groupChat = characterStore.characters[requestCharId];
         if(!currentChar){
             return
         }
@@ -67,7 +67,7 @@
         let lastMessages:Message[] = messages.slice(Math.max(messages.length - 10, 0));
         if(lastMessages.length === 0)
             return
-        const prompt = DBState.db.autoSuggestPrompt && DBState.db.autoSuggestPrompt.length > 0 ? DBState.db.autoSuggestPrompt : defaultAutoSuggestPrompt
+        const prompt = settingsStore.state.autoSuggestPrompt && settingsStore.state.autoSuggestPrompt.length > 0 ? settingsStore.state.autoSuggestPrompt : defaultAutoSuggestPrompt
         let promptbody:OpenAIChat[] = [
             {
                 role:'system',
@@ -79,11 +79,11 @@
             }
         ]
 
-        if(DBState.db.subModel === "textgen_webui" || DBState.db.subModel === 'mancer' || DBState.db.subModel.startsWith('local_')){
+        if(settingsStore.state.subModel === "textgen_webui" || settingsStore.state.subModel === 'mancer' || settingsStore.state.subModel.startsWith('local_')){
             promptbody = [
                 {
                     role: 'system',
-                    content: replacePlaceholders(DBState.db.autoSuggestPrompt, currentChar.name)
+                    content: replacePlaceholders(settingsStore.state.autoSuggestPrompt, currentChar.name)
                 },
                 ...lastMessages.map(({ role, data }) => ({
                     role: role === "user" ? "user" as const : "assistant" as const,
@@ -104,8 +104,8 @@
             bias: {},
             currentChar : currentChar as character
         }, 'submodel', requestController?.signal ?? null).then(rq2=>{
-            const stillCurrentRequest = suggestionRequestId === requestId && $selectedCharID === requestCharId && DBState.db.characters[requestCharId]?.chatPage === requestChatPage
-            const currentTargetChat = DBState.db.characters[requestCharId]?.chats[requestChatPage]
+            const stillCurrentRequest = suggestionRequestId === requestId && $selectedCharID === requestCharId && characterStore.characters[requestCharId]?.chatPage === requestChatPage
+            const currentTargetChat = characterStore.characters[requestCharId]?.chats[requestChatPage]
             if(rq2.type !== 'fail' && rq2.type !== 'streaming' && rq2.type !== 'multiline' && progress && stillCurrentRequest && currentTargetChat){
                 var suggestMessagesNew = rq2.result.split('\n').filter(msg => msg.startsWith('-')).map(msg => msg.replace('-','').trim())
                 currentTargetChat.suggestMessages = suggestMessagesNew
@@ -151,7 +151,7 @@
     $effect.pre(() => {
         $selectedCharID
         //FIXME add selectedChatPage for optimize render
-        chatPage = DBState.db.characters[$selectedCharID].chatPage
+        chatPage = characterStore.characters[$selectedCharID].chatPage
         updateSuggestions()
     });
     $effect.pre(() => {translateSuggest(toggleTranslate, suggestMessages)});
@@ -164,7 +164,7 @@
             <div>{language.creatingSuggestions}</div>
         </div>        
     {:else if !$doingChat}
-        {#if DBState.db.translator !== ''}
+        {#if settingsStore.state.translator !== ''}
             <div class="flex mr-2 mb-2">
                 <button class={"bg-textcolor2 hover:bg-darkbutton font-bold py-2 px-4 rounded-sm " + (toggleTranslate ? 'text-green-500' : 'text-textcolor')}
                     onclick={() => {
@@ -199,7 +199,7 @@
                     messageInput(suggest)
                     send()
                 }}>
-                {#await ParseMarkdown((DBState.db.translator !== '' && toggleTranslate && suggestMessagesTranslated && suggestMessagesTranslated.length > 0) ? suggestMessagesTranslated[i]??suggest : suggest) then md}
+                {#await ParseMarkdown((settingsStore.state.translator !== '' && toggleTranslate && suggestMessagesTranslated && suggestMessagesTranslated.length > 0) ? suggestMessagesTranslated[i]??suggest : suggest) then md}
                     {@html md}
                 {/await}
                 </button>

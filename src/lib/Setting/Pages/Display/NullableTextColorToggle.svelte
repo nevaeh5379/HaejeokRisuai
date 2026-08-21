@@ -1,6 +1,6 @@
 <script lang="ts">
     import { language } from 'src/lang';
-    import { DBState } from 'src/ts/stores.svelte';
+    import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import Check from 'src/lib/UI/GUI/CheckInput.svelte';
 
     interface Props {
@@ -10,7 +10,7 @@
     }
 
     let { field, labelKey, defaultColor }: Props = $props();
-    let currentValue = $derived(DBState.db[field]);
+    let currentValue = $derived(settingsStore.state[field]);
 </script>
 
 {#if currentValue}
@@ -18,7 +18,7 @@
         <Check
             check={true}
             onChange={() => {
-                DBState.db[field] = null;
+                settingsStore.state[field] = null;
             }}
             name={language[labelKey]}
             hiddenName
@@ -28,7 +28,7 @@
             class="style2 text-sm mr-2"
             value={currentValue}
             oninput={(e) => {
-                DBState.db[field] = e.currentTarget.value;
+                settingsStore.state[field] = e.currentTarget.value;
             }}
         />
         <span>{language[labelKey]}</span>
@@ -38,7 +38,7 @@
         <Check
             check={false}
             onChange={() => {
-                DBState.db[field] = defaultColor;
+                settingsStore.state[field] = defaultColor;
             }}
             name={language[labelKey]}
         />

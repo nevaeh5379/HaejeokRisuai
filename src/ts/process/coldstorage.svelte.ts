@@ -8,7 +8,7 @@ import {
 } from "@tauri-apps/plugin-fs"
 import { forageStorage } from "../globalApi.svelte"
 import { isTauri, isNodeServer } from "src/ts/platform"
-import { DBState } from "../stores.svelte"
+import { characterStore } from "../stores/domain/characterStore.svelte"
 import { NodeStorage } from "../storage/nodeStorage"
 import { compress as fflateCompress, decompress as fflateDecompress } from "fflate"
 import { fetchProtectedResource } from "../sionyw"
@@ -343,7 +343,7 @@ async function removeColdStorageItems(keys:string[]) {
     }
 }
 
-export async function listColdDataKeys(db: Pick<Database, 'characters'> = DBState.db): Promise<string[]> {
+export async function listColdDataKeys(db: Pick<Database, 'characters'> = { characters: characterStore.characters }): Promise<string[]> {
     return listColdDataKeysFromDb(db)
 }
 
@@ -355,7 +355,7 @@ export type ColdStorageBackupPayload = {
 }
 
 export async function collectColdStorageBackupPayloads(
-    db: Pick<Database, 'characters'> = DBState.db,
+    db: Pick<Database, 'characters'> = { characters: characterStore.characters },
     onProgress?: (current: number, total: number, key?: string) => void,
 ): Promise<{
     payloads: ColdStorageBackupPayload[]
@@ -432,7 +432,7 @@ export async function preLoadChat(
     chatIndex: number,
     options: { full?: boolean } = {},
 ){
-    const chat = DBState.db?.characters?.[characterIndex]?.chats?.[chatIndex]   
+    const chat = characterStore.characters?.[characterIndex]?.chats?.[chatIndex]   
 
     if(!chat){
         return
@@ -440,15 +440,11 @@ export async function preLoadChat(
 
     if((chat.messagesLoaded === false || chat.detailsLoaded === false ||
         (options.full && chat.messagesFullyLoaded === false)) && chat.id){
-        // Use the SQL adapter's lazy chat loader (works for all backends)
-        const adapter = DBState.db as any
-        if (adapter.ensureChatMessages) {
-            try {
-                await adapter.ensureChatMessages(chat.id, options)
-                return
-            } catch (error) {
-                console.error(`SQL loadChat failed for chat ${chat.id}:`, error)
-            }
+        try {
+            await characterStore.ensureChatMessages(chat.id, options)
+            return
+        } catch (error) {
+            console.error(`SQL loadChat failed for chat ${chat.id}:`, error)
         }
     }
 

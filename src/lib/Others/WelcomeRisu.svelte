@@ -2,12 +2,11 @@
     import { Send } from "@lucide/svelte";
     import { changeLanguage, language } from "src/lang";
     import { setPreset } from "src/ts/storage/database.svelte";
-    import { DBState } from 'src/ts/stores.svelte';
+    import { settingsStore } from "src/ts/stores/domain";
     import Chat from "../ChatScreens/Chat.svelte";
     import { prebuiltPresets } from "src/ts/process/templates/templates";
     import { updateTextThemeAndCSS } from "src/ts/gui/colorscheme";
     import { alertError } from "src/ts/alert";
-    import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
     import Airisu from '../../etc/Airisu.webp'
 
     const airisuStyle = `background: url("${Airisu}");background-size: cover;`
@@ -22,7 +21,7 @@
         const browserLangShort = browserLang.split('-')[0]
         const usableLangs = ['de', 'en', 'ko', 'cn', 'vi', 'zh-Hant']
         if(usableLangs.includes(browserLangShort)){
-            DBState.db.language = browserLangShort
+            settingsStore.state.language = browserLangShort
             void changeLanguage(browserLangShort).then(() => {
                 step = 1
             })
@@ -31,7 +30,7 @@
     let start = $state(false)
 
     async function selectUiLanguage(lang: string) {
-        DBState.db.language = lang
+        settingsStore.state.language = lang
         await changeLanguage(lang)
         step = 1
     }
@@ -40,7 +39,7 @@
         switch(step){
             case 1:{
                 if(input.length > 0){
-                    DBState.db.username = input
+                    settingsStore.state.username = input
                     step = 2
                     input = ''
                 }
@@ -63,13 +62,13 @@
                     break
                 }
                 if(provider === 'openai'){
-                    DBState.db.openAIKey = input
+                    settingsStore.state.openAIKey = input
                 }
                 if(provider === 'openrouter'){
-                    DBState.db.openrouterKey = input
+                    settingsStore.state.openrouterKey = input
                 }
                 if(provider === 'claude'){
-                    DBState.db.claudeAPIKey = input
+                    settingsStore.state.claudeAPIKey = input
                 }
                 step = 5
                 input = ''
@@ -81,90 +80,90 @@
     $effect.pre(() => {
         if(step === 10){
             setTimeout(async () => {
-                DBState.db = setPreset(DBState.db, prebuiltPresets.OAI2)
-                DBState.db.textTheme = 'highcontrast'
+                setPreset(settingsStore.state as any, prebuiltPresets.OAI2)
+                settingsStore.state.textTheme = 'highcontrast'
                 updateTextThemeAndCSS()
 
                 switch(chatMemorySelection){
                     case 0:{
-                        DBState.db.maxContext = 16000
-                        DBState.db.maxResponse = 1000
+                        settingsStore.state.maxContext = 16000
+                        settingsStore.state.maxResponse = 1000
                         break
                     }
                     case 1:{
-                        DBState.db.maxContext = 8000
-                        DBState.db.maxResponse = 500
+                        settingsStore.state.maxContext = 8000
+                        settingsStore.state.maxResponse = 500
                         break
                     }
                     case 2:{
-                        DBState.db.maxContext = 12000
-                        DBState.db.maxResponse = 800
+                        settingsStore.state.maxContext = 12000
+                        settingsStore.state.maxResponse = 800
                         break
                     }
                     case 3:{
-                        DBState.db.maxContext = 100000
-                        DBState.db.maxResponse = 1000
+                        settingsStore.state.maxContext = 100000
+                        settingsStore.state.maxResponse = 1000
                         break
                     }
                 }
 
                 if(provider === 'claude'){
-                    DBState.db.aiModel = 'claude-3-5-sonnet-20241022'
-                    DBState.db.subModel = 'claude-3-5-sonnet-20241022'
+                    settingsStore.state.aiModel = 'claude-3-5-sonnet-20241022'
+                    settingsStore.state.subModel = 'claude-3-5-sonnet-20241022'
                 }
 
                 if(provider === 'openai'){
-                    DBState.db.aiModel = 'gpt4o-chatgpt'
-                    DBState.db.subModel = 'gpt4o-chatgpt'
+                    settingsStore.state.aiModel = 'gpt4o-chatgpt'
+                    settingsStore.state.subModel = 'gpt4o-chatgpt'
                 }
 
                 if(provider === 'openrouter'){
-                    DBState.db.aiModel = 'openrouter'
-                    DBState.db.subModel = 'openrouter'
-                    DBState.db.openrouterRequestModel = 'risu/free'
+                    settingsStore.state.aiModel = 'openrouter'
+                    settingsStore.state.subModel = 'openrouter'
+                    settingsStore.state.openrouterRequestModel = 'risu/free'
                 }
                 if(provider === 'horde'){
-                    DBState.db.aiModel = 'horde:::auto'
-                    DBState.db.subModel = 'horde:::auto'
+                    settingsStore.state.aiModel = 'horde:::auto'
+                    settingsStore.state.subModel = 'horde:::auto'
                 }
                 if(chatLang !== 0){
-                    switch(DBState.db.language){
+                    switch(settingsStore.state.language){
                         case 'de':{
-                            DBState.db.translator = 'de'
+                            settingsStore.state.translator = 'de'
                             break
                         }
                         case 'en':{
-                            DBState.db.translator = 'en'
+                            settingsStore.state.translator = 'en'
                             break
                         }
                         case 'ko':{
-                            DBState.db.translator = 'ko'
+                            settingsStore.state.translator = 'ko'
                             break
                         }
                         case 'cn':{
-                            DBState.db.translator = 'zh'
+                            settingsStore.state.translator = 'zh'
                             break
                         }
                         case 'vi':{
-                            DBState.db.translator = 'vi'
+                            settingsStore.state.translator = 'vi'
                             break
                         }
                         case 'zh-Hant':{
-                            DBState.db.translator = 'zh-TW'
+                            settingsStore.state.translator = 'zh-TW'
                             break
                         }
                     }
                 }
                 if(chatLang === 1){
-                    DBState.db.autoTranslate = true
-                    DBState.db.translatorType = 'google'
-                    DBState.db.useAutoTranslateInput = true
+                    settingsStore.state.autoTranslate = true
+                    settingsStore.state.translatorType = 'google'
+                    settingsStore.state.useAutoTranslateInput = true
                 }
 
                 await settingsStore.set('didFirstSetup', true)
             }, 1000);
 
-            DBState.db.claudeCachingExperimental = true
+            settingsStore.state.claudeCachingExperimental = true
         }
 
     });
@@ -194,8 +193,8 @@
                 {:else}
                     <Chat name="Airisu" img={airisuStyle} message={language.setup.welcome} isLastMemory={false} />
                     {#if step >= 2}
-                        <Chat name={DBState.db.username} message={DBState.db.username} isLastMemory={false} />
-                        <Chat name="Airisu" img={airisuStyle} message={language.setup.setupLaterMessage.replace('{username}', DBState.db.username)} isLastMemory={false} />
+                        <Chat name={settingsStore.state.username} message={settingsStore.state.username} isLastMemory={false} />
+                        <Chat name="Airisu" img={airisuStyle} message={language.setup.setupLaterMessage.replace('{username}', settingsStore.state.username)} isLastMemory={false} />
                     {/if}
                     {#if step === 2}
                         <div class="grid grid-cols-2 gap-4 md:grid-cols-3">
@@ -214,8 +213,8 @@
                         </div>
                     {/if}
                     {#if step >= 3}
-                        <Chat name={DBState.db.username} message={language.setup.setupMessageOption1} isLastMemory={false} />
-                        <Chat name="Airisu" img={airisuStyle} message={language.setup.welcome2.replace('{username}', DBState.db.username)} isLastMemory={false} />
+                        <Chat name={settingsStore.state.username} message={language.setup.setupMessageOption1} isLastMemory={false} />
+                        <Chat name="Airisu" img={airisuStyle} message={language.setup.welcome2.replace('{username}', settingsStore.state.username)} isLastMemory={false} />
                     {/if}
                     {#if step === 3}
                         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -250,7 +249,7 @@
                         </div>
                     {/if}
                     {#if step >= 4}
-                        <Chat name={DBState.db.username} message={provider} isLastMemory={false} />
+                        <Chat name={settingsStore.state.username} message={provider} isLastMemory={false} />
                         {#if provider === 'openai'}
                             <Chat name="Airisu" img={airisuStyle} message={language.setup.setupOpenAI} isLastMemory={false} />
                         {/if}
@@ -267,7 +266,7 @@
                         {/if}
                     {/if}
                     {#if step >= 5}
-                        <Chat name={DBState.db.username} message="<HIDDEN>" isLastMemory={false} />
+                        <Chat name={settingsStore.state.username} message="<HIDDEN>" isLastMemory={false} />
                         <Chat name="Airisu" img={airisuStyle} message={language.setup.chooseChatType} isLastMemory={false} />
                     {/if}
                     {#if step === 5}
@@ -296,7 +295,7 @@
                         </div>
                     {/if}
                     {#if step >= 6}
-                        <Chat name={DBState.db.username} message={
+                        <Chat name={settingsStore.state.username} message={
                             language.setup[`chooseChatTypeOption${chatLang+1}`]
                         } isLastMemory={false} />
                         <Chat name="Airisu" img={airisuStyle} message={language.setup.chooseCheapOrMemory} isLastMemory={false} />

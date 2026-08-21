@@ -1,6 +1,6 @@
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { MCPClient, type JsonRPC, type MCPTool, type RPCToolCallContent } from "./mcplib";
-import { DBState } from "src/ts/stores.svelte";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { getModuleMcps } from "../modules";
 import { alertError, alertInput, alertNormal } from "src/ts/alert";
 import { v4 } from "uuid";
@@ -183,14 +183,15 @@ export async function initializeMCPs(additionalMCPs?:string[]) {
             }
 
             const registerRefresh:typeof MCPClient.prototype.registerRefreshToken = (arg) => {
-                DBState.db.authRefreshes.push({
+                settingsStore.state.authRefreshes ??= []
+                settingsStore.state.authRefreshes.push({
                     url: mcp,
                     ...arg
                 })
             }
 
             const getRefresh:typeof MCPClient.prototype.getRefreshToken = async () => {
-                return DBState.db.authRefreshes.find(refresh => refresh.url === mcp);
+                return settingsStore.state.authRefreshes?.find(refresh => refresh.url === mcp);
             }
 
             try {

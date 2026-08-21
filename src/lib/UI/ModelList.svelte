@@ -1,6 +1,5 @@
 <script lang="ts">
-    
-    import { DBState } from 'src/ts/stores.svelte';
+    import { settingsStore } from 'src/ts/stores/domain';
     import { getHordeModels } from "src/ts/horde/getModels";
     import Accordion from "./Accordion.svelte";
     import { language } from "src/lang";
@@ -87,9 +86,9 @@
                 {/await}
             </Accordion>
 
-            {#if DBState?.db.customModels?.length > 0}
+            {#if settingsStore.state.customModels?.length > 0}
                 <Accordion name={language.customModels}>
-                    {#each DBState.db.customModels as model}
+                    {#each settingsStore.state.customModels as model}
                         <button class="hover:bg-selected px-6 py-2 text-lg" onclick={() => {changeModel(model.id)}}>{model.name ?? "Unnamed"}</button>
                     {/each}
                 </Accordion>

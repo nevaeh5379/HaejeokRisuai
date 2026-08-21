@@ -1,6 +1,6 @@
 <script lang="ts">
     import isEqual from "lodash/isEqual"
-    import { DBState } from 'src/ts/stores.svelte'
+    import { settingsStore } from 'src/ts/stores/domain'
     import { sleep } from "src/ts/util"
     import { alertError } from "../../ts/alert"
     import { addMetadataToElement, getDistance, ParseMarkdown, postTranslationParse, trimMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
@@ -76,11 +76,11 @@
                 lastChatId = chatID
                 let translateText = false
                 try {
-                    if(DBState.db.autoTranslate){
-                        if(DBState.db.autoTranslateCachedOnly && DBState.db.translatorType === 'llm'){
-                            const cache = DBState.db.translateBeforeHTMLFormatting
+                    if(settingsStore.state.autoTranslate){
+                        if(settingsStore.state.autoTranslateCachedOnly && settingsStore.state.translatorType === 'llm'){
+                            const cache = settingsStore.state.translateBeforeHTMLFormatting
                             ? await getLLMCache(data)
-                            : !DBState.db.legacyTranslation
+                            : !settingsStore.state.legacyTranslation
                             ? await getLLMCache(await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition()))
                             : await getLLMCache(await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition()))
                   
@@ -107,13 +107,13 @@
                 }
             }
             if(retranslate || translated){
-                if (DBState.db.showTranslationLoading) {
+                if (settingsStore.state.showTranslationLoading) {
                     lastParsed = `<div style="display:flex;justify-content:center;align-items:center;height:48px;"><div style="animation: spin 1s linear infinite; border-radius: 50%; height: 32px; width: 32px; border: 2px solid #3b82f6; border-top: 2px solid transparent;"></div></div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>`
                 }
 
                 let transResult
                 
-                if(DBState.db.translatorType === 'llm' && DBState.db.translateBeforeHTMLFormatting){
+                if(settingsStore.state.translatorType === 'llm' && settingsStore.state.translateBeforeHTMLFormatting){
                     await sleep(100)
                     translating = true
                     data = await translateHTML(data, false, charArg, chatID, retranslate)
@@ -123,7 +123,7 @@
                     lastCharArg = charArg
                     transResult = marked
                 }
-                else if(!DBState.db.legacyTranslation){
+                else if(!settingsStore.state.legacyTranslation){
                     const marked = await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition())
                     translating = true
                     const translated = await postTranslationParse(await translateHTML(marked, false, charArg, chatID, retranslate))
@@ -170,7 +170,7 @@
     }
 
     const checkImg = () => {
-        if(!DBState.db.newImageHandlingBeta || !bodyRoot){
+        if(!settingsStore.state.newImageHandlingBeta || !bodyRoot){
             return
         }
         const imgs = bodyRoot.querySelectorAll('img:not([src^="data:"]):not([src^="http:"]):not([src^="https:"]):not([src^="blob:"]):not([src^="file:"]):not([src^="tauri:"]):not([noimage])') as NodeListOf<HTMLImageElement>

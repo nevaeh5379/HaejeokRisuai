@@ -21,30 +21,42 @@ vi.mock(import('../../../globalApi.svelte'), () => ({
   getFileSrc: () => Promise.resolve(''),
 }))
 
-vi.mock(import('../../../stores.svelte'), () => {
+vi.mock(import('../../../stores/domain/characterStore.svelte'), () => {
   return {
-    DBState: {
-      db: {
-        characters: [
-          {
-            chatPage: 0,
-            chats: [
-              {
-                scriptstate: {},
-              },
-            ],
-            defaultVariables: '',
-          },
-        ],
+    characterStore: {
+      characters: [
+        {
+          chatPage: 0,
+          chats: [
+            {
+              scriptstate: {},
+            },
+          ],
+          defaultVariables: '',
+        },
+      ],
+    },
+  } as any
+})
+
+vi.mock(import('../../../stores/domain/settingsStore.svelte'), () => {
+  return {
+    settingsStore: {
+      state: {
         globalChatVariables: {},
         templateDefaultVariables: '',
       },
     },
+  } as any
+})
+
+vi.mock(import('../../../stores.svelte'), () => {
+  return {
     selIdState: {
       selId: 0,
     },
     selectedCharID: writable(0),
-  } as typeof import('../../../stores.svelte')
+  } as any
 })
 
 //#endregion

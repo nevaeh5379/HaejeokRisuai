@@ -2,7 +2,8 @@
     import { fade, fly } from "svelte/transition";
     import { onMount } from "svelte";
     import IrisImage from "../../etc/Airisu.webp";
-    import { DBState, irisStore } from "src/ts/stores.svelte";
+    import { irisStore } from "src/ts/stores.svelte";
+    import { settingsStore } from "src/ts/stores/domain";
     import { requestChatData } from "src/ts/process/request/request";
     import { alertError } from "src/ts/alert";
     import { getIrisSystemPrompt } from "src/ts/iris";
@@ -51,7 +52,7 @@
     });
 
     let dialogue = $state<DialogueLine[]>(
-        introDialogue[DBState.db.language] ?? introDialogue.en
+        introDialogue[settingsStore.state.language] ?? introDialogue.en
     );
 
     let currentIndex = $state(0);
@@ -65,7 +66,7 @@
     let userInputEl = $state<HTMLInputElement | null>(null);
     
     let isUnsupportedModel = $derived.by(() => {
-        const currentModel = (DBState.db.seperateModelsForAxModels ? DBState.db.seperateModels.otherAx : '') || DBState.db.subModel;
+        const currentModel = (settingsStore.state.seperateModelsForAxModels ? settingsStore.state.seperateModels.otherAx : '') || settingsStore.state.subModel;
         const modelInfo = getModelInfo(currentModel);
         return !(
             modelInfo.format === LLMFormat.Anthropic ||
@@ -245,12 +246,12 @@
                 dialogue = saved;
                 currentIndex = dialogue.length - 1;
             } else {
-                dialogue = introDialogue[DBState.db.language] ?? introDialogue.en;
+                dialogue = introDialogue[settingsStore.state.language] ?? introDialogue.en;
                 currentIndex = 0;
             }
             startTyping(dialogue[currentIndex].text);
         }).catch(() => {
-            dialogue = introDialogue[DBState.db.language] ?? introDialogue.en;
+            dialogue = introDialogue[settingsStore.state.language] ?? introDialogue.en;
             currentIndex = 0;
             startTyping(dialogue[currentIndex].text);
         });
@@ -278,7 +279,7 @@
     });
 
     function resetDialogue() {
-        dialogue = introDialogue[DBState.db.language] ?? introDialogue.en;
+        dialogue = introDialogue[settingsStore.state.language] ?? introDialogue.en;
         currentIndex = 0;
         saveDialogue();
         startTyping(dialogue[0].text);
@@ -474,7 +475,7 @@
                 {/if}
                 {#if isUnsupportedModel}
                     <div class="mt-2 rounded-md bg-red-600/80 px-3 py-2 text-sm text-white">
-                        {unsupportedModelDialogue[DBState.db.language]?.[0].text ?? unsupportedModelDialogue.en[0].text}
+                        {unsupportedModelDialogue[settingsStore.state.language]?.[0].text ?? unsupportedModelDialogue.en[0].text}
                     </div>
                 {/if}
             </div>

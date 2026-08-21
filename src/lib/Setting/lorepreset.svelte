@@ -2,7 +2,7 @@
     import { alertConfirm } from "../../ts/alert";
     import { language } from "../../lang";
     
-    import { DBState } from 'src/ts/stores.svelte';
+    import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { SquarePenIcon, PlusIcon, TrashIcon, XIcon } from "@lucide/svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
     let editMode = $state(false)
@@ -20,29 +20,29 @@
                 </button>
             </div>
         </div>
-        {#each DBState.db.loreBook as lore, ind}
+        {#each settingsStore.state.loreBook as lore, ind}
             <button onclick={() => {
                 if(!editMode){
-                    DBState.db.loreBookPage = ind
+                    settingsStore.state.loreBookPage = ind
                 }
-            }} class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer" class:bg-selected={ind === DBState.db.loreBookPage}>
+            }} class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer" class:bg-selected={ind === settingsStore.state.loreBookPage}>
                 {#if editMode}
-                    <TextInput bind:value={DBState.db.loreBook[ind].name} placeholder="string" padding={false}/>
+                    <TextInput bind:value={settingsStore.state.loreBook[ind].name} placeholder="string" padding={false}/>
                 {:else}
                     <span>{lore.name}</span>
                 {/if}
                 <div class="grow flex justify-end">
                     <div class="text-textcolor2 hover:text-green-500 cursor-pointer" role="button" tabindex="0" onclick={async (e) => {
                         e.stopPropagation()
-                        if(DBState.db.loreBook.length === 1){
+                        if(settingsStore.state.loreBook.length === 1){
                             return
                         }
                         const d = await alertConfirm(`${language.removeConfirm}${lore.name}`)
                         if(d){
-                            DBState.db.loreBookPage = 0
-                            let loreBook = DBState.db.loreBook
+                            settingsStore.state.loreBookPage = 0
+                            let loreBook = settingsStore.state.loreBook
                             loreBook.splice(ind, 1)
-                            DBState.db.loreBook = loreBook
+                            settingsStore.state.loreBook = loreBook
                         }
                     }} onkeydown={(e) => {
                         if(e.key === 'Enter'){
@@ -56,14 +56,14 @@
         {/each}
         <div class="flex mt-2 items-center">
             <button class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1" onclick={() => {
-                let loreBooks = DBState.db.loreBook
+                let loreBooks = settingsStore.state.loreBook
                 let newLoreBook = {
                     name: `New LoreBook`,
                     data: []
                 }
                 loreBooks.push(newLoreBook)
 
-                DBState.db.loreBook = loreBooks
+                settingsStore.state.loreBook = loreBooks
             }}>
                 <PlusIcon/>
             </button>

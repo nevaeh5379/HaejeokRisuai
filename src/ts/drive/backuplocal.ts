@@ -10,7 +10,7 @@ import { decryptBuffer, encryptBuffer, sleep } from "../util";
 import { hubURL } from "../characterCards";
 import { language } from "src/lang";
 import { collectColdStorageBackupPayloads, confirmIncompleteColdStorageOperation, getColdStorageBackupKey, getColdStorageItem, isColdStorageBackupData, listColdDataKeys, setColdStorageItem } from "../process/coldstorage.svelte";
-import { DBState } from "../stores.svelte";
+import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { NodeStorage } from "../storage/nodeStorage";
 import { PROMPT_SETTING_KEYS, POSTGRES_DOMAINS } from "../storage/databaseAdapters.svelte";
 import { getSqlStorage } from "../storage/sqlStorageFactory";
@@ -450,7 +450,7 @@ export async function SaveLocalBackup(){
                     let data: Uint8Array | undefined;
                     let isCached = false;
                     if(forageStorage.isAccount && key.startsWith('assets/')){
-                        if(DBState.db.skipSavingAssetsOnWebSync){
+                        if(settingsStore.state.skipSavingAssetsOnWebSync){
                             continue
                         }
 
@@ -708,7 +708,7 @@ export async function SavePartialLocalBackup(){
                 let data: Uint8Array | undefined;
                 let isCached = false;
                 if(forageStorage.isAccount && key.startsWith('assets/')){
-                    if(DBState.db.skipSavingAssetsOnWebSync){
+                    if(settingsStore.state.skipSavingAssetsOnWebSync){
                         continue
                     }
 

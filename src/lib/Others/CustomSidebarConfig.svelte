@@ -1,5 +1,6 @@
 <script lang="ts">
-    import { customSideBarConfigDialogStore, DBState } from "src/ts/stores.svelte";
+    import { customSideBarConfigDialogStore } from "src/ts/stores.svelte";
+    import { settingsStore } from "src/ts/stores/domain";
     import Button from "../UI/GUI/Button.svelte";
     import { language } from "src/lang";
     import { getFullSettingsData } from "src/ts/setting/utils";
@@ -24,13 +25,13 @@
             <div
                 class="m-4 border-darkborderc p-2 border rounded-sm flex flex-col w-xl max-w-full"
             >
-                {#if DBState.db.customSidebarItems.length === 0}
+                {#if settingsStore.state.customSidebarItems.length === 0}
                     <div class="text-textcolor2">
                         No custom sidebar items configured
                     </div>
                 {/if}
 
-                {#each DBState.db.customSidebarItems as item}
+                {#each settingsStore.state.customSidebarItems as item}
                     <div
                         class="border-darkborderc p-2 border rounded-sm flex items-start"
                     >
@@ -39,8 +40,8 @@
                         <button
                             class="ml-2"
                             onclick={() => {
-                                DBState.db.customSidebarItems =
-                                    DBState.db.customSidebarItems.filter(
+                                settingsStore.state.customSidebarItems =
+                                    settingsStore.state.customSidebarItems.filter(
                                         (i) => i.id !== item.id,
                                     );
                             }}
@@ -71,7 +72,7 @@
         {#if configPage === "add"}
             <Button
                 onclick={() => {
-                    DBState.db.customSidebarItems.push({
+                    settingsStore.state.customSidebarItems.push({
                         id: crypto.randomUUID(),
                         type: "model",
                         subType: "none",
@@ -85,7 +86,7 @@
 
             <Button
                 onclick={() => {
-                    DBState.db.customSidebarItems.push({
+                    settingsStore.state.customSidebarItems.push({
                         id: crypto.randomUUID(),
                         type: "preset",
                         subType: "none",
@@ -99,7 +100,7 @@
 
             <Button
                 onclick={() => {
-                    DBState.db.customSidebarItems.push({
+                    settingsStore.state.customSidebarItems.push({
                         id: crypto.randomUUID(),
                         type: "loadout",
                         subType: "none",
@@ -113,7 +114,7 @@
 
             <Button
                 onclick={() => {
-                    DBState.db.customSidebarItems.push({
+                    settingsStore.state.customSidebarItems.push({
                         id: crypto.randomUUID(),
                         type: "persona",
                         subType: "none",
@@ -157,7 +158,7 @@
                 {#each getFullSettingsData(search) as type}
                     <Button
                         onclick={() => {
-                            DBState.db.customSidebarItems.push({
+                            settingsStore.state.customSidebarItems.push({
                                 id: crypto.randomUUID(),
                                 type: "setting",
                                 subType: type.id,

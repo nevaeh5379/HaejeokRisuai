@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { DBState } from "src/ts/stores.svelte";
+    import { settingsStore } from "src/ts/stores/domain";
     import Help from "./Help.svelte";
     import { language } from "src/lang";
     import SliderInput from "../UI/GUI/SliderInput.svelte";
@@ -25,12 +25,12 @@
     } = $props()
 
     let effectiveModel = $derived.by(() => {
-        if (!paramKey) return DBState.db.subModel
+        if (!paramKey) return settingsStore.state.subModel
         if (auxModelKeys.includes(paramKey as AuxModelKey)) {
-            if (DBState.db.seperateModelsForAxModels) {
-                return DBState.db.seperateModels[paramKey as AuxModelKey] || DBState.db.subModel
+            if (settingsStore.state.seperateModelsForAxModels) {
+                return settingsStore.state.seperateModels[paramKey as AuxModelKey] || settingsStore.state.subModel
             }
-            return DBState.db.subModel
+            return settingsStore.state.subModel
         }
         return paramKey
     })

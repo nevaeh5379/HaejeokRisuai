@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { DBState } from 'src/ts/stores.svelte';
+    import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import { language } from 'src/lang';
     import { getCharImage } from 'src/ts/characterImage';
     import SidebarAvatar from './SidebarAvatar.svelte';
@@ -84,7 +84,7 @@
     }
 
     let allSessions = $derived.by<SessionItem[]>(() => {
-        const characters = DBState.db.characters ?? [];
+        const characters = characterStore.characters ?? [];
         const sessions: SessionItem[] = [];
 
         for (let charIdx = 0; charIdx < characters.length; charIdx++) {
@@ -98,83 +98,63 @@
                 const chat = chats[chatIdx];
                 if (!chat) continue;
 
-                const messages = chat.message ?? [];
-                let lastMessageTime = 0;
-                let lastSnippet = '';
+                const lastMsg =
+                    chat.message && chat.message.length > 0
+                        ? chat.message[chat.message.length - 1]
+                        : null;
 
-                if (messages.length > 0) {
-                    for (let m = messages.length - 1; m >= 0; m--) {
-                        const msg = messages[m];
-                        if (!msg) continue;
-                        if (!lastMessageTime && msg.time) {
-                            lastMessageTime = msg.time;
-                        }
-                        if (!lastSnippet && msg.data) {
-                            const cleaned = cleanSnippet(msg.data);
-                            if (cleaned) {
-                                lastSnippet = cleaned.slice(0, 100);
-                            }
-                        }
-                        if (lastMessageTime && lastSnippet) break;
-                    }
-                }
+                const rawSnippet = lastMsg?.data ?? '';
+                const snippet = cleanSnippet(rawSnippet);
 
+                // Use the message's custom sendDate if available, or fall back to chat's lastInteraction
                 const timestamp =
-                    chat.lastDate ||
-                    lastMessageTime ||
-                    char.lastInteraction ||
-                    ('creation_date' in char ? char.creation_date : 0) ||
+                    lastMsg?.sendDate ??
+                    (chat as any).lastInteraction ??
+                    (char as any).lastInteraction ??
                     0;
-
-                let folderName: string | undefined = undefined;
-                if (chat.folderId && char.chatFolders) {
-                    folderName = char.chatFolders.find(
-                        (f) => f.id === chat.folderId
-                    )?.name;
-                }
 
                 sessions.push({
                     charIndex: charIdx,
                     chatIndex: chatIdx,
-                    characterName: char.name || 'Unnamed',
+                    characterName: char.name ?? 'Unknown',
                     characterImage: char.image,
                     characterId: char.chaId,
                     isGroup,
-                    chatName: chat.name || `Chat ${chatIdx + 1}`,
-                    folderName,
-                    lastMessageSnippet: lastSnippet,
+                    chatName: chat.name || `${language.Chat} ${chatIdx + 1}`,
+                    folderName: chat.folder,
+                    lastMessageSnippet: snippet,
                     timestamp,
                     agoText: makeAgoText(timestamp),
                 });
             }
         }
 
-        return sessions.sort((a, b) => b.timestamp - a.timestamp);
+        // Sort descending by latest interaction/message time
+        return sessions
+            .sort((a, b) => b.timestamp - a.timestamp)
+            .slice(0, 50);
     });
 
     let filteredSessions = $derived.by(() => {
         const query = searchInput.trim().toLowerCase();
-        if (!query) {
-            return allSessions.slice(0, 50);
-        }
-        return allSessions
-            .filter((s) => {
-                return (
-                    s.characterName.toLowerCase().includes(query) ||
-                    s.chatName.toLowerCase().includes(query) ||
-                    (s.folderName && s.folderName.toLowerCase().includes(query)) ||
-                    (s.lastMessageSnippet &&
-                        s.lastMessageSnippet.toLowerCase().includes(query))
-                );
-            })
-            .slice(0, 50);
+        if (!query) return allSessions;
+
+        return allSessions.filter((session) => {
+            return (
+                session.characterName.toLowerCase().includes(query) ||
+                session.chatName.toLowerCase().includes(query) ||
+                session.lastMessageSnippet.toLowerCase().includes(query) ||
+                (session.folderName &&
+                    session.folderName.toLowerCase().includes(query))
+            );
+        });
     });
 
     async function selectSession(item: SessionItem) {
         const { changeChar } = await import('../../ts/characters');
         const { changeChatTo } = await import('../../ts/globalApi.svelte');
 
-        const char = DBState.db.characters[item.charIndex];
+        const char = characterStore.characters[item.charIndex];
         if (!char) return;
 
         char.chatPage = item.chatIndex;
@@ -273,7 +253,7 @@
                                       })
                                 : '/none.webp'}
                             size="40"
-                            rounded={DBState.db.roundIcons}
+                            rounded={settingsStore.state.roundIcons}
                             name={session.characterName}
                             chaId={session.characterId}
                         />

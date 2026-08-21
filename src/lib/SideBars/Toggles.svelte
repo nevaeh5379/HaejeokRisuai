@@ -1,6 +1,7 @@
 <script lang="ts">
     import { getModuleToggles } from "src/ts/process/modules";
-    import { DBState, MobileGUI, selectedCharID } from "src/ts/stores.svelte";
+    import { MobileGUI, selectedCharID } from "src/ts/stores.svelte";
+    import { characterStore, settingsStore } from "src/ts/stores/domain";
     import { parseToggleSyntax, type sidebarToggle, type sidebarToggleGroup } from "src/ts/util";
     import { language } from "src/lang";
     import type { PromptItem } from "src/ts/process/prompt";
@@ -44,16 +45,16 @@
         })
 
     let hasJailbreakPrompt = $derived.by(() => {
-        const template = DBState.db.promptTemplate
+        const template = settingsStore.state.promptTemplate
         if (!template) {
-            return (DBState.db.jailbreak ?? '').trim().length > 0
+            return (settingsStore.state.jailbreak ?? '').trim().length > 0
         }
         return templateUsesJailbreakToggle(template)
     })
 
-    let charToggle = $state((DBState.db?.characters?.[$selectedCharID] as character)?.customModuleToggle)
+    let charToggle = $state((characterStore.characters?.[$selectedCharID] as character)?.customModuleToggle)
     $effect(() => {
-        const charToggleTemp = (DBState.db?.characters?.[$selectedCharID] as character)?.customModuleToggle
+        const charToggleTemp = (characterStore.characters?.[$selectedCharID] as character)?.customModuleToggle
         if(charToggleTemp !== charToggle) {
             charToggle = charToggleTemp
         }
@@ -61,7 +62,7 @@
 
     let groupedToggles = $derived.by(() => {
         const ungrouped = parseToggleSyntax(
-            DBState.db.customPromptTemplateToggle + '\n' +
+            settingsStore.state.customPromptTemplateToggle + '\n' +
             getModuleToggles() + '\n' +
             charToggle
         )
@@ -95,7 +96,7 @@
         {:else if toggle.type === 'select'}
             <div class="w-full flex gap-2 mt-2 items-center" class:justify-end={$MobileGUI} >
                 <span>{toggle.value}</span>
-                <SelectInput className="w-32" bind:value={DBState.db.globalChatVariables[`toggle_${toggle.key}`]}>
+                <SelectInput className="w-32" bind:value={settingsStore.state.globalChatVariables[`toggle_${toggle.key}`]}>
                     {#each toggle.options as option, i}
                         <OptionInput value={i.toString()}>{option}</OptionInput>
                     {/each}
@@ -104,12 +105,12 @@
         {:else if toggle.type === 'text'}
             <div class="w-full flex gap-2 mt-2 items-center" class:justify-end={$MobileGUI}>
                 <span>{toggle.value}</span>
-                <TextInput className="w-32" bind:value={DBState.db.globalChatVariables[`toggle_${toggle.key}`]} />
+                <TextInput className="w-32" bind:value={settingsStore.state.globalChatVariables[`toggle_${toggle.key}`]} />
             </div>
         {:else if toggle.type === 'textarea'}
             <div class="w-full flex gap-2 mt-2 items-start" class:justify-end={$MobileGUI}>
                 <span class="mt-1.5">{toggle.value}</span>
-                <TextAreaInput className="w-32" height='20' bind:value={DBState.db.globalChatVariables[`toggle_${toggle.key}`]} />
+                <TextAreaInput className="w-32" height='20' bind:value={settingsStore.state.globalChatVariables[`toggle_${toggle.key}`]} />
             </div>
         {:else if toggle.type === 'caption'}
             <div class="w-full mt-1 text-xs text-textcolor2">
@@ -127,8 +128,8 @@
             {/if}
         {:else}
             <div class="w-full flex mt-2 items-center" class:justify-end={$MobileGUI}>
-                <CheckInput check={DBState.db.globalChatVariables[`toggle_${toggle.key}`] === '1'} reverse={reverse} name={toggle.value} onChange={() => {
-                    DBState.db.globalChatVariables[`toggle_${toggle.key}`] = DBState.db.globalChatVariables[`toggle_${toggle.key}`] === '1' ? '0' : '1'
+                <CheckInput check={settingsStore.state.globalChatVariables[`toggle_${toggle.key}`] === '1'} reverse={reverse} name={toggle.value} onChange={() => {
+                    settingsStore.state.globalChatVariables[`toggle_${toggle.key}`] = settingsStore.state.globalChatVariables[`toggle_${toggle.key}`] === '1' ? '0' : '1'
                 }} />
             </div>
         {/if}
@@ -141,14 +142,14 @@
 
         {#if hasJailbreakPrompt}
             <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI}>
-                <CheckInput bind:check={DBState.db.jailbreakToggle} name={language.jailbreakToggle} reverse />
+                <CheckInput bind:check={settingsStore.state.jailbreakToggle} name={language.jailbreakToggle} reverse />
             </div>
         {/if}
 
         {@render toggles(groupedToggles, true)}
-        {#if chara && (DBState.db.supaModelType !== 'none' || DBState.db.hanuraiEnable || DBState.db.hypaV3)}
+        {#if chara && (settingsStore.state.supaModelType !== 'none' || settingsStore.state.hanuraiEnable || settingsStore.state.hypaV3)}
             <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI}>
-                <CheckInput bind:check={chara.supaMemory} reverse name={DBState.db.hypaV3 ? language.ToggleHypaMemory : DBState.db.hanuraiEnable ? language.hanuraiMemory : DBState.db.hypaMemory ? language.ToggleHypaMemory : language.ToggleSuperMemory}/>
+                <CheckInput bind:check={chara.supaMemory} reverse name={settingsStore.state.hypaV3 ? language.ToggleHypaMemory : settingsStore.state.hanuraiEnable ? language.hanuraiMemory : settingsStore.state.hypaMemory ? language.ToggleHypaMemory : language.ToggleSuperMemory}/>
             </div>
         {/if}
     </div>
@@ -157,13 +158,13 @@
 
     {#if hasJailbreakPrompt}
         <div class="flex mt-2 items-center">
-            <CheckInput bind:check={DBState.db.jailbreakToggle} name={language.jailbreakToggle}/>
+            <CheckInput bind:check={settingsStore.state.jailbreakToggle} name={language.jailbreakToggle}/>
         </div>
     {/if}
     {@render toggles(groupedToggles)}
-    {#if chara && (DBState.db.supaModelType !== 'none' || DBState.db.hanuraiEnable || DBState.db.hypaV3)}
+    {#if chara && (settingsStore.state.supaModelType !== 'none' || settingsStore.state.hanuraiEnable || settingsStore.state.hypaV3)}
         <div class="flex mt-2 items-center">
-            <CheckInput bind:check={chara.supaMemory} name={DBState.db.hypaV3 ? language.ToggleHypaMemory : DBState.db.hanuraiEnable ? language.hanuraiMemory : DBState.db.hypaMemory ? language.ToggleHypaMemory : language.ToggleSuperMemory}/>
+            <CheckInput bind:check={chara.supaMemory} name={settingsStore.state.hypaV3 ? language.ToggleHypaMemory : settingsStore.state.hanuraiEnable ? language.hanuraiMemory : settingsStore.state.hypaMemory ? language.ToggleHypaMemory : language.ToggleSuperMemory}/>
         </div>
     {/if}
 {/if}

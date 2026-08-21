@@ -3,7 +3,7 @@
     import Accordion from "src/lib/UI/Accordion.svelte";
     import Check from "src/lib/UI/GUI/CheckInput.svelte";
     
-    import { DBState } from 'src/ts/stores.svelte';
+    import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import ChatFormatSettings from "./ChatFormatSettings.svelte";
     import OpenrouterProviderList from "src/lib/UI/OpenrouterProviderList.svelte";
     import { PlusIcon, TrashIcon } from "@lucide/svelte";
@@ -12,13 +12,13 @@
 
 <Accordion name={`OpenRouter ${language.settings}`} styled>
     <div class="flex items-center mb-4">
-        <Check bind:check={DBState.db.openrouterFallback} name={language.openRouterFallback}/>
+        <Check bind:check={settingsStore.state.openrouterFallback} name={language.openRouterFallback}/>
     </div>
     <div class="flex items-center mb-4">
-        <Check bind:check={DBState.db.openrouterMiddleOut} name={language.openRouterMiddleOut}/>
+        <Check bind:check={settingsStore.state.openrouterMiddleOut} name={language.openRouterMiddleOut}/>
     </div>
     <div class="flex items-center mb-4">
-        <Check bind:check={DBState.db.useInstructPrompt} name={language.useInstructPrompt}/>
+        <Check bind:check={settingsStore.state.useInstructPrompt} name={language.useInstructPrompt}/>
     </div>
     {#await getOpenRouterProviders()}
         <Accordion name={language.openRouterProviderOrder} help="openRouterProviderOrder" styled>
@@ -32,70 +32,70 @@
         </Accordion>
     {:then openRouterProviders}
         <Accordion name={language.openRouterProviderOrder} help="openRouterProviderOrder" styled>
-            {#each DBState.db.openrouterProvider.order as _, i}
+            {#each settingsStore.state.openrouterProvider.order as _, i}
                 <span class="text-textcolor mt-4">
                     {language.provider} {i + 1}
                 </span>
-                <OpenrouterProviderList bind:value={DBState.db.openrouterProvider.order[i]} options={openRouterProviders} />
+                <OpenrouterProviderList bind:value={settingsStore.state.openrouterProvider.order[i]} options={openRouterProviders} />
             {/each}
             <div class="flex gap-2">
                 <button class="bg-selected text-textcolor p-2 rounded-md" onclick={() => {
-                    let value = DBState.db.openrouterProvider.order ?? []
+                    let value = settingsStore.state.openrouterProvider.order ?? []
                     value.push('')
-                    DBState.db.openrouterProvider.order = value
+                    settingsStore.state.openrouterProvider.order = value
             }}><PlusIcon /></button>
                 <button class="bg-red-500 text-white p-2 rounded-md" onclick={() => {
-                    let value = DBState.db.openrouterProvider.order ?? []
+                    let value = settingsStore.state.openrouterProvider.order ?? []
                     value.pop()
-                    DBState.db.openrouterProvider.order = value
+                    settingsStore.state.openrouterProvider.order = value
             }}><TrashIcon /></button>
             </div>
         </Accordion>
 
         <Accordion name={language.openRouterProviderOnly} help="openRouterProviderOnly" styled>
-            {#each DBState.db.openrouterProvider.only as model, i}
+            {#each settingsStore.state.openrouterProvider.only as model, i}
                 <span class="text-textcolor mt-4">
                     {language.provider} {i + 1}
                 </span>
-                <OpenrouterProviderList bind:value={DBState.db.openrouterProvider.only[i]} options={openRouterProviders} />
+                <OpenrouterProviderList bind:value={settingsStore.state.openrouterProvider.only[i]} options={openRouterProviders} />
             {/each}
             <div class="flex gap-2">
                 <button class="bg-selected text-textcolor p-2 rounded-md" onclick={() => {
-                    let value = DBState.db.openrouterProvider.only ?? []
+                    let value = settingsStore.state.openrouterProvider.only ?? []
                     value.push('')
-                    DBState.db.openrouterProvider.only = value
+                    settingsStore.state.openrouterProvider.only = value
             }}><PlusIcon /></button>
                 <button class="bg-red-500 text-white p-2 rounded-md" onclick={() => {
-                    let value = DBState.db.openrouterProvider.only ?? []
+                    let value = settingsStore.state.openrouterProvider.only ?? []
                     value.pop()
-                    DBState.db.openrouterProvider.only = value
+                    settingsStore.state.openrouterProvider.only = value
             }}><TrashIcon /></button>
             </div>
         </Accordion>
 
         <Accordion name={language.openRouterProviderIgnore} help="openRouterProviderIgnore" styled>
-            {#each DBState.db.openrouterProvider.ignore as model, i}
+            {#each settingsStore.state.openrouterProvider.ignore as model, i}
                 <span class="text-textcolor mt-4">
                     {language.provider} {i + 1}
                 </span>
-                <OpenrouterProviderList bind:value={DBState.db.openrouterProvider.ignore[i]} options={openRouterProviders} />
+                <OpenrouterProviderList bind:value={settingsStore.state.openrouterProvider.ignore[i]} options={openRouterProviders} />
             {/each}
             <div class="flex gap-2">
                 <button class="bg-selected text-textcolor p-2 rounded-md" onclick={() => {
-                    let value = DBState.db.openrouterProvider.ignore ?? []
+                    let value = settingsStore.state.openrouterProvider.ignore ?? []
                     value.push('')
-                    DBState.db.openrouterProvider.ignore = value
+                    settingsStore.state.openrouterProvider.ignore = value
             }}><PlusIcon /></button>
                 <button class="bg-red-500 text-white p-2 rounded-md" onclick={() => {
-                    let value = DBState.db.openrouterProvider.ignore ?? []
+                    let value = settingsStore.state.openrouterProvider.ignore ?? []
                     value.pop()
-                    DBState.db.openrouterProvider.ignore = value
+                    settingsStore.state.openrouterProvider.ignore = value
             }}><TrashIcon /></button>
             </div>
         </Accordion>
     {/await}
 
-    {#if DBState.db.useInstructPrompt}
+    {#if settingsStore.state.useInstructPrompt}
         <ChatFormatSettings />
     {/if}
 </Accordion>

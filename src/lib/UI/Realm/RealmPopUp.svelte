@@ -4,7 +4,7 @@
     import { alertConfirm, alertInput, alertNormal } from "src/ts/alert";
     import { hubURL, type hubType, downloadRisuHub, getRealmInfo } from "src/ts/characterCards";
     
-    import { DBState } from 'src/ts/stores.svelte';
+    import { settingsStore } from 'src/ts/stores/domain';
     import RealmLicense from "./RealmLicense.svelte";
     import MultiLangDisplay from "../GUI/MultiLangDisplay.svelte";
     import { tooltip } from "src/ts/gui/tooltip";
@@ -36,7 +36,7 @@
                 }}>Forked</button>
             {/if}
             <div class="flex justify-start gap-4 mt-4">
-                {#if DBState.db.hideAllImages}
+                {#if settingsStore.state.hideAllImages}
                     <div class="h-36 w-36 rounded-md bg-darkbutton flex items-center justify-center text-textcolor2">
                         <span class="text-4xl">?</span>
                     </div>
@@ -95,7 +95,7 @@
             })}>
                 <FlagIcon />
             </button>
-            {#if (DBState.db.account?.token?.split('-') ?? [])[1] === openedData.creator}
+            {#if (settingsStore.state.account?.token?.split('-') ?? [])[1] === openedData.creator}
                 <button class="text-textcolor2 hover:text-red-500" onclick={(async (e) => {
                     e.stopPropagation()
                     const conf = await alertConfirm('Do you want to remove this character from Realm?')
@@ -104,7 +104,7 @@
                             method: "POST",
                             body: JSON.stringify({
                                 id: openedData.id,
-                                token: DBState.db.account?.token
+                                token: settingsStore.state.account?.token
                             })
                         })
                         alertNormal(await da.text())

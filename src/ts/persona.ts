@@ -6,7 +6,9 @@ import { language } from "src/lang"
 import { reencodeImage } from "./process/files/inlays"
 import { PngChunk } from "./pngChunk"
 import { v4 } from "uuid"
-import { DBState } from "./stores.svelte"
+import { safeStructuredClone } from "./polyfill"
+import { settingsStore } from "./stores/domain/settingsStore.svelte"
+import { personaStore } from "./stores/domain/personaStore.svelte"
 
 export async function selectUserImg() {
     const selected = await selectSingleFile(['png'])
@@ -15,24 +17,27 @@ export async function selectUserImg() {
     }
     const img = selected.data
     const imgp = await saveImage(img)
-    DBState.db.userIcon = imgp
-    const currentPersona = DBState.db.personas[DBState.db.selectedPersona]
-    DBState.db.personas[DBState.db.selectedPersona] = {
+    settingsStore.state.userIcon = imgp
+    const currentPersona = personaStore.activePersona
+    const selIndex = settingsStore.state.selectedPersona ?? 0
+    settingsStore.state.personas ??= []
+    settingsStore.state.personas[selIndex] = {
         ...currentPersona,
-        name: DBState.db.username,
-        icon: DBState.db.userIcon,
-        personaPrompt: DBState.db.personaPrompt,
-        note: DBState.db.userNote,
+        name: settingsStore.state.username,
+        icon: settingsStore.state.userIcon,
+        personaPrompt: settingsStore.state.personaPrompt,
+        note: settingsStore.state.userNote,
         id: currentPersona?.id ?? v4()
     }
 }
 
 export function saveUserPersona() {
-    if (DBState.db.personas[DBState.db.selectedPersona]) {
-        DBState.db.personas[DBState.db.selectedPersona].name = DBState.db.username
-        DBState.db.personas[DBState.db.selectedPersona].icon = DBState.db.userIcon
-        DBState.db.personas[DBState.db.selectedPersona].personaPrompt = DBState.db.personaPrompt
-        DBState.db.personas[DBState.db.selectedPersona].note = DBState.db.userNote
+    const selIndex = settingsStore.state.selectedPersona ?? 0
+    if (settingsStore.state.personas?.[selIndex]) {
+        settingsStore.state.personas[selIndex].name = settingsStore.state.username
+        settingsStore.state.personas[selIndex].icon = settingsStore.state.userIcon
+        settingsStore.state.personas[selIndex].personaPrompt = settingsStore.state.personaPrompt
+        settingsStore.state.personas[selIndex].note = settingsStore.state.userNote
     }
 }
 
@@ -40,13 +45,13 @@ export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') 
     if (save === 'save') {
         saveUserPersona()
     }
-    const pr = DBState.db.personas[id]
+    const pr = settingsStore.state.personas?.[id]
     if (pr) {
-        DBState.db.personaPrompt = pr.personaPrompt
-        DBState.db.username = pr.name
-        DBState.db.userIcon = pr.icon
-        DBState.db.userNote = pr.note
-        DBState.db.selectedPersona = id
+        settingsStore.state.personaPrompt = pr.personaPrompt
+        settingsStore.state.username = pr.name
+        settingsStore.state.userIcon = pr.icon
+        settingsStore.state.userNote = pr.note
+        settingsStore.state.selectedPersona = id
     }
 }
 
@@ -128,7 +133,8 @@ export async function importUserPersona() {
         }
         const data: PersonaCard = JSON.parse(Buffer.from(decoded, 'base64').toString('utf-8'))
         if (data.name && data.personaPrompt) {
-            DBState.db.personas.push({
+            settingsStore.state.personas ??= []
+            settingsStore.state.personas.push({
                 name: data.name,
                 icon: await saveImage(await reencodeImage(v.data)),
                 personaPrompt: data.personaPrompt,

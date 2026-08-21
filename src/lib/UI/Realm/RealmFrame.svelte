@@ -2,7 +2,7 @@
     import { alertMd } from "src/ts/alert";
     import { shareRealmCardData } from "src/ts/realm";
     import { downloadPreset } from "src/ts/storage/database.svelte";
-    import { DBState } from 'src/ts/stores.svelte';
+    import { characterStore, settingsStore, moduleStore } from 'src/ts/stores/domain';
     import { selectedCharID, ShowRealmFrameStore } from "src/ts/stores.svelte";
     import { sleep } from "src/ts/util";
     import { onDestroy, onMount } from "svelte";
@@ -11,8 +11,8 @@
         $ShowRealmFrameStore = ''
     }
     let iframe: HTMLIFrameElement = $state(null)
-    const tk = DBState.db?.account?.token;
-    const id = DBState.db?.account?.id
+    const tk = settingsStore.state?.account?.token;
+    const id = settingsStore.state?.account?.id
     let loadingStage = $state(0)
     let pongGot = false
 
@@ -31,9 +31,9 @@
             if($ShowRealmFrameStore.startsWith('preset') || $ShowRealmFrameStore.startsWith('module')){
                 //TODO, add preset edit
             }
-            else if(DBState.db.characters[$selectedCharID].type === 'character'){
+            else if(characterStore.characters[$selectedCharID].type === 'character'){
                 loadingStage = 0
-                DBState.db.characters[$selectedCharID].realmId = e.data.id
+                characterStore.characters[$selectedCharID].realmId = e.data.id
             }
             close()
         }
@@ -72,7 +72,7 @@
             }
         }
         else if($ShowRealmFrameStore.startsWith('module')){
-            const predata = DBState.db.modules[Number($ShowRealmFrameStore.split(':')[1])]
+            const predata = (moduleStore.modules ?? settingsStore.state.modules)[Number($ShowRealmFrameStore.split(':')[1])]
             //@ts-expect-error adding type field for Realm export, not defined in module type
             predata.type = 'risuModule'
             const encodedPredata = new TextEncoder().encode(JSON.stringify(predata))
@@ -101,8 +101,8 @@
         if($ShowRealmFrameStore.startsWith('preset') || $ShowRealmFrameStore.startsWith('module')){
             //TODO, add preset edit
         }
-        else if(DBState.db.characters[$selectedCharID].type === 'character' && DBState.db.characters[$selectedCharID].realmId){
-            url += `&edit=${DBState.db.characters[$selectedCharID].realmId}&edit-type=normal`
+        else if(characterStore.characters[$selectedCharID].type === 'character' && characterStore.characters[$selectedCharID].realmId){
+            url += `&edit=${characterStore.characters[$selectedCharID].realmId}&edit-type=normal`
         }
         url += '#noLayout'
         return url

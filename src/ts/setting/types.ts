@@ -122,14 +122,14 @@ export interface SettingItem {
     showExperimental?: boolean;
     
     /** 
-     * Database key for binding (DBState.db.xxx)
+     * Database key for binding (settingsStore.state.xxx)
      * Only for input types (check, text, number, textarea, slider, select, color)
      */
     bindKey?: keyof Database;
     
     /**
      * Path for nested object binding (e.g., 'ooba.top_p')
-     * Use when binding to nested properties like DBState.db.ooba.top_p
+     * Use when binding to nested properties like settingsStore.state.ooba.top_p
      * Takes precedence over bindKey if both are specified
      */
     bindPath?: string;

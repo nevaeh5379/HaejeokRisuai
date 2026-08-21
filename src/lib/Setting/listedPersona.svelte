@@ -2,7 +2,7 @@
     import { XIcon } from "@lucide/svelte";
     import { language } from "../../lang";
     
-    import { DBState } from 'src/ts/stores.svelte';
+    import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { changeUserPersona } from "src/ts/persona";
 
 
@@ -24,11 +24,11 @@
                 </button>
             </div>
         </div>
-        {#each DBState.db.personas as persona, i}
+        {#each settingsStore.state.personas as persona, i}
             <button onclick={() => {
                 changeUserPersona(i)
                 close()
-            }} class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer" class:bg-selected={i === DBState.db.selectedPersona}>
+            }} class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer" class:bg-selected={i === settingsStore.state.selectedPersona}>
                 <span class="overflow-x-auto whitespace-nowrap w-full text-left">
                     <span class="font-medium">{persona.name}</span>
                     {#if persona.note}

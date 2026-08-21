@@ -4,12 +4,13 @@
     import Chat from "../ChatScreens/Chat.svelte";
     import { getCharImage } from "src/ts/characters";
     import { findCharacterbyId, getUserName, getUserIcon } from "src/ts/util";
-    import { createSimpleCharacter, bookmarkListOpen, DBState, selectedCharID, ScrollToMessageStore } from "src/ts/stores.svelte";
+    import { createSimpleCharacter, bookmarkListOpen, selectedCharID, ScrollToMessageStore } from "src/ts/stores.svelte";
+    import { characterStore } from "src/ts/stores/domain";
     import { language } from "src/lang";
     import { alertInput } from "src/ts/alert";
 
     const close = () => $bookmarkListOpen = false;
-    let chara = $derived(DBState.db.characters[$selectedCharID]);
+    let chara = $derived(characterStore.characters[$selectedCharID]);
     const simpleChar = $derived(createSimpleCharacter(chara));
 
     const messageMap = $derived.by(() => {

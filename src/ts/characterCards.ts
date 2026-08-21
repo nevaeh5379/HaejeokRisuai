@@ -8,7 +8,9 @@ import { changeChar, characterFormatUpdate } from "./characters"
 import { AppendableBuffer, BlankWriter, checkCharOrder, downloadFile, forageStorage, loadAsset, LocalWriter, openURL, readImage, saveAsset, VirtualWriter } from "./globalApi.svelte"
 import { isTauri, isNodeServer } from "src/ts/platform"
 import { compressImage, getImageType } from "./media"
-import { DBState, SettingsMenuIndex, ShowRealmFrameStore, selectedCharID, settingsOpen } from "./stores.svelte"
+import { SettingsMenuIndex, ShowRealmFrameStore, selectedCharID, settingsOpen } from "./stores.svelte"
+import { characterStore } from "./stores/domain/characterStore.svelte"
+import { moduleStore } from "./stores/domain/moduleStore.svelte"
 import { hasher } from "./hash"
 import { type CharacterCardV3, type LorebookEntry } from '@risuai/ccardlib'
 import { reencodeImage } from "./process/files/inlays"
@@ -61,7 +63,7 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
             return db.characters.length - 1 as any
         }
         if((da.char_name || da.name) && (da.char_persona || da.description) && (da.char_greeting || da.first_mes)){
-            DBState.db.characters.push(convertOffSpecCards(da))
+            characterStore.characters.push(convertOffSpecCards(da))
             alertNormal(language.importedCharacter)
             return
         }
@@ -373,13 +375,13 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
     if(parsed.spec !== 'chara_card_v2' && parsed.spec !== 'chara_card_v3'){
         const charaData:OldTavernChar = JSON.parse(Buffer.from(readedChara, 'base64').toString('utf-8'))
         const imgp = await saveAsset(img)
-        DBState.db.characters.push(convertOffSpecCards(charaData, imgp))
+        characterStore.characters.push(convertOffSpecCards(charaData, imgp))
         alertNormal(language.importedCharacter)
-        return DBState.db.characters.length - 1
+        return characterStore.characters.length - 1
     }
     await importCharacterCardSpec(parsed, img, "normal", assets)
     
-    return DBState.db.characters.length - 1
+    return characterStore.characters.length - 1
     
 }
 
@@ -465,7 +467,7 @@ export async function characterURLImport() {
                 return false
             }
         }
-        DBState.db.modules.push(importData)
+        await moduleStore.installModule(importData)
         alertNormal(language.successImport)
         SettingsMenuIndex.set(14)
         settingsOpen.set(true)
@@ -501,7 +503,7 @@ export async function characterURLImport() {
         const module = new Uint8Array(await data.arrayBuffer())
         const md = await readModule(Buffer.from(module))
         md.id = v4()
-        DBState.db.modules.push(md)
+        await moduleStore.installModule(md)
         alertNormal(language.successImport)
         SettingsMenuIndex.set(14)
         settingsOpen.set(true)
@@ -583,7 +585,7 @@ export async function characterURLImport() {
         if(name.endsWith('risum')){
             const md = await readModule(Buffer.from(data))
             md.id = v4()
-            DBState.db.modules.push(md)
+            await moduleStore.installModule(md)
             alertNormal(language.successImport)
             SettingsMenuIndex.set(14)
             settingsOpen.set(true)
@@ -721,7 +723,6 @@ async function importCharacterCardSpec<T extends boolean = false>(card:Character
 
     const data = card.data
     let im = img ? await saveAsset(img) : undefined
-    let db = DBState.db
 
     const risuext = safeStructuredClone(data.extensions.risuai)
     let emotions:[string, string][] = []
@@ -1024,7 +1025,8 @@ async function importCharacterCardSpec<T extends boolean = false>(card:Character
         return char as any
     }
 
-    db.characters.push(char)
+    characterStore.characters.push(char)
+    await characterFormatUpdate(char)
     alertNormal(language.importedCharacter)
     return true as any
 
@@ -1243,13 +1245,10 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
     spec?:'v2'|'v3'
 } = {}) {
     if (char.detailsLoaded === false && char.chaId) {
-        const adapter = DBState.db as any
-        if (adapter.ensureCharacterDetails) {
-            try {
-                await adapter.ensureCharacterDetails(char.chaId)
-            } catch (e) {
-                console.error('Failed to load character details for export:', e)
-            }
+        try {
+            await characterStore.ensureCharacterDetails(char.chaId)
+        } catch (e) {
+            console.error('Failed to load character details for export:', e)
         }
     }
     let img = await readImage(char.image)

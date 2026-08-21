@@ -16,7 +16,9 @@ import { open } from '@tauri-apps/plugin-shell';
 import { setDatabase, type Database, defaultSdDataFunc, getDatabase, appVer, getCurrentCharacter, type character, type groupChat, appSubVer } from "./storage/database.svelte";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { checkRisuUpdate } from "./update";
-import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, saving } from "./stores.svelte";
+import { MobileGUI, botMakerMode, selectedCharID, loadedStore, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, saving } from "./stores.svelte";
+import { settingsStore } from "./stores/domain/settingsStore.svelte";
+import { characterStore } from "./stores/domain/characterStore.svelte";
 import { alertConfirm, alertError, alertMd, alertNormal, alertSelect, alertTOS, waitAlert } from "./alert";
 import { hasher } from "./hash";
 import { hubURL } from './hub';
@@ -829,7 +831,7 @@ async function fetchWithProxy(url: string, arg: GlobalFetchArgs): Promise<Global
             ...(arg.useRisuToken && { "x-risu-tk": "use" }),
             ...(arg.requestTimeoutMs && { "risu-timeout-ms": Math.max(1, Math.floor(arg.requestTimeoutMs)).toString() }),
             ...(nodeProxyAuth && { "risu-auth": nodeProxyAuth }),
-            ...(DBState?.db?.requestLocation && { "risu-location": DBState.db.requestLocation }),
+            ...(settingsStore.state.requestLocation && { "risu-location": settingsStore.state.requestLocation }),
         };
 
         const body = arg.body instanceof URLSearchParams ? arg.body.toString() : JSON.stringify(arg.body);
@@ -1049,10 +1051,10 @@ export function replaceDbResources(db: Database, replacer: { [key: string]: stri
  * Ensures that all characters are properly ordered and removes any invalid entries.
  */
 export function checkCharOrder() {
-    DBState.db.characterOrder = DBState.db.characterOrder ?? []
+    settingsStore.state.characterOrder = settingsStore.state.characterOrder ?? []
     let ordered = []
-    for (let i = 0; i < DBState.db.characterOrder.length; i++) {
-        const folder = DBState.db.characterOrder[i]
+    for (let i = 0; i < settingsStore.state.characterOrder.length; i++) {
+        const folder = settingsStore.state.characterOrder[i]
         if (typeof (folder) !== 'string' && folder) {
             for (const f of folder.data) {
                 ordered.push(f)
@@ -1065,30 +1067,30 @@ export function checkCharOrder() {
 
     let charIdList: string[] = []
 
-    for (let i = 0; i < DBState.db.characters.length; i++) {
-        const char = DBState.db.characters[i]
+    for (let i = 0; i < characterStore.characters.length; i++) {
+        const char = characterStore.characters[i]
         const charId = char.chaId
         if (!char.trashTime) {
             charIdList.push(charId)
         }
         if (!ordered.includes(charId)) {
             if (charId !== '§temp' && charId !== '§playground' && !char.trashTime) {
-                DBState.db.characterOrder.push(charId)
+                settingsStore.state.characterOrder.push(charId)
             }
         }
     }
 
 
-    for (let i = 0; i < DBState.db.characterOrder.length; i++) {
-        const data = DBState.db.characterOrder[i]
+    for (let i = 0; i < settingsStore.state.characterOrder.length; i++) {
+        const data = settingsStore.state.characterOrder[i]
         if (typeof (data) !== 'string') {
             if (!data) {
-                DBState.db.characterOrder.splice(i, 1)
+                settingsStore.state.characterOrder.splice(i, 1)
                 i--;
                 continue
             }
             if (data.data.length === 0) {
-                DBState.db.characterOrder.splice(i, 1)
+                settingsStore.state.characterOrder.splice(i, 1)
                 i--;
                 continue
             }
@@ -1099,11 +1101,11 @@ export function checkCharOrder() {
                     i2--;
                 }
             }
-            DBState.db.characterOrder[i] = data
+            settingsStore.state.characterOrder[i] = data
         }
         else {
             if (!charIdList.includes(data)) {
-                DBState.db.characterOrder.splice(i, 1)
+                settingsStore.state.characterOrder.splice(i, 1)
                 i--;
             }
         }
@@ -2015,14 +2017,14 @@ export async function fetchNative(url: string, arg: {
                 "x-risu-tk": "use",
                 ...(arg.requestTimeoutMs && { "risu-timeout-ms": Math.max(1, Math.floor(arg.requestTimeoutMs)).toString() }),
                 ...(nodeProxyAuth ? { "risu-auth": nodeProxyAuth } : {}),
-                ...(DBState?.db?.requestLocation && { "risu-location": DBState.db.requestLocation }),
+                ...(settingsStore.state.requestLocation && { "risu-location": settingsStore.state.requestLocation }),
             } : {
                 "risu-header": encodeURIComponent(JSON.stringify(headers)),
                 "risu-url": encodeURIComponent(url),
                 "Content-Type": "application/json",
                 ...(arg.requestTimeoutMs && { "risu-timeout-ms": Math.max(1, Math.floor(arg.requestTimeoutMs)).toString() }),
                 ...(nodeProxyAuth ? { "risu-auth": nodeProxyAuth } : {}),
-                ...(DBState?.db?.requestLocation && { "risu-location": DBState.db.requestLocation }),
+                ...(settingsStore.state.requestLocation && { "risu-location": settingsStore.state.requestLocation }),
             },
             method: arg.method,
             signal: requestSignal
@@ -2244,7 +2246,7 @@ export function getLanguageCodes() {
         return {
             code: v.code.toLocaleLowerCase(),
             name: new Intl.DisplayNames([
-                DBState.db.language === 'cn' ? 'zh' : DBState.db.language
+                settingsStore.state.language === 'cn' ? 'zh' : settingsStore.state.language
             ], {
                 type: 'language',
                 fallback: 'none'
@@ -2439,8 +2441,10 @@ $effect.root(() => {
         if(!chatFoldedState.data){
             return
         }
-        const char = DBState.db.characters[selIdState.selId]
+        const char = characterStore.characters[selIdState.selId]
+        if (!char || !char.chats) return
         const chat = char.chats[char.chatPage]
+        if (!chat) return
         if(chatFoldedState.data.targetCharacterId !== char.chaId){
             chatFoldedState.data = null
         }
@@ -2454,8 +2458,10 @@ $effect.root(() => {
             chatFoldedStateMessageIndex.index = -1
             return
         }
-        const char = DBState.db.characters[selIdState.selId]
+        const char = characterStore.characters[selIdState.selId]
+        if (!char || !char.chats) return
         const chat = char.chats[char.chatPage]
+        if (!chat) return
         const messageIndex = chat.message.findIndex((v) => {
             return chatFoldedState.data?.targetMessageId === v.chatId
         })
@@ -2505,8 +2511,10 @@ export function changeChatTo(IdOrIndex: string | number) {
         return
     }
 
-    const nextChat = DBState.db.characters[selIdState.selId].chats[index]
-    DBState.db.characters[selIdState.selId].chatPage = index
+    const nextChat = characterStore.characters[selIdState.selId]?.chats?.[index]
+    if (characterStore.characters[selIdState.selId]) {
+        characterStore.characters[selIdState.selId].chatPage = index
+    }
     ReloadGUIPointer.set(Math.random())
     releaseInactiveChatMessages(nextChat?.id)
 }

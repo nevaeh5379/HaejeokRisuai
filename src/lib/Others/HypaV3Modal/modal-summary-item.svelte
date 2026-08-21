@@ -23,7 +23,8 @@
   import { type Message } from "src/ts/storage/database.svelte";
   import { translateHTML } from "src/ts/translator/translator";
   import { alertConfirm } from "src/ts/alert";
-  import { DBState, selectedCharID } from "src/ts/stores.svelte";
+  import { selectedCharID } from "src/ts/stores.svelte";
+  import { characterStore } from "src/ts/stores/domain";
   import type {
     SummaryItemState,
     ExpandedMessageState,
@@ -144,8 +145,8 @@
   }
 
   function isOrphan(): boolean {
-    const char = DBState.db.characters[$selectedCharID];
-    const chat = char.chats[DBState.db.characters[$selectedCharID].chatPage];
+    const char = characterStore.characters[$selectedCharID];
+    const chat = char.chats[characterStore.characters[$selectedCharID].chatPage];
 
     for (const chatMemo of summary.chatMemos) {
       if (chatMemo == null) {
@@ -194,8 +195,8 @@
   async function getMessageFromChatMemo(
     chatMemo: string | null
   ): Promise<Message | null> {
-    const char = DBState.db.characters[$selectedCharID];
-    const chat = char.chats[DBState.db.characters[$selectedCharID].chatPage];
+    const char = characterStore.characters[$selectedCharID];
+    const chat = char.chats[characterStore.characters[$selectedCharID].chatPage];
     const shouldProcess = getCurrentHypaV3Preset().settings.processRegexScript;
 
     let msg = null;

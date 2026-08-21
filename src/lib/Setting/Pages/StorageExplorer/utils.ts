@@ -1,6 +1,7 @@
 import { forageStorage } from 'src/ts/globalApi.svelte'
 import { NodeStorage } from 'src/ts/storage/nodeStorage'
-import { DBState } from 'src/ts/stores.svelte'
+import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte'
+import { characterStore } from 'src/ts/stores/domain/characterStore.svelte'
 import { language } from 'src/lang'
 import type {
     BotAssetItem,
@@ -64,10 +65,10 @@ export async function runStorageAnalysis(
     assetMap: Map<string, NodeStorageAssetItem>,
     assetDetails: NodeStorageAssetDetails | null
 ): Promise<AnalysisResult> {
-    const characters = DBState.db.characters || []
+    const characters = characterStore.characters || []
 
     // SQL storage lazy-loads characters with only core fields
-    const adapter = DBState.db as any
+    const adapter = settingsStore.state as any
     if (adapter?.ensureCharacterDetails) {
         await Promise.allSettled(
             characters
@@ -187,12 +188,12 @@ export async function runStorageAnalysis(
     }
 
     const modules: ModuleStorageInfo[] = []
-    const moduleEntries = (DBState.db.modules || []).map((module, index) => ({
+    const moduleEntries = (settingsStore.state.modules || []).map((module: any, index: number) => ({
         module,
         storageId: module.id || `module:${index}`,
         displayName: module.name
     }))
-    for (const [index, persona] of (DBState.db.personas || []).entries()) {
+    for (const [index, persona] of (settingsStore.state.personas || []).entries()) {
         if (!persona?.embeddedModule) continue
         moduleEntries.push({
             module: persona.embeddedModule,

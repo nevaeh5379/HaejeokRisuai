@@ -34,30 +34,42 @@ const varStorage = vi.hoisted(
     )
 )
 
-vi.mock(import('../../../stores.svelte'), () => {
+vi.mock(import('../../../stores/domain/characterStore.svelte'), () => {
   return {
-    DBState: {
-      db: {
-        characters: [
-          {
-            chatPage: 0,
-            chats: [
-              {
-                scriptstate: varStorage,
-              },
-            ],
-            defaultVariables: '',
-          },
-        ],
+    characterStore: {
+      characters: [
+        {
+          chatPage: 0,
+          chats: [
+            {
+              scriptstate: varStorage,
+            },
+          ],
+          defaultVariables: '',
+        },
+      ],
+    },
+  } as any
+})
+
+vi.mock(import('../../../stores/domain/settingsStore.svelte'), () => {
+  return {
+    settingsStore: {
+      state: {
         globalChatVariables: varStorage,
         templateDefaultVariables: '',
       },
     },
+  } as any
+})
+
+vi.mock(import('../../../stores.svelte'), () => {
+  return {
     selIdState: {
       selId: 0,
     },
     selectedCharID: writable(0),
-  } as typeof import('../../../stores.svelte')
+  } as any
 })
 
 //#endregion

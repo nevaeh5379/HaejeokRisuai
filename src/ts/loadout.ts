@@ -1,6 +1,9 @@
 import { changeUserPersona } from "./persona"
 import { changeToPreset, getCurrentCharacter } from "./storage/database.svelte"
-import { DBState } from "./stores.svelte"
+import { safeStructuredClone } from "./polyfill"
+import { settingsStore } from "./stores/domain/settingsStore.svelte"
+import { presetStore } from "./stores/domain/presetStore.svelte"
+import { personaStore } from "./stores/domain/personaStore.svelte"
 
 export type Loadout = {
     name: string
@@ -20,7 +23,7 @@ export function makeLoadout(options:{
 }): Loadout {
     const character = getCurrentCharacter()
     const id = crypto.randomUUID()
-    const preset = DBState.db.botPresets[DBState.db.botPresetsId]
+    const preset = presetStore.activePreset
     const icons = []
 
     if(character?.image){
@@ -33,10 +36,10 @@ export function makeLoadout(options:{
         lastUsed: Date.now(),
         favorite: false,
         characterIds: character ? [character.chaId] : [],
-        modules: DBState.db.enabledModules,
-        globalVariables: DBState.db.globalChatVariables,
-        presetName: preset.name ?? '',
-        personaId: DBState.db.personas[DBState.db.selectedPersona]?.id,
+        modules: settingsStore.state.enabledModules,
+        globalVariables: settingsStore.state.globalChatVariables,
+        presetName: preset?.name ?? '',
+        personaId: personaStore.activePersona?.id,
         icons: icons
     });
 }
@@ -50,31 +53,35 @@ export function applyLoadout(loadout: Loadout, apply:LoadoutApplyOption[] = [
     'persona'
 ]) {
     loadout.lastUsed = Date.now()
-    loadout.characterIds.push(getCurrentCharacter()?.chaId)
+    const char = getCurrentCharacter()
+    if (char) {
+        loadout.characterIds.push(char.chaId)
+    }
     if(apply.includes('persona')) {
-        let personaIndex = DBState.db.personas?.findIndex(p => p.id === loadout.personaId)
+        let personaIndex = personaStore.list.findIndex(p => p.id === loadout.personaId)
         if(personaIndex !== -1){
             changeUserPersona(personaIndex)
         }
     }
     if(apply.includes('preset')) {
-        let presetIndex = DBState.db.botPresets?.findIndex(p => p.name === loadout.presetName)
+        let presetIndex = presetStore.list.findIndex(p => p.name === loadout.presetName)
         if(presetIndex !== -1){
             changeToPreset(presetIndex)
         }
     }
     if(apply.includes('modules')) {
-        DBState.db.enabledModules = loadout.modules
+        settingsStore.state.enabledModules = loadout.modules
     }
     if(apply.includes('globalVariables')) {
-        DBState.db.globalChatVariables = loadout.globalVariables
+        settingsStore.state.globalChatVariables = loadout.globalVariables
     }
-    DBState.db.lastLoadedLoadoutName = loadout.name
+    settingsStore.state.lastLoadedLoadoutName = loadout.name
 }
 
 export function saveCurrentLoadout(name: string) {
     const loadout = makeLoadout({name})
-    DBState.db.loadouts.push(loadout)
+    settingsStore.state.loadouts ??= []
+    settingsStore.state.loadouts.push(loadout)
     return loadout
 }
 

@@ -1,6 +1,5 @@
 import type { RisuModule } from '../../process/modules'
 import { settingsStore } from './settingsStore.svelte'
-import { DBState } from '../../stores.svelte'
 
 class ModuleStore {
     modules = $state<RisuModule[]>([])
@@ -12,7 +11,7 @@ class ModuleStore {
     }
 
     get list(): RisuModule[] {
-        return this.modules.length > 0 ? this.modules : (settingsStore.get('modules') ?? DBState.db?.modules ?? [])
+        return this.modules.length > 0 ? this.modules : (settingsStore.get('modules') ?? [])
     }
 
     get enabledList(): RisuModule[] {
@@ -34,9 +33,6 @@ class ModuleStore {
         }
         this.modules = current
         settingsStore.set('modules', current)
-        if (DBState.db) {
-            DBState.db.modules = current
-        }
         await settingsStore.flush()
     }
 
@@ -49,10 +45,6 @@ class ModuleStore {
         this.enabledModules = (settingsStore.get('enabledModules') ?? []).filter((mId: string) => mId !== id)
         settingsStore.set('modules', this.modules)
         settingsStore.set('enabledModules', this.enabledModules)
-        if (DBState.db) {
-            DBState.db.modules = this.modules
-            DBState.db.enabledModules = this.enabledModules
-        }
         await settingsStore.flush()
     }
 
@@ -67,9 +59,6 @@ class ModuleStore {
         }
         this.enabledModules = Array.from(enabledSet)
         settingsStore.set('enabledModules', this.enabledModules)
-        if (DBState.db) {
-            DBState.db.enabledModules = this.enabledModules
-        }
         await settingsStore.flush()
         return shouldEnable
     }

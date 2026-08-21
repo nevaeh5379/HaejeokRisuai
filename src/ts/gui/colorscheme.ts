@@ -4,7 +4,8 @@ import { downloadFile } from "../globalApi.svelte";
 import { BufferToText, selectSingleFile } from "../util";
 import { alertError } from "../alert";
 import { isLite } from "../lite";
-import { CustomCSSStore, DBState, SafeModeStore } from "../stores.svelte";
+import { CustomCSSStore, SafeModeStore } from "../stores.svelte";
+import { settingsStore } from "../stores/domain/settingsStore.svelte";
 
 export interface ColorScheme{
     bgcolor: string;
@@ -239,20 +240,20 @@ export const colorSchemeList = Object.keys(colorShemes) as (keyof typeof colorSh
 export function changeColorScheme(colorScheme: string){
     try {
         if(colorScheme === 'custom'){
-            DBState.db.colorScheme = safeStructuredClone(DBState.db.customColorScheme ?? defaultColorScheme)
+            settingsStore.state.colorScheme = safeStructuredClone(settingsStore.state.customColorScheme ?? defaultColorScheme)
         }
         else{
-            DBState.db.colorScheme = safeStructuredClone(colorShemes[colorScheme])
+            settingsStore.state.colorScheme = safeStructuredClone(colorShemes[colorScheme])
         }
-        DBState.db.colorSchemeName = colorScheme
+        settingsStore.state.colorSchemeName = colorScheme
         updateColorScheme()   
     } catch (error) {}
 }
 
 export function updateCustomColorScheme(){
     try {
-        DBState.db.colorScheme = safeStructuredClone(DBState.db.customColorScheme ?? defaultColorScheme)
-        DBState.db.colorSchemeName = 'custom'
+        settingsStore.state.colorScheme = safeStructuredClone(settingsStore.state.customColorScheme ?? defaultColorScheme)
+        settingsStore.state.colorSchemeName = 'custom'
         updateColorScheme()
     } catch (error) {}
 }
@@ -287,14 +288,14 @@ export function updateColorScheme(){
 
 export function changeColorSchemeType(type: 'light'|'dark'){
     try {
-        DBState.db.customColorScheme.type = type
+        settingsStore.state.customColorScheme.type = type
         updateCustomColorScheme()
         updateTextThemeAndCSS()
     } catch (error) {}
 }
 
 export function exportColorScheme(){
-    let json = JSON.stringify(DBState.db.customColorScheme)
+    let json = JSON.stringify(settingsStore.state.customColorScheme)
     downloadFile('colorScheme.json', json)
 }
 
@@ -322,7 +323,7 @@ export async function importColorScheme(){
             alertError('Invalid color scheme')
             return
         }
-        DBState.db.customColorScheme = colorScheme
+        settingsStore.state.customColorScheme = colorScheme
         updateCustomColorScheme()
     }
     catch(e){
@@ -333,7 +334,7 @@ export async function importColorScheme(){
 }
 
 export function updateTextThemeAndCSS(){
-    let db = DBState.db
+    let db = settingsStore.state
     const root = document.querySelector(':root') as HTMLElement;
     if(!root){
         return

@@ -6,7 +6,8 @@
     CheckIcon,
   } from "@lucide/svelte";
   import { language } from "src/lang";
-  import { DBState, selectedCharID } from "src/ts/stores.svelte";
+  import { selectedCharID } from "src/ts/stores.svelte";
+  import { characterStore } from "src/ts/stores/domain";
   import type { TagManagerState } from "./types";
 
   interface Props {
@@ -18,8 +19,8 @@
   }: Props = $props();
 
   const hypaV3Data = $derived(
-    DBState.db.characters[$selectedCharID].chats[
-      DBState.db.characters[$selectedCharID].chatPage
+    characterStore.characters[$selectedCharID].chats[
+      characterStore.characters[$selectedCharID].chatPage
     ].hypaV3Data
   );
 

@@ -1,17 +1,17 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import { DBState } from '../../../stores.svelte'
+import { settingsStore } from '../../../stores/domain/settingsStore.svelte'
 import { compressImage } from '../compressImage'
 
 vi.mock(
-    import('../../../stores.svelte'),
+    import('../../../stores/domain/settingsStore.svelte'),
     () =>
         ({
-            DBState: {
-                db: {
+            settingsStore: {
+                state: {
                     imageCompression: false,
                 },
             },
-        }) as typeof import('../../../stores.svelte'),
+        }) as any,
 )
 
 const doLossyCompressionMock = vi.fn()
@@ -25,7 +25,7 @@ beforeEach(() => {
 
 describe('imageCompression disabled', () => {
     beforeEach(() => {
-        DBState.db.imageCompression = false
+        settingsStore.state.imageCompression = false
     })
 
     test('returns original data without compression', async () => {
@@ -37,7 +37,7 @@ describe('imageCompression disabled', () => {
 
 describe('imageCompression enabled', () => {
     beforeEach(() => {
-        DBState.db.imageCompression = true
+        settingsStore.state.imageCompression = true
     })
 
     test('returns original data for Unknown type', async () => {

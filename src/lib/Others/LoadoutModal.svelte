@@ -8,8 +8,8 @@
         SaveIcon,
         TrashIcon,
     } from "@lucide/svelte";
-    import { DBState } from "src/ts/stores.svelte";
     import { loadoutModalStore } from "src/ts/stores.svelte";
+    import { settingsStore } from "src/ts/stores/domain";
     import { applyLoadout, saveCurrentLoadout, type Loadout } from "src/ts/loadout";
     import { getCurrentCharacter } from "src/ts/storage/database.svelte";
 
@@ -38,7 +38,7 @@
     const RECENT_LIMIT = 3;
 
     function getSortedLoadouts(): Loadout[] {
-        return [...(DBState.db.loadouts ?? [])].sort(
+        return [...(settingsStore.state.loadouts ?? [])].sort(
             (a, b) => b.lastUsed - a.lastUsed,
         );
     }
@@ -85,9 +85,9 @@
     }
 
     function removeLoadout(loadout: Loadout) {
-        const index = DBState.db.loadouts.findIndex(l => l.id === loadout.id);
+        const index = settingsStore.state.loadouts.findIndex(l => l.id === loadout.id);
         if (index !== -1) {
-            DBState.db.loadouts.splice(index, 1);
+            settingsStore.state.loadouts.splice(index, 1);
         }
     }
 </script>

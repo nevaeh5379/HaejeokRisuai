@@ -34,8 +34,8 @@ bind:this={textareaInput}
     class:mb-2={margin === 'both'}
     class:mt-4={margin === 'top'}
     class:mt-2={margin === 'both'}
-    class:shrink-0={DBState.db.resizeTextarea}
-    class:overflow-visible={DBState.db.resizeTextarea}
+    class:shrink-0={settingsStore.state.resizeTextarea}
+    class:overflow-visible={settingsStore.state.resizeTextarea}
     bind:this={highlightDom}
     onfocusout={() => {
         hideAutoComplete()
@@ -73,7 +73,7 @@ bind:this={textareaInput}
             onkeydown={async (e) => {
                 if(
                     (e.ctrlKey || e.shiftKey || e.altKey)    
-                    && hotkeyMatches(DBState.db.hotkeys.find(hk => hk.action === 'popupEditor'), e)
+                    && hotkeyMatches(settingsStore.state.hotkeys?.find(hk => hk.action === 'popupEditor'), e)
                 ){
                     e.preventDefault()
                     popUpEditorStore.value = value
@@ -92,7 +92,7 @@ bind:this={textareaInput}
             }}
 
             oncontextmenu={(e) => {
-                if(DBState.db.longPressToPopupEditor){
+                if(settingsStore.state.longPressToPopupEditor){
                     e.preventDefault()
                     popUpEditorStore.value = value
                     popUpEditorStore.mode = 'default'
@@ -138,7 +138,7 @@ bind:this={textareaInput}
             }}>{content}</button>
         {/each}
     </div>
-    {#if DBState.db.resizeTextarea}
+    {#if settingsStore.state.resizeTextarea}
     <div id="resize-handle" class="resize-handle  absolute -right-3 -bottom-3 w-10 h-10 pt-2 pl-2 pb-4 pr-4 z-1000 cursor-ns-resize touch-none [&>svg]:size-full" style:color="var(--risu-theme-darkborderc)" role="separator" bind:this={resizeHandle} onpointerdown={startResize}>
         {@html resizeIcon}
     </div>
@@ -149,8 +149,9 @@ bind:this={textareaInput}
     import { highlighter, getNewHighlightId, removeHighlight, AllCBS } from 'src/ts/gui/highlight'
     import { sleep } from 'src/ts/util';
     import { onDestroy, onMount } from 'svelte';
-  import { DBState, disableHighlight, popUpEditorStore } from 'src/ts/stores.svelte';
-  import { isMobile } from 'src/ts/platform'
+    import { disableHighlight, popUpEditorStore } from 'src/ts/stores.svelte';
+    import { settingsStore } from 'src/ts/stores/domain';
+    import { isMobile } from 'src/ts/platform'
     import { hotkeyMatches } from 'src/ts/hotkey';
   import resizeIcon from 'src/etc/resizeIcon.svg?raw'
     interface Props {

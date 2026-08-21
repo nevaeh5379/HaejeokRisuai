@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { DBState } from 'src/ts/stores.svelte';
+    import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { updateTextThemeAndCSS } from 'src/ts/gui/colorscheme';
     import ColorInput from 'src/lib/UI/GUI/ColorInput.svelte';
 
@@ -13,12 +13,12 @@
     ] as const;
 </script>
 
-{#if DBState.db.textTheme === 'custom'}
+{#if settingsStore.state.textTheme === 'custom'}
     {#each colors as color}
         <div class="flex items-center mt-2">
             <ColorInput
                 nullable={color[2]}
-                bind:value={DBState.db.customTextTheme[color[0]]}
+                bind:value={settingsStore.state.customTextTheme[color[0]]}
                 oninput={updateTextThemeAndCSS}
             />
             <span class="ml-2">{color[1]}</span>

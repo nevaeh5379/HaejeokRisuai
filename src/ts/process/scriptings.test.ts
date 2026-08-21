@@ -33,8 +33,11 @@ vi.mock('../storage/database.svelte', () => ({
   setDatabase: vi.fn(),
 }))
 
+vi.mock('../stores/domain/characterStore.svelte', () => ({
+  characterStore: { characters: [{ name: '', chats: [{ message: [] }] }] },
+}))
+
 vi.mock('../stores.svelte', () => ({
-  DBState: { db: {} },
   ReloadChatPointer: { update: vi.fn() },
   ReloadGUIPointer: { update: vi.fn() },
   selectedCharID: { subscribe: (run: (value: number) => void) => (run(0), () => undefined) },

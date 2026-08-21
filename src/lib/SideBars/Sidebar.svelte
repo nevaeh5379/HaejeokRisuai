@@ -19,7 +19,7 @@
 
   } from "../../ts/stores.svelte";
     import { setDatabase, type folder } from "../../ts/storage/database.svelte";
-    import { DBState } from 'src/ts/stores.svelte';
+    import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import BarIcon from "./BarIcon.svelte";
     import SidebarIndicator from "./SidebarIndicator.svelte";
     import {
@@ -95,11 +95,11 @@
   $effect(() => {
     let newCharImages: sortType[] = [];
     const idObject = getCharacterIndexObject()
-    for (const id of DBState.db.characterOrder) {
+    for (const id of settingsStore.state.characterOrder) {
       if(typeof(id) === 'string'){
         const index = idObject[id] ?? -1
         if(index !== -1){
-          const cha = DBState.db.characters[index]
+          const cha = characterStore.characters[index]
           newCharImages.push({
             img:cha.image ?? "",
             index:index,
@@ -114,7 +114,7 @@
         for(const id of folder.data){
           const index = idObject[id] ?? -1
           if(index !== -1){
-            const cha = DBState.db.characters[index]
+            const cha = characterStore.characters[index]
             folderCharImages.push({
               img:cha.image ?? "",
               index:index,
@@ -136,8 +136,8 @@
     if (!isEqual(charImages, newCharImages)) {
       charImages = newCharImages;
     }
-    if(IconRounded !== DBState.db.roundIcons){
-      IconRounded = DBState.db.roundIcons
+    if(IconRounded !== settingsStore.state.roundIcons){
+      IconRounded = settingsStore.state.roundIcons
     }
   })
 
@@ -146,7 +146,7 @@
     if(mainIndex.index === targetIndex.index && mainIndex.folder === targetIndex.folder){
       return
     }
-    let db = DBState.db
+    let db = settingsStore.state
     let mainFolderIndex = mainIndex.folder ? getFolderIndex(mainIndex.folder) : null
     let targetFolderIndex = targetIndex.folder ? getFolderIndex(targetIndex.folder) : null
     let mainFolderId = mainIndex.folder ? (db.characterOrder[mainFolderIndex] as folder).id : ''
@@ -219,13 +219,13 @@
       }
     }
 
-    DBState.db.characterOrder = db.characterOrder
+    settingsStore.state.characterOrder = db.characterOrder
     checkCharOrder()
   }
 
   function getFolderIndex(id:string){
-    for(let i=0;i<DBState.db.characterOrder.length;i++){
-      const data = DBState.db.characterOrder[i]
+    for(let i=0;i<settingsStore.state.characterOrder.length;i++){
+      const data = settingsStore.state.characterOrder[i]
       if(typeof(data) !== 'string' && data.id === id){
         return i
       }
@@ -237,7 +237,7 @@
     const selectedId = $selectedCharID
     if (selectedId === -1) return
     
-    const characterId = DBState.db.characters[selectedId]?.chaId
+    const characterId = characterStore.characters[selectedId]?.chaId
     if (!characterId) return
     
     let targetFolderId: string | null = null
@@ -245,7 +245,7 @@
     for (const item of charImages) {
       if (item.type === 'folder') {
         const foundChar = item.folder.find(c => 
-          DBState.db.characters[c.index]?.chaId === characterId
+          characterStore.characters[c.index]?.chaId === characterId
         )
         if (foundChar) {
           targetFolderId = item.id
@@ -289,7 +289,7 @@
     if(mainIndex.index === targetIndex.index && mainIndex.folder === targetIndex.folder){
       return
     }
-    let db = DBState.db
+    let db = settingsStore.state
     let mainFolderIndex = mainIndex.folder ? getFolderIndex(mainIndex.folder) : null
     let mainFolder = db.characterOrder[mainFolderIndex] as folder
     if(targetIndex.folder){
@@ -327,7 +327,7 @@
       }
     }
 
-    DBState.db.characterOrder = db.characterOrder
+    settingsStore.state.characterOrder = db.characterOrder
     checkCharOrder()
   }
 
@@ -407,7 +407,7 @@
     return false
   }
 </script>
-{#if DBState.db.menuSideBar}
+{#if settingsStore.state.menuSideBar}
 <div
   class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
   class:editMode
@@ -488,7 +488,7 @@
   class:hidden={hidden}
   class:flex={!hidden}
 >
-  {#if !DBState.db.hamburgerButtonBottom}
+  {#if !settingsStore.state.hamburgerButtonBottom}
   <button
     class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
     onclick={() => {
@@ -614,7 +614,7 @@
               size="56" 
               rounded={IconRounded} 
               name={char.name}
-              chaId={DBState.db.characters[char.index]?.chaId}
+              chaId={characterStore.characters[char.index]?.chaId}
             />
           {:else if char.type === "folder"}
             {#key char.color}
@@ -625,7 +625,7 @@
                 const sel = parseInt(await alertSelect([language.renameFolder,language.changeFolderColor,language.changeFolderImage,language.cancel]))
                 if(sel === 0){
                   const v = await alertInput(language.changeFolderName, [], char.name)
-                  const db = DBState.db
+                  const db = settingsStore.state
                   if(v){
                     const oder = db.characterOrder[ind]
                     if(typeof(oder) === 'string'){
@@ -638,7 +638,7 @@
                 else if(sel === 1){
                   const colors = ["red","green","blue","yellow","indigo","purple","pink","default"]
                   const sel = parseInt(await alertSelect(colors))
-                  const db = DBState.db
+                  const db = settingsStore.state
                   const oder = db.characterOrder[ind]
                   if(typeof(oder) === 'string'){
                     return
@@ -648,7 +648,7 @@
                 }
                 else if(sel === 2) {
                   const sel = parseInt(await alertSelect(['Reset to Default Image', 'Select Image File']))
-                  const db = DBState.db
+                  const db = settingsStore.state
                   const oder = db.characterOrder[ind]
                   if(typeof(oder) === 'string'){
                     return
@@ -692,7 +692,7 @@
                 }
                 openFolders = openFolders
               }}>
-                {#if DBState.db.showFolderName}
+                {#if settingsStore.state.showFolderName}
                   <div class="h-full w-full flex justify-center items-center">
                     <span class="hyphens-auto truncate font-bold">{char.name}</span>
                   </div>
@@ -776,7 +776,7 @@
                   size="56" 
                   rounded={IconRounded} 
                   name={char2.name}
-                  chaId={DBState.db.characters[char2.index]?.chaId}
+                  chaId={characterStore.characters[char2.index]?.chaId}
                 />
               </div>
             </div>
@@ -845,7 +845,7 @@
       >
     </div>
   </div>
-  {#if DBState.db.hamburgerButtonBottom}
+  {#if settingsStore.state.hamburgerButtonBottom}
   <div class="border-t border-t-selected w-full relative text-white ">
     {#if menuMode === 1}
       <div class="absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2">
@@ -955,7 +955,7 @@
   {#if sideBarMode === 0}
     {#if $selectedCharID < 0 || $settingsOpen}
       <LazyComponent loader={recentSessionsLoader} props={{ reseter }} />
-    {:else if DBState.db.characters[$selectedCharID]?.chaId === '§playground'}
+    {:else if characterStore.characters[$selectedCharID]?.chaId === '§playground'}
       <LazyComponent loader={sideChatListLoader} />
     {:else if $ConnectionOpenStore}
       <div class="flex flex-col">
@@ -983,7 +983,7 @@
           devTool = false
           botMakerMode.set(true)
         }} class="grow rounded-br-md" class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button>
-        {#if DBState.db.enableDevTools}
+        {#if settingsStore.state.enableDevTools}
           <button onclick={() => {
             devTool = true
           }} class="border-l border-l-selected rounded-br-md px-1" class:text-textcolor2={!devTool}>

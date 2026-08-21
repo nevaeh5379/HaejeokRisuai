@@ -1,4 +1,6 @@
 import { writable } from "svelte/store";
+import { settingsStore } from './stores/domain/settingsStore.svelte';
+import { characterStore } from './stores/domain/characterStore.svelte';
 
 type AlertData = {
     type: 'error'|'normal'|'none'|'ask'|'wait'|'selectChar'|'input'|'toast'|'wait2'|'markdown'|'select'|'login'|'tos'|'cardexport'|'requestdata'|'addchar'|'hypaV2'|'selectModule'|'chatOptions'|'pukmakkurit'|'branches'|'progress'|'pluginconfirm'|'requestlogs'
@@ -117,10 +119,6 @@ export function createSimpleCharacter(char: Character | GroupChat): SimpleCharac
 
 updateSize()
 window.addEventListener("resize", updateSize);
-export const DBState = $state({
-    db: {} as Database
-});
-
 export const LoadingStatusState = $state({
     text: '',
 })
@@ -209,18 +207,18 @@ $effect.root(() => {
     selectedCharID.subscribe((v) => {
         selIdState.selId = v
 
-        if (DBState?.db?.characters?.[selIdState.selId]) {
-            if (DBState.db.hypaV3 && DBState.db.hypaV3Presets?.[DBState.db.hypaV3PresetId]?.settings?.alwaysToggleOn) {
-                DBState.db.characters[selIdState.selId].supaMemory = true;
+        if (characterStore.characters?.[selIdState.selId]) {
+            if (settingsStore.state.hypaV3 && settingsStore.state.hypaV3Presets?.[settingsStore.state.hypaV3PresetId]?.settings?.alwaysToggleOn) {
+                characterStore.characters[selIdState.selId].supaMemory = true;
             }
         }
     })
     $effect(() => {
-        const enabledModuleCount = DBState?.db?.enabledModules?.length ?? 0
-        const chatModuleCount = DBState?.db?.characters?.[selIdState.selId]?.chats?.[DBState?.db?.characters?.[selIdState.selId]?.chatPage]?.modules?.length ?? 0
-        DBState?.db?.characters?.[selIdState.selId]?.hideChatIcon
-        DBState?.db?.characters?.[selIdState.selId]?.backgroundHTML
-        DBState?.db?.moduleIntergration
+        const enabledModuleCount = settingsStore.state.enabledModules?.length ?? 0
+        const chatModuleCount = characterStore.characters?.[selIdState.selId]?.chats?.[characterStore.characters?.[selIdState.selId]?.chatPage]?.modules?.length ?? 0
+        characterStore.characters?.[selIdState.selId]?.hideChatIcon
+        characterStore.characters?.[selIdState.selId]?.backgroundHTML
+        settingsStore.state.moduleIntergration
         if (enabledModuleCount > 0 || chatModuleCount > 0) {
             void import('./process/modules').then(({ moduleUpdate }) => moduleUpdate())
         }

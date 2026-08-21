@@ -1,5 +1,6 @@
 <script lang="ts">
-    import { DBState, OpenRealmStore } from "src/ts/stores.svelte";
+    import { OpenRealmStore } from "src/ts/stores.svelte";
+    import { characterStore, settingsStore } from "src/ts/stores/domain";
     import { ArrowLeft, StarIcon, SortAscIcon, SearchIcon } from "@lucide/svelte";
     import { getVersionString } from "src/ts/globalApi.svelte";
     import { language } from "src/lang";
@@ -37,9 +38,9 @@
 
     let contextMenu = $state<{ x: number; y: number; index: number } | null>(null)
 
-    let allCharacters = $derived(DBState.db.characters ?? [])
-    let favorites = $derived(DBState.db.characterFavorites ?? [])
-    let hidden = $derived(DBState.db.characterHidden ?? [])
+    let allCharacters = $derived(characterStore.characters ?? [])
+    let favorites = $derived(settingsStore.state.characterFavorites ?? [])
+    let hidden = $derived(settingsStore.state.characterHidden ?? [])
 
     // Image URL cache — keyed by chaId, survives re-sort/filter without re-fetch
     let imageUrlCache = $state(new Map<string, string | null>())
@@ -149,7 +150,7 @@
     // Preload image URLs for visible items in single high-DPI display WebP batch request
     $effect(() => {
         const items = visibleCharacters
-        if (DBState.db.hideAllImages) return
+        if (settingsStore.state.hideAllImages) return
 
         const toLoad: typeof items = []
         let cacheUpdated = false
@@ -206,8 +207,8 @@
     function getImageUrl(charOrId: any): string | null | undefined {
         const char = typeof charOrId === 'object' && charOrId !== null
             ? charOrId
-            : DBState.db.characters?.find((c: any) => c.chaId === charOrId)
-        if (!char?.image || DBState.db.hideAllImages) return null
+            : characterStore.characters?.find((c: any) => c.chaId === charOrId)
+        if (!char?.image || settingsStore.state.hideAllImages) return null
         if (imageUrlCache.has(char.chaId)) {
             return imageUrlCache.get(char.chaId)
         }
@@ -219,28 +220,28 @@
     }
 
     function toggleFavorite(index: number) {
-        const char = DBState.db.characters?.[index]
+        const char = characterStore.characters?.[index]
         if (!char) return
         const chaId = char.chaId
-        const favs = DBState.db.characterFavorites ?? []
+        const favs = settingsStore.state.characterFavorites ?? []
         const i = favs.indexOf(chaId)
         if (i >= 0) {
-            DBState.db.characterFavorites = favs.filter(id => id !== chaId)
+            settingsStore.state.characterFavorites = favs.filter(id => id !== chaId)
         } else {
-            DBState.db.characterFavorites = [...favs, chaId]
+            settingsStore.state.characterFavorites = [...favs, chaId]
         }
     }
 
     function toggleHidden(index: number) {
-        const char = DBState.db.characters?.[index]
+        const char = characterStore.characters?.[index]
         if (!char) return
         const chaId = char.chaId
-        const hid = DBState.db.characterHidden ?? []
+        const hid = settingsStore.state.characterHidden ?? []
         const i = hid.indexOf(chaId)
         if (i >= 0) {
-            DBState.db.characterHidden = hid.filter(id => id !== chaId)
+            settingsStore.state.characterHidden = hid.filter(id => id !== chaId)
         } else {
-            DBState.db.characterHidden = [...hid, chaId]
+            settingsStore.state.characterHidden = [...hid, chaId]
         }
     }
 
@@ -352,7 +353,7 @@
                     e.target.addEventListener('touchend', onEnd, { passive: true })
                   }}
                 >
-                  {#if char.image && !DBState.db.hideAllImages}
+                  {#if char.image && !settingsStore.state.hideAllImages}
                     {@const url = getImageUrl(char)}
                     <div class="relative w-full overflow-hidden bg-darkbutton/50 rounded-xl min-h-[140px] flex items-center justify-center">
                       {#if url === undefined}
@@ -361,7 +362,7 @@
                         <img
                           src={url}
                           alt={char.name}
-                          class="w-full h-auto block transition-all duration-300 group-hover:scale-105 {isHidden(char) && DBState.db.blurHiddenCharacters ? 'blur-xl' : ''}"
+                          class="w-full h-auto block transition-all duration-300 group-hover:scale-105 {isHidden(char) && settingsStore.state.blurHiddenCharacters ? 'blur-xl' : ''}"
                           loading="lazy"
                           decoding="async"
                           draggable="false"
@@ -421,8 +422,8 @@
 </div>
 
 {#if contextMenu}
-  {#if DBState.db.characters?.[contextMenu.index]}
-    {@const char = DBState.db.characters[contextMenu.index]}
+  {#if characterStore.characters?.[contextMenu.index]}
+    {@const char = characterStore.characters[contextMenu.index]}
     <div
       class="fixed z-50 min-w-[180px] rounded-lg border border-borderc/20 bg-darkbg shadow-xl py-1 text-sm select-none"
       style="left: {Math.min(contextMenu.x, window.innerWidth - 200)}px; top: {Math.min(contextMenu.y, window.innerHeight - 160)}px;"

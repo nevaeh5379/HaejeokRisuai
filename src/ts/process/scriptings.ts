@@ -4,7 +4,8 @@ import { hasher, type simpleCharacterArgument, risuChatParser } from "../parser/
 import { LuaEngine, LuaFactory } from "wasmoon";
 import { getCurrentCharacter, getCurrentChat, getDatabase, setDatabase, type Chat, type character, type groupChat, type triggerscript } from "../storage/database.svelte";
 import { get } from "svelte/store";
-import { DBState, ReloadChatPointer, ReloadGUIPointer, selectedCharID } from "../stores.svelte";
+import { ReloadChatPointer, ReloadGUIPointer, selectedCharID } from "../stores.svelte";
+import { characterStore } from "../stores/domain/characterStore.svelte";
 import { alertSelect, alertError, alertInput, alertNormal, alertConfirm } from "../alert";
 import { HypaProcesser } from "./memory/hypamemory";
 import { generateAIImage } from "./stableDiff";
@@ -663,7 +664,7 @@ export async function runScripted(code:string, arg:{
                 if(typeof name !== 'string'){
                     throw('Invalid data type')
                 }
-                DBState.db.characters[selectedChar].name = name
+                characterStore.characters[selectedChar].name = name
             })
 
             declareAPI('getDescription', (id:string) => {
@@ -671,7 +672,7 @@ export async function runScripted(code:string, arg:{
                     return
                 }
                 const selectedChar = get(selectedCharID)
-                const char = DBState.db.characters[selectedChar]
+                const char = characterStore.characters[selectedChar]
                 if(char.type === 'group'){
                     throw('Character is a group')
                 }
@@ -683,7 +684,7 @@ export async function runScripted(code:string, arg:{
                     return
                 }
                 const selectedChar = get(selectedCharID)
-                const char = DBState.db.characters[selectedChar]
+                const char = characterStore.characters[selectedChar]
                 if(typeof data !== 'string'){
                     throw('Invalid data type')
                 }
@@ -691,12 +692,12 @@ export async function runScripted(code:string, arg:{
                     throw('Character is a group')
                 }
                 char.desc = desc
-                DBState.db.characters[selectedChar] = char
+                characterStore.characters[selectedChar] = char
             })
 
             declareAPI('getCharacterFirstMessage', (id:string) => {
                 const selectedChar = get(selectedCharID)
-                const char = DBState.db.characters[selectedChar]
+                const char = characterStore.characters[selectedChar]
                 return char.firstMessage
             })
 
@@ -711,7 +712,7 @@ export async function runScripted(code:string, arg:{
                     return false
                 }
                 char.firstMessage = data
-                DBState.db.characters[selectedChar] = char
+                characterStore.characters[selectedChar] = char
                 return true
             })
 
@@ -750,7 +751,7 @@ export async function runScripted(code:string, arg:{
                 if(typeof data !== 'string'){
                     return false
                 }
-                DBState.db.characters[selectedChar].backgroundHTML = data
+                characterStore.characters[selectedChar].backgroundHTML = data
                 return true
             })
 

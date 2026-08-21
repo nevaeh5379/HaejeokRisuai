@@ -3,14 +3,15 @@
     import { mount, onDestroy, unmount } from 'svelte';
     import Chat from './Chat.svelte';
     import { getCharImage } from 'src/ts/characters';
-    import { createSimpleCharacter, DBState, selectedCharID, ReloadChatPointer } from 'src/ts/stores.svelte';
+    import { createSimpleCharacter, selectedCharID, ReloadChatPointer } from 'src/ts/stores.svelte';
+    import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import { chatFoldedStateMessageIndex } from 'src/ts/globalApi.svelte';
     import { get } from 'svelte/store';
     
     const getCurrentChatRoomId = () => {
         const charId = get(selectedCharID);
         if (charId < 0) return null;
-        const char = DBState.db.characters[charId];
+        const char = characterStore.characters[charId];
         if (!char) return null;
         return char.chats?.[char.chatPage]?.id ?? null;
     };
@@ -86,7 +87,7 @@
         let loadStart = messages.length - 1
         let loadEnd = messages.length - loadPages
         const currentChat = currentCharacter.chats?.[currentCharacter.chatPage]
-        const configuredPerformanceMode = DBState.db.streamingDisplayOptimizationMode ?? 'off';
+        const configuredPerformanceMode = settingsStore.state.streamingDisplayOptimizationMode ?? 'off';
         const performanceMode = currentChat?.isStreaming
             ? currentChat.activeStreamingDisplayOptimizationMode ?? configuredPerformanceMode
             : configuredPerformanceMode
@@ -222,8 +223,8 @@
         // Only auto-scroll if it's the same chat and new messages were added
         if(isSameChat && messages.length > previousLength){
             const lastMsg = messages[messages.length - 1];
-            if(lastMsg && lastMsg.role === 'char' && DBState.db.autoScrollToNewMessage){
-                if(wasAtBottom || DBState.db.alwaysScrollToNewMessage){
+            if(lastMsg && lastMsg.role === 'char' && settingsStore.state.autoScrollToNewMessage){
+                if(wasAtBottom || settingsStore.state.alwaysScrollToNewMessage){
                     const element = chatBody.firstElementChild;
                     if(element){
                         setTimeout(() => {

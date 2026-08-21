@@ -2,7 +2,7 @@
     import { alertConfirm, alertError } from "../../ts/alert";
     import { language } from "../../lang";
     
-    import { DBState } from 'src/ts/stores.svelte';
+    import { characterStore } from 'src/ts/stores/domain';
     import { ReloadGUIPointer, selectedCharID } from "../../ts/stores.svelte";
     import { DownloadIcon, SquarePenIcon, HardDriveUploadIcon, PlusIcon, TrashIcon, XIcon } from "@lucide/svelte";
     import { exportChat, importChat } from "../../ts/characters";
@@ -25,15 +25,15 @@
                 </button>
             </div>
         </div>
-        {#each DBState.db.characters[$selectedCharID].chats as chat, i}
+        {#each characterStore.characters[$selectedCharID].chats as chat, i}
             <button onclick={() => {
                 if(!editMode){
                     changeChatTo(i)
                     close()
                 }
-            }} class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer" class:bg-selected={i === DBState.db.characters[$selectedCharID].chatPage}>
+            }} class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer" class:bg-selected={i === characterStore.characters[$selectedCharID].chatPage}>
                 {#if editMode}
-                    <TextInput bind:value={DBState.db.characters[$selectedCharID].chats[i].name} padding={false}/>
+                    <TextInput bind:value={characterStore.characters[$selectedCharID].chats[i].name} padding={false}/>
                 {:else}
                     <span>{chat.name}</span>
                 {/if}
@@ -48,16 +48,16 @@
                     </div>
                     <div class="text-textcolor2 hover:text-green-500 cursor-pointer" role="button" tabindex="0" onclick={async (e) => {
                         e.stopPropagation()
-                        if(DBState.db.characters[$selectedCharID].chats.length === 1){
+                        if(characterStore.characters[$selectedCharID].chats.length === 1){
                             alertError(language.errors.onlyOneChat)
                             return
                         }
                         const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
                         if(d){
                             changeChatTo(0)
-                            let chats = DBState.db.characters[$selectedCharID].chats
+                            let chats = characterStore.characters[$selectedCharID].chats
                             chats.splice(i, 1)
-                            DBState.db.characters[$selectedCharID].chats = chats
+                            characterStore.characters[$selectedCharID].chats = chats
                         }
                     }} onkeydown={() => {
                         
@@ -69,9 +69,9 @@
         {/each}
         <div class="flex mt-2 items-center">
             <button class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1" onclick={() => {
-                const cha = DBState.db.characters[$selectedCharID]
-                const len = DBState.db.characters[$selectedCharID].chats.length
-                let chats = DBState.db.characters[$selectedCharID].chats
+                const cha = characterStore.characters[$selectedCharID]
+                const len = characterStore.characters[$selectedCharID].chats.length
+                let chats = characterStore.characters[$selectedCharID].chats
                 chats.unshift({
                     message:[], note:'', name:`New Chat ${len + 1}`, localLore:[], fmIndex: -1
                 })
@@ -84,7 +84,7 @@
                         })
                     })
                 }
-                DBState.db.characters[$selectedCharID].chats = chats
+                characterStore.characters[$selectedCharID].chats = chats
                 changeChatTo(len)
                 close()
             }}>

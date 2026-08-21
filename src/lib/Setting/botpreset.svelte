@@ -2,13 +2,14 @@
     import { alertCardExport, alertConfirm, alertError } from "../../ts/alert";
     import { language } from "../../lang";
     import { changeToPreset, copyPreset, downloadPreset, importPreset } from "../../ts/storage/database.svelte";
-    import { DBState } from 'src/ts/stores.svelte';
+    import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { CopyIcon, Share2Icon, PencilIcon, HardDriveUploadIcon, PlusIcon, TrashIcon, XIcon, GitCompare } from "@lucide/svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
     import { prebuiltPresets } from "src/ts/process/templates/templates";
     import { ShowRealmFrameStore } from "src/ts/stores.svelte";
     import PromptDiffModal from "../Others/PromptDiffModal.svelte";
     import { RISU_PRESET_DRAG_TYPE } from "src/ts/dragTypes";
+    import { safeStructuredClone } from "src/ts/polyfill";
 
     let editMode = $state(false)
     let isDragging = $state(false)
@@ -27,25 +28,25 @@
 
     function movePreset(fromIndex: number, toIndex: number) {
         if (fromIndex === toIndex) return;
-        if (fromIndex < 0 || toIndex < 0 || fromIndex >= DBState.db.botPresets.length || toIndex > DBState.db.botPresets.length) return;
+        if (fromIndex < 0 || toIndex < 0 || fromIndex >= settingsStore.state.botPresets.length || toIndex > settingsStore.state.botPresets.length) return;
 
-        let botPresets = [...DBState.db.botPresets];
+        let botPresets = [...settingsStore.state.botPresets];
         const movedItem = botPresets.splice(fromIndex, 1)[0];
         if (!movedItem) return;
 
         const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex;
         botPresets.splice(adjustedToIndex, 0, movedItem);
 
-        const currentId = DBState.db.botPresetsId;
+        const currentId = settingsStore.state.botPresetsId;
         if (currentId === fromIndex) {
-            DBState.db.botPresetsId = adjustedToIndex;
+            settingsStore.state.botPresetsId = adjustedToIndex;
         } else if (fromIndex < currentId && adjustedToIndex >= currentId) {
-            DBState.db.botPresetsId = currentId - 1;
+            settingsStore.state.botPresetsId = currentId - 1;
         } else if (fromIndex > currentId && adjustedToIndex <= currentId) {
-            DBState.db.botPresetsId = currentId + 1;
+            settingsStore.state.botPresetsId = currentId + 1;
         }
 
-        DBState.db.botPresets = botPresets;
+        settingsStore.state.botPresets = botPresets;
     }
 
     function isPresetDrag(e: DragEvent) {
@@ -109,7 +110,7 @@
                 </button>
             </div>
         </div>
-        {#each DBState.db.botPresets as preset, i}
+        {#each settingsStore.state.botPresets as preset, i}
             <div class="w-full transition-all duration-200"
                 class:h-0.5={!isDragging || dragOverIndex !== i}
                 class:h-1={isDragging && dragOverIndex === i}
@@ -142,7 +143,7 @@
                 }
             }} 
             class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer" 
-            class:bg-selected={i === DBState.db.botPresetsId}
+            class:bg-selected={i === settingsStore.state.botPresetsId}
             class:draggable-preset={!editMode}
             draggable={!editMode ? "true" : "false"}
             ondragstart={(e) => {
@@ -189,7 +190,7 @@
                 dragOverIndex = -1
             }}>
                 {#if editMode}
-                    <TextInput bind:value={DBState.db.botPresets[i].name} placeholder="string" padding={false}/>
+                    <TextInput bind:value={settingsStore.state.botPresets[i].name} placeholder="string" padding={false}/>
                 {:else}
                     {#if i < 9}
                         <span class="w-2 text-center mr-2 text-textcolor2">{i + 1}</span>
@@ -201,7 +202,7 @@
                     <span>{preset.name}</span>
                 {/if}
                 <div class="grow flex justify-end">
-                    {#if DBState.db.showPromptComparison}
+                    {#if settingsStore.state.showPromptComparison}
                         <div class="{selectedDiffPreset === i ? 'text-green-500' : 'text-textcolor2 hover:text-green-500'} cursor-pointer mr-2" role="button" tabindex="0" onclick={(e) => {
                             e.stopPropagation()
                             handleDiffMode(i)
@@ -243,16 +244,16 @@
                     </div>
                     <div class="text-textcolor2 hover:text-green-500 cursor-pointer" role="button" tabindex="0" onclick={async (e) => {
                         e.stopPropagation()
-                        if(DBState.db.botPresets.length === 1){
+                        if(settingsStore.state.botPresets.length === 1){
                             alertError(language.errors.onlyOneChat)
                             return
                         }
                         const d = await alertConfirm(`${language.removeConfirm}${preset.name}`)
                         if(d){
                             changeToPreset(0)
-                            let botPresets = DBState.db.botPresets
+                            let botPresets = settingsStore.state.botPresets
                             botPresets.splice(i, 1)
-                            DBState.db.botPresets = botPresets
+                            settingsStore.state.botPresets = botPresets
                             changeToPreset(0, false)
                         }
                     }} onkeydown={(e) => {
@@ -267,10 +268,10 @@
         {/each}
 
         <div class="w-full transition-all duration-200"
-            class:h-0.5={!isDragging || dragOverIndex !== DBState.db.botPresets.length}
-            class:h-1={isDragging && dragOverIndex === DBState.db.botPresets.length}
-            class:bg-blue-500={isDragging && dragOverIndex === DBState.db.botPresets.length}
-            class:shadow-lg={isDragging && dragOverIndex === DBState.db.botPresets.length}
+            class:h-0.5={!isDragging || dragOverIndex !== settingsStore.state.botPresets.length}
+            class:h-1={isDragging && dragOverIndex === settingsStore.state.botPresets.length}
+            class:bg-blue-500={isDragging && dragOverIndex === settingsStore.state.botPresets.length}
+            class:shadow-lg={isDragging && dragOverIndex === settingsStore.state.botPresets.length}
             class:hover:bg-gray-600={!isDragging}
             role="listitem"
             ondragover={(e) => {
@@ -280,25 +281,25 @@
                 e.preventDefault()
                 e.stopPropagation()
                 e.dataTransfer.dropEffect = 'move'
-                dragOverIndex = DBState.db.botPresets.length
+                dragOverIndex = settingsStore.state.botPresets.length
             }}
             ondragleave={(e) => {
                 dragOverIndex = -1
             }}
             ondrop={(e) => {
-                handlePresetDrop(DBState.db.botPresets.length, e)
+                handlePresetDrop(settingsStore.state.botPresets.length, e)
                 dragOverIndex = -1
             }}>
         </div>
         
         <div class="flex mt-2 items-center">
             <button class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1" onclick={() => {
-                let botPresets = DBState.db.botPresets
+                let botPresets = settingsStore.state.botPresets
                 let newPreset = safeStructuredClone(prebuiltPresets.OAI2)
                 newPreset.name = `New Preset`
                 botPresets.push(newPreset)
 
-                DBState.db.botPresets = botPresets
+                settingsStore.state.botPresets = botPresets
             }}>
                 <PlusIcon/>
             </button>

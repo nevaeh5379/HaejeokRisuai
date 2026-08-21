@@ -1,6 +1,6 @@
 <script lang="ts">
     import { type character, type groupChat } from "src/ts/storage/database.svelte";
-    import { DBState } from 'src/ts/stores.svelte';
+    import { characterStore } from 'src/ts/stores/domain';
     import BarIcon from "../SideBars/BarIcon.svelte";
     import { addCharacter, changeChar, getCharImage } from "src/ts/characters";
     import { MobileSearch } from "src/ts/stores.svelte";
@@ -77,7 +77,7 @@
     }
 
     let filteredChars = $derived(
-        sortChar(DBState.db.characters).filter(char =>
+        sortChar(characterStore.characters).filter(char =>
             normalizeSearch(char.name).includes(normalizedSearch)
         )
     );

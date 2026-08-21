@@ -1,10 +1,10 @@
 import { get } from "svelte/store"
 import { alertMd, alertSelect, alertToast, alertWait, doingAlert, alertRequestLogs } from "./alert"
 import { changeToPreset as changeToPreset2, getDatabase  } from "./storage/database.svelte"
-import { alertStore, DBState, loadoutModalStore, MobileGUIStack, MobileSideBar, openPersonaList, openPresetList, OpenRealmStore, PlaygroundStore, QuickSettings, SafeModeStore, selectedCharID, settingsOpen } from "./stores.svelte"
+import { alertStore, loadoutModalStore, MobileGUIStack, MobileSideBar, openPersonaList, openPresetList, OpenRealmStore, PlaygroundStore, QuickSettings, SafeModeStore, selectedCharID, settingsOpen } from "./stores.svelte"
 import { language } from "src/lang"
 import { updateTextThemeAndCSS } from "./gui/colorscheme"
-import { defaultHotkeys } from "./defaulthotkeys"
+import { defaultHotkeys, type Hotkey } from "./defaulthotkeys"
 import { RISU_SIDEBAR_DRAG_TYPE } from "./dragTypes"
 
 export function initHotkey(){
@@ -323,7 +323,7 @@ async function quickMenu(){
     }
 }
 
-export function hotkeyMatches(hotkey: typeof DBState.db.hotkeys[number], ev: KeyboardEvent): boolean {
+export function hotkeyMatches(hotkey: Hotkey, ev: KeyboardEvent): boolean {
     if(!hotkey){
         return false
     }

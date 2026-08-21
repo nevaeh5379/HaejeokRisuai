@@ -6,7 +6,8 @@
     summarize,
   } from "src/ts/process/memory/hypav3";
   import { alertNormalWait } from "src/ts/alert";
-  import { DBState, selectedCharID, hypaV3ModalOpen } from "src/ts/stores.svelte";
+  import { selectedCharID, hypaV3ModalOpen } from "src/ts/stores.svelte";
+  import { characterStore } from "src/ts/stores/domain";
   import { language } from "src/lang";
   import { translateHTML } from "src/ts/translator/translator";
   import { alertConfirmTwice } from "./HypaV3Modal/utils";
@@ -39,8 +40,8 @@
     import type { OpenAIChat } from "src/ts/process/index.svelte";
 
   const hypaV3Data = $derived(
-    DBState.db.characters[$selectedCharID].chats[
-      DBState.db.characters[$selectedCharID].chatPage
+    characterStore.characters[$selectedCharID].chats[
+      characterStore.characters[$selectedCharID].chatPage
     ].hypaV3Data
   );
 
@@ -99,8 +100,8 @@
     filterSelected;
 
     untrack(() => {
-      DBState.db.characters[$selectedCharID].chats[
-        DBState.db.characters[$selectedCharID].chatPage
+      characterStore.characters[$selectedCharID].chats[
+        characterStore.characters[$selectedCharID].chatPage
       ].hypaV3Data ??= {
         summaries: [],
         categories: [{ id: "", name: language.hypaV3Modal.unclassified }],
@@ -358,8 +359,8 @@
         language.hypaV3Modal.resetConfirmSecondMessage
       )
     ) {
-      DBState.db.characters[$selectedCharID].chats[
-        DBState.db.characters[$selectedCharID].chatPage
+      characterStore.characters[$selectedCharID].chats[
+        characterStore.characters[$selectedCharID].chatPage
       ].hypaV3Data = {
         summaries: [],
       };
@@ -584,16 +585,16 @@
   }
 
   function isHypaV2ConversionPossible(): boolean {
-    const char = DBState.db.characters[$selectedCharID];
-    const chat = char.chats[DBState.db.characters[$selectedCharID].chatPage];
+    const char = characterStore.characters[$selectedCharID];
+    const chat = char.chats[characterStore.characters[$selectedCharID].chatPage];
 
     return chat.hypaV3Data?.summaries?.length === 0 && chat.hypaV2Data != null;
   }
 
   function convertHypaV2ToV3(): { success: boolean; error?: string } {
     try {
-      const char = DBState.db.characters[$selectedCharID];
-      const chat = char.chats[DBState.db.characters[$selectedCharID].chatPage];
+      const char = characterStore.characters[$selectedCharID];
+      const chat = char.chats[characterStore.characters[$selectedCharID].chatPage];
       const hypaV2Data = chat.hypaV2Data;
 
       if (chat.hypaV3Data?.summaries?.length > 0) {

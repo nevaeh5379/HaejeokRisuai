@@ -7,7 +7,7 @@
     import { openURL } from "src/ts/globalApi.svelte";
     import { hubURL } from "src/ts/characterCards";
     import TriggerV2List from "./TriggerV2List.svelte";
-    import { DBState } from "src/ts/stores.svelte";
+    import { settingsStore } from "src/ts/stores/domain";
 
     interface Props {
         value?: triggerscript[];
@@ -21,7 +21,7 @@
 </script>
 
 <div class="flex items-start mt-2 gap-2">
-    {#if v1Enabled || DBState.db.showDeprecatedTriggerV1 }
+    {#if v1Enabled || settingsStore.state.showDeprecatedTriggerV1 }
         <button class="bg-bgcolor py-1 rounded-md text-sm px-2" class:ring-1={v1Enabled} onclick={(async (e) => {
             e.stopPropagation()
             const codeType = value?.[0]?.effect?.[0]?.type

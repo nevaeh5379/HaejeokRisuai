@@ -8,7 +8,7 @@
     import CheckInput from "./GUI/CheckInput.svelte";
     import { ArrowDown, ArrowUp, XIcon } from "@lucide/svelte";
     import TextInput from "./GUI/TextInput.svelte";
-    import { DBState } from 'src/ts/stores.svelte';
+    import { settingsStore } from 'src/ts/stores/domain';
     import { RISU_PROMPT_DRAG_TYPE } from "src/ts/dragTypes";
     
     interface Props {
@@ -108,17 +108,17 @@
             return
         }
 
-        const ind = DBState.db.promptTemplate.findIndex((item, index) => {
+        const ind = settingsStore.state.promptTemplate.findIndex((item, index) => {
             return JSON.stringify(item) === JSON.stringify(prompt)
         })
 
         if(ind !== -1){
-            DBState.db.promptTemplate.splice(ind, 1)
+            settingsStore.state.promptTemplate.splice(ind, 1)
         }
-        const myInd = DBState.db.promptTemplate.findIndex((item, index) => {
+        const myInd = settingsStore.state.promptTemplate.findIndex((item, index) => {
             return JSON.stringify(item) === JSON.stringify(promptItem)
         })
-        DBState.db.promptTemplate.splice(myInd, 0, prompt)
+        settingsStore.state.promptTemplate.splice(myInd, 0, prompt)
 
     }
 
@@ -278,7 +278,7 @@
             <OptionInput value="chatML">{"chatML"}</OptionInput>
             <OptionInput value="cache">{language.cachePoint}</OptionInput>
 
-            {#if DBState.db.promptSettings.customChainOfThought}
+            {#if settingsStore.state.promptSettings.customChainOfThought}
                 <OptionInput value="cot">{language.cot}</OptionInput>
             {/if}
         </SelectInput>
@@ -334,7 +334,7 @@
                         }
                     }} />
                 {/if}
-                {#if DBState.db.promptSettings.sendChatAsSystem}
+                {#if settingsStore.state.promptSettings.sendChatAsSystem}
                     <CheckInput name={language.chatAsOriginalOnSystem} bind:check={promptItem.chatAsOriginalOnSystem}/>
                 {/if}
             {/if}

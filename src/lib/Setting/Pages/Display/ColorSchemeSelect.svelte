@@ -1,6 +1,6 @@
 <script lang="ts">
     import { language } from 'src/lang';
-    import { DBState } from 'src/ts/stores.svelte';
+    import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import {
         changeColorScheme,
         colorSchemeList,
@@ -33,10 +33,10 @@
         <button
             type="button"
             class="flex min-h-28 flex-col items-center justify-center gap-2 rounded-md border p-3 text-center transition-colors hover:bg-darkbutton focus:outline-hidden focus:ring-2 focus:ring-borderc"
-            class:border-borderc={DBState.db.colorSchemeName === scheme}
-            class:border-darkborderc={DBState.db.colorSchemeName !== scheme}
-            class:bg-darkbutton={DBState.db.colorSchemeName === scheme}
-            aria-pressed={DBState.db.colorSchemeName === scheme}
+            class:border-borderc={settingsStore.state.colorSchemeName === scheme}
+            class:border-darkborderc={settingsStore.state.colorSchemeName !== scheme}
+            class:bg-darkbutton={settingsStore.state.colorSchemeName === scheme}
+            aria-pressed={settingsStore.state.colorSchemeName === scheme}
             title={formatSchemeName(scheme)}
             onclick={() => changeColorScheme(scheme)}
         >
@@ -53,10 +53,10 @@
     <button
         type="button"
         class="flex min-h-28 flex-col items-center justify-center gap-2 rounded-md border p-3 text-center transition-colors hover:bg-darkbutton focus:outline-hidden focus:ring-2 focus:ring-borderc"
-        class:border-borderc={DBState.db.colorSchemeName === 'custom'}
-        class:border-darkborderc={DBState.db.colorSchemeName !== 'custom'}
-        class:bg-darkbutton={DBState.db.colorSchemeName === 'custom'}
-        aria-pressed={DBState.db.colorSchemeName === 'custom'}
+        class:border-borderc={settingsStore.state.colorSchemeName === 'custom'}
+        class:border-darkborderc={settingsStore.state.colorSchemeName !== 'custom'}
+        class:bg-darkbutton={settingsStore.state.colorSchemeName === 'custom'}
+        aria-pressed={settingsStore.state.colorSchemeName === 'custom'}
         title="Custom"
         onclick={() => changeColorScheme('custom')}
     >
@@ -64,7 +64,7 @@
             class="palette-wheel relative h-14 w-14 overflow-hidden rounded-full shadow-sm"
             aria-hidden="true"
         >
-            <span class="palette-wheel-fill" style={paletteStyle(DBState.db.customColorScheme)}></span>
+            <span class="palette-wheel-fill" style={paletteStyle(settingsStore.state.customColorScheme)}></span>
         </span>
         <span class="w-full truncate text-sm text-textcolor">Custom</span>
     </button>

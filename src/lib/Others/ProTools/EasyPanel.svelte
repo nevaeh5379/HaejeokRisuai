@@ -4,7 +4,8 @@
     import SegmentedControl from "src/lib/UI/GUI/SegmentedControl.svelte";
     import SliderInput from "src/lib/UI/GUI/SliderInput.svelte";
     import ModelList from "src/lib/UI/ModelList.svelte";
-    import { DBState, easyPanelStore } from "src/ts/stores.svelte";
+    import { easyPanelStore } from "src/ts/stores.svelte";
+    import { settingsStore } from "src/ts/stores/domain";
     import Help from "../Help.svelte";
     import Button from "src/lib/UI/GUI/Button.svelte";
     import CheckInput from "src/lib/UI/GUI/CheckInput.svelte";
@@ -19,11 +20,11 @@
     let parameterModelSelection = $state('')
 
     let hasEPRequirements = $derived.by(() => {
-        return  DBState.db.seperateParametersEnabled &&
-                DBState.db.doNotChangeSeperateModels &&
-                DBState.db.seperateModels &&
-                DBState.db.epEnabled &&
-                DBState.db.disableSeperateParameterChangeOnPresetChange
+        return  settingsStore.state.seperateParametersEnabled &&
+                settingsStore.state.doNotChangeSeperateModels &&
+                settingsStore.state.seperateModels &&
+                settingsStore.state.epEnabled &&
+                settingsStore.state.disableSeperateParameterChangeOnPresetChange
     })
 
     const onClose = () => {
@@ -60,16 +61,16 @@
             </div>
 
             <Button className="mt-4" onclick={() => {
-                DBState.db.seperateParametersEnabled = true
-                DBState.db.doNotChangeSeperateModels = true
-                DBState.db.seperateModels = {
+                settingsStore.state.seperateParametersEnabled = true
+                settingsStore.state.doNotChangeSeperateModels = true
+                settingsStore.state.seperateModels = {
                     memory: '',
                     translate: '',
                     emotion: '',
                     otherAx: ''
                 }
-                DBState.db.epEnabled = true
-                DBState.db.disableSeperateParameterChangeOnPresetChange = true
+                settingsStore.state.epEnabled = true
+                settingsStore.state.disableSeperateParameterChangeOnPresetChange = true
             }}>
                 {language.run}
             </Button>
@@ -78,43 +79,43 @@
              <div class="w-full grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 justify-center items-center">
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.mainModel}</span>
-                    <ModelList bind:value={DBState.db.aiModel} blankable excludesPrefix="plugin"/>
+                    <ModelList bind:value={settingsStore.state.aiModel} blankable excludesPrefix="plugin"/>
                 </div>
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.submodel}</span>
-                    <ModelList bind:value={DBState.db.subModel} blankable excludesPrefix="plugin"/>
+                    <ModelList bind:value={settingsStore.state.subModel} blankable excludesPrefix="plugin"/>
                 </div>
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.longTermMemory}</span>
-                    <ModelList bind:value={DBState.db.seperateModels.memory} blankable excludesPrefix="plugin"/>
+                    <ModelList bind:value={settingsStore.state.seperateModels.memory} blankable excludesPrefix="plugin"/>
                 </div>
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.translator}</span>
-                    <ModelList bind:value={DBState.db.seperateModels.translate} blankable excludesPrefix="plugin"/>
+                    <ModelList bind:value={settingsStore.state.seperateModels.translate} blankable excludesPrefix="plugin"/>
                 </div>
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.emotionImage}</span>
-                    <ModelList bind:value={DBState.db.seperateModels.emotion} blankable excludesPrefix="plugin"/>
+                    <ModelList bind:value={settingsStore.state.seperateModels.emotion} blankable excludesPrefix="plugin"/>
                 </div>
 
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.others}</span>
-                    <ModelList bind:value={DBState.db.seperateModels.otherAx} blankable excludesPrefix="plugin"/>
+                    <ModelList bind:value={settingsStore.state.seperateModels.otherAx} blankable excludesPrefix="plugin"/>
                 </div>
                 
             </div>
         {/if}
         {#if selectedOption === 'parameters'}
 
-            {#if DBState.db.seperateParametersByModel}
+            {#if settingsStore.state.seperateParametersByModel}
 
                 <ModelList bind:value={parameterModelSelection} blankable excludesPrefix="plugin" onChange={(v) => {
-                    DBState.db.seperateParameters.overrides ??= {}
-                    DBState.db.seperateParameters.overrides[v] ??= {}
+                    settingsStore.state.seperateParameters.overrides ??= {}
+                    settingsStore.state.seperateParameters.overrides[v] ??= {}
                 }}/>
 
                 {#if parameterModelSelection !== ''}
-                    <AllSeperateParameters bind:value={DBState.db.seperateParameters.overrides[parameterModelSelection]} withImportExport paramKey={parameterModelSelection} />
+                    <AllSeperateParameters bind:value={settingsStore.state.seperateParameters.overrides[parameterModelSelection]} withImportExport paramKey={parameterModelSelection} />
 
                 {/if}
             {:else}
@@ -130,13 +131,13 @@
                 />
                 <div class="w-full mt-4 flex flex-col">
                     {#if selectedParameterOption === 'memory'}
-                        <AllSeperateParameters bind:value={DBState.db.seperateParameters.memory} withImportExport paramKey="memory" />
+                        <AllSeperateParameters bind:value={settingsStore.state.seperateParameters.memory} withImportExport paramKey="memory" />
                     {:else if selectedParameterOption === 'translate'}
-                        <AllSeperateParameters bind:value={DBState.db.seperateParameters.translate} withImportExport paramKey="translate" />
+                        <AllSeperateParameters bind:value={settingsStore.state.seperateParameters.translate} withImportExport paramKey="translate" />
                     {:else if selectedParameterOption === 'emotion'}
-                        <AllSeperateParameters bind:value={DBState.db.seperateParameters.emotion} withImportExport paramKey="emotion" />
+                        <AllSeperateParameters bind:value={settingsStore.state.seperateParameters.emotion} withImportExport paramKey="emotion" />
                     {:else if selectedParameterOption === 'otherAx'}
-                        <AllSeperateParameters bind:value={DBState.db.seperateParameters.otherAx} withImportExport paramKey="otherAx" />
+                        <AllSeperateParameters bind:value={settingsStore.state.seperateParameters.otherAx} withImportExport paramKey="otherAx" />
                     {/if}
                 </div>
 
@@ -144,7 +145,7 @@
         {:else if selectedOption === 'customModels'}
             <CustomModelsSettings noAccordion />
         {:else if selectedOption === 'settings'}
-             <CheckInput name={language.seperateParametersByModel} bind:check={DBState.db.seperateParametersByModel}/>
+             <CheckInput name={language.seperateParametersByModel} bind:check={settingsStore.state.seperateParametersByModel}/>
         {/if}
     </div>
 </div>

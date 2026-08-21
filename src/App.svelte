@@ -1,6 +1,6 @@
 <script lang="ts">
     import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, saving, AccountWarning, selectedCharID, PlaygroundStore } from './ts/stores.svelte';
-    import { DBState } from './ts/stores.svelte';
+    import { settingsStore, moduleStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
     import { isNodeServer } from './ts/platform';
     import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
@@ -12,7 +12,7 @@
 
 
   
-    let didFirstSetup: boolean  = $derived(DBState.db?.didFirstSetup)
+    let didFirstSetup: boolean  = $derived(settingsStore.state.didFirstSetup)
     let gridOpen = $state(false)
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
     let aprilFoolsPage = $state(0)
@@ -104,7 +104,7 @@
         const data = new Uint8Array(await file.arrayBuffer())
         const { readModule } = await import('./ts/process/modules')
         const module = await readModule(Buffer.from(data))
-        DBState.db.modules.push(module)
+        await moduleStore.installModule(module)
         alertNormal(language.successImport)
     } else {
         const { importCharacterProcess } = await import('./ts/characterCards')
@@ -120,7 +120,7 @@
         return
     }
 
-    const aliveMode = DBState?.db?.keepSessionAlive
+    const aliveMode = settingsStore.state?.keepSessionAlive
     switch(aliveMode){
         case 'pip':{
 

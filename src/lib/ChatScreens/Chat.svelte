@@ -8,7 +8,8 @@
     import { risuChatParser } from "src/ts/process/scripts"
     import { runTrigger } from 'src/ts/process/triggers'
     import { sayTTS } from "src/ts/process/tts"
-    import { DBState, ReloadChatPointer, CurrentTriggerIdStore, popupStore } from 'src/ts/stores.svelte'
+    import { ReloadChatPointer, CurrentTriggerIdStore, popupStore } from 'src/ts/stores.svelte'
+    import { characterStore, settingsStore } from 'src/ts/stores/domain'
     import { ConnectionOpenStore } from 'src/ts/sync/multiuserState'
     import { capitalize, getUserIcon, getUserName, sleep } from "src/ts/util"
     import { onDestroy, onMount } from "svelte"
@@ -100,7 +101,7 @@
 
     async function ensureFullMessageIndex(): Promise<number> {
         const characterIndex = selIdState.selId
-        const character = DBState.db.characters[characterIndex]
+        const character = characterStore.characters[characterIndex]
         const chatIndex = character?.chatPage
         const chat = character?.chats?.[chatIndex]
         const messageId = chat?.message?.[idx]?.chatId
@@ -115,41 +116,41 @@
         const targetIndex = await ensureFullMessageIndex()
         if (targetIndex < 0) return
         if(e.shiftKey){
-            let msg = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message
+            let msg = characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message
             msg = msg.slice(0, targetIndex)
-            DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message = msg
+            characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message = msg
             return
         }
 
-        const rm = DBState.db.askRemoval ? await alertConfirm(language.removeChat) : true
+        const rm = settingsStore.state.askRemoval ? await alertConfirm(language.removeChat) : true
         if(rm){
-            if(DBState.db.instantRemove || rec){
+            if(settingsStore.state.instantRemove || rec){
                 const r = await alertConfirm(language.instantRemoveConfirm)
-                let msg = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message
+                let msg = characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message
                 if(!r){
                     msg = msg.slice(0, targetIndex)
                 }
                 else{
                     msg.splice(targetIndex, 1)
                 }
-                DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message = msg
+                characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message = msg
             }
             else{
-                let msg = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message
+                let msg = characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message
                 msg.splice(targetIndex, 1)
-                DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message = msg
+                characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message = msg
             }
         }
     }
 
     async function edit(){
-        DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].data = message
+        characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].data = message
     }
 
     function handlePartialEditSave(e: CustomEvent<{ newData: string }>) {
         if (idx >= 0) {
             message = e.detail.newData
-            DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].data = e.detail.newData
+            characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].data = e.detail.newData
             displaya(e.detail.newData)
         }
     }
@@ -158,7 +159,7 @@
         try{
             const cbsConditions:CbsConditions = {
                 firstmsg: firstMessage ?? false,
-                chatRole: DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]?.message?.[idx]?.role ?? null,
+                chatRole: characterStore.characters[selIdState.selId]?.chats?.[characterStore.characters[selIdState.selId].chatPage]?.message?.[idx]?.role ?? null,
             }
             return cbsConditions
         }
@@ -171,10 +172,10 @@
     }
 
     async function getTranslationCacheKey(): Promise<string> {
-        if(DBState.db.translateBeforeHTMLFormatting){
+        if(settingsStore.state.translateBeforeHTMLFormatting){
             return msgDisplay
         }
-        if(!DBState.db.legacyTranslation){
+        if(!settingsStore.state.legacyTranslation){
             return await ParseMarkdown(msgDisplay, character, 'pretranslate', idx, getCbsCondition())
         }
         return await ParseMarkdown(msgDisplay, character, 'notrim', idx, getCbsCondition())
@@ -252,7 +253,7 @@
         }
 
         const characterIndex = selIdState.selId
-        const character = DBState.db.characters?.[characterIndex]
+        const character = characterStore.characters?.[characterIndex]
         if (!character) {
             return
         }
@@ -294,13 +295,13 @@
     }
 
     let isBookmarked = $derived(
-        DBState.db.characters[selIdState.selId]
-            ?.chats[DBState.db.characters[selIdState.selId].chatPage]
-            ?.bookmarks?.includes(DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]?.chatId) ?? false
+        characterStore.characters[selIdState.selId]
+            ?.chats?.[characterStore.characters[selIdState.selId].chatPage]
+            ?.bookmarks?.includes(characterStore.characters[selIdState.selId]?.chats?.[characterStore.characters[selIdState.selId].chatPage]?.message?.[idx]?.chatId) ?? false
     );
 
     async function toggleBookmark() {
-        const chat = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage];
+        const chat = characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage];
         
         if(!chat.message[idx]) return;
 
@@ -351,7 +352,7 @@
     }
 
     function getMaxWidth(): string {
-        switch (DBState.db.chatLimitSize) {
+        switch (settingsStore.state.chatLimitSize) {
             //Unlimited
             case -1:
                 return '100%'
@@ -377,12 +378,12 @@
 
 {#snippet genInfo()}
     <div class="flex flex-col items-end">
-        {#if messageGenerationInfo && (DBState.db.requestInfoInsideChat || aiLawApplies())}
+        {#if messageGenerationInfo && (settingsStore.state.requestInfoInsideChat || aiLawApplies())}
             <button class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                     hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center" 
                     onclick={() => {
                         const currentGenerationInfo = idx >= 0 ? 
-                            DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[idx].generationInfo :
+                            characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message[idx].generationInfo :
                             messageGenerationInfo
 
                         alertRequestData({
@@ -397,7 +398,7 @@
                 </span>
             </button>
         {/if}
-        {#if DBState.db.translatorType === 'llm' && translated}
+        {#if settingsStore.state.translatorType === 'llm' && translated}
             <button class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                             hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
                     onclick={() => {
@@ -472,12 +473,12 @@
             class:prose-invert={$ColorSchemeTypeStore}
             bind:this={bodyRoot}
             onclick={() => {
-            if(DBState.db.clickToEdit && idx > -1 && !isOptimizedStreamingMessage){
+            if(settingsStore.state.clickToEdit && idx > -1 && !isOptimizedStreamingMessage){
                 editMode = true
             }
         }}
-            style:font-size="{0.875 * (DBState.db.zoomsize / 100)}rem"
-            style:line-height="{(DBState.db.lineHeight ?? 1.25) * (DBState.db.zoomsize / 100)}rem"
+            style:font-size="{0.875 * (settingsStore.state.zoomsize / 100)}rem"
+            style:line-height="{(settingsStore.state.lineHeight ?? 1.25) * (settingsStore.state.zoomsize / 100)}rem"
         >
             {#key `${totalLengthPointer}|${chatReloadPointer}`}
                 <ChatBody
@@ -497,13 +498,13 @@
                     {renderRawStreaming}
                     {rawStreamingText} />
             {/key}
-            {#if idx >= 0 && !editMode && !isOptimizedStreamingMessage && partialEditEnabled && (DBState.db.enableBlockPartialEdit || DBState.db.enableDragPartialEdit)}
+            {#if idx >= 0 && !editMode && !isOptimizedStreamingMessage && partialEditEnabled && (settingsStore.state.enableBlockPartialEdit || settingsStore.state.enableDragPartialEdit)}
                 <PartialEditController
                     messageData={message}
                     chatIndex={idx}
                     {bodyRoot}
-                    blockEditEnabled={DBState.db.enableBlockPartialEdit}
-                    dragEditEnabled={DBState.db.enableDragPartialEdit}
+                    blockEditEnabled={settingsStore.state.enableBlockPartialEdit}
+                    dragEditEnabled={settingsStore.state.enableDragPartialEdit}
                     on:save={handlePartialEditSave}
                 />
             {/if}
@@ -529,13 +530,13 @@
                 {@render translationButton()}
                 {#if window.innerWidth >= 640}
                     {@render majorIconButtonsBody(false)}
-                    {#if DBState.db.characters[selIdState.selId]}
+                    {#if characterStore.characters[selIdState.selId]}
                         <PopupButton>
                             {@render minorIconButtonsBody(true)}
                         </PopupButton>
                     {/if}
                 {:else}
-                    {#if DBState.db.characters[selIdState.selId]}
+                    {#if characterStore.characters[selIdState.selId]}
                         <PopupButton>
                             {@render majorIconButtonsBody(true)}
                             {@render minorIconButtonsBody(true)}
@@ -553,7 +554,7 @@
 
 
 {#snippet majorIconButtonsBody(showNames:boolean)}
-    {#if DBState.db.useChatCopy && !blankMessage}
+    {#if settingsStore.state.useChatCopy && !blankMessage}
     <button class="flex items-center hover:text-blue-500 transition-colors button-icon-copy" onclick={async ()=>{
         const copyText = renderRawStreaming
             ? risuChatParser(rawStreamingText, {chara: name, chatID: idx, rmVar: true, visualize: true, cbsConditions: getCbsCondition()})
@@ -649,7 +650,7 @@
                 let hasValidImage = false
                 
                 try {
-                    const iconImage = (await getFileSrc(DBState.db.characters[selIdState.selId].image ?? '', { thumbnail: true })) ?? ''
+                    const iconImage = (await getFileSrc(characterStore.characters[selIdState.selId].image ?? '', { thumbnail: true })) ?? ''
                     
                     if(iconImage && (iconImage.startsWith('http://asset.localhost') || iconImage.startsWith('https://asset.localhost') || iconImage.startsWith('https://sv.risuai') || iconImage.startsWith('data:') || iconImage.startsWith('http') || iconImage.startsWith('/'))){
                         if(iconImage.startsWith('data:')){
@@ -787,7 +788,7 @@
     </button>    
 {/if}
 {#if idx > -1}
-    {#if DBState.db.characters[selIdState.selId].type !== 'group' && DBState.db.characters[selIdState.selId].ttsMode !== 'none' && (DBState.db.characters[selIdState.selId].ttsMode)}
+    {#if characterStore.characters[selIdState.selId].type !== 'group' && characterStore.characters[selIdState.selId].ttsMode !== 'none' && (characterStore.characters[selIdState.selId].ttsMode)}
         <button class="flex items-center hover:text-blue-500 transition-colors button-icon-tts" onclick={()=>{
             return sayTTS(null, isOptimizedStreamingMessage ? rawStreamingText : message)
         }}>
@@ -810,7 +811,7 @@
 {/snippet}
 
 {#snippet translationButton(showNames = false)}
-    {#if DBState.db.translator !== '' && !blankMessage && !isOptimizedStreamingMessage}
+    {#if settingsStore.state.translator !== '' && !blankMessage && !isOptimizedStreamingMessage}
         <button class={"flex items-center cursor-pointer hover:text-blue-500 transition-colors button-icon-translate " + (translated ? 'text-blue-400':'')} class:translating={translating} onclick={async () => {
             translated = !translated
         }}>
@@ -841,11 +842,11 @@
 
 {#snippet rerolls()}
     {#if rerollIcon || altGreeting}
-        {#if DBState.db.swipe || altGreeting}
+        {#if settingsStore.state.swipe || altGreeting}
             <button class="flex items-center hover:text-blue-500 transition-colors button-icon-unreroll" class:dyna-icon={rerollIcon === 'dynamic'} onclick={unReroll}>
                 <ArrowLeft size={22}/>
             </button>
-            {#if firstMessage && DBState.db.swipe && DBState.db.showFirstMessagePages}
+            {#if firstMessage && settingsStore.state.swipe && settingsStore.state.showFirstMessagePages}
                 <span class="flex items-center text-xs text-textcolor2">{currentPage}/{totalPages}</span>
             {/if}
             <button class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic'} onclick={onReroll}>
@@ -861,7 +862,7 @@
 
 {#snippet minorIconButtonsBody(showNames:boolean)}
     
-    {#if DBState.db.enableBookmark}
+    {#if settingsStore.state.enableBookmark}
         <button class="flex items-center hover:text-blue-500 transition-colors button-icon-bookmark {isBookmarked ? 'text-yellow-400' : ''}" onclick={async () => {
             await sleep(1)
             toggleBookmark()
@@ -877,12 +878,12 @@
         await sleep(1)
         const targetIndex = await ensureFullMessageIndex()
         if (targetIndex < 0) return
-        const currentChat = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
+        const currentChat = characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage]
         
-        if(DBState.db.createFolderOnBranch && !currentChat.folderId){
+        if(settingsStore.state.createFolderOnBranch && !currentChat.folderId){
             const folderId = v4()
-            DBState.db.characters[selIdState.selId].chatFolders ??= []
-            DBState.db.characters[selIdState.selId].chatFolders.unshift({
+            characterStore.characters[selIdState.selId].chatFolders ??= []
+            characterStore.characters[selIdState.selId].chatFolders.unshift({
                 id: folderId,
                 name: `Branches of ${currentChat.name}`,
                 folded: false,
@@ -903,7 +904,7 @@
             chatId: v4(),
         })
 
-        DBState.db.characters[selIdState.selId].chats.unshift(newChat)
+        characterStore.characters[selIdState.selId].chats.unshift(newChat)
         changeChatTo(0)
     }}>
         <SplitIcon size={20}/>
@@ -914,8 +915,8 @@
 
     <button class="flex items-center hover:text-blue-500 transition-colors" onclick={async () => {
         await sleep(1)
-        const currentMessage = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
-        DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].disabled = !currentMessage.disabled
+        const currentMessage = characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx]
+        characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].disabled = !currentMessage.disabled
     }}>
         <PowerOff size={20}/>
         {#if showNames}
@@ -925,8 +926,8 @@
 
     <button class="flex items-center hover:text-blue-500 transition-colors" onclick={async () => {
         await sleep(1)
-        const currentMessage = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
-        DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].disabled = currentMessage.disabled === 'allBefore' ? false : 'allBefore'
+        const currentMessage = characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx]
+        characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].disabled = currentMessage.disabled === 'allBefore' ? false : 'allBefore'
     }}>
         <Scissors size={20}/>
         {#if showNames}
@@ -937,8 +938,8 @@
 
 {#snippet senderIcon(options:{rounded?:boolean,styleFix?:string} = {})}
     {#if !blankMessage && !$HideIconStore}
-        {#if DBState.db.characters[selIdState.selId]?.chaId === "§playground"}
-        <div class="shadow-lg border-textcolor2 border flex justify-center items-center text-textcolor2" style={options?.styleFix ?? `height:${DBState.db.iconsize * 3.5 / 100}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`}
+        {#if characterStore.characters[selIdState.selId]?.chaId === "§playground"}
+        <div class="shadow-lg border-textcolor2 border flex justify-center items-center text-textcolor2" style={options?.styleFix ?? `height:${settingsStore.state.iconsize * 3.5 / 100}rem;width:${settingsStore.state.iconsize * 3.5 / 100}rem;min-width:${settingsStore.state.iconsize * 3.5 / 100}rem`}
             class:rounded-md={options?.rounded} class:rounded-full={options?.rounded}>
                 {#if name === 'assistant'}
                     <BotIcon />
@@ -948,14 +949,14 @@
             </div>
         {:else}
             {#await img}
-                <div class="shadow-lg bg-textcolor2" style={options?.styleFix ??`height:${DBState.db.iconsize * 3.5 / 100}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`}
+                <div class="shadow-lg bg-textcolor2" style={options?.styleFix ??`height:${settingsStore.state.iconsize * 3.5 / 100}rem;width:${settingsStore.state.iconsize * 3.5 / 100}rem;min-width:${settingsStore.state.iconsize * 3.5 / 100}rem`}
                 class:rounded-md={!options?.rounded} class:rounded-full={options?.rounded}></div>
             {:then m}
                 {#if largePortrait && (!options?.rounded)}
-                    <div class="shadow-lg bg-textcolor2" style={m + (options?.styleFix ?? `height:${DBState.db.iconsize * 3.5 / 100 / 0.75}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`)}
+                    <div class="shadow-lg bg-textcolor2" style={m + (options?.styleFix ?? `height:${settingsStore.state.iconsize * 3.5 / 100 / 0.75}rem;width:${settingsStore.state.iconsize * 3.5 / 100}rem;min-width:${settingsStore.state.iconsize * 3.5 / 100}rem`)}
                     class:rounded-md={!options?.rounded} class:rounded-full={options?.rounded}></div>
                 {:else}
-                    <div class="shadow-lg bg-textcolor2" style={m + (options?.styleFix ?? `height:${DBState.db.iconsize * 3.5 / 100}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`)}
+                    <div class="shadow-lg bg-textcolor2" style={m + (options?.styleFix ?? `height:${settingsStore.state.iconsize * 3.5 / 100}rem;width:${settingsStore.state.iconsize * 3.5 / 100}rem;min-width:${settingsStore.state.iconsize * 3.5 / 100}rem`)}
                     class:rounded-md={!options?.rounded} class:rounded-full={options?.rounded}></div>
                 {/if}
             {/await}
@@ -1039,7 +1040,7 @@
     {:else if dom.tagName === 'HR'}
         <hr class={dom.getAttribute('class') ?? ''} style={dom.getAttribute('style') ?? ''} />
     {:else if dom.tagName === 'BR'}
-        <br class={dom.getAttribute('class') ?? ''} style={dom.getAttribute('style') ?? ''} />
+        <br class={dom.getAttribute('class') ?? ''} style={dom.getAttribute('style') ?? ''}>
     {:else if dom.tagName === 'CODE'}
         <code class={dom.getAttribute('class') ?? ''} style={dom.getAttribute('style') ?? ''}>
             {@render renderChilds(dom)}
@@ -1109,11 +1110,11 @@
 {/if}
 <div class="flex max-w-full justify-center risu-chat items-center"
      data-chat-index={idx}
-     data-chat-id={DBState.db.characters?.[selIdState.selId]?.chats?.[DBState.db.characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.chatId ?? ''}
-     style:border-top={isLastMemory ? `${DBState.db.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7)` : ''}
+     data-chat-id={characterStore.characters?.[selIdState.selId]?.chats?.[characterStore.characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.chatId ?? ''}
+     style:border-top={isLastMemory ? `${settingsStore.state.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7)` : ''}
      onclickcapture={handleButtonTriggerWithin}>
     <div class="text-textcolor mt-1 ml-4 mr-4 mb-1 p-2 bg-transparent grow border-t-gray-900 border-opacity/30 border-transparent flexium items-start" style:max-width={getMaxWidth()}>
-        {#if DBState.db.theme === 'mobilechat' && !blankMessage}
+        {#if settingsStore.state.theme === 'mobilechat' && !blankMessage}
             <div class={role === 'user' ? "flex items-start w-full justify-end" : "flex items-start"}>
                 {#if role !== 'user'}
                     {@render senderIcon({rounded: true})}
@@ -1124,7 +1125,7 @@
                     class:rounded-tr-none={role === 'user'}
                 >
                     <p class="text-gray-800">{@render textBox()}</p>
-                    {#if DBState.db.characters?.[selIdState.selId]?.chats?.[DBState.db.characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.time}
+                    {#if characterStore.characters?.[selIdState.selId]?.chats?.[characterStore.characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.time}
                         <span class="text-xs text-textcolor2 mt-1 block">
                             {new Intl.DateTimeFormat(undefined, {
                                 hour: '2-digit',
@@ -1133,7 +1134,7 @@
                                 month: '2-digit',
                                 day: '2-digit',
                                 hour12: false
-                            }).format(DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].time)}
+                            }).format(characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].time)}
                         </span>
                     {/if}
                 </div>
@@ -1141,7 +1142,7 @@
                     {@render senderIcon({rounded: true})}
                 {/if}
             </div>
-        {:else if DBState.db.theme === 'cardboard' && !blankMessage}
+        {:else if settingsStore.state.theme === 'cardboard' && !blankMessage}
             <div class="w-full flex flex-col px-0 sm:px-4 py-4 relative">
                 <div class="bg-linear-to-b from-gray-100 to-gray-200 rounded-lg shadow-lg border-gray-400 border p-4 flex flex-col">
                     <div class="flex gap-4 mt-2 flex-col sm:flex-row">
@@ -1165,17 +1166,17 @@
                     {@render iconButtons({applyTextColors: false})}
                 </div>
             </div>
-        {:else if DBState.db.theme === 'customHTML' && !blankMessage}
-            {@render renderGuiHtmlPart(RenderGUIHtml(DBState.db.guiHTML))}
+        {:else if settingsStore.state.theme === 'customHTML' && !blankMessage}
+            {@render renderGuiHtmlPart(RenderGUIHtml(settingsStore.state.guiHTML))}
         {:else}
-            {@render senderIcon({rounded: DBState.db.roundIcons})}
+            {@render senderIcon({rounded: settingsStore.state.roundIcons})}
             <span class="flex flex-col ml-4 w-full max-w-full min-w-0 text-black">
                 <div class="flexium items-center chat-width">
-                    {#if DBState.db.characters[selIdState.selId]?.chaId === "§playground" && !blankMessage && DBState.db.characters[selIdState.selId]?.chats?.[DBState.db.characters[selIdState.selId]?.chatPage]?.message?.[idx]}
+                    {#if characterStore.characters[selIdState.selId]?.chaId === "§playground" && !blankMessage && characterStore.characters[selIdState.selId]?.chats?.[characterStore.characters[selIdState.selId]?.chatPage]?.message?.[idx]}
                         <span class="chat-width text-xl border-darkborderc flex items-center text-textcolor">
-                            <span>{DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'Assistant' : 'User'}</span>
+                            <span>{characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'Assistant' : 'User'}</span>
                             <button class="ml-2 text-textcolor2 hover:text-textcolor" onclick={() => {
-                                DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].role = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'user' : 'char'
+                                characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].role = characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'user' : 'char'
                                 ReloadChatPointer.update((v) => {
                                     v[idx] = (v[idx] ?? 0) + 1
                                     return v

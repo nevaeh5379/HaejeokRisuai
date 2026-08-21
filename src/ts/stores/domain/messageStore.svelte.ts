@@ -1,29 +1,33 @@
-import type { Message } from '../../storage/database.svelte'
+import type { Message, Chat } from '../../storage/database.svelte'
 import { getSqlStorage } from '../../storage/sqlStorageFactory'
-import { DBState, selectedCharID } from '../../stores.svelte'
-import { get } from 'svelte/store'
+import { characterStore } from './characterStore.svelte'
+import { v4 as uuidv4 } from 'uuid'
+import { sqlMessageData } from '../../storage/sqlCommit'
+
+function findChatAcrossCharacters(chatId: string): Chat | undefined {
+    for (const char of characterStore.characters) {
+        const chat = char.chats?.find((c) => c.id === chatId)
+        if (chat) return chat
+    }
+    return characterStore.currentChat?.id === chatId ? characterStore.currentChat : undefined
+}
 
 class MessageStore {
     get currentMessages(): Message[] {
-        const charId = get(selectedCharID)
-        const char = DBState.db?.characters?.[charId]
-        if (!char) return []
-        const chat = char.chats?.[char.chatPage]
-        return chat?.message ?? []
+        return characterStore.currentChat?.message ?? []
     }
 
     async appendMessage(chatId: string, message: Message): Promise<void> {
-        const charId = get(selectedCharID)
-        const char = DBState.db?.characters?.[charId]
-        const chat = char?.chats?.[char.chatPage]
-        if (chat && chat.id === chatId) {
+        message.chatId ||= uuidv4()
+        const chat = findChatAcrossCharacters(chatId)
+        if (chat) {
             chat.message ??= []
             chat.message.push(message)
         }
         try {
             const storage = await getSqlStorage()
             const messages = chat?.message ?? [message]
-            const position = messages.length - 1
+            const position = (chat?.messagesFullyLoaded === false ? (chat?.messageOffset ?? 0) : 0) + (chat?.message ? chat.message.length - 1 : 0)
             await storage.commit({
                 baseRevision: storage.getRevision(),
                 root: { upserts: [], deletes: [] },
@@ -31,14 +35,14 @@ class MessageStore {
                 chats: [],
                 chatManifests: [],
                 messages: [{
-                    id: message.chatId || `${chatId}_${position}`,
+                    id: message.chatId,
                     chatId,
                     position,
-                    data: message,
+                    data: sqlMessageData(message),
                 }],
                 messageManifests: [{
                     chatId,
-                    ids: messages.map((m, idx) => m.chatId || `${chatId}_${idx}`),
+                    ids: messages.map((m) => m.chatId!),
                 }],
             })
         } catch (error) {
@@ -47,15 +51,13 @@ class MessageStore {
     }
 
     async updateMessage(chatId: string, message: Message): Promise<void> {
-        const charId = get(selectedCharID)
-        const char = DBState.db?.characters?.[charId]
-        const chat = char?.chats?.[char.chatPage]
+        const chat = findChatAcrossCharacters(chatId)
         let position = 0
-        if (chat && chat.id === chatId && chat.message) {
+        if (chat && chat.message) {
             const index = chat.message.findIndex((m) => m.chatId === message.chatId)
             if (index >= 0) {
                 chat.message[index] = message
-                position = index
+                position = (chat.messagesFullyLoaded === false ? (chat.messageOffset ?? 0) : 0) + index
             }
         }
         try {
@@ -67,10 +69,10 @@ class MessageStore {
                 chats: [],
                 chatManifests: [],
                 messages: [{
-                    id: message.chatId || `${chatId}_${position}`,
+                    id: message.chatId!,
                     chatId,
                     position,
-                    data: message,
+                    data: sqlMessageData(message),
                 }],
                 messageManifests: [],
             })
@@ -80,10 +82,8 @@ class MessageStore {
     }
 
     async deleteMessage(chatId: string, messageId: string): Promise<void> {
-        const charId = get(selectedCharID)
-        const char = DBState.db?.characters?.[charId]
-        const chat = char?.chats?.[char.chatPage]
-        if (chat && chat.id === chatId && chat.message) {
+        const chat = findChatAcrossCharacters(chatId)
+        if (chat && chat.message) {
             chat.message = chat.message.filter((m) => m.chatId !== messageId)
         }
         try {
@@ -98,12 +98,20 @@ class MessageStore {
                 messages: [],
                 messageManifests: [{
                     chatId,
-                    ids: messages.map((m, idx) => m.chatId || `${chatId}_${idx}`),
+                    ids: messages.map((m) => m.chatId!),
                 }],
             })
         } catch (error) {
             console.error('[MessageStore] Failed to commit deleteMessage:', error)
         }
+    }
+
+    async finalizeStreaming(chatId: string, message: Message): Promise<void> {
+        await this.appendMessage(chatId, message)
+    }
+
+    async loadOlderMessages(chatId: string, limit?: number): Promise<number> {
+        return characterStore.loadOlderChatMessages(chatId, limit)
     }
 }
 

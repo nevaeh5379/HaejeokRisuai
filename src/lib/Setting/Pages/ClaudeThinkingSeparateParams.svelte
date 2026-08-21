@@ -1,6 +1,6 @@
 <script lang="ts">
     import { language } from 'src/lang';
-    import { DBState } from 'src/ts/stores.svelte';
+    import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { getModelInfo } from 'src/ts/model/modellist';
     import { LLMFlags } from 'src/ts/model/types';
     import SliderInput from 'src/lib/UI/GUI/SliderInput.svelte';
@@ -8,7 +8,7 @@
     import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte';
     import type { SeparateParameters } from 'src/ts/storage/database.svelte';
 
-    type AuxModelKey = keyof typeof DBState.db.seperateModels
+    type AuxModelKey = keyof typeof settingsStore.state.seperateModels
 
     let {
         value = $bindable(),
@@ -21,12 +21,12 @@
     const auxModelKeys: AuxModelKey[] = ['memory', 'emotion', 'translate', 'otherAx']
 
     let effectiveModel = $derived.by(() => {
-        if (!paramKey) return DBState.db.subModel
+        if (!paramKey) return settingsStore.state.subModel
         if (auxModelKeys.includes(paramKey as AuxModelKey)) {
-            if (DBState.db.seperateModelsForAxModels) {
-                return DBState.db.seperateModels[paramKey as AuxModelKey] || DBState.db.subModel
+            if (settingsStore.state.seperateModelsForAxModels) {
+                return settingsStore.state.seperateModels[paramKey as AuxModelKey] || settingsStore.state.subModel
             }
-            return DBState.db.subModel
+            return settingsStore.state.subModel
         }
         return paramKey
     })

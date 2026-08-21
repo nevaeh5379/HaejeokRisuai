@@ -5,7 +5,7 @@
     import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";
     import { alertConfirm, alertError, alertInput, alertNormal } from "src/ts/alert";
     import { downloadFile } from "src/ts/globalApi.svelte";
-    import { DBState } from "src/ts/stores.svelte";
+    import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
     import {
         createTranslatorPreset,
         decodeTranslatorPresetFile,
@@ -20,23 +20,23 @@
     import { language } from "src/lang";
 
     function normalizeTranslatorPresets() {
-        normalizeTranslatorPresetState(DBState.db);
+        normalizeTranslatorPresetState(settingsStore.state);
     }
 
     function syncCurrentTranslatorPreset() {
-        syncCurrentTranslatorPresetToLegacyFields(DBState.db);
+        syncCurrentTranslatorPresetToLegacyFields(settingsStore.state);
     }
 </script>
 
 <span class="text-textcolor mt-4">Preset</span>
 <select
     class={"border border-darkborderc focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200 text-md px-4 py-2 mb-1"}
-    bind:value={() => DBState.db.translatorPresetId, (value) => {
-        DBState.db.translatorPresetId = Number(value);
+    bind:value={() => settingsStore.state.translatorPresetId, (value) => {
+        settingsStore.state.translatorPresetId = Number(value);
         syncCurrentTranslatorPreset();
     }}
 >
-    {#each DBState.db.translatorPresets as preset, i}
+    {#each settingsStore.state.translatorPresets as preset, i}
         <option class="bg-darkbg appearance-none" value={i}>{preset.name}</option>
     {/each}
 </select>
@@ -46,10 +46,10 @@
         class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
         onclick={() => {
             const newPreset = createTranslatorPreset();
-            const presets = DBState.db.translatorPresets;
+            const presets = settingsStore.state.translatorPresets;
             presets.push(newPreset);
-            DBState.db.translatorPresets = presets;
-            DBState.db.translatorPresetId = DBState.db.translatorPresets.length - 1;
+            settingsStore.state.translatorPresets = presets;
+            settingsStore.state.translatorPresetId = settingsStore.state.translatorPresets.length - 1;
             normalizeTranslatorPresets();
         }}
     >
@@ -59,21 +59,21 @@
     <button
         class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
         onclick={async () => {
-            const presets = DBState.db.translatorPresets;
+            const presets = settingsStore.state.translatorPresets;
 
             if (presets.length === 0) {
                 alertError("There must be at least one preset.");
                 return;
             }
 
-            const id = DBState.db.translatorPresetId;
+            const id = settingsStore.state.translatorPresetId;
             const preset = presets[id];
             const newName = await alertInput(`Enter new name for ${preset.name}`, [], preset.name);
 
             if (!newName || newName.trim().length === 0) return;
 
             preset.name = newName;
-            DBState.db.translatorPresets = presets;
+            settingsStore.state.translatorPresets = presets;
             syncCurrentTranslatorPreset();
         }}
     >
@@ -83,22 +83,22 @@
     <button
         class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
         onclick={async () => {
-            const presets = DBState.db.translatorPresets;
+            const presets = settingsStore.state.translatorPresets;
 
             if (presets.length <= 1) {
                 alertError("There must be at least one preset.");
                 return;
             }
 
-            const id = DBState.db.translatorPresetId;
+            const id = settingsStore.state.translatorPresetId;
             const preset = presets[id];
             const confirmed = await alertConfirm(`${language.removeConfirm}${preset.name}`);
 
             if (!confirmed) return;
 
-            DBState.db.translatorPresetId = 0;
+            settingsStore.state.translatorPresetId = 0;
             presets.splice(id, 1);
-            DBState.db.translatorPresets = presets;
+            settingsStore.state.translatorPresets = presets;
             normalizeTranslatorPresets();
         }}
     >
@@ -111,14 +111,14 @@
         class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
         onclick={async () => {
             try {
-                const presets = DBState.db.translatorPresets;
+                const presets = settingsStore.state.translatorPresets;
 
                 if (presets.length === 0) {
                     alertError("There must be at least one preset.");
                     return;
                 }
 
-                const preset = presets[DBState.db.translatorPresetId];
+                const preset = presets[settingsStore.state.translatorPresetId];
                 await downloadFile(
                     getTranslatorPresetDownloadName(preset.name),
                     await encodeTranslatorPresetFile(preset)
@@ -141,11 +141,11 @@
                 if (!selectedFile) return;
 
                 const newPreset = await decodeTranslatorPresetFile(selectedFile.data);
-                const presets = DBState.db.translatorPresets;
+                const presets = settingsStore.state.translatorPresets;
 
                 presets.push(newPreset);
-                DBState.db.translatorPresets = presets;
-                DBState.db.translatorPresetId = DBState.db.translatorPresets.length - 1;
+                settingsStore.state.translatorPresets = presets;
+                settingsStore.state.translatorPresetId = settingsStore.state.translatorPresets.length - 1;
                 normalizeTranslatorPresets();
 
                 alertNormal(language.successImport);
@@ -158,8 +158,8 @@
     </button>
 </div>
 
-{#if DBState.db.translatorPresets?.[DBState.db.translatorPresetId]}
-    {@const preset = DBState.db.translatorPresets[DBState.db.translatorPresetId]}
+{#if settingsStore.state.translatorPresets?.[settingsStore.state.translatorPresetId]}
+    {@const preset = settingsStore.state.translatorPresets[settingsStore.state.translatorPresetId]}
     <span class="text-textcolor mt-4">{language.translationResponseSize}</span>
     <NumberInput
         min={0}

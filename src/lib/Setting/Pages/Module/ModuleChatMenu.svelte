@@ -5,9 +5,11 @@
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import type { RisuModule } from "src/ts/process/modules";
     
-    import { DBState, ReloadGUIPointer } from 'src/ts/stores.svelte';
+    import { ReloadGUIPointer } from 'src/ts/stores.svelte';
     import { selectedCharID } from "src/ts/stores.svelte";
     import { SettingsMenuIndex, settingsOpen } from "src/ts/stores.svelte";
+    import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+    import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 
     interface Props {
         close?: any;
@@ -18,7 +20,6 @@
     let moduleSearch = $state('')
 
     function sortModules(modules:RisuModule[], search:string){
-        const db = DBState.db
         return modules.filter((v) => {
             if(search === '') return true
             return v.name.toLowerCase().includes(search.toLowerCase())
@@ -50,10 +51,10 @@
         <TextInput className="mt-4" placeholder={language.search} bind:value={moduleSearch} />
 
         <div class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md">
-            {#if DBState.db.modules.length === 0}
+            {#if settingsStore.state.modules.length === 0}
                 <div class="text-textcolor2 p-3">{language.noModules}</div>
             {:else}
-                {#each sortModules(DBState.db.modules, moduleSearch) as rmodule, i}
+                {#each sortModules(settingsStore.state.modules, moduleSearch) as rmodule, i}
                     {#if i !== 0}
                         <div class="border-t-1 border-selected"></div>
                     {/if}
@@ -61,7 +62,7 @@
                         {#if rmodule.mcp}
                             <Waypoints size={18} class="mr-2" />
                         {/if}
-                        {#if !alertMode && DBState.db.enabledModules.includes(rmodule.id)}
+                        {#if !alertMode && settingsStore.state.enabledModules.includes(rmodule.id)}
                             <span class="text-textcolor2">{rmodule.name}</span>
                         {:else}
                             <span class="">{rmodule.name}</span>
@@ -76,38 +77,38 @@
                                 }}>
                                     <CircleCheckIcon size={18}/>
                                 </button>
-                            {:else if DBState.db.enabledModules.includes(rmodule.id)}
+                            {:else if settingsStore.state.enabledModules.includes(rmodule.id)}
                                 <button class="mr-2 text-textcolor2 cursor-not-allowed"aria-labelledby="disabled">
                                 </button>
                             {:else}
-                                <button class={(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules.includes(rmodule.id)) ?
+                                <button class={(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules.includes(rmodule.id)) ?
                                         "mr-2 cursor-pointer text-blue-500" :
-                                        (DBState.db.characters[$selectedCharID]?.modules?.includes(rmodule.id)) ?
+                                        (characterStore.characters[$selectedCharID]?.modules?.includes(rmodule.id)) ?
                                         "mr-2 cursor-pointer text-violet-500" :
                                         "text-textcolor2 hover:text-blue-400 mr-2 cursor-pointer"
                                 } onclick={async (e) => {
                                     e.stopPropagation()
-                                    if(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules.includes(rmodule.id)){
-                                        DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules.splice(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules.indexOf(rmodule.id), 1)
+                                    if(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules.includes(rmodule.id)){
+                                        characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules.splice(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules.indexOf(rmodule.id), 1)
 
                                     }
                                     else{
-                                        DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules.push(rmodule.id)
+                                        characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules.push(rmodule.id)
                                     }
-                                    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules
+                                    characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules
                                     $ReloadGUIPointer += 1
                                 }}
                                 oncontextmenu={(e) => {
                                     e.preventDefault()
                                     e.stopPropagation()
-                                    if(!DBState.db.characters[$selectedCharID].modules){
-                                        DBState.db.characters[$selectedCharID].modules = []
+                                    if(!characterStore.characters[$selectedCharID].modules){
+                                        characterStore.characters[$selectedCharID].modules = []
                                     }
-                                    if(DBState.db.characters[$selectedCharID].modules.includes(rmodule.id)){
-                                        DBState.db.characters[$selectedCharID].modules.splice(DBState.db.characters[$selectedCharID].modules.indexOf(rmodule.id), 1)
+                                    if(characterStore.characters[$selectedCharID].modules.includes(rmodule.id)){
+                                        characterStore.characters[$selectedCharID].modules.splice(characterStore.characters[$selectedCharID].modules.indexOf(rmodule.id), 1)
                                     }
                                     else{
-                                        DBState.db.characters[$selectedCharID].modules.push(rmodule.id)
+                                        characterStore.characters[$selectedCharID].modules.push(rmodule.id)
                                     }
                                     $ReloadGUIPointer += 1
                                 }}>

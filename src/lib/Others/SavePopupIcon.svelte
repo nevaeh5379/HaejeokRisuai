@@ -1,11 +1,12 @@
 <script lang="ts">
   import { OctagonAlert, SaveIcon } from "@lucide/svelte";
   import { alertMd } from "src/ts/alert";
-  import { AccountWarning, DBState, saving } from "src/ts/stores.svelte";
+  import { AccountWarning, saving } from "src/ts/stores.svelte";
+  import { settingsStore } from "src/ts/stores/domain";
 
 </script>
 
-{#if DBState?.db?.showSavingIcon && saving.state}
+{#if settingsStore.state?.showSavingIcon && saving.state}
   <div
     class="absolute top-3 right-3 z-10 text-white p-2 rounded-sm bg-linear-to-br from-blue-500 to-purple-800 saving-animation pointer-events-none opacity-15"
   >

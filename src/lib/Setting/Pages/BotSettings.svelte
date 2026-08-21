@@ -4,7 +4,7 @@
     import { language } from "src/lang";
     import Help from "src/lib/Others/Help.svelte";
     
-    import { DBState } from 'src/ts/stores.svelte';
+    import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
     import { customProviderStore } from "src/ts/plugins/plugins.svelte";
     import { downloadFile } from "src/ts/globalApi.svelte";
     import { isTauri } from "src/ts/platform"
@@ -51,32 +51,32 @@
     // Reset model selection and display name when subscription mode toggles
     let _nanogptSubModeInitialized = false
     $effect(() => {
-        const _sub = DBState.db.nanogptUseSubscriptionEndpoint
+        const _sub = settingsStore.state.nanogptUseSubscriptionEndpoint
         if (!_nanogptSubModeInitialized) { _nanogptSubModeInitialized = true; return }
-        DBState.db.nanogptRequestModel = ''
-        DBState.db.nanogptRequestModelName = ''
+        settingsStore.state.nanogptRequestModel = ''
+        settingsStore.state.nanogptRequestModelName = ''
     })
 
     // Reset provider selection to Auto when the model or subscription mode changes
     let _nanogptProviderResetInitialized = false
     $effect(() => {
-        const _model = DBState.db.nanogptRequestModel
-        const _sub   = DBState.db.nanogptUseSubscriptionEndpoint
+        const _model = settingsStore.state.nanogptRequestModel
+        const _sub   = settingsStore.state.nanogptUseSubscriptionEndpoint
         if (!_nanogptProviderResetInitialized) { _nanogptProviderResetInitialized = true; return }
-        DBState.db.nanogptProvider = ''
+        settingsStore.state.nanogptProvider = ''
     })
 
     // Reset subscription mode (and related state) when API key is cleared
     let _nanogptKeyInitialized = false
     $effect(() => {
-        const _key = DBState.db.nanogptKey
+        const _key = settingsStore.state.nanogptKey
         if (!_nanogptKeyInitialized) { _nanogptKeyInitialized = true; return }
         if (!_key) {
-            DBState.db.nanogptUseSubscriptionEndpoint = false
-            DBState.db.nanogptSubscriptionState = ''
-            DBState.db.nanogptRequestModel = ''
-            DBState.db.nanogptRequestModelName = ''
-            DBState.db.nanogptProvider = ''
+            settingsStore.state.nanogptUseSubscriptionEndpoint = false
+            settingsStore.state.nanogptSubscriptionState = ''
+            settingsStore.state.nanogptRequestModel = ''
+            settingsStore.state.nanogptRequestModelName = ''
+            settingsStore.state.nanogptProvider = ''
         }
     })
 
@@ -93,40 +93,40 @@
     let { goPromptTemplate = () => {} }: Props = $props();
 
     async function loadTokenize(){
-        tokens.mainPrompt = await tokenizeAccurate(DBState.db.mainPrompt, true)
-        tokens.jailbreak = await tokenizeAccurate(DBState.db.jailbreak, true)
-        tokens.globalNote = await tokenizeAccurate(DBState.db.globalNote, true)
+        tokens.mainPrompt = await tokenizeAccurate(settingsStore.state.mainPrompt, true)
+        tokens.jailbreak = await tokenizeAccurate(settingsStore.state.jailbreak, true)
+        tokens.globalNote = await tokenizeAccurate(settingsStore.state.globalNote, true)
     }
 
     $effect.pre(() => {
-        if(DBState.db.aiModel === 'textgen_webui' || DBState.db.subModel === 'mancer'){
-            DBState.db.useStreaming = DBState.db.textgenWebUIStreamURL.startsWith("wss://")
+        if(settingsStore.state.aiModel === 'textgen_webui' || settingsStore.state.subModel === 'mancer'){
+            settingsStore.state.useStreaming = settingsStore.state.textgenWebUIStreamURL.startsWith("wss://")
         }
     });
 
     function clearVertexToken() {
-        DBState.db.vertexAccessToken = '';
-        DBState.db.vertexAccessTokenExpires = 0;
+        settingsStore.state.vertexAccessToken = '';
+        settingsStore.state.vertexAccessTokenExpires = 0;
         console.log('Vertex AI token cleared');
     }
 
 
-    let submenu = $state(DBState.db.useLegacyGUI ? -1 : 0)
-    let modelInfo = $derived(getModelInfo(DBState.db.aiModel))
-    let subModelInfo = $derived(getModelInfo(DBState.db.subModel))
-    let nanogptInputMode = $state<'list' | 'manual'>(DBState.db.nanogptRequestModel && !DBState.db.nanogptRequestModelName ? 'manual' : 'list')
+    let submenu = $state(settingsStore.state.useLegacyGUI ? -1 : 0)
+    let modelInfo = $derived(getModelInfo(settingsStore.state.aiModel))
+    let subModelInfo = $derived(getModelInfo(settingsStore.state.subModel))
+    let nanogptInputMode = $state<'list' | 'manual'>(settingsStore.state.nanogptRequestModel && !settingsStore.state.nanogptRequestModelName ? 'manual' : 'list')
     // svelte-ignore state_referenced_locally
     let prevNanogptInputMode = nanogptInputMode;
     $effect(() => {
         if (nanogptInputMode !== prevNanogptInputMode) {
-            DBState.db.nanogptRequestModel = '';
-            DBState.db.nanogptRequestModelName = '';
+            settingsStore.state.nanogptRequestModel = '';
+            settingsStore.state.nanogptRequestModelName = '';
             prevNanogptInputMode = nanogptInputMode;
         }
     });
 
-    let usesOllamaLocal = $derived(DBState.db.aiModel === 'ollama-hosted' || DBState.db.subModel === 'ollama-hosted')
-    let usesOllamaCloud = $derived(DBState.db.aiModel === 'ollama-cloud' || DBState.db.subModel === 'ollama-cloud')
+    let usesOllamaLocal = $derived(settingsStore.state.aiModel === 'ollama-hosted' || settingsStore.state.subModel === 'ollama-hosted')
+    let usesOllamaCloud = $derived(settingsStore.state.aiModel === 'ollama-cloud' || settingsStore.state.subModel === 'ollama-cloud')
 </script>
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.chatBot}</h2>
 
@@ -157,25 +157,25 @@
 
 {#if submenu === 0 || submenu === -1}
     <span class="text-textcolor mt-4">{language.model} <Help key="model"/></span>
-    <ModelList bind:value={DBState.db.aiModel}/>
+    <ModelList bind:value={settingsStore.state.aiModel}/>
 
     <span class="text-textcolor mt-2">{language.submodel} <Help key="submodel"/></span>
-    <ModelList bind:value={DBState.db.subModel}/>
+    <ModelList bind:value={settingsStore.state.subModel}/>
 
     {#if modelInfo.provider === LLMProvider.GoogleCloud || subModelInfo.provider === LLMProvider.GoogleCloud}
         <span class="text-textcolor">GoogleAI API Key</span>
-        <TextInput marginBottom={true} size={"sm"} placeholder="..." hideText={DBState.db.hideApiKey} bind:value={DBState.db.google.accessToken}/>
+        <TextInput marginBottom={true} size={"sm"} placeholder="..." hideText={settingsStore.state.hideApiKey} bind:value={settingsStore.state.google.accessToken}/>
     {/if}
     {#if modelInfo.provider === LLMProvider.VertexAI || subModelInfo.provider === LLMProvider.VertexAI}
         <span class="text-textcolor">Project ID</span>
-        <TextInput marginBottom={true} size={"sm"} placeholder="..." bind:value={DBState.db.google.projectId} oninput={clearVertexToken}/>
+        <TextInput marginBottom={true} size={"sm"} placeholder="..." bind:value={settingsStore.state.google.projectId} oninput={clearVertexToken}/>
         <span class="text-textcolor">Vertex Client Email</span>
-        <TextInput marginBottom={true} size={"sm"} placeholder="..." bind:value={DBState.db.vertexClientEmail} oninput={clearVertexToken}/>
+        <TextInput marginBottom={true} size={"sm"} placeholder="..." bind:value={settingsStore.state.vertexClientEmail} oninput={clearVertexToken}/>
         <span class="text-textcolor">Vertex Private Key</span>
-        <TextInput marginBottom={true} size={"sm"} placeholder="..." hideText={DBState.db.hideApiKey} bind:value={DBState.db.vertexPrivateKey} oninput={clearVertexToken}/>
+        <TextInput marginBottom={true} size={"sm"} placeholder="..." hideText={settingsStore.state.hideApiKey} bind:value={settingsStore.state.vertexPrivateKey} oninput={clearVertexToken}/>
         <span class="text-textcolor">Region</span>
-        <SelectInput value={DBState.db.vertexRegion} onchange={(e) => {
-            DBState.db.vertexRegion = e.currentTarget.value
+        <SelectInput value={settingsStore.state.vertexRegion} onchange={(e) => {
+            settingsStore.state.vertexRegion = e.currentTarget.value
             clearVertexToken()
         }}>
             <OptionInput value={'global'}>
@@ -191,35 +191,35 @@
     {/if}
     {#if modelInfo.provider === LLMProvider.NovelList || subModelInfo.provider === LLMProvider.NovelList}
         <span class="text-textcolor">NovelList {language.apiKey}</span>
-        <TextInput hideText={DBState.db.hideApiKey} marginBottom={true} size={"sm"} placeholder="..." bind:value={DBState.db.novellistAPI}/>
+        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={true} size={"sm"} placeholder="..." bind:value={settingsStore.state.novellistAPI}/>
     {/if}
-    {#if DBState.db.aiModel.startsWith('mancer') || DBState.db.subModel.startsWith('mancer')}
+    {#if settingsStore.state.aiModel.startsWith('mancer') || settingsStore.state.subModel.startsWith('mancer')}
         <span class="text-textcolor">Mancer {language.apiKey}</span>
-        <TextInput hideText={DBState.db.hideApiKey} marginBottom={true} size={"sm"} placeholder="..." bind:value={DBState.db.mancerHeader}/>
+        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={true} size={"sm"} placeholder="..." bind:value={settingsStore.state.mancerHeader}/>
     {/if}
     {#if modelInfo.provider === LLMProvider.Anthropic || subModelInfo.provider === LLMProvider.Anthropic
             || modelInfo.provider === LLMProvider.AWS || subModelInfo.provider === LLMProvider.AWS }
         <span class="text-textcolor">Claude {language.apiKey}</span>
-        <TextInput hideText={DBState.db.hideApiKey} marginBottom={true} size={"sm"} placeholder="..." bind:value={DBState.db.claudeAPIKey}/>
+        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={true} size={"sm"} placeholder="..." bind:value={settingsStore.state.claudeAPIKey}/>
     {/if}
     {#if modelInfo.provider === LLMProvider.Mistral || subModelInfo.provider === LLMProvider.Mistral}
         <span class="text-textcolor">Mistral {language.apiKey}</span>
-        <TextInput hideText={DBState.db.hideApiKey} marginBottom={true} size={"sm"} placeholder="..." bind:value={DBState.db.mistralKey}/>
+        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={true} size={"sm"} placeholder="..." bind:value={settingsStore.state.mistralKey}/>
     {/if}
     {#if modelInfo.provider === LLMProvider.NovelAI || subModelInfo.provider === LLMProvider.NovelAI}
         <span class="text-textcolor">NovelAI Bearer Token</span>
-        <TextInput bind:value={DBState.db.novelai.token}/>
+        <TextInput bind:value={settingsStore.state.novelai.token}/>
     {/if}
-    {#if DBState.db.aiModel === 'reverse_proxy' || DBState.db.subModel === 'reverse_proxy'}
+    {#if settingsStore.state.aiModel === 'reverse_proxy' || settingsStore.state.subModel === 'reverse_proxy'}
         <span class="text-textcolor mt-2">URL <Help key="forceUrl"/></span>
-        <TextInput marginBottom={false} size={"sm"} bind:value={DBState.db.forceReplaceUrl} placeholder="https//..." />
+        <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.forceReplaceUrl} placeholder="https//..." />
         <span class="text-textcolor mt-4"> {language.proxyAPIKey}</span>
-        <TextInput hideText={DBState.db.hideApiKey} marginBottom={false} size={"sm"} placeholder="leave it blank if it hasn't password" bind:value={DBState.db.proxyKey} />
+        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} placeholder="leave it blank if it hasn't password" bind:value={settingsStore.state.proxyKey} />
         <span class="text-textcolor mt-4"> {language.proxyRequestModel}</span>
-        <TextInput marginBottom={false} size={"sm"} bind:value={DBState.db.customProxyRequestModel} placeholder="Name" />
+        <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.customProxyRequestModel} placeholder="Name" />
         <span class="text-textcolor mt-4"> {language.format}</span>
-        <SelectInput value={DBState.db.customAPIFormat.toString()} onchange={(e) => {
-            DBState.db.customAPIFormat = parseInt(e.currentTarget.value) as LLMFormat
+        <SelectInput value={settingsStore.state.customAPIFormat.toString()} onchange={(e) => {
+            settingsStore.state.customAPIFormat = parseInt(e.currentTarget.value) as LLMFormat
         }}>
             <OptionInput value={LLMFormat.OpenAICompatible.toString()}>
                 OpenAI Compatible
@@ -243,18 +243,18 @@
     {/if}
     {#if modelInfo.provider === LLMProvider.Cohere || subModelInfo.provider === LLMProvider.Cohere}
         <span class="text-textcolor mt-4">Cohere {language.apiKey}</span>
-        <TextInput hideText={DBState.db.hideApiKey} marginBottom={false} size={"sm"} bind:value={DBState.db.cohereAPIKey} />
+        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.cohereAPIKey} />
     {/if}
     {#if usesOllamaLocal || usesOllamaCloud}
         {#if usesOllamaLocal}
         <span class="text-textcolor mt-4">Ollama URL</span>
-        <TextInput marginBottom={false} size={"sm"} bind:value={DBState.db.ollamaURL} />
+        <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaURL} />
         {/if}
 
         {#if usesOllamaCloud}
         <span class="text-textcolor mt-4">Ollama {language.model}</span>
         <SegmentedControl
-            bind:value={DBState.db.ollamaInputMode}
+            bind:value={settingsStore.state.ollamaInputMode}
             options={[
                 { value: 'list', label: (language as any).nanoGPTSelectFromList || 'Select from List' },
                 { value: 'manual', label: (language as any).nanoGPTManualInput || 'Manual Input' }
@@ -262,30 +262,30 @@
             size="md"
         />
 
-        {#if DBState.db.ollamaInputMode === 'manual'}
-            <TextInput marginBottom={false} size={"sm"} bind:value={DBState.db.ollamaCloudModel} placeholder="Model" oninput={() => DBState.db.ollamaCloudModelName = ''} />
+        {#if settingsStore.state.ollamaInputMode === 'manual'}
+            <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaCloudModel} placeholder="Model" oninput={() => settingsStore.state.ollamaCloudModelName = ''} />
         {:else}
-            {#await getOllamaModels(DBState.db.ollamaURL, 'cloud', DBState.db.ollamaApiKey)}
-                <ModelGrid bind:value={DBState.db.ollamaCloudModel} loading={true} />
+            {#await getOllamaModels(settingsStore.state.ollamaURL, 'cloud', settingsStore.state.ollamaApiKey)}
+                <ModelGrid bind:value={settingsStore.state.ollamaCloudModel} loading={true} />
             {:then cloudModels}
                 <ModelGrid
-                    bind:value={DBState.db.ollamaCloudModel}
+                    bind:value={settingsStore.state.ollamaCloudModel}
                     items={cloudModels ?? []}
-                    selectedLabelOverride={DBState.db.ollamaCloudModel ? `Cloud / ${DBState.db.ollamaCloudModelName || DBState.db.ollamaCloudModel}` : undefined}
+                    selectedLabelOverride={settingsStore.state.ollamaCloudModel ? `Cloud / ${settingsStore.state.ollamaCloudModelName || settingsStore.state.ollamaCloudModel}` : undefined}
                     onselect={(_id, name) => {
-                        DBState.db.ollamaModelSource = 'cloud'
-                        DBState.db.ollamaCloudModelName = name
+                        settingsStore.state.ollamaModelSource = 'cloud'
+                        settingsStore.state.ollamaCloudModelName = name
                     }}
                 />
             {/await}
         {/if}
 
             <span class="text-textcolor mt-4">Ollama {language.apiKey}</span>
-            <TextInput hideText={DBState.db.hideApiKey} marginBottom={false} size={"sm"} bind:value={DBState.db.ollamaApiKey} />
+            <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaApiKey} />
 
             <span class="text-textcolor mt-4">Ollama {language.format}</span>
-            <SelectInput value={DBState.db.ollamaRequestFormat.toString()} onchange={(e) => {
-                DBState.db.ollamaRequestFormat = parseInt(e.currentTarget.value) as LLMFormat
+            <SelectInput value={settingsStore.state.ollamaRequestFormat.toString()} onchange={(e) => {
+                settingsStore.state.ollamaRequestFormat = parseInt(e.currentTarget.value) as LLMFormat
             }}>
                 <OptionInput value={LLMFormat.Ollama.toString()}>
                     Ollama SDK
@@ -302,18 +302,18 @@
             </SelectInput>
 
             <div class="mt-2">
-                <CheckInput bind:check={DBState.db.useStreaming} name={`Response ${language.streaming}`} />
+                <CheckInput bind:check={settingsStore.state.useStreaming} name={`Response ${language.streaming}`} />
             </div>
         {/if}
 
         {#if usesOllamaLocal}
         <span class="text-textcolor mt-4">Ollama Model</span>
-        <TextInput marginBottom={false} size={"sm"} bind:value={DBState.db.ollamaModel} placeholder="Model" oninput={() => { DBState.db.ollamaModelSource = 'local'; DBState.db.ollamaModelName = '' }} />
+        <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaModel} placeholder="Model" oninput={() => { settingsStore.state.ollamaModelSource = 'local'; settingsStore.state.ollamaModelName = '' }} />
         {/if}
 
-        {#if usesOllamaLocal || (usesOllamaCloud && DBState.db.ollamaRequestFormat === LLMFormat.Ollama)}
+        {#if usesOllamaLocal || (usesOllamaCloud && settingsStore.state.ollamaRequestFormat === LLMFormat.Ollama)}
         <span class="text-textcolor mt-4">Ollama Thinking</span>
-        <SelectInput bind:value={DBState.db.ollamaThinkingMode}>
+        <SelectInput bind:value={settingsStore.state.ollamaThinkingMode}>
             <OptionInput value="auto">
                 Auto
             </OptionInput>
@@ -335,15 +335,15 @@
         </SelectInput>
         {/if}
     {/if}
-    {#if DBState.db.aiModel === 'nanogpt' || DBState.db.subModel === 'nanogpt'}
+    {#if settingsStore.state.aiModel === 'nanogpt' || settingsStore.state.subModel === 'nanogpt'}
         <span class="text-textcolor mt-4">NanoGPT {language.apiKey}</span>
-        <TextInput hideText={DBState.db.hideApiKey} marginBottom={false} size={"sm"} bind:value={DBState.db.nanogptKey} />
+        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.nanogptKey} />
 
-        <NanoGPTDashboard apiKey={DBState.db.nanogptKey} />
+        <NanoGPTDashboard apiKey={settingsStore.state.nanogptKey} />
 
-        {#if DBState.db.nanogptSubscriptionState === 'active' || DBState.db.nanogptSubscriptionState === 'grace'}
+        {#if settingsStore.state.nanogptSubscriptionState === 'active' || settingsStore.state.nanogptSubscriptionState === 'grace'}
             <div class="flex items-center mt-3">
-                <CheckInput bind:check={DBState.db.nanogptUseSubscriptionEndpoint} name={language.nanoGPTUseSubscriptionEndpoint} />
+                <CheckInput bind:check={settingsStore.state.nanogptUseSubscriptionEndpoint} name={language.nanoGPTUseSubscriptionEndpoint} />
             </div>
         {/if}
 
@@ -358,42 +358,42 @@
         />
 
         {#if nanogptInputMode === 'manual'}
-            <TextInput marginBottom={false} size={"sm"} bind:value={DBState.db.nanogptRequestModel} placeholder={(language as any).nanoGPTManualModelSelect || "Manual Model Select"} oninput={() => DBState.db.nanogptRequestModelName = ''}/>
+            <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.nanogptRequestModel} placeholder={(language as any).nanoGPTManualModelSelect || "Manual Model Select"} oninput={() => settingsStore.state.nanogptRequestModelName = ''}/>
         {:else}
-            {#await Promise.all([getNanoGPTModels(), getNanoGPTSubscriptionModels(DBState.db.nanogptKey)])}
-                <ModelGrid bind:value={DBState.db.nanogptRequestModel} loading={true} />
+            {#await Promise.all([getNanoGPTModels(), getNanoGPTSubscriptionModels(settingsStore.state.nanogptKey)])}
+                <ModelGrid bind:value={settingsStore.state.nanogptRequestModel} loading={true} />
             {:then [regular, sub]}
                 <ModelGrid
-                    bind:value={DBState.db.nanogptRequestModel}
-                    items={DBState.db.nanogptUseSubscriptionEndpoint ? (sub ?? []).map(ngToGridItem) : (regular ?? []).map(ngToGridItem)}
-                    showSubBadge={DBState.db.nanogptUseSubscriptionEndpoint}
-                    selectedLabelOverride={DBState.db.nanogptRequestModel && !DBState.db.nanogptRequestModelName ? DBState.db.nanogptRequestModel : undefined}
-                    onselect={(_id, name) => { DBState.db.nanogptRequestModelName = name }}
+                    bind:value={settingsStore.state.nanogptRequestModel}
+                    items={settingsStore.state.nanogptUseSubscriptionEndpoint ? (sub ?? []).map(ngToGridItem) : (regular ?? []).map(ngToGridItem)}
+                    showSubBadge={settingsStore.state.nanogptUseSubscriptionEndpoint}
+                    selectedLabelOverride={settingsStore.state.nanogptRequestModel && !settingsStore.state.nanogptRequestModelName ? settingsStore.state.nanogptRequestModel : undefined}
+                    onselect={(_id, name) => { settingsStore.state.nanogptRequestModelName = name }}
                 />
-                {#if !DBState.db.nanogptUseSubscriptionEndpoint}
+                {#if !settingsStore.state.nanogptUseSubscriptionEndpoint}
                     <NanoGPTProviderPicker
-                        apiKey={DBState.db.nanogptKey}
-                        modelId={DBState.db.nanogptRequestModel}
-                        bind:value={DBState.db.nanogptProvider}
+                        apiKey={settingsStore.state.nanogptKey}
+                        modelId={settingsStore.state.nanogptRequestModel}
+                        bind:value={settingsStore.state.nanogptProvider}
                     />
                 {/if}
             {/await}
         {/if}
     {/if}
-    {#if DBState.db.aiModel === 'openrouter' || DBState.db.subModel === 'openrouter'}
+    {#if settingsStore.state.aiModel === 'openrouter' || settingsStore.state.subModel === 'openrouter'}
         <span class="text-textcolor mt-4">OpenRouter {language.apiKey}</span>
-        <TextInput hideText={DBState.db.hideApiKey} marginBottom={false} size={"sm"} bind:value={DBState.db.openrouterKey} />
+        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.openrouterKey} />
 
         <span class="text-textcolor mt-4">OpenRouter {language.model}</span>
         {#await getOpenRouterModels()}
-            <ModelGrid bind:value={DBState.db.openrouterRequestModel} pinnedItems={openrouterPinnedItems} loading={true} />
+            <ModelGrid bind:value={settingsStore.state.openrouterRequestModel} pinnedItems={openrouterPinnedItems} loading={true} />
         {:then m}
-            <ModelGrid bind:value={DBState.db.openrouterRequestModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
+            <ModelGrid bind:value={settingsStore.state.openrouterRequestModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
         {/await}
     {/if}
-    {#if DBState.db.aiModel === 'openrouter' || DBState.db.aiModel === 'reverse_proxy'}
+    {#if settingsStore.state.aiModel === 'openrouter' || settingsStore.state.aiModel === 'reverse_proxy'}
         <span class="text-textcolor">{language.tokenizer}</span>
-        <SelectInput bind:value={DBState.db.customTokenizer}>
+        <SelectInput bind:value={settingsStore.state.customTokenizer}>
             {#each tokenizerList as entry}
                 <OptionInput value={entry[0]}>{entry[1]}</OptionInput>
             {/each}
@@ -401,41 +401,41 @@
     {/if}
     {#if modelInfo.provider === LLMProvider.OpenAI || subModelInfo.provider === LLMProvider.OpenAI}
         <span class="text-textcolor">OpenAI {language.apiKey} <Help key="oaiapikey"/></span>
-        <TextInput hideText={DBState.db.hideApiKey} marginBottom={false} size={"sm"} bind:value={DBState.db.openAIKey} placeholder="sk-XXXXXXXXXXXXXXXXXXXX"/>
+        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.openAIKey} placeholder="sk-XXXXXXXXXXXXXXXXXXXX"/>
     {/if}
 
     {#if modelInfo.keyIdentifier}
         <span class="text-textcolor">{modelInfo.name} {language.apiKey}</span>
-        <TextInput hideText={DBState.db.hideApiKey} marginBottom={false} size={"sm"} bind:value={DBState.db.OaiCompAPIKeys[modelInfo.keyIdentifier]} placeholder="..."/>
+        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.OaiCompAPIKeys[modelInfo.keyIdentifier]} placeholder="..."/>
     {/if}
 
     {#if subModelInfo.keyIdentifier && subModelInfo.keyIdentifier !== modelInfo.keyIdentifier}
         <span class="text-textcolor">{subModelInfo.name} {language.apiKey}</span>
-        <TextInput hideText={DBState.db.hideApiKey} marginBottom={false} size={"sm"} bind:value={DBState.db.OaiCompAPIKeys[subModelInfo.keyIdentifier]} placeholder="..."/>
+        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.OaiCompAPIKeys[subModelInfo.keyIdentifier]} placeholder="..."/>
     {/if}
 
     <div class="py-2 flex flex-col gap-2 mb-4">
         {#if !usesOllamaCloud && (modelInfo.flags.includes(LLMFlags.hasStreaming) || subModelInfo.flags.includes(LLMFlags.hasStreaming))}
-            <Check bind:check={DBState.db.useStreaming} name={`Response ${language.streaming}`}/>
+            <Check bind:check={settingsStore.state.useStreaming} name={`Response ${language.streaming}`}/>
             
-            {#if DBState.db.useStreaming && (modelInfo.flags.includes(LLMFlags.geminiThinking) || subModelInfo.flags.includes(LLMFlags.geminiThinking))}
-                <Check bind:check={DBState.db.streamGeminiThoughts} name={`Stream Gemini Thoughts`}/>
+            {#if settingsStore.state.useStreaming && (modelInfo.flags.includes(LLMFlags.geminiThinking) || subModelInfo.flags.includes(LLMFlags.geminiThinking))}
+                <Check bind:check={settingsStore.state.streamGeminiThoughts} name={`Stream Gemini Thoughts`}/>
             {/if}
         {/if}
 
-        {#if DBState.db.aiModel === 'reverse_proxy' || DBState.db.subModel === 'reverse_proxy'}
-            <Check bind:check={DBState.db.reverseProxyOobaMode} name={`${language.reverseProxyOobaMode}`}/>
+        {#if settingsStore.state.aiModel === 'reverse_proxy' || settingsStore.state.subModel === 'reverse_proxy'}
+            <Check bind:check={settingsStore.state.reverseProxyOobaMode} name={`${language.reverseProxyOobaMode}`}/>
         {/if}
         {#if modelInfo.provider === LLMProvider.NovelAI || subModelInfo.provider === LLMProvider.NovelAI}
-            <Check bind:check={DBState.db.NAIadventure} name={language.textAdventureNAI}/>
+            <Check bind:check={settingsStore.state.NAIadventure} name={language.textAdventureNAI}/>
 
-            <Check bind:check={DBState.db.NAIappendName} name={language.appendNameNAI}/>
+            <Check bind:check={settingsStore.state.NAIappendName} name={language.appendNameNAI}/>
         {/if}
     </div>
 
-    {#if DBState.db.aiModel === 'custom' || DBState.db.subModel === 'custom'}
+    {#if settingsStore.state.aiModel === 'custom' || settingsStore.state.subModel === 'custom'}
         <span class="text-textcolor mt-2">{language.plugin}</span>
-        <SelectInput className="mt-2 mb-4" bind:value={DBState.db.currentPluginProvider}>
+        <SelectInput className="mt-2 mb-4" bind:value={settingsStore.state.currentPluginProvider}>
             <OptionInput value="">None</OptionInput>
             {#each $customProviderStore as plugin}
                 <OptionInput value={plugin}>{plugin}</OptionInput>
@@ -443,43 +443,43 @@
         </SelectInput>
     {/if}
 
-    {#if DBState.db.aiModel === "kobold" || DBState.db.subModel === "kobold"}
+    {#if settingsStore.state.aiModel === "kobold" || settingsStore.state.subModel === "kobold"}
         <span class="text-textcolor">Kobold URL</span>
-        <TextInput marginBottom={true} bind:value={DBState.db.koboldURL} />
+        <TextInput marginBottom={true} bind:value={settingsStore.state.koboldURL} />
     {/if}
 
-    {#if DBState.db.aiModel === 'echo_model' || DBState.db.subModel === 'echo_model'}
+    {#if settingsStore.state.aiModel === 'echo_model' || settingsStore.state.subModel === 'echo_model'}
         <span class="text-textcolor mt-2">Echo Message</span>
-        <TextAreaInput margin="bottom" bind:value={DBState.db.echoMessage} placeholder={"The message you want to receive as the bot's response\n(e.g., Lumi tilts her head, her white hair sliding down as her pretty green and aqua eyes sparkle…)"}/>
+        <TextAreaInput margin="bottom" bind:value={settingsStore.state.echoMessage} placeholder={"The message you want to receive as the bot's response\n(e.g., Lumi tilts her head, her white hair sliding down as her pretty green and aqua eyes sparkle…)"}/>
         <span class="text-textcolor mt-2">Echo Delay (Seconds)</span>
-        <NumberInput marginBottom={true} bind:value={DBState.db.echoDelay} min={0}/>
+        <NumberInput marginBottom={true} bind:value={settingsStore.state.echoDelay} min={0}/>
     {/if}
 
-    {#if DBState.db.aiModel.startsWith("horde") || DBState.db.subModel.startsWith("horde") }
+    {#if settingsStore.state.aiModel.startsWith("horde") || settingsStore.state.subModel.startsWith("horde") }
         <span class="text-textcolor">Horde {language.apiKey}</span>
-        <TextInput hideText={DBState.db.hideApiKey} marginBottom={true} bind:value={DBState.db.hordeConfig.apiKey} />
+        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={true} bind:value={settingsStore.state.hordeConfig.apiKey} />
     {/if}
-    {#if DBState.db.aiModel === 'textgen_webui' || DBState.db.subModel === 'textgen_webui'
-        || DBState.db.aiModel === 'mancer' || DBState.db.subModel === 'mancer'}
+    {#if settingsStore.state.aiModel === 'textgen_webui' || settingsStore.state.subModel === 'textgen_webui'
+        || settingsStore.state.aiModel === 'mancer' || settingsStore.state.subModel === 'mancer'}
         <span class="text-textcolor mt-2">Blocking {language.providerURL}</span>
-        <TextInput marginBottom={true} bind:value={DBState.db.textgenWebUIBlockingURL} placeholder="https://..."/>
+        <TextInput marginBottom={true} bind:value={settingsStore.state.textgenWebUIBlockingURL} placeholder="https://..."/>
         <span class="text-draculared text-xs mb-2">You must use textgen webui with --public-api</span>
         <span class="text-textcolor mt-2">Stream {language.providerURL}</span>
-        <TextInput marginBottom={true} bind:value={DBState.db.textgenWebUIStreamURL} placeholder="wss://..."/>
+        <TextInput marginBottom={true} bind:value={settingsStore.state.textgenWebUIStreamURL} placeholder="wss://..."/>
         {#if !isTauri}
             <span class="text-draculared text-xs mb-2">You are using web version. you must use ngrok or other tunnels to use your local webui.</span>
         {/if}
         <span class="text-draculared text-xs mb-2">Warning: For Ooba version over 1.7, use "Ooba" as model, and use url like http://127.0.0.1:5000/v1/chat/completions</span>
     {/if}
-    {#if DBState.db.aiModel === 'ooba' || DBState.db.subModel === 'ooba'}
+    {#if settingsStore.state.aiModel === 'ooba' || settingsStore.state.subModel === 'ooba'}
         <span class="text-textcolor mt-2">Ooba {language.providerURL}</span>
-        <TextInput marginBottom={true} bind:value={DBState.db.textgenWebUIBlockingURL} placeholder="https://..."/>
+        <TextInput marginBottom={true} bind:value={settingsStore.state.textgenWebUIBlockingURL} placeholder="https://..."/>
     {/if}
-    {#if DBState.db.aiModel.startsWith("horde") || DBState.db.aiModel === 'kobold' }
+    {#if settingsStore.state.aiModel.startsWith("horde") || settingsStore.state.aiModel === 'kobold' }
         <ChatFormatSettings />
     {/if}
 
-    {#if DBState.db.auxModelUnderModelSettings}
+    {#if settingsStore.state.auxModelUnderModelSettings}
         <AuxModelSelectors />
     {/if}
 {/if}
@@ -487,62 +487,62 @@
 {#if submenu === 1 || submenu === -1}
     <!-- Data-driven basic parameters -->
     <SettingRenderer items={allBasicParameterItems} {modelInfo} {subModelInfo} />
-    {#if DBState.db.aiModel === 'textgen_webui' || DBState.db.aiModel === 'mancer' || DBState.db.aiModel.startsWith('local_') || DBState.db.aiModel.startsWith('hf:::')}
+    {#if settingsStore.state.aiModel === 'textgen_webui' || settingsStore.state.aiModel === 'mancer' || settingsStore.state.aiModel.startsWith('local_') || settingsStore.state.aiModel.startsWith('hf:::')}
         <span class="text-textcolor">Repetition Penalty</span>
-        <SliderInput min={1} max={1.5} step={0.01} fixed={2} marginBottom bind:value={DBState.db.ooba.repetition_penalty}/>
+        <SliderInput min={1} max={1.5} step={0.01} fixed={2} marginBottom bind:value={settingsStore.state.ooba.repetition_penalty}/>
         <span class="text-textcolor">Length Penalty</span>
-        <SliderInput min={-5} max={5} step={0.05} marginBottom fixed={2} bind:value={DBState.db.ooba.length_penalty}/>
+        <SliderInput min={-5} max={5} step={0.05} marginBottom fixed={2} bind:value={settingsStore.state.ooba.length_penalty}/>
         <span class="text-textcolor">Top K</span>
-        <SliderInput min={0} max={100} step={1} marginBottom bind:value={DBState.db.ooba.top_k} />
+        <SliderInput min={0} max={100} step={1} marginBottom bind:value={settingsStore.state.ooba.top_k} />
         <span class="text-textcolor">Top P</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={DBState.db.ooba.top_p}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.ooba.top_p}/>
         <span class="text-textcolor">Typical P</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={DBState.db.ooba.typical_p}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.ooba.typical_p}/>
         <span class="text-textcolor">Top A</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={DBState.db.ooba.top_a}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.ooba.top_a}/>
         <span class="text-textcolor">No Repeat n-gram Size</span>
-        <SliderInput min={0} max={20} step={1} marginBottom bind:value={DBState.db.ooba.no_repeat_ngram_size}/>
+        <SliderInput min={0} max={20} step={1} marginBottom bind:value={settingsStore.state.ooba.no_repeat_ngram_size}/>
         <div class="flex items-center mt-4">
-            <Check bind:check={DBState.db.ooba.do_sample} name={'Do Sample'}/>
+            <Check bind:check={settingsStore.state.ooba.do_sample} name={'Do Sample'}/>
         </div>
         <div class="flex items-center mt-4">
-            <Check bind:check={DBState.db.ooba.add_bos_token} name={'Add BOS Token'}/>
+            <Check bind:check={settingsStore.state.ooba.add_bos_token} name={'Add BOS Token'}/>
         </div>
         <div class="flex items-center mt-4">
-            <Check bind:check={DBState.db.ooba.ban_eos_token} name={'Ban EOS Token'}/>
+            <Check bind:check={settingsStore.state.ooba.ban_eos_token} name={'Ban EOS Token'}/>
         </div>
         <div class="flex items-center mt-4">
-            <Check bind:check={DBState.db.ooba.skip_special_tokens} name={'Skip Special Tokens'}/>
+            <Check bind:check={settingsStore.state.ooba.skip_special_tokens} name={'Skip Special Tokens'}/>
         </div>
         <div class="flex items-center mt-4">
-            <Check check={!!DBState.db.localStopStrings} name={language.customStopWords} onChange={() => {
-                if(!DBState.db.localStopStrings){
-                    DBState.db.localStopStrings = []
+            <Check check={!!settingsStore.state.localStopStrings} name={language.customStopWords} onChange={() => {
+                if(!settingsStore.state.localStopStrings){
+                    settingsStore.state.localStopStrings = []
                 }
                 else{
-                    DBState.db.localStopStrings = null
+                    settingsStore.state.localStopStrings = null
                 }
             }} />
         </div>
-        {#if DBState.db.localStopStrings}
+        {#if settingsStore.state.localStopStrings}
             <div class="flex flex-col p-2 rounded-sm border border-selected mt-2 gap-1">
                 <div class="p-2">
                     <button class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full" onclick={() => {
-                        let localStopStrings = DBState.db.localStopStrings
+                        let localStopStrings = settingsStore.state.localStopStrings
                         localStopStrings.push('')
-                        DBState.db.localStopStrings = localStopStrings
+                        settingsStore.state.localStopStrings = localStopStrings
                     }}><PlusIcon /></button>
                 </div>
-                {#each DBState.db.localStopStrings as stopString, i}
+                {#each settingsStore.state.localStopStrings as stopString, i}
                     <div class="flex w-full">
                         <div class="grow">
-                            <TextInput marginBottom bind:value={DBState.db.localStopStrings[i]} fullwidth fullh/>
+                            <TextInput marginBottom bind:value={settingsStore.state.localStopStrings[i]} fullwidth fullh/>
                         </div>
                         <div>
                             <button class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full" onclick={() => {
-                                let localStopStrings = DBState.db.localStopStrings
+                                let localStopStrings = settingsStore.state.localStopStrings
                                 localStopStrings.splice(i, 1)
-                                DBState.db.localStopStrings = localStopStrings
+                                settingsStore.state.localStopStrings = localStopStrings
                             }}><TrashIcon /></button>
                         </div>
                     </div>
@@ -552,66 +552,66 @@
         <div class="flex flex-col p-3 rounded-md border-selected border mt-4">
             <ChatFormatSettings />
         </div>
-        <Check bind:check={DBState.db.ooba.formating.useName} name={language.useNamePrefix}/>
+        <Check bind:check={settingsStore.state.ooba.formating.useName} name={language.useNamePrefix}/>
     
     {:else if modelInfo.format === LLMFormat.NovelAI}
         <div class="flex flex-col p-3 bg-darkbg mt-4">
             <span class="text-textcolor">Starter</span>
-            <TextInput bind:value={DBState.db.NAIsettings.starter} placeholder={'⁂'} />
+            <TextInput bind:value={settingsStore.state.NAIsettings.starter} placeholder={'⁂'} />
             <span class="text-textcolor">Seperator</span>
-            <TextInput bind:value={DBState.db.NAIsettings.seperator} placeholder={"\\n"}/>
+            <TextInput bind:value={settingsStore.state.NAIsettings.seperator} placeholder={"\\n"}/>
         </div>
         <span class="text-textcolor">Top P</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={DBState.db.NAIsettings.topP}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.topP}/>
         <span class="text-textcolor">Top K</span>
-        <SliderInput min={0} max={100} step={1} marginBottom bind:value={DBState.db.NAIsettings.topK}/>
+        <SliderInput min={0} max={100} step={1} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.topK}/>
         <span class="text-textcolor">Top A</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={DBState.db.NAIsettings.topA}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.topA}/>
         <span class="text-textcolor">Tailfree Sampling</span>
-        <SliderInput min={0} max={1} step={0.001} marginBottom fixed={3} bind:value={DBState.db.NAIsettings.tailFreeSampling}/>
+        <SliderInput min={0} max={1} step={0.001} marginBottom fixed={3} bind:value={settingsStore.state.NAIsettings.tailFreeSampling}/>
         <span class="text-textcolor">Typical P</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={DBState.db.NAIsettings.typicalp}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.typicalp}/>
         <span class="text-textcolor">Repetition Penalty</span>
-        <SliderInput min={0} max={3} step={0.01} marginBottom fixed={2} bind:value={DBState.db.NAIsettings.repetitionPenalty}/>
+        <SliderInput min={0} max={3} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.repetitionPenalty}/>
         <span class="text-textcolor">Repetition Penalty Range</span>
-        <SliderInput min={0} max={8192} step={1} marginBottom fixed={0} bind:value={DBState.db.NAIsettings.repetitionPenaltyRange}/>
+        <SliderInput min={0} max={8192} step={1} marginBottom fixed={0} bind:value={settingsStore.state.NAIsettings.repetitionPenaltyRange}/>
         <span class="text-textcolor">Repetition Penalty Slope</span>
-        <SliderInput min={0} max={10} step={0.01} marginBottom fixed={2} bind:value={DBState.db.NAIsettings.repetitionPenaltySlope}/>
+        <SliderInput min={0} max={10} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.repetitionPenaltySlope}/>
         <span class="text-textcolor">Frequency Penalty</span>
-        <SliderInput min={-2} max={2} step={0.01} marginBottom fixed={2} bind:value={DBState.db.NAIsettings.frequencyPenalty}/>
+        <SliderInput min={-2} max={2} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.frequencyPenalty}/>
         <span class="text-textcolor">Presence Penalty</span>
-        <SliderInput min={-2} max={2} step={0.01} marginBottom fixed={2} bind:value={DBState.db.NAIsettings.presencePenalty}/>
+        <SliderInput min={-2} max={2} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.presencePenalty}/>
         <span class="text-textcolor">Mirostat LR</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={DBState.db.NAIsettings.mirostat_lr}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.mirostat_lr}/>
         <span class="text-textcolor">Mirostat Tau</span>
-        <SliderInput min={0} max={6} step={0.01} marginBottom fixed={2} bind:value={DBState.db.NAIsettings.mirostat_tau}/>
+        <SliderInput min={0} max={6} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.mirostat_tau}/>
         <span class="text-textcolor">Cfg Scale</span>
-        <SliderInput min={1} max={3} step={0.01} marginBottom fixed={2} bind:value={DBState.db.NAIsettings.cfg_scale}/>
+        <SliderInput min={1} max={3} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.cfg_scale}/>
 
     {:else if modelInfo.format === LLMFormat.NovelList}
         <span class="text-textcolor">Top P</span>
-        <SliderInput min={0} max={2} step={0.01} marginBottom fixed={2} bind:value={DBState.db.ainconfig.top_p}/>
+        <SliderInput min={0} max={2} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.ainconfig.top_p}/>
         <span class="text-textcolor">Reputation Penalty</span>
-        <SliderInput min={0} max={2} step={0.01} marginBottom fixed={2} bind:value={DBState.db.ainconfig.rep_pen}/>
+        <SliderInput min={0} max={2} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.ainconfig.rep_pen}/>
         <span class="text-textcolor">Reputation Penalty Range</span>
-        <SliderInput min={0} max={2048} step={1} marginBottom fixed={2} bind:value={DBState.db.ainconfig.rep_pen_range}/>
+        <SliderInput min={0} max={2048} step={1} marginBottom fixed={2} bind:value={settingsStore.state.ainconfig.rep_pen_range}/>
         <span class="text-textcolor">Reputation Penalty Slope</span>
-        <SliderInput min={0} max={10} step={0.1} marginBottom fixed={2} bind:value={DBState.db.ainconfig.rep_pen_slope}/>
+        <SliderInput min={0} max={10} step={0.1} marginBottom fixed={2} bind:value={settingsStore.state.ainconfig.rep_pen_slope}/>
         <span class="text-textcolor">Top K</span>
-        <SliderInput min={1} max={500} step={1} marginBottom fixed={2} bind:value={DBState.db.ainconfig.top_k}/>
+        <SliderInput min={1} max={500} step={1} marginBottom fixed={2} bind:value={settingsStore.state.ainconfig.top_k}/>
         <span class="text-textcolor">Top A</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={DBState.db.ainconfig.top_a}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.ainconfig.top_a}/>
         <span class="text-textcolor">Typical P</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={DBState.db.ainconfig.typical_p}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.ainconfig.typical_p}/>
     {:else}
         <!-- Standard parameters now handled by SettingRenderer above -->
     {/if}
 
-    {#if (DBState.db.reverseProxyOobaMode && DBState.db.aiModel === 'reverse_proxy') || (DBState.db.aiModel === 'ooba')}
-        <OobaSettings instructionMode={DBState.db.aiModel === 'ooba'} />
+    {#if (settingsStore.state.reverseProxyOobaMode && settingsStore.state.aiModel === 'reverse_proxy') || (settingsStore.state.aiModel === 'ooba')}
+        <OobaSettings instructionMode={settingsStore.state.aiModel === 'ooba'} />
     {/if}
 
-    {#if DBState.db.aiModel.startsWith('openrouter')}
+    {#if settingsStore.state.aiModel.startsWith('openrouter')}
         <OpenrouterSettings />
     {/if}
 
@@ -628,30 +628,30 @@
                 <th class="font-medium">{language.value}</th>
                 <th>
                     <button class="font-medium cursor-pointer hover:text-green-500 w-full flex justify-center items-center" onclick={() => {
-                        let bia = DBState.db.bias
+                        let bia = settingsStore.state.bias
                         bia.push(['', 0])
-                        DBState.db.bias = bia
+                        settingsStore.state.bias = bia
                     }}><PlusIcon /></button>
                 </th>
             </tr>
-            {#if DBState.db.bias.length === 0}
+            {#if settingsStore.state.bias.length === 0}
                 <tr>
                     <td colspan="3" class="text-textcolor2">{language.noBias}</td>
                 </tr>
             {/if}
-            {#each DBState.db.bias as bias, i}
+            {#each settingsStore.state.bias as bias, i}
                 <tr>
                     <td class="font-medium truncate">
-                        <TextInput bind:value={DBState.db.bias[i][0]} size="lg" fullwidth/>
+                        <TextInput bind:value={settingsStore.state.bias[i][0]} size="lg" fullwidth/>
                     </td>
                     <td class="font-medium truncate">
-                        <NumberInput bind:value={DBState.db.bias[i][1]} max={100} min={-101} size="lg" fullwidth/>
+                        <NumberInput bind:value={settingsStore.state.bias[i][1]} max={100} min={-101} size="lg" fullwidth/>
                     </td>
                     <td>
                         <button class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full" onclick={() => {
-                            let bia = DBState.db.bias
+                            let bia = settingsStore.state.bias
                             bia.splice(i, 1)
-                            DBState.db.bias = bia
+                            settingsStore.state.bias = bia
                         }}><TrashIcon /></button>
                     </td>
                 </tr>
@@ -660,14 +660,14 @@
         </table>
         <div class="text-textcolor2 mt-2 flex items-center gap-2">
             <button class="font-medium cursor-pointer hover:text-textcolor gap-2" onclick={() => {
-                const data = JSON.stringify(DBState.db.bias, null, 2)
+                const data = JSON.stringify(settingsStore.state.bias, null, 2)
                 downloadFile('bias.json', data)
             }}><DownloadIcon /></button>
             <button class="font-medium cursor-pointer hover:text-textcolor" onclick={async () => {
                 const sel = await selectSingleFile(['json'])
                 const utf8 = new TextDecoder().decode(sel.data)
                 if(Array.isArray(JSON.parse(utf8))){
-                    DBState.db.bias = JSON.parse(utf8)
+                    settingsStore.state.bias = JSON.parse(utf8)
                 }
             }}><HardDriveUploadIcon /></button>
         </div>
@@ -681,28 +681,28 @@
                 <th class="font-medium">{language.value}</th>
                 <th>
                     <button class="font-medium cursor-pointer hover:text-green-500 w-full flex justify-center items-center" onclick={() => {
-                        DBState.db.additionalParams.push(['', ''])
+                        settingsStore.state.additionalParams.push(['', ''])
                     }}><PlusIcon /></button>
                 </th>
             </tr>
-            {#if DBState.db.additionalParams.length === 0}
+            {#if settingsStore.state.additionalParams.length === 0}
                 <tr class="text-textcolor2">
                     <td colspan="3">{language.noData}</td>
                 </tr>
             {/if}
-            {#each DBState.db.additionalParams as additionalParams, i}
+            {#each settingsStore.state.additionalParams as additionalParams, i}
                 <tr>
                     <td class="font-medium truncate">
-                        <TextInput bind:value={DBState.db.additionalParams[i][0]} size="lg" fullwidth/>
+                        <TextInput bind:value={settingsStore.state.additionalParams[i][0]} size="lg" fullwidth/>
                     </td>
                     <td class="font-medium truncate">
-                        <TextInput bind:value={DBState.db.additionalParams[i][1]} size="lg" fullwidth/>
+                        <TextInput bind:value={settingsStore.state.additionalParams[i][1]} size="lg" fullwidth/>
                     </td>
                     <td>
                         <button class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full" onclick={() => {
-                            let additionalParams = DBState.db.additionalParams
+                            let additionalParams = settingsStore.state.additionalParams
                             additionalParams.splice(i, 1)
-                            DBState.db.additionalParams = additionalParams
+                            settingsStore.state.additionalParams = additionalParams
                         }}><TrashIcon /></button>
                     </td>
                 </tr>
@@ -713,35 +713,35 @@
 
 
     <Accordion styled name={language.promptTemplate}>
-        {#if DBState.db.promptTemplate}
+        {#if settingsStore.state.promptTemplate}
             {#if submenu !== -1}
                 <PromptSettings mode='inline' subMenu={1} />
             {/if}
         {:else}
             <Check check={false} name={language.usePromptTemplate} onChange={() => {
-                DBState.db.promptTemplate = []
+                settingsStore.state.promptTemplate = []
             }}/>
         {/if}
     </Accordion>
 
     {#snippet CustomFlagButton(name:string,flag:number)}
         <Button className="mt-2" onclick={(e) => {
-            if(DBState.db.customFlags.includes(flag as LLMFlags)){
-                DBState.db.customFlags = DBState.db.customFlags.filter((f) => f !== flag)
+            if(settingsStore.state.customFlags.includes(flag as LLMFlags)){
+                settingsStore.state.customFlags = settingsStore.state.customFlags.filter((f: LLMFlags) => f !== flag)
             }
             else{
-                DBState.db.customFlags.push(flag as LLMFlags)
+                settingsStore.state.customFlags.push(flag as LLMFlags)
             }
-        }} styled={DBState.db.customFlags.includes(flag as LLMFlags) ? 'primary' : 'outlined'}>
+        }} styled={settingsStore.state.customFlags.includes(flag as LLMFlags) ? 'primary' : 'outlined'}>
             {name}
         </Button>
     {/snippet}
 
     <Accordion styled name={language.customFlags}>
-        <Check bind:check={DBState.db.enableCustomFlags} name={language.enableCustomFlags}/>
+        <Check bind:check={settingsStore.state.enableCustomFlags} name={language.enableCustomFlags}/>
 
 
-        {#if DBState.db.enableCustomFlags}
+        {#if settingsStore.state.enableCustomFlags}
             {@render CustomFlagButton('hasImageInput', 0)}
             {@render CustomFlagButton('hasImageOutput', 1)}
             {@render CustomFlagButton('hasAudioInput', 2)}
@@ -771,22 +771,22 @@
     </Accordion>
 
     <Accordion styled name={language.moduleIntergration} help="moduleIntergration">
-        <TextAreaInput bind:value={DBState.db.moduleIntergration} fullwidth height={"32"} autocomplete="off"/>
+        <TextAreaInput bind:value={settingsStore.state.moduleIntergration} fullwidth height={"32"} autocomplete="off"/>
     </Accordion>
 
     <Accordion styled name={language.tools}>
-        <Check name={language.search} check={DBState.db.modelTools.includes('search')} onChange={() => {
-            if(DBState.db.modelTools.includes('search')){
-                DBState.db.modelTools = DBState.db.modelTools.filter((tool) => tool !== 'search')
+        <Check name={language.search} check={settingsStore.state.modelTools.includes('search')} onChange={() => {
+            if(settingsStore.state.modelTools.includes('search')){
+                settingsStore.state.modelTools = settingsStore.state.modelTools.filter((tool: string) => tool !== 'search')
             }
             else{
-                DBState.db.modelTools.push('search')
+                settingsStore.state.modelTools.push('search')
             }
         }} />
     </Accordion>
     
     <Accordion styled name={language.regexScript}>
-        <RegexList bind:value={DBState.db.presetRegex} buttons />
+        <RegexList bind:value={settingsStore.state.presetRegex} buttons />
     </Accordion>
 
     <Accordion styled name={language.icon}>
@@ -795,9 +795,9 @@
                 {language.preview}
             </span>
             <div class="flex items-center justify-center gap-2">
-                {#if DBState.db.botPresets[DBState.db.botPresetsId]?.image}
-                    <img src={DBState.db.botPresets[DBState.db.botPresetsId]?.image} alt="icon" class="w-6 h-6 rounded-md" decoding="async"/>
-                    <span class="text-textcolor2">{DBState.db.botPresets[DBState.db.botPresetsId]?.name}</span>
+                {#if settingsStore.state.botPresets[settingsStore.state.botPresetsId]?.image}
+                    <img src={settingsStore.state.botPresets[settingsStore.state.botPresetsId]?.image} alt="icon" class="w-6 h-6 rounded-md" decoding="async"/>
+                    <span class="text-textcolor2">{settingsStore.state.botPresets[settingsStore.state.botPresetsId]?.name}</span>
                 {:else}
                     <span class="text-textcolor2">{language.noImages}</span>
                 {/if}
@@ -816,7 +816,7 @@
             canvas.height = 48
             ctx.drawImage(img, 0, 0, 48, 48)
             const data = canvas.toDataURL('image/jpeg', 0.7)
-            DBState.db.botPresets[DBState.db.botPresetsId].image = data //Since its small (max 2304 pixels), its okay to store it directly
+            settingsStore.state.botPresets[settingsStore.state.botPresetsId].image = data //Since its small (max 2304 pixels), its okay to store it directly
         }}>
             <UploadIcon />
         </button>
@@ -827,20 +827,20 @@
 {/if}
 
 {#if submenu === 2 || submenu === -1}
-    {#if !DBState.db.promptTemplate}
+    {#if !settingsStore.state.promptTemplate}
         <span class="text-textcolor">{language.mainPrompt} <Help key="mainprompt"/></span>
-        <TextAreaInput fullwidth autocomplete="off" height={"32"} bind:value={DBState.db.mainPrompt}></TextAreaInput>
+        <TextAreaInput fullwidth autocomplete="off" height={"32"} bind:value={settingsStore.state.mainPrompt}></TextAreaInput>
         <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.mainPrompt} {language.tokens}</span>
         <span class="text-textcolor">{language.jailbreakPrompt} <Help key="jailbreak"/></span>
-        <TextAreaInput fullwidth autocomplete="off" height={"32"} bind:value={DBState.db.jailbreak}></TextAreaInput>
+        <TextAreaInput fullwidth autocomplete="off" height={"32"} bind:value={settingsStore.state.jailbreak}></TextAreaInput>
         <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.jailbreak} {language.tokens}</span>
         <span class="text-textcolor">{language.globalNote} <Help key="globalNote"/></span>
-        <TextAreaInput fullwidth autocomplete="off" height={"32"} bind:value={DBState.db.globalNote}></TextAreaInput>
+        <TextAreaInput fullwidth autocomplete="off" height={"32"} bind:value={settingsStore.state.globalNote}></TextAreaInput>
         <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.globalNote} {language.tokens}</span>  
         <span class="text-textcolor mb-2 mt-4">{language.formatingOrder} <Help key="formatOrder"/></span>
-        <DropList bind:list={DBState.db.formatingOrder} />
+        <DropList bind:list={settingsStore.state.formatingOrder} />
         <div class="flex items-center mt-4">
-            <Check bind:check={DBState.db.promptPreprocess} name={language.promptPreprocess}/>
+            <Check bind:check={settingsStore.state.promptPreprocess} name={language.promptPreprocess}/>
         </div>
     {:else if submenu === 2}
         <PromptSettings mode='inline' />
@@ -848,7 +848,7 @@
 {/if}
 
 
-{#if DBState.db.promptTemplate && submenu === -1}
+{#if settingsStore.state.promptTemplate && submenu === -1}
     <div class="mt-2">
         <Button onclick={goPromptTemplate} size="sm">{language.promptTemplate}</Button>
     </div>

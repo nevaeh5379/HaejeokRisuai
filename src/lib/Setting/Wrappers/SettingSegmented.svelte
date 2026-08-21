@@ -4,7 +4,7 @@
     import SegmentedControl from 'src/lib/UI/GUI/SegmentedControl.svelte';
     import Help from 'src/lib/Others/Help.svelte';
     import { language } from 'src/lang';
-    import { DBState } from 'src/ts/stores.svelte';
+    import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
 
     interface Props {
         item: SettingItem;
@@ -40,6 +40,6 @@
     {#if item.helpKey}<Help key={item.helpKey as any} unrecommended={item.helpUnrecommended ?? false}/>{/if}
 </span>
 <SegmentedControl
-    bind:value={(DBState.db as any)[item.bindKey]}
+    bind:value={(settingsStore.state as any)[item.bindKey]}
     options={processedOptions}
 />

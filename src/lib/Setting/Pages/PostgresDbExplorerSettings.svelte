@@ -27,7 +27,8 @@
     import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
     import { forageStorage } from 'src/ts/globalApi.svelte'
     import { NodeStorage } from 'src/ts/storage/nodeStorage'
-    import { DBState } from 'src/ts/stores.svelte'
+    import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte'
+    import { characterStore } from 'src/ts/stores/domain/characterStore.svelte'
     import { getMimeType } from 'src/ts/media'
     import DbExplorerTabNav from './DbExplorer/DbExplorerTabNav.svelte'
     import DbConfigTab from './DbExplorer/tabs/DbConfigTab.svelte'
@@ -223,7 +224,7 @@
         if (remoteBotStats && remoteBotStats.length > 0) {
             return remoteBotStats
         }
-        const chars = DBState.db.characters || []
+        const chars = characterStore.characters || []
         return chars.map((char: any) => {
             const isGroup = char.type === 'group'
             const chats = Array.isArray(char.chats) ? char.chats : []
@@ -311,8 +312,8 @@
             totalInputTokens,
             totalOutputTokens,
             totalTokens: totalInputTokens + totalOutputTokens,
-            totalModules: (DBState.db.modules?.length ?? 0),
-            totalLorebooks: (DBState.db.loreBook?.length ?? 0),
+            totalModules: (settingsStore.state.modules?.length ?? 0),
+            totalLorebooks: (settingsStore.state.loreBook?.length ?? 0),
             totalTables: tables.length,
             totalRows
         }

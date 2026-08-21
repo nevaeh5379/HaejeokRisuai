@@ -1,18 +1,23 @@
 import { get } from 'svelte/store'
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
 import { parseKeyValue } from '../util'
+import { characterStore } from '../stores/domain/characterStore.svelte'
+import { settingsStore } from '../stores/domain/settingsStore.svelte'
 
 export function getChatVar(key:string): string {
     const selectedChar = get(selectedCharID)
-    const char = DBState.db.characters[selectedChar]
+    const char = characterStore.characters[selectedChar]
     if(!char){
         return 'null'
     }
     const chat = char.chats[char.chatPage]
+    if (!chat) {
+        return 'null'
+    }
     chat.scriptstate ??= {}
     const state = (chat.scriptstate['$' + key])
     if(state === undefined || state === null){
-        const defaultVariables = parseKeyValue(char.defaultVariables).concat(parseKeyValue(DBState.db.templateDefaultVariables))
+        const defaultVariables = parseKeyValue(char.defaultVariables).concat(parseKeyValue(settingsStore.state.templateDefaultVariables))
         const findResult = defaultVariables.find((f) => {
             return f[0] === key
         })
@@ -26,7 +31,14 @@ export function getChatVar(key:string): string {
 
 export function setChatVar(key:string, value:string): boolean {
     const selectedChar = get(selectedCharID)
-    const chat = DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
+    const char = characterStore.characters[selectedChar]
+    if (!char || !char.chats) {
+        return false
+    }
+    const chat = char.chats[char.chatPage]
+    if (!chat) {
+        return false
+    }
     chat.scriptstate ??= {}
 
     const stateKey = '$' + key
@@ -39,5 +51,5 @@ export function setChatVar(key:string, value:string): boolean {
 }
 
 export function getGlobalChatVar(key:string): string {
-    return DBState.db.globalChatVariables[key] ?? 'null'
+    return settingsStore.state.globalChatVariables?.[key] ?? 'null'
 }

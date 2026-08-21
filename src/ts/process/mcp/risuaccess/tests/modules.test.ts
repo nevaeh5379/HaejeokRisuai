@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import type { RisuModule } from 'src/ts/process/modules'
 import type { customscript, loreBook } from 'src/ts/storage/database.svelte'
-import { DBState } from 'src/ts/stores.svelte'
+import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte'
 import { beforeEach, expect, test, vi } from 'vitest'
 import type { RPCToolCallTextContent } from '../../mcplib'
 import { ModuleHandler } from '../modules'
@@ -16,15 +16,20 @@ vi.mock(import('src/ts/alert'), () => ({
   alertConfirm: vi.fn(),
 }))
 
-vi.mock(import('src/ts/stores.svelte'), () => {
+vi.mock(import('src/ts/stores/domain/settingsStore.svelte'), () => {
   return {
-    DBState: {
-      db: {
+    settingsStore: {
+      state: {
         characters: [],
         enabledModules: [],
         modules: [],
       },
     },
+  } as any
+})
+
+vi.mock(import('src/ts/stores.svelte'), () => {
+  return {
     selIdState: {
       selId: 0,
     },
@@ -82,15 +87,15 @@ test('lists installed modules with pagination', async () => {
   const modules = Array(10)
     .fill(0)
     .map((_, i) => makeModule(String(i)))
-  DBState.db.modules = modules
-  DBState.db.enabledModules = [modules[0].id, modules[2].id]
+  settingsStore.state.modules = modules
+  settingsStore.state.enabledModules = [modules[0].id, modules[2].id]
 
   expect(await instance.handle('risu-list-modules', { count: 3 })).toMatchSnapshot()
   expect(await instance.handle('risu-list-modules', { count: 3, offset: 3 })).toMatchSnapshot()
   expect(await instance.handle('risu-list-modules', { count: 3, offset: 10 })).toMatchSnapshot()
 
-  DBState.db.modules = []
-  DBState.db.enabledModules = []
+  settingsStore.state.modules = []
+  settingsStore.state.enabledModules = []
 
   expect(await instance.handle('risu-list-modules', {})).toEqual(makeToolResponse([]))
 })
@@ -101,8 +106,8 @@ test('retrieves bgEmbedding, toggles, description, id, enabled, low level access
   const modules = Array(10)
     .fill(0)
     .map((_, i) => makeModule(String(i)))
-  DBState.db.modules = modules
-  DBState.db.enabledModules = [modules[0].id, modules[2].id, modules[4].id]
+  settingsStore.state.modules = modules
+  settingsStore.state.enabledModules = [modules[0].id, modules[2].id, modules[4].id]
 
   await fc.assert(
     fc.asyncProperty(
@@ -117,13 +122,13 @@ test('retrieves bgEmbedding, toggles, description, id, enabled, low level access
       ]),
       fc.integer({ max: 9, min: 0 }),
       async (fieldsArg, targetIndex) => {
-        const target = DBState.db.modules[targetIndex]
+        const target = settingsStore.state.modules[targetIndex]
         const fields = fieldsArg.length > 0 ? fieldsArg : ['name', 'description', 'id', 'enabled']
 
         const expected = Object.fromEntries(
           fields.map((field) => {
             if (field === 'enabled') {
-              return ['enabled', DBState.db.enabledModules.includes(target.id)]
+              return ['enabled', settingsStore.state.enabledModules.includes(target.id)]
             }
             return [field, target[field]]
           })
@@ -146,7 +151,7 @@ test('lists lorebooks of a module with pagination', async () => {
       .fill(0)
       .map((_, i) => makeLorebook(String(i))),
   }
-  DBState.db.modules = [module]
+  settingsStore.state.modules = [module]
 
   expect(await instance.handle('risu-list-module-lorebooks', { count: 3, id: 'A' })).toMatchSnapshot()
   expect(await instance.handle('risu-list-module-lorebooks', { count: 3, offset: 3, id: 'A' })).toMatchSnapshot()
@@ -166,7 +171,7 @@ test('retrieves fields of a lorebook', async () => {
       .fill(0)
       .map((_, i) => makeLorebook(String(i))),
   }
-  DBState.db.modules = [module]
+  settingsStore.state.modules = [module]
 
   expect(await instance.handle('risu-get-module-lorebook', { id: 'A', names: ['0', '2', '99'] })).toMatchSnapshot()
 })
@@ -180,7 +185,7 @@ test('lists all regex scripts of a module', async () => {
       .fill(0)
       .map((_, i) => makeRegex(String(i))),
   }
-  DBState.db.modules = [module]
+  settingsStore.state.modules = [module]
 
   expect(await instance.handle('risu-get-module-regex-scripts', { id: 'A' })).toMatchSnapshot()
 
@@ -206,7 +211,7 @@ test('retrieves a module Lua script', async () => {
       }
     ]
   }
-  DBState.db.modules = [module]
+  settingsStore.state.modules = [module]
 
   expect(await instance.handle('risu-get-module-lua-script', { id: 'A' })).toEqual(makeToolResponse('print("hello")'))
 })
@@ -214,7 +219,7 @@ test('retrieves a module Lua script', async () => {
 test('errs retrieving a module Lua script if it is not using one', async () => {
   const instance = new ModuleHandler()
 
-  DBState.db.modules = [makeModule('A')]
+  settingsStore.state.modules = [makeModule('A')]
 
   expect(await instance.handle('risu-get-module-lua-script', { id: 'A' })).toEqual(makeToolResponse('Error: This module does not contain a Lua trigger.'))
 })

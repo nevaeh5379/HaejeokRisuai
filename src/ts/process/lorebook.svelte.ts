@@ -2,7 +2,8 @@ import { get } from "svelte/store";
 import { getChatVar, setChatVar } from '../parser/chatVar.svelte';
 import {selectedCharID} from '../stores.svelte'
 import { type Message, type loreBook } from "../storage/database.svelte";
-import { DBState } from '../stores.svelte';
+import { settingsStore } from '../stores/domain/settingsStore.svelte';
+import { characterStore } from '../stores/domain/characterStore.svelte';
 import { tokenize } from "../tokenizer";
 import { risuChatParser } from "../parser/parser.svelte";
 import { findCharacterbyId, pickHashRand, selectSingleFile } from "../util";
@@ -16,9 +17,9 @@ import { v4 } from "uuid";
 export function addLorebook(type:number) {
     const selectedID = get(selectedCharID)
     if(type === 0){
-        DBState.db.characters[selectedID].globalLore.push({
+        characterStore.characters[selectedID].globalLore.push({
             key: '',
-            comment: `New Lore ${DBState.db.characters[selectedID].globalLore.length + 1}`,
+            comment: `New Lore ${characterStore.characters[selectedID].globalLore.length + 1}`,
             content: '',
             mode: 'normal',
             insertorder: 100,
@@ -28,10 +29,10 @@ export function addLorebook(type:number) {
         })
     }
     else{
-        const page = DBState.db.characters[selectedID].chatPage
-        DBState.db.characters[selectedID].chats[page].localLore.push({
+        const page = characterStore.characters[selectedID].chatPage
+        characterStore.characters[selectedID].chats[page].localLore.push({
             key: '',
-            comment: `New Lore ${DBState.db.characters[selectedID].chats[page].localLore.length + 1}`,
+            comment: `New Lore ${characterStore.characters[selectedID].chats[page].localLore.length + 1}`,
             content: '',
             mode: 'normal',
             insertorder: 100,
@@ -46,7 +47,7 @@ export function addLorebookFolder(type:number) {
     const selectedID = get(selectedCharID)
     const id = v4()
     if(type === 0){
-        DBState.db.characters[selectedID].globalLore.push({
+        characterStore.characters[selectedID].globalLore.push({
             key: '\uf000folder:' + id,
             comment: `New Folder`,
             content: '',
@@ -58,8 +59,8 @@ export function addLorebookFolder(type:number) {
         })
     }
     else{
-        const page = DBState.db.characters[selectedID].chatPage
-        DBState.db.characters[selectedID].chats[page].localLore.push({
+        const page = characterStore.characters[selectedID].chatPage
+        characterStore.characters[selectedID].chats[page].localLore.push({
             key: '\uf000folder:' + id,
             comment: `New Folder`,
             content: '',
@@ -74,15 +75,15 @@ export function addLorebookFolder(type:number) {
 
 export async function loadLoreBookV3Prompt(){
     const selectedID = get(selectedCharID)
-    const char = DBState.db.characters[selectedID]
+    const char = characterStore.characters[selectedID]
     const page = char.chatPage
     const characterLore = char.globalLore ?? []
     const chatLore = char.chats[page].localLore ?? []
     const moduleLorebook = getModuleLorebooks()
     const fullLore = safeStructuredClone(characterLore.concat(chatLore).concat(moduleLorebook))
     const currentChat = char.chats[page].message
-    const loreDepth = char.loreSettings?.scanDepth ?? DBState.db.loreBookDepth
-    const loreToken = char.loreSettings?.tokenBudget ?? DBState.db.loreBookToken
+    const loreDepth = char.loreSettings?.scanDepth ?? settingsStore.state.loreBookDepth
+    const loreToken = char.loreSettings?.tokenBudget ?? settingsStore.state.loreBookToken
     const fullWordMatchingSetting = char.loreSettings?.fullWordMatching ?? false
     const chatLength = currentChat.length + 1 //includes first message
     const recursiveScanning = char.loreSettings?.recursiveScanning ?? true
@@ -93,36 +94,38 @@ export async function loadLoreBookV3Prompt(){
     }[] = []
     let matchLog:{
         prompt: string,
-        source: string
-        activated: string
+        matches: string[],
+        key: string
+    }[] = []
+    let selectedTokens = 0
+    let selectedCount = 0
+    let addedKeys:string[] = []
+    let logs:{
+        key: string,
+        content: string,
+        comment: string,
+        mode: string,
+        reason: string,
     }[] = []
 
-    const searchMatch = (messages:Message[],arg:{
-        keys:string[],
-        searchDepth:number,
-        regex:boolean
-        fullWordMatching:boolean
-        all?:boolean
-        dontSearchWhenRecursive: boolean
-    }) => {
-        const sliced = messages.slice(messages.length - arg.searchDepth,messages.length)
-        const newKeys = []
-        for (const key of arg.keys) {
-            const trimmed = key.trim()
-            if (trimmed.length > 0) {
-                newKeys.push(trimmed)
-            }
-        }
-        arg.keys = newKeys
-        let mList:{
-            source:string
-            prompt:string
+    let loreOrder: {
+        order: number,
+        type: 'character'|'chat'|'module',
+        lore: loreBook,
+        index: number
+    }[] = []
+
+    if(currentChat){
+        let sliced = currentChat.slice(-loreDepth)
+        let prompts:{
+            source: string,
+            prompt: string,
             data:string
         }[] = sliced.map((msg, i) => {
             if(msg.role === 'user'){
                 return {
                     source: `message ${i} by user`,
-                    prompt: `\x01{{${DBState.db.username}}}:` + msg.data + '\x01',
+                    prompt: `\x01{{${settingsStore.state.username}}}:` + msg.data + '\x01',
                     data: msg.data
                 }
             }
@@ -667,10 +670,10 @@ export async function loadLoreBookV3Prompt(){
 
 export async function importLoreBook(mode:'global'|'local'|'sglobal'){
     const selectedID = get(selectedCharID)
-    const page = mode === 'sglobal' ? -1 : DBState.db.characters[selectedID].chatPage
+    const page = mode === 'sglobal' ? -1 : characterStore.characters[selectedID].chatPage
     let lore = 
-        mode === 'global' ? DBState.db.characters[selectedID].globalLore : 
-        DBState.db.characters[selectedID].chats[page].localLore
+        mode === 'global' ? characterStore.characters[selectedID].globalLore : 
+        characterStore.characters[selectedID].chats[page].localLore
     const lorebook = (await selectSingleFile(['json', 'lorebook'])).data
     if(!lorebook){
         return
@@ -691,10 +694,10 @@ export async function importLoreBook(mode:'global'|'local'|'sglobal'){
             lore.push(...convertExternalLorebook(entries))
         }
         if(mode === 'global'){
-            DBState.db.characters[selectedID].globalLore = lore
+            characterStore.characters[selectedID].globalLore = lore
         }
         else{
-            DBState.db.characters[selectedID].chats[page].localLore = lore
+            characterStore.characters[selectedID].chats[page].localLore = lore
         }
     } catch (error) {
         alertError(error)
@@ -747,10 +750,10 @@ export function convertExternalLorebook(entries:{[key:string]:CCLorebook}){
 export async function exportLoreBook(mode:'global'|'local'|'sglobal'){
     try {
         const selectedID = get(selectedCharID)
-        const page = mode === 'sglobal' ? -1 : DBState.db.characters[selectedID].chatPage
+        const page = mode === 'sglobal' ? -1 : characterStore.characters[selectedID].chatPage
         const lore = 
-            mode === 'global' ? DBState.db.characters[selectedID].globalLore : 
-            DBState.db.characters[selectedID].chats[page].localLore        
+            mode === 'global' ? characterStore.characters[selectedID].globalLore : 
+            characterStore.characters[selectedID].chats[page].localLore        
         const stringl = Buffer.from(JSON.stringify({
             type: 'risu',
             ver: 1,

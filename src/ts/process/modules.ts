@@ -7,7 +7,7 @@ import { v4 } from "uuid"
 import { convertExternalLorebook } from "./lorebook.svelte"
 import { compressImage } from '../media'
 import { decodeRPack, encodeRPack } from "../rpack/rpack_js"
-import { DBState, HideIconStore, moduleBackgroundEmbedding, ReloadGUIPointer } from "../stores.svelte"
+import { HideIconStore, moduleBackgroundEmbedding, ReloadGUIPointer } from "../stores.svelte"
 import {get} from "svelte/store"
 import { convertCharacterToModule, convertModuleToCharacter } from "../interchangeability"
 import { exportCharacterCard, importCharacterProcess } from "../characterCards"
