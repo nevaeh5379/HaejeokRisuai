@@ -325,6 +325,33 @@ class PostgresStorage extends SqlStorageBase {
         return result.rows.map((row) => row.asset_key);
     }
 
+    async listAssetCatalogEntries(prefix = '') {
+        this.assertEnabled();
+        const result = prefix
+            ? await this.pool.query(
+                'SELECT asset_key, size_bytes, etag, updated_at FROM system.asset_catalog WHERE LEFT(asset_key, $1) = $2 ORDER BY asset_key',
+                [prefix.length, prefix]
+            )
+            : await this.pool.query('SELECT asset_key, size_bytes, etag, updated_at FROM system.asset_catalog ORDER BY asset_key');
+        return result.rows.map((row) => ({
+            key: row.asset_key,
+            size: row.size_bytes === null ? null : Number(row.size_bytes),
+            etag: row.etag ?? null,
+            updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null,
+        }));
+    }
+
+    async getAssetCatalogStats() {
+        this.assertEnabled();
+        const result = await this.pool.query(
+            'SELECT COUNT(*)::bigint AS total_objects, COALESCE(SUM(size_bytes), 0)::bigint AS total_size FROM system.asset_catalog'
+        );
+        return {
+            totalObjects: Number(result.rows[0].total_objects),
+            totalSizeBytes: Number(result.rows[0].total_size),
+        };
+    }
+
     async upsertAssetCatalog(entries) {
         this.assertEnabled();
         if (!Array.isArray(entries) || entries.length === 0) return 0;

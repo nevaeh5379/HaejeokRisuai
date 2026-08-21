@@ -860,6 +860,44 @@ class OracleStorage extends SqlStorageBase {
         }
     }
 
+    async listAssetCatalogEntries(prefix = '') {
+        this.assertEnabled();
+        const conn = await this.pool.getConnection();
+        try {
+            const rows = prefix
+                ? await fetchRows(conn,
+                    `SELECT asset_key, size_bytes, etag, updated_at FROM system_asset_catalog
+                     WHERE SUBSTR(asset_key, 1, :1) = :2 ORDER BY asset_key`,
+                    [prefix.length, prefix])
+                : await fetchRows(conn,
+                    `SELECT asset_key, size_bytes, etag, updated_at FROM system_asset_catalog ORDER BY asset_key`);
+            return rows.map((row) => ({
+                key: row.asset_key,
+                size: row.size_bytes === null || row.size_bytes === undefined ? null : Number(row.size_bytes),
+                etag: row.etag ?? null,
+                updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null,
+            }));
+        } finally {
+            await conn.close();
+        }
+    }
+
+    async getAssetCatalogStats() {
+        this.assertEnabled();
+        const conn = await this.pool.getConnection();
+        try {
+            const row = await fetchOne(conn,
+                `SELECT COUNT(*) AS total_objects, NVL(SUM(size_bytes), 0) AS total_size
+                 FROM system_asset_catalog`);
+            return {
+                totalObjects: Number(row.total_objects),
+                totalSizeBytes: Number(row.total_size),
+            };
+        } finally {
+            await conn.close();
+        }
+    }
+
     async upsertAssetCatalog(entries) {
         this.assertEnabled();
         if (!Array.isArray(entries) || entries.length === 0) return 0;

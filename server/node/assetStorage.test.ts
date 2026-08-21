@@ -230,6 +230,29 @@ describe('AssetStorageManager', () => {
         expect(mgr.getPublicConfig().enabled).toBe(false)
     })
 
+    it('can build an explorer summary without listing S3', async () => {
+        const mgr = new AssetStorageManager(tmpDir)
+        await mgr.init()
+        let getStatsCalls = 0
+        mgr.s3Config = { bucket: 'catalog-bucket', endpoint: 'http://s3.test' }
+        mgr.s3Storage = {
+            async getStats() {
+                getStatsCalls++
+                return { totalObjects: 99, totalSizeBytes: 999 }
+            }
+        } as any
+
+        const summary = await mgr.getSummary({ skipS3Stats: true })
+
+        expect(getStatsCalls).toBe(0)
+        expect(summary.s3).toMatchObject({
+            storageType: 's3',
+            bucketName: 'catalog-bucket',
+            totalObjects: 0,
+            totalSizeBytes: 0
+        })
+    })
+
     it('getDatabaseBinHashes reports matching hashes when local and S3 agree', async () => {
         const mgr = new AssetStorageManager(tmpDir)
         await mgr.init()

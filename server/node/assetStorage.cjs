@@ -1663,15 +1663,26 @@ class AssetStorageManager {
         return await this.activeStorage.writeFromPath(hexPath, sourcePath);
     }
 
-    async getSummary() {
+    async getSummary(options = {}) {
+        const { skipS3Stats = false } = options;
         const localFsStats = await this.localFs.getStats();
         let s3Stats = null;
         let azureStats = null;
         if (this.s3Storage) {
-            try {
-                s3Stats = await this.s3Storage.getStats();
-            } catch {
-                // Ignore S3 error
+            if (skipS3Stats) {
+                s3Stats = {
+                    storageType: 's3',
+                    bucketName: this.s3Config?.bucket || '',
+                    endpoint: this.s3Config?.endpoint || 'AWS Standard',
+                    totalObjects: 0,
+                    totalSizeBytes: 0
+                };
+            } else {
+                try {
+                    s3Stats = await this.s3Storage.getStats();
+                } catch {
+                    // Ignore S3 error
+                }
             }
         }
         if (this.azureSqlStorage) {

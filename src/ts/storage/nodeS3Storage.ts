@@ -53,6 +53,8 @@ export interface NodeS3Stats {
     endpoint?: string
     totalObjects: number
     totalSizeBytes: number
+    /** 'catalog' = derived from the SQL asset catalog instead of S3 */
+    listSource?: 'catalog' | 'storage'
 }
 
 export interface NodeS3MigrationResult {
@@ -96,6 +98,10 @@ export interface NodeStorageAssetDetails {
     totalObjects: number
     totalSizeBytes: number
     assets: NodeStorageAssetItem[]
+    /** 'catalog' = served from the SQL asset catalog, 'storage' = live S3 listing */
+    listSource?: 'catalog' | 'storage' | 'storage-sync'
+    /** The catalog has no rows; the UI may offer an explicit S3 resync. */
+    catalogEmpty?: boolean
 }
 
 export interface NodeS3ProgressEvent {
@@ -417,6 +423,17 @@ export class NodeS3Storage {
         })
         if (response.status < 200 || response.status >= 300) {
             throw await responseError(response, 'Failed to clean local storage')
+        }
+        return await response.json()
+    }
+
+    async resyncAssetCatalog(): Promise<{ success: boolean; count: number; source: string }> {
+        const response = await fetch('/api/asset-catalog/resync', {
+            method: 'POST',
+            headers: await this.authHeaders()
+        })
+        if (response.status < 200 || response.status >= 300) {
+            throw await responseError(response, 'Failed to resync asset catalog')
         }
         return await response.json()
     }

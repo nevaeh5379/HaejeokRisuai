@@ -545,6 +545,9 @@ function getAssetCatalogSourceId() {
         type: 's3',
         endpoint: config.endpoint || 'aws',
         bucket: config.bucket || 'risuai-assets',
+        // 'full-bucket' = the catalog mirrors every object in the bucket
+        // (assets/, thumbnails/, database/...), not just the assets/ prefix.
+        scope: 'full-bucket'
     });
 }
 
@@ -568,12 +571,16 @@ async function resolveCatalogedAssetKeys(storage, prefix = 'assets/', forceResyn
         if (initialized) {
             return { keys: await postgresStorage.listAssetCatalog(prefix), source: 'catalog' };
         }
-        const keys = await storage.list(prefix);
+        // Uninitialized (or forced): mirror the entire bucket so an
+        // "initialized" catalog always means a complete listing.
+        const fresh = await storage.getAssetDetails();
         await postgresStorage.replaceAssetCatalog(
-            prefix,
-            keys.map((key) => ({ key })),
+            '',
+            fresh.assets.map((asset) => ({ key: asset.key, size: asset.size })),
             sourceId
         );
+        const keys = fresh.assets.map((asset) => asset.key)
+            .filter((key) => !prefix || key.startsWith(prefix));
         return { keys, source: 'storage-sync' };
     } catch (error) {
         console.warn('[asset-catalog] SQL catalog unavailable; falling back to storage listing:', error?.message || error);
@@ -581,8 +588,70 @@ async function resolveCatalogedAssetKeys(storage, prefix = 'assets/', forceResyn
     }
 }
 
+// Full-bucket catalog (re)synchronization. Lists S3 once and replaces every
+// catalog row. Used by the explicit resync endpoint, post-migration sync, and
+// the storage explorer's one-time initialization.
+async function resyncAssetCatalogFull() {
+    const storage = assetStorageManager.getStorage();
+    if (storage.type !== 's3' || !assetStorageManager.s3Storage) {
+        throw new Error('S3 storage is not active');
+    }
+    const sourceId = getAssetCatalogSourceId();
+    if (!sourceId || !canUseAssetCatalog()) {
+        throw new Error('SQL asset catalog is unavailable');
+    }
+    const fresh = await assetStorageManager.s3Storage.getAssetDetails();
+    const count = await postgresStorage.replaceAssetCatalog(
+        '',
+        fresh.assets.map((asset) => ({ key: asset.key, size: asset.size })),
+        sourceId
+    );
+    return { count, source: 'storage-sync' };
+}
+
+// Asset details for the storage explorer are catalog-only. An empty or
+// uninitialized catalog is reported to the client so the user can explicitly
+// approve the S3 listing required to populate it.
+async function getCatalogedAssetDetails() {
+    if (!assetStorageManager.s3Storage) return null;
+    const sourceId = getAssetCatalogSourceId();
+    if (!sourceId) return null;
+    const config = assetStorageManager.s3Config || assetStorageManager.config || {};
+    const initialized = await postgresStorage.isAssetCatalogInitialized(sourceId);
+    let assets = [];
+    if (initialized) {
+        const rows = await postgresStorage.listAssetCatalogEntries('');
+        assets = rows.map((row) => ({ key: row.key, size: row.size ?? 0, mtime: row.updatedAt ?? 0 }));
+    }
+    return {
+        storageType: 's3',
+        bucketName: config.bucket || '',
+        endpoint: config.endpoint || 'AWS Standard',
+        totalObjects: assets.length,
+        totalSizeBytes: assets.reduce((sum, asset) => sum + (asset.size || 0), 0),
+        assets,
+        listSource: 'catalog',
+        catalogEmpty: assets.length === 0
+    };
+}
+
+// S3 remove() also deletes the derived thumbnail for every removed image, so
+// catalog cleanup must account for those keys as well.
+function deriveCatalogDeleteKeys(keys) {
+    const result = [];
+    for (const key of keys) {
+        if (typeof key !== 'string' || key.length === 0) continue;
+        result.push(key);
+        if (!key.startsWith('thumbnails/')) {
+            result.push(`thumbnails/${key}_128x128.webp`);
+        }
+    }
+    return result;
+}
+
 async function upsertAssetCatalogEntries(entries) {
-    const assetEntries = entries.filter((entry) => entry?.key?.startsWith('assets/'));
+    const assetEntries = (Array.isArray(entries) ? entries : [])
+        .filter((entry) => typeof entry?.key === 'string' && entry.key.length > 0);
     if (assetEntries.length === 0 || !canUseAssetCatalog() ||
         typeof postgresStorage.upsertAssetCatalog !== 'function') return;
     try {
@@ -597,7 +666,8 @@ async function upsertAssetCatalogKey(key, size = null) {
 }
 
 async function removeAssetCatalogKeys(keys) {
-    const assetKeys = keys.filter((key) => key?.startsWith('assets/'));
+    const assetKeys = (Array.isArray(keys) ? keys : [])
+        .filter((key) => typeof key === 'string' && key.length > 0);
     if (assetKeys.length === 0 || !canUseAssetCatalog() ||
         typeof postgresStorage.removeAssetCatalog !== 'function') return;
     try {
@@ -3767,7 +3837,25 @@ app.get('/api/storage-summary', authenticatedRouteLimiter, async (req, res, next
         return;
     }
     try {
-        const summary = await assetStorageManager.getSummary();
+        // Never list S3 just to render the explorer summary. S3 statistics are
+        // populated exclusively from the SQL catalog below.
+        const summary = await assetStorageManager.getSummary({ skipS3Stats: true });
+        if (summary.s3 && canUseAssetCatalog()) {
+            try {
+                const sourceId = getAssetCatalogSourceId();
+                if (sourceId && await postgresStorage.isAssetCatalogInitialized(sourceId)) {
+                    const stats = await postgresStorage.getAssetCatalogStats();
+                    summary.s3 = {
+                        ...summary.s3,
+                        totalObjects: stats.totalObjects,
+                        totalSizeBytes: stats.totalSizeBytes,
+                        listSource: 'catalog'
+                    };
+                }
+            } catch (error) {
+                console.warn('[asset-catalog] SQL catalog stats unavailable; keeping S3 stats:', error?.message || error);
+            }
+        }
         res.send(summary);
     } catch (error) {
         next(error);
@@ -3780,8 +3868,35 @@ app.get('/api/s3-asset-details', authenticatedRouteLimiter, async (req, res, nex
     }
     try {
         const target = req.query.target || 'active';
+        const effectiveType = target === 'active'
+            ? assetStorageManager.getStorage().type
+            : target;
+        if (effectiveType === 's3') {
+            if (!canUseAssetCatalog()) {
+                res.status(503).send({
+                    error: 'SQL asset catalog is unavailable',
+                    code: 'asset_catalog_unavailable'
+                });
+                return;
+            }
+            try {
+                const details = await getCatalogedAssetDetails();
+                if (details) {
+                    res.send(details);
+                    return;
+                }
+            } catch (error) {
+                next(error);
+                return;
+            }
+            res.status(503).send({
+                error: 'SQL asset catalog is unavailable',
+                code: 'asset_catalog_unavailable'
+            });
+            return;
+        }
         const details = await assetStorageManager.getAssetDetails(target);
-        res.send(details);
+        res.send({ ...details, listSource: details.listSource || 'storage' });
     } catch (error) {
         next(error);
     }
@@ -3799,7 +3914,7 @@ app.post('/api/storage-assets-delete', authenticatedRouteLimiter, async (req, re
         }
         const result = await assetStorageManager.deleteAssetKeys(keys, target);
         if (target === 's3' || (target === 'active' && assetStorageManager.getStorage().type === 's3')) {
-            await removeAssetCatalogKeys(keys);
+            await removeAssetCatalogKeys(deriveCatalogDeleteKeys(keys));
         }
         res.send(result);
     } catch (error) {
@@ -3837,7 +3952,9 @@ app.post('/api/s3-migrate', authenticatedRouteLimiter, async (req, res, next) =>
         });
 
         if (assetStorageManager.getStorage().type === 's3' && canUseAssetCatalog()) {
-            await resolveCatalogedAssetKeys(assetStorageManager.getStorage(), 'assets/', true);
+            await resyncAssetCatalogFull().catch((error) => {
+                console.warn('[asset-catalog] Post-migration catalog resync failed:', error?.message || error);
+            });
         }
 
         res.write(JSON.stringify({ type: 'done', ...result }) + '\n');
@@ -4018,7 +4135,9 @@ app.get('/api/remove', authenticatedRouteLimiter, async (req, res, next) => {
     try {
         await assetStorageManager.getStorage().remove(filePaths);
         await removeAssetCatalogKeys(
-            filePaths.map((filePath) => Buffer.from(filePath, 'hex').toString('utf8'))
+            deriveCatalogDeleteKeys(
+                filePaths.map((filePath) => Buffer.from(filePath, 'hex').toString('utf8'))
+            )
         );
         res.send({
             success: true,
@@ -4068,11 +4187,8 @@ app.post('/api/asset-catalog/resync', authenticatedRouteLimiter, async (req, res
         return;
     }
     try {
-        const result = await resolveCatalogedAssetKeys(storage, 'assets/', true);
-        if (result.source !== 'storage-sync') {
-            throw new Error('Asset catalog resync fell back to direct storage listing');
-        }
-        res.send({ success: true, count: result.keys.length, source: result.source });
+        const result = await resyncAssetCatalogFull();
+        res.send({ success: true, count: result.count, source: result.source });
     } catch (error) {
         next(error);
     }

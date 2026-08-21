@@ -112,6 +112,9 @@
     let orphanSizeBytes = $state(0)
     let cleaningOrphans = $state(false)
 
+    // SQL asset catalog (S3 listing mirror)
+    let resyncingCatalog = $state(false)
+
     // All files explorer
     let fileSearch = $state('')
     let fileFilter = $state<'all' | 'image' | 'audio' | 'orphan'>('all')
@@ -189,16 +192,32 @@
         }
     }
 
-    async function loadTargetAssets() {
+    async function loadTargetAssets(promptForEmptyCatalog = true) {
         try {
             const storage = getNodeStorage()
             assetDetails = await storage.s3.getAssetDetails(viewTarget)
+            if (viewTarget === 's3' && assetDetails.catalogEmpty && promptForEmptyCatalog) {
+                const shouldPopulate = await alertConfirm(language.storageEmptyCatalogConfirm)
+                if (shouldPopulate) {
+                    resyncingCatalog = true
+                    try {
+                        const result = await storage.s3.resyncAssetCatalog()
+                        alertNormal(language.storageResyncCatalogSuccess(result.count))
+                        await loadTargetAssets(false)
+                        return
+                    } catch (error) {
+                        alertError(error)
+                    } finally {
+                        resyncingCatalog = false
+                    }
+                }
+            }
             const map = new Map<string, NodeStorageAssetItem>()
             for (const item of assetDetails.assets) {
                 map.set(item.key, item)
             }
             assetMap = map
-            analyzeStorage()
+            await analyzeStorage()
         } catch (err: any) {
             console.warn('Failed to load asset details for target:', viewTarget, err)
             assetDetails = {
@@ -208,7 +227,7 @@
                 assets: []
             }
             assetMap = new Map()
-            analyzeStorage()
+            await analyzeStorage()
         }
     }
 
@@ -227,8 +246,21 @@
         loading = false
     }
 
-    function analyzeStorage() {
+    async function analyzeStorage() {
         const characters = DBState.db.characters || []
+
+        // SQL storage lazy-loads characters with only core fields (image/name/…).
+        // emotionImages / additionalAssets / ccAssets are absent until details are
+        // fetched, so the per-bot breakdown would otherwise count only the avatar.
+        const adapter = DBState.db as any
+        if (adapter?.ensureCharacterDetails) {
+            await Promise.allSettled(
+                characters
+                    .filter((c: any) => c && c.detailsLoaded === false && c.chaId)
+                    .map((c: any) => adapter.ensureCharacterDetails(c.chaId))
+            )
+        }
+
         const referencedKeys = new Set<string>()
         const bots: BotStorageInfo[] = []
 
@@ -601,6 +633,23 @@
             alertError(error)
         } finally {
             cleaningOrphans = false
+        }
+    }
+
+    async function resyncAssetCatalog() {
+        if (resyncingCatalog || viewTarget !== 's3') return
+        if (!await alertConfirm(language.storageResyncCatalogConfirm)) return
+
+        resyncingCatalog = true
+        try {
+            const storage = getNodeStorage()
+            const result = await storage.s3.resyncAssetCatalog()
+            alertNormal(language.storageResyncCatalogSuccess(result.count))
+            await loadTargetAssets()
+        } catch (error) {
+            alertError(error)
+        } finally {
+            resyncingCatalog = false
         }
     }
 
@@ -1342,6 +1391,28 @@
                             {language.storageFilterOrphan} ({orphanAssets.length})
                         </button>
                     </div>
+
+                    {#if viewTarget === 's3' && assetDetails?.listSource === 'catalog'}
+                        <div class="flex items-center gap-2 rounded-lg border border-sky-500/40 bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-300">
+                            <DatabaseIcon class="h-3.5 w-3.5 shrink-0" />
+                            <span class="whitespace-nowrap">{language.storageListFromCatalog}</span>
+                            <button
+                                type="button"
+                                class="flex items-center gap-1 rounded-md bg-sky-500/20 px-1.5 py-0.5 font-semibold whitespace-nowrap hover:bg-sky-500/30 transition-colors disabled:opacity-50"
+                                disabled={resyncingCatalog || busy}
+                                onclick={resyncAssetCatalog}
+                                title={language.storageResyncCatalogDescription}
+                            >
+                                {#if resyncingCatalog}
+                                    <RefreshCwIcon class="h-3 w-3 animate-spin" />
+                                    <span>{language.storageResyncingCatalog}</span>
+                                {:else}
+                                    <RefreshCwIcon class="h-3 w-3" />
+                                    <span>{language.storageResyncCatalog}</span>
+                                {/if}
+                            </button>
+                        </div>
+                    {/if}
 
                     {#if selectedFileKeys.size > 0}
                         <button

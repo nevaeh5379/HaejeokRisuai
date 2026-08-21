@@ -126,7 +126,7 @@ When S3 is enabled:
 - **Download S3 Assets to Local**: Exports all objects from the S3 bucket back to the local `save/` directory.
 - During migration, read requests automatically fall back to local disk if an asset hasn't been uploaded yet, ensuring zero broken images.
 
-When structured SQL storage and S3 are both active, RisuAI maintains an `asset_catalog` containing S3 asset keys. The first backup performs one full `assets/` listing to initialize it; later uploads and deletes update it incrementally, so subsequent backups query SQL instead of running `ListObjectsV2`. The catalog is scoped to the configured endpoint and bucket. Use `POST /api/asset-catalog/resync` after modifying the bucket outside RisuAI or whenever an explicit reconciliation is required.
+When structured SQL storage and S3 are both active, RisuAI maintains an `asset_catalog` mirroring **every object** in the S3 bucket (assets, thumbnails, database.bin). The first use performs one full bucket listing to initialize it; later uploads and deletes update it incrementally, so subsequent backups and the Storage Explorer query SQL instead of running `ListObjectsV2`. The catalog is scoped to the configured endpoint and bucket. Use `POST /api/asset-catalog/resync` (or the Storage Explorer's Resync button) after modifying the bucket outside RisuAI, or because lazily generated thumbnails are only tracked after a resync.
 
 Migration and rollback use a memory-first bounded concurrency. `RISUAI_MIGRATE_CONCURRENCY` controls the worker count (default `4`; raise it only when more throughput is worth the extra memory). Files larger than 512 KiB stream to/from S3 instead of buffering in memory. Progress updates are time-throttled (~200 ms) to avoid flooding the client.
 

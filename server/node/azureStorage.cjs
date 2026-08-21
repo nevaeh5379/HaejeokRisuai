@@ -396,6 +396,38 @@ class AzureStorage extends SqlStorageBase {
         return result.recordset.map((row) => row.asset_key);
     }
 
+    async listAssetCatalogEntries(prefix = '') {
+        const pool = await this.getPool();
+        const request = pool.request();
+        let query = 'SELECT asset_key, size_bytes, etag, updated_at FROM [system].[asset_catalog]';
+        if (prefix) {
+            request.input('prefix_length', sql.Int, prefix.length);
+            request.input('prefix', sql.NVarChar(900), prefix);
+            query += ' WHERE LEFT(asset_key, @prefix_length) = @prefix';
+        }
+        query += ' ORDER BY asset_key';
+        const result = await request.query(query);
+        return result.recordset.map((row) => ({
+            key: row.asset_key,
+            size: row.size_bytes === null || row.size_bytes === undefined ? null : Number(row.size_bytes),
+            etag: row.etag ?? null,
+            updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null,
+        }));
+    }
+
+    async getAssetCatalogStats() {
+        const pool = await this.getPool();
+        const result = await pool.request().query(
+            `SELECT COUNT(*) AS total_objects, ISNULL(SUM(size_bytes), 0) AS total_size
+             FROM [system].[asset_catalog]`
+        );
+        const row = result.recordset[0] || {};
+        return {
+            totalObjects: Number(row.total_objects) || 0,
+            totalSizeBytes: Number(row.total_size) || 0,
+        };
+    }
+
     async upsertAssetCatalog(entries) {
         if (!Array.isArray(entries) || entries.length === 0) return 0;
         const pool = await this.getPool();
