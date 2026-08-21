@@ -779,7 +779,7 @@ export function LoadLocalBackup(){
         }
         input.type = 'file';
         input.accept = '.bin';
-        input.onchange = async () => {
+        const runLoadLocalBackup = async () => {
             if (!input.files || input.files.length === 0) {
                 input.remove();
                 return;
@@ -1100,6 +1100,16 @@ export function LoadLocalBackup(){
             }
 
             alertNormal('Success');
+        };
+
+        input.onchange = async () => {
+            try {
+                await runLoadLocalBackup();
+            } catch (error) {
+                console.error(error);
+                const detail = error instanceof Error ? error.message : `${error}`;
+                alertError(`Failed to load local backup: ${detail}\nCheck the server console or logs for details.`);
+            }
         };
 
         input.click();

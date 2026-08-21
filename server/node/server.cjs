@@ -2324,6 +2324,11 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
         await upsertAssetCatalogEntries(completedCatalogEntries);
         res.send({ success: true, written: fileCount });
     } catch (error) {
+        const inFlightFiles = [...receivingFiles.values()].map((file) => file.name);
+        console.error(
+            `[Server] write-bulk failed${inFlightFiles.length ? ` (in flight: ${inFlightFiles.join(', ')})` : ''}:`,
+            error?.stack || error
+        );
         await cleanup();
         if (error?.statusCode) {
             res.status(error.statusCode).send({ error: error.message });
@@ -4390,6 +4395,29 @@ app.get('/api/oauth_callback', async (req, res) => {
             
 })
 
+const FRIENDLY_ERROR_MESSAGES = {
+    InvalidAccessKeyId: 'S3 asset storage authentication failed: the access key ID is not valid (InvalidAccessKeyId). Check the S3 access key configuration.',
+    InvalidClientTokenId: 'S3 asset storage authentication failed: the access key ID is not valid (InvalidClientTokenId). Check the S3 access key configuration.',
+    SignatureDoesNotMatch: 'S3 asset storage authentication failed: the request signature does not match (SignatureDoesNotMatch). Check the S3 secret key configuration.',
+    AccessDenied: 'S3 access denied (AccessDenied). Check the bucket permissions for this key.',
+    NoSuchBucket: 'S3 bucket does not exist (NoSuchBucket).',
+    BucketAlreadyExists: 'S3 bucket already exists (BucketAlreadyExists).',
+    ENOENT: 'File or directory not found (ENOENT).',
+    ENOSPC: 'Server disk is full (ENOSPC).',
+    EACCES: 'File permission denied (EACCES).',
+    EPERM: 'Operation not permitted (EPERM).',
+    EMFILE: 'Too many open files (EMFILE).',
+    ENFILE: 'Too many open files system-wide (ENFILE).',
+    EROFS: 'Filesystem is read-only (EROFS).',
+    EISDIR: 'Attempted to write to a directory (EISDIR).',
+    ECONNREFUSED: 'Connection to the remote service was refused (ECONNREFUSED).',
+    ECONNRESET: 'Connection to the remote service was reset (ECONNRESET).',
+    ETIMEDOUT: 'Connection to the remote service timed out (ETIMEDOUT).',
+    EAI_AGAIN: 'DNS lookup failed (EAI_AGAIN).',
+    TimeoutError: 'Request timed out (TimeoutError).',
+    ERR_STREAM_PREMATURE_CLOSE: 'The request stream was closed before it completed.',
+};
+
 app.use((error, req, res, next) => {
     if (error?.type === 'entity.too.large' || error?.status === 413) {
         const isPostgresPayload = isLargePostgresJsonRequest(req);
@@ -4401,7 +4429,26 @@ app.use((error, req, res, next) => {
         });
         return;
     }
-    next(error);
+
+    const statusCode = Number.isInteger(error?.status) ? error.status
+        : Number.isInteger(error?.statusCode) ? error.statusCode
+        : 500;
+    const errorKey = [error?.name, error?.code, error?.type]
+        .find((value) => typeof value === 'string' && Object.hasOwn(FRIENDLY_ERROR_MESSAGES, value));
+    const rawMessage = error?.message || (error ? String(error) : 'Unknown error');
+    const message = errorKey ? `${FRIENDLY_ERROR_MESSAGES[errorKey]} (${rawMessage})` : rawMessage;
+
+    if (statusCode >= 500) {
+        console.error(`[Server] Unhandled error on ${req.method} ${req.path}:`, error?.stack || error);
+    }
+
+    if (res.headersSent) {
+        return next(error);
+    }
+    res.status(statusCode).send({
+        error: message,
+        code: errorKey || undefined,
+    });
 });
 
 async function getHttpsOptions() {

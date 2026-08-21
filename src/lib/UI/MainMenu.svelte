@@ -20,6 +20,24 @@
     let contextMenu = $state<{ x: number; y: number; index: number } | null>(null)
 
     let allCharacters = $derived(DBState.db.characters ?? [])
+    let favorites = $derived(DBState.db.characterFavorites ?? [])
+    let hidden = $derived(DBState.db.characterHidden ?? [])
+
+    // Image URL cache — keyed by chaId, survives re-sort/filter without re-fetch
+    let imageUrlCache = $state(new Map<string, string | null>())
+    // Non-reactive set to track which chaIds have been requested — prevents duplicate fetches
+    let requestedIds = new Set<string>()
+
+    // Progressive loading — only render items visible (or near) the viewport
+    const PAGE_SIZE = 24
+    let visibleCount = $state(PAGE_SIZE)
+
+    function isFavorite(char: any): boolean {
+        return favorites.includes(char.chaId)
+    }
+    function isHidden(char: any): boolean {
+        return hidden.includes(char.chaId)
+    }
 
     function charCreator(char: any): string {
         return (char.creator ?? '').toLowerCase()
@@ -32,11 +50,11 @@
         let list = allCharacters.map((char, index) => ({ char, index }))
 
         if (!showHidden) {
-            list = list.filter(({ char }) => char.hidden !== true)
+            list = list.filter(({ char }) => !isHidden(char))
         }
 
         if (showFavoritesOnly) {
-            list = list.filter(({ char }) => char.favorite === true)
+            list = list.filter(({ char }) => isFavorite(char))
         }
 
         const q = searchQuery.trim().toLowerCase()
@@ -60,8 +78,8 @@
                 )
             case 'favorite':
                 return [...list].sort((a, b) => {
-                    const af = a.char.favorite === true ? 1 : 0
-                    const bf = b.char.favorite === true ? 1 : 0
+                    const af = isFavorite(a.char) ? 1 : 0
+                    const bf = isFavorite(b.char) ? 1 : 0
                     return bf - af
                 })
             default:
@@ -69,17 +87,87 @@
         }
     })
 
+    let visibleCharacters = $derived(sortedCharacters.slice(0, visibleCount))
+
+    // Reset paging when filter/sort/search changes
+    $effect(() => {
+        // Touch reactive deps to track changes
+        void showHidden; void showFavoritesOnly; void searchQuery; void sortMode
+        visibleCount = PAGE_SIZE
+    })
+
+    // IntersectionObserver sentinel — loads next page when sentinel enters view
+    let sentinelEl = $state<HTMLDivElement | null>(null)
+    let observer: IntersectionObserver | null = null
+
+    $effect(() => {
+        if (!sentinelEl) return
+        observer?.disconnect()
+        observer = new IntersectionObserver((entries) => {
+            for (const entry of entries) {
+                if (entry.isIntersecting && visibleCount < sortedCharacters.length) {
+                    visibleCount = Math.min(visibleCount + PAGE_SIZE, sortedCharacters.length)
+                }
+            }
+        }, { rootMargin: '300px' })
+        observer.observe(sentinelEl)
+        return () => observer?.disconnect()
+    })
+
+    // Preload image URLs for visible items in batch (parallel)
+    $effect(() => {
+        const items = visibleCharacters
+        const toLoad = items.filter(({ char }) =>
+            char.image && !DBState.db.hideAllImages && !requestedIds.has(char.chaId)
+        )
+        if (toLoad.length === 0) return
+
+        for (const { char } of toLoad) {
+            requestedIds.add(char.chaId)
+        }
+
+        let cancelled = false
+        for (const { char } of toLoad) {
+            getCharImage(char.image, 'plain').then((src) => {
+                if (cancelled) return
+                imageUrlCache.set(char.chaId, src ?? null)
+                imageUrlCache = new Map(imageUrlCache)
+            }).catch(() => {
+                if (cancelled) return
+                imageUrlCache.set(char.chaId, null)
+                imageUrlCache = new Map(imageUrlCache)
+            })
+        }
+        return () => { cancelled = true }
+    })
+
+    function getImageUrl(chaId: string): string | null | undefined {
+        return imageUrlCache.get(chaId)
+    }
+
     function toggleFavorite(index: number) {
         const char = DBState.db.characters?.[index]
-        if (char) {
-            char.favorite = !char.favorite
+        if (!char) return
+        const chaId = char.chaId
+        const favs = DBState.db.characterFavorites ?? []
+        const i = favs.indexOf(chaId)
+        if (i >= 0) {
+            DBState.db.characterFavorites = favs.filter(id => id !== chaId)
+        } else {
+            DBState.db.characterFavorites = [...favs, chaId]
         }
     }
 
     function toggleHidden(index: number) {
         const char = DBState.db.characters?.[index]
-        if (char) {
-            char.hidden = !char.hidden
+        if (!char) return
+        const chaId = char.chaId
+        const hid = DBState.db.characterHidden ?? []
+        const i = hid.indexOf(chaId)
+        if (i >= 0) {
+            DBState.db.characterHidden = hid.filter(id => id !== chaId)
+        } else {
+            DBState.db.characterHidden = [...hid, chaId]
         }
     }
 
@@ -158,9 +246,9 @@
           </select>
         </div>
       </div>
-      {#if sortedCharacters.length > 0}
+      {#if visibleCharacters.length > 0}
         <div class="columns-2 sm:columns-3 md:columns-4 lg:columns-5 xl:columns-6 gap-3">
-          {#each sortedCharacters as { char, index } (char.chaId)}
+          {#each visibleCharacters as { char, index } (char.chaId)}
             <button
               class="group relative w-full mb-3 break-inside-avoid overflow-hidden rounded-xl bg-darkbg block transition-all duration-300 hover:-translate-y-1 hover:ring-2 hover:ring-selected/50 hover:shadow-xl hover:shadow-darkbg/50"
               onclick={() => changeChar(index)}
@@ -190,38 +278,33 @@
               }}
             >
               {#if char.image && !DBState.db.hideAllImages}
-                {#await getCharImage(char.image, 'plain') then src}
-                  {#if src}
-                    <img
-                      src={src}
-                      alt={char.name}
-                      class="w-full h-auto block transition-transform duration-300 group-hover:scale-105 {char.hidden && DBState.db.blurHiddenCharacters ? 'blur-xl' : ''}"
-                      loading="lazy"
-                      decoding="async"
-                      draggable="false"
-                    />
-                  {:else}
-                    <div class="w-full aspect-square flex items-center justify-center bg-darkbutton text-textcolor2 text-4xl font-bold">
-                      {char.name?.charAt(0)?.toUpperCase() ?? '?'}
-                    </div>
-                  {/if}
-                {:catch}
+                {@const url = getImageUrl(char.chaId)}
+                {#if url === undefined}
+                  <div class="w-full aspect-square bg-darkbutton animate-pulse"></div>
+                {:else if url}
+                  <img
+                    src={url}
+                    alt={char.name}
+                    class="w-full h-auto block transition-transform duration-300 group-hover:scale-105 {isHidden(char) && DBState.db.blurHiddenCharacters ? 'blur-xl' : ''}"
+                    loading="lazy"
+                    decoding="async"
+                    draggable="false"
+                  />
+                {:else}
                   <div class="w-full aspect-square flex items-center justify-center bg-darkbutton text-textcolor2 text-4xl font-bold">
                     {char.name?.charAt(0)?.toUpperCase() ?? '?'}
                   </div>
-                {/await}
+                {/if}
               {:else}
                 <div class="w-full aspect-square flex items-center justify-center bg-darkbutton text-textcolor2 text-4xl font-bold">
                   {char.name?.charAt(0)?.toUpperCase() ?? '?'}
                 </div>
               {/if}
-              {#if char.favorite || char.hidden}
+              {#if isFavorite(char)}
                 <div class="absolute top-2 right-2 z-10 flex gap-1">
-                  {#if char.favorite}
-                    <div class="p-1 rounded-full bg-black/40 backdrop-blur-sm text-yellow-400 pointer-events-none">
-                      <StarIcon class="w-3 h-3" fill="currentColor" />
-                    </div>
-                  {/if}
+                  <div class="p-1 rounded-full bg-black/40 backdrop-blur-sm text-yellow-400 pointer-events-none">
+                    <StarIcon class="w-3 h-3" fill="currentColor" />
+                  </div>
                 </div>
               {/if}
               <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 pt-8 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
@@ -230,6 +313,11 @@
             </button>
           {/each}
         </div>
+        {#if visibleCount < sortedCharacters.length}
+          <div bind:this={sentinelEl} class="w-full h-10 flex items-center justify-center py-4">
+            <div class="w-6 h-6 border-2 border-textcolor2/30 border-t-textcolor2 rounded-full animate-spin"></div>
+          </div>
+        {/if}
       {:else}
         <div class="text-textcolor2 text-center py-12">
           {#if searchQuery.trim()}
@@ -254,28 +342,29 @@
 </div>
 
 {#if contextMenu}
-  <div
-    class="fixed z-50 min-w-[180px] rounded-lg border border-borderc/20 bg-darkbg shadow-xl py-1 text-sm select-none"
-    style="left: {Math.min(contextMenu.x, window.innerWidth - 200)}px; top: {Math.min(contextMenu.y, window.innerHeight - 160)}px;"
-    role="menu"
-    tabindex="-1"
-  >
-    {#if DBState.db.characters?.[contextMenu.index]}
+  {#if DBState.db.characters?.[contextMenu.index]}
+    {@const char = DBState.db.characters[contextMenu.index]}
+    <div
+      class="fixed z-50 min-w-[180px] rounded-lg border border-borderc/20 bg-darkbg shadow-xl py-1 text-sm select-none"
+      style="left: {Math.min(contextMenu.x, window.innerWidth - 200)}px; top: {Math.min(contextMenu.y, window.innerHeight - 160)}px;"
+      role="menu"
+      tabindex="-1"
+    >
       <button
         class="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-selected/50 transition-colors text-textcolor"
         role="menuitem"
         onclick={(e) => { e.stopPropagation(); toggleFavorite(contextMenu!.index); closeContextMenu() }}
       >
-        <StarIcon class="w-4 h-4" fill={(DBState.db.characters[contextMenu.index] as any).favorite ? 'currentColor' : 'none'} />
-        {(DBState.db.characters[contextMenu.index] as any).favorite ? 'Remove from Favorites' : 'Add to Favorites'}
+        <StarIcon class="w-4 h-4" fill={isFavorite(char) ? 'currentColor' : 'none'} />
+        {isFavorite(char) ? 'Remove from Favorites' : 'Add to Favorites'}
       </button>
       <button
         class="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-selected/50 transition-colors text-textcolor"
         role="menuitem"
         onclick={(e) => { e.stopPropagation(); toggleHidden(contextMenu!.index); closeContextMenu() }}
       >
-        {(DBState.db.characters[contextMenu.index] as any).hidden ? 'Unhide' : 'Hide'}
+        {isHidden(char) ? 'Unhide' : 'Hide'}
       </button>
-    {/if}
-  </div>
+    </div>
+  {/if}
 {/if}

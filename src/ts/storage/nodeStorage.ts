@@ -155,10 +155,13 @@ export class NodeStorage{
                 'risu-auth': await this.createAuth()
             }
         })
+        let data: { error?: string } = {}
+        try{
+            data = await da.json()
+        }catch{}
         if(da.status < 200 || da.status >= 300){
-            throw "setItem Error"
+            throw new Error(data?.error ?? `setItem Error: ${da.status}`)
         }
-        const data = await da.json()
         if(data.error){
             throw data.error
         }
@@ -235,9 +238,13 @@ export class NodeStorage{
             request.onabort = () => reject(new Error('setItems request aborted'))
             request.onload = () => {
                 if(request.status < 200 || request.status >= 300){
-                    const message = request.response?.error
-                        ?? `setItems Error: ${request.status}`
-                    reject(new Error(message))
+                    let message = request.response?.error
+                    if(!message && typeof request.responseText === 'string' && request.responseText){
+                        try{
+                            message = JSON.parse(request.responseText)?.error
+                        }catch{}
+                    }
+                    reject(new Error(message ?? `setItems Error: ${request.status}`))
                     return
                 }
                 onProgress?.({
