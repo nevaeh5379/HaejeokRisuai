@@ -7,7 +7,7 @@
     import { prebuiltPresets } from "src/ts/process/templates/templates";
     import { updateTextThemeAndCSS } from "src/ts/gui/colorscheme";
     import { alertError } from "src/ts/alert";
-    import { getDataSession } from "src/ts/storage/dataSession.svelte";
+    import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
     import Airisu from '../../etc/Airisu.webp'
 
     const airisuStyle = `background: url("${Airisu}");background-size: cover;`
@@ -161,10 +161,7 @@
                     DBState.db.useAutoTranslateInput = true
                 }
 
-                const dataSession = getDataSession()
-                await dataSession.transaction(() => {
-                    dataSession.settings.set('didFirstSetup', true)
-                })
+                await settingsStore.set('didFirstSetup', true)
             }, 1000);
 
             DBState.db.claudeCachingExperimental = true

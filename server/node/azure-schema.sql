@@ -86,56 +86,11 @@ IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[system].
 BEGIN
     CREATE TABLE [system].[settings] (
         [key] NVARCHAR(450) PRIMARY KEY,
+        [text_val] NVARCHAR(MAX),
+        [num_val] FLOAT,
+        [bool_val] BIT,
         updated_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
     );
-END;
-
-IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[system].[setting_values]') AND type in (N'U'))
-BEGIN
-    CREATE TABLE [system].[setting_values] (
-        setting_key NVARCHAR(450) NOT NULL REFERENCES [system].[settings]([key]) ON DELETE CASCADE,
-        node_id BIGINT NOT NULL CHECK (node_id >= 0),
-        parent_node_id BIGINT,
-        member_key NVARCHAR(450),
-        encoded_member_key NVARCHAR(450),
-        position INT CHECK (position >= 0),
-        value_type NVARCHAR(32) NOT NULL CHECK (
-            value_type IN ('null', 'text', 'encoded-text', 'number', 'boolean', 'object', 'array')
-        ),
-        text_value NVARCHAR(MAX),
-        encoded_text_value NVARCHAR(MAX),
-        number_value FLOAT,
-        boolean_value BIT,
-        PRIMARY KEY (setting_key, node_id),
-        FOREIGN KEY (setting_key, parent_node_id) REFERENCES [system].[setting_values](setting_key, node_id),
-        CHECK (
-            (node_id = 0 AND parent_node_id IS NULL AND member_key IS NULL
-                AND encoded_member_key IS NULL AND position IS NULL)
-            OR
-            (node_id > 0 AND parent_node_id IS NOT NULL AND (
-                (position IS NOT NULL AND member_key IS NULL AND encoded_member_key IS NULL)
-                OR
-                (position IS NULL AND (
-                    (member_key IS NOT NULL AND encoded_member_key IS NULL)
-                    OR (member_key IS NULL AND encoded_member_key IS NOT NULL)
-                ))
-            ))
-        ),
-        CHECK (
-            (value_type IN ('null', 'object', 'array') AND text_value IS NULL
-                AND encoded_text_value IS NULL AND number_value IS NULL AND boolean_value IS NULL)
-            OR (value_type = 'text' AND text_value IS NOT NULL
-                AND encoded_text_value IS NULL AND number_value IS NULL AND boolean_value IS NULL)
-            OR (value_type = 'encoded-text' AND text_value IS NULL
-                AND encoded_text_value IS NOT NULL AND number_value IS NULL AND boolean_value IS NULL)
-            OR (value_type = 'number' AND text_value IS NULL
-                AND encoded_text_value IS NULL AND number_value IS NOT NULL AND boolean_value IS NULL)
-            OR (value_type = 'boolean' AND text_value IS NULL
-                AND encoded_text_value IS NULL AND number_value IS NULL AND boolean_value IS NOT NULL)
-        )
-    );
-    CREATE INDEX setting_values_parent_idx ON [system].[setting_values] (setting_key, parent_node_id, position);
-    CREATE INDEX setting_values_member_idx ON [system].[setting_values] (setting_key, member_key);
 END;
 
 IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[system].[bot_presets]') AND type in (N'U'))

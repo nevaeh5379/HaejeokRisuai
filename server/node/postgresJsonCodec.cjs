@@ -137,7 +137,12 @@ function decodePostgresJsonObject(value) {
     return decoded || value;
 }
 
+function canUsePostgresText(value) {
+    return typeof value === 'string' && !value.includes('\0') && Buffer.from(value, 'utf8').toString('utf8') === value;
+}
+
 module.exports = {
+    canUsePostgresText,
     decodePostgresJsonValue,
     encodePostgresJsonValue,
 };

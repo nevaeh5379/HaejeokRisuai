@@ -106,9 +106,32 @@ function mapTableName(qualifiedName) {
     return qualifiedName;
 }
 
+function mapSettingValueToColumns(value) {
+    if (typeof value === 'boolean') {
+        return { text_val: null, num_val: null, bool_val: value ? 1 : 0 };
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return { text_val: null, num_val: value, bool_val: null };
+    }
+    if (typeof value === 'string') {
+        return { text_val: value, num_val: null, bool_val: null };
+    }
+    if (value === null || value === undefined) {
+        return { text_val: null, num_val: null, bool_val: null };
+    }
+    return { text_val: String(value), num_val: null, bool_val: null };
+}
+
+function mapColumnsToSettingValue(row) {
+    if (row.bool_val !== null && row.bool_val !== undefined) return Boolean(row.bool_val);
+    if (row.num_val !== null && row.num_val !== undefined) return Number(row.num_val);
+    if (row.text_val !== null && row.text_val !== undefined) return row.text_val;
+    return null;
+}
+
 // 감사 대상 테이블 목록 (PostgreSQL AUDITED_TABLES와 동일, 접두어 변환)
 const AUDITED_TABLES_QUALIFIED = [
-    'system.settings', 'system.setting_values', 'character.characters',
+    'system.settings', 'character.characters',
     ...SETTING_RELATION_DEFINITIONS.map((d) => d.table),
     'character.attributes', 'character.tags',
     'character.greetings', 'character.biases', 'character.emotions',
@@ -1037,11 +1060,8 @@ class OracleStorage extends SqlStorageBase {
             }
 
             if (shallow) {
-                // 지연 설정 키 제외 (DEFERRED_SETTING_KEYS는 postgresStorage에서 정의됨)
-                // 단순화: 모든 설정 로드 (Oracle은 IN 목록 크기 제한이 있으므로)
-                const settings = await fetchRows(conn, `SELECT * FROM system_settings ORDER BY key`);
-                const settingValues = await fetchRows(conn, `SELECT * FROM system_setting_values ORDER BY setting_key, node_id`,
-                    [], { clobColumns: ['text_value', 'encoded_text_value'] });
+                const settings = await fetchRows(conn, `SELECT key, text_val, num_val, bool_val FROM system_settings ORDER BY key`,
+                    [], { clobColumns: ['text_val'] });
                 const characters = await fetchRows(conn, `SELECT * FROM character_characters ORDER BY position, id`,
                     [], { clobColumns: ['image', 'description', 'notes', 'creator_notes', 'system_prompt',
                         'post_history_instructions', 'personality', 'scenario', 'example_message', 'license',
@@ -1054,7 +1074,10 @@ class OracleStorage extends SqlStorageBase {
                     [], { clobColumns: ['note', 'sd_data', 'supa_memory_data', 'last_memory'] });
                 const bookmarks = await fetchRows(conn, `SELECT * FROM chat_bookmarks ORDER BY chat_id, position`);
 
-                const database = rebuildSettings(settings, settingValues);
+                const database = {};
+                for (const row of settings) {
+                    database[row.key] = mapColumnsToSettingValue(row);
+                }
                 database.plugins ??= [];
                 database.pluginCustomStorage ??= {};
 
@@ -1076,9 +1099,8 @@ class OracleStorage extends SqlStorageBase {
             }
 
             // 전체 로드
-            const allSettings = await fetchRows(conn, `SELECT * FROM system_settings ORDER BY key`);
-            const allSettingValues = await fetchRows(conn, `SELECT * FROM system_setting_values ORDER BY setting_key, node_id`,
-                [], { clobColumns: ['text_value', 'encoded_text_value'] });
+            const allSettings = await fetchRows(conn, `SELECT key, text_val, num_val, bool_val FROM system_settings ORDER BY key`,
+                [], { clobColumns: ['text_val'] });
             const characters = await fetchRows(conn, `SELECT * FROM character_characters ORDER BY position, id`,
                 [], { clobColumns: ['image', 'description', 'notes', 'creator_notes', 'system_prompt',
                     'post_history_instructions', 'personality', 'scenario', 'example_message', 'license',
@@ -1123,7 +1145,10 @@ class OracleStorage extends SqlStorageBase {
                 [], { clobColumns: ['toggle_value'] });
             const promptItems = await fetchRows(conn, `SELECT * FROM chat_message_prompt_items ORDER BY chat_id, message_id, position`);
 
-            const database = rebuildSettings(allSettings, allSettingValues);
+            const database = {};
+            for (const row of allSettings) {
+                database[row.key] = mapColumnsToSettingValue(row);
+            }
             const characterRelations = createCharacterRelations({
                 attributes: characterAttributes, tags, greetings, biases, emotions,
                 modules: characterModules, groupMembers, chatFolders, scripts,
@@ -1452,44 +1477,26 @@ class OracleStorage extends SqlStorageBase {
                 await conn.execute('DELETE FROM character_characters');
             }
 
-            // 설정 upsert
-            onProgress?.({ stage: 'settings', message: `설정 분해 및 동기화 중... (${payload.rootUpserts.length}개 설정)`, percent: 10 });
-            let splitSettings;
-            try {
-                splitSettings = payload.rootUpserts.map((row) => splitSetting(row.key, row.value, {
-                    maxRows: MAX_SYNC_ROWS, maxDepth: 128,
-                }));
-            } catch (error) {
-                throw new StoragePayloadError(
-                    error instanceof Error ? error.message : 'Oracle setting decomposition failed'
-                );
-            }
-            const settingValueCount = splitSettings.reduce((c, s) => c + s.values.length, 0);
-            if (settingValueCount > MAX_SYNC_ROWS) {
-                throw new StoragePayloadError(`Structured settings exceed the ${MAX_SYNC_ROWS} row limit`);
-            }
-
-            // system_settings MERGE
-            if (splitSettings.length > 0) {
+            // 설정 upsert (MERGE INTO system_settings)
+            onProgress?.({ stage: 'settings', message: `설정 동기화 중... (${payload.rootUpserts.length}개 설정)`, percent: 10 });
+            if (payload.rootUpserts.length > 0) {
                 const mergeSql = `MERGE INTO system_settings t
-                    USING (SELECT :1 AS key FROM dual) s
+                    USING (SELECT :key AS key, :text_val AS text_val, :num_val AS num_val, :bool_val AS bool_val FROM dual) s
                     ON (t.key = s.key)
-                    WHEN NOT MATCHED THEN INSERT (key) VALUES (s.key)`;
-                await conn.executeMany(mergeSql, splitSettings.map((s) => [s.setting.key]));
+                    WHEN MATCHED THEN UPDATE SET
+                        t.text_val = s.text_val,
+                        t.num_val = s.num_val,
+                        t.bool_val = s.bool_val,
+                        t.updated_at = SYSTIMESTAMP
+                    WHEN NOT MATCHED THEN INSERT (key, text_val, num_val, bool_val, updated_at)
+                        VALUES (s.key, s.text_val, s.num_val, s.bool_val, SYSTIMESTAMP)`;
+                const settingBinds = payload.rootUpserts.map((row) => {
+                    const mapped = mapSettingValueToColumns(row.value);
+                    return { key: row.key, ...mapped };
+                });
+                await conn.executeMany(mergeSql, settingBinds);
             }
-            const changedSettingKeys = splitSettings.map((s) => s.setting.key);
-            if (changedSettingKeys.length > 0) {
-                // 기존 setting_values 삭제 (executemany)
-                const delSql = `DELETE FROM system_setting_values WHERE setting_key = :1`;
-                await conn.executeMany(delSql, changedSettingKeys.map((k) => [k]));
-            }
-            // setting_values bulk insert
-            const allValues = splitSettings.flatMap((s) => s.values);
-            if (allValues.length > 0) {
-                const cols = ['setting_key', 'node_id', 'parent_node_id', 'member_key', 'encoded_member_key',
-                    'position', 'value_type', 'number_value', 'boolean_value', 'text_value', 'encoded_text_value'];
-                await this._bulkInsertRows(conn, 'system_setting_values', cols, allValues, onProgress);
-            }
+            const changedSettingKeys = payload.rootUpserts.map((s) => s.key);
 
             // 관계형 설정 테이블
             const projectedSettings = projectSettings(payload.rootUpserts);

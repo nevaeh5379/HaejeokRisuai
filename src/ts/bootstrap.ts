@@ -41,7 +41,7 @@ import { getSqlStorage } from "./storage/sqlStorageFactory";
 import type { ISqlStorage, INodeSqlStorageAdmin } from "./storage/ISqlStorage";
 import { isNodeSqlStorageAdmin } from "./storage/ISqlStorage";
 import { checkAndMigrateLegacyDatabase, migrateLegacyDatabase } from "./storage/migration";
-import { startDataSession } from './storage/dataSession.svelte'
+import { moduleStore } from './stores/domain/moduleStore.svelte'
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null
 
@@ -214,7 +214,7 @@ export async function loadData() {
             }
             selectedCharID.set(-1)
             assignIds()
-            startDataSession(getDatabase(), storage)
+            moduleStore.init(db.modules, db.enabledModules)
             startObserveDom()
             registerModelDynamic()
             cleanChunks()

@@ -68,11 +68,34 @@ const {
     suppressLegacyReadErrors: true,
 });
 
+function mapSettingValueToColumns(value) {
+    if (typeof value === 'boolean') {
+        return { text_val: null, num_val: null, bool_val: value ? 1 : 0 };
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return { text_val: null, num_val: value, bool_val: null };
+    }
+    if (typeof value === 'string') {
+        return { text_val: value, num_val: null, bool_val: null };
+    }
+    if (value === null || value === undefined) {
+        return { text_val: null, num_val: null, bool_val: null };
+    }
+    return { text_val: String(value), num_val: null, bool_val: null };
+}
+
+function mapColumnsToSettingValue(row) {
+    if (row.bool_val !== null && row.bool_val !== undefined) return Boolean(row.bool_val);
+    if (row.num_val !== null && row.num_val !== undefined) return Number(row.num_val);
+    if (row.text_val !== null && row.text_val !== undefined) return row.text_val;
+    return null;
+}
+
 const AZURE_SCHEMA_VERSION = 2;
 const MAX_SYNC_ROWS = 250000;
 
 const AUDITED_TABLES = [
-    'system.settings', 'system.setting_values', 'system.bot_presets',
+    'system.settings', 'system.bot_presets',
     'system.personas', 'system.modules', 'system.plugins',
     'system.global_lorebooks', 'system.global_lore_entries', 'system.global_lore_cache_items',
     'system.translator_presets', 'system.hotkeys', 'system.custom_models',
@@ -546,36 +569,21 @@ class AzureStorage extends SqlStorageBase {
 
         const deferredKeysLiteral = DEFERRED_SETTING_KEYS.map((k) => `'${k.replace(/'/g, "''")}'`).join(', ');
 
-        // 1. Settings & Setting values
-        let settingsQuery = 'SELECT [key] FROM [system].[settings] ORDER BY [key]';
+        // 1. Settings
+        let settingsQuery = 'SELECT [key], [text_val], [num_val], [bool_val] FROM [system].[settings] ORDER BY [key]';
         if (Array.isArray(onlyKeys) && onlyKeys.length > 0) {
             const keysList = onlyKeys.map((k) => `'${k.replace(/'/g, "''")}'`).join(', ');
-            settingsQuery = `SELECT [key] FROM [system].[settings] WHERE [key] IN (${keysList}) ORDER BY [key]`;
+            settingsQuery = `SELECT [key], [text_val], [num_val], [bool_val] FROM [system].[settings] WHERE [key] IN (${keysList}) ORDER BY [key]`;
         } else if (shallow) {
-            settingsQuery = `SELECT [key] FROM [system].[settings] WHERE [key] NOT IN (${deferredKeysLiteral}) ORDER BY [key]`;
+            settingsQuery = `SELECT [key], [text_val], [num_val], [bool_val] FROM [system].[settings] WHERE [key] NOT IN (${deferredKeysLiteral}) ORDER BY [key]`;
         }
         const settingsRes = await pool.request().query(settingsQuery);
         const settings = settingsRes.recordset;
 
-        let settingValues = [];
-        if (settings.length > 0) {
-            let svQuery = `
-                SELECT setting_key, node_id, parent_node_id, member_key, encoded_member_key,
-                       position, value_type, text_value, encoded_text_value, number_value, boolean_value
-                FROM [system].[setting_values]
-            `;
-            if (Array.isArray(onlyKeys) && onlyKeys.length > 0) {
-                const keysList = settings.map((s) => `'${s.key.replace(/'/g, "''")}'`).join(', ');
-                svQuery += ` WHERE setting_key IN (${keysList})`;
-            } else if (shallow) {
-                svQuery += ` WHERE setting_key NOT IN (${deferredKeysLiteral})`;
-            }
-            svQuery += ' ORDER BY setting_key, node_id';
-            const svRes = await pool.request().query(svQuery);
-            settingValues = svRes.recordset;
+        const database = {};
+        for (const row of settings) {
+            database[row.key] = mapColumnsToSettingValue(row);
         }
-
-        const database = rebuildSettings(settings, settingValues);
         if (shallow) {
             database.plugins ??= [];
             database.pluginCustomStorage ??= {};
@@ -974,58 +982,22 @@ class AzureStorage extends SqlStorageBase {
                 await tx.request().query('DELETE FROM [system].[settings];');
             }
 
-            let splitSettings;
-            try {
-                splitSettings = payload.rootUpserts.map((row) => splitSetting(row.key, row.value, {
-                    maxRows: MAX_SYNC_ROWS,
-                    maxDepth: 128,
-                }));
-            } catch (error) {
-                throw new StoragePayloadError(
-                    error instanceof Error ? error.message : 'Azure SQL setting decomposition failed'
+            if (payload.rootUpserts && payload.rootUpserts.length > 0) {
+                const settingRows = payload.rootUpserts.map((row) => {
+                    const mapped = mapSettingValueToColumns(row.value);
+                    return { key: row.key, ...mapped };
+                });
+                await bulkInsert(
+                    tx,
+                    'system.settings',
+                    ['key', 'text_val', 'num_val', 'bool_val'],
+                    ['nvarchar(450)', 'nvarchar(max)', 'float', 'bit'],
+                    settingRows,
+                    ['key']
                 );
             }
 
-            const settingValueCount = splitSettings.reduce(
-                (count, setting) => count + setting.values.length,
-                0
-            );
-            if (settingValueCount > MAX_SYNC_ROWS) {
-                throw new StoragePayloadError(
-                    `Structured settings exceed the ${MAX_SYNC_ROWS} row limit`
-                );
-            }
-
-            await bulkInsert(
-                tx,
-                'system.settings',
-                ['key'],
-                ['nvarchar(450)'],
-                splitSettings.map((item) => item.setting),
-                ['key']
-            );
-
-            const changedSettingKeys = splitSettings.map((item) => item.setting.key);
-            if (changedSettingKeys.length > 0) {
-                const keysList = changedSettingKeys.map((k) => `'${k.replace(/'/g, "''")}'`).join(', ');
-                await tx.request().query(`DELETE FROM [system].[setting_values] WHERE [setting_key] IN (${keysList});`);
-            }
-
-            await bulkInsert(
-                tx,
-                'system.setting_values',
-                [
-                    'setting_key', 'node_id', 'parent_node_id', 'member_key', 'encoded_member_key',
-                    'position', 'value_type', 'text_value', 'encoded_text_value', 'number_value',
-                    'boolean_value',
-                ],
-                [
-                    'nvarchar(450)', 'bigint', 'bigint', 'nvarchar(450)', 'nvarchar(450)',
-                    'int', 'nvarchar(32)', 'nvarchar(max)', 'nvarchar(max)',
-                    'float', 'bit',
-                ],
-                splitSettings.flatMap((item) => item.values)
-            );
+            const changedSettingKeys = (payload.rootUpserts || []).map((item) => item.key);
 
             const projectedSettings = projectSettings(payload.rootUpserts);
             if (changedSettingKeys.length > 0) {

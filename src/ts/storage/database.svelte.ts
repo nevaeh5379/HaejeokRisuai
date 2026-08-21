@@ -788,9 +788,6 @@ function refreshLanguage(data: Database): void {
 
 export function setDatabaseLite(data:Database){
     DBState.db = data
-    void import('./dataSession.svelte').then(({ replaceActiveDataSession }) =>
-        replaceActiveDataSession(data)
-    ).catch((error) => console.error('Failed to replace active SQL DataSession:', error))
 }
 
 interface getDatabaseOptions{

@@ -3584,6 +3584,138 @@ app.post(
     }
 );
 
+// ── Direct SQL Mutation Endpoints (Domain Architecture) ──
+
+app.put(
+    '/api/db/settings/:key',
+    authenticatedRouteLimiter,
+    requireNodeAuth,
+    postgresJsonParser,
+    async (req, res, next) => {
+        if (!postgresStorage.enabled) {
+            res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+            return;
+        }
+        try {
+            const result = await postgresStorage.updateSetting(req.params.key, req.body.value);
+            res.send(result);
+        } catch (error) {
+            next(error);
+        }
+    }
+);
+
+app.delete(
+    '/api/db/settings/:key',
+    authenticatedRouteLimiter,
+    requireNodeAuth,
+    async (req, res, next) => {
+        if (!postgresStorage.enabled) {
+            res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+            return;
+        }
+        try {
+            const result = await postgresStorage.deleteSetting(req.params.key);
+            res.send(result);
+        } catch (error) {
+            next(error);
+        }
+    }
+);
+
+app.post(
+    '/api/db/bot-presets',
+    authenticatedRouteLimiter,
+    requireNodeAuth,
+    postgresJsonParser,
+    async (req, res, next) => {
+        if (!postgresStorage.enabled) {
+            res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+            return;
+        }
+        try {
+            const result = await postgresStorage.saveBotPreset(req.body.preset, req.body.position);
+            res.send(result);
+        } catch (error) {
+            next(error);
+        }
+    }
+);
+
+app.post(
+    '/api/db/modules',
+    authenticatedRouteLimiter,
+    requireNodeAuth,
+    postgresJsonParser,
+    async (req, res, next) => {
+        if (!postgresStorage.enabled) {
+            res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+            return;
+        }
+        try {
+            const result = await postgresStorage.saveModule(req.body.module);
+            res.send(result);
+        } catch (error) {
+            next(error);
+        }
+    }
+);
+
+app.delete(
+    '/api/db/modules/:id',
+    authenticatedRouteLimiter,
+    requireNodeAuth,
+    async (req, res, next) => {
+        if (!postgresStorage.enabled) {
+            res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+            return;
+        }
+        try {
+            const result = await postgresStorage.deleteModule(req.params.id);
+            res.send(result);
+        } catch (error) {
+            next(error);
+        }
+    }
+);
+
+app.post(
+    '/api/db/chats/:chatId/messages',
+    authenticatedRouteLimiter,
+    requireNodeAuth,
+    postgresJsonParser,
+    async (req, res, next) => {
+        if (!postgresStorage.enabled) {
+            res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+            return;
+        }
+        try {
+            const result = await postgresStorage.saveMessage(req.params.chatId, req.body.message);
+            res.send(result);
+        } catch (error) {
+            next(error);
+        }
+    }
+);
+
+app.delete(
+    '/api/db/chats/:chatId/messages/:messageId',
+    authenticatedRouteLimiter,
+    requireNodeAuth,
+    async (req, res, next) => {
+        if (!postgresStorage.enabled) {
+            res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
+            return;
+        }
+        try {
+            const result = await postgresStorage.deleteMessage(req.params.chatId, req.params.messageId);
+            res.send(result);
+        } catch (error) {
+            next(error);
+        }
+    }
+);
+
 app.get('/api/database-v2/cold-storage', authenticatedRouteLimiter, async (req, res, next) => {
     if (!await checkAuth(req, res)) {
         return;

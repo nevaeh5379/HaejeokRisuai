@@ -11,6 +11,7 @@ import { DBState, HideIconStore, moduleBackgroundEmbedding, ReloadGUIPointer } f
 import {get} from "svelte/store"
 import { convertCharacterToModule, convertModuleToCharacter } from "../interchangeability"
 import { exportCharacterCard, importCharacterProcess } from "../characterCards"
+import { moduleStore } from "../stores/domain/moduleStore.svelte"
 
 export interface MCPModule{
     url: string
@@ -272,7 +273,7 @@ export async function importModule(){
                 return
             }
             const module = convertCharacterToModule(char)
-            DBState.db.modules.push(module)
+            await moduleStore.installModule(module)
         } catch (error) {
             console.error(error)
             alertError(language.errors.noData)
@@ -284,7 +285,7 @@ export async function importModule(){
         try {
             const buf = Buffer.from(fileData)
             const module = await readModule(buf)
-            DBState.db.modules.push(module)
+            await moduleStore.installModule(module)
         } catch (error) {
             console.error(error)
             alertError(language.errors.noData)
@@ -309,7 +310,7 @@ export async function importModule(){
                     return false
                 }
             }
-            DBState.db.modules.push(importData)
+            await moduleStore.installModule(importData)
             return
         }
         // importData.type === 'risu' in conflict with HypaV3 preset exports
@@ -322,7 +323,7 @@ export async function importModule(){
                 lorebook: lores,
                 id: v4()
             }
-            DBState.db.modules.push(importModule)
+            await moduleStore.installModule(importModule)
             return
         }
         if(importData.entries){
@@ -333,7 +334,7 @@ export async function importModule(){
                 lorebook: lores,
                 id: v4()
             }
-            DBState.db.modules.push(importModule)
+            await moduleStore.installModule(importModule)
             return
         }
         if(importData.type === 'regex'  && importData.data){
@@ -344,7 +345,7 @@ export async function importModule(){
                 regex: regexs,
                 id: v4()
             }
-            DBState.db.modules.push(importModule)
+            await moduleStore.installModule(importModule)
             return
         }
     } catch (error) {

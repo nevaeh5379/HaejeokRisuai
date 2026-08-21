@@ -97,61 +97,15 @@ END $$;
 
 CREATE TABLE IF NOT EXISTS system.settings (
     key TEXT PRIMARY KEY,
+    text_val TEXT,
+    num_val DOUBLE PRECISION,
+    bool_val BOOLEAN,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS system.setting_values (
-    setting_key TEXT NOT NULL REFERENCES system.settings(key)
-        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
-    node_id BIGINT NOT NULL CHECK (node_id >= 0),
-    parent_node_id BIGINT,
-    member_key TEXT,
-    encoded_member_key TEXT,
-    position INTEGER CHECK (position >= 0),
-    value_type TEXT NOT NULL CHECK (
-        value_type IN ('null', 'text', 'encoded-text', 'number', 'boolean', 'object', 'array')
-    ),
-    text_value TEXT,
-    encoded_text_value TEXT,
-    number_value DOUBLE PRECISION,
-    boolean_value BOOLEAN,
-    PRIMARY KEY (setting_key, node_id),
-    FOREIGN KEY (setting_key, parent_node_id)
-        REFERENCES system.setting_values(setting_key, node_id)
-        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
-    CHECK (
-        (node_id = 0 AND parent_node_id IS NULL AND member_key IS NULL
-            AND encoded_member_key IS NULL AND position IS NULL)
-        OR
-        (node_id > 0 AND parent_node_id IS NOT NULL AND (
-            (position IS NOT NULL AND member_key IS NULL AND encoded_member_key IS NULL)
-            OR
-            (position IS NULL AND (
-                (member_key IS NOT NULL AND encoded_member_key IS NULL)
-                OR (member_key IS NULL AND encoded_member_key IS NOT NULL)
-            ))
-        ))
-    ),
-    CHECK (
-        (value_type IN ('null', 'object', 'array') AND text_value IS NULL
-            AND encoded_text_value IS NULL AND number_value IS NULL AND boolean_value IS NULL)
-        OR (value_type = 'text' AND text_value IS NOT NULL
-            AND encoded_text_value IS NULL AND number_value IS NULL AND boolean_value IS NULL)
-        OR (value_type = 'encoded-text' AND text_value IS NULL
-            AND encoded_text_value IS NOT NULL AND number_value IS NULL AND boolean_value IS NULL)
-        OR (value_type = 'number' AND text_value IS NULL
-            AND encoded_text_value IS NULL AND number_value IS NOT NULL AND boolean_value IS NULL)
-        OR (value_type = 'boolean' AND text_value IS NULL
-            AND encoded_text_value IS NULL AND number_value IS NULL AND boolean_value IS NOT NULL)
-    )
-);
-
-CREATE INDEX IF NOT EXISTS setting_values_parent_idx
-ON system.setting_values (setting_key, parent_node_id, position);
-
-CREATE INDEX IF NOT EXISTS setting_values_member_idx
-ON system.setting_values (setting_key, member_key)
-WHERE member_key IS NOT NULL;
+ALTER TABLE system.settings ADD COLUMN IF NOT EXISTS text_val TEXT;
+ALTER TABLE system.settings ADD COLUMN IF NOT EXISTS num_val DOUBLE PRECISION;
+ALTER TABLE system.settings ADD COLUMN IF NOT EXISTS bool_val BOOLEAN;
 
 CREATE TABLE IF NOT EXISTS system.bot_presets (
     setting_key TEXT NOT NULL DEFAULT 'botPresets' CHECK (setting_key = 'botPresets'),
@@ -1283,7 +1237,6 @@ DECLARE
 BEGIN
     FOREACH audited_target SLICE 1 IN ARRAY ARRAY[
         ARRAY['system', 'settings'],
-        ARRAY['system', 'setting_values'],
         ARRAY['system', 'bot_presets'],
         ARRAY['system', 'personas'],
         ARRAY['system', 'modules'],

@@ -1,4 +1,4 @@
-const { canUsePostgresText } = require('./postgresSettingsCodec.cjs');
+const { canUsePostgresText } = require('./postgresJsonCodec.cjs');
 
 const DEFINITIONS = [
     {

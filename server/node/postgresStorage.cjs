@@ -17,13 +17,6 @@ const {
     splitMessage,
 } = require('./postgresRelationalCodec.cjs');
 const {
-    decodeMember,
-    encodeMember,
-    rebuildSettings,
-    rebuildSettingSubtree,
-    splitSetting,
-} = require('./postgresSettingsCodec.cjs');
-const {
     projectSettings,
     SETTING_RELATION_DEFINITIONS,
 } = require('./postgresSettingRelations.cjs');
@@ -46,7 +39,7 @@ const BULK_INSERT_BATCH_ROWS = Math.max(
     Number.parseInt(process.env.RISUAI_SQL_BATCH_ROWS || '1000', 10) || 1000
 );
 const AUDITED_TABLES = [
-    'system.settings', 'system.setting_values', 'character.characters',
+    'system.settings', 'character.characters',
     ...SETTING_RELATION_DEFINITIONS.map((definition) => definition.table),
     'character.attributes', 'character.tags',
     'character.greetings', 'character.biases', 'character.emotions',
@@ -75,6 +68,29 @@ const unzipAsync = promisify(unzip);
 
 
 const DEFERRED_KEYS_SQL_LITERAL = DEFERRED_SETTING_KEYS.map((k) => `'${k}'`).join(', ');
+
+function mapSettingValueToColumns(value) {
+    if (typeof value === 'boolean') {
+        return { text_val: null, num_val: null, bool_val: value };
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return { text_val: null, num_val: value, bool_val: null };
+    }
+    if (typeof value === 'string') {
+        return { text_val: value, num_val: null, bool_val: null };
+    }
+    if (value === null || value === undefined) {
+        return { text_val: null, num_val: null, bool_val: null };
+    }
+    return { text_val: String(value), num_val: null, bool_val: null };
+}
+
+function mapColumnsToSettingValue(row) {
+    if (row.bool_val !== null && row.bool_val !== undefined) return row.bool_val;
+    if (row.num_val !== null && row.num_val !== undefined) return Number(row.num_val);
+    if (row.text_val !== null && row.text_val !== undefined) return row.text_val;
+    return null;
+}
 
 class PostgresRevisionConflictError extends Error {
     constructor(revision) {
@@ -1076,8 +1092,7 @@ class PostgresStorage extends SqlStorageBase {
 
             if (shallow) {
                 const shallowQueries = [
-                    `SELECT * FROM system.settings WHERE key NOT IN (${DEFERRED_KEYS_SQL_LITERAL}) ORDER BY key`,
-                    `SELECT * FROM system.setting_values WHERE setting_key NOT IN (${DEFERRED_KEYS_SQL_LITERAL}) ORDER BY setting_key, node_id`,
+                    `SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key NOT IN (${DEFERRED_KEYS_SQL_LITERAL}) ORDER BY key`,
                     'SELECT * FROM character.characters ORDER BY position, id',
                     'SELECT * FROM character.tags ORDER BY character_id, position',
                     'SELECT * FROM character.group_members ORDER BY group_id, position',
@@ -1087,10 +1102,13 @@ class PostgresStorage extends SqlStorageBase {
                 ];
                 const results = await client.query(shallowQueries.join(';\n'));
                 const [
-                    settings, settingValues, characters, tags, groupMembers, chatFolders, chats, bookmarks
+                    settings, characters, tags, groupMembers, chatFolders, chats, bookmarks
                 ] = results.map((result) => result.rows);
 
-                const database = rebuildSettings(settings, settingValues);
+                const database = {};
+                for (const row of settings) {
+                    database[row.key] = mapColumnsToSettingValue(row);
+                }
                 database.plugins ??= [];
                 database.pluginCustomStorage ??= {};
 
@@ -1114,8 +1132,7 @@ class PostgresStorage extends SqlStorageBase {
             }
 
             const loadQueries = [
-                'SELECT * FROM system.settings ORDER BY key',
-                'SELECT * FROM system.setting_values ORDER BY setting_key, node_id',
+                'SELECT key, text_val, num_val, bool_val FROM system.settings ORDER BY key',
                 'SELECT * FROM character.characters ORDER BY position, id',
                 'SELECT * FROM character.attributes ORDER BY character_id, key',
                 'SELECT * FROM character.tags ORDER BY character_id, position',
@@ -1148,13 +1165,16 @@ class PostgresStorage extends SqlStorageBase {
             const results = await client.query(loadQueries.join(';\n'));
             const rows = results.map((result) => result.rows);
             const [
-                settings, settingValues, characters, characterAttributes, tags, greetings, biases, emotions,
+                settings, characters, characterAttributes, tags, greetings, biases, emotions,
                 characterModules, groupMembers, chatFolders, scripts, sdData, assets, characterLore,
                 chats, chatAttributes, suggestions, chatModules, scriptState, bookmarks, memory,
                 chatLore, messages, messageAttributes, generations, promptInfos, promptToggles, promptItems
             ] = rows;
 
-            const database = rebuildSettings(settings, settingValues);
+            const database = {};
+            for (const row of settings) {
+                database[row.key] = mapColumnsToSettingValue(row);
+            }
 
             const characterRelations = createCharacterRelations({
                 attributes: characterAttributes, tags, greetings, biases, emotions,
@@ -1480,15 +1500,14 @@ class PostgresStorage extends SqlStorageBase {
         try {
             await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
             const settingsResult = await client.query(
-                'SELECT * FROM system.settings WHERE key = ANY($1::text[]) ORDER BY key',
-                [keys]
-            );
-            const valuesResult = await client.query(
-                'SELECT * FROM system.setting_values WHERE setting_key = ANY($1::text[]) ORDER BY setting_key, node_id',
+                'SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key = ANY($1::text[]) ORDER BY key',
                 [keys]
             );
             await client.query('COMMIT');
-            const rebuilt = rebuildSettings(settingsResult.rows, valuesResult.rows);
+            const rebuilt = {};
+            for (const row of settingsResult.rows) {
+                rebuilt[row.key] = mapColumnsToSettingValue(row);
+            }
             const serialized = JSON.stringify(rebuilt);
             const hash = crypto.createHash('sha256').update(serialized).digest('hex');
             return {
@@ -1501,6 +1520,209 @@ class PostgresStorage extends SqlStorageBase {
         } finally {
             client.release();
         }
+    }
+
+    async executeRevision(action, scope = 'database', callback) {
+        this.assertEnabled();
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+            const metaResult = await client.query(
+                'SELECT revision FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE'
+            );
+            const currentRevision = Number(metaResult.rows[0].revision);
+            const nextRevision = currentRevision + 1;
+            const revisionId = await beginAuditRevision(client, {
+                storageRevision: nextRevision,
+                databaseInitialized: true,
+                scope,
+                action,
+            });
+
+            const result = await callback(client, revisionId);
+
+            await client.query(
+                `UPDATE system.storage_meta
+                 SET revision = $1, initialized = TRUE, updated_at = NOW()
+                 WHERE singleton = TRUE`,
+                [nextRevision]
+            );
+            await client.query('COMMIT');
+            return { success: true, revision: nextRevision, revisionId, ...result };
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async updateSetting(key, value) {
+        return await this.executeRevision(`setting:update (${key})`, 'database', async (client) => {
+            const mapped = mapSettingValueToColumns(value);
+            await client.query(
+                `INSERT INTO system.settings (key, text_val, num_val, bool_val, updated_at)
+                 VALUES ($1, $2, $3, $4, NOW())
+                 ON CONFLICT (key) DO UPDATE SET
+                    text_val = EXCLUDED.text_val,
+                    num_val = EXCLUDED.num_val,
+                    bool_val = EXCLUDED.bool_val,
+                    updated_at = NOW()`,
+                [key, mapped.text_val, mapped.num_val, mapped.bool_val]
+            );
+            const projected = projectSettings([{ key, value }]);
+            for (const definition of SETTING_RELATION_DEFINITIONS) {
+                if (definition.settingKeys.includes(key)) {
+                    await client.query(
+                        `DELETE FROM ${assertSqlIdentifier(definition.table)} WHERE setting_key = $1`,
+                        [key]
+                    );
+                    await bulkInsert(
+                        client,
+                        definition.table,
+                        definition.columns,
+                        definition.types,
+                        projected[definition.table]
+                    );
+                }
+            }
+            this.invalidateBootstrapCache([key]);
+            return { key };
+        });
+    }
+
+    async deleteSetting(key) {
+        return await this.executeRevision(`setting:delete (${key})`, 'database', async (client) => {
+            await client.query('DELETE FROM system.settings WHERE key = $1', [key]);
+            this.invalidateBootstrapCache([key]);
+            return { key };
+        });
+    }
+
+    async saveBotPreset(preset, position = 0) {
+        return await this.executeRevision(`preset:save (${preset.name || position})`, 'database', async (client) => {
+            const columns = [
+                'setting_key', 'position', 'name', 'api_type', 'ai_model', 'sub_model', 'main_prompt',
+                'jailbreak', 'global_note', 'temperature', 'max_context', 'max_response',
+                'frequency_penalty', 'presence_penalty', 'prompt_preprocess', 'proxy_model',
+                'openrouter_model', 'image',
+            ];
+            const row = {
+                setting_key: 'botPresets',
+                position: Number(position) || 0,
+                name: preset.name ?? null,
+                api_type: preset.apiType ?? null,
+                ai_model: preset.aiModel ?? null,
+                sub_model: preset.subModel ?? null,
+                main_prompt: preset.mainPrompt ?? null,
+                jailbreak: preset.jailbreak ?? null,
+                global_note: preset.globalNote ?? null,
+                temperature: Number(preset.temperature) || null,
+                max_context: Number(preset.maxContext) || null,
+                max_response: Number(preset.maxResponse) || null,
+                frequency_penalty: Number(preset.frequencyPenalty) || null,
+                presence_penalty: Number(preset.presencePenalty ?? preset.PresensePenalty) || null,
+                prompt_preprocess: Boolean(preset.promptPreprocess),
+                proxy_model: preset.proxyModel ?? null,
+                openrouter_model: preset.openrouter_model ?? null,
+                image: preset.image ?? null,
+            };
+            await bulkInsert(
+                client,
+                'system.bot_presets',
+                columns,
+                [
+                    'text', 'integer', 'text', 'text', 'text', 'text', 'text', 'text', 'text',
+                    'double precision', 'integer', 'integer', 'double precision', 'double precision',
+                    'boolean', 'text', 'text', 'text',
+                ],
+                [row],
+                `ON CONFLICT (setting_key, position) DO UPDATE SET ${columns.slice(2).map((c) =>
+                    `"${c}" = EXCLUDED."${c}"`).join(', ')}`
+            );
+            return { position };
+        });
+    }
+
+    async saveModule(moduleData) {
+        return await this.executeRevision(`module:save (${moduleData.name || moduleData.id})`, 'database', async (client) => {
+            const id = moduleData.id;
+            const columns = [
+                'setting_key', 'position', 'module_id', 'name', 'description', 'cjs',
+                'low_level_access', 'hide_icon', 'background_embedding', 'namespace',
+                'custom_toggle', 'mcp_url', 'icon',
+            ];
+            const posResult = await client.query(
+                `SELECT position FROM system.modules WHERE module_id = $1 LIMIT 1`,
+                [id]
+            );
+            const maxPosResult = await client.query(
+                `SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM system.modules`
+            );
+            const position = posResult.rowCount > 0 ? posResult.rows[0].position : maxPosResult.rows[0].next_pos;
+            const row = {
+                setting_key: 'modules',
+                position,
+                module_id: id,
+                name: moduleData.name ?? null,
+                description: moduleData.description ?? null,
+                cjs: moduleData.cjs ?? null,
+                low_level_access: Boolean(moduleData.lowLevelAccess),
+                hide_icon: Boolean(moduleData.hideIcon),
+                background_embedding: moduleData.backgroundEmbedding ?? null,
+                namespace: moduleData.namespace ?? null,
+                custom_toggle: moduleData.customModuleToggle ?? null,
+                mcp_url: moduleData.mcp?.url ?? null,
+                icon: moduleData.icon ?? null,
+            };
+            await bulkInsert(
+                client,
+                'system.modules',
+                columns,
+                [
+                    'text', 'integer', 'text', 'text', 'text', 'text', 'boolean', 'boolean', 'text',
+                    'text', 'text', 'text', 'text',
+                ],
+                [row],
+                `ON CONFLICT (setting_key, position) DO UPDATE SET ${columns.slice(2).map((c) =>
+                    `"${c}" = EXCLUDED."${c}"`).join(', ')}`
+            );
+            return { id };
+        });
+    }
+
+    async deleteModule(moduleId) {
+        return await this.executeRevision(`module:delete (${moduleId})`, 'database', async (client) => {
+            await client.query('DELETE FROM system.modules WHERE module_id = $1', [moduleId]);
+            return { id: moduleId };
+        });
+    }
+
+    async saveMessage(chatId, message) {
+        return await this.executeRevision('message:save', 'database', async (client) => {
+            const split = splitMessage({ id: message.chatId || message.id, chatId, position: message.position ?? 0, data: message });
+            const messageColumns = ['chat_id', 'id', 'position', 'role', 'content_text', 'content_binary', 'saying_character_id', 'sent_time', 'sender_name', 'other_user', 'disabled_scope', 'is_comment'];
+            await bulkInsert(client, 'chat.messages', messageColumns,
+                ['text', 'text', 'integer', 'text', 'text', 'bytea', 'text', 'bigint', 'text', 'boolean', 'text', 'boolean'],
+                [split.core],
+                `ON CONFLICT (chat_id, id) DO UPDATE SET ${messageColumns.slice(2).map((column) =>
+                    `"${column}" = EXCLUDED."${column}"`).join(', ')}, updated_at = NOW()`);
+            await deleteMessageChildren(client, [{ id: split.core.id, chatId }]);
+            if (split.attributes.length > 0) {
+                await bulkInsert(client, 'chat.message_attributes', ['chat_id', 'message_id', 'key', 'value'], ['text', 'text', 'text', 'jsonb'], split.attributes.map((r) => ({ ...r, chat_id: chatId, message_id: split.core.id })));
+            }
+            if (split.generation) {
+                await bulkInsert(client, 'chat.message_generation', ['chat_id', 'message_id', 'model', 'generation_id', 'input_tokens', 'output_tokens', 'max_context', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time'], ['text', 'text', 'text', 'text', 'integer', 'integer', 'integer', 'double precision', 'double precision', 'double precision', 'double precision'], [split.generation]);
+            }
+            return { id: split.core.id, chatId };
+        });
+    }
+
+    async deleteMessage(chatId, messageId) {
+        return await this.executeRevision('message:delete', 'database', async (client) => {
+            await client.query('DELETE FROM chat.messages WHERE chat_id = $1 AND id = $2', [chatId, messageId]);
+            return { chatId, messageId };
+        });
     }
 
     async sync(rawPayload, options = {}) {
@@ -1533,55 +1755,25 @@ class PostgresStorage extends SqlStorageBase {
             }
 
             onProgress?.({ stage: 'settings', message: `Syncing settings (${payload.rootUpserts.length})`, count: payload.rootUpserts.length });
-            let splitSettings;
-            try {
-                splitSettings = payload.rootUpserts.map((row) => splitSetting(row.key, row.value, {
-                    maxRows: MAX_SYNC_ROWS,
-                    maxDepth: 128,
-                }));
-            } catch (error) {
-                throw new PostgresPayloadError(
-                    error instanceof Error ? error.message : 'PostgreSQL setting decomposition failed'
+            if (payload.rootUpserts.length > 0) {
+                const settingRows = payload.rootUpserts.map((row) => {
+                    const mapped = mapSettingValueToColumns(row.value);
+                    return { key: row.key, ...mapped };
+                });
+                await bulkInsert(
+                    client,
+                    'system.settings',
+                    ['key', 'text_val', 'num_val', 'bool_val'],
+                    ['text', 'text', 'double precision', 'boolean'],
+                    settingRows,
+                    `ON CONFLICT (key) DO UPDATE SET
+                        text_val = EXCLUDED.text_val,
+                        num_val = EXCLUDED.num_val,
+                        bool_val = EXCLUDED.bool_val,
+                        updated_at = NOW()`
                 );
             }
-            const settingValueCount = splitSettings.reduce(
-                (count, setting) => count + setting.values.length,
-                0
-            );
-            if (settingValueCount > MAX_SYNC_ROWS) {
-                throw new PostgresPayloadError(
-                    `Structured settings exceed the ${MAX_SYNC_ROWS} row limit`
-                );
-            }
-            await bulkInsert(
-                client,
-                'system.settings',
-                ['key'],
-                ['text'],
-                splitSettings.map((item) => item.setting),
-                'ON CONFLICT (key) DO UPDATE SET updated_at = NOW()'
-            );
-            const changedSettingKeys = splitSettings.map((item) => item.setting.key);
-            if (changedSettingKeys.length > 0) {
-                await client.query(
-                    'DELETE FROM system.setting_values WHERE setting_key = ANY($1::text[])',
-                    [changedSettingKeys]
-                );
-            }
-            await bulkInsert(
-                client,
-                'system.setting_values',
-                [
-                    'setting_key', 'node_id', 'parent_node_id', 'member_key', 'encoded_member_key',
-                    'position', 'value_type', 'text_value', 'encoded_text_value', 'number_value',
-                    'boolean_value',
-                ],
-                [
-                    'text', 'bigint', 'bigint', 'text', 'text', 'integer', 'text', 'text', 'text',
-                    'double precision', 'boolean',
-                ],
-                splitSettings.flatMap((item) => item.values)
-            );
+            const changedSettingKeys = payload.rootUpserts.map((item) => item.key);
             const projectedSettings = projectSettings(payload.rootUpserts);
             if (changedSettingKeys.length > 0) {
                 const changedSettingKeySet = new Set(changedSettingKeys);

@@ -116,60 +116,11 @@ END risu_record_change;
 
 CREATE TABLE system_settings (
     key VARCHAR2(4000) PRIMARY KEY,
+    text_val CLOB,
+    num_val BINARY_DOUBLE,
+    bool_val NUMBER(1),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL
 );
-
-CREATE TABLE system_setting_values (
-    setting_key VARCHAR2(4000) NOT NULL REFERENCES system_settings(key)
-        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
-    node_id NUMBER NOT NULL CHECK (node_id >= 0),
-    parent_node_id NUMBER,
-    member_key VARCHAR2(4000),
-    encoded_member_key VARCHAR2(4000),
-    position INTEGER CHECK (position >= 0),
-    value_type VARCHAR2(32) NOT NULL CHECK (
-        value_type IN ('null', 'text', 'encoded-text', 'number', 'boolean', 'object', 'array')
-    ),
-    text_value CLOB,
-    encoded_text_value CLOB,
-    number_value BINARY_DOUBLE,
-    boolean_value NUMBER(1),
-    PRIMARY KEY (setting_key, node_id),
-    FOREIGN KEY (setting_key, parent_node_id)
-        REFERENCES system_setting_values(setting_key, node_id)
-        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
-    CHECK (
-        (node_id = 0 AND parent_node_id IS NULL AND member_key IS NULL
-            AND encoded_member_key IS NULL AND position IS NULL)
-        OR
-        (node_id > 0 AND parent_node_id IS NOT NULL AND (
-            (position IS NOT NULL AND member_key IS NULL AND encoded_member_key IS NULL)
-            OR
-            (position IS NULL AND (
-                (member_key IS NOT NULL AND encoded_member_key IS NULL)
-                OR (member_key IS NULL AND encoded_member_key IS NOT NULL)
-            ))
-        ))
-    ),
-    CHECK (
-        (value_type IN ('null', 'object', 'array') AND text_value IS NULL
-            AND encoded_text_value IS NULL AND number_value IS NULL AND boolean_value IS NULL)
-        OR (value_type = 'text' AND text_value IS NOT NULL
-            AND encoded_text_value IS NULL AND number_value IS NULL AND boolean_value IS NULL)
-        OR (value_type = 'encoded-text' AND text_value IS NULL
-            AND encoded_text_value IS NOT NULL AND number_value IS NULL AND boolean_value IS NULL)
-        OR (value_type = 'number' AND text_value IS NULL
-            AND encoded_text_value IS NULL AND number_value IS NOT NULL AND boolean_value IS NULL)
-        OR (value_type = 'boolean' AND text_value IS NULL
-            AND encoded_text_value IS NULL AND number_value IS NULL AND boolean_value IS NOT NULL)
-    )
-);
-
-CREATE INDEX setting_values_parent_idx
-ON system_setting_values (setting_key, parent_node_id, position);
-
-CREATE INDEX setting_values_member_idx
-ON system_setting_values (CASE WHEN member_key IS NOT NULL THEN member_key ELSE NULL END);
 
 -- ============================================================
 -- 관계형 설정 테이블 (PostgreSQL system.bot_presets 등)
