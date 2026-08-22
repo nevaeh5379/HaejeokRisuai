@@ -56,6 +56,39 @@ async function initializeLocalBackupWriter(writer: LocalWriter, partial = false)
     }
 }
 
+async function saveNodeLocalBackupStream() {
+    await forageStorage.Init()
+    if(!(forageStorage.realStorage instanceof NodeStorage)){
+        throw new Error('Node local backup requires NodeStorage')
+    }
+    const auth = await forageStorage.realStorage.getCachedAuth()
+    alertProgress('Saving local backup... (Starting server stream)', 1)
+    const response = await fetch('/api/local-backup/export/jobs', {
+        method: 'POST',
+        headers: { 'risu-auth': auth }
+    })
+    const body = await response.json().catch(() => null) as {id?:string, error?:string}|null
+    if(!response.ok || !body?.id){
+        throw new Error(body?.error ?? `Local backup export failed (${response.status})`)
+    }
+    const completion = fetch(`/api/local-backup/export/jobs/${encodeURIComponent(body.id)}`, {
+        headers: { 'risu-auth': auth }
+    })
+    const anchor = document.createElement('a')
+    anchor.href = `/api/local-backup/export/${encodeURIComponent(body.id)}?auth=${encodeURIComponent(auth)}`
+    anchor.download = `risu_backup_${new Date().toISOString().slice(0, 10)}.risubackup`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    alertProgress('Saving local backup... (Server is streaming directly to the download)', 50)
+    const completed = await completion
+    const completedBody = await completed.json().catch(() => null) as {status?:string, error?:string}|null
+    if(!completed.ok || completedBody?.status !== 'complete'){
+        throw new Error(completedBody?.error ?? `Local backup download failed (${completed.status})`)
+    }
+    alertNormal('Success')
+}
+
 /**
  * Merge a transactionally consistent full SQL snapshot into the lazy adapter
  * without replacing values that are already loaded (and may still be dirty).
@@ -259,6 +292,10 @@ export async function ensureDatabaseFullyLoaded(db: Database, onProgress?: (msg:
 
 export async function SaveLocalBackup(){
     try {
+        if(isNodeServer && !forageStorage.isAccount){
+            await saveNodeLocalBackupStream()
+            return
+        }
         alertProgress("Saving local backup... (Preparing database)", 0)
         await sleep(10)
         const db = getDatabase() as PortableDatabase
@@ -815,7 +852,7 @@ export function LoadLocalBackup(){
             type: 'none'
         }
         input.type = 'file';
-        input.accept = '.bin';
+        input.accept = '.bin,.risubackup';
         const runLoadLocalBackup = async () => {
             if (!input.files || input.files.length === 0) {
                 input.remove();
@@ -834,12 +871,14 @@ export function LoadLocalBackup(){
             let entriesRestored = 0
             let entriesWritten = 0
             let currentEntryName = ''
+            let bytesRead = 0
 
             const flushNodeAssets = async(): Promise<number> => {
                 if(pendingNodeAssets.size === 0){
                     return 0
                 }
                 const count = pendingNodeAssets.size
+                const parsedPercent = file.size === 0 ? 90 : Math.floor(bytesRead / file.size * 90)
                 await (forageStorage.realStorage as NodeStorage).setItems(pendingNodeAssets)
                 pendingNodeAssets.clear()
                 pendingNodeAssetBytes = 0
@@ -927,7 +966,6 @@ export function LoadLocalBackup(){
             }
 
             const reader = file.stream().getReader();
-            let bytesRead = 0;
             let lastUiUpdate = 0;
             type BackupParserPhase = 'nameLength' | 'name' | 'dataLength' | 'data'
             let parserPhase: BackupParserPhase = 'nameLength'

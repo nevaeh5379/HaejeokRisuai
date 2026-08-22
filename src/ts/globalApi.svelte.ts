@@ -205,26 +205,32 @@ class ThumbnailBatchLoader {
         try {
             if (forageStorage.realStorage instanceof NodeStorage) {
                 const nodeStorage = forageStorage.realStorage as NodeStorage
-                const results = await nodeStorage.getItems(batchKeys, undefined, { thumbnail: true })
-
-                for (const loc of batchKeys) {
-                    const buf = results.get(loc)
-                    const pendingItem = this.pending.get(loc)
-                    if (buf && buf.length > 0) {
-                        const blob = new Blob([buf as any], { type: 'image/webp' })
-                        const blobUrl = URL.createObjectURL(blob)
-                        this.cacheWeights.set(loc, buf.byteLength)
-                        this.cache.set(loc, blobUrl)
-                        pendingItem?.resolve(blobUrl)
-                    } else {
-                        // Fallback to direct URL if thumbnail bulk returned nothing for this key
-                        nodeStorage.getDirectUrl(loc, { thumbnail: true }).then(directUrl => {
-                            pendingItem?.resolve(directUrl)
-                        }).catch(() => {
-                            pendingItem?.resolve('')
-                        })
+                const maxBatchSize = 48
+                for(let offset=0;offset<batchKeys.length;offset+=maxBatchSize){
+                    const keys = batchKeys.slice(offset, offset + maxBatchSize)
+                    let results = new Map<string, Buffer>()
+                    try{
+                        results = await nodeStorage.getItems(keys, undefined, { thumbnail: true })
+                    } catch(error) {
+                        console.error('Failed to load thumbnail batch', error)
                     }
-                    this.pending.delete(loc)
+
+                    for (const loc of keys) {
+                        const buf = results.get(loc)
+                        const pendingItem = this.pending.get(loc)
+                        if (buf && buf.length > 0) {
+                            const blob = new Blob([buf as any], { type: 'image/webp' })
+                            const blobUrl = URL.createObjectURL(blob)
+                            this.cacheWeights.set(loc, buf.byteLength)
+                            this.cache.set(loc, blobUrl)
+                            pendingItem?.resolve(blobUrl)
+                        } else {
+                            this.cacheWeights.set(loc, 1)
+                            this.cache.set(loc, '/none.webp')
+                            pendingItem?.resolve('/none.webp')
+                        }
+                        this.pending.delete(loc)
+                    }
                 }
             } else {
                 for (const loc of batchKeys) {
@@ -234,18 +240,12 @@ class ThumbnailBatchLoader {
                 }
             }
         } catch (err) {
-            // Fallback for all items in batch
-            if (forageStorage.realStorage instanceof NodeStorage) {
-                const nodeStorage = forageStorage.realStorage as NodeStorage
-                for (const loc of batchKeys) {
-                    const pendingItem = this.pending.get(loc)
-                    this.pending.delete(loc)
-                    nodeStorage.getDirectUrl(loc, { thumbnail: true }).then(directUrl => {
-                        pendingItem?.resolve(directUrl)
-                    }).catch(() => {
-                        pendingItem?.resolve('')
-                    })
-                }
+            for (const loc of batchKeys) {
+                const pendingItem = this.pending.get(loc)
+                this.pending.delete(loc)
+                this.cacheWeights.set(loc, 1)
+                this.cache.set(loc, '/none.webp')
+                pendingItem?.resolve('/none.webp')
             }
         }
     }
@@ -323,7 +323,7 @@ export async function getFileSrc(loc: string, options?: { thumbnail?: boolean })
         return hubURL + `/rs/` + loc + (isThumb ? '?thumb=1' : '')
     }
     if (isNodeServer || (forageStorage.realStorage instanceof NodeStorage)) {
-        if (isThumb && loc.startsWith('assets')) {
+        if (isThumb) {
             return await thumbnailBatchLoader.load(loc)
         }
         const nodeStorage = forageStorage.realStorage as NodeStorage

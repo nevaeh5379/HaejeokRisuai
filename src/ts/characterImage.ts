@@ -39,6 +39,8 @@ export interface CharImageOptions {
     height?: number
 }
 
+const NODE_IMAGE_BATCH_SIZE = 24
+
 export async function getCharImagesBatch(
     locs: string[],
     options: CharImageOptions = { size: 'display' }
@@ -67,13 +69,19 @@ export async function getCharImagesBatch(
     if (uncachedLocs.length === 0) {
         return result
     }
+    const setMissing = (loc:string) => {
+        const cacheKey = `${sizeKey}_${loc}`
+        fullImageBlobCache.set(cacheKey, '/none.webp')
+        result.set(loc, '/none.webp')
+    }
 
-    // NodeStorage: fetch all in 1 single POST /api/read-bulk request
+    // NodeStorage: use bounded POST /api/read-bulk batches. Never fall back to
+    // one direct GET per image, since that can create hundreds of requests.
     if (forageStorage.realStorage instanceof NodeStorage) {
         const nodeStorage = forageStorage.realStorage as NodeStorage
         try {
-            const assetLocs = uncachedLocs.filter(loc => loc.startsWith('assets'))
-            const nonAssetLocs = uncachedLocs.filter(loc => !loc.startsWith('assets'))
+            const directLocs = uncachedLocs.filter(loc => /^(https?:|data:|blob:|\/)/i.test(loc))
+            const assetLocs = uncachedLocs.filter(loc => !directLocs.includes(loc))
 
             if (assetLocs.length > 0) {
                 const bulkOpts = {
@@ -82,36 +90,45 @@ export async function getCharImagesBatch(
                     width: options.width ?? (options.size === 'display' ? 512 : (options.thumbnail ? 128 : undefined)),
                     height: options.height ?? (options.size === 'display' ? 768 : (options.thumbnail ? 128 : undefined))
                 }
-                const itemsMap = await nodeStorage.getItems(assetLocs, undefined, bulkOpts)
-                for (const loc of assetLocs) {
-                    const buf = itemsMap.get(loc)
-                    const cacheKey = `${sizeKey}_${loc}`
-                    if (buf && buf.length > 0) {
-                        const mime = (options.size === 'display' || options.thumbnail) ? 'image/webp' : getMimeType(loc)
-                        const blob = new Blob([buf as any], { type: mime })
-                        const blobUrl = URL.createObjectURL(blob)
-                        fullImageBlobCache.set(cacheKey, blobUrl)
-                        result.set(loc, blobUrl)
-                    } else {
-                        // Fallback to direct url if buffer was missing
-                        const fallbackUrl = await nodeStorage.getDirectUrl(loc, bulkOpts)
-                        fullImageBlobCache.set(cacheKey, fallbackUrl)
-                        result.set(loc, fallbackUrl)
+                for(let offset=0;offset<assetLocs.length;offset+=NODE_IMAGE_BATCH_SIZE){
+                    const batch = assetLocs.slice(offset, offset + NODE_IMAGE_BATCH_SIZE)
+                    try{
+                        const itemsMap = await nodeStorage.getItems(batch, undefined, bulkOpts)
+                        for (const loc of batch) {
+                            const buf = itemsMap.get(loc)
+                            const cacheKey = `${sizeKey}_${loc}`
+                            if (buf && buf.length > 0) {
+                                const mime = (options.size === 'display' || options.thumbnail) ? 'image/webp' : getMimeType(loc)
+                                const blob = new Blob([buf as any], { type: mime })
+                                const blobUrl = URL.createObjectURL(blob)
+                                fullImageBlobCache.set(cacheKey, blobUrl)
+                                result.set(loc, blobUrl)
+                            } else {
+                                setMissing(loc)
+                            }
+                        }
+                    } catch(error) {
+                        console.error('Failed to load character image batch', error)
+                        for(const loc of batch){
+                            setMissing(loc)
+                        }
                     }
                 }
             }
 
-            for (const loc of nonAssetLocs) {
-                const src = await getFileSrc(loc, options)
+            for (const loc of directLocs) {
+                const src = loc
                 const cacheKey = `${sizeKey}_${loc}`
-                if (src) {
-                    fullImageBlobCache.set(cacheKey, src)
-                    result.set(loc, src)
-                }
+                fullImageBlobCache.set(cacheKey, src)
+                result.set(loc, src)
             }
             return result
         } catch (e) {
-            console.error('Failed to batch load character images, falling back', e)
+            console.error('Failed to batch load character images', e)
+            for(const loc of uncachedLocs){
+                setMissing(loc)
+            }
+            return result
         }
     }
 
@@ -133,4 +150,3 @@ export async function getCharImagesBatch(
 
     return result
 }
-

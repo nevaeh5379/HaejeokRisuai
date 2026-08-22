@@ -37,6 +37,10 @@ const zlib = require('zlib');
 const { gzip } = require('zlib');
 const { createJsonStream } = require('./streamJson.cjs');
 const { streamZip } = require('./zipStream.cjs');
+const {
+    createEntryHeader: createLocalBackupEntryHeader,
+    encodeDatabase: encodeLocalBackupDatabase,
+} = require('./localBackupFormat.cjs');
 const { normalizePageInteger, paginateMessages } = require('./messagePagination.cjs');
 const {
     PostgresPayloadError,
@@ -2158,6 +2162,10 @@ const BULK_WRITE_MAX_OPEN_FILES = Math.max(
     1,
     parseInt(process.env.RISUAI_RESTORE_MAX_OPEN_FILES || '64', 10) || 64
 );
+const S3_BULK_UPLOAD_CONCURRENCY = Math.min(
+    BULK_WRITE_MAX_OPEN_FILES,
+    Math.max(1, parseInt(process.env.RISUAI_S3_BULK_UPLOAD_CONCURRENCY || '12', 10) || 12)
+);
 function createBulkProtocolError(message) {
     const error = new Error(message);
     error.statusCode = 400;
@@ -2306,7 +2314,7 @@ app.post('/api/charx-export/jobs', authenticatedRouteLimiter, async(req, res) =>
         res.status(429).send({ error: 'Too many pending CharX exports' });
         return;
     }
-    if (!Array.isArray(req.body?.entries) || req.body.entries.length === 0 || req.body.entries.length > 10000) {
+    if (!Array.isArray(req.body?.entries) || req.body.entries.length === 0) {
         res.status(400).send({ error: 'Invalid CharX export manifest' });
         return;
     }
@@ -2325,6 +2333,12 @@ app.post('/api/charx-export/jobs', authenticatedRouteLimiter, async(req, res) =>
                 throw new Error(`CharX entry has no source or inline data: ${entry?.name}`);
             }
         }
+        if (req.body.previewSource !== undefined) {
+            const previewSource = req.body.previewSource?.replace?.(/\\/g, '/');
+            if (typeof previewSource !== 'string' || !previewSource.startsWith('assets/') || previewSource.includes('\0') || previewSource.split('/').includes('..')) {
+                throw new Error(`Invalid CharX JPEG preview source: ${req.body.previewSource}`);
+            }
+        }
         if (inlineCharacters > 44 * 1024 * 1024) {
             throw new Error('CharX inline metadata exceeds 32MB');
         }
@@ -2333,11 +2347,36 @@ app.post('/api/charx-export/jobs', authenticatedRouteLimiter, async(req, res) =>
         return;
     }
     const id = crypto.randomBytes(24).toString('base64url');
+    let resolveCompletion;
+    const completion = new Promise((resolve) => {
+        resolveCompletion = resolve;
+    });
     charxExportJobs.set(id, {
         body: req.body,
+        status: 'pending',
+        error: null,
+        completion,
+        resolveCompletion,
         expiresAt: Date.now() + CHARX_EXPORT_JOB_TTL_MS,
     });
     res.send({ id, expiresInMs: CHARX_EXPORT_JOB_TTL_MS });
+});
+
+app.get('/api/charx-export/jobs/:jobId', authenticatedRouteLimiter, async(req, res) => {
+    if (!await checkAuth(req, res)) return;
+    pruneCharxExportJobs();
+    const job = charxExportJobs.get(req.params.jobId);
+    if (!job) {
+        res.status(404).send({ error: 'CharX export job not found or expired' });
+        return;
+    }
+    if (job.status === 'pending' || job.status === 'streaming') {
+        await job.completion;
+    }
+    res.send({ status: job.status, error: job.error });
+    if (job.status === 'complete' || job.status === 'error') {
+        charxExportJobs.delete(req.params.jobId);
+    }
 });
 
 app.get('/api/charx-export/:jobId', authenticatedRouteLimiter, async(req, res) => {
@@ -2348,19 +2387,31 @@ app.get('/api/charx-export/:jobId', authenticatedRouteLimiter, async(req, res) =
         res.status(404).send({ error: 'CharX export job not found or expired' });
         return;
     }
-    charxExportJobs.delete(req.params.jobId);
+    if (job.status !== 'pending') {
+        res.status(409).send({ error: 'CharX export download was already started' });
+        return;
+    }
+    job.status = 'streaming';
+    job.expiresAt = Number.POSITIVE_INFINITY;
     req.body = job.body;
-    await handleCharxExport(req, res);
+    req.charxExportJob = job;
+    const completed = await handleCharxExport(req, res);
+    job.status = completed ? 'complete' : 'error';
+    job.error ??= completed ? null : 'CharX download failed';
+    job.body = null;
+    job.expiresAt = Date.now() + CHARX_EXPORT_JOB_TTL_MS;
+    job.resolveCompletion();
+    job.resolveCompletion = null;
 });
 
 async function handleCharxExport(req, res) {
-    if (!await checkAuth(req, res)) return;
+    if (!await checkAuth(req, res)) return false;
 
     try {
         const requestedEntries = req.body?.entries;
-        if (!Array.isArray(requestedEntries) || requestedEntries.length === 0 || requestedEntries.length > 10000) {
-            res.status(400).send({ error: 'CharX entries must contain between 1 and 10000 files' });
-            return;
+        if (!Array.isArray(requestedEntries) || requestedEntries.length === 0) {
+            res.status(400).send({ error: 'CharX entries must contain at least one file' });
+            return false;
         }
 
         const seenNames = new Set();
@@ -2405,33 +2456,204 @@ async function handleCharxExport(req, res) {
             return { name, size: data.length, source: data };
         });
 
+        const isJpeg = req.body?.previewSource !== undefined;
         const requestedName = typeof req.body?.filename === 'string' ? req.body.filename : 'character.charx';
         const safeName = path.basename(requestedName).replace(/[\r\n"\\]/g, '_').slice(0, 200) || 'character.charx';
-        const downloadName = safeName.endsWith('.charx') ? safeName : `${safeName}.charx`;
+        const downloadName = isJpeg
+            ? (/\.jpe?g$/i.test(safeName) ? safeName : `${safeName}.jpeg`)
+            : (safeName.endsWith('.charx') ? safeName : `${safeName}.charx`);
         const asciiDownloadName = downloadName.replace(/[^\x20-\x7e]/g, '_');
         res.status(200);
-        res.setHeader('Content-Type', 'application/zip');
-        res.setHeader(
-            'Content-Disposition',
-            `attachment; filename="${asciiDownloadName}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`
-        );
+        res.setHeader('Content-Type', isJpeg ? 'image/jpeg' : 'application/zip');
+        res.setHeader('Content-Disposition', `attachment; filename="${asciiDownloadName}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`);
         res.setHeader('Cache-Control', 'no-store');
         res.setHeader('X-Accel-Buffering', 'no');
         if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
-        await streamZip(res, entries);
-        res.end();
+        let prefixSize = 0;
+        if (req.body?.previewSource !== undefined) {
+            const previewSource = req.body.previewSource?.replace?.(/\\/g, '/');
+            if (typeof previewSource !== 'string' || !previewSource.startsWith('assets/') || previewSource.includes('\0') || previewSource.split('/').includes('..')) {
+                throw new Error(`Invalid CharX JPEG preview source: ${req.body.previewSource}`);
+            }
+            const preview = typeof storage.openReadStream === 'function'
+                ? await storage.openReadStream(keyToHex(previewSource))
+                : await storage.read(keyToHex(previewSource));
+            if (!preview.exists) throw new Error(`CharX JPEG preview not found: ${previewSource}`);
+            const previewBody = preview.stream ?? preview.buffer;
+            if (!previewBody) throw new Error(`CharX JPEG preview is not readable: ${previewSource}`);
+            const { Readable } = require('stream');
+            const sharp = require('sharp');
+            const input = Buffer.isBuffer(previewBody) || previewBody instanceof Uint8Array
+                ? Readable.from([previewBody])
+                : Readable.from(previewBody);
+            const jpegStream = input.pipe(sharp().jpeg({ quality: 85 }));
+            for await (const chunk of jpegStream) {
+                const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+                if (!res.write(data)) await once(res, 'drain');
+                prefixSize += data.length;
+            }
+        }
+
+        await streamZip(res, entries, { initialOffset: prefixSize });
+        await new Promise((resolve, reject) => {
+            res.once('finish', resolve);
+            res.once('error', reject);
+            res.end();
+        });
+        return true;
     } catch (error) {
+        if (req.charxExportJob) req.charxExportJob.error = error.message;
         if (!res.headersSent) {
             res.status(400).send({ error: error.message });
-            return;
+            return false;
         }
         console.error('[CharX export] Streaming failed:', error);
         res.destroy(error);
+        return false;
     }
 }
 
 app.post('/api/charx-export', authenticatedRouteLimiter, handleCharxExport);
+
+const localBackupJobs = new Map();
+const LOCAL_BACKUP_JOB_TTL_MS = 60 * 1000;
+
+function pruneLocalBackupJobs() {
+    const now = Date.now();
+    for (const [id, job] of localBackupJobs) {
+        if (job.expiresAt <= now) localBackupJobs.delete(id);
+    }
+}
+
+function settleLocalBackupJob(job, status, error = null) {
+    job.status = status;
+    job.error = error;
+    job.expiresAt = Date.now() + LOCAL_BACKUP_JOB_TTL_MS;
+    job.resolveCompletion?.();
+    job.resolveCompletion = null;
+}
+
+async function writeLocalBackupHeader(output, name, size) {
+    await writePacket(output, createLocalBackupEntryHeader(name, size));
+}
+
+async function writeLocalBackupEntry(output, name, source, size) {
+    await writeLocalBackupHeader(output, name, size);
+    if (Buffer.isBuffer(source) || source instanceof Uint8Array) {
+        await writePacket(output, source);
+        return;
+    }
+    for await (const chunk of source) {
+        await writePacket(output, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+}
+
+async function buildPortableServerDatabase() {
+    if (!postgresStorage.enabled) throw new Error('SQL storage is not configured');
+    const loaded = await postgresStorage.loadDatabase({ shallow: false });
+    if (!loaded?.database) throw new Error('Database is not initialized');
+    const database = loaded.database;
+    const summaries = (await postgresStorage.listBotPresets()).presets;
+    const loadedPresets = (await Promise.all(summaries.map((summary) => postgresStorage.loadBotPreset(summary.id))))
+        .filter(Boolean);
+    database.botPresets = loadedPresets.map((result) => {
+        const { id: _id, ...preset } = result.preset;
+        return preset;
+    });
+    const activeId = database.activeBotPresetId;
+    database.botPresetsId = Math.max(0, summaries.findIndex((summary) => summary.id === activeId));
+    return database;
+}
+
+async function encodePortableServerDatabase(database) {
+    return await encodeLocalBackupDatabase(database);
+}
+
+async function streamServerLocalBackup(res) {
+    const database = await buildPortableServerDatabase();
+    const databaseData = await encodePortableServerDatabase(database);
+    const storage = assetStorageManager.getStorage();
+    const resolved = storage.type === 's3'
+        ? await resolveCatalogedAssetKeys(storage, 'assets/')
+        : { keys: await storage.list('assets/') };
+    const assetKeys = resolved.keys.filter((key) => typeof key === 'string' && key.startsWith('assets/'));
+    const coldItems = typeof postgresStorage.listColdStorage === 'function'
+        ? await postgresStorage.listColdStorage()
+        : [];
+
+    res.status(200);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="risu_backup_${new Date().toISOString().slice(0, 10)}.risubackup"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Accel-Buffering', 'no');
+    if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+    for (const key of assetKeys) {
+        const opened = typeof storage.openReadStream === 'function'
+            ? await storage.openReadStream(keyToHex(key))
+            : await storage.read(keyToHex(key));
+        if (!opened.exists) continue;
+        const source = opened.stream ?? opened.buffer;
+        const size = Number(opened.contentLength ?? opened.buffer?.length);
+        if (!source || !Number.isSafeInteger(size)) throw new Error(`Backup asset is not streamable: ${key}`);
+        await writeLocalBackupEntry(res, key, source, size);
+    }
+    for (const summary of coldItems) {
+        const loaded = await postgresStorage.loadColdStorage(summary.key);
+        if (!loaded) continue;
+        const data = Buffer.from(JSON.stringify(loaded.data), 'utf8');
+        await writeLocalBackupEntry(res, `coldstorage_${summary.key}.json`, data, data.length);
+    }
+    await writeLocalBackupEntry(res, 'database.risudat', databaseData, databaseData.length);
+    await new Promise((resolve, reject) => {
+        res.once('finish', resolve);
+        res.once('error', reject);
+        res.end();
+    });
+}
+
+app.post('/api/local-backup/export/jobs', authenticatedRouteLimiter, async(req, res) => {
+    if (!await checkAuth(req, res)) return;
+    pruneLocalBackupJobs();
+    const id = crypto.randomBytes(24).toString('base64url');
+    let resolveCompletion;
+    const completion = new Promise((resolve) => { resolveCompletion = resolve; });
+    localBackupJobs.set(id, {
+        status: 'pending', error: null, completion, resolveCompletion,
+        expiresAt: Date.now() + LOCAL_BACKUP_JOB_TTL_MS,
+    });
+    res.send({ id });
+});
+
+app.get('/api/local-backup/export/jobs/:jobId', authenticatedRouteLimiter, async(req, res) => {
+    if (!await checkAuth(req, res)) return;
+    pruneLocalBackupJobs();
+    const job = localBackupJobs.get(req.params.jobId);
+    if (!job) return res.status(404).send({ error: 'Local backup job not found or expired' });
+    if (job.status === 'pending' || job.status === 'streaming') await job.completion;
+    res.send({ status: job.status, error: job.error });
+    localBackupJobs.delete(req.params.jobId);
+});
+
+app.get('/api/local-backup/export/:jobId', authenticatedRouteLimiter, async(req, res) => {
+    if (!await checkAuth(req, res)) return;
+    pruneLocalBackupJobs();
+    const job = localBackupJobs.get(req.params.jobId);
+    if (!job) return res.status(404).send({ error: 'Local backup job not found or expired' });
+    if (job.status !== 'pending') return res.status(409).send({ error: 'Local backup download was already started' });
+    job.status = 'streaming';
+    job.expiresAt = Number.POSITIVE_INFINITY;
+    try {
+        await streamServerLocalBackup(res);
+        settleLocalBackupJob(job, 'complete');
+    } catch (error) {
+        console.error('[Local backup] Streaming export failed:', error);
+        if (!res.headersSent) res.status(500).send({ error: error.message });
+        else res.destroy(error);
+        settleLocalBackupJob(job, 'error', error.message);
+    }
+});
 
 app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => {
     if (!await checkAuth(req, res)) return;
@@ -2448,6 +2670,8 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
     let activeChunk = null;
     let fileCount = 0;
     const completedCatalogEntries = [];
+    const pendingFinalizations = new Set();
+    let finalizationError = null;
 
     const cleanup = async() => {
         for (const file of receivingFiles.values()) {
@@ -2513,7 +2737,9 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
                         throw createBulkProtocolError(`Duplicate bulk file name: ${name}`);
                     }
 
-                    const writer = storage.createWriteStream(encodedName);
+                    // Backup/CharX bulk restores should not regenerate a thumbnail for
+                    // every image. Required bot icons are generated lazily on first read.
+                    const writer = storage.createWriteStream(encodedName, { generateThumbnail: false });
                     receivingFiles.set(fileId, {
                         name,
                         expectedSize,
@@ -2566,10 +2792,23 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
                     file.writer.stream.end();
                     receivingFiles.delete(fileId);
                     offset += 5;
-                    // Apply request backpressure so completed multipart uploads are not
-                    // retained until the entire restore body has arrived.
-                    await file.writer.done();
-                    completedCatalogEntries.push({ key: file.name, size: Number(file.expectedSize) });
+                    const finalize = file.writer.done()
+                        .then(() => {
+                            completedCatalogEntries.push({ key: file.name, size: Number(file.expectedSize) });
+                        })
+                        .catch((error) => {
+                            finalizationError ??= error;
+                        })
+                        .finally(() => {
+                            pendingFinalizations.delete(finalize);
+                        });
+                    pendingFinalizations.add(finalize);
+                    if (storage.type !== 's3') {
+                        await finalize;
+                    } else if (pendingFinalizations.size >= S3_BULK_UPLOAD_CONCURRENCY) {
+                        await Promise.race(pendingFinalizations);
+                    }
+                    if (finalizationError) throw finalizationError;
                     continue;
                 }
 
@@ -2583,6 +2822,9 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
             throw createBulkProtocolError('Bulk write request ended with an incomplete packet');
         }
 
+        await Promise.all(pendingFinalizations);
+        if (finalizationError) throw finalizationError;
+
         await upsertAssetCatalogEntries(completedCatalogEntries);
         res.send({ success: true, written: fileCount });
     } catch (error) {
@@ -2592,6 +2834,7 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
             error?.stack || error
         );
         await cleanup();
+        await Promise.all(pendingFinalizations);
         if (error?.statusCode) {
             res.status(error.statusCode).send({ error: error.message });
             return;

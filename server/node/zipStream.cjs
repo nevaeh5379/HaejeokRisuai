@@ -66,8 +66,8 @@ function asAsyncIterable(source) {
  * Streams an uncompressed ZIP/ZIP64 archive to a writable response.
  * Only central-directory metadata is retained; entry bodies are never buffered.
  */
-async function streamZip(output, entries) {
-    let offset = 0n;
+async function streamZip(output, entries, options = {}) {
+    let offset = BigInt(options.initialOffset ?? 0);
     const centralEntries = [];
 
     const write = async (chunk) => {

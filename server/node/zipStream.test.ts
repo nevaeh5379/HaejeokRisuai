@@ -54,4 +54,21 @@ describe('streamZip', () => {
             source: Buffer.from('too large'),
         }])).rejects.toThrow('exceeded declared size')
     })
+
+    it('writes valid offsets when the ZIP follows a JPEG prefix', async () => {
+        const output = new CollectingWriter()
+        const prefix = Buffer.from([0xff, 0xd8, 0xff, 0xd9])
+        output.write(prefix)
+
+        await streamZip(output, [{
+            name: 'card.json',
+            size: 2,
+            source: Buffer.from('{}'),
+        }], { initialOffset: prefix.length })
+        output.end()
+
+        const file = Buffer.concat(output.chunks)
+        expect(file.subarray(0, prefix.length)).toEqual(prefix)
+        expect(Buffer.from(unzipSync(file)['card.json']).toString()).toBe('{}')
+    })
 })

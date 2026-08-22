@@ -877,11 +877,11 @@ class S3AssetStorage {
         return { success: true };
     }
 
-    createWriteStream(hexPath) {
+    createWriteStream(hexPath, options = {}) {
         const key = hexToKey(hexPath);
         const contentType = getContentType(key);
         const passThrough = new stream.PassThrough();
-        const chunks = isImageKey(key) ? [] : null;
+        const chunks = isImageKey(key) && options.generateThumbnail !== false ? [] : null;
         if (chunks) {
             passThrough.on('data', (chunk) => {
                 if (chunks.length < 50) {
@@ -1701,8 +1701,10 @@ class AssetStorageManager {
         return null;
     }
 
-    createWriteStream(hexPath) {
-        return this.activeStorage.createWriteStream(hexPath);
+    createWriteStream(hexPath, options) {
+        return options === undefined
+            ? this.activeStorage.createWriteStream(hexPath)
+            : this.activeStorage.createWriteStream(hexPath, options);
     }
 
     async writeFromPath(hexPath, sourcePath) {

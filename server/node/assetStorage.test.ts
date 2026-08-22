@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
@@ -660,6 +660,27 @@ describe('createWriteStream streaming support', () => {
 
         expect(s3Store.has(key)).toBe(true)
         expect(s3Store.get(key)!).toEqual(Buffer.from('stream-part-1-stream-part-2'))
+    })
+
+    it('S3AssetStorage.createWriteStream can skip eager thumbnails during bulk restore', async () => {
+        const s3Storage = new S3AssetStorage({
+            bucket: 'test-bucket',
+            region: 'us-east-1',
+            accessKeyId: 'test',
+            secretAccessKey: 'test'
+        }, tmpDir)
+        s3Storage.client.send = vi.fn(async () => ({})) as any
+        const eagerThumbnail = vi.spyOn(s3Storage, 'eagerGenerateThumbnail')
+
+        const writer = s3Storage.createWriteStream(
+            keyToHex('assets/restored-image.png'),
+            { generateThumbnail: false }
+        )
+        writer.stream.end(Buffer.from('image-data'))
+        await writer.done()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+
+        expect(eagerThumbnail).not.toHaveBeenCalled()
     })
 
     it('AzureSqlAssetStorage.createWriteStream preserves uploads with more than 100 chunks', async () => {

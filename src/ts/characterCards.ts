@@ -1301,7 +1301,7 @@ function getCharXAssetDirectory(asset:{type?:string, ext?:string}){
     return { type, contentType }
 }
 
-async function exportCharacterCardNodeStream(char:character){
+async function exportCharacterCardNodeStream(char:character, type:'charx'|'charxJpeg'){
     const card = createBaseV3(char)
     const entries:NodeCharXExportEntry[] = []
     const seenPaths = new Set<string>()
@@ -1396,7 +1396,8 @@ async function exportCharacterCardNodeStream(char:character){
             'risu-auth': auth
         },
         body: JSON.stringify({
-            filename: `${char.name}.charx`,
+            filename: type === 'charxJpeg' ? `${char.name}.jpeg` : `${char.name}.charx`,
+            previewSource: type === 'charxJpeg' ? char.image : undefined,
             entries
         })
     })
@@ -1410,10 +1411,19 @@ async function exportCharacterCardNodeStream(char:character){
     }
     const anchor = document.createElement('a')
     anchor.href = `/api/charx-export/${encodeURIComponent(body.id)}?auth=${encodeURIComponent(auth)}`
-    anchor.download = `${char.name || 'character'}.charx`
+    anchor.download = `${char.name || 'character'}.${type === 'charxJpeg' ? 'jpeg' : 'charx'}`
+    const completionResponse = fetch(`/api/charx-export/jobs/${encodeURIComponent(body.id)}`, {
+        headers: { 'risu-auth': auth }
+    })
     document.body.appendChild(anchor)
     anchor.click()
     anchor.remove()
+    alertWait('Loading... (Downloading)')
+    const completed = await completionResponse
+    const completionBody = await completed.json().catch(() => null) as {status?:string, error?:string}|null
+    if(!completed.ok || completionBody?.status !== 'complete'){
+        throw new Error(completionBody?.error ?? `CharX download failed (${completed.status})`)
+    }
     alertNormal(language.successExport)
 }
 
@@ -1431,13 +1441,17 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
     }
     const requestedSpec = arg.spec ?? 'v2'
     if(
-        type === 'charx'
+        (type === 'charx' || type === 'charxJpeg')
         && requestedSpec === 'v3'
         && !arg.writer
-        && forageStorage.realStorage instanceof NodeStorage
+        && isNodeServer
     ){
         try{
-            await exportCharacterCardNodeStream(char)
+            await forageStorage.Init()
+            if(!(forageStorage.realStorage instanceof NodeStorage)){
+                throw new Error('Node CharX export requires NodeStorage')
+            }
+            await exportCharacterCardNodeStream(char, type)
         } catch(error) {
             alertError(error)
         }

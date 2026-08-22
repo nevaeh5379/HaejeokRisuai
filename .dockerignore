@@ -1,2 +1,33 @@
-node_modules
-.risuai
+# Dependencies
+node_modules/
+
+# Git & IDE
+.git/
+.github/
+.vscode/
+.idea/
+.codegraph/
+
+# Desktop / Rust builds (Tauri)
+src-tauri/
+
+# Build artifacts & caches
+dist/
+dist-*/
+build/
+.wrangler/
+.tauri/
+__pycache__/
+
+# Local data & environment
+save/
+.risuai/
+.env*
+!*.env.example
+
+# Logs, dumps & trace files
+*.log
+*.har
+*.gz
+*profile.json*
+/server/node/ssl/certificate
