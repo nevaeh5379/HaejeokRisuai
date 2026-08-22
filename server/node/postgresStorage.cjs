@@ -2135,6 +2135,17 @@ class PostgresStorage extends SqlStorageBase {
                     [manifest.chatId, manifest.ids]
                 );
             }
+            if (payload.messageDeletes) {
+                for (const del of payload.messageDeletes) {
+                    if (del.ids.length > 0) {
+                        await client.query(
+                            `DELETE FROM chat.messages
+                             WHERE chat_id = $1 AND id = ANY($2::text[])`,
+                            [del.chatId, del.ids]
+                        );
+                    }
+                }
+            }
 
             onProgress?.({ stage: 'finalizing', message: 'Updating metadata and committing' });
             await client.query(

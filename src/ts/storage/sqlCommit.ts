@@ -46,6 +46,7 @@ export interface SqlCommit {
     chatManifests: { characterId: string, ids: string[] }[]
     messages: SqlMessageUpsert[]
     messageManifests: { chatId: string, ids: string[] }[]
+    messageDeletes?: { chatId: string, ids: string[] }[]
 }
 
 export interface SqlCommitResult {
@@ -69,6 +70,7 @@ export function createEmptySqlCommit(baseRevision: number, action?: string): Sql
         chatManifests: [],
         messages: [],
         messageManifests: [],
+        messageDeletes: [],
     }
 }
 
@@ -76,7 +78,8 @@ export function hasSqlCommitChanges(commit: SqlCommit): boolean {
     return commit.root.upserts.length > 0 || commit.root.deletes.length > 0 ||
         commit.characters.length > 0 || commit.characterIds !== undefined ||
         commit.chats.length > 0 || commit.chatManifests.length > 0 ||
-        commit.messages.length > 0 || commit.messageManifests.length > 0
+        commit.messages.length > 0 || commit.messageManifests.length > 0 ||
+        (commit.messageDeletes !== undefined && commit.messageDeletes.length > 0)
 }
 
 export function sqlCharacterData(value: character | groupChat): unknown {

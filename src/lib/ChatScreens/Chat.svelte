@@ -9,7 +9,7 @@
     import { runTrigger } from 'src/ts/process/triggers'
     import { sayTTS } from "src/ts/process/tts"
     import { ReloadChatPointer, CurrentTriggerIdStore, popupStore } from 'src/ts/stores.svelte'
-    import { characterStore, settingsStore } from 'src/ts/stores/domain'
+    import { characterStore, settingsStore, messageStore } from 'src/ts/stores/domain'
     import { ConnectionOpenStore } from 'src/ts/sync/multiuserState'
     import { capitalize, getUserIcon, getUserName, sleep } from "src/ts/util"
     import { onDestroy, onMount } from "svelte"
@@ -99,10 +99,16 @@
         rawStreamingText = state.rawStreamingText
     }
 
-    async function ensureFullMessageIndex(): Promise<number> {
+    function findChatIndex(): { characterIndex: number; chatIndex: number } {
         const characterIndex = selIdState.selId
+        const char = characterStore.characters[characterIndex]
+        const chatIndex = char?.chatPage ?? 0
+        return { characterIndex, chatIndex }
+    }
+
+    async function ensureFullMessageIndex(): Promise<number> {
+        const { characterIndex, chatIndex } = findChatIndex()
         const character = characterStore.characters[characterIndex]
-        const chatIndex = character?.chatPage
         const chat = character?.chats?.[chatIndex]
         const messageId = chat?.message?.[idx]?.chatId
         if (!chat || chat.messagesFullyLoaded !== false) return idx
@@ -115,10 +121,16 @@
     async function rm(e:MouseEvent, rec?:boolean){
         const targetIndex = await ensureFullMessageIndex()
         if (targetIndex < 0) return
+        const char = characterStore.characters[selIdState.selId]
+        const currentChat = char?.chats?.[char.chatPage]
+        if (!currentChat || !currentChat.message) return
+
         if(e.shiftKey){
-            let msg = characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message
-            msg = msg.slice(0, targetIndex)
-            characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message = msg
+            const deletedIds = (currentChat.message.slice(targetIndex).map((m) => m.chatId).filter(Boolean)) as string[]
+            currentChat.message = currentChat.message.slice(0, targetIndex)
+            if (currentChat.id && deletedIds.length > 0) {
+                await messageStore.deleteMessages(currentChat.id, deletedIds)
+            }
             return
         }
 
@@ -126,32 +138,54 @@
         if(rm){
             if(settingsStore.state.instantRemove || rec){
                 const r = await alertConfirm(language.instantRemoveConfirm)
-                let msg = characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message
                 if(!r){
-                    msg = msg.slice(0, targetIndex)
+                    const deletedIds = (currentChat.message.slice(targetIndex).map((m) => m.chatId).filter(Boolean)) as string[]
+                    currentChat.message = currentChat.message.slice(0, targetIndex)
+                    if (currentChat.id && deletedIds.length > 0) {
+                        await messageStore.deleteMessages(currentChat.id, deletedIds)
+                    }
                 }
                 else{
-                    msg.splice(targetIndex, 1)
+                    const targetMessage = currentChat.message[targetIndex]
+                    currentChat.message.splice(targetIndex, 1)
+                    if (currentChat.id && targetMessage?.chatId) {
+                        await messageStore.deleteMessage(currentChat.id, targetMessage.chatId)
+                    }
                 }
-                characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message = msg
             }
             else{
-                let msg = characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message
-                msg.splice(targetIndex, 1)
-                characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message = msg
+                const targetMessage = currentChat.message[targetIndex]
+                currentChat.message.splice(targetIndex, 1)
+                if (currentChat.id && targetMessage?.chatId) {
+                    await messageStore.deleteMessage(currentChat.id, targetMessage.chatId)
+                }
             }
         }
     }
 
     async function edit(){
-        characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].data = message
+        const char = characterStore.characters[selIdState.selId]
+        const currentChat = char?.chats?.[char.chatPage]
+        if (currentChat && currentChat.message?.[idx]) {
+            currentChat.message[idx].data = message
+            if (currentChat.id) {
+                await messageStore.updateMessage(currentChat.id, currentChat.message[idx])
+            }
+        }
     }
 
     function handlePartialEditSave(e: CustomEvent<{ newData: string }>) {
         if (idx >= 0) {
             message = e.detail.newData
-            characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].data = e.detail.newData
-            displaya(e.detail.newData)
+            const char = characterStore.characters[selIdState.selId]
+            const currentChat = char?.chats?.[char.chatPage]
+            if (currentChat && currentChat.message?.[idx]) {
+                currentChat.message[idx].data = e.detail.newData
+                displaya(e.detail.newData)
+                if (currentChat.id) {
+                    void messageStore.updateMessage(currentChat.id, currentChat.message[idx])
+                }
+            }
         }
     }
 
@@ -905,6 +939,9 @@
         })
 
         characterStore.characters[selIdState.selId].chats.unshift(newChat)
+        if (newChat.id && newChat.message?.length > 0) {
+            void messageStore.commitMessages(newChat.id, newChat.message)
+        }
         changeChatTo(0)
     }}>
         <SplitIcon size={20}/>
@@ -915,8 +952,15 @@
 
     <button class="flex items-center hover:text-blue-500 transition-colors" onclick={async () => {
         await sleep(1)
-        const currentMessage = characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx]
-        characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].disabled = !currentMessage.disabled
+        const char = characterStore.characters[selIdState.selId]
+        const currentChat = char?.chats?.[char.chatPage]
+        if (currentChat?.message?.[idx]) {
+            const currentMessage = currentChat.message[idx]
+            currentMessage.disabled = !currentMessage.disabled
+            if (currentChat.id) {
+                void messageStore.updateMessage(currentChat.id, currentMessage)
+            }
+        }
     }}>
         <PowerOff size={20}/>
         {#if showNames}
@@ -926,8 +970,15 @@
 
     <button class="flex items-center hover:text-blue-500 transition-colors" onclick={async () => {
         await sleep(1)
-        const currentMessage = characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx]
-        characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].disabled = currentMessage.disabled === 'allBefore' ? false : 'allBefore'
+        const char = characterStore.characters[selIdState.selId]
+        const currentChat = char?.chats?.[char.chatPage]
+        if (currentChat?.message?.[idx]) {
+            const currentMessage = currentChat.message[idx]
+            currentMessage.disabled = currentMessage.disabled === 'allBefore' ? false : 'allBefore'
+            if (currentChat.id) {
+                void messageStore.updateMessage(currentChat.id, currentMessage)
+            }
+        }
     }}>
         <Scissors size={20}/>
         {#if showNames}
@@ -1176,7 +1227,15 @@
                         <span class="chat-width text-xl border-darkborderc flex items-center text-textcolor">
                             <span>{characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'Assistant' : 'User'}</span>
                             <button class="ml-2 text-textcolor2 hover:text-textcolor" onclick={() => {
-                                characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].role = characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'user' : 'char'
+                                const char = characterStore.characters[selIdState.selId]
+                                const currentChat = char?.chats?.[char.chatPage]
+                                if (currentChat?.message?.[idx]) {
+                                    const currentMessage = currentChat.message[idx]
+                                    currentMessage.role = currentMessage.role === 'char' ? 'user' : 'char'
+                                    if (currentChat.id) {
+                                        void messageStore.updateMessage(currentChat.id, currentMessage)
+                                    }
+                                }
                                 ReloadChatPointer.update((v) => {
                                     v[idx] = (v[idx] ?? 0) + 1
                                     return v

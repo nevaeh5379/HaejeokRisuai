@@ -95,4 +95,22 @@ describe('SQL row commits', () => {
         expect(pluginStorageStmt?.bind[0]).toBe('my-plugin')
         expect(pluginStorageStmt?.bind[1]).toBe(JSON.stringify({ setting1: 'val1' }))
     })
+
+    it('executes targeted message deletions with messageDeletes', async () => {
+        const commit = createEmptySqlCommit(5, 'message-delete')
+        commit.messageDeletes = [{
+            chatId: 'chat-1',
+            ids: ['msg-1', 'msg-2'],
+        }]
+        expect(hasSqlCommitChanges(commit)).toBe(true)
+
+        const statements: { sql: string; bind: unknown[] }[] = []
+        await applySqliteCommit(commit, (sql, bind = []) => {
+            statements.push({ sql, bind })
+        })
+
+        expect(statements).toHaveLength(1)
+        expect(statements[0].sql).toBe('DELETE FROM messages WHERE chat_id = ? AND id IN (?,?)')
+        expect(statements[0].bind).toEqual(['chat-1', 'msg-1', 'msg-2'])
+    })
 })

@@ -350,6 +350,9 @@ function createSqlStorageHelpers({
         });
         const chatManifests = validateManifests(payload.chatManifests, 'chatManifests', 'characterId');
         const messageManifests = validateManifests(payload.messageManifests, 'messageManifests', 'chatId');
+        const messageDeletes = payload.messageDeletes === undefined
+            ? undefined
+            : validateManifests(payload.messageDeletes, 'messageDeletes', 'chatId');
         const characterIds = payload.characterIds === undefined
             ? undefined
             : asArray(payload.characterIds, 'characterIds').map((id, index) => {
@@ -372,6 +375,7 @@ function createSqlStorageHelpers({
             messages,
             chatManifests,
             messageManifests,
+            messageDeletes,
             characterIds,
         };
     }

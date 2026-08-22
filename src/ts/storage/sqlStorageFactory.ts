@@ -82,3 +82,7 @@ export async function getSqlStorage(): Promise<ISqlStorage> {
 export function resetSqlStorage(): void {
     storageSingleton = null
 }
+
+export function setSqlStorageForTesting(storage: ISqlStorage | null): void {
+    storageSingleton = storage ? wrapWithSerializedCommits(storage) : null
+}

@@ -1082,6 +1082,18 @@ class AzureStorage extends SqlStorageBase {
                         );
                     }
                 }
+                if (payload.messageDeletes) {
+                    for (const del of payload.messageDeletes) {
+                        if (del.ids.length > 0) {
+                            const delIdsList = del.ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(', ');
+                            const delReq = tx.request();
+                            delReq.input('msg_del_chat_id', sql.NVarChar(450), del.chatId);
+                            await delReq.query(
+                                `DELETE FROM [chat].[messages] WHERE chat_id = @msg_del_chat_id AND id IN (${delIdsList});`
+                            );
+                        }
+                    }
+                }
             }
 
             if (payload.characters && payload.characters.length > 0) {

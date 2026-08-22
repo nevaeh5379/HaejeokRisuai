@@ -1714,6 +1714,14 @@ class OracleStorage extends SqlStorageBase {
                         toDelete.map((r) => [r.id]));
                 }
             }
+            if (payload.messageDeletes) {
+                for (const del of payload.messageDeletes) {
+                    if (del.ids.length > 0) {
+                        await conn.executeMany(`DELETE FROM chat_messages WHERE chat_id = :1 AND id = :2`,
+                            del.ids.map((id) => [del.chatId, id]));
+                    }
+                }
+            }
 
             // revision 갱신
             onProgress?.({ stage: 'commit', message: '오라클 트랜잭션 커밋 중...', percent: 98 });

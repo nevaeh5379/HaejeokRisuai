@@ -76,4 +76,12 @@ export async function applySqliteCommit(commit: SqlCommit, execute: SqliteExecut
             await execute(`DELETE FROM messages WHERE chat_id = ? AND id NOT IN (${placeholders})`, [manifest.chatId, ...manifest.ids])
         }
     }
+    if (commit.messageDeletes) {
+        for (const del of commit.messageDeletes) {
+            if (del.ids.length > 0) {
+                const placeholders = del.ids.map(() => '?').join(',')
+                await execute(`DELETE FROM messages WHERE chat_id = ? AND id IN (${placeholders})`, [del.chatId, ...del.ids])
+            }
+        }
+    }
 }

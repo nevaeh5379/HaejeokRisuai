@@ -130,26 +130,64 @@ class MessageStore {
     async deleteMessage(chatId: string, messageId: string): Promise<void> {
         const chat = findChatAcrossCharacters(chatId)
         if (chat && chat.message) {
+            const beforeLen = chat.message.length
             chat.message = chat.message.filter((m) => m.chatId !== messageId)
+            const deletedCount = beforeLen - chat.message.length
+            if (deletedCount > 0 && typeof chat.messageTotal === 'number') {
+                chat.messageTotal = Math.max(0, chat.messageTotal - deletedCount)
+            }
         }
         try {
             const storage = await getSqlStorage()
-            const messages = chat?.message ?? []
             await storage.commit({
                 baseRevision: storage.getRevision(),
-                action: 'message',
+                action: 'message-delete',
                 root: { upserts: [], deletes: [] },
                 characters: [],
                 chats: [],
                 chatManifests: [],
                 messages: [],
-                messageManifests: [{
+                messageManifests: [],
+                messageDeletes: [{
                     chatId,
-                    ids: messages.map((m) => m.chatId!),
+                    ids: [messageId],
                 }],
             })
         } catch (error) {
             console.error('[MessageStore] Failed to commit deleteMessage:', error)
+        }
+    }
+
+    async deleteMessages(chatId: string, messageIds: string[]): Promise<void> {
+        if (!messageIds || messageIds.length === 0) return
+        const idSet = new Set(messageIds)
+        const chat = findChatAcrossCharacters(chatId)
+        if (chat && chat.message) {
+            const beforeLen = chat.message.length
+            chat.message = chat.message.filter((m) => !m.chatId || !idSet.has(m.chatId))
+            const deletedCount = beforeLen - chat.message.length
+            if (deletedCount > 0 && typeof chat.messageTotal === 'number') {
+                chat.messageTotal = Math.max(0, chat.messageTotal - deletedCount)
+            }
+        }
+        try {
+            const storage = await getSqlStorage()
+            await storage.commit({
+                baseRevision: storage.getRevision(),
+                action: 'message-delete',
+                root: { upserts: [], deletes: [] },
+                characters: [],
+                chats: [],
+                chatManifests: [],
+                messages: [],
+                messageManifests: [],
+                messageDeletes: [{
+                    chatId,
+                    ids: messageIds,
+                }],
+            })
+        } catch (error) {
+            console.error('[MessageStore] Failed to commit deleteMessages:', error)
         }
     }
 
