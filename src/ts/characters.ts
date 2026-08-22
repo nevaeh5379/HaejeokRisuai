@@ -850,6 +850,7 @@ export async function changeChar(index: number, arg:{
     void preloadCharacterImage(characterStore.characters?.[index]?.image)
     reseter();
     pendingCharID.set(index);
+    const modulePromise = import('./process/modules')
     if(characterStore.characters?.[index]?.coldstorage){
         const coldData = await getColdStorageItem(characterStore.characters[index].coldstorage!)
         if(coldData?.character && coldData.character.chaId === characterStore.characters[index].chaId){
@@ -891,7 +892,12 @@ export async function changeChar(index: number, arg:{
     characterFormatUpdate(index, {
       updateInteraction: true,
     });
+    const { moduleUpdate } = await modulePromise
+    if(get(pendingCharID) !== index){
+        return
+    }
     selectedCharID.set(index);
+    moduleUpdate(index, { reloadMessages: false })
     pendingCharID.set(-1)
     releaseInactiveChatMessages(currentChar?.chats?.[currentChatPage]?.id)
 }

@@ -44,6 +44,8 @@
     let messageInputTranslate:string = $state('')
     let openMenu = $state(false)
     let loadPages = $state(getInitialChatLoadPages(settingsStore.state))
+    let loadPagesCharacterId = -1
+    let loadPagesChatPage = -1
     let autoMode = $state(false)
     let rerolls:Message[][] = []
     let rerollid = -1
@@ -59,6 +61,16 @@
     let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props();
     let currentCharacter = $derived(characterStore.characters[$selectedCharID])
     let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
+
+    $effect(() => {
+        const characterId = $selectedCharID
+        const chatPage = characterStore.characters[characterId]?.chatPage ?? -1
+        if(characterId !== loadPagesCharacterId || chatPage !== loadPagesChatPage){
+            loadPagesCharacterId = characterId
+            loadPagesChatPage = chatPage
+            loadPages = getInitialChatLoadPages(settingsStore.state)
+        }
+    })
 
     function scrollToBottom() {
         chatsInstance?.scrollToLatestMessage();

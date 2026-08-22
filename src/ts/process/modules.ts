@@ -1,6 +1,6 @@
 import { language } from "src/lang"
 import { alertClear, alertConfirm, alertError, alertModuleSelect, alertNormal, alertStore, alertWait } from "../alert"
-import { getCurrentCharacter, getCurrentChat, getDatabase, setCurrentCharacter, setDatabase, type customscript, type loreBook, type triggerscript } from "../storage/database.svelte"
+import { getCurrentCharacter, getDatabase, setCurrentCharacter, setDatabase, type character, type customscript, type groupChat, type loreBook, type triggerscript } from "../storage/database.svelte"
 import { AppendableBuffer, downloadFile, forageStorage, LocalWriter, readImage, saveAsset, VirtualWriter } from "../globalApi.svelte"
 import { checkPersonaBinded, selectSingleFile, sleep } from "../util"
 import { v4 } from "uuid"
@@ -391,11 +391,12 @@ function deduplicateModuleById(modules:RisuModule[]){
     return newModules
 }
 
-export function getModules(){
-    const currentChat = getCurrentChat()
-    const character = getCurrentCharacter()
-    const persona = checkPersonaBinded()
+function getModulesForCharacter(character: character | groupChat | undefined){
     const db = getDatabase()
+    const currentChat = character?.chats?.[character.chatPage]
+    const persona = currentChat?.bindedPersona
+        ? db.personas?.find((item) => item.id === currentChat.bindedPersona)
+        : null
     let ids = db.enabledModules ?? []
     if (currentChat){
         ids = ids.concat(currentChat.modules ?? [])
@@ -411,6 +412,10 @@ export function getModules(){
         ids = ids.concat(intList)
     }
     return getModuleByIds(ids)
+}
+
+export function getModules(){
+    return getModulesForCharacter(getCurrentCharacter())
 
 }
 
@@ -537,10 +542,13 @@ export async function applyModule() {
 
 let lastModuleIds:string = ''
 
-export function moduleUpdate(){
-
-
-    const m = getModules()
+export function moduleUpdate(characterIndex?: number, options: {
+    reloadMessages?: boolean
+} = {}){
+    const character = characterIndex === undefined
+        ? getCurrentCharacter()
+        : getDatabase().characters[characterIndex]
+    const m = getModulesForCharacter(character)
 
     const ids = m.map((m) => m.id).join('-')
     
@@ -559,13 +567,13 @@ export function moduleUpdate(){
         }
     })
 
-    if(backgroundEmbedding){
-        moduleBackgroundEmbedding.set(backgroundEmbedding)
-    }
-    HideIconStore.set(getCurrentCharacter()?.hideChatIcon || moduleHideIcon)
+    moduleBackgroundEmbedding.set(backgroundEmbedding)
+    HideIconStore.set(character?.hideChatIcon || moduleHideIcon)
 
     if(lastModuleIds !== ids){
-        ReloadGUIPointer.set(get(ReloadGUIPointer) + 1)
+        if(options.reloadMessages !== false){
+            ReloadGUIPointer.set(get(ReloadGUIPointer) + 1)
+        }
         lastModuleIds = ids
     }
 }

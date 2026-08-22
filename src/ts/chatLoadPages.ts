@@ -3,7 +3,7 @@
 // Users can still raise these values in Display settings when memory is ample.
 import { isMemoryConstrainedDevice } from './memory/deviceMemory'
 
-export const DEFAULT_CHAT_LOAD_INITIAL_PAGES = isMemoryConstrainedDevice() ? 8 : 12
+export const DEFAULT_CHAT_LOAD_INITIAL_PAGES = isMemoryConstrainedDevice() ? 4 : 12
 export const DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES = isMemoryConstrainedDevice() ? 6 : 8
 
 export function normalizeChatLoadPages(value: unknown, fallback: number): number {
