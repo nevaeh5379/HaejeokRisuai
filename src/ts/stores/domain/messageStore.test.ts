@@ -4,7 +4,7 @@ import { characterStore } from './characterStore.svelte'
 import { setSqlStorageForTesting } from '../../storage/sqlStorageFactory'
 import type { ISqlStorage } from '../../storage/ISqlStorage'
 import type { SqlCommit, SqlCommitResult } from '../../storage/sqlCommit'
-import type { character } from '../../storage/database.svelte'
+import type { character, Message } from '../../storage/database.svelte'
 
 class MockSqlStorage {
     backendKind = 'web-sqlite' as const
@@ -129,6 +129,25 @@ describe('messageStore', () => {
         expect(commit.messages).toHaveLength(1)
         expect(commit.messages[0].id).toBe('msg-4')
         expect(commit.messageManifests).toEqual([])
+    })
+
+    it('persists an already appended user message without duplicating it', async () => {
+        const chat = characterStore.characters[0].chats[0]
+        const translatedUserMessage: Message = { role: 'user', data: 'translated input' }
+        chat.message.push(translatedUserMessage)
+
+        await messageStore.appendMessage('chat-1', translatedUserMessage)
+
+        expect(chat.message).toHaveLength(4)
+        expect(translatedUserMessage.chatId).toBeTruthy()
+        expect(mockStorage.commits).toHaveLength(1)
+        expect(mockStorage.commits[0].messages).toHaveLength(1)
+        expect(mockStorage.commits[0].messages[0]).toMatchObject({
+            id: translatedUserMessage.chatId,
+            chatId: 'chat-1',
+            position: 3,
+            data: { role: 'user', data: 'translated input' },
+        })
     })
 
     it('omits messageManifests in commitMessages when messages are partially loaded', async () => {

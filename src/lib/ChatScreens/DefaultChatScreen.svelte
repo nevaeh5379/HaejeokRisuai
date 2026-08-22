@@ -182,6 +182,7 @@
 
         const activeChat = characterStore.characters[selectedChar].chats[currentChatPage]
         let cha = activeChat.message
+        let appendedUserMessage: Message | undefined
 
         if(messageInput.startsWith('/')){
             const { processMultiCommand } = await import('src/ts/process/command')
@@ -204,11 +205,12 @@
             if(characterStore.characters[selectedChar].type !== 'group'){
                 if(cha.length === 0 || cha[cha.length - 1].role !== 'user'){
                     if(settingsStore.state.useSayNothing){
-                        cha.push({
+                        appendedUserMessage = {
                             role: 'user',
                             data: '*says nothing*',
                             name: $ConnectionOpenStore ? settingsStore.state.username : null
-                        })
+                        }
+                        cha.push(appendedUserMessage)
                     }
                 }
             }
@@ -222,25 +224,32 @@
                     cha = triggerResult.chat.message
                 }
 
-                cha.push({
+                appendedUserMessage = {
                     role: 'user',
                     data: await processScript(char,messageInput,'editinput'),
                     time: Date.now(),
                     name: $ConnectionOpenStore ? settingsStore.state.username : null
-                })
+                }
+                cha.push(appendedUserMessage)
             }
             else{
-                cha.push({
+                appendedUserMessage = {
                     role: 'user',
                     data: messageInput,
                     time: Date.now(),
                     name: $ConnectionOpenStore ? settingsStore.state.username : null
-                })
+                }
+                cha.push(appendedUserMessage)
             }
         }
         messageInput = ''
         messageInputTranslate = ''
         characterStore.characters[selectedChar].chats[currentChatPage].message = cha
+        if(activeChat.id && appendedUserMessage){
+            // Persist before generation because request setup, cancellation, or
+            // provider errors can return before the normal completion commit.
+            await messageStore.appendMessage(activeChat.id, appendedUserMessage)
+        }
         rerolls = []
         await sleep(10)
         updateInputSizeAll()
