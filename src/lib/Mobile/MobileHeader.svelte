@@ -3,6 +3,7 @@
     import { language } from "src/lang";
     import { characterStore } from 'src/ts/stores/domain';
     import { MobileGUIStack, MobileSearch, selectedCharID, SettingsMenuIndex, MobileSideBar, messageSearchOpen } from "src/ts/stores.svelte";
+    import { preloadChatSidebarPanel } from '../SideBars/sidebarPanelLoaders';
 
 </script>
 <div class="w-full px-4 h-16 border-b border-b-darkborderc bg-darkbg flex justify-start items-center gap-2">
@@ -21,7 +22,7 @@
         </button>
         <span class="font-bold text-lg w-2/3 truncate">{characterStore.characters[$selectedCharID].name}</span>
         <div class="flex-1 flex justify-end">
-            <button onclick={() => {
+            <button onpointerdown={() => void preloadChatSidebarPanel()} onclick={() => {
                 MobileSideBar.set(1)
             }}>
                 <MenuIcon />

@@ -48,7 +48,6 @@
     import LazyComponent from '../Others/LazyComponent.svelte';
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
-    import { onMount } from 'svelte';
     import { get } from 'svelte/store';
     import { loadCharConfig, loadSideChatList, preloadChatSidebarPanel } from './sidebarPanelLoaders';
     import { doingChat } from 'src/ts/process/chatRuntimeState';
@@ -78,19 +77,6 @@
     }
     void changeChar(index)
   }
-
-  onMount(() => {
-    const idleWindow = window as Window & {
-      requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number
-      cancelIdleCallback?: (handle: number) => void
-    }
-    if (idleWindow.requestIdleCallback) {
-      const handle = idleWindow.requestIdleCallback(() => void preloadChatSidebarPanel(), { timeout: 2000 })
-      return () => idleWindow.cancelIdleCallback?.(handle)
-    }
-    const handle = globalThis.setTimeout(() => void preloadChatSidebarPanel(), 200)
-    return () => globalThis.clearTimeout(handle)
-  })
 
   async function addNewCharacter() {
     const { addCharacter } = await import('../../ts/characters')

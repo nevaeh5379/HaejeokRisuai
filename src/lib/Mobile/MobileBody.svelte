@@ -4,8 +4,7 @@
     import { language } from "src/lang";
     import { isLite } from "src/ts/lite";
     import LazyComponent from '../Others/LazyComponent.svelte'
-    import { onMount } from 'svelte'
-    import { loadCharConfig, loadSideChatList, preloadChatSidebarPanel } from '../SideBars/sidebarPanelLoaders'
+    import { loadCharConfig, loadSideChatList } from '../SideBars/sidebarPanelLoaders'
     
     const settingsLoader = () => import('../Setting/Settings.svelte')
     const realmLoader = () => import('../UI/Realm/RealmMain.svelte')
@@ -13,18 +12,6 @@
     const chatLoader = () => import('../ChatScreens/ChatScreen.svelte')
     const devToolLoader = () => import('../SideBars/DevTool.svelte')
 
-    onMount(() => {
-        const idleWindow = window as Window & {
-            requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number
-            cancelIdleCallback?: (handle: number) => void
-        }
-        if (idleWindow.requestIdleCallback) {
-            const handle = idleWindow.requestIdleCallback(() => void preloadChatSidebarPanel(), { timeout: 2000 })
-            return () => idleWindow.cancelIdleCallback?.(handle)
-        }
-        const handle = globalThis.setTimeout(() => void preloadChatSidebarPanel(), 200)
-        return () => globalThis.clearTimeout(handle)
-    })
 </script>
 
 {#if $MobileSideBar > 0 && !$isLite}

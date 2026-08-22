@@ -1,7 +1,7 @@
 <script lang="ts">
-    import { onDestroy, onMount } from "svelte";
+    import { tick } from "svelte";
     import { v4 } from "uuid";
-    import Sortable from 'sortablejs/modular/sortable.core.esm.js';
+    import type Sortable from 'sortablejs/modular/sortable.core.esm.js';
     import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon } from "@lucide/svelte";
 
     import type { Chat, ChatFolder, character, groupChat } from "src/ts/storage/database.svelte";
@@ -13,15 +13,11 @@
     import Button from "../UI/GUI/Button.svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
 
-    import { exportChat, importChat, exportAllChats } from "src/ts/characters";
     import { alertChatOptions, alertConfirm, alertError, alertNormal, alertSelect, alertStore } from "src/ts/alert";
-    import { findCharacterbyId, sleep, sortableOptions } from "src/ts/util";
-    import { createMultiuserRoom } from "src/ts/sync/multiuser";
     import { bookmarkListOpen } from "src/ts/stores.svelte";
     import { language } from "src/lang";
     import Toggles from "./Toggles.svelte";
-    import { changeChatTo, createChatCopyName } from "src/ts/globalApi.svelte";
-    import { preLoadChat } from "src/ts/process/coldstorage.svelte";
+    import { releaseInactiveChatMessages } from "src/ts/stores/domain/messageStore.svelte";
 
     interface Props {
         chara: character|groupChat;
@@ -31,14 +27,64 @@
     let editMode = $state(false)
 
     let chatsStb: Sortable[] = []
-    let folderStb: Sortable = null
+    let folderStb: Sortable | null = null
 
     let folderEles: HTMLDivElement = $state()
     let listEle: HTMLDivElement = $state()
     let sorted = $state(0)
-    let opened = 0
+    let sortableLoadId = 0
 
-    const createStb = () => {
+    const sortableOptions = {
+        delay: 300,
+        delayOnTouchOnly: true,
+        filter: '.no-sort',
+        onMove: (event: { related: HTMLElement }) => {
+            return !event.related.classList.contains('no-sort')
+        },
+    } as const
+
+    const destroySortable = () => {
+        if (folderStb) {
+            try {
+                folderStb.destroy()
+            } catch {}
+            folderStb = null
+        }
+        for (const sortable of chatsStb) {
+            try {
+                sortable.destroy()
+            } catch {}
+        }
+        chatsStb = []
+    }
+
+    const changeChatTo = (index: number) => {
+        if (index < 0 || index >= chara.chats.length) return
+        chara.chatPage = index
+        ReloadGUIPointer.set(Math.random())
+        releaseInactiveChatMessages(chara.chats[index]?.id)
+    }
+
+    const createChatCopyName = (originalName: string) => {
+        const name = originalName.replaceAll(/\(((Copy|Branch)( \d+)?)\)$/g, '').trim()
+        let copyIndex = 1
+        let newName = `${name} (Copy)`
+        while (chara.chats.some((chat) => chat.name === newName)) {
+            copyIndex += 1
+            newName = `${name} (Copy ${copyIndex})`
+        }
+        return newName
+    }
+
+    const createStb = async () => {
+        const loadId = ++sortableLoadId
+        destroySortable()
+        if (!editMode) return
+
+        await tick()
+        const { default: Sortable } = await import('sortablejs/modular/sortable.core.esm.js')
+        if (!editMode || loadId !== sortableLoadId || !listEle || !folderEles) return
+
         for (let chat of listEle.querySelectorAll('.risu-chat')) {
             chatsStb.push(new Sortable(chat, {
                 group: 'chats',
@@ -76,8 +122,6 @@
                         this.destroy()
                     } catch (e) {}
                     sorted += 1
-                    await sleep(1)
-                    createStb()
                 },
                 ...sortableOptions
             }))
@@ -115,36 +159,30 @@
                     folderStb.destroy()
                 } catch (e) {}
                 sorted += 1
-                await sleep(1)
-                createStb()
             },
             ...sortableOptions
         })
     }
 
-    onMount(createStb)
-
-    onDestroy(() => {
-        if (folderStb) {
-            try {
-                folderStb.destroy()
-            } catch (error) {}
+    $effect(() => {
+        editMode
+        sorted
+        void createStb()
+        return () => {
+            sortableLoadId += 1
+            destroySortable()
         }
-        chatsStb.map(stb => {
-            try {
-                stb.destroy()
-            } catch (error) {}
-        })
     })
 </script>
 <div class="flex flex-col w-full h-[calc(100%-2rem)] max-h-[calc(100%-2rem)]">
-    <Button className="relative bottom-2" onclick={() => {
+    <Button className="relative bottom-2" onclick={async () => {
         const cha = chara
         const len = chara.chats.length
         const newChat = {
             message:[], note:'', name:`New Chat ${len + 1}`, localLore:[], fmIndex: -1, id: v4()
         }
         if(cha.type === 'group'){
+            const { findCharacterbyId } = await import('src/ts/util')
             cha.characters.forEach((c) => {
                 newChat.message.push({
                     chatId: v4(),
@@ -254,7 +292,7 @@
                             changeChatTo(chara.chats.indexOf(chat))
                             $ReloadGUIPointer += 1
                         }
-                    }} class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"class:bg-selected={chara.chats.indexOf(chat) === chara.chatPage}>
+                    }} class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md [content-visibility:auto] [contain-intrinsic-size:40px]"class:bg-selected={chara.chats.indexOf(chat) === chara.chatPage}>
                         {#if editMode}
                             <TextInput bind:value={chat.name} className="grow min-w-0" padding={false}/>
                         {:else}
@@ -270,9 +308,10 @@
                                 switch(option){
                                     case 0:{
                                         const chatIdx = chara.chats.indexOf(chat)
+                                        const { preLoadChat } = await import('src/ts/process/coldstorage.svelte')
                                         await preLoadChat($selectedCharID, chatIdx, { full: true })
                                         const newChat = $state.snapshot(chara.chats[chatIdx])
-                                        newChat.name = createChatCopyName(newChat.name, 'Copy')
+                                        newChat.name = createChatCopyName(newChat.name)
                                         newChat.id = v4()
                                         for (const msg of newChat.message ?? []) {
                                             msg.chatId = v4()
@@ -310,7 +349,8 @@
                                     }
                                     case 2:{
                                         changeChatTo(chara.chats.indexOf(chat))
-                                        createMultiuserRoom()
+                                        const { createMultiuserRoom } = await import('src/ts/sync/multiuser')
+                                        void createMultiuserRoom()
                                     }
                                 }
                             }}>
@@ -331,7 +371,8 @@
                                 }
                             }} class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={async (e) => {
                                 e.stopPropagation()
-                                exportChat(chara.chats.indexOf(chat))
+                                const { exportChat } = await import('src/ts/characters')
+                                await exportChat(chara.chats.indexOf(chat))
                             }}>
                                 <DownloadIcon size={18}/>
                             </div>
@@ -374,7 +415,7 @@
                     $ReloadGUIPointer += 1
                 }
             }}
-            class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
+            class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md [content-visibility:auto] [contain-intrinsic-size:40px]"
             class:bg-selected={i === chara.chatPage}>
                 {#if editMode}
                     <TextInput bind:value={chara.chats[i].name} className="grow min-w-0" padding={false}/>
@@ -390,9 +431,10 @@
                         const option = await alertChatOptions()
                         switch(option){
                             case 0:{
+                                const { preLoadChat } = await import('src/ts/process/coldstorage.svelte')
                                 await preLoadChat($selectedCharID, i, { full: true })
                                 const newChat = $state.snapshot(chara.chats[i])
-                                newChat.name = createChatCopyName(newChat.name, 'Copy')
+                                newChat.name = createChatCopyName(newChat.name)
                                 newChat.id = v4()
                                 for (const msg of newChat.message ?? []) {
                                     msg.chatId = v4()
@@ -431,7 +473,8 @@
                             }
                             case 2:{
                                 changeChatTo(i)
-                                createMultiuserRoom()
+                                const { createMultiuserRoom } = await import('src/ts/sync/multiuser')
+                                void createMultiuserRoom()
                             }
                         }
                     }}>
@@ -452,7 +495,8 @@
                         }
                     }} class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={async (e) => {
                         e.stopPropagation()
-                        exportChat(i)
+                        const { exportChat } = await import('src/ts/characters')
+                        await exportChat(i)
                     }}>
                         <DownloadIcon size={18}/>
                     </div>
@@ -487,13 +531,15 @@
 
     <div class="border-t border-selected mt-2">
         <div class="flex mt-2 ml-2 items-center">
-            <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" onclick={() => {
-                exportAllChats()
+            <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" onclick={async () => {
+                const { exportAllChats } = await import('src/ts/characters')
+                await exportAllChats()
             }}>
                 <DownloadIcon size={18}/>
             </button>
-            <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" onclick={() => {
-                importChat()
+            <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" onclick={async () => {
+                const { importChat } = await import('src/ts/characters')
+                await importChat()
             }}>
                 <HardDriveUploadIcon size={18}/>
             </button>

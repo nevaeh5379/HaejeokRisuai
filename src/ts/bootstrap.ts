@@ -45,6 +45,7 @@ import { settingsStore } from './stores/domain/settingsStore.svelte'
 import { characterStore } from './stores/domain/characterStore.svelte'
 import { presetStore } from './stores/domain/presetStore.svelte'
 import { setSqlRuntime, getSqlRuntime } from './storage/sqlRuntime'
+import { isMemoryConstrainedDevice } from './memory/deviceMemory'
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null
 
@@ -156,9 +157,18 @@ export async function loadData() {
             updateAnimationSpeed()
             updateHeightMode()
             updateGuisize()
-            loadedStore.set(true)
-            startupPhase.set('shell-ready')
-            performance.mark('shell-ready')
+            const deferShellUntilRuntimeReady = isMemoryConstrainedDevice()
+            let shellReady = false
+            const revealShell = () => {
+                if (shellReady) return
+                shellReady = true
+                loadedStore.set(true)
+                startupPhase.set('shell-ready')
+                performance.mark('shell-ready')
+            }
+            if (!deferShellUntilRuntimeReady) {
+                revealShell()
+            }
 
             // ── Step 6: Service worker (web only) ─────────────────────────
             LoadingStatusState.text = "Checking Service Worker..."
@@ -233,6 +243,7 @@ export async function loadData() {
             registerModelDynamic()
             performance.mark('plugins-ready')
             cleanChunks()
+            revealShell()
             if (presetStore.activeStatus === 'ready') {
                 startupPhase.set('chat-ready')
                 performance.mark('chat-ready')
