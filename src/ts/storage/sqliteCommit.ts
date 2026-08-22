@@ -1,91 +1,137 @@
 import type { SqlCommit } from './sqlCommit'
+import { flattenRelationalValue, RELATIONAL_NODE_COLUMNS, type RelationalNodeRow } from './relationalNodeCodec'
 
 export type SqliteExecute = (sql: string, bind?: unknown[]) => void | Promise<void>
 
-export async function applySqliteCommit(commit: SqlCommit, execute: SqliteExecute): Promise<void> {
-    if (commit.replaceAll) {
-        await execute('DELETE FROM plugin_custom_storage')
-    }
+const SETTING_DOMAINS: Record<string, ReadonlySet<string>> = {
+    model: new Set(['apiType', 'aiModel', 'subModel', 'temperature', 'maxContext', 'maxResponse', 'frequencyPenalty', 'PresensePenalty', 'bias', 'customModels', 'fallbackModels']),
+    provider: new Set(['openAIKey', 'proxyKey', 'forceReplaceUrl', 'openrouterKey', 'claudeAPIKey', 'nanogptKey', 'koboldURL', 'textgenWebUIStreamURL', 'textgenWebUIBlockingURL', 'OaiCompAPIKeys']),
+    prompt: new Set(['mainPrompt', 'jailbreak', 'globalNote', 'additionalPrompt', 'descriptionPrefix', 'promptTemplate', 'promptSettings', 'instructChatTemplate', 'JinjaTemplate', 'globalscript']),
+    memory: new Set(['supaMemoryPrompt', 'supaMemoryKey', 'hypaMemoryKey', 'voyageApiKey', 'hypaMemory', 'hypav2', 'hypaModel', 'memoryAlgorithmType']),
+    translation: new Set(['language', 'translator', 'translatorType', 'translatorInputLanguage', 'autoTranslate', 'useAutoTranslateInput', 'deeplOptions', 'deeplXOptions']),
+    media: new Set(['sdProvider', 'webUiUrl', 'sdSteps', 'sdCFG', 'sdConfig', 'NAIImgUrl', 'NAIApiKey', 'NAIImgModel', 'NAIImgConfig', 'ttsAutoSpeech', 'elevenLabKey', 'voicevoxUrl']),
+    ui: new Set(['zoomsize', 'customBackground', 'fullScreen', 'iconsize', 'theme', 'textTheme', 'customTextTheme', 'colorScheme', 'colorSchemeName', 'customColorScheme', 'characterOrder', 'hotkeys']),
+    collection: new Set(['botPresets', 'personas', 'modules', 'loreBook', 'loadouts', 'plugins', 'pluginV2', 'translatorPresets']),
+}
 
+export function settingDomain(key: string): string {
+    for (const [domain, keys] of Object.entries(SETTING_DOMAINS)) if (keys.has(key)) return domain
+    return 'account-sync-compatibility'
+}
+
+function nodeBind(ownerValues: unknown[], row: RelationalNodeRow): unknown[] {
+    return [...ownerValues, ...RELATIONAL_NODE_COLUMNS.map((column) => row[column])]
+}
+
+async function replaceNodes(execute: SqliteExecute, table: string, ownerColumns: string[], ownerValues: unknown[], value: unknown): Promise<void> {
+    await execute(`DELETE FROM ${table} WHERE ${ownerColumns.map((column) => `${column} = ?`).join(' AND ')}`, ownerValues)
+    const columns = [...ownerColumns, ...RELATIONAL_NODE_COLUMNS]
+    const placeholders = columns.map(() => '?').join(', ')
+    for (const row of flattenRelationalValue(value)) {
+        await execute(`INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`, nodeBind(ownerValues, row))
+    }
+}
+
+function coldKind(value: unknown): string {
+    if (Array.isArray(value)) return 'legacy'
+    if (value && typeof value === 'object' && 'character' in value) return 'character'
+    if (value && typeof value === 'object' && 'message' in value) return 'chat'
+    return 'unknown'
+}
+
+export async function writeSqliteColdStorage(execute: SqliteExecute, key: string, value: unknown): Promise<void> {
+    await execute(`INSERT INTO cold_archives (archive_id, archive_kind, updated_at)
+        VALUES (?, ?, datetime('now')) ON CONFLICT(archive_id) DO UPDATE SET
+        archive_kind=excluded.archive_kind, updated_at=datetime('now')`, [key, coldKind(value)])
+    await replaceNodes(execute, 'cold_extension_nodes', ['archive_id'], [key], value)
+}
+
+export async function applySqliteCommit(commit: SqlCommit, execute: SqliteExecute): Promise<void> {
+    if (commit.replaceAll) await execute('DELETE FROM plugin_custom_storage')
     for (const upsert of commit.root.upserts) {
-        await execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))", [upsert.key, JSON.stringify(upsert.value)])
+        if (upsert.key === 'pluginCustomStorage') continue
+        const root = flattenRelationalValue(upsert.value)[0]
+        await execute(`INSERT INTO system_settings
+            (key, domain, value_type, text_value, encoded_text_value, number_value, boolean_value, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET
+            domain=excluded.domain, value_type=excluded.value_type, text_value=excluded.text_value,
+            encoded_text_value=excluded.encoded_text_value, number_value=excluded.number_value,
+            boolean_value=excluded.boolean_value, updated_at=datetime('now')`,
+        [upsert.key, settingDomain(upsert.key), root.value_type, root.text_value,
+            root.encoded_text_value, root.number_value, root.boolean_value])
+        await replaceNodes(execute, 'setting_extension_nodes', ['setting_key'], [upsert.key], upsert.value)
     }
-    for (const key of commit.root.deletes) {
-        await execute('DELETE FROM system_settings WHERE key = ?', [key])
-    }
+    for (const key of commit.root.deletes) await execute('DELETE FROM system_settings WHERE key = ?', [key])
 
     if (commit.pluginStorage) {
-        if (commit.pluginStorage.clear) {
-            await execute('DELETE FROM plugin_custom_storage')
-        }
-        for (const key of commit.pluginStorage.deletes) {
-            await execute('DELETE FROM plugin_custom_storage WHERE key = ?', [key])
-        }
+        if (commit.pluginStorage.clear) await execute('DELETE FROM plugin_custom_storage')
+        for (const key of commit.pluginStorage.deletes) await execute('DELETE FROM plugin_custom_storage WHERE key = ?', [key])
         for (const upsert of commit.pluginStorage.upserts) {
-            await execute(
-                "INSERT OR REPLACE INTO plugin_custom_storage (key, value, updated_at) VALUES (?, ?, datetime('now'))",
-                [upsert.key, JSON.stringify(upsert.value)],
-            )
+            await execute(`INSERT INTO plugin_custom_storage (key, value, updated_at) VALUES (?, ?, datetime('now'))
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')`, [upsert.key, JSON.stringify(upsert.value)])
         }
     }
 
     for (const entry of commit.characters) {
         const data = entry.data as Record<string, unknown>
-        await execute(`INSERT OR REPLACE INTO characters
-            (id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded, data, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now'))`, [
-            entry.id, entry.position, data.type ?? 'character', data.name ?? '', data.image ?? null,
-            data.trashTime ?? null, data.creationDate ?? null, data.modificationDate ?? null,
-            data.lastInteraction ?? null, JSON.stringify(data),
-        ])
+        await execute(`INSERT INTO characters
+            (id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now')) ON CONFLICT(id) DO UPDATE SET
+            position=excluded.position, kind=excluded.kind, name=excluded.name, image=excluded.image,
+            trash_time=excluded.trash_time, creation_time=excluded.creation_time,
+            modification_time=excluded.modification_time, last_interaction_time=excluded.last_interaction_time,
+            details_loaded=1, updated_at=datetime('now')`, [entry.id, entry.position,
+            data.type === 'group' ? 'group' : 'character', data.name ?? '', data.image ?? null,
+            data.trashTime ?? null, data.creationDate ?? data.creation_date ?? null,
+            data.modificationDate ?? data.modification_date ?? null, data.lastInteraction ?? null])
+        await replaceNodes(execute, 'character_extension_nodes', ['character_id'], [entry.id], data)
+        await execute('DELETE FROM character_tags WHERE character_id = ?', [entry.id])
+        if (Array.isArray(data.tags)) for (const [position, tag] of data.tags.entries()) {
+            if (typeof tag === 'string') await execute('INSERT INTO character_tags (character_id, position, tag) VALUES (?, ?, ?)', [entry.id, position, tag])
+        }
     }
     if (commit.characterIds !== undefined) {
-        if (commit.characterIds.length === 0) {
-            await execute('DELETE FROM characters')
-        } else {
-            const placeholders = commit.characterIds.map(() => '?').join(',')
-            await execute(`DELETE FROM characters WHERE id NOT IN (${placeholders})`, commit.characterIds)
-        }
+        if (!commit.characterIds.length) await execute('DELETE FROM characters')
+        else await execute(`DELETE FROM characters WHERE id NOT IN (${commit.characterIds.map(() => '?').join(',')})`, commit.characterIds)
     }
 
     for (const entry of commit.chats) {
         const data = entry.data as Record<string, unknown>
-        await execute(`INSERT OR REPLACE INTO chats
-            (id, character_id, position, name, note, folder_id, last_message_time, messages_loaded, data, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now'))`, [
-            entry.id, entry.characterId, entry.position, data.name ?? '', data.note ?? '',
-            data.folderId ?? null, data.lastDate ?? null, JSON.stringify(data),
-        ])
+        await execute(`INSERT INTO chats
+            (id, character_id, position, name, note, folder_id, last_message_time, messages_loaded, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now')) ON CONFLICT(id) DO UPDATE SET
+            character_id=excluded.character_id, position=excluded.position, name=excluded.name,
+            note=excluded.note, folder_id=excluded.folder_id, last_message_time=excluded.last_message_time,
+            updated_at=datetime('now')`, [entry.id, entry.characterId, entry.position, data.name ?? '',
+            data.note ?? '', data.folderId ?? null, data.lastDate ?? null])
+        await replaceNodes(execute, 'chat_extension_nodes', ['chat_id'], [entry.id], data)
     }
     for (const manifest of commit.chatManifests) {
-        if (manifest.ids.length === 0) {
-            await execute('DELETE FROM chats WHERE character_id = ?', [manifest.characterId])
-        } else {
-            const placeholders = manifest.ids.map(() => '?').join(',')
-            await execute(`DELETE FROM chats WHERE character_id = ? AND id NOT IN (${placeholders})`, [manifest.characterId, ...manifest.ids])
-        }
+        if (!manifest.ids.length) await execute('DELETE FROM chats WHERE character_id = ?', [manifest.characterId])
+        else await execute(`DELETE FROM chats WHERE character_id = ? AND id NOT IN (${manifest.ids.map(() => '?').join(',')})`, [manifest.characterId, ...manifest.ids])
     }
 
     for (const entry of commit.messages) {
-        const data = entry.data as Record<string, unknown>
-        await execute('INSERT OR REPLACE INTO messages (chat_id, id, position, role, sent_time, data) VALUES (?, ?, ?, ?, ?, ?)', [
-            entry.chatId, entry.id, entry.position, data.role ?? 'char', data.time ?? null, JSON.stringify(data),
-        ])
+        const data = entry.data as Record<string, any>
+        const content = flattenRelationalValue(typeof data.data === 'string' ? data.data : String(data.data ?? ''))[0]
+        await execute(`INSERT INTO messages
+            (chat_id, id, position, role, content_text, content_encoded, sender_name, sent_time, generation_model, input_tokens, output_tokens)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(chat_id,id) DO UPDATE SET
+            position=excluded.position, role=excluded.role, content_text=excluded.content_text,
+            content_encoded=excluded.content_encoded, sender_name=excluded.sender_name,
+            sent_time=excluded.sent_time, generation_model=excluded.generation_model,
+            input_tokens=excluded.input_tokens, output_tokens=excluded.output_tokens`,
+        [entry.chatId, entry.id, entry.position, data.role ?? 'char', content.text_value,
+            content.encoded_text_value, data.name ?? null, data.time ?? null,
+            data.generationInfo?.model ?? null, data.generationInfo?.inputTokens ?? null,
+            data.generationInfo?.outputTokens ?? null])
+        await replaceNodes(execute, 'message_extension_nodes', ['chat_id', 'message_id'], [entry.chatId, entry.id], data)
     }
     for (const manifest of commit.messageManifests) {
-        if (manifest.ids.length === 0) {
-            await execute('DELETE FROM messages WHERE chat_id = ?', [manifest.chatId])
-        } else {
-            const placeholders = manifest.ids.map(() => '?').join(',')
-            await execute(`DELETE FROM messages WHERE chat_id = ? AND id NOT IN (${placeholders})`, [manifest.chatId, ...manifest.ids])
-        }
+        if (!manifest.ids.length) await execute('DELETE FROM messages WHERE chat_id = ?', [manifest.chatId])
+        else await execute(`DELETE FROM messages WHERE chat_id = ? AND id NOT IN (${manifest.ids.map(() => '?').join(',')})`, [manifest.chatId, ...manifest.ids])
     }
-    if (commit.messageDeletes) {
-        for (const del of commit.messageDeletes) {
-            if (del.ids.length > 0) {
-                const placeholders = del.ids.map(() => '?').join(',')
-                await execute(`DELETE FROM messages WHERE chat_id = ? AND id IN (${placeholders})`, [del.chatId, ...del.ids])
-            }
-        }
+    for (const deletion of commit.messageDeletes ?? []) if (deletion.ids.length) {
+        await execute(`DELETE FROM messages WHERE chat_id = ? AND id IN (${deletion.ids.map(() => '?').join(',')})`, [deletion.chatId, ...deletion.ids])
     }
 }

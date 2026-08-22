@@ -37,10 +37,7 @@ const {
     splitLore,
 } = require('./postgresRelationalCodec.cjs');
 const {
-    decodeMember,
-    encodeMember,
     rebuildSettings,
-    rebuildSettingSubtree,
     splitSetting,
 } = require('./postgresSettingsCodec.cjs');
 const {
@@ -85,7 +82,8 @@ try {
     oracledb.fetchAsBuffer = [oracledb.BLOB];
 } catch (e) {}
 
-const ORACLE_SCHEMA_VERSION = 2;
+const ORACLE_SCHEMA_VERSION = 3;
+const RELATIONAL_SCHEMA_LAYOUT = 'relational-schema-v2';
 const MAX_SYNC_ROWS = 250000;
 
 // Oracle은 스키마(사용자)가 하나이므로 점 표기(system.settings)를 접두어(system_settings)로 변환
@@ -119,7 +117,7 @@ function mapSettingValueToColumns(value) {
     if (value === null || value === undefined) {
         return { text_val: null, num_val: null, bool_val: null };
     }
-    return { text_val: JSON.stringify(value), num_val: null, bool_val: null };
+    return { text_val: null, num_val: null, bool_val: null };
 }
 
 function mapColumnsToSettingValue(row) {
@@ -140,7 +138,7 @@ function mapColumnsToSettingValue(row) {
 
 // 감사 대상 테이블 목록 (PostgreSQL AUDITED_TABLES와 동일, 접두어 변환)
 const AUDITED_TABLES_QUALIFIED = [
-    'system.settings', 'character.characters',
+    'system.settings', 'system.setting_values', 'system.plugin_custom_storage', 'character.characters',
     ...SETTING_RELATION_DEFINITIONS.map((d) => d.table),
     'character.attributes', 'character.tags',
     'character.greetings', 'character.biases', 'character.emotions',
@@ -656,10 +654,16 @@ class OracleStorage extends SqlStorageBase {
                 );
                 const v = checkRes.rows[0]?.SCHEMA_VERSION;
                 const l = checkRes.rows[0]?.SCHEMA_LAYOUT;
-                if (v === ORACLE_SCHEMA_VERSION && l === 'relational-schema-v1') {
+                if (v === ORACLE_SCHEMA_VERSION && l === RELATIONAL_SCHEMA_LAYOUT) {
                     alreadyInitialized = true;
+                } else if (v !== undefined) {
+                    throw new Error(
+                        `Unsupported Oracle schema ${v}/${l}; expected ${ORACLE_SCHEMA_VERSION}/${RELATIONAL_SCHEMA_LAYOUT}. ` +
+                        'Reset the configured development database explicitly before retrying.'
+                    );
                 }
             } catch (e) {
+                if (String(e?.message || '').startsWith('Unsupported Oracle schema')) throw e;
                 // meta 테이블이 없으면 applySchema 진행
             }
 
@@ -680,10 +684,10 @@ class OracleStorage extends SqlStorageBase {
             await verifyConn.close();
             const schemaVersion = result.rows[0]?.SCHEMA_VERSION;
             const schemaLayout = result.rows[0]?.SCHEMA_LAYOUT;
-            if (schemaVersion !== ORACLE_SCHEMA_VERSION || schemaLayout !== 'relational-schema-v1') {
+            if (schemaVersion !== ORACLE_SCHEMA_VERSION || schemaLayout !== RELATIONAL_SCHEMA_LAYOUT) {
                 throw new Error(
                     `Unsupported Oracle schema ${schemaVersion}/${schemaLayout}; ` +
-                    `expected ${ORACLE_SCHEMA_VERSION}/relational-schema-v1`
+                    `expected ${ORACLE_SCHEMA_VERSION}/${RELATIONAL_SCHEMA_LAYOUT}`
                 );
             }
             return pool;
@@ -1071,6 +1075,8 @@ class OracleStorage extends SqlStorageBase {
             if (shallow) {
                 const settings = await fetchRows(conn, `SELECT key, text_val, num_val, bool_val FROM system_settings ORDER BY key`,
                     [], { clobColumns: ['text_val'] });
+                const settingValues = await fetchRows(conn, `SELECT * FROM system_setting_values ORDER BY setting_key, node_id`,
+                    [], { clobColumns: ['member_key', 'encoded_member_key', 'text_value', 'encoded_text_value'] });
                 const characters = await fetchRows(conn, `SELECT * FROM character_characters ORDER BY position, id`,
                     [], { clobColumns: ['image', 'description', 'notes', 'creator_notes', 'system_prompt',
                         'post_history_instructions', 'personality', 'scenario', 'example_message', 'license',
@@ -1083,12 +1089,15 @@ class OracleStorage extends SqlStorageBase {
                     [], { clobColumns: ['note', 'sd_data', 'supa_memory_data', 'last_memory'] });
                 const bookmarks = await fetchRows(conn, `SELECT * FROM chat_bookmarks ORDER BY chat_id, position`);
 
-                const database = {};
-                for (const row of settings) {
+                const database = rebuildSettings(settings, settingValues);
+                for (const row of settings) if (!Object.prototype.hasOwnProperty.call(database, row.key)) {
                     database[row.key] = mapColumnsToSettingValue(row);
                 }
                 database.plugins ??= [];
-                database.pluginCustomStorage ??= {};
+                const pluginRows = await fetchRows(conn,
+                    `SELECT key, JSON_SERIALIZE(value RETURNING CLOB) AS value FROM system_plugin_custom_storage`,
+                    [], { clobColumns: ['value'] });
+                database.pluginCustomStorage = Object.fromEntries(pluginRows.map((row) => [row.key, JSON.parse(row.value)]));
 
                 const characterRelations = {
                     tags: groupRows(tags, 'character_id'),
@@ -1110,6 +1119,8 @@ class OracleStorage extends SqlStorageBase {
             // 전체 로드
             const allSettings = await fetchRows(conn, `SELECT key, text_val, num_val, bool_val FROM system_settings ORDER BY key`,
                 [], { clobColumns: ['text_val'] });
+            const allSettingValues = await fetchRows(conn, `SELECT * FROM system_setting_values ORDER BY setting_key, node_id`,
+                [], { clobColumns: ['member_key', 'encoded_member_key', 'text_value', 'encoded_text_value'] });
             const characters = await fetchRows(conn, `SELECT * FROM character_characters ORDER BY position, id`,
                 [], { clobColumns: ['image', 'description', 'notes', 'creator_notes', 'system_prompt',
                     'post_history_instructions', 'personality', 'scenario', 'example_message', 'license',
@@ -1154,10 +1165,14 @@ class OracleStorage extends SqlStorageBase {
                 [], { clobColumns: ['toggle_value'] });
             const promptItems = await fetchRows(conn, `SELECT * FROM chat_message_prompt_items ORDER BY chat_id, message_id, position`);
 
-            const database = {};
-            for (const row of allSettings) {
+            const database = rebuildSettings(allSettings, allSettingValues);
+            for (const row of allSettings) if (!Object.prototype.hasOwnProperty.call(database, row.key)) {
                 database[row.key] = mapColumnsToSettingValue(row);
             }
+            const pluginRows = await fetchRows(conn,
+                `SELECT key, JSON_SERIALIZE(value RETURNING CLOB) AS value FROM system_plugin_custom_storage`,
+                [], { clobColumns: ['value'] });
+            database.pluginCustomStorage = Object.fromEntries(pluginRows.map((row) => [row.key, JSON.parse(row.value)]));
             const characterRelations = createCharacterRelations({
                 attributes: characterAttributes, tags, greetings, biases, emotions,
                 modules: characterModules, groupMembers, chatFolders, scripts,
@@ -1340,14 +1355,11 @@ class OracleStorage extends SqlStorageBase {
         const conn = await this.pool.getConnection();
         try {
             await conn.execute('SET TRANSACTION READ ONLY');
-            const settings = await fetchRows(conn,
-                `SELECT * FROM system_settings WHERE key = 'pluginCustomStorage' ORDER BY key`);
-            const settingValues = await fetchRows(conn,
-                `SELECT * FROM system_setting_values WHERE setting_key = 'pluginCustomStorage' ORDER BY setting_key, node_id`,
-                [], { clobColumns: ['text_value', 'encoded_text_value'] });
-            const rebuilt = rebuildSettings(settings, settingValues);
+            const rows = await fetchRows(conn,
+                `SELECT key, JSON_SERIALIZE(value RETURNING CLOB) AS value
+                 FROM system_plugin_custom_storage ORDER BY key`, [], { clobColumns: ['value'] });
             await conn.rollback();
-            const pluginCustomStorage = rebuilt.pluginCustomStorage || {};
+            const pluginCustomStorage = Object.fromEntries(rows.map((row) => [row.key, JSON.parse(row.value)]));
             const serialized = JSON.stringify(pluginCustomStorage);
             const hash = crypto.createHash('sha256').update(serialized).digest('hex');
             const result = { pluginCustomStorage, hash };
@@ -1366,14 +1378,9 @@ class OracleStorage extends SqlStorageBase {
         const conn = await this.pool.getConnection();
         try {
             await conn.execute('SET TRANSACTION READ ONLY');
-            const rows = await fetchRows(conn,
-                `SELECT node_id, member_key, encoded_member_key, position
-                 FROM system_setting_values
-                 WHERE setting_key = 'pluginCustomStorage' AND parent_node_id = 0
-                 ORDER BY node_id`,
-                [], { clobColumns: ['member_key', 'encoded_member_key'] });
+            const rows = await fetchRows(conn, `SELECT key FROM system_plugin_custom_storage ORDER BY key`);
             await conn.rollback();
-            return rows.map((row) => decodeMember(row)).filter((key) => key !== null && key !== undefined);
+            return rows.map((row) => row.key);
         } catch (error) {
             try { await conn.rollback(); } catch (e) {}
             throw error;
@@ -1387,34 +1394,14 @@ class OracleStorage extends SqlStorageBase {
         const conn = await this.pool.getConnection();
         try {
             await conn.execute('SET TRANSACTION READ ONLY');
-            const encoded = encodeMember(storageKey, null);
-            // Oracle 재귀 CTE (PostgreSQL WITH RECURSIVE 호환)
             const rows = await fetchRows(conn,
-                `WITH key_tree (node_id, parent_node_id, member_key, encoded_member_key, position,
-                                value_type, text_value, encoded_text_value, number_value, boolean_value) AS (
-                    SELECT node_id, parent_node_id, member_key, encoded_member_key, position,
-                           value_type, text_value, encoded_text_value, number_value, boolean_value
-                    FROM system_setting_values
-                    WHERE setting_key = 'pluginCustomStorage'
-                      AND parent_node_id = 0
-                      AND ((member_key IS NOT NULL AND member_key = :1)
-                           OR (encoded_member_key IS NOT NULL AND encoded_member_key = :2))
-                    UNION ALL
-                    SELECT v.node_id, v.parent_node_id, v.member_key, v.encoded_member_key, v.position,
-                           v.value_type, v.text_value, v.encoded_text_value, v.number_value, v.boolean_value
-                    FROM system_setting_values v
-                    INNER JOIN key_tree kt ON v.parent_node_id = kt.node_id
-                    WHERE v.setting_key = 'pluginCustomStorage'
-                )
-                SELECT * FROM key_tree ORDER BY node_id`,
-                [encoded.member_key, encoded.encoded_member_key],
-                { clobColumns: ['member_key', 'encoded_member_key', 'text_value', 'encoded_text_value'] });
+                `SELECT JSON_SERIALIZE(value RETURNING CLOB) AS value
+                 FROM system_plugin_custom_storage WHERE key = :1`, [storageKey], { clobColumns: ['value'] });
             await conn.rollback();
             if (rows.length === 0) {
                 return { key: storageKey, exists: false, value: null, hash: 'null' };
             }
-            const rootNodeId = Number(rows[0].node_id);
-            const value = rebuildSettingSubtree(rootNodeId, rows);
+            const value = JSON.parse(rows[0].value);
             const serialized = JSON.stringify(value);
             const hash = crypto.createHash('sha256').update(serialized).digest('hex');
             return { key: storageKey, exists: true, value, hash };
@@ -1441,6 +1428,12 @@ class OracleStorage extends SqlStorageBase {
                 keys, { clobColumns: ['text_value', 'encoded_text_value'] });
             await conn.rollback();
             const rebuilt = rebuildSettings(settings, settingValues);
+            if (keys.includes('pluginCustomStorage')) {
+                const pluginRows = await fetchRows(conn,
+                    `SELECT key, JSON_SERIALIZE(value RETURNING CLOB) AS value FROM system_plugin_custom_storage`,
+                    [], { clobColumns: ['value'] });
+                rebuilt.pluginCustomStorage = Object.fromEntries(pluginRows.map((row) => [row.key, JSON.parse(row.value)]));
+            }
             const serialized = JSON.stringify(rebuilt);
             const hash = crypto.createHash('sha256').update(serialized).digest('hex');
             return { settings: rebuilt, hash };
@@ -1483,12 +1476,14 @@ class OracleStorage extends SqlStorageBase {
             if (payload.replaceAll) {
                 onProgress?.({ stage: 'cleanup', message: '기존 데이터 정리 중...', percent: 5 });
                 await conn.execute('DELETE FROM system_settings');
+                await conn.execute('DELETE FROM system_plugin_custom_storage');
                 await conn.execute('DELETE FROM character_characters');
             }
 
             // 설정 upsert (MERGE INTO system_settings)
             onProgress?.({ stage: 'settings', message: `설정 동기화 중... (${payload.rootUpserts.length}개 설정)`, percent: 10 });
-            if (payload.rootUpserts.length > 0) {
+            const rootSettingUpserts = payload.rootUpserts.filter((row) => row.key !== 'pluginCustomStorage');
+            if (rootSettingUpserts.length > 0) {
                 const mergeSql = `MERGE INTO system_settings t
                     USING (SELECT :key AS key, :text_val AS text_val, :num_val AS num_val, :bool_val AS bool_val FROM dual) s
                     ON (t.key = s.key)
@@ -1499,16 +1494,22 @@ class OracleStorage extends SqlStorageBase {
                         t.updated_at = SYSTIMESTAMP
                     WHEN NOT MATCHED THEN INSERT (key, text_val, num_val, bool_val, updated_at)
                         VALUES (s.key, s.text_val, s.num_val, s.bool_val, SYSTIMESTAMP)`;
-                const settingBinds = payload.rootUpserts.map((row) => {
+                const settingBinds = rootSettingUpserts.map((row) => {
                     const mapped = mapSettingValueToColumns(row.value);
                     return { key: row.key, ...mapped };
                 });
                 await conn.executeMany(mergeSql, settingBinds);
+                await conn.executeMany(`DELETE FROM system_setting_values WHERE setting_key = :1`,
+                    rootSettingUpserts.map((row) => [row.key]));
+                const settingValueRows = rootSettingUpserts.flatMap((row) => splitSetting(row.key, row.value).values);
+                await this._bulkInsertRows(conn, 'system_setting_values',
+                    ['setting_key', 'node_id', 'parent_node_id', 'member_key', 'encoded_member_key', 'position', 'value_type', 'text_value', 'encoded_text_value', 'number_value', 'boolean_value'],
+                    settingValueRows, onProgress);
             }
-            const changedSettingKeys = payload.rootUpserts.map((s) => s.key);
+            const changedSettingKeys = rootSettingUpserts.map((s) => s.key);
 
             // 관계형 설정 테이블
-            const projectedSettings = projectSettings(payload.rootUpserts);
+            const projectedSettings = projectSettings(rootSettingUpserts);
             if (changedSettingKeys.length > 0) {
                 const changedSet = new Set(changedSettingKeys);
                 for (const definition of SETTING_RELATION_DEFINITIONS) {
@@ -1527,6 +1528,23 @@ class OracleStorage extends SqlStorageBase {
             if (payload.rootDeletes.length > 0) {
                 await conn.executeMany(`DELETE FROM system_settings WHERE key = :1`,
                     payload.rootDeletes.map((k) => [k]));
+            }
+            if (payload.pluginStorageClear) {
+                await conn.execute('DELETE FROM system_plugin_custom_storage');
+            }
+            if (payload.pluginStorageDeletes?.length) {
+                await conn.executeMany('DELETE FROM system_plugin_custom_storage WHERE key = :1',
+                    payload.pluginStorageDeletes.map((key) => [key]));
+            }
+            if (payload.pluginStorageUpserts?.length) {
+                const pluginSql = `MERGE INTO system_plugin_custom_storage target
+                    USING (SELECT :1 AS key, JSON(:2) AS value FROM dual) source
+                    ON (target.key = source.key)
+                    WHEN MATCHED THEN UPDATE SET target.value = source.value, target.updated_at = SYSTIMESTAMP
+                    WHEN NOT MATCHED THEN INSERT (key, value, updated_at)
+                    VALUES (source.key, source.value, SYSTIMESTAMP)`;
+                await conn.executeMany(pluginSql,
+                    payload.pluginStorageUpserts.map((item) => [item.key, JSON.stringify(item.value)]));
             }
 
             // 캐릭터 upsert
@@ -1877,7 +1895,7 @@ class OracleStorage extends SqlStorageBase {
     _getLobColumnsForTable(table) {
         const mapped = mapTableName(table);
         const lobCols = {
-            'system_setting_values': ['text_value', 'encoded_text_value'],
+            'system_setting_values': ['member_key', 'encoded_member_key', 'text_value', 'encoded_text_value'],
             'system_bot_presets': ['main_prompt', 'jailbreak', 'global_note', 'image'],
             'system_personas': ['prompt', 'icon', 'note'],
             'system_modules': ['description', 'cjs', 'background_embedding', 'custom_toggle', 'icon'],

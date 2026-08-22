@@ -5,15 +5,15 @@ CREATE SCHEMA IF NOT EXISTS cold;
 
 CREATE TABLE IF NOT EXISTS system.storage_meta (
     singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
-    schema_version INTEGER NOT NULL DEFAULT 2,
-    schema_layout TEXT NOT NULL DEFAULT 'relational-schema-v1',
+    schema_version INTEGER NOT NULL DEFAULT 3,
+    schema_layout TEXT NOT NULL DEFAULT 'relational-schema-v2',
     revision BIGINT NOT NULL DEFAULT 0,
     initialized BOOLEAN NOT NULL DEFAULT FALSE,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 INSERT INTO system.storage_meta (singleton, schema_version, schema_layout)
-VALUES (TRUE, 2, 'relational-schema-v1')
+VALUES (TRUE, 3, 'relational-schema-v2')
 ON CONFLICT (singleton) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS system.asset_catalog_state (
@@ -100,6 +100,34 @@ CREATE TABLE IF NOT EXISTS system.settings (
     text_val TEXT,
     num_val DOUBLE PRECISION,
     bool_val BOOLEAN,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS system.setting_values (
+    setting_key TEXT NOT NULL REFERENCES system.settings(key) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    node_id INTEGER NOT NULL,
+    parent_node_id INTEGER,
+    member_key TEXT,
+    encoded_member_key TEXT,
+    position INTEGER CHECK (position >= 0),
+    value_type TEXT NOT NULL CHECK (value_type IN ('null','text','encoded-text','number','boolean','array','object')),
+    text_value TEXT,
+    encoded_text_value TEXT,
+    number_value DOUBLE PRECISION,
+    boolean_value BOOLEAN,
+    PRIMARY KEY (setting_key, node_id),
+    FOREIGN KEY (setting_key, parent_node_id) REFERENCES system.setting_values(setting_key, node_id)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    CHECK (node_id = 0 OR parent_node_id IS NOT NULL),
+    CHECK (member_key IS NULL OR encoded_member_key IS NULL),
+    CHECK (text_value IS NULL OR encoded_text_value IS NULL)
+);
+CREATE INDEX IF NOT EXISTS setting_values_parent_idx
+ON system.setting_values (setting_key, parent_node_id, position, node_id);
+
+CREATE TABLE IF NOT EXISTS system.plugin_custom_storage (
+    key TEXT PRIMARY KEY,
+    value JSONB NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -1237,6 +1265,8 @@ DECLARE
 BEGIN
     FOREACH audited_target SLICE 1 IN ARRAY ARRAY[
         ARRAY['system', 'settings'],
+        ARRAY['system', 'setting_values'],
+        ARRAY['system', 'plugin_custom_storage'],
         ARRAY['system', 'bot_presets'],
         ARRAY['system', 'personas'],
         ARRAY['system', 'modules'],

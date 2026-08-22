@@ -27,7 +27,8 @@ import { isTauri } from '../platform'
 import { appDataDir, join } from '@tauri-apps/api/path'
 import sqliteSchemaSql from './sqlite-schema.sql?raw'
 import { buildSqlReplaceCommit, SqlRevisionConflictError, type SqlCommit, type SqlCommitResult } from './sqlCommit'
-import { applySqliteCommit } from './sqliteCommit'
+import { applySqliteCommit, writeSqliteColdStorage } from './sqliteCommit'
+import { rebuildRelationalValue, RELATIONAL_SCHEMA_LAYOUT, SQLITE_SCHEMA_VERSION, SqlSchemaResetRequiredError } from './relationalNodeCodec'
 
 type SqlDatabase = import('@tauri-apps/plugin-sql').default
 
@@ -79,7 +80,18 @@ export class TauriSqliteStorage implements ISqlStorage {
             const dbPath = await join(appDir, 'risuai-local.sqlite3')
             this.db = await sql.default.load(`sqlite:${dbPath}`)
 
-            // Apply schema
+            const existingMeta = await this.db.select<{ name: string }[]>(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'system_storage_meta'",
+            )
+            if (existingMeta.length) {
+                const rows = await this.db.select<{ schema_version: number; schema_layout: string }[]>(
+                    'SELECT schema_version, schema_layout FROM system_storage_meta WHERE singleton = 1',
+                )
+                const meta = rows[0]
+                if (Number(meta?.schema_version) !== SQLITE_SCHEMA_VERSION || meta?.schema_layout !== RELATIONAL_SCHEMA_LAYOUT) {
+                    throw new SqlSchemaResetRequiredError(meta?.schema_version, meta?.schema_layout)
+                }
+            }
             await this.db.execute(sqliteSchemaSql)
 
             // Read revision
@@ -96,6 +108,7 @@ export class TauriSqliteStorage implements ISqlStorage {
             console.error('TauriSqliteStorage init failed:', error)
             this.initialized = true
             this._enabled = false
+            if (error instanceof SqlSchemaResetRequiredError) throw error
             return false
         }
     }
@@ -117,6 +130,17 @@ export class TauriSqliteStorage implements ISqlStorage {
         await this.db.execute(sql, bind)
     }
 
+    private async loadNodeValue(table: string, ownerWhere: string, bind: unknown[]): Promise<unknown> {
+        const rows = await this.selectRows(`SELECT node_id, parent_node_id, node_order, object_key,
+            object_key_encoded, value_type, text_value, encoded_text_value, number_value,
+            boolean_value FROM ${table} WHERE ${ownerWhere} ORDER BY node_id`, bind)
+        return rows.length ? rebuildRelationalValue(rows) : undefined
+    }
+
+    private loadSettingValue(key: string): Promise<unknown> {
+        return this.loadNodeValue('setting_extension_nodes', 'setting_key = ?', [key])
+    }
+
     // ── Database-level load / save ───────────────────────────────────────
 
     async loadDatabase(options?: SqlLoadDatabaseOptions): Promise<SqlLoadDatabaseResult | null> {
@@ -129,15 +153,11 @@ export class TauriSqliteStorage implements ISqlStorage {
         const db: DatabaseType = {} as any
 
         // Load all settings
-        const settingsRows = await this.selectRows<{ key: string; value: string }>(
-            'SELECT key, value FROM system_settings',
+        const settingsRows = await this.selectRows<{ key: string }>(
+            'SELECT key FROM system_settings',
         )
         for (const row of settingsRows) {
-            try {
-                ;(db as any)[row.key] = JSON.parse(row.value)
-            } catch {
-                ;(db as any)[row.key] = row.value
-            }
+            ;(db as any)[row.key] = await this.loadSettingValue(row.key)
         }
 
         // Also merge plugin_custom_storage table if present
@@ -160,8 +180,8 @@ export class TauriSqliteStorage implements ISqlStorage {
             id: string; position: number; kind: string; name: string; image: string | null;
             trash_time: number | null; creation_time: number | null;
             modification_time: number | null; last_interaction_time: number | null;
-            details_loaded: number; data: string | null
-        }>('SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded, data FROM characters ORDER BY position')
+            details_loaded: number
+        }>('SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position')
 
         const characters: (character | groupChat)[] = []
         for (const row of charRows) {
@@ -180,16 +200,16 @@ export class TauriSqliteStorage implements ISqlStorage {
                     chatPage: 0,
                 } as any)
             } else {
-                const fullChar = row.data ? JSON.parse(row.data) : {}
+                const fullChar = (await this.loadNodeValue('character_extension_nodes', 'character_id = ?', [row.id]) ?? {}) as any
                 fullChar.chaId = row.id
                 fullChar.detailsLoaded = true
                 const chatRows = await this.selectRows<{
                     id: string; name: string; note: string; folder_id: string | null;
-                    last_message_time: number | null; data: string | null
-                }>('SELECT id, name, note, folder_id, last_message_time, data FROM chats WHERE character_id = ? ORDER BY position', [row.id])
+                    last_message_time: number | null
+                }>('SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position', [row.id])
                 const chats: Chat[] = []
                 for (const chatRow of chatRows) {
-                    const chatData = chatRow.data ? JSON.parse(chatRow.data) : {}
+                    const chatData = (await this.loadNodeValue('chat_extension_nodes', 'chat_id = ?', [chatRow.id]) ?? {}) as any
                     chatData.id = chatRow.id
                     chatData.name = chatRow.name ?? ''
                     chatData.note = chatRow.note ?? ''
@@ -262,21 +282,19 @@ export class TauriSqliteStorage implements ISqlStorage {
     // ── Per-entity lazy loaders ──────────────────────────────────────────
 
     async loadCharacter(characterId: string): Promise<character | groupChat | null> {
-        const row = await this.selectOne<{ data: string | null }>(
-            'SELECT data FROM characters WHERE id = ?', [characterId],
-        )
-        if (!row || !row.data) return null
-        const fullChar = JSON.parse(row.data)
+        const row = await this.selectOne<{ id: string }>('SELECT id FROM characters WHERE id = ?', [characterId])
+        if (!row) return null
+        const fullChar = (await this.loadNodeValue('character_extension_nodes', 'character_id = ?', [characterId]) ?? {}) as any
         fullChar.chaId = characterId
         fullChar.detailsLoaded = true
 
         const chatRows = await this.selectRows<{
             id: string; name: string; note: string; folder_id: string | null;
-            last_message_time: number | null; data: string | null
-        }>('SELECT id, name, note, folder_id, last_message_time, data FROM chats WHERE character_id = ? ORDER BY position', [characterId])
+            last_message_time: number | null
+        }>('SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position', [characterId])
         const chats: Chat[] = []
         for (const chatRow of chatRows) {
-            const chatData = chatRow.data ? JSON.parse(chatRow.data) : {}
+            const chatData = (await this.loadNodeValue('chat_extension_nodes', 'chat_id = ?', [chatRow.id]) ?? {}) as any
             chatData.id = chatRow.id
             chatData.name = chatRow.name ?? ''
             chatData.note = chatRow.note ?? ''
@@ -294,11 +312,11 @@ export class TauriSqliteStorage implements ISqlStorage {
     async loadChat(chatId: string, options?: { messageLimit?: number }): Promise<Chat | null> {
         const chatRow = await this.selectOne<{
             id: string; name: string; note: string; folder_id: string | null;
-            last_message_time: number | null; data: string | null
-        }>('SELECT id, name, note, folder_id, last_message_time, data FROM chats WHERE id = ?', [chatId])
+            last_message_time: number | null
+        }>('SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?', [chatId])
         if (!chatRow) return null
 
-        const chatData = chatRow.data ? JSON.parse(chatRow.data) : {}
+        const chatData = (await this.loadNodeValue('chat_extension_nodes', 'chat_id = ?', [chatId]) ?? {}) as any
         chatData.id = chatRow.id
         chatData.name = chatRow.name ?? ''
         chatData.note = chatRow.note ?? ''
@@ -310,9 +328,9 @@ export class TauriSqliteStorage implements ISqlStorage {
         const limit = options?.messageLimit
         const offset = limit === undefined ? 0 : Math.max(0, total - Math.max(1, Math.floor(limit)))
         const msgRows = limit === undefined
-            ? await this.selectRows<{ data: string }>('SELECT data FROM messages WHERE chat_id = ? ORDER BY position', [chatId])
-            : await this.selectRows<{ data: string }>('SELECT data FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?', [chatId, limit, offset])
-        chatData.message = msgRows.map((r) => JSON.parse(r.data))
+            ? await this.selectRows<{ id: string }>('SELECT id FROM messages WHERE chat_id = ? ORDER BY position', [chatId])
+            : await this.selectRows<{ id: string }>('SELECT id FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?', [chatId, limit, offset])
+        chatData.message = await Promise.all(msgRows.map((r) => this.loadNodeValue('message_extension_nodes', 'chat_id = ? AND message_id = ?', [chatId, r.id])))
         chatData.messageOffset = offset
         chatData.messageTotal = total
         chatData.messagesFullyLoaded = offset === 0
@@ -322,10 +340,10 @@ export class TauriSqliteStorage implements ISqlStorage {
     }
 
     async loadChatMessages(chatId: string): Promise<Message[]> {
-        const msgRows = await this.selectRows<{ data: string }>(
-            'SELECT data FROM messages WHERE chat_id = ? ORDER BY position', [chatId],
+        const msgRows = await this.selectRows<{ id: string }>(
+            'SELECT id FROM messages WHERE chat_id = ? ORDER BY position', [chatId],
         )
-        return msgRows.map((r) => JSON.parse(r.data))
+        return Promise.all(msgRows.map((r) => this.loadNodeValue('message_extension_nodes', 'chat_id = ? AND message_id = ?', [chatId, r.id]) as Promise<Message>))
     }
 
     async loadChatMessagePage(chatId: string, before: number | undefined, limit: number) {
@@ -333,12 +351,12 @@ export class TauriSqliteStorage implements ISqlStorage {
         const total = Number(totalRow?.total ?? 0)
         const end = Math.min(total, Math.max(0, before ?? total))
         const offset = Math.max(0, end - Math.max(1, Math.floor(limit)))
-        const msgRows = await this.selectRows<{ data: string }>(
-            'SELECT data FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?',
+        const msgRows = await this.selectRows<{ id: string }>(
+            'SELECT id FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?',
             [chatId, end - offset, offset],
         )
         return {
-            messages: msgRows.map((row) => JSON.parse(row.data)),
+            messages: await Promise.all(msgRows.map((row) => this.loadNodeValue('message_extension_nodes', 'chat_id = ? AND message_id = ?', [chatId, row.id]) as Promise<Message>)),
             offset,
             total,
             hasMore: offset > 0,
@@ -348,64 +366,39 @@ export class TauriSqliteStorage implements ISqlStorage {
     // ── Domain loaders ───────────────────────────────────────────────────
 
     async loadPersonas(): Promise<RisuPersona[]> {
-        const row = await this.selectOne<{ value: string }>("SELECT value FROM system_settings WHERE key = 'personas'")
-        if (!row) return []
-        try { return JSON.parse(row.value) } catch { return [] }
+        return (await this.loadSettingValue('personas') as RisuPersona[] | undefined) ?? []
     }
 
     async loadBotPresets(): Promise<botPreset[]> {
-        const row = await this.selectOne<{ value: string }>("SELECT value FROM system_settings WHERE key = 'botPresets'")
-        if (!row) return []
-        try { return JSON.parse(row.value) } catch { return [] }
+        return (await this.loadSettingValue('botPresets') as botPreset[] | undefined) ?? []
     }
 
     async loadLorebooks(): Promise<{ name: string; data: loreBook[] }[]> {
-        const row = await this.selectOne<{ value: string }>("SELECT value FROM system_settings WHERE key = 'loreBook'")
-        if (!row) return []
-        try { return JSON.parse(row.value) } catch { return [] }
+        return (await this.loadSettingValue('loreBook') as { name: string; data: loreBook[] }[] | undefined) ?? []
     }
 
     async loadModules(): Promise<RisuModule[]> {
-        const row = await this.selectOne<{ value: string }>("SELECT value FROM system_settings WHERE key = 'modules'")
-        if (!row) return []
-        try { return JSON.parse(row.value) } catch { return [] }
+        return (await this.loadSettingValue('modules') as RisuModule[] | undefined) ?? []
     }
 
     async loadPrompts(): Promise<Record<string, any>> {
-        const rows = await this.selectRows<{ key: string; value: string }>(
-            "SELECT key, value FROM system_settings WHERE key IN ('mainPrompt','jailbreak','globalNote','additionalPrompt','supaMemoryPrompt','personaPrompt','emotionPrompt','emotionPrompt2','autoSuggestPrompt','translatorPrompt','instructChatTemplate','JinjaTemplate','customTokenizer','promptTemplate','promptSettings','customPromptTemplateToggle')",
-        )
+        const rows = await this.selectRows<{ key: string }>("SELECT key FROM system_settings WHERE domain = 'prompt'")
         const prompts: Record<string, any> = {}
-        for (const row of rows) {
-            try { prompts[row.key] = JSON.parse(row.value) } catch { prompts[row.key] = row.value }
-        }
+        for (const row of rows) prompts[row.key] = await this.loadSettingValue(row.key)
         return prompts
     }
 
     async loadScripts(): Promise<customscript[]> {
-        const row = await this.selectOne<{ value: string }>("SELECT value FROM system_settings WHERE key = 'globalscript'")
-        if (!row) return []
-        try { return JSON.parse(row.value) } catch { return [] }
+        return (await this.loadSettingValue('globalscript') as customscript[] | undefined) ?? []
     }
 
     // ── Plugins ──────────────────────────────────────────────────────────
 
     async loadPlugins(): Promise<any[] | null> {
-        const row = await this.selectOne<{ data: string }>("SELECT data FROM plugins WHERE key = 'plugins'")
-        if (!row) return null
-        try { return JSON.parse(row.data) } catch { return [] }
+        return (await this.loadSettingValue('plugins') as any[] | undefined) ?? null
     }
 
     async loadPluginCustomStorage(): Promise<Record<string, any> | null> {
-        const settingRow = await this.selectOne<{ value: string }>("SELECT value FROM system_settings WHERE key = 'pluginCustomStorage'")
-        if (settingRow && settingRow.value) {
-            try {
-                const parsed = JSON.parse(settingRow.value)
-                if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-                    return parsed
-                }
-            } catch {}
-        }
         const rows = await this.selectRows<{ key: string; value: string }>(
             'SELECT key, value FROM plugin_custom_storage',
         )
@@ -420,42 +413,36 @@ export class TauriSqliteStorage implements ISqlStorage {
     // ── Settings ─────────────────────────────────────────────────────────
 
     async loadSettingKey(key: string): Promise<any> {
-        const row = await this.selectOne<{ value: string }>('SELECT value FROM system_settings WHERE key = ?', [key])
-        if (!row) return undefined
-        try { return JSON.parse(row.value) } catch { return row.value }
+        return this.loadSettingValue(key)
     }
 
     // ── Cold storage ─────────────────────────────────────────────────────
 
     async getColdStorageItem(key: string): Promise<unknown | null> {
-        const row = await this.selectOne<{ data: string }>('SELECT data FROM cold_storage WHERE key = ?', [key])
-        if (!row) return null
-        try { return JSON.parse(row.data) } catch { return null }
+        const row = await this.selectOne<{ archive_id: string }>('SELECT archive_id FROM cold_archives WHERE archive_id = ?', [key])
+        return row ? this.loadNodeValue('cold_extension_nodes', 'archive_id = ?', [key]) : null
     }
 
     async listColdStorageItems(): Promise<{ items: string[] }> {
-        const rows = await this.selectRows<{ key: string }>('SELECT key FROM cold_storage')
-        return { items: rows.map((r) => r.key) }
+        const rows = await this.selectRows<{ archive_id: string }>('SELECT archive_id FROM cold_archives')
+        return { items: rows.map((r) => r.archive_id) }
     }
 
     async setColdStorageItem(key: string, value: unknown): Promise<boolean> {
-        await this.execute(
-            "INSERT OR REPLACE INTO cold_storage (key, data, updated_at) VALUES (?, ?, datetime('now'))",
-            [key, JSON.stringify(value)],
-        )
+        await writeSqliteColdStorage((sql, bind = []) => this.execute(sql, bind), key, value)
         return true
     }
 
     async removeColdStorageItems(keys: string[]): Promise<number> {
         if (keys.length === 0) return 0
         const placeholders = keys.map(() => '?').join(',')
-        await this.execute(`DELETE FROM cold_storage WHERE key IN (${placeholders})`, keys)
+        await this.execute(`DELETE FROM cold_archives WHERE archive_id IN (${placeholders})`, keys)
         return keys.length
     }
 
     async pruneColdStorage(retainedKeys: string[]): Promise<number> {
-        const allRows = await this.selectRows<{ key: string }>('SELECT key FROM cold_storage')
-        const toDelete = allRows.map((r) => r.key).filter((k) => !retainedKeys.includes(k))
+        const allRows = await this.selectRows<{ archive_id: string }>('SELECT archive_id FROM cold_archives')
+        const toDelete = allRows.map((r) => r.archive_id).filter((k) => !retainedKeys.includes(k))
         return this.removeColdStorageItems(toDelete)
     }
 
@@ -485,12 +472,11 @@ export class TauriSqliteStorage implements ISqlStorage {
     // ── Search ───────────────────────────────────────────────────────────
 
     async searchMessages(query: string, scope: 'all' | 'active' | 'cold' = 'all', limit: number = 50): Promise<NodePostgresMessageSearchResult[]> {
-        const rows = await this.selectRows<{ chat_id: string; id: string; position: number; role: string; sent_time: number | null; data: string }>(
-            `SELECT chat_id, id, position, role, sent_time, data FROM messages WHERE data LIKE ? ORDER BY sent_time DESC LIMIT ?`,
+        const rows = await this.selectRows<{ chat_id: string; id: string; position: number; role: string; sent_time: number | null; sender_name: string | null; content_text: string | null }>(
+            `SELECT chat_id, id, position, role, sent_time, sender_name, content_text FROM messages WHERE content_text LIKE ? ORDER BY sent_time DESC LIMIT ?`,
             [`%${query}%`, limit],
         )
         return rows.map((r) => {
-            const msgData = JSON.parse(r.data)
             return {
                 storageState: 'active' as const,
                 archiveId: null,
@@ -502,30 +488,20 @@ export class TauriSqliteStorage implements ISqlStorage {
                 position: Number(r.position),
                 role: r.role as 'user' | 'char',
                 sentTime: r.sent_time != null ? Number(r.sent_time) : null,
-                senderName: msgData.name ?? null,
-                snippet: (msgData.data ?? '').slice(0, 200),
+                senderName: r.sender_name ?? null,
+                snippet: (r.content_text ?? '').slice(0, 200),
             }
         })
     }
 
     async getTokenUsage(): Promise<NodePostgresTokenUsage[]> {
-        const rows = await this.selectRows<{ data: string }>("SELECT data FROM messages WHERE data LIKE '%\"generationInfo\"%'")
-        const usage: Record<string, { model: string; messageCount: number; totalInputTokens: number; totalOutputTokens: number }> = {}
-        for (const row of rows) {
-            try {
-                const msg = JSON.parse(row.data)
-                const gi = msg.generationInfo
-                if (!gi) continue
-                const model = gi.model || 'unknown'
-                if (!usage[model]) {
-                    usage[model] = { model, messageCount: 0, totalInputTokens: 0, totalOutputTokens: 0 }
-                }
-                usage[model].messageCount++
-                usage[model].totalInputTokens += gi.inputTokens ?? 0
-                usage[model].totalOutputTokens += gi.outputTokens ?? 0
-            } catch {}
-        }
-        return Object.values(usage)
+        const rows = await this.selectRows<{ model: string; message_count: number; input_tokens: number; output_tokens: number }>(
+            `SELECT COALESCE(generation_model, 'unknown') AS model, COUNT(*) AS message_count,
+             COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens
+             FROM messages WHERE generation_model IS NOT NULL GROUP BY generation_model`,
+        )
+        return rows.map((row) => ({ model: row.model, messageCount: Number(row.message_count),
+            totalInputTokens: Number(row.input_tokens), totalOutputTokens: Number(row.output_tokens) }))
     }
 
     async getBotChatStats(): Promise<NodePostgresBotChatStats[]> {
@@ -535,8 +511,8 @@ export class TauriSqliteStorage implements ISqlStorage {
         const chatRows = await this.selectRows<{ id: string; character_id: string; last_message_time: number | null }>(
             'SELECT id, character_id, last_message_time FROM chats'
         )
-        const msgRows = await this.selectRows<{ chat_id: string; role: string; sent_time: number | null; data: string }>(
-            'SELECT chat_id, role, sent_time, data FROM messages'
+        const msgRows = await this.selectRows<{ chat_id: string; role: string; sent_time: number | null; content_length: number }>(
+            "SELECT chat_id, role, sent_time, length(COALESCE(content_text, content_encoded, '')) AS content_length FROM messages"
         )
 
         const chatsByChar = new Map<string, { id: string; lastMessageTime: number | null }[]>()
@@ -556,14 +532,7 @@ export class TauriSqliteStorage implements ISqlStorage {
                 list = []
                 msgsByChat.set(m.chat_id, list)
             }
-            let len = 0
-            try {
-                const parsed = JSON.parse(m.data)
-                len = typeof parsed.data === 'string' ? parsed.data.length : 0
-            } catch {
-                len = (m.data || '').length
-            }
-            list.push({ role: m.role, sentTime: m.sent_time != null ? Number(m.sent_time) : null, len })
+            list.push({ role: m.role, sentTime: m.sent_time != null ? Number(m.sent_time) : null, len: Number(m.content_length) })
         }
 
         return chars.map((c) => {
@@ -622,8 +591,9 @@ export class TauriSqliteStorage implements ISqlStorage {
 
     async searchCharactersByTag(tag: string, limit: number = 100): Promise<NodePostgresCharacterSearchResult[]> {
         const rows = await this.selectRows<{ id: string; name: string; image: string | null; kind: string }>(
-            `SELECT id, name, image, kind FROM characters WHERE data LIKE ? LIMIT ?`,
-            [`%"tags":%${tag}%`, limit],
+            `SELECT DISTINCT c.id, c.name, c.image, c.kind FROM characters c
+             JOIN character_tags t ON t.character_id = c.id WHERE t.tag LIKE ? LIMIT ?`,
+            [`%${tag}%`, limit],
         )
         return rows.map((r) => ({
             id: r.id,

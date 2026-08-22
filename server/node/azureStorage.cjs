@@ -25,10 +25,7 @@ const {
     splitLore,
 } = require('./postgresRelationalCodec.cjs');
 const {
-    decodeMember,
-    encodeMember,
     rebuildSettings,
-    rebuildSettingSubtree,
     splitSetting,
 } = require('./postgresSettingsCodec.cjs');
 const {
@@ -81,7 +78,7 @@ function mapSettingValueToColumns(value) {
     if (value === null || value === undefined) {
         return { text_val: null, num_val: null, bool_val: null };
     }
-    return { text_val: JSON.stringify(value), num_val: null, bool_val: null };
+    return { text_val: null, num_val: null, bool_val: null };
 }
 
 function mapColumnsToSettingValue(row) {
@@ -100,11 +97,12 @@ function mapColumnsToSettingValue(row) {
     return null;
 }
 
-const AZURE_SCHEMA_VERSION = 2;
+const AZURE_SCHEMA_VERSION = 3;
+const RELATIONAL_SCHEMA_LAYOUT = 'relational-schema-v2';
 const MAX_SYNC_ROWS = 250000;
 
 const AUDITED_TABLES = [
-    'system.settings', 'system.bot_presets',
+    'system.settings', 'system.setting_values', 'system.bot_presets',
     'system.personas', 'system.modules', 'system.plugins',
     'system.global_lorebooks', 'system.global_lore_entries', 'system.global_lore_cache_items',
     'system.translator_presets', 'system.hotkeys', 'system.custom_models',
@@ -380,6 +378,21 @@ class AzureStorage extends SqlStorageBase {
 
     async initialize() {
         const pool = await this.getPool();
+        const existing = await pool.request().query(
+            "SELECT OBJECT_ID(N'[system].[storage_meta]', N'U') AS table_id"
+        );
+        if (existing.recordset[0]?.table_id) {
+            const current = (await pool.request().query(
+                'SELECT schema_version, schema_layout FROM [system].[storage_meta] WHERE singleton = 1'
+            )).recordset[0];
+            if (current && (Number(current.schema_version) !== AZURE_SCHEMA_VERSION || current.schema_layout !== RELATIONAL_SCHEMA_LAYOUT)) {
+                throw new Error(
+                    `Unsupported Azure SQL schema ${current.schema_version}/${current.schema_layout}; ` +
+                    `expected ${AZURE_SCHEMA_VERSION}/${RELATIONAL_SCHEMA_LAYOUT}. ` +
+                    'Reset the configured development database explicitly before retrying.'
+                );
+            }
+        }
         const schemaSql = await fs.readFile(this.schemaPath, 'utf8');
         const req = pool.request();
         await req.batch(schemaSql);
@@ -389,15 +402,25 @@ class AzureStorage extends SqlStorageBase {
         if (metaRes.recordset.length === 0) {
             await pool.request().query(`
                 INSERT INTO [system].[storage_meta] (singleton, schema_version, schema_layout, revision, initialized)
-                VALUES (1, ${AZURE_SCHEMA_VERSION}, 'relational-schema-v1', 0, 0)
+                VALUES (1, ${AZURE_SCHEMA_VERSION}, '${RELATIONAL_SCHEMA_LAYOUT}', 0, 0)
             `);
+        }
+        const meta = (await pool.request().query(
+            'SELECT schema_version, schema_layout FROM [system].[storage_meta] WHERE singleton = 1'
+        )).recordset[0];
+        if (Number(meta?.schema_version) !== AZURE_SCHEMA_VERSION || meta?.schema_layout !== RELATIONAL_SCHEMA_LAYOUT) {
+            throw new Error(
+                `Unsupported Azure SQL schema ${meta?.schema_version}/${meta?.schema_layout}; ` +
+                `expected ${AZURE_SCHEMA_VERSION}/${RELATIONAL_SCHEMA_LAYOUT}. ` +
+                'Reset the configured development database explicitly before retrying.'
+            );
         }
     }
 
     async getState() {
         const pool = await this.getPool();
         const res = await pool.request().query('SELECT revision, initialized, schema_version, schema_layout FROM [system].[storage_meta] WHERE singleton = 1');
-        const row = res.recordset[0] || { revision: 0, initialized: false, schema_version: AZURE_SCHEMA_VERSION, schema_layout: 'relational-schema-v1' };
+        const row = res.recordset[0] || { revision: 0, initialized: false, schema_version: AZURE_SCHEMA_VERSION, schema_layout: RELATIONAL_SCHEMA_LAYOUT };
         return {
             revision: parseInt(row.revision, 10) || 0,
             initialized: Boolean(row.initialized),
@@ -588,14 +611,21 @@ class AzureStorage extends SqlStorageBase {
         }
         const settingsRes = await pool.request().query(settingsQuery);
         const settings = settingsRes.recordset;
-
-        const database = {};
-        for (const row of settings) {
+        const settingKeys = new Set(settings.map((row) => row.key));
+        const settingValuesRes = await pool.request().query(
+            'SELECT * FROM [system].[setting_values] ORDER BY setting_key, node_id'
+        );
+        const database = rebuildSettings(settings,
+            settingValuesRes.recordset.filter((row) => settingKeys.has(row.setting_key)));
+        for (const row of settings) if (!Object.prototype.hasOwnProperty.call(database, row.key)) {
             database[row.key] = mapColumnsToSettingValue(row);
         }
+        const pluginRows = (await pool.request().query(
+            'SELECT [key], [value] FROM [system].[plugin_custom_storage] ORDER BY [key]'
+        )).recordset;
+        database.pluginCustomStorage = Object.fromEntries(pluginRows.map((row) => [row.key, JSON.parse(row.value)]));
         if (shallow) {
             database.plugins ??= [];
-            database.pluginCustomStorage ??= {};
         }
 
         // 2. Characters & 3. Chats
@@ -877,9 +907,12 @@ class AzureStorage extends SqlStorageBase {
         if (this.pluginCustomStorageCache) {
             return this.pluginCustomStorageCache;
         }
-        const { settings, hash } = await this.loadSettingKeys(['pluginCustomStorage']);
+        const pool = await this.getPool();
+        const rows = (await pool.request().query('SELECT [key], [value] FROM [system].[plugin_custom_storage] ORDER BY [key]')).recordset;
+        const pluginCustomStorage = Object.fromEntries(rows.map((row) => [row.key, JSON.parse(row.value)]));
+        const hash = crypto.createHash('sha256').update(JSON.stringify(pluginCustomStorage)).digest('hex');
         const result = {
-            pluginCustomStorage: settings.pluginCustomStorage || {},
+            pluginCustomStorage,
             hash,
         };
         if (this.objectCacheEnabled) this.pluginCustomStorageCache = result;
@@ -888,24 +921,21 @@ class AzureStorage extends SqlStorageBase {
 
     async listPluginCustomStorageKeys() {
         const pool = await this.getPool();
-        const res = await pool.request().query(`
-            SELECT member_key, encoded_member_key
-            FROM [system].[setting_values]
-            WHERE setting_key = 'pluginCustomStorage' AND parent_node_id = 0
-            ORDER BY node_id
-        `);
-        return res.recordset.map((row) => row.member_key || row.encoded_member_key).filter(Boolean);
+        const res = await pool.request().query('SELECT [key] FROM [system].[plugin_custom_storage] ORDER BY [key]');
+        return res.recordset.map((row) => row.key);
     }
 
     async loadPluginCustomStorageKey(storageKey) {
-        const { settings } = await this.loadSettingKeys(['pluginCustomStorage']);
-        const customStorage = settings.pluginCustomStorage || {};
-        const value = customStorage[storageKey] !== undefined ? customStorage[storageKey] : null;
+        const pool = await this.getPool();
+        const request = pool.request();
+        request.input('key', sql.NVarChar(450), storageKey);
+        const rows = (await request.query('SELECT [value] FROM [system].[plugin_custom_storage] WHERE [key] = @key')).recordset;
+        const value = rows.length ? JSON.parse(rows[0].value) : null;
         const serialized = JSON.stringify(value);
         const hash = crypto.createHash('sha256').update(serialized).digest('hex');
         return {
             key: storageKey,
-            exists: customStorage[storageKey] !== undefined,
+            exists: rows.length > 0,
             value,
             hash,
         };
@@ -922,6 +952,12 @@ class AzureStorage extends SqlStorageBase {
             pool.request().query(`SELECT * FROM [system].[setting_values] WHERE setting_key IN (${keysList}) ORDER BY setting_key, node_id`),
         ]);
         const rebuilt = rebuildSettings(settingsRes.recordset, valuesRes.recordset);
+        if (keys.includes('pluginCustomStorage')) {
+            const pluginRows = (await pool.request().query(
+                'SELECT [key], [value] FROM [system].[plugin_custom_storage] ORDER BY [key]'
+            )).recordset;
+            rebuilt.pluginCustomStorage = Object.fromEntries(pluginRows.map((row) => [row.key, JSON.parse(row.value)]));
+        }
         const serialized = JSON.stringify(rebuilt);
         const hash = crypto.createHash('sha256').update(serialized).digest('hex');
         return {
@@ -989,10 +1025,12 @@ class AzureStorage extends SqlStorageBase {
             // 3. Process Settings
             if (payload.replaceAll) {
                 await tx.request().query('DELETE FROM [system].[settings];');
+                await tx.request().query('DELETE FROM [system].[plugin_custom_storage];');
             }
 
-            if (payload.rootUpserts && payload.rootUpserts.length > 0) {
-                const settingRows = payload.rootUpserts.map((row) => {
+            const rootSettingUpserts = (payload.rootUpserts || []).filter((row) => row.key !== 'pluginCustomStorage');
+            if (rootSettingUpserts.length > 0) {
+                const settingRows = rootSettingUpserts.map((row) => {
                     const mapped = mapSettingValueToColumns(row.value);
                     return { key: row.key, ...mapped };
                 });
@@ -1004,11 +1042,18 @@ class AzureStorage extends SqlStorageBase {
                     settingRows,
                     ['key']
                 );
+                const changedKeysList = rootSettingUpserts.map((row) => `'${row.key.replace(/'/g, "''")}'`).join(', ');
+                await tx.request().query(`DELETE FROM [system].[setting_values] WHERE setting_key IN (${changedKeysList});`);
+                const settingValueRows = rootSettingUpserts.flatMap((row) => splitSetting(row.key, row.value).values);
+                await bulkInsert(tx, 'system.setting_values',
+                    ['setting_key', 'node_id', 'parent_node_id', 'member_key', 'encoded_member_key', 'position', 'value_type', 'text_value', 'encoded_text_value', 'number_value', 'boolean_value'],
+                    ['nvarchar(450)', 'int', 'int', 'nvarchar(max)', 'nvarchar(max)', 'int', 'nvarchar(32)', 'nvarchar(max)', 'nvarchar(max)', 'float', 'bit'],
+                    settingValueRows);
             }
 
-            const changedSettingKeys = (payload.rootUpserts || []).map((item) => item.key);
+            const changedSettingKeys = rootSettingUpserts.map((item) => item.key);
 
-            const projectedSettings = projectSettings(payload.rootUpserts);
+            const projectedSettings = projectSettings(rootSettingUpserts);
             if (changedSettingKeys.length > 0) {
                 const keysList = changedSettingKeys.map((k) => `'${k.replace(/'/g, "''")}'`).join(', ');
                 for (const definition of SETTING_RELATION_DEFINITIONS) {
@@ -1032,6 +1077,24 @@ class AzureStorage extends SqlStorageBase {
             if (payload.rootDeletes && payload.rootDeletes.length > 0) {
                 const delKeys = payload.rootDeletes.map((k) => `'${k.replace(/'/g, "''")}'`).join(', ');
                 await tx.request().query(`DELETE FROM [system].[settings] WHERE [key] IN (${delKeys});`);
+            }
+            if (payload.pluginStorageClear) {
+                await tx.request().query('DELETE FROM [system].[plugin_custom_storage];');
+            }
+            if (payload.pluginStorageDeletes?.length) {
+                const request = tx.request();
+                request.input('keys', sql.NVarChar(sql.MAX), JSON.stringify(payload.pluginStorageDeletes));
+                await request.query(`DELETE target FROM [system].[plugin_custom_storage] target
+                    INNER JOIN OPENJSON(@keys) values_json ON target.[key] = values_json.[value];`);
+            }
+            for (const item of payload.pluginStorageUpserts || []) {
+                const request = tx.request();
+                request.input('key', sql.NVarChar(450), item.key);
+                request.input('value', sql.NVarChar(sql.MAX), JSON.stringify(item.value));
+                await request.query(`MERGE [system].[plugin_custom_storage] AS target
+                    USING (SELECT @key AS [key], @value AS [value]) AS source ON target.[key] = source.[key]
+                    WHEN MATCHED THEN UPDATE SET [value] = source.[value], updated_at = SYSDATETIMEOFFSET()
+                    WHEN NOT MATCHED THEN INSERT ([key], [value]) VALUES (source.[key], source.[value]);`);
             }
 
             // 4. Characters, Chats, Messages

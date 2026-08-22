@@ -71,9 +71,11 @@ describe('SQL row commits', () => {
             statements.push({ sql, bind })
         })
 
-        expect(statements).toHaveLength(2)
-        expect(statements[0].sql).toContain('system_settings')
-        expect(statements[1].sql).toContain('messages')
+        expect(statements.some(({ sql }) => sql.includes('system_settings'))).toBe(true)
+        expect(statements.some(({ sql }) => sql.includes('setting_extension_nodes'))).toBe(true)
+        expect(statements.some(({ sql }) => sql.includes('messages'))).toBe(true)
+        expect(statements.some(({ sql }) => sql.includes('message_extension_nodes'))).toBe(true)
+        expect(statements.every(({ sql }) => !/\b(?:data|value)\b[^)]*JSON/i.test(sql))).toBe(true)
         expect(statements.every(({ sql }) => !sql.includes('DELETE FROM characters'))).toBe(true)
     })
 
@@ -89,7 +91,7 @@ describe('SQL row commits', () => {
             statements.push({ sql, bind })
         })
 
-        const pluginStorageStmt = statements.find((s) => s.sql.includes('INSERT OR REPLACE INTO plugin_custom_storage'))
+        const pluginStorageStmt = statements.find((s) => s.sql.includes('INSERT INTO plugin_custom_storage'))
         expect(pluginStorageStmt).toBeDefined()
         expect(pluginStorageStmt?.bind[0]).toBe('my-plugin')
         expect(pluginStorageStmt?.bind[1]).toBe(JSON.stringify({ setting1: 'val1' }))
@@ -160,4 +162,3 @@ describe('SQL row commits', () => {
         expect(pluginStorageUpsert?.value).toEqual({})
     })
 })
-

@@ -4,7 +4,7 @@
 -- 단일 Oracle 스키마 내의 접두어 테이블로 매핑.
 --
 -- 스키마 버전: 2 (postgres-schema.sql과 동일)
--- 레이아웃: relational-schema-v1
+-- 레이아웃: relational-schema-v2
 
 -- ============================================================
 -- system_* 테이블 (PostgreSQL system. 스키마 대응)
@@ -12,8 +12,8 @@
 
 CREATE TABLE system_storage_meta (
     singleton NUMBER(1) DEFAULT 1 PRIMARY KEY,
-    schema_version NUMBER DEFAULT 2 NOT NULL,
-    schema_layout VARCHAR2(64) DEFAULT 'relational-schema-v1' NOT NULL,
+    schema_version NUMBER DEFAULT 3 NOT NULL,
+    schema_layout VARCHAR2(64) DEFAULT 'relational-schema-v2' NOT NULL,
     revision NUMBER DEFAULT 0 NOT NULL,
     initialized NUMBER(1) DEFAULT 0 NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
@@ -21,10 +21,10 @@ CREATE TABLE system_storage_meta (
 );
 
 INSERT INTO system_storage_meta (singleton, schema_version, schema_layout)
-VALUES (1, 2, 'relational-schema-v1');
+VALUES (1, 3, 'relational-schema-v2');
 -- MERGE 기반 upsert (단일 행 보장, 이미 존재하면 무시)
 MERGE INTO system_storage_meta target
-USING (SELECT 1 AS singleton, 2 AS schema_version, 'relational-schema-v1' AS schema_layout FROM dual) src
+USING (SELECT 1 AS singleton, 3 AS schema_version, 'relational-schema-v2' AS schema_layout FROM dual) src
 ON (target.singleton = src.singleton)
 WHEN NOT MATCHED THEN INSERT (singleton, schema_version, schema_layout)
     VALUES (src.singleton, src.schema_version, src.schema_layout);
@@ -119,6 +119,32 @@ CREATE TABLE system_settings (
     text_val CLOB,
     num_val BINARY_DOUBLE,
     bool_val NUMBER(1),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL
+);
+
+CREATE TABLE system_setting_values (
+    setting_key VARCHAR2(4000) NOT NULL REFERENCES system_settings(key) ON DELETE CASCADE,
+    node_id INTEGER NOT NULL,
+    parent_node_id INTEGER,
+    member_key CLOB,
+    encoded_member_key CLOB,
+    position INTEGER CHECK (position >= 0),
+    value_type VARCHAR2(32) NOT NULL CHECK (value_type IN ('null','text','encoded-text','number','boolean','array','object')),
+    text_value CLOB,
+    encoded_text_value CLOB,
+    number_value BINARY_DOUBLE,
+    boolean_value NUMBER(1),
+    PRIMARY KEY (setting_key, node_id),
+    FOREIGN KEY (setting_key, parent_node_id) REFERENCES system_setting_values(setting_key, node_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    CHECK (node_id = 0 OR parent_node_id IS NOT NULL),
+    CHECK (member_key IS NULL OR encoded_member_key IS NULL),
+    CHECK (text_value IS NULL OR encoded_text_value IS NULL)
+);
+CREATE INDEX setting_values_parent_idx ON system_setting_values (setting_key, parent_node_id, position, node_id);
+
+CREATE TABLE system_plugin_custom_storage (
+    key VARCHAR2(4000) PRIMARY KEY,
+    value JSON NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL
 );
 

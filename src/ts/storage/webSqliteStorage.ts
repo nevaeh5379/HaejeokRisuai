@@ -25,7 +25,8 @@ import type {
 import { createSqlDatabaseAdapter } from './databaseAdapters.svelte'
 import sqliteSchemaSql from './sqlite-schema.sql?raw'
 import { buildSqlReplaceCommit, SqlRevisionConflictError, type SqlCommit, type SqlCommitResult } from './sqlCommit'
-import { applySqliteCommit } from './sqliteCommit'
+import { applySqliteCommit, writeSqliteColdStorage } from './sqliteCommit'
+import { rebuildRelationalValue, RELATIONAL_SCHEMA_LAYOUT, SQLITE_SCHEMA_VERSION, SqlSchemaResetRequiredError } from './relationalNodeCodec'
 
 interface Sqlite3Module {
     oo1: {
@@ -103,6 +104,15 @@ export class WebSqliteStorage implements ISqlStorage {
                 throw new Error('OPFS not available')
             }
             this.db = new sqlite3.oo1.OpfsDb(DB_FILE)
+            const existingMeta = this.selectRows(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'system_storage_meta'",
+            )
+            if (existingMeta.length) {
+                const meta = this.selectOne('SELECT schema_version, schema_layout FROM system_storage_meta WHERE singleton = 1')
+                if (Number(meta?.schema_version) !== SQLITE_SCHEMA_VERSION || meta?.schema_layout !== RELATIONAL_SCHEMA_LAYOUT) {
+                    throw new SqlSchemaResetRequiredError(meta?.schema_version, meta?.schema_layout)
+                }
+            }
             this.db.exec(sqliteSchemaSql)
 
             const rows = this.selectRows('SELECT initialized, revision FROM system_storage_meta WHERE singleton = 1')
@@ -116,6 +126,7 @@ export class WebSqliteStorage implements ISqlStorage {
             console.error('WebSqliteStorage init failed:', error)
             this.initialized = true
             this._enabled = false
+            if (error instanceof SqlSchemaResetRequiredError) throw error
             return false
         }
     }
@@ -158,6 +169,17 @@ export class WebSqliteStorage implements ISqlStorage {
         }
     }
 
+    private loadNodeValue(table: string, ownerWhere: string, bind: unknown[]): unknown {
+        const rows = this.selectRows(`SELECT node_id, parent_node_id, node_order, object_key,
+            object_key_encoded, value_type, text_value, encoded_text_value, number_value,
+            boolean_value FROM ${table} WHERE ${ownerWhere} ORDER BY node_id`, bind)
+        return rows.length ? rebuildRelationalValue(rows) : undefined
+    }
+
+    private loadSettingValue(key: string): unknown {
+        return this.loadNodeValue('setting_extension_nodes', 'setting_key = ?', [key])
+    }
+
     async loadDatabase(options?: SqlLoadDatabaseOptions): Promise<SqlLoadDatabaseResult | null> {
         if (!this._enabled) {
             const ok = await this.init()
@@ -166,10 +188,9 @@ export class WebSqliteStorage implements ISqlStorage {
         const shallow = options?.shallow !== false
         const db: Database = {} as any
 
-        const settingsRows = this.selectRows('SELECT key, value FROM system_settings')
+        const settingsRows = this.selectRows('SELECT key FROM system_settings')
         for (const row of settingsRows) {
-            try { (db as any)[row.key as string] = JSON.parse(row.value as string) }
-            catch { (db as any)[row.key as string] = row.value }
+            ;(db as any)[row.key as string] = this.loadSettingValue(row.key as string)
         }
 
         // Also merge plugin_custom_storage table if present
@@ -186,7 +207,7 @@ export class WebSqliteStorage implements ISqlStorage {
         db.pluginCustomStorage ??= {}
 
         const charRows = this.selectRows(
-            'SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded, data FROM characters ORDER BY position',
+            'SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position',
         )
         const characters: (character | groupChat)[] = []
         for (const row of charRows) {
@@ -205,16 +226,16 @@ export class WebSqliteStorage implements ISqlStorage {
                     chatPage: 0,
                 } as any)
             } else {
-                const fullChar = row.data ? JSON.parse(row.data as string) : {}
+                const fullChar = (this.loadNodeValue('character_extension_nodes', 'character_id = ?', [row.id]) ?? {}) as any
                 fullChar.chaId = row.id
                 fullChar.detailsLoaded = true
                 const chatRows = this.selectRows(
-                    'SELECT id, name, note, folder_id, last_message_time, data FROM chats WHERE character_id = ? ORDER BY position',
+                    'SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position',
                     [row.id],
                 )
                 const chats: Chat[] = []
                 for (const cr of chatRows) {
-                    const cd = cr.data ? JSON.parse(cr.data as string) : {}
+                    const cd = (this.loadNodeValue('chat_extension_nodes', 'chat_id = ?', [cr.id]) ?? {}) as any
                     cd.id = cr.id; cd.name = (cr.name as string) ?? ''; cd.note = (cr.note as string) ?? ''
                     cd.folderId = (cr.folder_id as string) ?? undefined
                     cd.lastDate = (cr.last_message_time as number) ?? undefined
@@ -274,14 +295,14 @@ export class WebSqliteStorage implements ISqlStorage {
     }
 
     async loadCharacter(characterId: string): Promise<character | groupChat | null> {
-        const row = this.selectOne('SELECT data FROM characters WHERE id = ?', [characterId])
-        if (!row || !row.data) return null
-        const fc = JSON.parse(row.data as string)
+        const row = this.selectOne('SELECT id FROM characters WHERE id = ?', [characterId])
+        if (!row) return null
+        const fc = (this.loadNodeValue('character_extension_nodes', 'character_id = ?', [characterId]) ?? {}) as any
         fc.chaId = characterId; fc.detailsLoaded = true
-        const cr = this.selectRows('SELECT id, name, note, folder_id, last_message_time, data FROM chats WHERE character_id = ? ORDER BY position', [characterId])
+        const cr = this.selectRows('SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position', [characterId])
         const chats: Chat[] = []
         for (const r of cr) {
-            const cd = r.data ? JSON.parse(r.data as string) : {}
+            const cd = (this.loadNodeValue('chat_extension_nodes', 'chat_id = ?', [r.id]) ?? {}) as any
             cd.id = r.id; cd.name = (r.name as string) ?? ''; cd.note = (r.note as string) ?? ''
             cd.folderId = (r.folder_id as string) ?? undefined
             cd.lastDate = (r.last_message_time as number) ?? undefined
@@ -293,9 +314,9 @@ export class WebSqliteStorage implements ISqlStorage {
     }
 
     async loadChat(chatId: string, options?: { messageLimit?: number }): Promise<Chat | null> {
-        const cr = this.selectOne('SELECT id, name, note, folder_id, last_message_time, data FROM chats WHERE id = ?', [chatId])
+        const cr = this.selectOne('SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?', [chatId])
         if (!cr) return null
-        const cd = cr.data ? JSON.parse(cr.data as string) : {}
+        const cd = (this.loadNodeValue('chat_extension_nodes', 'chat_id = ?', [chatId]) ?? {}) as any
         cd.id = cr.id; cd.name = (cr.name as string) ?? ''; cd.note = (cr.note as string) ?? ''
         cd.folderId = (cr.folder_id as string) ?? undefined
         cd.lastDate = (cr.last_message_time as number) ?? undefined
@@ -304,17 +325,17 @@ export class WebSqliteStorage implements ISqlStorage {
         const limit = options?.messageLimit
         const offset = limit === undefined ? 0 : Math.max(0, total - Math.max(1, Math.floor(limit)))
         const mr = limit === undefined
-            ? this.selectRows('SELECT data FROM messages WHERE chat_id = ? ORDER BY position', [chatId])
-            : this.selectRows('SELECT data FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?', [chatId, limit, offset])
-        cd.message = mr.map((r) => JSON.parse(r.data as string))
+            ? this.selectRows('SELECT id FROM messages WHERE chat_id = ? ORDER BY position', [chatId])
+            : this.selectRows('SELECT id FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?', [chatId, limit, offset])
+        cd.message = mr.map((r) => this.loadNodeValue('message_extension_nodes', 'chat_id = ? AND message_id = ?', [chatId, r.id]))
         cd.messageOffset = offset; cd.messageTotal = total; cd.messagesFullyLoaded = offset === 0
         cd.messagesLoaded = true; cd.detailsLoaded = true
         return cd
     }
 
     async loadChatMessages(chatId: string): Promise<Message[]> {
-        return this.selectRows('SELECT data FROM messages WHERE chat_id = ? ORDER BY position', [chatId])
-            .map((r) => JSON.parse(r.data as string))
+        return this.selectRows('SELECT id FROM messages WHERE chat_id = ? ORDER BY position', [chatId])
+            .map((r) => this.loadNodeValue('message_extension_nodes', 'chat_id = ? AND message_id = ?', [chatId, r.id]) as Message)
     }
 
     async loadChatMessagePage(chatId: string, before: number | undefined, limit: number) {
@@ -323,11 +344,11 @@ export class WebSqliteStorage implements ISqlStorage {
         const end = Math.min(total, Math.max(0, before ?? total))
         const offset = Math.max(0, end - Math.max(1, Math.floor(limit)))
         const rows = this.selectRows(
-            'SELECT data FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?',
+            'SELECT id FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?',
             [chatId, end - offset, offset],
         )
         return {
-            messages: rows.map((row) => JSON.parse(row.data as string)),
+            messages: rows.map((row) => this.loadNodeValue('message_extension_nodes', 'chat_id = ? AND message_id = ?', [chatId, row.id]) as Message),
             offset,
             total,
             hasMore: offset > 0,
@@ -335,54 +356,31 @@ export class WebSqliteStorage implements ISqlStorage {
     }
 
     async loadPersonas(): Promise<RisuPersona[]> {
-        const r = this.selectOne("SELECT value FROM system_settings WHERE key = 'personas'")
-        if (!r) return []
-        try { return JSON.parse(r.value as string) } catch { return [] }
+        return (this.loadSettingValue('personas') as RisuPersona[] | undefined) ?? []
     }
     async loadBotPresets(): Promise<botPreset[]> {
-        const r = this.selectOne("SELECT value FROM system_settings WHERE key = 'botPresets'")
-        if (!r) return []
-        try { return JSON.parse(r.value as string) } catch { return [] }
+        return (this.loadSettingValue('botPresets') as botPreset[] | undefined) ?? []
     }
     async loadLorebooks(): Promise<{ name: string; data: loreBook[] }[]> {
-        const r = this.selectOne("SELECT value FROM system_settings WHERE key = 'loreBook'")
-        if (!r) return []
-        try { return JSON.parse(r.value as string) } catch { return [] }
+        return (this.loadSettingValue('loreBook') as { name: string; data: loreBook[] }[] | undefined) ?? []
     }
     async loadModules(): Promise<RisuModule[]> {
-        const r = this.selectOne("SELECT value FROM system_settings WHERE key = 'modules'")
-        if (!r) return []
-        try { return JSON.parse(r.value as string) } catch { return [] }
+        return (this.loadSettingValue('modules') as RisuModule[] | undefined) ?? []
     }
     async loadPrompts(): Promise<Record<string, any>> {
-        const rows = this.selectRows(
-            "SELECT key, value FROM system_settings WHERE key IN ('mainPrompt','jailbreak','globalNote','additionalPrompt','supaMemoryPrompt','personaPrompt','emotionPrompt','emotionPrompt2','autoSuggestPrompt','translatorPrompt','instructChatTemplate','JinjaTemplate','customTokenizer','promptTemplate','promptSettings','customPromptTemplateToggle')",
-        )
+        const rows = this.selectRows("SELECT key FROM system_settings WHERE domain = 'prompt'")
         const p: Record<string, any> = {}
-        for (const r of rows) { try { p[r.key as string] = JSON.parse(r.value as string) } catch { p[r.key as string] = r.value } }
+        for (const r of rows) p[r.key as string] = this.loadSettingValue(r.key as string)
         return p
     }
     async loadScripts(): Promise<customscript[]> {
-        const r = this.selectOne("SELECT value FROM system_settings WHERE key = 'globalscript'")
-        if (!r) return []
-        try { return JSON.parse(r.value as string) } catch { return [] }
+        return (this.loadSettingValue('globalscript') as customscript[] | undefined) ?? []
     }
 
     async loadPlugins(): Promise<any[] | null> {
-        const r = this.selectOne("SELECT data FROM plugins WHERE key = 'plugins'")
-        if (!r) return null
-        try { return JSON.parse(r.data as string) } catch { return [] }
+        return (this.loadSettingValue('plugins') as any[] | undefined) ?? null
     }
     async loadPluginCustomStorage(): Promise<Record<string, any> | null> {
-        const settingRow = this.selectOne("SELECT value FROM system_settings WHERE key = 'pluginCustomStorage'")
-        if (settingRow && settingRow.value) {
-            try {
-                const parsed = JSON.parse(settingRow.value as string)
-                if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-                    return parsed
-                }
-            } catch {}
-        }
         const rows = this.selectRows('SELECT key, value FROM plugin_custom_storage')
         if (rows.length === 0) return null
         const s: Record<string, any> = {}
@@ -391,31 +389,28 @@ export class WebSqliteStorage implements ISqlStorage {
     }
 
     async loadSettingKey(key: string): Promise<any> {
-        const r = this.selectOne('SELECT value FROM system_settings WHERE key = ?', [key])
-        if (!r) return undefined
-        try { return JSON.parse(r.value as string) } catch { return r.value }
+        return this.loadSettingValue(key)
     }
 
     async getColdStorageItem(key: string): Promise<unknown | null> {
-        const r = this.selectOne('SELECT data FROM cold_storage WHERE key = ?', [key])
-        if (!r) return null
-        try { return JSON.parse(r.data as string) } catch { return null }
+        const r = this.selectOne('SELECT archive_id FROM cold_archives WHERE archive_id = ?', [key])
+        return r ? this.loadNodeValue('cold_extension_nodes', 'archive_id = ?', [key]) : null
     }
     async listColdStorageItems(): Promise<{ items: string[] }> {
-        return { items: this.selectRows('SELECT key FROM cold_storage').map((r) => r.key as string) }
+        return { items: this.selectRows('SELECT archive_id FROM cold_archives').map((r) => r.archive_id as string) }
     }
     async setColdStorageItem(key: string, value: unknown): Promise<boolean> {
-        this.run("INSERT OR REPLACE INTO cold_storage (key, data, updated_at) VALUES (?, ?, datetime('now'))", [key, JSON.stringify(value)])
+        await writeSqliteColdStorage((sql, bind = []) => this.run(sql, bind), key, value)
         return true
     }
     async removeColdStorageItems(keys: string[]): Promise<number> {
         if (keys.length === 0) return 0
         const ph = keys.map(() => '?').join(',')
-        this.run(`DELETE FROM cold_storage WHERE key IN (${ph})`, keys)
+        this.run(`DELETE FROM cold_archives WHERE archive_id IN (${ph})`, keys)
         return keys.length
     }
     async pruneColdStorage(retainedKeys: string[]): Promise<number> {
-        const all = this.selectRows('SELECT key FROM cold_storage').map((r) => r.key as string)
+        const all = this.selectRows('SELECT archive_id FROM cold_archives').map((r) => r.archive_id as string)
         return this.removeColdStorageItems(all.filter((k) => !retainedKeys.includes(k)))
     }
 
@@ -437,38 +432,33 @@ export class WebSqliteStorage implements ISqlStorage {
 
     async searchMessages(query: string, scope: 'all' | 'active' | 'cold' = 'all', limit: number = 50): Promise<NodePostgresMessageSearchResult[]> {
         const rows = this.selectRows(
-            'SELECT chat_id, id, position, role, sent_time, data FROM messages WHERE data LIKE ? ORDER BY sent_time DESC LIMIT ?',
+            `SELECT chat_id, id, position, role, sent_time, sender_name, content_text
+             FROM messages WHERE content_text LIKE ? ORDER BY sent_time DESC LIMIT ?`,
             [`%${query}%`, limit],
         )
         return rows.map((r) => {
-            const md = JSON.parse(r.data as string)
             return {
                 storageState: 'active' as const, archiveId: null, characterId: null, characterName: null,
                 chatId: r.chat_id as string, chatName: '', messageId: r.id as string,
                 position: Number(r.position), role: r.role as 'user' | 'char',
                 sentTime: r.sent_time != null ? Number(r.sent_time) : null,
-                senderName: md.name ?? null, snippet: (md.data ?? '').slice(0, 200),
+                senderName: (r.sender_name as string) ?? null, snippet: String(r.content_text ?? '').slice(0, 200),
             }
         })
     }
     async getTokenUsage(): Promise<NodePostgresTokenUsage[]> {
-        const rows = this.selectRows("SELECT data FROM messages WHERE data LIKE '%\"generationInfo\"%'")
-        const u: Record<string, { model: string; messageCount: number; totalInputTokens: number; totalOutputTokens: number }> = {}
-        for (const r of rows) {
-            try {
-                const m = JSON.parse(r.data as string)
-                const gi = m.generationInfo; if (!gi) continue
-                const model = gi.model || 'unknown'
-                if (!u[model]) u[model] = { model, messageCount: 0, totalInputTokens: 0, totalOutputTokens: 0 }
-                u[model].messageCount++; u[model].totalInputTokens += gi.inputTokens ?? 0; u[model].totalOutputTokens += gi.outputTokens ?? 0
-            } catch {}
-        }
-        return Object.values(u)
+        return this.selectRows(`SELECT COALESCE(generation_model, 'unknown') AS model,
+            COUNT(*) AS message_count, COALESCE(SUM(input_tokens), 0) AS input_tokens,
+            COALESCE(SUM(output_tokens), 0) AS output_tokens FROM messages
+            WHERE generation_model IS NOT NULL GROUP BY generation_model`).map((row) => ({
+            model: row.model as string, messageCount: Number(row.message_count),
+            totalInputTokens: Number(row.input_tokens), totalOutputTokens: Number(row.output_tokens),
+        }))
     }
     async getBotChatStats(): Promise<NodePostgresBotChatStats[]> {
         const chars = this.selectRows('SELECT id, name, image, kind, last_interaction_time FROM characters ORDER BY position ASC') as { id: string; name: string; image: string | null; kind: string; last_interaction_time: number | null }[]
         const chatRows = this.selectRows('SELECT id, character_id, last_message_time FROM chats') as { id: string; character_id: string; last_message_time: number | null }[]
-        const msgRows = this.selectRows('SELECT chat_id, role, sent_time, data FROM messages') as { chat_id: string; role: string; sent_time: number | null; data: string }[]
+        const msgRows = this.selectRows('SELECT chat_id, role, sent_time, length(COALESCE(content_text, content_encoded, \'\')) AS content_length FROM messages') as { chat_id: string; role: string; sent_time: number | null; content_length: number }[]
 
         const chatsByChar = new Map<string, { id: string; lastMessageTime: number | null }[]>()
         for (const ch of chatRows) {
@@ -487,14 +477,7 @@ export class WebSqliteStorage implements ISqlStorage {
                 list = []
                 msgsByChat.set(m.chat_id, list)
             }
-            let len = 0
-            try {
-                const parsed = JSON.parse(m.data)
-                len = typeof parsed.data === 'string' ? parsed.data.length : 0
-            } catch {
-                len = (m.data || '').length
-            }
-            list.push({ role: m.role, sentTime: m.sent_time != null ? Number(m.sent_time) : null, len })
+            list.push({ role: m.role, sentTime: m.sent_time != null ? Number(m.sent_time) : null, len: Number(m.content_length) })
         }
 
         return chars.map((c) => {
@@ -551,7 +534,8 @@ export class WebSqliteStorage implements ISqlStorage {
         })
     }
     async searchCharactersByTag(tag: string, limit: number = 100): Promise<NodePostgresCharacterSearchResult[]> {
-        const rows = this.selectRows('SELECT id, name, image, kind FROM characters WHERE data LIKE ? LIMIT ?', [`%${tag}%`, limit])
+        const rows = this.selectRows(`SELECT DISTINCT c.id, c.name, c.image, c.kind FROM characters c
+            JOIN character_tags t ON t.character_id = c.id WHERE t.tag LIKE ? LIMIT ?`, [`%${tag}%`, limit])
         return rows.map((r) => ({ id: r.id as string, name: r.name as string, image: (r.image as string) ?? null, kind: (r.kind as 'character' | 'group') ?? 'character' }))
     }
     async searchCharactersByName(name: string, limit: number = 100): Promise<NodePostgresCharacterSearchResult[]> {

@@ -21,6 +21,10 @@ const {
     SETTING_RELATION_DEFINITIONS,
 } = require('./postgresSettingRelations.cjs');
 const {
+    rebuildSettings,
+    splitSetting,
+} = require('./postgresSettingsCodec.cjs');
+const {
     DEFERRED_SETTING_KEYS,
     SqlStorageBase,
     createSqlStorageHelpers,
@@ -32,14 +36,15 @@ const {
     rebuildDatabaseGraph,
 } = require('./sqlStorageCommon.cjs');
 
-const POSTGRES_SCHEMA_VERSION = 2;
+const POSTGRES_SCHEMA_VERSION = 3;
+const RELATIONAL_SCHEMA_LAYOUT = 'relational-schema-v2';
 const MAX_SYNC_ROWS = 250000;
 const BULK_INSERT_BATCH_ROWS = Math.max(
     1,
     Number.parseInt(process.env.RISUAI_SQL_BATCH_ROWS || '1000', 10) || 1000
 );
 const AUDITED_TABLES = [
-    'system.settings', 'character.characters',
+    'system.settings', 'system.setting_values', 'system.plugin_custom_storage', 'character.characters',
     ...SETTING_RELATION_DEFINITIONS.map((definition) => definition.table),
     'character.attributes', 'character.tags',
     'character.greetings', 'character.biases', 'character.emotions',
@@ -82,7 +87,27 @@ function mapSettingValueToColumns(value) {
     if (value === null || value === undefined) {
         return { text_val: null, num_val: null, bool_val: null };
     }
-    return { text_val: JSON.stringify(value), num_val: null, bool_val: null };
+    return { text_val: null, num_val: null, bool_val: null };
+}
+
+async function replaceSettingValueRows(client, upserts) {
+    if (upserts.length === 0) return;
+    const keys = upserts.map((item) => item.key);
+    await client.query('DELETE FROM system.setting_values WHERE setting_key = ANY($1::text[])', [keys]);
+    const rows = upserts.flatMap((item) => splitSetting(item.key, item.value).values);
+    await bulkInsert(client, 'system.setting_values',
+        ['setting_key', 'node_id', 'parent_node_id', 'member_key', 'encoded_member_key', 'position', 'value_type', 'text_value', 'encoded_text_value', 'number_value', 'boolean_value'],
+        ['text', 'integer', 'integer', 'text', 'text', 'integer', 'text', 'text', 'text', 'double precision', 'boolean'], rows);
+}
+
+function rebuildSettingRows(settings, valueRows) {
+    const rebuilt = rebuildSettings(settings, valueRows);
+    for (const row of settings) {
+        if (!Object.prototype.hasOwnProperty.call(rebuilt, row.key)) {
+            rebuilt[row.key] = mapColumnsToSettingValue(row);
+        }
+    }
+    return rebuilt;
 }
 
 function mapColumnsToSettingValue(row) {
@@ -311,6 +336,19 @@ class PostgresStorage extends SqlStorageBase {
         });
         try {
             await pool.query('SELECT 1');
+            const existingMeta = await pool.query("SELECT to_regclass('system.storage_meta') AS table_name");
+            if (existingMeta.rows[0]?.table_name) {
+                const current = (await pool.query(
+                    'SELECT schema_version, schema_layout FROM system.storage_meta WHERE singleton = TRUE'
+                )).rows[0];
+                if (current && (Number(current.schema_version) !== POSTGRES_SCHEMA_VERSION || current.schema_layout !== RELATIONAL_SCHEMA_LAYOUT)) {
+                    throw new Error(
+                        `Unsupported PostgreSQL schema ${current.schema_version}/${current.schema_layout}; ` +
+                        `expected ${POSTGRES_SCHEMA_VERSION}/${RELATIONAL_SCHEMA_LAYOUT}. ` +
+                        'Reset the configured development database explicitly before retrying.'
+                    );
+                }
+            }
             const schema = await fs.readFile(path.join(__dirname, 'postgres-schema.sql'), 'utf8');
             await pool.query(schema);
             const result = await pool.query(
@@ -318,10 +356,11 @@ class PostgresStorage extends SqlStorageBase {
             );
             const schemaVersion = result.rows[0]?.schema_version;
             const schemaLayout = result.rows[0]?.schema_layout;
-            if (schemaVersion !== POSTGRES_SCHEMA_VERSION || schemaLayout !== 'relational-schema-v1') {
+            if (schemaVersion !== POSTGRES_SCHEMA_VERSION || schemaLayout !== RELATIONAL_SCHEMA_LAYOUT) {
                 throw new Error(
                     `Unsupported PostgreSQL schema ${schemaVersion}/${schemaLayout}; ` +
-                    `expected ${POSTGRES_SCHEMA_VERSION}/relational-schema-v1`
+                    `expected ${POSTGRES_SCHEMA_VERSION}/${RELATIONAL_SCHEMA_LAYOUT}. ` +
+                    'Reset the configured development database explicitly before retrying.'
                 );
             }
             return pool;
@@ -1144,6 +1183,7 @@ class PostgresStorage extends SqlStorageBase {
             if (shallow) {
                 const shallowQueries = [
                     `SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key NOT IN (${DEFERRED_KEYS_SQL_LITERAL}) ORDER BY key`,
+                    `SELECT * FROM system.setting_values WHERE setting_key NOT IN (${DEFERRED_KEYS_SQL_LITERAL}) ORDER BY setting_key, node_id`,
                     'SELECT * FROM character.characters ORDER BY position, id',
                     'SELECT * FROM character.tags ORDER BY character_id, position',
                     'SELECT * FROM character.group_members ORDER BY group_id, position',
@@ -1153,15 +1193,13 @@ class PostgresStorage extends SqlStorageBase {
                 ];
                 const results = await client.query(shallowQueries.join(';\n'));
                 const [
-                    settings, characters, tags, groupMembers, chatFolders, chats, bookmarks
+                    settings, settingValues, characters, tags, groupMembers, chatFolders, chats, bookmarks
                 ] = results.map((result) => result.rows);
 
-                const database = {};
-                for (const row of settings) {
-                    database[row.key] = mapColumnsToSettingValue(row);
-                }
+                const database = rebuildSettingRows(settings, settingValues);
                 database.plugins ??= [];
-                database.pluginCustomStorage ??= {};
+                database.pluginCustomStorage = Object.fromEntries((await client.query(
+                    'SELECT key, value FROM system.plugin_custom_storage ORDER BY key')).rows.map((row) => [row.key, row.value]));
 
                 const characterRelations = {
                     tags: groupRows(tags, 'character_id'),
@@ -1184,6 +1222,7 @@ class PostgresStorage extends SqlStorageBase {
 
             const loadQueries = [
                 'SELECT key, text_val, num_val, bool_val FROM system.settings ORDER BY key',
+                'SELECT * FROM system.setting_values ORDER BY setting_key, node_id',
                 'SELECT * FROM character.characters ORDER BY position, id',
                 'SELECT * FROM character.attributes ORDER BY character_id, key',
                 'SELECT * FROM character.tags ORDER BY character_id, position',
@@ -1216,16 +1255,15 @@ class PostgresStorage extends SqlStorageBase {
             const results = await client.query(loadQueries.join(';\n'));
             const rows = results.map((result) => result.rows);
             const [
-                settings, characters, characterAttributes, tags, greetings, biases, emotions,
+                settings, settingValues, characters, characterAttributes, tags, greetings, biases, emotions,
                 characterModules, groupMembers, chatFolders, scripts, sdData, assets, characterLore,
                 chats, chatAttributes, suggestions, chatModules, scriptState, bookmarks, memory,
                 chatLore, messages, messageAttributes, generations, promptInfos, promptToggles, promptItems
             ] = rows;
 
-            const database = {};
-            for (const row of settings) {
-                database[row.key] = mapColumnsToSettingValue(row);
-            }
+            const database = rebuildSettingRows(settings, settingValues);
+            database.pluginCustomStorage = Object.fromEntries((await client.query(
+                'SELECT key, value FROM system.plugin_custom_storage ORDER BY key')).rows.map((row) => [row.key, row.value]));
 
             const characterRelations = createCharacterRelations({
                 attributes: characterAttributes, tags, greetings, biases, emotions,
@@ -1441,16 +1479,9 @@ class PostgresStorage extends SqlStorageBase {
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-            const queries = [
-                "SELECT * FROM system.settings WHERE key = 'pluginCustomStorage' ORDER BY key",
-                "SELECT * FROM system.setting_values WHERE setting_key = 'pluginCustomStorage' ORDER BY setting_key, node_id",
-            ];
-            const results = await client.query(queries.join(';\n'));
-            const [settings, settingValues] = results.map((result) => result.rows);
-            const rebuilt = rebuildSettings(settings, settingValues);
+            const rows = (await client.query('SELECT key, value FROM system.plugin_custom_storage ORDER BY key')).rows;
             await client.query('COMMIT');
-
-            const pluginCustomStorage = rebuilt.pluginCustomStorage || {};
+            const pluginCustomStorage = Object.fromEntries(rows.map((row) => [row.key, row.value]));
             const serialized = JSON.stringify(pluginCustomStorage);
             const hash = crypto.createHash('sha256').update(serialized).digest('hex');
 
@@ -1473,15 +1504,9 @@ class PostgresStorage extends SqlStorageBase {
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-            const result = await client.query(
-                `SELECT node_id, member_key, encoded_member_key, position
-                 FROM system.setting_values
-                 WHERE setting_key = 'pluginCustomStorage' AND parent_node_id = 0
-                 ORDER BY node_id`
-            );
+            const result = await client.query('SELECT key FROM system.plugin_custom_storage ORDER BY key');
             await client.query('COMMIT');
-            const keys = result.rows.map((row) => decodeMember(row)).filter((key) => key !== null && key !== undefined);
-            return keys;
+            return result.rows.map((row) => row.key);
         } catch (error) {
             await client.query('ROLLBACK').catch(() => {});
             throw error;
@@ -1495,26 +1520,8 @@ class PostgresStorage extends SqlStorageBase {
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-            const encoded = encodeMember(storageKey, null);
-            const query = `
-                WITH RECURSIVE key_tree AS (
-                    SELECT node_id, parent_node_id, member_key, encoded_member_key, position,
-                           value_type, text_value, encoded_text_value, number_value, boolean_value
-                    FROM system.setting_values
-                    WHERE setting_key = 'pluginCustomStorage'
-                      AND parent_node_id = 0
-                      AND ((member_key IS NOT NULL AND member_key = $1)
-                           OR (encoded_member_key IS NOT NULL AND encoded_member_key = $2))
-                    UNION ALL
-                    SELECT v.node_id, v.parent_node_id, v.member_key, v.encoded_member_key, v.position,
-                           v.value_type, v.text_value, v.encoded_text_value, v.number_value, v.boolean_value
-                    FROM system.setting_values v
-                    INNER JOIN key_tree kt ON v.parent_node_id = kt.node_id
-                    WHERE v.setting_key = 'pluginCustomStorage'
-                )
-                SELECT * FROM key_tree ORDER BY node_id;
-            `;
-            const result = await client.query(query, [encoded.member_key, encoded.encoded_member_key]);
+            const result = await client.query(
+                'SELECT value FROM system.plugin_custom_storage WHERE key = $1', [storageKey]);
             await client.query('COMMIT');
 
             if (result.rows.length === 0) {
@@ -1526,8 +1533,7 @@ class PostgresStorage extends SqlStorageBase {
                 };
             }
 
-            const rootNodeId = Number(result.rows[0].node_id);
-            const value = rebuildSettingSubtree(rootNodeId, result.rows);
+            const value = result.rows[0].value;
             const serialized = JSON.stringify(value);
             const hash = crypto.createHash('sha256').update(serialized).digest('hex');
 
@@ -1554,10 +1560,16 @@ class PostgresStorage extends SqlStorageBase {
                 'SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key = ANY($1::text[]) ORDER BY key',
                 [keys]
             );
+            const valuesResult = await client.query(
+                'SELECT * FROM system.setting_values WHERE setting_key = ANY($1::text[]) ORDER BY setting_key, node_id',
+                [keys]
+            );
             await client.query('COMMIT');
-            const rebuilt = {};
-            for (const row of settingsResult.rows) {
-                rebuilt[row.key] = mapColumnsToSettingValue(row);
+            const rebuilt = rebuildSettingRows(settingsResult.rows, valuesResult.rows);
+            if (keys.includes('pluginCustomStorage')) {
+                const pluginRows = (await client.query(
+                    'SELECT key, value FROM system.plugin_custom_storage ORDER BY key')).rows;
+                rebuilt.pluginCustomStorage = Object.fromEntries(pluginRows.map((row) => [row.key, row.value]));
             }
             const serialized = JSON.stringify(rebuilt);
             const hash = crypto.createHash('sha256').update(serialized).digest('hex');
@@ -1621,6 +1633,7 @@ class PostgresStorage extends SqlStorageBase {
                     updated_at = NOW()`,
                 [key, mapped.text_val, mapped.num_val, mapped.bool_val]
             );
+            await replaceSettingValueRows(client, [{ key, value }]);
             const projected = projectSettings([{ key, value }]);
             for (const definition of SETTING_RELATION_DEFINITIONS) {
                 if (definition.settingKeys.includes(key)) {
@@ -1834,12 +1847,14 @@ class PostgresStorage extends SqlStorageBase {
 
             if (payload.replaceAll) {
                 await client.query('DELETE FROM system.settings');
+                await client.query('DELETE FROM system.plugin_custom_storage');
                 await client.query('DELETE FROM character.characters');
             }
 
             onProgress?.({ stage: 'settings', message: `Syncing settings (${payload.rootUpserts.length})`, count: payload.rootUpserts.length });
-            if (payload.rootUpserts.length > 0) {
-                const settingRows = payload.rootUpserts.map((row) => {
+            const rootSettingUpserts = payload.rootUpserts.filter((row) => row.key !== 'pluginCustomStorage');
+            if (rootSettingUpserts.length > 0) {
+                const settingRows = rootSettingUpserts.map((row) => {
                     const mapped = mapSettingValueToColumns(row.value);
                     return { key: row.key, ...mapped };
                 });
@@ -1851,9 +1866,10 @@ class PostgresStorage extends SqlStorageBase {
                     settingRows,
                     buildUpsertClause('system.settings', ['key'], ['text_val', 'num_val', 'bool_val'], true)
                 );
+                await replaceSettingValueRows(client, rootSettingUpserts);
             }
-            const changedSettingKeys = payload.rootUpserts.map((item) => item.key);
-            const projectedSettings = projectSettings(payload.rootUpserts);
+            const changedSettingKeys = rootSettingUpserts.map((item) => item.key);
+            const projectedSettings = projectSettings(rootSettingUpserts);
             if (changedSettingKeys.length > 0) {
                 const changedSettingKeySet = new Set(changedSettingKeys);
                 for (const definition of SETTING_RELATION_DEFINITIONS) {
@@ -1880,68 +1896,20 @@ class PostgresStorage extends SqlStorageBase {
                 await client.query('DELETE FROM system.settings WHERE key = ANY($1::text[])', [payload.rootDeletes]);
             }
             if (payload.pluginStorageClear) {
-                await client.query("DELETE FROM system.setting_values WHERE setting_key = 'pluginCustomStorage'");
-                await client.query("DELETE FROM system.settings WHERE key = 'pluginCustomStorage'");
+                await client.query('DELETE FROM system.plugin_custom_storage');
             }
             if (payload.pluginStorageDeletes && payload.pluginStorageDeletes.length > 0) {
-                for (const key of payload.pluginStorageDeletes) {
-                    const encoded = encodeMember(key, null);
-                    await client.query(
-                        `WITH RECURSIVE key_tree AS (
-                            SELECT node_id FROM system.setting_values
-                            WHERE setting_key = 'pluginCustomStorage' AND parent_node_id = 0
-                              AND ((member_key IS NOT NULL AND member_key = $1)
-                                   OR (encoded_member_key IS NOT NULL AND encoded_member_key = $2))
-                            UNION ALL
-                            SELECT v.node_id FROM system.setting_values v
-                            INNER JOIN key_tree kt ON v.parent_node_id = kt.node_id
-                            WHERE v.setting_key = 'pluginCustomStorage'
-                        )
-                        DELETE FROM system.setting_values
-                        WHERE setting_key = 'pluginCustomStorage'
-                          AND node_id IN (SELECT node_id FROM key_tree)`,
-                        [encoded.member_key, encoded.encoded_member_key]
-                    );
-                }
+                await client.query('DELETE FROM system.plugin_custom_storage WHERE key = ANY($1::text[])',
+                    [payload.pluginStorageDeletes]);
             }
             if (payload.pluginStorageUpserts && payload.pluginStorageUpserts.length > 0) {
                 for (const upsert of payload.pluginStorageUpserts) {
-                    const encoded = encodeMember(upsert.key, null);
                     await client.query(
-                        `WITH RECURSIVE key_tree AS (
-                            SELECT node_id FROM system.setting_values
-                            WHERE setting_key = 'pluginCustomStorage' AND parent_node_id = 0
-                              AND ((member_key IS NOT NULL AND member_key = $1)
-                                   OR (encoded_member_key IS NOT NULL AND encoded_member_key = $2))
-                            UNION ALL
-                            SELECT v.node_id FROM system.setting_values v
-                            INNER JOIN key_tree kt ON v.parent_node_id = kt.node_id
-                            WHERE v.setting_key = 'pluginCustomStorage'
-                        )
-                        DELETE FROM system.setting_values
-                        WHERE setting_key = 'pluginCustomStorage'
-                          AND node_id IN (SELECT node_id FROM key_tree)`,
-                        [encoded.member_key, encoded.encoded_member_key]
+                        `INSERT INTO system.plugin_custom_storage (key, value, updated_at)
+                         VALUES ($1, $2::jsonb, NOW())
+                         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+                        [upsert.key, JSON.stringify(upsert.value)]
                     );
-                    const split = splitSetting('pluginCustomStorage', { [upsert.key]: upsert.value });
-                    if (split.values.length > 0) {
-                        const maxNodeRes = await client.query(
-                            "SELECT COALESCE(MAX(node_id), 0) AS max_id FROM system.setting_values WHERE setting_key = 'pluginCustomStorage'"
-                        );
-                        const baseNodeId = Number(maxNodeRes.rows[0].max_id);
-                        const remappedValues = split.values.map((v) => ({
-                            ...v,
-                            node_id: v.node_id + baseNodeId,
-                            parent_node_id: v.parent_node_id === 0 ? 0 : v.parent_node_id + baseNodeId,
-                        }));
-                        await bulkInsert(
-                            client,
-                            'system.setting_values',
-                            ['setting_key', 'node_id', 'parent_node_id', 'member_key', 'encoded_member_key', 'position', 'value_type', 'text_value', 'encoded_text_value', 'number_value', 'boolean_value'],
-                            ['text', 'integer', 'integer', 'text', 'text', 'integer', 'text', 'text', 'text', 'double precision', 'boolean'],
-                            remappedValues
-                        );
-                    }
                 }
             }
             if (payload.pluginStorageClear || (payload.pluginStorageDeletes && payload.pluginStorageDeletes.length > 0) || (payload.pluginStorageUpserts && payload.pluginStorageUpserts.length > 0)) {
