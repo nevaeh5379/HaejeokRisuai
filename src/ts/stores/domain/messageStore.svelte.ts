@@ -47,10 +47,7 @@ class MessageStore {
                     position,
                     data: sqlMessageData(message),
                 }],
-                messageManifests: [{
-                    chatId,
-                    ids: messages.map((m) => m.chatId!).filter(Boolean),
-                }],
+                messageManifests: [],
             })
         } catch (error) {
             console.error('[MessageStore] Failed to commit appendMessage:', error)
@@ -85,7 +82,7 @@ class MessageStore {
                 chats: [],
                 chatManifests: [],
                 messages: messageUpserts,
-                messageManifests: [{
+                messageManifests: chat?.messagesFullyLoaded === false ? [] : [{
                     chatId,
                     ids: allMessages.map((m) => m.chatId!).filter(Boolean),
                 }],

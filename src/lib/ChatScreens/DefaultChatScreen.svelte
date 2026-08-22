@@ -6,7 +6,7 @@
     import { tick } from 'svelte';
     import Chat from "./Chat.svelte";
     import { type Message } from "../../ts/storage/database.svelte";
-    import { characterStore, settingsStore, personaStore } from 'src/ts/stores/domain';
+    import { characterStore, settingsStore, personaStore, messageStore } from 'src/ts/stores/domain';
     import { getCharImage } from "../../ts/characters";
     import { chatProcessStage, doingChat, sendChat } from "../../ts/process/index.svelte";
     import { sleep } from "../../ts/util";
@@ -727,11 +727,14 @@
                     </button>
                 {:else}
                     <div onclick={(e) => {
-                        characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.push({
-                            role: 'char',
-                            data: ''
-                        })
-                        characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage] = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage]
+                        const currentChat = characterStore.characters[$selectedCharID]?.chats?.[characterStore.characters[$selectedCharID]?.chatPage]
+                        if (currentChat?.id) {
+                            void messageStore.appendMessage(currentChat.id, {
+                                role: 'char',
+                                data: '',
+                                chatId: v4()
+                            })
+                        }
                     }}
                          class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
                          style:height={inputHeight}

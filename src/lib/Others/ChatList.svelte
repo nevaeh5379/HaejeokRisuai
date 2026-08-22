@@ -2,13 +2,14 @@
     import { alertConfirm, alertError } from "../../ts/alert";
     import { language } from "../../lang";
     
-    import { characterStore } from 'src/ts/stores/domain';
+    import { characterStore, messageStore } from 'src/ts/stores/domain';
     import { ReloadGUIPointer, selectedCharID } from "../../ts/stores.svelte";
     import { DownloadIcon, SquarePenIcon, HardDriveUploadIcon, PlusIcon, TrashIcon, XIcon } from "@lucide/svelte";
     import { exportChat, importChat } from "../../ts/characters";
     import { findCharacterbyId } from "../../ts/util";
     import TextInput from "../UI/GUI/TextInput.svelte";
     import { changeChatTo } from "src/ts/globalApi.svelte";
+    import { v4 } from "uuid";
 
     let editMode = $state(false)
     /** @type {{close?: any}} */
@@ -70,22 +71,30 @@
         <div class="flex mt-2 items-center">
             <button class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1" onclick={() => {
                 const cha = characterStore.characters[$selectedCharID]
-                const len = characterStore.characters[$selectedCharID].chats.length
-                let chats = characterStore.characters[$selectedCharID].chats
-                chats.unshift({
-                    message:[], note:'', name:`New Chat ${len + 1}`, localLore:[], fmIndex: -1
-                })
+                const len = cha.chats.length
+                const newChat = {
+                    id: v4(),
+                    message: [],
+                    note: '',
+                    name: `New Chat ${len + 1}`,
+                    localLore: [],
+                    fmIndex: -1,
+                }
                 if(cha.type === 'group'){
-                    cha.characters.map((c) => {
-                        chats[len].message.push({
+                    cha.characters.forEach((c) => {
+                        newChat.message.push({
+                            chatId: v4(),
                             saying: c,
                             role: 'char',
                             data: findCharacterbyId(c).firstMessage
                         })
                     })
                 }
-                characterStore.characters[$selectedCharID].chats = chats
-                changeChatTo(len)
+                cha.chats.unshift(newChat)
+                if (newChat.id && newChat.message.length > 0) {
+                    void messageStore.commitMessages(newChat.id, newChat.message)
+                }
+                changeChatTo(0)
                 close()
             }}>
                 <PlusIcon/>

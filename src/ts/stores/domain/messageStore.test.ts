@@ -116,7 +116,7 @@ describe('messageStore', () => {
         })
     })
 
-    it('commits newly appended messages to SQL', async () => {
+    it('commits newly appended messages to SQL without messageManifests', async () => {
         const newMsg = { chatId: 'msg-4', role: 'char' as const, data: 'brand new message' }
         await messageStore.appendMessage('chat-1', newMsg)
 
@@ -128,5 +128,39 @@ describe('messageStore', () => {
         const commit = mockStorage.commits[0]
         expect(commit.messages).toHaveLength(1)
         expect(commit.messages[0].id).toBe('msg-4')
+        expect(commit.messageManifests).toEqual([])
+    })
+
+    it('omits messageManifests in commitMessages when messages are partially loaded', async () => {
+        const chat = characterStore.characters[0].chats[0]
+        chat.messagesFullyLoaded = false
+        chat.messageOffset = 10
+
+        const newMsg = { chatId: 'msg-5', role: 'char' as const, data: 'partial load commit' }
+        chat.message.push(newMsg)
+        await messageStore.commitMessages('chat-1', [newMsg])
+
+        expect(mockStorage.commits).toHaveLength(1)
+        const commit = mockStorage.commits[0]
+        expect(commit.messages).toHaveLength(1)
+        expect(commit.messages[0].position).toBe(13) // offset (10) + index (3)
+        expect(commit.messageManifests).toEqual([])
+    })
+
+    it('includes messageManifests in commitMessages when messages are fully loaded', async () => {
+        const chat = characterStore.characters[0].chats[0]
+        chat.messagesFullyLoaded = true
+
+        const newMsg = { chatId: 'msg-5', role: 'char' as const, data: 'fully loaded commit' }
+        chat.message.push(newMsg)
+        await messageStore.commitMessages('chat-1', [newMsg])
+
+        expect(mockStorage.commits).toHaveLength(1)
+        const commit = mockStorage.commits[0]
+        expect(commit.messages).toHaveLength(1)
+        expect(commit.messageManifests).toHaveLength(1)
+        expect(commit.messageManifests[0].chatId).toBe('chat-1')
+        expect(commit.messageManifests[0].ids).toContain('msg-1')
+        expect(commit.messageManifests[0].ids).toContain('msg-5')
     })
 })

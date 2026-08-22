@@ -6,7 +6,7 @@
 
     import type { Chat, ChatFolder, character, groupChat } from "src/ts/storage/database.svelte";
     import { ReloadGUIPointer } from 'src/ts/stores.svelte';
-    import { characterStore, settingsStore, personaStore } from 'src/ts/stores/domain';
+    import { characterStore, settingsStore, personaStore, messageStore } from 'src/ts/stores/domain';
     import { selectedCharID } from "src/ts/stores.svelte";
 
     import CheckInput from "../UI/GUI/CheckInput.svelte";
@@ -141,20 +141,23 @@
     <Button className="relative bottom-2" onclick={() => {
         const cha = chara
         const len = chara.chats.length
-        let chats = chara.chats
-        chats.unshift({
+        const newChat = {
             message:[], note:'', name:`New Chat ${len + 1}`, localLore:[], fmIndex: -1, id: v4()
-        })
+        }
         if(cha.type === 'group'){
-            cha.characters.map((c) => {
-                chats[len].message.push({
+            cha.characters.forEach((c) => {
+                newChat.message.push({
+                    chatId: v4(),
                     saying: c,
                     role: 'char',
                     data: findCharacterbyId(c).firstMessage
                 })
             })
         }
-        chara.chats = chats
+        chara.chats.unshift(newChat)
+        if (newChat.id && newChat.message.length > 0) {
+            void messageStore.commitMessages(newChat.id, newChat.message)
+        }
         changeChatTo(0)
         $ReloadGUIPointer += 1
     }}>{language.newChat}</Button>
@@ -271,7 +274,13 @@
                                         const newChat = $state.snapshot(chara.chats[chatIdx])
                                         newChat.name = createChatCopyName(newChat.name, 'Copy')
                                         newChat.id = v4()
+                                        for (const msg of newChat.message ?? []) {
+                                            msg.chatId = v4()
+                                        }
                                         chara.chats.unshift(newChat)
+                                        if (newChat.id && newChat.message?.length > 0) {
+                                            void messageStore.commitMessages(newChat.id, newChat.message)
+                                        }
                                         changeChatTo(0)
                                         chara.chats = chara.chats
                                         break
@@ -385,7 +394,13 @@
                                 const newChat = $state.snapshot(chara.chats[i])
                                 newChat.name = createChatCopyName(newChat.name, 'Copy')
                                 newChat.id = v4()
+                                for (const msg of newChat.message ?? []) {
+                                    msg.chatId = v4()
+                                }
                                 chara.chats.unshift(newChat)
+                                if (newChat.id && newChat.message?.length > 0) {
+                                    void messageStore.commitMessages(newChat.id, newChat.message)
+                                }
                                 changeChatTo(0)
                                 chara.chats = chara.chats
                                 break

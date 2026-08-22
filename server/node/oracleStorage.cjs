@@ -1657,14 +1657,7 @@ class OracleStorage extends SqlStorageBase {
                 'chat_message_attributes', 'chat_message_generation', 'chat_message_prompt_info',
                 'chat_message_prompt_toggles', 'chat_message_prompt_items',
             ];
-            if (changedChatIds.length > 0) {
-                for (const table of messageChildTables) {
-                    const delSql = `DELETE FROM ${assertSqlIdentifier(table)} WHERE chat_id = :1`;
-                    await conn.executeMany(delSql, changedChatIds.map((id) => [id]));
-                }
-                const delMsgSql = `DELETE FROM chat_messages WHERE chat_id = :1`;
-                await conn.executeMany(delMsgSql, changedChatIds.map((id) => [id]));
-            } else if (payload.messages.length > 0) {
+            if (payload.messages.length > 0) {
                 await deleteMessageChildren(conn, payload.messages);
                 const delMsgSql = `DELETE FROM chat_messages WHERE chat_id = :1 AND id = :2`;
                 await conn.executeMany(delMsgSql, payload.messages.map((m) => [m.chatId, m.id]));

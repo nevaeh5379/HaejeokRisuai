@@ -15,9 +15,7 @@ import { doingChat } from "./process/index.svelte";
 import { importCharacter } from "./characterCards";
 import { PngChunk } from "./pngChunk";
 import { getColdStorageItem, preLoadChat } from "./process/coldstorage.svelte";
-import { isNodeServer } from "./platform";
-import { NodeStorage } from "./storage/nodeStorage";
-import { releaseInactiveChatMessages } from "./stores/domain/messageStore.svelte";
+import { releaseInactiveChatMessages, messageStore } from "./stores/domain/messageStore.svelte";
 import { createBlankChar } from './characterDefaults'
 import { getCharImage, getCharImagesBatch } from './characterImage'
 
@@ -391,6 +389,9 @@ export async function importChat(){
             }
 
             characterStore.characters[selectedID].chats.unshift(newChat)
+            if (newChat.id && newChat.message?.length > 0) {
+                void messageStore.commitMessages(newChat.id, newChat.message)
+            }
             changeChatTo(0)
             alertNormal(language.successImport)
         }
@@ -422,13 +423,18 @@ export async function importChat(){
                     chat.id = v4()
                 })
                 characterStore.characters[selectedID].chats.unshift(...chats)
+                for (const chat of chats) {
+                    if (chat.id && chat.message?.length > 0) {
+                        void messageStore.commitMessages(chat.id, chat.message)
+                    }
+                }
                 alertNormal(language.successImport)
                 return
             }
             if(json.type === 'risuAllChats' && json.ver === 1){
                 const chats = json.data
                 if(Array.isArray(chats) && chats.length > 0){
-                    characterStore.characters[selectedID].chats.unshift(...(chats.map((v) => {
+                    const mappedChats = chats.map((v) => {
                         if(!v.id){
                             v.id = uuidv4()
                         }
@@ -437,7 +443,13 @@ export async function importChat(){
                         }
                         v.fmIndex ??= -1
                         return v
-                    })))
+                    })
+                    characterStore.characters[selectedID].chats.unshift(...mappedChats)
+                    for (const chat of mappedChats) {
+                        if (chat.id && chat.message?.length > 0) {
+                            void messageStore.commitMessages(chat.id, chat.message)
+                        }
+                    }
                     alertNormal(language.successImport)
                     return
                 } else {
@@ -451,6 +463,9 @@ export async function importChat(){
                     das.fmIndex ??= -1
                     das.id = v4()
                     characterStore.characters[selectedID].chats.unshift(das)
+                    if (das.id && das.message?.length > 0) {
+                        void messageStore.commitMessages(das.id, das.message)
+                    }
                     alertNormal(language.successImport)
                     return
                 }
