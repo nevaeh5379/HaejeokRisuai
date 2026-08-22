@@ -5,6 +5,40 @@ import { getMimeType } from './media/mimeType'
 
 // Global cache for character images across the application session
 export const fullImageBlobCache = new Map<string, string>()
+const characterImagePreloads = new Map<string, Promise<void>>()
+
+/**
+ * Starts fetching and decoding a character image before a component needs it.
+ * Keeping the Image instance inside the promise ensures the browser can reuse
+ * the in-flight request when the same URL is applied to the chat avatar.
+ */
+export function preloadCharacterImage(loc: string): Promise<void> {
+    if (!loc || settingsStore.state.hideAllImages || typeof Image === 'undefined') {
+        return Promise.resolve()
+    }
+
+    const existing = characterImagePreloads.get(loc)
+    if (existing) return existing
+
+    const preload = (async () => {
+        const source = await getCharImage(loc, 'plain')
+        if (!source || source === '/none.webp') return
+
+        await new Promise<void>((resolve, reject) => {
+            const image = new Image()
+            image.decoding = 'async'
+            image.fetchPriority = 'high'
+            image.onload = () => resolve()
+            image.onerror = () => reject(new Error(`Failed to preload character image: ${loc}`))
+            image.src = source
+        })
+    })().catch(() => {
+        characterImagePreloads.delete(loc)
+    })
+
+    characterImagePreloads.set(loc, preload)
+    return preload
+}
 
 export async function getCharImage(
     loc: string,

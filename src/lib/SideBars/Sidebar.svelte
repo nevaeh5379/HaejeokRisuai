@@ -34,7 +34,7 @@
     User2Icon,
     SearchIcon,
   } from "@lucide/svelte";
-    import { getCharImage } from '../../ts/characterImage';
+    import { getCharImage, preloadCharacterImage } from '../../ts/characterImage';
     import { language } from "../../lang";
     import isEqual from "lodash/isEqual";
     import SidebarAvatar from "./SidebarAvatar.svelte";
@@ -61,6 +61,7 @@
 
   async function changeCharacter(index: number) {
     void preloadSidebarPanels()
+    void preloadCharacterImage(characterStore.characters?.[index]?.image)
     const { changeChar } = await import('../../ts/characters')
     changeChar(index, { reseter })
   }

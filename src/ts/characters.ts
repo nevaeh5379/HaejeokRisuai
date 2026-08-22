@@ -17,7 +17,7 @@ import { PngChunk } from "./pngChunk";
 import { getColdStorageItem, preLoadChat } from "./process/coldstorage.svelte";
 import { releaseInactiveChatMessages, messageStore } from "./stores/domain/messageStore.svelte";
 import { createBlankChar } from './characterDefaults'
-import { getCharImage, getCharImagesBatch } from './characterImage'
+import { getCharImage, getCharImagesBatch, preloadCharacterImage } from './characterImage'
 import { loadCharacterSelectionData } from './characterSelectionLoader'
 
 export { createBlankChar } from './characterDefaults'
@@ -830,6 +830,7 @@ export async function changeChar(index: number, arg:{
     if(get(doingChat)){
       return
     }
+    void preloadCharacterImage(characterStore.characters?.[index]?.image)
     reseter();
     if(characterStore.characters?.[index]?.coldstorage){
         const coldData = await getColdStorageItem(characterStore.characters[index].coldstorage!)

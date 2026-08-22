@@ -33,7 +33,7 @@ vi.mock(import('./media/mimeType'), () => ({
     getMimeType: () => 'image/png',
 }))
 
-import { fullImageBlobCache, getCharImagesBatch } from './characterImage'
+import { fullImageBlobCache, getCharImagesBatch, preloadCharacterImage } from './characterImage'
 
 describe('getCharImagesBatch', () => {
     beforeEach(() => {
@@ -53,5 +53,40 @@ describe('getCharImagesBatch', () => {
         expect(mocks.getFileSrc).not.toHaveBeenCalled()
         expect([...result.values()]).toEqual(Array(50).fill('/none.webp'))
         consoleError.mockRestore()
+    })
+})
+
+describe('preloadCharacterImage', () => {
+    it('starts one reusable browser image request for concurrent calls', async () => {
+        const requestedSources: string[] = []
+        let imageCount = 0
+        class MockImage {
+            decoding = ''
+            fetchPriority = ''
+            complete = false
+            onload: (() => void) | null = null
+            onerror: (() => void) | null = null
+
+            constructor() {
+                imageCount += 1
+            }
+
+            set src(value: string) {
+                requestedSources.push(value)
+                queueMicrotask(() => this.onload?.())
+            }
+        }
+        vi.stubGlobal('Image', MockImage)
+        mocks.getFileSrc.mockResolvedValueOnce('/api/read?avatar=1')
+
+        const first = preloadCharacterImage('assets/chat-avatar.png')
+        const second = preloadCharacterImage('assets/chat-avatar.png')
+
+        expect(first).toBe(second)
+        await first
+        expect(mocks.getFileSrc).toHaveBeenCalledWith('assets/chat-avatar.png', undefined)
+        expect(requestedSources).toEqual(['/api/read?avatar=1'])
+        expect(imageCount).toBe(1)
+        vi.unstubAllGlobals()
     })
 })
