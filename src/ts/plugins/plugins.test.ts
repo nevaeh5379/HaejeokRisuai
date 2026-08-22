@@ -14,6 +14,7 @@ describe('Plugin Storage & SafeDatabase Persistence', () => {
         committed = []
         mockStorage = {
             getRevision: vi.fn(() => committed.length),
+            loadPluginCustomStorageKey: vi.fn(async () => undefined),
             commit: vi.fn(async (commit: SqlCommit) => {
                 committed.push(structuredClone(commit))
                 return { revision: committed.length }
@@ -48,6 +49,25 @@ describe('Plugin Storage & SafeDatabase Persistence', () => {
             key: 'testKey',
             value: { value: 123 },
         })
+    })
+
+    it('lists unloaded keys and fetches a plugin storage value on first access', async () => {
+        mockStorage.loadPluginCustomStorageKey = vi.fn(async (key: string) => {
+            return key === 'lazyKey' ? { loaded: true } : undefined
+        })
+        settingsStore.hydratePluginCustomStorageKeys(['lazyKey'])
+        const apis = getV2PluginAPIs()
+
+        expect(apis.pluginStorage.keys()).toEqual(['lazyKey'])
+        expect(apis.pluginStorage.length()).toBe(1)
+        expect(settingsStore.state.pluginCustomStorage).toEqual({})
+
+        await expect(apis.pluginStorage.getItem('lazyKey')).resolves.toEqual({ loaded: true })
+        await expect(apis.pluginStorage.getItem('lazyKey')).resolves.toEqual({ loaded: true })
+        expect(mockStorage.loadPluginCustomStorageKey).toHaveBeenCalledTimes(1)
+
+        await settingsStore.flush()
+        expect(mockStorage.commit).not.toHaveBeenCalled()
     })
 
     it('persists pluginStorage.removeItem and clear to settingsStore and SQL', async () => {

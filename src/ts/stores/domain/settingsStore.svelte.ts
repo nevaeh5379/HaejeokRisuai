@@ -43,6 +43,8 @@ class SettingsStore {
     private pendingPluginStorageUpserts = new Map<string, unknown>()
     private pendingPluginStorageDeletes = new Set<string>()
     private pendingPluginStorageClear = false
+    private pluginStorageKeys = new Set<string>()
+    private pluginStorageLoads = new Map<string, Promise<any>>()
     private keyDisposers = new Map<string, () => void>()
     private keySetDispose: (() => void) | null = null
     private previousFingerprints = new Map<string, string>()
@@ -60,6 +62,7 @@ class SettingsStore {
         this.pendingPluginStorageUpserts.clear()
         this.pendingPluginStorageDeletes.clear()
         this.pendingPluginStorageClear = false
+        this.pluginStorageLoads.clear()
 
         const adapter = initialSettings as Partial<Database> & { getLoadedRootKeys?: () => string[] }
         const keys = adapter.getLoadedRootKeys?.() ?? Object.keys(initialSettings)
@@ -69,6 +72,7 @@ class SettingsStore {
         delete (settingsCopy as any).botPresets
         delete (settingsCopy as any).botPresetsId
         settingsCopy.pluginCustomStorage ??= {}
+        this.pluginStorageKeys = new Set(Object.keys(settingsCopy.pluginCustomStorage))
 
         for (const [key, val] of Object.entries(settingsCopy)) {
             if (key === 'characters' || key === 'isSql' || key === 'pluginCustomStorage') continue
@@ -190,6 +194,7 @@ class SettingsStore {
         const keyStr = String(key)
         this.state[keyStr] = value
         if (keyStr === 'pluginCustomStorage') {
+            this.pluginStorageKeys.clear()
             if (value && typeof value === 'object') {
                 for (const [k, v] of Object.entries(value)) {
                     this.setPluginCustomStorageKey(k, v)
@@ -245,9 +250,54 @@ class SettingsStore {
         return this.state.pluginCustomStorage
     }
 
+    getPluginCustomStorageKeys(): string[] {
+        return Array.from(this.pluginStorageKeys)
+    }
+
+    hasPluginCustomStorageKey(key: string): boolean {
+        return this.pluginStorageKeys.has(key)
+    }
+
+    hasLoadedPluginCustomStorageKey(key: string): boolean {
+        return Object.prototype.hasOwnProperty.call(this.state.pluginCustomStorage ?? {}, key)
+    }
+
+    hydratePluginCustomStorageKeys(keys: string[]): void {
+        this.pluginStorageKeys = new Set([
+            ...keys,
+            ...Object.keys(this.state.pluginCustomStorage ?? {}),
+        ])
+    }
+
+    hydratePluginCustomStorageKey(key: string, value: any): void {
+        this.state.pluginCustomStorage ??= {}
+        this.state.pluginCustomStorage[key] = value
+        this.pluginStorageKeys.add(key)
+    }
+
+    async loadPluginCustomStorageKey(key: string): Promise<any> {
+        if (this.hasLoadedPluginCustomStorageKey(key)) {
+            return this.state.pluginCustomStorage[key]
+        }
+        const existingLoad = this.pluginStorageLoads.get(key)
+        if (existingLoad) return existingLoad
+        const storage = this.storage || await getSqlStorage()
+        const pending = storage.loadPluginCustomStorageKey(key).then((value) => {
+            if (this.pendingPluginStorageClear || this.pendingPluginStorageDeletes.has(key)) return undefined
+            if (this.hasLoadedPluginCustomStorageKey(key)) return this.state.pluginCustomStorage[key]
+            if (value !== undefined) this.hydratePluginCustomStorageKey(key, value)
+            return value
+        }).finally(() => {
+            if (this.pluginStorageLoads.get(key) === pending) this.pluginStorageLoads.delete(key)
+        })
+        this.pluginStorageLoads.set(key, pending)
+        return pending
+    }
+
     setPluginCustomStorageKey(key: string, value: any): void {
         this.state.pluginCustomStorage ??= {}
         this.state.pluginCustomStorage[key] = value
+        this.pluginStorageKeys.add(key)
         this.pendingPluginStorageDeletes.delete(key)
         this.pendingPluginStorageUpserts.set(key, $state.snapshot(value))
         this.scheduleCommit()
@@ -257,6 +307,7 @@ class SettingsStore {
         if (this.state.pluginCustomStorage) {
             delete this.state.pluginCustomStorage[key]
         }
+        this.pluginStorageKeys.delete(key)
         this.pendingPluginStorageUpserts.delete(key)
         this.pendingPluginStorageDeletes.add(key)
         this.scheduleCommit()
@@ -264,6 +315,7 @@ class SettingsStore {
 
     clearPluginCustomStorage(): void {
         this.state.pluginCustomStorage = {}
+        this.pluginStorageKeys.clear()
         this.pendingPluginStorageUpserts.clear()
         this.pendingPluginStorageDeletes.clear()
         this.pendingPluginStorageClear = true

@@ -1195,8 +1195,10 @@ class PostgresStorage extends SqlStorageBase {
 
                 const database = rebuildSettingRows(settings, settingValues);
                 database.plugins ??= [];
-                database.pluginCustomStorage = Object.fromEntries((await client.query(
-                    'SELECT key, value FROM system.plugin_custom_storage ORDER BY key')).rows.map((row) => [row.key, row.value]));
+                // Plugin storage is loaded by key after startup. Keeping it out
+                // of the shallow shell prevents large, static plugin caches from
+                // being parsed and transferred twice during bootstrap.
+                database.pluginCustomStorage = {};
 
                 const characterRelations = {
                     tags: groupRows(tags, 'character_id'),

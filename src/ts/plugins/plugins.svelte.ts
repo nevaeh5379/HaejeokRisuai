@@ -4,14 +4,12 @@ import { getCurrentCharacter, getDatabase, setDatabase, setDatabaseLite } from "
 import { alertConfirm, alertError, alertPluginConfirm } from "../alert";
 import { selectSingleFile, sleep } from "../util";
 import type { OpenAIChat } from "../process/index.svelte";
-import { fetchNative, forageStorage, globalFetch, readImage, saveAsset, toGetter } from "../globalApi.svelte";
+import { fetchNative, globalFetch, readImage, saveAsset, toGetter } from "../globalApi.svelte";
 import { hotReloading, pluginAlertModalStore, selectedCharID } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import type { ScriptMode } from "../process/scripts";
 import { checkCodeSafety } from "./pluginSafety";
 import { SafeDocument, SafeIdbFactory, SafeLocalStorage } from "./pluginSafeClass";
-import { isNodeServer } from "../platform";
-import { NodeStorage } from "../storage/nodeStorage";
 
 export const customProviderStore = writable([] as string[])
 
@@ -714,17 +712,13 @@ export const getV2PluginAPIs = () => {
                 },
                 ownKeys(target) {
                     const keys = Object.keys(settingsStore.state).filter(key => allowedDbKeys.includes(key));
-                    const custom = settingsStore.state.pluginCustomStorage;
-                    if (custom) {
-                        keys.push(...Object.keys(custom));
-                    }
+                    keys.push(...settingsStore.getPluginCustomStorageKeys());
                     return Array.from(new Set(keys));
                 },
                 has(target, prop) {
                     if (typeof prop === 'string') {
                         if (allowedDbKeys.includes(prop) && prop in settingsStore.state) return true;
-                        const custom = settingsStore.state.pluginCustomStorage;
-                        if (custom && prop in custom) return true;
+                        if (settingsStore.hasPluginCustomStorageKey(prop)) return true;
                     }
                     return false;
                 },
@@ -736,6 +730,9 @@ export const getV2PluginAPIs = () => {
                         const custom = settingsStore.state.pluginCustomStorage;
                         if (custom && prop in custom) {
                             return { value: custom[prop], writable: true, enumerable: true, configurable: true };
+                        }
+                        if (settingsStore.hasPluginCustomStorageKey(prop)) {
+                            return { value: undefined, writable: true, enumerable: true, configurable: true };
                         }
                     }
                     return undefined;
@@ -758,22 +755,13 @@ export const getV2PluginAPIs = () => {
         },
         pluginStorage: {
             getItem: async (key: string) => {
-                const custom = settingsStore.state.pluginCustomStorage ?? {};
-                if (custom[key] !== undefined && custom[key] !== null) {
-                    return $state.snapshot(custom[key]);
+                try {
+                    const loaded = await settingsStore.loadPluginCustomStorageKey(key);
+                    return loaded === undefined ? null : $state.snapshot(loaded);
+                } catch (err) {
+                    console.error(`Failed to load plugin custom storage key '${key}':`, err);
+                    return null;
                 }
-                if (isNodeServer && forageStorage.realStorage instanceof NodeStorage && forageStorage.realStorage.postgres.isEnabled()) {
-                    try {
-                        const loaded = await forageStorage.realStorage.postgres.loadPluginCustomStorageKey(key);
-                        if (loaded !== undefined && loaded !== null) {
-                            settingsStore.setPluginCustomStorageKey(key, loaded);
-                            return $state.snapshot(loaded);
-                        }
-                    } catch (err) {
-                        console.error(`Failed to load plugin custom storage key '${key}':`, err);
-                    }
-                }
-                return custom[key] !== undefined && custom[key] !== null ? $state.snapshot(custom[key]) : null;
             },
             setItem: (key: string, value: any) => {
                 settingsStore.setPluginCustomStorageKey(key, value);
@@ -785,17 +773,14 @@ export const getV2PluginAPIs = () => {
                 settingsStore.clearPluginCustomStorage();
             },
             key: (index: number) => {
-                const custom = settingsStore.state.pluginCustomStorage ?? {};
-                const keys = Object.keys(custom);
+                const keys = settingsStore.getPluginCustomStorageKeys();
                 return keys[index] || null;
             },
             keys: () => {
-                const custom = settingsStore.state.pluginCustomStorage ?? {};
-                return Object.keys(custom);
+                return settingsStore.getPluginCustomStorageKeys();
             },
             length: () => {
-                const custom = settingsStore.state.pluginCustomStorage ?? {};
-                return Object.keys(custom).length;
+                return settingsStore.getPluginCustomStorageKeys().length;
             }
         },
         setDatabaseLite: (newDb: any) => {

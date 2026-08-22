@@ -620,12 +620,15 @@ class AzureStorage extends SqlStorageBase {
         for (const row of settings) if (!Object.prototype.hasOwnProperty.call(database, row.key)) {
             database[row.key] = mapColumnsToSettingValue(row);
         }
-        const pluginRows = (await pool.request().query(
-            'SELECT [key], [value] FROM [system].[plugin_custom_storage] ORDER BY [key]'
-        )).recordset;
-        database.pluginCustomStorage = Object.fromEntries(pluginRows.map((row) => [row.key, JSON.parse(row.value)]));
         if (shallow) {
             database.plugins ??= [];
+            // Plugin storage is loaded by key after startup.
+            database.pluginCustomStorage = {};
+        } else {
+            const pluginRows = (await pool.request().query(
+                'SELECT [key], [value] FROM [system].[plugin_custom_storage] ORDER BY [key]'
+            )).recordset;
+            database.pluginCustomStorage = Object.fromEntries(pluginRows.map((row) => [row.key, JSON.parse(row.value)]));
         }
 
         // 2. Characters & 3. Chats

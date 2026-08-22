@@ -124,6 +124,8 @@ export interface ISqlStorage {
 
     loadPlugins(): Promise<any[] | null>
     loadPluginCustomStorage(): Promise<Record<string, any> | null>
+    listPluginCustomStorageKeys(): Promise<string[]>
+    loadPluginCustomStorageKey(key: string): Promise<any>
 
     // ── Settings ─────────────────────────────────────────────────────────
 

@@ -180,15 +180,15 @@ export async function loadData() {
                 performance.mark('active-preset-ready')
             }).catch(() => undefined)
             const pluginsReady = Promise.all([
-                storage.loadPlugins(), storage.loadPluginCustomStorage(), storage.loadModules(),
+                storage.loadPlugins(), storage.listPluginCustomStorageKeys(), storage.loadModules(),
                 storage.loadSettingKey('customModels'), storage.loadPersonas(),
-            ]).then(async ([plugins, pluginCustomStorage, modules, customModels, personas]) => {
+            ]).then(async ([plugins, pluginCustomStorageKeys, modules, customModels, personas]) => {
                 settingsStore.hydrate((state) => {
                     state.plugins = plugins ?? []
-                    state.pluginCustomStorage = pluginCustomStorage ?? {}
                     if (customModels !== undefined) state.customModels = customModels
                     state.personas = personas
                 })
+                settingsStore.hydratePluginCustomStorageKeys(pluginCustomStorageKeys)
                 moduleStore.init(modules ?? [], activeDb.enabledModules ?? [])
                 await loadPlugins()
             }).catch(() => undefined)

@@ -13,6 +13,7 @@ describe('SettingsStore Reactivity and Persistence', () => {
         committed = []
         mockStorage = {
             getRevision: vi.fn(() => committed.length),
+            loadPluginCustomStorageKey: vi.fn(async () => undefined),
             commit: vi.fn(async (commit: SqlCommit) => {
                 committed.push(structuredClone(commit))
                 return { revision: committed.length }
@@ -274,5 +275,23 @@ describe('SettingsStore Reactivity and Persistence', () => {
 
         expect(committed[2].pluginStorage?.clear).toBe(true)
     })
-})
 
+    it('tracks plugin storage keys without loading values and hydrates one key without committing it', async () => {
+        mockStorage.loadPluginCustomStorageKey = vi.fn(async (key: string) => {
+            return key === 'large-cache' ? { entries: [1, 2, 3] } : undefined
+        })
+        settingsStore.init({ pluginCustomStorage: {} } as any, mockStorage)
+        settingsStore.hydratePluginCustomStorageKeys(['large-cache', 'other-cache'])
+
+        expect(settingsStore.getPluginCustomStorageKeys()).toEqual(['large-cache', 'other-cache'])
+        expect(settingsStore.hasLoadedPluginCustomStorageKey('large-cache')).toBe(false)
+        expect(settingsStore.state.pluginCustomStorage).toEqual({})
+
+        await expect(settingsStore.loadPluginCustomStorageKey('large-cache')).resolves.toEqual({ entries: [1, 2, 3] })
+        expect(settingsStore.hasLoadedPluginCustomStorageKey('large-cache')).toBe(true)
+        expect(settingsStore.state.pluginCustomStorage['large-cache']).toEqual({ entries: [1, 2, 3] })
+
+        await settingsStore.flush()
+        expect(mockStorage.commit).not.toHaveBeenCalled()
+    })
+})

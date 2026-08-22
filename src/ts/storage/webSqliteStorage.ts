@@ -423,6 +423,17 @@ export class WebSqliteStorage implements ISqlStorage {
         return s
     }
 
+    async listPluginCustomStorageKeys(): Promise<string[]> {
+        return this.selectRows('SELECT key FROM plugin_custom_storage ORDER BY key')
+            .map((row) => row.key as string)
+    }
+
+    async loadPluginCustomStorageKey(key: string): Promise<any> {
+        const row = this.selectOne('SELECT value FROM plugin_custom_storage WHERE key = ?', [key])
+        if (!row) return undefined
+        try { return JSON.parse(row.value as string) } catch { return row.value }
+    }
+
     async loadSettingKey(key: string): Promise<any> {
         return this.loadSettingValue(key)
     }

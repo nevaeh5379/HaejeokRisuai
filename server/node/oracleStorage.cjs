@@ -1094,10 +1094,8 @@ class OracleStorage extends SqlStorageBase {
                     database[row.key] = mapColumnsToSettingValue(row);
                 }
                 database.plugins ??= [];
-                const pluginRows = await fetchRows(conn,
-                    `SELECT key, JSON_SERIALIZE(value RETURNING CLOB) AS value FROM system_plugin_custom_storage`,
-                    [], { clobColumns: ['value'] });
-                database.pluginCustomStorage = Object.fromEntries(pluginRows.map((row) => [row.key, JSON.parse(row.value)]));
+                // Plugin storage is loaded by key after startup.
+                database.pluginCustomStorage = {};
 
                 const characterRelations = {
                     tags: groupRows(tags, 'character_id'),

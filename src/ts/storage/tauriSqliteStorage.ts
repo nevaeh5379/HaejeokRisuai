@@ -446,6 +446,22 @@ export class TauriSqliteStorage implements ISqlStorage {
         return storage
     }
 
+    async listPluginCustomStorageKeys(): Promise<string[]> {
+        const rows = await this.selectRows<{ key: string }>(
+            'SELECT key FROM plugin_custom_storage ORDER BY key',
+        )
+        return rows.map((row) => row.key)
+    }
+
+    async loadPluginCustomStorageKey(key: string): Promise<any> {
+        const row = await this.selectOne<{ value: string }>(
+            'SELECT value FROM plugin_custom_storage WHERE key = ?',
+            [key],
+        )
+        if (!row) return undefined
+        try { return JSON.parse(row.value) } catch { return row.value }
+    }
+
     // ── Settings ─────────────────────────────────────────────────────────
 
     async loadSettingKey(key: string): Promise<any> {
