@@ -4,24 +4,39 @@
     import { language } from "src/lang";
     import { isLite } from "src/ts/lite";
     import LazyComponent from '../Others/LazyComponent.svelte'
+    import { onMount } from 'svelte'
+    import { loadCharConfig, loadSideChatList, preloadSidebarPanels } from '../SideBars/sidebarPanelLoaders'
     
     const settingsLoader = () => import('../Setting/Settings.svelte')
     const realmLoader = () => import('../UI/Realm/RealmMain.svelte')
     const charactersLoader = () => import('./MobileCharacters.svelte')
     const chatLoader = () => import('../ChatScreens/ChatScreen.svelte')
-    const charConfigLoader = () => import('../SideBars/CharConfig.svelte')
     const devToolLoader = () => import('../SideBars/DevTool.svelte')
-    const sideChatListLoader = () => import('../SideBars/SideChatListForCurrent.svelte')
+
+    onMount(() => {
+        const idleWindow = window as Window & {
+            requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number
+            cancelIdleCallback?: (handle: number) => void
+        }
+        if (idleWindow.requestIdleCallback) {
+            const handle = idleWindow.requestIdleCallback(() => void preloadSidebarPanels(), { timeout: 2000 })
+            return () => idleWindow.cancelIdleCallback?.(handle)
+        }
+        const handle = globalThis.setTimeout(() => void preloadSidebarPanels(), 200)
+        return () => globalThis.clearTimeout(handle)
+    })
 </script>
 
 {#if $MobileSideBar > 0 && !$isLite}
 <div class="w-full px-2 py-1 text-textcolor2 border-b border-b-darkborderc bg-darkbg flex justify-start items-center gap-2">
     <button class="flex-1 border-r border-r-darkborderc" class:text-textcolor={$MobileSideBar === 1} onclick={() => {
+        void loadSideChatList()
         $MobileSideBar = 1
     }}>
         {language.Chat}
     </button>
     <button class="flex-1 border-r border-r-darkborderc" class:text-textcolor={$MobileSideBar === 2} onclick={() => {
+        void loadCharConfig()
         $MobileSideBar = 2
     }}>
         {language.character}
@@ -37,9 +52,9 @@
     {#if $MobileSideBar > 0}
         <div class="w-full flex flex-col p-2 mt-2 h-full">
             {#if $MobileSideBar === 1}
-                <LazyComponent loader={sideChatListLoader} />
+                <LazyComponent loader={loadSideChatList} />
             {:else if $MobileSideBar === 2}
-                <LazyComponent loader={charConfigLoader} />
+                <LazyComponent loader={loadCharConfig} />
             {:else if $MobileSideBar === 3}
                 <LazyComponent loader={devToolLoader} />
             {/if}

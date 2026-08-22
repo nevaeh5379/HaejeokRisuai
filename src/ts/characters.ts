@@ -18,6 +18,7 @@ import { getColdStorageItem, preLoadChat } from "./process/coldstorage.svelte";
 import { releaseInactiveChatMessages, messageStore } from "./stores/domain/messageStore.svelte";
 import { createBlankChar } from './characterDefaults'
 import { getCharImage, getCharImagesBatch } from './characterImage'
+import { loadCharacterSelectionData } from './characterSelectionLoader'
 
 export { createBlankChar } from './characterDefaults'
 export { getCharImage, getCharImagesBatch } from './characterImage'
@@ -840,16 +841,21 @@ export async function changeChar(index: number, arg:{
             return
         }
     }
-    if(characterStore.characters?.[index]?.detailsLoaded === false && characterStore.characters?.[index]?.chaId){
-        try {
-            await characterStore.ensureCharacterDetails(characterStore.characters[index].chaId)
-        } catch (error) {
-            console.error(`SQL loadCharacter failed for character ${characterStore.characters[index].chaId}:`, error)
-        }
-    }
+    await loadCharacterSelectionData({
+        getCharacter: () => characterStore.characters?.[index],
+        ensureCharacterDetails: async (characterId) => {
+            try {
+                await characterStore.ensureCharacterDetails(characterId)
+            } catch (error) {
+                console.error(`SQL loadCharacter failed for character ${characterId}:`, error)
+            }
+        },
+        preLoadChat: async (chatIndex) => {
+            await preLoadChat(index, chatIndex)
+        },
+    })
     const currentChar = characterStore.characters?.[index]
     const currentChatPage = currentChar?.chatPage ?? 0
-    await preLoadChat(index, currentChatPage)
     characterFormatUpdate(index, {
       updateInteraction: true,
     });

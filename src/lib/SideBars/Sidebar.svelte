@@ -48,21 +48,35 @@
     import LazyComponent from '../Others/LazyComponent.svelte';
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
+    import { onMount } from 'svelte';
+    import { loadCharConfig, loadSideChatList, preloadSidebarPanels } from './sidebarPanelLoaders';
   let sideBarMode = $state(0);
   let editMode = $state(false);
   let menuMode = $state(0);
   let devTool = $state(false)
 
-  const sideChatListLoader = () => import('./SideChatListForCurrent.svelte')
   const recentSessionsLoader = () => import('./RecentSessionsList.svelte')
-  const charConfigLoader = () => import('./CharConfig.svelte')
   const devToolLoader = () => import('./DevTool.svelte')
   const quickSettingsLoader = () => import('../Others/QuickSettingsGUI.svelte')
 
   async function changeCharacter(index: number) {
+    void preloadSidebarPanels()
     const { changeChar } = await import('../../ts/characters')
     changeChar(index, { reseter })
   }
+
+  onMount(() => {
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number
+      cancelIdleCallback?: (handle: number) => void
+    }
+    if (idleWindow.requestIdleCallback) {
+      const handle = idleWindow.requestIdleCallback(() => void preloadSidebarPanels(), { timeout: 2000 })
+      return () => idleWindow.cancelIdleCallback?.(handle)
+    }
+    const handle = globalThis.setTimeout(() => void preloadSidebarPanels(), 200)
+    return () => globalThis.clearTimeout(handle)
+  })
 
   async function addNewCharacter() {
     const { addCharacter } = await import('../../ts/characters')
@@ -595,6 +609,8 @@
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
             role="button" tabindex="0"
+            onpointerenter={() => void preloadSidebarPanels()}
+            onfocus={() => void preloadSidebarPanels()}
             onclick={() => {
               if(char.type === "normal"){
                 void changeCharacter(char.index);
@@ -758,6 +774,8 @@
               <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
               <div
                   role="button" tabindex="0"
+                  onpointerenter={() => void preloadSidebarPanels()}
+                  onfocus={() => void preloadSidebarPanels()}
                   onclick={() => {
                     if(char2.type === "normal"){
                       void changeCharacter(char2.index);
@@ -956,7 +974,7 @@
     {#if $selectedCharID < 0 || $settingsOpen}
       <LazyComponent loader={recentSessionsLoader} props={{ reseter }} />
     {:else if characterStore.characters[$selectedCharID]?.chaId === '§playground'}
-      <LazyComponent loader={sideChatListLoader} />
+      <LazyComponent loader={loadSideChatList} />
     {:else if $ConnectionOpenStore}
       <div class="flex flex-col">
         <h1 class="text-xl">{language.connectionOpen}</h1>
@@ -976,10 +994,12 @@
     {:else}
       <div class="w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
         <button onclick={() => {
+          void loadSideChatList()
           devTool = false
           botMakerMode.set(false)
         }} class="grow border-r border-r-selected rounded-bl-md" class:text-textcolor2={$botMakerMode || devTool}>{language.Chat}</button>
         <button onclick={() => {
+          void loadCharConfig()
           devTool = false
           botMakerMode.set(true)
         }} class="grow rounded-br-md" class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button>
@@ -996,9 +1016,9 @@
       {:else if devTool}
         <LazyComponent loader={devToolLoader} />
       {:else if $botMakerMode}
-        <LazyComponent loader={charConfigLoader} />
+        <LazyComponent loader={loadCharConfig} />
       {:else}
-        <LazyComponent loader={sideChatListLoader} />
+        <LazyComponent loader={loadSideChatList} />
       {/if}
     {/if}
   {/if}

@@ -3,7 +3,7 @@
     import { tokenizeAccurate } from "../../ts/tokenizer";
     import { getCurrentCharacter, saveImage as saveAsset, type character, type groupChat } from "../../ts/storage/database.svelte";
     import { characterStore, settingsStore, moduleStore } from 'src/ts/stores/domain';
-    import { untrack } from 'svelte';
+    import { onDestroy } from 'svelte';
     import { CharConfigSubMenu, MobileGUI, ShowRealmFrameStore, selectedCharID, hypaV3ModalOpen } from "../../ts/stores.svelte";
     import { PlusIcon, SmileIcon, TrashIcon, UserIcon, ActivityIcon, BookIcon, User, Braces, Volume2Icon, DownloadIcon, HardDriveUploadIcon, Share2Icon, ImageIcon, ImageOffIcon, ArrowUp, ArrowDown } from '@lucide/svelte'
     import Check from "../UI/GUI/CheckInput.svelte";
@@ -35,43 +35,28 @@
     import Toggles from "./Toggles.svelte";
     import { convertCharacterToModule } from "src/ts/interchangeability";
     import { getMimeType } from "src/ts/media";
+    import { createDeferredTokenCalculator } from "src/ts/deferredTokenCalculator";
 
     let iconRemoveMode = $state(false)
     let viewSubMenu = $state(0)
     let emos:[string, string][] = $state([])
     let iconButtonSize = window.innerWidth > 360 ? 24 as const : 20 as const
     let tokens = $state({
-        desc: 0,
-        firstMsg: 0,
-        localNote: 0,
-        charaNote: 0
+        desc: null as number | null,
+        firstMsg: null as number | null,
+        localNote: null as number | null,
     })
 
-    let lasttokens = {
-        desc: '',
-        firstMsg: '',
-        localNote: '',
-        charaNote: ''
-    }
+    const tokenCalculator = createDeferredTokenCalculator({
+        calculate: tokenizeAccurate,
+        apply: (result) => {
+            tokens.desc = result.desc
+            tokens.firstMsg = result.firstMsg
+            tokens.localNote = result.localNote
+        },
+    })
 
-    async function loadTokenize(
-        desc: string | null,
-        firstMsg: string | null,
-        localNote: string
-    ) {
-        if (desc !== null && lasttokens.desc !== desc) {
-            lasttokens.desc = desc
-            tokens.desc = await tokenizeAccurate(desc)
-        }
-        if (firstMsg !== null && lasttokens.firstMsg !== firstMsg) {
-            lasttokens.firstMsg = firstMsg
-            tokens.firstMsg = await tokenizeAccurate(firstMsg)
-        }
-        if (lasttokens.localNote !== localNote) {
-            lasttokens.localNote = localNote
-            tokens.localNote = await tokenizeAccurate(localNote)
-        }
-    }
+    onDestroy(() => tokenCalculator.dispose())
 
 
     let assetFileExtensions:string[] = $state([])
@@ -82,15 +67,20 @@
         emos = characterStore.characters[$selectedCharID].emotionImages
     });
 
-    $effect.pre(() => {
+    $effect(() => {
         const chara = characterStore.characters[$selectedCharID]
         const desc = chara.type !== 'group' ? (chara as character).desc : null
         const firstMsg = chara.type !== 'group' ? chara.firstMessage : null
         const localNote = chara.chats[chara.chatPage].note
 
-        untrack(() => {
-            loadTokenize(desc, firstMsg, localNote)
+        const changedTokens = tokenCalculator.update({
+            desc,
+            firstMsg,
+            localNote,
         })
+        for (const key of changedTokens) {
+            tokens[key] = null
+        }
     });
 
     $effect.pre(() => {
@@ -269,10 +259,10 @@
         <TextInput size="xl" marginBottom placeholder="Character Name" bind:value={characterStore.characters[$selectedCharID].name} />
         <span class="text-textcolor">{language.description} <Help key="charDesc"/></span>
         <TextAreaInput highlight margin="both" autocomplete="off" bind:value={(characterStore.characters[$selectedCharID] as character).desc}></TextAreaInput>
-        <span class="text-textcolor2 mb-6 text-sm">{tokens.desc} {language.tokens}</span>
+        <span class="text-textcolor2 mb-6 text-sm">{tokens.desc ?? '…'} {language.tokens}</span>
         <span class="text-textcolor">{language.firstMessage} <Help key="charFirstMessage"/></span>
         <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterStore.characters[$selectedCharID].firstMessage}></TextAreaInput>
-        <span class="text-textcolor2 mb-6 text-sm">{tokens.firstMsg} {language.tokens}</span>
+        <span class="text-textcolor2 mb-6 text-sm">{tokens.firstMsg ?? '…'} {language.tokens}</span>
 
     {:else if licensed !== 'private' && characterStore.characters[$selectedCharID].type === 'group'}
         <TextInput size="xl" marginBottom placeholder="Group Name" bind:value={characterStore.characters[$selectedCharID].name} />
@@ -333,7 +323,7 @@
         highlight
         placeholder={getAuthorNoteDefaultText()}
     />
-    <span class="text-textcolor2 mb-6 text-sm">{tokens.localNote} {language.tokens}</span>
+    <span class="text-textcolor2 mb-6 text-sm">{tokens.localNote ?? '…'} {language.tokens}</span>
 
     {#if !$MobileGUI}
         <Toggles bind:chara={characterStore.characters[$selectedCharID]} noContainer />
