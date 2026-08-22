@@ -138,4 +138,95 @@ describe('CharacterStore active-tracking persistence', () => {
         expect(committed.length).toBe(2)
         expect(committed[1].chats![0].data).toHaveProperty('note', 'edited note')
     })
+
+    it('tracks character order changes and direct additions when selectedId is -1', async () => {
+        const chars = [makeChar('a'), makeChar('b')]
+        characterStore.init(chars, mockStorage)
+        await new Promise((r) => setTimeout(r, 30))
+
+        // selectedId is -1 (default)
+        expect(characterStore.selectedId).toBe(-1)
+
+        // Push a new character directly (e.g. card import)
+        const imported = makeChar('imported')
+        characterStore.characters.push(imported)
+        await new Promise((r) => setTimeout(r, 30))
+        await characterStore.flush()
+
+        expect(committed.length).toBe(1)
+        expect(committed[0].characters).toHaveLength(1)
+        expect(committed[0].characters![0].id).toBe(imported.chaId)
+        expect(committed[0].characterIds).toHaveLength(3)
+
+        committed.length = 0
+
+        // Reorder characters
+        characterStore.characters.reverse()
+        await new Promise((r) => setTimeout(r, 30))
+        await characterStore.flush()
+
+        expect(committed.length).toBe(1)
+        expect(committed[0].action).toBe('order')
+        expect(committed[0].characterIds).toEqual(characterStore.characters.map((c) => c.chaId))
+    })
+
+    it('persists characters added via add() and handles remove()', async () => {
+        const chars = [makeChar('a')]
+        characterStore.init(chars, mockStorage)
+        await new Promise((r) => setTimeout(r, 30))
+
+        const newChar = makeChar('added-via-method')
+        const idx = characterStore.add(newChar)
+        expect(idx).toBe(1)
+        await characterStore.flush()
+
+        expect(committed.length).toBe(1)
+        expect(committed[0].characters![0].id).toBe(newChar.chaId)
+        expect(committed[0].characterIds).toContain(newChar.chaId)
+
+        committed.length = 0
+
+        characterStore.remove(0)
+        await characterStore.flush()
+
+        expect(committed.length).toBe(1)
+        expect(committed[0].characterIds).toEqual([newChar.chaId])
+    })
+
+    it('handles whole-object replacements via setCurrentCharacter and setCharacterByIndex', async () => {
+        const chars = [makeChar('a'), makeChar('b')]
+        characterStore.init(chars, mockStorage)
+        await new Promise((r) => setTimeout(r, 30))
+
+        characterStore.select(0)
+        await new Promise((r) => setTimeout(r, 30))
+
+        // Replace active character object
+        const replacedActive = makeChar('a-replaced')
+        replacedActive.chaId = chars[0].chaId
+        characterStore.setCurrentCharacter(replacedActive)
+        await characterStore.flush()
+
+        expect(committed.length).toBe(1)
+        expect((committed[0].characters![0].data as any).name).toBe('a-replaced')
+
+        // Subsequent mutations to the new object are tracked
+        committed.length = 0
+        characterStore.characters[0].name = 'a-replaced-and-mutated'
+        await new Promise((r) => setTimeout(r, 30))
+        await characterStore.flush()
+
+        expect(committed.length).toBe(1)
+        expect((committed[0].characters![0].data as any).name).toBe('a-replaced-and-mutated')
+
+        // Replace inactive character object
+        committed.length = 0
+        const replacedInactive = makeChar('b-replaced')
+        replacedInactive.chaId = chars[1].chaId
+        characterStore.setCharacterByIndex(1, replacedInactive)
+        await characterStore.flush()
+
+        expect(committed.length).toBe(1)
+        expect((committed[0].characters![0].data as any).name).toBe('b-replaced')
+    })
 })

@@ -16,7 +16,8 @@ class CharacterStore {
     private dirtyChatManifests = new Set<string>()  // character IDs whose chat list changed
     private dirtyCharacterIds = false               // character order changed
 
-    // Active-tracking effect lifecycle
+    // Effect lifecycles
+    private arrayDispose: (() => void) | null = null
     private activeDispose: (() => void) | null = null
     private charIdsSnapshot = ''
 
@@ -39,6 +40,8 @@ class CharacterStore {
 
     init(characters: (character | groupChat)[], storage: ISqlStorage): void {
         this.storage = storage
+        this.arrayDispose?.()
+        this.arrayDispose = null
         this.activeDispose?.()
         this.activeDispose = null
         this.dirtyCharacters.clear()
@@ -54,7 +57,39 @@ class CharacterStore {
         }
         this.charIdsSnapshot = characters.map((c) => c.chaId).join(',')
         this.characters = characters
+        this.selectedId = -1
+        this.observeArray()
         this.observeActive()
+    }
+
+    // ── Character array tracking (order & additions) ─────────────────
+
+    private observeArray(): void {
+        this.arrayDispose?.()
+        this.arrayDispose = null
+
+        const knownCharIds = new Set<string>(this.characters.map((c) => c.chaId).filter(Boolean))
+
+        this.arrayDispose = $effect.root(() => {
+            $effect(() => {
+                const chars = this.characters
+                let orderChanged = false
+                for (const c of chars) {
+                    if (!c.chaId) c.chaId = uuidv4()
+                    if (!knownCharIds.has(c.chaId)) {
+                        knownCharIds.add(c.chaId)
+                        this.dirtyCharacters.add(c.chaId)
+                        orderChanged = true
+                    }
+                }
+                const currentIds = chars.map((c) => c.chaId).join(',')
+                if (currentIds !== this.charIdsSnapshot || orderChanged) {
+                    this.charIdsSnapshot = currentIds
+                    this.dirtyCharacterIds = true
+                    this.scheduleCommit()
+                }
+            })
+        })
     }
 
     // ── Active character + active chat tracking ──────────────────────
@@ -154,17 +189,6 @@ class CharacterStore {
                 }
                 this.dirtyChatManifests.add(char.chaId)
                 this.scheduleCommit()
-            })
-
-            // Track character order changes (array-level)
-            $effect(() => {
-                const chars = this.characters
-                const currentIds = chars.map((c) => c.chaId || '').join(',')
-                if (currentIds !== this.charIdsSnapshot) {
-                    this.charIdsSnapshot = currentIds
-                    this.dirtyCharacterIds = true
-                    this.scheduleCommit()
-                }
             })
         })
     }
@@ -315,7 +339,11 @@ class CharacterStore {
 
     setCurrentCharacter(char: character | groupChat): void {
         if (this.selectedId >= 0 && this.selectedId < this.characters.length) {
+            char.chaId ||= this.characters[this.selectedId].chaId || uuidv4()
             this.characters[this.selectedId] = char
+            this.dirtyCharacters.add(char.chaId)
+            this.scheduleCommit()
+            this.observeActive()
         }
     }
 
@@ -324,7 +352,15 @@ class CharacterStore {
     }
 
     setCharacterByIndex(index: number, char: character | groupChat): void {
-        this.characters[index] = char
+        if (index >= 0 && index < this.characters.length) {
+            char.chaId ||= this.characters[index].chaId || uuidv4()
+            this.characters[index] = char
+            this.dirtyCharacters.add(char.chaId)
+            this.scheduleCommit()
+            if (index === this.selectedId) {
+                this.observeActive()
+            }
+        }
     }
 
     getCurrentChat(): Chat | undefined {
@@ -346,16 +382,22 @@ class CharacterStore {
 
     add(char: character | groupChat): number {
         char.chaId ||= uuidv4()
+        this.dirtyCharacters.add(char.chaId)
+        this.dirtyCharacterIds = true
         this.characters.push(char)
+        this.scheduleCommit()
         return this.characters.length - 1
     }
 
     remove(index: number): void {
         if (index >= 0 && index < this.characters.length) {
             this.characters.splice(index, 1)
+            this.dirtyCharacterIds = true
+            this.scheduleCommit()
             if (this.selectedId >= this.characters.length) {
                 this.selectedId = this.characters.length - 1
             }
+            this.observeActive()
         }
     }
 
@@ -375,6 +417,9 @@ class CharacterStore {
                             chats: existingChats,
                             detailsLoaded: true,
                         })
+                        if (idx === this.selectedId) {
+                            this.observeActive()
+                        }
                     }
                 }
             } catch (error) {
@@ -460,6 +505,8 @@ class CharacterStore {
             clearTimeout(this.debounceTimer)
             this.debounceTimer = null
         }
+        this.arrayDispose?.()
+        this.arrayDispose = null
         this.activeDispose?.()
         this.activeDispose = null
     }
