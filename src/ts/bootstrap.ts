@@ -182,11 +182,13 @@ export async function loadData() {
             const pluginsReady = Promise.all([
                 storage.loadPlugins(), storage.listPluginCustomStorageKeys(), storage.loadModules(),
                 storage.loadSettingKey('customModels'), storage.loadPersonas(),
-            ]).then(async ([plugins, pluginCustomStorageKeys, modules, customModels, personas]) => {
+                storage.loadSettingKey('personaPrompt'),
+            ]).then(async ([plugins, pluginCustomStorageKeys, modules, customModels, personas, personaPrompt]) => {
                 settingsStore.hydrate((state) => {
                     state.plugins = plugins ?? []
                     if (customModels !== undefined) state.customModels = customModels
                     state.personas = personas
+                    state.personaPrompt = personaPrompt ?? personas[state.selectedPersona]?.personaPrompt ?? ''
                 })
                 settingsStore.hydratePluginCustomStorageKeys(pluginCustomStorageKeys)
                 moduleStore.init(modules ?? [], activeDb.enabledModules ?? [])
