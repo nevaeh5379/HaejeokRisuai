@@ -28,7 +28,7 @@ const PROMPT_SETTING_KEYS = [
 // snapshot avoids opening a transaction (and consuming a pool connection) for
 // every lazy domain at the same time.
 const BOOTSTRAP_SETTING_KEYS = [
-    'plugins', 'personas', 'botPresets', 'loreBook', 'modules', 'globalscript',
+    'plugins', 'pluginCustomStorage', 'personas', 'botPresets', 'loreBook', 'modules', 'globalscript',
     'customModels', 'translatorPresets', 'loadouts', 'customBackground',
     ...PROMPT_SETTING_KEYS,
 ];

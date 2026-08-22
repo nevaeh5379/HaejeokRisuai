@@ -113,6 +113,7 @@ export function buildSqlReplaceCommit(database: Database, baseRevision: number):
     commit.replaceAll = true
     commit.characterIds = []
 
+    database.pluginCustomStorage ??= {}
     for (const [key, value] of Object.entries(database)) {
         if (key !== 'characters' && value !== undefined && typeof value !== 'function' &&
             key !== 'isSql') {

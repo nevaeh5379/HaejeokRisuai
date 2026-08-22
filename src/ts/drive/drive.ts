@@ -359,6 +359,7 @@ async function loadDrive(ACCESS_TOKEN:string, mode: 'backup'|'sync'):Promise<voi
             }
         }
         db.didFirstSetup = true
+        db.pluginCustomStorage ??= {}
         const storage = await getSqlStorage()
         await storage.replaceDatabase(db)
         lastSaved = Date.now()

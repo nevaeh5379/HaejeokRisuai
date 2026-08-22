@@ -55,6 +55,7 @@ class SettingsStore {
         const settingsCopy = { ...initialSettings }
         delete (settingsCopy as any).characters
         delete (settingsCopy as any).isSql
+        settingsCopy.pluginCustomStorage ??= {}
 
         for (const [key, val] of Object.entries(settingsCopy)) {
             if (key === 'characters' || key === 'isSql') continue
@@ -166,6 +167,28 @@ class SettingsStore {
         this.pendingUpserts.delete(keyStr)
         this.pendingDeletes.add(keyStr)
         this.scheduleCommit()
+    }
+
+    getPluginCustomStorage(): Record<string, any> {
+        this.state.pluginCustomStorage ??= {}
+        return this.state.pluginCustomStorage
+    }
+
+    setPluginCustomStorageKey(key: string, value: any): void {
+        this.state.pluginCustomStorage ??= {}
+        this.state.pluginCustomStorage[key] = value
+        this.set('pluginCustomStorage' as any, this.state.pluginCustomStorage)
+    }
+
+    removePluginCustomStorageKey(key: string): void {
+        this.state.pluginCustomStorage ??= {}
+        delete this.state.pluginCustomStorage[key]
+        this.set('pluginCustomStorage' as any, this.state.pluginCustomStorage)
+    }
+
+    clearPluginCustomStorage(): void {
+        this.state.pluginCustomStorage = {}
+        this.set('pluginCustomStorage' as any, {})
     }
 
     dispose(): void {

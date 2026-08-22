@@ -5,6 +5,7 @@ import {
     createEmptySqlCommit,
     hasSqlCommitChanges,
 } from './sqlCommit'
+import type { Database } from './database.svelte'
 
 describe('SQL row commits', () => {
     it('keeps character, chat, and message rows separate during explicit import', () => {
@@ -30,7 +31,10 @@ describe('SQL row commits', () => {
 
         expect(commit.baseRevision).toBe(7)
         expect(commit.replaceAll).toBe(true)
-        expect(commit.root.upserts).toEqual([{ key: 'username', value: 'User' }])
+        expect(commit.root.upserts).toEqual([
+            { key: 'username', value: 'User' },
+            { key: 'pluginCustomStorage', value: {} },
+        ])
         expect(commit.characters).toHaveLength(1)
         expect(commit.characters[0].data).not.toHaveProperty('chats')
         expect(commit.chats).toHaveLength(1)
@@ -96,6 +100,41 @@ describe('SQL row commits', () => {
         expect(pluginStorageStmt?.bind[1]).toBe(JSON.stringify({ setting1: 'val1' }))
     })
 
+    it('executes targeted plugin_custom_storage deletion when keys are removed', async () => {
+        const commit = createEmptySqlCommit(2)
+        commit.root.upserts.push({
+            key: 'pluginCustomStorage',
+            value: {
+                'plugin-a': { key: 'a' },
+            },
+        })
+        const statements: { sql: string; bind: unknown[] }[] = []
+
+        await applySqliteCommit(commit, (sql, bind = []) => {
+            statements.push({ sql, bind })
+        })
+
+        const deleteNotInStmt = statements.find((s) => s.sql.includes('DELETE FROM plugin_custom_storage WHERE key NOT IN'))
+        expect(deleteNotInStmt).toBeDefined()
+        expect(deleteNotInStmt?.bind).toEqual(['plugin-a'])
+    })
+
+    it('clears plugin_custom_storage table when pluginCustomStorage is an empty object', async () => {
+        const commit = createEmptySqlCommit(3)
+        commit.root.upserts.push({
+            key: 'pluginCustomStorage',
+            value: {},
+        })
+        const statements: { sql: string; bind: unknown[] }[] = []
+
+        await applySqliteCommit(commit, (sql, bind = []) => {
+            statements.push({ sql, bind })
+        })
+
+        const clearStmt = statements.find((s) => s.sql === 'DELETE FROM plugin_custom_storage')
+        expect(clearStmt).toBeDefined()
+    })
+
     it('executes targeted message deletions with messageDeletes', async () => {
         const commit = createEmptySqlCommit(5, 'message-delete')
         commit.messageDeletes = [{
@@ -113,4 +152,18 @@ describe('SQL row commits', () => {
         expect(statements[0].sql).toBe('DELETE FROM messages WHERE chat_id = ? AND id IN (?,?)')
         expect(statements[0].bind).toEqual(['chat-1', 'msg-1', 'msg-2'])
     })
+
+    it('ensures pluginCustomStorage is always included in buildSqlReplaceCommit root upserts', () => {
+        const minimalDb = {
+            apiType: 'gemini-3-flash-preview',
+            characters: [],
+        } as unknown as Database
+
+        const commit = buildSqlReplaceCommit(minimalDb, 0)
+        expect(commit.replaceAll).toBe(true)
+        const pluginStorageUpsert = commit.root.upserts.find((u) => u.key === 'pluginCustomStorage')
+        expect(pluginStorageUpsert).toBeDefined()
+        expect(pluginStorageUpsert?.value).toEqual({})
+    })
 })
+

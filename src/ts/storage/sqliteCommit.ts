@@ -9,12 +9,24 @@ export async function applySqliteCommit(commit: SqlCommit, execute: SqliteExecut
 
     for (const upsert of commit.root.upserts) {
         await execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))", [upsert.key, JSON.stringify(upsert.value)])
-        if (upsert.key === 'pluginCustomStorage' && upsert.value && typeof upsert.value === 'object') {
-            for (const [pluginKey, pluginVal] of Object.entries(upsert.value)) {
-                await execute(
-                    "INSERT OR REPLACE INTO plugin_custom_storage (key, value, updated_at) VALUES (?, ?, datetime('now'))",
-                    [pluginKey, JSON.stringify(pluginVal)],
-                )
+        if (upsert.key === 'pluginCustomStorage') {
+            if (upsert.value && typeof upsert.value === 'object') {
+                const entries = Object.entries(upsert.value)
+                if (entries.length === 0) {
+                    await execute('DELETE FROM plugin_custom_storage')
+                } else {
+                    const keys = entries.map(([k]) => k)
+                    const placeholders = keys.map(() => '?').join(',')
+                    await execute(`DELETE FROM plugin_custom_storage WHERE key NOT IN (${placeholders})`, keys)
+                    for (const [pluginKey, pluginVal] of entries) {
+                        await execute(
+                            "INSERT OR REPLACE INTO plugin_custom_storage (key, value, updated_at) VALUES (?, ?, datetime('now'))",
+                            [pluginKey, JSON.stringify(pluginVal)],
+                        )
+                    }
+                }
+            } else {
+                await execute('DELETE FROM plugin_custom_storage')
             }
         }
     }

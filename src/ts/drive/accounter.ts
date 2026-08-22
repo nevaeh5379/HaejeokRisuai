@@ -1,5 +1,5 @@
 import { hubURL } from '../hub'
-import { getDatabase, setDatabase } from "../storage/database.svelte"
+import { getDatabase, normalizeDatabaseDefaults, setDatabase } from "../storage/database.svelte"
 import { alertConfirm, alertError, alertMd, alertNormal, alertSelect, alertWait } from "../alert"
 import { AppendableBuffer } from "../globalApi.svelte"
 import { decodeRisuSave } from "../storage/risuSave"
@@ -133,6 +133,8 @@ export async function loadRisuAccountBackup() {
         alertWait("Loading backup")
 
         const restoredDb = await decodeRisuSave(buf.buffer)
+        normalizeDatabaseDefaults(restoredDb)
+        restoredDb.pluginCustomStorage ??= {}
         const storage = await getSqlStorage()
         await storage.replaceDatabase(restoredDb)
 

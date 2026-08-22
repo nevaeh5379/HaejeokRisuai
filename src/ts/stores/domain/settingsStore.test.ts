@@ -230,4 +230,60 @@ describe('SettingsStore Reactivity and Persistence', () => {
             ],
         })
     })
+
+    it('persists pluginCustomStorage mutations and key removals', async () => {
+        settingsStore.init(
+            {
+                pluginCustomStorage: {
+                    existingPlugin: { opt: true },
+                },
+            } as any,
+            mockStorage,
+        )
+
+        // 1. Add/update plugin key
+        settingsStore.setPluginCustomStorageKey('myPlugin', { count: 42 })
+
+        await vi.waitFor(async () => {
+            await settingsStore.flush()
+            expect(committed.length).toBe(1)
+        })
+
+        expect(committed[0].root.upserts).toContainEqual({
+            key: 'pluginCustomStorage',
+            value: {
+                existingPlugin: { opt: true },
+                myPlugin: { count: 42 },
+            },
+        })
+
+        // 2. Remove a plugin key
+        settingsStore.removePluginCustomStorageKey('existingPlugin')
+
+        await vi.waitFor(async () => {
+            await settingsStore.flush()
+            expect(committed.length).toBe(2)
+        })
+
+        expect(committed[1].root.upserts).toContainEqual({
+            key: 'pluginCustomStorage',
+            value: {
+                myPlugin: { count: 42 },
+            },
+        })
+
+        // 3. Clear all plugin storage
+        settingsStore.clearPluginCustomStorage()
+
+        await vi.waitFor(async () => {
+            await settingsStore.flush()
+            expect(committed.length).toBe(3)
+        })
+
+        expect(committed[2].root.upserts).toContainEqual({
+            key: 'pluginCustomStorage',
+            value: {},
+        })
+    })
 })
+

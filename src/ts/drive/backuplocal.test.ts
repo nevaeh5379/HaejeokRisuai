@@ -89,4 +89,21 @@ describe('hydrateLazyDatabaseFromSnapshot', () => {
         expect((db as any).modules).toEqual([{ id: 'mod-1', name: 'Restored module' }])
         expect(db.pluginCustomStorage).toEqual({ myPlugin: { key: 'value' } })
     })
+
+    it('preserves existing pluginCustomStorage and initializes missing pluginCustomStorage during normalization', async () => {
+        const { normalizeDatabaseDefaults } = await import('../storage/database.svelte')
+        const emptyDb = {} as Database
+        normalizeDatabaseDefaults(emptyDb)
+        expect(emptyDb.pluginCustomStorage).toEqual({})
+
+        const existingDb = {
+            pluginCustomStorage: {
+                pm_store: { version: 5 },
+            },
+        } as unknown as Database
+        normalizeDatabaseDefaults(existingDb)
+        expect(existingDb.pluginCustomStorage).toEqual({
+            pm_store: { version: 5 },
+        })
+    })
 })

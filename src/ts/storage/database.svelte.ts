@@ -119,6 +119,9 @@ export function normalizeDatabaseDefaults(data:Database){
     if(checkNullish(data.plugins)){
         data.plugins = []
     }
+    if(checkNullish(data.pluginCustomStorage)){
+        data.pluginCustomStorage = {}
+    }
     if(checkNullish(data.zoomsize)){
         data.zoomsize = 100
     }

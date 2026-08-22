@@ -153,6 +153,7 @@ export class TauriSqliteStorage implements ISqlStorage {
                 }
             }
         }
+        db.pluginCustomStorage ??= {}
 
         // Load characters
         const charRows = await this.selectRows<{

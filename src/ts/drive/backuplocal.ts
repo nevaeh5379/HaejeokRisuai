@@ -4,7 +4,7 @@ import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm, 
 import { LocalWriter, forageStorage } from "../globalApi.svelte";
 import { isNodeServer, isTauri } from "src/ts/platform"
 import { decodeRisuSave, encodeRisuSaveLegacy, encodeRisuSaveLegacyAsync } from "../storage/risuSave";
-import { getDatabase, setDatabaseLite, type Database } from "../storage/database.svelte";
+import { getDatabase, normalizeDatabaseDefaults, setDatabaseLite, type Database } from "../storage/database.svelte";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { decryptBuffer, encryptBuffer, sleep } from "../util";
 import { hubURL } from "../characterCards";
@@ -510,6 +510,7 @@ export async function SaveLocalBackup(){
             if (key === 'account' || typeof value === 'function') continue
             cleanDb[key] = value
         }
+        cleanDb.pluginCustomStorage ??= {}
         let dbData = await encodeRisuSaveLegacyAsync(cleanDb, 'compression')
 
         if(forageStorage.isAccount && location.origin.endsWith('risuai.xyz')){
@@ -767,6 +768,7 @@ export async function SavePartialLocalBackup(){
             if (key === 'account' || typeof value === 'function') continue
             cleanDb[key] = value
         }
+        cleanDb.pluginCustomStorage ??= {}
         const dbData = await encodeRisuSaveLegacyAsync(cleanDb, 'compression')
 
         alertProgress(`Saving partial local backup... (Writing database)`, 98)
@@ -1085,6 +1087,8 @@ export function LoadLocalBackup(){
             }
             alertProgress('Decoding database...', 95)
             const dbData = await decodeRisuSave(db);
+            normalizeDatabaseDefaults(dbData);
+            dbData.pluginCustomStorage ??= {};
             const missingColdStorageKeys:string[] = []
             for(const key of await listColdDataKeys(dbData)){
                 if(restoredColdStorageKeys.has(key)){

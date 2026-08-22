@@ -183,6 +183,7 @@ export class WebSqliteStorage implements ISqlStorage {
                 }
             }
         }
+        db.pluginCustomStorage ??= {}
 
         const charRows = this.selectRows(
             'SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded, data FROM characters ORDER BY position',

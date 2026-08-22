@@ -910,6 +910,8 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
                 } else {
                     const plugins = await this.loadPlugins()
                     if (plugins) body.database.plugins = plugins
+                    const pluginStorage = await this.loadPluginCustomStorage()
+                    if (pluginStorage) body.database.pluginCustomStorage = pluginStorage
                 }
                 body.database.pluginCustomStorage ??= {}
                 this.revision = body.revision

@@ -687,131 +687,141 @@ export const getV2PluginAPIs = () => {
         apiVersion: "2.1",
         apiVersionCompatibleWith: ["2.0","2.1"],
         getDatabase: () => {
-            const db = getDatabase()
-            if(!db){
-                return {}
-            }
-            return new Proxy(db, {
+            return new Proxy({} as any, {
                 get(target, prop) {
-                    if (typeof prop === 'string' && allowedDbKeys.includes(prop)) {
-                        return (target as any)[prop];
-                    }
-                    else if(target.pluginCustomStorage){
-                        console.log('Getting custom db property', prop.toString());
-                        return target.pluginCustomStorage[prop.toString()];
+                    if (typeof prop === 'string') {
+                        if (allowedDbKeys.includes(prop)) {
+                            return settingsStore.state[prop];
+                        }
+                        const custom = settingsStore.state.pluginCustomStorage;
+                        if (custom && prop in custom) {
+                            return $state.snapshot(custom[prop]);
+                        }
                     }
                     return undefined;
                 },
                 set(target, prop, value) {
-                    if (typeof prop === 'string' && allowedDbKeys.includes(prop)) {
-                        (target as any)[prop] = value;
-                        return true;
+                    if (typeof prop === 'string') {
+                        if (allowedDbKeys.includes(prop)) {
+                            settingsStore.set(prop as any, value);
+                            return true;
+                        } else {
+                            settingsStore.setPluginCustomStorageKey(prop, value);
+                            return true;
+                        }
                     }
-                    else{
-                        console.log('Setting custom db property', prop.toString(), value);
-                        target.pluginCustomStorage ??= {}
-                        target.pluginCustomStorage[prop.toString()] = value;
-                        return true;
-                    }
+                    return false;
                 },
                 ownKeys(target) {
-                    const keys = Reflect.ownKeys(target).filter(key => typeof key === 'string' && allowedDbKeys.includes(key));
-                    if(target.pluginCustomStorage){
-                        keys.push(...Object.keys(target.pluginCustomStorage));
+                    const keys = Object.keys(settingsStore.state).filter(key => allowedDbKeys.includes(key));
+                    const custom = settingsStore.state.pluginCustomStorage;
+                    if (custom) {
+                        keys.push(...Object.keys(custom));
                     }
-                    return keys;
+                    return Array.from(new Set(keys));
+                },
+                has(target, prop) {
+                    if (typeof prop === 'string') {
+                        if (allowedDbKeys.includes(prop) && prop in settingsStore.state) return true;
+                        const custom = settingsStore.state.pluginCustomStorage;
+                        if (custom && prop in custom) return true;
+                    }
+                    return false;
+                },
+                getOwnPropertyDescriptor(target, prop) {
+                    if (typeof prop === 'string') {
+                        if (allowedDbKeys.includes(prop) && prop in settingsStore.state) {
+                            return { value: settingsStore.state[prop], writable: true, enumerable: true, configurable: true };
+                        }
+                        const custom = settingsStore.state.pluginCustomStorage;
+                        if (custom && prop in custom) {
+                            return { value: custom[prop], writable: true, enumerable: true, configurable: true };
+                        }
+                    }
+                    return undefined;
                 },
                 deleteProperty(target, prop) {
-                    console.log('Attempt to delete db.' + String(prop) + ' denied in safe database proxy.');
+                    if (typeof prop === 'string') {
+                        if (allowedDbKeys.includes(prop)) {
+                            console.log('Attempt to delete db.' + String(prop) + ' denied in safe database proxy.');
+                            return false;
+                        }
+                        settingsStore.removePluginCustomStorageKey(prop);
+                        return true;
+                    }
                     return false;
                 },
                 getPrototypeOf(target) {
                     return Reflect.getPrototypeOf(target);
                 },
-            })
+            });
         },
         pluginStorage: {
             getItem: async (key: string) => {
-                const db = getDatabase({ snapshot: true });
-                db.pluginCustomStorage ??= {}
-                if (db.pluginCustomStorage[key] !== undefined && db.pluginCustomStorage[key] !== null) {
-                    return db.pluginCustomStorage[key];
+                const custom = settingsStore.state.pluginCustomStorage ?? {};
+                if (custom[key] !== undefined && custom[key] !== null) {
+                    return $state.snapshot(custom[key]);
                 }
                 if (isNodeServer && forageStorage.realStorage instanceof NodeStorage && forageStorage.realStorage.postgres.isEnabled()) {
                     try {
                         const loaded = await forageStorage.realStorage.postgres.loadPluginCustomStorageKey(key);
                         if (loaded !== undefined && loaded !== null) {
-                            const realDb = getDatabase();
-                            realDb.pluginCustomStorage ??= {}
-                            realDb.pluginCustomStorage[key] = loaded;
-                            return loaded;
+                            settingsStore.setPluginCustomStorageKey(key, loaded);
+                            return $state.snapshot(loaded);
                         }
                     } catch (err) {
                         console.error(`Failed to load plugin custom storage key '${key}':`, err);
                     }
                 }
-                return db.pluginCustomStorage[key] || null;
+                return custom[key] !== undefined && custom[key] !== null ? $state.snapshot(custom[key]) : null;
             },
             setItem: (key: string, value: any) => {
-                const db = getDatabase();
-                db.pluginCustomStorage ??= {}
-                db.pluginCustomStorage[key] = value;
+                settingsStore.setPluginCustomStorageKey(key, value);
             },
             removeItem: (key: string) => {
-                const db = getDatabase();
-                db.pluginCustomStorage ??= {}
-                delete db.pluginCustomStorage[key];
+                settingsStore.removePluginCustomStorageKey(key);
             },
             clear: () => {
-                const db = getDatabase();
-                db.pluginCustomStorage = {};
+                settingsStore.clearPluginCustomStorage();
             },
             key: (index: number) => {
-                const db = getDatabase();
-                db.pluginCustomStorage ??= {}
-                const keys = Object.keys(db.pluginCustomStorage);
+                const custom = settingsStore.state.pluginCustomStorage ?? {};
+                const keys = Object.keys(custom);
                 return keys[index] || null;
             },
             keys: () => {
-                const db = getDatabase();
-                db.pluginCustomStorage ??= {}
-                return Object.keys(db.pluginCustomStorage);
+                const custom = settingsStore.state.pluginCustomStorage ?? {};
+                return Object.keys(custom);
             },
             length: () => {
-                const db = getDatabase();
-                db.pluginCustomStorage ??= {}
-                return Object.keys(db.pluginCustomStorage).length;
+                const custom = settingsStore.state.pluginCustomStorage ?? {};
+                return Object.keys(custom).length;
             }
         },
         setDatabaseLite: (newDb: any) => {
-            const db = getDatabase();
-            db.pluginCustomStorage ??= {}
+            if (!newDb || typeof newDb !== 'object') return;
             for (const key of Object.keys(newDb)) {
                 if (allowedDbKeys.includes(key)) {
-                    (db as any)[key] = newDb[key];
-                }
-                else{
-                    db.pluginCustomStorage[key] = newDb[key];
+                    settingsStore.set(key as any, newDb[key]);
+                } else {
+                    settingsStore.setPluginCustomStorageKey(key, newDb[key]);
                 }
             }
         },
         setDatabase: async (newDb: any) => {
-            const db = getDatabase();
-            db.pluginCustomStorage ??= {}
+            if (!newDb || typeof newDb !== 'object') return;
             for (const key of Object.keys(newDb)) {
                 if (key === 'plugins') {
-                    console.warn('[WARN] Plugin attempted to access plugin directly. this would be blocked in future versions. Instead, use the provided APIs to manage plugins. Attempting to handle plugin installation via plugin for new plugins in the provided database object.')
-                    newDb[key] = await handlePluginInstallViaPlugin(newDb.plugins)
+                    console.warn('[WARN] Plugin attempted to access plugin directly. this would be blocked in future versions. Instead, use the provided APIs to manage plugins. Attempting to handle plugin installation via plugin for new plugins in the provided database object.');
+                    newDb[key] = await handlePluginInstallViaPlugin(newDb.plugins);
                 }
                 
                 if (allowedDbKeys.includes(key)) {
-                    (db as any)[key] = newDb[key];
-                }
-                else{
-                    db.pluginCustomStorage[key] = newDb[key];
+                    settingsStore.set(key as any, newDb[key]);
+                } else {
+                    settingsStore.setPluginCustomStorageKey(key, newDb[key]);
                 }
             }
-            setDatabase(db);
         },
         SafeFunction: new Proxy(Function, {
             construct(target, args) {
