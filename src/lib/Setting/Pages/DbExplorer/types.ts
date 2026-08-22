@@ -46,3 +46,23 @@ export type BotStatsSortType = 'messages_desc' | 'sessions_desc' | 'recent_desc'
 export type ModelStatsSortType = 'tokens_desc' | 'requests_desc' | 'name_asc'
 export type HistoryScopeFilter = 'all' | 'database' | 'cold-storage' | 'restore'
 
+export interface ParsedTableInfo extends NodePostgresTableInfo {
+    schema: string
+    shortName: string
+}
+
+export interface TableContextMenuData {
+    open: boolean
+    x: number
+    y: number
+    type: 'cell' | 'header' | 'table'
+    columnName?: string
+    columnInfo?: NodePostgresColumnInfo
+    cellValue?: unknown
+    row?: Record<string, unknown>
+    tableName?: string
+}
+
+export type TableDisplayMode = 'card' | 'table'
+export type TableMobileView = 'tables' | 'data'
+
