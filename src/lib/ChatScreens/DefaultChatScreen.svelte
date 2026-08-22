@@ -7,24 +7,18 @@
     import Chat from "./Chat.svelte";
     import { type Message } from "../../ts/storage/database.svelte";
     import { characterStore, settingsStore, personaStore, messageStore, presetStore } from 'src/ts/stores/domain';
-    import { getCharImage } from "../../ts/characters";
-    import { chatProcessStage, doingChat, sendChat } from "../../ts/process/index.svelte";
+    import { getCharImage } from "../../ts/characterImage";
+    import { chatProcessStage, doingChat } from "../../ts/process/chatRuntimeState";
     import { sleep } from "../../ts/util";
     import { language } from "../../lang";
-    import { isExpTranslator, translate } from "../../ts/translator/translator";
     import { alertError, alertNormal, alertWait, showHypaV2Alert } from "../../ts/alert";
     import sendSound from '../../etc/send.mp3'
     import { processScript } from "src/ts/process/scripts";
     import CreatorQuote from "./CreatorQuote.svelte";
-    import { stopTTS } from "src/ts/process/tts";
     import MainMenu from '../UI/MainMenu.svelte';
     import AssetInput from './AssetInput.svelte';
     import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile } from 'src/ts/globalApi.svelte';
-    import { runTrigger } from 'src/ts/process/triggers';
     import { v4 } from 'uuid';
-    import { PreUnreroll, Prereroll } from 'src/ts/process/prereroll';
-    import { processMultiCommand } from 'src/ts/process/command';
-    import { postChatFile } from 'src/ts/process/files/multisend';
     import { getInlayAsset } from 'src/ts/process/files/inlays';
     import { ConnectionOpenStore } from 'src/ts/sync/multiuserState';
     import { coldStorageHeader, preLoadChat } from 'src/ts/process/coldstorage.svelte';
@@ -190,6 +184,7 @@
         let cha = activeChat.message
 
         if(messageInput.startsWith('/')){
+            const { processMultiCommand } = await import('src/ts/process/command')
             const commandProcessed = await processMultiCommand(messageInput)
             if(commandProcessed !== false){
                 messageInput = ''
@@ -221,6 +216,7 @@
         else{
             const char = characterStore.characters[selectedChar]
             if(char.type === 'character'){
+                const { runTrigger } = await import('src/ts/process/triggers')
                 let triggerResult = await runTrigger(char,'input', {chat: char.chats[char.chatPage]})
                 if(triggerResult){
                     cha = triggerResult.chat.message
@@ -270,6 +266,7 @@
         const msgs = activeChat.message
         const genId = msgs.at(-1)?.generationInfo?.generationId
         if(genId){
+            const { Prereroll } = await import('src/ts/process/prereroll')
             const r = Prereroll(genId)
             if(r){
                 msgs[msgs.length - 1].data = r
@@ -320,6 +317,7 @@
         const msgs = activeChat.message
         const genId = msgs.at(-1)?.generationInfo?.generationId
         if(genId){
+            const { PreUnreroll } = await import('src/ts/process/prereroll')
             const r = PreUnreroll(genId)
             if(r){
                 msgs[msgs.length - 1].data = r
@@ -347,6 +345,7 @@
         messageInput = ''
         abortController = new AbortController()
         try {
+            const { sendChat } = await import('../../ts/process/index.svelte')
             await sendChat(-1, {
                 signal:abortController.signal,
                 continue:continued
@@ -453,6 +452,7 @@
         if(!settingsStore.state.useAutoTranslateInput){
             return
         }
+        const { isExpTranslator, translate } = await import('../../ts/translator/translator')
         if(isExpTranslator()){
             if(!reverse){
                 messageInputTranslate = ''
@@ -685,6 +685,7 @@
                                     reader.onload = async (e) => {
                                         const buf = e.target?.result as ArrayBuffer
                                         const uint8 = new Uint8Array(buf)
+                                        const { postChatFile } = await import('src/ts/process/files/multisend')
                                         const results = await postChatFile({
                                             name: file.name,
                                             data: uint8
@@ -980,7 +981,7 @@
                     <!-- svelte-ignore block_empty -->
                     {#if characterStore.characters[$selectedCharID].ttsMode === 'webspeech' || characterStore.characters[$selectedCharID].ttsMode === 'elevenlab'}
                         <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => {
-                            stopTTS()
+                            void import('src/ts/process/tts').then(({ stopTTS }) => stopTTS())
                         }}>
                             <MicOffIcon />
                             <span class="ml-2">{language.ttsStop}</span>
@@ -1073,6 +1074,7 @@
                     </div>
 
                     <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={async () => {
+                        const { postChatFile } = await import('src/ts/process/files/multisend')
                         const results = await postChatFile(messageInput)
                         if(!results) return
                         for(const res of results){

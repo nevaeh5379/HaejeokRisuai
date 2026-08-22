@@ -7,6 +7,21 @@ import { getMimeType } from './media/mimeType'
 export const fullImageBlobCache = new Map<string, string>()
 const characterImagePreloads = new Map<string, Promise<void>>()
 
+export function releaseCharacterImageCache(prefix: string): void {
+    const releasedUrls = new Set<string>()
+    for (const [key, value] of fullImageBlobCache) {
+        if (!key.startsWith(prefix)) continue
+        fullImageBlobCache.delete(key)
+        if (value.startsWith('blob:')) releasedUrls.add(value)
+    }
+
+    for (const url of releasedUrls) {
+        if (![...fullImageBlobCache.values()].includes(url)) {
+            URL.revokeObjectURL(url)
+        }
+    }
+}
+
 /**
  * Starts fetching and decoding a character image before a component needs it.
  * Keeping the Image instance inside the promise ensures the browser can reuse
@@ -121,8 +136,8 @@ export async function getCharImagesBatch(
                 const bulkOpts = {
                     size: options.size,
                     thumbnail: options.thumbnail,
-                    width: options.width ?? (options.size === 'display' ? 512 : (options.thumbnail ? 128 : undefined)),
-                    height: options.height ?? (options.size === 'display' ? 768 : (options.thumbnail ? 128 : undefined))
+                    width: options.width ?? (options.size === 'display' ? 512 : (options.size === 'thumb' || options.thumbnail ? 128 : undefined)),
+                    height: options.height ?? (options.size === 'display' ? 768 : (options.size === 'thumb' || options.thumbnail ? 128 : undefined))
                 }
                 for(let offset=0;offset<assetLocs.length;offset+=NODE_IMAGE_BATCH_SIZE){
                     const batch = assetLocs.slice(offset, offset + NODE_IMAGE_BATCH_SIZE)
@@ -132,7 +147,7 @@ export async function getCharImagesBatch(
                             const buf = itemsMap.get(loc)
                             const cacheKey = `${sizeKey}_${loc}`
                             if (buf && buf.length > 0) {
-                                const mime = (options.size === 'display' || options.thumbnail) ? 'image/webp' : getMimeType(loc)
+                                const mime = (options.size === 'display' || options.size === 'thumb' || options.thumbnail) ? 'image/webp' : getMimeType(loc)
                                 const blob = new Blob([buf as any], { type: mime })
                                 const blobUrl = URL.createObjectURL(blob)
                                 fullImageBlobCache.set(cacheKey, blobUrl)

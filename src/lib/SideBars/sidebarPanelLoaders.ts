@@ -24,6 +24,10 @@ export const loadSideChatList = createCachedLoader<ComponentModule>(
     () => import('./SideChatListForCurrent.svelte'),
 )
 
-export async function preloadSidebarPanels(): Promise<void> {
-    await Promise.allSettled([loadCharConfig(), loadSideChatList()])
+export async function preloadChatSidebarPanel(): Promise<void> {
+    await loadSideChatList().catch(() => undefined)
+}
+
+export async function preloadCharacterSidebarPanel(): Promise<void> {
+    await loadCharConfig().catch(() => undefined)
 }

@@ -5,7 +5,7 @@
     import { isLite } from "src/ts/lite";
     import LazyComponent from '../Others/LazyComponent.svelte'
     import { onMount } from 'svelte'
-    import { loadCharConfig, loadSideChatList, preloadSidebarPanels } from '../SideBars/sidebarPanelLoaders'
+    import { loadCharConfig, loadSideChatList, preloadChatSidebarPanel } from '../SideBars/sidebarPanelLoaders'
     
     const settingsLoader = () => import('../Setting/Settings.svelte')
     const realmLoader = () => import('../UI/Realm/RealmMain.svelte')
@@ -19,10 +19,10 @@
             cancelIdleCallback?: (handle: number) => void
         }
         if (idleWindow.requestIdleCallback) {
-            const handle = idleWindow.requestIdleCallback(() => void preloadSidebarPanels(), { timeout: 2000 })
+            const handle = idleWindow.requestIdleCallback(() => void preloadChatSidebarPanel(), { timeout: 2000 })
             return () => idleWindow.cancelIdleCallback?.(handle)
         }
-        const handle = globalThis.setTimeout(() => void preloadSidebarPanels(), 200)
+        const handle = globalThis.setTimeout(() => void preloadChatSidebarPanel(), 200)
         return () => globalThis.clearTimeout(handle)
     })
 </script>

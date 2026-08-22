@@ -4,10 +4,7 @@
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme"
     import { longpress } from "src/ts/gui/longtouch"
     import { getModelInfo } from "src/ts/model/modellist"
-    import { runLuaButtonTrigger } from 'src/ts/process/scriptings'
     import { risuChatParser } from "src/ts/process/scripts"
-    import { runTrigger } from 'src/ts/process/triggers'
-    import { sayTTS } from "src/ts/process/tts"
     import { ReloadChatPointer, CurrentTriggerIdStore, popupStore } from 'src/ts/stores.svelte'
     import { characterStore, settingsStore, messageStore } from 'src/ts/stores/domain'
     import { ConnectionOpenStore } from 'src/ts/sync/multiuserState'
@@ -25,7 +22,6 @@
     import ChatBody from './ChatBody.svelte'
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
-    import { getLLMCache, setLLMCache } from "../../ts/translator/translator"
     import { preLoadChat } from "../../ts/process/coldstorage.svelte"
 
     let translating = $state(false)
@@ -217,6 +213,7 @@
 
     async function loadTranslationForEdit() {
         const key = await getTranslationCacheKey()
+        const { getLLMCache } = await import('../../ts/translator/translator')
         const cached = await getLLMCache(key)
         editTranslationText = cached ?? ''
         editTranslationMode = true
@@ -224,6 +221,7 @@
 
     async function saveTranslationEdit() {
         const key = await getTranslationCacheKey()
+        const { setLLMCache } = await import('../../ts/translator/translator')
         await setLLMCache(key, editTranslationText)
         editTranslationMode = false
     }
@@ -302,16 +300,17 @@
         const triggerId = origin.getAttribute('risu-id')
         const btnEvent = origin.getAttribute('risu-btn')
 
-        const triggerResult =
-            triggerName ?
-                await runTrigger(currentChar, 'manual', {
+        const triggerResult = triggerName
+            ? await import('src/ts/process/triggers').then(({ runTrigger }) =>
+                runTrigger(currentChar, 'manual', {
                     chat: getCurrentChat(),
                     manualName: triggerName,
                     triggerId: triggerId || undefined,
-                }) :
-            btnEvent ?
-                await runLuaButtonTrigger(currentChar, btnEvent) :
-            null
+                }))
+            : btnEvent
+                ? await import('src/ts/process/scriptings').then(({ runLuaButtonTrigger }) =>
+                    runLuaButtonTrigger(currentChar, btnEvent))
+                : null
 
         if(triggerResult) {
             setCurrentChat(triggerResult.chat)
@@ -823,7 +822,8 @@
 {/if}
 {#if idx > -1}
     {#if characterStore.characters[selIdState.selId].type !== 'group' && characterStore.characters[selIdState.selId].ttsMode !== 'none' && (characterStore.characters[selIdState.selId].ttsMode)}
-        <button class="flex items-center hover:text-blue-500 transition-colors button-icon-tts" onclick={()=>{
+        <button class="flex items-center hover:text-blue-500 transition-colors button-icon-tts" onclick={async ()=>{
+            const { sayTTS } = await import('src/ts/process/tts')
             return sayTTS(null, isOptimizedStreamingMessage ? rawStreamingText : message)
         }}>
             <Volume2Icon size={20}/>

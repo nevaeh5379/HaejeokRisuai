@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => {
     class NodeStorage {
-        getItems = vi.fn(async (_keys: string[]) => {
+        getItems = vi.fn(async (_keys: string[]): Promise<Map<string, Uint8Array>> => {
             throw new Error('bulk unavailable')
         })
         getDirectUrl = vi.fn(async () => '/api/read')
@@ -33,7 +33,7 @@ vi.mock(import('./media/mimeType'), () => ({
     getMimeType: () => 'image/png',
 }))
 
-import { fullImageBlobCache, getCharImagesBatch, preloadCharacterImage } from './characterImage'
+import { fullImageBlobCache, getCharImagesBatch, preloadCharacterImage, releaseCharacterImageCache } from './characterImage'
 
 describe('getCharImagesBatch', () => {
     beforeEach(() => {
@@ -53,6 +53,39 @@ describe('getCharImagesBatch', () => {
         expect(mocks.getFileSrc).not.toHaveBeenCalled()
         expect([...result.values()]).toEqual(Array(50).fill('/none.webp'))
         consoleError.mockRestore()
+    })
+
+    it('uses thumbnail dimensions and WebP blobs for thumb batches', async () => {
+        mocks.storage.getItems.mockResolvedValueOnce(new Map([
+            ['assets/image.png', new Uint8Array([1, 2, 3])],
+        ]))
+        const createObjectURL = vi.fn(() => 'blob:thumb')
+        vi.stubGlobal('URL', { createObjectURL, revokeObjectURL: vi.fn() })
+
+        const result = await getCharImagesBatch(['assets/image.png'], { size: 'thumb' })
+
+        expect(mocks.storage.getItems).toHaveBeenCalledWith(
+            ['assets/image.png'],
+            undefined,
+            expect.objectContaining({ size: 'thumb', width: 128, height: 128 }),
+        )
+        expect(createObjectURL).toHaveBeenCalledWith(expect.objectContaining({ type: 'image/webp' }))
+        expect(result.get('assets/image.png')).toBe('blob:thumb')
+        vi.unstubAllGlobals()
+    })
+
+    it('releases only matching cached blob URLs', () => {
+        const revokeObjectURL = vi.fn()
+        vi.stubGlobal('URL', { createObjectURL: vi.fn(), revokeObjectURL })
+        fullImageBlobCache.set('thumb_a', 'blob:thumb-a')
+        fullImageBlobCache.set('display_b', 'blob:display-b')
+
+        releaseCharacterImageCache('thumb_')
+
+        expect(fullImageBlobCache.has('thumb_a')).toBe(false)
+        expect(fullImageBlobCache.get('display_b')).toBe('blob:display-b')
+        expect(revokeObjectURL).toHaveBeenCalledWith('blob:thumb-a')
+        vi.unstubAllGlobals()
     })
 })
 

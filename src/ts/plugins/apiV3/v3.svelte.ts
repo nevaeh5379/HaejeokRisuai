@@ -21,7 +21,7 @@ import { hasher } from "src/ts/hash";
 import localforage from "localforage";
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, type LLMModel } from "src/ts/model/types";
 import { customV3ProviderMetaStore } from './providerStore'
-import { sendChat as processSendChat, doingChat } from "src/ts/process/index.svelte";
+import { doingChat } from "src/ts/process/chatRuntimeState";
 import { getModelInfo } from "src/ts/model/modellist";
 import type { ModelModeExtended } from "src/ts/process/request/shared";
 import { requestChatDataMain } from "src/ts/process/request/request";
@@ -1304,6 +1304,7 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             }
 
             try {
+                const { sendChat: processSendChat } = await import('src/ts/process/index.svelte')
                 await processSendChat(-1, {});
             } finally {
                 // Plugin API path does not pass through the UI unlock logic,

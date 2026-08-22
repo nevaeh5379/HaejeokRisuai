@@ -49,7 +49,7 @@
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
     import { onMount } from 'svelte';
-    import { loadCharConfig, loadSideChatList, preloadSidebarPanels } from './sidebarPanelLoaders';
+    import { loadCharConfig, loadSideChatList, preloadChatSidebarPanel } from './sidebarPanelLoaders';
   let sideBarMode = $state(0);
   let editMode = $state(false);
   let menuMode = $state(0);
@@ -60,7 +60,7 @@
   const quickSettingsLoader = () => import('../Others/QuickSettingsGUI.svelte')
 
   async function changeCharacter(index: number) {
-    void preloadSidebarPanels()
+    void preloadChatSidebarPanel()
     void preloadCharacterImage(characterStore.characters?.[index]?.image)
     const { changeChar } = await import('../../ts/characters')
     changeChar(index, { reseter })
@@ -72,10 +72,10 @@
       cancelIdleCallback?: (handle: number) => void
     }
     if (idleWindow.requestIdleCallback) {
-      const handle = idleWindow.requestIdleCallback(() => void preloadSidebarPanels(), { timeout: 2000 })
+      const handle = idleWindow.requestIdleCallback(() => void preloadChatSidebarPanel(), { timeout: 2000 })
       return () => idleWindow.cancelIdleCallback?.(handle)
     }
-    const handle = globalThis.setTimeout(() => void preloadSidebarPanels(), 200)
+    const handle = globalThis.setTimeout(() => void preloadChatSidebarPanel(), 200)
     return () => globalThis.clearTimeout(handle)
   })
 
@@ -610,8 +610,8 @@
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
             role="button" tabindex="0"
-            onpointerenter={() => void preloadSidebarPanels()}
-            onfocus={() => void preloadSidebarPanels()}
+            onpointerenter={() => void preloadChatSidebarPanel()}
+            onfocus={() => void preloadChatSidebarPanel()}
             onclick={() => {
               if(char.type === "normal"){
                 void changeCharacter(char.index);
@@ -775,8 +775,8 @@
               <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
               <div
                   role="button" tabindex="0"
-                  onpointerenter={() => void preloadSidebarPanels()}
-                  onfocus={() => void preloadSidebarPanels()}
+                  onpointerenter={() => void preloadChatSidebarPanel()}
+                  onfocus={() => void preloadChatSidebarPanel()}
                   onclick={() => {
                     if(char2.type === "normal"){
                       void changeCharacter(char2.index);

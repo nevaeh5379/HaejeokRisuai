@@ -4,7 +4,7 @@
     import { ArrowLeft, StarIcon, SortAscIcon, SearchIcon } from "@lucide/svelte";
     import { getVersionString } from "src/ts/globalApi.svelte";
     import { language } from "src/lang";
-    import { getCharImagesBatch, fullImageBlobCache } from "src/ts/characterImage";
+    import { getCharImagesBatch, fullImageBlobCache, releaseCharacterImageCache } from "src/ts/characterImage";
     import { changeChar } from "src/ts/characters";
     import { matchCharacterKorean } from "src/ts/util/koreanSearch";
     import Title from "./Title.svelte";
@@ -18,6 +18,7 @@
     let isMounted = true
     onDestroy(() => {
         isMounted = false
+        releaseCharacterImageCache('thumb_')
     })
 
     let sortMode = $state<SortMode>('default')
@@ -160,7 +161,7 @@
             if (!char.image) continue
             if (imageUrlCache.has(char.chaId)) continue
 
-            const cached = fullImageBlobCache.get(`display_${char.image}`) ?? fullImageBlobCache.get(char.image)
+            const cached = fullImageBlobCache.get(`thumb_${char.image}`) ?? fullImageBlobCache.get(char.image)
             if (cached) {
                 imageUrlCache.set(char.chaId, cached)
                 cacheUpdated = true
@@ -183,7 +184,7 @@
         }
 
         const locs = toLoad.map(({ char }) => char.image)
-        getCharImagesBatch(locs, { size: 'display' }).then((batchMap) => {
+        getCharImagesBatch(locs, { size: 'thumb', width: 256, height: 384 }).then((batchMap) => {
             for (const { char } of toLoad) {
                 inFlightIds.delete(char.chaId)
                 const src = batchMap.get(char.image) ?? null
@@ -191,6 +192,8 @@
             }
             if (isMounted) {
                 imageUrlCache = new Map(imageUrlCache)
+            } else {
+                releaseCharacterImageCache('thumb_')
             }
         }).catch((err) => {
             console.error('Failed to batch load character images', err)
@@ -212,7 +215,7 @@
         if (imageUrlCache.has(char.chaId)) {
             return imageUrlCache.get(char.chaId)
         }
-        const cached = fullImageBlobCache.get(`display_${char.image}`) ?? fullImageBlobCache.get(char.image)
+        const cached = fullImageBlobCache.get(`thumb_${char.image}`) ?? fullImageBlobCache.get(char.image)
         if (cached) {
             return cached
         }

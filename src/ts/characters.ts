@@ -11,7 +11,7 @@ import { AppendableBuffer, changeChatTo, checkCharOrder, downloadFile, forageSto
 import { updateInlayScreen } from "./process/inlayScreen";
 import { parseMarkdownSafe } from "./parser/parser.svelte";
 import { translateHTML } from "./translator/translator";
-import { doingChat } from "./process/index.svelte";
+import { doingChat } from "./process/chatRuntimeState";
 import { importCharacter } from "./characterCards";
 import { PngChunk } from "./pngChunk";
 import { getColdStorageItem, preLoadChat } from "./process/coldstorage.svelte";
@@ -534,10 +534,21 @@ function formatTavernChat(chat:string, charName:string){
     return chat.replace(/<([Uu]ser)>|\{\{([Uu]ser)\}\}/g, getUserName()).replace(/((\{\{)|<)([Cc]har)(=.+)?((\}\})|>)/g, charName)
 }
 
+const formattedCharacters = new WeakSet<object>()
+
 export function characterFormatUpdate(indexOrCharacter:number|character, arg:{
     updateInteraction?:boolean,
 } = {}){
     let cha = typeof(indexOrCharacter) === 'number' ? getCharacterByIndex(indexOrCharacter) : indexOrCharacter
+    if (formattedCharacters.has(cha)) {
+        if (arg.updateInteraction) {
+            cha.lastInteraction = Date.now()
+            if (typeof indexOrCharacter === 'number') {
+                setCharacterByIndex(indexOrCharacter, cha)
+            }
+        }
+        return cha
+    }
     if(cha.chats.length === 0){
         cha.chats = [{
             message: [],
@@ -632,7 +643,10 @@ export function characterFormatUpdate(indexOrCharacter:number|character, arg:{
     if(checkNullish(cha.customscript)){
         cha.customscript = []
     }
-    cha.lastInteraction = Date.now()
+    if (arg.updateInteraction) {
+        cha.lastInteraction = Date.now()
+    }
+    formattedCharacters.add(cha)
     if(typeof(indexOrCharacter) === 'number'){
         setCharacterByIndex(indexOrCharacter, cha)
     }

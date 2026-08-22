@@ -1,6 +1,5 @@
 <script lang="ts">
     import { language } from "../../lang";
-    import { tokenizeAccurate } from "../../ts/tokenizer";
     import { getCurrentCharacter, saveImage as saveAsset, type character, type groupChat } from "../../ts/storage/database.svelte";
     import { characterStore, settingsStore, moduleStore } from 'src/ts/stores/domain';
     import { onDestroy } from 'svelte';
@@ -27,7 +26,6 @@
     import TriggerList from "./Scripts/TriggerList.svelte";
     import CheckInput from "../UI/GUI/CheckInput.svelte";
     import { updateInlayScreen } from "src/ts/process/inlayScreen";
-    import { registerOnnxModel } from "src/ts/process/transformers";
     import MultiLangInput from "../UI/GUI/MultiLangInput.svelte";
     import { applyModule } from "src/ts/process/modules";
     import { exportRegex, importRegex } from "src/ts/process/scripts";
@@ -48,7 +46,10 @@
     })
 
     const tokenCalculator = createDeferredTokenCalculator({
-        calculate: tokenizeAccurate,
+        calculate: async (text) => {
+            const { tokenizeAccurate } = await import('../../ts/tokenizer')
+            return tokenizeAccurate(text)
+        },
         apply: (result) => {
             tokens.desc = result.desc
             tokens.firstMsg = result.firstMsg
@@ -905,6 +906,7 @@
                 <span class="text-textcolor">No Model</span>
             {/if}
             <Button onclick={async () => {
+                const { registerOnnxModel } = await import('src/ts/process/transformers')
                 const model = await registerOnnxModel()
                 if(model && characterStore.characters[$selectedCharID].type === 'character'){
                     characterStore.characters[$selectedCharID].vits = model

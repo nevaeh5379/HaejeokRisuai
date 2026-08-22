@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { requestChatData } from "src/ts/process/request/request";
-    import { doingChat, type OpenAIChat } from "../../ts/process/index.svelte";
+    import type { OpenAIChat } from "../../ts/process/index.svelte";
+    import { doingChat } from "../../ts/process/chatRuntimeState";
     import { type character, type Message, type groupChat } from "../../ts/storage/database.svelte";
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import { selectedCharID } from "../../ts/stores.svelte";
@@ -231,4 +232,3 @@
         100% { transform: rotate(360deg); }
     }
 </style>
-

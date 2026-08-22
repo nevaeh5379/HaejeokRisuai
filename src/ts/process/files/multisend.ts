@@ -2,7 +2,7 @@ import { getDatabase, setDatabase } from 'src/ts/storage/database.svelte';
 import { selectedCharID } from 'src/ts/stores.svelte';
 import { characterStore } from 'src/ts/stores/domain/characterStore.svelte';
 import { get } from 'svelte/store';
-import { doingChat, sendChat } from '../index.svelte';
+import { doingChat } from '../chatRuntimeState';
 import { downloadFile } from 'src/ts/globalApi.svelte';
 import { isTauri } from "src/ts/platform"
 import { HypaProcesser } from '../memory/hypamemory';
@@ -46,6 +46,7 @@ async function sendPofile(arg:sendFileArg){
             currentChar.chats[currentChar.chatPage] = currentChat
             characterStore.characters[get(selectedCharID)] = currentChar
             doingChat.set(false)
+            const { sendChat } = await import('../index.svelte')
             await sendChat(-1);
             currentChar = characterStore.characters[get(selectedCharID)]
             currentChat = currentChar.chats[currentChar.chatPage]

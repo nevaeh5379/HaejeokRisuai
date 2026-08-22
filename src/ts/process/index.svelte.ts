@@ -1,4 +1,6 @@
 import { get, writable } from "svelte/store";
+import { chatProcessStage, doingChat } from './chatRuntimeState'
+export { chatProcessStage, doingChat } from './chatRuntimeState'
 import { type character, type MessageGenerationInfo, type Chat, type MessagePresetInfo, changeToPreset, setCurrentChat, type Message, type StreamingDisplayOptimizationMode } from "../storage/database.svelte";
 import { settingsStore } from '../stores/domain/settingsStore.svelte';
 import { characterStore } from '../stores/domain/characterStore.svelte';
@@ -93,8 +95,6 @@ export interface requestTokenPart{
     tokens:number
 }
 
-export const doingChat = writable(false)
-export const chatProcessStage = writable(0)
 export const abortChat = writable(false)
 export let requestTokenParts:{[key:string]:requestTokenPart[]} = {}
 export let previewFormated:OpenAIChat[] = []

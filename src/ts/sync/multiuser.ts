@@ -6,7 +6,7 @@ import { selectedCharID } from '../stores.svelte';
 import { findCharacterIndexbyId, sleep } from '../util';
 import type { DataConnection, Peer } from 'peerjs';
 import { readImage } from '../globalApi.svelte';
-import { doingChat } from '../process/index.svelte';
+import { doingChat } from '../process/chatRuntimeState';
 import { ConnectionIsHost, ConnectionOpenStore, RoomIdStore } from './multiuserState'
 
 export { ConnectionIsHost, ConnectionOpenStore, RoomIdStore } from './multiuserState'
