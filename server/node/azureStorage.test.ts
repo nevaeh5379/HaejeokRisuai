@@ -316,7 +316,8 @@ describe('AzureStorage Server Interface Compatibility', () => {
         expect(typeof storage.loadPluginsData).toBe('function')
         expect(typeof storage.loadSettingKeys).toBe('function')
         expect(typeof storage.loadPersonas).toBe('function')
-        expect(typeof storage.loadBotPresets).toBe('function')
+        expect(typeof storage.listBotPresets).toBe('function')
+        expect(typeof storage.loadBotPreset).toBe('function')
         expect(typeof storage.loadLorebooks).toBe('function')
         expect(typeof storage.loadModules).toBe('function')
         expect(typeof storage.loadPrompts).toBe('function')
@@ -348,4 +349,3 @@ describe('AzureStorage Server Interface Compatibility', () => {
         expect(typeof storage.getTableRows).toBe('function')
     })
 })
-

@@ -6,6 +6,7 @@ import { language } from "src/lang"
 import { updateTextThemeAndCSS } from "./gui/colorscheme"
 import { defaultHotkeys, type Hotkey } from "./defaulthotkeys"
 import { RISU_SIDEBAR_DRAG_TYPE } from "./dragTypes"
+import { presetStore } from './stores/domain/presetStore.svelte'
 
 export function initHotkey(){
     document.addEventListener('keydown', async (ev) => {
@@ -412,11 +413,10 @@ export function initMobileGesture(){
 
 function changeToPreset(num:number){
     if(!doingAlert()){
-        let db = getDatabase()
-        let pres = db.botPresets
-        if(pres.length > num){
-            alertToast(`Changed to Preset: ${pres[num].name}`)
-            changeToPreset2(num)
+        const summary = presetStore.summaries[num]
+        if(summary){
+            alertToast(`Changed to Preset: ${summary.name}`)
+            void changeToPreset2(num)
         }
     }
 }

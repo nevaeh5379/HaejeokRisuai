@@ -12,8 +12,8 @@
 
 CREATE TABLE system_storage_meta (
     singleton NUMBER(1) DEFAULT 1 PRIMARY KEY,
-    schema_version NUMBER DEFAULT 3 NOT NULL,
-    schema_layout VARCHAR2(64) DEFAULT 'relational-schema-v2' NOT NULL,
+    schema_version NUMBER DEFAULT 4 NOT NULL,
+    schema_layout VARCHAR2(64) DEFAULT 'relational-schema-v3' NOT NULL,
     revision NUMBER DEFAULT 0 NOT NULL,
     initialized NUMBER(1) DEFAULT 0 NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
@@ -21,10 +21,10 @@ CREATE TABLE system_storage_meta (
 );
 
 INSERT INTO system_storage_meta (singleton, schema_version, schema_layout)
-VALUES (1, 3, 'relational-schema-v2');
+VALUES (1, 4, 'relational-schema-v3');
 -- MERGE 기반 upsert (단일 행 보장, 이미 존재하면 무시)
 MERGE INTO system_storage_meta target
-USING (SELECT 1 AS singleton, 3 AS schema_version, 'relational-schema-v2' AS schema_layout FROM dual) src
+USING (SELECT 1 AS singleton, 4 AS schema_version, 'relational-schema-v3' AS schema_layout FROM dual) src
 ON (target.singleton = src.singleton)
 WHEN NOT MATCHED THEN INSERT (singleton, schema_version, schema_layout)
     VALUES (src.singleton, src.schema_version, src.schema_layout);
@@ -153,27 +153,14 @@ CREATE TABLE system_plugin_custom_storage (
 -- ============================================================
 
 CREATE TABLE system_bot_presets (
-    setting_key VARCHAR2(64) DEFAULT 'botPresets' NOT NULL CHECK (setting_key = 'botPresets'),
-    position INTEGER NOT NULL CHECK (position >= 0),
-    name VARCHAR2(4000),
-    api_type VARCHAR2(256),
-    ai_model VARCHAR2(512),
-    sub_model VARCHAR2(512),
-    main_prompt CLOB,
-    jailbreak CLOB,
-    global_note CLOB,
-    temperature BINARY_DOUBLE,
-    max_context INTEGER,
-    max_response INTEGER,
-    frequency_penalty BINARY_DOUBLE,
-    presence_penalty BINARY_DOUBLE,
-    prompt_preprocess NUMBER(1),
-    proxy_model VARCHAR2(512),
-    openrouter_model VARCHAR2(512),
+    preset_id VARCHAR2(64) PRIMARY KEY,
+    position INTEGER NOT NULL UNIQUE CHECK (position >= 0),
+    name VARCHAR2(4000) DEFAULT '' NOT NULL,
     image CLOB,
-    PRIMARY KEY (setting_key, position),
-    FOREIGN KEY (setting_key) REFERENCES system_settings(key)
-        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+    api_type VARCHAR2(256) DEFAULT '' NOT NULL,
+    ai_model VARCHAR2(512) DEFAULT '' NOT NULL,
+    data CLOB NOT NULL CHECK (data IS JSON), content_hash VARCHAR2(128) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL
 );
 
 CREATE INDEX bot_presets_model_idx ON system_bot_presets (api_type, ai_model);

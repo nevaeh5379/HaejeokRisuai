@@ -97,8 +97,8 @@ function mapColumnsToSettingValue(row) {
     return null;
 }
 
-const AZURE_SCHEMA_VERSION = 3;
-const RELATIONAL_SCHEMA_LAYOUT = 'relational-schema-v2';
+const AZURE_SCHEMA_VERSION = 4;
+const RELATIONAL_SCHEMA_LAYOUT = 'relational-schema-v3';
 const MAX_SYNC_ROWS = 250000;
 
 const AUDITED_TABLES = [
@@ -966,6 +966,27 @@ class AzureStorage extends SqlStorageBase {
         };
     }
 
+    async listBotPresets() {
+        const started = process.hrtime.bigint();
+        const pool = await this.getPool();
+        const rows = (await pool.request().query(`SELECT preset_id, position, name, image, api_type, ai_model, content_hash
+            FROM [system].[bot_presets] ORDER BY position`)).recordset;
+        const presets = rows.map((row) => ({ id: row.preset_id, position: Number(row.position), name: row.name || '',
+            image: row.image || '', apiType: row.api_type || '', aiModel: row.ai_model || '', hash: row.content_hash }));
+        return { presets, hash: crypto.createHash('sha256').update(JSON.stringify(presets)).digest('hex'),
+            queryMs: Number(process.hrtime.bigint() - started) / 1e6 };
+    }
+
+    async loadBotPreset(id) {
+        const started = process.hrtime.bigint();
+        const pool = await this.getPool();
+        const request = pool.request(); request.input('id', sql.NVarChar(450), id);
+        const rows = (await request.query('SELECT data, content_hash FROM [system].[bot_presets] WHERE preset_id = @id')).recordset;
+        if (!rows.length) return null;
+        return { preset: { ...JSON.parse(rows[0].data), id }, hash: rows[0].content_hash,
+            queryMs: Number(process.hrtime.bigint() - started) / 1e6 };
+    }
+
     async reconfigure(options = {}) {
         this.invalidateBootstrapCache();
         if (this.pool) {
@@ -1026,6 +1047,44 @@ class AzureStorage extends SqlStorageBase {
             if (payload.replaceAll) {
                 await tx.request().query('DELETE FROM [system].[settings];');
                 await tx.request().query('DELETE FROM [system].[plugin_custom_storage];');
+                await tx.request().query('DELETE FROM [system].[bot_presets];');
+            }
+
+            if (payload.presets) {
+                const existing = (await tx.request().query('SELECT preset_id, position FROM [system].[bot_presets] ORDER BY position')).recordset;
+                const currentActiveId = (await tx.request().query("SELECT text_val FROM [system].[settings] WHERE [key]='activeBotPresetId'")).recordset[0]?.text_val;
+                const originalIds = existing.map((row) => row.preset_id);
+                const ids = new Set(existing.map((row) => row.preset_id));
+                for (const id of payload.presets.deletes) ids.delete(id);
+                for (const entry of payload.presets.upserts) ids.add(entry.id);
+                if (!ids.size) throw new StoragePayloadError('At least one bot preset must remain');
+                if (payload.presets.order && (payload.presets.order.length !== ids.size || new Set(payload.presets.order).size !== ids.size || payload.presets.order.some((id) => !ids.has(id)))) throw new StoragePayloadError('Preset order must contain every preset ID exactly once');
+                if (payload.presets.activeId !== undefined && !ids.has(payload.presets.activeId)) throw new StoragePayloadError('Active bot preset does not exist');
+                for (const id of payload.presets.deletes) { const r = tx.request(); r.input('id', sql.NVarChar(450), id); await r.query('DELETE FROM [system].[bot_presets] WHERE preset_id=@id'); }
+                let nextPosition = existing.reduce((max, row) => Math.max(max, Number(row.position)), -1) + 1;
+                const positions = new Map(existing.map((row) => [row.preset_id, Number(row.position)]));
+                for (const entry of payload.presets.upserts) {
+                    const data = { ...entry.data }; delete data.id; const serialized = JSON.stringify(data);
+                    const r = tx.request(); r.input('id', sql.NVarChar(450), entry.id); r.input('position', sql.Int, entry.position ?? positions.get(entry.id) ?? nextPosition++);
+                    r.input('name', sql.NVarChar(sql.MAX), data.name || ''); r.input('image', sql.NVarChar(sql.MAX), data.image || '');
+                    r.input('api_type', sql.NVarChar(256), data.apiType || ''); r.input('ai_model', sql.NVarChar(512), data.aiModel || '');
+                    r.input('data', sql.NVarChar(sql.MAX), serialized); r.input('hash', sql.NVarChar(128), crypto.createHash('sha256').update(serialized).digest('hex'));
+                    await r.query(`MERGE [system].[bot_presets] AS t USING (SELECT @id preset_id) AS s ON t.preset_id=s.preset_id
+                        WHEN MATCHED THEN UPDATE SET position=@position,name=@name,image=@image,api_type=@api_type,ai_model=@ai_model,data=@data,content_hash=@hash,updated_at=SYSDATETIMEOFFSET()
+                        WHEN NOT MATCHED THEN INSERT (preset_id,position,name,image,api_type,ai_model,data,content_hash) VALUES (@id,@position,@name,@image,@api_type,@ai_model,@data,@hash);`);
+                }
+                if (payload.presets.order) {
+                    await tx.request().query('UPDATE [system].[bot_presets] SET position=position+1000000000');
+                    for (const [position, id] of payload.presets.order.entries()) { const r=tx.request(); r.input('id',sql.NVarChar(450),id); r.input('position',sql.Int,position); await r.query('UPDATE [system].[bot_presets] SET position=@position WHERE preset_id=@id'); }
+                }
+                let activeId = payload.presets.activeId;
+                if (activeId === undefined) {
+                    if (!currentActiveId || !ids.has(currentActiveId)) {
+                        const deletedIndex = originalIds.indexOf(currentActiveId);
+                        activeId = originalIds.slice(deletedIndex + 1).find((id) => ids.has(id)) || originalIds.slice(0, Math.max(0, deletedIndex)).reverse().find((id) => ids.has(id)) || (payload.presets.order || Array.from(ids))[0];
+                    }
+                }
+                if (activeId !== undefined) payload.rootUpserts.push({ key: 'activeBotPresetId', value: activeId });
             }
 
             const rootSettingUpserts = (payload.rootUpserts || []).filter((row) => row.key !== 'pluginCustomStorage');
@@ -1458,9 +1517,6 @@ class AzureStorage extends SqlStorageBase {
             this.pluginCustomStorageCache = null;
         }
         this.invalidateBootstrapCache([...changedSettingKeys, ...rootDeletes]);
-        void this.warmBootstrapCache().catch((error) => {
-            console.warn('[Azure SQL] Bootstrap cache refresh failed:', error.message);
-        });
 
         return syncResult;
     }
@@ -2267,9 +2323,6 @@ class AzureStorage extends SqlStorageBase {
         this.pluginsCache = null;
         this.pluginCustomStorageCache = null;
         this.invalidateBootstrapCache();
-        void this.warmBootstrapCache().catch((error) => {
-            console.warn('[Azure SQL] Bootstrap cache refresh failed:', error.message);
-        });
         return result;
     }
 

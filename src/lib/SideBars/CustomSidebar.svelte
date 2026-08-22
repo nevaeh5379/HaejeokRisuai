@@ -1,7 +1,7 @@
 <script lang="ts">
     import { Cog, PinIcon } from '@lucide/svelte'
     import { loadoutModalStore, openPersonaList, openPresetList, selectedCharID } from 'src/ts/stores.svelte';
-    import { characterStore, settingsStore, personaStore } from 'src/ts/stores/domain';
+    import { characterStore, settingsStore, personaStore, presetStore } from 'src/ts/stores/domain';
     import Button from '../UI/GUI/Button.svelte';
     import type { CustomSideBarItem } from 'src/ts/storage/database.svelte';
     import { language } from 'src/lang';
@@ -39,7 +39,7 @@
             <Button onclick={() => {
                 openPresetList.set(!get(openPresetList))
             }}>{
-                settingsStore.state.botPresets?.[settingsStore.state.botPresetsId]?.name
+                presetStore.activePreset?.name
                 ||
                 language.presets
             }</Button>

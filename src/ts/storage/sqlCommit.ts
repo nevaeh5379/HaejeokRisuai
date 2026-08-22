@@ -1,4 +1,4 @@
-import type { Chat, Database, Message, character, groupChat } from './database.svelte'
+import type { Chat, Database, PortableDatabase, Message, character, groupChat, botPreset } from './database.svelte'
 import { v4 as uuidv4 } from 'uuid'
 
 export interface SqlSettingUpsert {
@@ -26,6 +26,12 @@ export interface SqlMessageUpsert {
     data: unknown
 }
 
+export interface SqlPresetUpsert {
+    id: string
+    position?: number
+    data: botPreset
+}
+
 /**
  * A bounded, row-oriented database transaction. Unlike the former save
  * payload this is produced at the mutation boundary; building it never walks
@@ -44,6 +50,12 @@ export interface SqlCommit {
         upserts: SqlSettingUpsert[]
         deletes: string[]
         clear?: boolean
+    }
+    presets?: {
+        upserts: SqlPresetUpsert[]
+        deletes: string[]
+        order?: string[]
+        activeId?: string
     }
     characters: SqlCharacterUpsert[]
     characterIds?: string[]
@@ -89,6 +101,8 @@ export function hasSqlCommitChanges(commit: SqlCommit): boolean {
     )
     return commit.root.upserts.length > 0 || commit.root.deletes.length > 0 ||
         hasPluginChanges ||
+        Boolean(commit.presets && (commit.presets.upserts.length > 0 || commit.presets.deletes.length > 0 ||
+            commit.presets.order !== undefined || commit.presets.activeId !== undefined)) ||
         commit.characters.length > 0 || commit.characterIds !== undefined ||
         commit.chats.length > 0 || commit.chatManifests.length > 0 ||
         commit.messages.length > 0 || commit.messageManifests.length > 0 ||
@@ -132,9 +146,21 @@ export function buildSqlReplaceCommit(database: Database, baseRevision: number):
         deletes: [],
         clear: true,
     }
+    const portableDatabase = database as Database & Partial<PortableDatabase>
+    const portablePresets = Array.isArray(portableDatabase.botPresets) ? portableDatabase.botPresets : []
+    const presetIds = portablePresets.map(() => uuidv4())
+    if (portablePresets.length > 0) {
+        const activeIndex = Math.max(0, Math.min(Number(portableDatabase.botPresetsId) || 0, portablePresets.length - 1))
+        commit.presets = {
+            upserts: portablePresets.map((data, position) => ({ id: presetIds[position], position, data })),
+            deletes: [],
+            order: presetIds,
+            activeId: presetIds[activeIndex],
+        }
+    }
     for (const [key, value] of Object.entries(database)) {
         if (key !== 'characters' && value !== undefined && typeof value !== 'function' &&
-            key !== 'isSql') {
+            key !== 'isSql' && key !== 'botPresets' && key !== 'botPresetsId') {
             commit.root.upserts.push({ key, value })
         }
     }

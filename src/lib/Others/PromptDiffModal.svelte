@@ -2,6 +2,7 @@
     import { XIcon } from "@lucide/svelte"
     import { getDatabase, type PromptDiffPrefs } from "../../ts/storage/database.svelte"
     import type { PromptItem, PromptItemPlain, PromptItemChatML, PromptItemTyped, PromptItemAuthorNote, PromptItemChat } from "src/ts/process/prompt.ts";
+    import { presetStore } from 'src/ts/stores/domain/presetStore.svelte';
 
     interface Props {
         firstPresetId: number;
@@ -357,8 +358,7 @@
         const isPromptItemChat = (item: PromptItem): item is PromptItemChat =>
             item.type === 'chat'
         
-        const db = getDatabase()
-        const formated = safeStructuredClone(db.botPresets[id].promptTemplate)
+        const formated = safeStructuredClone(presetStore.cache.get(presetStore.summaries[id].id)?.promptTemplate ?? [])
         const cards: PromptCard[] = []
 
         for(let i=0;i<formated.length;i++){

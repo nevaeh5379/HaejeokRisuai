@@ -10,9 +10,9 @@ import {
 import { changeFullscreen, checkNullish, sleep } from "./util"
 import { v4 as uuidv4 } from 'uuid';
 import { get } from "svelte/store";
-import { setDatabase, defaultSdDataFunc, getDatabase, type Database } from "./storage/database.svelte";
+import { setDatabase, defaultSdDataFunc, getDatabase, setPreset, type Database } from "./storage/database.svelte";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { MobileGUI, botMakerMode, selectedCharID, loadedStore, LoadingStatusState, sqlConfiguredStore } from "./stores.svelte";
+import { MobileGUI, botMakerMode, selectedCharID, loadedStore, LoadingStatusState, sqlConfiguredStore, startupPhase } from "./stores.svelte";
 import { loadPlugins } from "./plugins/plugins.svelte";
 import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput, alertSelect, alertNormal } from "./alert";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
@@ -43,6 +43,8 @@ import { checkAndMigrateLegacyDatabase, migrateLegacyDatabase } from "./storage/
 import { moduleStore } from './stores/domain/moduleStore.svelte'
 import { settingsStore } from './stores/domain/settingsStore.svelte'
 import { characterStore } from './stores/domain/characterStore.svelte'
+import { presetStore } from './stores/domain/presetStore.svelte'
+import { setSqlRuntime, getSqlRuntime } from './storage/sqlRuntime'
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null
 
@@ -63,6 +65,7 @@ export async function loadData() {
     const loaded = get(loadedStore)
     if (!loaded) {
         try {
+            startupPhase.set('core-loading')
             // ── Step 0: Initialise forageStorage (needed for asset access
             // and Node server's NodeStorage which provides the SQL admin) ──
             if (!isTauri) {
@@ -72,6 +75,7 @@ export async function loadData() {
             // ── Step 1: Initialise SQL storage backend ────────────────────
             LoadingStatusState.text = "Initialising Database..."
             const storage = await getSqlStorage()
+            setSqlRuntime(storage)
             const ok = await storage.init()
             if (!ok) {
                 // SQL backend could not be initialised.
@@ -114,39 +118,29 @@ export async function loadData() {
                 LoadingStatusState.text = "Loading Database..."
                 const reloaded = await storage.loadDatabase({ shallow: true })
                 if (reloaded && reloaded.database) {
-                    setDatabase(reloaded.database)
+                    setDatabase(reloaded.database, storage)
                 } else {
                     // Still empty — start with blank DB
-                    setDatabase({} as Database)
+                    setDatabase({} as Database, storage)
                 }
             } else if (loadResult && loadResult.database) {
-                setDatabase(loadResult.database)
+                setDatabase(loadResult.database, storage)
             } else {
                 // Load failed entirely
-                setDatabase({} as Database)
+                setDatabase({} as Database, storage)
             }
 
             const activeDb = getDatabase()
-            characterStore.init(activeDb.characters ?? [], storage)
-            settingsStore.init(activeDb, storage)
-            moduleStore.init(activeDb.modules ?? [], activeDb.enabledModules ?? [])
 
             // Non-English dictionaries are separate chunks. Resolve the one
             // selected by this database before mounting the application so
             // every component sees the final language on its first render.
             await changeLanguage(activeDb.language)
+            performance.mark('core-ready')
 
             // ── Node server: update SQL config state ──────────────────────
             if (isNodeServer && isNodeSqlStorageAdmin(storage)) {
                 sqlConfiguredStore.set(storage.isEnabled())
-            }
-
-            // ── Step 4: Account sync check (Node server only) ─────────────
-            if (isNodeServer && await forageStorage.checkAccountSync()) {
-                LoadingStatusState.text = "Checking Account Sync..."
-                // Account sync for assets only — DB is in SQL
-                LoadingStatusState.text = "Rechecking Account Sync..."
-                await forageStorage.checkAccountSync()
             }
 
             // ── Step 5: Drive sync check ──────────────────────────────────
@@ -157,15 +151,20 @@ export async function loadData() {
                 return
             }
 
+            updateColorScheme()
+            updateTextThemeAndCSS()
+            updateAnimationSpeed()
+            updateHeightMode()
+            updateGuisize()
+            loadedStore.set(true)
+            startupPhase.set('shell-ready')
+            performance.mark('shell-ready')
+
             // ── Step 6: Service worker (web only) ─────────────────────────
             LoadingStatusState.text = "Checking Service Worker..."
-            if (navigator.serviceWorker) {
-                setUsingSw(true)
-                await registerSw()
-            }
-            else {
-                setUsingSw(false)
-            }
+            const serviceWorkerReady = navigator.serviceWorker
+                ? registerSw().then(() => setUsingSw(true)).catch(() => setUsingSw(false))
+                : Promise.resolve(setUsingSw(false))
             if (getDatabase().didFirstSetup) {
                 const urlParams = new URLSearchParams(location.search)
                 if (urlParams.has('realm') || urlParams.has('charahub')) {
@@ -175,16 +174,29 @@ export async function loadData() {
             }
 
             // ── Step 7: Plugins, format checks, state updates ─────────────
-            LoadingStatusState.text = "Loading Plugins..."
-            try {
+            LoadingStatusState.text = "Loading chat runtime..."
+            const presetReady = presetStore.init(storage, activeDb.activeBotPresetId).then(() => {
+                if (presetStore.activePreset) settingsStore.hydrate((state) => setPreset(state as Database, presetStore.activePreset!))
+                performance.mark('active-preset-ready')
+            }).catch(() => undefined)
+            const pluginsReady = Promise.all([
+                storage.loadPlugins(), storage.loadPluginCustomStorage(), storage.loadModules(),
+                storage.loadSettingKey('customModels'), storage.loadPersonas(),
+            ]).then(async ([plugins, pluginCustomStorage, modules, customModels, personas]) => {
+                settingsStore.hydrate((state) => {
+                    state.plugins = plugins ?? []
+                    state.pluginCustomStorage = pluginCustomStorage ?? {}
+                    if (customModels !== undefined) state.customModels = customModels
+                    state.personas = personas
+                })
+                moduleStore.init(modules ?? [], activeDb.enabledModules ?? [])
                 await loadPlugins()
-            } catch (error) { }
-            if (getDatabase().account) {
-                LoadingStatusState.text = "Checking Account Data..."
-                try {
-                    await loadRisuAccountData()
-                } catch (error) { }
-            }
+            }).catch(() => undefined)
+            const accountReady = (async () => {
+                if (isNodeServer && await forageStorage.checkAccountSync()) await forageStorage.checkAccountSync()
+                if (getDatabase().account) await loadRisuAccountData().catch(() => undefined)
+            })()
+            await Promise.all([presetReady, pluginsReady, serviceWorkerReady, accountReady])
             try {
                 //@ts-expect-error navigator.standalone is iOS Safari non-standard property, not in Navigator interface
                 const isInStandaloneMode = (window.matchMedia('(display-mode: standalone)').matches) || (window.navigator.standalone) || document.referrer.includes('android-app://');
@@ -199,12 +211,7 @@ export async function loadData() {
             const db = getDatabase();
 
             LoadingStatusState.text = "Updating States..."
-            updateColorScheme()
-            updateTextThemeAndCSS()
-            updateAnimationSpeed()
-            updateHeightMode()
             updateErrorHandling()
-            updateGuisize()
             if (!localStorage.getItem('nightlyWarned') && window.location.hostname === 'nightly.risuai.xyz') {
                 alertMd(language.nightlyWarning)
                 await waitAlert()
@@ -220,11 +227,14 @@ export async function loadData() {
             }
             selectedCharID.set(-1)
             assignIds()
-            moduleStore.init(db.modules, db.enabledModules)
             startObserveDom()
             registerModelDynamic()
+            performance.mark('plugins-ready')
             cleanChunks()
-            loadedStore.set(true)
+            if (presetStore.activeStatus === 'ready') {
+                startupPhase.set('chat-ready')
+                performance.mark('chat-ready')
+            }
             alertTOS().then((a) => {
                 if (a === false) {
                     location.reload()
@@ -309,7 +319,7 @@ async function checkNewFormat(): Promise<void> {
     // Legacy file migrations operate on complete snapshots. SQL data is
     // migrated by the storage schema/codec and may only contain shallow
     // entities here; walking it would hydrate every deferred domain.
-    if ((db as Database & { isSql?: boolean }).isSql) {
+    if (getSqlRuntime().isSql) {
         checkCharOrder()
         return
     }

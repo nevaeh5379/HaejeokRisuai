@@ -36,8 +36,8 @@ const {
     rebuildDatabaseGraph,
 } = require('./sqlStorageCommon.cjs');
 
-const POSTGRES_SCHEMA_VERSION = 3;
-const RELATIONAL_SCHEMA_LAYOUT = 'relational-schema-v2';
+const POSTGRES_SCHEMA_VERSION = 4;
+const RELATIONAL_SCHEMA_LAYOUT = 'relational-schema-v3';
 const MAX_SYNC_ROWS = 250000;
 const BULK_INSERT_BATCH_ROWS = Math.max(
     1,
@@ -679,9 +679,6 @@ class PostgresStorage extends SqlStorageBase {
             this.pluginsCache = null;
             this.pluginCustomStorageCache = null;
             this.invalidateBootstrapCache();
-            void this.warmBootstrapCache().catch((error) => {
-                console.warn('[PostgreSQL] Bootstrap cache refresh failed:', error.message);
-            });
             return {
                 revisionId: restoreRevisionId,
                 restoredFromRevisionId: targetRevisionId,
@@ -1585,6 +1582,35 @@ class PostgresStorage extends SqlStorageBase {
         }
     }
 
+    async listBotPresets() {
+        this.assertEnabled();
+        const started = process.hrtime.bigint();
+        const result = await this.pool.query(
+            `SELECT preset_id, position, name, image, api_type, ai_model, content_hash
+             FROM system.bot_presets ORDER BY position`
+        );
+        const presets = result.rows.map((row) => ({
+            id: row.preset_id, position: Number(row.position), name: row.name || '', image: row.image || '',
+            apiType: row.api_type || '', aiModel: row.ai_model || '', hash: row.content_hash,
+        }));
+        const hash = crypto.createHash('sha256').update(JSON.stringify(presets)).digest('hex');
+        return { presets, hash, queryMs: Number(process.hrtime.bigint() - started) / 1e6 };
+    }
+
+    async loadBotPreset(id) {
+        this.assertEnabled();
+        const started = process.hrtime.bigint();
+        const result = await this.pool.query(
+            'SELECT data, content_hash FROM system.bot_presets WHERE preset_id = $1', [id]);
+        if (result.rowCount === 0) return null;
+        const data = result.rows[0].data;
+        return {
+            preset: { ...(typeof data === 'string' ? JSON.parse(data) : data), id },
+            hash: result.rows[0].content_hash,
+            queryMs: Number(process.hrtime.bigint() - started) / 1e6,
+        };
+    }
+
     async executeRevision(action, scope = 'database', callback) {
         this.assertEnabled();
         const client = await this.pool.connect();
@@ -1665,46 +1691,18 @@ class PostgresStorage extends SqlStorageBase {
 
     async saveBotPreset(preset, position = 0) {
         return await this.executeRevision(`preset:save (${preset.name || position})`, 'database', async (client) => {
-            const columns = [
-                'setting_key', 'position', 'name', 'api_type', 'ai_model', 'sub_model', 'main_prompt',
-                'jailbreak', 'global_note', 'temperature', 'max_context', 'max_response',
-                'frequency_penalty', 'presence_penalty', 'prompt_preprocess', 'proxy_model',
-                'openrouter_model', 'image',
-            ];
-            const row = {
-                setting_key: 'botPresets',
-                position: Number(position) || 0,
-                name: preset.name ?? null,
-                api_type: preset.apiType ?? null,
-                ai_model: preset.aiModel ?? null,
-                sub_model: preset.subModel ?? null,
-                main_prompt: preset.mainPrompt ?? null,
-                jailbreak: preset.jailbreak ?? null,
-                global_note: preset.globalNote ?? null,
-                temperature: Number(preset.temperature) || null,
-                max_context: Number(preset.maxContext) || null,
-                max_response: Number(preset.maxResponse) || null,
-                frequency_penalty: Number(preset.frequencyPenalty) || null,
-                presence_penalty: Number(preset.presencePenalty ?? preset.PresensePenalty) || null,
-                prompt_preprocess: Boolean(preset.promptPreprocess),
-                proxy_model: preset.proxyModel ?? null,
-                openrouter_model: preset.openrouter_model ?? null,
-                image: preset.image ?? null,
-            };
-            await bulkInsert(
-                client,
-                'system.bot_presets',
-                columns,
-                [
-                    'text', 'integer', 'text', 'text', 'text', 'text', 'text', 'text', 'text',
-                    'double precision', 'integer', 'integer', 'double precision', 'double precision',
-                    'boolean', 'text', 'text', 'text',
-                ],
-                [row],
-                `ON CONFLICT (setting_key, position) DO UPDATE SET ${columns.slice(2).map((c) =>
-                    `"${c}" = EXCLUDED."${c}"`).join(', ')}`
-            );
-            return { position };
+            const id = preset.id || crypto.randomUUID();
+            const data = { ...preset }; delete data.id;
+            const serialized = JSON.stringify(data);
+            const hash = crypto.createHash('sha256').update(serialized).digest('hex');
+            await client.query(`INSERT INTO system.bot_presets
+                (preset_id,position,name,image,api_type,ai_model,data,content_hash)
+                VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)
+                ON CONFLICT (preset_id) DO UPDATE SET name=EXCLUDED.name,image=EXCLUDED.image,
+                api_type=EXCLUDED.api_type,ai_model=EXCLUDED.ai_model,data=EXCLUDED.data,
+                content_hash=EXCLUDED.content_hash,updated_at=NOW()`,
+            [id, Number(position) || 0, data.name || '', data.image || '', data.apiType || '', data.aiModel || '', serialized, hash]);
+            return { id, position };
         });
     }
 
@@ -1848,7 +1846,60 @@ class PostgresStorage extends SqlStorageBase {
             if (payload.replaceAll) {
                 await client.query('DELETE FROM system.settings');
                 await client.query('DELETE FROM system.plugin_custom_storage');
+                await client.query('DELETE FROM system.bot_presets');
                 await client.query('DELETE FROM character.characters');
+            }
+
+            if (payload.presets) {
+                const existingResult = await client.query('SELECT preset_id, position FROM system.bot_presets ORDER BY position');
+                const currentActiveResult = await client.query("SELECT text_val FROM system.settings WHERE key = 'activeBotPresetId'");
+                const currentActiveId = currentActiveResult.rows[0]?.text_val;
+                const originalIds = existingResult.rows.map((row) => row.preset_id);
+                const ids = new Set(existingResult.rows.map((row) => row.preset_id));
+                for (const id of payload.presets.deletes) ids.delete(id);
+                for (const entry of payload.presets.upserts) ids.add(entry.id);
+                if (ids.size === 0) throw new PostgresPayloadError('At least one bot preset must remain');
+                if (payload.presets.order && (payload.presets.order.length !== ids.size ||
+                    new Set(payload.presets.order).size !== ids.size || payload.presets.order.some((id) => !ids.has(id)))) {
+                    throw new PostgresPayloadError('Preset order must contain every preset ID exactly once');
+                }
+                if (payload.presets.activeId !== undefined && !ids.has(payload.presets.activeId)) {
+                    throw new PostgresPayloadError('Active bot preset does not exist');
+                }
+                if (payload.presets.deletes.length) {
+                    await client.query('DELETE FROM system.bot_presets WHERE preset_id = ANY($1::text[])', [payload.presets.deletes]);
+                }
+                let nextPosition = existingResult.rows.reduce((max, row) => Math.max(max, Number(row.position)), -1) + 1;
+                const existingPositions = new Map(existingResult.rows.map((row) => [row.preset_id, Number(row.position)]));
+                for (const entry of payload.presets.upserts) {
+                    const data = { ...entry.data }; delete data.id;
+                    const serialized = JSON.stringify(data);
+                    const contentHash = crypto.createHash('sha256').update(serialized).digest('hex');
+                    const position = entry.position ?? existingPositions.get(entry.id) ?? nextPosition++;
+                    await client.query(`INSERT INTO system.bot_presets
+                        (preset_id, position, name, image, api_type, ai_model, data, content_hash, updated_at)
+                        VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,NOW())
+                        ON CONFLICT (preset_id) DO UPDATE SET position=EXCLUDED.position, name=EXCLUDED.name,
+                        image=EXCLUDED.image, api_type=EXCLUDED.api_type, ai_model=EXCLUDED.ai_model,
+                        data=EXCLUDED.data, content_hash=EXCLUDED.content_hash, updated_at=NOW()`,
+                    [entry.id, position, data.name || '', data.image || '', data.apiType || '', data.aiModel || '', serialized, contentHash]);
+                }
+                if (payload.presets.order) {
+                    await client.query('UPDATE system.bot_presets SET position = position + 1000000000');
+                    for (const [position, id] of payload.presets.order.entries()) {
+                        await client.query('UPDATE system.bot_presets SET position = $1 WHERE preset_id = $2', [position, id]);
+                    }
+                }
+                let activeId = payload.presets.activeId;
+                if (activeId === undefined) {
+                    if (!currentActiveId || !ids.has(currentActiveId)) {
+                        const deletedIndex = originalIds.indexOf(currentActiveId);
+                        activeId = originalIds.slice(deletedIndex + 1).find((id) => ids.has(id)) ||
+                            originalIds.slice(0, Math.max(0, deletedIndex)).reverse().find((id) => ids.has(id)) ||
+                            (payload.presets.order || Array.from(ids))[0];
+                    }
+                }
+                if (activeId !== undefined) payload.rootUpserts.push({ key: 'activeBotPresetId', value: activeId });
             }
 
             onProgress?.({ stage: 'settings', message: `Syncing settings (${payload.rootUpserts.length})`, count: payload.rootUpserts.length });
@@ -2200,9 +2251,6 @@ class PostgresStorage extends SqlStorageBase {
                 this.pluginCustomStorageCache = null;
             }
             this.invalidateBootstrapCache([...changedSettingKeys, ...payload.rootDeletes]);
-            void this.warmBootstrapCache().catch((error) => {
-                console.warn('[PostgreSQL] Bootstrap cache refresh failed:', error.message);
-            });
             return {
                 revision: nextRevision,
                 changed: {

@@ -43,14 +43,17 @@ class SettingsStore {
     private pendingPluginStorageUpserts = new Map<string, unknown>()
     private pendingPluginStorageDeletes = new Set<string>()
     private pendingPluginStorageClear = false
-    private rootDispose: (() => void) | null = null
+    private keyDisposers = new Map<string, () => void>()
+    private keySetDispose: (() => void) | null = null
     private previousFingerprints = new Map<string, string>()
 
     state = $state<Record<string, any>>({})
 
-    init(initialSettings: Partial<Database>, storage: ISqlStorage): void {
+    init(initialSettings: Partial<Database>, storage: ISqlStorage | null): void {
         this.storage = storage
-        this.rootDispose?.()
+        for (const dispose of this.keyDisposers.values()) dispose()
+        this.keyDisposers.clear()
+        this.keySetDispose?.(); this.keySetDispose = null
         this.previousFingerprints.clear()
         this.pendingUpserts.clear()
         this.pendingDeletes.clear()
@@ -58,9 +61,13 @@ class SettingsStore {
         this.pendingPluginStorageDeletes.clear()
         this.pendingPluginStorageClear = false
 
-        const settingsCopy = { ...initialSettings }
+        const adapter = initialSettings as Partial<Database> & { getLoadedRootKeys?: () => string[] }
+        const keys = adapter.getLoadedRootKeys?.() ?? Object.keys(initialSettings)
+        const settingsCopy = Object.fromEntries(keys.map((key) => [key, (initialSettings as any)[key]]))
         delete (settingsCopy as any).characters
         delete (settingsCopy as any).isSql
+        delete (settingsCopy as any).botPresets
+        delete (settingsCopy as any).botPresetsId
         settingsCopy.pluginCustomStorage ??= {}
 
         for (const [key, val] of Object.entries(settingsCopy)) {
@@ -73,33 +80,48 @@ class SettingsStore {
     }
 
     private observe(): void {
-        this.rootDispose = $effect.root(() => {
+        for (const key of Object.keys(this.state)) this.observeKey(key)
+        this.keySetDispose = $effect.root(() => {
             $effect(() => {
-                const keys = Object.keys(this.state)
-                for (const key of keys) {
-                    if (key === 'characters' || key === 'isSql' || key === 'pluginCustomStorage') continue
-                    const val = this.state[key]
-                    trackDeep(val)
-                    const snapshot = $state.snapshot(val)
-                    const fp = snapshotFingerprint(snapshot)
-                    const prev = this.previousFingerprints.get(key)
-                    if (prev !== fp) {
-                        this.previousFingerprints.set(key, fp)
-                        this.pendingDeletes.delete(key)
-                        this.pendingUpserts.set(key, snapshot)
-                        this.scheduleCommit()
-                    }
-                }
-                for (const prevKey of this.previousFingerprints.keys()) {
-                    if (!keys.includes(prevKey)) {
-                        this.previousFingerprints.delete(prevKey)
-                        this.pendingUpserts.delete(prevKey)
-                        this.pendingDeletes.add(prevKey)
+                const keys = new Set(Object.keys(this.state))
+                for (const key of keys) this.observeKey(key)
+                for (const key of this.previousFingerprints.keys()) {
+                    if (!keys.has(key)) {
+                        this.previousFingerprints.delete(key)
+                        this.pendingUpserts.delete(key)
+                        this.pendingDeletes.add(key)
                         this.scheduleCommit()
                     }
                 }
             })
         })
+    }
+
+    private observeKey(key: string): void {
+        if (this.keyDisposers.has(key) || key === 'characters' || key === 'isSql' || key === 'pluginCustomStorage' || key === 'botPresets' || key === 'botPresetsId') return
+        const dispose = $effect.root(() => {
+            $effect(() => {
+                const val = this.state[key]
+                if (!Object.prototype.hasOwnProperty.call(this.state, key)) {
+                    this.previousFingerprints.delete(key)
+                    this.pendingUpserts.delete(key)
+                    this.pendingDeletes.add(key)
+                    this.scheduleCommit()
+                    return
+                }
+                trackDeep(val)
+                const snapshot = $state.snapshot(val)
+                const fp = snapshotFingerprint(snapshot)
+                const prev = this.previousFingerprints.get(key)
+                if (prev !== fp) {
+                    this.previousFingerprints.set(key, fp)
+                    this.pendingDeletes.delete(key)
+                    this.pendingUpserts.set(key, snapshot)
+                    this.scheduleCommit()
+                }
+            })
+        })
+        this.keyDisposers.set(key, dispose)
     }
 
     private scheduleCommit(): void {
@@ -175,6 +197,7 @@ class SettingsStore {
             }
             return
         }
+        this.observeKey(keyStr)
         this.pendingDeletes.delete(keyStr)
         this.pendingUpserts.set(keyStr, $state.snapshot(value))
         this.scheduleCommit()
@@ -190,6 +213,18 @@ class SettingsStore {
         this.scheduleCommit()
     }
 
+    /** Apply storage-derived runtime values without turning hydration into a write. */
+    hydrate(updater: (state: Record<string, any>) => void): void {
+        updater(this.state)
+        for (const [key, value] of Object.entries(this.state)) {
+            if (key === 'characters' || key === 'isSql' || key === 'pluginCustomStorage' || key === 'botPresets' || key === 'botPresetsId') continue
+            this.observeKey(key)
+            this.previousFingerprints.set(key, snapshotFingerprint($state.snapshot(value)))
+            this.pendingUpserts.delete(key)
+            this.pendingDeletes.delete(key)
+        }
+    }
+
     delete(key: keyof Database): void {
         const keyStr = String(key)
         if (keyStr === 'pluginCustomStorage') {
@@ -197,6 +232,8 @@ class SettingsStore {
             return
         }
         delete this.state[keyStr]
+        this.keyDisposers.get(keyStr)?.()
+        this.keyDisposers.delete(keyStr)
         this.previousFingerprints.delete(keyStr)
         this.pendingUpserts.delete(keyStr)
         this.pendingDeletes.add(keyStr)
@@ -238,8 +275,9 @@ class SettingsStore {
             clearTimeout(this.debounceTimer)
             this.debounceTimer = null
         }
-        this.rootDispose?.()
-        this.rootDispose = null
+        for (const dispose of this.keyDisposers.values()) dispose()
+        this.keyDisposers.clear()
+        this.keySetDispose?.(); this.keySetDispose = null
     }
 }
 

@@ -2,20 +2,6 @@ const { canUsePostgresText } = require('./postgresJsonCodec.cjs');
 
 const DEFINITIONS = [
     {
-        table: 'system.bot_presets',
-        columns: [
-            'setting_key', 'position', 'name', 'api_type', 'ai_model', 'sub_model', 'main_prompt',
-            'jailbreak', 'global_note', 'temperature', 'max_context', 'max_response',
-            'frequency_penalty', 'presence_penalty', 'prompt_preprocess', 'proxy_model',
-            'openrouter_model', 'image',
-        ],
-        types: [
-            'text', 'integer', 'text', 'text', 'text', 'text', 'text', 'text', 'text',
-            'double precision', 'integer', 'integer', 'double precision', 'double precision',
-            'boolean', 'text', 'text', 'text',
-        ],
-    },
-    {
         table: 'system.personas',
         columns: [
             'setting_key', 'position', 'persona_id', 'name', 'prompt', 'icon', 'large_portrait',
@@ -165,7 +151,6 @@ const ORDERED_TEXT_KEYS = new Set([
 ]);
 const STRING_MAP_KEYS = new Set(['globalChatVariables', 'OaiCompAPIKeys', 'seperateModels']);
 const TABLE_SETTING_KEYS = {
-    'system.bot_presets': ['botPresets'],
     'system.personas': ['personas'],
     'system.modules': ['modules'],
     'system.plugins': ['plugins', 'pluginV2'],
@@ -223,32 +208,6 @@ function record(value) {
 function projectSettings(upserts) {
     const rows = Object.fromEntries(DEFINITIONS.map((definition) => [definition.table, []]));
     for (const { key, value } of upserts) {
-        if (key === 'botPresets') {
-            for (const [position, rawPreset] of array(value).entries()) {
-                const preset = record(rawPreset);
-                rows['system.bot_presets'].push({
-                    setting_key: key,
-                    position,
-                    name: text(preset.name),
-                    api_type: text(preset.apiType),
-                    ai_model: text(preset.aiModel),
-                    sub_model: text(preset.subModel),
-                    main_prompt: text(preset.mainPrompt),
-                    jailbreak: text(preset.jailbreak),
-                    global_note: text(preset.globalNote),
-                    temperature: number(preset.temperature),
-                    max_context: number(preset.maxContext),
-                    max_response: number(preset.maxResponse),
-                    frequency_penalty: number(preset.frequencyPenalty),
-                    presence_penalty: number(preset.PresensePenalty),
-                    prompt_preprocess: boolean(preset.promptPreprocess),
-                    proxy_model: text(preset.proxyRequestModel),
-                    openrouter_model: text(preset.openrouterRequestModel),
-                    image: text(preset.image),
-                });
-            }
-            continue;
-        }
         if (key === 'personas') {
             for (const [position, rawPersona] of array(value).entries()) {
                 const persona = record(rawPersona);

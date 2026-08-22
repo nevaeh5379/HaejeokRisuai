@@ -21,6 +21,7 @@ import {
 } from '../chatLoadPages';
 import { settingsStore } from '../stores/domain/settingsStore.svelte';
 import { characterStore } from '../stores/domain/characterStore.svelte';
+import { presetStore } from '../stores/domain/presetStore.svelte';
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = "2026.8.160" //<APP_VERSION_POINT>
@@ -164,13 +165,14 @@ export function normalizeDatabaseDefaults(data:Database){
     if(checkNullish(data.proxyKey)){
         data.proxyKey = ""
     }
-    if(checkNullish(data.botPresets)){
+    const portableData = data as Database & Partial<PortableDatabase>
+    if(checkNullish(portableData.botPresets)){
         let defaultPreset = presetTemplate
         defaultPreset.name = "Default"
-        data.botPresets = [defaultPreset]
+        portableData.botPresets = [defaultPreset]
     }
-    if(checkNullish(data.botPresetsId)){
-        data.botPresetsId = 0
+    if(checkNullish(portableData.botPresetsId)){
+        portableData.botPresetsId = 0
     }
     if(Array.isArray(data.promptTemplate)){
         data.promptTemplate = normalizePromptTemplate(data.promptTemplate)
@@ -506,8 +508,8 @@ export function normalizeDatabaseDefaults(data:Database){
             ignore: []
         }
     }
-    if (data.botPresets) {
-        for (const preset of data.botPresets) {
+    if (portableData.botPresets) {
+        for (const preset of portableData.botPresets) {
             if(Array.isArray(preset.promptTemplate)){
                 preset.promptTemplate = normalizePromptTemplate(preset.promptTemplate)
             }
@@ -766,7 +768,7 @@ export function normalizeDatabaseDefaults(data:Database){
     return data
 }
 
-export function setDatabase(data:Database){
+export function setDatabase(data:Database, storage: import('./ISqlStorage').ISqlStorage | null = null){
     // Normalize the adapter's plain core snapshot. Running normalization on
     // the adapter proxy itself would access lazy getters and defeat selective
     // SQL reads.
@@ -779,7 +781,7 @@ export function setDatabase(data:Database){
         normalizeDatabaseDefaults(data)
     }
     if (data.language) refreshLanguage(data)
-    setDatabaseLite(data)
+    setDatabaseLite(data, storage)
 }
 
 function refreshLanguage(data: Database): void {
@@ -790,9 +792,9 @@ function refreshLanguage(data: Database): void {
     })
 }
 
-export function setDatabaseLite(data:Database){
-    characterStore.init(data.characters ?? [], null as any)
-    settingsStore.init(data, null as any)
+export function setDatabaseLite(data:Database, storage: import('./ISqlStorage').ISqlStorage | null = null){
+    characterStore.init(data.characters ?? [], storage as any)
+    settingsStore.init(data, storage)
 }
 
 interface getDatabaseOptions{
@@ -904,8 +906,7 @@ export interface Database{
     formatversion:number
     waifuWidth:number
     waifuWidth2:number
-    botPresets:botPreset[]
-    botPresetsId:number
+    activeBotPresetId?: string
     sdProvider: string
     webUiUrl:string
     sdSteps:number
@@ -1335,6 +1336,12 @@ export interface Database{
     moveInsteadOfCopyOnCMPConvert?:boolean
     skipSavingAssetsOnWebSync?:boolean
     resizeTextarea?: boolean
+}
+
+/** External backup/preset files retain the legacy ordered array boundary. */
+export type PortableDatabase = Database & {
+    botPresets: botPreset[]
+    botPresetsId: number
 }
 
 export interface CustomSideBarItem{
@@ -2106,15 +2113,14 @@ export const defaultSdDataFunc = () =>{
     return safeStructuredClone(defaultSdData)
 }
 
-export function saveCurrentPreset(){
+export async function saveCurrentPreset(){
     let db = settingsStore.state
-    let pres = db.botPresets
-
-    if(db.botPresetsId === -1){
+    const current = presetStore.activePreset
+    if(!current){
         return
     }
     const savedPreset:botPreset =  {
-        name: pres[db.botPresetsId].name,
+        name: current.name,
         apiType: db.apiType,
         openAIKey: db.openAIKey,
         localNetworkMode: db.localNetworkMode,
@@ -2177,7 +2183,7 @@ export function saveCurrentPreset(){
         customFlags: safeStructuredClone(db.customFlags),
         enableCustomFlags: db.enableCustomFlags,
         regex: db.presetRegex,
-        image: pres?.[db.botPresetsId]?.image ?? '',
+        image: current.image ?? '',
         reasonEffort: db.reasoningEffort ?? 0,
         thinkingTokens: db.thinkingTokens ?? null,
         thinkingType: db.thinkingType ?? 'budget',
@@ -2194,36 +2200,27 @@ export function saveCurrentPreset(){
         dynamicOutput: db.dynamicOutput ?? null
     }
     
-    if(!Array.isArray(pres)){
-        pres = []
-    }
-    //if out of bounds, create a new preset
-    if(db.botPresetsId >= pres.length){
-        pres.push(savedPreset)
-    }
-    else{
-        pres[db.botPresetsId] = savedPreset
-    }
-    db.botPresets = pres
+    await presetStore.savePreset({ ...savedPreset, id: current.id } as botPreset)
 }
 
-export function copyPreset(id:number){
-    saveCurrentPreset()
-    let db = settingsStore.state
-    let pres = db.botPresets
-    const newPres = safeStructuredClone(pres[id])
+export async function copyPreset(id:number){
+    await saveCurrentPreset()
+    const source = await presetStore.load(presetStore.summaries[id].id)
+    const newPres = safeStructuredClone(source)
+    delete (newPres as any).id
     newPres.name += " Copy"
-    db.botPresets.push(newPres)
+    await presetStore.savePreset(newPres, presetStore.summaries.length)
 }
 
-export function changeToPreset(id =0, savecurrent = true){
+export async function changeToPreset(id =0, savecurrent = true){
     if(savecurrent){
-        saveCurrentPreset()
+        await saveCurrentPreset()
     }
     let db = settingsStore.state as Database
-    let pres = db.botPresets
-    const newPres = pres[id]
-    db.botPresetsId = id
+    const summary = presetStore.summaries[id]
+    if (!summary) return
+    const newPres = await presetStore.load(summary.id)
+    await presetStore.setActiveId(summary.id)
     setPreset(db, newPres)
 }
 
@@ -2362,9 +2359,9 @@ import type { OpenAIChat } from '../process/index.svelte';
 import type { Loadout } from '../loadout';
 
 export async function downloadPreset(id:number, type:'json'|'risupreset'|'return' = 'json'){
-    saveCurrentPreset()
-    let db = getDatabase()
-    let pres = safeStructuredClone(db.botPresets[id])
+    await saveCurrentPreset()
+    let pres = safeStructuredClone(await presetStore.load(presetStore.summaries[id].id))
+    delete (pres as any).id
     console.log(pres)
     pres.openAIKey = ''
     pres.forceReplaceUrl = ''
@@ -2441,7 +2438,6 @@ export async function importPreset(f:{
     if(pre?.promptTemplate !== undefined){
         pre.promptTemplate = normalizePromptTemplate(pre.promptTemplate)
     }
-    let db = settingsStore.state
     if(pre.presetVersion && pre.presetVersion >= 3){
         //NAI preset
         const pr = safeStructuredClone(prebuiltPresets.NAI)
@@ -2462,7 +2458,7 @@ export async function importPreset(f:{
         pr.NAISettings.mirostat_lr = pre.parameters.mirostat_lr
         pr.NAISettings.mirostat_tau = pre.parameters.mirostat_tau
         pr.name = pre.name ?? "Imported"
-        db.botPresets.push(pr)
+        await presetStore.savePreset(pr, presetStore.summaries.length)
         return
     }
 
@@ -2568,14 +2564,11 @@ export async function importPreset(f:{
         }
         pr.promptTemplate = normalizePromptTemplate(pr.promptTemplate)
         pr.name = "Imported ST Preset"
-        db.botPresets.push(pr)
+        await presetStore.savePreset(pr, presetStore.summaries.length)
         return
     }
     pre.name ??= "Imported"
-    if(!Array.isArray(db.botPresets)){
-        db.botPresets = []
-    }
-    db.botPresets.push(pre)
+    await presetStore.savePreset(pre, presetStore.summaries.length)
 }
 
 function normalizePromptRole(role: unknown): 'user'|'bot'|'system'|null {

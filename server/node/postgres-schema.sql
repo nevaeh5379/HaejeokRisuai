@@ -5,15 +5,15 @@ CREATE SCHEMA IF NOT EXISTS cold;
 
 CREATE TABLE IF NOT EXISTS system.storage_meta (
     singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
-    schema_version INTEGER NOT NULL DEFAULT 3,
-    schema_layout TEXT NOT NULL DEFAULT 'relational-schema-v2',
+    schema_version INTEGER NOT NULL DEFAULT 4,
+    schema_layout TEXT NOT NULL DEFAULT 'relational-schema-v3',
     revision BIGINT NOT NULL DEFAULT 0,
     initialized BOOLEAN NOT NULL DEFAULT FALSE,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 INSERT INTO system.storage_meta (singleton, schema_version, schema_layout)
-VALUES (TRUE, 3, 'relational-schema-v2')
+VALUES (TRUE, 4, 'relational-schema-v3')
 ON CONFLICT (singleton) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS system.asset_catalog_state (
@@ -136,27 +136,12 @@ ALTER TABLE system.settings ADD COLUMN IF NOT EXISTS num_val DOUBLE PRECISION;
 ALTER TABLE system.settings ADD COLUMN IF NOT EXISTS bool_val BOOLEAN;
 
 CREATE TABLE IF NOT EXISTS system.bot_presets (
-    setting_key TEXT NOT NULL DEFAULT 'botPresets' CHECK (setting_key = 'botPresets'),
-    position INTEGER NOT NULL CHECK (position >= 0),
-    name TEXT,
-    api_type TEXT,
-    ai_model TEXT,
-    sub_model TEXT,
-    main_prompt TEXT,
-    jailbreak TEXT,
-    global_note TEXT,
-    temperature DOUBLE PRECISION,
-    max_context INTEGER,
-    max_response INTEGER,
-    frequency_penalty DOUBLE PRECISION,
-    presence_penalty DOUBLE PRECISION,
-    prompt_preprocess BOOLEAN,
-    proxy_model TEXT,
-    openrouter_model TEXT,
-    image TEXT,
-    PRIMARY KEY (setting_key, position),
-    FOREIGN KEY (setting_key) REFERENCES system.settings(key)
-        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+    preset_id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL UNIQUE CHECK (position >= 0),
+    name TEXT NOT NULL DEFAULT '', image TEXT NOT NULL DEFAULT '',
+    api_type TEXT NOT NULL DEFAULT '', ai_model TEXT NOT NULL DEFAULT '',
+    data JSONB NOT NULL, content_hash TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS bot_presets_model_idx

@@ -14,6 +14,8 @@ import type {
     ISqlStorage,
     SqlLoadDatabaseOptions,
     SqlLoadDatabaseResult,
+    BotPresetSummary,
+    StoredBotPreset,
 } from './ISqlStorage'
 import type {
     NodePostgresRevision,
@@ -141,6 +143,30 @@ export class TauriSqliteStorage implements ISqlStorage {
         return this.loadNodeValue('setting_extension_nodes', 'setting_key = ?', [key])
     }
 
+    private async validatePresetCommit(commit: SqlCommit): Promise<void> {
+        if (!commit.presets) return
+        const originalIds = (await this.selectRows<{ preset_id: string }>('SELECT preset_id FROM bot_presets ORDER BY position')).map((row) => row.preset_id)
+        const ids = new Set(originalIds)
+        if (commit.replaceAll) ids.clear()
+        for (const id of commit.presets.deletes) ids.delete(id)
+        for (const entry of commit.presets.upserts) ids.add(entry.id)
+        if (ids.size === 0) throw new Error('At least one bot preset must remain')
+        if (commit.presets.order && (commit.presets.order.length !== ids.size ||
+            new Set(commit.presets.order).size !== ids.size || commit.presets.order.some((id) => !ids.has(id)))) {
+            throw new Error('Preset order must contain every preset ID exactly once')
+        }
+        if (commit.presets.activeId !== undefined && !ids.has(commit.presets.activeId)) throw new Error('Active bot preset does not exist')
+        if (commit.presets.activeId === undefined) {
+            const current = await this.loadSettingValue('activeBotPresetId') as string | undefined
+            if (!current || !ids.has(current)) {
+                const index = originalIds.indexOf(current ?? '')
+                commit.presets.activeId = originalIds.slice(index + 1).find((id) => ids.has(id)) ||
+                    originalIds.slice(0, Math.max(0, index)).reverse().find((id) => ids.has(id)) ||
+                    (commit.presets.order || Array.from(ids))[0]
+            }
+        }
+    }
+
     // ── Database-level load / save ───────────────────────────────────────
 
     async loadDatabase(options?: SqlLoadDatabaseOptions): Promise<SqlLoadDatabaseResult | null> {
@@ -239,7 +265,7 @@ export class TauriSqliteStorage implements ISqlStorage {
             const adapter = createSqlDatabaseAdapter(
                 db,
                 this,
-                ['personas', 'botPresets', 'loreBook', 'modules', 'prompts', 'scripts'],
+                ['personas', 'loreBook', 'modules', 'prompts', 'scripts'],
             )
             return { status: 'ready', revision: this.revision, database: adapter }
         }
@@ -254,6 +280,7 @@ export class TauriSqliteStorage implements ISqlStorage {
             const meta = await this.selectOne<{ revision: number }>('SELECT revision FROM system_storage_meta WHERE singleton = 1')
             const currentRevision = Number(meta?.revision) || 0
             if (commit.baseRevision !== currentRevision) throw new SqlRevisionConflictError(currentRevision)
+            await this.validatePresetCommit(commit)
             if (commit.replaceAll) {
                 await this.execute('DELETE FROM system_settings')
                 await this.execute('DELETE FROM plugin_custom_storage')
@@ -369,8 +396,17 @@ export class TauriSqliteStorage implements ISqlStorage {
         return (await this.loadSettingValue('personas') as RisuPersona[] | undefined) ?? []
     }
 
-    async loadBotPresets(): Promise<botPreset[]> {
-        return (await this.loadSettingValue('botPresets') as botPreset[] | undefined) ?? []
+    async listBotPresets(): Promise<BotPresetSummary[]> {
+        const rows = await this.selectRows<{ preset_id: string; position: number; name: string; image: string; api_type: string; ai_model: string; content_hash: string }>(
+            'SELECT preset_id, position, name, image, api_type, ai_model, content_hash FROM bot_presets ORDER BY position')
+        return rows.map((row) => ({ id: row.preset_id, position: Number(row.position), name: row.name,
+            image: row.image, apiType: row.api_type, aiModel: row.ai_model, hash: row.content_hash }))
+    }
+
+    async loadBotPreset(id: string): Promise<StoredBotPreset | null> {
+        const row = await this.selectOne<{ data: string }>('SELECT data FROM bot_presets WHERE preset_id = ?', [id])
+        if (!row) return null
+        return { ...(JSON.parse(row.data) as botPreset), id }
     }
 
     async loadLorebooks(): Promise<{ name: string; data: loreBook[] }[]> {

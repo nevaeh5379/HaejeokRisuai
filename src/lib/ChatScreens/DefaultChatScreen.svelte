@@ -2,11 +2,11 @@
 
     import Suggestion from './Suggestion.svelte';
     import { CameraIcon, DatabaseIcon, DicesIcon, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, SparkleIcon } from "@lucide/svelte";
-    import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, easyPanelStore, chatPanelStore } from "../../ts/stores.svelte";
+    import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, easyPanelStore, chatPanelStore, startupPhase } from "../../ts/stores.svelte";
     import { tick } from 'svelte';
     import Chat from "./Chat.svelte";
     import { type Message } from "../../ts/storage/database.svelte";
-    import { characterStore, settingsStore, personaStore, messageStore } from 'src/ts/stores/domain';
+    import { characterStore, settingsStore, personaStore, messageStore, presetStore } from 'src/ts/stores/domain';
     import { getCharImage } from "../../ts/characters";
     import { chatProcessStage, doingChat, sendChat } from "../../ts/process/index.svelte";
     import { sleep } from "../../ts/util";
@@ -704,6 +704,21 @@
                             style:height={inputHeight}
                     >
                         <div class="loadmove chat-process-stage-{$chatProcessStage}" class:autoload={autoMode}></div>
+                    </button>
+                {:else if $startupPhase !== 'chat-ready'}
+                    <button
+                        onclick={async () => {
+                            if (presetStore.activeStatus === 'error') {
+                                await presetStore.retryActive()
+                                if (presetStore.activePreset) $startupPhase = 'chat-ready'
+                            }
+                        }}
+                        disabled={presetStore.activeStatus !== 'error'}
+                        title={presetStore.error ?? 'Chat runtime is loading'}
+                        class="flex justify-center border-y border-darkborderc items-center text-textcolor2 px-3 text-xs"
+                        style:height={inputHeight}
+                    >
+                        {presetStore.activeStatus === 'error' ? 'Retry' : 'Loading…'}
                     </button>
                 {:else}
                     <button

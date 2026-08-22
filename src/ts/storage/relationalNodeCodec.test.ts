@@ -36,9 +36,10 @@ describe('typed relational node codec', () => {
         expect(() => flattenRelationalValue([1, 2, 3], { maxRows: 3 })).toThrow(/maximum row count/)
     })
 
-    it('declares the v2 local schema with no document payload columns', () => {
+    it('declares the v3 local schema with presets as the bounded document exception', () => {
         expect(sqliteSchemaSql).toContain(`'${RELATIONAL_SCHEMA_LAYOUT}'`)
-        expect(sqliteSchemaSql).toContain('schema_version INTEGER NOT NULL DEFAULT 2')
+        expect(sqliteSchemaSql).toContain('schema_version INTEGER NOT NULL DEFAULT 3')
+        expect(sqliteSchemaSql).toMatch(/bot_presets[\s\S]{0,350}data TEXT NOT NULL/)
         expect(sqliteSchemaSql).not.toMatch(/\b(?:system_settings|characters|chats|messages|cold_storage)\s*\([^;]*\b(?:data|value|payload)\s+TEXT/is)
         expect(sqliteSchemaSql).toMatch(/plugin_custom_storage[\s\S]*json_valid\(value\)/)
     })

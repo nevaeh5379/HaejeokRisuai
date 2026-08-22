@@ -3,6 +3,16 @@ import { flattenRelationalValue, RELATIONAL_NODE_COLUMNS, type RelationalNodeRow
 
 export type SqliteExecute = (sql: string, bind?: unknown[]) => void | Promise<void>
 
+export function presetContentHash(value: unknown): string {
+    const serialized = JSON.stringify(value)
+    let hash = 2166136261
+    for (let index = 0; index < serialized.length; index++) {
+        hash ^= serialized.charCodeAt(index)
+        hash = Math.imul(hash, 16777619)
+    }
+    return `${serialized.length}-${(hash >>> 0).toString(16)}`
+}
+
 const SETTING_DOMAINS: Record<string, ReadonlySet<string>> = {
     model: new Set(['apiType', 'aiModel', 'subModel', 'temperature', 'maxContext', 'maxResponse', 'frequencyPenalty', 'PresensePenalty', 'bias', 'customModels', 'fallbackModels']),
     provider: new Set(['openAIKey', 'proxyKey', 'forceReplaceUrl', 'openrouterKey', 'claudeAPIKey', 'nanogptKey', 'koboldURL', 'textgenWebUIStreamURL', 'textgenWebUIBlockingURL', 'OaiCompAPIKeys']),
@@ -47,8 +57,12 @@ export async function writeSqliteColdStorage(execute: SqliteExecute, key: string
 }
 
 export async function applySqliteCommit(commit: SqlCommit, execute: SqliteExecute): Promise<void> {
-    if (commit.replaceAll) await execute('DELETE FROM plugin_custom_storage')
+    if (commit.replaceAll) {
+        await execute('DELETE FROM plugin_custom_storage')
+        await execute('DELETE FROM bot_presets')
+    }
     for (const upsert of commit.root.upserts) {
+        if (upsert.key === 'botPresets' || upsert.key === 'botPresetsId') throw new Error(`${upsert.key} must be written through presets`)
         if (upsert.key === 'pluginCustomStorage') continue
         const root = flattenRelationalValue(upsert.value)[0]
         await execute(`INSERT INTO system_settings
@@ -61,7 +75,10 @@ export async function applySqliteCommit(commit: SqlCommit, execute: SqliteExecut
             root.encoded_text_value, root.number_value, root.boolean_value])
         await replaceNodes(execute, 'setting_extension_nodes', ['setting_key'], [upsert.key], upsert.value)
     }
-    for (const key of commit.root.deletes) await execute('DELETE FROM system_settings WHERE key = ?', [key])
+    for (const key of commit.root.deletes) {
+        if (key === 'botPresets' || key === 'botPresetsId') throw new Error(`${key} is not a root setting`)
+        await execute('DELETE FROM system_settings WHERE key = ?', [key])
+    }
 
     if (commit.pluginStorage) {
         if (commit.pluginStorage.clear) await execute('DELETE FROM plugin_custom_storage')
@@ -69,6 +86,46 @@ export async function applySqliteCommit(commit: SqlCommit, execute: SqliteExecut
         for (const upsert of commit.pluginStorage.upserts) {
             await execute(`INSERT INTO plugin_custom_storage (key, value, updated_at) VALUES (?, ?, datetime('now'))
                 ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')`, [upsert.key, JSON.stringify(upsert.value)])
+        }
+    }
+
+    if (commit.presets) {
+        for (const id of commit.presets.deletes) {
+            await execute('DELETE FROM bot_presets WHERE preset_id = ?', [id])
+        }
+        for (const entry of commit.presets.upserts) {
+            const data = { ...entry.data } as Record<string, unknown>
+            delete data.id
+            const serialized = JSON.stringify(data)
+            const position = entry.position ?? 0
+            await execute(`INSERT INTO bot_presets
+                (preset_id, position, name, image, api_type, ai_model, data, content_hash, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(preset_id) DO UPDATE SET position=excluded.position,
+                name=excluded.name, image=excluded.image, api_type=excluded.api_type,
+                ai_model=excluded.ai_model, data=excluded.data,
+                content_hash=excluded.content_hash, updated_at=datetime('now')`,
+            [entry.id, position, data.name ?? '', data.image ?? '', data.apiType ?? '',
+                data.aiModel ?? '', serialized, presetContentHash(data)])
+        }
+        if (commit.presets.order) {
+            await execute('UPDATE bot_presets SET position = position + 1000000000')
+            for (const [position, id] of commit.presets.order.entries()) {
+                await execute('UPDATE bot_presets SET position = ? WHERE preset_id = ?', [position, id])
+            }
+        }
+        if (commit.presets.activeId !== undefined) {
+            const value = commit.presets.activeId
+            const root = flattenRelationalValue(value)[0]
+            await execute(`INSERT INTO system_settings
+                (key, domain, value_type, text_value, encoded_text_value, number_value, boolean_value, updated_at)
+                VALUES ('activeBotPresetId', 'model', ?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(key) DO UPDATE SET value_type=excluded.value_type,
+                text_value=excluded.text_value, encoded_text_value=excluded.encoded_text_value,
+                number_value=excluded.number_value, boolean_value=excluded.boolean_value,
+                updated_at=datetime('now')`, [root.value_type, root.text_value,
+                root.encoded_text_value, root.number_value, root.boolean_value])
+            await replaceNodes(execute, 'setting_extension_nodes', ['setting_key'], ['activeBotPresetId'], value)
         }
     }
 

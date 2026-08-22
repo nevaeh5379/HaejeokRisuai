@@ -128,7 +128,7 @@ describe('SQL chat message paging', () => {
 })
 
 describe('SQL domain preservation and loading', () => {
-    it('preserves initially provided personas, modules, presets, and lorebook without returning dummy defaults', () => {
+    it('preserves initially provided personas, modules, and lorebook without returning dummy defaults', () => {
         const initialData = {
             username: 'Alice',
             personas: [
@@ -137,9 +137,6 @@ describe('SQL domain preservation and loading', () => {
             ],
             modules: [
                 { id: 'mod-1', name: 'Module 1' },
-            ],
-            botPresets: [
-                { name: 'Preset 1' },
             ],
             loreBook: [
                 { name: 'Lore 1', data: [] },
@@ -150,7 +147,7 @@ describe('SQL domain preservation and loading', () => {
         const adapter = createSqlDatabaseAdapter(
             initialData,
             storage,
-            ['personas', 'modules', 'botPresets', 'loreBook'],
+            ['personas', 'modules', 'loreBook'],
         )
 
         expect(adapter.personas).toHaveLength(2)
@@ -158,8 +155,6 @@ describe('SQL domain preservation and loading', () => {
         expect(adapter.personas[1].name).toBe('Custom Persona 2')
         expect(adapter.modules).toHaveLength(1)
         expect(adapter.modules[0].name).toBe('Module 1')
-        expect(adapter.botPresets).toHaveLength(1)
-        expect(adapter.botPresets[0].name).toBe('Preset 1')
         expect(adapter.loreBook).toHaveLength(1)
         expect(adapter.loreBook[0].name).toBe('Lore 1')
         expect(adapter.isDomainLoaded!('personas')).toBe(true)

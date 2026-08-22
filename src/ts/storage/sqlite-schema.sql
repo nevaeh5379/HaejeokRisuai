@@ -5,14 +5,25 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS system_storage_meta (
     singleton INTEGER PRIMARY KEY DEFAULT 1 CHECK (singleton = 1),
-    schema_version INTEGER NOT NULL DEFAULT 2,
-    schema_layout TEXT NOT NULL DEFAULT 'relational-schema-v2',
+    schema_version INTEGER NOT NULL DEFAULT 3,
+    schema_layout TEXT NOT NULL DEFAULT 'relational-schema-v3',
     revision INTEGER NOT NULL DEFAULT 0,
     initialized INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 INSERT OR IGNORE INTO system_storage_meta (singleton, schema_version, schema_layout)
-VALUES (1, 2, 'relational-schema-v2');
+VALUES (1, 3, 'relational-schema-v3');
+
+CREATE TABLE IF NOT EXISTS bot_presets (
+    preset_id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL UNIQUE CHECK (position >= 0),
+    name TEXT NOT NULL DEFAULT '', image TEXT NOT NULL DEFAULT '',
+    api_type TEXT NOT NULL DEFAULT '', ai_model TEXT NOT NULL DEFAULT '',
+    data TEXT NOT NULL, content_hash TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS bot_presets_position_idx ON bot_presets (position);
+CREATE INDEX IF NOT EXISTS bot_presets_model_idx ON bot_presets (api_type, ai_model);
 
 CREATE TABLE IF NOT EXISTS system_revisions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

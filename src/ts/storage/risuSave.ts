@@ -1,6 +1,6 @@
 import { Packr, Unpackr, decode } from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
-import { getDatabase, presetTemplate, type Database } from "./database.svelte";
+import { getDatabase, presetTemplate, type Database, type PortableDatabase } from "./database.svelte";
 import localforage from "localforage";
 import { forageStorage } from "../globalApi.svelte";
 import { isNodeServer, isTauri } from "src/ts/platform"
@@ -127,11 +127,10 @@ export class RisuSaveDecoder {
         compression: boolean;
         content: string;
     }[] = []
-    async decode(data: Uint8Array): Promise<Database> {
+    async decode(data: Uint8Array): Promise<PortableDatabase> {
         console.log('Decoding RisuSave data');
         let offset = magicRisuSaveHeader.length;
-        //@ts-expect-error Database has required fields, but we initialize empty and populate incrementally during decode
-        let db:Database = {}
+        let db:PortableDatabase = {} as PortableDatabase
         const loadedBlocks = new Set<string>();
         while (offset < data.length) {
             try {

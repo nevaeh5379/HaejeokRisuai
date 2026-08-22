@@ -42,7 +42,7 @@ describe('shared SQL storage helpers', () => {
         })
         await expect(storage.loadPrompts()).resolves.toMatchObject({ hash: 'hash' })
         await expect(storage.loadBootstrapData()).resolves.toMatchObject({
-            database: { plugins: 'plugins-value', botPresets: 'botPresets-value' },
+            database: { plugins: 'plugins-value' },
             hash: 'hash',
         })
         const countAfterWarm = settingLoadCount
@@ -53,6 +53,8 @@ describe('shared SQL storage helpers', () => {
         expect(settingLoadCount).toBe(countAfterWarm)
         storage.invalidateBootstrapCache(['botPresets'])
         await storage.loadBootstrapData()
+        expect(settingLoadCount).toBe(countAfterWarm)
+        expect(BOOTSTRAP_SETTING_KEYS).not.toContain('botPresets')
         expect(BOOTSTRAP_SETTING_KEYS).toContain('globalscript')
         expect(BOOTSTRAP_SETTING_KEYS).toContain('customModels')
         expect(BOOTSTRAP_SETTING_KEYS).toContain('translatorPresets')
@@ -113,6 +115,22 @@ describe('shared SQL storage helpers', () => {
             baseRevision: 2,
             messageManifests: [{ chatId: 'chat-1', ids: [null] }],
         })).toThrow(TestPayloadError)
+    })
+
+    it('normalizes ID-based preset mutations and rejects legacy root arrays', () => {
+        const helpers = createSqlStorageHelpers({ PayloadError: TestPayloadError })
+        const id = '123e4567-e89b-42d3-a456-426614174000'
+        const payload = helpers.validateSyncPayload({
+            baseRevision: 4,
+            root: { upserts: [], deletes: [] },
+            presets: { upserts: [{ id, position: 0, data: { name: 'Only summary fields escape list API', openAIKey: 'secret' } }], deletes: [], order: [id], activeId: id },
+        })
+        expect(payload.presets).toMatchObject({ order: [id], activeId: id })
+        expect(payload.presets.upserts[0].data.openAIKey).toBe('secret')
+        expect(() => helpers.validateSyncPayload({
+            baseRevision: 4,
+            root: { upserts: [{ key: 'botPresets', value: [] }], deletes: [] },
+        })).toThrow(/written through presets/)
     })
 
     it('groups relational child rows by entity and message', () => {

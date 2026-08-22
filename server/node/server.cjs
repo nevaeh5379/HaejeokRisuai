@@ -381,6 +381,13 @@ async function mirrorFullBackupToBackup(onProgress) {
         return { skipped: 'primary_not_initialized' };
     }
     const payload = buildFullBackupPayload(loaded.database);
+    const presetSummaries = (await postgresStorage.listBotPresets()).presets;
+    payload.presets = {
+        upserts: (await Promise.all(presetSummaries.map((summary) => postgresStorage.loadBotPreset(summary.id))))
+            .filter(Boolean).map((result, position) => ({ id: result.preset.id, position, data: result.preset })),
+        deletes: [], order: presetSummaries.map((summary) => summary.id),
+        activeId: loaded.database.activeBotPresetId || presetSummaries[0]?.id,
+    };
     const settingsCount = payload.root?.upserts?.length ?? payload.rootUpserts?.length ?? 0;
     const charactersCount = payload.characters?.length || 0;
     const chatsCount = payload.chats?.length || 0;
@@ -468,6 +475,13 @@ async function restoreBackupToMainDatabase(onProgress) {
         throw new Error('Backup database has no valid data to restore');
     }
     const payload = buildFullBackupPayload(loaded.database);
+    const presetSummaries = (await backupStorage.listBotPresets()).presets;
+    payload.presets = {
+        upserts: (await Promise.all(presetSummaries.map((summary) => backupStorage.loadBotPreset(summary.id))))
+            .filter(Boolean).map((result, position) => ({ id: result.preset.id, position, data: result.preset })),
+        deletes: [], order: presetSummaries.map((summary) => summary.id),
+        activeId: loaded.database.activeBotPresetId || presetSummaries[0]?.id,
+    };
     const settingsCount = payload.root?.upserts?.length ?? payload.rootUpserts?.length ?? 0;
     const charactersCount = payload.characters?.length || 0;
     const chatsCount = payload.chats?.length || 0;
@@ -2506,7 +2520,6 @@ app.post('/api/postgres-config', authenticatedRouteLimiter, async (req, res, nex
 
         if (postgresStorage.enabled) {
             await postgresStorage.migrateLegacyColdStorage(savePath);
-            await postgresStorage.warmBootstrapCache();
         }
         res.send({ success: true, ...await getPostgresConfigResponse() });
     } catch (error) {
@@ -2678,8 +2691,6 @@ app.post('/api/db-config', authenticatedRouteLimiter, async (req, res, next) => 
                 console.warn('[db-config] Legacy cold storage migration skipped:', e.message);
             }
         }
-        await postgresStorage.warmBootstrapCache();
-
         // PostgreSQL 호환 config 파일도 갱신 (기존 /api/postgres-config와 호환성)
         if (vendor === 'postgres') {
             await persistPostgresServerConfig({
@@ -3088,34 +3099,6 @@ app.get('/api/database-v2/plugins', authenticatedRouteLimiter, async (req, res, 
     }
 });
 
-app.get('/api/database-v2/bootstrap', authenticatedRouteLimiter, async (req, res, next) => {
-    if (!await checkAuth(req, res)) {
-        return;
-    }
-    if (!postgresStorage.enabled) {
-        res.status(404).send({
-            error: 'PostgreSQL storage is not configured',
-            code: 'postgres_disabled',
-        });
-        return;
-    }
-
-    try {
-        const result = await postgresStorage.loadBootstrapData();
-        const etag = `"risu-bootstrap-${result.hash}"`;
-        res.setHeader('ETag', etag);
-        res.setHeader('Cache-Control', 'private, no-cache');
-        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
-        if (requestEtag.split(',').map((value) => value.trim()).includes(etag)) {
-            res.status(304).end();
-            return;
-        }
-        await sendCompressedJson(req, res, result);
-    } catch (error) {
-        next(error);
-    }
-});
-
 app.get('/api/database-v2/plugin-custom-storage/keys', authenticatedRouteLimiter, async (req, res, next) => {
     if (!await checkAuth(req, res)) {
         return;
@@ -3257,26 +3240,55 @@ app.get('/api/database-v2/personas', authenticatedRouteLimiter, async (req, res,
     }
 });
 
-app.get('/api/database-v2/bot-presets', authenticatedRouteLimiter, async (req, res, next) => {
+app.get('/api/database-v2/presets', authenticatedRouteLimiter, async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     if (!postgresStorage.enabled) {
         res.status(404).send({ error: 'PostgreSQL storage is not configured', code: 'postgres_disabled' });
         return;
     }
     try {
-        const result = await postgresStorage.loadBotPresets();
-        const etag = `"risu-bot-presets-${result.hash}"`;
+        const result = await postgresStorage.listBotPresets();
+        const etag = `"risu-presets-${result.hash}"`;
         res.setHeader('ETag', etag);
         res.setHeader('Cache-Control', 'private, no-cache');
+        res.setHeader('Server-Timing', `sql;dur=${result.queryMs.toFixed(1)}, serialize;desc="streamed"`);
         const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
         if (requestEtag.split(',').map((v) => v.trim()).includes(etag)) {
             res.status(304).end();
             return;
         }
-        await sendCompressedJson(req, res, { botPresets: result.botPresets, hash: result.hash });
+        await sendCompressedJson(req, res, { presets: result.presets, hash: result.hash });
     } catch (error) {
         next(error);
     }
+});
+
+app.get('/api/database-v2/presets/:id', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'SQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(req.params.id)) {
+        res.status(400).send({ error: 'Invalid preset ID', code: 'invalid_preset_id' });
+        return;
+    }
+    try {
+        const result = await postgresStorage.loadBotPreset(req.params.id);
+        if (!result) {
+            res.status(404).send({ error: 'Preset not found', code: 'preset_not_found' });
+            return;
+        }
+        const etag = `"risu-preset-${req.params.id}-${result.hash}"`;
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        res.setHeader('Server-Timing', `sql;dur=${result.queryMs.toFixed(1)}, serialize;desc="streamed"`);
+        const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
+        if (requestEtag.split(',').map((v) => v.trim()).includes(etag)) {
+            res.status(304).end(); return;
+        }
+        await sendCompressedJson(req, res, { preset: result.preset, hash: result.hash });
+    } catch (error) { next(error); }
 });
 
 app.get('/api/database-v2/lorebooks', authenticatedRouteLimiter, async (req, res, next) => {
@@ -4810,7 +4822,6 @@ async function startServer() {
     try {
         console.log('[Server] Step 1: initializing storage...');
         await postgresStorage.initialize();
-        await postgresStorage.warmBootstrapCache();
         console.log('[Server] Step 2: storage initialized, initializing asset storage...');
         await assetStorageManager.init();
         console.log('[Server] Step 3: asset storage initialized, checking bootstrap config...');

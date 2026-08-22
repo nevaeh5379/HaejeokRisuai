@@ -1,36 +1,114 @@
+import { v4 as uuidv4 } from 'uuid'
 import type { botPreset } from '../../storage/database.svelte'
-import { settingsStore } from './settingsStore.svelte'
+import { presetTemplate } from '../../storage/database.svelte'
+import type { BotPresetSummary, ISqlStorage, StoredBotPreset } from '../../storage/ISqlStorage'
+import { safeStructuredClone } from '../../polyfill'
+
+export type PresetLoadStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 class PresetStore {
+    private storage: ISqlStorage | null = null
+    summaries = $state<BotPresetSummary[]>([])
+    activeId = $state('')
+    cache = $state(new Map<string, StoredBotPreset>())
+    listStatus = $state<PresetLoadStatus>('idle')
+    activeStatus = $state<PresetLoadStatus>('idle')
+    error = $state<string | null>(null)
+
     get list(): botPreset[] {
-        return settingsStore.get('botPresets') ?? []
+        return this.summaries.map((summary) => this.cache.get(summary.id) ?? ({
+            id: summary.id, name: summary.name, image: summary.image,
+            apiType: summary.apiType, aiModel: summary.aiModel,
+        } as unknown as StoredBotPreset))
     }
-
     get activeIndex(): number {
-        return settingsStore.get('botPresetsId') ?? 0
+        const index = this.summaries.findIndex((preset) => preset.id === this.activeId)
+        return index < 0 ? 0 : index
+    }
+    get activePreset(): StoredBotPreset | undefined { return this.cache.get(this.activeId) }
+
+    async init(storage: ISqlStorage, preferredActiveId?: string): Promise<void> {
+        this.storage = storage; this.listStatus = 'loading'; this.activeStatus = 'loading'; this.error = null
+        try {
+            let summaries = await storage.listBotPresets()
+            if (summaries.length === 0) {
+                const id = uuidv4(); const data = safeStructuredClone(presetTemplate); data.name = 'Default'
+                await storage.commit({ baseRevision: storage.getRevision(), action: 'preset:create-default',
+                    root: { upserts: [], deletes: [] }, presets: { upserts: [{ id, position: 0, data }], deletes: [], order: [id], activeId: id },
+                    characters: [], chats: [], chatManifests: [], messages: [], messageManifests: [] })
+                summaries = await storage.listBotPresets()
+            }
+            this.summaries = summaries; this.listStatus = 'ready'
+            const activeId = summaries.some((summary) => summary.id === preferredActiveId) ? preferredActiveId! : summaries[0].id
+            await this.setActiveId(activeId, preferredActiveId !== activeId)
+        } catch (error) {
+            this.listStatus = 'error'; this.activeStatus = 'error'; this.error = error instanceof Error ? error.message : String(error)
+            throw error
+        }
     }
 
-    get activePreset(): botPreset | undefined {
-        const presets = this.list
-        return presets[this.activeIndex] ?? presets[0]
+    async load(id: string, force = false): Promise<StoredBotPreset> {
+        if (!this.storage) throw new Error('Preset store is not initialized')
+        if (!force && this.cache.has(id)) return this.cache.get(id)!
+        const preset = await this.storage.loadBotPreset(id)
+        if (!preset) throw new Error(`Preset not found: ${id}`)
+        this.cache.set(id, preset); return preset
     }
-
+    async retryActive(): Promise<void> {
+        if (!this.activeId) return
+        this.activeStatus = 'loading'; this.error = null
+        try { await this.load(this.activeId, true); this.activeStatus = 'ready' }
+        catch (error) { this.activeStatus = 'error'; this.error = error instanceof Error ? error.message : String(error) }
+    }
     async savePreset(preset: botPreset, position?: number): Promise<void> {
-        const targetPos = position !== undefined ? position : this.activeIndex
-        const presets = [...this.list]
-        presets[targetPos] = preset
-        settingsStore.set('botPresets', presets)
-        await settingsStore.flush()
+        if (!this.storage) throw new Error('Preset store is not initialized')
+        const id = (preset as StoredBotPreset).id || this.summaries[position ?? this.activeIndex]?.id || uuidv4()
+        const targetPosition = position ?? this.summaries.findIndex((summary) => summary.id === id)
+        const data = safeStructuredClone(preset) as StoredBotPreset; delete (data as any).id
+        await this.storage.commit({ baseRevision: this.storage.getRevision(), action: 'preset:save', root: { upserts: [], deletes: [] },
+            presets: { upserts: [{ id, position: targetPosition < 0 ? this.summaries.length : targetPosition, data }], deletes: [] }, characters: [], chats: [], chatManifests: [], messages: [], messageManifests: [] })
+        this.cache.set(id, { ...data, id }); this.summaries = await this.storage.listBotPresets()
     }
-
-    async setPresets(presets: botPreset[]): Promise<void> {
-        settingsStore.set('botPresets', presets)
-        await settingsStore.flush()
+    async setActiveId(id: string, persist = true): Promise<void> {
+        if (!this.storage || !this.summaries.some((preset) => preset.id === id)) throw new Error('Active bot preset does not exist')
+        this.activeId = id; this.activeStatus = 'loading'; this.error = null
+        try {
+            await this.load(id)
+            if (persist) await this.storage.commit({ baseRevision: this.storage.getRevision(), action: 'preset:activate', root: { upserts: [], deletes: [] },
+                presets: { upserts: [], deletes: [], activeId: id }, characters: [], chats: [], chatManifests: [], messages: [], messageManifests: [] })
+            this.activeStatus = 'ready'
+        } catch (error) { this.activeStatus = 'error'; this.error = error instanceof Error ? error.message : String(error); throw error }
     }
-
     async setActiveIndex(index: number): Promise<void> {
-        settingsStore.set('botPresetsId', index)
-        await settingsStore.flush()
+        const summary = this.summaries[index]; if (!summary) throw new Error('Preset index is out of range')
+        await this.setActiveId(summary.id)
+    }
+    async reorder(ids: string[]): Promise<void> {
+        if (!this.storage) throw new Error('Preset store is not initialized')
+        await this.storage.commit({ baseRevision: this.storage.getRevision(), action: 'preset:reorder', root: { upserts: [], deletes: [] },
+            presets: { upserts: [], deletes: [], order: ids }, characters: [], chats: [], chatManifests: [], messages: [], messageManifests: [] })
+        this.summaries = await this.storage.listBotPresets()
+    }
+    async delete(id: string): Promise<void> {
+        if (!this.storage) throw new Error('Preset store is not initialized')
+        if (this.summaries.length <= 1) throw new Error('At least one bot preset must remain')
+        const index = this.summaries.findIndex((preset) => preset.id === id); if (index < 0) throw new Error('Preset not found')
+        const nextActive = id === this.activeId ? (this.summaries[index + 1]?.id || this.summaries[index - 1].id) : this.activeId
+        const order = this.summaries.filter((preset) => preset.id !== id).map((preset) => preset.id)
+        await this.storage.commit({ baseRevision: this.storage.getRevision(), action: 'preset:delete', root: { upserts: [], deletes: [] },
+            presets: { upserts: [], deletes: [id], order, activeId: nextActive }, characters: [], chats: [], chatManifests: [], messages: [], messageManifests: [] })
+        this.cache.delete(id); this.activeId = nextActive; this.summaries = await this.storage.listBotPresets(); await this.load(nextActive); this.activeStatus = 'ready'
+    }
+    async setPresets(presets: botPreset[], activeIndex = 0): Promise<void> {
+        if (!this.storage || presets.length === 0) throw new Error('At least one bot preset is required')
+        const ids = presets.map(() => uuidv4()); const selected = ids[Math.max(0, Math.min(activeIndex, ids.length - 1))]
+        await this.storage.commit({ baseRevision: this.storage.getRevision(), action: 'preset:replace', root: { upserts: [], deletes: [] },
+            presets: { upserts: presets.map((data, position) => ({ id: ids[position], position, data })), deletes: this.summaries.map((preset) => preset.id), order: ids, activeId: selected },
+            characters: [], chats: [], chatManifests: [], messages: [], messageManifests: [] })
+        this.cache.clear(); this.summaries = await this.storage.listBotPresets(); await this.setActiveId(selected, false)
+    }
+    async loadAll(): Promise<StoredBotPreset[]> {
+        const result: StoredBotPreset[] = []; for (const summary of this.summaries) result.push(await this.load(summary.id)); return result
     }
 }
 

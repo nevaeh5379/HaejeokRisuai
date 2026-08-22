@@ -53,6 +53,18 @@ export interface SqlChatMetadata {
     lastDate: number | null
 }
 
+export type StoredBotPreset = botPreset & { id: string }
+
+export interface BotPresetSummary {
+    id: string
+    position: number
+    name: string
+    image: string
+    apiType: string
+    aiModel: string
+    hash: string
+}
+
 /**
  * Core SQL storage interface that every backend (Node server, web SQLite WASM,
  * Tauri SQLite) must implement. This is the single contract the rest of the
@@ -65,7 +77,7 @@ export interface SqlChatMetadata {
  *  - `loadCharacter(id)` returns a full character (with chats list but without
  *    message arrays).
  *  - `loadChat(id)` returns a full chat *with* its message array.
- *  - Domain loaders (`loadPersonas`, `loadBotPresets`, …) fetch one domain at
+ *  - Domain loaders (`loadPersonas`, `listBotPresets`/`loadBotPreset`, …) fetch one domain at
  *    a time, allowing the adapter to keep unloaded domains out of memory.
  */
 export interface ISqlStorage {
@@ -101,7 +113,8 @@ export interface ISqlStorage {
     // ── Domain loaders (deferred by the adapter) ─────────────────────────
 
     loadPersonas(): Promise<RisuPersona[]>
-    loadBotPresets(): Promise<botPreset[]>
+    listBotPresets(): Promise<BotPresetSummary[]>
+    loadBotPreset(id: string): Promise<StoredBotPreset | null>
     loadLorebooks(): Promise<{ name: string; data: loreBook[] }[]>
     loadModules(): Promise<RisuModule[]>
     loadPrompts(): Promise<Record<string, any>>

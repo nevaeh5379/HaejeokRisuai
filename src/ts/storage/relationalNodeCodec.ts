@@ -1,5 +1,5 @@
-export const RELATIONAL_SCHEMA_LAYOUT = 'relational-schema-v2'
-export const SQLITE_SCHEMA_VERSION = 2
+export const RELATIONAL_SCHEMA_LAYOUT = 'relational-schema-v3'
+export const SQLITE_SCHEMA_VERSION = 3
 export const MAX_RELATIONAL_NODE_DEPTH = 128
 export const MAX_RELATIONAL_NODE_ROWS = 250_000
 

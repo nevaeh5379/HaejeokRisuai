@@ -268,14 +268,7 @@ describe('NodePostgresStorage browser client', () => {
             .mockResolvedValueOnce(new Response(JSON.stringify({
                 status: 'ready',
                 revision: 10,
-                database: { username: 'test-user', characters: [] },
-            }), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({
-                database: {
-                    plugins: [{ name: 'test-plugin' }],
-                    customModels: [{ id: 'xcustom:::test', name: 'My Custom' }],
-                },
-                hash: 'bootstrap-hash-1',
+                database: { username: 'test-user', characters: [], theme: 'dark' },
             }), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
                 status: 'ready',
@@ -288,16 +281,14 @@ describe('NodePostgresStorage browser client', () => {
         const shallowResult = await storage.loadDatabase()
         const shallowDb = shallowResult?.database as any
         expect(shallowDb?.username).toBe('test-user')
-        expect(shallowDb?.plugins).toHaveLength(1)
-        expect(shallowDb?.customModels).toEqual([{ id: 'xcustom:::test', name: 'My Custom' }])
-        expect(shallowDb?.pluginCustomStorage).toEqual({})
+        expect(shallowDb?.theme).toBe('dark')
+        expect(shallowDb.isDomainLoaded('plugins')).toBe(false)
         expect(fetchMock.mock.calls[0][0]).toBe('/api/database-v2?shallow=true')
-        expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/bootstrap')
 
         const fullResult = await storage.loadDatabase({ shallow: false })
         const fullDb = fullResult?.database as any
         expect(fullDb?.username).toBe('test-user')
-        expect(fetchMock.mock.calls[2][0]).toBe('/api/database-v2?shallow=false')
+        expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2?shallow=false')
     })
 
     it('loads chat details on demand', async () => {
@@ -307,7 +298,6 @@ describe('NodePostgresStorage browser client', () => {
                 revision: 10,
                 database: { username: 'test-user', characters: [] },
             }), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({ database: { plugins: [] }, hash: 'b-empty' }), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
                 chat: {
                     id: 'chat-123',
@@ -328,7 +318,7 @@ describe('NodePostgresStorage browser client', () => {
         expect(chat?.id).toBe('chat-123')
         expect(chat?.message).toHaveLength(2)
         expect(chat?.localLore).toHaveLength(1)
-        expect(fetchMock.mock.calls[2][0]).toBe('/api/database-v2/chats/chat-123')
+        expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/chats/chat-123')
     })
 
     it('requests bounded chat pages with absolute offsets', async () => {
@@ -355,7 +345,6 @@ describe('NodePostgresStorage browser client', () => {
                 revision: 10,
                 database: { username: 'test-user', characters: [] },
             }), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({ database: { plugins: [] }, hash: 'b-empty' }), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
                 character: {
                     chaId: 'char-123',
@@ -374,7 +363,7 @@ describe('NodePostgresStorage browser client', () => {
         expect(char?.name).toBe('Loaded Character')
         expect((char as any)?.globalLore).toHaveLength(1)
         expect((char as any)?.emotionImages).toHaveLength(1)
-        expect(fetchMock.mock.calls[2][0]).toBe('/api/database-v2/characters/char-123')
+        expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/characters/char-123')
     })
 
     it('loads and caches individual plugin custom storage keys on demand', async () => {
@@ -408,24 +397,20 @@ describe('NodePostgresStorage browser client', () => {
         expect(fetchMock.mock.calls[2][1].headers['If-None-Match']).toBe('"risu-plugin-key-key-1-hash"')
     })
 
-    it('hydrates startup domains in one bootstrap request', async () => {
+    it('keeps startup shallow and loads preset summaries and one document separately', async () => {
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify({
                 status: 'ready',
                 revision: 10,
                 database: { username: 'test-user', characters: [] },
             }), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({
-                database: {
-                    plugins: [],
-                    personas: [{ name: 'Persona 1', icon: '', personaPrompt: 'Hello' }],
-                    botPresets: [{ name: 'Preset Alpha', temperature: 75 }],
-                    loreBook: [{ name: 'World Lore', data: [] }],
-                    modules: [],
-                    globalscript: [],
-                },
-                hash: 'bootstrap-hash-1',
-            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ presets: [{
+                id: '123e4567-e89b-42d3-a456-426614174000', position: 0, name: 'Preset Alpha',
+                image: '', apiType: 'openai', aiModel: 'gpt-test', hash: 'preset-hash',
+            }], hash: 'list-hash' }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ preset: {
+                id: '123e4567-e89b-42d3-a456-426614174000', name: 'Preset Alpha', temperature: 75,
+            }, hash: 'preset-hash' }), { status: 200 }))
         vi.stubGlobal('fetch', fetchMock)
 
         const storage = new NodePostgresStorage(async () => 'test-auth')
@@ -434,37 +419,15 @@ describe('NodePostgresStorage browser client', () => {
         expect(db).toBeDefined()
         expect(db.isSql).toBe(true)
 
-        expect(fetchMock).toHaveBeenCalledTimes(2)
-        expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/bootstrap')
-        expect(db.isDomainLoaded('personas')).toBe(true)
-        expect(db.isDomainLoaded('botPresets')).toBe(true)
-        expect(db.isDomainLoaded('loreBook')).toBe(true)
-
-        await db.ensureLoaded('personas')
-        expect(db.isDomainLoaded('personas')).toBe(true)
-        expect(db.personas).toHaveLength(1)
-        expect(db.personas[0].name).toBe('Persona 1')
-
-        await db.ensureLoaded('botPresets')
-        expect(db.isDomainLoaded('botPresets')).toBe(true)
-        expect(db.botPresets).toHaveLength(1)
-        expect(db.botPresets[0].name).toBe('Preset Alpha')
-
-        await db.ensureLoaded('loreBook')
-        expect(db.isDomainLoaded('loreBook')).toBe(true)
-        expect(db.loreBook).toHaveLength(1)
-        expect(db.loreBook[0].name).toBe('World Lore')
-        expect(fetchMock).toHaveBeenCalledTimes(2)
-
-        // Spread operator preserves personas and other domains
-        const spreadDb = { ...db }
-        expect(spreadDb.personas).toBeDefined()
-        expect(spreadDb.personas).toHaveLength(1)
-        expect(spreadDb.personas[0].largePortrait).toBe(false)
-        expect(spreadDb.botPresets).toBeDefined()
-        expect(spreadDb.loreBook).toBeDefined()
-        expect(spreadDb.modules).toBeDefined()
-        expect(spreadDb.globalscript).toBeDefined()
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(db.isDomainLoaded('personas')).toBe(false)
+        expect(fetchMock.mock.calls.some(([url]) => url === '/api/database-v2/bootstrap')).toBe(false)
+        const summaries = await storage.listBotPresets()
+        expect(summaries[0]).toMatchObject({ name: 'Preset Alpha', position: 0 })
+        const preset = await storage.loadBotPreset(summaries[0].id)
+        expect(preset).toMatchObject({ name: 'Preset Alpha', temperature: 75 })
+        expect(fetchMock.mock.calls[1][0]).toBe('/api/database-v2/presets')
+        expect(fetchMock.mock.calls[2][0]).toBe('/api/database-v2/presets/123e4567-e89b-42d3-a456-426614174000')
     })
 
     it('loads bot chat stats from /api/database-v2/bot-stats', async () => {
@@ -518,4 +481,3 @@ describe('NodePostgresStorage browser client', () => {
         })
     })
 })
-

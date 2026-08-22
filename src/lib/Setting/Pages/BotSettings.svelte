@@ -5,6 +5,7 @@
     import Help from "src/lib/Others/Help.svelte";
     
     import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+    import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
     import { customProviderStore } from "src/ts/plugins/plugins.svelte";
     import { downloadFile } from "src/ts/globalApi.svelte";
     import { isTauri } from "src/ts/platform"
@@ -795,9 +796,9 @@
                 {language.preview}
             </span>
             <div class="flex items-center justify-center gap-2">
-                {#if settingsStore.state.botPresets[settingsStore.state.botPresetsId]?.image}
-                    <img src={settingsStore.state.botPresets[settingsStore.state.botPresetsId]?.image} alt="icon" class="w-6 h-6 rounded-md" decoding="async"/>
-                    <span class="text-textcolor2">{settingsStore.state.botPresets[settingsStore.state.botPresetsId]?.name}</span>
+                {#if presetStore.activePreset?.image}
+                    <img src={presetStore.activePreset.image} alt="icon" class="w-6 h-6 rounded-md" decoding="async"/>
+                    <span class="text-textcolor2">{presetStore.activePreset.name}</span>
                 {:else}
                     <span class="text-textcolor2">{language.noImages}</span>
                 {/if}
@@ -816,7 +817,10 @@
             canvas.height = 48
             ctx.drawImage(img, 0, 0, 48, 48)
             const data = canvas.toDataURL('image/jpeg', 0.7)
-            settingsStore.state.botPresets[settingsStore.state.botPresetsId].image = data //Since its small (max 2304 pixels), its okay to store it directly
+            if (presetStore.activePreset) {
+                presetStore.activePreset.image = data
+                await presetStore.savePreset(presetStore.activePreset)
+            }
         }}>
             <UploadIcon />
         </button>

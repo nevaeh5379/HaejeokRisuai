@@ -7,7 +7,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const COMPAT_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{6,12}$/i;
 
 const DEFERRED_SETTING_KEYS = [
-    'plugins', 'pluginCustomStorage', 'personas', 'botPresets', 'loreBook',
+    'plugins', 'pluginCustomStorage', 'personas', 'botPresets', 'botPresetsId', 'loreBook',
     'modules', 'globalscript', 'promptTemplate', 'promptSettings', 'mainPrompt',
     'jailbreak', 'globalNote', 'additionalPrompt', 'supaMemoryPrompt',
     'personaPrompt', 'emotionPrompt', 'emotionPrompt2', 'autoSuggestPrompt',
@@ -28,7 +28,7 @@ const PROMPT_SETTING_KEYS = [
 // snapshot avoids opening a transaction (and consuming a pool connection) for
 // every lazy domain at the same time.
 const BOOTSTRAP_SETTING_KEYS = [
-    'plugins', 'pluginCustomStorage', 'personas', 'botPresets', 'loreBook', 'modules', 'globalscript',
+    'plugins', 'pluginCustomStorage', 'personas', 'loreBook', 'modules', 'globalscript',
     'customModels', 'translatorPresets', 'loadouts', 'customBackground',
     ...PROMPT_SETTING_KEYS,
 ];
@@ -102,10 +102,6 @@ class SqlStorageBase {
 
     async loadPersonas() {
         return this.loadSettingCollection('personas', 'personas');
-    }
-
-    async loadBotPresets() {
-        return this.loadSettingCollection('botPresets', 'botPresets');
     }
 
     async loadLorebooks() {
@@ -320,12 +316,38 @@ function createSqlStorageHelpers({
                     throw new PayloadError(`root.upserts[${index}] must be an object`);
                 }
                 assertId(item.key, `root.upserts[${index}].key`);
+                if (item.key === 'botPresets' || item.key === 'botPresetsId') {
+                    throw new PayloadError(`${item.key} must be written through presets`);
+                }
                 return { key: item.key, value: item.value };
             });
             rootDeletes = asArray(payload.root.deletes, 'root.deletes').map((key, index) => {
                 assertId(key, `root.deletes[${index}]`);
+                if (key === 'botPresets' || key === 'botPresetsId') throw new PayloadError(`${key} is not a root setting`);
                 return key;
             });
+        }
+
+        let presets;
+        if (payload.presets !== undefined) {
+            if (!payload.presets || typeof payload.presets !== 'object' || Array.isArray(payload.presets)) {
+                throw new PayloadError('presets must be an object');
+            }
+            const upserts = asArray(payload.presets.upserts, 'presets.upserts').map((item, index) => {
+                if (!item || typeof item !== 'object' || Array.isArray(item)) throw new PayloadError(`presets.upserts[${index}] must be an object`);
+                assertId(item.id, `presets.upserts[${index}].id`);
+                if (item.position !== undefined) assertPosition(item.position, `presets.upserts[${index}].position`);
+                if (!item.data || typeof item.data !== 'object' || Array.isArray(item.data)) throw new PayloadError(`presets.upserts[${index}].data must be an object`);
+                return { id: item.id, position: item.position, data: item.data };
+            });
+            const deletes = asArray(payload.presets.deletes, 'presets.deletes').map((id, index) => {
+                assertId(id, `presets.deletes[${index}]`); return id;
+            });
+            const order = payload.presets.order === undefined ? undefined : asArray(payload.presets.order, 'presets.order').map((id, index) => {
+                assertId(id, `presets.order[${index}]`); return id;
+            });
+            if (payload.presets.activeId !== undefined) assertId(payload.presets.activeId, 'presets.activeId');
+            presets = { upserts, deletes, order, activeId: payload.presets.activeId };
         }
 
         let pluginStorageUpserts = [];
@@ -394,6 +416,7 @@ function createSqlStorageHelpers({
             pluginStorageUpserts,
             pluginStorageDeletes,
             pluginStorageClear,
+            presets,
             characters,
             chats,
             messages,

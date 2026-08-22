@@ -35,6 +35,7 @@ export const SizeStore = writable({
 })
 
 export const loadedStore = writable(false)
+export const startupPhase = writable<'core-loading' | 'shell-ready' | 'chat-ready'>('core-loading')
 export const saving = $state({ state: false })
 export const AccountWarning = writable('')
 export const DynamicGUI = writable(false)

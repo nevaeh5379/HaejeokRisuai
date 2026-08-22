@@ -230,7 +230,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         const randomSelect = Math.floor(Math.random() * names.length)
         const ele = names[randomSelect]
 
-        const findId = settingsStore.state.botPresets.findIndex((v) => {
+        const findId = presetStore.summaries.findIndex((v) => {
             return v.name === ele
         })
 
@@ -238,7 +238,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             alertToast(`Cannot find preset: ${ele}`)
         }
         else{
-            changeToPreset(findId, true)
+            await changeToPreset(findId, true)
         }
     }
 
@@ -280,7 +280,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         value: string,
     }[] = []
     if(settingsStore.state.promptInfoInsideChat){
-        initialPresetNameForPromptInfo = settingsStore.state.botPresets[settingsStore.state.botPresetsId]?.name ?? ''
+        initialPresetNameForPromptInfo = presetStore.activePreset?.name ?? ''
         initialPromptTogglesForPromptInfo = parseToggleSyntax(settingsStore.state.customPromptTemplateToggle + getModuleToggles())
             .flatMap(toggle => {
                 const raw = settingsStore.state.globalChatVariables[`toggle_${toggle.key}`]

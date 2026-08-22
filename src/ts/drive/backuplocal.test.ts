@@ -27,7 +27,6 @@ describe('hydrateLazyDatabaseFromSnapshot', () => {
                 chats,
             }],
             personas: [{ name: 'Current persona' }],
-            botPresets: [],
             pluginCustomStorage: {},
             isDomainLoaded: (domain: string) => domain === 'personas',
         } as unknown as Database
@@ -47,7 +46,6 @@ describe('hydrateLazyDatabaseFromSnapshot', () => {
                 }],
             }],
             personas: [{ name: 'Stored persona' }],
-            botPresets: [{ name: 'Stored preset' }],
             pluginCustomStorage: { plugin: { enabled: true } },
         } as unknown as Database
 
@@ -68,7 +66,6 @@ describe('hydrateLazyDatabaseFromSnapshot', () => {
             message: [{ role: 'user', data: 'unsaved edit' }],
         })
         expect(db.personas).toEqual([{ name: 'Current persona' }])
-        expect(db.botPresets).toEqual([{ name: 'Stored preset' }])
         expect(db.pluginCustomStorage).toEqual({ plugin: { enabled: true } })
     })
 

@@ -18,14 +18,14 @@ IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[system].
 BEGIN
     CREATE TABLE [system].[storage_meta] (
         singleton BIT PRIMARY KEY DEFAULT 1 CHECK (singleton = 1),
-        schema_version INT NOT NULL DEFAULT 3,
-        schema_layout NVARCHAR(64) NOT NULL DEFAULT 'relational-schema-v2',
+        schema_version INT NOT NULL DEFAULT 4,
+        schema_layout NVARCHAR(64) NOT NULL DEFAULT 'relational-schema-v3',
         revision BIGINT NOT NULL DEFAULT 0,
         initialized BIT NOT NULL DEFAULT 0,
         updated_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
     );
     INSERT INTO [system].[storage_meta] (singleton, schema_version, schema_layout)
-    VALUES (1, 3, 'relational-schema-v2');
+    VALUES (1, 4, 'relational-schema-v3');
 END;
 
 IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[system].[asset_catalog_state]') AND type in (N'U'))
@@ -120,26 +120,12 @@ END;
 IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[system].[bot_presets]') AND type in (N'U'))
 BEGIN
     CREATE TABLE [system].[bot_presets] (
-        setting_key NVARCHAR(450) NOT NULL DEFAULT 'botPresets' CHECK (setting_key = 'botPresets'),
-        position INT NOT NULL CHECK (position >= 0),
-        name NVARCHAR(MAX),
-        api_type NVARCHAR(256),
-        ai_model NVARCHAR(512),
-        sub_model NVARCHAR(512),
-        main_prompt NVARCHAR(MAX),
-        jailbreak NVARCHAR(MAX),
-        global_note NVARCHAR(MAX),
-        temperature FLOAT,
-        max_context INT,
-        max_response INT,
-        frequency_penalty FLOAT,
-        presence_penalty FLOAT,
-        prompt_preprocess BIT,
-        proxy_model NVARCHAR(512),
-        openrouter_model NVARCHAR(512),
-        image NVARCHAR(MAX),
-        PRIMARY KEY (setting_key, position),
-        FOREIGN KEY (setting_key) REFERENCES [system].[settings]([key]) ON DELETE CASCADE
+        preset_id NVARCHAR(450) NOT NULL PRIMARY KEY,
+        position INT NOT NULL UNIQUE CHECK (position >= 0),
+        name NVARCHAR(MAX) NOT NULL DEFAULT '', image NVARCHAR(MAX) NOT NULL DEFAULT '',
+        api_type NVARCHAR(256) NOT NULL DEFAULT '', ai_model NVARCHAR(512) NOT NULL DEFAULT '',
+        data NVARCHAR(MAX) NOT NULL CHECK (ISJSON(data) = 1), content_hash NVARCHAR(128) NOT NULL,
+        updated_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
     );
     CREATE INDEX bot_presets_model_idx ON [system].[bot_presets] (api_type, ai_model);
 END;

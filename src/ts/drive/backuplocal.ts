@@ -4,7 +4,7 @@ import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm, 
 import { LocalWriter, forageStorage } from "../globalApi.svelte";
 import { isNodeServer, isTauri } from "src/ts/platform"
 import { decodeRisuSave, encodeRisuSaveLegacy, encodeRisuSaveLegacyAsync } from "../storage/risuSave";
-import { getDatabase, normalizeDatabaseDefaults, setDatabaseLite, type Database } from "../storage/database.svelte";
+import { getDatabase, normalizeDatabaseDefaults, setDatabaseLite, type Database, type PortableDatabase } from "../storage/database.svelte";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { decryptBuffer, encryptBuffer, sleep } from "../util";
 import { hubURL } from "../characterCards";
@@ -14,10 +14,10 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { NodeStorage } from "../storage/nodeStorage";
 import { PROMPT_SETTING_KEYS, POSTGRES_DOMAINS } from "../storage/databaseAdapters.svelte";
 import { getSqlStorage } from "../storage/sqlStorageFactory";
+import { presetStore } from '../stores/domain/presetStore.svelte';
 
 const SQL_DOMAIN_ROOT_KEYS: Record<(typeof POSTGRES_DOMAINS)[number], string[]> = {
     personas: ['personas'],
-    botPresets: ['botPresets'],
     loreBook: ['loreBook'],
     modules: ['modules'],
     prompts: [...PROMPT_SETTING_KEYS],
@@ -261,7 +261,9 @@ export async function SaveLocalBackup(){
     try {
         alertProgress("Saving local backup... (Preparing database)", 0)
         await sleep(10)
-        const db = getDatabase()
+        const db = getDatabase() as PortableDatabase
+        db.botPresets = (await presetStore.loadAll()).map(({ id: _id, ...preset }) => preset)
+        db.botPresetsId = presetStore.activeIndex
         await ensureDatabaseFullyLoaded(db, (msg) => {
             alertProgress(`Saving local backup... (${msg})`, 0)
         })
@@ -573,7 +575,9 @@ export async function SavePartialLocalBackup(){
         
         alertProgress("Saving partial local backup... (Preparing database)", 0)
         await sleep(10)
-        const db = getDatabase()
+        const db = getDatabase() as PortableDatabase
+        db.botPresets = (await presetStore.loadAll()).map(({ id: _id, ...preset }) => preset)
+        db.botPresetsId = presetStore.activeIndex
         await ensureDatabaseFullyLoaded(db, (msg) => {
             alertProgress(`Saving partial local backup... (${msg})`, 0)
         })

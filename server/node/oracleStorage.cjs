@@ -82,8 +82,8 @@ try {
     oracledb.fetchAsBuffer = [oracledb.BLOB];
 } catch (e) {}
 
-const ORACLE_SCHEMA_VERSION = 3;
-const RELATIONAL_SCHEMA_LAYOUT = 'relational-schema-v2';
+const ORACLE_SCHEMA_VERSION = 4;
+const RELATIONAL_SCHEMA_LAYOUT = 'relational-schema-v3';
 const MAX_SYNC_ROWS = 250000;
 
 // Oracle은 스키마(사용자)가 하나이므로 점 표기(system.settings)를 접두어(system_settings)로 변환
@@ -1445,6 +1445,33 @@ class OracleStorage extends SqlStorageBase {
         }
     }
 
+    async listBotPresets() {
+        this.assertEnabled();
+        const started = process.hrtime.bigint();
+        const conn = await this.pool.getConnection();
+        try {
+            const rows = await fetchRows(conn, `SELECT preset_id, position, name, image, api_type, ai_model, content_hash
+                FROM system_bot_presets ORDER BY position`, [], { clobColumns: ['image'] });
+            const presets = rows.map((row) => ({ id: row.preset_id, position: Number(row.position), name: row.name || '',
+                image: row.image || '', apiType: row.api_type || '', aiModel: row.ai_model || '', hash: row.content_hash }));
+            return { presets, hash: crypto.createHash('sha256').update(JSON.stringify(presets)).digest('hex'),
+                queryMs: Number(process.hrtime.bigint() - started) / 1e6 };
+        } finally { try { await conn.close(); } catch {} }
+    }
+
+    async loadBotPreset(id) {
+        this.assertEnabled();
+        const started = process.hrtime.bigint();
+        const conn = await this.pool.getConnection();
+        try {
+            const rows = await fetchRows(conn, 'SELECT data, content_hash FROM system_bot_presets WHERE preset_id = :1',
+                [id], { clobColumns: ['data'] });
+            if (!rows.length) return null;
+            return { preset: { ...JSON.parse(rows[0].data), id }, hash: rows[0].content_hash,
+                queryMs: Number(process.hrtime.bigint() - started) / 1e6 };
+        } finally { try { await conn.close(); } catch {} }
+    }
+
     // ============================================================
     // sync: 변경사항 동기화 (가장 복잡한 메서드)
     // ============================================================
@@ -1477,7 +1504,49 @@ class OracleStorage extends SqlStorageBase {
                 onProgress?.({ stage: 'cleanup', message: '기존 데이터 정리 중...', percent: 5 });
                 await conn.execute('DELETE FROM system_settings');
                 await conn.execute('DELETE FROM system_plugin_custom_storage');
+                await conn.execute('DELETE FROM system_bot_presets');
                 await conn.execute('DELETE FROM character_characters');
+            }
+
+            if (payload.presets) {
+                const existing = await fetchRows(conn, 'SELECT preset_id, position FROM system_bot_presets ORDER BY position');
+                const currentActiveRows = await fetchRows(conn, "SELECT text_val FROM system_settings WHERE key = 'activeBotPresetId'");
+                const currentActiveId = currentActiveRows[0]?.text_val;
+                const originalIds = existing.map((row) => row.preset_id);
+                const ids = new Set(existing.map((row) => row.preset_id));
+                for (const id of payload.presets.deletes) ids.delete(id);
+                for (const entry of payload.presets.upserts) ids.add(entry.id);
+                if (!ids.size) throw new StoragePayloadError('At least one bot preset must remain');
+                if (payload.presets.order && (payload.presets.order.length !== ids.size || new Set(payload.presets.order).size !== ids.size || payload.presets.order.some((id) => !ids.has(id)))) {
+                    throw new StoragePayloadError('Preset order must contain every preset ID exactly once');
+                }
+                if (payload.presets.activeId !== undefined && !ids.has(payload.presets.activeId)) throw new StoragePayloadError('Active bot preset does not exist');
+                for (const id of payload.presets.deletes) await conn.execute('DELETE FROM system_bot_presets WHERE preset_id = :1', [id]);
+                let nextPosition = existing.reduce((max, row) => Math.max(max, Number(row.position)), -1) + 1;
+                const positions = new Map(existing.map((row) => [row.preset_id, Number(row.position)]));
+                const mergePreset = `MERGE INTO system_bot_presets t USING (SELECT :preset_id preset_id FROM dual) s
+                    ON (t.preset_id=s.preset_id) WHEN MATCHED THEN UPDATE SET t.position=:position,t.name=:name,t.image=:image,
+                    t.api_type=:api_type,t.ai_model=:ai_model,t.data=:data,t.content_hash=:content_hash,t.updated_at=SYSTIMESTAMP
+                    WHEN NOT MATCHED THEN INSERT (preset_id,position,name,image,api_type,ai_model,data,content_hash,updated_at)
+                    VALUES (:preset_id,:position,:name,:image,:api_type,:ai_model,:data,:content_hash,SYSTIMESTAMP)`;
+                for (const entry of payload.presets.upserts) {
+                    const data = { ...entry.data }; delete data.id; const serialized = JSON.stringify(data);
+                    await conn.execute(mergePreset, { preset_id: entry.id, position: entry.position ?? positions.get(entry.id) ?? nextPosition++,
+                        name: data.name || '', image: data.image || '', api_type: data.apiType || '', ai_model: data.aiModel || '',
+                        data: serialized, content_hash: crypto.createHash('sha256').update(serialized).digest('hex') });
+                }
+                if (payload.presets.order) {
+                    await conn.execute('UPDATE system_bot_presets SET position = position + 1000000000');
+                    for (const [position, id] of payload.presets.order.entries()) await conn.execute('UPDATE system_bot_presets SET position = :1 WHERE preset_id = :2', [position, id]);
+                }
+                let activeId = payload.presets.activeId;
+                if (activeId === undefined) {
+                    if (!currentActiveId || !ids.has(currentActiveId)) {
+                        const deletedIndex = originalIds.indexOf(currentActiveId);
+                        activeId = originalIds.slice(deletedIndex + 1).find((id) => ids.has(id)) || originalIds.slice(0, Math.max(0, deletedIndex)).reverse().find((id) => ids.has(id)) || (payload.presets.order || Array.from(ids))[0];
+                    }
+                }
+                if (activeId !== undefined) payload.rootUpserts.push({ key: 'activeBotPresetId', value: activeId });
             }
 
             // 설정 upsert (MERGE INTO system_settings)
@@ -1751,9 +1820,6 @@ class OracleStorage extends SqlStorageBase {
                 this.pluginCustomStorageCache = null;
             }
             this.invalidateBootstrapCache([...changedKeys, ...rootDeletes]);
-            void this.warmBootstrapCache().catch((error) => {
-                console.warn('[Oracle] Bootstrap cache refresh failed:', error.message);
-            });
             onProgress?.({ stage: 'done', message: `동기화 완료 (Revision: ${nextRevision})`, percent: 100 });
             return {
                 revision: nextRevision,
@@ -1896,7 +1962,7 @@ class OracleStorage extends SqlStorageBase {
         const mapped = mapTableName(table);
         const lobCols = {
             'system_setting_values': ['member_key', 'encoded_member_key', 'text_value', 'encoded_text_value'],
-            'system_bot_presets': ['main_prompt', 'jailbreak', 'global_note', 'image'],
+            'system_bot_presets': ['image', 'data'],
             'system_personas': ['prompt', 'icon', 'note'],
             'system_modules': ['description', 'cjs', 'background_embedding', 'custom_toggle', 'icon'],
             'system_plugins': ['script'],
@@ -2399,9 +2465,6 @@ class OracleStorage extends SqlStorageBase {
             this.pluginsCache = null;
             this.pluginCustomStorageCache = null;
             this.invalidateBootstrapCache();
-            void this.warmBootstrapCache().catch((error) => {
-                console.warn('[Oracle] Bootstrap cache refresh failed:', error.message);
-            });
             return {
                 revisionId: restoreRevisionId,
                 restoredFromRevisionId: targetRevisionId,

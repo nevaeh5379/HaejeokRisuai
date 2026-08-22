@@ -28,7 +28,6 @@ export interface IDatabaseAdapter extends Database {
 
 export const POSTGRES_DOMAINS = [
     'personas',
-    'botPresets',
     'loreBook',
     'modules',
     'prompts',
@@ -120,11 +119,6 @@ const DEFERRED_DOMAINS: Record<string, DomainConfig> = {
             largePortrait: persona?.largePortrait ?? false,
         })),
     },
-    botPresets: {
-        domainName: 'botPresets',
-        getDefault: () => [{ ...fallbackBotPreset }],
-        normalizeInitial: (val) => val ?? [],
-    },
     loreBook: {
         domainName: 'loreBook',
         getDefault: () => [{ name: 'Default', data: [] }],
@@ -187,7 +181,6 @@ export function createSqlDatabaseAdapter(
 
     const internalState = $state<{
         personas: RisuPersona[] | null
-        botPresets: botPreset[] | null
         loreBook: { name: string; data: loreBook[] }[] | null
         modules: RisuModule[] | null
         globalscript: customscript[] | null
@@ -196,7 +189,6 @@ export function createSqlDatabaseAdapter(
         coreData: Record<string, any>
     }>({
         personas: null,
-        botPresets: null,
         loreBook: null,
         modules: null,
         globalscript: null,
@@ -380,12 +372,6 @@ export function createSqlDatabaseAdapter(
                         internalState.personas = mappedPersonas
                         internalState.loadedDomains.add('personas')
                         return internalState.personas
-                    }
-                    case 'botPresets': {
-                        const botPresets = await storage.loadBotPresets()
-                        internalState.botPresets = botPresets
-                        internalState.loadedDomains.add('botPresets')
-                        return botPresets
                     }
                     case 'loreBook': {
                         const loreBook = await storage.loadLorebooks()

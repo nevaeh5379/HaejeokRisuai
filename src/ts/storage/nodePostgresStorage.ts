@@ -2,7 +2,7 @@ import localforage from 'localforage'
 import type { Database, Message, character, groupChat, Chat, RisuPersona, botPreset, loreBook, customscript } from './database.svelte'
 import type { RisuModule } from '../process/modules'
 import { createSqlDatabaseAdapter } from './databaseAdapters.svelte'
-import type { INodeSqlStorageAdmin, SqlLoadDatabaseOptions, SqlLoadDatabaseResult } from './ISqlStorage'
+import type { INodeSqlStorageAdmin, SqlLoadDatabaseOptions, SqlLoadDatabaseResult, BotPresetSummary, StoredBotPreset } from './ISqlStorage'
 import { buildSqlReplaceCommit, type SqlCommit, type SqlCommitResult } from './sqlCommit'
 
 export type DbVendor = 'postgres' | 'oracle' | 'azure'
@@ -266,7 +266,6 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     private status:'unknown'|'enabled'|'disabled' = 'unknown'
     private revision = 0
     private pluginsCacheForage = localforage.createInstance({ name: 'risuaiPostgresPlugins' })
-    private bootstrapCacheForage = localforage.createInstance({ name: 'risuaiPostgresBootstrap' })
     private pluginStorageCacheForage = localforage.createInstance({ name: 'risuaiPostgresPluginStorage' })
 
     private personasCacheForage = localforage.createInstance({ name: 'risuaiPostgresPersonas' })
@@ -277,10 +276,10 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     private scriptsCacheForage = localforage.createInstance({ name: 'risuaiPostgresScripts' })
 
     private memoryPluginsCache:{ hash:string, plugins:any[] }|null = null
-    private memoryBootstrapCache:{ hash:string, database:Partial<Database> }|null = null
     private memoryPluginStorageCache:{ hash:string, pluginCustomStorage:Record<string, any> }|null = null
     private memoryPersonasCache:{ hash:string, personas:RisuPersona[] }|null = null
-    private memoryBotPresetsCache:{ hash:string, botPresets:botPreset[] }|null = null
+    private memoryBotPresetsCache:{ hash:string, presets:BotPresetSummary[] }|null = null
+    private memoryBotPresetCache = new Map<string, { hash: string, preset: StoredBotPreset }>()
     private memoryLoreBookCache:{ hash:string, loreBook:{ name:string, data:loreBook[] }[] }|null = null
     private memoryModulesCache:{ hash:string, modules:RisuModule[] }|null = null
     private memoryPromptsCache:{ hash:string, prompts:Record<string, any> }|null = null
@@ -502,43 +501,6 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
         return body.plugins ?? []
     }
 
-    private async loadBootstrapData():Promise<Partial<Database>|null> {
-        let cached:{ hash:string, database:Partial<Database> }|null = this.memoryBootstrapCache
-        if (!cached) {
-            try {
-                cached = await this.bootstrapCacheForage.getItem('cache')
-            } catch {
-                cached = null
-            }
-        }
-
-        const headers:Record<string, string> = await this.authHeaders()
-        if (cached?.hash) {
-            headers['If-None-Match'] = `"risu-bootstrap-${cached.hash}"`
-        }
-        const response = await fetch('/api/database-v2/bootstrap', {
-            method: 'GET',
-            cache: 'no-cache',
-            headers,
-        })
-        // Allow a newer web client to keep working during a rolling server
-        // update. The caller falls back to the dedicated plugins endpoint.
-        if (response.status === 404) return null
-        if (response.status === 304 && cached) {
-            this.memoryBootstrapCache = cached
-            return cached.database
-        }
-        if (response.status < 200 || response.status >= 300) {
-            throw await responseError(response, 'SQL bootstrap data load failed')
-        }
-
-        const body:{ database:Partial<Database>, hash:string } = await response.json()
-        const entry = { hash: body.hash, database: body.database ?? {} }
-        this.memoryBootstrapCache = entry
-        void this.bootstrapCacheForage.setItem('cache', entry).catch(() => {})
-        return entry.database
-    }
-
     async loadPluginCustomStorage():Promise<Record<string, any>|null> {
         if(!await this.ensureEnabled()){
             return null
@@ -690,7 +652,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
         return body.personas ?? []
     }
 
-    async loadBotPresets(): Promise<botPreset[]> {
+    async listBotPresets(): Promise<BotPresetSummary[]> {
         if (!await this.ensureEnabled()) return []
         let cached = this.memoryBotPresetsCache
         if (!cached) {
@@ -702,27 +664,48 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
         }
         const headers: Record<string, string> = await this.authHeaders()
         if (cached?.hash) {
-            headers['If-None-Match'] = `"risu-bot-presets-${cached.hash}"`
+            headers['If-None-Match'] = `"risu-presets-${cached.hash}"`
         }
-        const response = await fetch('/api/database-v2/bot-presets', {
+        const response = await fetch('/api/database-v2/presets', {
             method: 'GET',
             cache: 'no-cache',
             headers,
         })
         if (response.status === 304 && cached) {
-            return cached.botPresets ?? []
+            return cached.presets ?? []
         }
         if (response.status === 404) return []
         if (response.status < 200 || response.status >= 300) {
             throw await responseError(response, 'PostgreSQL bot presets load failed')
         }
-        const body: { botPresets: botPreset[], hash: string } = await response.json()
-        const entry = { hash: body.hash, botPresets: body.botPresets ?? [] }
+        const body: { presets: BotPresetSummary[], hash: string } = await response.json()
+        const entry = { hash: body.hash, presets: body.presets ?? [] }
         this.memoryBotPresetsCache = entry
         try {
             await this.botPresetsCacheForage.setItem('cache', entry)
         } catch {}
-        return body.botPresets ?? []
+        return body.presets ?? []
+    }
+
+    async loadBotPreset(id: string): Promise<StoredBotPreset | null> {
+        if (!await this.ensureEnabled()) return null
+        let cached = this.memoryBotPresetCache.get(id)
+        if (!cached) {
+            try { cached = (await this.botPresetsCacheForage.getItem(`preset:${id}`)) ?? undefined } catch {}
+        }
+        const headers: Record<string, string> = await this.authHeaders()
+        if (cached?.hash) headers['If-None-Match'] = `"risu-preset-${id}-${cached.hash}"`
+        const response = await fetch(`/api/database-v2/presets/${encodeURIComponent(id)}`, {
+            method: 'GET', cache: 'no-cache', headers,
+        })
+        if (response.status === 304 && cached) return cached.preset
+        if (response.status === 404) return null
+        if (response.status < 200 || response.status >= 300) throw await responseError(response, 'Bot preset load failed')
+        const body: { preset: StoredBotPreset, hash: string } = await response.json()
+        const entry = { hash: body.hash, preset: body.preset }
+        this.memoryBotPresetCache.set(id, entry)
+        void this.botPresetsCacheForage.setItem(`preset:${id}`, entry).catch(() => {})
+        return body.preset
     }
 
     async loadLorebooks(): Promise<{ name: string, data: loreBook[] }[]> {
@@ -904,21 +887,11 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
         this.status = 'enabled'
         if(body.status === 'ready' && body.database){
             if (options.shallow !== false) {
-                const bootstrapData = await this.loadBootstrapData()
-                if (bootstrapData) {
-                    Object.assign(body.database, bootstrapData)
-                } else {
-                    const plugins = await this.loadPlugins()
-                    if (plugins) body.database.plugins = plugins
-                    const pluginStorage = await this.loadPluginCustomStorage()
-                    if (pluginStorage) body.database.pluginCustomStorage = pluginStorage
-                }
-                body.database.pluginCustomStorage ??= {}
                 this.revision = body.revision
                 const adapter = createSqlDatabaseAdapter(
                     body.database,
                     this,
-                    bootstrapData ? ['personas', 'botPresets', 'loreBook', 'modules', 'prompts', 'scripts'] : [],
+                    [],
                 )
                 return { status: 'ready', revision: body.revision, database: adapter }
             }

@@ -14,6 +14,8 @@ import type {
     ISqlStorage,
     SqlLoadDatabaseOptions,
     SqlLoadDatabaseResult,
+    BotPresetSummary,
+    StoredBotPreset,
 } from './ISqlStorage'
 import type {
     NodePostgresRevision,
@@ -180,6 +182,30 @@ export class WebSqliteStorage implements ISqlStorage {
         return this.loadNodeValue('setting_extension_nodes', 'setting_key = ?', [key])
     }
 
+    private validatePresetCommit(commit: SqlCommit): void {
+        if (!commit.presets) return
+        const originalIds = this.selectRows('SELECT preset_id FROM bot_presets ORDER BY position').map((row) => row.preset_id as string)
+        const ids = new Set(originalIds)
+        if (commit.replaceAll) ids.clear()
+        for (const id of commit.presets.deletes) ids.delete(id)
+        for (const entry of commit.presets.upserts) ids.add(entry.id)
+        if (ids.size === 0) throw new Error('At least one bot preset must remain')
+        if (commit.presets.order && (commit.presets.order.length !== ids.size ||
+            new Set(commit.presets.order).size !== ids.size || commit.presets.order.some((id) => !ids.has(id)))) {
+            throw new Error('Preset order must contain every preset ID exactly once')
+        }
+        if (commit.presets.activeId !== undefined && !ids.has(commit.presets.activeId)) throw new Error('Active bot preset does not exist')
+        if (commit.presets.activeId === undefined) {
+            const current = this.loadSettingValue('activeBotPresetId') as string | undefined
+            if (!current || !ids.has(current)) {
+                const index = originalIds.indexOf(current ?? '')
+                commit.presets.activeId = originalIds.slice(index + 1).find((id) => ids.has(id)) ||
+                    originalIds.slice(0, Math.max(0, index)).reverse().find((id) => ids.has(id)) ||
+                    (commit.presets.order || Array.from(ids))[0]
+            }
+        }
+    }
+
     async loadDatabase(options?: SqlLoadDatabaseOptions): Promise<SqlLoadDatabaseResult | null> {
         if (!this._enabled) {
             const ok = await this.init()
@@ -255,7 +281,7 @@ export class WebSqliteStorage implements ISqlStorage {
             const adapter = createSqlDatabaseAdapter(
                 db,
                 this,
-                ['personas', 'botPresets', 'loreBook', 'modules', 'prompts', 'scripts'],
+                ['personas', 'loreBook', 'modules', 'prompts', 'scripts'],
             )
             return { status: 'ready', revision: this.revision, database: adapter }
         }
@@ -269,6 +295,7 @@ export class WebSqliteStorage implements ISqlStorage {
             const meta = this.selectOne('SELECT revision FROM system_storage_meta WHERE singleton = 1')
             const currentRevision = Number(meta?.revision) || 0
             if (commit.baseRevision !== currentRevision) throw new SqlRevisionConflictError(currentRevision)
+            this.validatePresetCommit(commit)
             if (commit.replaceAll) {
                 this.run('DELETE FROM system_settings')
                 this.run('DELETE FROM plugin_custom_storage')
@@ -358,8 +385,16 @@ export class WebSqliteStorage implements ISqlStorage {
     async loadPersonas(): Promise<RisuPersona[]> {
         return (this.loadSettingValue('personas') as RisuPersona[] | undefined) ?? []
     }
-    async loadBotPresets(): Promise<botPreset[]> {
-        return (this.loadSettingValue('botPresets') as botPreset[] | undefined) ?? []
+    async listBotPresets(): Promise<BotPresetSummary[]> {
+        return this.selectRows('SELECT preset_id, position, name, image, api_type, ai_model, content_hash FROM bot_presets ORDER BY position')
+            .map((row) => ({ id: row.preset_id as string, position: Number(row.position),
+                name: row.name as string, image: row.image as string, apiType: row.api_type as string,
+                aiModel: row.ai_model as string, hash: row.content_hash as string }))
+    }
+    async loadBotPreset(id: string): Promise<StoredBotPreset | null> {
+        const row = this.selectOne('SELECT data FROM bot_presets WHERE preset_id = ?', [id])
+        if (!row) return null
+        return { ...(JSON.parse(row.data as string) as botPreset), id }
     }
     async loadLorebooks(): Promise<{ name: string; data: loreBook[] }[]> {
         return (this.loadSettingValue('loreBook') as { name: string; data: loreBook[] }[] | undefined) ?? []

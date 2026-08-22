@@ -105,13 +105,14 @@ describe('Oracle Backup Archive Sync Test', () => {
     it('creates, decodes, and validates full backup archive sync with OracleStorage', async () => {
         // 1. Create a complete synthetic backup database structure
         const sampleDb = {
-            botPresets: {
-                'default-preset': {
+            botPresets: [
+                {
                     name: 'Default',
                     prompt: 'You are an AI assistant.',
                     temperature: 0.7,
                 },
-            },
+            ],
+            botPresetsId: 0,
             personas: {
                 'persona-1': {
                     name: 'UserPersona',
@@ -256,13 +257,18 @@ describe('Oracle Backup Archive Sync Test', () => {
             }
         }
 
-        const rootKeys = Object.keys(decodedDb).filter(k => !['characters'].includes(k))
+        const rootKeys = Object.keys(decodedDb).filter(k => !['characters', 'botPresets', 'botPresetsId'].includes(k))
         const rootUpserts = rootKeys.map(k => ({ key: k, value: (decodedDb as any)[k] }))
 
         const syncPayload = {
             baseRevision: 0,
             replaceAll: true,
             root: { upserts: rootUpserts, deletes: [] },
+            presets: {
+                upserts: [{ id: '123e4567-e89b-42d3-a456-426614174000', position: 0, data: decodedDb.botPresets[0] }],
+                deletes: [], order: ['123e4567-e89b-42d3-a456-426614174000'],
+                activeId: '123e4567-e89b-42d3-a456-426614174000',
+            },
             characters: allChars,
             characterIds: allChars.map(c => c.id),
             chats: allChatsForSync,
@@ -277,6 +283,9 @@ describe('Oracle Backup Archive Sync Test', () => {
                     return { rows: [{ REVISION: 0 }] }
                 }
                 if (sql.includes('SELECT id FROM character_characters')) {
+                    return { rows: [] }
+                }
+                if (sql.includes('SELECT preset_id, position FROM system_bot_presets')) {
                     return { rows: [] }
                 }
                 if (sql.includes('INSERT INTO system_revisions')) {

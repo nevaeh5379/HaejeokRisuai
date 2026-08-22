@@ -3,15 +3,15 @@ import { describe, expect, it } from 'vitest'
 
 const schema = (name: string) => readFileSync(new URL(name, import.meta.url), 'utf8')
 
-describe('relational schema v2 metadata and setting trees', () => {
+describe('relational schema metadata and setting trees', () => {
     it.each([
         ['PostgreSQL', 'postgres-schema.sql'],
         ['Oracle', 'oracle-schema.sql'],
         ['Azure SQL', 'azure-schema.sql'],
-    ])('%s declares server schema v3 and relational-schema-v2', (_vendor, filename) => {
+    ])('%s declares server schema v4 and relational-schema-v3', (_vendor, filename) => {
         const sql = schema(filename)
-        expect(sql).toContain('relational-schema-v2')
-        expect(sql).toMatch(/schema_version[^\n]*(?:DEFAULT\s+3|3\s+NOT NULL)/i)
+        expect(sql).toContain('relational-schema-v3')
+        expect(sql).toMatch(/schema_version[^\n]*(?:DEFAULT\s+4|4\s+NOT NULL)/i)
         expect(sql).toMatch(/setting_values/i)
         expect(sql).toMatch(/parent_node_id/i)
         expect(sql).toMatch(/encoded_text_value/i)

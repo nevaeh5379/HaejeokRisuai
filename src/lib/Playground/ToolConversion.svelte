@@ -45,5 +45,5 @@
     <Button onclick={addFile}>Add</Button>
 </div>
 <Button className="mt-6" onclick={() => {
-    promptConvertion(files)
+    void promptConvertion(files)
 }}>Run</Button>
