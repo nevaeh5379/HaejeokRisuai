@@ -417,9 +417,10 @@ export async function importPlugin(code:string|null = null, argu:{
         }
 
         console.log(`Imported plugin: ${pluginData.name} (API v${apiVersion})`)
-        setDatabaseLite(db)
+        settingsStore.set('plugins', db.plugins)
+        await settingsStore.flush()
 
-        loadPlugins()
+        await loadPlugins()
         
     } catch (error) {
         console.error(error)

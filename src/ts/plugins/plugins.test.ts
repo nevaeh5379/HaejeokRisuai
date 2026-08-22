@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { getV2PluginAPIs } from './plugins.svelte'
+import { getV2PluginAPIs, importPlugin } from './plugins.svelte'
 import { settingsStore } from '../stores/domain/settingsStore.svelte'
 import type { ISqlStorage } from '../storage/ISqlStorage'
 import type { SqlCommit } from '../storage/sqlCommit'
@@ -155,6 +155,50 @@ describe('Plugin Storage & SafeDatabase Persistence', () => {
         expect(committed[0].root.upserts).toContainEqual({
             key: 'theme',
             value: 'dracula',
+        })
+    })
+
+    it('commits an updated plugin to SQL before reloading plugins', async () => {
+        settingsStore.init(
+            {
+                plugins: [{
+                    name: 'UpdateTest',
+                    script: 'old script',
+                    arguments: {},
+                    realArg: {},
+                    customLink: [],
+                    argMeta: {},
+                    version: '3.0',
+                    versionOfPlugin: '1.0.0',
+                    enabled: false,
+                }],
+                pluginCustomStorage: {},
+            } as any,
+            mockStorage,
+        )
+
+        await importPlugin([
+            '//@name UpdateTest',
+            '//@api 3.0',
+            '//@version 1.1.0',
+            '',
+            'Risuai.log("updated");',
+        ].join('\n'), {
+            isUpdate: true,
+            originalPluginName: 'UpdateTest',
+        })
+
+        const pluginCommit = committed.find((commit) =>
+            commit.root.upserts.some((upsert) => upsert.key === 'plugins'),
+        )
+        expect(pluginCommit).toBeDefined()
+        expect(pluginCommit?.root.upserts).toContainEqual({
+            key: 'plugins',
+            value: [expect.objectContaining({
+                name: 'UpdateTest',
+                versionOfPlugin: '1.1.0',
+                script: expect.stringContaining('Risuai.log("updated");'),
+            })],
         })
     })
 })
