@@ -36,6 +36,7 @@ const { promisify } = require('util');
 const zlib = require('zlib');
 const { gzip } = require('zlib');
 const { createJsonStream } = require('./streamJson.cjs');
+const { streamZip } = require('./zipStream.cjs');
 const { normalizePageInteger, paginateMessages } = require('./messagePagination.cjs');
 const {
     PostgresPayloadError,
@@ -2235,7 +2236,9 @@ app.post('/api/read-bulk', authenticatedRouteLimiter, async(req, res, next) => {
         try {
             const result = useThumb && typeof storage.readThumbnail === 'function'
                 ? await storage.readThumbnail(filePath, thumbOptions)
-                : await storage.read(filePath);
+                : typeof storage.openReadStream === 'function'
+                    ? await storage.openReadStream(filePath)
+                    : await storage.read(filePath);
             if (!result.exists) continue;
 
             const name = Buffer.from(filePath, 'hex').toString('utf8');
@@ -2272,6 +2275,163 @@ app.post('/api/read-bulk', authenticatedRouteLimiter, async(req, res, next) => {
 
     res.end();
 });
+
+function normalizeCharxEntryName(value) {
+    if (typeof value !== 'string' || value.length === 0 || value.length > 4096 || value.includes('\0')) {
+        throw new Error('Invalid CharX entry name');
+    }
+    const normalized = value.replace(/\\/g, '/').replace(/^\/+/, '');
+    const parts = normalized.split('/');
+    if (parts.some((part) => !part || part === '.' || part === '..')) {
+        throw new Error(`Invalid CharX entry path: ${value}`);
+    }
+    return parts.join('/');
+}
+
+const charxExportJobs = new Map();
+const CHARX_EXPORT_JOB_TTL_MS = 60 * 1000;
+const CHARX_EXPORT_MAX_JOBS = 8;
+
+function pruneCharxExportJobs() {
+    const now = Date.now();
+    for (const [id, job] of charxExportJobs) {
+        if (job.expiresAt <= now) charxExportJobs.delete(id);
+    }
+}
+
+app.post('/api/charx-export/jobs', authenticatedRouteLimiter, async(req, res) => {
+    if (!await checkAuth(req, res)) return;
+    pruneCharxExportJobs();
+    if (charxExportJobs.size >= CHARX_EXPORT_MAX_JOBS) {
+        res.status(429).send({ error: 'Too many pending CharX exports' });
+        return;
+    }
+    if (!Array.isArray(req.body?.entries) || req.body.entries.length === 0 || req.body.entries.length > 10000) {
+        res.status(400).send({ error: 'Invalid CharX export manifest' });
+        return;
+    }
+    try {
+        let inlineCharacters = 0;
+        for (const entry of req.body.entries) {
+            normalizeCharxEntryName(entry?.name);
+            if (typeof entry?.source === 'string') {
+                const source = entry.source.replace(/\\/g, '/');
+                if (!source.startsWith('assets/') || source.includes('\0') || source.split('/').includes('..')) {
+                    throw new Error(`Invalid CharX asset source: ${entry.source}`);
+                }
+            } else if (typeof entry?.dataBase64 === 'string') {
+                inlineCharacters += entry.dataBase64.length;
+            } else {
+                throw new Error(`CharX entry has no source or inline data: ${entry?.name}`);
+            }
+        }
+        if (inlineCharacters > 44 * 1024 * 1024) {
+            throw new Error('CharX inline metadata exceeds 32MB');
+        }
+    } catch (error) {
+        res.status(400).send({ error: error.message });
+        return;
+    }
+    const id = crypto.randomBytes(24).toString('base64url');
+    charxExportJobs.set(id, {
+        body: req.body,
+        expiresAt: Date.now() + CHARX_EXPORT_JOB_TTL_MS,
+    });
+    res.send({ id, expiresInMs: CHARX_EXPORT_JOB_TTL_MS });
+});
+
+app.get('/api/charx-export/:jobId', authenticatedRouteLimiter, async(req, res) => {
+    if (!await checkAuth(req, res)) return;
+    pruneCharxExportJobs();
+    const job = charxExportJobs.get(req.params.jobId);
+    if (!job) {
+        res.status(404).send({ error: 'CharX export job not found or expired' });
+        return;
+    }
+    charxExportJobs.delete(req.params.jobId);
+    req.body = job.body;
+    await handleCharxExport(req, res);
+});
+
+async function handleCharxExport(req, res) {
+    if (!await checkAuth(req, res)) return;
+
+    try {
+        const requestedEntries = req.body?.entries;
+        if (!Array.isArray(requestedEntries) || requestedEntries.length === 0 || requestedEntries.length > 10000) {
+            res.status(400).send({ error: 'CharX entries must contain between 1 and 10000 files' });
+            return;
+        }
+
+        const seenNames = new Set();
+        let inlineBytes = 0;
+        const storage = assetStorageManager.getStorage();
+        const entries = requestedEntries.map((entry) => {
+            const name = normalizeCharxEntryName(entry?.name);
+            if (seenNames.has(name)) throw new Error(`Duplicate CharX entry: ${name}`);
+            seenNames.add(name);
+
+            if (typeof entry?.source === 'string') {
+                const source = entry.source.replace(/\\/g, '/');
+                if (!source.startsWith('assets/') || source.includes('\0') || source.split('/').includes('..')) {
+                    throw new Error(`Invalid CharX asset source: ${entry.source}`);
+                }
+                return {
+                    name,
+                    open: async () => {
+                        const result = typeof storage.openReadStream === 'function'
+                            ? await storage.openReadStream(keyToHex(source))
+                            : await storage.read(keyToHex(source));
+                        if (!result.exists) throw new Error(`CharX asset not found: ${source}`);
+                        const body = result.stream ?? result.buffer;
+                        if (!body) throw new Error(`CharX asset is not readable: ${source}`);
+                        const size = Number(result.contentLength ?? result.buffer?.length);
+                        if (!Number.isSafeInteger(size) || size < 0) {
+                            throw new Error(`CharX asset size is unavailable: ${source}`);
+                        }
+                        return { source: body, size };
+                    }
+                };
+            }
+
+            if (typeof entry?.dataBase64 !== 'string') {
+                throw new Error(`CharX entry has no source or inline data: ${name}`);
+            }
+            const data = Buffer.from(entry.dataBase64, 'base64');
+            inlineBytes += data.length;
+            if (inlineBytes > 32 * 1024 * 1024) {
+                throw new Error('CharX inline metadata exceeds 32MB');
+            }
+            return { name, size: data.length, source: data };
+        });
+
+        const requestedName = typeof req.body?.filename === 'string' ? req.body.filename : 'character.charx';
+        const safeName = path.basename(requestedName).replace(/[\r\n"\\]/g, '_').slice(0, 200) || 'character.charx';
+        const downloadName = safeName.endsWith('.charx') ? safeName : `${safeName}.charx`;
+        const asciiDownloadName = downloadName.replace(/[^\x20-\x7e]/g, '_');
+        res.status(200);
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader(
+            'Content-Disposition',
+            `attachment; filename="${asciiDownloadName}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`
+        );
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Accel-Buffering', 'no');
+        if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+        await streamZip(res, entries);
+        res.end();
+    } catch (error) {
+        if (!res.headersSent) {
+            res.status(400).send({ error: error.message });
+            return;
+        }
+        console.error('[CharX export] Streaming failed:', error);
+        res.destroy(error);
+    }
+}
+
+app.post('/api/charx-export', authenticatedRouteLimiter, handleCharxExport);
 
 app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => {
     if (!await checkAuth(req, res)) return;

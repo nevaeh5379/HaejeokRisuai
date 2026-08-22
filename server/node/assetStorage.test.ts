@@ -3,6 +3,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import { Readable } from 'node:stream'
 
 const require = createRequire(import.meta.url)
 const {
@@ -57,6 +58,40 @@ describe('AssetStorage utilities', () => {
         expect(isImageKey('assets/pic.jpg')).toBe(true)
         expect(isImageKey('assets/audio.mp3')).toBe(false)
         expect(isImageKey('data.json')).toBe(false)
+    })
+})
+
+describe('streaming asset reads', () => {
+    it('keeps the S3 response body as a stream', async () => {
+        const storage = new S3AssetStorage({
+            region: 'us-east-1',
+            bucket: 'test-bucket',
+            accessKeyId: 'test',
+            secretAccessKey: 'test',
+        })
+        let transformed = false
+        const body = Readable.from([Buffer.from('large-'), Buffer.from('asset')]) as any
+        body.transformToByteArray = async () => {
+            transformed = true
+            return new Uint8Array()
+        }
+        storage.client = {
+            send: async () => ({
+                Body: body,
+                ContentLength: 11,
+                ContentType: 'application/octet-stream',
+            }),
+        }
+
+        const result = await storage.openReadStream(keyToHex('assets/large.bin'))
+        const chunks:Buffer[] = []
+        for await(const chunk of result.stream){
+            chunks.push(Buffer.from(chunk))
+        }
+
+        expect(transformed).toBe(false)
+        expect(Buffer.concat(chunks).toString()).toBe('large-asset')
+        expect(result.contentLength).toBe(11)
     })
 })
 

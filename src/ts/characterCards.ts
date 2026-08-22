@@ -1239,6 +1239,184 @@ function createBaseV2(char:character) {
 }
 
 
+type NodeCharXExportEntry = {
+    name: string
+    source?: string
+    dataBase64?: string
+}
+
+function getCharXAssetDirectory(asset:{type?:string, ext?:string}){
+    let type = 'other'
+    let contentType = 'other'
+    switch(asset.type){
+        case 'emotion':
+        case 'background':
+        case 'user_icon':
+        case 'icon':
+            type = asset.type
+            break
+    }
+    switch(asset.ext){
+        case 'png':
+        case 'jpg':
+        case 'jpeg':
+        case 'gif':
+        case 'webp':
+        case 'avif':
+            contentType = 'image'
+            break
+        case 'mp3':
+        case 'wav':
+        case 'ogg':
+        case 'flac':
+            contentType = 'audio'
+            break
+        case 'mp4':
+        case 'webm':
+        case 'mov':
+        case 'avi':
+        case 'mkv':
+            contentType = 'video'
+            break
+        case 'mmd':
+        case 'obj':
+            contentType = 'model'
+            break
+        case 'safetensors':
+        case 'cpkt':
+        case 'onnx':
+            contentType = 'ai'
+            break
+        case 'otf':
+        case 'ttf':
+        case 'woff':
+        case 'woff2':
+            contentType = 'fonts'
+            break
+        case 'js':
+        case 'ts':
+        case 'lua':
+            contentType = 'code'
+    }
+    return { type, contentType }
+}
+
+async function exportCharacterCardNodeStream(char:character){
+    const card = createBaseV3(char)
+    const entries:NodeCharXExportEntry[] = []
+    const seenPaths = new Set<string>()
+    const seenMetaPaths = new Set<string>()
+    const sourcePaths = new Map<string, string>()
+
+    for(let index=0;index<(card.data.assets?.length ?? 0);index++){
+        const asset = card.data.assets[index]
+        let source = asset.uri
+        if(source === 'ccdefault:'){
+            source = char.image
+        }
+        else if(isKnownUri(source)){
+            continue
+        }
+        if(!source?.startsWith('assets/')){
+            throw new Error(`Cannot stream non-local CharX asset: ${source}`)
+        }
+
+        const existingPath = sourcePaths.get(source)
+        if(existingPath){
+            asset.uri = `embeded://${existingPath}`
+            continue
+        }
+
+        const {type, contentType} = getCharXAssetDirectory(asset)
+        let name = asset.name || `asset_${index + 1}`
+        if(name.length > 100){
+            name = name.substring(0, 100)
+        }
+        const ext = asset.ext === 'unknown' ? 'png' : (asset.ext || 'png')
+        const baseDir = asset.ext === 'unknown'
+            ? `assets/${type}/image`
+            : `assets/${type}/${contentType}`
+        let uniqueName = name
+        let suffix = 0
+        while(seenPaths.has(`${baseDir}/${uniqueName}.${ext}`)){
+            suffix += 1
+            uniqueName = `${name}_${suffix}`
+        }
+        const archivePath = `${baseDir}/${uniqueName}.${ext}`
+        seenPaths.add(archivePath)
+        sourcePaths.set(source, archivePath)
+        asset.uri = `embeded://${archivePath}`
+        let metaName = uniqueName
+        let metaSuffix = 0
+        while(seenMetaPaths.has(`x_meta/${metaName}.json`)){
+            metaSuffix += 1
+            metaName = `${uniqueName}_${metaSuffix}`
+        }
+        const metaPath = `x_meta/${metaName}.json`
+        seenMetaPaths.add(metaPath)
+        entries.push({
+            name: metaPath,
+            dataBase64: Buffer.from(JSON.stringify({
+                type: contentType === 'image' ? ext.toUpperCase() : 'Unknown'
+            }), 'utf-8').toString('base64')
+        })
+        entries.push({ name: archivePath, source })
+    }
+
+    const md:RisuModule = {
+        name: `${char.name} Module`,
+        description: `Module for ${char.name}`,
+        id: v4(),
+        trigger: card.data.extensions.risuai.triggerscript ?? [],
+        regex: card.data.extensions.risuai.customScripts ?? [],
+        lorebook: char.globalLore ?? [],
+    }
+    delete card.data.extensions.risuai.triggerscript
+    delete card.data.extensions.risuai.customScripts
+    const moduleData = await exportModuleLegacy(md, {
+        alertEnd: false,
+        saveData: false
+    })
+    entries.push({
+        name: 'module.risum',
+        dataBase64: Buffer.from(moduleData).toString('base64')
+    })
+    entries.push({
+        name: 'card.json',
+        dataBase64: Buffer.from(JSON.stringify(card, null, 4), 'utf-8').toString('base64')
+    })
+
+    alertWait('Loading... (Starting server export)')
+    const storage = forageStorage.realStorage as NodeStorage
+    const auth = await storage.getCachedAuth()
+    const response = await fetch('/api/charx-export/jobs', {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+            'risu-auth': auth
+        },
+        body: JSON.stringify({
+            filename: `${char.name}.charx`,
+            entries
+        })
+    })
+    if(!response.ok){
+        const body = await response.json().catch(() => null)
+        throw new Error(body?.error ?? `CharX export failed (${response.status})`)
+    }
+    const body = await response.json() as {id?:string}
+    if(!body.id){
+        throw new Error('CharX export job has no download ID')
+    }
+    const anchor = document.createElement('a')
+    anchor.href = `/api/charx-export/${encodeURIComponent(body.id)}?auth=${encodeURIComponent(auth)}`
+    anchor.download = `${char.name || 'character'}.charx`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    alertNormal(language.successExport)
+}
+
 export async function exportCharacterCard(char:character, type:'png'|'json'|'charx'|'charxJpeg' = 'png', arg:{
     password?:string
     writer?:LocalWriter|VirtualWriter,
@@ -1251,8 +1429,22 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
             console.error('Failed to load character details for export:', e)
         }
     }
+    const requestedSpec = arg.spec ?? 'v2'
+    if(
+        type === 'charx'
+        && requestedSpec === 'v3'
+        && !arg.writer
+        && forageStorage.realStorage instanceof NodeStorage
+    ){
+        try{
+            await exportCharacterCardNodeStream(char)
+        } catch(error) {
+            alertError(error)
+        }
+        return
+    }
     let img = await readImage(char.image)
-    const spec:'v2'|'v3' = arg.spec ?? 'v2' //backward compatibility
+    const spec:'v2'|'v3' = requestedSpec //backward compatibility
     try{
         char.image = ''
         img = type === 'png' ? (await reencodeImage(img)) : img

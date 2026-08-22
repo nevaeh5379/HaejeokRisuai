@@ -241,6 +241,10 @@ class LocalFsStorage {
         };
     }
 
+    async openReadStream(hexPath) {
+        return this.read(hexPath);
+    }
+
     async readThumbnail(hexPath, options = {}) {
         const width = options.width || 128;
         const height = options.height || 128;
@@ -669,6 +673,37 @@ class S3AssetStorage {
                 stream: buffer ? undefined : response.Body,
                 contentType: response.ContentType || getContentType(key),
                 contentLength: buffer ? buffer.length : response.ContentLength
+            };
+        } catch (err) {
+            if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) {
+                return { exists: false };
+            }
+            throw err;
+        }
+    }
+
+    async openReadStream(hexPath) {
+        const key = hexToKey(hexPath);
+        try {
+            const response = await this.client.send(new GetObjectCommand({
+                Bucket: this.config.bucket,
+                Key: key
+            }));
+            const body = response.Body;
+            if (body && typeof body[Symbol.asyncIterator] === 'function') {
+                return {
+                    exists: true,
+                    stream: body,
+                    contentType: response.ContentType || getContentType(key),
+                    contentLength: Number(response.ContentLength || 0)
+                };
+            }
+            const buffer = await getS3BodyBuffer(body);
+            return {
+                exists: true,
+                buffer,
+                contentType: response.ContentType || getContentType(key),
+                contentLength: buffer ? buffer.length : Number(response.ContentLength || 0)
             };
         } catch (err) {
             if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) {
@@ -1951,6 +1986,47 @@ class AzureSqlAssetStorage {
             buffer,
             contentType: row.content_type || getContentType(key),
             contentLength: row.size != null ? Number(row.size) : buffer.length,
+        };
+    }
+
+    async openReadStream(hexPath) {
+        const key = hexToKey(hexPath);
+        const pool = await this._getPool();
+        const metaResult = await pool.request()
+            .input('key', this.sql.NVarChar(512), key)
+            .query('SELECT content_type, size, DATALENGTH(content) AS actual_size FROM asset_files WHERE asset_key = @key');
+        if (!metaResult.recordset || metaResult.recordset.length === 0) {
+            return { exists: false };
+        }
+        const row = metaResult.recordset[0];
+        const contentLength = Number(row.size != null ? row.size : row.actual_size || 0);
+        const sql = this.sql;
+        const chunkSize = 1024 * 1024;
+
+        async function* readChunks() {
+            let offset = 1;
+            while (offset <= contentLength) {
+                const length = Math.min(chunkSize, contentLength - offset + 1);
+                const result = await pool.request()
+                    .input('key', sql.NVarChar(512), key)
+                    .input('offset', sql.BigInt, offset)
+                    .input('length', sql.Int, length)
+                    .query('SELECT SUBSTRING(content, @offset, @length) AS chunk FROM asset_files WHERE asset_key = @key');
+                const value = result.recordset?.[0]?.chunk;
+                if (!value || value.length === 0) {
+                    throw new Error(`Azure SQL asset ended before its declared size: ${key}`);
+                }
+                const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+                yield chunk;
+                offset += chunk.length;
+            }
+        }
+
+        return {
+            exists: true,
+            stream: readChunks(),
+            contentType: row.content_type || getContentType(key),
+            contentLength
         };
     }
 
