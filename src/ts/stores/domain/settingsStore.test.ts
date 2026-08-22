@@ -249,12 +249,9 @@ describe('SettingsStore Reactivity and Persistence', () => {
             expect(committed.length).toBe(1)
         })
 
-        expect(committed[0].root.upserts).toContainEqual({
-            key: 'pluginCustomStorage',
-            value: {
-                existingPlugin: { opt: true },
-                myPlugin: { count: 42 },
-            },
+        expect(committed[0].pluginStorage?.upserts).toContainEqual({
+            key: 'myPlugin',
+            value: { count: 42 },
         })
 
         // 2. Remove a plugin key
@@ -265,12 +262,7 @@ describe('SettingsStore Reactivity and Persistence', () => {
             expect(committed.length).toBe(2)
         })
 
-        expect(committed[1].root.upserts).toContainEqual({
-            key: 'pluginCustomStorage',
-            value: {
-                myPlugin: { count: 42 },
-            },
-        })
+        expect(committed[1].pluginStorage?.deletes).toContain('existingPlugin')
 
         // 3. Clear all plugin storage
         settingsStore.clearPluginCustomStorage()
@@ -280,10 +272,7 @@ describe('SettingsStore Reactivity and Persistence', () => {
             expect(committed.length).toBe(3)
         })
 
-        expect(committed[2].root.upserts).toContainEqual({
-            key: 'pluginCustomStorage',
-            value: {},
-        })
+        expect(committed[2].pluginStorage?.clear).toBe(true)
     })
 })
 

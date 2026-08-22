@@ -1879,6 +1879,76 @@ class PostgresStorage extends SqlStorageBase {
             if (payload.rootDeletes.length > 0) {
                 await client.query('DELETE FROM system.settings WHERE key = ANY($1::text[])', [payload.rootDeletes]);
             }
+            if (payload.pluginStorageClear) {
+                await client.query("DELETE FROM system.setting_values WHERE setting_key = 'pluginCustomStorage'");
+                await client.query("DELETE FROM system.settings WHERE key = 'pluginCustomStorage'");
+            }
+            if (payload.pluginStorageDeletes && payload.pluginStorageDeletes.length > 0) {
+                for (const key of payload.pluginStorageDeletes) {
+                    const encoded = encodeMember(key, null);
+                    await client.query(
+                        `WITH RECURSIVE key_tree AS (
+                            SELECT node_id FROM system.setting_values
+                            WHERE setting_key = 'pluginCustomStorage' AND parent_node_id = 0
+                              AND ((member_key IS NOT NULL AND member_key = $1)
+                                   OR (encoded_member_key IS NOT NULL AND encoded_member_key = $2))
+                            UNION ALL
+                            SELECT v.node_id FROM system.setting_values v
+                            INNER JOIN key_tree kt ON v.parent_node_id = kt.node_id
+                            WHERE v.setting_key = 'pluginCustomStorage'
+                        )
+                        DELETE FROM system.setting_values
+                        WHERE setting_key = 'pluginCustomStorage'
+                          AND node_id IN (SELECT node_id FROM key_tree)`,
+                        [encoded.member_key, encoded.encoded_member_key]
+                    );
+                }
+            }
+            if (payload.pluginStorageUpserts && payload.pluginStorageUpserts.length > 0) {
+                for (const upsert of payload.pluginStorageUpserts) {
+                    const encoded = encodeMember(upsert.key, null);
+                    await client.query(
+                        `WITH RECURSIVE key_tree AS (
+                            SELECT node_id FROM system.setting_values
+                            WHERE setting_key = 'pluginCustomStorage' AND parent_node_id = 0
+                              AND ((member_key IS NOT NULL AND member_key = $1)
+                                   OR (encoded_member_key IS NOT NULL AND encoded_member_key = $2))
+                            UNION ALL
+                            SELECT v.node_id FROM system.setting_values v
+                            INNER JOIN key_tree kt ON v.parent_node_id = kt.node_id
+                            WHERE v.setting_key = 'pluginCustomStorage'
+                        )
+                        DELETE FROM system.setting_values
+                        WHERE setting_key = 'pluginCustomStorage'
+                          AND node_id IN (SELECT node_id FROM key_tree)`,
+                        [encoded.member_key, encoded.encoded_member_key]
+                    );
+                    const split = splitSetting('pluginCustomStorage', { [upsert.key]: upsert.value });
+                    if (split.values.length > 0) {
+                        const maxNodeRes = await client.query(
+                            "SELECT COALESCE(MAX(node_id), 0) AS max_id FROM system.setting_values WHERE setting_key = 'pluginCustomStorage'"
+                        );
+                        const baseNodeId = Number(maxNodeRes.rows[0].max_id);
+                        const remappedValues = split.values.map((v) => ({
+                            ...v,
+                            node_id: v.node_id + baseNodeId,
+                            parent_node_id: v.parent_node_id === 0 ? 0 : v.parent_node_id + baseNodeId,
+                        }));
+                        await bulkInsert(
+                            client,
+                            'system.setting_values',
+                            ['setting_key', 'node_id', 'parent_node_id', 'member_key', 'encoded_member_key', 'position', 'value_type', 'text_value', 'encoded_text_value', 'number_value', 'boolean_value'],
+                            ['text', 'integer', 'integer', 'text', 'text', 'integer', 'text', 'text', 'text', 'double precision', 'boolean'],
+                            remappedValues
+                        );
+                    }
+                }
+            }
+            if (payload.pluginStorageClear || (payload.pluginStorageDeletes && payload.pluginStorageDeletes.length > 0) || (payload.pluginStorageUpserts && payload.pluginStorageUpserts.length > 0)) {
+                this.pluginCustomStorageCache = null;
+                this.bootstrapCache = null;
+                this.bootstrapCacheGeneration++;
+            }
 
             onProgress?.({ stage: 'characters', message: `Syncing characters (${payload.characters.length})`, count: payload.characters.length });
             const splitCharacters = payload.characters.map(splitCharacter);

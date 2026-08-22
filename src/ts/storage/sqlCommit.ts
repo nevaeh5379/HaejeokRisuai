@@ -40,6 +40,11 @@ export interface SqlCommit {
         upserts: SqlSettingUpsert[]
         deletes: string[]
     }
+    pluginStorage?: {
+        upserts: SqlSettingUpsert[]
+        deletes: string[]
+        clear?: boolean
+    }
     characters: SqlCharacterUpsert[]
     characterIds?: string[]
     chats: SqlChatUpsert[]
@@ -75,7 +80,15 @@ export function createEmptySqlCommit(baseRevision: number, action?: string): Sql
 }
 
 export function hasSqlCommitChanges(commit: SqlCommit): boolean {
+    const hasPluginChanges = Boolean(
+        commit.pluginStorage && (
+            commit.pluginStorage.upserts.length > 0 ||
+            commit.pluginStorage.deletes.length > 0 ||
+            commit.pluginStorage.clear
+        )
+    )
     return commit.root.upserts.length > 0 || commit.root.deletes.length > 0 ||
+        hasPluginChanges ||
         commit.characters.length > 0 || commit.characterIds !== undefined ||
         commit.chats.length > 0 || commit.chatManifests.length > 0 ||
         commit.messages.length > 0 || commit.messageManifests.length > 0 ||
@@ -114,6 +127,11 @@ export function buildSqlReplaceCommit(database: Database, baseRevision: number):
     commit.characterIds = []
 
     database.pluginCustomStorage ??= {}
+    commit.pluginStorage = {
+        upserts: Object.entries(database.pluginCustomStorage).map(([key, value]) => ({ key, value })),
+        deletes: [],
+        clear: true,
+    }
     for (const [key, value] of Object.entries(database)) {
         if (key !== 'characters' && value !== undefined && typeof value !== 'function' &&
             key !== 'isSql') {

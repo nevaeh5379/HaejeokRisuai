@@ -79,52 +79,46 @@ describe('SQL row commits', () => {
 
     it('syncs pluginCustomStorage upserts and deletions to plugin_custom_storage table', async () => {
         const commit = createEmptySqlCommit(1)
-        commit.replaceAll = true
-        commit.root.upserts.push({
-            key: 'pluginCustomStorage',
-            value: {
-                'my-plugin': { setting1: 'val1' },
-            },
-        })
+        commit.pluginStorage = {
+            upserts: [{ key: 'my-plugin', value: { setting1: 'val1' } }],
+            deletes: [],
+        }
         const statements: { sql: string; bind: unknown[] }[] = []
 
         await applySqliteCommit(commit, (sql, bind = []) => {
             statements.push({ sql, bind })
         })
 
-        expect(statements.some((s) => s.sql.includes('DELETE FROM plugin_custom_storage'))).toBe(true)
-        expect(statements.some((s) => s.sql.includes('INSERT OR REPLACE INTO system_settings'))).toBe(true)
         const pluginStorageStmt = statements.find((s) => s.sql.includes('INSERT OR REPLACE INTO plugin_custom_storage'))
         expect(pluginStorageStmt).toBeDefined()
         expect(pluginStorageStmt?.bind[0]).toBe('my-plugin')
         expect(pluginStorageStmt?.bind[1]).toBe(JSON.stringify({ setting1: 'val1' }))
     })
 
-    it('executes targeted plugin_custom_storage deletion when keys are removed', async () => {
+    it('executes targeted plugin_custom_storage deletion when key is removed', async () => {
         const commit = createEmptySqlCommit(2)
-        commit.root.upserts.push({
-            key: 'pluginCustomStorage',
-            value: {
-                'plugin-a': { key: 'a' },
-            },
-        })
+        commit.pluginStorage = {
+            upserts: [],
+            deletes: ['plugin-a'],
+        }
         const statements: { sql: string; bind: unknown[] }[] = []
 
         await applySqliteCommit(commit, (sql, bind = []) => {
             statements.push({ sql, bind })
         })
 
-        const deleteNotInStmt = statements.find((s) => s.sql.includes('DELETE FROM plugin_custom_storage WHERE key NOT IN'))
-        expect(deleteNotInStmt).toBeDefined()
-        expect(deleteNotInStmt?.bind).toEqual(['plugin-a'])
+        const deleteStmt = statements.find((s) => s.sql.includes('DELETE FROM plugin_custom_storage WHERE key = ?'))
+        expect(deleteStmt).toBeDefined()
+        expect(deleteStmt?.bind).toEqual(['plugin-a'])
     })
 
-    it('clears plugin_custom_storage table when pluginCustomStorage is an empty object', async () => {
+    it('clears plugin_custom_storage table when clear is true', async () => {
         const commit = createEmptySqlCommit(3)
-        commit.root.upserts.push({
-            key: 'pluginCustomStorage',
-            value: {},
-        })
+        commit.pluginStorage = {
+            upserts: [],
+            deletes: [],
+            clear: true,
+        }
         const statements: { sql: string; bind: unknown[] }[] = []
 
         await applySqliteCommit(commit, (sql, bind = []) => {

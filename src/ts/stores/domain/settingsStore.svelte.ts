@@ -40,6 +40,9 @@ class SettingsStore {
     private debounceTimer: ReturnType<typeof setTimeout> | null = null
     private pendingUpserts = new Map<string, unknown>()
     private pendingDeletes = new Set<string>()
+    private pendingPluginStorageUpserts = new Map<string, unknown>()
+    private pendingPluginStorageDeletes = new Set<string>()
+    private pendingPluginStorageClear = false
     private rootDispose: (() => void) | null = null
     private previousFingerprints = new Map<string, string>()
 
@@ -51,6 +54,9 @@ class SettingsStore {
         this.previousFingerprints.clear()
         this.pendingUpserts.clear()
         this.pendingDeletes.clear()
+        this.pendingPluginStorageUpserts.clear()
+        this.pendingPluginStorageDeletes.clear()
+        this.pendingPluginStorageClear = false
 
         const settingsCopy = { ...initialSettings }
         delete (settingsCopy as any).characters
@@ -58,7 +64,7 @@ class SettingsStore {
         settingsCopy.pluginCustomStorage ??= {}
 
         for (const [key, val] of Object.entries(settingsCopy)) {
-            if (key === 'characters' || key === 'isSql') continue
+            if (key === 'characters' || key === 'isSql' || key === 'pluginCustomStorage') continue
             this.previousFingerprints.set(key, snapshotFingerprint($state.snapshot(val)))
         }
 
@@ -71,7 +77,7 @@ class SettingsStore {
             $effect(() => {
                 const keys = Object.keys(this.state)
                 for (const key of keys) {
-                    if (key === 'characters' || key === 'isSql') continue
+                    if (key === 'characters' || key === 'isSql' || key === 'pluginCustomStorage') continue
                     const val = this.state[key]
                     trackDeep(val)
                     const snapshot = $state.snapshot(val)
@@ -110,7 +116,9 @@ class SettingsStore {
             clearTimeout(this.debounceTimer)
             this.debounceTimer = null
         }
-        if (this.pendingUpserts.size === 0 && this.pendingDeletes.size === 0) {
+        const hasRootChanges = this.pendingUpserts.size > 0 || this.pendingDeletes.size > 0
+        const hasPluginChanges = this.pendingPluginStorageUpserts.size > 0 || this.pendingPluginStorageDeletes.size > 0 || this.pendingPluginStorageClear
+        if (!hasRootChanges && !hasPluginChanges) {
             return
         }
         const storage = this.storage || await getSqlStorage()
@@ -118,6 +126,18 @@ class SettingsStore {
         const deletes = Array.from(this.pendingDeletes)
         this.pendingUpserts.clear()
         this.pendingDeletes.clear()
+
+        let pluginStoragePayload: import('../../storage/sqlCommit').SqlCommit['pluginStorage'] = undefined
+        if (hasPluginChanges) {
+            pluginStoragePayload = {
+                upserts: Array.from(this.pendingPluginStorageUpserts.entries()).map(([key, value]) => ({ key, value })),
+                deletes: Array.from(this.pendingPluginStorageDeletes),
+                clear: this.pendingPluginStorageClear || undefined,
+            }
+            this.pendingPluginStorageUpserts.clear()
+            this.pendingPluginStorageDeletes.clear()
+            this.pendingPluginStorageClear = false
+        }
 
         try {
             await storage.commit({
@@ -127,6 +147,7 @@ class SettingsStore {
                     upserts,
                     deletes,
                 },
+                pluginStorage: pluginStoragePayload,
                 characters: [],
                 chats: [],
                 chatManifests: [],
@@ -146,6 +167,14 @@ class SettingsStore {
     set<K extends keyof Database>(key: K, value: Database[K]): void {
         const keyStr = String(key)
         this.state[keyStr] = value
+        if (keyStr === 'pluginCustomStorage') {
+            if (value && typeof value === 'object') {
+                for (const [k, v] of Object.entries(value)) {
+                    this.setPluginCustomStorageKey(k, v)
+                }
+            }
+            return
+        }
         this.pendingDeletes.delete(keyStr)
         this.pendingUpserts.set(keyStr, $state.snapshot(value))
         this.scheduleCommit()
@@ -154,6 +183,7 @@ class SettingsStore {
     update(updater: (state: Record<string, any>) => void): void {
         updater(this.state)
         for (const [key, value] of Object.entries(this.state)) {
+            if (key === 'characters' || key === 'isSql' || key === 'pluginCustomStorage') continue
             this.pendingDeletes.delete(key)
             this.pendingUpserts.set(key, $state.snapshot(value))
         }
@@ -162,6 +192,10 @@ class SettingsStore {
 
     delete(key: keyof Database): void {
         const keyStr = String(key)
+        if (keyStr === 'pluginCustomStorage') {
+            this.clearPluginCustomStorage()
+            return
+        }
         delete this.state[keyStr]
         this.previousFingerprints.delete(keyStr)
         this.pendingUpserts.delete(keyStr)
@@ -177,18 +211,26 @@ class SettingsStore {
     setPluginCustomStorageKey(key: string, value: any): void {
         this.state.pluginCustomStorage ??= {}
         this.state.pluginCustomStorage[key] = value
-        this.set('pluginCustomStorage' as any, this.state.pluginCustomStorage)
+        this.pendingPluginStorageDeletes.delete(key)
+        this.pendingPluginStorageUpserts.set(key, $state.snapshot(value))
+        this.scheduleCommit()
     }
 
     removePluginCustomStorageKey(key: string): void {
-        this.state.pluginCustomStorage ??= {}
-        delete this.state.pluginCustomStorage[key]
-        this.set('pluginCustomStorage' as any, this.state.pluginCustomStorage)
+        if (this.state.pluginCustomStorage) {
+            delete this.state.pluginCustomStorage[key]
+        }
+        this.pendingPluginStorageUpserts.delete(key)
+        this.pendingPluginStorageDeletes.add(key)
+        this.scheduleCommit()
     }
 
     clearPluginCustomStorage(): void {
         this.state.pluginCustomStorage = {}
-        this.set('pluginCustomStorage' as any, {})
+        this.pendingPluginStorageUpserts.clear()
+        this.pendingPluginStorageDeletes.clear()
+        this.pendingPluginStorageClear = true
+        this.scheduleCommit()
     }
 
     dispose(): void {

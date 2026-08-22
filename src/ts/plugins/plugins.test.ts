@@ -44,9 +44,9 @@ describe('Plugin Storage & SafeDatabase Persistence', () => {
             expect(committed.length).toBe(1)
         })
 
-        expect(committed[0].root.upserts).toContainEqual({
-            key: 'pluginCustomStorage',
-            value: { testKey: { value: 123 } },
+        expect(committed[0].pluginStorage?.upserts).toContainEqual({
+            key: 'testKey',
+            value: { value: 123 },
         })
     })
 
@@ -71,10 +71,7 @@ describe('Plugin Storage & SafeDatabase Persistence', () => {
             expect(committed.length).toBe(2)
         })
 
-        expect(committed[1].root.upserts).toContainEqual({
-            key: 'pluginCustomStorage',
-            value: { keyB: 'valB' },
-        })
+        expect(committed[1].pluginStorage?.deletes).toContain('keyA')
 
         // Clear
         apis.pluginStorage.clear()
@@ -86,10 +83,7 @@ describe('Plugin Storage & SafeDatabase Persistence', () => {
             expect(committed.length).toBe(3)
         })
 
-        expect(committed[2].root.upserts).toContainEqual({
-            key: 'pluginCustomStorage',
-            value: {},
-        })
+        expect(committed[2].pluginStorage?.clear).toBe(true)
     })
 
     it('persists custom property writes via safeDatabase proxy', async () => {
@@ -108,9 +102,9 @@ describe('Plugin Storage & SafeDatabase Persistence', () => {
             expect(committed.length).toBe(1)
         })
 
-        expect(committed[0].root.upserts).toContainEqual({
-            key: 'pluginCustomStorage',
-            value: { myCustomPluginData: { enabled: true, mode: 'fast' } },
+        expect(committed[0].pluginStorage?.upserts).toContainEqual({
+            key: 'myCustomPluginData',
+            value: { enabled: true, mode: 'fast' },
         })
 
         // Delete custom property
@@ -123,10 +117,7 @@ describe('Plugin Storage & SafeDatabase Persistence', () => {
             expect(committed.length).toBe(2)
         })
 
-        expect(committed[1].root.upserts).toContainEqual({
-            key: 'pluginCustomStorage',
-            value: {},
-        })
+        expect(committed[1].pluginStorage?.deletes).toContain('myCustomPluginData')
     })
 
     it('persists allowed DB property writes via safeDatabase proxy', async () => {

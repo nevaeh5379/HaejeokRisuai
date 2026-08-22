@@ -328,6 +328,27 @@ function createSqlStorageHelpers({
             });
         }
 
+        let pluginStorageUpserts = [];
+        let pluginStorageDeletes = [];
+        let pluginStorageClear = false;
+        if (payload.pluginStorage !== undefined) {
+            if (!payload.pluginStorage || typeof payload.pluginStorage !== 'object' || Array.isArray(payload.pluginStorage)) {
+                throw new PayloadError('pluginStorage must be an object');
+            }
+            pluginStorageClear = Boolean(payload.pluginStorage.clear);
+            pluginStorageUpserts = asArray(payload.pluginStorage.upserts, 'pluginStorage.upserts').map((item, index) => {
+                if (!item || typeof item !== 'object' || Array.isArray(item)) {
+                    throw new PayloadError(`pluginStorage.upserts[${index}] must be an object`);
+                }
+                assertId(item.key, `pluginStorage.upserts[${index}].key`);
+                return { key: item.key, value: item.value };
+            });
+            pluginStorageDeletes = asArray(payload.pluginStorage.deletes, 'pluginStorage.deletes').map((key, index) => {
+                assertId(key, `pluginStorage.deletes[${index}]`);
+                return key;
+            });
+        }
+
         const characters = validateRows(payload.characters, 'characters', (row, index) => {
             assertId(row.id, `characters[${index}].id`);
             assertPosition(row.position, `characters[${index}].position`);
@@ -370,6 +391,9 @@ function createSqlStorageHelpers({
             baseRevision: payload.baseRevision,
             rootUpserts,
             rootDeletes,
+            pluginStorageUpserts,
+            pluginStorageDeletes,
+            pluginStorageClear,
             characters,
             chats,
             messages,
