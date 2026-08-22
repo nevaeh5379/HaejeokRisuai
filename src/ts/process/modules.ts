@@ -356,11 +356,9 @@ export async function importModule(){
 }
 
 function getModuleById(id:string){
-    const db = getDatabase()
-    for(let i=0;i<db.modules.length;i++){
-        if(db.modules[i].id === id){
-            return db.modules[i]
-        }
+    const module = moduleStore.getById(id)
+    if(module){
+        return module
     }
 
     if(id === '$embedded'){
@@ -373,9 +371,8 @@ function getModuleById(id:string){
 }
 
 function getModuleByIds(ids:string[]){
-    const db = getDatabase()
     const idSet = new Set(ids)
-    const modules = db.modules.filter(m => 
+    const modules = moduleStore.list.filter(m =>
         idSet.has(m.id) || (m.namespace && idSet.has(m.namespace))
     )
     return deduplicateModuleById(modules)
@@ -394,8 +391,6 @@ function deduplicateModuleById(modules:RisuModule[]){
     return newModules
 }
 
-let lastModules = ''
-let lastModuleData:RisuModule[] = []
 export function getModules(){
     const currentChat = getCurrentChat()
     const character = getCurrentCharacter()
@@ -415,15 +410,7 @@ export function getModules(){
         const intList = db.moduleIntergration.split(',').map((s) => s.trim())
         ids = ids.concat(intList)
     }
-    const idsJoined = ids.join('-')
-    if(lastModules === idsJoined){
-        return lastModuleData
-    }
-
-    let modules:RisuModule[] = getModuleByIds(ids)
-    lastModules = idsJoined
-    lastModuleData = modules
-    return modules
+    return getModuleByIds(ids)
 
 }
 
@@ -584,6 +571,5 @@ export function moduleUpdate(){
 }
 
 export function refreshModules(){
-    lastModules = ''
-    lastModuleData = []
+    // Module resolution is reactive and no longer uses a manual cache.
 }

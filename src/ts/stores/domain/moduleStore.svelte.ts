@@ -8,6 +8,10 @@ class ModuleStore {
     init(modules: RisuModule[] = [], enabled: string[] = []): void {
         this.modules = [...modules]
         this.enabledModules = [...enabled]
+        settingsStore.hydrate((state) => {
+            state.modules = this.modules
+            state.enabledModules = this.enabledModules
+        })
     }
 
     get list(): RisuModule[] {

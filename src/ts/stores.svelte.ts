@@ -207,6 +207,7 @@ ReloadGUIPointer.subscribe(() => {
 $effect.root(() => {
     selectedCharID.subscribe((v) => {
         selIdState.selId = v
+        characterStore.select(v)
 
         if (characterStore.characters?.[selIdState.selId]) {
             if (settingsStore.state.hypaV3 && settingsStore.state.hypaV3Presets?.[settingsStore.state.hypaV3PresetId]?.settings?.alwaysToggleOn) {

@@ -3,6 +3,7 @@
     
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { characterStore } from 'src/ts/stores/domain/characterStore.svelte';
+    import { moduleStore } from 'src/ts/stores/domain/moduleStore.svelte';
     import Button from "src/lib/UI/GUI/Button.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
     import { exportModule, exportModuleLegacy, importModule, refreshModules, type RisuModule } from "src/ts/process/modules";
@@ -81,13 +82,7 @@
                                     "text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
                                 } use:tooltip={language.enableGlobal} onclick={async (e) => {
                                 e.stopPropagation()
-                                if(settingsStore.state.enabledModules.includes(rmodule.id)){
-                                    settingsStore.state.enabledModules.splice(settingsStore.state.enabledModules.indexOf(rmodule.id), 1)
-                                }
-                                else{
-                                    settingsStore.state.enabledModules.push(rmodule.id)
-                                }
-                                settingsStore.state.enabledModules = settingsStore.state.enabledModules
+                                await moduleStore.toggleModule(rmodule.id)
                                 charConversionMode = false
                             }}>
                                 <Globe size={18}/>

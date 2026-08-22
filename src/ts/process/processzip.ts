@@ -1,9 +1,11 @@
-import { AppendableBuffer, saveAsset, type LocalWriter, type VirtualWriter } from "../globalApi.svelte";
+import { AppendableBuffer, forageStorage, saveAsset, type LocalWriter, type VirtualWriter } from "../globalApi.svelte";
 import * as fflate from "fflate";
 import { asBuffer, Semaphore, sleep } from "../util";
 import { alertStore } from "../alert";
 import { hasher } from "../hash";
 import { hubURL } from "../characterCards";
+import { NodeStorage } from "../storage/nodeStorage";
+import { v4 as uuidv4 } from "uuid";
 
 // File size and chunk size constants
 const MAX_ASSET_SIZE_BYTES = 50 * 1024 * 1024; // 50MB
@@ -11,6 +13,8 @@ const CHUNK_SIZE_BYTES = 1024 * 1024; // 1MB
 
 // Queue management constants
 const MAX_CONCURRENT_ASSET_SAVES = 10;
+const NODE_ASSET_BATCH_MAX_FILES = 64;
+const NODE_ASSET_BATCH_MAX_BYTES = 64 * 1024 * 1024;
 
 // HTTP status code ranges
 const HTTP_STATUS_OK_MIN = 200;
@@ -174,6 +178,11 @@ export class CharXImporter{
     private completionSettled: boolean = false
     private errors: Error[] = []
     private onProgress?: (done: number, total: number) => void
+
+    // Node self-hosting can stream many assets through one bulk request.
+    private pendingNodeAssets: Array<{id:string, data:Uint8Array}> = []
+    private pendingNodeAssetBytes: number = 0
+    private nodeAssetSaveChain: Promise<void> = Promise.resolve()
 
     // Results: filename -> saved asset ID mapping
     assets:{[key:string]:string} = {}
@@ -390,9 +399,16 @@ export class CharXImporter{
      */
     async #processAssetQueue(asset:{id:string, data:Uint8Array}){
         this.totalEnqueued += 1
+
+        if(!this.skipSaving && forageStorage.realStorage instanceof NodeStorage){
+            this.#enqueueNodeAsset(asset)
+            return
+        }
+
         let acquired = false
         try {
             await this.semaphore.acquire()
+            acquired = true
             const ext = asset.id.split('.').pop() || 'png'
             const assetSaveId = this.skipSaving
                 ? `assets/${await hasher(asset.data)}.${ext}`
@@ -412,10 +428,80 @@ export class CharXImporter{
     }
 
     /**
+     * Buffers Node server assets into bounded batches. This mirrors local backup
+     * restore and avoids issuing one HTTP request for every file in the archive.
+     */
+    #enqueueNodeAsset(asset:{id:string, data:Uint8Array}){
+        this.pendingNodeAssets.push(asset)
+        this.pendingNodeAssetBytes += asset.data.byteLength
+
+        if(
+            this.pendingNodeAssets.length >= NODE_ASSET_BATCH_MAX_FILES
+            || this.pendingNodeAssetBytes >= NODE_ASSET_BATCH_MAX_BYTES
+        ){
+            this.#flushNodeAssets()
+        }
+    }
+
+    #flushNodeAssets(){
+        if(this.pendingNodeAssets.length === 0){
+            return
+        }
+
+        const batch = this.pendingNodeAssets
+        this.pendingNodeAssets = []
+        this.pendingNodeAssetBytes = 0
+
+        const saveBatch = () => this.#saveNodeAssetBatch(batch)
+        this.nodeAssetSaveChain = this.nodeAssetSaveChain.then(saveBatch, saveBatch)
+    }
+
+    async #saveNodeAssetBatch(batch:Array<{id:string, data:Uint8Array}>){
+        try{
+            const storage = forageStorage.realStorage
+            if(!(storage instanceof NodeStorage)){
+                throw new Error('Node asset storage changed while importing CharX')
+            }
+
+            const prepared = await Promise.all(batch.map(async(asset) => {
+                const ext = asset.id.split('.').pop() || 'png'
+                let id = ''
+                try{
+                    id = await hasher(asset.data)
+                } catch {
+                    id = uuidv4()
+                }
+                const assetSaveId = `assets/${id}.${ext}`
+                return { asset, assetSaveId }
+            }))
+            const items = new Map<string, Uint8Array>()
+            for(const {asset, assetSaveId} of prepared){
+                items.set(assetSaveId, asset.data)
+            }
+
+            await storage.setItems(items)
+
+            for(const {asset, assetSaveId} of prepared){
+                this.assets[asset.id] = assetSaveId
+            }
+        } catch(error) {
+            this.errors.push(error instanceof Error ? error : new Error(String(error)))
+        } finally {
+            for(let i=0;i<batch.length;i++){
+                this.totalCompleted += 1
+                this.onProgress?.(this.totalCompleted, this.totalEnqueued)
+            }
+            this.#checkCompletion()
+        }
+    }
+
+    /**
      * Finalizes processing when all ZIP data has been pushed.
      * Saves hash signal if needed and marks the queue as complete.
      */
     async #finalize(){
+        this.#flushNodeAssets()
+
         // Save hash signal for server sync if needed
         if(this.hashSignal){
             await saveAsset(new TextEncoder().encode(this.hashSignal))

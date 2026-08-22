@@ -81,21 +81,23 @@
                                 <button class="mr-2 text-textcolor2 cursor-not-allowed"aria-labelledby="disabled">
                                 </button>
                             {:else}
-                                <button class={(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules.includes(rmodule.id)) ?
+                                <button class={(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules?.includes(rmodule.id)) ?
                                         "mr-2 cursor-pointer text-blue-500" :
                                         (characterStore.characters[$selectedCharID]?.modules?.includes(rmodule.id)) ?
                                         "mr-2 cursor-pointer text-violet-500" :
                                         "text-textcolor2 hover:text-blue-400 mr-2 cursor-pointer"
                                 } onclick={async (e) => {
                                     e.stopPropagation()
-                                    if(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules.includes(rmodule.id)){
-                                        characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules.splice(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules.indexOf(rmodule.id), 1)
+                                    const currentChat = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage]
+                                    currentChat.modules ??= []
+                                    if(currentChat.modules.includes(rmodule.id)){
+                                        currentChat.modules.splice(currentChat.modules.indexOf(rmodule.id), 1)
 
                                     }
                                     else{
-                                        characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules.push(rmodule.id)
+                                        currentChat.modules.push(rmodule.id)
                                     }
-                                    characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules
+                                    currentChat.modules = currentChat.modules
                                     $ReloadGUIPointer += 1
                                 }}
                                 oncontextmenu={(e) => {

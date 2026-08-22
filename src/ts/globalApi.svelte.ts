@@ -18,6 +18,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, saving } from "./stores.svelte";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
+import { moduleStore } from "./stores/domain/moduleStore.svelte";
 import { characterStore } from "./stores/domain/characterStore.svelte";
 import { alertConfirm, alertError, alertMd, alertNormal, alertSelect, alertTOS, waitAlert } from "./alert";
 import { hasher } from "./hash";
@@ -959,17 +960,15 @@ export function getUncleanablesSync(db: Database, uptype: 'basename' | 'pure' = 
         }
     }
 
-    if (db.modules) {
-        for (const module of db.modules) {
-            const assets = module.assets
-            if (assets) {
-                for (const asset of assets) {
-                    addUncleanable(asset[1])
-                }
+    for (const module of db.modules ?? moduleStore.list) {
+        const assets = module.assets
+        if (assets) {
+            for (const asset of assets) {
+                addUncleanable(asset[1])
             }
-            if(module.icon){
-                addUncleanable(module.icon)
-            }
+        }
+        if(module.icon){
+            addUncleanable(module.icon)
         }
     }
 

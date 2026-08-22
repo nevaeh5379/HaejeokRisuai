@@ -1,6 +1,6 @@
-import { getDatabase } from "src/ts/storage/database.svelte";
 import { MCPClient, type JsonRPC, type MCPTool, type RPCToolCallContent } from "./mcplib";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
 import { getModuleMcps } from "../modules";
 import { alertError, alertInput, alertNormal } from "src/ts/alert";
 import { v4 } from "uuid";
@@ -21,7 +21,6 @@ const callOnlyMCPUrls = [
 ]
 
 export async function initializeMCPs(additionalMCPs?:string[]) {
-    const db = getDatabase()
     const mcpUrls = getModuleMcps()
     if(additionalMCPs && additionalMCPs.length > 0) {
         for(const mcp of additionalMCPs) {
@@ -314,8 +313,7 @@ export async function importMCPModule(){
             alertError('MCP module not found or invalid URL');
             return;
         }
-        const db = getDatabase();
-        db.modules.push({
+        await moduleStore.installModule({
             name: meta.serverInfo.name,
             description: "MCP from " + x,
             mcp: {
