@@ -23,14 +23,17 @@ export { createBlankChar } from './characterDefaults'
 export { getCharImage, getCharImagesBatch } from './characterImage'
 
 export function createNewCharacter() {
-    characterStore.characters.push(createBlankChar())
+    const char = createBlankChar()
+    characterStore.characters.push(char)
     checkCharOrder()
+    characterStore.markCharacterDirty(char.chaId)
+    characterStore.markCharacterOrderDirty()
     return characterStore.characters.length - 1
 }
 
 export function createNewGroup(){
-    characterStore.characters.push({
-        type: 'group',
+    const char = {
+        type: 'group' as const,
         name: "",
         firstMessage: "",
         chats: [{
@@ -41,7 +44,7 @@ export function createNewGroup(){
         }],
         chatFolders: [],
         chatPage: 0,
-        viewScreen: 'none',
+        viewScreen: 'none' as const,
         globalLore: [],
         characters: [],
         autoMode: false,
@@ -53,8 +56,11 @@ export function createNewGroup(){
         characterTalks: [],
         characterActive: [],
         realmId: ''
-    })
+    }
+    characterStore.characters.push(char)
     checkCharOrder()
+    characterStore.markCharacterDirty(char.chaId)
+    characterStore.markCharacterOrderDirty()
     return characterStore.characters.length - 1
 }
 
@@ -771,12 +777,14 @@ export async function removeChar(identifier:string|number,name:string, type:'nor
     }
     if(type === 'normal'){
         chars[index].trashTime = Date.now()
+        characterStore.markCharacterDirty(chars[index].chaId)
     }
     else{
         chars.splice(index, 1)
     }
     checkCharOrder()
     characterStore.characters = chars
+    characterStore.markCharacterOrderDirty()
     selectedCharID.set(-1)
 }
 

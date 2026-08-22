@@ -4,34 +4,22 @@ import { getSqlStorage } from '../../storage/sqlStorageFactory'
 import { v4 as uuidv4 } from 'uuid'
 import { sqlCharacterData, sqlChatData } from '../../storage/sqlCommit'
 import { isMemoryConstrainedDevice } from '../../memory/deviceMemory'
-
-function snapshotFingerprint(value: unknown): string {
-    try {
-        const serialized = JSON.stringify(value)
-        if (!serialized) return ''
-        let hash = 2166136261
-        for (let index = 0; index < serialized.length; index++) {
-            hash ^= serialized.charCodeAt(index)
-            hash = Math.imul(hash, 16777619)
-        }
-        return `${serialized.length}:${hash >>> 0}`
-    } catch {
-        return ''
-    }
-}
+import { trackDeep, snapshotFingerprint } from './reactiveUtils'
 
 class CharacterStore {
     private storage: ISqlStorage | null = null
     private debounceTimer: ReturnType<typeof setTimeout> | null = null
-    private pendingCharacters = new Map<string, { id: string; position: number; data: unknown }>()
-    private pendingCharacterIds: string[] | undefined = undefined
-    private pendingChats = new Map<string, { id: string; characterId: string; position: number; data: unknown }>()
-    private pendingChatManifests = new Map<string, string[]>()
-    private rootDispose: (() => void) | null = null
-    private characterFingerprints = new Map<string, string>()
-    private chatFingerprints = new Map<string, string>()
-    private chatManifestFingerprints = new Map<string, string>()
-    private charIdsFingerprint = ''
+
+    // Dirty sets — only IDs, no snapshots.  Serialised at flush time.
+    private dirtyCharacters = new Set<string>()
+    private dirtyChats = new Set<string>()
+    private dirtyChatManifests = new Set<string>()  // character IDs whose chat list changed
+    private dirtyCharacterIds = false               // character order changed
+
+    // Active-tracking effect lifecycle
+    private activeDispose: (() => void) | null = null
+    private charIdsSnapshot = ''
+
     private characterDetailPromises = new Map<string, Promise<void>>()
     private chatDetailPromises = new Map<string, Promise<void>>()
     private olderChatPromises = new Map<string, Promise<number>>()
@@ -51,14 +39,12 @@ class CharacterStore {
 
     init(characters: (character | groupChat)[], storage: ISqlStorage): void {
         this.storage = storage
-        this.rootDispose?.()
-        this.characterFingerprints.clear()
-        this.chatFingerprints.clear()
-        this.chatManifestFingerprints.clear()
-        this.pendingCharacters.clear()
-        this.pendingChats.clear()
-        this.pendingChatManifests.clear()
-        this.pendingCharacterIds = undefined
+        this.activeDispose?.()
+        this.activeDispose = null
+        this.dirtyCharacters.clear()
+        this.dirtyChats.clear()
+        this.dirtyChatManifests.clear()
+        this.dirtyCharacterIds = false
 
         for (const char of characters) {
             char.chaId ||= uuidv4()
@@ -66,95 +52,147 @@ class CharacterStore {
                 chat.id ||= uuidv4()
             }
         }
-        this.charIdsFingerprint = characters.map((c) => c.chaId).join(',')
+        this.charIdsSnapshot = characters.map((c) => c.chaId).join(',')
         this.characters = characters
-        this.observe()
+        this.observeActive()
     }
 
-    private observe(): void {
-        let initial = true
-        this.rootDispose = $effect.root(() => {
+    // ── Active character + active chat tracking ──────────────────────
+
+    private observeActive(): void {
+        this.activeDispose?.()
+        this.activeDispose = null
+
+        const char = this.characters[this.selectedId]
+        if (!char) return
+
+        // Preserve the legacy invariant: every chat must have a stable id
+        // (the old observe loop assigned these during traversal).
+        for (const c of char.chats ?? []) {
+            if (!c.id) c.id = uuidv4()
+        }
+
+        // Synchronous baselines taken at observe time.  The first (async) effect
+        // run compares against these so mutations occurring between observe and
+        // the first flush are still detected; later runs mark unconditionally.
+        const charBaseline = snapshotFingerprint(sqlCharacterData($state.snapshot(char)))
+        const activeChatAtObserve = char.chats?.[char.chatPage ?? 0]
+        const chatBaselineId = activeChatAtObserve?.id
+        const chatBaselineFp = activeChatAtObserve && activeChatAtObserve.id !== undefined
+            ? snapshotFingerprint(sqlChatData($state.snapshot(activeChatAtObserve)))
+            : ''
+        const manifestBaseline = (char.chats ?? []).map((c) => c.id).join(',')
+        // Chats already known to storage when observation started; additions get marked
+        const knownChatIds = new Set<string>((char.chats ?? []).map((c) => c.id))
+
+        let charInitial = true
+        let manifestInitial = true
+        // Deduplicates chat switches: only mutations to the *same* chat count as changes
+        let lastChatId: string | undefined = undefined
+
+        this.activeDispose = $effect.root(() => {
+            // Track active character property changes
             $effect(() => {
-                const chars = this.characters
-                const currentCharIds = chars.map((c) => c.chaId || '').join(',')
-                let anyChanges = false
-
-                for (let i = 0; i < chars.length; i++) {
-                    const char = chars[i]
-                    char.chaId ||= uuidv4()
-                    const charData = sqlCharacterData($state.snapshot(char))
-                    const charFp = snapshotFingerprint(charData)
-
-                    if (initial) {
-                        this.characterFingerprints.set(char.chaId, charFp)
-                    } else {
-                        const prevCharFp = this.characterFingerprints.get(char.chaId)
-                        if (prevCharFp !== charFp) {
-                            this.characterFingerprints.set(char.chaId, charFp)
-                            this.pendingCharacters.set(char.chaId, {
-                                id: char.chaId,
-                                position: i,
-                                data: charData,
-                            })
-                            anyChanges = true
-                        }
-                    }
-
-                    const chats = char.chats ?? []
-                    const chatIds = chats.map((c) => c.id || '')
-                    const manifestKey = chatIds.join(',')
-
-                    if (initial) {
-                        this.chatManifestFingerprints.set(char.chaId, manifestKey)
-                    } else {
-                        const prevManifest = this.chatManifestFingerprints.get(char.chaId)
-                        if (prevManifest !== manifestKey) {
-                            this.chatManifestFingerprints.set(char.chaId, manifestKey)
-                            this.pendingChatManifests.set(char.chaId, chatIds.filter(Boolean))
-                            anyChanges = true
-                        }
-                    }
-
-                    for (let j = 0; j < chats.length; j++) {
-                        const chat = chats[j]
-                        chat.id ||= uuidv4()
-                        const chatData = sqlChatData($state.snapshot(chat))
-                        const chatFp = snapshotFingerprint(chatData)
-
-                        if (initial) {
-                            this.chatFingerprints.set(chat.id, chatFp)
-                        } else {
-                            const prevChatFp = this.chatFingerprints.get(chat.id)
-                            if (prevChatFp !== chatFp) {
-                                this.chatFingerprints.set(chat.id, chatFp)
-                                this.pendingChats.set(chat.id, {
-                                    id: chat.id,
-                                    characterId: char.chaId,
-                                    position: j,
-                                    data: chatData,
-                                })
-                                anyChanges = true
-                            }
-                        }
-                    }
-                }
-
-                if (!initial) {
-                    if (currentCharIds !== this.charIdsFingerprint) {
-                        this.charIdsFingerprint = currentCharIds
-                        this.pendingCharacterIds = chars.map((c) => c.chaId)
-                        anyChanges = true
-                    }
-                    if (anyChanges) {
+                trackDeep(char)
+                if (charInitial) {
+                    charInitial = false
+                    if (snapshotFingerprint(sqlCharacterData($state.snapshot(char))) !== charBaseline) {
+                        this.dirtyCharacters.add(char.chaId)
                         this.scheduleCommit()
                     }
-                } else {
-                    this.charIdsFingerprint = currentCharIds
+                    return
                 }
-                initial = false
+                this.dirtyCharacters.add(char.chaId)
+                this.scheduleCommit()
+            })
+
+            // Track active chat (follows chatPage) property changes
+            $effect(() => {
+                const chat = char.chats?.[char.chatPage ?? 0]
+                if (!chat) return
+                trackDeep(chat)
+                if (lastChatId === undefined && chat.id === chatBaselineId) {
+                    // First observation of the baseline chat — compare against observe-time state
+                    lastChatId = chat.id
+                    if (chatBaselineFp !== '' && snapshotFingerprint(sqlChatData($state.snapshot(chat))) !== chatBaselineFp) {
+                        this.dirtyChats.add(chat.id)
+                        this.scheduleCommit()
+                    }
+                    return
+                }
+                const isSameChat = lastChatId === chat.id
+                lastChatId = chat.id
+                if (!isSameChat) return
+                this.dirtyChats.add(chat.id)
+                this.scheduleCommit()
+            })
+
+            // Track chat list structural changes (add/remove/reorder).
+            // Also assigns ids to newly added chats (legacy observe-loop duty)
+            // and marks added chats so their metadata rows get persisted.
+            $effect(() => {
+                const chats = char.chats ?? []
+                let added = false
+                for (const c of chats) {
+                    if (!c.id) {
+                        c.id = uuidv4()
+                    }
+                    if (!knownChatIds.has(c.id)) {
+                        knownChatIds.add(c.id)
+                        this.dirtyChats.add(c.id)
+                        added = true
+                    }
+                }
+                if (manifestInitial) {
+                    manifestInitial = false
+                    const manifestKey = chats.map((c) => c.id).join(',')
+                    if (manifestKey !== manifestBaseline || added) {
+                        this.dirtyChatManifests.add(char.chaId)
+                        this.scheduleCommit()
+                    }
+                    return
+                }
+                this.dirtyChatManifests.add(char.chaId)
+                this.scheduleCommit()
+            })
+
+            // Track character order changes (array-level)
+            $effect(() => {
+                const chars = this.characters
+                const currentIds = chars.map((c) => c.chaId || '').join(',')
+                if (currentIds !== this.charIdsSnapshot) {
+                    this.charIdsSnapshot = currentIds
+                    this.dirtyCharacterIds = true
+                    this.scheduleCommit()
+                }
             })
         })
     }
+
+    // ── Explicit dirty marking for non-active characters/chats ───────
+
+    markCharacterDirty(chaId: string): void {
+        this.dirtyCharacters.add(chaId)
+        this.scheduleCommit()
+    }
+
+    markChatDirty(chatId: string): void {
+        this.dirtyChats.add(chatId)
+        this.scheduleCommit()
+    }
+
+    markChatManifestDirty(chaId: string): void {
+        this.dirtyChatManifests.add(chaId)
+        this.scheduleCommit()
+    }
+
+    markCharacterOrderDirty(): void {
+        this.dirtyCharacterIds = true
+        this.charIdsSnapshot = this.characters.map((c) => c.chaId || '').join(',')
+        this.scheduleCommit()
+    }
+
+    // ── Commit pipeline ───────────────────────────────────────────────
 
     private scheduleCommit(): void {
         if (this.debounceTimer) {
@@ -171,33 +209,76 @@ class CharacterStore {
             this.debounceTimer = null
         }
         if (
-            this.pendingCharacters.size === 0 &&
-            this.pendingCharacterIds === undefined &&
-            this.pendingChats.size === 0 &&
-            this.pendingChatManifests.size === 0
+            this.dirtyCharacters.size === 0 &&
+            this.dirtyChats.size === 0 &&
+            this.dirtyChatManifests.size === 0 &&
+            !this.dirtyCharacterIds
         ) {
             return
         }
 
         const storage = this.storage || await getSqlStorage()
-        const characters = Array.from(this.pendingCharacters.values())
-        const characterIds = this.pendingCharacterIds
-        const chats = Array.from(this.pendingChats.values())
-        const chatManifests = Array.from(this.pendingChatManifests.entries()).map(([characterId, ids]) => ({ characterId, ids }))
+
+        // Serialise dirty characters
+        const characters: { id: string; position: number; data: unknown }[] = []
+        for (const chaId of this.dirtyCharacters) {
+            const idx = this.characters.findIndex((c) => c.chaId === chaId)
+            if (idx >= 0) {
+                characters.push({
+                    id: chaId,
+                    position: idx,
+                    data: sqlCharacterData($state.snapshot(this.characters[idx])),
+                })
+            }
+        }
+
+        // Serialise dirty chats
+        const chats: { id: string; characterId: string; position: number; data: unknown }[] = []
+        for (const chatId of this.dirtyChats) {
+            for (const char of this.characters) {
+                const chatIdx = char.chats?.findIndex((c) => c.id === chatId)
+                if (chatIdx !== undefined && chatIdx >= 0) {
+                    chats.push({
+                        id: chatId,
+                        characterId: char.chaId,
+                        position: chatIdx,
+                        data: sqlChatData($state.snapshot(char.chats[chatIdx])),
+                    })
+                    break
+                }
+            }
+        }
+
+        // Chat manifests (chat list order per character)
+        const chatManifests: { characterId: string; ids: string[] }[] = []
+        for (const chaId of this.dirtyChatManifests) {
+            const char = this.characters.find((c) => c.chaId === chaId)
+            if (char?.chats) {
+                chatManifests.push({
+                    characterId: chaId,
+                    ids: char.chats.map((c) => c.id).filter(Boolean) as string[],
+                })
+            }
+        }
+
+        // Character order
+        const characterIds = this.dirtyCharacterIds
+            ? this.characters.map((c) => c.chaId)
+            : undefined
 
         let action = 'character'
-        if (this.pendingCharacters.size > 0) {
+        if (characters.length > 0) {
             action = 'character'
-        } else if (this.pendingChats.size > 0 || this.pendingChatManifests.size > 0) {
+        } else if (chats.length > 0 || chatManifests.length > 0) {
             action = 'chat'
-        } else if (this.pendingCharacterIds !== undefined) {
+        } else if (characterIds !== undefined) {
             action = 'order'
         }
 
-        this.pendingCharacters.clear()
-        this.pendingCharacterIds = undefined
-        this.pendingChats.clear()
-        this.pendingChatManifests.clear()
+        this.dirtyCharacters.clear()
+        this.dirtyChats.clear()
+        this.dirtyChatManifests.clear()
+        this.dirtyCharacterIds = false
 
         try {
             await storage.commit({
@@ -215,6 +296,8 @@ class CharacterStore {
             console.error('[CharacterStore] Failed to commit character changes to SQL storage:', error)
         }
     }
+
+    // ── Public accessors ──────────────────────────────────────────────
 
     get(index: number, options?: { snapshot?: boolean }): (character | groupChat) | undefined {
         const char = this.characters[index]
@@ -257,6 +340,8 @@ class CharacterStore {
 
     select(index: number): void {
         this.selectedId = index
+        // Re-observe the new active character
+        this.observeActive()
     }
 
     add(char: character | groupChat): number {
@@ -290,7 +375,6 @@ class CharacterStore {
                             chats: existingChats,
                             detailsLoaded: true,
                         })
-                        this.characterFingerprints.set(chaId, snapshotFingerprint(sqlCharacterData(this.characters[idx])))
                     }
                 }
             } catch (error) {
@@ -334,7 +418,6 @@ class CharacterStore {
                     chat.messageTotal ??= chat.message.length
                     chat.messagesFullyLoaded ??= chat.messageOffset === 0
                     chat.detailsLoaded = true
-                    this.chatFingerprints.set(chatId, snapshotFingerprint(sqlChatData(chat)))
                 }
             } catch (error) {
                 console.error(`[CharacterStore] loadChat failed for ${chatId}:`, error)
@@ -377,8 +460,8 @@ class CharacterStore {
             clearTimeout(this.debounceTimer)
             this.debounceTimer = null
         }
-        this.rootDispose?.()
-        this.rootDispose = null
+        this.activeDispose?.()
+        this.activeDispose = null
     }
 }
 

@@ -1,44 +1,12 @@
 import type { Database } from '../../storage/database.svelte'
 import type { ISqlStorage } from '../../storage/ISqlStorage'
 import { getSqlStorage } from '../../storage/sqlStorageFactory'
-
-function snapshotFingerprint(value: unknown): string {
-    try {
-        const serialized = JSON.stringify(value)
-        if (!serialized) return ''
-        let hash = 2166136261
-        for (let index = 0; index < serialized.length; index++) {
-            hash ^= serialized.charCodeAt(index)
-            hash = Math.imul(hash, 16777619)
-        }
-        return `${serialized.length}:${hash >>> 0}`
-    } catch {
-        return ''
-    }
-}
-
-function trackDeep(value: unknown, seen = new WeakSet<object>()): void {
-    if (!value || typeof value !== 'object' || seen.has(value as object)) return
-    seen.add(value as object)
-    if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer || value instanceof Blob || value instanceof Date) return
-    if (value instanceof Map) {
-        for (const [key, item] of value) {
-            trackDeep(key, seen)
-            trackDeep(item, seen)
-        }
-        return
-    }
-    if (value instanceof Set) {
-        for (const item of value) trackDeep(item, seen)
-        return
-    }
-    for (const key of Object.keys(value)) trackDeep((value as Record<string, unknown>)[key], seen)
-}
+import { trackDeep, snapshotFingerprint } from './reactiveUtils'
 
 class SettingsStore {
     private storage: ISqlStorage | null = null
     private debounceTimer: ReturnType<typeof setTimeout> | null = null
-    private pendingUpserts = new Map<string, unknown>()
+    private dirtyKeys = new Set<string>()
     private pendingDeletes = new Set<string>()
     private pendingPluginStorageUpserts = new Map<string, unknown>()
     private pendingPluginStorageDeletes = new Set<string>()
@@ -47,7 +15,6 @@ class SettingsStore {
     private pluginStorageLoads = new Map<string, Promise<any>>()
     private keyDisposers = new Map<string, () => void>()
     private keySetDispose: (() => void) | null = null
-    private previousFingerprints = new Map<string, string>()
 
     state = $state<Record<string, any>>({})
 
@@ -56,8 +23,7 @@ class SettingsStore {
         for (const dispose of this.keyDisposers.values()) dispose()
         this.keyDisposers.clear()
         this.keySetDispose?.(); this.keySetDispose = null
-        this.previousFingerprints.clear()
-        this.pendingUpserts.clear()
+        this.dirtyKeys.clear()
         this.pendingDeletes.clear()
         this.pendingPluginStorageUpserts.clear()
         this.pendingPluginStorageDeletes.clear()
@@ -74,11 +40,6 @@ class SettingsStore {
         settingsCopy.pluginCustomStorage ??= {}
         this.pluginStorageKeys = new Set(Object.keys(settingsCopy.pluginCustomStorage))
 
-        for (const [key, val] of Object.entries(settingsCopy)) {
-            if (key === 'characters' || key === 'isSql' || key === 'pluginCustomStorage') continue
-            this.previousFingerprints.set(key, snapshotFingerprint($state.snapshot(val)))
-        }
-
         this.state = settingsCopy
         this.observe()
     }
@@ -89,10 +50,9 @@ class SettingsStore {
             $effect(() => {
                 const keys = new Set(Object.keys(this.state))
                 for (const key of keys) this.observeKey(key)
-                for (const key of this.previousFingerprints.keys()) {
+                for (const key of this.keyDisposers.keys()) {
                     if (!keys.has(key)) {
-                        this.previousFingerprints.delete(key)
-                        this.pendingUpserts.delete(key)
+                        this.dirtyKeys.delete(key)
                         this.pendingDeletes.add(key)
                         this.scheduleCommit()
                     }
@@ -103,26 +63,33 @@ class SettingsStore {
 
     private observeKey(key: string): void {
         if (this.keyDisposers.has(key) || key === 'characters' || key === 'isSql' || key === 'pluginCustomStorage' || key === 'botPresets' || key === 'botPresetsId') return
+        // Synchronous baseline taken at observe time.  The first (async) effect
+        // run compares against it so mutations occurring between observe and the
+        // first flush are still detected; later runs mark unconditionally.
+        const baseline = Object.prototype.hasOwnProperty.call(this.state, key)
+            ? snapshotFingerprint($state.snapshot(this.state[key]))
+            : undefined
+        let initial = true
         const dispose = $effect.root(() => {
             $effect(() => {
-                const val = this.state[key]
                 if (!Object.prototype.hasOwnProperty.call(this.state, key)) {
-                    this.previousFingerprints.delete(key)
-                    this.pendingUpserts.delete(key)
+                    initial = false
+                    this.dirtyKeys.delete(key)
                     this.pendingDeletes.add(key)
                     this.scheduleCommit()
                     return
                 }
-                trackDeep(val)
-                const snapshot = $state.snapshot(val)
-                const fp = snapshotFingerprint(snapshot)
-                const prev = this.previousFingerprints.get(key)
-                if (prev !== fp) {
-                    this.previousFingerprints.set(key, fp)
-                    this.pendingDeletes.delete(key)
-                    this.pendingUpserts.set(key, snapshot)
-                    this.scheduleCommit()
+                trackDeep(this.state[key])
+                if (initial) {
+                    initial = false
+                    if (snapshotFingerprint($state.snapshot(this.state[key])) !== baseline) {
+                        this.dirtyKeys.add(key)
+                        this.scheduleCommit()
+                    }
+                    return
                 }
+                this.dirtyKeys.add(key)
+                this.scheduleCommit()
             })
         })
         this.keyDisposers.set(key, dispose)
@@ -142,15 +109,21 @@ class SettingsStore {
             clearTimeout(this.debounceTimer)
             this.debounceTimer = null
         }
-        const hasRootChanges = this.pendingUpserts.size > 0 || this.pendingDeletes.size > 0
+        const hasRootChanges = this.dirtyKeys.size > 0 || this.pendingDeletes.size > 0
         const hasPluginChanges = this.pendingPluginStorageUpserts.size > 0 || this.pendingPluginStorageDeletes.size > 0 || this.pendingPluginStorageClear
         if (!hasRootChanges && !hasPluginChanges) {
             return
         }
         const storage = this.storage || await getSqlStorage()
-        const upserts = Array.from(this.pendingUpserts.entries()).map(([key, value]) => ({ key, value }))
+        // Serialise at flush time — snapshots are never retained between commits
+        const upserts: { key: string; value: unknown }[] = []
+        for (const key of this.dirtyKeys) {
+            if (!Object.prototype.hasOwnProperty.call(this.state, key)) continue
+            if (this.pendingDeletes.has(key)) continue
+            upserts.push({ key, value: $state.snapshot(this.state[key]) })
+        }
         const deletes = Array.from(this.pendingDeletes)
-        this.pendingUpserts.clear()
+        this.dirtyKeys.clear()
         this.pendingDeletes.clear()
 
         let pluginStoragePayload: import('../../storage/sqlCommit').SqlCommit['pluginStorage'] = undefined
@@ -204,30 +177,35 @@ class SettingsStore {
         }
         this.observeKey(keyStr)
         this.pendingDeletes.delete(keyStr)
-        this.pendingUpserts.set(keyStr, $state.snapshot(value))
+        this.dirtyKeys.add(keyStr)
         this.scheduleCommit()
     }
 
     update(updater: (state: Record<string, any>) => void): void {
         updater(this.state)
-        for (const [key, value] of Object.entries(this.state)) {
+        for (const key of Object.keys(this.state)) {
             if (key === 'characters' || key === 'isSql' || key === 'pluginCustomStorage') continue
             this.pendingDeletes.delete(key)
-            this.pendingUpserts.set(key, $state.snapshot(value))
+            this.dirtyKeys.add(key)
         }
         this.scheduleCommit()
     }
 
     /** Apply storage-derived runtime values without turning hydration into a write. */
     hydrate(updater: (state: Record<string, any>) => void): void {
+        // Tear down key effects so hydration mutations are not observed as changes,
+        // then re-observe with a fresh initial pass that skips dirty marking.
+        for (const dispose of this.keyDisposers.values()) dispose()
+        this.keyDisposers.clear()
+        this.keySetDispose?.(); this.keySetDispose = null
+        this.dirtyKeys.clear()
         updater(this.state)
-        for (const [key, value] of Object.entries(this.state)) {
+        for (const key of Object.keys(this.state)) {
             if (key === 'characters' || key === 'isSql' || key === 'pluginCustomStorage' || key === 'botPresets' || key === 'botPresetsId') continue
             this.observeKey(key)
-            this.previousFingerprints.set(key, snapshotFingerprint($state.snapshot(value)))
-            this.pendingUpserts.delete(key)
             this.pendingDeletes.delete(key)
         }
+        this.observe()
     }
 
     delete(key: keyof Database): void {
@@ -239,8 +217,7 @@ class SettingsStore {
         delete this.state[keyStr]
         this.keyDisposers.get(keyStr)?.()
         this.keyDisposers.delete(keyStr)
-        this.previousFingerprints.delete(keyStr)
-        this.pendingUpserts.delete(keyStr)
+        this.dirtyKeys.delete(keyStr)
         this.pendingDeletes.add(keyStr)
         this.scheduleCommit()
     }

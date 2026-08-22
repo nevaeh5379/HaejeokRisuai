@@ -130,6 +130,12 @@ export class AutoStorage{
             }
 
             const dba = replaceDbResources(db, replaced)
+            // replaceDbResources mutates characters in place; mark all dirty so
+            // the SQL store persists replaced resources for non-active characters too.
+            const { characterStore } = await import("../stores/domain/characterStore.svelte")
+            for (const cha of characterStore.characters) {
+                if (cha.chaId) characterStore.markCharacterDirty(cha.chaId)
+            }
             const comp = encodeRisuSaveLegacy(dba, 'compression')
             //try decoding
             try {

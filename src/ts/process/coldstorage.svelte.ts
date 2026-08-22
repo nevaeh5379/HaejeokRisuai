@@ -475,7 +475,10 @@ export async function preLoadChat(
                 role: 'char'
             }]
             chat.lastDate = Date.now()
-            return
+        }
+        if(chat.id){
+            // Restored before the chat becomes active-tracked; mark explicitly
+            characterStore.markChatDirty(chat.id)
         }
     }
 

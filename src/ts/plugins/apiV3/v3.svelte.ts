@@ -854,6 +854,7 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
         setCharacterToIndex: (index:number, char:any) => {
             if(characterStore.characters[index]){
                 characterStore.characters[index] = char
+                if (char?.chaId) characterStore.markCharacterDirty(char.chaId)
             }
         },
         getChatFromIndex: (characterIndex:number, chatIndex:number) => {
@@ -872,6 +873,8 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                 const chats = char.chats;
                 if(chats && chats[chatIndex]){
                     char.chats[chatIndex] = chat
+                    if (chat?.id) characterStore.markChatDirty(chat.id)
+                    characterStore.markChatManifestDirty(char.chaId)
                 }
             }
         },
