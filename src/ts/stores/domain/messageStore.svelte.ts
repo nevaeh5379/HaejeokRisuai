@@ -68,7 +68,6 @@ class MessageStore {
     }
 
     async commitMessages(chatId: string, msgs: Message[]): Promise<void> {
-        if (msgs.length === 0) return
         const chat = findChatAcrossCharacters(chatId)
         const allMessages = chat?.message ?? msgs
         const baseOffset = (chat?.messagesFullyLoaded === false ? (chat?.messageOffset ?? 0) : 0)

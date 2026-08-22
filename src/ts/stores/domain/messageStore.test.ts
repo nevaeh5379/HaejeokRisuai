@@ -163,4 +163,17 @@ describe('messageStore', () => {
         expect(commit.messageManifests[0].ids).toContain('msg-1')
         expect(commit.messageManifests[0].ids).toContain('msg-5')
     })
+
+    it('persists an empty fully-loaded message list', async () => {
+        const chat = characterStore.characters[0].chats[0]
+        chat.messagesFullyLoaded = true
+        chat.message = []
+
+        await messageStore.commitMessages('chat-1', [])
+
+        expect(mockStorage.commits).toHaveLength(1)
+        const commit = mockStorage.commits[0]
+        expect(commit.messages).toEqual([])
+        expect(commit.messageManifests).toEqual([{ chatId: 'chat-1', ids: [] }])
+    })
 })

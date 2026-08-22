@@ -19,6 +19,7 @@ import { tokenize } from "../tokenizer";
 import { fetchNative, readImage } from "../globalApi.svelte";
 import { loadLoreBookV3Prompt } from './lorebook.svelte';
 import { getPersonaPrompt, getUserName, getUserIcon } from '../util';
+import { messageStore } from '../stores/domain/messageStore.svelte';
 let luaFactory:LuaFactory
 let ScriptingSafeIds = new Set<string>()
 let ScriptingEditDisplayIds = new Set<string>()
@@ -32,6 +33,7 @@ interface BasicScriptingEngineState {
     chat?: Chat;
     setVar?: (key:string, value:string) => boolean|void,
     getVar?: (key:string) => string,
+    messagesMutated?: boolean,
 }
 
 interface LuaScriptingEngineState extends BasicScriptingEngineState {
@@ -82,6 +84,7 @@ export async function runScripted(code:string, arg:{
         ScriptingEngineState.chat = chat
         ScriptingEngineState.setVar = setVar
         ScriptingEngineState.getVar = getVar
+        ScriptingEngineState.messagesMutated = false
         if (code !== ScriptingEngineState.code) {
             let declareAPI:(name: string, func:Function) => void
 
@@ -201,6 +204,7 @@ export async function runScripted(code:string, arg:{
                 const message = ScriptingEngineState.chat.message?.at(index)
                 if(message){
                     message.data = value ?? ''
+                    ScriptingEngineState.messagesMutated = true
                 }
             })
             declareAPI('setChatRole', (id:string, index:number, value:string) => {
@@ -210,6 +214,7 @@ export async function runScripted(code:string, arg:{
                 const message = ScriptingEngineState.chat.message?.at(index)
                 if(message){
                     message.role = value === 'user' ? 'user' : 'char'
+                    ScriptingEngineState.messagesMutated = true
                 }
             })
             declareAPI('cutChat', (id:string, start:number, end:number) => {
@@ -217,12 +222,15 @@ export async function runScripted(code:string, arg:{
                     return
                 }
                 ScriptingEngineState.chat.message = ScriptingEngineState.chat.message.slice(start,end)
+                ScriptingEngineState.messagesMutated = true
             })
             declareAPI('removeChat', (id:string, index:number) => {
                 if(!ScriptingSafeIds.has(id)){
                     return
                 }
-                ScriptingEngineState.chat.message.splice(index, 1)
+                if(ScriptingEngineState.chat.message.splice(index, 1).length > 0){
+                    ScriptingEngineState.messagesMutated = true
+                }
             })
             declareAPI('addChat', (id:string, role:string, value:string) => {
                 if(!ScriptingSafeIds.has(id)){
@@ -230,6 +238,7 @@ export async function runScripted(code:string, arg:{
                 }
                 let roleData:'user'|'char' = role === 'user' ? 'user' : 'char'
                 ScriptingEngineState.chat.message.push({role: roleData, data: value ?? ''})
+                ScriptingEngineState.messagesMutated = true
             })
             declareAPI('insertChat', (id:string, index:number, role:string, value:string) => {
                 if(!ScriptingSafeIds.has(id)){
@@ -237,6 +246,7 @@ export async function runScripted(code:string, arg:{
                 }
                 let roleData:'user'|'char' = role === 'user' ? 'user' : 'char'
                 ScriptingEngineState.chat.message.splice(index, 0, {role: roleData, data: value ?? ''})
+                ScriptingEngineState.messagesMutated = true
             })
 
             declareAPI('getTokens', async (id:string, value:string) => {
@@ -288,6 +298,7 @@ export async function runScripted(code:string, arg:{
                         data: v.data
                     }
                 })
+                ScriptingEngineState.messagesMutated = true
             })
 
             declareAPI('logMain', (value:string) => {
@@ -1167,6 +1178,10 @@ export async function runScripted(code:string, arg:{
         ScriptingSafeIds.delete(accessKey)
         ScriptingLowLevelIds.delete(accessKey)
         chat = ScriptingEngineState.chat
+
+        if(ScriptingEngineState.messagesMutated && chat?.id){
+            await messageStore.commitMessages(chat.id, chat.message ?? [])
+        }
 
         return {
             stopSending, chat, res

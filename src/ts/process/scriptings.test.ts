@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { beforeAll, expect, test, vi } from 'vitest'
 
+const commitMessages = vi.hoisted(() => vi.fn(async () => undefined))
+
 vi.mock('../parser/parser.svelte', () => ({
   hasher: vi.fn(),
   risuChatParser: vi.fn(),
@@ -35,6 +37,10 @@ vi.mock('../storage/database.svelte', () => ({
 
 vi.mock('../stores/domain/characterStore.svelte', () => ({
   characterStore: { characters: [{ name: '', chats: [{ message: [] }] }] },
+}))
+
+vi.mock('../stores/domain/messageStore.svelte', () => ({
+  messageStore: { commitMessages },
 }))
 
 vi.mock('../stores.svelte', () => ({
@@ -92,4 +98,31 @@ test('keeps explicit false as the generation stop signal', async () => {
 
   expect(result.res).toBe(false)
   expect(result.stopSending).toBe(true)
+})
+
+test('persists a user message added by Lua', async () => {
+  commitMessages.mockClear()
+  const chat = { id: 'chat-1', message: [] } as never
+
+  await runScripted(
+    'function onStart(id) addChat(id, "user", "persist me") end',
+    { char: {} as never, chat, mode: 'start' }
+  )
+
+  expect(commitMessages).toHaveBeenCalledOnce()
+  expect(commitMessages).toHaveBeenCalledWith('chat-1', [
+    { role: 'user', data: 'persist me' },
+  ])
+})
+
+test('does not persist when Lua only reads chat messages', async () => {
+  commitMessages.mockClear()
+  const chat = { id: 'chat-1', message: [{ role: 'user', data: 'hello' }] } as never
+
+  await runScripted(
+    'function onStart(id) getChatData(id, 0) end',
+    { char: {} as never, chat, mode: 'start' }
+  )
+
+  expect(commitMessages).not.toHaveBeenCalled()
 })
