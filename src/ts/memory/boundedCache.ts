@@ -1,6 +1,6 @@
 export interface BoundedCacheOptions<K, V> {
-    maxEntries: number
-    maxWeight?: number
+    maxEntries: number | (() => number)
+    maxWeight?: number | (() => number)
     weigh?: (value: V, key: K) => number
     onEvict?: (value: V, key: K) => void
 }
@@ -49,8 +49,14 @@ export class BoundedCache<K, V> {
     }
 
     private trim(): void {
-        while (this.values.size > this.options.maxEntries ||
-            (this.options.maxWeight !== undefined && this.totalWeight > this.options.maxWeight)) {
+        const maxEntries = typeof this.options.maxEntries === 'function'
+            ? this.options.maxEntries()
+            : this.options.maxEntries
+        const maxWeight = typeof this.options.maxWeight === 'function'
+            ? this.options.maxWeight()
+            : this.options.maxWeight
+        while (this.values.size > maxEntries ||
+            (maxWeight !== undefined && this.totalWeight > maxWeight)) {
             const oldest = this.values.keys().next().value as K | undefined
             if (oldest === undefined) break
             this.delete(oldest)

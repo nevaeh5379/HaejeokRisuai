@@ -23,7 +23,6 @@ import { getModelInfo } from '../model/modellist';
 import { registerCBS, type matcherArg, type RegisterCallback } from '../cbs';
 import cssSelectorParser from 'postcss-selector-parser'
 import { getMimeType } from '../media/mimeType';
-import { isMemoryConstrainedDevice } from '../memory/deviceMemory';
 
 const markdownItOptions = {
     html: true,
@@ -669,7 +668,6 @@ function trimmer(str:string){
     return str.trim().replace(/[_ -.]/g, '')
 }
 
-const INLAY_BLOB_CACHE_LIMIT = isMemoryConstrainedDevice() ? 8 : 24
 const blobUrlCache = new Map<string, string>()
 
 async function parseInlayAssets(data:string){
@@ -686,7 +684,8 @@ async function parseInlayAssets(data:string){
             if(!url && asset?.data){
                 url = URL.createObjectURL(asset.data)
                 blobUrlCache.set(id, url)
-                if (blobUrlCache.size > INLAY_BLOB_CACHE_LIMIT) {
+                const cacheLimit = settingsStore.state.lowSpecMode ? 8 : 24
+                if (blobUrlCache.size > cacheLimit) {
                     const oldest = blobUrlCache.keys().next().value!
                     const oldUrl = blobUrlCache.get(oldest)
                     if (oldUrl) URL.revokeObjectURL(oldUrl)

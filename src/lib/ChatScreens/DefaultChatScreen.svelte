@@ -28,9 +28,9 @@
     import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages';
     import { getMimeType } from 'src/ts/media';
     import { compactChatMessages } from 'src/ts/stores/domain/messageStore.svelte';
-    import { isMemoryConstrainedDevice } from 'src/ts/memory/deviceMemory';
 
-    const REROLL_HISTORY_LIMIT = isMemoryConstrainedDevice() ? 3 : 50
+    let lowSpecMode = $derived(settingsStore.state.lowSpecMode === true)
+    let rerollHistoryLimit = $derived(lowSpecMode ? 3 : 50)
 
     const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then(m => m.default);
     
@@ -307,7 +307,7 @@
             rerolls.push(safeStructuredClone(msgs.slice(lastUserIdx + 1)))
             rerollid = rerolls.length - 1
         }
-        while (rerolls.length > REROLL_HISTORY_LIMIT) {
+        while (rerolls.length > rerollHistoryLimit) {
             const removed = rerolls.shift()!
             if (rerollid >= 0) rerollid = Math.max(0, rerollid - 1)
             removed.length = 0
@@ -374,7 +374,7 @@
             if(previousLength < characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.length){
                 rerolls.push(safeStructuredClone(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message).slice(previousLength))
                 rerollid = rerolls.length - 1
-                while (rerolls.length > REROLL_HISTORY_LIMIT) {
+                while (rerolls.length > rerollHistoryLimit) {
                     const removed = rerolls.shift()!
                     if (rerollid >= 0) rerollid = Math.max(0, rerollid - 1)
                     removed.length = 0
@@ -932,7 +932,7 @@
                         message={characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].fmIndex === -1 ? characterStore.characters[$selectedCharID].firstMessage :
                             characterStore.characters[$selectedCharID].alternateGreetings[characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].fmIndex]}
                         role='char'
-                        img={getCharImage(characterStore.characters[$selectedCharID].image, 'css')}
+                        img={getCharImage(characterStore.characters[$selectedCharID].image, 'css', lowSpecMode ? { thumbnail: true } : undefined)}
                         idx={-1}
                         altGreeting={characterStore.characters[$selectedCharID].alternateGreetings.length > 0}
                         largePortrait={characterStore.characters[$selectedCharID].largePortrait}

@@ -709,6 +709,7 @@ export function normalizeDatabaseDefaults(data:Database){
     data.streamGeminiThoughts ??= false
     data.settingsCloseButtonSize ??= 24
     data.hideAllImages ??= false
+    data.lowSpecMode ??= false
     data.blurHiddenCharacters ??= true
     data.characterFavorites ??= []
     data.characterHidden ??= []
@@ -1305,6 +1306,7 @@ export interface Database{
     promptDiffPrefs:PromptDiffPrefs
     enableBookmark?: boolean
     hideAllImages?: boolean
+    lowSpecMode?: boolean
     blurHiddenCharacters?: boolean
     characterFavorites?: string[]
     characterHidden?: string[]

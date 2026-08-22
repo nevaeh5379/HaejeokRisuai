@@ -159,6 +159,7 @@ export const languageEnglish = {
         genTimes:
             "This option is used to set the number of responses to generate on support models. Other then first response will be act as cached reroll. This can reduce the cost of the model, but it can also increase the cost if you use it without reroll.",
         requestretrys: "This option is used to set the number of request retries when request fails.",
+        lowSpecMode: "Reduces post-loading stalls on older devices by finishing chat runtime setup before showing the app, decoding bounded character thumbnails, rendering fewer chat messages, and releasing inactive messages in small idle batches. Restart Risuai after changing this setting.",
         chatLoadInitialPages: "Number of recent chat messages to render when a chat screen opens. Higher values show more history immediately but can make long chats heavier to open.",
         chatLoadAdditionalPages: "Number of older chat messages to render each time you scroll to the top. Higher values reduce repeated loading but can make each load heavier.",
         emotionPrompt: "This option is used to set the prompt that is used to detect emotion. If it is blank, it will use the default prompt.",
@@ -1057,6 +1058,7 @@ export const languageEnglish = {
     prompt: "Prompt",
     loreBookDepth: "Lorebook Search Depth",
     loreBookToken: "Lorebook Max Tokens",
+    lowSpecMode: "Low-spec Mode",
     chatLoadInitialPages: "Initial Chat Load Count",
     chatLoadAdditionalPages: "Additional Chat Load Count",
     removeCharacter: "Remove Character",

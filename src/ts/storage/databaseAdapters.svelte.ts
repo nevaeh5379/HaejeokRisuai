@@ -11,7 +11,6 @@ import type {
 import type { RisuModule } from '../process/modules'
 import { defaultAutoSuggestPrompt, defaultJailbreak, defaultMainPrompt } from './defaultPrompts'
 import type { ISqlStorage } from './ISqlStorage'
-import { isMemoryConstrainedDevice } from '../memory/deviceMemory'
 import { cancelChatMessageCompaction } from '../stores/domain/messageStore.svelte'
 
 export interface IDatabaseAdapter extends Database {
@@ -229,7 +228,7 @@ export function createSqlDatabaseAdapter(
     const characterDetailPromises = new Map<string, Promise<void>>()
     const chatDetailPromises = new Map<string, Promise<void>>()
     const olderChatPromises = new Map<string, Promise<number>>()
-    const initialMessagePageSize = isMemoryConstrainedDevice() ? 24 : 60
+    const initialMessagePageSize = initialData.lowSpecMode ? 24 : 60
 
     function findChat(chatId: string): Chat | undefined {
         const chars = internalState.coreData.characters as (character | groupChat)[]

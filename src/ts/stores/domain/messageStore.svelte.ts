@@ -1,7 +1,7 @@
 import type { Message, Chat } from '../../storage/database.svelte'
 import { getSqlStorage } from '../../storage/sqlStorageFactory'
 import { characterStore } from './characterStore.svelte'
-import { isMemoryConstrainedDevice } from '../../memory/deviceMemory'
+import { settingsStore } from './settingsStore.svelte'
 import { v4 as uuidv4 } from 'uuid'
 import { sqlMessageData } from '../../storage/sqlCommit'
 
@@ -11,11 +11,10 @@ import { sqlMessageData } from '../../storage/sqlCommit'
  * as paged-out (`messagesFullyLoaded = false`); they are transparently reloaded
  * from SQL storage via `loadOlderChatMessages` when scrolled into view.
  *
- * The cap scales down on memory-constrained (mobile/low-RAM) devices where the
- * cost of keeping thousands of parsed message objects is the primary memory
- * pressure point.
+ * Low-spec mode scales the cap down when the cost of keeping thousands of
+ * parsed message objects is the primary memory pressure point.
  */
-const ACTIVE_CHAT_MESSAGE_RETENTION = isMemoryConstrainedDevice() ? 40 : 200
+const getActiveChatMessageRetention = () => settingsStore.state.lowSpecMode ? 40 : 200
 
 function findChatAcrossCharacters(chatId: string): Chat | undefined {
     for (const char of characterStore.characters) {
@@ -211,6 +210,20 @@ class MessageStore {
 
 export const messageStore = new MessageStore()
 
+let inactiveReleaseGeneration = 0
+
+function evictInactiveChatMessages(chats: Chat[], activeChatId?: string): void {
+    for (const chat of chats) {
+        if (!chat.id || chat.id === activeChatId) continue
+        if (chat.preventMessageCompaction) continue
+        if (chat.message && chat.message.length > 0 && chat.messagesLoaded !== false) {
+            chat.message = []
+            chat.messagesLoaded = false
+            chat.messagesFullyLoaded = false
+        }
+    }
+}
+
 /**
  * Evicts the message array of every chat except the active one (and any chat
  * flagged with `preventMessageCompaction`, e.g. while generation is running).
@@ -225,18 +238,39 @@ export const messageStore = new MessageStore()
  * live in the Svelte `$state` tree and cannot be garbage-collected.
  */
 export function releaseInactiveChatMessages(activeChatId?: string): void {
+    const generation = ++inactiveReleaseGeneration
+    const inactiveChats: Chat[] = []
     for (const char of characterStore.characters) {
         if (!char.chats) continue
         for (const chat of char.chats) {
-            if (!chat.id || chat.id === activeChatId) continue
-            if (chat.preventMessageCompaction) continue
-            if (chat.message && chat.message.length > 0 && chat.messagesLoaded !== false) {
-                chat.message = []
-                chat.messagesLoaded = false
-                chat.messagesFullyLoaded = false
-            }
+            if (chat.id && chat.id !== activeChatId) inactiveChats.push(chat)
         }
     }
+
+    if (!settingsStore.state.lowSpecMode) {
+        evictInactiveChatMessages(inactiveChats, activeChatId)
+        return
+    }
+
+    // Releasing many large reactive message arrays at once can trigger a
+    // noticeable garbage-collection pause shortly after character selection.
+    // Drop a small number during each idle period so scrolling stays responsive.
+    let cursor = 0
+    const releaseBatch = () => {
+        if (generation !== inactiveReleaseGeneration) return
+        const nextCursor = Math.min(cursor + 4, inactiveChats.length)
+        evictInactiveChatMessages(inactiveChats.slice(cursor, nextCursor), activeChatId)
+        cursor = nextCursor
+        if (cursor < inactiveChats.length) scheduleBatch()
+    }
+    const scheduleBatch = () => {
+        if ('requestIdleCallback' in globalThis) {
+            globalThis.requestIdleCallback(releaseBatch)
+        } else {
+            globalThis.setTimeout(releaseBatch, 0)
+        }
+    }
+    scheduleBatch()
 }
 
 /**
@@ -253,9 +287,10 @@ export function compactChatMessages(chatId: string): void {
     if (chat.preventMessageCompaction) return
     if (chat.messagesFullyLoaded === false) return
     const messages = chat.message
-    if (!messages || messages.length <= ACTIVE_CHAT_MESSAGE_RETENTION) return
+    const retention = getActiveChatMessageRetention()
+    if (!messages || messages.length <= retention) return
 
-    const dropCount = messages.length - ACTIVE_CHAT_MESSAGE_RETENTION
+    const dropCount = messages.length - retention
     chat.message = messages.slice(dropCount)
     chat.messageOffset = (chat.messageOffset ?? 0) + dropCount
     if (typeof chat.messageTotal === 'number') {

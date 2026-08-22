@@ -96,8 +96,12 @@ export const advancedSettingsItems: SettingItem[] = [
 
     // Chat Loading
     {
+        id: 'adv.lowSpecMode', type: 'check', labelKey: 'lowSpecMode', bindKey: 'lowSpecMode',
+        helpKey: 'lowSpecMode', classes: 'mt-4'
+    },
+    {
         id: 'adv.chatLoadInitial', type: 'number', labelKey: 'chatLoadInitialPages', bindKey: 'chatLoadInitialPages',
-        helpKey: 'chatLoadInitialPages', classes: 'mt-4', options: { min: 1 }
+        helpKey: 'chatLoadInitialPages', options: { min: 1 }
     },
     {
         id: 'adv.chatLoadAdditional', type: 'number', labelKey: 'chatLoadAdditionalPages', bindKey: 'chatLoadAdditionalPages',

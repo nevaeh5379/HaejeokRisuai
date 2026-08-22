@@ -45,7 +45,6 @@ import { settingsStore } from './stores/domain/settingsStore.svelte'
 import { characterStore } from './stores/domain/characterStore.svelte'
 import { presetStore } from './stores/domain/presetStore.svelte'
 import { setSqlRuntime, getSqlRuntime } from './storage/sqlRuntime'
-import { isMemoryConstrainedDevice } from './memory/deviceMemory'
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null
 
@@ -157,7 +156,7 @@ export async function loadData() {
             updateAnimationSpeed()
             updateHeightMode()
             updateGuisize()
-            const deferShellUntilRuntimeReady = isMemoryConstrainedDevice()
+            const deferShellUntilRuntimeReady = settingsStore.state.lowSpecMode === true
             let shellReady = false
             const revealShell = () => {
                 if (shellReady) return

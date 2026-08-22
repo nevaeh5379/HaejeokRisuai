@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => {
         storage,
         forageStorage: { realStorage: storage },
         getFileSrc: vi.fn(async () => '/api/read'),
+        settingsState: { hideAllImages: false, lowSpecMode: false },
     }
 })
 
@@ -26,7 +27,7 @@ vi.mock(import('./globalApi.svelte'), () => ({
 }) as any)
 
 vi.mock(import('./stores/domain/settingsStore.svelte'), () => ({
-    settingsStore: { state: { hideAllImages: false } },
+    settingsStore: { state: mocks.settingsState },
 }) as any)
 
 vi.mock(import('./media/mimeType'), () => ({
@@ -39,6 +40,7 @@ describe('getCharImagesBatch', () => {
     beforeEach(() => {
         vi.clearAllMocks()
         fullImageBlobCache.clear()
+        mocks.settingsState.lowSpecMode = false
     })
 
     it('never falls back to one direct request per local image', async () => {
@@ -120,6 +122,30 @@ describe('preloadCharacterImage', () => {
         expect(mocks.getFileSrc).toHaveBeenCalledWith('assets/chat-avatar.png', undefined)
         expect(requestedSources).toEqual(['/api/read?avatar=1'])
         expect(imageCount).toBe(1)
+        vi.unstubAllGlobals()
+    })
+
+    it('preloads a bounded thumbnail when low-spec mode is enabled', async () => {
+        class MockImage {
+            decoding = ''
+            fetchPriority = ''
+            onload: (() => void) | null = null
+            onerror: (() => void) | null = null
+
+            set src(_value: string) {
+                queueMicrotask(() => this.onload?.())
+            }
+        }
+        vi.stubGlobal('Image', MockImage)
+        mocks.getFileSrc.mockResolvedValueOnce('/api/read?avatar=thumb')
+        mocks.settingsState.lowSpecMode = true
+
+        await preloadCharacterImage('assets/mobile-chat-avatar.png')
+
+        expect(mocks.getFileSrc).toHaveBeenCalledWith(
+            'assets/mobile-chat-avatar.png',
+            { thumbnail: true },
+        )
         vi.unstubAllGlobals()
     })
 })

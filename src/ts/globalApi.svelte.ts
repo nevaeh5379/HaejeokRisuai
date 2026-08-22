@@ -48,7 +48,6 @@ import { generateClientThumbnail } from "./media/thumbnail";
 import { getMimeType } from "./media/mimeType";
 import { BoundedCache } from "./memory/boundedCache";
 import { releaseInactiveChatMessages } from "./stores/domain/messageStore.svelte";
-import { isMemoryConstrainedDevice } from "./memory/deviceMemory";
 
 export const forageStorage = new AutoStorage()
 
@@ -113,9 +112,8 @@ let checkedPaths: string[] = []
 const revokeObjectUrl = (url: string) => {
     if (url.startsWith('blob:')) URL.revokeObjectURL(url)
 }
-const constrainedMemory = isMemoryConstrainedDevice()
 const tauriThumbnailUrls = new BoundedCache<string, string>({
-    maxEntries: constrainedMemory ? 24 : 96,
+    maxEntries: () => settingsStore.state.lowSpecMode ? 24 : 96,
     onEvict: revokeObjectUrl
 })
 
@@ -128,8 +126,8 @@ const tauriThumbnailUrls = new BoundedCache<string, string>({
 class ThumbnailBatchLoader {
     private cacheWeights = new Map<string, number>()
     private cache = new BoundedCache<string, string>({
-        maxEntries: constrainedMemory ? 24 : 96,
-        maxWeight: (constrainedMemory ? 3 : 8) * 1024 * 1024,
+        maxEntries: () => settingsStore.state.lowSpecMode ? 24 : 96,
+        maxWeight: () => (settingsStore.state.lowSpecMode ? 3 : 8) * 1024 * 1024,
         weigh: (_url, loc) => this.cacheWeights.get(loc) ?? 1,
         onEvict: (url, loc) => {
             this.cacheWeights.delete(loc)
@@ -275,8 +273,8 @@ export function invalidateThumbnailCache(loc?: string) {
 const registeredSwCaches = new Set<string>()
 const browserAssetWeights = new Map<string, number>()
 const browserAssetUrls = new BoundedCache<string, string>({
-    maxEntries: constrainedMemory ? 16 : 64,
-    maxWeight: (constrainedMemory ? 8 : 24) * 1024 * 1024,
+    maxEntries: () => settingsStore.state.lowSpecMode ? 16 : 64,
+    maxWeight: () => (settingsStore.state.lowSpecMode ? 8 : 24) * 1024 * 1024,
     weigh: (_url, key) => browserAssetWeights.get(key) ?? 1,
     onEvict: (url, key) => {
         browserAssetWeights.delete(key)

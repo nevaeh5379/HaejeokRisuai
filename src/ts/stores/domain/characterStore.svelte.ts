@@ -3,7 +3,7 @@ import type { ISqlStorage } from '../../storage/ISqlStorage'
 import { getSqlStorage } from '../../storage/sqlStorageFactory'
 import { v4 as uuidv4 } from 'uuid'
 import { sqlCharacterData, sqlChatData } from '../../storage/sqlCommit'
-import { isMemoryConstrainedDevice } from '../../memory/deviceMemory'
+import { settingsStore } from './settingsStore.svelte'
 import { trackDeep, snapshotFingerprint } from './reactiveUtils'
 
 class CharacterStore {
@@ -433,7 +433,7 @@ class CharacterStore {
     }
 
     async ensureChatMessages(chatId: string, options: { full?: boolean } = {}): Promise<void> {
-        const initialMessagePageSize = isMemoryConstrainedDevice() ? 12 : 60
+        const initialMessagePageSize = settingsStore.state.lowSpecMode ? 12 : 60
         const char = this.characters.find((c) => c.chats?.some((ch) => ch.id === chatId))
         const chat = char?.chats?.find((ch) => ch.id === chatId)
         if (

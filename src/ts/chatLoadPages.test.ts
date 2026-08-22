@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
     DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES,
     DEFAULT_CHAT_LOAD_INITIAL_PAGES,
+    LOW_SPEC_CHAT_LOAD_ADDITIONAL_PAGES,
+    LOW_SPEC_CHAT_LOAD_INITIAL_PAGES,
     getAdditionalChatLoadPages,
     getInitialChatLoadPages,
     normalizeChatLoadPages,
@@ -26,5 +28,9 @@ describe('normalizeChatLoadPages', () => {
         expect(getInitialChatLoadPages({ chatLoadInitialPages: 12 })).toBe(12)
         expect(getAdditionalChatLoadPages({})).toBe(DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES)
         expect(getAdditionalChatLoadPages({ chatLoadAdditionalPages: 8 })).toBe(8)
+        expect(getInitialChatLoadPages({ lowSpecMode: true })).toBe(LOW_SPEC_CHAT_LOAD_INITIAL_PAGES)
+        expect(getAdditionalChatLoadPages({ lowSpecMode: true })).toBe(LOW_SPEC_CHAT_LOAD_ADDITIONAL_PAGES)
+        expect(getInitialChatLoadPages({ chatLoadInitialPages: 40, lowSpecMode: true })).toBe(LOW_SPEC_CHAT_LOAD_INITIAL_PAGES)
+        expect(getAdditionalChatLoadPages({ chatLoadAdditionalPages: 40, lowSpecMode: true })).toBe(LOW_SPEC_CHAT_LOAD_ADDITIONAL_PAGES)
     })
 })

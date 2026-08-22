@@ -1,10 +1,9 @@
-// Keep the default DOM deliberately small: every rendered message owns a
+// Keep the low-spec DOM deliberately small: every rendered message owns a
 // Svelte component, parsed HTML, event handlers, and potentially decoded media.
-// Users can still raise these values in Display settings when memory is ample.
-import { isMemoryConstrainedDevice } from './memory/deviceMemory'
-
-export const DEFAULT_CHAT_LOAD_INITIAL_PAGES = isMemoryConstrainedDevice() ? 4 : 12
-export const DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES = isMemoryConstrainedDevice() ? 6 : 8
+export const DEFAULT_CHAT_LOAD_INITIAL_PAGES = 12
+export const DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES = 8
+export const LOW_SPEC_CHAT_LOAD_INITIAL_PAGES = 4
+export const LOW_SPEC_CHAT_LOAD_ADDITIONAL_PAGES = 6
 
 export function normalizeChatLoadPages(value: unknown, fallback: number): number {
     const fallbackValue = Number.isFinite(fallback) && fallback >= 1
@@ -19,10 +18,12 @@ export function normalizeChatLoadPages(value: unknown, fallback: number): number
     return Math.floor(numberValue)
 }
 
-export function getInitialChatLoadPages(db: { chatLoadInitialPages?: number }): number {
+export function getInitialChatLoadPages(db: { chatLoadInitialPages?: number; lowSpecMode?: boolean }): number {
+    if (db.lowSpecMode) return LOW_SPEC_CHAT_LOAD_INITIAL_PAGES
     return normalizeChatLoadPages(db.chatLoadInitialPages, DEFAULT_CHAT_LOAD_INITIAL_PAGES)
 }
 
-export function getAdditionalChatLoadPages(db: { chatLoadAdditionalPages?: number }): number {
+export function getAdditionalChatLoadPages(db: { chatLoadAdditionalPages?: number; lowSpecMode?: boolean }): number {
+    if (db.lowSpecMode) return LOW_SPEC_CHAT_LOAD_ADDITIONAL_PAGES
     return normalizeChatLoadPages(db.chatLoadAdditionalPages, DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES)
 }

@@ -36,7 +36,12 @@ export function preloadCharacterImage(loc: string): Promise<void> {
     if (existing) return existing
 
     const preload = (async () => {
-        const source = await getCharImage(loc, 'plain')
+        // Full-resolution card images can finish loading after the chat has
+        // become interactive and then monopolize image decoding on older
+        // mobile CPUs. Low-spec mode uses the same bounded thumbnail as the
+        // chat message avatar, so warm that resource instead.
+        const imageOptions = settingsStore.state.lowSpecMode ? { thumbnail: true } : undefined
+        const source = await getCharImage(loc, 'plain', imageOptions)
         if (!source || source === '/none.webp') return
 
         await new Promise<void>((resolve, reject) => {
