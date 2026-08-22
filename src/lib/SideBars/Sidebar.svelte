@@ -14,8 +14,8 @@
 
     additionalHamburgerMenu,
 
-    messageSearchOpen
-
+    messageSearchOpen,
+    pendingCharID,
 
   } from "../../ts/stores.svelte";
     import { setDatabase, type folder } from "../../ts/storage/database.svelte";
@@ -49,7 +49,9 @@
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
     import { onMount } from 'svelte';
+    import { get } from 'svelte/store';
     import { loadCharConfig, loadSideChatList, preloadChatSidebarPanel } from './sidebarPanelLoaders';
+    import { doingChat } from 'src/ts/process/chatRuntimeState';
   let sideBarMode = $state(0);
   let editMode = $state(false);
   let menuMode = $state(0);
@@ -60,10 +62,21 @@
   const quickSettingsLoader = () => import('../Others/QuickSettingsGUI.svelte')
 
   async function changeCharacter(index: number) {
+    if (get(doingChat)) {
+      return
+    }
+
+    // Reflect the tap before loading the character module or persisted chat data,
+    // without exposing partially loaded character data to the chat components.
+    reseter()
+    pendingCharID.set(index)
     void preloadChatSidebarPanel()
     void preloadCharacterImage(characterStore.characters?.[index]?.image)
     const { changeChar } = await import('../../ts/characters')
-    changeChar(index, { reseter })
+    if (get(pendingCharID) !== index) {
+      return
+    }
+    void changeChar(index)
   }
 
   onMount(() => {
@@ -85,6 +98,7 @@
   }
 
   function reseter() {
+    pendingCharID.set(-1)
     menuMode = 0;
     sideBarMode = 0;
     editMode = false;
@@ -605,7 +619,7 @@
         ondragenter={preventAll}
       >
         <SidebarIndicator
-          isActive={char.type === 'normal' && $selectedCharID === char.index && sideBarMode !== 1}
+          isActive={char.type === 'normal' && ($pendingCharID === char.index || ($pendingCharID < 0 && $selectedCharID === char.index)) && sideBarMode !== 1}
         />
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
@@ -770,7 +784,7 @@
               ondragenter={preventAll}
             >
               <SidebarIndicator
-                isActive={$selectedCharID === char2.index && sideBarMode !== 1}
+                isActive={($pendingCharID === char2.index || ($pendingCharID < 0 && $selectedCharID === char2.index)) && sideBarMode !== 1}
               />
               <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
               <div

@@ -5,7 +5,7 @@ import { language } from "../lang";
 import { checkNullish, findCharacterbyId, findCharacterIndexbyId, getUserName, selectMultipleFile, selectSingleFile } from "./util";
 import { v4 as uuidv4, v4 } from 'uuid';
 import { getImageType } from "./media";
-import { MobileGUIStack, OpenRealmStore, selectedCharID } from "./stores.svelte";
+import { MobileGUIStack, OpenRealmStore, pendingCharID, selectedCharID } from "./stores.svelte";
 import { characterStore } from "./stores/domain/characterStore.svelte";
 import { AppendableBuffer, changeChatTo, checkCharOrder, downloadFile, forageStorage, getFileSrc } from "./globalApi.svelte";
 import { updateInlayScreen } from "./process/inlayScreen";
@@ -842,10 +842,14 @@ export async function changeChar(index: number, arg:{
 } = {}) {
     const reseter = arg.reseter ?? (() => {})
     if(get(doingChat)){
+      if(get(pendingCharID) === index){
+        pendingCharID.set(-1)
+      }
       return
     }
     void preloadCharacterImage(characterStore.characters?.[index]?.image)
     reseter();
+    pendingCharID.set(index);
     if(characterStore.characters?.[index]?.coldstorage){
         const coldData = await getColdStorageItem(characterStore.characters[index].coldstorage!)
         if(coldData?.character && coldData.character.chaId === characterStore.characters[index].chaId){
@@ -853,27 +857,41 @@ export async function changeChar(index: number, arg:{
         }
         else{
             alertError(language.errors.coldStorageRestoreFailed)
+            if(get(pendingCharID) === index){
+                pendingCharID.set(-1)
+            }
             return
         }
     }
-    await loadCharacterSelectionData({
-        getCharacter: () => characterStore.characters?.[index],
-        ensureCharacterDetails: async (characterId) => {
-            try {
-                await characterStore.ensureCharacterDetails(characterId)
-            } catch (error) {
-                console.error(`SQL loadCharacter failed for character ${characterId}:`, error)
-            }
-        },
-        preLoadChat: async (chatIndex) => {
-            await preLoadChat(index, chatIndex)
-        },
-    })
+    try {
+        await loadCharacterSelectionData({
+            getCharacter: () => characterStore.characters?.[index],
+            ensureCharacterDetails: async (characterId) => {
+                try {
+                    await characterStore.ensureCharacterDetails(characterId)
+                } catch (error) {
+                    console.error(`SQL loadCharacter failed for character ${characterId}:`, error)
+                }
+            },
+            preLoadChat: async (chatIndex) => {
+                await preLoadChat(index, chatIndex)
+            },
+        })
+    } catch (error) {
+        if(get(pendingCharID) === index){
+            pendingCharID.set(-1)
+        }
+        throw error
+    }
+    if(get(pendingCharID) !== index){
+        return
+    }
     const currentChar = characterStore.characters?.[index]
     const currentChatPage = currentChar?.chatPage ?? 0
     characterFormatUpdate(index, {
       updateInteraction: true,
     });
     selectedCharID.set(index);
+    pendingCharID.set(-1)
     releaseInactiveChatMessages(currentChar?.chats?.[currentChatPage]?.id)
 }

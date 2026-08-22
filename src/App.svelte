@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, saving, AccountWarning, selectedCharID, PlaygroundStore } from './ts/stores.svelte';
+    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, saving, AccountWarning, selectedCharID, pendingCharID, PlaygroundStore } from './ts/stores.svelte';
     import { settingsStore, moduleStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
     import { isNodeServer } from './ts/platform';
@@ -9,6 +9,7 @@
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
     import LazyComponent from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
+    import { language } from './lang';
 
 
   
@@ -254,7 +255,17 @@
 
                 </div>
             {/if}
-            {#if $selectedCharID < 0 && $PlaygroundStore === 0}
+            {#if $pendingCharID >= 0}
+                <div class="flex grow items-center justify-center bg-darkbg text-textcolor2">
+                    <div class="flex items-center gap-3">
+                        <svg class="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        <span>{language.loadingChatData}</span>
+                    </div>
+                </div>
+            {:else if $selectedCharID < 0 && $PlaygroundStore === 0}
                 <LazyComponent loader={mainMenuLoader} />
             {:else}
                 <LazyComponent loader={chatScreenLoader} />
