@@ -304,7 +304,7 @@ class CharacterStore {
     }
 
     async ensureChatMessages(chatId: string, options: { full?: boolean } = {}): Promise<void> {
-        const initialMessagePageSize = isMemoryConstrainedDevice() ? 24 : 60
+        const initialMessagePageSize = isMemoryConstrainedDevice() ? 12 : 60
         const char = this.characters.find((c) => c.chats?.some((ch) => ch.id === chatId))
         const chat = char?.chats?.find((ch) => ch.id === chatId)
         if (

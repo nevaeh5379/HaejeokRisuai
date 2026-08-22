@@ -1,8 +1,10 @@
 // Keep the default DOM deliberately small: every rendered message owns a
 // Svelte component, parsed HTML, event handlers, and potentially decoded media.
 // Users can still raise these values in Display settings when memory is ample.
-export const DEFAULT_CHAT_LOAD_INITIAL_PAGES = 12
-export const DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES = 8
+import { isMemoryConstrainedDevice } from './memory/deviceMemory'
+
+export const DEFAULT_CHAT_LOAD_INITIAL_PAGES = isMemoryConstrainedDevice() ? 8 : 12
+export const DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES = isMemoryConstrainedDevice() ? 6 : 8
 
 export function normalizeChatLoadPages(value: unknown, fallback: number): number {
     const fallbackValue = Number.isFinite(fallback) && fallback >= 1

@@ -1,8 +1,21 @@
 import type { Message, Chat } from '../../storage/database.svelte'
 import { getSqlStorage } from '../../storage/sqlStorageFactory'
 import { characterStore } from './characterStore.svelte'
+import { isMemoryConstrainedDevice } from '../../memory/deviceMemory'
 import { v4 as uuidv4 } from 'uuid'
 import { sqlMessageData } from '../../storage/sqlCommit'
+
+/**
+ * In-memory retention cap for a single active chat. Messages beyond the most
+ * recent `ACTIVE_CHAT_MESSAGE_RETENTION` slice are evicted from RAM and marked
+ * as paged-out (`messagesFullyLoaded = false`); they are transparently reloaded
+ * from SQL storage via `loadOlderChatMessages` when scrolled into view.
+ *
+ * The cap scales down on memory-constrained (mobile/low-RAM) devices where the
+ * cost of keeping thousands of parsed message objects is the primary memory
+ * pressure point.
+ */
+const ACTIVE_CHAT_MESSAGE_RETENTION = isMemoryConstrainedDevice() ? 40 : 200
 
 function findChatAcrossCharacters(chatId: string): Chat | undefined {
     for (const char of characterStore.characters) {
@@ -199,6 +212,65 @@ class MessageStore {
 
 export const messageStore = new MessageStore()
 
-export function releaseInactiveChatMessages(_activeChatId?: string): void {}
-export function compactChatMessages(_chatId: string): void {}
+/**
+ * Evicts the message array of every chat except the active one (and any chat
+ * flagged with `preventMessageCompaction`, e.g. while generation is running).
+ *
+ * Evicted chats are marked `messagesLoaded = false` so that the next access
+ * transparently reloads them from SQL storage via `ensureChatMessages` /
+ * `preLoadChat`. Because messages are persisted to the DB on every commit,
+ * dropping the in-memory copy does not lose data.
+ *
+ * This is the single biggest memory win when a user has browsed through many
+ * chats: without it, every chat ever visited keeps its full message array
+ * live in the Svelte `$state` tree and cannot be garbage-collected.
+ */
+export function releaseInactiveChatMessages(activeChatId?: string): void {
+    for (const char of characterStore.characters) {
+        if (!char.chats) continue
+        for (const chat of char.chats) {
+            if (!chat.id || chat.id === activeChatId) continue
+            if (chat.preventMessageCompaction) continue
+            if (chat.message && chat.message.length > 0 && chat.messagesLoaded !== false) {
+                chat.message = []
+                chat.messagesLoaded = false
+                chat.messagesFullyLoaded = false
+            }
+        }
+    }
+}
+
+/**
+ * Trims the message array of the active chat to the most recent retention cap,
+ * converting the dropped prefix into a paged-out window. The removed messages
+ * remain in SQL storage and are reloaded on demand via `loadOlderMessages`.
+ *
+ * No-op when the chat is still loading, not fully loaded, or guarded by
+ * `preventMessageCompaction`.
+ */
+export function compactChatMessages(chatId: string): void {
+    const chat = findChatAcrossCharacters(chatId)
+    if (!chat || !chat.id) return
+    if (chat.preventMessageCompaction) return
+    if (chat.messagesFullyLoaded === false) return
+    const messages = chat.message
+    if (!messages || messages.length <= ACTIVE_CHAT_MESSAGE_RETENTION) return
+
+    const dropCount = messages.length - ACTIVE_CHAT_MESSAGE_RETENTION
+    chat.message = messages.slice(dropCount)
+    chat.messageOffset = (chat.messageOffset ?? 0) + dropCount
+    if (typeof chat.messageTotal === 'number') {
+        chat.messageTotal = Math.max(chat.messageTotal, messages.length)
+    } else {
+        chat.messageTotal = messages.length
+    }
+    chat.messagesFullyLoaded = false
+    chat.messagesLoaded = true
+}
+
+/**
+ * Reserved hook for cancelling a pending compaction. The current synchronous
+ * implementation has nothing to cancel, so this remains a no-op but is kept in
+ * the public API so callers don't need conditional imports.
+ */
 export function cancelChatMessageCompaction(_chatId: string): void {}
