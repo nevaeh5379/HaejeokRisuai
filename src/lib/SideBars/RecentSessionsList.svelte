@@ -109,8 +109,7 @@
                 const timestamp =
                     chat.lastDate ||
                     lastMsg?.time ||
-                    (char as any).lastInteraction ||
-                    ('creation_date' in char ? (char as any).creation_date : 0) ||
+                    (chatIdx === char.chatPage ? char.lastInteraction : 0) ||
                     0;
 
                 let folderName: string | undefined = undefined;
