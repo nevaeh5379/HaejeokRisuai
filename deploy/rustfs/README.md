@@ -295,10 +295,12 @@ monitoring for those checks.
 
 ## Backups, recovery, and removal
 
-There is currently no `backup`, `restore`, `update`, `uninstall`, or `purge`
-command. `down` is not a backup, and `rebuild` is not an update workflow. A
-complete backup of this all-in-one deployment must cover every active storage
-location:
+The full source-checkout `risuai.sh` deployment currently has no `backup`,
+`restore`, `update`, `uninstall`, or `purge` command. The separate quick Docker
+installation includes a coordinated restic helper; see
+[`deploy/quick/README.md`](../quick/README.md). For this advanced installer,
+`down` is not a backup and `rebuild` is not an update workflow. A complete
+backup of this all-in-one deployment must cover every active storage location:
 
 | Data | Backup requirement |
 | --- | --- |

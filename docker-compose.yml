@@ -1,14 +1,83 @@
-name: risuai
+name: haejeok-risuai
 
 services:
-  risuai:
-    container_name: risuai
-    image: ghcr.io/kwaroran/risuai:latest
-    restart: always
-    ports:
-      - 6001:6001
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: risuai
+      POSTGRES_USER: risuai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
     volumes:
-      - risuai-save:/app/save
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U risuai -d risuai"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?Set RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:?Set RUSTFS_SECRET_KEY}
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+    ports:
+      - "127.0.0.1:${RUSTFS_API_PORT:-9000}:9000"
+      - "127.0.0.1:${RUSTFS_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - rustfs-data:/data
+
+  risuai:
+    image: ubfaole9/risuai:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_started
+    environment:
+      RISU_POSTGRES_BOOTSTRAP_URL: postgresql://risuai:${POSTGRES_PASSWORD}@postgres:5432/risuai
+      RISU_POSTGRES_POOL_MAX: 10
+      RISUAI_MIGRATE_CONCURRENCY: 4
+      RISU_STORAGE_TYPE: s3
+      RISU_S3_BOOTSTRAP_ENDPOINT: http://rustfs:9000
+      RISU_S3_BOOTSTRAP_BUCKET: risuai-assets
+      RISU_S3_BOOTSTRAP_KEY: ${RUSTFS_ACCESS_KEY:?Set RUSTFS_ACCESS_KEY}
+      RISU_S3_BOOTSTRAP_SECRET: ${RUSTFS_SECRET_KEY:?Set RUSTFS_SECRET_KEY}
+      TRUST_PROXY: 1
+    ports:
+      - "127.0.0.1:${RISUAI_PORT:-6001}:6001"
+    volumes:
+      - ./save:/app/save
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:6001').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+
+  restic:
+    image: restic/restic:latest
+    profiles: ["backup"]
+    environment:
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-/repository}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:?Set RESTIC_PASSWORD}
+      AWS_ACCESS_KEY_ID: ${RESTIC_AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${RESTIC_AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${RESTIC_AWS_DEFAULT_REGION:-}
+      AWS_SESSION_TOKEN: ${RESTIC_AWS_SESSION_TOKEN:-}
+    volumes:
+      - ./backup/restic:/repository
+      - ./save:/source/save:ro
+      - rustfs-data:/source/rustfs:ro
+      - ./backup/staging:/source/staging:ro
+      - restic-cache:/root/.cache/restic
 
 volumes:
-  risuai-save:
+  postgres-data:
+  rustfs-data:
+  restic-cache:

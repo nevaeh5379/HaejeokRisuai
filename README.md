@@ -60,47 +60,56 @@ Prebuilt desktop releases are published through the [Haejeok RisuAI Releases](ht
 
 ### Docker server (recommended)
 
-The currently documented server path uses **Docker Compose + PostgreSQL 17 + RustFS**.
+The recommended server path uses the prebuilt Docker image with **PostgreSQL 17 + RustFS + restic**.
 
 #### Requirements
 
 - Docker Engine or Docker Desktop
 - Docker Compose v2 (`docker compose`)
-- Git
+- `curl`
 
-#### Quick start
+#### One-line install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nevaeh5379/HaejeokRisuAI/main/install.sh | sh
+```
+
+The installer creates `~/haejeok-risuai`, generates random credentials, downloads the quick Compose stack, pulls `ubfaole9/risuai:latest`, and starts the services. After installation, open `http://localhost:6001`.
+
+The installer configures:
+
+- Haejeok RisuAI from `ubfaole9/risuai:latest`
+- PostgreSQL 17 (`postgres:17-alpine`)
+- RustFS S3-compatible object storage
+- restic for encrypted snapshots
+
+PostgreSQL stays inside the Docker network. RustFS is bound to loopback by default (`127.0.0.1:9000` for the S3 API and `127.0.0.1:9001` for the console).
+
+#### Managing and backing up the server
+
+```sh
+cd ~/haejeok-risuai
+docker compose ps
+docker compose logs -f risuai
+./backup.sh
+docker compose pull && docker compose up -d
+```
+
+The backup helper briefly quiesces application writes, creates a PostgreSQL `pg_dump`, stops RustFS while its volume is read, and stores the database dump, RustFS data, and `save/` state in restic. The default encrypted restic repository is local under `backup/restic`, so configure or copy it off-host for real disaster recovery and keep the `RESTIC_PASSWORD` separately.
+
+See the [quick deployment guide](deploy/quick/README.md) for backup details and remote restic configuration.
+
+#### Advanced/source installation
+
+The full `risuai.sh` installer remains available for source builds and `lan`, `domain`, `dynv6`, and external reverse-proxy modes:
 
 ```sh
 git clone https://github.com/nevaeh5379/HaejeokRisuAI.git
 cd HaejeokRisuAI
-chmod +x risuai.sh
 ./risuai.sh install --mode local -y
 ```
 
-After installation, open `http://localhost:6001`.
-
-The installer configures:
-
-- Haejeok RisuAI application container
-- PostgreSQL 17 (`postgres:17-alpine`)
-- RustFS S3-compatible object storage
-
-PostgreSQL stays inside the Docker network. RustFS is bound to loopback by default (`127.0.0.1:9000` for the S3 API and `127.0.0.1:9001` for the console).
-
-#### Managing the server
-
-```sh
-./risuai.sh status
-./risuai.sh doctor
-./risuai.sh logs --follow
-./risuai.sh stop
-./risuai.sh start
-./risuai.sh restart
-```
-
-Persistent data is stored in Docker volumes for PostgreSQL and RustFS, while application state is stored under `./save`. Installer-generated credentials and deployment state are kept under `.risuai/`; back these up together with your database and RustFS data.
-
-Additional `lan`, `domain`, `dynv6`, and external reverse-proxy modes are available through `./risuai.sh install`, but the local Docker + PostgreSQL + RustFS path above is the recommended starting point. See the [deployment guide](deploy/rustfs/README.md) for advanced modes and security notes.
+See the [advanced deployment guide](deploy/rustfs/README.md) for those modes and their security notes.
 
 ### Development
 
