@@ -106,7 +106,7 @@
     <div class="chat-message-container" data-log-message-row={index}
         style="margin-bottom:1.4em;padding-left:{isUser ? '1.5em' : '0'};padding-right:{isUser ? '0' : '1.5em'};border-left:{isUser ? `2px solid ${color.border}` : 'none'};position:relative;">
         <div style="color:{color.nameColor};font-weight:600;font-size:calc({baseFontSize} * 0.88);margin-bottom:0.2em;opacity:0.7;">{message.name}</div>
-        <div onclick={stop} style="color:{color.text};line-height:1.7;font-size:{baseFontSize};">
+        <div onclick={stop} onkeydown={(e) => { if (isEditable) e.stopPropagation() }} role="presentation" style="color:{color.text};line-height:1.7;font-size:{baseFontSize};">
             <MessageContent {message} {color} {settings} {onRendered} {index} {isEditable} {onEditInput} />
         </div>
         {#if isEditable && onDelete}
@@ -130,7 +130,7 @@
                     <span style="font-size:calc({baseFontSize} * 0.75);opacity:0.6;font-weight:400;margin-left:8px;">{new Date(message.time).toLocaleTimeString()}</span>
                 {/if}
             </div>
-            <div onclick={stop} style="padding:12px 14px;color:{color.text};line-height:1.75;word-wrap:break-word;font-size:{baseFontSize};">
+            <div onclick={stop} onkeydown={(e) => { if (isEditable) e.stopPropagation() }} role="presentation" style="padding:12px 14px;color:{color.text};line-height:1.75;word-wrap:break-word;font-size:{baseFontSize};">
                 <MessageContent {message} {color} {settings} {onRendered} {index} {isEditable} {onEditInput} />
             </div>
         </div>
@@ -150,7 +150,7 @@
                 <span style="color:{color.nameColor};font-weight:600;font-size:calc({baseFontSize} * 0.88);margin-bottom:4px;margin-left:6px;opacity:0.85;letter-spacing:0.01em;">{message.name}</span>
             {/if}
             <div style="border-radius:{isUser ? '16px 4px 16px 16px' : '4px 16px 16px 16px'};background:{isUser ? color.cardBgUser : color.cardBg};box-shadow:0 2px 12px rgba(0,0,0,0.06);overflow:hidden;backdrop-filter:blur(12px) saturate(180%);-webkit-backdrop-filter:blur(12px) saturate(180%);border:1px solid {color.border};">
-                <div onclick={stop} style="padding:10px 14px;color:{color.text};line-height:1.7;word-wrap:break-word;overflow-wrap:anywhere;font-size:{baseFontSize};">
+                <div onclick={stop} onkeydown={(e) => { if (isEditable) e.stopPropagation() }} role="presentation" style="padding:10px 14px;color:{color.text};line-height:1.7;word-wrap:break-word;overflow-wrap:anywhere;font-size:{baseFontSize};">
                     <MessageContent {message} {color} {settings} {onRendered} {index} {isEditable} {onEditInput} />
                 </div>
             </div>
@@ -172,11 +172,11 @@
         <div style="flex:1;min-width:0;">
             <strong style="color:{color.nameColor};font-weight:600;font-size:calc({baseFontSize} * {cfg.nameSize});display:block;margin-bottom:6px;text-align:{isUser ? 'right' : 'left'};opacity:{cfg.nameOpacity};">{message.name}</strong>
             {#if showBubble}
-                <div onclick={stop} style="background-color:{isUser ? color.cardBgUser : color.cardBg};border-radius:{isUser ? '16px 4px 16px 16px' : '16px'};padding:{cfg.padY}px {cfg.padX}px;box-shadow:{color.shadow};border:1px solid {color.border};color:{color.text};line-height:{cfg.lineHeight};word-wrap:break-word;position:relative;font-size:{baseFontSize};">
+                <div onclick={stop} onkeydown={(e) => { if (isEditable) e.stopPropagation() }} role="presentation" style="background-color:{isUser ? color.cardBgUser : color.cardBg};border-radius:{isUser ? '16px 4px 16px 16px' : '16px'};padding:{cfg.padY}px {cfg.padX}px;box-shadow:{color.shadow};border:1px solid {color.border};color:{color.text};line-height:{cfg.lineHeight};word-wrap:break-word;position:relative;font-size:{baseFontSize};">
                     <MessageContent {message} {color} {settings} {onRendered} {index} {isEditable} {onEditInput} />
                 </div>
             {:else}
-                <div onclick={stop} style="color:{color.text};line-height:{cfg.lineHeight};word-wrap:break-word;padding:2px 4px;font-size:{baseFontSize};">
+                <div onclick={stop} onkeydown={(e) => { if (isEditable) e.stopPropagation() }} role="presentation" style="color:{color.text};line-height:{cfg.lineHeight};word-wrap:break-word;padding:2px 4px;font-size:{baseFontSize};">
                     <MessageContent {message} {color} {settings} {onRendered} {index} {isEditable} {onEditInput} />
                 </div>
             {/if}

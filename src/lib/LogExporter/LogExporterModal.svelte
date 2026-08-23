@@ -1,11 +1,37 @@
 <script lang="ts">
-    import { X, Pencil, FileText, ChevronLeft, ChevronRight, Image as ImageIcon, MoreHorizontal, Copy, FileCode, Download, Upload, Trash2, CheckSquare, Square, RefreshCw, ZoomIn, ZoomOut, Maximize, Settings } from '@lucide/svelte'
+    import {
+        X,
+        Pencil,
+        FileText,
+        ChevronLeft,
+        ChevronRight,
+        Image as ImageIcon,
+        MoreHorizontal,
+        MoreVertical,
+        Copy,
+        FileCode,
+        Download,
+        Upload,
+        Trash2,
+        CheckSquare,
+        Square,
+        RefreshCw,
+        ZoomIn,
+        ZoomOut,
+        Maximize,
+        RotateCcw,
+        Eye,
+        Palette,
+        ArrowLeftRight,
+        FileOutput,
+        SlidersHorizontal,
+        Check,
+    } from '@lucide/svelte'
     import { fade } from 'svelte/transition'
     import Button from 'src/lib/UI/GUI/Button.svelte'
     import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
     import LogContainer from './LogContainer.svelte'
     import SettingsPanel from './SettingsPanel.svelte'
-    import ReplaceTab from './ReplaceTab.svelte'
     import { logExporterStore } from 'src/ts/logexporter/store.svelte'
     import { collectLogData } from 'src/ts/logexporter/chatData.svelte'
     import { loadCharSettings, saveCharSettings, mergeWithDefaults } from 'src/ts/logexporter/settings.svelte'
@@ -40,11 +66,14 @@
     let selectedIndices = $state<Set<number>>(new Set())
     let lastSelectedIndex = $state<number | null>(null)
     let isSettingsOpen = $state(true)
-    let isMobilePanelOpen = $state(false)
-    let activeTab = $state<'style' | 'export' | 'replace' | 'advanced'>('style')
+
+    // Tab state
+    let activeDesktopTab = $state<'style' | 'replace' | 'export' | 'advanced'>('style')
+    let activeMobileTab = $state<'preview' | 'style' | 'replace' | 'export' | 'advanced'>('preview')
 
     let progress = $state({ active: false, message: '', current: 0, total: 0 })
     let moreMenuOpen = $state(false)
+    let copySuccess = $state(false)
 
     // Preview scaling
     let previewScale = $state(1)
@@ -115,13 +144,14 @@
     function resetViewState() {
         selectedIndices = new Set()
         lastSelectedIndex = null
-        activeTab = 'style'
+        activeDesktopTab = 'style'
+        activeMobileTab = 'preview'
         isSettingsOpen = window.innerWidth >= 1024
-        isMobilePanelOpen = false
         fitMode = true
         previewScale = 1
         progress = { active: false, message: '', current: 0, total: 0 }
         moreMenuOpen = false
+        copySuccess = false
         formatPreview = ''
     }
 
@@ -166,7 +196,7 @@
         lastSelectedIndex = index
     }
 
-    function selectAll() { selectedIndices = new Set(visibleMessages.map((_, i) => i)) ; moreMenuOpen = false }
+    function selectAll() { selectedIndices = new Set(visibleMessages.map((_, i) => i)); moreMenuOpen = false }
     function deselectAll() { selectedIndices = new Set(); moreMenuOpen = false }
     function invertSelection() {
         const next = new Set<number>()
@@ -186,7 +216,8 @@
     // ── Fit / zoom ───────────────────────────────────────────────────────
     function fitToViewport() {
         if (!viewportEl) return
-        const available = Math.max(1, viewportEl.clientWidth - 24)
+        const padding = isMobile ? 16 : 48
+        const available = Math.max(1, viewportEl.clientWidth - padding)
         previewScale = Math.min(1, Math.max(0.15, available / viewWidth))
         fitMode = true
     }
@@ -194,6 +225,11 @@
         fitMode = false
         previewScale = Math.min(2, Math.max(0.15, Math.round((previewScale + delta) * 10) / 10))
     }
+    function resetScale() {
+        fitMode = false
+        previewScale = 1
+    }
+
     $effect(() => {
         if (!viewportEl) return
         const observer = new ResizeObserver(() => {
@@ -222,7 +258,7 @@
             } finally {
                 if (!cancelled) formatPreviewPending = false
             }
-        }, 400)
+        }, 350)
         return () => {
             cancelled = true
             clearTimeout(timer)
@@ -247,6 +283,11 @@
         }
     }
 
+    function triggerCopyFeedback() {
+        copySuccess = true
+        setTimeout(() => { copySuccess = false }, 2000)
+    }
+
     async function exportViaHtml(action: 'copy' | 'save') {
         try {
             startProgress('HTML 생성 중...', 1)
@@ -258,7 +299,7 @@
             endProgress()
             if (action === 'copy') {
                 const ok = await copyToClipboard(result.content)
-                if (!ok) console.error('[logexporter] Clipboard copy failed')
+                if (ok) triggerCopyFeedback()
             } else {
                 await saveAsFile(exportFilename('html'), result.content)
             }
@@ -275,7 +316,7 @@
             endProgress()
             if (action === 'copy') {
                 const ok = await copyToClipboard(result.content)
-                if (!ok) console.error('[logexporter] Clipboard copy failed')
+                if (ok) triggerCopyFeedback()
             } else {
                 await saveAsFile(exportFilename(result.extension), result.content)
             }
@@ -330,225 +371,147 @@
         if (!logExporterStore.isOpen) return
         if (e.key === 'Escape') close()
     }
+
+    const mobileNavTabs = $derived([
+        { id: 'preview' as const, label: '미리보기', icon: Eye },
+        { id: 'style' as const, label: '스타일', icon: Palette },
+        { id: 'replace' as const, label: '치환', icon: ArrowLeftRight, badge: settings.replacementRules?.length || 0 },
+        { id: 'export' as const, label: '내보내기', icon: FileOutput },
+        { id: 'advanced' as const, label: '고급', icon: SlidersHorizontal },
+    ])
 </script>
 
 <svelte:window bind:innerWidth={windowWidth} onkeydown={handleKeydown} />
 
 {#if logExporterStore.isOpen}
-    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3">
-        <div class="flex flex-col w-[80vw] h-[80vh] bg-bgcolor text-textcolor rounded-2xl shadow-2xl border border-darkborderc overflow-hidden" transition:fade={{ duration: 120 }}>
-        <!-- Top bar -->
-        <div class="flex items-center gap-3 px-4 py-3 border-b border-darkborderc bg-darkbg shrink-0">
-            <div class="w-7 h-7 rounded-md bg-darkbutton border border-darkborderc flex items-center justify-center">
-                <FileText size={15} />
-            </div>
-            <span class="text-sm font-semibold">로그 내보내기</span>
-            <span class="text-xs text-textcolor2 truncate">{charInfo.name}{charInfo.chatName ? ` · ${charInfo.chatName}` : ''}</span>
-            <div class="flex-1"></div>
-
-            <button
-                type="button"
-                class="p-2 rounded-md border border-darkborderc hover:bg-darkbutton transition-colors"
-                class:border-borderc={settings.isEditable}
-                onclick={() => setSetting('isEditable', !settings.isEditable)}
-                title="편집 모드"
-            >
-                <Pencil size={14} class={settings.isEditable ? '' : 'opacity-60'} />
-            </button>
-            <button type="button" id="log-exporter-close" class="p-2 rounded-md border border-darkborderc hover:bg-darkbutton transition-colors" onclick={close} title="닫기 (Esc)">
-                <X size={15} />
-            </button>
-        </div>
-
-        <!-- Body -->
-        <div class="flex flex-1 overflow-hidden relative">
-            {#if isLoading}
-                <div class="flex-1 flex items-center justify-center">
-                    <div class="animate-spin w-8 h-8 border-2 border-selected border-t-transparent rounded-full"></div>
-                </div>
-            {:else if loadError}
-                <div class="flex-1 flex items-center justify-center px-8 text-center text-textcolor2">{loadError}</div>
-            {:else}
-                <!-- Desktop settings sidebar -->
-                {#if !isMobile}
-                    <div
-                        class="flex flex-col h-full border-r border-darkborderc bg-darkbg shrink-0 overflow-hidden transition-all duration-200"
-                        style="width:{isSettingsOpen ? '430px' : '0px'};"
+    <!-- Backdrop -->
+    <div
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs select-none"
+        class:p-0={isMobile}
+        class:p-4={!isMobile}
+        class:lg:p-6={!isMobile}
+        transition:fade={{ duration: 120 }}
+    >
+        <!-- Modal Window Container -->
+        <div
+            class="flex flex-col bg-bgcolor text-textcolor overflow-hidden transition-all duration-200"
+            class:w-full={isMobile}
+            class:h-full={isMobile}
+            class:rounded-none={isMobile}
+            class:border-0={isMobile}
+            class:w-[95vw]={!isMobile}
+            class:max-w-[1600px]={!isMobile}
+            class:h-[92vh]={!isMobile}
+            class:max-h-[1020px]={!isMobile}
+            class:rounded-2xl={!isMobile}
+            class:border={!isMobile}
+            class:border-darkborderc={!isMobile}
+            class:shadow-2xl={!isMobile}
+        >
+            <!-- ═══════════════════════════════════════════════════════════════════ -->
+            <!-- MOBILE HEADER (Mobile only)                                         -->
+            <!-- ═══════════════════════════════════════════════════════════════════ -->
+            {#if isMobile}
+                <div class="flex items-center gap-3 px-4 py-3 border-b border-darkborderc bg-darkbg shrink-0 shadow-xs">
+                    <button
+                        type="button"
+                        class="w-9 h-9 rounded-xl bg-darkbutton hover:bg-darkborderc border border-darkborderc flex items-center justify-center text-textcolor transition active:scale-95 shrink-0"
+                        onclick={close}
+                        aria-label="뒤로가기"
                     >
-                        <div class="h-full w-[430px] flex flex-col overflow-hidden">
-                            {#if activeTab === 'replace'}
-                                <ReplaceTab {settings} onChange={setSetting} />
-                            {:else}
-                                <SettingsPanel
-                                    bind:activeTab
-                                    {settings}
-                                    onChange={setSetting}
-                                    participants={[...viewData.participants]}
-                                    {excludedParticipants}
-                                    onToggleParticipant={(name, excluded) => {
-                                        excludedParticipants = excluded
-                                            ? [...excludedParticipants, name]
-                                            : excludedParticipants.filter((n) => n !== name)
-                                    }}
-                                />
-                            {/if}
-                        </div>
+                        <ChevronLeft size={20} />
+                    </button>
+                    {#if charInfo.avatarUrl}
+                        <img src={charInfo.avatarUrl} alt={charInfo.name} class="w-9 h-9 rounded-xl object-cover border border-darkborderc shadow-xs shrink-0" />
+                    {/if}
+                    <div class="flex flex-col min-w-0 flex-1">
+                        <span class="text-sm font-bold text-textcolor truncate">로그 내보내기</span>
+                        <span class="text-[11px] text-textcolor2 truncate">
+                            {charInfo.name}{charInfo.chatName ? ` · ${charInfo.chatName}` : ''}
+                        </span>
                     </div>
-                {/if}
+                    <button
+                        type="button"
+                        class="p-2 rounded-xl border transition-colors active:scale-95 {settings.isEditable ? 'bg-selected text-white border-selected shadow-xs' : 'bg-darkbutton text-textcolor2 hover:text-textcolor border-darkborderc'}"
+                        onclick={() => setSetting('isEditable', !settings.isEditable)}
+                        title="메시지 편집"
+                        aria-label="메시지 편집"
+                    >
+                        <Pencil size={16} />
+                    </button>
+                </div>
 
-                <!-- Preview column -->
-                <div class="flex flex-col flex-1 overflow-hidden relative min-w-0">
-                    <!-- Sidebar toggle handle -->
-                    {#if !isMobile}
+                <!-- Mobile Sub-Header Navigation Tabs -->
+                <div class="flex items-center border-b border-darkborderc bg-darkbg p-1.5 gap-1 overflow-x-auto no-scrollbar shrink-0">
+                    {#each mobileNavTabs as tab (tab.id)}
                         <button
                             type="button"
-                            class="absolute left-0 top-1/2 -translate-y-1/2 z-20 w-[18px] h-12 flex items-center justify-center bg-darkbg border border-l-0 border-darkborderc text-textcolor2 shadow-md"
-                            style="border-radius:0 8px 8px 0;"
-                            onclick={() => (isSettingsOpen = !isSettingsOpen)}
-                            title={isSettingsOpen ? '설정 접기' : '설정 펼치기'}
+                            class="flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-semibold transition-all shrink-0 relative {activeMobileTab === tab.id ? 'bg-selected text-white shadow-xs' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton/80 bg-darkbutton/40'}"
+                            onclick={() => (activeMobileTab = tab.id)}
                         >
-                            {#if isSettingsOpen}<ChevronLeft size={14}/>{:else}<ChevronRight size={14}/>{/if}
-                        </button>
-                    {/if}
-
-                    <!-- Preview toolbar -->
-                    <div class="flex items-center gap-2 px-3 py-2 border-b border-darkborderc bg-darkbg shrink-0 text-xs">
-                        <SelectInput value={settings.format} size="sm" onchange={(e) => setSetting('format', e.currentTarget.value as ExportFormat)}>
-                            {#each EXPORT_FORMAT_OPTIONS as opt (opt.value)}
-                                <option value={opt.value}>{opt.label}</option>
-                            {/each}
-                        </SelectInput>
-                        {#if isMobile}
-                            <button type="button" class="p-1.5 rounded border border-darkborderc hover:bg-darkbutton" onclick={() => (isMobilePanelOpen = true)} title="설정">
-                                <Settings size={13}/>
-                            </button>
-                        {/if}
-                        <div class="flex-1"></div>
-                        {#if isBasicFormat}
-                            <button class="p-1.5 rounded border border-darkborderc hover:bg-darkbutton" onclick={() => changeScale(-0.1)} title="축소"><ZoomOut size={13}/></button>
-                            <span class="tabular-nums w-10 text-center text-textcolor2">{Math.round(previewScale * 100)}%</span>
-                            <button class="p-1.5 rounded border border-darkborderc hover:bg-darkbutton" onclick={() => changeScale(0.1)} title="확대"><ZoomIn size={13}/></button>
-                            <button class="p-1.5 rounded border border-darkborderc hover:bg-darkbutton" onclick={() => { fitMode = true; fitToViewport() }} title="맞춤"><Maximize size={13}/></button>
-                        {/if}
-                    </div>
-
-                    <!-- Scaled preview -->
-                    <div bind:this={viewportEl} class="flex-1 overflow-auto p-6 relative" style="background:{backgroundColor};">
-                        {#if isBasicFormat}
-                            {#key viewData}
-                                <div bind:this={documentEl} class="mx-auto origin-top" style="width:{viewWidth}px;transform:scale({previewScale});margin-bottom:{Math.max(0, documentHeight * (previewScale - 1))}px;">
-                                    <LogContainer
-                                        data={viewData}
-                                        {settings}
-                                        selectedThemeKey={settings.theme}
-                                        selectedColorKey={settings.color}
-                                        fontSize={fontSize}
-                                        containerWidth={viewWidth}
-                                        selectedIndices={selectedIndices}
-                                        onMessageSelect={handleSelect}
-                                        onMessageDelete={(i) => {
-                                            const target = visibleMessages[i]
-                                            if (target) allMessages = allMessages.filter((m) => m !== target)
-                                            clearBatchCache()
-                                        }}
-                                    />
-                                </div>
-                            {/key}
-                        {:else if settings.format === 'html'}
-                            <div class="mx-auto w-full h-full bg-black/20 rounded-lg overflow-hidden border border-darkborderc">
-                                {#if formatPreviewPending && !formatPreview}
-                                    <div class="flex items-center justify-center h-full"><div class="animate-spin w-6 h-6 border-2 border-selected border-t-transparent rounded-full"></div></div>
-                                {:else}
-                                    <iframe title="HTML 미리보기" class="w-full h-full border-0 bg-white" srcdoc={formatPreview}></iframe>
-                                {/if}
-                            </div>
-                        {:else}
-                            <pre class="whitespace-pre-wrap break-words mx-auto p-5 rounded-lg border border-darkborderc bg-darkbg text-textcolor font-mono text-sm" style="max-width:800px;">{formatPreview}</pre>
-                        {/if}
-                    </div>
-
-                    <!-- Action bar -->
-                    <div class="shrink-0 border-t border-darkborderc bg-darkbg px-4 py-3 flex items-center gap-2 relative">
-                        {#if isBasicFormat}
-                            <Button size="sm" onclick={() => void handleSaveImage()} disabled={progress.active}>
-                                <div class="flex items-center gap-2"><ImageIcon size={15}/> 이미지 저장</div>
-                            </Button>
-                        {:else if settings.format === 'html'}
-                            <Button size="sm" onclick={() => void exportViaHtml('save')} disabled={progress.active}>
-                                <div class="flex items-center gap-2"><FileCode size={15}/> HTML 저장</div>
-                            </Button>
-                            <Button size="sm" styled="outlined" onclick={() => void exportViaHtml('copy')} disabled={progress.active}>
-                                <div class="flex items-center gap-2"><Copy size={15}/> HTML 복사</div>
-                            </Button>
-                        {:else}
-                            <Button size="sm" onclick={() => void handleExportTextOrMarkdown('save')} disabled={progress.active}>
-                                <div class="flex items-center gap-2"><Download size={15}/> 저장</div>
-                            </Button>
-                            <Button size="sm" styled="outlined" onclick={() => void handleExportTextOrMarkdown('copy')} disabled={progress.active}>
-                                <div class="flex items-center gap-2"><Copy size={15}/> 복사</div>
-                            </Button>
-                        {/if}
-                        <div class="relative">
-                            <button class="p-2 rounded-md border border-darkborderc hover:bg-darkbutton" onclick={() => (moreMenuOpen = !moreMenuOpen)} title="더보기">
-                                <MoreHorizontal size={16}/>
-                            </button>
-                            {#if moreMenuOpen}
-                                <div class="absolute bottom-full mb-2 left-0 z-30 min-w-[180px] rounded-md border border-darkborderc bg-darkbg shadow-xl py-1" transition:fade={{ duration: 80 }}>
-                                    <button class="w-full text-left px-3 py-2 text-sm hover:bg-darkbutton flex items-center gap-2" onclick={() => void exportViaHtml('copy')}><Copy size={14}/> HTML 복사</button>
-                                    <button class="w-full text-left px-3 py-2 text-sm hover:bg-darkbutton flex items-center gap-2" onclick={() => void exportViaHtml('save')}><FileCode size={14}/> HTML 저장</button>
-                                    <div class="my-1 border-t border-darkborderc"></div>
-                                    <button class="w-full text-left px-3 py-2 text-sm hover:bg-darkbutton flex items-center gap-2" onclick={() => void handleBackup()}><Download size={14}/> JSON 백업</button>
-                                    <button class="w-full text-left px-3 py-2 text-sm hover:bg-darkbutton flex items-center gap-2" onclick={handleRestore}><Upload size={14}/> JSON 복원</button>
-                                    {#if settings.isEditable}
-                                        <div class="my-1 border-t border-darkborderc"></div>
-                                        <button class="w-full text-left px-3 py-2 text-sm hover:bg-darkbutton flex items-center gap-2" onclick={selectAll}><CheckSquare size={14}/> 전체 선택</button>
-                                        <button class="w-full text-left px-3 py-2 text-sm hover:bg-darkbutton flex items-center gap-2" onclick={deselectAll}><Square size={14}/> 전체 해제</button>
-                                        <button class="w-full text-left px-3 py-2 text-sm hover:bg-darkbutton flex items-center gap-2" onclick={invertSelection}><RefreshCw size={14}/> 선택 반전</button>
-                                    {/if}
-                                </div>
+                            <tab.icon size={14} />
+                            <span>{tab.label}</span>
+                            {#if tab.badge && tab.badge > 0}
+                                <span class="text-[10px] px-1.5 py-0.2 rounded-full font-bold tabular-nums {activeMobileTab === tab.id ? 'bg-white text-selected' : 'bg-selected/25 text-selected'}">
+                                    {tab.badge}
+                                </span>
                             {/if}
-                        </div>
+                        </button>
+                    {/each}
+                </div>
+            {/if}
 
-                        <div class="flex-1"></div>
-
-                        {#if settings.isEditable}
-                            <div class="w-px h-5 bg-darkborderc mx-1"></div>
-                            <Button size="sm" styled="danger" disabled={!hasSelection} onclick={deleteSelected}>
-                                <div class="flex items-center gap-2"><Trash2 size={15}/> 삭제 ({selectedIndices.size})</div>
-                            </Button>
-                        {/if}
+            <!-- ═══════════════════════════════════════════════════════════════════ -->
+            <!-- BODY (SIDEBAR + FULL-HEIGHT PREVIEW CANVAS)                        -->
+            <!-- ═══════════════════════════════════════════════════════════════════ -->
+            <div class="flex flex-1 overflow-hidden relative">
+                {#if isLoading}
+                    <!-- Loading state -->
+                    <div class="flex-1 flex flex-col items-center justify-center gap-3">
+                        <div class="animate-spin w-9 h-9 border-3 border-selected border-t-transparent rounded-full shadow-lg"></div>
+                        <span class="text-xs text-textcolor font-medium">로그 데이터를 준비하고 있습니다...</span>
                     </div>
-
-                    <!-- Progress overlay -->
-                    {#if progress.active}
-                        <div class="absolute inset-0 z-40 flex items-center justify-center bg-black/50">
-                            <div class="rounded-xl border border-darkborderc bg-darkbg px-8 py-6 flex flex-col items-center gap-3 min-w-[280px]">
-                                <div class="animate-spin w-7 h-7 border-2 border-selected border-t-transparent rounded-full"></div>
-                                <div class="text-sm text-center">{progress.message}</div>
-                                {#if progress.total > 1}
-                                    <div class="w-full h-1.5 rounded bg-darkbutton overflow-hidden">
-                                        <div class="h-full bg-selected transition-all" style="width:{progress.total > 0 ? Math.min(100, (progress.current / progress.total) * 100) : 0}%"></div>
+                {:else if loadError}
+                    <!-- Error state -->
+                    <div class="flex-1 flex flex-col items-center justify-center px-8 text-center gap-2">
+                        <span class="text-sm font-semibold text-red-400">데이터를 불러오는 중 오류가 발생했습니다</span>
+                        <span class="text-xs text-textcolor2 max-w-md">{loadError}</span>
+                        <Button size="sm" onclick={loadData} className="mt-2">다시 시도</Button>
+                    </div>
+                {:else}
+                    <!-- ── DESKTOP SIDEBAR ── -->
+                    {#if !isMobile}
+                        <div
+                            class="flex flex-col h-full border-r border-darkborderc bg-bgcolor shrink-0 overflow-hidden transition-all duration-200 relative"
+                            style="width:{isSettingsOpen ? '440px' : '0px'};"
+                        >
+                            <div class="h-full w-[440px] flex flex-col overflow-hidden">
+                                <!-- Sidebar Header (Character / Chat Info) -->
+                                <div class="flex items-center gap-3 px-4 py-3 border-b border-darkborderc bg-darkbg shrink-0">
+                                    {#if charInfo.avatarUrl}
+                                        <img src={charInfo.avatarUrl} alt={charInfo.name} class="w-9 h-9 rounded-xl object-cover border border-darkborderc shadow-xs shrink-0" />
+                                    {:else}
+                                        <div class="w-9 h-9 rounded-xl bg-selected/20 border border-selected/40 flex items-center justify-center text-selected font-bold text-sm shadow-xs shrink-0">
+                                            {charInfo.name ? charInfo.name.slice(0, 1).toUpperCase() : '🤖'}
+                                        </div>
+                                    {/if}
+                                    <div class="flex flex-col min-w-0 flex-1">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-sm font-bold text-textcolor truncate">로그 내보내기</span>
+                                            {#if allMessages.length > 0}
+                                                <span class="text-[11px] px-2 py-0.2 rounded-full bg-selected/20 text-textcolor border border-selected/40 font-bold tabular-nums shrink-0">
+                                                    {allMessages.length}
+                                                </span>
+                                            {/if}
+                                        </div>
+                                        <span class="text-[11px] text-textcolor2 truncate">{charInfo.name}{charInfo.chatName ? ` · ${charInfo.chatName}` : ''}</span>
                                     </div>
-                                {/if}
-                            </div>
-                        </div>
-                    {/if}
+                                </div>
 
-                    <!-- Mobile settings overlay -->
-                    {#if isMobile && isMobilePanelOpen}
-                        <div class="absolute inset-0 z-40 bg-bgcolor flex flex-col" transition:fade={{ duration: 120 }}>
-                            <div class="flex items-center justify-between px-4 py-3 border-b border-darkborderc shrink-0">
-                                <span class="text-sm font-semibold">설정</span>
-                                <button type="button" class="p-2 rounded-md border border-darkborderc hover:bg-darkbutton" onclick={() => (isMobilePanelOpen = false)}>
-                                    <X size={15}/>
-                                </button>
-                            </div>
-                            <div class="flex-1 overflow-hidden">
-                                {#if activeTab === 'replace'}
-                                    <ReplaceTab {settings} onChange={setSetting} />
-                                {:else}
+                                <!-- Settings Panel -->
+                                <div class="flex-1 overflow-hidden">
                                     <SettingsPanel
-                                        bind:activeTab
+                                        bind:activeTab={activeDesktopTab}
                                         {settings}
                                         onChange={setSetting}
                                         participants={[...viewData.participants]}
@@ -559,13 +522,407 @@
                                                 : excludedParticipants.filter((n) => n !== name)
                                         }}
                                     />
+                                </div>
+                            </div>
+                        </div>
+                    {/if}
+
+                    <!-- ── PREVIEW & CANVAS COLUMN (OR MOBILE VIEW) ── -->
+                    <div
+                        class="flex flex-col flex-1 overflow-hidden relative min-w-0 bg-bgcolor"
+                        class:hidden={isMobile && activeMobileTab !== 'preview'}
+                    >
+                        <!-- Desktop Sidebar Toggle Button -->
+                        {#if !isMobile}
+                            <button
+                                type="button"
+                                class="absolute left-0 top-1/2 -translate-y-1/2 z-30 w-5 h-12 flex items-center justify-center bg-darkbg border border-l-0 border-darkborderc text-textcolor hover:text-selected hover:bg-darkbutton transition-all shadow-md active:scale-95"
+                                style="border-radius:0 8px 8px 0;"
+                                onclick={() => (isSettingsOpen = !isSettingsOpen)}
+                                title={isSettingsOpen ? '설정 사이드바 접기' : '설정 사이드바 펼치기'}
+                                aria-label={isSettingsOpen ? '설정 접기' : '설정 펼치기'}
+                            >
+                                {#if isSettingsOpen}
+                                    <ChevronLeft size={15} />
+                                {:else}
+                                    <ChevronRight size={15} />
                                 {/if}
+                            </button>
+                        {/if}
+
+                        <!-- ═══════════════════════════════════════════════════════════ -->
+                        <!-- FLOATING TOP CONTROLS OVER PREVIEW                        -->
+                        <!-- ═══════════════════════════════════════════════════════════ -->
+                        <div class="pointer-events-none absolute top-4 left-4 right-4 z-20 flex items-center justify-between gap-2">
+                            <!-- Left: Floating Format Selector -->
+                            <div class="pointer-events-auto">
+                                <SelectInput
+                                    value={settings.format}
+                                    size="sm"
+                                    className="bg-darkbg/90 backdrop-blur-md border border-darkborderc rounded-xl shadow-lg text-textcolor font-bold text-xs"
+                                    onchange={(e) => setSetting('format', e.currentTarget.value as ExportFormat)}
+                                >
+                                    {#each EXPORT_FORMAT_OPTIONS as opt (opt.value)}
+                                        <option value={opt.value}>{opt.label}</option>
+                                    {/each}
+                                </SelectInput>
+                            </div>
+
+                            <!-- Right: Floating Zoom + Edit + Close Buttons -->
+                            <div class="pointer-events-auto flex items-center gap-2">
+                                {#if isBasicFormat}
+                                    <!-- Floating Zoom Controls -->
+                                    <div class="flex items-center gap-1 bg-darkbg/90 backdrop-blur-md border border-darkborderc rounded-xl p-1 shadow-lg">
+                                        <button
+                                            type="button"
+                                            class="p-1.5 rounded-lg hover:bg-darkbutton text-textcolor hover:text-selected transition-colors active:scale-95"
+                                            onclick={() => changeScale(-0.1)}
+                                            title="축소"
+                                            aria-label="축소"
+                                        >
+                                            <ZoomOut size={14} />
+                                        </button>
+                                        <span class="tabular-nums px-1 text-[11px] font-bold text-textcolor min-w-9 text-center">
+                                            {Math.round(previewScale * 100)}%
+                                        </span>
+                                        <button
+                                            type="button"
+                                            class="p-1.5 rounded-lg hover:bg-darkbutton text-textcolor hover:text-selected transition-colors active:scale-95"
+                                            onclick={() => changeScale(0.1)}
+                                            title="확대"
+                                            aria-label="확대"
+                                        >
+                                            <ZoomIn size={14} />
+                                        </button>
+                                        <div class="w-px h-3.5 bg-darkborderc mx-0.5"></div>
+                                        <button
+                                            type="button"
+                                            class="p-1.5 rounded-lg hover:bg-darkbutton text-textcolor hover:text-selected transition-colors active:scale-95"
+                                            onclick={() => { fitMode = true; fitToViewport() }}
+                                            title="화면 너비 맞춤"
+                                            aria-label="화면 맞춤"
+                                        >
+                                            <Maximize size={14} />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="p-1.5 rounded-lg hover:bg-darkbutton text-textcolor hover:text-selected transition-colors active:scale-95"
+                                            onclick={resetScale}
+                                            title="100% 원래 크기"
+                                            aria-label="원래 크기"
+                                        >
+                                            <RotateCcw size={14} />
+                                        </button>
+                                    </div>
+                                {/if}
+
+                                <!-- Floating Edit Mode Toggle -->
+                                <button
+                                    type="button"
+                                    class="h-9 w-9 rounded-xl border border-darkborderc bg-darkbg/90 backdrop-blur-md shadow-lg flex items-center justify-center transition active:scale-95 {settings.isEditable ? 'bg-selected text-white border-selected ring-2 ring-selected/50' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton'}"
+                                    onclick={() => setSetting('isEditable', !settings.isEditable)}
+                                    title={settings.isEditable ? '메시지 편집 모드 켜짐 (클릭하여 끄기)' : '메시지 편집 모드'}
+                                    aria-label="메시지 편집"
+                                    aria-pressed={settings.isEditable}
+                                >
+                                    <Pencil size={15} />
+                                </button>
+
+                                {#if !isMobile}
+                                    <!-- Floating Close Button -->
+                                    <button
+                                        type="button"
+                                        id="log-exporter-close"
+                                        class="h-9 w-9 rounded-xl border border-darkborderc bg-darkbg/90 backdrop-blur-md shadow-lg flex items-center justify-center text-textcolor2 hover:text-textcolor hover:bg-darkbutton transition active:scale-95"
+                                        onclick={close}
+                                        title="닫기 (Esc)"
+                                        aria-label="닫기"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                {/if}
+                            </div>
+                        </div>
+
+                        <!-- ═══════════════════════════════════════════════════════════ -->
+                        <!-- CANVAS WORKSPACE (FULL HEIGHT)                             -->
+                        <!-- ═══════════════════════════════════════════════════════════ -->
+                        <div
+                            bind:this={viewportEl}
+                            class="flex-1 overflow-auto relative flex flex-col pt-18 pb-20 px-6"
+                            style="background:{backgroundColor};"
+                        >
+                            {#if isBasicFormat}
+                                {#key viewData}
+                                    <div
+                                        bind:this={documentEl}
+                                        class="mx-auto origin-top transition-transform"
+                                        style="width:{viewWidth}px;transform:scale({previewScale});margin-bottom:{Math.max(0, documentHeight * (previewScale - 1))}px;"
+                                    >
+                                        <LogContainer
+                                            data={viewData}
+                                            {settings}
+                                            selectedThemeKey={settings.theme}
+                                            selectedColorKey={settings.color}
+                                            fontSize={fontSize}
+                                            containerWidth={viewWidth}
+                                            selectedIndices={selectedIndices}
+                                            onMessageSelect={handleSelect}
+                                            onMessageDelete={(i) => {
+                                                const target = visibleMessages[i]
+                                                if (target) allMessages = allMessages.filter((m) => m !== target)
+                                                clearBatchCache()
+                                            }}
+                                        />
+                                    </div>
+                                {/key}
+                            {:else if settings.format === 'html'}
+                                <div class="mx-auto w-full h-full bg-black/20 rounded-xl overflow-hidden border border-darkborderc shadow-inner">
+                                    {#if formatPreviewPending && !formatPreview}
+                                        <div class="flex items-center justify-center h-full">
+                                            <div class="animate-spin w-7 h-7 border-2 border-selected border-t-transparent rounded-full"></div>
+                                        </div>
+                                    {:else}
+                                        <iframe title="HTML 미리보기" class="w-full h-full border-0 bg-white" srcdoc={formatPreview}></iframe>
+                                    {/if}
+                                </div>
+                            {:else}
+                                <div class="flex-1 overflow-auto max-w-4xl w-full mx-auto">
+                                    <pre class="whitespace-pre-wrap break-words p-5 rounded-xl border border-darkborderc bg-darkbg/90 text-textcolor font-mono text-xs leading-relaxed shadow-sm">{formatPreview}</pre>
+                                </div>
+                            {/if}
+                        </div>
+
+                        <!-- ═══════════════════════════════════════════════════════════ -->
+                        <!-- FLOATING BOTTOM ACTIONS OVER PREVIEW                       -->
+                        <!-- ═══════════════════════════════════════════════════════════ -->
+                        <div class="pointer-events-none absolute bottom-5 left-5 right-5 z-20 flex items-center justify-start gap-2">
+                            <div class="pointer-events-auto flex items-center gap-2">
+                                {#if settings.isEditable && hasSelection}
+                                    <!-- Edit Mode Selection Actions Bar -->
+                                    <div class="flex items-center gap-2 bg-darkbg/95 backdrop-blur-md border border-darkborderc rounded-2xl p-2 shadow-2xl">
+                                        <span class="text-xs font-bold px-2.5 py-1 rounded-xl bg-selected/20 text-textcolor border border-selected/40 tabular-nums whitespace-nowrap">
+                                            {selectedIndices.size}개 선택됨
+                                        </span>
+                                        <button
+                                            type="button"
+                                            class="h-8 px-2.5 rounded-lg border border-darkborderc bg-darkbutton hover:bg-darkborderc text-xs font-medium text-textcolor transition flex items-center active:scale-95"
+                                            onclick={selectAll}
+                                        >
+                                            전체 선택
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="h-8 px-2.5 rounded-lg border border-darkborderc bg-darkbutton hover:bg-darkborderc text-xs font-medium text-textcolor transition flex items-center active:scale-95"
+                                            onclick={deselectAll}
+                                        >
+                                            전체 해제
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="h-8 px-2.5 rounded-lg border border-darkborderc bg-darkbutton hover:bg-darkborderc text-xs font-medium text-textcolor transition flex items-center active:scale-95"
+                                            onclick={invertSelection}
+                                        >
+                                            선택 반전
+                                        </button>
+                                        <Button size="sm" styled="danger" className="h-8 px-3 rounded-lg flex items-center gap-1.5" onclick={deleteSelected}>
+                                            <Trash2 size={14} />
+                                            <span>선택 삭제 ({selectedIndices.size})</span>
+                                        </Button>
+                                    </div>
+                                {:else}
+                                    <!-- Direct Floating Buttons without outer container wrapper -->
+                                    {#if isBasicFormat}
+                                        <Button size="sm" className="h-9 px-4 rounded-xl flex items-center gap-2 font-bold shadow-lg" onclick={() => void handleSaveImage()} disabled={progress.active}>
+                                            <ImageIcon size={15} />
+                                            <span>저장</span>
+                                        </Button>
+                                    {:else if settings.format === 'html'}
+                                        <Button size="sm" className="h-9 px-4 rounded-xl flex items-center gap-2 font-bold shadow-lg" onclick={() => void exportViaHtml('save')} disabled={progress.active}>
+                                            <FileCode size={15} />
+                                            <span>저장</span>
+                                        </Button>
+                                        <Button size="sm" styled="outlined" className="h-9 px-3 rounded-xl bg-darkbg/90 backdrop-blur-md border border-darkborderc shadow-lg flex items-center gap-2" onclick={() => void exportViaHtml('copy')} disabled={progress.active}>
+                                            {#if copySuccess}
+                                                <Check size={15} class="text-green-400" />
+                                                <span class="text-green-400 font-medium">복사됨!</span>
+                                            {:else}
+                                                <Copy size={15} />
+                                                <span>HTML 복사</span>
+                                            {/if}
+                                        </Button>
+                                    {:else}
+                                        <Button size="sm" className="h-9 px-4 rounded-xl flex items-center gap-2 font-bold shadow-lg" onclick={() => void handleExportTextOrMarkdown('save')} disabled={progress.active}>
+                                            <Download size={15} />
+                                            <span>저장</span>
+                                        </Button>
+                                        <Button size="sm" styled="outlined" className="h-9 px-3 rounded-xl bg-darkbg/90 backdrop-blur-md border border-darkborderc shadow-lg flex items-center gap-2" onclick={() => void handleExportTextOrMarkdown('copy')} disabled={progress.active}>
+                                            {#if copySuccess}
+                                                <Check size={15} class="text-green-400" />
+                                                <span class="text-green-400 font-medium">복사됨!</span>
+                                            {:else}
+                                                <Copy size={15} />
+                                                <span>클립보드 복사</span>
+                                            {/if}
+                                        </Button>
+                                    {/if}
+
+                                    <!-- More menu dropdown -->
+                                    <div class="relative flex items-center">
+                                        <Button
+                                            size="sm"
+                                            styled="outlined"
+                                            className="h-9 w-9 !p-0 rounded-xl bg-darkbg/90 backdrop-blur-md border border-darkborderc shadow-lg flex items-center justify-center text-textcolor2 hover:text-textcolor hover:bg-darkbutton transition active:scale-95"
+                                            onclick={() => (moreMenuOpen = !moreMenuOpen)}
+                                        >
+                                            <MoreHorizontal size={15} />
+                                        </Button>
+
+                                        {#if moreMenuOpen}
+                                            <div
+                                                class="absolute bottom-full mb-2.5 left-0 z-30 min-w-48 rounded-xl border border-darkborderc bg-darkbg shadow-2xl p-1 text-xs space-y-0.5"
+                                                transition:fade={{ duration: 80 }}
+                                            >
+                                                <button
+                                                    type="button"
+                                                    class="w-full text-left px-3 py-2 rounded-lg hover:bg-darkbutton flex items-center gap-2.5 text-textcolor transition-colors active:scale-98"
+                                                    onclick={() => { moreMenuOpen = false; void exportViaHtml('copy') }}
+                                                >
+                                                    <Copy size={14} class="text-textcolor2" />
+                                                    <span>HTML 클립보드 복사</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="w-full text-left px-3 py-2 rounded-lg hover:bg-darkbutton flex items-center gap-2.5 text-textcolor transition-colors active:scale-98"
+                                                    onclick={() => { moreMenuOpen = false; void exportViaHtml('save') }}
+                                                    disabled={progress.active}
+                                                >
+                                                    <FileCode size={14} class="text-textcolor2" />
+                                                    <span>HTML 파일로 저장</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="w-full text-left px-3 py-2 rounded-lg hover:bg-darkbutton flex items-center gap-2.5 text-textcolor transition-colors active:scale-98"
+                                                    onclick={() => { moreMenuOpen = false; void handleExportTextOrMarkdown('save') }}
+                                                    disabled={progress.active}
+                                                >
+                                                    <Download size={14} class="text-textcolor2" />
+                                                    <span>{settings.format === 'markdown' ? 'Markdown' : '텍스트'} 파일 저장</span>
+                                                </button>
+                                                <div class="border-t border-darkborderc/60 my-1"></div>
+                                                <button
+                                                    type="button"
+                                                    class="w-full text-left px-3 py-2 rounded-lg hover:bg-darkbutton flex items-center gap-2.5 text-textcolor transition-colors active:scale-98"
+                                                    onclick={() => { moreMenuOpen = false; void handleBackup() }}
+                                                >
+                                                    <Download size={14} class="text-textcolor2" />
+                                                    <span>JSON 백업 내보내기</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="w-full text-left px-3 py-2 rounded-lg hover:bg-darkbutton flex items-center gap-2.5 text-textcolor transition-colors active:scale-98"
+                                                    onclick={() => { moreMenuOpen = false; handleRestore() }}
+                                                >
+                                                    <Upload size={14} class="text-textcolor2" />
+                                                    <span>JSON 백업 복원하기</span>
+                                                </button>
+                                                {#if settings.isEditable}
+                                                    <div class="border-t border-darkborderc/60 my-1"></div>
+                                                    <button type="button" class="w-full text-left px-3 py-2 rounded-lg hover:bg-darkbutton flex items-center gap-2.5 text-textcolor" onclick={() => { moreMenuOpen = false; selectAll() }}>
+                                                        <CheckSquare size={14} class="text-textcolor2" /> 전체 선택
+                                                    </button>
+                                                    <button type="button" class="w-full text-left px-3 py-2 rounded-lg hover:bg-darkbutton flex items-center gap-2.5 text-textcolor" onclick={() => { moreMenuOpen = false; deselectAll() }}>
+                                                        <Square size={14} class="text-textcolor2" /> 전체 해제
+                                                    </button>
+                                                    <button type="button" class="w-full text-left px-3 py-2 rounded-lg hover:bg-darkbutton flex items-center gap-2.5 text-textcolor" onclick={() => { moreMenuOpen = false; invertSelection() }}>
+                                                        <RefreshCw size={14} class="text-textcolor2" /> 선택 반전
+                                                    </button>
+                                                {/if}
+                                            </div>
+                                        {/if}
+                                    </div>
+                                {/if}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ── MOBILE SETTINGS TABS (Mobile only when not in preview) ── -->
+                    {#if isMobile && activeMobileTab !== 'preview'}
+                        <div class="flex-1 flex flex-col overflow-hidden bg-bgcolor">
+                            <div class="flex-1 overflow-hidden">
+                                <SettingsPanel
+                                    bind:activeTab={activeMobileTab}
+                                    showTabBar={false}
+                                    {settings}
+                                    onChange={setSetting}
+                                    participants={[...viewData.participants]}
+                                    {excludedParticipants}
+                                    onToggleParticipant={(name, excluded) => {
+                                        excludedParticipants = excluded
+                                            ? [...excludedParticipants, name]
+                                            : excludedParticipants.filter((n) => n !== name)
+                                    }}
+                                />
+                            </div>
+
+                            <!-- Mobile Settings Bottom Bar -->
+                            <div class="shrink-0 border-t border-darkborderc bg-darkbg/95 p-3 flex items-center gap-2">
+                                <Button
+                                    size="md"
+                                    className="flex-1 font-medium"
+                                    onclick={() => (activeMobileTab = 'preview')}
+                                >
+                                    <div class="flex items-center justify-center gap-2">
+                                        <Eye size={16} />
+                                        미리보기 확인
+                                    </div>
+                                </Button>
+                                <Button
+                                    size="md"
+                                    styled="outlined"
+                                    onclick={() => {
+                                        if (isBasicFormat) void handleSaveImage()
+                                        else if (settings.format === 'html') void exportViaHtml('save')
+                                        else void handleExportTextOrMarkdown('save')
+                                    }}
+                                >
+                                    <div class="flex items-center justify-center gap-1.5">
+                                        <Download size={16} />
+                                        내보내기
+                                    </div>
+                                </Button>
+                            </div>
+                        </div>
+                    {/if}
+                {/if}
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <!-- PROGRESS MODAL OVERLAY                                             -->
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        {#if progress.active}
+            <div class="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4" transition:fade={{ duration: 100 }}>
+                <div class="rounded-2xl border border-darkborderc bg-darkbg p-6 flex flex-col items-center gap-4 min-w-72 max-w-sm shadow-2xl">
+                    <div class="animate-spin w-8 h-8 border-3 border-selected border-t-transparent rounded-full"></div>
+                    <div class="text-sm font-semibold text-textcolor text-center">{progress.message}</div>
+                    {#if progress.total > 1}
+                        <div class="w-full space-y-1.5">
+                            <div class="w-full h-2 rounded-full bg-darkbutton overflow-hidden border border-darkborderc">
+                                <div
+                                    class="h-full bg-selected transition-all duration-200"
+                                    style="width:{progress.total > 0 ? Math.min(100, (progress.current / progress.total) * 100) : 0}%"
+                                ></div>
+                            </div>
+                            <div class="flex justify-between text-[11px] text-textcolor2 tabular-nums">
+                                <span>{progress.current} / {progress.total}</span>
+                                <span>{Math.round((progress.current / progress.total) * 100)}%</span>
                             </div>
                         </div>
                     {/if}
                 </div>
-            {/if}
-        </div>
-        </div>
+            </div>
+        {/if}
     </div>
 {/if}
+

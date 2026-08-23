@@ -1,4 +1,5 @@
 <select
+    id={id}
     class={"border border-darkborderc focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200" + ((className) ? (' ' + className) : '')}
     class:text-sm={size === 'sm'}
     class:text-md={size === 'md'}
@@ -17,6 +18,7 @@
 </select>
 <script lang="ts">
     interface Props {
+        id?: string;
         value: string | number;
         className?: string;
         size?: 'sm'|'md'|'lg'|'xl';
@@ -27,6 +29,7 @@
     }
 
     let {
+        id = undefined,
         value = $bindable(),
         className = "",
         size = 'md',
