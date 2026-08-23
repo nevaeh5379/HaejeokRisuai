@@ -241,8 +241,11 @@ export async function runScripted(
         }
         const message = ScriptingEngineState.chat.message?.at(index);
         if (message) {
-          message.data = value ?? "";
-          ScriptingEngineState.messagesMutated = true;
+          const newValue = value ?? "";
+          if (message.data !== newValue) {
+            message.data = newValue;
+            ScriptingEngineState.messagesMutated = true;
+          }
         }
       });
       declareAPI("setChatRole", (id: string, index: number, value: string) => {

@@ -144,3 +144,23 @@ test("does not persist when Lua only reads chat messages", async () => {
 
   expect(commitMessages).not.toHaveBeenCalled();
 });
+
+test("does not persist when Lua sets a chat message to the same value", async () => {
+  commitMessages.mockClear();
+  const chat = {
+    id: "chat-1",
+    message: [{ role: "char", data: "same text" }],
+  } as never;
+
+  await runScripted(
+    `
+      function onStart(id)
+        local msg = getChat(id, 0)
+        setChat(id, 0, msg.data)
+      end
+    `,
+    { char: {} as never, chat, mode: "start" },
+  );
+
+  expect(commitMessages).not.toHaveBeenCalled();
+});

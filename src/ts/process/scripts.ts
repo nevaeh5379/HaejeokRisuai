@@ -1,5 +1,9 @@
 import { get } from "svelte/store";
-import { CharEmotion, selectedCharID } from "../stores.svelte";
+import {
+  CharEmotion,
+  scriptCacheRevision,
+  selectedCharID,
+} from "../stores.svelte";
 import {
   type character,
   type customscript,
@@ -97,7 +101,7 @@ function generateScriptCacheKey(
   chatID = -1,
   cbsConditions: CbsConditions = {},
 ) {
-  let hash = data + "|||" + mode + "|||";
+  let hash = data + "|||" + mode + "|||" + scriptCacheRevision + "|||";
   for (const script of scripts) {
     if (script.type !== mode) {
       continue;
@@ -176,8 +180,9 @@ export async function processScriptFull(
 
   data = risuChatParser(data, { chatID: chatID, cbsConditions });
   const scripts = (db.presetRegex ?? [])
-    .concat(char.customscript)
-    .concat(getModuleRegexScripts());
+    .concat(char.customscript ?? [])
+    .concat(getModuleRegexScripts())
+    .filter((script): script is customscript => !!script);
   const hash = generateScriptCacheKey(
     scripts,
     data,

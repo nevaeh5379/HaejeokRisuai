@@ -230,10 +230,12 @@ export const hotReloading = $state<string[]>([]);
 // - configured: DB vendor가 설정되어 활성화됨
 export const sqlConfiguredStore = writable<boolean | null>(null);
 
+export let scriptCacheRevision = 0;
 let reloadSubscriptionReady = false;
 ReloadGUIPointer.subscribe(() => {
   ReloadChatPointer.set({});
   if (reloadSubscriptionReady) {
+    scriptCacheRevision += 1;
     void import("./process/scripts").then(({ resetScriptCache }) =>
       resetScriptCache(),
     );
