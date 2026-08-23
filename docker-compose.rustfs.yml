@@ -4,10 +4,12 @@ services:
   rustfs:
     image: rustfs/rustfs:latest
     container_name: risuai-rustfs
-    restart: always
+    restart: unless-stopped
+    labels:
+      io.risuai.installation-id: ${RISUAI_INSTALLATION_ID:?Set RISUAI_INSTALLATION_ID}
     environment:
-      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
-      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?Set RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:?Set RUSTFS_SECRET_KEY}
       RUSTFS_CONSOLE_ENABLE: "true"
       RUSTFS_ADDRESS: ":9000"
       RUSTFS_CONSOLE_ADDRESS: ":9001"
@@ -20,7 +22,9 @@ services:
   postgres:
     image: postgres:17-alpine
     container_name: risuai-postgres
-    restart: always
+    restart: unless-stopped
+    labels:
+      io.risuai.installation-id: ${RISUAI_INSTALLATION_ID:?Set RISUAI_INSTALLATION_ID}
     environment:
       POSTGRES_DB: risuai
       POSTGRES_USER: risuai
@@ -37,7 +41,9 @@ services:
     container_name: risuai
     build: .
     image: risuai-full:local
-    restart: always
+    restart: unless-stopped
+    labels:
+      io.risuai.installation-id: ${RISUAI_INSTALLATION_ID:?Set RISUAI_INSTALLATION_ID}
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,18 +52,29 @@ services:
     environment:
       RISU_POSTGRES_BOOTSTRAP_URL: postgresql://risuai:${POSTGRES_PASSWORD}@postgres:5432/risuai
       RISU_POSTGRES_POOL_MAX: 10
-      RISUAI_MIGRATE_CONCURRENCY: 128
+      RISUAI_MIGRATE_CONCURRENCY: ${RISUAI_MIGRATE_CONCURRENCY:-4}
       RISU_STORAGE_TYPE: s3
       RISU_S3_BOOTSTRAP_ENDPOINT: http://rustfs:9000
       RISU_S3_BOOTSTRAP_BUCKET: risuai-assets
-      RISU_S3_BOOTSTRAP_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
-      RISU_S3_BOOTSTRAP_SECRET: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      RISU_S3_BOOTSTRAP_KEY: ${RUSTFS_ACCESS_KEY:?Set RUSTFS_ACCESS_KEY}
+      RISU_S3_BOOTSTRAP_SECRET: ${RUSTFS_SECRET_KEY:?Set RUSTFS_SECRET_KEY}
       TRUST_PROXY: 1
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:6001').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
     volumes:
       - ./save:/app/save
 
 
 volumes:
   rustfs-data:
-  risuai-save:
   risuai-postgres:

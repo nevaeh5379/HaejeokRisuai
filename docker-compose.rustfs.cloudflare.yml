@@ -2,7 +2,9 @@ services:
   cloudflare-ddns:
     image: node:22-alpine
     container_name: risuai-cloudflare-ddns
-    restart: always
+    restart: unless-stopped
+    labels:
+      io.risuai.installation-id: ${RISUAI_INSTALLATION_ID:?Set RISUAI_INSTALLATION_ID}
     user: "0:0"
     entrypoint: ["node", "/usr/local/bin/update-cloudflare.mjs"]
     environment:

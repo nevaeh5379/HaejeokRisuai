@@ -2,7 +2,9 @@ services:
   dynv6:
     image: curlimages/curl:latest
     container_name: risuai-dynv6
-    restart: always
+    restart: unless-stopped
+    labels:
+      io.risuai.installation-id: ${RISUAI_INSTALLATION_ID:?Set RISUAI_INSTALLATION_ID}
     user: "0:0"
     entrypoint: ["/bin/sh", "/usr/local/bin/update-dynv6"]
     environment:

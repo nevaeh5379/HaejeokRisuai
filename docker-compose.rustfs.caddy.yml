@@ -6,16 +6,18 @@ services:
   caddy:
     image: caddy:2-alpine
     container_name: risuai-caddy
-    restart: always
+    restart: unless-stopped
+    labels:
+      io.risuai.installation-id: ${RISUAI_INSTALLATION_ID:?Set RISUAI_INSTALLATION_ID}
     depends_on:
       risuai:
-        condition: service_started
+        condition: service_healthy
     environment:
       RISUAI_DOMAIN: ${RISUAI_DOMAIN:?Set RISUAI_DOMAIN}
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      - "${RISUAI_HTTP_PORT:-80}:80"
+      - "${RISUAI_HTTPS_PORT:-443}:443"
+      - "${RISUAI_HTTPS_PORT:-443}:443/udp"
     volumes:
       - ./deploy/rustfs/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
