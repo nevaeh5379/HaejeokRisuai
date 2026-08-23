@@ -30,10 +30,8 @@
     import type { character } from "src/ts/storage/database.svelte";
     import { language } from "src/lang";
     import { getFileSrc } from "src/ts/globalApi.svelte";
-    import { getMimeType } from "src/ts/media";
     import { selectMultipleFile } from "src/ts/util";
     import { alertConfirm } from "src/ts/alert";
-    import { getAssetsBatch } from "src/ts/characterImage";
     import {
         getAssetCategory,
         getDefaultMacroTag,
@@ -90,36 +88,134 @@
         return counts;
     });
 
-    // Resolved file src URLs cache
+    // Keep only near-viewport thumbnail URLs in component state. getFileSrc's
+    // thumbnail caches are bounded, so old Blob URLs are revoked automatically.
     let assetSrcMap = $state<Record<string, string>>({});
-    let isLoadingAssets = $state(false);
 
-    $effect(() => {
-        if (!currentChar?.additionalAssets) return;
-        const pathsToLoad = currentChar.additionalAssets
-            .map((a) => a[1])
-            .filter((p): p is string => Boolean(p && !assetSrcMap[p]));
+    type AssetPreviewTarget = { assetId: string; category: AssetCategory };
 
-        if (pathsToLoad.length === 0) return;
+    function resolveAssetSrc(assetId: string, thumbnail = false) {
+        if (/^(https?:|data:|blob:|\/)/i.test(assetId)) {
+            return Promise.resolve(assetId);
+        }
+        return getFileSrc(assetId, thumbnail ? { thumbnail: true } : undefined);
+    }
 
-        isLoadingAssets = true;
-        getAssetsBatch(pathsToLoad, { size: "full" })
-            .then((map) => {
-                const updated = { ...assetSrcMap };
-                for (const [path, url] of map) {
-                    if (url && url !== "/none.webp") {
-                        updated[path] = url;
-                    }
+    type AssetPreviewRegistration = {
+        target: AssetPreviewTarget;
+        isNearViewport: boolean;
+        activeAssetId: string | null;
+        loadVersion: number;
+    };
+
+    const previewRegistrations = new Map<HTMLElement, AssetPreviewRegistration>();
+    const activePreviewRefs = new Map<string, number>();
+    let galleryEl = $state<HTMLDivElement | null>(null);
+    let previewObserver: IntersectionObserver | null = null;
+
+    function removeThumbnailSource(assetId: string) {
+        if (!assetSrcMap[assetId]) return;
+        const next = { ...assetSrcMap };
+        delete next[assetId];
+        assetSrcMap = next;
+    }
+
+    function deactivatePreview(registration: AssetPreviewRegistration) {
+        registration.loadVersion++;
+        const assetId = registration.activeAssetId;
+        if (!assetId) return;
+
+        registration.activeAssetId = null;
+        const nextRefCount = (activePreviewRefs.get(assetId) ?? 1) - 1;
+        if (nextRefCount > 0) {
+            activePreviewRefs.set(assetId, nextRefCount);
+        } else {
+            activePreviewRefs.delete(assetId);
+            removeThumbnailSource(assetId);
+        }
+    }
+
+    async function activatePreview(registration: AssetPreviewRegistration) {
+        const { assetId, category } = registration.target;
+        if (
+            category !== "image" ||
+            !assetId ||
+            registration.activeAssetId === assetId
+        ) return;
+
+        registration.activeAssetId = assetId;
+        activePreviewRefs.set(assetId, (activePreviewRefs.get(assetId) ?? 0) + 1);
+        if (assetSrcMap[assetId]) return;
+
+        const version = ++registration.loadVersion;
+        try {
+            const url = await resolveAssetSrc(assetId, true);
+            if (
+                version !== registration.loadVersion ||
+                !registration.isNearViewport ||
+                registration.activeAssetId !== assetId
+            ) return;
+            if (url && url !== "/none.webp") {
+                assetSrcMap = { ...assetSrcMap, [assetId]: url };
+            }
+        } catch (error) {
+            console.error("Failed to load asset thumbnail", error);
+        }
+    }
+
+    function getPreviewObserver() {
+        previewObserver ??= new IntersectionObserver(
+            (entries) => {
+                for (const entry of entries) {
+                    const registration = previewRegistrations.get(entry.target as HTMLElement);
+                    if (!registration) continue;
+                    const isNearViewport = entry.isIntersecting;
+                    if (registration.isNearViewport === isNearViewport) continue;
+                    registration.isNearViewport = isNearViewport;
+                    if (isNearViewport) void activatePreview(registration);
+                    else deactivatePreview(registration);
                 }
-                assetSrcMap = updated;
-            })
-            .catch((err) => {
-                console.error("Failed to batch load assets in modal", err);
-            })
-            .finally(() => {
-                isLoadingAssets = false;
-            });
-    });
+            },
+            {
+                root: galleryEl,
+                rootMargin: settingsStore.state.lowSpecMode ? "100px 0px" : "200px 0px",
+                threshold: 0
+            }
+        );
+        return previewObserver;
+    }
+
+    function observeAssetPreview(node: HTMLElement, initialTarget: AssetPreviewTarget) {
+        const registration: AssetPreviewRegistration = {
+            target: initialTarget,
+            isNearViewport: false,
+            activeAssetId: null,
+            loadVersion: 0
+        };
+        previewRegistrations.set(node, registration);
+        getPreviewObserver().observe(node);
+
+        return {
+            update(nextTarget: AssetPreviewTarget) {
+                if (
+                    nextTarget.assetId === registration.target.assetId &&
+                    nextTarget.category === registration.target.category
+                ) return;
+                deactivatePreview(registration);
+                registration.target = nextTarget;
+                if (registration.isNearViewport) void activatePreview(registration);
+            },
+            destroy() {
+                previewObserver?.unobserve(node);
+                deactivatePreview(registration);
+                previewRegistrations.delete(node);
+                if (previewRegistrations.size === 0) {
+                    previewObserver?.disconnect();
+                    previewObserver = null;
+                }
+            }
+        };
+    }
 
     // Processed and filtered list of assets
     let processedAssets = $derived.by(() => {
@@ -192,9 +288,36 @@
             assetId: item[1],
             ext,
             category: getAssetCategory(ext),
-            srcUrl: assetSrcMap[item[1]],
             isExcluded: currentChar?.prebuiltAssetExclude?.includes(item[1]) ?? false,
             defaultTag: getDefaultMacroTag(ext, item[0])
+        };
+    });
+
+    let inspectingSrcUrl = $state("");
+    let inspectingLoadVersion = 0;
+
+    $effect(() => {
+        const assetId = inspectingAsset?.assetId;
+        const version = ++inspectingLoadVersion;
+        inspectingSrcUrl = "";
+        if (!assetId) return;
+
+        resolveAssetSrc(assetId)
+            .then((url) => {
+                if (
+                    version === inspectingLoadVersion &&
+                    inspectingAsset?.assetId === assetId
+                ) {
+                    inspectingSrcUrl = url;
+                }
+            })
+            .catch((error) => {
+                console.error("Failed to load full asset preview", error);
+            });
+
+        return () => {
+            inspectingLoadVersion++;
+            inspectingSrcUrl = "";
         };
     });
 
@@ -689,7 +812,11 @@
         {/if}
 
         <!-- Workspace Gallery (Full Width Clean Layout) -->
-        <div class="flex-1 overflow-y-auto p-5 scrollbar-thin" onscroll={handleGalleryScroll}>
+        <div
+            bind:this={galleryEl}
+            class="flex-1 overflow-y-auto p-5 scrollbar-thin"
+            onscroll={handleGalleryScroll}
+        >
             {#if rawAssets.length === 0}
                 <!-- Empty State -->
                 <div class="flex flex-col items-center justify-center h-full min-h-[300px] text-center text-textcolor2 gap-4">
@@ -734,7 +861,10 @@
                             }}
                         >
                             <!-- Card Thumbnail Container -->
-                            <div class="relative w-full aspect-square bg-black/40 flex items-center justify-center overflow-hidden">
+                            <div
+                                class="relative w-full aspect-square bg-black/40 flex items-center justify-center overflow-hidden"
+                                use:observeAssetPreview={{ assetId, category }}
+                            >
                                 {#if category === "image" && srcUrl}
                                     <img src={srcUrl} alt={name} class="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" loading="lazy" />
                                 {:else if category === "image"}
@@ -892,6 +1022,7 @@
                                             type="button"
                                             class="w-12 h-12 rounded bg-black/40 border border-darkborderc flex items-center justify-center overflow-hidden cursor-pointer"
                                             onclick={() => { inspectingIndex = originalIndex; }}
+                                            use:observeAssetPreview={{ assetId, category }}
                                         >
                                             {#if category === "image" && srcUrl}
                                                 <img src={srcUrl} alt={name} class="w-full h-full object-cover" />
@@ -1103,24 +1234,24 @@
             </button>
 
             <!-- Media Preview -->
-            {#if inspectingAsset.category === "image" && inspectingAsset.srcUrl}
+            {#if inspectingAsset.category === "image" && inspectingSrcUrl}
                 <img
-                    src={inspectingAsset.srcUrl}
+                    src={inspectingSrcUrl}
                     alt={inspectingAsset.name}
                     class="max-h-[75vh] max-w-[85vw] object-contain rounded-xl shadow-2xl animate-in zoom-in-95 duration-150"
                 />
-            {:else if inspectingAsset.category === "audio" && inspectingAsset.srcUrl}
+            {:else if inspectingAsset.category === "audio" && inspectingSrcUrl}
                 <div class="flex flex-col items-center justify-center gap-6 p-8 bg-darkbg border border-darkborderc rounded-2xl shadow-2xl max-w-md w-full">
                     <div class="p-6 rounded-full bg-purple-500/20 text-purple-400">
                         <MusicIcon size={64} />
                     </div>
                     <!-- svelte-ignore a11y_media_has_caption -->
-                    <audio src={inspectingAsset.srcUrl} controls class="w-full" autoplay></audio>
+                    <audio src={inspectingSrcUrl} controls class="w-full" autoplay></audio>
                 </div>
-            {:else if inspectingAsset.category === "video" && inspectingAsset.srcUrl}
+            {:else if inspectingAsset.category === "video" && inspectingSrcUrl}
                 <!-- svelte-ignore a11y_media_has_caption -->
                 <video
-                    src={inspectingAsset.srcUrl}
+                    src={inspectingSrcUrl}
                     controls
                     class="max-h-[75vh] max-w-[85vw] rounded-xl shadow-2xl"
                     autoplay
