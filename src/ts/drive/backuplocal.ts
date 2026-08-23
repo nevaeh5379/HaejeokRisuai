@@ -50,6 +50,7 @@ import {
 } from "../storage/databaseAdapters.svelte";
 import { getSqlStorage } from "../storage/sqlStorageFactory";
 import { presetStore } from "../stores/domain/presetStore.svelte";
+import { decryptLegacyAccountBackup } from "./legacyBackupEncryption";
 
 const SQL_DOMAIN_ROOT_KEYS: Record<
   (typeof POSTGRES_DOMAINS)[number],
@@ -1114,26 +1115,30 @@ export function LoadLocalBackup() {
       const restoreBackupEntry = async (name: string, data: Uint8Array) => {
         currentEntryName = name;
         if (name === "encryption.risudat") {
+          let meta: typeof encryptionMeta;
           try {
-            const meta = JSON.parse(
-              new TextDecoder().decode(data),
-            ) as typeof encryptionMeta;
-            if (meta.type === "account" && meta.time) {
-              encryptionMeta.type = "account";
-              encryptionMeta.time = meta.time;
-            } else {
-              alertError(
-                "Invalid encryption metadata, will attempt to load database backup without decryption.",
-              );
-            }
-          } catch (e) {
-            console.error("Failed to parse encryption metadata:", e);
-            alertError(
-              "Failed to parse encryption metadata, will attempt to load database backup without decryption.",
+            meta = JSON.parse(new TextDecoder().decode(data));
+          } catch (error) {
+            console.error("Failed to parse encryption metadata:", error);
+            throw new Error(
+              "This backup is encrypted, but its encryption metadata is invalid.",
             );
           }
+
+          if (
+            meta.type !== "account" ||
+            typeof meta.time !== "number" ||
+            !Number.isFinite(meta.time) ||
+            meta.time <= 0
+          ) {
+            throw new Error(
+              "This backup is encrypted, but its encryption metadata is incomplete.",
+            );
+          }
+          encryptionMeta.type = "account";
+          encryptionMeta.time = meta.time;
         } else if (name === "database.risudat") {
-          pendingDatabase = data;
+          pendingDatabase = new Uint8Array(data);
         } else {
           const coldStorageKey = getColdStorageBackupKey(name);
           let handledAsColdStorage = false;
@@ -1359,19 +1364,16 @@ export function LoadLocalBackup() {
       let db = pendingDatabase;
       if (encryptionMeta.type === "account" && encryptionMeta.time) {
         try {
-          const key = (
-            await (
-              await fetch(
-                `https://sv.risuai.xyz/cryptokey?key=${encryptionMeta.time}`,
-              )
-            ).json()
-          ).key;
-          const decrypted = await decryptBuffer(db, key);
-          db = new Uint8Array(decrypted);
-        } catch (e) {
-          console.error("Failed to decrypt database backup:", e);
-          alertError(
-            "Failed to decrypt database backup, will attempt to load it without decryption.",
+          db = await decryptLegacyAccountBackup(
+            db,
+            encryptionMeta.time,
+            decryptBuffer,
+          );
+        } catch (error) {
+          console.error("Failed to decrypt database backup:", error);
+          const detail = error instanceof Error ? error.message : `${error}`;
+          throw new Error(
+            `This backup is encrypted and could not be decrypted. ${detail}`,
           );
         }
       }
