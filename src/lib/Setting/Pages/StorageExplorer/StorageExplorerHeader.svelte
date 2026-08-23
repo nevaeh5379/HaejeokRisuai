@@ -1,109 +1,76 @@
 <script lang="ts">
     import {
-        ChevronLeftIcon,
-        DatabaseIcon,
-        FolderArchiveIcon,
-        HardDriveIcon,
+        MenuIcon,
         RefreshCwIcon,
-        ServerIcon,
         XIcon
     } from '@lucide/svelte'
     import { language } from 'src/lang'
-    import { formatBytes } from './utils'
-    import type { NodeS3ServerConfig, NodeStorageSummary, ViewTarget } from './types'
+    import type { TabType, ViewTarget } from './types'
 
     interface Props {
+        currentTab: TabType
         viewTarget: ViewTarget
-        config: NodeS3ServerConfig | null
-        storageSummary: NodeStorageSummary | null
         loading: boolean
         busy: boolean
-        onSwitchTarget: (target: ViewTarget) => void
+        onToggleMobileSidebar?: () => void
         onRefresh: () => void
         onClose: () => void
     }
 
     const {
+        currentTab,
         viewTarget,
-        config,
-        storageSummary,
         loading,
         busy,
-        onSwitchTarget,
+        onToggleMobileSidebar,
         onRefresh,
         onClose
     }: Props = $props()
+
+    const targetLabel = $derived.by(() => {
+        if (viewTarget === 's3') return language.storageTargetS3 ?? 'S3 / RustFS'
+        if (viewTarget === 'azuresql') return language.storageAzureSql ?? 'Azure SQL'
+        return language.storageLocalFs ?? 'Local FS'
+    })
+
+    const tabLabel = $derived.by(() => {
+        if (currentTab === 'bots') return language.storageTabBots
+        if (currentTab === 'modules') return language.storageTabModules
+        if (currentTab === 'files') return language.storageTabAllFiles
+        if (currentTab === 'backend') return language.storageTabBackend
+        return ''
+    })
 </script>
 
-<header class="flex h-14 shrink-0 items-center justify-between border-b border-darkborderc bg-darkbg px-3 sm:px-5 py-2.5 rounded-t-none sm:rounded-t-2xl select-none">
-    <!-- Left: Navigation & Title -->
+<header class="flex h-14 shrink-0 items-center justify-between border-b border-darkborderc bg-darkbg px-3 sm:px-5 py-2.5 select-none">
+    <!-- Left: Mobile Menu Toggle & Breadcrumbs -->
     <div class="flex items-center gap-2 sm:gap-3 min-w-0">
-        <button
-            type="button"
-            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-darkborderc bg-darkbg hover:bg-selected/40 transition-colors cursor-pointer"
-            onclick={onClose}
-            title={language.storageClose ?? 'Close'}
-            aria-label="Close"
-        >
-            <ChevronLeftIcon class="h-5 w-5" />
-        </button>
-        <div class="flex items-center gap-2 min-w-0">
-            <HardDriveIcon class="h-5 w-5 text-blue-400 shrink-0 hidden sm:inline" />
-            <h2 class="truncate text-sm font-bold sm:text-lg">{language.storageExplorer}</h2>
+        {#if onToggleMobileSidebar}
+            <button
+                type="button"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-darkborderc bg-darkbg hover:bg-selected/40 transition-colors md:hidden cursor-pointer"
+                onclick={onToggleMobileSidebar}
+                title="Toggle Sidebar"
+                aria-label="Toggle Sidebar"
+            >
+                <MenuIcon class="h-4.5 w-4.5" />
+            </button>
+        {/if}
+
+        <!-- Breadcrumbs -->
+        <div class="flex items-center gap-2 min-w-0 text-xs sm:text-sm">
+            <span class="rounded-md px-2 py-0.5 font-bold uppercase text-[10px] sm:text-xs shrink-0 {viewTarget === 's3' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : (viewTarget === 'azuresql' ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30' : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30')}">
+                {targetLabel}
+            </span>
+            <span class="text-textcolor2">/</span>
+            <h3 class="truncate font-bold text-textcolor">
+                {tabLabel}
+            </h3>
         </div>
     </div>
 
-    <!-- Right: Backend Switcher Pill & Actions -->
-    <div class="flex items-center gap-1.5 sm:gap-2">
-        <!-- Target Storage Toggle Pill (S3 / Azure SQL / Local FS) -->
-        <div class="flex items-center rounded-lg border border-darkborderc bg-darkbg/90 p-0.5 text-xs">
-            {#if config?.enabled && config.storageType !== 'azuresql'}
-                <button
-                    type="button"
-                    class="flex items-center gap-1 sm:gap-1.5 rounded-md px-2 sm:px-2.5 py-1 transition-all cursor-pointer {viewTarget === 's3' ? 'bg-blue-600 text-white font-semibold shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
-                    onclick={() => onSwitchTarget('s3')}
-                    title={language.storageS3Rustfs}
-                >
-                    <ServerIcon class="h-3.5 w-3.5 shrink-0" />
-                    <span class="hidden md:inline">{language.storageS3Rustfs}</span>
-                    <span class="md:hidden">S3</span>
-                    <span class="rounded-full bg-black/30 px-1.5 py-0.2 text-[10px] hidden sm:inline">
-                        {formatBytes(storageSummary?.s3?.totalSizeBytes ?? 0)}
-                    </span>
-                </button>
-            {/if}
-
-            {#if config?.enabled && config.storageType === 'azuresql'}
-                <button
-                    type="button"
-                    class="flex items-center gap-1 sm:gap-1.5 rounded-md px-2 sm:px-2.5 py-1 transition-all cursor-pointer {viewTarget === 'azuresql' ? 'bg-sky-600 text-white font-semibold shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
-                    onclick={() => onSwitchTarget('azuresql')}
-                    title={language.storageAzureSql}
-                >
-                    <DatabaseIcon class="h-3.5 w-3.5 shrink-0" />
-                    <span class="hidden md:inline">{language.storageAzureSql}</span>
-                    <span class="md:hidden">Azure</span>
-                    <span class="rounded-full bg-black/30 px-1.5 py-0.2 text-[10px] hidden sm:inline">
-                        {formatBytes(storageSummary?.azuresql?.totalSizeBytes ?? 0)}
-                    </span>
-                </button>
-            {/if}
-
-            <button
-                type="button"
-                class="flex items-center gap-1 sm:gap-1.5 rounded-md px-2 sm:px-2.5 py-1 transition-all cursor-pointer {viewTarget === 'fs' ? 'bg-indigo-600 text-white font-semibold shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
-                onclick={() => onSwitchTarget('fs')}
-                title={language.storageLocalFs}
-            >
-                <FolderArchiveIcon class="h-3.5 w-3.5 shrink-0" />
-                <span class="hidden md:inline">{language.storageLocalFs}</span>
-                <span class="md:hidden">FS</span>
-                <span class="rounded-full bg-black/30 px-1.5 py-0.2 text-[10px] hidden sm:inline">
-                    {formatBytes(storageSummary?.localFs?.totalSizeBytes ?? 0)}
-                </span>
-            </button>
-        </div>
-
+    <!-- Right: Actions (Refresh, Close) -->
+    <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
         <!-- Refresh button -->
         <button
             type="button"

@@ -5,8 +5,7 @@
     import { alertConfirm, alertError, alertNormal } from 'src/ts/alert'
     import { getMimeType } from 'src/ts/media'
     import StorageExplorerHeader from './StorageExplorer/StorageExplorerHeader.svelte'
-    import StorageOverviewBanner from './StorageExplorer/StorageOverviewBanner.svelte'
-    import StorageTabNav from './StorageExplorer/StorageTabNav.svelte'
+    import StorageExplorerSidebar from './StorageExplorer/StorageExplorerSidebar.svelte'
     import BotAnalysisTab from './StorageExplorer/tabs/BotAnalysisTab.svelte'
     import ModuleAnalysisTab from './StorageExplorer/tabs/ModuleAnalysisTab.svelte'
     import BackendConfigTab from './StorageExplorer/tabs/BackendConfigTab.svelte'
@@ -22,6 +21,7 @@
         readImageFromTarget,
         runStorageAnalysis
     } from './StorageExplorer/utils'
+    import type { NodeBackupConfig } from 'src/ts/storage/nodePostgresStorage'
     import type {
         AssetStorageType,
         BotStorageInfo,
@@ -43,6 +43,7 @@
 
     let currentTab = $state<TabType>('bots')
     let viewTarget = $state<ViewTarget>('s3')
+    let mobileSidebarOpen = $state(false)
 
     let loading = $state(true)
     let busy = $state(false)
@@ -50,6 +51,7 @@
 
     // Storage summary (all storages)
     let storageSummary = $state<NodeStorageSummary | null>(null)
+    let backupConfig = $state<NodeBackupConfig | null>(null)
 
     // Backend config
     let config = $state<NodeS3ServerConfig | null>(null)
@@ -183,11 +185,26 @@
                 }
             }
 
+            try {
+                backupConfig = await storage.postgres.getBackupStatus()
+            } catch {
+                backupConfig = null
+            }
+
             await loadTargetAssets()
         } catch (error: any) {
             loadError = error?.message || `${error}`
         } finally {
             loading = false
+        }
+    }
+
+    async function refreshBackupConfig() {
+        try {
+            const storage = getNodeStorage()
+            backupConfig = await storage.postgres.getBackupStatus()
+        } catch {
+            backupConfig = null
         }
     }
 
@@ -603,131 +620,170 @@
 >
     <!-- Floating Window (Desktop) / Fullscreen (Mobile) -->
     <div
-        class="flex h-full w-full sm:h-[92vh] sm:max-h-[960px] sm:max-w-6xl md:max-w-7xl lg:max-w-[105rem] flex-col overflow-hidden rounded-none sm:rounded-2xl border-0 sm:border border-darkborderc bg-bgcolor text-textcolor shadow-2xl animate-in zoom-in-95 duration-200"
+        class="flex h-full w-full sm:h-[92vh] sm:max-h-[960px] sm:max-w-6xl md:max-w-7xl lg:max-w-[110rem] flex-row overflow-hidden rounded-none sm:rounded-2xl border-0 sm:border border-darkborderc bg-bgcolor text-textcolor shadow-2xl animate-in zoom-in-95 duration-200"
         onclick={(e) => e.stopPropagation()}
     >
-        <!-- Header with Target Storage Switcher -->
-        <StorageExplorerHeader
-            {viewTarget}
-            {config}
-            {storageSummary}
-            {loading}
-            {busy}
-            onSwitchTarget={switchViewTarget}
-            onRefresh={loadData}
-            onClose={close}
-        />
+        <!-- Desktop Left Sidebar (Visible on md+) -->
+        <div class="hidden md:flex md:w-64 lg:w-72 md:shrink-0 h-full">
+            <StorageExplorerSidebar
+                {currentTab}
+                {viewTarget}
+                {storageSummary}
+                {config}
+                {backupConfig}
+                botCount={botAnalysis.length}
+                moduleCount={moduleAnalysis.length}
+                fileCount={assetDetails?.totalObjects ?? 0}
+                orphanCount={orphanAssets.length}
+                {orphanSizeBytes}
+                {purgingLocal}
+                {cleaningOrphans}
+                {busy}
+                onSelectTab={(t) => (currentTab = t)}
+                onSwitchTarget={switchViewTarget}
+                onPurgeLocalFs={purgeLocalFsAssets}
+                onCleanOrphans={cleanOrphanAssets}
+            />
+        </div>
 
-        <!-- Storage Overview Summary Banner -->
-        <StorageOverviewBanner
-            {storageSummary}
-            {config}
-            {viewTarget}
-            botCount={botAnalysis.length}
-            moduleCount={moduleAnalysis.length}
-            orphanCount={orphanAssets.length}
-            {orphanSizeBytes}
-            {purgingLocal}
-            {cleaningOrphans}
-            {busy}
-            onPurgeLocalFs={purgeLocalFsAssets}
-            onCleanOrphans={cleanOrphanAssets}
-        />
-
-        <!-- Tab Navigation Bar -->
-        <StorageTabNav
-            {currentTab}
-            {viewTarget}
-            botCount={botAnalysis.length}
-            moduleCount={moduleAnalysis.length}
-            fileCount={assetDetails?.totalObjects ?? 0}
-            onSelectTab={(t) => currentTab = t}
-        />
-
-        <!-- Main Content Area -->
-        <main class="flex-1 overflow-y-auto p-3 sm:p-5 min-h-0">
-            {#if loadError}
-                <div class="mb-4 flex items-center gap-2 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-                    <CircleAlertIcon class="h-5 w-5 shrink-0" />
-                    <span>{loadError}</span>
-                </div>
-            {/if}
-
-            <!-- TAB 1: BOTS -->
-            {#if currentTab === 'bots'}
-                <BotAnalysisTab
-                    bots={botAnalysis}
-                    {thumbnailUrls}
-                    onLoadThumbnail={loadThumbnail}
-                    onSelectBot={(bot) => selectedBot = bot}
-                />
-            {/if}
-
-            <!-- TAB 2: MODULES -->
-            {#if currentTab === 'modules'}
-                <ModuleAnalysisTab
-                    modules={moduleAnalysis}
-                    {thumbnailUrls}
-                    onLoadThumbnail={loadThumbnail}
-                    onSelectModule={(mod) => selectedModule = mod}
-                />
-            {/if}
-
-            <!-- TAB 3: BACKEND CONFIG -->
-            {#if currentTab === 'backend'}
-                <BackendConfigTab
-                    {config}
-                    {storageSummary}
-                    {storageType}
-                    bind:endpoint
-                    bind:bucket
-                    bind:region
-                    bind:accessKeyId
-                    bind:secretAccessKey
-                    bind:forcePathStyle
-                    bind:autoCreateBucket
-                    bind:azureServer
-                    bind:azureDatabase
-                    bind:azureUser
-                    bind:azurePassword
-                    bind:azurePort
-                    {busy}
-                    {testingConnection}
-                    {migrating}
-                    {rollingBack}
-                    {purgingLocal}
-                    onSelectBackend={(type) => {
-                        storageType = type
-                        enabled = type !== 'fs'
-                    }}
-                    onTestConnection={testConnection}
-                    onApplyConfiguration={applyConfiguration}
-                    onMigrateToS3={migrateToS3}
-                    onRollbackToLocal={rollbackToLocal}
-                    onPurgeLocalFs={purgeLocalFsAssets}
-                />
-            {/if}
-
-            <!-- TAB 4: ALL FILES EXPLORER -->
-            {#if currentTab === 'files'}
-                <FilesExplorerTab
-                    {assetDetails}
-                    {orphanAssets}
+        <!-- Mobile Drawer Overlay Sidebar (< md) -->
+        {#if mobileSidebarOpen}
+            <!-- Backdrop for mobile drawer -->
+            <div
+                class="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs md:hidden"
+                onclick={() => (mobileSidebarOpen = false)}
+            ></div>
+            <!-- Drawer container -->
+            <div class="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] md:hidden shadow-2xl animate-in slide-in-from-left duration-200">
+                <StorageExplorerSidebar
+                    {currentTab}
                     {viewTarget}
-                    {selectedFileKeys}
-                    {resyncingCatalog}
+                    {storageSummary}
+                    {config}
+                    {backupConfig}
+                    botCount={botAnalysis.length}
+                    moduleCount={moduleAnalysis.length}
+                    fileCount={assetDetails?.totalObjects ?? 0}
+                    orphanCount={orphanAssets.length}
+                    {orphanSizeBytes}
+                    {purgingLocal}
+                    {cleaningOrphans}
                     {busy}
-                    {thumbnailUrls}
-                    onLoadThumbnail={loadThumbnail}
-                    onOpenPreview={openPreview}
-                    onToggleSelectFile={toggleSelectFile}
-                    onToggleSelectAll={toggleSelectAll}
-                    onDeleteSingleFile={deleteSingleFile}
-                    onDeleteSelectedFiles={deleteSelectedFiles}
-                    onResyncCatalog={resyncAssetCatalog}
+                    onSelectTab={(t) => {
+                        currentTab = t
+                        mobileSidebarOpen = false
+                    }}
+                    onSwitchTarget={(tgt) => {
+                        switchViewTarget(tgt)
+                        mobileSidebarOpen = false
+                    }}
+                    onPurgeLocalFs={purgeLocalFsAssets}
+                    onCleanOrphans={cleanOrphanAssets}
+                    onClose={() => (mobileSidebarOpen = false)}
                 />
-            {/if}
-        </main>
+            </div>
+        {/if}
+
+        <!-- Right Main Panel: Header + Content -->
+        <div class="flex flex-1 flex-col min-w-0 h-full overflow-hidden">
+            <!-- Header with Breadcrumb & Actions -->
+            <StorageExplorerHeader
+                {currentTab}
+                {viewTarget}
+                {loading}
+                {busy}
+                onToggleMobileSidebar={() => (mobileSidebarOpen = !mobileSidebarOpen)}
+                onRefresh={loadData}
+                onClose={close}
+            />
+
+            <!-- Main Content Area -->
+            <main class="flex-1 overflow-y-auto p-3 sm:p-5 min-h-0">
+                {#if loadError}
+                    <div class="mb-4 flex items-center gap-2 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+                        <CircleAlertIcon class="h-5 w-5 shrink-0" />
+                        <span>{loadError}</span>
+                    </div>
+                {/if}
+
+                <!-- TAB 1: BOTS -->
+                {#if currentTab === 'bots'}
+                    <BotAnalysisTab
+                        bots={botAnalysis}
+                        {thumbnailUrls}
+                        onLoadThumbnail={loadThumbnail}
+                        onSelectBot={(bot) => selectedBot = bot}
+                    />
+                {/if}
+
+                <!-- TAB 2: MODULES -->
+                {#if currentTab === 'modules'}
+                    <ModuleAnalysisTab
+                        modules={moduleAnalysis}
+                        {thumbnailUrls}
+                        onLoadThumbnail={loadThumbnail}
+                        onSelectModule={(mod) => selectedModule = mod}
+                    />
+                {/if}
+
+                <!-- TAB 3: BACKEND CONFIG -->
+                {#if currentTab === 'backend'}
+                    <BackendConfigTab
+                        {config}
+                        {storageSummary}
+                        {storageType}
+                        bind:endpoint
+                        bind:bucket
+                        bind:region
+                        bind:accessKeyId
+                        bind:secretAccessKey
+                        bind:forcePathStyle
+                        bind:autoCreateBucket
+                        bind:azureServer
+                        bind:azureDatabase
+                        bind:azureUser
+                        bind:azurePassword
+                        bind:azurePort
+                        {busy}
+                        {testingConnection}
+                        {migrating}
+                        {rollingBack}
+                        {purgingLocal}
+                        {backupConfig}
+                        onSelectBackend={(type) => {
+                            storageType = type
+                            enabled = type !== 'fs'
+                        }}
+                        onTestConnection={testConnection}
+                        onApplyConfiguration={applyConfiguration}
+                        onMigrateToS3={migrateToS3}
+                        onRollbackToLocal={rollbackToLocal}
+                        onPurgeLocalFs={purgeLocalFsAssets}
+                        onBackupUpdated={refreshBackupConfig}
+                    />
+                {/if}
+
+                <!-- TAB 4: ALL FILES EXPLORER -->
+                {#if currentTab === 'files'}
+                    <FilesExplorerTab
+                        {assetDetails}
+                        {orphanAssets}
+                        {viewTarget}
+                        {selectedFileKeys}
+                        {resyncingCatalog}
+                        {busy}
+                        {thumbnailUrls}
+                        onLoadThumbnail={loadThumbnail}
+                        onOpenPreview={openPreview}
+                        onToggleSelectFile={toggleSelectFile}
+                        onToggleSelectAll={toggleSelectAll}
+                        onDeleteSingleFile={deleteSingleFile}
+                        onDeleteSelectedFiles={deleteSelectedFiles}
+                        onResyncCatalog={resyncAssetCatalog}
+                    />
+                {/if}
+            </main>
+        </div>
     </div>
 </div>
 
