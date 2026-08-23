@@ -54,6 +54,24 @@ async function resolveAvatar(url: string | undefined): Promise<string> {
   }
 }
 
+function getFirstMessageText(
+  char: character | groupChat,
+  chat: { fmIndex?: number },
+): string {
+  if (isGroup(char)) return "";
+  const fmIndex = chat.fmIndex ?? -1;
+  const raw =
+    fmIndex === -1
+      ? char.firstMessage
+      : (char.alternateGreetings?.[fmIndex] ?? char.firstMessage);
+  return raw ?? "";
+}
+
+function isBlankMessage(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed === "" || trimmed === "{{none}}" || trimmed === "{{blank}}";
+}
+
 export interface CollectLogDataOptions extends MessageRangeOptions {
   /** Character index (defaults to the currently selected one) */
   characterIndex?: number;
@@ -88,25 +106,98 @@ export async function collectLogData(
 
   const avatarCache = new Map<string, string>();
 
-  let rawMessages: Message[] = chat.message ?? [];
-  // Range filtering
+  const firstMessageText = getFirstMessageText(char, chat);
+  const hasFirstMessage = !isGroup(char) && !isBlankMessage(firstMessageText);
+
+  interface RawItem {
+    msg: Message;
+    isFirstMessage: boolean;
+    chatIndex: number;
+  }
+
+  const allRawItems: RawItem[] = [];
+  if (hasFirstMessage) {
+    allRawItems.push({
+      msg: {
+        role: "char",
+        data: firstMessageText,
+        name: char.name,
+        chatId: "first-message",
+      },
+      isFirstMessage: true,
+      chatIndex: -1,
+    });
+  }
+
+  const chatMessages = chat.message ?? [];
+  for (let i = 0; i < chatMessages.length; i++) {
+    allRawItems.push({
+      msg: chatMessages[i],
+      isFirstMessage: false,
+      chatIndex: i,
+    });
+  }
+
+  let rawItems = allRawItems;
   if (options.singleMessage !== undefined) {
-    rawMessages = [rawMessages[options.singleMessage]].filter(Boolean);
-  } else {
-    const start = options.startIndex ?? 0;
-    const end =
-      options.endIndex !== undefined
-        ? options.endIndex + 1
-        : rawMessages.length;
-    rawMessages = rawMessages.slice(start, end);
+    if (options.singleMessage === -1) {
+      rawItems = allRawItems.filter((item) => item.isFirstMessage);
+    } else {
+      const matched = allRawItems.filter(
+        (item) =>
+          !item.isFirstMessage && item.chatIndex === options.singleMessage,
+      );
+      if (matched.length > 0) {
+        rawItems = matched;
+      } else if (
+        options.singleMessage >= 0 &&
+        options.singleMessage < allRawItems.length
+      ) {
+        rawItems = [allRawItems[options.singleMessage]];
+      } else {
+        rawItems = [];
+      }
+    }
+  } else if (
+    options.startIndex !== undefined ||
+    options.endIndex !== undefined
+  ) {
+    const startChatIdx = options.startIndex ?? -1;
+    const endChatIdx = options.endIndex;
+
+    rawItems = allRawItems.filter((item) => {
+      if (startChatIdx !== undefined) {
+        if (startChatIdx === -1) {
+          // Starts from first message, include all
+        } else {
+          if (item.isFirstMessage) return false;
+          if (item.chatIndex < startChatIdx) return false;
+        }
+      }
+      if (endChatIdx !== undefined) {
+        if (endChatIdx === -1) {
+          if (!item.isFirstMessage) return false;
+        } else {
+          if (!item.isFirstMessage && item.chatIndex > endChatIdx) return false;
+        }
+      }
+      return true;
+    });
   }
 
   const participants = new Set<string>();
 
   const messages: LogMessageData[] = [];
-  for (let i = 0; i < rawMessages.length; i++) {
+  for (let i = 0; i < rawItems.length; i++) {
     if (cancelled?.value) throw new Error("cancelled");
-    const msg = rawMessages[i];
+    const item = rawItems[i];
+    const msg = item.msg;
+    const isFm = item.isFirstMessage;
+    const chatID = isFm ? -1 : item.chatIndex;
+    const cbsConditions = {
+      firstmsg: isFm,
+      chatRole: msg.role,
+    };
 
     const name = resolveSpeakerName(msg, char);
     participants.add(name);
@@ -133,15 +224,23 @@ export async function collectLogData(
     // Render through the native parser pipeline ('notrim' keeps full HTML)
     let html = "";
     try {
-      html = await ParseMarkdown(msg.data ?? "", char, "notrim", i, {});
+      html = await ParseMarkdown(
+        msg.data ?? "",
+        char,
+        "notrim",
+        chatID,
+        cbsConditions,
+      );
     } catch (e) {
       console.error("[logexporter] ParseMarkdown failed:", e);
       html = `<p>${escapeHtml(msg.data ?? "")}</p>`;
     }
 
     messages.push({
-      key: `${chat.id ?? chatPage}-${i}`,
-      role: msg.role,
+      key: isFm
+        ? `${chat.id ?? chatPage}-fm`
+        : `${chat.id ?? chatPage}-${item.chatIndex}`,
+      role: msg.role as "user" | "char",
       name,
       html,
       text: htmlToText(html),

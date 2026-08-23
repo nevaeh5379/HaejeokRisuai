@@ -835,7 +835,7 @@
         {/if}
     </button>    
 {/if}
-{#if idx > -1 && !renderRawStreaming}
+{#if (idx > -1 || (firstMessage && !blankMessage)) && !renderRawStreaming}
     <button class="flex items-center hover:text-blue-500 transition-colors button-icon-export-from" onclick={() => {
         openLogExporterFrom(idx)
     }} title="이 메시지부터 로그 내보내기">
