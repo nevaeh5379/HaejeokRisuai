@@ -14,6 +14,7 @@ async function fixture(records = {}, options = {}) {
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, "http://localhost");
     if (url.pathname === "/ip4" || url.pathname === "/ip6") {
+      if (options.hangAddressLookup) return;
       response.end(url.pathname === "/ip4" ? (options.ipv4 ?? "203.0.113.4") : (options.ipv6 ?? "2001:db8::4"));
       return;
     }
@@ -56,14 +57,18 @@ async function fixture(records = {}, options = {}) {
   };
 }
 
-function run(env) {
+function run(env, timeoutMs = 5000) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [script.pathname], { env });
     let stdout = "";
     let stderr = "";
+    const timeout = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
     child.stdout.on("data", (chunk) => (stdout += chunk));
     child.stderr.on("data", (chunk) => (stderr += chunk));
-    child.on("close", (code) => resolve({ code, stdout, stderr }));
+    child.on("close", (code, signal) => {
+      clearTimeout(timeout);
+      resolve({ code, signal, stdout, stderr });
+    });
   });
 }
 
@@ -133,5 +138,43 @@ test("reports Cloudflare authentication failures", async () => {
     const result = await run(f.env);
     assert.equal(result.code, 1);
     assert.match(result.stderr, /authentication failed/);
+  } finally { await f.close(); }
+});
+
+test("rejects permanent configuration errors before entering the retry loop", async () => {
+  const f = await fixture();
+  try {
+    const result = await run({ ...f.env, CLOUDFLARE_ONCE: "false", CLOUDFLARE_UPDATE_INTERVAL: "invalid" });
+    assert.equal(result.code, 1);
+    assert.equal(result.signal, null);
+    assert.match(result.stderr, /UPDATE_INTERVAL must be an integer/);
+    assert.equal(f.calls.length, 0);
+  } finally { await f.close(); }
+});
+
+test("rejects invalid booleans and endpoint schemes", async (t) => {
+  const f = await fixture();
+  try {
+    for (const [name, env, message] of [
+      ["boolean", { CLOUDFLARE_IPV6: "yes" }, /IPV6 must be true or false/],
+      ["URL", { PUBLIC_IPV4_URL: "file:///etc/passwd" }, /must use HTTP or HTTPS/],
+    ]) {
+      await t.test(name, async () => {
+        const result = await run({ ...f.env, ...env });
+        assert.equal(result.code, 1);
+        assert.match(result.stderr, message);
+      });
+    }
+  } finally { await f.close(); }
+});
+
+test("aborts a stalled address lookup at the configured deadline", async () => {
+  const f = await fixture({}, { hangAddressLookup: true });
+  try {
+    const result = await run({ ...f.env, CLOUDFLARE_REQUEST_TIMEOUT: "1" }, 3000);
+    assert.equal(result.code, 1);
+    assert.equal(result.signal, null);
+    assert.match(result.stderr, /timed out after 1 seconds/);
+    assert.equal(f.calls.length, 0);
   } finally { await f.close(); }
 });

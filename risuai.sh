@@ -285,6 +285,13 @@ normalize_bool() {
     esac
 }
 
+is_safe_scalar() {
+    scalar_value=$1
+    # printf adds no newline, so any counted line feed came from the value.
+    [ "$(printf '%s' "$scalar_value" | wc -l | tr -d '[:space:]')" = 0 ] || return 1
+    ! printf '%s' "$scalar_value" | LC_ALL=C grep -q '[[:cntrl:]]'
+}
+
 normalize_hostname() {
     normalized_hostname=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
     case "$normalized_hostname" in *.) normalized_hostname=${normalized_hostname%.} ;; esac
@@ -294,6 +301,7 @@ normalize_hostname() {
 is_valid_hostname() {
     hostname_value=$1
     [ -n "$hostname_value" ] || return 1
+    is_safe_scalar "$hostname_value" || return 1
     [ "${#hostname_value}" -le 253 ] || return 1
     case "$hostname_value" in *.*) ;; *) return 1 ;; esac
     printf '%s\n' "$hostname_value" | grep -Eq '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$' || return 1
@@ -304,6 +312,7 @@ is_valid_hostname() {
 is_valid_proxy_network() {
     network_value=$1
     [ -n "$network_value" ] || return 1
+    is_safe_scalar "$network_value" || return 1
     [ "${#network_value}" -le 255 ] || return 1
     printf '%s\n' "$network_value" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_.-]*$'
 }
@@ -311,12 +320,14 @@ is_valid_proxy_network() {
 is_safe_credential() {
     credential_value=$1
     [ -n "$credential_value" ] || return 1
+    is_safe_scalar "$credential_value" || return 1
     printf '%s\n' "$credential_value" | grep -Eq '^[A-Za-z0-9._~-]+$'
 }
 
 is_valid_secret() {
     secret_value=$1
     [ -n "$secret_value" ] || return 1
+    is_safe_scalar "$secret_value" || return 1
     [ "$secret_value" = "$(printf '%s' "$secret_value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')" ] || return 1
     ! printf '%s' "$secret_value" | LC_ALL=C grep -q '[[:cntrl:]]'
 }
@@ -531,7 +542,9 @@ validate_saved_configuration() {
     is_safe_credential "$saved_secret" || { error "Missing or unsafe RUSTFS_SECRET_KEY in $validate_file"; return 1; }
     saved_id=$(read_env_value_from "$validate_file" RISUAI_INSTALLATION_ID)
     if [ "$saved_version" = 2 ] && [ -z "$saved_id" ]; then error "Schema 2 configuration is missing RISUAI_INSTALLATION_ID"; return 1; fi
-    if [ -n "$saved_id" ]; then printf '%s\n' "$saved_id" | grep -Eq '^[0-9a-f]{32}$' || { error "Invalid RISUAI_INSTALLATION_ID in $validate_file"; return 1; }; fi
+    if [ -n "$saved_id" ]; then
+        if ! is_safe_scalar "$saved_id" || ! printf '%s\n' "$saved_id" | grep -Eq '^[0-9a-f]{32}$'; then error "Invalid RISUAI_INSTALLATION_ID in $validate_file"; return 1; fi
+    fi
     saved_interval=$(env_value_or "$validate_file" DYNV6_UPDATE_INTERVAL 300)
     is_valid_integer_range "$saved_interval" 60 86400 || { error "Invalid DDNS interval in $validate_file"; return 1; }
     saved_ipv6=$(env_value_or "$validate_file" DYNV6_IPV6 false)
@@ -548,7 +561,7 @@ validate_saved_configuration() {
     fi
     if [ "$saved_mode:$saved_dns" = domain:cloudflare ]; then
         saved_zone=$(read_env_value_from "$validate_file" CLOUDFLARE_ZONE_ID)
-        printf '%s\n' "$saved_zone" | grep -Eq '^[0-9A-Fa-f]{32}$' || { error "Invalid saved Cloudflare Zone ID"; return 1; }
+        if ! is_safe_scalar "$saved_zone" || ! printf '%s\n' "$saved_zone" | grep -Eq '^[0-9A-Fa-f]{32}$'; then error "Invalid saved Cloudflare Zone ID"; return 1; fi
         [ -s "$cloudflare_token_file" ] || { error "The saved Cloudflare token is missing or empty"; return 1; }
     fi
     if [ "$saved_mode:$saved_proxy" = proxy:docker ]; then
@@ -1149,7 +1162,7 @@ manage_existing_installation() {
                 esac
             done
             if [ -n "$logs_service" ]; then
-                printf '%s\n' "$logs_service" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_.-]*$' || die "Invalid service name: $logs_service"
+                if ! is_safe_scalar "$logs_service" || ! printf '%s\n' "$logs_service" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_.-]*$'; then die "Invalid service name: $logs_service"; fi
                 expected_services | grep -Fx "$logs_service" >/dev/null 2>&1 || die "Unknown service for the saved mode: $logs_service"
             fi
             if [ "$logs_follow" = true ]; then
@@ -1423,7 +1436,7 @@ fi
 if [ "$mode:$dns_provider" = domain:cloudflare ]; then
     if [ -z "$cloudflare_zone_id" ] && [ "$saved_configuration_valid" = true ] && [ "$saved_mode" = domain ] && [ "$(env_value_or "$env_file" RISUAI_DNS_PROVIDER none)" = cloudflare ]; then cloudflare_zone_id=$(read_env_value_from "$env_file" CLOUDFLARE_ZONE_ID); fi
     if [ -z "$cloudflare_zone_id" ] && [ "$interactive" = true ]; then cloudflare_zone_id=$(prompt_line "Cloudflare Zone ID" ""); fi
-    printf '%s\n' "$cloudflare_zone_id" | grep -Eq '^[0-9A-Fa-f]{32}$' || die "Invalid Cloudflare Zone ID (expected 32 hexadecimal characters)"
+    if ! is_safe_scalar "$cloudflare_zone_id" || ! printf '%s\n' "$cloudflare_zone_id" | grep -Eq '^[0-9A-Fa-f]{32}$'; then die "Invalid Cloudflare Zone ID (expected 32 hexadecimal characters)"; fi
     if [ -z "$cloudflare_token" ] && [ -s "$cloudflare_token_file" ]; then cloudflare_token=$(sed -n '1p' "$cloudflare_token_file"); cloudflare_token_source=saved; fi
     if [ -z "$cloudflare_token" ] && [ "$interactive" = true ]; then cloudflare_token=$(prompt_secret "Cloudflare Zone-scoped DNS Write token"); cloudflare_token_source=prompt; fi
     is_valid_secret "$cloudflare_token" || die "A non-empty Cloudflare token is required"

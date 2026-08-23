@@ -3,9 +3,12 @@ import { readFile } from "node:fs/promises";
 
 const zoneId = process.env.CLOUDFLARE_ZONE_ID ?? "";
 const recordName = (process.env.CLOUDFLARE_RECORD_NAME ?? "").toLowerCase();
-const ipv6Enabled = process.env.CLOUDFLARE_IPV6 === "true";
-const once = process.env.CLOUDFLARE_ONCE === "true";
+const ipv6Setting = process.env.CLOUDFLARE_IPV6 ?? "false";
+const onceSetting = process.env.CLOUDFLARE_ONCE ?? "false";
+const ipv6Enabled = ipv6Setting === "true";
+const once = onceSetting === "true";
 const interval = Number(process.env.CLOUDFLARE_UPDATE_INTERVAL ?? "300");
+const requestTimeout = Number(process.env.CLOUDFLARE_REQUEST_TIMEOUT ?? "30");
 const apiBase = process.env.CLOUDFLARE_API_BASE ?? "https://api.cloudflare.com/client/v4";
 const ipv4Url = process.env.PUBLIC_IPV4_URL ?? "https://api.ipify.org";
 const ipv6Url = process.env.PUBLIC_IPV6_URL ?? "https://api6.ipify.org";
@@ -17,33 +20,72 @@ function fail(message) {
 
 function validateConfiguration() {
   if (!/^[0-9a-f]{32}$/i.test(zoneId)) fail("CLOUDFLARE_ZONE_ID must be a 32-character hexadecimal ID");
-  if (!recordName) fail("CLOUDFLARE_RECORD_NAME is required");
-  if (!Number.isInteger(interval) || interval < 60) fail("CLOUDFLARE_UPDATE_INTERVAL must be an integer of at least 60 seconds");
+  if (
+    recordName.length > 253 ||
+    !/^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(recordName)
+  ) {
+    fail("CLOUDFLARE_RECORD_NAME must be a valid fully qualified hostname");
+  }
+  if (ipv6Setting !== "true" && ipv6Setting !== "false") fail("CLOUDFLARE_IPV6 must be true or false");
+  if (onceSetting !== "true" && onceSetting !== "false") fail("CLOUDFLARE_ONCE must be true or false");
+  if (!Number.isInteger(interval) || interval < 60 || interval > 86400) {
+    fail("CLOUDFLARE_UPDATE_INTERVAL must be an integer from 60 to 86400 seconds");
+  }
+  if (!Number.isInteger(requestTimeout) || requestTimeout < 1 || requestTimeout > 600) {
+    fail("CLOUDFLARE_REQUEST_TIMEOUT must be an integer from 1 to 600 seconds");
+  }
+  for (const [name, value] of [
+    ["CLOUDFLARE_API_BASE", apiBase],
+    ["PUBLIC_IPV4_URL", ipv4Url],
+    ["PUBLIC_IPV6_URL", ipv6Url],
+  ]) {
+    let parsed;
+    try {
+      parsed = new URL(value);
+    } catch {
+      fail(`${name} must be an absolute HTTP(S) URL`);
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") fail(`${name} must use HTTP or HTTPS`);
+  }
 }
 
-async function responseText(response, description) {
-  const text = await response.text();
+async function requestText(url, options, description) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), requestTimeout * 1000);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const text = await response.text();
+    return { response, text };
+  } catch (error) {
+    if (controller.signal.aborted) fail(`${description} timed out after ${requestTimeout} seconds`);
+    fail(`${description} failed: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function responseText(response, text, description) {
   if (!response.ok) fail(`${description} failed with HTTP ${response.status}: ${text.slice(0, 300)}`);
   return text.trim();
 }
 
 async function getPublicAddress(url, family) {
-  const response = await fetch(url, { headers: { Accept: "text/plain" } });
-  const address = await responseText(response, `public IPv${family} lookup`);
+  const description = `public IPv${family} lookup`;
+  const { response, text } = await requestText(url, { headers: { Accept: "text/plain" } }, description);
+  const address = responseText(response, text, description);
   if (isIP(address) !== family) fail(`public IPv${family} lookup returned an invalid address: ${address}`);
   return address;
 }
 
 async function api(token, path, options = {}) {
-  const response = await fetch(`${apiBase}${path}`, {
+  const { response, text } = await requestText(`${apiBase}${path}`, {
     ...options,
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       ...(options.headers ?? {}),
     },
-  });
-  const text = await response.text();
+  }, "Cloudflare API request");
   let body;
   try {
     body = JSON.parse(text);
@@ -65,9 +107,9 @@ async function listRecords(token, type) {
 }
 
 async function updateOnce() {
-  validateConfiguration();
   const token = (await readFile(tokenFile, "utf8")).trim();
   if (!token) fail("The Cloudflare API token secret is empty");
+  if (!/^[A-Za-z0-9._-]+$/.test(token)) fail("The Cloudflare API token secret contains unsupported whitespace or characters");
 
   // Resolve and validate every requested address before making any DNS change.
   const addresses = { A: await getPublicAddress(ipv4Url, 4) };
@@ -106,6 +148,9 @@ async function updateOnce() {
 }
 
 async function main() {
+  // Permanent configuration errors must fail before entering the retry loop;
+  // otherwise NaN/negative intervals can become a zero-delay busy loop.
+  validateConfiguration();
   if (once) {
     await updateOnce();
     return;

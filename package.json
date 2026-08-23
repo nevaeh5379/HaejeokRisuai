@@ -21,6 +21,7 @@
     "check:bundle": "node scripts/check-initial-bundle.mjs",
     "test": "vitest run",
     "test:cloudflare-ddns": "node --test deploy/rustfs/update-cloudflare.node-test.mjs",
+    "test:risuai-installer": "node --test deploy/rustfs/risuai.node-test.mjs",
     "tauri": "tauri",
     "buildsite": "vite build --outDir dist",
     "runserver": "node server/node/server.cjs",
