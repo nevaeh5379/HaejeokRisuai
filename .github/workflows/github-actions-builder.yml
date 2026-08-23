@@ -137,17 +137,30 @@ jobs:
         run: |
           node .github/scripts/set-release-version.mjs "$BUILD_NUMBER"
 
-      - name: install pnpm
-        uses: pnpm/action-setup@v5
-        with:
-          version: 10.34.1
-
       - name: setup node
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+
+      - name: install pnpm
+        shell: bash
+        run: |
+          npm install --global pnpm@10.34.1
+          pnpm --version
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-${{ matrix.settings.target }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.settings.target }}-pnpm-store-
+            ${{ runner.os }}-pnpm-store-
 
       - name: install dependencies (ubuntu only)
         if: matrix.settings.platform == 'ubuntu-latest'
