@@ -15,7 +15,6 @@ type AlertData = {
     | "wait2"
     | "markdown"
     | "select"
-    | "login"
     | "tos"
     | "risu-tos"
     | "cardexport"

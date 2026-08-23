@@ -6,7 +6,7 @@
     import { ParseMarkdown } from '../../ts/parser/parser.svelte';
     import BarIcon from '../SideBars/BarIcon.svelte';
     import { ChevronRightIcon, User } from '@lucide/svelte';
-    import { hubURL, isCharacterHasAssets } from 'src/ts/characterCards';
+    import { isCharacterHasAssets } from 'src/ts/characterCards';
     import TextInput from '../UI/GUI/TextInput.svelte';
     import { aiLawApplies, openURL, getFetchLogs } from 'src/ts/globalApi.svelte';
     import Button from '../UI/GUI/Button.svelte';
@@ -31,7 +31,7 @@
     import {
         HAEJEOK_PRIVACY_URL,
         HAEJEOK_TERMS_URL,
-        RISU_SERVICE_PRIVACY_URL,
+        RISU_REALM_CONTENT_RULES_URL,
         RISU_SERVICE_TERMS_URL,
     } from "src/ts/legal";
 
@@ -181,16 +181,6 @@
     }
 </script>
 
-<svelte:window onmessage={async (e) => {
-    if(e.origin.startsWith("https://sv.risuai.xyz") || e.origin.startsWith("https://nightly.sv.risuai.xyz") || e.origin.startsWith("http://127.0.0.1") || e.origin === window.location.origin){
-        if(e.data.msg?.data?.vaild && $alertStore.type === 'login'){
-            $alertStore = {
-                type: 'none',
-                msg: JSON.stringify(e.data.msg)
-            }
-        }
-    }
-}}></svelte:window>
 
 {#if $alertStore.type !== 'none' &&  $alertStore.type !== 'toast' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs'}
     <div class="absolute w-full h-full z-50 bg-black/50 flex justify-center items-center" class:vis={ $alertStore.type === 'wait2'}>
@@ -230,7 +220,7 @@
                         }}>Privacy Notice</a>.
                     </div>
                     <div class="text-gray-500 mt-4 text-sm">
-                        Haejeok RisuAI is an independent fork. Optional RisuAI account, Hub, Realm, and related upstream services are operated separately and may require a separate acceptance.
+                        Haejeok RisuAI is an independent fork. RisuRealm and related upstream services are operated separately and may require a separate acceptance.
                     </div>
                 {:else}
                     <div class="text-textcolor">
@@ -238,10 +228,10 @@
                         <a role="button" tabindex="0" class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer" onclick={() => {
                             openURL(RISU_SERVICE_TERMS_URL)
                         }}>Terms of Service</a>
-                        and
+                        and the
                         <a role="button" tabindex="0" class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer" onclick={() => {
-                            openURL(RISU_SERVICE_PRIVACY_URL)
-                        }}>Privacy Policy</a>.
+                            openURL(RISU_REALM_CONTENT_RULES_URL)
+                        }}>RisuRealm Content Rules</a>.
                     </div>
                     <div class="text-gray-500 mt-4 text-sm">
                         These upstream services are not operated by the Haejeok RisuAI project.
@@ -390,11 +380,6 @@
                         {/each}
                     </datalist>
                 {/if}
-            {:else if $alertStore.type === 'login'}
-                <div class="fixed top-0 left-0 bg-black/50 w-full h-full flex justify-center items-center">
-                    <iframe src={hubURL + '/hub/login'} title="login" class="w-full h-full">
-                    </iframe>
-                </div>
             {:else if $alertStore.type === 'selectChar'}
                 <div class="flex w-full items-start flex-wrap gap-2 justify-start">
                     {#each characterStore.characters as char, i}

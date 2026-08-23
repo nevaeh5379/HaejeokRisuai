@@ -21,7 +21,6 @@ export interface alertData {
     | "wait2"
     | "markdown"
     | "select"
-    | "login"
     | "tos"
     | "risu-tos"
     | "cardexport"
@@ -145,20 +144,6 @@ export async function alertChatOptions() {
   await waitAlert();
 
   return parseInt(get(alertStoreImported).msg);
-}
-
-export async function alertLogin() {
-  if (!(await alertRisuServiceTOS())) {
-    return "";
-  }
-
-  alertStoreImported.set({
-    type: "login",
-    msg: "login",
-  });
-  await waitAlert();
-
-  return get(alertStoreImported).msg;
 }
 
 export async function alertSelect(msg: string[], display?: string) {

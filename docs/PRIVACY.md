@@ -2,76 +2,78 @@
 
 Effective date: 2026-08-23
 
-This notice describes privacy considerations for Haejeok RisuAI builds and the project's
-recommended self-hosted deployment. Haejeok RisuAI is an independent community fork of
-RisuAI and is not the operator of the original RisuAI online services.
+This notice describes privacy considerations for Haejeok RisuAI builds and the recommended
+self-hosted deployment. Haejeok RisuAI is an independent community fork and is not the
+operator of the original RisuAI online services.
 
 ## 1. Self-hosted data
 
 Haejeok RisuAI is primarily distributed as software. When you run it yourself, application
 data is stored on the device or infrastructure controlled by you or your server operator.
-In the recommended Docker deployment, persistent application data may be stored in
-PostgreSQL, assets may be stored in RustFS, and additional application state is stored in
-the configured save directory.
+In the recommended Docker deployment, persistent data may be stored in PostgreSQL, assets
+may be stored in RustFS, and additional state may be stored in the configured save directory.
 
-The Haejeok RisuAI project does not become the controller of a self-hosted database merely
-because it distributes the software. The person or organization operating a public instance
-is responsible for its own privacy notices, access controls, retention, and compliance.
+The Haejeok RisuAI project does not become the operator of a self-hosted database merely
+because it distributes the software. Anyone operating an instance for other people is
+responsible for their own privacy notice, access controls, retention, and compliance.
 
-## 2. Server logs
+## 2. No built-in Risu Account storage
+
+Haejeok RisuAI does not provide built-in Risu Account login, account storage, or account
+synchronization. The Haejeok client does not use Risu Account credentials as its application
+storage mechanism.
+
+If an external RisuAI-operated page such as RisuRealm asks you to authenticate, that takes
+place with the external service and is governed by that service's own policies.
+
+## 3. Server logs
 
 The Node server may write operational information to standard output, including connection
 information such as client IP addresses, timestamps, errors, and request-related diagnostics.
 Server operators decide how container or host logs are retained, exported, or deleted.
 
-## 3. Data sent to services you choose
+## 4. AI providers and services you choose
 
-When you configure an AI provider, cloud storage, authentication provider, or another
-integration, prompts, files, account information, model parameters, or other data may be
-sent to that provider as required for the feature you invoke. Haejeok RisuAI does not
-control how those third parties process data.
+When you configure an AI provider, storage provider, or another integration, prompts, files,
+model parameters, credentials, or other data may be sent to that provider as required for
+the feature you invoke. Haejeok RisuAI does not control how those third parties process data.
 
-Review the privacy policy of each provider before enabling it, especially before sending
-personal, confidential, regulated, or otherwise sensitive information.
+Review each provider's privacy policy before enabling it, especially before sending personal,
+confidential, regulated, or otherwise sensitive information.
 
-## 4. Original RisuAI online services
+## 5. RisuRealm and upstream services
 
-Optional features may connect to services operated by the original RisuAI maintainers,
-including RisuAI account, Hub, Realm, and related endpoints. Those services are separate
-from Haejeok RisuAI. Their own Terms of Service and Privacy Policy govern information sent
-to them.
+RisuRealm and related upstream endpoints are operated separately by the original RisuAI
+maintainers. When you open or use RisuRealm, the upstream service's own terms and rules apply:
 
-Haejeok RisuAI presents a separate upstream-service notice before supported account,
-Hub, or Realm flows so that this distinction is visible to users.
+- https://sv.risuai.xyz/hub/tos
+- https://realm.risuai.net/help/content-rules
 
-## 5. Browser and application storage
+Information submitted directly to those services is handled by their operators rather than
+by the Haejeok RisuAI project.
 
-The application may store preferences, acceptance records, cached assets, credentials,
-and application state using browser storage, local files, or platform-specific application
-storage. Deleting the application alone may not remove server-side or third-party data.
+## 6. Local application storage
 
-## 6. Retention and deletion
+The application may store preferences, legal acceptance records, cached assets, credentials
+for providers you configure, and application state using browser storage, local files, or
+platform-specific storage. Removing the application may not remove data held by a separate
+self-hosted server or third-party provider.
+
+## 7. Retention and deletion
 
 For self-hosted deployments, the server operator controls retention. Removing data may
-require deleting records from PostgreSQL, objects from RustFS, files in the save directory,
-backups, and retained logs. Data previously sent to third-party services must be managed
-under those services' own deletion and retention mechanisms.
+require deleting PostgreSQL records, RustFS objects, files in the save directory, backups,
+and retained logs. Data submitted to third-party or upstream services must be managed using
+those services' own deletion and retention mechanisms.
 
-## 7. Security
+## 8. Security, changes, and contact
 
-No software or network service can guarantee absolute security. Protect administrative
-interfaces, database credentials, RustFS credentials, API keys, backups, and reverse-proxy
-configuration. Do not expose PostgreSQL or storage administration interfaces publicly
-unless you understand and secure the resulting risk.
-
-## 8. Changes and contact
+Protect administrative interfaces, database and RustFS credentials, API keys, backups, and
+reverse-proxy configuration. No software or network service can guarantee absolute security.
 
 This notice may be updated as the project changes. Material revisions should update the
-effective date above.
-
-For non-sensitive privacy questions about the Haejeok RisuAI software distribution, use
-the GitHub repository's maintainer channels. Do not post personal data, credentials, private
-prompts, or security-sensitive details in a public issue.
+effective date above. For non-sensitive questions, use the Haejeok RisuAI repository's
+maintainer channels and do not post personal data or credentials publicly.
 
 Operators who make a Haejeok RisuAI instance available to other people should publish a
 privacy notice appropriate to their own deployment and jurisdiction. This document is a

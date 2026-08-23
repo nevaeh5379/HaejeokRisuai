@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { BookIcon, FlagIcon, ImageIcon, PaperclipIcon, SmileIcon, TrashIcon } from "@lucide/svelte";
+    import { BookIcon, FlagIcon, ImageIcon, PaperclipIcon, SmileIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import { alertConfirm, alertInput, alertNormal } from "src/ts/alert";
     import { hubURL, type hubType, downloadRisuHub, getRealmInfo } from "src/ts/characterCards";
@@ -95,24 +95,6 @@
             })}>
                 <FlagIcon />
             </button>
-            {#if (settingsStore.state.account?.token?.split('-') ?? [])[1] === openedData.creator}
-                <button class="text-textcolor2 hover:text-red-500" onclick={(async (e) => {
-                    e.stopPropagation()
-                    const conf = await alertConfirm('Do you want to remove this character from Realm?')
-                    if(conf){
-                        const da = await fetch(hubURL + '/hub/remove', {
-                            method: "POST",
-                            body: JSON.stringify({
-                                id: openedData.id,
-                                token: settingsStore.state.account?.token
-                            })
-                        })
-                        alertNormal(await da.text())
-                    }
-                })}>
-                    <TrashIcon />
-                </button>
-            {/if}
             <button class="text-textcolor2 hover:text-green-500" onclick={(async (e) => {
                 e.stopPropagation()
                 await navigator.clipboard.writeText(`https://realm.risuai.net/character/${openedData.id}`)

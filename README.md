@@ -48,9 +48,10 @@ You can get detailed information on https://github.com/kwaroran/Risuai/wiki (Wor
 - [Haejeok RisuAI Terms of Use](docs/TERMS.md)
 - [Haejeok RisuAI Privacy Notice](docs/PRIVACY.md)
 
-Haejeok RisuAI is an independent fork. Optional RisuAI account, Hub, Realm, and related
-upstream services are operated separately and remain subject to the original service's
-Terms of Service and Privacy Policy.
+Haejeok RisuAI is an independent fork and does not provide built-in Risu Account login or
+account synchronization. RisuRealm and related upstream services are operated separately;
+when using them, review the [original RisuAI service terms](https://sv.risuai.xyz/hub/tos)
+and the [RisuRealm Content Rules](https://realm.risuai.net/help/content-rules).
 
 ## Installation
 

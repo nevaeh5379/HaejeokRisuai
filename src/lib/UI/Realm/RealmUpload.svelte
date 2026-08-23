@@ -5,14 +5,6 @@
         onclick?.(e)
     }}>
         
-        {#if !settingsStore.state.account}
-            <span class="font-bold text-2xl w-full">You must login to Risu Account upload to RisuRealm</span>
-            <span class="text-textcolor2">You can login in app settings 🡲 account</span>
-            <button onclick={async () => {
-                close()
-            }} class="text-textcolor mt-2 text-lg bg-transparent border-solid border-1 border-borderc p-4 hover:bg-blue-800 transition-colors cursor-pointer">OK</button>
-            
-        {:else}
         <h1 class="font-bold text-2xl w-full">
             <span>
                 Share {char.name} to {language.hub}
@@ -100,7 +92,6 @@
                 {language.shareCloud}
             {/if}
         </Button>
-        {/if}
 
     </div>
 </div>
@@ -112,7 +103,6 @@
     import { alertError } from "src/ts/alert";
     import { shareRisuHub2 } from "src/ts/characterCards";
     import { type character } from "src/ts/storage/database.svelte";
-    import { settingsStore } from 'src/ts/stores/domain';
     import TextInput from "../GUI/TextInput.svelte";
     import Button from "../GUI/Button.svelte";
     import SelectInput from "../GUI/SelectInput.svelte";

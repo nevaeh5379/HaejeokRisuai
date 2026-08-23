@@ -14,7 +14,6 @@ import {
   compress as fflateCompress,
   decompress as fflateDecompress,
 } from "fflate";
-import { fetchProtectedResource } from "../sionyw";
 import { alertClear, alertConfirm, alertError, alertWait } from "../alert";
 import { language } from "src/lang";
 import type { Database } from "../storage/database.svelte";
@@ -46,31 +45,8 @@ async function decompress(data: Uint8Array) {
   });
 }
 
-export async function getColdStorageItem(
-  key: string,
-  opts: {
-    accountFallback?: boolean;
-  } = {},
-) {
-  if (forageStorage.isAccount && !opts.accountFallback) {
-    const d = await fetchProtectedResource("/hub/account/coldstorage", {
-      method: "GET",
-      headers: {
-        "x-risu-key": key,
-      },
-    });
-
-    if (d.status === 200) {
-      const buf = await d.arrayBuffer();
-      const text = new TextDecoder().decode(
-        await decompress(new Uint8Array(buf)),
-      );
-      return JSON.parse(text);
-    }
-    return await getColdStorageItem(key, {
-      accountFallback: true,
-    });
-  } else if (isNodeServer) {
+export async function getColdStorageItem(key: string) {
+  if (isNodeServer) {
     try {
       const storage = forageStorage.realStorage as NodeStorage;
       if (storage.postgres.isEnabled()) {
@@ -141,47 +117,11 @@ async function compressColdStorageValue(
   }
 }
 
-export async function setAccountColdStorageItem(
-  key: string,
-  value: any,
-): Promise<boolean> {
-  const compressed = await compressColdStorageValue(value);
-  if (!compressed) {
-    return false;
-  }
-
-  try {
-    const res = await fetchProtectedResource("/hub/account/coldstorage", {
-      method: "POST",
-      headers: {
-        "x-risu-key": key,
-        "content-type": "application/octet-stream",
-      },
-      body: compressed as any,
-    });
-    if (res.status !== 200) {
-      console.error(
-        "Error setting cold storage item:",
-        await res.text().catch(() => "unknown"),
-      );
-      return false;
-    }
-    return true;
-  } catch (error) {
-    console.error("Cold storage account write failed:", error);
-    return false;
-  }
-}
-
 export async function setColdStorageItem(
   key: string,
   value: any,
 ): Promise<boolean> {
   console.log("setting cold storage item", key);
-
-  if (forageStorage.isAccount) {
-    return await setAccountColdStorageItem(key, value);
-  }
 
   if (isNodeServer) {
     try {
@@ -242,19 +182,7 @@ export async function setColdStorageItem(
 }
 
 export async function listColdStorageItems(): Promise<{ items: string[] }> {
-  if (forageStorage.isAccount) {
-    const d = await fetchProtectedResource("/hub/account/coldstorage", {
-      method: "GET",
-      headers: {
-        "x-risu-key": "@list-keys",
-      },
-    });
-
-    if (d.status === 200) {
-      return await d.json();
-    }
-    return null;
-  } else if (isNodeServer) {
+  if (isNodeServer) {
     const storage = forageStorage.realStorage as NodeStorage;
     if (storage.postgres.isEnabled()) {
       return await storage.postgres.listColdStorageItems();
@@ -293,7 +221,7 @@ export async function listColdStorageItems(): Promise<{ items: string[] }> {
 
 export async function cleanColdStorage() {
   const actualUsedKeys = await listColdDataKeys();
-  if (isNodeServer && !forageStorage.isAccount) {
+  if (isNodeServer) {
     const storage = forageStorage.realStorage as NodeStorage;
     if (storage.postgres.isEnabled()) {
       const deleted = await storage.postgres.pruneColdStorage(actualUsedKeys);
@@ -318,7 +246,7 @@ export async function cleanColdStorage() {
     unusedKeys,
   );
 
-  if (forageStorage.isAccount || isNodeServer) {
+  if (isNodeServer) {
     await removeColdStorageItems(unusedKeys);
   } else {
     for (let i = 0; i < unusedKeys.length; i++) {
@@ -334,26 +262,7 @@ export async function cleanColdStorage() {
 }
 
 async function removeColdStorageItems(keys: string[]) {
-  if (forageStorage.isAccount) {
-    try {
-      const res = await fetchProtectedResource("/hub/account/coldstorage", {
-        method: "POST",
-        headers: {
-          "x-risu-key": "remove",
-          "x-action": "remove",
-        },
-        body: JSON.stringify({ keys }),
-      });
-      if (res.status !== 200) {
-        console.error(
-          "Error removing cold storage item:",
-          await res.text().catch(() => "unknown"),
-        );
-      }
-    } catch (error) {
-      console.error("Cold storage account remove failed:", error);
-    }
-  } else if (isNodeServer) {
+  if (isNodeServer) {
     try {
       const storage = forageStorage.realStorage as NodeStorage;
       if (storage.postgres.isEnabled()) {

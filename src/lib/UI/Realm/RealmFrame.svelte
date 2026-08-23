@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { alertMd } from "src/ts/alert";
+    import { alertMd, alertRisuServiceTOS } from "src/ts/alert";
     import { shareRealmCardData } from "src/ts/realm";
     import { downloadPreset } from "src/ts/storage/database.svelte";
     import { characterStore, settingsStore, moduleStore } from 'src/ts/stores/domain';
@@ -11,8 +11,6 @@
         $ShowRealmFrameStore = ''
     }
     let iframe: HTMLIFrameElement = $state(null)
-    const tk = settingsStore.state?.account?.token;
-    const id = settingsStore.state?.account?.id
     let loadingStage = $state(0)
     let pongGot = false
 
@@ -51,6 +49,11 @@
     }
 
     onMount(async () => {
+        if (!(await alertRisuServiceTOS())) {
+            close()
+            return
+        }
+
         window.addEventListener('message', pmfunc)
 
         let data:{
@@ -96,15 +99,16 @@
     })
 
     const getUrl = () => {
-        let url = tk ? `https://realm.risuai.net/upload?token=${tk}&token_id=${id}` : 'https://realm.risuai.net/upload'
+        const url = new URL('https://realm.risuai.net/upload')
         if($ShowRealmFrameStore.startsWith('preset') || $ShowRealmFrameStore.startsWith('module')){
             //TODO, add preset edit
         }
         else if(characterStore.characters[$selectedCharID].type === 'character' && characterStore.characters[$selectedCharID].realmId){
-            url += `&edit=${characterStore.characters[$selectedCharID].realmId}&edit-type=normal`
+            url.searchParams.set('edit', characterStore.characters[$selectedCharID].realmId)
+            url.searchParams.set('edit-type', 'normal')
         }
-        url += '#noLayout'
-        return url
+        url.hash = 'noLayout'
+        return url.toString()
     }
 
     onDestroy(() => {

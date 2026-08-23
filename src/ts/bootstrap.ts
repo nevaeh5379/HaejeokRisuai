@@ -44,7 +44,6 @@ import {
   oldJailbreak,
   oldMainPrompt,
 } from "./storage/defaultPrompts";
-import { loadRisuAccountData } from "./drive/accounter";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
 import { changeLanguage, language } from "src/lang";
@@ -273,23 +272,14 @@ export async function loadData() {
           },
         )
         .catch(() => undefined);
-      const accountReady = (async () => {
-        if (isNodeServer && (await forageStorage.checkAccountSync()))
-          await forageStorage.checkAccountSync();
-        if (getDatabase().account)
-          await loadRisuAccountData().catch(() => undefined);
-      })();
-      await Promise.all([
-        presetReady,
-        pluginsReady,
-        serviceWorkerReady,
-        accountReady,
-      ]);
+      await Promise.all([presetReady, pluginsReady, serviceWorkerReady]);
       try {
-        //@ts-expect-error navigator.standalone is iOS Safari non-standard property, not in Navigator interface
+        const standaloneNavigator = window.navigator as Navigator & {
+          standalone?: boolean;
+        };
         const isInStandaloneMode =
           window.matchMedia("(display-mode: standalone)").matches ||
-          window.navigator.standalone ||
+          standaloneNavigator.standalone === true ||
           document.referrer.includes("android-app://");
         if (isInStandaloneMode) {
           await navigator.storage.persist();
@@ -646,7 +636,7 @@ async function cleanChunks(
 ) {
   const cleanColdStorage = options.cleanColdStorage ?? false;
   const db = getDatabase();
-  if (isNodeServer || db.account?.useSync) {
+  if (isNodeServer) {
     return;
   }
   if (db.coldstorage && !cleanColdStorage) {

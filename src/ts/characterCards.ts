@@ -65,7 +65,6 @@ import { PngChunk } from "./pngChunk";
 import type { OnnxModelFiles } from "./process/transformers";
 import {
   CharXImporter,
-  CharXSkippableChecker,
   CharXWriter,
 } from "./process/processzip";
 import {
@@ -75,7 +74,6 @@ import {
 } from "./process/modules";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
-import { AccountStorage } from "./storage/accountStorage";
 import { NodeStorage } from "./storage/nodeStorage";
 import { hubURL } from "./hub";
 
@@ -147,52 +145,8 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
       msg: "Loading... (Reading)",
     });
 
-    let charXMode: "normal" | "skippable" | "signal" = "normal";
-    let signal = "";
-    if (forageStorage.realStorage instanceof AccountStorage) {
-      if (f.data instanceof ReadableStream) {
-        const tee = f.data.tee();
-        const reader = tee[0].getReader();
-        f.data = tee[1];
-        const chunks: Uint8Array[] = [];
-        let done = false;
-        let readedBytes = 0;
-        while (!done) {
-          const r = await reader.read();
-          readedBytes += r.value ? r.value.length : 0;
-          if (r.done) {
-            done = true;
-          } else {
-            chunks.push(r.value);
-          }
-          alertWait(`Loading... (Reading) ${readedBytes} Bytes`);
-        }
-        let offset = 0;
-        const uint8 = new Uint8Array(readedBytes);
-        for (const chunk of chunks) {
-          uint8.set(chunk, offset);
-          offset += chunk.length;
-        }
-        const v = await CharXSkippableChecker(uint8);
-        signal = v.hash;
-        charXMode = v.success ? "skippable" : "signal";
-      } else {
-        const rsp = new Response(f.data as any);
-        f.data = new Uint8Array(await rsp.arrayBuffer());
-        const v = await CharXSkippableChecker(f.data);
-        signal = v.hash;
-        charXMode = v.success ? "skippable" : "signal";
-      }
-    }
-
     const importer = new CharXImporter();
     importer.alertInfo = true;
-    if (charXMode === "skippable") {
-      importer.skipSaving = true;
-    }
-    if (charXMode === "signal") {
-      importer.hashSignal = signal;
-    }
     await importer.parse(f.data);
     const cardData = importer.cardData;
     if (!cardData) {
@@ -316,32 +270,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
 
       readedPngChunks++;
 
-      if (db.account?.useSync && f.lightningRealmImport) {
-        const id = await hasher(assetData);
-        const xid = "assets/" + id + ".png";
-        queueFetchKey.push(assetIndex);
-        queueFetchData.push(assetData);
-        queueFetch.push(fetch("https://sv.risuai.xyz/rs/" + xid));
-        assets[assetIndex] = "xid:" + xid;
-        if (queueFetch.length > 10) {
-          const res = await Promise.all(queueFetch);
-          for (let i = 0; i < res.length; i++) {
-            if (res[i].status !== 200) {
-              const assetId = await saveAsset(queueFetchData[i]);
-              assets[queueFetchKey[i]] = assetId;
-            } else {
-              assets[queueFetchKey[i]] = assets[queueFetchKey[i]].replace(
-                "xid:",
-                "",
-              );
-            }
-          }
-          queueFetch = [];
-          queueFetchKey = [];
-          queueFetchData = [];
-        }
-        continue;
-      }
+
 
       const assetId = await saveAsset(assetData);
       assets[assetIndex] = assetId;
@@ -2148,39 +2077,7 @@ export async function shareRisuHub2(
     openURL(
       `https://realm.risuai.net/hub/realm/upload#filedata=${encodeURIComponent(dat)}`,
     );
-
-    let testMode = true;
-    if (testMode) {
-      return;
-    }
-
-    const fetchPromise = fetch(hubURL + "/hub/realm/upload", {
-      method: "POST",
-      body: writer.buf.buffer as any,
-      headers: {
-        "Content-Type": "image/png",
-        "x-risu-api-version": "4",
-        "x-risu-token": getDatabase()?.account?.token,
-        "x-risu-username": arg.anon ? "" : getDatabase()?.account?.id,
-        "x-risu-debug": "true",
-        "x-risu-update-id": arg.update ? (char.realmId ?? "null") : "null",
-      },
-    });
-
-    const res = await fetchPromise;
-
-    if (res.status !== 200) {
-      alertError(await res.text());
-    } else {
-      const resJSON = await res.json();
-      alertMd(resJSON.message);
-      const currentChar = getCurrentCharacter();
-      if (currentChar.type === "group") {
-        return;
-      }
-      currentChar.realmId = resJSON.id;
-      setCurrentCharacter(currentChar);
-    }
+    return;
   } catch (error) {
     alertError(error);
   }

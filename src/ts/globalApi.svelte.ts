@@ -57,7 +57,6 @@ import {
   oldJailbreak,
   oldMainPrompt,
 } from "./storage/defaultPrompts";
-import { loadRisuAccountData } from "./drive/accounter";
 import { decodeRisuSave, encodeRisuSaveLegacy } from "./storage/risuSave";
 import { AutoStorage } from "./storage/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
@@ -69,7 +68,6 @@ import { startObserveDom } from "./observer.svelte";
 import { updateGuisize } from "./gui/guisize";
 import { initMobileGesture } from "./hotkey";
 import { fetch as TauriHTTPFetch } from "@tauri-apps/plugin-http";
-import type { AccountStorage } from "./storage/accountStorage";
 import { isTauri, isNodeServer } from "./platform";
 import { isLocalNetworkUrl } from "./network/localNetwork";
 import {
@@ -368,9 +366,6 @@ export async function getFileSrc(
       }
     }
     return convertFileSrc(loc);
-  }
-  if (forageStorage.isAccount && loc.startsWith("assets")) {
-    return hubURL + `/rs/` + loc + (isThumb ? "?thumb=1" : "");
   }
   if (isNodeServer || forageStorage.realStorage instanceof NodeStorage) {
     if (isThumb) {
