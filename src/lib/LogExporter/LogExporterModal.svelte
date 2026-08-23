@@ -313,7 +313,8 @@
 <svelte:window bind:innerWidth={windowWidth} onkeydown={handleKeydown} />
 
 {#if logExporterStore.isOpen}
-    <div class="fixed inset-0 z-50 flex flex-col bg-bgcolor text-textcolor" transition:fade={{ duration: 120 }}>
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3">
+        <div class="flex flex-col w-[80vw] h-[80vh] bg-bgcolor text-textcolor rounded-2xl shadow-2xl border border-darkborderc overflow-hidden" transition:fade={{ duration: 120 }}>
         <!-- Top bar -->
         <div class="flex items-center gap-3 px-4 py-3 border-b border-darkborderc bg-darkbg shrink-0">
             <div class="w-7 h-7 rounded-md bg-darkbutton border border-darkborderc flex items-center justify-center">
@@ -524,6 +525,7 @@
                     {/if}
                 </div>
             {/if}
+        </div>
         </div>
     </div>
 {/if}

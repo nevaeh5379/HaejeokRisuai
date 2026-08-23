@@ -11,6 +11,7 @@
     "dev": "vite",
     "dev:node": "node scripts/dev-node.mjs",
     "dev:server": "node scripts/dev-server.mjs",
+    "dev:node-all": "node scripts/dev-node-all.mjs",
     "dev:storage": "docker compose -f docker-compose.dev.yml up -d",
     "dev:storage:down": "docker compose -f docker-compose.dev.yml down",
     "build": "vite build --sourcemap",
