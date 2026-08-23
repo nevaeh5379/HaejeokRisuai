@@ -21,6 +21,7 @@
         LogExporterSettings,
         LogMessageData,
     } from 'src/ts/logexporter/types'
+    import type { character, groupChat } from 'src/ts/storage/database.svelte'
 
     // ── Responsive ───────────────────────────────────────────────────────
     let windowWidth = $state(typeof window !== 'undefined' ? window.innerWidth : 1280)
@@ -30,6 +31,7 @@
     let isLoading = $state(true)
     let loadError = $state('')
     let charId = $state('')
+    let currentChar = $state<character | groupChat | undefined>(undefined)
     let settings = $state<LogExporterSettings>(mergeWithDefaults(undefined))
     let excludedParticipants = $state<string[]>([])
     let allMessages = $state<LogMessageData[]>([])
@@ -63,6 +65,8 @@
         charInfo,
         messages: visibleMessages,
         participants: new Set(visibleMessages.map((m) => m.name)),
+        characterId: charId,
+        character: currentChar,
     })
     const hasSelection = $derived(selectedIndices.size > 0)
     const isBasicFormat = $derived(settings.format === 'basic')
@@ -86,6 +90,7 @@
             })
             charInfo = data.charInfo
             allMessages = data.messages
+            currentChar = data.character
 
             charId = data.characterId ?? ''
             const saved = await loadCharSettings(charId)
@@ -263,6 +268,23 @@
         }
     }
 
+    async function handleExportTextOrMarkdown(action: 'copy' | 'save') {
+        try {
+            startProgress('내보내기 생성 중...', 1)
+            const result = await generateExport(viewData, settings, palette)
+            endProgress()
+            if (action === 'copy') {
+                const ok = await copyToClipboard(result.content)
+                if (!ok) console.error('[logexporter] Clipboard copy failed')
+            } else {
+                await saveAsFile(exportFilename(result.extension), result.content)
+            }
+        } catch (e) {
+            console.error(e)
+            endProgress()
+        }
+    }
+
     async function handleBackup() {
         try {
             const payload = JSON.stringify({ type: 'risuLogExporter', ver: 1, settings, messages: allMessages })
@@ -413,23 +435,25 @@
                     <!-- Scaled preview -->
                     <div bind:this={viewportEl} class="flex-1 overflow-auto p-6 relative" style="background:{backgroundColor};">
                         {#if isBasicFormat}
-                            <div bind:this={documentEl} class="mx-auto origin-top" style="width:{viewWidth}px;transform:scale({previewScale});margin-bottom:{Math.max(0, documentHeight * (previewScale - 1))}px;">
-                                <LogContainer
-                                    data={viewData}
-                                    {settings}
-                                    selectedThemeKey={settings.theme}
-                                    selectedColorKey={settings.color}
-                                    fontSize={fontSize}
-                                    containerWidth={viewWidth}
-                                    selectedIndices={selectedIndices}
-                                    onMessageSelect={handleSelect}
-                                    onMessageDelete={(i) => {
-                                        const target = visibleMessages[i]
-                                        if (target) allMessages = allMessages.filter((m) => m !== target)
-                                        clearBatchCache()
-                                    }}
-                                />
-                            </div>
+                            {#key viewData}
+                                <div bind:this={documentEl} class="mx-auto origin-top" style="width:{viewWidth}px;transform:scale({previewScale});margin-bottom:{Math.max(0, documentHeight * (previewScale - 1))}px;">
+                                    <LogContainer
+                                        data={viewData}
+                                        {settings}
+                                        selectedThemeKey={settings.theme}
+                                        selectedColorKey={settings.color}
+                                        fontSize={fontSize}
+                                        containerWidth={viewWidth}
+                                        selectedIndices={selectedIndices}
+                                        onMessageSelect={handleSelect}
+                                        onMessageDelete={(i) => {
+                                            const target = visibleMessages[i]
+                                            if (target) allMessages = allMessages.filter((m) => m !== target)
+                                            clearBatchCache()
+                                        }}
+                                    />
+                                </div>
+                            {/key}
                         {:else if settings.format === 'html'}
                             <div class="mx-auto w-full h-full bg-black/20 rounded-lg overflow-hidden border border-darkborderc">
                                 {#if formatPreviewPending && !formatPreview}
@@ -445,9 +469,25 @@
 
                     <!-- Action bar -->
                     <div class="shrink-0 border-t border-darkborderc bg-darkbg px-4 py-3 flex items-center gap-2 relative">
-                        <Button size="sm" onclick={() => void handleSaveImage()} disabled={progress.active}>
-                            <div class="flex items-center gap-2"><ImageIcon size={15}/> 이미지 저장</div>
-                        </Button>
+                        {#if isBasicFormat}
+                            <Button size="sm" onclick={() => void handleSaveImage()} disabled={progress.active}>
+                                <div class="flex items-center gap-2"><ImageIcon size={15}/> 이미지 저장</div>
+                            </Button>
+                        {:else if settings.format === 'html'}
+                            <Button size="sm" onclick={() => void exportViaHtml('save')} disabled={progress.active}>
+                                <div class="flex items-center gap-2"><FileCode size={15}/> HTML 저장</div>
+                            </Button>
+                            <Button size="sm" styled="outlined" onclick={() => void exportViaHtml('copy')} disabled={progress.active}>
+                                <div class="flex items-center gap-2"><Copy size={15}/> HTML 복사</div>
+                            </Button>
+                        {:else}
+                            <Button size="sm" onclick={() => void handleExportTextOrMarkdown('save')} disabled={progress.active}>
+                                <div class="flex items-center gap-2"><Download size={15}/> 저장</div>
+                            </Button>
+                            <Button size="sm" styled="outlined" onclick={() => void handleExportTextOrMarkdown('copy')} disabled={progress.active}>
+                                <div class="flex items-center gap-2"><Copy size={15}/> 복사</div>
+                            </Button>
+                        {/if}
                         <div class="relative">
                             <button class="p-2 rounded-md border border-darkborderc hover:bg-darkbutton" onclick={() => (moreMenuOpen = !moreMenuOpen)} title="더보기">
                                 <MoreHorizontal size={16}/>

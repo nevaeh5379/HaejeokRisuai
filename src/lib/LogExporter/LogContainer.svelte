@@ -36,13 +36,6 @@
     const exportComplete = $derived(isForExport && renderedCount >= messages.length)
 
     $effect(() => {
-        // Reset readiness whenever the message list changes
-        void messages.length
-        renderedCount = 0
-        rootEl?.removeAttribute('data-log-render-complete')
-    })
-
-    $effect(() => {
         if (exportComplete && rootEl && isForExport) {
             rootEl.setAttribute('data-log-render-complete', 'true')
             onReady?.()

@@ -19,23 +19,25 @@
     let {
         messages,
         currentCharacter,
-        onReroll,
-        unReroll,
+        onReroll = () => {},
+        unReroll = () => {},
         currentUsername,
         userIcon,
-        loadPages,
+        loadPages = messages.length,
         userIconPortrait,
-        hasNewUnreadMessage = $bindable(false)
+        hasNewUnreadMessage = $bindable(false),
+        hideButtons = false,
     }:{
         messages: Message[]
         currentCharacter: character|groupChat
-        onReroll: () => void
-        unReroll: () => void
+        onReroll?: () => void
+        unReroll?: () => void
         currentUsername: string
         userIcon: string
-        loadPages: number
+        loadPages?: number
         userIconPortrait?: boolean
         hasNewUnreadMessage?: boolean
+        hideButtons?: boolean
     } = $props();
 
     let chatBody: HTMLDivElement;
@@ -85,8 +87,8 @@
         const userImage = getCharImage(userIcon, 'css', { thumbnail: true })
         const simpleChar = createSimpleCharacter(currentCharacter);
         let loadStart = messages.length - 1
-        let loadEnd = messages.length - loadPages
-        const currentChat = currentCharacter.chats?.[currentCharacter.chatPage]
+        let loadEnd = messages.length - (loadPages ?? messages.length)
+        const currentChat = currentCharacter?.chats?.[currentCharacter.chatPage]
         const configuredPerformanceMode = settingsStore.state.streamingDisplayOptimizationMode ?? 'off';
         const performanceMode = currentChat?.isStreaming
             ? currentChat.activeStreamingDisplayOptimizationMode ?? configuredPerformanceMode
@@ -95,9 +97,9 @@
             ? messages.length - 1
             : -1
 
-        if(chatFoldedStateMessageIndex.index !== -1){
+        if(!hideButtons && chatFoldedStateMessageIndex.index !== -1){
             loadStart = chatFoldedStateMessageIndex.index
-            loadEnd = Math.max(0, chatFoldedStateMessageIndex.index - loadPages)
+            loadEnd = Math.max(0, chatFoldedStateMessageIndex.index - (loadPages ?? messages.length))
         }
 
         const reloadPointerMap = get(ReloadChatPointer);
@@ -109,7 +111,7 @@
             const reloadPointer = reloadPointerMap[i] ?? 0;
             const activeStreamingMessage = i === activeStreamingIndex && message.role === 'char';
             const hashMessageData = activeStreamingMessage ? '' : message.data;
-            let hashd = hashMessageData + (message.chatId ?? '') + i.toString() + messageLargePortrait.toString() + message.disabled?.toString() + reloadPointer.toString();
+            let hashd = hashMessageData + (message.chatId ?? '') + i.toString() + messageLargePortrait.toString() + message.disabled?.toString() + reloadPointer.toString() + hideButtons.toString();
             const currentHash = hashCode(hashd);
             currentHashes.add(currentHash);
             if(!hashes.has(currentHash)){
@@ -128,15 +130,16 @@
                         unReroll: unReroll,
                         rerollIcon: 'dynamic',
                         character: simpleChar,
-                        largePortrait: message.role === 'user' ? (userIconPortrait ?? false) : ((currentCharacter as character).largePortrait ?? false),
+                        largePortrait: messageLargePortrait,
                         messageGenerationInfo: message.generationInfo,
                         role: message.role,
-                        name: message.role === 'user' ? currentUsername : currentCharacter.name,
+                        name: message.role === 'user' ? currentUsername : (message.name || currentCharacter.name),
                         isComment: message.isComment ?? false,
                         disabled: message.disabled ?? false,
                         isOptimizedStreamingMessage: activeStreamingMessage,
                         streamingOptimizationMode: performanceMode,
                         rawStreamingText: message.data,
+                        hideButtons: hideButtons,
                     },
 
                 })
@@ -211,7 +214,9 @@
 
     $effect(() => {
         console.log('Updating Chats');
-        void $ReloadChatPointer; // Make $effect track ReloadChatPointer changes
+        if(!hideButtons){
+            void $ReloadChatPointer; // Make $effect track ReloadChatPointer changes
+        }
         const currentChatRoomId = getCurrentChatRoomId();
         const isSameChat = currentChatRoomId === previousChatRoomId;
         if (!isSameChat) {
@@ -221,7 +226,7 @@
         updateChatBody()
         
         // Only auto-scroll if it's the same chat and new messages were added
-        if(isSameChat && messages.length > previousLength){
+        if(!hideButtons && isSameChat && messages.length > previousLength){
             const lastMsg = messages[messages.length - 1];
             if(lastMsg && lastMsg.role === 'char' && settingsStore.state.autoScrollToNewMessage){
                 if(wasAtBottom || settingsStore.state.alwaysScrollToNewMessage){

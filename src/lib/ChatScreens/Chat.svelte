@@ -55,6 +55,7 @@
         isOptimizedStreamingMessage?: boolean;
         streamingOptimizationMode?: StreamingDisplayOptimizationMode;
         rawStreamingText?: string;
+        hideButtons?: boolean;
     }
 
     let {
@@ -80,6 +81,7 @@
         isOptimizedStreamingMessage = false,
         streamingOptimizationMode = 'off',
         rawStreamingText = message,
+        hideButtons = false,
     }: Props = $props();
 
     let msgDisplay = $state('')
@@ -279,6 +281,7 @@
     }
 
     async function handleButtonTriggerWithin(event: UIEvent) {
+        if (hideButtons) return
         const target = event.target as HTMLElement
         const origin = target.closest('[risu-trigger], [risu-btn]')
         if (!origin) {
@@ -411,6 +414,7 @@
 
 
 {#snippet genInfo()}
+    {#if !hideButtons}
     <div class="flex flex-col items-end">
         {#if messageGenerationInfo && (settingsStore.state.requestInfoInsideChat || aiLawApplies())}
             <button class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
@@ -460,6 +464,7 @@
             </button>
         {/if}
     </div>
+    {/if}
 {/snippet}
 
 {#snippet textBox()}
@@ -479,16 +484,23 @@
                 {@const type = parts[1]}
 
                 {#if type === 'branchedfrom'}
-                    <button class="text-blue-500 hover:underline"
-                        onclick={() => {
-                            console.log(parts)
-                            changeChatTo(parts[2] ?? '')
-                            foldChatToMessage(parts[4])
-                        }}
-                    >
-                        <GitBranch size={20} class="inline-block mr-1" />
-                        {language.branchedText.replace("{}", parts[3] ?? '')}
-                    </button>
+                    {#if hideButtons}
+                        <span class="text-blue-500">
+                            <GitBranch size={20} class="inline-block mr-1" />
+                            {language.branchedText.replace("{}", parts[3] ?? '')}
+                        </span>
+                    {:else}
+                        <button class="text-blue-500 hover:underline"
+                            onclick={() => {
+                                console.log(parts)
+                                changeChatTo(parts[2] ?? '')
+                                foldChatToMessage(parts[4])
+                            }}
+                        >
+                            <GitBranch size={20} class="inline-block mr-1" />
+                            {language.branchedText.replace("{}", parts[3] ?? '')}
+                        </button>
+                    {/if}
                 {/if}
             {:else}
                 {msgDisplay}
@@ -507,7 +519,7 @@
             class:prose-invert={$ColorSchemeTypeStore}
             bind:this={bodyRoot}
             onclick={() => {
-            if(settingsStore.state.clickToEdit && idx > -1 && !isOptimizedStreamingMessage){
+            if(!hideButtons && settingsStore.state.clickToEdit && idx > -1 && !isOptimizedStreamingMessage){
                 editMode = true
             }
         }}
@@ -532,7 +544,7 @@
                     {renderRawStreaming}
                     {rawStreamingText} />
             {/key}
-            {#if idx >= 0 && !editMode && !isOptimizedStreamingMessage && partialEditEnabled && (settingsStore.state.enableBlockPartialEdit || settingsStore.state.enableDragPartialEdit)}
+            {#if !hideButtons && idx >= 0 && !editMode && !isOptimizedStreamingMessage && partialEditEnabled && (settingsStore.state.enableBlockPartialEdit || settingsStore.state.enableDragPartialEdit)}
                 <PartialEditController
                     messageData={message}
                     chatIndex={idx}
@@ -547,6 +559,7 @@
 {/snippet}
 
 {#snippet iconButtons(options:{applyTextColors?:boolean} = {})}
+    {#if !hideButtons}
     <div class="grow flex items-center justify-end" class:text-textcolor2={options?.applyTextColors !== false}>
         {#if isComment}
             <button
@@ -584,6 +597,7 @@
             </div>
         {/if}
     </div>
+    {/if}
 {/snippet}
 
 
@@ -1232,9 +1246,11 @@
                         {/if}
                     </div>
                 </div>
+                {#if !hideButtons}
                 <div class="absolute bottom-0 right-0 bg-linear-to-b from-gray-200 to-gray-300 p-2 rounded-md border border-gray-400 text-gray-400">
                     {@render iconButtons({applyTextColors: false})}
                 </div>
+                {/if}
             </div>
         {:else if settingsStore.state.theme === 'customHTML' && !blankMessage}
             {@render renderGuiHtmlPart(RenderGUIHtml(settingsStore.state.guiHTML))}
@@ -1245,6 +1261,7 @@
                     {#if characterStore.characters[selIdState.selId]?.chaId === "§playground" && !blankMessage && characterStore.characters[selIdState.selId]?.chats?.[characterStore.characters[selIdState.selId]?.chatPage]?.message?.[idx]}
                         <span class="chat-width text-xl border-darkborderc flex items-center text-textcolor">
                             <span>{characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'Assistant' : 'User'}</span>
+                            {#if !hideButtons}
                             <button class="ml-2 text-textcolor2 hover:text-textcolor" onclick={() => {
                                 const char = characterStore.characters[selIdState.selId]
                                 const currentChat = char?.chats?.[char.chatPage]
@@ -1260,6 +1277,7 @@
                                     return v
                                 })
                             }}><ArrowLeftRightIcon size="18" /></button>
+                            {/if}
                         </span>
                     {:else if !blankMessage && !$HideIconStore}
                         <div class="chat-width text-xl unmargin text-textcolor flex items-center">

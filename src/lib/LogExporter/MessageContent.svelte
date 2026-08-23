@@ -32,6 +32,15 @@
 
     let html = $state('')
     let contentEl: HTMLDivElement | null = $state(null)
+    let reportedContent: string | null = null
+
+    function commitContent(next: string) {
+        html = next
+        if (reportedContent !== next) {
+            reportedContent = next
+            onRendered?.()
+        }
+    }
 
     const signature = $derived(JSON.stringify({
         key: message.key,
@@ -49,8 +58,7 @@
         const sig = signature
         const cached = getCachedProcessedHtml(sig)
         if (cached !== undefined) {
-            if (html !== cached) html = cached
-            onRendered?.()
+            commitContent(cached)
             return
         }
         let cancelled = false
@@ -71,14 +79,10 @@
         }).then((result) => {
             if (cancelled) return
             setCachedProcessedHtml(sig, result)
-            html = result
-            onRendered?.()
+            commitContent(result)
         }).catch((e) => {
             console.error('[logexporter] Message processing failed:', e)
-            if (!cancelled) {
-                html = message.html
-                onRendered?.()
-            }
+            if (!cancelled) commitContent(message.html)
         })
         return () => {
             cancelled = true
