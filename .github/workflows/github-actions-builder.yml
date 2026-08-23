@@ -1,70 +1,159 @@
-name: 'publish'
+name: Publish
+
 on:
   push:
-    branches:
-      - production
+    branches: [main]
   workflow_dispatch: {}
 
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      build_number: ${{ steps.version.outputs.build_number }}
+      build_tag: ${{ steps.version.outputs.build_tag }}
+      release_id: ${{ steps.release.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Calculate build version
+        id: version
+        shell: bash
+        run: |
+          BUILD_NUMBER=$(git rev-list --count HEAD)
+          BUILD_TAG="b${BUILD_NUMBER}"
+
+          echo "build_number=${BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "build_tag=${BUILD_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        shell: bash
+        env:
+          BUILD_TAG: ${{ steps.version.outputs.build_tag }}
+        run: |
+          PREVIOUS_TAG=$(git tag --list 'b*' --sort=-version:refname | head -n 1)
+          if [ -z "$PREVIOUS_TAG" ]; then
+            PREVIOUS_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
+          fi
+
+          {
+            echo "## ${BUILD_TAG}"
+            echo
+            if [ -n "$PREVIOUS_TAG" ]; then
+              echo "Changes since \`${PREVIOUS_TAG}\`:"
+              echo
+              git log "${PREVIOUS_TAG}..HEAD" --no-merges --pretty=format:'- %s (`%h`) — %an'
+            else
+              echo "Changes included in this build:"
+              echo
+              git log HEAD --no-merges --pretty=format:'- %s (`%h`) — %an'
+            fi
+            echo
+          } > release-notes.md
+
+      - name: Create or update draft release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_TAG: ${{ steps.version.outputs.build_tag }}
+        run: |
+          RELEASE_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"${BUILD_TAG}\") | .id" | head -n 1)
+
+          BODY=$(cat release-notes.md)
+
+          if [ -n "$RELEASE_ID" ]; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+              -f name="$BUILD_TAG" \
+              -f body="$BODY" >/dev/null
+          else
+            RELEASE_ID=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/releases" \
+              -f tag_name="$BUILD_TAG" \
+              -f target_commitish="$GITHUB_SHA" \
+              -f name="$BUILD_TAG" \
+              -f body="$BODY" \
+              -F draft=true \
+              -F prerelease=false \
+              --jq '.id')
+          fi
+
+          echo "release_id=${RELEASE_ID}" >> "$GITHUB_OUTPUT"
+
   publish-tauri:
+    needs: prepare-release
     permissions:
       contents: write
     strategy:
       fail-fast: false
       matrix:
-        # platform: [ubuntu-latest,macos-latest,windows-latest]
         settings:
-          - platform: 'macos-latest' # for Arm based macs (M1 and above).
-            target: 'aarch64-apple-darwin'
-            args: '--target aarch64-apple-darwin'
-          - platform: 'macos-latest' # for Intel based macs.
-            target: 'x86_64-apple-darwin'
-            args: '--target x86_64-apple-darwin'
-          - platform: 'ubuntu-latest' # for Tauri v1 you could replace this with ubuntu-20.04.
-            target: 'x86_64-unknown-linux-gnu'
-            args: '--target x86_64-unknown-linux-gnu'
-          - platform: 'windows-latest'
-            target: 'x86_64-pc-windows-msvc'
-            args: '--target x86_64-pc-windows-msvc'
-          
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+          - platform: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            args: --target x86_64-unknown-linux-gnu
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: --target x86_64-pc-windows-msvc
     runs-on: ${{ matrix.settings.platform }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Apply build version
+        shell: bash
+        env:
+          BUILD_NUMBER: ${{ needs.prepare-release.outputs.build_number }}
+        run: |
+          node .github/scripts/set-release-version.mjs "$BUILD_NUMBER"
+
       - name: install pnpm
         uses: pnpm/action-setup@v5
         with:
           version: 10.34.1
+
       - name: setup node
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: 'pnpm'
-          cache-dependency-path: 'pnpm-lock.yaml'
-      - id: set_var_win
-        if: matrix.settings.platform == 'windows-latest'
-        run: |
-          choco install jq -y
-      - id: set_var
-        shell: bash
-        run: |
-          echo "VERSION_JSON=$(jq -c . < version.json)" >> $GITHUB_ENV
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
       - name: install dependencies (ubuntu only)
         if: matrix.settings.platform == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
       - name: install Rust stable
-        uses: dtolnay/rust-toolchain@stable # Set this to dtolnay/rust-toolchain@nightly
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.settings.target }}
-      - uses: Swatinem/rust-cache@v2
-        name: Setup Rust cache
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
           key: ${{ matrix.settings.platform }}-${{ matrix.settings.target }}
+
       - name: install frontend dependencies
         run: pnpm install --frozen-lockfile
-      - uses: tauri-apps/tauri-action@v0.6.2
+
+      - name: Build and upload Tauri bundles
+        uses: tauri-apps/tauri-action@action-v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
@@ -73,10 +162,24 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
           VITE_RISU_LEGAL_CONFIGURED: 'TRUE'
         with:
-          tagName: 'v__VERSION__' # the action automatically replaces \_\_VERSION\_\_ with the app version.
-          releaseName: 'v__VERSION__'
-          releaseBody: 'Release of v__VERSION__'
+          releaseId: ${{ needs.prepare-release.outputs.release_id }}
+          tagName: ${{ needs.prepare-release.outputs.build_tag }}
           releaseDraft: true
-          prerelease: false
           args: ${{ matrix.settings.args }}
-          tauriScript: "pnpm tauri"
+          tauriScript: pnpm tauri
+
+  publish-release:
+    needs: [prepare-release, publish-tauri]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
+        shell: bash
+        run: |
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            -F draft=false \
+            -f make_latest=true >/dev/null
