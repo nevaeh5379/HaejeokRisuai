@@ -7,7 +7,7 @@
     import { hypaV3ModalOpen, hypaV3ProgressStore } from "./ts/stores.svelte";
     import sendSound from './etc/send.mp3'
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
-    import LazyComponent from './lib/Others/LazyComponent.svelte';
+    import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
 
 
@@ -54,6 +54,12 @@
             void import('./lib/UI/Realm/RealmPopUp.svelte').then((module) => {
                 RealmPopUp = module.default
             })
+        }
+    })
+
+    $effect(() => {
+        if ($sideBarStore || $selectedCharID) {
+            preloadLazy(assetManagerLoader)
         }
     })
 

@@ -33,6 +33,7 @@
     import { getMimeType } from "src/ts/media";
     import { selectMultipleFile } from "src/ts/util";
     import { alertConfirm } from "src/ts/alert";
+    import { getAssetsBatch } from "src/ts/characterImage";
     import {
         getAssetCategory,
         getDefaultMacroTag,
@@ -91,19 +92,33 @@
 
     // Resolved file src URLs cache
     let assetSrcMap = $state<Record<string, string>>({});
+    let isLoadingAssets = $state(false);
 
     $effect(() => {
         if (!currentChar?.additionalAssets) return;
-        for (const asset of currentChar.additionalAssets) {
-            const path = asset[1];
-            if (path && !assetSrcMap[path]) {
-                getFileSrc(path).then((url) => {
-                    if (url) {
-                        assetSrcMap = { ...assetSrcMap, [path]: url };
+        const pathsToLoad = currentChar.additionalAssets
+            .map((a) => a[1])
+            .filter((p): p is string => Boolean(p && !assetSrcMap[p]));
+
+        if (pathsToLoad.length === 0) return;
+
+        isLoadingAssets = true;
+        getAssetsBatch(pathsToLoad, { size: "full" })
+            .then((map) => {
+                const updated = { ...assetSrcMap };
+                for (const [path, url] of map) {
+                    if (url && url !== "/none.webp") {
+                        updated[path] = url;
                     }
-                });
-            }
-        }
+                }
+                assetSrcMap = updated;
+            })
+            .catch((err) => {
+                console.error("Failed to batch load assets in modal", err);
+            })
+            .finally(() => {
+                isLoadingAssets = false;
+            });
     });
 
     // Processed and filtered list of assets
@@ -144,6 +159,27 @@
 
         return list;
     });
+
+    // Progressive rendering limit for instantaneous modal rendering with large asset lists
+    let displayLimit = $state(48);
+
+    $effect(() => {
+        void selectedCategory;
+        void searchQuery;
+        void sortOption;
+        displayLimit = 48;
+    });
+
+    let displayedAssets = $derived(processedAssets.slice(0, displayLimit));
+
+    function handleGalleryScroll(e: UIEvent) {
+        const target = e.currentTarget as HTMLElement;
+        if (target.scrollTop + target.clientHeight >= target.scrollHeight - 400) {
+            if (displayLimit < processedAssets.length) {
+                displayLimit = Math.min(displayLimit + 48, processedAssets.length);
+            }
+        }
+    }
 
     // Current inspecting asset item for lightbox
     let inspectingAsset = $derived.by(() => {
@@ -653,7 +689,7 @@
         {/if}
 
         <!-- Workspace Gallery (Full Width Clean Layout) -->
-        <div class="flex-1 overflow-y-auto p-5 scrollbar-thin">
+        <div class="flex-1 overflow-y-auto p-5 scrollbar-thin" onscroll={handleGalleryScroll}>
             {#if rawAssets.length === 0}
                 <!-- Empty State -->
                 <div class="flex flex-col items-center justify-center h-full min-h-[300px] text-center text-textcolor2 gap-4">
@@ -681,7 +717,7 @@
             {:else if viewMode === "grid"}
                 <!-- Full-Width Responsive Grid View -->
                 <div class="grid gap-3 sm:gap-4 {gridSize === 'sm' ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10' : gridSize === 'lg' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7'}">
-                    {#each processedAssets as { originalIndex, name, assetId, ext, category }}
+                    {#each displayedAssets as { originalIndex, name, assetId, ext, category }}
                         {@const srcUrl = assetSrcMap[assetId]}
                         {@const isExcluded = currentChar?.prebuiltAssetExclude?.includes(assetId)}
                         {@const isSelected = selectedIndices.has(originalIndex)}
@@ -702,7 +738,9 @@
                                 {#if category === "image" && srcUrl}
                                     <img src={srcUrl} alt={name} class="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" loading="lazy" />
                                 {:else if category === "image"}
-                                    <ImageIcon size={32} class="text-textcolor2/50" />
+                                    <div class="flex items-center justify-center w-full h-full text-textcolor2/40 animate-pulse">
+                                        <ImageIcon size={32} />
+                                    </div>
                                 {:else if category === "audio"}
                                     <div class="flex flex-col items-center justify-center gap-1 text-purple-400 p-2">
                                         <MusicIcon size={32} />
@@ -825,7 +863,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {#each processedAssets as { originalIndex, name, assetId, ext, category }}
+                            {#each displayedAssets as { originalIndex, name, assetId, ext, category }}
                                 {@const srcUrl = assetSrcMap[assetId]}
                                 {@const isExcluded = currentChar?.prebuiltAssetExclude?.includes(assetId)}
                                 {@const isSelected = selectedIndices.has(originalIndex)}
@@ -857,6 +895,10 @@
                                         >
                                             {#if category === "image" && srcUrl}
                                                 <img src={srcUrl} alt={name} class="w-full h-full object-cover" />
+                                            {:else if category === "image"}
+                                                <div class="flex items-center justify-center w-full h-full text-textcolor2/40 animate-pulse">
+                                                    <ImageIcon size={18} />
+                                                </div>
                                             {:else if category === "audio"}
                                                 <MusicIcon size={18} class="text-purple-400" />
                                             {:else if category === "video"}
@@ -939,6 +981,19 @@
                             {/each}
                         </tbody>
                     </table>
+                </div>
+            {/if}
+
+            <!-- Progressive Load Indicator when more assets are available -->
+            {#if displayLimit < processedAssets.length}
+                <div class="flex justify-center items-center py-4 text-xs text-textcolor2">
+                    <button
+                        type="button"
+                        class="px-4 py-1.5 rounded-lg bg-darkbg border border-darkborderc hover:bg-bgcolor text-textcolor transition-colors cursor-pointer"
+                        onclick={() => { displayLimit = Math.min(displayLimit + 48, processedAssets.length); }}
+                    >
+                        Load More ({displayedAssets.length} / {processedAssets.length})
+                    </button>
                 </div>
             {/if}
         </div>

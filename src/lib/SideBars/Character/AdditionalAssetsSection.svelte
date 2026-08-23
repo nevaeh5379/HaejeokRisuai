@@ -28,6 +28,7 @@
     import CheckInput from "src/lib/UI/GUI/CheckInput.svelte";
     import SelectInput from "src/lib/UI/GUI/SelectInput.svelte";
     import OptionInput from "src/lib/UI/GUI/OptionInput.svelte";
+    import { getAssetsBatch } from "src/ts/characterImage";
     import {
         getAssetCategory,
         getDefaultMacroTag,
@@ -95,16 +96,25 @@
 
     $effect(() => {
         if (!paginatedAssets) return;
-        for (const { item } of paginatedAssets) {
-            const path = item[1];
-            if (path && !assetSrcMap[path]) {
-                getFileSrc(path).then((url) => {
-                    if (url) {
-                        assetSrcMap = { ...assetSrcMap, [path]: url };
+        const pathsToLoad = paginatedAssets
+            .map(({ item }) => item[1])
+            .filter((p): p is string => Boolean(p && !assetSrcMap[p]));
+
+        if (pathsToLoad.length === 0) return;
+
+        getAssetsBatch(pathsToLoad, { size: "full" })
+            .then((map) => {
+                const updated = { ...assetSrcMap };
+                for (const [path, url] of map) {
+                    if (url && url !== "/none.webp") {
+                        updated[path] = url;
                     }
-                });
-            }
-        }
+                }
+                assetSrcMap = updated;
+            })
+            .catch((err) => {
+                console.error("Failed to batch load sidebar assets", err);
+            });
     });
 
     async function handleAddFiles() {
@@ -196,6 +206,7 @@
                     type="button"
                     class="p-1.5 rounded-md hover:bg-textcolor/10 text-textcolor2 hover:text-textcolor transition-colors cursor-pointer border border-darkborderc"
                     title={language.openFloatingManager}
+                    onmouseenter={() => { import("src/lib/Others/AssetManagerModal.svelte"); }}
                     onclick={() => openFloatingModal(selectedCategory)}
                 >
                     <Maximize2Icon size={16} />
