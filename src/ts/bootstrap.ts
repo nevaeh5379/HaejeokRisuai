@@ -197,6 +197,10 @@ export async function loadData() {
       updateAnimationSpeed();
       updateHeightMode();
       updateGuisize();
+      // Reset the initial selection before the shell becomes interactive.
+      // Doing this later can overwrite a character the user selected while
+      // the remaining startup work is still loading.
+      selectedCharID.set(-1);
       const deferShellUntilRuntimeReady =
         settingsStore.state.lowSpecMode === true;
       let shellReady = false;
@@ -310,7 +314,6 @@ export async function loadData() {
         initMobileGesture();
         MobileGUI.set(true);
       }
-      selectedCharID.set(-1);
       assignIds();
       startObserveDom();
       registerModelDynamic();
