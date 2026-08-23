@@ -223,6 +223,12 @@ export const customSideBarConfigDialogStore = $state({
   open: false,
 });
 
+export const assetManagerModalStore = $state({
+  open: false,
+  selectedAssetIndex: -1,
+  filterType: "all" as "all" | "image" | "audio" | "video" | "font" | "other",
+});
+
 //Set might be more ideal, however since Svelte doesn't support reactive Sets, using array for now
 export const hotReloading = $state<string[]>([]);
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, saving, AccountWarning, selectedCharID, PlaygroundStore } from './ts/stores.svelte';
+    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, saving, AccountWarning, selectedCharID, PlaygroundStore } from './ts/stores.svelte';
     import { settingsStore, moduleStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
     import { isNodeServer } from './ts/platform';
@@ -46,6 +46,7 @@
     const loadoutLoader = () => import('./lib/Others/LoadoutModal.svelte')
     const irisLoader = () => import('./lib/Others/IrisModal.svelte')
     const sidebarConfigLoader = () => import('./lib/Others/CustomSidebarConfig.svelte')
+    const assetManagerLoader = () => import('./lib/Others/AssetManagerModal.svelte')
     const savePopupLoader = () => import('./lib/Others/SavePopupIcon.svelte')
 
     $effect(() => {
@@ -311,5 +312,8 @@
     {/if}
     {#if customSideBarConfigDialogStore.open}
         <LazyComponent loader={sidebarConfigLoader} />
+    {/if}
+    {#if assetManagerModalStore.open}
+        <LazyComponent loader={assetManagerLoader} />
     {/if}
 </main>
