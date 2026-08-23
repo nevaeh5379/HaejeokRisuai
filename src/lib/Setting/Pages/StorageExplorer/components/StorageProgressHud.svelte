@@ -20,13 +20,13 @@
         <!-- Header -->
         <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-2 min-w-0">
-                <Loader2Icon class="h-4 w-4 animate-spin text-blue-400 shrink-0" />
+                <Loader2Icon class="h-4 w-4 animate-spin text-textcolor shrink-0" />
                 <h5 class="truncate text-xs sm:text-sm font-semibold">
                     {activeTask === 'migrate' ? language.s3MigratingTitle : language.s3RollingBackTitle}
                 </h5>
             </div>
             <div class="flex items-center gap-2 shrink-0">
-                <span class="text-xs sm:text-sm font-bold text-blue-400">
+                <span class="text-xs sm:text-sm font-bold text-textcolor">
                     {progressData.percentage}%
                 </span>
                 <button
@@ -47,7 +47,7 @@
         <!-- Progress bar track -->
         <div class="mt-2.5 h-2 w-full overflow-hidden rounded-full border border-darkborderc bg-bgcolor/50">
             <div
-                class="h-full bg-linear-to-r from-blue-500 via-indigo-500 to-purple-600 transition-[width] duration-150"
+                class="h-full bg-textcolor2 transition-[width] duration-150"
                 style="width: {progressData.percentage}%"
             ></div>
         </div>

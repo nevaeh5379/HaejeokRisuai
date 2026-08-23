@@ -48,7 +48,7 @@
         {#if onToggleMobileSidebar}
             <button
                 type="button"
-                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-darkborderc bg-darkbg hover:bg-selected/40 transition-colors md:hidden cursor-pointer"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-darkborderc bg-darkbutton text-textcolor hover:bg-selected transition-colors md:hidden cursor-pointer"
                 onclick={onToggleMobileSidebar}
                 title="Toggle Sidebar"
                 aria-label="Toggle Sidebar"
@@ -59,13 +59,19 @@
 
         <!-- Breadcrumbs -->
         <div class="flex items-center gap-2 min-w-0 text-xs sm:text-sm">
-            <span class="rounded-md px-2 py-0.5 font-bold uppercase text-[10px] sm:text-xs shrink-0 {viewTarget === 's3' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : (viewTarget === 'azuresql' ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30' : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30')}">
-                {targetLabel}
-            </span>
-            <span class="text-textcolor2">/</span>
-            <h3 class="truncate font-bold text-textcolor">
-                {tabLabel}
-            </h3>
+            {#if currentTab === 'backend'}
+                <h3 class="truncate font-bold text-textcolor">
+                    {tabLabel}
+                </h3>
+            {:else}
+                <span class="rounded-md border px-2 py-0.5 font-semibold text-[10px] sm:text-xs shrink-0 {viewTarget === 'fs' ? 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300' : (viewTarget === 's3' ? 'bg-blue-500/15 border-blue-500/30 text-blue-300' : 'bg-sky-500/15 border-sky-500/30 text-sky-300')}">
+                    {targetLabel}
+                </span>
+                <span class="text-textcolor2">/</span>
+                <h3 class="truncate font-bold text-textcolor">
+                    {tabLabel}
+                </h3>
+            {/if}
         </div>
     </div>
 
@@ -74,7 +80,7 @@
         <!-- Refresh button -->
         <button
             type="button"
-            class="flex h-9 items-center gap-1.5 rounded-lg border border-darkborderc bg-darkbg px-2.5 sm:px-3 text-xs font-medium hover:bg-selected/40 transition-colors disabled:opacity-50 cursor-pointer"
+            class="flex h-9 items-center gap-1.5 rounded-lg border border-darkborderc bg-darkbutton px-2.5 sm:px-3 text-xs font-medium text-textcolor hover:bg-selected transition-colors disabled:opacity-50 cursor-pointer"
             disabled={loading || busy}
             onclick={onRefresh}
             title={language.storageRefresh}
@@ -86,7 +92,7 @@
         <!-- Close button -->
         <button
             type="button"
-            class="flex h-9 w-9 items-center justify-center rounded-lg text-textcolor2 hover:bg-darkborderc/50 hover:text-textcolor transition-colors cursor-pointer"
+            class="flex h-9 w-9 items-center justify-center rounded-lg text-textcolor2 hover:bg-darkbutton hover:text-textcolor transition-colors cursor-pointer"
             onclick={onClose}
             title={language.storageClose ?? 'Close'}
             aria-label="Close"

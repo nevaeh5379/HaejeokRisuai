@@ -1,21 +1,32 @@
 <script lang="ts">
     import { SearchIcon, UserIcon, XIcon } from '@lucide/svelte'
     import { language } from 'src/lang'
+    import StorageTargetSelector from '../components/StorageTargetSelector.svelte'
     import { formatBytes } from '../utils'
-    import type { BotSortType, BotStorageInfo } from '../types'
+    import type { BotSortType, BotStorageInfo, NodeS3ServerConfig, NodeStorageSummary, ViewTarget } from '../types'
 
     interface Props {
         bots: BotStorageInfo[]
+        viewTarget: ViewTarget
+        storageSummary: NodeStorageSummary | null
+        config?: NodeS3ServerConfig | null
+        busy?: boolean
         thumbnailUrls: Map<string, string>
         onLoadThumbnail: (key: string) => void
         onSelectBot: (bot: BotStorageInfo) => void
+        onSwitchTarget: (target: ViewTarget) => void
     }
 
     const {
         bots,
+        viewTarget,
+        storageSummary,
+        config,
+        busy = false,
         thumbnailUrls,
         onLoadThumbnail,
-        onSelectBot
+        onSelectBot,
+        onSwitchTarget
     }: Props = $props()
 
     let botSearch = $state('')
@@ -41,7 +52,7 @@
 </script>
 
 <div class="flex flex-col gap-4">
-    <!-- Controls: Search & Sort -->
+    <!-- Controls: Search & Target Selector & Sort -->
     <div class="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
         <div class="relative min-w-[200px] flex-1 max-w-md">
             <SearchIcon class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-textcolor2 pointer-events-none" />
@@ -49,7 +60,7 @@
                 type="text"
                 bind:value={botSearch}
                 placeholder={language.storageSearchBots}
-                class="w-full rounded-lg border border-darkborderc bg-darkbg py-2 pl-9 pr-8 text-xs sm:text-sm text-textcolor placeholder-textcolor2 focus:border-blue-500 focus:outline-hidden"
+                class="w-full rounded-lg border border-darkborderc bg-darkbg py-2 pl-9 pr-8 text-xs sm:text-sm text-textcolor placeholder-textcolor2 focus:border-darkborderc/90 focus:outline-hidden"
             />
             {#if botSearch}
                 <button
@@ -63,17 +74,29 @@
             {/if}
         </div>
 
-        <div class="flex items-center gap-2 shrink-0">
-            <span class="text-xs text-textcolor2 hidden sm:inline">{language.storageSort}:</span>
-            <select
-                bind:value={botSort}
-                class="rounded-lg border border-darkborderc bg-darkbg px-2.5 sm:px-3 py-2 text-xs font-medium text-textcolor focus:border-blue-500 focus:outline-hidden cursor-pointer"
-            >
-                <option value="size_desc">{language.storageSortSizeDesc}</option>
-                <option value="size_asc">{language.storageSortSizeAsc}</option>
-                <option value="count_desc">{language.storageSortCountDesc}</option>
-                <option value="name_asc">{language.storageSortNameAsc}</option>
-            </select>
+        <div class="flex flex-wrap items-center gap-2.5 shrink-0">
+            <!-- Storage Target Selector Menu -->
+            <StorageTargetSelector
+                {viewTarget}
+                {storageSummary}
+                {config}
+                disabled={busy}
+                {onSwitchTarget}
+            />
+
+            <!-- Sort Dropdown -->
+            <div class="flex items-center gap-1.5 shrink-0">
+                <span class="text-xs text-textcolor2 hidden sm:inline">{language.storageSort}:</span>
+                <select
+                    bind:value={botSort}
+                    class="rounded-lg border border-darkborderc bg-darkbg px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-medium text-textcolor focus:border-darkborderc/90 focus:outline-hidden cursor-pointer"
+                >
+                    <option value="size_desc">{language.storageSortSizeDesc}</option>
+                    <option value="size_asc">{language.storageSortSizeAsc}</option>
+                    <option value="count_desc">{language.storageSortCountDesc}</option>
+                    <option value="name_asc">{language.storageSortNameAsc}</option>
+                </select>
+            </div>
         </div>
     </div>
 
@@ -88,7 +111,7 @@
             {#each filteredBots as bot (bot.id)}
                 <button
                     type="button"
-                    class="group relative flex flex-col justify-between rounded-xl border border-darkborderc bg-darkbg/70 p-3.5 sm:p-4 text-left transition-all hover:border-darkborderc/80 hover:bg-darkbg hover:shadow-lg cursor-pointer w-full active:scale-[0.99]"
+                    class="group relative flex flex-col justify-between rounded-xl border border-darkborderc bg-darkbg/70 p-3.5 sm:p-4 text-left transition-all hover:border-darkborderc/90 hover:bg-darkbg hover:shadow-md cursor-pointer w-full active:scale-[0.99]"
                     onclick={() => onSelectBot(bot)}
                 >
                     <div class="flex items-start gap-3 w-full">
@@ -110,11 +133,11 @@
 
                         <!-- Bot Title & Size -->
                         <div class="min-w-0 flex-1">
-                            <h4 class="truncate text-sm font-bold text-textcolor group-hover:text-blue-400 transition-colors">
+                            <h4 class="truncate text-sm font-bold text-textcolor">
                                 {bot.name}
                             </h4>
                             <div class="mt-1 flex items-center gap-2">
-                                <span class="rounded-md bg-blue-500/15 px-2 py-0.5 text-xs font-semibold text-blue-300">
+                                <span class="rounded-md bg-darkbutton border border-darkborderc/60 px-2 py-0.5 text-xs font-semibold text-textcolor">
                                     {formatBytes(bot.totalSizeBytes)}
                                 </span>
                                 <span class="text-xs text-textcolor2">

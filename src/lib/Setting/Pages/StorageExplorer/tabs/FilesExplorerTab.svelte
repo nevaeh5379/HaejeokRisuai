@@ -18,13 +18,16 @@
         XIcon
     } from '@lucide/svelte'
     import { language } from 'src/lang'
+    import StorageTargetSelector from '../components/StorageTargetSelector.svelte'
     import { formatBytes, isAudioFile, isImageFile, isThumbnailKey, sortAssetFiles } from '../utils'
-    import type { FileFilterType, FileSortType, NodeStorageAssetDetails, NodeStorageAssetItem, ViewTarget } from '../types'
+    import type { FileFilterType, FileSortType, NodeS3ServerConfig, NodeStorageAssetDetails, NodeStorageAssetItem, NodeStorageSummary, ViewTarget } from '../types'
 
     interface Props {
         assetDetails: NodeStorageAssetDetails | null
         orphanAssets: NodeStorageAssetItem[]
         viewTarget: ViewTarget
+        storageSummary: NodeStorageSummary | null
+        config?: NodeS3ServerConfig | null
         selectedFileKeys: Set<string>
         resyncingCatalog: boolean
         busy: boolean
@@ -36,12 +39,15 @@
         onDeleteSingleFile: (key: string) => void
         onDeleteSelectedFiles: () => void
         onResyncCatalog: () => void
+        onSwitchTarget: (target: ViewTarget) => void
     }
 
     const {
         assetDetails,
         orphanAssets,
         viewTarget,
+        storageSummary,
+        config,
         selectedFileKeys,
         resyncingCatalog,
         busy,
@@ -52,7 +58,8 @@
         onToggleSelectAll,
         onDeleteSingleFile,
         onDeleteSelectedFiles,
-        onResyncCatalog
+        onResyncCatalog,
+        onSwitchTarget
     }: Props = $props()
 
     let fileSearch = $state('')
@@ -175,7 +182,7 @@
                 bind:value={fileSearch}
                 oninput={() => page = 1}
                 placeholder={language.storageSearchFiles}
-                class="w-full rounded-lg border border-darkborderc bg-darkbg py-2 pl-9 pr-8 text-xs sm:text-sm text-textcolor placeholder-textcolor2 focus:border-blue-500 focus:outline-hidden"
+                class="w-full rounded-lg border border-darkborderc bg-darkbg py-2 pl-9 pr-8 text-xs sm:text-sm text-textcolor placeholder-textcolor2 focus:border-darkborderc/90 focus:outline-hidden"
             />
             {#if fileSearch}
                 <button
@@ -221,15 +228,24 @@
             </button>
         </div>
 
-        <!-- Sort dropdown & Mode Switcher & Catalog Resync Actions -->
+        <!-- Target Selector & Sort dropdown & Mode Switcher & Catalog Resync Actions -->
         <div class="flex flex-wrap items-center gap-2">
+            <!-- Storage Target Selector Menu -->
+            <StorageTargetSelector
+                {viewTarget}
+                {storageSummary}
+                {config}
+                disabled={busy}
+                {onSwitchTarget}
+            />
+
             <!-- Sort dropdown -->
             <div class="flex items-center gap-1.5 shrink-0">
                 <span class="text-xs text-textcolor2 hidden md:inline">{language.storageSort}:</span>
                 <select
                     value={fileSort}
                     onchange={(e) => setSort((e.target as HTMLSelectElement).value as FileSortType)}
-                    class="rounded-lg border border-darkborderc bg-darkbg px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-medium text-textcolor focus:border-blue-500 focus:outline-hidden cursor-pointer"
+                    class="rounded-lg border border-darkborderc bg-darkbg px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-medium text-textcolor focus:border-darkborderc/90 focus:outline-hidden cursor-pointer"
                 >
                     <option value="size_desc">{language.storageSortSizeDesc}</option>
                     <option value="size_asc">{language.storageSortSizeAsc}</option>
@@ -259,12 +275,12 @@
             </div>
 
             {#if viewTarget === 's3' && assetDetails?.listSource === 'catalog'}
-                <div class="flex items-center gap-2 rounded-lg border border-sky-500/40 bg-sky-500/10 px-2.5 py-1 text-xs text-sky-300">
-                    <DatabaseIcon class="h-3.5 w-3.5 shrink-0 hidden sm:inline" />
-                    <span class="whitespace-nowrap text-[11px] sm:text-xs">{language.storageListFromCatalog}</span>
+                <div class="flex items-center gap-2 rounded-lg border border-darkborderc bg-darkbutton px-2.5 py-1 text-xs text-textcolor">
+                    <DatabaseIcon class="h-3.5 w-3.5 shrink-0 text-textcolor2 hidden sm:inline" />
+                    <span class="whitespace-nowrap text-[11px] sm:text-xs text-textcolor2">{language.storageListFromCatalog}</span>
                     <button
                         type="button"
-                        class="flex items-center gap-1 rounded-md bg-sky-500/20 px-2 py-0.5 font-semibold whitespace-nowrap hover:bg-sky-500/30 transition-colors disabled:opacity-50 cursor-pointer"
+                        class="flex items-center gap-1 rounded-md bg-bgcolor/60 border border-darkborderc/60 px-2 py-0.5 font-semibold whitespace-nowrap hover:bg-selected transition-colors disabled:opacity-50 cursor-pointer text-textcolor"
                         disabled={resyncingCatalog || busy}
                         onclick={onResyncCatalog}
                         title={language.storageResyncCatalogDescription}
@@ -296,20 +312,20 @@
 
     <!-- Selection Banner for Multi-Page Files -->
     {#if selectedFileKeys.size > 0 && totalItems > 0}
-        <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3.5 py-2 text-xs text-blue-200 animate-in fade-in duration-150">
+        <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-darkborderc bg-selected px-3.5 py-2 text-xs text-textcolor animate-in fade-in duration-150">
             <div class="flex items-center gap-2">
                 <span>
                     <strong>{selectedFileKeys.size}</strong> {language.storageFiles ?? 'files'} selected.
                 </span>
                 {#if isCurrentPageAllSelected && totalItems > pagedFiles.length && !isAllFilteredSelected}
-                    <span class="text-blue-300/80">({pagedFiles.length} on this page)</span>
+                    <span class="text-textcolor2">({pagedFiles.length} on this page)</span>
                 {/if}
             </div>
             <div class="flex items-center gap-2">
                 {#if !isAllFilteredSelected && totalItems > pagedFiles.length}
                     <button
                         type="button"
-                        class="font-semibold underline hover:text-white cursor-pointer transition-colors"
+                        class="font-semibold underline hover:text-textcolor cursor-pointer transition-colors"
                         onclick={selectAllFiltered}
                     >
                         {language.storageSelectAllMatching(totalItems)}
@@ -318,7 +334,7 @@
                 {/if}
                 <button
                     type="button"
-                    class="hover:text-white cursor-pointer transition-colors text-blue-300/90"
+                    class="hover:text-textcolor cursor-pointer transition-colors text-textcolor2"
                     onclick={deselectAllFiltered}
                 >
                     {language.storageDeselectAll}
@@ -353,9 +369,9 @@
                                 >
                                     <span>{language.storageAssetKey}</span>
                                     {#if fileSort === 'name_asc'}
-                                        <ArrowUpIcon class="h-3.5 w-3.5 text-blue-400" />
+                                        <ArrowUpIcon class="h-3.5 w-3.5 text-textcolor" />
                                     {:else if fileSort === 'name_desc'}
-                                        <ArrowDownIcon class="h-3.5 w-3.5 text-blue-400" />
+                                        <ArrowDownIcon class="h-3.5 w-3.5 text-textcolor" />
                                     {:else}
                                         <ArrowUpDownIcon class="h-3 w-3 text-textcolor2 opacity-40 group-hover:opacity-100 transition-opacity" />
                                     {/if}
@@ -369,9 +385,9 @@
                                 >
                                     <span>{language.storageSize}</span>
                                     {#if fileSort === 'size_desc'}
-                                        <ArrowDownIcon class="h-3.5 w-3.5 text-blue-400" />
+                                        <ArrowDownIcon class="h-3.5 w-3.5 text-textcolor" />
                                     {:else if fileSort === 'size_asc'}
-                                        <ArrowUpIcon class="h-3.5 w-3.5 text-blue-400" />
+                                        <ArrowUpIcon class="h-3.5 w-3.5 text-textcolor" />
                                     {:else}
                                         <ArrowUpDownIcon class="h-3 w-3 text-textcolor2 opacity-40 group-hover:opacity-100 transition-opacity" />
                                     {/if}
@@ -389,7 +405,7 @@
                             </tr>
                         {:else}
                             {#each pagedFiles as file (file.key)}
-                                <tr class="hover:bg-darkbutton/30 transition-colors {selectedFileKeys.has(file.key) ? 'bg-blue-500/10' : ''}">
+                                <tr class="hover:bg-darkbutton/30 transition-colors {selectedFileKeys.has(file.key) ? 'bg-selected' : ''}">
                                     <td class="px-3 py-2 text-center">
                                         <input
                                             type="checkbox"
@@ -422,7 +438,7 @@
                                     <td class="px-3 py-2 font-mono text-xs max-w-xs truncate">
                                         <div class="flex items-center gap-1.5 min-w-0">
                                             {#if isThumbnailKey(file.key)}
-                                                <span class="rounded bg-purple-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-purple-300 shrink-0">
+                                                <span class="rounded bg-darkbutton border border-darkborderc/40 px-1.5 py-0.5 text-[10px] font-medium text-textcolor2 shrink-0">
                                                     Thumb
                                                 </span>
                                             {/if}
@@ -475,7 +491,7 @@
             {:else}
                 <div class="flex flex-col gap-2">
                     {#each pagedFiles as file (file.key)}
-                        <div class="flex items-center gap-3 rounded-xl border border-darkborderc bg-darkbg p-2.5 transition-colors {selectedFileKeys.has(file.key) ? 'border-blue-500/60 bg-blue-500/10' : ''}">
+                        <div class="flex items-center gap-3 rounded-xl border border-darkborderc bg-darkbg p-2.5 transition-colors {selectedFileKeys.has(file.key) ? 'bg-selected' : ''}">
                             <!-- Select checkbox -->
                             <input
                                 type="checkbox"
@@ -507,11 +523,11 @@
                             <!-- Key & Size -->
                             <div class="min-w-0 flex-1">
                                 <div class="flex items-center justify-between gap-1">
-                                    <span class="rounded-md bg-darkbutton px-1.5 py-0.5 text-[10px] font-semibold text-blue-300">
+                                    <span class="rounded-md bg-darkbutton border border-darkborderc/40 px-1.5 py-0.5 text-[10px] font-semibold text-textcolor">
                                         {formatBytes(file.size)}
                                     </span>
                                     {#if isThumbnailKey(file.key)}
-                                        <span class="rounded bg-purple-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-purple-300">
+                                        <span class="rounded bg-darkbutton border border-darkborderc/40 px-1.5 py-0.5 text-[10px] font-medium text-textcolor2">
                                             Thumb
                                         </span>
                                     {/if}
@@ -551,7 +567,7 @@
                     <select
                         value={pageSize}
                         onchange={handlePageSizeChange}
-                        class="rounded-md border border-darkborderc bg-darkbutton px-2 py-1 text-xs text-textcolor focus:border-blue-500 focus:outline-hidden cursor-pointer"
+                        class="rounded-md border border-darkborderc bg-darkbutton px-2 py-1 text-xs text-textcolor focus:border-darkborderc/90 focus:outline-hidden cursor-pointer"
                     >
                         <option value={25}>25</option>
                         <option value={50}>50</option>

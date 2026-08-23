@@ -363,7 +363,7 @@
                 <HardDriveIcon class="h-4 w-4 shrink-0" />
                 <span>{language.storageTabBackend}</span>
                 {#if config}
-                    <span class="rounded-full px-1.5 py-0.2 text-[10px] font-mono {config.enabled ? 'bg-blue-500/20 text-blue-300' : 'bg-darkbutton text-textcolor2'}">
+                    <span class="rounded-full bg-darkbutton px-1.5 py-0.2 text-[10px] font-mono text-textcolor2 border border-darkborderc/40">
                         {config.storageType.toUpperCase()}
                     </span>
                 {/if}
@@ -374,39 +374,17 @@
                 class="flex items-center gap-2 rounded-lg px-3.5 py-1.5 transition-all cursor-pointer {activeSection === 'backup' ? 'bg-selected text-textcolor font-semibold shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
                 onclick={() => activeSection = 'backup'}
             >
-                <ShieldCheckIcon class="h-4 w-4 shrink-0 text-emerald-400" />
+                <ShieldCheckIcon class="h-4 w-4 shrink-0" />
                 <span>{language.sqlBackupTitle}</span>
                 {#if localBackup?.configured}
-                    <span class="rounded-full px-1.5 py-0.2 text-[10px] font-mono {localBackup.enabled ? 'bg-emerald-500/20 text-emerald-300' : 'bg-darkbutton text-textcolor2'}">
+                    <span class="rounded-full px-1.5 py-0.2 text-[10px] font-mono shrink-0 {localBackup.enabled ? 'bg-darkbutton border border-darkborderc text-textcolor flex items-center gap-1' : 'bg-darkbutton text-textcolor2'}">
+                        {#if localBackup.enabled}
+                            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                        {/if}
                         {localBackup.enabled ? language.storageActive : language.storageInactive}
                     </span>
                 {/if}
             </button>
-        </div>
-
-        <!-- Right side quick status badge (Desktop) -->
-        <div class="hidden sm:flex items-center gap-2 text-xs">
-            {#if activeSection === 'assets'}
-                <div class="inline-flex items-center gap-2 rounded-xl border border-darkborderc bg-darkbg px-3 py-1.5">
-                    <span class="h-2 w-2 rounded-full {config?.enabled ? 'bg-emerald-400 animate-pulse' : 'bg-indigo-400'}"></span>
-                    <span class="text-textcolor2 text-[11px]">{language.s3StatsStorageType}:</span>
-                    <span class="font-bold text-textcolor">
-                        {config?.storageType === 'azuresql' ? language.storageBackendAzureSql : (config?.storageType === 's3' ? language.storageBackendS3 : language.storageBackendLocalFs)}
-                    </span>
-                    <span class="rounded-md px-1.5 py-0.2 text-[10px] font-mono {config?.enabled ? 'bg-emerald-500/15 text-emerald-300' : 'bg-darkbutton text-textcolor2'}">
-                        {config?.enabled ? language.storageActive : language.storageBackendLocalFs}
-                    </span>
-                </div>
-            {:else if localBackup}
-                <div class="inline-flex items-center gap-2 rounded-xl border border-darkborderc bg-darkbg px-3 py-1.5">
-                    <span class="h-2 w-2 rounded-full {localBackup.enabled ? 'bg-emerald-400' : 'bg-amber-400'}"></span>
-                    <span class="text-textcolor2 text-[11px]">DB:</span>
-                    <span class="font-bold text-textcolor font-mono">{localBackup.vendor?.toUpperCase() || 'SQL'}</span>
-                    <span class="rounded-md px-1.5 py-0.2 text-[10px] {localBackup.enabled ? 'bg-emerald-500/15 text-emerald-300' : 'bg-darkbutton text-textcolor2'}">
-                        {localBackup.enabled ? language.sqlBackupStatusEnabled : language.sqlBackupStatusDisabled}
-                    </span>
-                </div>
-            {/if}
         </div>
     </div>
 
@@ -419,7 +397,7 @@
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="flex items-center gap-2">
                     <h3 class="text-sm sm:text-base font-bold text-textcolor flex items-center gap-2">
-                        <LayersIcon class="h-4.5 w-4.5 text-blue-400" />
+                        <LayersIcon class="h-4.5 w-4.5 text-textcolor" />
                         <span>{language.storageBackendSelect}</span>
                     </h3>
                     <button
@@ -432,11 +410,6 @@
                         <CircleQuestionMarkIcon size={14} />
                     </button>
                 </div>
-                {#if config}
-                    <span class="rounded-full px-3 py-1 text-xs font-semibold shrink-0 {config.enabled ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-darkbutton text-textcolor2 border border-darkborderc'}">
-                        {config.storageType === 'azuresql' ? language.storageBackendAzureSql : (config.storageType === 's3' ? language.storageBackendS3 : language.storageBackendLocalFs)}
-                    </span>
-                {/if}
             </div>
 
             {#if config?.managedByEnvironment}
@@ -451,13 +424,13 @@
                 <!-- Local FS Card -->
                 <button
                     type="button"
-                    class="group relative flex items-center justify-between rounded-xl border p-3.5 sm:p-4 text-left transition-all duration-150 cursor-pointer {storageType === 'fs' ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/40 shadow-sm' : 'border-darkborderc bg-bgcolor/40 hover:border-darkborderc/90 hover:bg-darkbg/90'} {config?.managedByEnvironment ? 'pointer-events-none opacity-60' : ''}"
+                    class="group relative flex items-center justify-between rounded-xl border p-3.5 sm:p-4 text-left transition-all duration-150 cursor-pointer {storageType === 'fs' ? 'border-indigo-500/50 bg-indigo-500/10 text-textcolor ring-1 ring-indigo-500/30 shadow-xs font-medium' : 'border-darkborderc bg-bgcolor/40 hover:border-indigo-500/30 hover:bg-darkbg text-textcolor2'} {config?.managedByEnvironment ? 'pointer-events-none opacity-60' : ''}"
                     onclick={() => onSelectBackend('fs')}
                     disabled={config?.managedByEnvironment}
                     title={language.storageBackendFsDesc}
                 >
                     <div class="flex items-center gap-3 min-w-0">
-                        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg {storageType === 'fs' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-darkbg text-indigo-400'} border border-indigo-500/30">
+                        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-darkbutton text-indigo-400 border border-darkborderc">
                             <FolderArchiveIcon class="h-4.5 w-4.5" />
                         </div>
                         <div class="min-w-0">
@@ -465,9 +438,10 @@
                             <div class="text-[11px] text-textcolor2 truncate">서버 로컬 디스크</div>
                         </div>
                     </div>
-                    {#if storageType === 'fs'}
-                        <span class="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[10px] font-semibold text-indigo-300 border border-indigo-500/40 shrink-0">
-                            {config?.storageType === 'fs' ? language.storageActive : language.select}
+                    {#if config?.storageType === 'fs'}
+                        <span class="rounded-full bg-indigo-500/15 border border-indigo-500/30 px-2 py-0.5 text-[10px] font-semibold text-indigo-300 shrink-0 flex items-center gap-1">
+                            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                            {language.storageActive}
                         </span>
                     {/if}
                 </button>
@@ -475,13 +449,13 @@
                 <!-- S3 Card -->
                 <button
                     type="button"
-                    class="group relative flex items-center justify-between rounded-xl border p-3.5 sm:p-4 text-left transition-all duration-150 cursor-pointer {storageType === 's3' ? 'border-blue-500 bg-blue-500/10 ring-2 ring-blue-500/40 shadow-sm' : 'border-darkborderc bg-bgcolor/40 hover:border-darkborderc/90 hover:bg-darkbg/90'} {config?.managedByEnvironment ? 'pointer-events-none opacity-60' : ''}"
+                    class="group relative flex items-center justify-between rounded-xl border p-3.5 sm:p-4 text-left transition-all duration-150 cursor-pointer {storageType === 's3' ? 'border-blue-500/50 bg-blue-500/10 text-textcolor ring-1 ring-blue-500/30 shadow-xs font-medium' : 'border-darkborderc bg-bgcolor/40 hover:border-blue-500/30 hover:bg-darkbg text-textcolor2'} {config?.managedByEnvironment ? 'pointer-events-none opacity-60' : ''}"
                     onclick={() => onSelectBackend('s3')}
                     disabled={config?.managedByEnvironment}
                     title={language.storageBackendS3Desc}
                 >
                     <div class="flex items-center gap-3 min-w-0">
-                        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg {storageType === 's3' ? 'bg-blue-500/20 text-blue-300' : 'bg-darkbg text-blue-400'} border border-blue-500/30">
+                        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-darkbutton text-blue-400 border border-darkborderc">
                             <ServerIcon class="h-4.5 w-4.5" />
                         </div>
                         <div class="min-w-0">
@@ -489,9 +463,10 @@
                             <div class="text-[11px] text-textcolor2 truncate">RustFS, MinIO, S3, R2</div>
                         </div>
                     </div>
-                    {#if storageType === 's3'}
-                        <span class="rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] font-semibold text-blue-300 border border-blue-500/40 shrink-0">
-                            {config?.storageType === 's3' && config?.enabled ? language.storageActive : language.select}
+                    {#if config?.storageType === 's3' && config?.enabled}
+                        <span class="rounded-full bg-blue-500/15 border border-blue-500/30 px-2 py-0.5 text-[10px] font-semibold text-blue-300 shrink-0 flex items-center gap-1">
+                            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                            {language.storageActive}
                         </span>
                     {/if}
                 </button>
@@ -499,13 +474,13 @@
                 <!-- Azure SQL Card -->
                 <button
                     type="button"
-                    class="group relative flex items-center justify-between rounded-xl border p-3.5 sm:p-4 text-left transition-all duration-150 cursor-pointer {storageType === 'azuresql' ? 'border-sky-500 bg-sky-500/10 ring-2 ring-sky-500/40 shadow-sm' : 'border-darkborderc bg-bgcolor/40 hover:border-darkborderc/90 hover:bg-darkbg/90'} {config?.azureManagedByEnvironment ? 'pointer-events-none opacity-60' : ''}"
+                    class="group relative flex items-center justify-between rounded-xl border p-3.5 sm:p-4 text-left transition-all duration-150 cursor-pointer {storageType === 'azuresql' ? 'border-sky-500/50 bg-sky-500/10 text-textcolor ring-1 ring-sky-500/30 shadow-xs font-medium' : 'border-darkborderc bg-bgcolor/40 hover:border-sky-500/30 hover:bg-darkbg text-textcolor2'} {config?.azureManagedByEnvironment ? 'pointer-events-none opacity-60' : ''}"
                     onclick={() => onSelectBackend('azuresql')}
                     disabled={config?.azureManagedByEnvironment}
                     title={language.storageBackendAzureSqlDesc}
                 >
                     <div class="flex items-center gap-3 min-w-0">
-                        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg {storageType === 'azuresql' ? 'bg-sky-500/20 text-sky-300' : 'bg-darkbg text-sky-400'} border border-sky-500/30">
+                        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-darkbutton text-sky-400 border border-darkborderc">
                             <DatabaseIcon class="h-4.5 w-4.5" />
                         </div>
                         <div class="min-w-0">
@@ -513,16 +488,17 @@
                             <div class="text-[11px] text-textcolor2 truncate">Azure SQL / MSSQL Blob</div>
                         </div>
                     </div>
-                    {#if storageType === 'azuresql'}
-                        <span class="rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold text-sky-300 border border-sky-500/40 shrink-0">
-                            {config?.storageType === 'azuresql' && config?.enabled ? language.storageActive : language.select}
+                    {#if config?.storageType === 'azuresql' && config?.enabled}
+                        <span class="rounded-full bg-sky-500/15 border border-sky-500/30 px-2 py-0.5 text-[10px] font-semibold text-sky-300 shrink-0 flex items-center gap-1">
+                            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                            {language.storageActive}
                         </span>
                     {/if}
                 </button>
             </div>
         </div>
 
-        <!-- 2-Column Responsive Dashboard Layout (Desktop lg:grid-cols-12) -->
+        <!-- 2-Column Responsive Layout: Connection Form & Tools (Desktop lg:grid-cols-12) -->
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
             <!-- Left Main Column: Connection Form (7 cols) -->
             <div class="lg:col-span-7 xl:col-span-7 space-y-5">
@@ -746,77 +722,13 @@
                 {/if}
             </div>
 
-            <!-- Right Sidebar Column: Status & Maintenance Tools (5 cols) -->
+            <!-- Right Sidebar Column: Migration & Maintenance Tools (5 cols) -->
             <div class="lg:col-span-5 xl:col-span-5 space-y-5">
-                <!-- Card 1: Storage Statistics & Overview -->
+                <!-- Migration & Rollback Tools -->
                 <div class="rounded-2xl border border-darkborderc bg-darkbg p-4 sm:p-5 shadow-xs space-y-4">
                     <div class="flex items-center justify-between border-b border-darkborderc/60 pb-3">
                         <h4 class="text-sm font-bold text-textcolor flex items-center gap-2">
-                            <HardDriveIcon class="h-4 w-4 text-blue-400" />
-                            <span>스토리지 현황</span>
-                        </h4>
-                        <span class="rounded-full px-2.5 py-0.5 text-[11px] font-mono font-semibold {config?.enabled ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'}">
-                            {config?.enabled ? language.storageActive : language.storageBackendLocalFs}
-                        </span>
-                    </div>
-
-                    <!-- Metric Tiles -->
-                    <div class="grid grid-cols-2 gap-2.5">
-                        <div class="rounded-xl border border-darkborderc/60 bg-bgcolor/40 p-3">
-                            <div class="text-[10px] uppercase tracking-wider text-textcolor2 font-medium">{language.storageTotalAssets}</div>
-                            <div class="mt-1 text-base sm:text-lg font-bold text-textcolor font-mono">
-                                {(storageSummary?.activeType === 's3' ? storageSummary?.s3?.totalObjects : storageSummary?.activeType === 'azuresql' ? storageSummary?.azuresql?.totalObjects : storageSummary?.localFs?.totalObjects ?? 0)?.toLocaleString()}
-                            </div>
-                        </div>
-                        <div class="rounded-xl border border-darkborderc/60 bg-bgcolor/40 p-3">
-                            <div class="text-[10px] uppercase tracking-wider text-textcolor2 font-medium">{language.storageTotalSize}</div>
-                            <div class="mt-1 text-base sm:text-lg font-bold text-textcolor font-mono">
-                                {formatBytes(storageSummary?.activeType === 's3' ? (storageSummary?.s3?.totalSizeBytes ?? 0) : storageSummary?.activeType === 'azuresql' ? (storageSummary?.azuresql?.totalSizeBytes ?? 0) : (storageSummary?.localFs?.totalSizeBytes ?? 0))}
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Detailed Breakdown -->
-                    <div class="space-y-1.5 pt-1 text-xs text-textcolor2">
-                        <div class="flex items-center justify-between py-1 border-b border-darkborderc/40">
-                            <span class="flex items-center gap-1.5">
-                                <FolderArchiveIcon class="h-3.5 w-3.5 text-indigo-400" />
-                                <span>로컬 디스크</span>
-                            </span>
-                            <span class="font-mono text-textcolor">
-                                {formatBytes(storageSummary?.localFs?.totalSizeBytes ?? 0)} ({(storageSummary?.localFs?.totalObjects ?? 0).toLocaleString()})
-                            </span>
-                        </div>
-                        {#if storageSummary?.s3}
-                            <div class="flex items-center justify-between py-1 border-b border-darkborderc/40">
-                                <span class="flex items-center gap-1.5">
-                                    <ServerIcon class="h-3.5 w-3.5 text-blue-400" />
-                                    <span>S3 버킷</span>
-                                </span>
-                                <span class="font-mono text-textcolor">
-                                    {formatBytes(storageSummary.s3.totalSizeBytes ?? 0)} ({(storageSummary.s3.totalObjects ?? 0).toLocaleString()})
-                                </span>
-                            </div>
-                        {/if}
-                        {#if storageSummary?.azuresql}
-                            <div class="flex items-center justify-between py-1">
-                                <span class="flex items-center gap-1.5">
-                                    <DatabaseIcon class="h-3.5 w-3.5 text-sky-400" />
-                                    <span>Azure SQL Blob</span>
-                                </span>
-                                <span class="font-mono text-textcolor">
-                                    {formatBytes(storageSummary.azuresql.totalSizeBytes ?? 0)} ({(storageSummary.azuresql.totalObjects ?? 0).toLocaleString()})
-                                </span>
-                            </div>
-                        {/if}
-                    </div>
-                </div>
-
-                <!-- Card 2: Migration & Rollback Tools -->
-                <div class="rounded-2xl border border-darkborderc bg-darkbg p-4 sm:p-5 shadow-xs space-y-4">
-                    <div class="flex items-center justify-between border-b border-darkborderc/60 pb-3">
-                        <h4 class="text-sm font-bold text-textcolor flex items-center gap-2">
-                            <ArrowRightLeftIcon class="h-4 w-4 text-blue-400" />
+                            <ArrowRightLeftIcon class="h-4 w-4 text-textcolor" />
                             <span>{language.s3StatsAndTools}</span>
                         </h4>
                         <button
@@ -834,7 +746,7 @@
                         <!-- Migration Action Item -->
                         <div class="flex items-center justify-between gap-3 rounded-xl border border-darkborderc/80 bg-bgcolor/40 p-3">
                             <div class="flex items-center gap-3 min-w-0">
-                                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-darkbutton text-textcolor border border-darkborderc">
                                     <UploadIcon class="h-4 w-4" />
                                 </div>
                                 <div class="min-w-0">
@@ -863,7 +775,7 @@
                         <!-- Rollback Action Item -->
                         <div class="flex items-center justify-between gap-3 rounded-xl border border-darkborderc/80 bg-bgcolor/40 p-3">
                             <div class="flex items-center gap-3 min-w-0">
-                                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
+                                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-darkbutton text-textcolor border border-darkborderc">
                                     <DownloadIcon class="h-4 w-4" />
                                 </div>
                                 <div class="min-w-0">
@@ -935,7 +847,7 @@
         <div class="rounded-2xl border border-darkborderc bg-darkbg p-4 sm:p-5 shadow-xs space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="flex items-center gap-2.5">
-                    <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-darkbutton text-textcolor border border-darkborderc">
                         <ShieldCheckIcon class="h-5 w-5" />
                     </div>
                     <div class="flex items-center gap-2">
@@ -954,7 +866,10 @@
 
                 <div class="flex items-center gap-2">
                     {#if localBackup}
-                        <span class="rounded-full px-2.5 py-0.5 text-xs font-medium {localBackup.enabled ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-darkbutton text-textcolor2'}">
+                        <span class="rounded-full px-2.5 py-0.5 text-xs font-medium {localBackup.enabled ? 'bg-darkbutton border border-darkborderc text-textcolor flex items-center gap-1' : 'bg-darkbutton text-textcolor2'}">
+                            {#if localBackup.enabled}
+                                <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                            {/if}
                             {localBackup.enabled ? language.sqlBackupStatusEnabled : language.sqlBackupStatusDisabled}
                         </span>
                     {/if}
@@ -981,7 +896,7 @@
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <button
                         type="button"
-                        class="rounded-xl border p-4 text-left transition-all cursor-pointer {backupVendor === 'postgres' ? 'border-blue-500 bg-blue-500/10 ring-2 ring-blue-500/40 shadow-sm' : 'border-darkborderc bg-bgcolor/40 hover:border-darkborderc/80 hover:bg-darkbg'}"
+                        class="rounded-xl border p-4 text-left transition-all cursor-pointer {backupVendor === 'postgres' ? 'border-darkborderc bg-selected text-textcolor ring-1 ring-darkborderc shadow-xs font-medium' : 'border-darkborderc bg-bgcolor/40 hover:border-darkborderc/80 hover:bg-darkbg text-textcolor2'}"
                         onclick={() => backupVendor = 'postgres'}
                         title={language.sqlVendorPostgresDesc}
                     >
@@ -991,7 +906,7 @@
 
                     <button
                         type="button"
-                        class="rounded-xl border p-4 text-left transition-all cursor-pointer {backupVendor === 'oracle' ? 'border-red-500 bg-red-500/10 ring-2 ring-red-500/40 shadow-sm' : 'border-darkborderc bg-bgcolor/40 hover:border-darkborderc/80 hover:bg-darkbg'}"
+                        class="rounded-xl border p-4 text-left transition-all cursor-pointer {backupVendor === 'oracle' ? 'border-darkborderc bg-selected text-textcolor ring-1 ring-darkborderc shadow-xs font-medium' : 'border-darkborderc bg-bgcolor/40 hover:border-darkborderc/80 hover:bg-darkbg text-textcolor2'}"
                         onclick={() => backupVendor = 'oracle'}
                         title={language.sqlVendorOracleDesc}
                     >
@@ -1001,7 +916,7 @@
 
                     <button
                         type="button"
-                        class="rounded-xl border p-4 text-left transition-all cursor-pointer {backupVendor === 'azure' ? 'border-sky-500 bg-sky-500/10 ring-2 ring-sky-500/40 shadow-sm' : 'border-darkborderc bg-bgcolor/40 hover:border-darkborderc/80 hover:bg-darkbg'}"
+                        class="rounded-xl border p-4 text-left transition-all cursor-pointer {backupVendor === 'azure' ? 'border-darkborderc bg-selected text-textcolor ring-1 ring-darkborderc shadow-xs font-medium' : 'border-darkborderc bg-bgcolor/40 hover:border-darkborderc/80 hover:bg-darkbg text-textcolor2'}"
                         onclick={() => backupVendor = 'azure'}
                         title={language.sqlVendorAzureDesc}
                     >
@@ -1019,7 +934,7 @@
                 <!-- Connection Form Card -->
                 <div class="rounded-2xl border border-darkborderc bg-darkbg p-4 sm:p-6 shadow-xs space-y-4">
                     <h4 class="text-sm font-bold text-textcolor flex items-center gap-2 border-b border-darkborderc/60 pb-3">
-                        <DatabaseIcon class="h-4 w-4 text-emerald-400" />
+                        <DatabaseIcon class="h-4 w-4 text-textcolor" />
                         <span>백업 데이터베이스 연결 정보</span>
                     </h4>
 
@@ -1113,7 +1028,7 @@
                 <!-- Backup Options: Mirroring & Snapshot -->
                 <div class="rounded-2xl border border-darkborderc bg-darkbg p-4 sm:p-5 shadow-xs space-y-4">
                     <h4 class="text-sm font-bold text-textcolor flex items-center gap-2 border-b border-darkborderc/60 pb-3">
-                        <ClockIcon class="h-4 w-4 text-blue-400" />
+                        <ClockIcon class="h-4 w-4 text-textcolor" />
                         <span>복제 및 스냅샷 옵션</span>
                     </h4>
 
@@ -1183,11 +1098,11 @@
                     <div class="rounded-2xl border border-darkborderc bg-darkbg p-4 sm:p-5 shadow-xs text-xs text-textcolor2 space-y-4">
                         <div class="flex items-center justify-between border-b border-darkborderc/60 pb-3">
                             <span class="font-bold text-textcolor text-sm flex items-center gap-2">
-                                <ShieldCheckIcon class="h-4 w-4 text-emerald-400" />
+                                <ShieldCheckIcon class="h-4 w-4 text-textcolor" />
                                 <span>백업 복제 상태</span>
                             </span>
                             {#if localBackup.inFlight && !backupResyncing && !backupRestoring}
-                                <span class="text-xs text-blue-400 font-mono animate-pulse">{language.sqlBackupInProgress}</span>
+                                <span class="text-xs text-textcolor2 font-mono animate-pulse">{language.sqlBackupInProgress}</span>
                             {/if}
                         </div>
 
@@ -1205,7 +1120,7 @@
 
                             <div class="rounded-xl bg-bgcolor/40 p-2.5 border border-darkborderc/60 text-center">
                                 <div class="text-[10px] text-textcolor2 uppercase font-medium">{language.sqlBackupLag}</div>
-                                <div class="text-base font-bold mt-0.5 {(localBackup.lag ?? 0) > 0 ? 'text-amber-400' : 'text-emerald-400'}">
+                                <div class="text-base font-bold mt-0.5 {(localBackup.lag ?? 0) > 0 ? 'text-amber-400' : 'text-textcolor'}">
                                     {localBackup.lag ?? 0}
                                 </div>
                             </div>
@@ -1240,7 +1155,7 @@
                     <!-- Maintenance & Recovery Card -->
                     <div class="rounded-2xl border border-darkborderc bg-darkbg p-4 sm:p-5 shadow-xs space-y-4">
                         <h4 class="text-sm font-bold text-textcolor flex items-center gap-2 border-b border-darkborderc/60 pb-3">
-                            <ZapIcon class="h-4 w-4 text-amber-400" />
+                            <ZapIcon class="h-4 w-4 text-textcolor" />
                             <span>유지보수 및 복구 도구</span>
                         </h4>
 
@@ -1248,7 +1163,7 @@
                             <!-- Full Resync Action Item -->
                             <div class="flex items-center justify-between gap-3 rounded-xl border border-darkborderc/80 bg-bgcolor/40 p-3">
                                 <div class="flex items-center gap-3 min-w-0">
-                                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-darkbutton text-textcolor border border-darkborderc">
                                         <RefreshCwIcon class="h-4 w-4 {backupResyncing ? 'animate-spin' : ''}" />
                                     </div>
                                     <div class="min-w-0">
@@ -1274,21 +1189,21 @@
                             </div>
 
                             <!-- Restore to Main Action Item -->
-                            <div class="flex items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+                            <div class="flex items-center justify-between gap-3 rounded-xl border border-darkborderc/80 bg-bgcolor/40 p-3">
                                 <div class="flex items-center gap-3 min-w-0">
-                                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-darkbutton text-textcolor border border-darkborderc">
                                         <ZapIcon class="h-4 w-4" />
                                     </div>
                                     <div class="min-w-0">
-                                        <div class="text-xs font-bold text-amber-200">
+                                        <div class="text-xs font-bold text-textcolor">
                                             {language.sqlBackupRestoreToMain}
                                         </div>
-                                        <div class="text-[11px] text-amber-300/80 truncate">백업 DB의 데이터를 메인 DB로 복원</div>
+                                        <div class="text-[11px] text-textcolor2 truncate">백업 DB의 데이터를 메인 DB로 복원</div>
                                     </div>
                                 </div>
                                 <Button
                                     size="sm"
-                                    className="shrink-0 inline-flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/40 text-amber-200 border-amber-500/40 font-medium"
+                                    className="shrink-0 inline-flex items-center gap-1.5 font-medium"
                                     disabled={busy || backupRestoring}
                                     onclick={restoreFromBackupNow}
                                 >
@@ -1316,7 +1231,7 @@
                                 </div>
                                 <Button
                                     size="sm"
-                                    className="shrink-0 inline-flex items-center gap-1.5 bg-rose-500/20 hover:bg-rose-500/40 text-rose-200 border-rose-500/40 font-medium"
+                                    className="shrink-0 inline-flex items-center gap-1.5 bg-rose-600/30 hover:bg-rose-600/50 text-rose-200 border-rose-500/40 font-medium"
                                     disabled={busy || backupRemoving}
                                     onclick={removeBackupConfiguration}
                                 >
@@ -1330,7 +1245,7 @@
                     <!-- Information Card when not configured -->
                     <div class="rounded-2xl border border-darkborderc/70 bg-darkbg/60 p-4 sm:p-5 shadow-xs space-y-3 text-xs text-textcolor2">
                         <div class="flex items-center gap-2 font-semibold text-textcolor text-sm">
-                            <ShieldIcon class="h-4.5 w-4.5 text-emerald-400" />
+                            <ShieldIcon class="h-4.5 w-4.5 text-textcolor" />
                             <span>백업 데이터베이스 소개</span>
                         </div>
                         <p class="leading-relaxed">
@@ -1346,13 +1261,13 @@
 
                 <!-- Real-time Progress HUD for Sync/Restore -->
                 {#if (backupResyncing || backupRestoring) && backupProgressData}
-                    <div class="rounded-2xl border border-blue-500/40 bg-blue-500/10 p-4 text-textcolor shadow-md animate-in fade-in duration-200">
+                    <div class="rounded-2xl border border-darkborderc bg-selected p-4 text-textcolor shadow-md animate-in fade-in duration-200">
                         <div class="flex items-center justify-between text-xs font-semibold">
                             <span>{backupProgressData.message || (backupRestoring ? language.sqlBackupProgressRestoring : language.sqlBackupResyncBusy)}</span>
-                            <span class="font-mono text-blue-300">{backupProgressData.percentage}%</span>
+                            <span class="font-mono text-textcolor">{backupProgressData.percentage}%</span>
                         </div>
                         <div class="mt-2 h-2 w-full overflow-hidden rounded-full bg-darkbg">
-                            <div class="h-full bg-blue-500 transition-all duration-300" style="width: {backupProgressData.percentage}%"></div>
+                            <div class="h-full bg-textcolor2 transition-all duration-300" style="width: {backupProgressData.percentage}%"></div>
                         </div>
                     </div>
                 {/if}

@@ -84,7 +84,7 @@
                     <div class="flex items-center gap-2 text-xs text-textcolor2">
                         <span>{bot.totalAssets} {language.storageAssets}</span>
                         <span>·</span>
-                        <span class="font-semibold text-blue-400">{formatBytes(bot.totalSizeBytes)}</span>
+                        <span class="font-semibold text-textcolor">{formatBytes(bot.totalSizeBytes)}</span>
                     </div>
                 </div>
             </div>
@@ -159,7 +159,7 @@
                                     <span class="rounded-md bg-darkbutton px-1.5 py-0.5 text-[10px] font-medium text-textcolor2">
                                         {asset.type}
                                     </span>
-                                    <span class="text-xs font-semibold text-blue-300">
+                                    <span class="text-xs font-semibold text-textcolor">
                                         {formatBytes(asset.size)}
                                     </span>
                                 </div>

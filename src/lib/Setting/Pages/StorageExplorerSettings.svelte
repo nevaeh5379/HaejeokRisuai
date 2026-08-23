@@ -640,7 +640,6 @@
                 {cleaningOrphans}
                 {busy}
                 onSelectTab={(t) => (currentTab = t)}
-                onSwitchTarget={switchViewTarget}
                 onPurgeLocalFs={purgeLocalFsAssets}
                 onCleanOrphans={cleanOrphanAssets}
             />
@@ -671,10 +670,6 @@
                     {busy}
                     onSelectTab={(t) => {
                         currentTab = t
-                        mobileSidebarOpen = false
-                    }}
-                    onSwitchTarget={(tgt) => {
-                        switchViewTarget(tgt)
                         mobileSidebarOpen = false
                     }}
                     onPurgeLocalFs={purgeLocalFsAssets}
@@ -710,9 +705,14 @@
                 {#if currentTab === 'bots'}
                     <BotAnalysisTab
                         bots={botAnalysis}
+                        {viewTarget}
+                        {storageSummary}
+                        {config}
+                        {busy}
                         {thumbnailUrls}
                         onLoadThumbnail={loadThumbnail}
                         onSelectBot={(bot) => selectedBot = bot}
+                        onSwitchTarget={switchViewTarget}
                     />
                 {/if}
 
@@ -720,9 +720,14 @@
                 {#if currentTab === 'modules'}
                     <ModuleAnalysisTab
                         modules={moduleAnalysis}
+                        {viewTarget}
+                        {storageSummary}
+                        {config}
+                        {busy}
                         {thumbnailUrls}
                         onLoadThumbnail={loadThumbnail}
                         onSelectModule={(mod) => selectedModule = mod}
+                        onSwitchTarget={switchViewTarget}
                     />
                 {/if}
 
@@ -769,6 +774,8 @@
                         {assetDetails}
                         {orphanAssets}
                         {viewTarget}
+                        {storageSummary}
+                        {config}
                         {selectedFileKeys}
                         {resyncingCatalog}
                         {busy}
@@ -780,6 +787,7 @@
                         onDeleteSingleFile={deleteSingleFile}
                         onDeleteSelectedFiles={deleteSelectedFiles}
                         onResyncCatalog={resyncAssetCatalog}
+                        onSwitchTarget={switchViewTarget}
                     />
                 {/if}
             </main>

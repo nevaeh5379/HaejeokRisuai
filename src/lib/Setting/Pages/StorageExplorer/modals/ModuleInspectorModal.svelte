@@ -62,7 +62,7 @@
                     <div class="flex items-center gap-2 text-xs text-textcolor2">
                         <span>{module.totalAssets} {language.storageAssets}</span>
                         <span>·</span>
-                        <span class="font-semibold text-violet-400">{formatBytes(module.totalSizeBytes)}</span>
+                        <span class="font-semibold text-textcolor">{formatBytes(module.totalSizeBytes)}</span>
                     </div>
                 </div>
             </div>
@@ -106,7 +106,7 @@
                                     <span class="rounded-md bg-darkbutton px-1.5 py-0.5 text-[10px] font-medium text-textcolor2">
                                         {asset.type === 'moduleIcon' ? language.storageModuleIcon : language.storageModuleAsset}
                                     </span>
-                                    <span class="text-xs font-semibold text-violet-300">{formatBytes(asset.size)}</span>
+                                    <span class="text-xs font-semibold text-textcolor">{formatBytes(asset.size)}</span>
                                 </div>
                                 <h5 class="mt-1 truncate text-xs font-medium text-textcolor" title={asset.label}>{asset.label}</h5>
                                 <div class="mt-0.5 flex items-center justify-between gap-1">

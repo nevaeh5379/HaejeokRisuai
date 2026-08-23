@@ -1,21 +1,32 @@
 <script lang="ts">
     import { PackageIcon, SearchIcon, XIcon } from '@lucide/svelte'
     import { language } from 'src/lang'
+    import StorageTargetSelector from '../components/StorageTargetSelector.svelte'
     import { formatBytes } from '../utils'
-    import type { ModuleSortType, ModuleStorageInfo } from '../types'
+    import type { ModuleSortType, ModuleStorageInfo, NodeS3ServerConfig, NodeStorageSummary, ViewTarget } from '../types'
 
     interface Props {
         modules: ModuleStorageInfo[]
+        viewTarget: ViewTarget
+        storageSummary: NodeStorageSummary | null
+        config?: NodeS3ServerConfig | null
+        busy?: boolean
         thumbnailUrls: Map<string, string>
         onLoadThumbnail: (key: string) => void
         onSelectModule: (module: ModuleStorageInfo) => void
+        onSwitchTarget: (target: ViewTarget) => void
     }
 
     const {
         modules,
+        viewTarget,
+        storageSummary,
+        config,
+        busy = false,
         thumbnailUrls,
         onLoadThumbnail,
-        onSelectModule
+        onSelectModule,
+        onSwitchTarget
     }: Props = $props()
 
     let moduleSearch = $state('')
@@ -41,7 +52,7 @@
 </script>
 
 <div class="flex flex-col gap-4">
-    <!-- Controls: Search & Sort -->
+    <!-- Controls: Search & Target Selector & Sort -->
     <div class="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
         <div class="relative min-w-[200px] flex-1 max-w-md">
             <SearchIcon class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-textcolor2 pointer-events-none" />
@@ -49,7 +60,7 @@
                 type="text"
                 bind:value={moduleSearch}
                 placeholder={language.storageSearchModules}
-                class="w-full rounded-lg border border-darkborderc bg-darkbg py-2 pl-9 pr-8 text-xs sm:text-sm text-textcolor placeholder-textcolor2 focus:border-violet-500 focus:outline-hidden"
+                class="w-full rounded-lg border border-darkborderc bg-darkbg py-2 pl-9 pr-8 text-xs sm:text-sm text-textcolor placeholder-textcolor2 focus:border-darkborderc/90 focus:outline-hidden"
             />
             {#if moduleSearch}
                 <button
@@ -63,17 +74,29 @@
             {/if}
         </div>
 
-        <div class="flex items-center gap-2 shrink-0">
-            <span class="text-xs text-textcolor2 hidden sm:inline">{language.storageSort}:</span>
-            <select
-                bind:value={moduleSort}
-                class="rounded-lg border border-darkborderc bg-darkbg px-2.5 sm:px-3 py-2 text-xs font-medium text-textcolor focus:border-violet-500 focus:outline-hidden cursor-pointer"
-            >
-                <option value="size_desc">{language.storageSortSizeDesc}</option>
-                <option value="size_asc">{language.storageSortSizeAsc}</option>
-                <option value="count_desc">{language.storageSortCountDesc}</option>
-                <option value="name_asc">{language.storageSortModuleNameAsc}</option>
-            </select>
+        <div class="flex flex-wrap items-center gap-2.5 shrink-0">
+            <!-- Storage Target Selector Menu -->
+            <StorageTargetSelector
+                {viewTarget}
+                {storageSummary}
+                {config}
+                disabled={busy}
+                {onSwitchTarget}
+            />
+
+            <!-- Sort Dropdown -->
+            <div class="flex items-center gap-2 shrink-0">
+                <span class="text-xs text-textcolor2 hidden sm:inline">{language.storageSort}:</span>
+                <select
+                    bind:value={moduleSort}
+                    class="rounded-lg border border-darkborderc bg-darkbg px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-medium text-textcolor focus:border-darkborderc/90 focus:outline-hidden cursor-pointer"
+                >
+                    <option value="size_desc">{language.storageSortSizeDesc}</option>
+                    <option value="size_asc">{language.storageSortSizeAsc}</option>
+                    <option value="count_desc">{language.storageSortCountDesc}</option>
+                    <option value="name_asc">{language.storageSortModuleNameAsc}</option>
+                </select>
+            </div>
         </div>
     </div>
 
@@ -88,15 +111,15 @@
             {#each filteredModules as module (module.id)}
                 <button
                     type="button"
-                    class="group relative flex w-full cursor-pointer flex-col justify-between rounded-xl border border-darkborderc bg-darkbg/70 p-3.5 sm:p-4 text-left transition-all hover:border-darkborderc/80 hover:bg-darkbg hover:shadow-lg active:scale-[0.99]"
+                    class="group relative flex w-full cursor-pointer flex-col justify-between rounded-xl border border-darkborderc bg-darkbg/70 p-3.5 sm:p-4 text-left transition-all hover:border-darkborderc/90 hover:bg-darkbg hover:shadow-md active:scale-[0.99]"
                     onclick={() => onSelectModule(module)}
                 >
                     <div class="w-full">
-                        <h4 class="truncate text-sm font-bold text-textcolor transition-colors group-hover:text-violet-400">
+                        <h4 class="truncate text-sm font-bold text-textcolor">
                             {module.name}
                         </h4>
                         <div class="mt-1.5 flex items-center gap-2">
-                            <span class="rounded-md bg-violet-500/15 px-2 py-0.5 text-xs font-semibold text-violet-300">
+                            <span class="rounded-md bg-darkbutton border border-darkborderc/60 px-2 py-0.5 text-xs font-semibold text-textcolor">
                                 {formatBytes(module.totalSizeBytes)}
                             </span>
                             <span class="text-xs text-textcolor2">
