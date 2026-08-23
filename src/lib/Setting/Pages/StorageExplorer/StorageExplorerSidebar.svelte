@@ -1,5 +1,6 @@
 <script lang="ts">
     import {
+        AlertTriangleIcon,
         CheckCircle2Icon,
         DatabaseIcon,
         FolderArchiveIcon,
@@ -29,6 +30,9 @@
         fileCount: number
         orphanCount: number
         orphanSizeBytes: number
+        missingBotAssetsCount?: number
+        missingModuleAssetsCount?: number
+        totalMissingAssets?: number
         purgingLocal: boolean
         cleaningOrphans: boolean
         busy: boolean
@@ -49,6 +53,9 @@
         fileCount,
         orphanCount,
         orphanSizeBytes,
+        missingBotAssetsCount = 0,
+        missingModuleAssetsCount = 0,
+        totalMissingAssets = 0,
         purgingLocal,
         cleaningOrphans,
         busy,
@@ -183,9 +190,17 @@
                         <UserIcon class="h-4 w-4 shrink-0 {currentTab === 'bots' ? 'text-textcolor' : 'text-textcolor2 group-hover:text-textcolor'}" />
                         <span class="truncate">{language.storageTabBots}</span>
                     </div>
-                    <span class="rounded-full px-2 py-0.2 text-[10px] font-mono shrink-0 {currentTab === 'bots' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc/60' : 'bg-darkbutton text-textcolor2'}">
-                        {botCount}
-                    </span>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        {#if missingBotAssetsCount > 0}
+                            <span class="rounded-full bg-amber-500/20 border border-amber-500/30 px-1.5 py-0.2 text-[10px] font-mono font-bold text-amber-300 flex items-center gap-0.5" title="{missingBotAssetsCount} missing assets">
+                                <AlertTriangleIcon class="h-3 w-3 text-amber-400 shrink-0" />
+                                {missingBotAssetsCount}
+                            </span>
+                        {/if}
+                        <span class="rounded-full px-2 py-0.2 text-[10px] font-mono {currentTab === 'bots' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc/60' : 'bg-darkbutton text-textcolor2'}">
+                            {botCount}
+                        </span>
+                    </div>
                 </button>
 
                 <!-- Tab: Modules -->
@@ -198,9 +213,17 @@
                         <PackageIcon class="h-4 w-4 shrink-0 {currentTab === 'modules' ? 'text-textcolor' : 'text-textcolor2 group-hover:text-textcolor'}" />
                         <span class="truncate">{language.storageTabModules}</span>
                     </div>
-                    <span class="rounded-full px-2 py-0.2 text-[10px] font-mono shrink-0 {currentTab === 'modules' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc/60' : 'bg-darkbutton text-textcolor2'}">
-                        {moduleCount}
-                    </span>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        {#if missingModuleAssetsCount > 0}
+                            <span class="rounded-full bg-amber-500/20 border border-amber-500/30 px-1.5 py-0.2 text-[10px] font-mono font-bold text-amber-300 flex items-center gap-0.5" title="{missingModuleAssetsCount} missing assets">
+                                <AlertTriangleIcon class="h-3 w-3 text-amber-400 shrink-0" />
+                                {missingModuleAssetsCount}
+                            </span>
+                        {/if}
+                        <span class="rounded-full px-2 py-0.2 text-[10px] font-mono {currentTab === 'modules' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc/60' : 'bg-darkbutton text-textcolor2'}">
+                            {moduleCount}
+                        </span>
+                    </div>
                 </button>
 
                 <!-- Tab: All Files -->
@@ -251,6 +274,24 @@
             </span>
         </div>
 
+        <!-- Missing Assets Alert -->
+        {#if totalMissingAssets > 0}
+            <div class="flex flex-col gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-200">
+                <div class="flex items-center justify-between gap-1">
+                    <div class="flex items-center gap-1.5 font-semibold text-amber-300 min-w-0">
+                        <AlertTriangleIcon class="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                        <span class="truncate">{language.storageMissingAssets} ({viewTarget.toUpperCase()})</span>
+                    </div>
+                    <span class="rounded-full bg-amber-500/20 px-1.5 py-0.2 text-[10px] font-bold text-amber-300">
+                        {totalMissingAssets}개
+                    </span>
+                </div>
+                <p class="text-[11px] text-amber-200/80 leading-tight">
+                    {language.storageMissingAssetsDetected(totalMissingAssets)}
+                </p>
+            </div>
+        {/if}
+
         <!-- Orphan Assets Alert / Action -->
         {#if orphanCount > 0}
             <div class="flex flex-col gap-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs text-rose-200">
@@ -275,10 +316,12 @@
                     </button>
                 </div>
             </div>
-        {:else}
+        {/if}
+
+        {#if orphanCount === 0 && totalMissingAssets === 0}
             <div class="flex items-center gap-1.5 rounded-lg bg-bgcolor/50 border border-darkborderc/60 px-2.5 py-1.5 text-[11px] text-textcolor2">
                 <CheckCircle2Icon class="h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                <span class="truncate">연결된 에셋 정상 (고아 에셋 없음)</span>
+                <span class="truncate">{language.storageAllAssetsPresent ?? '연결된 에셋 정상'}</span>
             </div>
         {/if}
     </div>

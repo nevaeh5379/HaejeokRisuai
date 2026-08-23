@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { PackageIcon, SearchIcon, XIcon } from '@lucide/svelte'
+    import { AlertTriangleIcon, PackageIcon, SearchIcon, XIcon } from '@lucide/svelte'
     import { language } from 'src/lang'
     import StorageTargetSelector from '../components/StorageTargetSelector.svelte'
     import { formatBytes } from '../utils'
@@ -32,6 +32,9 @@
     let moduleSearch = $state('')
     let moduleSort = $state<ModuleSortType>('size_desc')
 
+    const totalMissing = $derived(modules.reduce((sum, m) => sum + m.missingAssetsCount, 0))
+    const modulesWithMissingCount = $derived(modules.filter((m) => m.missingAssetsCount > 0).length)
+
     const filteredModules = $derived.by(() => {
         let list = [...modules]
         if (moduleSearch.trim()) {
@@ -44,14 +47,35 @@
             list.sort((a, b) => a.totalSizeBytes - b.totalSizeBytes)
         } else if (moduleSort === 'count_desc') {
             list.sort((a, b) => b.totalAssets - a.totalAssets)
-        } else {
+        } else if (moduleSort === 'name_asc') {
             list.sort((a, b) => a.name.localeCompare(b.name))
+        } else if (moduleSort === 'missing_desc') {
+            list.sort((a, b) => b.missingAssetsCount - a.missingAssetsCount || b.totalSizeBytes - a.totalSizeBytes)
         }
         return list
     })
 </script>
 
 <div class="flex flex-col gap-4">
+    <!-- Missing Assets Banner -->
+    {#if totalMissing > 0}
+        <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
+            <div class="flex items-center gap-2 min-w-0">
+                <AlertTriangleIcon class="h-4 w-4 shrink-0 text-amber-400" />
+                <span class="truncate">{language.storageMissingModulesDetected(modulesWithMissingCount)} ({language.storageMissingAssets}: {totalMissing}개)</span>
+            </div>
+            {#if moduleSort !== 'missing_desc'}
+                <button
+                    type="button"
+                    class="rounded-md bg-amber-500/20 px-2.5 py-1 text-xs font-semibold text-amber-300 hover:bg-amber-500/30 transition-colors cursor-pointer shrink-0"
+                    onclick={() => moduleSort = 'missing_desc'}
+                >
+                    {language.storageSortMissingDesc}
+                </button>
+            {/if}
+        </div>
+    {/if}
+
     <!-- Controls: Search & Target Selector & Sort -->
     <div class="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
         <div class="relative min-w-[200px] flex-1 max-w-md">
@@ -95,6 +119,7 @@
                     <option value="size_asc">{language.storageSortSizeAsc}</option>
                     <option value="count_desc">{language.storageSortCountDesc}</option>
                     <option value="name_asc">{language.storageSortModuleNameAsc}</option>
+                    <option value="missing_desc">{language.storageSortMissingDesc}</option>
                 </select>
             </div>
         </div>
@@ -111,13 +136,21 @@
             {#each filteredModules as module (module.id)}
                 <button
                     type="button"
-                    class="group relative flex w-full cursor-pointer flex-col justify-between rounded-xl border border-darkborderc bg-darkbg/70 p-3.5 sm:p-4 text-left transition-all hover:border-darkborderc/90 hover:bg-darkbg hover:shadow-md active:scale-[0.99]"
+                    class="group relative flex w-full cursor-pointer flex-col justify-between rounded-xl border p-3.5 sm:p-4 text-left transition-all hover:bg-darkbg hover:shadow-md active:scale-[0.99] {module.missingAssetsCount > 0 ? 'border-amber-500/40 bg-amber-500/5 hover:border-amber-500/70' : 'border-darkborderc bg-darkbg/70 hover:border-darkborderc/90'}"
                     onclick={() => onSelectModule(module)}
                 >
                     <div class="w-full">
-                        <h4 class="truncate text-sm font-bold text-textcolor">
-                            {module.name}
-                        </h4>
+                        <div class="flex items-center justify-between gap-1">
+                            <h4 class="truncate text-sm font-bold text-textcolor">
+                                {module.name}
+                            </h4>
+                            {#if module.missingAssetsCount > 0}
+                                <span class="rounded-md bg-amber-500/20 border border-amber-500/30 px-1.5 py-0.2 text-[10px] font-bold text-amber-300 flex items-center gap-0.5 shrink-0" title="{module.missingAssetsCount} missing assets">
+                                    <AlertTriangleIcon class="h-3 w-3 text-amber-400" />
+                                    {module.missingAssetsCount}
+                                </span>
+                            {/if}
+                        </div>
                         <div class="mt-1.5 flex items-center gap-2">
                             <span class="rounded-md bg-darkbutton border border-darkborderc/60 px-2 py-0.5 text-xs font-semibold text-textcolor">
                                 {formatBytes(module.totalSizeBytes)}
@@ -127,8 +160,14 @@
                             </span>
                         </div>
                     </div>
-                    <div class="mt-3 border-t border-darkborderc/50 pt-2.5 text-[11px] text-textcolor2">
-                        {language.storageModuleAssets}: {module.assets.filter((a) => a.type === 'moduleAsset').length}
+                    <div class="mt-3 flex flex-wrap items-center justify-between gap-1.5 border-t border-darkborderc/50 pt-2.5 text-[11px] text-textcolor2">
+                        <span>{language.storageModuleAssets}: {module.assets.filter((a) => a.type === 'moduleAsset').length}</span>
+                        {#if module.missingAssetsCount > 0}
+                            <span class="rounded-md bg-amber-500/20 border border-amber-500/30 px-2 py-0.5 text-amber-300 font-semibold flex items-center gap-1">
+                                <AlertTriangleIcon class="h-3 w-3 text-amber-400" />
+                                {language.storageMissing}: {module.missingAssetsCount}
+                            </span>
+                        {/if}
                     </div>
                 </button>
             {/each}

@@ -91,6 +91,10 @@
     let orphanAssets = $state<NodeStorageAssetItem[]>([])
     let orphanSizeBytes = $state(0)
 
+    const missingBotAssetsCount = $derived(botAnalysis.reduce((sum, b) => sum + b.missingAssetsCount, 0))
+    const missingModuleAssetsCount = $derived(moduleAnalysis.reduce((sum, m) => sum + m.missingAssetsCount, 0))
+    const totalMissingAssets = $derived(missingBotAssetsCount + missingModuleAssetsCount)
+
     // Modals state
     let selectedBot = $state<BotStorageInfo | null>(null)
     let selectedModule = $state<ModuleStorageInfo | null>(null)
@@ -636,6 +640,9 @@
                 fileCount={assetDetails?.totalObjects ?? 0}
                 orphanCount={orphanAssets.length}
                 {orphanSizeBytes}
+                {missingBotAssetsCount}
+                {missingModuleAssetsCount}
+                {totalMissingAssets}
                 {purgingLocal}
                 {cleaningOrphans}
                 {busy}
@@ -665,6 +672,9 @@
                     fileCount={assetDetails?.totalObjects ?? 0}
                     orphanCount={orphanAssets.length}
                     {orphanSizeBytes}
+                    {missingBotAssetsCount}
+                    {missingModuleAssetsCount}
+                    {totalMissingAssets}
                     {purgingLocal}
                     {cleaningOrphans}
                     {busy}

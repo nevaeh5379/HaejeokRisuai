@@ -91,6 +91,7 @@ export interface AnalysisResult {
     modules: ModuleStorageInfo[]
     orphanAssets: NodeStorageAssetItem[]
     orphanSizeBytes: number
+    totalMissingAssets: number
 }
 
 export async function runStorageAnalysis(
@@ -127,7 +128,7 @@ export async function runStorageAnalysis(
             }
         }
         for (const candidate of candidates) referencedKeys.add(candidate)
-        return { matchedKey, size: item?.size ?? 0 }
+        return { matchedKey, size: item?.size ?? 0, exists: !!item }
     }
 
     for (const char of characters) {
@@ -139,11 +140,11 @@ export async function runStorageAnalysis(
         function addAsset(key: string | undefined, type: BotAssetItem['type'], label: string): string | undefined {
             const resolved = resolveAsset(key)
             if (!resolved) return
-            const { matchedKey, size } = resolved
+            const { matchedKey, size, exists } = resolved
 
             if (!seenKeys.has(matchedKey)) {
                 seenKeys.add(matchedKey)
-                botAssets.push({ key: matchedKey, type, label, size })
+                botAssets.push({ key: matchedKey, type, label, size, missing: !exists })
             }
             return matchedKey
         }
@@ -215,6 +216,7 @@ export async function runStorageAnalysis(
         }
 
         const totalSize = botAssets.reduce((sum, a) => sum + a.size, 0)
+        const missingCount = botAssets.filter((a) => a.missing).length
 
         bots.push({
             id: (char as any).id || (char as any).chaId || char.name,
@@ -226,7 +228,8 @@ export async function runStorageAnalysis(
             emotionsCount,
             additionalAssetsCount: additionalCount,
             ccAssetsCount,
-            audioCount
+            audioCount,
+            missingAssetsCount: missingCount
         })
     }
 
@@ -258,7 +261,8 @@ export async function runStorageAnalysis(
                 key: resolved.matchedKey,
                 type,
                 label,
-                size: resolved.size
+                size: resolved.size,
+                missing: !resolved.exists
             })
             return resolved.matchedKey
         }
@@ -270,13 +274,16 @@ export async function runStorageAnalysis(
             }
         }
 
+        const missingCount = moduleAssets.filter((a) => a.missing).length
+
         modules.push({
             id: storageId,
             name: displayName || language.storageUnnamedModule,
             iconKey: iconKey || module.icon,
             totalAssets: moduleAssets.length,
             totalSizeBytes: moduleAssets.reduce((sum, asset) => sum + asset.size, 0),
-            assets: moduleAssets
+            assets: moduleAssets,
+            missingAssetsCount: missingCount
         })
     }
 
@@ -330,10 +337,15 @@ export async function runStorageAnalysis(
         }
     }
 
+    const totalMissingAssets =
+        bots.reduce((sum, b) => sum + b.missingAssetsCount, 0) +
+        modules.reduce((sum, m) => sum + m.missingAssetsCount, 0)
+
     return {
         bots,
         modules,
         orphanAssets: orphans,
-        orphanSizeBytes: orphanSize
+        orphanSizeBytes: orphanSize,
+        totalMissingAssets
     }
 }

@@ -26,6 +26,7 @@ export interface BotAssetItem {
     type: BotAssetType
     label: string
     size: number
+    missing?: boolean
 }
 
 export interface BotStorageInfo {
@@ -39,6 +40,7 @@ export interface BotStorageInfo {
     additionalAssetsCount: number
     ccAssetsCount: number
     audioCount: number
+    missingAssetsCount: number
 }
 
 export interface ModuleStorageInfo {
@@ -48,12 +50,13 @@ export interface ModuleStorageInfo {
     totalAssets: number
     totalSizeBytes: number
     assets: BotAssetItem[]
+    missingAssetsCount: number
 }
 
 export type FileFilterType = 'all' | 'image' | 'audio' | 'orphan'
 export type FileSortType = 'size_desc' | 'size_asc' | 'name_asc' | 'name_desc'
-export type BotSortType = 'size_desc' | 'size_asc' | 'count_desc' | 'name_asc'
-export type ModuleSortType = 'size_desc' | 'size_asc' | 'count_desc' | 'name_asc'
+export type BotSortType = 'size_desc' | 'size_asc' | 'count_desc' | 'name_asc' | 'missing_desc'
+export type ModuleSortType = 'size_desc' | 'size_asc' | 'count_desc' | 'name_asc' | 'missing_desc'
 
 export type {
     AssetStorageType,

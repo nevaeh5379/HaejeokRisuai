@@ -165,6 +165,75 @@ describe('StorageExplorer utils', () => {
             expect(orphanKeys).toEqual(['assets/truly_unused.png'])
             expect(result.orphanSizeBytes).toBe(900)
         })
+
+        it('correctly detects missing bot and module assets that do not exist in storage', async () => {
+            characterStore.characters = [
+                {
+                    chaId: 'char-missing',
+                    name: 'Missing Assets Bot',
+                    image: 'assets/present_avatar.png',
+                    emotionImages: [
+                        ['happy', 'assets/missing_happy.png'],
+                        ['sad', 'assets/present_sad.png']
+                    ],
+                    additionalAssets: [
+                        ['bg_extra', 'assets/missing_extra.png']
+                    ]
+                } as any
+            ]
+
+            settingsStore.state.modules = [
+                {
+                    id: 'mod-1',
+                    name: 'Test Module',
+                    icon: 'assets/missing_icon.png',
+                    assets: [
+                        ['sound', 'assets/present_sound.mp3']
+                    ]
+                } as any
+            ]
+
+            const storageAssets: NodeStorageAssetItem[] = [
+                { key: 'assets/present_avatar.png', size: 1200, mtime: 1 },
+                { key: 'assets/present_sad.png', size: 800, mtime: 1 },
+                { key: 'assets/present_sound.mp3', size: 3500, mtime: 1 }
+            ]
+
+            const assetMap = new Map<string, NodeStorageAssetItem>()
+            for (const item of storageAssets) {
+                assetMap.set(item.key, item)
+            }
+
+            const assetDetails: NodeStorageAssetDetails = {
+                storageType: 's3',
+                totalObjects: storageAssets.length,
+                totalSizeBytes: 5500,
+                assets: storageAssets
+            }
+
+            const result = await runStorageAnalysis(assetMap, assetDetails)
+
+            // Bot checks
+            expect(result.bots.length).toBe(1)
+            const bot = result.bots[0]
+            expect(bot.totalAssets).toBe(4) // avatar, happy, sad, bg_extra
+            expect(bot.missingAssetsCount).toBe(2) // missing_happy, missing_extra
+            expect(bot.assets.find((a) => a.key === 'assets/present_avatar.png')?.missing).toBe(false)
+            expect(bot.assets.find((a) => a.key === 'assets/present_sad.png')?.missing).toBe(false)
+            expect(bot.assets.find((a) => a.key === 'assets/missing_happy.png')?.missing).toBe(true)
+            expect(bot.assets.find((a) => a.key === 'assets/missing_extra.png')?.missing).toBe(true)
+
+            // Module checks
+            expect(result.modules.length).toBe(1)
+            const mod = result.modules[0]
+            expect(mod.totalAssets).toBe(2) // icon, sound
+            expect(mod.missingAssetsCount).toBe(1) // missing_icon
+            expect(mod.assets.find((a) => a.key === 'assets/missing_icon.png')?.missing).toBe(true)
+            expect(mod.assets.find((a) => a.key === 'assets/present_sound.mp3')?.missing).toBe(false)
+
+            // Total missing count
+            expect(result.totalMissingAssets).toBe(3) // 2 bot + 1 module
+        })
     })
 
     describe('sortAssetFiles', () => {
