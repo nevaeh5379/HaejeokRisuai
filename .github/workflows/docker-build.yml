@@ -33,10 +33,11 @@ jobs:
           BUILD_NUMBER=$(git rev-list --count HEAD)
           BUILD_TAG="b${BUILD_NUMBER}"
           OWNER=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          REPO=$(echo "${GITHUB_REPOSITORY#*/}" | tr '[:upper:]' '[:lower:]')
 
           echo "build_number=${BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "build_tag=${BUILD_TAG}" >> "$GITHUB_OUTPUT"
-          echo "image=ghcr.io/${OWNER}/risuai" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${OWNER}/${REPO}" >> "$GITHUB_OUTPUT"
 
       - name: Apply build version
         env:
@@ -61,7 +62,8 @@ jobs:
         run: |
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
-            --label "org.opencontainers.image.ref.name=risuai" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.ref.name=${IMAGE}" \
             --label "org.opencontainers.image.version=${BUILD_TAG}" \
             -t "${IMAGE}:${BUILD_TAG}" \
             -t "${IMAGE}:latest" \
