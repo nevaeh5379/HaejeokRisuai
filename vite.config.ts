@@ -176,6 +176,12 @@ export default defineConfig(({command, mode}) => {
                 priority: 80,
               },
               {
+                // FFmpeg.wasm — media conversion for the log exporter, lazy-loaded.
+                name: 'ffmpeg',
+                test: /node_modules[\\/]@ffmpeg[\\/]/,
+                priority: 80,
+              },
+              {
                 // Catch-all for remaining node_modules — consolidates the long
                 // tail of small dependency chunks into a single vendor chunk.
                 name: 'vendor',

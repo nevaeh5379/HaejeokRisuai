@@ -1,7 +1,7 @@
 <script lang="ts">
 
     import Suggestion from './Suggestion.svelte';
-    import { CameraIcon, DatabaseIcon, DicesIcon, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, SparkleIcon } from "@lucide/svelte";
+    import { CameraIcon, DatabaseIcon, DicesIcon, FileText, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, SparkleIcon } from "@lucide/svelte";
     import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, easyPanelStore, chatPanelStore, startupPhase } from "../../ts/stores.svelte";
     import { tick } from 'svelte';
     import Chat from "./Chat.svelte";
@@ -28,6 +28,8 @@
     import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages';
     import { getMimeType } from 'src/ts/media';
     import { compactChatMessages } from 'src/ts/stores/domain/messageStore.svelte';
+    import { openLogExporter } from 'src/ts/logexporter/index';
+    import LogExporterModal from 'src/lib/LogExporter/LogExporterModal.svelte';
 
     let lowSpecMode = $derived(settingsStore.state.lowSpecMode === true)
     let rerollHistoryLimit = $derived(lowSpecMode ? 3 : 50)
@@ -1094,6 +1096,13 @@
                         <span class="ml-2">{language.screenshot}</span>
                     </div>
 
+                    <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => {
+                        openLogExporter()
+                    }}>
+                        <FileText />
+                        <span class="ml-2">로그 내보내기</span>
+                    </div>
+
                     <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={async () => {
                         const { postChatFile } = await import('src/ts/process/files/multisend')
                         const results = await postChatFile(messageInput)
@@ -1156,6 +1165,8 @@
         {/each}
     </div>
 {/if}
+
+<LogExporterModal />
 <style>
 
     .chat-process-stage-1{

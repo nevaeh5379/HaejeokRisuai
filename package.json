@@ -35,6 +35,8 @@
     "@breezystack/lamejs": "^1.2.7",
     "@browsermt/bergamot-translator": "^0.4.9",
     "@dqbd/tiktoken": "^1.0.22",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@huggingface/jinja": "^0.2.2",
     "@huggingface/transformers": "^3.8.1",
     "@lucide/svelte": "^0.562.0",

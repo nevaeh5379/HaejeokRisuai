@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors } from "@lucide/svelte"
+    import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, DownloadIcon, FileText, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors } from "@lucide/svelte"
     import { aiLawApplies, changeChatTo, foldChatToMessage, getFileSrc, createChatCopyName } from "src/ts/globalApi.svelte"
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme"
     import { longpress } from "src/ts/gui/longtouch"
@@ -23,6 +23,7 @@
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
     import { preLoadChat } from "../../ts/process/coldstorage.svelte"
+    import { openLogExporterFrom, openLogExporterSingle } from "src/ts/logexporter/index"
 
     let translating = $state(false)
     let editMode = $state(false)
@@ -819,6 +820,24 @@
             <span class="ml-1">{language.copy}</span>
         {/if}
     </button>    
+{/if}
+{#if idx > -1 && !renderRawStreaming}
+    <button class="flex items-center hover:text-blue-500 transition-colors button-icon-export-from" onclick={() => {
+        openLogExporterFrom(idx)
+    }} title="이 메시지부터 로그 내보내기">
+        <DownloadIcon size={20}/>
+        {#if showNames}
+            <span class="ml-1">여기서부터</span>
+        {/if}
+    </button>
+    <button class="flex items-center hover:text-blue-500 transition-colors button-icon-export-single" onclick={() => {
+        openLogExporterSingle(idx)
+    }} title="이 메시지만 내보내기">
+        <FileText size={20}/>
+        {#if showNames}
+            <span class="ml-1">이 메시지만</span>
+        {/if}
+    </button>
 {/if}
 {#if idx > -1}
     {#if characterStore.characters[selIdState.selId].type !== 'group' && characterStore.characters[selIdState.selId].ttsMode !== 'none' && (characterStore.characters[selIdState.selId].ttsMode)}
