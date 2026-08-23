@@ -82,6 +82,17 @@ test("patches only content and preserves an existing record's settings", async (
   } finally { await f.close(); }
 });
 
+test("can force an unchanged write to validate DNS Write permission", async () => {
+  const f = await fixture({ A: [{ id: "a1", content: "203.0.113.4", ttl: 120, proxied: true }] });
+  try {
+    const result = await run({ ...f.env, CLOUDFLARE_FORCE_WRITE: "true" });
+    assert.equal(result.code, 0, result.stderr);
+    const patch = f.calls.find((call) => call.method === "PATCH");
+    assert.deepEqual(patch.body, { content: "203.0.113.4" });
+    assert.match(result.stdout, /verified write access/);
+  } finally { await f.close(); }
+});
+
 test("creates DNS-only automatic-TTL A and optional AAAA records", async () => {
   const f = await fixture();
   try {
@@ -157,6 +168,7 @@ test("rejects invalid booleans and endpoint schemes", async (t) => {
   try {
     for (const [name, env, message] of [
       ["boolean", { CLOUDFLARE_IPV6: "yes" }, /IPV6 must be true or false/],
+      ["force-write boolean", { CLOUDFLARE_FORCE_WRITE: "yes" }, /FORCE_WRITE must be true or false/],
       ["URL", { PUBLIC_IPV4_URL: "file:///etc/passwd" }, /must use HTTP or HTTPS/],
     ]) {
       await t.test(name, async () => {

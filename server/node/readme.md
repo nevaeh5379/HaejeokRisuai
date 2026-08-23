@@ -53,18 +53,37 @@ The server uses a revision check to reject writes from a stale browser session. 
 
 ### Backups
 
-Back up both storage locations:
+Back up every storage location that is enabled for the deployment:
 
 - PostgreSQL with `pg_dump` or your managed database backup facility.
-- The `save/` directory for assets, authentication state, and retained legacy migration copies.
+- The complete `save/` directory for authentication state, local assets,
+  server-side configuration, and retained legacy migration copies.
+- The S3 bucket when object storage is enabled. Assets migrated to RustFS, R2,
+  MinIO, or AWS S3 are not covered by a `save/` backup.
+- For the guided RustFS stack, the protected `.risuai/` directory containing
+  the deployment identity and credentials. Back it up with owner-only
+  permissions or stronger encryption. Caddy named volumes are optional but
+  retain ACME account and certificate state.
+
+Quiesce writes when PostgreSQL, S3, and `save/` must represent one consistent
+recovery point, and test restoration separately. The application revision log
+is not a replacement for `pg_dump`, an S3 export, or a volume snapshot. The
+current `risuai.sh` has no automated `backup` or `restore` command.
 
 An example deployment is provided in `docker-compose.postgres.yml`. Set `POSTGRES_PASSWORD` in the environment before starting it.
 
-### CloudBeaver
+### CloudBeaver in the PostgreSQL-only example
 
-The PostgreSQL Compose example also includes the CloudBeaver Community web database manager. It listens on `http://127.0.0.1:8978` by default and keeps its workspace in the `cloudbeaver-workspace` volume. In the first-run wizard, connect with host `postgres`, port `5432`, database/user `risuai`, and the configured `POSTGRES_PASSWORD`.
+`docker-compose.postgres.yml` includes the CloudBeaver Community web database
+manager. It listens on `http://127.0.0.1:8978` by default and keeps its workspace
+in the `cloudbeaver-workspace` volume. In the first-run wizard, connect with
+host `postgres`, port `5432`, database/user `risuai`, and the configured
+`POSTGRES_PASSWORD`.
 
 Set `CLOUDBEAVER_PORT` to change the host port, `CLOUDBEAVER_VERSION` to pin an image tag, or `CLOUDBEAVER_BIND_ADDRESS=0.0.0.0` to allow remote access. Remote access should be protected with HTTPS, a firewall, and CloudBeaver authentication because this UI can directly modify the database.
+
+CloudBeaver is **not** included in `docker-compose.rustfs.yml`, its networking
+overlays, or the `risuai.sh` guided deployment.
 
 ## S3 / RustFS Object Storage for Assets
 
@@ -89,16 +108,33 @@ Configure S3 storage from **Advanced Settings → S3 / Object Storage**, or via 
 
 A complete Docker Compose stack is provided in `docker-compose.rustfs.yml`:
 
-```bash
-POSTGRES_PASSWORD=your_password docker compose \
-  -f docker-compose.rustfs.yml -f docker-compose.rustfs.local.yml up -d
+```sh
+export RISUAI_INSTALLATION_ID="$(openssl rand -hex 16)"
+export POSTGRES_PASSWORD="$(openssl rand -hex 32)"
+export RUSTFS_ACCESS_KEY="risuai-$(openssl rand -hex 12)"
+export RUSTFS_SECRET_KEY="$(openssl rand -hex 32)"
+
+docker compose \
+  -f docker-compose.rustfs.yml \
+  -f docker-compose.rustfs.local.yml \
+  up -d --build
 ```
+
+Retain the generated values securely and export the same values for later
+direct Compose operations. The base file intentionally requires a stable
+`RISUAI_INSTALLATION_ID`, `POSTGRES_PASSWORD`, `RUSTFS_ACCESS_KEY`, and
+`RUSTFS_SECRET_KEY`; it no longer falls back to the public RustFS administrator
+credentials. Direct Compose use bypasses the installer's state permissions,
+environment isolation, ownership checks, transaction, and port validation.
 
 This stack starts:
 - **RustFS**: High-performance Rust-based S3 object storage (S3 API on port 9000, Web Console on port 9001).
 - **PostgreSQL 17**: Relational database for chats, characters, and revisions.
 - **RisuAI Server**: Pre-configured to communicate with both PostgreSQL and RustFS.
-- **CloudBeaver**: Database explorer on port 8978.
+
+PostgreSQL is private, while the default local overlay binds RisuAI, the RustFS
+API, and the RustFS console to IPv4 loopback. CloudBeaver is not part of this
+stack.
 
 For a guided deployment, run:
 
@@ -107,12 +143,50 @@ chmod +x risuai.sh
 ./risuai.sh install
 ```
 
-The menu supports localhost, trusted-LAN HTTP, a domain with manual DNS or
-Cloudflare DDNS, dynv6 with automatic HTTPS, and an existing reverse proxy.
-Localhost is the default. PostgreSQL remains private and RustFS remains bound to
-localhost in every mode. See [the deployment guide](../../deploy/rustfs/README.md)
-for non-interactive examples, DNS and port-forwarding requirements, security
-notes, and reverse-proxy setup.
+The menu supports loopback HTTP, HTTP on every IPv4 interface, a domain with
+manual DNS or Cloudflare DDNS, dynv6 with automatic HTTPS, and an existing host
+or Docker reverse proxy. Localhost is the default for a new interactive
+installation. PostgreSQL remains private and the installer forces RustFS to
+loopback in every mode.
+
+The guided installer supports custom app, RustFS, HTTP, and HTTPS host ports;
+provider token files; configurable DDNS and readiness intervals; and
+`--dry-run`, `--no-start`, `--skip-ddns-check`, `--skip-port-check`, and
+best-effort `--configure-firewall` workflows. Use `./risuai.sh help` for the
+complete option list. Token-file options are preferred because argument values
+can be exposed through process listings and shell history.
+
+Management commands include `start`, `stop`, `restart`, `rebuild`, `down`,
+`status`, `logs`, `doctor`, and `config`. `down` removes containers and private
+networks while retaining named volumes, `save/`, protected state, Caddy data,
+and an external proxy network. There is no automated update, backup, restore,
+uninstall, or purge command; `rebuild` recreates only the RisuAI application.
+
+The Compose services use `restart: unless-stopped`. PostgreSQL and RisuAI have
+healthchecks and Caddy waits for RisuAI health, but RustFS and the DDNS sidecars
+currently have no Compose health status. Installer readiness therefore proves
+the internal RisuAI HTTP response and running container set, not a signed S3
+operation, current DDNS, public DNS propagation, router reachability, or
+external TLS.
+
+Install/reinstall activation snapshots and restores the protected env/token
+generation if startup fails, and attempts to restart the previous deployment.
+It does not roll back persistent data, database migrations, built images, or an
+already-completed DNS update. `--no-start` saves validated configuration without
+building, starting, reconciling, or performing the one-shot DDNS check; existing
+containers remain unchanged until a later reconciliation.
+
+For automatic certificates, public TCP 80 and TCP 443 must ultimately reach
+Caddy; UDP 443 is optional HTTP/3. Custom `--http-port`/`--https-port` values are
+host-side mappings, so a router must still translate public TCP 80/443 (and
+optional UDP 443) to those host ports. Firewall and router policy remain the
+operator's responsibility. UFW is changed only when
+`--configure-firewall` is explicitly supplied, on a best-effort basis, and
+Docker-published ports may need separate Docker-aware firewall rules.
+
+See [the deployment guide](../../deploy/rustfs/README.md) for complete mode and
+option examples, token handling, DNS/router mappings, transaction and health
+boundaries, reverse-proxy setup, backups, and direct Compose requirements.
 
 ### Asset Migration & Tools
 

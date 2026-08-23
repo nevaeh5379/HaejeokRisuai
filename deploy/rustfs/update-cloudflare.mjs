@@ -5,8 +5,10 @@ const zoneId = process.env.CLOUDFLARE_ZONE_ID ?? "";
 const recordName = (process.env.CLOUDFLARE_RECORD_NAME ?? "").toLowerCase();
 const ipv6Setting = process.env.CLOUDFLARE_IPV6 ?? "false";
 const onceSetting = process.env.CLOUDFLARE_ONCE ?? "false";
+const forceWriteSetting = process.env.CLOUDFLARE_FORCE_WRITE ?? "false";
 const ipv6Enabled = ipv6Setting === "true";
 const once = onceSetting === "true";
+const forceWrite = forceWriteSetting === "true";
 const interval = Number(process.env.CLOUDFLARE_UPDATE_INTERVAL ?? "300");
 const requestTimeout = Number(process.env.CLOUDFLARE_REQUEST_TIMEOUT ?? "30");
 const apiBase = process.env.CLOUDFLARE_API_BASE ?? "https://api.cloudflare.com/client/v4";
@@ -28,6 +30,7 @@ function validateConfiguration() {
   }
   if (ipv6Setting !== "true" && ipv6Setting !== "false") fail("CLOUDFLARE_IPV6 must be true or false");
   if (onceSetting !== "true" && onceSetting !== "false") fail("CLOUDFLARE_ONCE must be true or false");
+  if (forceWriteSetting !== "true" && forceWriteSetting !== "false") fail("CLOUDFLARE_FORCE_WRITE must be true or false");
   if (!Number.isInteger(interval) || interval < 60 || interval > 86400) {
     fail("CLOUDFLARE_UPDATE_INTERVAL must be an integer from 60 to 86400 seconds");
   }
@@ -135,12 +138,12 @@ async function updateOnce() {
         body: JSON.stringify({ type, name: recordName, content, ttl: 1, proxied: false }),
       });
       console.log(`created ${type} record for ${recordName}: ${content}`);
-    } else if (records[0].content !== content) {
+    } else if (records[0].content !== content || forceWrite) {
       await api(token, `/zones/${zoneId}/dns_records/${records[0].id}`, {
         method: "PATCH",
         body: JSON.stringify({ content }),
       });
-      console.log(`updated ${type} record for ${recordName}: ${content}`);
+      console.log(`${records[0].content === content ? "verified write access to" : "updated"} ${type} record for ${recordName}: ${content}`);
     } else {
       console.log(`${type} record for ${recordName} is current: ${content}`);
     }

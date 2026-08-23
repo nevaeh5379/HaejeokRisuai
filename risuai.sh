@@ -547,6 +547,8 @@ validate_saved_configuration() {
     fi
     saved_interval=$(env_value_or "$validate_file" DYNV6_UPDATE_INTERVAL 300)
     is_valid_integer_range "$saved_interval" 60 86400 || { error "Invalid DDNS interval in $validate_file"; return 1; }
+    saved_wait_timeout=$(env_value_or "$validate_file" RISUAI_WAIT_TIMEOUT 300)
+    is_valid_integer_range "$saved_wait_timeout" 10 3600 || { error "Invalid readiness timeout in $validate_file"; return 1; }
     saved_ipv6=$(env_value_or "$validate_file" DYNV6_IPV6 false)
     normalize_bool "$saved_ipv6" >/dev/null 2>&1 || { error "Invalid IPv6 setting in $validate_file"; return 1; }
     case "$saved_mode" in
@@ -739,16 +741,21 @@ port_details() {
     detail_port=$2
     detail_bind=$3
     owned_binding=false
+    foreign_binding=false
     container_ids=$(docker ps --filter "publish=$detail_port/$detail_protocol" --format '{{.ID}}' 2>/dev/null || true)
     for detail_id in $container_ids; do
         if container_belongs_to_installation "$detail_id"; then
             owned_binding=true
         else
-            docker inspect --format 'Docker container {{.Name}}: {{json .NetworkSettings.Ports}}' "$detail_id" 2>/dev/null || true
+            foreign_binding=true
+            foreign_details=$(docker inspect --format 'Docker container {{.Name}}: {{json .NetworkSettings.Ports}}' "$detail_id" 2>/dev/null || true)
+            if [ -n "$foreign_details" ]; then printf '%s\n' "$foreign_details"; else printf 'Foreign Docker container %s publishes %s/%s\n' "$detail_id" "$detail_port" "$detail_protocol"; fi
         fi
     done
 
-    # Avoid reporting the current project's Docker proxy socket as a conflict.
+    # Docker already proved a foreign conflict. If the only publisher belongs
+    # to this installation, avoid mistaking Docker's host proxy for a conflict.
+    [ "$foreign_binding" = false ] || return 0
     [ "$owned_binding" = false ] || return 0
     socket_output=
     if command -v ss >/dev/null 2>&1; then
@@ -901,7 +908,10 @@ services_are_running() {
         service_id=$(compose ps -q "$expected_service" 2>/dev/null || true)
         [ -n "$service_id" ] || { error "Cannot resolve container for service: $expected_service"; services_ok=false; continue; }
         health_state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$service_id" 2>/dev/null || true)
-        case "$health_state" in unhealthy) error "Service is unhealthy: $expected_service"; services_ok=false ;; esac
+        case "$health_state" in
+            healthy|none) ;;
+            *) error "Service health is not ready ($health_state): $expected_service"; services_ok=false ;;
+        esac
     done
     [ "$services_ok" = true ]
 }
@@ -1130,6 +1140,12 @@ run_doctor() {
 
 manage_existing_installation() {
     require_installation
+    case "$action" in
+        start|restart|rebuild)
+            [ -n "$input_wait_timeout" ] || wait_timeout=$(env_value_or "$env_file" RISUAI_WAIT_TIMEOUT 300)
+            is_valid_integer_range "$wait_timeout" 10 3600 || die "Saved readiness timeout must be an integer from 10 to 3600"
+            ;;
+    esac
     if [ "$action" = config ]; then
         [ "$#" -eq 0 ] || die "config does not accept arguments"
         show_deployment_from "$env_file"
@@ -1201,16 +1217,26 @@ manage_existing_installation() {
             ;;
         restart)
             [ "$#" -eq 0 ] || die "restart does not accept arguments"
-            info "Restarting RisuAI containers"
+            load_saved_port_settings
+            validate_port_layout
+            if [ "$mode:$proxy_type" = proxy:docker ] && ! docker network inspect "$proxy_network" >/dev/null 2>&1; then die "Saved Docker proxy network is missing: $proxy_network"; fi
+            check_required_ports
+            info "Reconciling and restarting all RisuAI containers"
+            if docker image inspect risuai-full:local >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
             compose restart
             wait_for_risuai "$wait_timeout" || die "RisuAI did not become ready within ${wait_timeout}s"
             compose ps --all
             ;;
         rebuild)
             [ "$#" -eq 0 ] || die "rebuild does not accept arguments"
+            load_saved_port_settings
+            validate_port_layout
+            if [ "$mode:$proxy_type" = proxy:docker ] && ! docker network inspect "$proxy_network" >/dev/null 2>&1; then die "Saved Docker proxy network is missing: $proxy_network"; fi
+            check_required_ports
             info "Rebuilding and recreating the RisuAI application"
             compose build risuai
-            compose up -d --force-recreate --remove-orphans risuai
+            compose up -d --force-recreate risuai
+            compose up -d --remove-orphans
             wait_for_risuai "$wait_timeout" || die "Rebuilt RisuAI did not become ready within ${wait_timeout}s"
             compose ps --all
             ;;
@@ -1256,6 +1282,8 @@ configure_firewall=false
 no_start=false
 dry_run=false
 adopt_existing=false
+wait_timeout_explicit=false
+[ -n "$input_wait_timeout" ] && wait_timeout_explicit=true
 dynv6_token_source=none
 cloudflare_token_source=none
 dynv6_token_path=
@@ -1303,7 +1331,7 @@ while [ "$#" -gt 0 ]; do
         --http-port) [ "$#" -ge 2 ] || die "--http-port requires a value"; http_port=$2; http_port_explicit=true; shift 2 ;;
         --https-port) [ "$#" -ge 2 ] || die "--https-port requires a value"; https_port=$2; https_port_explicit=true; shift 2 ;;
         --ddns-interval) [ "$#" -ge 2 ] || die "--ddns-interval requires a value"; ddns_interval=$2; shift 2 ;;
-        --wait-timeout) [ "$#" -ge 2 ] || die "--wait-timeout requires a value"; wait_timeout=$2; shift 2 ;;
+        --wait-timeout) [ "$#" -ge 2 ] || die "--wait-timeout requires a value"; wait_timeout=$2; wait_timeout_explicit=true; shift 2 ;;
         --ipv6) ipv6_input=true; shift ;;
         --no-ipv6) ipv6_input=false; shift ;;
         --skip-ddns-check) skip_ddns_check=true; shift ;;
@@ -1420,6 +1448,8 @@ if [ "$mode" != domain ] && [ "$mode" != dynv6 ] && { [ "$http_port_explicit" = 
 if [ -z "$ddns_interval" ] && [ "$saved_configuration_valid" = true ]; then ddns_interval=$(env_value_or "$env_file" DYNV6_UPDATE_INTERVAL 300); fi
 ddns_interval=${ddns_interval:-300}
 is_valid_integer_range "$ddns_interval" 60 86400 || die "--ddns-interval must be an integer from 60 to 86400"
+if [ "$wait_timeout_explicit" = false ] && [ "$saved_configuration_valid" = true ]; then wait_timeout=$(env_value_or "$env_file" RISUAI_WAIT_TIMEOUT 300); fi
+is_valid_integer_range "$wait_timeout" 10 3600 || die "--wait-timeout must be an integer from 10 to 3600"
 if [ -z "$ipv6_input" ] && [ "$saved_configuration_valid" = true ] && { [ "$mode" = dynv6 ] || [ "$mode:$dns_provider" = domain:cloudflare ]; }; then ipv6_input=$(env_value_or "$env_file" DYNV6_IPV6 false); fi
 enable_ipv6=$(normalize_bool "${ipv6_input:-false}") || die "Invalid IPv6 boolean: $ipv6_input"
 if [ "$enable_ipv6" = true ] && [ "$mode" != dynv6 ] && [ "$mode:$dns_provider" != domain:cloudflare ]; then die "--ipv6 is only valid with dynv6 or Cloudflare DDNS"; fi
@@ -1454,6 +1484,10 @@ if [ "$mode:$proxy_type" = proxy:docker ] && ! docker network inspect "$proxy_ne
 if [ "$saved_configuration_valid" = true ]; then saved_id=$(read_env_value_from "$env_file" RISUAI_INSTALLATION_ID); else saved_id=; fi
 if [ -n "$saved_id" ]; then installation_id=$saved_id; else installation_id=$(random_secret | cut -c1-32); fi
 check_container_ownership
+
+if [ "$no_start" = true ] && [ "$dry_run" = false ] && [ "$saved_configuration_valid" = true ] && compose ps --status running --services 2>/dev/null | grep -q .; then
+    die "--no-start cannot replace the active configuration while this deployment is running; run '$script_path down' first, use --dry-run, or omit --no-start"
+fi
 
 postgres_volume=${project_name}_risuai-postgres
 rustfs_volume=${project_name}_rustfs-data
@@ -1540,6 +1574,7 @@ CLOUDFLARE_ZONE_ID=$cloudflare_zone_id
 CLOUDFLARE_IPV6=$enable_ipv6
 CLOUDFLARE_TOKEN_FILE=$write_cloudflare_path
 CLOUDFLARE_UPDATE_INTERVAL=$ddns_interval
+RISUAI_WAIT_TIMEOUT=$wait_timeout
 EOF
 }
 
@@ -1564,7 +1599,7 @@ if [ "$no_start" = false ]; then
                 ;;
             domain:cloudflare)
                 info "Validating and updating Cloudflare DNS once"
-                compose_with_env "$tmp_env" "$staged_dynv6_path" "$staged_cloudflare_path" run --rm --no-deps -e CLOUDFLARE_ONCE=true cloudflare-ddns || die "Cloudflare DDNS failed; check Zone ID, token scope, hostname, IPv6, and connectivity"
+                compose_with_env "$tmp_env" "$staged_dynv6_path" "$staged_cloudflare_path" run --rm --no-deps -e CLOUDFLARE_ONCE=true -e CLOUDFLARE_FORCE_WRITE=true cloudflare-ddns || die "Cloudflare DDNS failed; check Zone ID, DNS Write token scope, hostname, IPv6, and connectivity"
                 ;;
         esac
     else
