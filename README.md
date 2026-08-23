@@ -1,14 +1,46 @@
-# Risuai
+# Haejeok RisuAI
 
 <picture>
-  <img alt="text" src="https://raw.githubusercontent.com/kwaroran/Risuai/refs/heads/main/public/logo_typo_small.avif" width="400"/>
+  <img alt="Haejeok RisuAI" src="./public/logo_typo_small.avif" width="400"/>
 </picture>
 
-[![Svelte](https://img.shields.io/badge/svelte-5-red?logo=svelte)](https://svelte.dev/) [![Typescript](https://img.shields.io/badge/typescript-5.9-blue?logo=typescript)](https://www.typescriptlang.org/) [![Tauri](https://img.shields.io/badge/tauri-2.5-%2324C8D8?logo=tauri)](https://tauri.app/) [![Vite](https://img.shields.io/badge/vite-8-%23646CFF?logo=vite)](https://vite.dev/) [![Tailwind CSS](https://img.shields.io/badge/tailwindcss-4-%2306B6D4?logo=tailwindcss)](https://tailwindcss.com/)
+[![Svelte](https://img.shields.io/badge/svelte-5-red?logo=svelte)](https://svelte.dev/) [![TypeScript](https://img.shields.io/badge/typescript-5.9-blue?logo=typescript)](https://www.typescriptlang.org/) [![Tauri](https://img.shields.io/badge/tauri-2.5-%2324C8D8?logo=tauri)](https://tauri.app/) [![Vite](https://img.shields.io/badge/vite-8-%23646CFF?logo=vite)](https://vite.dev/) [![Tailwind CSS](https://img.shields.io/badge/tailwindcss-4-%2306B6D4?logo=tailwindcss)](https://tailwindcss.com/)
 
-Risuai, or Risu for short, is a cross platform AI chatting software / web application with powerful features such as multiple API support, assets in the chat, regex functions and much more.
+**Haejeok RisuAI** is an independently maintained fork of [RisuAI](https://github.com/kwaroran/RisuAI), focused on self-hosting, server-side operation, desktop distribution, and maintaining a practical deployment path for personal infrastructure.
 
-# Screenshots
+It keeps the core RisuAI chat experience while developing and distributing Haejeok-specific changes independently from the upstream project.
+
+> [!IMPORTANT]
+> Haejeok RisuAI is not an official RisuAI release. Bugs, releases, deployment support, and project-specific changes should be reported here rather than to the upstream project.
+
+## Project status
+
+Haejeok RisuAI is currently an actively developed independent build. The primary server deployment path being tested and documented is **Docker + PostgreSQL + RustFS**. Other deployment modes may exist in the repository but should be treated as less tested unless explicitly documented.
+
+## What is different?
+
+- Independent GitHub releases and desktop updater
+- Independent Docker/OCI image distribution
+- PostgreSQL-backed server storage
+- RustFS S3-compatible asset storage support
+- Self-hosting and Node server improvements
+- `bNNNN` build numbering based on Git history
+- No built-in Risu Account login or account synchronization
+- RisuRealm is treated as an external upstream service and keeps its own authentication, terms, and content rules
+
+## Core features
+
+Haejeok RisuAI inherits the broad feature set of RisuAI, including:
+
+- Multiple AI API providers such as OpenAI, Claude, Gemini, OpenRouter, and compatible endpoints
+- Character cards, group chats, lorebooks, regex scripts, plugins, and custom prompting
+- Emotion images, additional assets, TTS, translation, and theming
+- Long-term memory systems including HypaMemory and SupaMemory
+- Web, Node server, and Tauri desktop targets
+
+## Screenshots
+
+The screenshots below are inherited upstream UI references and may not exactly match the latest Haejeok RisuAI build.
 
 |         Screenshot 1         |         Screenshot 2         |
 | :--------------------------: | :--------------------------: |
@@ -20,54 +52,15 @@ Risuai, or Risu for short, is a cross platform AI chatting software / web applic
 [screenshot3]: https://github.com/kwaroran/Risuai/assets/116663078/faad0de5-56f3-4176-b38e-61c2d3a8698e
 [screenshot4]: https://github.com/kwaroran/Risuai/assets/116663078/ef946882-2311-43e7-81e7-5ca2d484fa90
 
-## Features
-
-- **Multiple API Supports**: Supports OpenAI, Claude, Gemini, DeepInfra, Ooba, OpenRouter... and More!
-- **Emotion Images**: Display the image of the current character, according to his/her expressions!
-- **Group Chats**: Multiple characters in one chat.
-- **Plugins**: Add your features and providers, and simply share.
-- **Regex Script**: Modify model's output by regex, to make a custom GUI and others
-- **Powerful Translators**: Automatically translate the input/output, so you can roleplay without knowing model's language.
-- **Lorebook**: Also known as world infos or memory book, which can make character memorize more. 
-- **Themes**: Choose it from 3 themes, Classic, WaifuLike, WaifuCut.
-- **Powerful Prompting**: Change the prompting order easily, Impersonate inside prompts, Use conditions, variables... and more!
-- **Customizable, Friendly UI**: Great Accessibility and mobile friendly
-- **TTS**: Use TTS to make the output text into voice.
-- **Additional Assets**: Embed your images, audios and videos to bot, and make it display at chat or background!
-- **Long-term Memory**: Advanced memory systems including HypaMemoryV2/V3 memory compression, SupaMemory for context management to maintain long-term conversation context.
-- And More!
-
-You can get detailed information on https://github.com/kwaroran/Risuai/wiki (Work in Progress)
-
-## Community
-
-- [Discord Server](https://discord.gg/JzP8tB9ZK8)
-
-## Legal
-
-- [Haejeok RisuAI Terms of Use](docs/TERMS.md)
-- [Haejeok RisuAI Privacy Notice](docs/PRIVACY.md)
-
-Haejeok RisuAI is an independent fork and does not provide built-in Risu Account login or
-account synchronization. RisuRealm and related upstream services are operated separately;
-when using them, review the [original RisuAI service terms](https://sv.risuai.xyz/hub/tos)
-and the [RisuRealm Content Rules](https://realm.risuai.net/help/content-rules).
-
 ## Installation
 
-- [Risuai Website](https://risuai.net) (Recommended)
-- [Github Releases](https://github.com/kwaroran/Risuai/releases)
+### Desktop releases
 
-### Development prerequisites
+Prebuilt desktop releases are published through the [Haejeok RisuAI Releases](https://github.com/nevaeh5379/HaejeokRisuAI/releases) page.
 
-- Node.js 20.19+ or 22.12+
-- pnpm
+### Docker server (recommended)
 
-### Docker Installation
-
-The recommended server deployment for Haejeok RisuAI is the Docker Compose stack with
-**PostgreSQL 17** for persistent application data and **RustFS** for S3-compatible asset
-storage. This is the primary deployment path currently documented here.
+The currently documented server path uses **Docker Compose + PostgreSQL 17 + RustFS**.
 
 #### Requirements
 
@@ -75,7 +68,7 @@ storage. This is the primary deployment path currently documented here.
 - Docker Compose v2 (`docker compose`)
 - Git
 
-#### Quick start (local)
+#### Quick start
 
 ```sh
 git clone https://github.com/nevaeh5379/HaejeokRisuAI.git
@@ -84,19 +77,17 @@ chmod +x risuai.sh
 ./risuai.sh install --mode local -y
 ```
 
-When the installation finishes, open `http://localhost:6001`.
+After installation, open `http://localhost:6001`.
 
-The installer creates and manages the complete stack:
+The installer configures:
 
 - Haejeok RisuAI application container
 - PostgreSQL 17 (`postgres:17-alpine`)
 - RustFS S3-compatible object storage
 
-PostgreSQL is kept inside the Docker network and is not published to the host. RustFS
-uses loopback-only host bindings by default (`127.0.0.1:9000` for the S3 API and
-`127.0.0.1:9001` for the console).
+PostgreSQL stays inside the Docker network. RustFS is bound to loopback by default (`127.0.0.1:9000` for the S3 API and `127.0.0.1:9001` for the console).
 
-#### Managing the installation
+#### Managing the server
 
 ```sh
 ./risuai.sh status
@@ -107,11 +98,44 @@ uses loopback-only host bindings by default (`127.0.0.1:9000` for the S3 API and
 ./risuai.sh restart
 ```
 
-Persistent data is stored in Docker volumes for PostgreSQL and RustFS, while application
-state is stored under `./save`. Installer-generated credentials and deployment state are
-kept under `.risuai/`; back these up together with your database and RustFS data.
+Persistent data is stored in Docker volumes for PostgreSQL and RustFS, while application state is stored under `./save`. Installer-generated credentials and deployment state are kept under `.risuai/`; back these up together with your database and RustFS data.
 
-Additional `lan`, `domain`, `dynv6`, and external reverse-proxy modes are available through
-`./risuai.sh install`, but the local Docker + PostgreSQL + RustFS setup above is the
-recommended starting point. See the [deployment guide](deploy/rustfs/README.md) for the
-advanced modes and security notes.
+Additional `lan`, `domain`, `dynv6`, and external reverse-proxy modes are available through `./risuai.sh install`, but the local Docker + PostgreSQL + RustFS path above is the recommended starting point. See the [deployment guide](deploy/rustfs/README.md) for advanced modes and security notes.
+
+### Development
+
+Development requires Node.js 20.19+ or 22.12+ and pnpm.
+
+```sh
+git clone https://github.com/nevaeh5379/HaejeokRisuAI.git
+cd HaejeokRisuAI
+pnpm install
+pnpm dev
+```
+
+## Legal and upstream services
+
+- [Haejeok RisuAI Terms of Use](docs/TERMS.md)
+- [Haejeok RisuAI Privacy Notice](docs/PRIVACY.md)
+- [Original RisuAI service terms](https://sv.risuai.xyz/hub/tos)
+- [RisuRealm Content Rules](https://realm.risuai.net/help/content-rules)
+
+Haejeok RisuAI does not provide built-in Risu Account login or account synchronization. RisuRealm and other upstream-hosted services remain separate services operated by the original RisuAI maintainers and are subject to their own policies.
+
+## Community and support
+
+For Haejeok RisuAI bugs, deployment issues, and project-specific feature requests, use the [Haejeok RisuAI issue tracker](https://github.com/nevaeh5379/HaejeokRisuAI/issues).
+
+The upstream RisuAI Discord server, website, and support channels are not Haejeok RisuAI support channels.
+
+## Upstream project
+
+Haejeok RisuAI is based on [RisuAI](https://github.com/kwaroran/RisuAI) and retains its Git history and GPL-3.0 licensed source heritage.
+
+Upstream development, documentation, and community resources belong to the original RisuAI project. Haejeok-specific releases and changes are maintained independently in this repository.
+
+If a change is suitable for the original project as well, contributions can still be prepared separately for upstream RisuAI.
+
+## License
+
+This project is distributed under the repository's [GNU General Public License v3.0](LICENSE).
