@@ -6,11 +6,28 @@ import { language } from 'src/lang'
 import type {
     BotAssetItem,
     BotStorageInfo,
+    FileSortType,
     ModuleStorageInfo,
     NodeStorageAssetItem,
     NodeStorageAssetDetails,
     ViewTarget
 } from './types'
+
+export function sortAssetFiles(files: NodeStorageAssetItem[], sortType: FileSortType): NodeStorageAssetItem[] {
+    const list = [...files]
+    switch (sortType) {
+        case 'size_desc':
+            return list.sort((a, b) => b.size - a.size)
+        case 'size_asc':
+            return list.sort((a, b) => a.size - b.size)
+        case 'name_asc':
+            return list.sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true, sensitivity: 'base' }))
+        case 'name_desc':
+            return list.sort((a, b) => b.key.localeCompare(a.key, undefined, { numeric: true, sensitivity: 'base' }))
+        default:
+            return list
+    }
+}
 
 export function isThumbnailKey(key: string): boolean {
     return typeof key === 'string' && key.startsWith('thumbnails/')

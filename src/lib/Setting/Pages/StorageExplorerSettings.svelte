@@ -103,12 +103,41 @@
 
     // Thumbnail cache
     let thumbnailUrls = $state<Map<string, string>>(new Map())
+    const pendingThumbnails = new Set<string>()
+    let thumbnailBatchTimer: any = null
+    const pendingBatchUpdates = new Map<string, string>()
+
+    function flushThumbnailBatch() {
+        if (pendingBatchUpdates.size === 0) return
+        for (const [k, v] of pendingBatchUpdates.entries()) {
+            thumbnailUrls.set(k, v)
+        }
+        pendingBatchUpdates.clear()
+        thumbnailUrls = new Map(thumbnailUrls)
+        thumbnailBatchTimer = null
+    }
+
+    function scheduleThumbnailUpdate(key: string, url: string) {
+        pendingBatchUpdates.set(key, url)
+        if (!thumbnailBatchTimer) {
+            thumbnailBatchTimer = setTimeout(flushThumbnailBatch, 32)
+        }
+    }
 
     function clearThumbnailCache() {
+        if (thumbnailBatchTimer) {
+            clearTimeout(thumbnailBatchTimer)
+            thumbnailBatchTimer = null
+        }
         for (const url of thumbnailUrls.values()) {
             URL.revokeObjectURL(url)
         }
+        for (const url of pendingBatchUpdates.values()) {
+            URL.revokeObjectURL(url)
+        }
         thumbnailUrls = new Map()
+        pendingBatchUpdates.clear()
+        pendingThumbnails.clear()
     }
 
     async function loadData() {
@@ -232,22 +261,25 @@
     }
 
     async function loadThumbnail(key: string) {
-        if (!key || thumbnailUrls.has(key)) return
-        const candidates = generateKeyCandidates(key)
-
-        for (const candidate of candidates) {
-            try {
-                const data = await readImageFromTarget(candidate, viewTarget)
-                if (data && data.length > 0) {
-                    const blob = new Blob([data as unknown as BlobPart], { type: getMimeType(candidate) })
-                    const url = URL.createObjectURL(blob)
-                    thumbnailUrls.set(key, url)
-                    thumbnailUrls = new Map(thumbnailUrls)
-                    return
+        if (!key || thumbnailUrls.has(key) || pendingBatchUpdates.has(key) || pendingThumbnails.has(key)) return
+        pendingThumbnails.add(key)
+        try {
+            const candidates = generateKeyCandidates(key)
+            for (const candidate of candidates) {
+                try {
+                    const data = await readImageFromTarget(candidate, viewTarget)
+                    if (data && data.length > 0) {
+                        const blob = new Blob([data as unknown as BlobPart], { type: getMimeType(candidate) })
+                        const url = URL.createObjectURL(blob)
+                        scheduleThumbnailUpdate(key, url)
+                        return
+                    }
+                } catch {
+                    // Next candidate
                 }
-            } catch {
-                // Next candidate
             }
+        } finally {
+            pendingThumbnails.delete(key)
         }
     }
 

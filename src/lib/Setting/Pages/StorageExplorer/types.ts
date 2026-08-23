@@ -51,6 +51,7 @@ export interface ModuleStorageInfo {
 }
 
 export type FileFilterType = 'all' | 'image' | 'audio' | 'orphan'
+export type FileSortType = 'size_desc' | 'size_asc' | 'name_asc' | 'name_desc'
 export type BotSortType = 'size_desc' | 'size_asc' | 'count_desc' | 'name_asc'
 export type ModuleSortType = 'size_desc' | 'size_asc' | 'count_desc' | 'name_asc'
 

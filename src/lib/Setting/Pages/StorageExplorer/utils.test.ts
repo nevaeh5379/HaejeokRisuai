@@ -3,7 +3,8 @@ import {
     isThumbnailKey,
     extractOriginalKeyFromThumbnail,
     generateKeyCandidates,
-    runStorageAnalysis
+    runStorageAnalysis,
+    sortAssetFiles
 } from './utils'
 import { characterStore } from 'src/ts/stores/domain/characterStore.svelte'
 import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte'
@@ -163,6 +164,63 @@ describe('StorageExplorer utils', () => {
             const orphanKeys = result.orphanAssets.map((a) => a.key)
             expect(orphanKeys).toEqual(['assets/truly_unused.png'])
             expect(result.orphanSizeBytes).toBe(900)
+        })
+    })
+
+    describe('sortAssetFiles', () => {
+        const sampleFiles: NodeStorageAssetItem[] = [
+            { key: 'assets/file10.png', size: 500, mtime: 1 },
+            { key: 'assets/file2.png', size: 1200, mtime: 2 },
+            { key: 'assets/file1.png', size: 100, mtime: 3 },
+            { key: 'assets/avatar.jpg', size: 8000, mtime: 4 }
+        ]
+
+        it('sorts files by size descending (largest first)', () => {
+            const sorted = sortAssetFiles(sampleFiles, 'size_desc')
+            expect(sorted.map((f) => f.key)).toEqual([
+                'assets/avatar.jpg',
+                'assets/file2.png',
+                'assets/file10.png',
+                'assets/file1.png'
+            ])
+            expect(sorted.map((f) => f.size)).toEqual([8000, 1200, 500, 100])
+        })
+
+        it('sorts files by size ascending (smallest first)', () => {
+            const sorted = sortAssetFiles(sampleFiles, 'size_asc')
+            expect(sorted.map((f) => f.key)).toEqual([
+                'assets/file1.png',
+                'assets/file10.png',
+                'assets/file2.png',
+                'assets/avatar.jpg'
+            ])
+            expect(sorted.map((f) => f.size)).toEqual([100, 500, 1200, 8000])
+        })
+
+        it('sorts files by natural filename/key ascending (A-Z with numeric order)', () => {
+            const sorted = sortAssetFiles(sampleFiles, 'name_asc')
+            expect(sorted.map((f) => f.key)).toEqual([
+                'assets/avatar.jpg',
+                'assets/file1.png',
+                'assets/file2.png',
+                'assets/file10.png'
+            ])
+        })
+
+        it('sorts files by natural filename/key descending (Z-A with numeric order)', () => {
+            const sorted = sortAssetFiles(sampleFiles, 'name_desc')
+            expect(sorted.map((f) => f.key)).toEqual([
+                'assets/file10.png',
+                'assets/file2.png',
+                'assets/file1.png',
+                'assets/avatar.jpg'
+            ])
+        })
+
+        it('does not mutate the original array', () => {
+            const originalKeys = sampleFiles.map((f) => f.key)
+            sortAssetFiles(sampleFiles, 'size_desc')
+            expect(sampleFiles.map((f) => f.key)).toEqual(originalKeys)
         })
     })
 })
