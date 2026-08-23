@@ -1,5 +1,6 @@
 import type {
     ColorPalette,
+    HtmlScaleMode,
     ImageStyle,
     LogExporterSettings,
     ReplacementRule,
@@ -12,6 +13,24 @@ import type {
  * already-parsed HTML strings: image embedding, decorative frames, cropping,
  * formatted blocks and regex replacements.
  */
+
+/**
+ * Resolves the effective base font size (px) for rendered messages.
+ *
+ * `full` scale applies the factor through a CSS transform on the container, so
+ * the base size stays untouched. `font` scale multiplies the base size directly
+ * so text grows while layout stays put — this must match the container's
+ * `font-size` in LogContainer so header (em-based) and body (px-based) text
+ * scale identically.
+ */
+export function effectiveFontSize(
+    previewFontSize: number | undefined,
+    mode: HtmlScaleMode,
+    factor: number | undefined,
+): number {
+    const base = previewFontSize || 16
+    return mode === 'full' ? base : base * (factor || 1)
+}
 
 // ─── Image URL embedding ─────────────────────────────────────────────────────
 

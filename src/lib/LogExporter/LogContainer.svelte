@@ -3,6 +3,7 @@
     import LogFooter from './LogFooter.svelte'
     import ThemeMessage from './ThemeMessage.svelte'
     import { resolveEffectiveColor } from 'src/ts/logexporter/constants'
+    import { effectiveFontSize } from 'src/ts/logexporter/messageRenderer'
     import type { LogRenderProps } from 'src/ts/logexporter/types'
 
     let {
@@ -61,20 +62,28 @@
     }
 
     function containerStyle(): string {
+        const baseWidth = containerWidth ? Number(containerWidth) : 900
+        const scale = Number(settings.htmlScaleFactor) || 1
+        const isFull = settings.htmlScaleMode === 'full'
+        const fontPx = effectiveFontSize(fontSize, settings.htmlScaleMode, settings.htmlScaleFactor)
+        const scaleRule = isFull
+            ? `transform:scale(${scale});transform-origin:top left;--log-scale:${scale}`
+            : ''
         return [
             `margin:${isForImageExport ? '0' : '16px auto'}`,
-            `width:${containerWidth ? `${containerWidth}px` : '900px'}`,
+            `width:${baseWidth}px`,
             'max-width:none',
             'box-sizing:border-box',
-            `font-size:${fontSize ? `${fontSize}px` : '16px'}`,
+            `font-size:${fontPx}px`,
             `background-color:${palette.background}`,
             `color:${palette.text}`,
             `border-radius:${isLogTheme ? '8px' : '12px'}`,
-            'overflow:hidden',
+            isFull ? 'overflow:visible' : 'overflow:hidden',
             `padding:${isLogTheme ? '0' : '24px 32px'}`,
             isLogTheme ? 'border:none' : `border:1px solid ${palette.border}`,
             isLogTheme ? 'box-shadow:none' : `box-shadow:${palette.shadow || 'none'}`,
-        ].join(';')
+            scaleRule,
+        ].filter(Boolean).join(';')
     }
 </script>
 

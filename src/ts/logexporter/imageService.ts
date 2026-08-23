@@ -38,6 +38,13 @@ function sanitizeFilename(name: string): string {
     return name.replace(/[/?%*:|"<>]/g, '-')
 }
 
+/** Reads the HTML full-scale factor (--log-scale) applied to an offscreen container. */
+function getTransformScale(element: HTMLElement): number {
+    const raw = element.style.getPropertyValue('--log-scale').trim()
+    const value = raw ? Number(raw) : 1
+    return value > 0 ? value : 1
+}
+
 /** Waits until every <img>/<video> inside the element finished loading. */
 async function waitForMedia(element: HTMLElement, timeoutMs = MEDIA_WAIT_TIMEOUT_MS): Promise<void> {
     const images = Array.from(element.querySelectorAll('img'))
@@ -138,10 +145,11 @@ async function captureElementToBlob(
     bgColor: string,
     pixelRatio: number,
 ): Promise<Blob> {
+    const scale = getTransformScale(element)
     const options = {
         pixelRatio,
-        width: element.offsetWidth,
-        height: element.offsetHeight,
+        width: Math.round(element.offsetWidth * scale),
+        height: Math.round(element.offsetHeight * scale),
         backgroundColor: format === 'jpeg' ? bgColor : undefined,
     }
     if (format === 'webp') {
@@ -167,8 +175,9 @@ async function forEachSection(
     onSectionBlob: (blob: Blob) => Promise<void>,
     onProgressUpdate?: (update: { message?: string }) => void,
 ): Promise<void> {
-    const totalHeight = element.offsetHeight
-    const totalWidth = element.offsetWidth
+    const scale = getTransformScale(element)
+    const totalHeight = element.offsetHeight * scale
+    const totalWidth = element.offsetWidth * scale
     const numSections = Math.ceil(totalHeight / maxHeight)
 
     onProgressUpdate?.({ message: `큰 이미지 분할 캡처 중 (${numSections}개 섹션)...` })
@@ -255,11 +264,15 @@ export async function saveAsImage(
             await inlineRemainingImages(element)
             await waitForMedia(element)
 
+            const scale = getTransformScale(element)
+            const renderedHeight = element.offsetHeight * scale
+            const renderedWidth = element.offsetWidth * scale
+
             const resolutionSetting = settings.imageResolution
             let resolution =
-                resolutionSetting === 'auto' ? computeAutoResolution(element.offsetHeight) : resolutionSetting
-            if (element.offsetHeight * resolution > BROWSER_MAX_HEIGHT) {
-                resolution = Math.max(1, Math.floor(BROWSER_MAX_HEIGHT / element.offsetHeight))
+                resolutionSetting === 'auto' ? computeAutoResolution(renderedHeight) : resolutionSetting
+            if (renderedHeight * resolution > BROWSER_MAX_HEIGHT) {
+                resolution = Math.max(1, Math.floor(BROWSER_MAX_HEIGHT / renderedHeight))
                 onProgressUpdate?.({ message: `[경고] 해상도가 높아 ${resolution}x로 자동 조정됨.` })
             }
 
@@ -269,7 +282,7 @@ export async function saveAsImage(
             )
 
             let blob: Blob | null = null
-            const isTooTall = element.offsetHeight > finalMaxHeight
+            const isTooTall = renderedHeight > finalMaxHeight
 
             if (isTooTall && settings.splitImage === 'chunk') {
                 const blobs: Blob[] = []

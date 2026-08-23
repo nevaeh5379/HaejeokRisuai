@@ -1,6 +1,7 @@
 <script lang="ts">
     import Avatar from './Avatar.svelte'
     import MessageContent from './MessageContent.svelte'
+    import { effectiveFontSize } from 'src/ts/logexporter/messageRenderer'
     import type {
         ColorPalette,
         LogExporterSettings,
@@ -72,7 +73,9 @@
         }
     }
 
-    const baseFontSize = $derived(`${settings.previewFontSize || 16}px`)
+    const baseFontSize = $derived.by(
+        () => `${effectiveFontSize(settings.previewFontSize, settings.htmlScaleMode, settings.htmlScaleFactor)}px`,
+    )
 
     function stop(e: MouseEvent) {
         if (isEditable) e.stopPropagation()
