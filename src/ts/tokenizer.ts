@@ -11,17 +11,20 @@ import type { MultiModal, OpenAIChat } from "./process/index.svelte";
 import { supportsInlayImage } from "./process/files/inlays";
 import { risuChatParser } from "./parser/parser.svelte";
 import { tokenizeGGUFModel } from "./process/models/local";
-import { globalFetch } from "./globalApi.svelte";
+import { forageStorage, globalFetch } from "./globalApi.svelte";
 import { getModelInfo, LLMTokenizer, type LLMModel } from "./model/modellist";
 import { pluginV2 } from "./plugins/plugins.svelte";
 import type { GemmaTokenizer } from "@huggingface/transformers";
 import { LRUMap } from "mnemonist";
+import { isNodeServer } from "./platform";
+import { NodeStorage } from "./storage/nodeStorage";
 
 const MAX_CACHE_SIZE = 128;
 
 const encodeCache = new LRUMap<string, number[] | Uint32Array | Int32Array>(
   MAX_CACHE_SIZE,
 );
+const tokenCountCache = new LRUMap<string, number>(MAX_CACHE_SIZE * 4);
 
 function getHash(
   data: string,
@@ -86,6 +89,78 @@ export async function encodeWithTokenizer(
     default:
       return await tikJS(data, "cl100k_base");
   }
+}
+
+type ServerTiktokenEncoding = "cl100k_base" | "o200k_base";
+
+function resolveServerTiktokenEncoding(
+  modelInfo: LLMModel,
+  pluginTokenizer: string,
+): ServerTiktokenEncoding | null {
+  const db = getDatabase();
+  const nonTiktoken = new Set([
+    "mistral", "llama", "novelai", "claude", "novellist", "llama3",
+    "gemma", "cohere", "deepseek", "deepseek-v4", "glm4", "glm5",
+  ]);
+
+  if (db.aiModel === "openrouter" || db.aiModel === "reverse_proxy") {
+    return nonTiktoken.has(db.customTokenizer) ? null : "o200k_base";
+  }
+  if (db.aiModel === "custom" && pluginTokenizer) {
+    if (pluginTokenizer === "custom") return null;
+    if (pluginTokenizer === "cl100k_base") return "cl100k_base";
+    if (pluginTokenizer === "o200k_base") return "o200k_base";
+    return nonTiktoken.has(pluginTokenizer) ? null : "o200k_base";
+  }
+  if (modelInfo.tokenizer === LLMTokenizer.tiktokenO200Base) return "o200k_base";
+  if (modelInfo.tokenizer === LLMTokenizer.tiktokenCl100kBase) return "cl100k_base";
+  if (modelInfo.tokenizer === LLMTokenizer.Unknown) return "cl100k_base";
+  return null;
+}
+
+export async function countTokenTexts(texts: string[]): Promise<number[]> {
+  if (texts.length === 0) return [];
+  const db = getDatabase();
+  const modelInfo = getModelInfo(db.aiModel);
+  const pluginTokenizer =
+    pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizer ?? "none";
+  const results = new Array<number>(texts.length);
+  const missingTexts: string[] = [];
+  const missingIndexes: number[] = [];
+
+  for (let i = 0; i < texts.length; i++) {
+    const key = getHash(texts[i], db.aiModel, db.customTokenizer,
+      db.currentPluginProvider, db.googleClaudeTokenizing, modelInfo, pluginTokenizer);
+    const cached = db.useTokenizerCaching ? tokenCountCache.get(key) : undefined;
+    if (cached !== undefined) results[i] = cached;
+    else { missingTexts.push(texts[i]); missingIndexes.push(i); }
+  }
+
+  if (missingTexts.length > 0) {
+    let counts: number[] | null = null;
+    const encoding = resolveServerTiktokenEncoding(modelInfo, pluginTokenizer);
+    if (encoding && isNodeServer && forageStorage.realStorage instanceof NodeStorage) {
+      try {
+        counts = await forageStorage.realStorage.tokenizeCountBatch(missingTexts, encoding);
+      } catch (error) {
+        console.warn("Server tokenization failed; falling back to browser tokenizer", error);
+      }
+    }
+    if (!counts) {
+      counts = [];
+      for (const text of missingTexts) counts.push((await encode(text)).length);
+    }
+    for (let i = 0; i < missingIndexes.length; i++) {
+      const index = missingIndexes[i];
+      results[index] = counts[i];
+      if (db.useTokenizerCaching) {
+        const key = getHash(texts[index], db.aiModel, db.customTokenizer,
+          db.currentPluginProvider, db.googleClaudeTokenizing, modelInfo, pluginTokenizer);
+        tokenCountCache.set(key, counts[i]);
+      }
+    }
+  }
+  return results;
 }
 
 export async function encode(
@@ -520,9 +595,20 @@ export class ChatTokenizer {
     return encoded;
   }
   async tokenizeChats(data: OpenAIChat[]) {
+    const texts: string[] = [];
+    for (const chat of data) {
+      texts.push(chat.content);
+      if (chat.name && this.useName === "name") texts.push(chat.name);
+    }
+    const counts = await countTokenTexts(texts);
+    let countIndex = 0;
     let encoded = 0;
     for (const chat of data) {
-      encoded += await this.tokenizeChat(chat);
+      encoded += counts[countIndex++] + this.chatAdditionalTokens;
+      if (chat.name && this.useName === "name") encoded += counts[countIndex++] + 1;
+      if (chat.multimodals?.length) {
+        for (const multimodal of chat.multimodals) encoded += await this.tokenizeMultiModal(multimodal);
+      }
     }
     return encoded;
   }

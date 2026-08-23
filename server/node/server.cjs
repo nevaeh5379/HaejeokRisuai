@@ -42,6 +42,8 @@ const {
     encodeDatabase: encodeLocalBackupDatabase,
 } = require('./localBackupFormat.cjs');
 const { normalizePageInteger, paginateMessages } = require('./messagePagination.cjs');
+const { countTokensBatch } = require('./tokenizeCount.cjs');
+const { matchLoreBatch } = require('./loreMatch.cjs');
 const {
     PostgresPayloadError,
     PostgresRevisionConflictError,
@@ -3426,6 +3428,47 @@ app.delete('/api/db-backup', authenticatedRouteLimiter, async (req, res, next) =
         removeBackupConfig(savePath);
         res.send({ success: true, ...(await getBackupConfigResponse()) });
     } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/tokenize-count', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    try {
+        const counts = countTokensBatch(req.body?.texts, req.body?.encoding);
+        res.send({ counts });
+    } catch (error) {
+        if (error instanceof TypeError || error instanceof RangeError) {
+            res.status(400).send({ error: error.message });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.post('/api/lore-match-batch', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    try {
+        const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
+        const requests = Array.isArray(req.body?.requests) ? req.body.requests : [];
+        if (messages.length > 10000) {
+            res.status(400).send({ error: 'Too many lore scan messages' });
+            return;
+        }
+        const results = matchLoreBatch(messages, requests, {
+            username: req.body?.username,
+            charName: req.body?.charName,
+        });
+        res.send({ results });
+    } catch (error) {
+        if (error instanceof TypeError || error instanceof RangeError) {
+            res.status(400).send({ error: error.message });
+            return;
+        }
         next(error);
     }
 });

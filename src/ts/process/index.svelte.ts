@@ -810,10 +810,7 @@ export async function sendChat(
     const template = promptTemplate;
 
     async function tokenizeChatArray(chats: OpenAIChat[]) {
-      for (const chat of chats) {
-        const tokens = await tokenizer.tokenizeChat(chat);
-        currentTokens += tokens;
-      }
+      currentTokens += await tokenizer.tokenizeChats(chats);
     }
 
     for (const card of template) {
@@ -989,17 +986,13 @@ export async function sendChat(
   } else {
     for (const key in unformated) {
       const chats = unformated[key] as OpenAIChat[];
-      for (const chat of chats) {
-        currentTokens += await tokenizer.tokenizeChat(chat);
-      }
+      currentTokens += await tokenizer.tokenizeChats(chats);
     }
   }
 
   const examples = exampleMessage(currentChar, getUserName());
 
-  for (const example of examples) {
-    currentTokens += await tokenizer.tokenizeChat(example);
-  }
+  currentTokens += await tokenizer.tokenizeChats(examples);
 
   let chats: OpenAIChat[] = examples;
 
@@ -1074,6 +1067,7 @@ export async function sendChat(
   }
 
   let index = 0;
+  const chatHistoryTokenStart = chats.length;
   for (const msg of ms) {
     let formatedChat = (
       await processScriptFull(
@@ -1252,9 +1246,9 @@ export async function sendChat(
       delete chat.multimodals;
     }
     chats.push(chat);
-    currentTokens += await tokenizer.tokenizeChat(chat);
     index++;
   }
+  currentTokens += await tokenizer.tokenizeChats(chats.slice(chatHistoryTokenStart));
   console.log(JSON.stringify(chats, null, 2));
 
   const depthPrompts = lorepmt.actives.filter((v) => {
@@ -1864,11 +1858,7 @@ export async function sendChat(
   }
 
   //token rechecking
-  let inputTokens = 0;
-
-  for (const chat of formated) {
-    inputTokens += await tokenizer.tokenizeChat(chat);
-  }
+  let inputTokens = await tokenizer.tokenizeChats(formated);
 
   if (inputTokens > maxContextTokens) {
     let pointer = 0;

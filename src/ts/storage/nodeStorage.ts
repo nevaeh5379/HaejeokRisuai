@@ -146,6 +146,67 @@ export class NodeStorage {
     return auth;
   }
 
+  async tokenizeCountBatch(
+    texts: string[],
+    encoding: "cl100k_base" | "o200k_base",
+  ): Promise<number[]> {
+    if (texts.length === 0) return [];
+
+    const counts: number[] = [];
+    const auth = await this.getCachedAuth();
+    for (let offset = 0; offset < texts.length; offset += 1024) {
+      const response = await fetch("/api/tokenize-count", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "risu-auth": auth,
+        },
+        body: JSON.stringify({ encoding, texts: texts.slice(offset, offset + 1024) }),
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(`Server tokenization failed (${response.status}): ${message}`);
+      }
+      const data = await response.json();
+      if (!Array.isArray(data.counts)) {
+        throw new Error("Server tokenization returned an invalid response");
+      }
+      counts.push(...data.counts);
+    }
+    return counts;
+  }
+
+  async loreMatchBatch(payload: {
+    messages: Array<{ role: string; data: string; displayName?: string }>;
+    requests: Array<{
+      keys: string[];
+      searchDepth: number;
+      regex: boolean;
+      fullWordMatching: boolean;
+      all?: boolean;
+    }>;
+    username: string;
+    charName: string;
+  }): Promise<Array<{ matched: boolean; logs: Array<{ prompt: string; source: string; activated: string }> }>> {
+    if (payload.requests.length === 0) return [];
+    const response = await fetch("/api/lore-match-batch", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "risu-auth": await this.getCachedAuth(),
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error(`Server lore matching failed (${response.status}): ${await response.text()}`);
+    }
+    const data = await response.json();
+    if (!Array.isArray(data.results)) {
+      throw new Error("Server lore matching returned an invalid response");
+    }
+    return data.results;
+  }
+
   async getKeyPair(): Promise<CryptoKeyPair> {
     const storedKey = await getKeypairStore("node");
 

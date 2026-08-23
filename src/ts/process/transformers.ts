@@ -1,7 +1,6 @@
 import type {
   SummarizationOutput,
   TextToAudioPipeline,
-  FeatureExtractionPipeline,
   TextGenerationConfig,
   TextGenerationOutput,
   ImageToTextOutput,
@@ -65,52 +64,6 @@ export const runSummarizer = async (text: string) => {
   let classifier = await pipeline("summarization", "Xenova/distilbart-cnn-6-6");
   const v = (await classifier(text)) as SummarizationOutput;
   return v[0].summary_text;
-};
-
-let extractor: FeatureExtractionPipeline = null;
-let lastEmbeddingModelQuery: string = "";
-type EmbeddingModel =
-  "Xenova/all-MiniLM-L6-v2" | "nomic-ai/nomic-embed-text-v1.5";
-export const runEmbedding = async (
-  texts: string[],
-  model: EmbeddingModel = "Xenova/all-MiniLM-L6-v2",
-  device: "webgpu" | "wasm",
-): Promise<Float32Array[]> => {
-  await initTransformers();
-  console.log("running embedding");
-  let embeddingModelQuery = model + device;
-  const { pipeline } = await import("@huggingface/transformers");
-  if (!extractor || embeddingModelQuery !== lastEmbeddingModelQuery) {
-    // Dispose old extractor
-    if (extractor) {
-      await extractor.dispose();
-    }
-    extractor = await pipeline<"feature-extraction">(
-      "feature-extraction",
-      model,
-      {
-        // Default dtype for webgpu is fp32, so we can use q8, which is the default dtype in wasm.
-        dtype: "q8",
-        device: device,
-        progress_callback: (progress) => {
-          console.log(progress);
-        },
-      },
-    );
-    lastEmbeddingModelQuery = embeddingModelQuery;
-    console.log("extractor loaded");
-  }
-  let result = await extractor(texts, { pooling: "mean", normalize: true });
-  console.log(texts, result);
-  const data = result.data as Float32Array;
-  console.log(data);
-  const lenPerText = data.length / texts.length;
-  let res: Float32Array[] = [];
-  for (let i = 0; i < texts.length; i++) {
-    res.push(data.subarray(i * lenPerText, (i + 1) * lenPerText));
-  }
-  console.log(res);
-  return res ?? [];
 };
 
 export const runImageEmbedding = async (dataurl: string) => {

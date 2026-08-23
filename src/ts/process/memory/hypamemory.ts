@@ -1,6 +1,5 @@
 import localforage from "localforage";
 import { globalFetch } from "src/ts/globalApi.svelte";
-import { runEmbedding } from "../transformers";
 import { appendLastPath } from "src/ts/util";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { isContextModel, getContextProvider } from "./contextualEmbedding";
@@ -10,47 +9,24 @@ export type HypaModel =
   | "ada"
   | "openai3small"
   | "openai3large"
-  | "MiniLM"
-  | "MiniLMGPU"
-  | "nomic"
-  | "nomicGPU"
-  | "bgeSmallEn"
-  | "bgeSmallEnGPU"
-  | "bgem3"
-  | "bgem3GPU"
-  | "multiMiniLM"
-  | "multiMiniLMGPU"
-  | "bgeM3Ko"
-  | "bgeM3KoGPU"
   | "voyageContext3";
 
-// In a typical environment, bge-m3 is a heavy model.
-// If your GPU can't handle this model, you'll see errror below.
-// Failed to execute 'mapAsync' on 'GPUBuffer': [Device] is lost
-export const localModels = {
-  models: {
-    MiniLM: "Xenova/all-MiniLM-L6-v2",
-    MiniLMGPU: "Xenova/all-MiniLM-L6-v2",
-    nomic: "nomic-ai/nomic-embed-text-v1.5",
-    nomicGPU: "nomic-ai/nomic-embed-text-v1.5",
-    bgeSmallEn: "Xenova/bge-small-en-v1.5",
-    bgeSmallEnGPU: "Xenova/bge-small-en-v1.5",
-    bgem3: "Xenova/bge-m3",
-    bgem3GPU: "Xenova/bge-m3",
-    multiMiniLM: "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
-    multiMiniLMGPU: "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
-    bgeM3Ko: "HyperBlaze/BGE-m3-ko",
-    bgeM3KoGPU: "HyperBlaze/BGE-m3-ko",
-  },
-  gpuModels: [
-    "MiniLMGPU",
-    "nomicGPU",
-    "bgeSmallEnGPU",
-    "bgem3GPU",
-    "multiMiniLMGPU",
-    "bgeM3KoGPU",
-  ],
-};
+export const DEFAULT_HYPA_MODEL: HypaModel = "openai3small";
+
+const supportedHypaModels = new Set<HypaModel>([
+  "custom",
+  "ada",
+  "openai3small",
+  "openai3large",
+  "voyageContext3",
+]);
+
+export function normalizeHypaModel(model: unknown): HypaModel {
+  if (typeof model === "string" && supportedHypaModels.has(model as HypaModel)) {
+    return model as HypaModel;
+  }
+  return DEFAULT_HYPA_MODEL;
+}
 
 export class HypaProcesser {
   oaikey: string;
@@ -65,11 +41,7 @@ export class HypaProcesser {
     });
     this.vectors = [];
     const db = getDatabase();
-    if (model === "auto") {
-      this.model = db.hypaModel || "MiniLM";
-    } else {
-      this.model = model;
-    }
+    this.model = normalizeHypaModel(model === "auto" ? db.hypaModel : model);
     this.customEmbeddingUrl =
       customEmbeddingUrl?.trim() || db.hypaCustomSettings?.url?.trim() || "";
   }
@@ -103,15 +75,6 @@ export class HypaProcesser {
       const groups = inputs.map((s) => [s]);
       const results = await provider.embedDocumentGroups(groups);
       return results.map((group) => group[0]);
-    }
-    if (Object.keys(localModels.models).includes(this.model)) {
-      const inputs: string[] = Array.isArray(input) ? input : [input];
-      let results: Float32Array[] = await runEmbedding(
-        inputs,
-        localModels.models[this.model],
-        localModels.gpuModels.includes(this.model) ? "webgpu" : "wasm",
-      );
-      return results;
     }
     let gf = null;
     if (this.model === "custom") {

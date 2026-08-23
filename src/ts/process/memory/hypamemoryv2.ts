@@ -1,12 +1,10 @@
 import localforage from "localforage";
-import { type HypaModel, localModels } from "./hypamemory";
+import { normalizeHypaModel, type HypaModel } from "./hypamemory";
 import { isContextModel, getContextProvider } from "./contextualEmbedding";
 import { TaskRateLimiter, TaskCanceledError } from "./taskRateLimiter";
-import { runEmbedding } from "../transformers";
 import { globalFetch } from "src/ts/globalApi.svelte";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { appendLastPath } from "src/ts/util";
-import { isMobile } from "src/ts/platform";
 
 export interface HypaProcessorV2Options {
   model?: HypaModel;
@@ -39,12 +37,13 @@ export class HypaProcessorV2<TMetadata> {
   public constructor(options?: HypaProcessorV2Options) {
     const db = getDatabase();
 
+    const model = normalizeHypaModel(options?.model ?? db.hypaModel);
     this.options = {
-      model: db.hypaModel || "MiniLM",
       customEmbeddingUrl: db.hypaCustomSettings?.url?.trim() || "",
       oaiKey: db.supaMemoryKey?.trim() || "",
       rateLimiter: new TaskRateLimiter(),
       ...options,
+      model,
     };
   }
 
@@ -256,43 +255,6 @@ export class HypaProcessorV2<TMetadata> {
           resultMap.set(id, ebdResult);
         }
       }
-    } else if (this.isLocalModel()) {
-      // Local model: Sequential processing
-      for (let i = 0; i < chunks.length; i++) {
-        // Progress callback
-        this.progressCallback?.(chunks.length - i - 1);
-
-        const chunk = chunks[i];
-        const embeddings = await this.getLocalEmbeds(
-          chunk.map((item) => item.content),
-        );
-
-        const savePromises = embeddings.map(async (embedding, j) => {
-          const { id, content, metadata } = chunk[j];
-
-          const ebdResult: EmbeddingResult<TMetadata> = {
-            id,
-            content,
-            embedding,
-            metadata,
-          };
-
-          // Save to DB
-          await this.forage.setItem(this.getCacheKey(content), {
-            content,
-            embedding,
-          });
-
-          // Save to memory
-          if (saveToMemory) {
-            this.vectors.set(id, ebdResult);
-          }
-
-          resultMap.set(id, ebdResult);
-        });
-
-        await Promise.all(savePromises);
-      }
     } else {
       // API model: Parallel processing
       const embeddingTasks = chunks.map((chunk) => {
@@ -396,25 +358,7 @@ export class HypaProcessorV2<TMetadata> {
   }
 
   private getOptimalChunkSize(): number {
-    // API
-    if (!this.isLocalModel()) {
-      return 50;
-    }
-
-    // WebGPU
-    if ("gpu" in navigator) {
-      return isMobile ? 5 : 10;
-    }
-
-    // WASM
-    const cpuCores = (navigator as Navigator).hardwareConcurrency || 4;
-    const baseChunkSize = isMobile ? Math.floor(cpuCores / 2) : cpuCores;
-
-    return Math.min(baseChunkSize, 10);
-  }
-
-  private isLocalModel(): boolean {
-    return Object.keys(localModels.models).includes(this.options.model);
+    return 50;
   }
 
   private chunkArray<T>(array: T[], size: number): T[][] {
@@ -425,16 +369,6 @@ export class HypaProcessorV2<TMetadata> {
     }
 
     return chunks;
-  }
-
-  private async getLocalEmbeds(contents: string[]): Promise<EmbeddingVector[]> {
-    const results: Float32Array[] = await runEmbedding(
-      contents,
-      localModels.models[this.options.model],
-      localModels.gpuModels.includes(this.options.model) ? "webgpu" : "wasm",
-    );
-
-    return results;
   }
 
   private async getAPIEmbeds(contents: string[]): Promise<EmbeddingVector[]> {

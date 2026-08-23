@@ -4,15 +4,17 @@ import { selectedCharID } from "../stores.svelte";
 import { type Message, type loreBook } from "../storage/database.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
-import { tokenize } from "../tokenizer";
+import { countTokenTexts } from "../tokenizer";
 import { risuChatParser } from "../parser/parser.svelte";
 import { findCharacterbyId, pickHashRand, selectSingleFile } from "../util";
 import { alertError, alertNormal } from "../alert";
 import { language } from "../../lang";
-import { downloadFile } from "../globalApi.svelte";
+import { downloadFile, forageStorage } from "../globalApi.svelte";
 import { getModuleLorebooks } from "./modules";
 import { CCardLib } from "@risuai/ccardlib";
 import { v4 } from "uuid";
+import { isNodeServer } from "../platform";
+import { NodeStorage } from "../storage/nodeStorage";
 
 export function addLorebook(type: number) {
   const selectedID = get(selectedCharID);
@@ -100,17 +102,35 @@ export async function loadLoreBookV3Prompt() {
     activated: string;
   }[] = [];
 
-  const searchMatch = (
-    messages: Message[],
-    arg: {
-      keys: string[];
-      searchDepth: number;
-      regex: boolean;
-      fullWordMatching: boolean;
-      all?: boolean;
-      dontSearchWhenRecursive: boolean;
-    },
-  ) => {
+  type LoreMatchRequest = {
+    keys: string[];
+    searchDepth: number;
+    regex: boolean;
+    fullWordMatching: boolean;
+    all?: boolean;
+    dontSearchWhenRecursive: boolean;
+  };
+  type LoreMatchResult = {
+    matched: boolean;
+    logs: { prompt: string; source: string; activated: string }[];
+  };
+  let precomputedMatchResults: Map<string, LoreMatchResult> | null = null;
+  const loreMatchCacheKey = (arg: LoreMatchRequest) =>
+    JSON.stringify([
+      arg.keys.map((key) => key.trim()).filter(Boolean),
+      arg.searchDepth,
+      arg.regex,
+      arg.fullWordMatching,
+      arg.all ?? false,
+      arg.dontSearchWhenRecursive,
+    ]);
+
+  const searchMatch = (messages: Message[], arg: LoreMatchRequest) => {
+    const precomputed = precomputedMatchResults?.get(loreMatchCacheKey(arg));
+    if (precomputed) {
+      matchLog.push(...precomputed.logs);
+      return precomputed.matched;
+    }
     const sliced = messages.slice(
       messages.length - arg.searchDepth,
       messages.length,
@@ -248,6 +268,94 @@ export async function loadLoreBookV3Prompt() {
     return false;
   };
 
+  async function prepareServerLoreMatches() {
+    if (recursiveScanning || !isNodeServer) return;
+    if (!(forageStorage.realStorage instanceof NodeStorage)) return;
+    if (fullLore.some((lore) => lore.mode === "child")) return;
+
+    const requests = new Map<string, LoreMatchRequest>();
+    try {
+      for (const lore of fullLore) {
+        if (!lore.alwaysActive && !lore.key) continue;
+        if (lore.content.split("\n").some((line) => line.trim().startsWith("@@@"))) return;
+        let scanDepth = loreDepth;
+        let fullWordMatching = fullWordMatchingSetting;
+        let dontSearchWhenRecursive = false;
+        let unsafeRecursiveOverride = false;
+        const searchQueries: Array<{ keys: string[]; all?: boolean }> = [];
+
+        CCardLib.decorator.parse(lore.content, (name, arg) => {
+          if (name === "scan_depth") {
+            scanDepth = parseInt(arg[0]);
+          } else if (name === "additional_keys" || name === "exclude_keys") {
+            searchQueries.push({ keys: arg });
+          } else if (name === "exclude_keys_all") {
+            searchQueries.push({ keys: arg, all: true });
+          } else if (name === "match_full_word") {
+            fullWordMatching = true;
+          } else if (name === "match_partial_word") {
+            fullWordMatching = false;
+          } else if (name === "no_recursive_search") {
+            dontSearchWhenRecursive = true;
+          } else if (name === "recursive") {
+            unsafeRecursiveOverride = true;
+          }
+          return;
+        });
+
+        if (unsafeRecursiveOverride || !Number.isFinite(scanDepth)) return;
+        if (!lore.alwaysActive) {
+          searchQueries.push({ keys: lore.key.split(",") });
+          if (lore.secondkey && lore.selective) {
+            searchQueries.push({ keys: lore.secondkey.split(",") });
+          }
+        }
+        for (const query of searchQueries) {
+          const request: LoreMatchRequest = {
+            keys: query.keys,
+            searchDepth: scanDepth,
+            regex: lore.useRegex ?? false,
+            fullWordMatching,
+            all: query.all,
+            dontSearchWhenRecursive,
+          };
+          requests.set(loreMatchCacheKey(request), request);
+        }
+      }
+    } catch {
+      return;
+    }
+
+    if (requests.size === 0) return;
+    const requestEntries = [...requests.entries()];
+    const maxDepth = Math.max(...requestEntries.map(([, request]) => request.searchDepth), 0);
+    const messages = (maxDepth > 0 ? currentChat.slice(-maxDepth) : []).map((msg) => ({
+      role: msg.role,
+      data: msg.data,
+      displayName:
+        msg.name ??
+        (msg.saying ? findCharacterbyId(msg.saying)?.name : null) ??
+        char.name,
+    }));
+
+    try {
+      const results = await forageStorage.realStorage.loreMatchBatch({
+        messages,
+        requests: requestEntries.map(([, request]) => request),
+        username: settingsStore.state.username,
+        charName: char.name,
+      });
+      if (results.length !== requestEntries.length) return;
+      precomputedMatchResults = new Map(
+        requestEntries.map(([key], index) => [key, results[index]]),
+      );
+    } catch (error) {
+      console.warn("Server lore matching failed; using browser matcher", error);
+    }
+  }
+
+  await prepareServerLoreMatches();
+
   let selectedTokens = 0;
   let selectedCount = 0;
   let addedKeys: string[] = [];
@@ -284,6 +392,7 @@ export async function loadLoreBookV3Prompt() {
     } | null;
   }[] = [];
   let activatedIndexes: number[] = [];
+  const activeTokenTexts: string[] = [];
   let disabledUIPrompts: string[] = [];
   let matchTimes = 0;
   let keepActivateAfterMatch = false;
@@ -619,17 +728,16 @@ export async function loadLoreBookV3Prompt() {
       }
 
       if (activated) {
+        // Evaluate CBS now to preserve the original chat-variable timing, then batch only
+        // the expensive tokenizer work after activation is complete.
+        activeTokenTexts.push(risuChatParser(content, { chara: char }));
         actives.push({
           depth: depth,
           pos: pos,
           prompt: content,
           role: role,
           order: order,
-          // Count tokens against the CBS-evaluated text (e.g. {{#if}}, {{getglobalvar}})
-          // so cutoff reflects what actually reaches the context, not the unevaluated source.
-          // runVar is left false (matching the output path in index.svelte.ts), so this
-          // evaluation has no side effects like setvar.
-          tokens: await tokenize(risuChatParser(content, { chara: char })),
+          tokens: 0,
           priority: priority,
           source: fullLore[i].comment || `lorebook ${i}`,
           inject: inject ?? null,
@@ -668,6 +776,11 @@ export async function loadLoreBookV3Prompt() {
         }
       }
     }
+  }
+
+  const activeTokenCounts = await countTokenTexts(activeTokenTexts);
+  for (let i = 0; i < actives.length; i++) {
+    actives[i].tokens = activeTokenCounts[i] ?? 0;
   }
 
   const activesSorted = actives.sort((a, b) => {
