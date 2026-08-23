@@ -3,10 +3,12 @@
         ArrowDownIcon,
         ArrowUpDownIcon,
         ArrowUpIcon,
+        CheckIcon,
         ChevronFirstIcon,
         ChevronLastIcon,
         ChevronLeftIcon,
         ChevronRightIcon,
+        CopyIcon,
         DatabaseIcon,
         LayoutGridIcon,
         LayersIcon,
@@ -19,8 +21,8 @@
     } from '@lucide/svelte'
     import { language } from 'src/lang'
     import StorageTargetSelector from '../components/StorageTargetSelector.svelte'
-    import { formatBytes, isAudioFile, isImageFile, isThumbnailKey, sortAssetFiles } from '../utils'
-    import type { FileFilterType, FileSortType, NodeS3ServerConfig, NodeStorageAssetDetails, NodeStorageAssetItem, NodeStorageSummary, ViewTarget } from '../types'
+    import { extractOriginalKeyFromThumbnail, formatBytes, generateKeyCandidates, isAudioFile, isImageFile, isThumbnailKey, sortAssetFiles } from '../utils'
+    import type { AssetUsageMap, FileFilterType, FileSortType, NodeS3ServerConfig, NodeStorageAssetDetails, NodeStorageAssetItem, NodeStorageSummary, ViewTarget } from '../types'
 
     interface Props {
         assetDetails: NodeStorageAssetDetails | null
@@ -32,6 +34,7 @@
         resyncingCatalog: boolean
         busy: boolean
         thumbnailUrls: Map<string, string>
+        assetUsageMap?: AssetUsageMap
         onLoadThumbnail: (key: string) => void
         onOpenPreview: (key: string) => void
         onToggleSelectFile: (key: string) => void
@@ -52,6 +55,7 @@
         resyncingCatalog,
         busy,
         thumbnailUrls,
+        assetUsageMap,
         onLoadThumbnail,
         onOpenPreview,
         onToggleSelectFile,
@@ -68,6 +72,57 @@
     let displayMode = $state<'table' | 'card'>('table')
     let page = $state(1)
     let pageSize = $state(50)
+    let copiedKey = $state<string | null>(null)
+
+    async function copyKey(key: string) {
+        try {
+            await navigator.clipboard.writeText(key)
+            copiedKey = key
+            setTimeout(() => {
+                if (copiedKey === key) copiedKey = null
+            }, 1500)
+        } catch {
+            // ignore
+        }
+    }
+
+    function getAssetUsages(key: string) {
+        if (!assetUsageMap) return []
+        const direct = assetUsageMap.get(key)
+        if (direct && direct.length > 0) return direct
+
+        if (isThumbnailKey(key)) {
+            const originalKey = extractOriginalKeyFromThumbnail(key)
+            if (originalKey) {
+                const candidates = generateKeyCandidates(originalKey)
+                for (const cand of candidates) {
+                    const found = assetUsageMap.get(cand)
+                    if (found && found.length > 0) return found
+                }
+            }
+        }
+
+        const candidates = generateKeyCandidates(key)
+        for (const cand of candidates) {
+            const found = assetUsageMap.get(cand)
+            if (found && found.length > 0) return found
+        }
+        return []
+    }
+
+    function getDisplayName(key: string): string {
+        const usages = getAssetUsages(key)
+        if (usages.length > 0) return usages[0].originalName
+        if (isThumbnailKey(key)) {
+            const orig = extractOriginalKeyFromThumbnail(key)
+            if (orig) {
+                const origUsages = getAssetUsages(orig)
+                if (origUsages.length > 0) return `${origUsages[0].originalName} (Thumb)`
+            }
+            return 'Thumb'
+        }
+        return key
+    }
 
     const filteredAndSortedFiles = $derived.by(() => {
         if (!assetDetails?.assets) return []
@@ -75,7 +130,19 @@
 
         if (fileSearch.trim()) {
             const query = fileSearch.trim().toLowerCase()
-            list = list.filter((f) => f.key.toLowerCase().includes(query))
+            list = list.filter((f) => {
+                if (f.key.toLowerCase().includes(query)) return true
+                const usages = getAssetUsages(f.key)
+                if (usages.length > 0) {
+                    return usages.some(
+                        (u) =>
+                            u.originalName.toLowerCase().includes(query) ||
+                            u.ownerName.toLowerCase().includes(query) ||
+                            u.assetType.toLowerCase().includes(query)
+                    )
+                }
+                return false
+            })
         }
 
         if (fileFilter === 'image') {
@@ -87,7 +154,27 @@
             list = list.filter((f) => orphanSet.has(f.key))
         }
 
-        return sortAssetFiles(list, fileSort)
+        if (fileSort === 'size_desc') {
+            return list.sort((a, b) => b.size - a.size)
+        } else if (fileSort === 'size_asc') {
+            return list.sort((a, b) => a.size - b.size)
+        } else if (fileSort === 'name_asc') {
+            return list.sort((a, b) =>
+                getDisplayName(a.key).localeCompare(getDisplayName(b.key), undefined, {
+                    numeric: true,
+                    sensitivity: 'base'
+                })
+            )
+        } else if (fileSort === 'name_desc') {
+            return list.sort((a, b) =>
+                getDisplayName(b.key).localeCompare(getDisplayName(a.key), undefined, {
+                    numeric: true,
+                    sensitivity: 'base'
+                })
+            )
+        }
+
+        return list
     })
 
     const totalItems = $derived(filteredAndSortedFiles.length)
@@ -347,8 +434,8 @@
     {#if displayMode === 'table'}
         <!-- Desktop / Tablet Table View -->
         <div class="rounded-xl border border-darkborderc bg-darkbg overflow-hidden flex flex-col">
-            <div class="max-h-[600px] overflow-y-auto">
-                <table class="w-full text-left text-xs text-textcolor">
+            <div class="max-h-[600px] overflow-y-auto overflow-x-auto">
+                <table class="w-full text-left text-xs text-textcolor min-w-[720px]">
                     <thead class="sticky top-0 z-10 border-b border-darkborderc bg-darkbg/95 backdrop-blur-xs font-semibold text-textcolor2">
                         <tr>
                             <th class="w-10 px-3 py-2.5 text-center">
@@ -360,14 +447,14 @@
                                     title={language.storageSelectCurrentPage}
                                 />
                             </th>
-                            <th class="w-14 px-3 py-2.5">{language.storagePreview}</th>
+                            <th class="w-12 px-2 py-2.5 text-center">{language.storagePreview}</th>
                             <th class="px-3 py-2.5">
                                 <button
                                     type="button"
                                     class="group inline-flex items-center gap-1.5 font-semibold text-textcolor2 hover:text-textcolor transition-colors cursor-pointer"
                                     onclick={() => toggleHeaderSort('key')}
                                 >
-                                    <span>{language.storageAssetKey}</span>
+                                    <span>{language.storageColumnOriginalName ?? '에셋 이름 / 파일명'}</span>
                                     {#if fileSort === 'name_asc'}
                                         <ArrowUpIcon class="h-3.5 w-3.5 text-textcolor" />
                                     {:else if fileSort === 'name_desc'}
@@ -377,7 +464,9 @@
                                     {/if}
                                 </button>
                             </th>
-                            <th class="w-28 px-3 py-2.5 text-right">
+                            <th class="w-44 sm:w-52 px-3 py-2.5">{language.storageColumnUsage ?? '사용처 (소속)'}</th>
+                            <th class="w-28 px-3 py-2.5 text-center">{language.storageColumnType ?? '유형'}</th>
+                            <th class="w-24 sm:w-28 px-3 py-2.5 text-right">
                                 <button
                                     type="button"
                                     class="group inline-flex items-center gap-1.5 font-semibold text-textcolor2 hover:text-textcolor transition-colors cursor-pointer ml-auto"
@@ -393,20 +482,23 @@
                                     {/if}
                                 </button>
                             </th>
-                            <th class="w-16 px-3 py-2.5 text-center">{language.storageAction}</th>
+                            <th class="w-12 px-3 py-2.5 text-center">{language.storageAction}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-darkborderc/40">
                         {#if pagedFiles.length === 0}
                             <tr>
-                                <td colspan="5" class="py-12 text-center text-textcolor2">
+                                <td colspan="7" class="py-12 text-center text-textcolor2">
                                     {language.storageNoAssetsFound}
                                 </td>
                             </tr>
                         {:else}
                             {#each pagedFiles as file (file.key)}
+                                {@const usages = getAssetUsages(file.key)}
+                                {@const isThumb = isThumbnailKey(file.key)}
                                 <tr class="hover:bg-darkbutton/30 transition-colors {selectedFileKeys.has(file.key) ? 'bg-selected' : ''}">
-                                    <td class="px-3 py-2 text-center">
+                                    <!-- 1. Checkbox -->
+                                    <td class="w-10 px-3 py-2 text-center">
                                         <input
                                             type="checkbox"
                                             checked={selectedFileKeys.has(file.key)}
@@ -414,10 +506,12 @@
                                             class="rounded-sm border-darkborderc cursor-pointer"
                                         />
                                     </td>
-                                    <td class="px-3 py-2">
+
+                                    <!-- 2. Preview -->
+                                    <td class="w-12 px-2 py-2 text-center">
                                         <button
                                             type="button"
-                                            class="h-8 w-8 overflow-hidden rounded-md border border-darkborderc bg-darkbutton hover:opacity-80 transition-opacity cursor-pointer flex items-center justify-center"
+                                            class="h-8 w-8 mx-auto overflow-hidden rounded-md border border-darkborderc bg-darkbutton hover:opacity-80 transition-opacity cursor-pointer flex items-center justify-center"
                                             onclick={() => onOpenPreview(file.key)}
                                             title="Preview"
                                         >
@@ -435,20 +529,85 @@
                                             {/if}
                                         </button>
                                     </td>
-                                    <td class="px-3 py-2 font-mono text-xs max-w-xs truncate">
-                                        <div class="flex items-center gap-1.5 min-w-0">
-                                            {#if isThumbnailKey(file.key)}
-                                                <span class="rounded bg-darkbutton border border-darkborderc/40 px-1.5 py-0.5 text-[10px] font-medium text-textcolor2 shrink-0">
-                                                    Thumb
-                                                </span>
-                                            {/if}
-                                            <span class="truncate" title={file.key}>{file.key}</span>
+
+                                    <!-- 3. Asset Name / Filename -->
+                                    <td class="px-3 py-2">
+                                        <div class="flex items-center gap-1.5 min-w-0 max-w-md">
+                                            <span class="font-semibold text-xs text-textcolor truncate" title={file.key}>
+                                                {#if usages.length > 0}
+                                                    {usages[0].originalName}
+                                                {:else if isThumb}
+                                                    <span class="text-textcolor2/80 font-mono text-[11px]">{file.key}</span>
+                                                {:else}
+                                                    <span class="text-textcolor2 font-mono text-[11px]">{file.key}</span>
+                                                {/if}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                class="shrink-0 p-1 rounded-sm hover:bg-darkbutton text-textcolor2 hover:text-textcolor transition-colors cursor-pointer"
+                                                onclick={() => copyKey(file.key)}
+                                                title={copiedKey === file.key ? 'Copied key!' : (language.storageCopyKey ?? 'Copy Asset Key')}
+                                            >
+                                                {#if copiedKey === file.key}
+                                                    <CheckIcon class="h-3 w-3 text-emerald-400" />
+                                                {:else}
+                                                    <CopyIcon class="h-3 w-3 opacity-60 hover:opacity-100" />
+                                                {/if}
+                                            </button>
                                         </div>
                                     </td>
-                                    <td class="px-3 py-2 text-right font-medium">
+
+                                    <!-- 4. Usage (Owner) -->
+                                    <td class="w-44 sm:w-52 px-3 py-2">
+                                        {#if usages.length > 0}
+                                            <div class="flex items-center gap-1 flex-wrap">
+                                                <span class="rounded-md px-2 py-0.5 text-xs font-medium truncate max-w-[170px] inline-flex items-center gap-1 {
+                                                    usages[0].ownerType === 'bot' ? 'bg-blue-500/15 border border-blue-500/30 text-blue-300' :
+                                                    usages[0].ownerType === 'module' ? 'bg-purple-500/15 border border-purple-500/30 text-purple-300' :
+                                                    usages[0].ownerType === 'persona' ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300' :
+                                                    usages[0].ownerType === 'background' ? 'bg-cyan-500/15 border border-cyan-500/30 text-cyan-300' :
+                                                    'bg-darkbutton border border-darkborderc text-textcolor2'
+                                                }" title={usages[0].ownerName}>
+                                                    <span class="text-[9px] opacity-75 font-bold">
+                                                        {usages[0].ownerType === 'bot' ? (language.storageTypeBot ?? '캐릭터') :
+                                                         usages[0].ownerType === 'module' ? (language.storageTypeModule ?? '모듈') :
+                                                         usages[0].ownerType === 'persona' ? (language.storageTypePersona ?? '페르소나') : ''}
+                                                    </span>
+                                                    <span class="truncate">{usages[0].ownerName}</span>
+                                                </span>
+                                                {#if usages.length > 1}
+                                                    <span class="rounded bg-darkborderc/60 px-1 py-0.2 text-[9px] font-mono text-textcolor2/80 shrink-0" title={usages.map(u => `${u.ownerName}: ${u.originalName}`).join('\n')}>
+                                                        +{usages.length - 1}
+                                                    </span>
+                                                {/if}
+                                            </div>
+                                        {:else if isThumb}
+                                            <span class="rounded bg-darkbutton border border-darkborderc/40 px-1.5 py-0.5 text-[10px] font-medium text-textcolor2">Thumb</span>
+                                        {:else}
+                                            <span class="rounded-md bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[11px] font-semibold text-amber-300">{language.storageUnusedOrphan ?? '미사용'}</span>
+                                        {/if}
+                                    </td>
+
+                                    <!-- 5. Type Badge -->
+                                    <td class="w-28 px-3 py-2 text-center">
+                                        {#if usages.length > 0}
+                                            <span class="rounded-md bg-darkbutton border border-darkborderc/60 px-2 py-0.5 text-[10px] font-medium text-textcolor2">
+                                                {usages[0].assetType}
+                                            </span>
+                                        {:else if isThumb}
+                                            <span class="rounded-md bg-darkbutton/50 px-1.5 py-0.5 text-[10px] text-textcolor2/60">thumb</span>
+                                        {:else}
+                                            <span class="text-textcolor2/40 text-xs">-</span>
+                                        {/if}
+                                    </td>
+
+                                    <!-- 6. Size -->
+                                    <td class="w-24 sm:w-28 px-3 py-2 text-right font-medium text-textcolor">
                                         {formatBytes(file.size)}
                                     </td>
-                                    <td class="px-3 py-2 text-center">
+
+                                    <!-- 7. Action -->
+                                    <td class="w-12 px-3 py-2 text-center">
                                         <button
                                             type="button"
                                             class="rounded-md p-1.5 text-textcolor2 hover:bg-rose-500/20 hover:text-rose-300 transition-colors cursor-pointer"
@@ -491,6 +650,8 @@
             {:else}
                 <div class="flex flex-col gap-2">
                     {#each pagedFiles as file (file.key)}
+                        {@const usages = getAssetUsages(file.key)}
+                        {@const isThumb = isThumbnailKey(file.key)}
                         <div class="flex items-center gap-3 rounded-xl border border-darkborderc bg-darkbg p-2.5 transition-colors {selectedFileKeys.has(file.key) ? 'bg-selected' : ''}">
                             <!-- Select checkbox -->
                             <input
@@ -520,21 +681,55 @@
                                 {/if}
                             </button>
 
-                            <!-- Key & Size -->
+                            <!-- Key & Size & Usages -->
                             <div class="min-w-0 flex-1">
-                                <div class="flex items-center justify-between gap-1">
+                                <div class="flex items-center justify-between gap-1 flex-wrap">
+                                    <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
+                                        {#if usages.length > 0}
+                                            <span class="rounded-md px-1.5 py-0.2 text-[10px] font-medium truncate max-w-[120px] {
+                                                usages[0].ownerType === 'bot' ? 'bg-blue-500/15 border border-blue-500/30 text-blue-300' :
+                                                usages[0].ownerType === 'module' ? 'bg-purple-500/15 border border-purple-500/30 text-purple-300' :
+                                                usages[0].ownerType === 'persona' ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300' :
+                                                'bg-darkbutton border border-darkborderc text-textcolor2'
+                                            }">
+                                                {usages[0].ownerName}
+                                            </span>
+                                            <span class="rounded-md bg-darkbutton border border-darkborderc/60 px-1.5 py-0.2 text-[9px] font-medium text-textcolor2">
+                                                {usages[0].assetType}
+                                            </span>
+                                        {:else if isThumb}
+                                            <span class="rounded bg-darkbutton border border-darkborderc/40 px-1.5 py-0.5 text-[10px] font-medium text-textcolor2">Thumb</span>
+                                        {:else}
+                                            <span class="rounded bg-amber-500/20 border border-amber-500/30 px-1.5 py-0.2 text-[9px] font-bold text-amber-300">{language.storageUnusedOrphan ?? '미사용'}</span>
+                                        {/if}
+                                    </div>
                                     <span class="rounded-md bg-darkbutton border border-darkborderc/40 px-1.5 py-0.5 text-[10px] font-semibold text-textcolor">
                                         {formatBytes(file.size)}
                                     </span>
-                                    {#if isThumbnailKey(file.key)}
-                                        <span class="rounded bg-darkbutton border border-darkborderc/40 px-1.5 py-0.5 text-[10px] font-medium text-textcolor2">
-                                            Thumb
-                                        </span>
-                                    {/if}
                                 </div>
-                                <p class="mt-1 truncate font-mono text-xs text-textcolor" title={file.key}>
-                                    {file.key}
-                                </p>
+
+                                <!-- Name & Copy -->
+                                <div class="mt-1 flex items-center gap-1 min-w-0">
+                                    <h5 class="truncate text-xs font-bold text-textcolor" title={file.key}>
+                                        {#if usages.length > 0}
+                                            {usages[0].originalName}
+                                        {:else}
+                                            <span class="font-mono text-[11px] text-textcolor2">{file.key}</span>
+                                        {/if}
+                                    </h5>
+                                    <button
+                                        type="button"
+                                        class="shrink-0 p-0.5 text-textcolor2/60 hover:text-textcolor transition-colors cursor-pointer"
+                                        onclick={() => copyKey(file.key)}
+                                        title={copiedKey === file.key ? 'Copied key!' : (language.storageCopyKey ?? 'Copy Asset Key')}
+                                    >
+                                        {#if copiedKey === file.key}
+                                            <CheckIcon class="h-3 w-3 text-emerald-400" />
+                                        {:else}
+                                            <CopyIcon class="h-3 w-3 opacity-60 hover:opacity-100" />
+                                        {/if}
+                                    </button>
+                                </div>
                             </div>
 
                             <!-- Delete single -->

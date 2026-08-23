@@ -24,6 +24,7 @@
     import type { NodeBackupConfig } from 'src/ts/storage/nodePostgresStorage'
     import type {
         AssetStorageType,
+        AssetUsageMap,
         BotStorageInfo,
         ModuleStorageInfo,
         NodeS3ProgressEvent,
@@ -90,6 +91,7 @@
     let moduleAnalysis = $state<ModuleStorageInfo[]>([])
     let orphanAssets = $state<NodeStorageAssetItem[]>([])
     let orphanSizeBytes = $state(0)
+    let assetUsageMap = $state<AssetUsageMap>(new Map())
 
     const missingBotAssetsCount = $derived(botAnalysis.reduce((sum, b) => sum + b.missingAssetsCount, 0))
     const missingModuleAssetsCount = $derived(moduleAnalysis.reduce((sum, m) => sum + m.missingAssetsCount, 0))
@@ -245,6 +247,7 @@
             moduleAnalysis = result.modules
             orphanAssets = result.orphanAssets
             orphanSizeBytes = result.orphanSizeBytes
+            assetUsageMap = result.assetUsageMap
 
             // Preload avatars
             for (const bot of result.bots) {
@@ -267,6 +270,7 @@
             moduleAnalysis = result.modules
             orphanAssets = result.orphanAssets
             orphanSizeBytes = result.orphanSizeBytes
+            assetUsageMap = result.assetUsageMap
         }
     }
 
@@ -790,6 +794,7 @@
                         {resyncingCatalog}
                         {busy}
                         {thumbnailUrls}
+                        {assetUsageMap}
                         onLoadThumbnail={loadThumbnail}
                         onOpenPreview={openPreview}
                         onToggleSelectFile={toggleSelectFile}
