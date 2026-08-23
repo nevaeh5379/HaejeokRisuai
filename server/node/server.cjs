@@ -3920,6 +3920,86 @@ app.get('/api/database-v2/revisions', authenticatedRouteLimiter, async (req, res
     }
 });
 
+app.get('/api/database-v2/revisions/diff', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'SQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    try {
+        if (typeof postgresStorage.getRevisionDiff !== 'function') {
+            res.status(501).send({ error: 'Revision diff is not supported by current storage engine' });
+            return;
+        }
+        const diff = await postgresStorage.getRevisionDiff(req.query.base, req.query.target);
+        res.send({ diff });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_revision_diff' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/revisions/:id/details', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'SQL storage is not configured', code: 'postgres_disabled' });
+        return;
+    }
+    try {
+        if (typeof postgresStorage.getRevisionDetails !== 'function') {
+            res.status(501).send({ error: 'Revision details are not supported by current storage engine' });
+            return;
+        }
+        const details = await postgresStorage.getRevisionDetails(req.params.id);
+        if (!details) {
+            res.status(404).send({ error: 'Revision not found', code: 'revision_not_found' });
+            return;
+        }
+        res.send({ details });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_revision_details' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.post(
+    '/api/database-v2/revisions/preview-restore',
+    authenticatedRouteLimiter,
+    async (req, res, next) => {
+        if (!await checkAuth(req, res)) {
+            return;
+        }
+        if (!postgresStorage.enabled) {
+            res.status(404).send({ error: 'SQL storage is not configured', code: 'postgres_disabled' });
+            return;
+        }
+        try {
+            if (typeof postgresStorage.previewRestore !== 'function') {
+                res.status(501).send({ error: 'Restore preview is not supported by current storage engine' });
+                return;
+            }
+            const preview = await postgresStorage.previewRestore(req.body?.revisionId);
+            res.send({ preview });
+        } catch (error) {
+            if (error instanceof PostgresPayloadError) {
+                res.status(400).send({ error: error.message, code: 'invalid_preview_restore' });
+                return;
+            }
+            next(error);
+        }
+    }
+);
+
 app.post(
     '/api/database-v2/revisions/restore',
     authenticatedRouteLimiter,

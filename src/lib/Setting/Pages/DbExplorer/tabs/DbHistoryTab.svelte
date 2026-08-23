@@ -1,25 +1,32 @@
 <script lang="ts">
     import {
-        CalendarIcon,
+        ArrowUpDownIcon,
+        CheckIcon,
         ChevronDownIcon,
         ChevronRightIcon,
         ClockIcon,
         FileCode2Icon,
+        FilterIcon,
         HistoryIcon,
         LayersIcon,
+        RefreshCwIcon,
         RotateCcwIcon,
         SearchIcon,
         SparklesIcon,
+        SplitIcon,
+        TableIcon,
+        TrendingUpIcon,
         XIcon
     } from '@lucide/svelte'
     import { language } from 'src/lang'
     import Button from 'src/lib/UI/GUI/Button.svelte'
     import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
-    import { alertConfirm, alertError, alertNormal } from 'src/ts/alert'
-    import { forageStorage } from 'src/ts/globalApi.svelte'
-    import { NodeStorage } from 'src/ts/storage/nodeStorage'
     import type { NodePostgresRevision } from 'src/ts/storage/nodePostgresStorage'
     import type { HistoryScopeFilter } from '../types'
+    import DbRevisionCard from '../components/DbRevisionCard.svelte'
+    import DbRevisionAuditDrawer from '../components/DbRevisionAuditDrawer.svelte'
+    import DbRevisionDiffModal from '../components/DbRevisionDiffModal.svelte'
+    import DbRevisionRestoreModal from '../components/DbRevisionRestoreModal.svelte'
 
     interface Props {
         revisions: NodePostgresRevision[]
@@ -31,65 +38,33 @@
         onRevisionRestored
     }: Props = $props()
 
-    let busy = $state(false)
+    // ── Filtering & Pagination State ──
     let selectedScope = $state<HistoryScopeFilter>('all')
+    let selectedAction = $state<string>('all')
     let actionSearch = $state('')
+    let pageSize = $state<number | 'all'>('all')
+    let displayedCount = $state<number>(100)
     let expandedRevisionId = $state<number | null>(null)
 
-    function getNodeStorage() {
-        if (!(forageStorage.realStorage instanceof NodeStorage)) {
-            throw new Error('Node storage is not available')
-        }
-        return forageStorage.realStorage
-    }
+    // ── Comparison Mode State ──
+    let compareMode = $state(false)
+    let selectedCompareIds = $state<number[]>([])
 
-    async function restoreRevision(revision: NodePostgresRevision) {
-        if (busy || !await alertConfirm(language.postgresRestoreConfirm(revision.id))) {
-            return
-        }
-        busy = true
-        try {
-            await getNodeStorage().postgres.restoreRevision(revision.id)
-            alertNormal(language.postgresRestoreSuccess)
-            onRevisionRestored?.()
-            setTimeout(() => location.reload(), 300)
-        } catch (error) {
-            alertError(error)
-            busy = false
-        }
-    }
+    // ── Drawers & Modals State ──
+    let auditDrawerOpen = $state(false)
+    let auditDrawerRevision = $state<NodePostgresRevision | null>(null)
 
-    function formatRelativeTime(dateString: string): string {
-        try {
-            const date = new Date(dateString)
-            const now = new Date()
-            const diffMs = now.getTime() - date.getTime()
-            const diffSec = Math.floor(diffMs / 1000)
-            const diffMin = Math.floor(diffSec / 60)
-            const diffHour = Math.floor(diffMin / 60)
-            const diffDay = Math.floor(diffHour / 24)
+    let diffModalOpen = $state(false)
+    let diffBaseId = $state<number | null>(null)
+    let diffTargetId = $state<number | null>(null)
 
-            if (diffSec < 60) return '방금 전'
-            if (diffMin < 60) return `${diffMin}분 전`
-            if (diffHour < 24) return `${diffHour}시간 전`
-            if (diffDay < 30) return `${diffDay}일 전`
-            return date.toLocaleDateString()
-        } catch {
-            return dateString
-        }
-    }
+    let restoreModalOpen = $state(false)
+    let restoreModalRevision = $state<NodePostgresRevision | null>(null)
 
-    const filteredRevisions = $derived.by(() => {
-        let list = [...revisions]
-        if (selectedScope !== 'all') {
-            list = list.filter((r) => r.scope === selectedScope)
-        }
-        if (actionSearch.trim()) {
-            const q = actionSearch.trim().toLowerCase()
-            list = list.filter((r) => r.action.toLowerCase().includes(q))
-        }
-        return list
-    })
+    // ── Derived Statistics ──
+    const activeRevisionId = $derived(
+        revisions[0]?.id ?? null
+    )
 
     const totalRestores = $derived(
         revisions.filter((r) => r.scope === 'restore').length
@@ -99,37 +74,120 @@
         revisions.reduce((acc, r) => acc + (r.change_count || 0), 0)
     )
 
-    function getActionBadgeClass(action: string): string {
-        switch (action) {
-            case 'message':
-                return 'bg-teal-500/20 text-teal-300 border-teal-500/30'
-            case 'character':
-                return 'bg-purple-500/20 text-purple-300 border-purple-500/30'
-            case 'chat':
-                return 'bg-sky-500/20 text-sky-300 border-sky-500/30'
-            case 'settings':
-            case 'root':
-                return 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-            case 'order':
-                return 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
-            case 'replace-all':
-            case 'replace_all':
-                return 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-            case 'restore':
-                return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-            default:
-                return 'bg-zinc-500/20 text-zinc-300 border-zinc-500/30'
+    const avgChangesPerRev = $derived(
+        revisions.length > 0 ? (totalChanges / revisions.length).toFixed(1) : '0'
+    )
+
+    // Available unique actions for filter chips
+    const uniqueActions = $derived.by<string[]>(() => {
+        const set = new Set<string>()
+        for (const r of revisions) {
+            if (r.action) set.add(r.action)
+        }
+        return Array.from(set).sort()
+    })
+
+    // Filtered list based on Scope, Action, and Search Query
+    const filteredRevisions = $derived.by(() => {
+        let list = [...revisions]
+        if (selectedScope !== 'all') {
+            list = list.filter((r) => r.scope === selectedScope)
+        }
+        if (selectedAction !== 'all') {
+            list = list.filter((r) => r.action === selectedAction)
+        }
+        if (actionSearch.trim()) {
+            const q = actionSearch.trim().toLowerCase()
+            list = list.filter((r) => {
+                if (r.action.toLowerCase().includes(q)) return true
+                if (r.scope.toLowerCase().includes(q)) return true
+                if (String(r.id).includes(q)) return true
+                if (r.restored_from_revision && String(r.restored_from_revision).includes(q)) return true
+                return false
+            })
+        }
+        return list
+    })
+
+    // Paginated / View-limited slice
+    const visibleRevisions = $derived.by(() => {
+        if (pageSize === 'all') {
+            return filteredRevisions
+        }
+        return filteredRevisions.slice(0, typeof pageSize === 'number' ? pageSize : displayedCount)
+    })
+
+    // ── Jump to Revision & Highlight ──
+    function jumpToRevision(id: number) {
+        // If target revision is outside currently filtered view, reset filters
+        if (!filteredRevisions.some((r) => r.id === id)) {
+            selectedScope = 'all'
+            selectedAction = 'all'
+            actionSearch = ''
+        }
+
+        setTimeout(() => {
+            const el = document.getElementById(`revision-card-${id}`)
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                el.classList.add('ring-2', 'ring-amber-400', 'bg-amber-500/20')
+                setTimeout(() => {
+                    el.classList.remove('ring-2', 'ring-amber-400', 'bg-amber-500/20')
+                }, 1500)
+            }
+        }, 100)
+    }
+
+    // ── Comparison Selection Toggle ──
+    function toggleCompareSelection(id: number) {
+        if (selectedCompareIds.includes(id)) {
+            selectedCompareIds = selectedCompareIds.filter((x) => x !== id)
+        } else {
+            if (selectedCompareIds.length >= 2) {
+                // Shift first item out and add new item
+                selectedCompareIds = [selectedCompareIds[1], id]
+            } else {
+                selectedCompareIds = [...selectedCompareIds, id]
+            }
         }
     }
 
-    const activeRevisionId = $derived(
-        revisions[0]?.id ?? null
-    )
+    function openCompareModal() {
+        if (selectedCompareIds.length === 2) {
+            diffBaseId = Math.min(selectedCompareIds[0], selectedCompareIds[1])
+            diffTargetId = Math.max(selectedCompareIds[0], selectedCompareIds[1])
+            diffModalOpen = true
+        }
+    }
+
+    function openCompareWithPrev(rev: NodePostgresRevision) {
+        // Find previous revision in list
+        const idx = revisions.findIndex((r) => r.id === rev.id)
+        if (idx >= 0 && idx + 1 < revisions.length) {
+            const prevRev = revisions[idx + 1]
+            diffBaseId = prevRev.id
+            diffTargetId = rev.id
+        } else {
+            diffBaseId = Math.max(1, rev.id - 1)
+            diffTargetId = rev.id
+        }
+        diffModalOpen = true
+    }
+
+    function openInspectDrawer(rev: NodePostgresRevision) {
+        auditDrawerRevision = rev
+        auditDrawerOpen = true
+    }
+
+    function openRestoreModal(rev: NodePostgresRevision) {
+        restoreModalRevision = rev
+        restoreModalOpen = true
+    }
 </script>
 
 <div class="space-y-6">
     <!-- ── 1. 상단 KPI 요약 카드 ── -->
-    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-5 sm:gap-4">
         <!-- 현재 활성 리비전 -->
         <div class="flex items-center gap-3.5 rounded-xl border border-darkborderc bg-darkbg p-3.5 sm:p-4 shadow-xs">
             <div class="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
@@ -143,7 +201,7 @@
             </div>
         </div>
 
-        <!-- 총 저장된 리비전 -->
+        <!-- 총 저장된 리비전 (무제한) -->
         <div class="flex items-center gap-3.5 rounded-xl border border-darkborderc bg-darkbg p-3.5 sm:p-4 shadow-xs">
             <div class="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-400 border border-violet-500/20">
                 <HistoryIcon class="h-5 w-5 sm:h-6 sm:w-6" />
@@ -181,52 +239,111 @@
                 </p>
             </div>
         </div>
+
+        <!-- 리비전당 평균 변경 항목 -->
+        <div class="flex items-center gap-3.5 rounded-xl border border-darkborderc bg-darkbg p-3.5 sm:p-4 shadow-xs col-span-2 sm:col-span-1">
+            <div class="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                <TrendingUpIcon class="h-5 w-5 sm:h-6 sm:w-6" />
+            </div>
+            <div class="min-w-0">
+                <p class="text-[11px] sm:text-xs text-textcolor2 truncate">{language.dbHistoryAvgChanges}</p>
+                <p class="text-base sm:text-xl font-bold font-mono text-textcolor truncate">
+                    {avgChangesPerRev}
+                </p>
+            </div>
+        </div>
     </div>
 
-    <!-- ── 2. 타임라인 목록 및 필터 ── -->
+    <!-- ── 2. 비교 모드 활성화 시 플로팅 배너 ── -->
+    {#if compareMode}
+        <div class="rounded-xl border border-violet-500/40 bg-violet-500/10 p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-md animate-in fade-in duration-150">
+            <div class="flex items-center gap-2.5">
+                <SplitIcon class="h-5 w-5 text-violet-400" />
+                <div>
+                    <span class="text-sm font-bold text-textcolor">
+                        {language.dbHistoryCompareMode}:
+                    </span>
+                    <span class="text-xs text-textcolor2 ml-1">
+                        {#if selectedCompareIds.length === 0}
+                            {language.dbHistoryCompareSelectPrompt} (0/2)
+                        {:else if selectedCompareIds.length === 1}
+                            Selected #{selectedCompareIds[0]} (1/2) - Select one more revision
+                        {:else}
+                            Comparing #{selectedCompareIds[0]} vs #{selectedCompareIds[1]} (2/2 ready)
+                        {/if}
+                    </span>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <Button
+                    size="sm"
+                    disabled={selectedCompareIds.length !== 2}
+                    className="bg-violet-600 hover:bg-violet-500 text-white font-medium px-4"
+                    onclick={openCompareModal}
+                >
+                    <SplitIcon size={14} class="mr-1.5 inline" />
+                    {language.dbHistoryCompareBtn(selectedCompareIds.length)}
+                </Button>
+                <Button
+                    size="sm"
+                    className="bg-darkbutton hover:bg-darkbutton/80 text-textcolor"
+                    onclick={() => {
+                        compareMode = false
+                        selectedCompareIds = []
+                    }}
+                >
+                    Cancel
+                </Button>
+            </div>
+        </div>
+    {/if}
+
+    <!-- ── 3. 타임라인 목록 및 필터 툴바 ── -->
     <div class="rounded-xl border border-darkborderc bg-darkbg p-4 sm:p-6 shadow-xs space-y-4">
+        <!-- Title & Main Controls Bar -->
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h3 class="text-base sm:text-lg font-semibold text-textcolor">{language.dbHistoryTimeline}</h3>
                 <p class="mt-0.5 text-xs text-textcolor2">{language.dbHistoryTimelineDesc}</p>
             </div>
 
-            <!-- Scope Tabs + Search -->
+            <!-- Scope Tabs + Search + Compare Mode Toggle -->
             <div class="flex flex-wrap items-center gap-2">
                 <!-- Scope Filter Buttons -->
-                <div class="flex items-center rounded-lg border border-darkborderc bg-bgcolor/40 p-0.5">
+                <div class="flex items-center rounded-lg border border-darkborderc bg-bgcolor/40 p-0.5 text-xs">
                     <button
                         type="button"
-                        class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors {selectedScope === 'all' ? 'bg-selected text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
+                        class="rounded-md px-2.5 py-1 font-medium transition-colors cursor-pointer {selectedScope === 'all' ? 'bg-selected text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
                         onclick={() => selectedScope = 'all'}
                     >
                         {language.dbHistoryScopeAll}
                     </button>
                     <button
                         type="button"
-                        class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors {selectedScope === 'database' ? 'bg-selected text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
+                        class="rounded-md px-2.5 py-1 font-medium transition-colors cursor-pointer {selectedScope === 'database' ? 'bg-selected text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
                         onclick={() => selectedScope = 'database'}
                     >
                         {language.dbHistoryScopeDatabase}
                     </button>
                     <button
                         type="button"
-                        class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors {selectedScope === 'cold-storage' ? 'bg-selected text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
+                        class="rounded-md px-2.5 py-1 font-medium transition-colors cursor-pointer {selectedScope === 'cold-storage' ? 'bg-selected text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
                         onclick={() => selectedScope = 'cold-storage'}
                     >
                         {language.dbHistoryScopeCold}
                     </button>
                     <button
                         type="button"
-                        class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors {selectedScope === 'restore' ? 'bg-selected text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
+                        class="rounded-md px-2.5 py-1 font-medium transition-colors cursor-pointer {selectedScope === 'restore' ? 'bg-selected text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
                         onclick={() => selectedScope = 'restore'}
                     >
                         {language.dbHistoryScopeRestore}
                     </button>
                 </div>
 
-                <!-- Action Search -->
-                <div class="relative w-40 sm:w-48">
+                <!-- Action Search Input -->
+                <div class="relative w-36 sm:w-48">
                     <div class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-textcolor2">
                         <SearchIcon size={13} />
                     </div>
@@ -234,7 +351,7 @@
                         bind:value={actionSearch}
                         size="sm"
                         fullwidth={true}
-                        placeholder="Action 검색..."
+                        placeholder={language.dbHistorySearchPlaceholder}
                         className="pl-7 pr-6 text-xs"
                     />
                     {#if actionSearch}
@@ -246,126 +363,137 @@
                         </button>
                     {/if}
                 </div>
+
+                <!-- Page Size Selector -->
+                <div class="flex items-center gap-1 text-xs font-mono">
+                    <span class="text-textcolor2 hidden sm:inline">{language.dbHistoryPageSize}:</span>
+                    <select
+                        class="rounded-lg border border-darkborderc bg-bgcolor px-2 py-1 text-xs text-textcolor focus:outline-hidden"
+                        bind:value={pageSize}
+                    >
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value={200}>200</option>
+                        <option value="all">{language.dbHistoryPageSizeAll} ({revisions.length})</option>
+                    </select>
+                </div>
+
+                <!-- Compare Mode Toggle Button -->
+                <Button
+                    size="sm"
+                    className="{compareMode ? 'bg-violet-600 text-white' : 'bg-darkbutton text-textcolor'} text-xs"
+                    onclick={() => {
+                        compareMode = !compareMode
+                        if (!compareMode) selectedCompareIds = []
+                    }}
+                >
+                    <SplitIcon size={13} class="mr-1 inline text-violet-400" />
+                    <span>{language.dbHistoryCompareMode}</span>
+                </Button>
             </div>
         </div>
 
-        <!-- Revision Cards List -->
-        {#if filteredRevisions.length === 0}
+        <!-- Action Quick Filter Chips -->
+        {#if uniqueActions.length > 0}
+            <div class="flex flex-wrap items-center gap-1.5 pt-1 border-t border-darkborderc/40 text-xs">
+                <span class="text-textcolor2 font-medium mr-1">{language.dbHistoryFilterAction}:</span>
+                <button
+                    type="button"
+                    class="rounded-md px-2 py-0.5 font-mono text-[11px] font-medium transition-colors cursor-pointer border {
+                        selectedAction === 'all'
+                            ? 'bg-selected text-textcolor border-darkborderc shadow-xs'
+                            : 'bg-darkbutton/60 text-textcolor2 border-darkborderc/50 hover:text-textcolor'
+                    }"
+                    onclick={() => selectedAction = 'all'}
+                >
+                    All ({revisions.length})
+                </button>
+                {#each uniqueActions as action}
+                    {@const count = revisions.filter((r) => r.action === action).length}
+                    <button
+                        type="button"
+                        class="rounded-md px-2 py-0.5 font-mono text-[11px] font-medium transition-colors cursor-pointer border flex items-center gap-1 {
+                            selectedAction === action
+                                ? 'bg-selected text-textcolor border-darkborderc shadow-xs'
+                                : 'bg-darkbutton/60 text-textcolor2 border-darkborderc/50 hover:text-textcolor'
+                        }"
+                        onclick={() => selectedAction = action}
+                    >
+                        <span>{action}</span>
+                        <span class="rounded bg-bgcolor/80 px-1 py-0.2 text-[9px]">{count}</span>
+                    </button>
+                {/each}
+            </div>
+        {/if}
+
+        <!-- ── Revision Cards List with Connected Timeline View ── -->
+        {#if visibleRevisions.length === 0}
             <div class="rounded-xl border border-darkborderc bg-bgcolor/20 p-12 text-center text-xs text-textcolor2">
                 {language.postgresHistoryEmpty}
             </div>
         {:else}
-            <div class="space-y-3">
-                {#each filteredRevisions as revision, index (revision.id)}
+            <div class="relative space-y-3 pt-2">
+                {#each visibleRevisions as revision, index (revision.id)}
                     {@const isLatest = revision.id === activeRevisionId}
                     {@const isExpanded = expandedRevisionId === revision.id}
+                    {@const isSelectedForCompare = selectedCompareIds.includes(revision.id)}
 
-                    <div class="rounded-xl border transition-all {isLatest ? 'border-blue-500/40 bg-blue-500/5' : 'border-darkborderc bg-bgcolor/30 hover:border-darkborderc/80'} p-4 shadow-xs">
-                        <div class="flex flex-wrap items-center justify-between gap-3">
-                            <!-- Left: ID + Scope + Action + Timestamp -->
-                            <div class="flex items-center gap-3 min-w-0">
-                                <!-- ID Badge -->
-                                <span class="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-lg font-mono text-xs sm:text-sm font-bold {isLatest ? 'bg-blue-500 text-white' : 'bg-darkbutton text-textcolor'}">
-                                    #{revision.id}
-                                </span>
-
-                                <div class="min-w-0">
-                                    <div class="flex flex-wrap items-center gap-1.5">
-                                        <!-- Scope Badge -->
-                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider font-mono {
-                                            revision.scope === 'restore' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
-                                            revision.scope === 'cold-storage' ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30' :
-                                            'bg-violet-500/20 text-violet-300 border border-violet-500/30'
-                                        }">
-                                            {revision.scope}
-                                        </span>
-
-                                        <!-- Action Tag -->
-                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wider font-mono border {getActionBadgeClass(revision.action)}">
-                                            {revision.action}
-                                        </span>
-
-                                        {#if isLatest}
-                                            <span class="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-300 border border-emerald-500/30">
-                                                {language.dbHistoryCurrentBadge}
-                                            </span>
-                                        {/if}
-                                    </div>
-
-                                    <!-- Date & Relative Time -->
-                                    <div class="mt-1 flex items-center gap-2 text-xs text-textcolor2 font-mono">
-                                        <span class="flex items-center gap-1">
-                                            <ClockIcon size={12} /> {formatRelativeTime(revision.created_at)}
-                                        </span>
-                                        <span>·</span>
-                                        <span class="text-[11px] opacity-70">
-                                            {new Date(revision.created_at).toLocaleString()}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Right: Change Count & Restore Action Button -->
-                            <div class="flex items-center gap-3 shrink-0">
-                                <div class="text-right font-mono text-xs text-textcolor2">
-                                    <span class="font-semibold text-textcolor">{revision.change_count}</span> {language.dbHistoryChangesCount}
-                                    {#if revision.restored_from_revision}
-                                        <div class="text-[10px] text-amber-400">
-                                            {language.dbHistoryRestoredFrom}{revision.restored_from_revision}
-                                        </div>
-                                    {/if}
-                                </div>
-
-                                <!-- Metadata Toggle Button -->
-                                <button
-                                    type="button"
-                                    class="p-1.5 rounded-lg text-textcolor2 hover:bg-darkbutton hover:text-textcolor transition-colors cursor-pointer"
-                                    title={language.dbHistoryDetails}
-                                    onclick={() => expandedRevisionId = isExpanded ? null : revision.id}
-                                >
-                                    {#if isExpanded}
-                                        <ChevronDownIcon size={16} />
-                                    {:else}
-                                        <ChevronRightIcon size={16} />
-                                    {/if}
-                                </button>
-
-                                <!-- Restore Button -->
-                                <Button
-                                    size="sm"
-                                    disabled={busy || isLatest}
-                                    onclick={() => restoreRevision(revision)}
-                                >
-                                    {language.postgresRestore}
-                                </Button>
-                            </div>
-                        </div>
-
-                        <!-- Expanded Metadata Section -->
-                        {#if isExpanded}
-                            <div class="mt-3.5 pt-3 border-t border-darkborderc/40 text-xs font-mono text-textcolor2 space-y-1.5 animate-in fade-in duration-150">
-                                <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                                    <div>
-                                        <span class="text-textcolor font-medium">{language.dbHistoryStorageRevision}:</span>
-                                        <span class="ml-1">{revision.storage_revision ?? '—'}</span>
-                                    </div>
-                                    <div>
-                                        <span class="text-textcolor font-medium">{language.dbHistoryDbInitialized}:</span>
-                                        <span class="ml-1">{revision.database_initialized ? 'Yes' : 'No'}</span>
-                                    </div>
-                                    <div>
-                                        <span class="text-textcolor font-medium">Restored From:</span>
-                                        <span class="ml-1">{revision.restored_from_revision ? `#${revision.restored_from_revision}` : '—'}</span>
-                                    </div>
-                                </div>
-                                <div class="mt-2 rounded-lg bg-darkbg/70 p-2.5 border border-darkborderc/60 overflow-x-auto text-[11px]">
-                                    <pre class="text-textcolor2">{JSON.stringify(revision, null, 2)}</pre>
-                                </div>
-                            </div>
-                        {/if}
-                    </div>
+                    <DbRevisionCard
+                        {revision}
+                        {isLatest}
+                        {isExpanded}
+                        {compareMode}
+                        {isSelectedForCompare}
+                        onToggleExpand={() => expandedRevisionId = isExpanded ? null : revision.id}
+                        onInspectAudit={() => openInspectDrawer(revision)}
+                        onCompareWithPrev={() => openCompareWithPrev(revision)}
+                        onToggleSelectCompare={() => toggleCompareSelection(revision.id)}
+                        onRestore={() => openRestoreModal(revision)}
+                        onJumpToRevision={jumpToRevision}
+                    />
                 {/each}
             </div>
+
+            <!-- "Show More" Button if limited view is active -->
+            {#if pageSize !== 'all' && typeof pageSize === 'number' && filteredRevisions.length > pageSize}
+                <div class="pt-3 flex justify-center">
+                    <Button
+                        size="sm"
+                        className="bg-darkbutton hover:bg-darkbutton/80 text-textcolor font-medium px-6 py-2"
+                        onclick={() => pageSize = 'all'}
+                    >
+                        Show All {filteredRevisions.length} Revisions
+                    </Button>
+                </div>
+            {/if}
         {/if}
     </div>
 </div>
+
+<!-- ── Audit Log Inspector Drawer ── -->
+<DbRevisionAuditDrawer
+    open={auditDrawerOpen}
+    revision={auditDrawerRevision}
+    isLatest={auditDrawerRevision?.id === activeRevisionId}
+    onClose={() => auditDrawerOpen = false}
+    onRestore={(rev) => openRestoreModal(rev)}
+    onCompareWithPrev={(rev) => openCompareWithPrev(rev)}
+/>
+
+<!-- ── Revision Diff Comparison Modal ── -->
+<DbRevisionDiffModal
+    open={diffModalOpen}
+    baseRevisionId={diffBaseId}
+    targetRevisionId={diffTargetId}
+    allRevisions={revisions}
+    onClose={() => diffModalOpen = false}
+    onRestore={(rev) => openRestoreModal(rev)}
+/>
+
+<!-- ── Safe Restore Impact Modal ── -->
+<DbRevisionRestoreModal
+    open={restoreModalOpen}
+    revision={restoreModalRevision}
+    onClose={() => restoreModalOpen = false}
+    onSuccess={() => onRevisionRestored?.()}
+/>

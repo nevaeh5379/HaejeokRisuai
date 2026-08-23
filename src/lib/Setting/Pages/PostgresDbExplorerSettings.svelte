@@ -197,7 +197,7 @@
             const config = await storage.getServerConfig()
             configEnabled = config.enabled
             tables = config.enabled ? await storage.listDbTables() : []
-            revisions = config.enabled ? await storage.listRevisions(30) : []
+            revisions = config.enabled ? await storage.listRevisions() : []
             tokenUsage = config.enabled ? await storage.getTokenUsage() : []
             remoteBotStats = config.enabled && typeof storage.getBotChatStats === 'function' ? await storage.getBotChatStats() : null
         } catch (err) {

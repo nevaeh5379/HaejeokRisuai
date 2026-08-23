@@ -87,6 +87,53 @@ export interface NodePostgresRevision {
     change_count:number
 }
 
+export interface NodePostgresAuditLogItem {
+    sequence: number
+    revisionId?: number
+    tableName: string
+    operation: 'INSERT' | 'UPDATE' | 'DELETE'
+    beforeRow: Record<string, unknown> | null
+    afterRow: Record<string, unknown> | null
+    recordedAt: string
+}
+
+export interface NodePostgresTableSummary {
+    tableName: string
+    insertCount: number
+    updateCount: number
+    deleteCount: number
+    totalCount: number
+}
+
+export interface NodePostgresRevisionDetails extends NodePostgresRevision {
+    tableSummaries: NodePostgresTableSummary[]
+    auditLogs: NodePostgresAuditLogItem[]
+}
+
+export interface NodePostgresRevisionDiff {
+    baseRevisionId: number
+    targetRevisionId: number
+    totalChanges: number
+    tables: Array<NodePostgresTableSummary & { entries: NodePostgresAuditLogItem[] }>
+}
+
+export interface NodePostgresRestorePreview {
+    targetRevisionId: number
+    currentRevisionId: number
+    revisionsToRevert: number
+    totalOperations: number
+    restoreInsertCount: number
+    restoreDeleteCount: number
+    restoreUpdateCount: number
+    affectedTables: Array<{
+        tableName: string
+        revertedInserts: number
+        revertedUpdates: number
+        revertedDeletes: number
+        totalChanges: number
+    }>
+}
+
 export interface NodePostgresMessageSearchResult {
     storageState:'active'|'cold'
     archiveId:string|null
@@ -963,24 +1010,83 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
         return await response.json()
     }
 
-    async listRevisions(limit = 50):Promise<NodePostgresRevision[]> {
-        if(!await this.ensureEnabled()){
+    async listRevisions(limit?: number): Promise<NodePostgresRevision[]> {
+        if (!await this.ensureEnabled()) {
             return []
         }
-        const response = await fetch(`/api/database-v2/revisions?limit=${encodeURIComponent(limit)}`, {
+        const url = (limit !== undefined && limit !== null && limit > 0)
+            ? `/api/database-v2/revisions?limit=${encodeURIComponent(limit)}`
+            : '/api/database-v2/revisions'
+        const response = await fetch(url, {
             method: 'GET',
             cache: 'no-cache',
             headers: await this.authHeaders()
         })
-        if(response.status < 200 || response.status >= 300){
+        if (response.status < 200 || response.status >= 300) {
             throw await responseError(response, 'PostgreSQL revision history load failed')
         }
-        const body:{ revisions:NodePostgresRevision[] } = await response.json()
+        const body: { revisions: NodePostgresRevision[] } = await response.json()
         return body.revisions
     }
 
-    async restoreRevision(revisionId:number):Promise<{revision:number, revisionId:number}> {
-        if(!await this.ensureEnabled()){
+    async getRevisionDetails(revisionId: number): Promise<NodePostgresRevisionDetails | null> {
+        if (!await this.ensureEnabled()) {
+            return null
+        }
+        const response = await fetch(`/api/database-v2/revisions/${encodeURIComponent(revisionId)}/details`, {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if (response.status === 404) {
+            return null
+        }
+        if (response.status < 200 || response.status >= 300) {
+            throw await responseError(response, 'PostgreSQL revision details load failed')
+        }
+        const body: { details: NodePostgresRevisionDetails } = await response.json()
+        return body.details
+    }
+
+    async getRevisionDiff(baseId: number, targetId: number): Promise<NodePostgresRevisionDiff | null> {
+        if (!await this.ensureEnabled()) {
+            return null
+        }
+        const response = await fetch(`/api/database-v2/revisions/diff?base=${encodeURIComponent(baseId)}&target=${encodeURIComponent(targetId)}`, {
+            method: 'GET',
+            cache: 'no-cache',
+            headers: await this.authHeaders()
+        })
+        if (response.status < 200 || response.status >= 300) {
+            throw await responseError(response, 'PostgreSQL revision diff load failed')
+        }
+        const body: { diff: NodePostgresRevisionDiff } = await response.json()
+        return body.diff
+    }
+
+    async previewRestoreRevision(revisionId: number): Promise<NodePostgresRestorePreview | null> {
+        if (!await this.ensureEnabled()) {
+            return null
+        }
+        const encodedBody = await encodeJsonBody({ revisionId })
+        const response = await fetch('/api/database-v2/revisions/preview-restore', {
+            method: 'POST',
+            body: encodedBody.body,
+            headers: {
+                'content-type': 'application/json',
+                ...(encodedBody.contentEncoding ? { 'content-encoding': encodedBody.contentEncoding } : {}),
+                ...await this.authHeaders()
+            }
+        })
+        if (response.status < 200 || response.status >= 300) {
+            throw await responseError(response, 'PostgreSQL revision preview restore failed')
+        }
+        const body: { preview: NodePostgresRestorePreview } = await response.json()
+        return body.preview
+    }
+
+    async restoreRevision(revisionId: number): Promise<{ revision: number; revisionId: number }> {
+        if (!await this.ensureEnabled()) {
             throw new Error('PostgreSQL storage is disabled')
         }
         const encodedBody = await encodeJsonBody({ revisionId })
@@ -993,10 +1099,10 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
                 ...await this.authHeaders()
             }
         })
-        if(response.status < 200 || response.status >= 300){
+        if (response.status < 200 || response.status >= 300) {
             throw await responseError(response, 'PostgreSQL revision restore failed')
         }
-        const result:{revision:number, revisionId:number} = await response.json()
+        const result: { revision: number; revisionId: number } = await response.json()
         this.revision = result.revision
         return result
     }

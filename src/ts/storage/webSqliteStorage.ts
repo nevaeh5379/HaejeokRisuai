@@ -19,6 +19,9 @@ import type {
 } from './ISqlStorage'
 import type {
     NodePostgresRevision,
+    NodePostgresRevisionDetails,
+    NodePostgresRevisionDiff,
+    NodePostgresRestorePreview,
     NodePostgresMessageSearchResult,
     NodePostgresTokenUsage,
     NodePostgresCharacterSearchResult,
@@ -460,10 +463,10 @@ export class WebSqliteStorage implements ISqlStorage {
         return this.removeColdStorageItems(all.filter((k) => !retainedKeys.includes(k)))
     }
 
-    async listRevisions(limit: number = 50): Promise<NodePostgresRevision[]> {
-        const rows = this.selectRows(
-            'SELECT id, storage_revision, database_initialized, scope, action, restored_from_revision, created_at FROM system_revisions ORDER BY created_at DESC, id DESC LIMIT ?', [limit],
-        )
+    async listRevisions(limit?: number): Promise<NodePostgresRevision[]> {
+        const hasLimit = limit !== undefined && limit !== null && limit > 0
+        const sql = 'SELECT id, storage_revision, database_initialized, scope, action, restored_from_revision, created_at FROM system_revisions ORDER BY created_at DESC, id DESC' + (hasLimit ? ' LIMIT ?' : '')
+        const rows = this.selectRows(sql, hasLimit ? [limit] : [])
         return rows.map((r) => ({
             id: Number(r.id), storage_revision: r.storage_revision != null ? Number(r.storage_revision) : null,
             database_initialized: r.database_initialized != null ? Boolean(r.database_initialized) : null,
@@ -472,6 +475,49 @@ export class WebSqliteStorage implements ISqlStorage {
             created_at: r.created_at as string, change_count: 0,
         }))
     }
+
+    async getRevisionDetails(revisionId: number): Promise<NodePostgresRevisionDetails | null> {
+        const rows = this.selectRows(
+            'SELECT id, storage_revision, database_initialized, scope, action, restored_from_revision, created_at FROM system_revisions WHERE id = ?', [revisionId]
+        )
+        if (rows.length === 0) return null
+        const r = rows[0]
+        return {
+            id: Number(r.id),
+            storage_revision: r.storage_revision != null ? Number(r.storage_revision) : null,
+            database_initialized: r.database_initialized != null ? Boolean(r.database_initialized) : null,
+            scope: r.scope as 'database' | 'cold-storage' | 'restore',
+            action: r.action as string,
+            restored_from_revision: r.restored_from_revision != null ? Number(r.restored_from_revision) : null,
+            created_at: r.created_at as string,
+            change_count: 0,
+            tableSummaries: [],
+            auditLogs: [],
+        }
+    }
+
+    async getRevisionDiff(baseId: number, targetId: number): Promise<NodePostgresRevisionDiff | null> {
+        return {
+            baseRevisionId: baseId,
+            targetRevisionId: targetId,
+            totalChanges: 0,
+            tables: [],
+        }
+    }
+
+    async previewRestoreRevision(revisionId: number): Promise<NodePostgresRestorePreview | null> {
+        return {
+            targetRevisionId: revisionId,
+            currentRevisionId: this.revision,
+            revisionsToRevert: Math.max(0, this.revision - revisionId),
+            totalOperations: 0,
+            restoreInsertCount: 0,
+            restoreDeleteCount: 0,
+            restoreUpdateCount: 0,
+            affectedTables: [],
+        }
+    }
+
     async restoreRevision(revisionId: number): Promise<{ revision: number; revisionId: number }> {
         return { revision: this.revision, revisionId }
     }

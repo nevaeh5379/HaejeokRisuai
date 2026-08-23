@@ -5,6 +5,9 @@ import type {
     NodePostgresServerConfig,
     NodePostgresServerConfigUpdate,
     NodePostgresRevision,
+    NodePostgresRevisionDetails,
+    NodePostgresRevisionDiff,
+    NodePostgresRestorePreview,
     NodePostgresMessageSearchResult,
     NodePostgresTokenUsage,
     NodePostgresCharacterSearchResult,
@@ -142,6 +145,9 @@ export interface ISqlStorage {
     // ── Revisions / history ──────────────────────────────────────────────
 
     listRevisions(limit?: number): Promise<NodePostgresRevision[]>
+    getRevisionDetails?(revisionId: number): Promise<NodePostgresRevisionDetails | null>
+    getRevisionDiff?(baseId: number, targetId: number): Promise<NodePostgresRevisionDiff | null>
+    previewRestoreRevision?(revisionId: number): Promise<NodePostgresRestorePreview | null>
     restoreRevision(revisionId: number): Promise<{ revision: number; revisionId: number }>
 
     // ── Search ───────────────────────────────────────────────────────────

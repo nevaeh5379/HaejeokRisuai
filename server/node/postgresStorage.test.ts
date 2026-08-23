@@ -8,6 +8,7 @@ const {
     decodePostgresJsonValue,
     encodePostgresJsonValue,
     PostgresPayloadError,
+    PostgresStorage,
     normalizeColdStorageKey,
     validateColdStorageKeys,
     validateColdStorageValue,
@@ -17,6 +18,7 @@ const {
     buildUpsertClause:(table:string, pkColumns:string[], valueColumns:string[], updateTimestamp?:boolean) => string
     decodePostgresJsonValue:(value:unknown) => unknown
     encodePostgresJsonValue:(value:unknown) => unknown
+    PostgresStorage:any
     PostgresPayloadError:new (message:string) => Error
     normalizeColdStorageKey:(key:unknown) => string
     validateColdStorageKeys:(keys:unknown) => string[]
@@ -160,6 +162,13 @@ describe('PostgreSQL sync payload validation', () => {
     it('returns DO NOTHING when valueColumns is empty', () => {
         const clause = buildUpsertClause('character.tags', ['character_id', 'position'], [])
         expect(clause).toBe('ON CONFLICT ("character_id", "position") DO NOTHING')
+    })
+
+    it('has revision methods on PostgresStorage prototype', () => {
+        expect(typeof PostgresStorage.prototype.listRevisions).toBe('function')
+        expect(typeof PostgresStorage.prototype.getRevisionDetails).toBe('function')
+        expect(typeof PostgresStorage.prototype.getRevisionDiff).toBe('function')
+        expect(typeof PostgresStorage.prototype.previewRestore).toBe('function')
     })
 })
 

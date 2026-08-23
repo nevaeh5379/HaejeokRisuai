@@ -1026,23 +1026,27 @@ class OracleStorage extends SqlStorageBase {
         }
     }
 
-    async listRevisions(rawLimit = 50) {
+    async listRevisions(rawLimit = null) {
         this.assertEnabled();
-        const parsedLimit = Number.parseInt(rawLimit, 10);
-        const limit = Number.isSafeInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 500) : 50;
         const conn = await this.pool.getConnection();
         try {
-            const rows = await fetchRows(conn,
-                `SELECT r.id, r.storage_revision, r.database_initialized,
+            let sql = `SELECT r.id, r.storage_revision, r.database_initialized,
                         r.scope, r.action, r.restored_from_revision,
                         r.created_at, COUNT(a.sequence_num) AS change_count
                  FROM system_revisions r
                  LEFT JOIN system_audit_log a ON a.revision_id = r.id
                  GROUP BY r.id, r.storage_revision, r.database_initialized,
                           r.scope, r.action, r.restored_from_revision, r.created_at
-                 ORDER BY r.id DESC
-                 FETCH FIRST :1 ROWS ONLY`,
-                [limit]);
+                 ORDER BY r.id DESC`;
+            const params = [];
+            if (rawLimit !== null && rawLimit !== undefined && rawLimit !== '' && rawLimit !== 'all' && rawLimit !== 0 && rawLimit !== '0') {
+                const parsedLimit = Number.parseInt(rawLimit, 10);
+                if (Number.isSafeInteger(parsedLimit) && parsedLimit > 0) {
+                    sql += ' FETCH FIRST :1 ROWS ONLY';
+                    params.push(parsedLimit);
+                }
+            }
+            const rows = await fetchRows(conn, sql, params);
             return rows.map((row) => ({
                 ...row,
                 id: Number(row.id),
@@ -1051,6 +1055,156 @@ class OracleStorage extends SqlStorageBase {
                 restored_from_revision: row.restored_from_revision === null ? null : Number(row.restored_from_revision),
                 change_count: Number(row.change_count),
             }));
+        } finally {
+            await conn.close();
+        }
+    }
+
+    async getRevisionDetails(id) {
+        this.assertEnabled();
+        const revisionId = Number(id);
+        const conn = await this.pool.getConnection();
+        try {
+            const revRows = await fetchRows(conn, 'SELECT * FROM system_revisions WHERE id = :1', [revisionId]);
+            if (revRows.length === 0) return null;
+            const rev = revRows[0];
+
+            const auditRows = await fetchRows(conn, 'SELECT sequence_num, table_name, operation, before_row, after_row, recorded_at FROM system_audit_log WHERE revision_id = :1 ORDER BY sequence_num ASC', [revisionId]);
+
+            const tableMap = new Map();
+            const auditLogs = auditRows.map((a) => {
+                const table = a.table_name;
+                const op = a.operation;
+                if (!tableMap.has(table)) {
+                    tableMap.set(table, { tableName: table, insertCount: 0, updateCount: 0, deleteCount: 0, totalCount: 0 });
+                }
+                const stat = tableMap.get(table);
+                stat.totalCount += 1;
+                if (op === 'INSERT') stat.insertCount += 1;
+                else if (op === 'UPDATE') stat.updateCount += 1;
+                else if (op === 'DELETE') stat.deleteCount += 1;
+
+                return {
+                    sequence: Number(a.sequence_num),
+                    tableName: a.table_name,
+                    operation: a.operation,
+                    beforeRow: a.before_row ? (typeof a.before_row === 'string' ? JSON.parse(a.before_row) : a.before_row) : null,
+                    afterRow: a.after_row ? (typeof a.after_row === 'string' ? JSON.parse(a.after_row) : a.after_row) : null,
+                    recordedAt: a.recorded_at,
+                };
+            });
+
+            return {
+                id: Number(rev.id),
+                storage_revision: rev.storage_revision === null ? null : Number(rev.storage_revision),
+                database_initialized: rev.database_initialized === null ? null : num1ToBool(rev.database_initialized),
+                scope: rev.scope,
+                action: rev.action,
+                restored_from_revision: rev.restored_from_revision === null ? null : Number(rev.restored_from_revision),
+                created_at: rev.created_at,
+                change_count: auditLogs.length,
+                tableSummaries: Array.from(tableMap.values()),
+                auditLogs,
+            };
+        } finally {
+            await conn.close();
+        }
+    }
+
+    async getRevisionDiff(baseId, targetId) {
+        this.assertEnabled();
+        const minId = Math.min(Number(baseId), Number(targetId));
+        const maxId = Math.max(Number(baseId), Number(targetId));
+        const conn = await this.pool.getConnection();
+        try {
+            const auditRows = await fetchRows(conn,
+                'SELECT sequence_num, revision_id, table_name, operation, before_row, after_row, recorded_at FROM system_audit_log WHERE revision_id > :1 AND revision_id <= :2 ORDER BY sequence_num ASC',
+                [minId, maxId]
+            );
+
+            const tableMap = new Map();
+            for (const a of auditRows) {
+                const table = a.table_name;
+                const op = a.operation;
+                if (!tableMap.has(table)) {
+                    tableMap.set(table, { tableName: table, insertCount: 0, updateCount: 0, deleteCount: 0, totalCount: 0, entries: [] });
+                }
+                const stat = tableMap.get(table);
+                stat.totalCount += 1;
+                if (op === 'INSERT') stat.insertCount += 1;
+                else if (op === 'UPDATE') stat.updateCount += 1;
+                else if (op === 'DELETE') stat.deleteCount += 1;
+                stat.entries.push({
+                    sequence: Number(a.sequence_num),
+                    revisionId: Number(a.revision_id),
+                    tableName: a.table_name,
+                    operation: a.operation,
+                    beforeRow: a.before_row ? (typeof a.before_row === 'string' ? JSON.parse(a.before_row) : a.before_row) : null,
+                    afterRow: a.after_row ? (typeof a.after_row === 'string' ? JSON.parse(a.after_row) : a.after_row) : null,
+                    recordedAt: a.recorded_at,
+                });
+            }
+
+            return {
+                baseRevisionId: Number(baseId),
+                targetRevisionId: Number(targetId),
+                totalChanges: auditRows.length,
+                tables: Array.from(tableMap.values()),
+            };
+        } finally {
+            await conn.close();
+        }
+    }
+
+    async previewRestore(rawRevisionId) {
+        this.assertEnabled();
+        const targetRevisionId = Number(rawRevisionId);
+        const conn = await this.pool.getConnection();
+        try {
+            const targetRows = await fetchRows(conn, 'SELECT id FROM system_revisions WHERE id = :1', [targetRevisionId]);
+            if (targetRows.length === 0) {
+                throw new Error('The requested revision does not exist');
+            }
+
+            const latestRows = await fetchRows(conn, 'SELECT id FROM system_revisions ORDER BY id DESC FETCH FIRST 1 ROWS ONLY', []);
+            const currentRevisionId = latestRows[0]?.id ? Number(latestRows[0].id) : targetRevisionId;
+
+            const auditRows = await fetchRows(conn, 'SELECT sequence_num, table_name, operation, before_row, after_row FROM system_audit_log WHERE revision_id > :1 ORDER BY sequence_num DESC', [targetRevisionId]);
+
+            const tableMap = new Map();
+            let restoreInsertCount = 0;
+            let restoreDeleteCount = 0;
+            let restoreUpdateCount = 0;
+
+            for (const event of auditRows) {
+                const table = event.table_name;
+                if (!tableMap.has(table)) {
+                    tableMap.set(table, { tableName: table, revertedInserts: 0, revertedUpdates: 0, revertedDeletes: 0, totalChanges: 0 });
+                }
+                const stat = tableMap.get(table);
+                stat.totalChanges += 1;
+                if (event.operation === 'INSERT') {
+                    stat.revertedInserts += 1;
+                    restoreDeleteCount += 1;
+                } else if (event.operation === 'DELETE') {
+                    stat.revertedDeletes += 1;
+                    restoreInsertCount += 1;
+                } else if (event.operation === 'UPDATE') {
+                    stat.revertedUpdates += 1;
+                    restoreUpdateCount += 1;
+                }
+            }
+
+            return {
+                targetRevisionId,
+                currentRevisionId,
+                revisionsToRevert: Math.max(0, currentRevisionId - targetRevisionId),
+                totalOperations: auditRows.length,
+                restoreInsertCount,
+                restoreDeleteCount,
+                restoreUpdateCount,
+                affectedTables: Array.from(tableMap.values()),
+            };
         } finally {
             await conn.close();
         }

@@ -2238,13 +2238,18 @@ class AzureStorage extends SqlStorageBase {
     // Revisions & Audit Log
     // ============================================================
 
-    async listRevisions(rawLimit = 50) {
+    async listRevisions(rawLimit = null) {
         const pool = await this.getPool();
-        const parsedLimit = Number.parseInt(rawLimit, 10);
-        const limit = Number.isSafeInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 500) : 50;
+        let topClause = '';
+        if (rawLimit !== null && rawLimit !== undefined && rawLimit !== '' && rawLimit !== 'all' && rawLimit !== 0 && rawLimit !== '0') {
+            const parsedLimit = Number.parseInt(rawLimit, 10);
+            if (Number.isSafeInteger(parsedLimit) && parsedLimit > 0) {
+                topClause = `TOP (${parsedLimit})`;
+            }
+        }
 
         const res = await pool.request().query(`
-            SELECT TOP (${limit}) r.id, r.storage_revision, r.database_initialized, r.scope, r.action,
+            SELECT ${topClause} r.id, r.storage_revision, r.database_initialized, r.scope, r.action,
                    r.restored_from_revision, r.created_at,
                    (SELECT COUNT(*) FROM [system].[audit_log] a WHERE a.revision_id = r.id) AS change_count
             FROM [system].[revisions] r
@@ -2264,10 +2269,10 @@ class AzureStorage extends SqlStorageBase {
     }
 
     async getRevisions() {
-        return await this.listRevisions(100);
+        return await this.listRevisions();
     }
 
-    async getRevision(id) {
+    async getRevisionDetails(id) {
         const pool = await this.getPool();
         const revReq = pool.request();
         revReq.input('id', sql.BigInt, id);
@@ -2279,22 +2284,140 @@ class AzureStorage extends SqlStorageBase {
         const auditRes = await auditReq.query('SELECT * FROM [system].[audit_log] WHERE revision_id = @rev_id ORDER BY sequence');
 
         const row = revRes.recordset[0];
-        return {
-            id: row.id,
-            storageRevision: parseInt(row.storage_revision, 10) || 0,
-            databaseInitialized: Boolean(row.database_initialized),
-            scope: row.scope,
-            action: row.action,
-            restoredFromRevision: row.restored_from_revision,
-            createdAt: row.created_at,
-            auditLogs: auditRes.recordset.map((a) => ({
-                sequence: a.sequence,
+        const tableMap = new Map();
+        const auditLogs = auditRes.recordset.map((a) => {
+            const table = a.table_name;
+            const op = a.operation;
+            if (!tableMap.has(table)) {
+                tableMap.set(table, { tableName: table, insertCount: 0, updateCount: 0, deleteCount: 0, totalCount: 0 });
+            }
+            const stat = tableMap.get(table);
+            stat.totalCount += 1;
+            if (op === 'INSERT') stat.insertCount += 1;
+            else if (op === 'UPDATE') stat.updateCount += 1;
+            else if (op === 'DELETE') stat.deleteCount += 1;
+
+            return {
+                sequence: Number(a.sequence),
                 tableName: a.table_name,
                 operation: a.operation,
-                beforeRow: a.before_row ? JSON.parse(a.before_row) : null,
-                afterRow: a.after_row ? JSON.parse(a.after_row) : null,
+                beforeRow: a.before_row ? (typeof a.before_row === 'string' ? JSON.parse(a.before_row) : a.before_row) : null,
+                afterRow: a.after_row ? (typeof a.after_row === 'string' ? JSON.parse(a.after_row) : a.after_row) : null,
                 recordedAt: a.recorded_at,
-            })),
+            };
+        });
+
+        return {
+            id: Number(row.id),
+            storage_revision: row.storage_revision === null ? null : Number(row.storage_revision),
+            database_initialized: Boolean(row.database_initialized),
+            scope: row.scope,
+            action: row.action,
+            restored_from_revision: row.restored_from_revision === null ? null : Number(row.restored_from_revision),
+            created_at: row.created_at,
+            change_count: auditLogs.length,
+            tableSummaries: Array.from(tableMap.values()),
+            auditLogs,
+        };
+    }
+
+    async getRevision(id) {
+        return await this.getRevisionDetails(id);
+    }
+
+    async getRevisionDiff(baseId, targetId) {
+        const pool = await this.getPool();
+        const minId = Math.min(Number(baseId), Number(targetId));
+        const maxId = Math.max(Number(baseId), Number(targetId));
+
+        const req = pool.request();
+        req.input('min_id', sql.BigInt, minId);
+        req.input('max_id', sql.BigInt, maxId);
+        const auditRes = await req.query(
+            'SELECT * FROM [system].[audit_log] WHERE revision_id > @min_id AND revision_id <= @max_id ORDER BY sequence'
+        );
+
+        const tableMap = new Map();
+        for (const a of auditRes.recordset) {
+            const table = a.table_name;
+            const op = a.operation;
+            if (!tableMap.has(table)) {
+                tableMap.set(table, { tableName: table, insertCount: 0, updateCount: 0, deleteCount: 0, totalCount: 0, entries: [] });
+            }
+            const stat = tableMap.get(table);
+            stat.totalCount += 1;
+            if (op === 'INSERT') stat.insertCount += 1;
+            else if (op === 'UPDATE') stat.updateCount += 1;
+            else if (op === 'DELETE') stat.deleteCount += 1;
+            stat.entries.push({
+                sequence: Number(a.sequence),
+                revisionId: Number(a.revision_id),
+                tableName: a.table_name,
+                operation: a.operation,
+                beforeRow: a.before_row ? (typeof a.before_row === 'string' ? JSON.parse(a.before_row) : a.before_row) : null,
+                afterRow: a.after_row ? (typeof a.after_row === 'string' ? JSON.parse(a.after_row) : a.after_row) : null,
+                recordedAt: a.recorded_at,
+            });
+        }
+
+        return {
+            baseRevisionId: Number(baseId),
+            targetRevisionId: Number(targetId),
+            totalChanges: auditRes.recordset.length,
+            tables: Array.from(tableMap.values()),
+        };
+    }
+
+    async previewRestore(rawRevisionId) {
+        const targetRevisionId = Number(rawRevisionId);
+        const pool = await this.getPool();
+        const targetReq = pool.request();
+        targetReq.input('id', sql.BigInt, targetRevisionId);
+        const targetRes = await targetReq.query('SELECT id FROM [system].[revisions] WHERE id = @id');
+        if (targetRes.recordset.length === 0) {
+            throw new Error('The requested revision does not exist');
+        }
+
+        const latestRes = await pool.request().query('SELECT TOP 1 id FROM [system].[revisions] ORDER BY id DESC');
+        const currentRevisionId = latestRes.recordset[0]?.id ? Number(latestRes.recordset[0].id) : targetRevisionId;
+
+        const auditReq = pool.request();
+        auditReq.input('target_id', sql.BigInt, targetRevisionId);
+        const auditRes = await auditReq.query('SELECT * FROM [system].[audit_log] WHERE revision_id > @target_id ORDER BY sequence DESC');
+
+        const tableMap = new Map();
+        let restoreInsertCount = 0;
+        let restoreDeleteCount = 0;
+        let restoreUpdateCount = 0;
+
+        for (const event of auditRes.recordset) {
+            const table = event.table_name;
+            if (!tableMap.has(table)) {
+                tableMap.set(table, { tableName: table, revertedInserts: 0, revertedUpdates: 0, revertedDeletes: 0, totalChanges: 0 });
+            }
+            const stat = tableMap.get(table);
+            stat.totalChanges += 1;
+            if (event.operation === 'INSERT') {
+                stat.revertedInserts += 1;
+                restoreDeleteCount += 1;
+            } else if (event.operation === 'DELETE') {
+                stat.revertedDeletes += 1;
+                restoreInsertCount += 1;
+            } else if (event.operation === 'UPDATE') {
+                stat.revertedUpdates += 1;
+                restoreUpdateCount += 1;
+            }
+        }
+
+        return {
+            targetRevisionId,
+            currentRevisionId,
+            revisionsToRevert: Math.max(0, currentRevisionId - targetRevisionId),
+            totalOperations: auditRes.recordset.length,
+            restoreInsertCount,
+            restoreDeleteCount,
+            restoreUpdateCount,
+            affectedTables: Array.from(tableMap.values()),
         };
     }
 

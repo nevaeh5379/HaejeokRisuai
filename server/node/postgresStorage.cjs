@@ -529,21 +529,24 @@ class PostgresStorage extends SqlStorageBase {
         }
     }
 
-    async listRevisions(rawLimit = 50) {
+    async listRevisions(rawLimit = null) {
         this.assertEnabled();
-        const parsedLimit = Number.parseInt(rawLimit, 10);
-        const limit = Number.isSafeInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 500) : 50;
-        const result = await this.pool.query(
-            `SELECT revision.id, revision.storage_revision, revision.database_initialized,
+        let sql = `SELECT revision.id, revision.storage_revision, revision.database_initialized,
                     revision.scope, revision.action, revision.restored_from_revision,
                     revision.created_at, COUNT(audit.sequence)::integer AS change_count
              FROM system.revisions AS revision
              LEFT JOIN system.audit_log AS audit ON audit.revision_id = revision.id
              GROUP BY revision.id
-             ORDER BY revision.id DESC
-             LIMIT $1`,
-            [limit]
-        );
+             ORDER BY revision.id DESC`;
+        const params = [];
+        if (rawLimit !== null && rawLimit !== undefined && rawLimit !== '' && rawLimit !== 'all' && rawLimit !== 0 && rawLimit !== '0') {
+            const parsedLimit = Number.parseInt(rawLimit, 10);
+            if (Number.isSafeInteger(parsedLimit) && parsedLimit > 0) {
+                sql += ' LIMIT $1';
+                params.push(parsedLimit);
+            }
+        }
+        const result = await this.pool.query(sql, params);
         return result.rows.map((row) => ({
             ...row,
             id: Number(row.id),
@@ -551,6 +554,180 @@ class PostgresStorage extends SqlStorageBase {
             restored_from_revision: row.restored_from_revision === null
                 ? null : Number(row.restored_from_revision),
         }));
+    }
+
+    async getRevisionDetails(rawRevisionId) {
+        this.assertEnabled();
+        const revisionId = Number(rawRevisionId);
+        if (!Number.isSafeInteger(revisionId) || revisionId <= 0) {
+            throw new PostgresPayloadError('revisionId must be a positive integer');
+        }
+        const revResult = await this.pool.query(
+            `SELECT id, storage_revision, database_initialized, scope, action, restored_from_revision, created_at
+             FROM system.revisions
+             WHERE id = $1`,
+            [revisionId]
+        );
+        if (revResult.rowCount === 0) {
+            return null;
+        }
+        const revision = revResult.rows[0];
+
+        const auditResult = await this.pool.query(
+            `SELECT sequence, table_name, operation, before_row, after_row, recorded_at
+             FROM system.audit_log
+             WHERE revision_id = $1
+             ORDER BY sequence ASC`,
+            [revisionId]
+        );
+
+        const tableMap = new Map();
+        const auditLogs = auditResult.rows.map((row) => {
+            const table = row.table_name;
+            const op = row.operation;
+            if (!tableMap.has(table)) {
+                tableMap.set(table, { tableName: table, insertCount: 0, updateCount: 0, deleteCount: 0, totalCount: 0 });
+            }
+            const stat = tableMap.get(table);
+            stat.totalCount += 1;
+            if (op === 'INSERT') stat.insertCount += 1;
+            else if (op === 'UPDATE') stat.updateCount += 1;
+            else if (op === 'DELETE') stat.deleteCount += 1;
+
+            return {
+                sequence: Number(row.sequence),
+                tableName: row.table_name,
+                operation: row.operation,
+                beforeRow: row.before_row,
+                afterRow: row.after_row,
+                recordedAt: row.recorded_at,
+            };
+        });
+
+        const tableSummaries = Array.from(tableMap.values());
+
+        return {
+            id: Number(revision.id),
+            storage_revision: revision.storage_revision === null ? null : Number(revision.storage_revision),
+            database_initialized: revision.database_initialized,
+            scope: revision.scope,
+            action: revision.action,
+            restored_from_revision: revision.restored_from_revision === null ? null : Number(revision.restored_from_revision),
+            created_at: revision.created_at,
+            change_count: auditLogs.length,
+            tableSummaries,
+            auditLogs,
+        };
+    }
+
+    async getRevisionDiff(rawBaseId, rawTargetId) {
+        this.assertEnabled();
+        const baseId = Number(rawBaseId);
+        const targetId = Number(rawTargetId);
+        if (!Number.isSafeInteger(baseId) || !Number.isSafeInteger(targetId) || baseId <= 0 || targetId <= 0) {
+            throw new PostgresPayloadError('baseRevisionId and targetRevisionId must be positive integers');
+        }
+        const minId = Math.min(baseId, targetId);
+        const maxId = Math.max(baseId, targetId);
+
+        const auditResult = await this.pool.query(
+            `SELECT sequence, revision_id, table_name, operation, before_row, after_row, recorded_at
+             FROM system.audit_log
+             WHERE revision_id > $1 AND revision_id <= $2
+             ORDER BY sequence ASC`,
+            [minId, maxId]
+        );
+
+        const tableMap = new Map();
+        for (const row of auditResult.rows) {
+            const table = row.table_name;
+            const op = row.operation;
+            if (!tableMap.has(table)) {
+                tableMap.set(table, { tableName: table, insertCount: 0, updateCount: 0, deleteCount: 0, totalCount: 0, entries: [] });
+            }
+            const stat = tableMap.get(table);
+            stat.totalCount += 1;
+            if (op === 'INSERT') stat.insertCount += 1;
+            else if (op === 'UPDATE') stat.updateCount += 1;
+            else if (op === 'DELETE') stat.deleteCount += 1;
+            stat.entries.push({
+                sequence: Number(row.sequence),
+                revisionId: Number(row.revision_id),
+                tableName: row.table_name,
+                operation: row.operation,
+                beforeRow: row.before_row,
+                afterRow: row.after_row,
+                recordedAt: row.recorded_at,
+            });
+        }
+
+        return {
+            baseRevisionId: baseId,
+            targetRevisionId: targetId,
+            totalChanges: auditResult.rowCount,
+            tables: Array.from(tableMap.values()),
+        };
+    }
+
+    async previewRestore(rawRevisionId) {
+        this.assertEnabled();
+        const targetRevisionId = Number(rawRevisionId);
+        if (!Number.isSafeInteger(targetRevisionId) || targetRevisionId <= 0) {
+            throw new PostgresPayloadError('revisionId must be a positive integer');
+        }
+        const target = await this.pool.query(
+            'SELECT id, scope, action, created_at FROM system.revisions WHERE id = $1', [targetRevisionId]
+        );
+        if (target.rowCount === 0) {
+            throw new PostgresPayloadError('The requested revision does not exist');
+        }
+        const latest = await this.pool.query(
+            'SELECT id FROM system.revisions ORDER BY id DESC LIMIT 1'
+        );
+        const currentRevisionId = latest.rows[0]?.id ? Number(latest.rows[0].id) : targetRevisionId;
+
+        const auditResult = await this.pool.query(
+            `SELECT sequence, table_name, operation, before_row, after_row
+             FROM system.audit_log
+             WHERE revision_id > $1
+             ORDER BY sequence DESC`,
+            [targetRevisionId]
+        );
+
+        const tableMap = new Map();
+        let restoreInsertCount = 0;
+        let restoreDeleteCount = 0;
+        let restoreUpdateCount = 0;
+
+        for (const event of auditResult.rows) {
+            const table = event.table_name;
+            if (!tableMap.has(table)) {
+                tableMap.set(table, { tableName: table, revertedInserts: 0, revertedUpdates: 0, revertedDeletes: 0, totalChanges: 0 });
+            }
+            const stat = tableMap.get(table);
+            stat.totalChanges += 1;
+            if (event.operation === 'INSERT') {
+                stat.revertedInserts += 1;
+                restoreDeleteCount += 1;
+            } else if (event.operation === 'DELETE') {
+                stat.revertedDeletes += 1;
+                restoreInsertCount += 1;
+            } else if (event.operation === 'UPDATE') {
+                stat.revertedUpdates += 1;
+                restoreUpdateCount += 1;
+            }
+        }
+
+        return {
+            targetRevisionId,
+            currentRevisionId,
+            revisionsToRevert: Math.max(0, currentRevisionId - targetRevisionId),
+            totalOperations: auditResult.rowCount,
+            restoreInsertCount,
+            restoreDeleteCount,
+            restoreUpdateCount,
+            affectedTables: Array.from(tableMap.values()),
+        };
     }
 
     async getRestoreMetadata(client) {

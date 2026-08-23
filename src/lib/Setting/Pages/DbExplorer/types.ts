@@ -2,13 +2,27 @@ import type {
     DbVendor,
     NodeBackupConfig,
     NodeBackupProgressEvent,
+    NodePostgresAuditLogItem,
     NodePostgresColumnInfo,
+    NodePostgresRestorePreview,
     NodePostgresRevision,
+    NodePostgresRevisionDetails,
+    NodePostgresRevisionDiff,
     NodePostgresServerConfig,
     NodePostgresTableData,
     NodePostgresTableInfo,
+    NodePostgresTableSummary,
     NodePostgresTokenUsage
 } from 'src/ts/storage/nodePostgresStorage'
+
+export type {
+    NodePostgresAuditLogItem,
+    NodePostgresRestorePreview,
+    NodePostgresRevision,
+    NodePostgresRevisionDetails,
+    NodePostgresRevisionDiff,
+    NodePostgresTableSummary,
+}
 
 export type DbExplorerTabType = 'tables' | 'config' | 'stats' | 'history'
 
