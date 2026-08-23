@@ -1,0 +1,168 @@
+import { describe, expect, it, beforeEach } from 'vitest'
+import {
+    isThumbnailKey,
+    extractOriginalKeyFromThumbnail,
+    generateKeyCandidates,
+    runStorageAnalysis
+} from './utils'
+import { characterStore } from 'src/ts/stores/domain/characterStore.svelte'
+import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte'
+import type { NodeStorageAssetDetails, NodeStorageAssetItem } from './types'
+
+describe('StorageExplorer utils', () => {
+    describe('isThumbnailKey', () => {
+        it('identifies thumbnail keys correctly', () => {
+            expect(isThumbnailKey('thumbnails/assets/bot1.png_128x128.webp')).toBe(true)
+            expect(isThumbnailKey('thumbnails/bot1.png_128x128.webp')).toBe(true)
+            expect(isThumbnailKey('thumbnails/subfolder/image.png_512x768.webp')).toBe(true)
+            expect(isThumbnailKey('thumbnails/custom_thumb')).toBe(true)
+        })
+
+        it('returns false for non-thumbnail keys', () => {
+            expect(isThumbnailKey('assets/bot1.png')).toBe(false)
+            expect(isThumbnailKey('bot1.png')).toBe(false)
+            expect(isThumbnailKey('customBackground.jpg')).toBe(false)
+            expect(isThumbnailKey('')).toBe(false)
+            expect(isThumbnailKey(null as any)).toBe(false)
+            expect(isThumbnailKey(undefined as any)).toBe(false)
+        })
+    })
+
+    describe('extractOriginalKeyFromThumbnail', () => {
+        it('extracts original asset keys from standard thumbnail paths', () => {
+            expect(extractOriginalKeyFromThumbnail('thumbnails/assets/bot1.png_128x128.webp')).toBe('assets/bot1.png')
+            expect(extractOriginalKeyFromThumbnail('thumbnails/bot1.png_128x128.webp')).toBe('bot1.png')
+            expect(extractOriginalKeyFromThumbnail('thumbnails/assets/nested/image.jpeg_256x256.webp')).toBe('assets/nested/image.jpeg')
+            expect(extractOriginalKeyFromThumbnail('thumbnails/assets/image.webp_128x128.webp')).toBe('assets/image.webp')
+        })
+
+        it('falls back gracefully if no dimension suffix is present', () => {
+            expect(extractOriginalKeyFromThumbnail('thumbnails/custom_image.png')).toBe('custom_image.png')
+        })
+
+        it('returns null for non-thumbnail keys', () => {
+            expect(extractOriginalKeyFromThumbnail('assets/bot1.png')).toBeNull()
+            expect(extractOriginalKeyFromThumbnail('bot1.png')).toBeNull()
+            expect(extractOriginalKeyFromThumbnail('')).toBeNull()
+        })
+    })
+
+    describe('generateKeyCandidates', () => {
+        it('generates asset-prefixed and unprefixed key candidates', () => {
+            expect(generateKeyCandidates('bot1.png')).toEqual(['bot1.png', 'assets/bot1.png'])
+            expect(generateKeyCandidates('assets/bot1.png')).toEqual(['assets/bot1.png', 'bot1.png'])
+        })
+    })
+
+    describe('runStorageAnalysis', () => {
+        beforeEach(() => {
+            // Reset stores
+            characterStore.characters = []
+            settingsStore.state.modules = []
+            settingsStore.state.personas = []
+            settingsStore.state.userIcon = ''
+            settingsStore.state.customBackground = ''
+            settingsStore.state.characterOrder = []
+        })
+
+        it('does not treat thumbnails of referenced bot assets as orphan assets', async () => {
+            // Setup active bot
+            characterStore.characters = [
+                {
+                    chaId: 'char-1',
+                    name: 'Active Bot',
+                    image: 'assets/bot1.png',
+                    emotionImages: [['happy', 'assets/bot1_happy.png']],
+                    additionalAssets: [['bg', 'assets/bot1_extra.png']],
+                    customBackground: 'bot1_bg.png',
+                    vits: {
+                        files: {
+                            greeting: 'assets/voice_greeting.wav'
+                        }
+                    }
+                } as any
+            ]
+
+            // Storage contains bot assets, their thumbnails, and an unreferenced asset with its thumbnail
+            const storageAssets: NodeStorageAssetItem[] = [
+                { key: 'assets/bot1.png', size: 1000, mtime: 1 },
+                { key: 'thumbnails/assets/bot1.png_128x128.webp', size: 100, mtime: 1 },
+                { key: 'assets/bot1_happy.png', size: 800, mtime: 1 },
+                { key: 'thumbnails/assets/bot1_happy.png_128x128.webp', size: 80, mtime: 1 },
+                { key: 'assets/bot1_extra.png', size: 600, mtime: 1 },
+                { key: 'bot1_bg.png', size: 1200, mtime: 1 },
+                { key: 'thumbnails/bot1_bg.png_128x128.webp', size: 120, mtime: 1 },
+                { key: 'assets/voice_greeting.wav', size: 3000, mtime: 1 },
+                // Unreferenced orphan assets
+                { key: 'assets/deleted_bot.png', size: 2000, mtime: 1 },
+                { key: 'thumbnails/assets/deleted_bot.png_128x128.webp', size: 200, mtime: 1 }
+            ]
+
+            const assetMap = new Map<string, NodeStorageAssetItem>()
+            for (const item of storageAssets) {
+                assetMap.set(item.key, item)
+            }
+
+            const assetDetails: NodeStorageAssetDetails = {
+                storageType: 's3',
+                totalObjects: storageAssets.length,
+                totalSizeBytes: storageAssets.reduce((sum, a) => sum + a.size, 0),
+                assets: storageAssets
+            }
+
+            const result = await runStorageAnalysis(assetMap, assetDetails)
+
+            // Bots analysis
+            expect(result.bots.length).toBe(1)
+            expect(result.bots[0].name).toBe('Active Bot')
+            expect(result.bots[0].totalAssets).toBe(5) // avatar, happy, extra, bg, vits audio
+
+            // Orphan assets should ONLY be the deleted bot image and its thumbnail
+            const orphanKeys = result.orphanAssets.map((a) => a.key)
+            expect(orphanKeys).toEqual([
+                'assets/deleted_bot.png',
+                'thumbnails/assets/deleted_bot.png_128x128.webp'
+            ])
+            expect(result.orphanSizeBytes).toBe(2200) // 2000 + 200
+        })
+
+        it('correctly protects persona icons, user icons, and global background from orphan classification', async () => {
+            settingsStore.state.personas = [
+                {
+                    id: 'p1',
+                    name: 'User Persona',
+                    icon: 'persona_icon.png'
+                } as any
+            ]
+            settingsStore.state.userIcon = 'assets/user_icon.png'
+            settingsStore.state.customBackground = 'assets/global_bg.jpg'
+
+            const storageAssets: NodeStorageAssetItem[] = [
+                { key: 'persona_icon.png', size: 500, mtime: 1 },
+                { key: 'thumbnails/persona_icon.png_128x128.webp', size: 50, mtime: 1 },
+                { key: 'assets/user_icon.png', size: 400, mtime: 1 },
+                { key: 'thumbnails/assets/user_icon.png_128x128.webp', size: 40, mtime: 1 },
+                { key: 'assets/global_bg.jpg', size: 1500, mtime: 1 },
+                { key: 'assets/truly_unused.png', size: 900, mtime: 1 }
+            ]
+
+            const assetMap = new Map<string, NodeStorageAssetItem>()
+            for (const item of storageAssets) {
+                assetMap.set(item.key, item)
+            }
+
+            const assetDetails: NodeStorageAssetDetails = {
+                storageType: 's3',
+                totalObjects: storageAssets.length,
+                totalSizeBytes: storageAssets.reduce((sum, a) => sum + a.size, 0),
+                assets: storageAssets
+            }
+
+            const result = await runStorageAnalysis(assetMap, assetDetails)
+
+            const orphanKeys = result.orphanAssets.map((a) => a.key)
+            expect(orphanKeys).toEqual(['assets/truly_unused.png'])
+            expect(result.orphanSizeBytes).toBe(900)
+        })
+    })
+})

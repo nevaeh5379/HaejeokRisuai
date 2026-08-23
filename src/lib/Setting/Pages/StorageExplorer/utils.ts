@@ -12,6 +12,21 @@ import type {
     ViewTarget
 } from './types'
 
+export function isThumbnailKey(key: string): boolean {
+    return typeof key === 'string' && key.startsWith('thumbnails/')
+}
+
+export function extractOriginalKeyFromThumbnail(thumbnailKey: string): string | null {
+    if (!thumbnailKey || typeof thumbnailKey !== 'string' || !thumbnailKey.startsWith('thumbnails/')) {
+        return null
+    }
+    const match = thumbnailKey.match(/^thumbnails\/(.+)_\d+x\d+\.webp$/i)
+    if (match) {
+        return match[1]
+    }
+    return thumbnailKey.replace(/^thumbnails\//, '')
+}
+
 export function formatBytes(bytes: number): string {
     if (bytes === 0) return '0 B'
     const k = 1024
@@ -171,6 +186,17 @@ export async function runStorageAnalysis(
             audioCount++
         }
 
+        if ((char as any).vits?.files) {
+            const vitsFiles = (char as any).vits.files
+            for (const key of Object.keys(vitsFiles)) {
+                const vitAsset = vitsFiles[key]
+                if (vitAsset) {
+                    addAsset(vitAsset, 'audio', `VITS: ${key}`)
+                    audioCount++
+                }
+            }
+        }
+
         const totalSize = botAssets.reduce((sum, a) => sum + a.size, 0)
 
         bots.push({
@@ -237,13 +263,50 @@ export async function runStorageAnalysis(
         })
     }
 
+    // Include persona icons
+    for (const persona of (settingsStore.state.personas || [])) {
+        if (persona?.icon) {
+            resolveAsset(persona.icon)
+        }
+    }
+
+    // Include user icon & global custom background
+    if (settingsStore.state.userIcon) {
+        resolveAsset(settingsStore.state.userIcon)
+    }
+    if (settingsStore.state.customBackground) {
+        resolveAsset(settingsStore.state.customBackground)
+    }
+
+    // Include character order folder icons
+    if (Array.isArray(settingsStore.state.characterOrder)) {
+        for (const item of settingsStore.state.characterOrder) {
+            if (typeof item === 'object' && item && 'imgFile' in item && typeof (item as any).imgFile === 'string') {
+                resolveAsset((item as any).imgFile)
+            }
+        }
+    }
+
     // Identify orphan assets on currently viewed storage
     const orphans: NodeStorageAssetItem[] = []
     let orphanSize = 0
     if (assetDetails?.assets) {
         for (const asset of assetDetails.assets) {
-            const strippedKey = asset.key.replace(/^assets\//, '')
-            if (!referencedKeys.has(asset.key) && !referencedKeys.has(strippedKey)) {
+            let isReferenced = false
+
+            if (isThumbnailKey(asset.key)) {
+                // If it's a thumbnail, check whether its parent original asset is referenced
+                const originalKey = extractOriginalKeyFromThumbnail(asset.key)
+                if (originalKey) {
+                    const originalCandidates = generateKeyCandidates(originalKey)
+                    isReferenced = originalCandidates.some((cand) => referencedKeys.has(cand))
+                }
+            } else {
+                const candidates = generateKeyCandidates(asset.key)
+                isReferenced = candidates.some((cand) => referencedKeys.has(cand))
+            }
+
+            if (!isReferenced) {
                 orphans.push(asset)
                 orphanSize += asset.size
             }

@@ -11,7 +11,7 @@
         XIcon
     } from '@lucide/svelte'
     import { language } from 'src/lang'
-    import { formatBytes, isAudioFile, isImageFile } from '../utils'
+    import { formatBytes, isAudioFile, isImageFile, isThumbnailKey } from '../utils'
     import type { FileFilterType, NodeStorageAssetDetails, NodeStorageAssetItem, ViewTarget } from '../types'
 
     interface Props {
@@ -254,7 +254,14 @@
                                         </button>
                                     </td>
                                     <td class="px-3 py-2 font-mono text-xs max-w-xs truncate">
-                                        <span title={file.key}>{file.key}</span>
+                                        <div class="flex items-center gap-1.5 min-w-0">
+                                            {#if isThumbnailKey(file.key)}
+                                                <span class="rounded bg-purple-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-purple-300 shrink-0">
+                                                    Thumb
+                                                </span>
+                                            {/if}
+                                            <span class="truncate" title={file.key}>{file.key}</span>
+                                        </div>
                                     </td>
                                     <td class="px-3 py-2 text-right font-medium">
                                         {formatBytes(file.size)}
@@ -337,6 +344,11 @@
                                     <span class="rounded-md bg-darkbutton px-1.5 py-0.5 text-[10px] font-semibold text-blue-300">
                                         {formatBytes(file.size)}
                                     </span>
+                                    {#if isThumbnailKey(file.key)}
+                                        <span class="rounded bg-purple-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-purple-300">
+                                            Thumb
+                                        </span>
+                                    {/if}
                                 </div>
                                 <p class="mt-1 truncate font-mono text-xs text-textcolor" title={file.key}>
                                     {file.key}
