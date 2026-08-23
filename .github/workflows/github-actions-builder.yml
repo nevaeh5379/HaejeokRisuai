@@ -58,6 +58,23 @@ jobs:
             echo
           } > release-notes.md
 
+      - name: Ensure build tag exists
+        shell: bash
+        env:
+          BUILD_TAG: ${{ steps.version.outputs.build_tag }}
+        run: |
+          REMOTE_SHA=$(git ls-remote --tags origin "refs/tags/${BUILD_TAG}" | awk '{print $1}')
+
+          if [ -n "$REMOTE_SHA" ]; then
+            if [ "$REMOTE_SHA" != "$GITHUB_SHA" ]; then
+              echo "Tag ${BUILD_TAG} already points to ${REMOTE_SHA}, expected ${GITHUB_SHA}" >&2
+              exit 1
+            fi
+          else
+            git tag "$BUILD_TAG" "$GITHUB_SHA"
+            git push origin "refs/tags/${BUILD_TAG}"
+          fi
+
       - name: Create or update draft release
         id: release
         shell: bash
@@ -72,9 +89,8 @@ jobs:
 
           jq -n \
             --arg tag "$BUILD_TAG" \
-            --arg target "$GITHUB_SHA" \
             --rawfile body release-notes.md \
-            '{tag_name: $tag, target_commitish: $target, name: $tag, body: $body, draft: true, prerelease: false}' \
+            '{tag_name: $tag, name: $tag, body: $body, draft: true, prerelease: false}' \
             > release-payload.json
 
           if [ -n "$RELEASE_ID" ]; then
