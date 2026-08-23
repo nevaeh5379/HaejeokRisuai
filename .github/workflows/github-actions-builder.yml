@@ -65,23 +65,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           BUILD_TAG: ${{ steps.version.outputs.build_tag }}
         run: |
-          RELEASE_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
-            --jq ".[] | select(.tag_name == \"${BUILD_TAG}\") | .id" | head -n 1)
-
-          BODY=$(cat release-notes.md)
+          RELEASE_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${BUILD_TAG}" \
+            --jq '.id' 2>/dev/null || true)
 
           if [ -n "$RELEASE_ID" ]; then
-            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
-              -f name="$BUILD_TAG" \
-              -f body="$BODY" >/dev/null
+            gh release edit "$BUILD_TAG" \
+              --title "$BUILD_TAG" \
+              --notes-file release-notes.md
           else
-            RELEASE_ID=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/releases" \
-              -f tag_name="$BUILD_TAG" \
-              -f target_commitish="$GITHUB_SHA" \
-              -f name="$BUILD_TAG" \
-              -f body="$BODY" \
-              -F draft=true \
-              -F prerelease=false \
+            gh release create "$BUILD_TAG" \
+              --target "$GITHUB_SHA" \
+              --title "$BUILD_TAG" \
+              --notes-file release-notes.md \
+              --draft
+
+            RELEASE_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${BUILD_TAG}" \
               --jq '.id')
           fi
 
