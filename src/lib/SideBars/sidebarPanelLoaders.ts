@@ -1,33 +1,35 @@
-import type { Component } from 'svelte'
+import type { Component } from "svelte";
 
-type ComponentModule = { default: Component<any> }
+type ComponentModule = { default: Component<any> };
 
-export function createCachedLoader<T>(loader: () => Promise<T>): () => Promise<T> {
-    let pending: Promise<T> | undefined
+export function createCachedLoader<T>(
+  loader: () => Promise<T>,
+): () => Promise<T> {
+  let pending: Promise<T> | undefined;
 
-    return () => {
-        if (!pending) {
-            pending = loader().catch((error) => {
-                pending = undefined
-                throw error
-            })
-        }
-        return pending
+  return () => {
+    if (!pending) {
+      pending = loader().catch((error) => {
+        pending = undefined;
+        throw error;
+      });
     }
+    return pending;
+  };
 }
 
 export const loadCharConfig = createCachedLoader<ComponentModule>(
-    () => import('./CharConfig.svelte'),
-)
+  () => import("./CharConfig.svelte"),
+);
 
 export const loadSideChatList = createCachedLoader<ComponentModule>(
-    () => import('./SideChatListForCurrent.svelte'),
-)
+  () => import("./SideChatListForCurrent.svelte"),
+);
 
 export async function preloadChatSidebarPanel(): Promise<void> {
-    await loadSideChatList().catch(() => undefined)
+  await loadSideChatList().catch(() => undefined);
 }
 
 export async function preloadCharacterSidebarPanel(): Promise<void> {
-    await loadCharConfig().catch(() => undefined)
+  await loadCharConfig().catch(() => undefined);
 }

@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store'
-import type { hubType } from './hubCatalog'
+import { writable } from "svelte/store";
+import type { hubType } from "./hubCatalog";
 
-export const showRealmInfoStore = writable<null | hubType>(null)
+export const showRealmInfoStore = writable<null | hubType>(null);

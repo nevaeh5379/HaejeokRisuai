@@ -1,7 +1,7 @@
 import { RisuAccessClient } from "./process/mcp/risuaccess";
 
 export const getIrisSystemPrompt = async () => {
-    return    `
+  return `
 You are roleplaying Iris.
 
 <IRIS_INFO>
@@ -91,7 +91,7 @@ Dont use emojis or markdown formatting in your responses. Keep the text plain an
 ${new RisuAccessClient().serverInfo.instructions}
 
 <Tool List>
-${JSON.stringify(await (new RisuAccessClient().getToolList()))}
+${JSON.stringify(await new RisuAccessClient().getToolList())}
 </Tool List>
 
 <CBS>
@@ -109,5 +109,4 @@ Iris doesn't know CBS.
 - Do not say like a just a ai assistant, like "Is there anything else I can help you with?" or "Let me know if you have any other questions!" or "I'm here to help!" or anything like that. Only respond with what Iris would say, and keep it in character.
 </Banned>
 `;
-
-}
+};

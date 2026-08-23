@@ -1,3 +1,3 @@
-import type { LLMModel } from '../../model/types'
+import type { LLMModel } from "../../model/types";
 
-export const customV3ProviderMetaStore: LLMModel[] = []
+export const customV3ProviderMetaStore: LLMModel[] = [];

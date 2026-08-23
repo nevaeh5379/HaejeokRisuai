@@ -20,19 +20,20 @@
  */
 
 /** Blocks in-app element drags from file-import path */
-export const RISU_APP_INTERNAL_DRAG_TYPE = 'application/x-risu-app-internal-drag'
+export const RISU_APP_INTERNAL_DRAG_TYPE =
+  "application/x-risu-app-internal-drag";
 
 /** TriggerV2 effect reorder */
-export const RISU_EFFECT_DRAG_TYPE = 'application/x-risu-effect-drag'
+export const RISU_EFFECT_DRAG_TYPE = "application/x-risu-effect-drag";
 
 /** Bot preset reorder */
-export const RISU_PRESET_DRAG_TYPE = 'application/x-risu-preset-drag'
+export const RISU_PRESET_DRAG_TYPE = "application/x-risu-preset-drag";
 
 /** Prompt template reorder */
-export const RISU_PROMPT_DRAG_TYPE = 'application/x-risu-prompt-drag'
+export const RISU_PROMPT_DRAG_TYPE = "application/x-risu-prompt-drag";
 
 /** Sidebar character/folder reorder — also checked in App.svelte, hotkey.ts */
-export const RISU_SIDEBAR_DRAG_TYPE = 'application/x-risu-sidebar-drag'
+export const RISU_SIDEBAR_DRAG_TYPE = "application/x-risu-sidebar-drag";
 
 /** TriggerV2 trigger reorder */
-export const RISU_TRIGGER_DRAG_TYPE = 'application/x-risu-trigger-drag'
+export const RISU_TRIGGER_DRAG_TYPE = "application/x-risu-trigger-drag";

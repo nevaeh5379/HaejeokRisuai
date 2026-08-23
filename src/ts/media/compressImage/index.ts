@@ -1,1 +1,1 @@
-export { compressImage } from './compressImage'
+export { compressImage } from "./compressImage";

@@ -1,323 +1,360 @@
-import { get, writable } from "svelte/store"
-import { sleep } from "./util"
-import { language } from "../lang"
-import { isTauri, isNodeServer } from "src/ts/platform"
-import { getDatabase, type MessageGenerationInfo } from "./storage/database.svelte"
-import { alertStore as alertStoreImported } from "./stores.svelte"
+import { get, writable } from "svelte/store";
+import { sleep } from "./util";
+import { language } from "../lang";
+import { isTauri, isNodeServer } from "src/ts/platform";
+import {
+  getDatabase,
+  type MessageGenerationInfo,
+} from "./storage/database.svelte";
+import { alertStore as alertStoreImported } from "./stores.svelte";
 
-export interface alertData{
-    type: 'error'|'normal'|'none'|'ask'|'wait'|'selectChar'
-            |'input'|'toast'|'wait2'|'markdown'|'select'|'login'
-            |'tos'|'cardexport'|'requestdata'|'addchar'|'hypaV2'|'selectModule'
-            |'chatOptions'|'pukmakkurit'|'branches'|'progress'|'pluginconfirm'|'requestlogs',
-    msg: string,
-    submsg?: string
-    datalist?: [string, string][],
-    stackTrace?: string;
-    defaultValue?: string
+export interface alertData {
+  type:
+    | "error"
+    | "normal"
+    | "none"
+    | "ask"
+    | "wait"
+    | "selectChar"
+    | "input"
+    | "toast"
+    | "wait2"
+    | "markdown"
+    | "select"
+    | "login"
+    | "tos"
+    | "cardexport"
+    | "requestdata"
+    | "addchar"
+    | "hypaV2"
+    | "selectModule"
+    | "chatOptions"
+    | "pukmakkurit"
+    | "branches"
+    | "progress"
+    | "pluginconfirm"
+    | "requestlogs";
+  msg: string;
+  submsg?: string;
+  datalist?: [string, string][];
+  stackTrace?: string;
+  defaultValue?: string;
 }
 
 type AlertGenerationInfoStoreData = {
-    genInfo: MessageGenerationInfo,
-    idx: number
-}
-export const alertGenerationInfoStore = writable<AlertGenerationInfoStoreData>(null)
+  genInfo: MessageGenerationInfo;
+  idx: number;
+};
+export const alertGenerationInfoStore =
+  writable<AlertGenerationInfoStoreData>(null);
 export const alertStore = {
-    set: (d:alertData) => {
-        alertStoreImported.set(d)
-    }
-}
+  set: (d: alertData) => {
+    alertStoreImported.set(d);
+  },
+};
 
 export function alertError(msg: string | Error) {
-    console.error(msg)
-    const db = getDatabase()
+  console.error(msg);
+  const db = getDatabase();
 
-    let stackTrace: string | undefined = undefined; 
+  let stackTrace: string | undefined = undefined;
 
-    if (typeof(msg) !== 'string') {
-        try{
-            if (msg instanceof Error) {
-                stackTrace = msg.stack
-                msg = msg.message
-            } else {
-                msg = JSON.stringify(msg)
-            }
-        } catch {
-            msg = `${msg}`
-        }
+  if (typeof msg !== "string") {
+    try {
+      if (msg instanceof Error) {
+        stackTrace = msg.stack;
+        msg = msg.message;
+      } else {
+        msg = JSON.stringify(msg);
+      }
+    } catch {
+      msg = `${msg}`;
     }
+  }
 
-    msg = msg.trim()
+  msg = msg.trim();
 
-    const ignoredErrors = [
-        '{}'
-    ]
+  const ignoredErrors = ["{}"];
 
-    if(ignoredErrors.includes(msg)){
-        return
-    }
+  if (ignoredErrors.includes(msg)) {
+    return;
+  }
 
-    let submsg = ''
+  let submsg = "";
 
-    //check if it's a known error
-    if(msg.includes('Failed to fetch') || msg.includes("NetworkError when attempting to fetch resource.")){
-        submsg =    db.usePlainFetch ? language.errors.networkFetchPlain :
-                    (!isTauri && !isNodeServer) ? language.errors.networkFetchWeb : language.errors.networkFetch
-    }
+  //check if it's a known error
+  if (
+    msg.includes("Failed to fetch") ||
+    msg.includes("NetworkError when attempting to fetch resource.")
+  ) {
+    submsg = db.usePlainFetch
+      ? language.errors.networkFetchPlain
+      : !isTauri && !isNodeServer
+        ? language.errors.networkFetchWeb
+        : language.errors.networkFetch;
+  }
 
-    alertStoreImported.set({
-        'type': 'error',
-        'msg': msg,
-        'submsg': submsg,
-        'stackTrace': stackTrace
-    })
+  alertStoreImported.set({
+    type: "error",
+    msg: msg,
+    submsg: submsg,
+    stackTrace: stackTrace,
+  });
 }
 
-export async function waitAlert(){
-    while(true){
-        if (get(alertStoreImported).type === 'none'){
-            break
-        }
-        await sleep(10)
+export async function waitAlert() {
+  while (true) {
+    if (get(alertStoreImported).type === "none") {
+      break;
     }
+    await sleep(10);
+  }
 }
 
-export function alertNormal(msg:string){
-    alertStoreImported.set({
-        'type': 'normal',
-        'msg': msg
-    })
+export function alertNormal(msg: string) {
+  alertStoreImported.set({
+    type: "normal",
+    msg: msg,
+  });
 }
 
-export async function alertNormalWait(msg:string){
-    alertStoreImported.set({
-        'type': 'normal',
-        'msg': msg
-    })
-    await waitAlert()
+export async function alertNormalWait(msg: string) {
+  alertStoreImported.set({
+    type: "normal",
+    msg: msg,
+  });
+  await waitAlert();
 }
 
 export async function alertAddCharacter() {
-    alertStoreImported.set({
-        'type': 'addchar',
-        'msg': language.addCharacter
-    })
-    await waitAlert()
+  alertStoreImported.set({
+    type: "addchar",
+    msg: language.addCharacter,
+  });
+  await waitAlert();
 
-    return get(alertStoreImported).msg
+  return get(alertStoreImported).msg;
 }
 
 export async function alertChatOptions() {
-    alertStoreImported.set({
-        'type': 'chatOptions',
-        'msg': language.chatOptions
-    })
-    await waitAlert()
+  alertStoreImported.set({
+    type: "chatOptions",
+    msg: language.chatOptions,
+  });
+  await waitAlert();
 
-    return parseInt(get(alertStoreImported).msg)
+  return parseInt(get(alertStoreImported).msg);
 }
 
-export async function alertLogin(){
-    alertStoreImported.set({
-        'type': 'login',
-        'msg': 'login'
-    })
-    await waitAlert()
+export async function alertLogin() {
+  alertStoreImported.set({
+    type: "login",
+    msg: "login",
+  });
+  await waitAlert();
 
-    return get(alertStoreImported).msg
+  return get(alertStoreImported).msg;
 }
 
-export async function alertSelect(msg:string[], display?:string){
-    const message = display !== undefined ? `__DISPLAY__${display}||${msg.join('||')}` : msg.join('||')
-    alertStoreImported.set({
-        'type': 'select',
-        'msg': message
-    })
+export async function alertSelect(msg: string[], display?: string) {
+  const message =
+    display !== undefined
+      ? `__DISPLAY__${display}||${msg.join("||")}`
+      : msg.join("||");
+  alertStoreImported.set({
+    type: "select",
+    msg: message,
+  });
 
-    await waitAlert()
+  await waitAlert();
 
-    return get(alertStoreImported).msg
+  return get(alertStoreImported).msg;
 }
 
-export async function alertErrorWait(msg:string){
-    alertStoreImported.set({
-        'type': 'wait2',
-        'msg': msg
-    })
-    await waitAlert()
+export async function alertErrorWait(msg: string) {
+  alertStoreImported.set({
+    type: "wait2",
+    msg: msg,
+  });
+  await waitAlert();
 }
 
-export function alertMd(msg:string){
-    alertStoreImported.set({
-        'type': 'markdown',
-        'msg': msg
-    })
+export function alertMd(msg: string) {
+  alertStoreImported.set({
+    type: "markdown",
+    msg: msg,
+  });
 }
 
-export function doingAlert(){
-    return get(alertStoreImported).type !== 'none' && get(alertStoreImported).type !== 'toast' && get(alertStoreImported).type !== 'wait' && get(alertStoreImported).type !== 'progress'
+export function doingAlert() {
+  return (
+    get(alertStoreImported).type !== "none" &&
+    get(alertStoreImported).type !== "toast" &&
+    get(alertStoreImported).type !== "wait" &&
+    get(alertStoreImported).type !== "progress"
+  );
 }
 
-export function alertToast(msg:string){
-    alertStoreImported.set({
-        'type': 'toast',
-        'msg': msg
-    })
+export function alertToast(msg: string) {
+  alertStoreImported.set({
+    type: "toast",
+    msg: msg,
+  });
 }
 
-export function alertWait(msg:string){
-    alertStoreImported.set({
-        'type': 'wait',
-        'msg': msg
-    })
-
+export function alertWait(msg: string) {
+  alertStoreImported.set({
+    type: "wait",
+    msg: msg,
+  });
 }
 
-export function alertProgress(msg:string, progress:number|string){
-    const percentStr = typeof progress === 'number'
-        ? Math.min(100, Math.max(0, progress)).toFixed(1)
-        : progress
-    alertStoreImported.set({
-        'type': 'progress',
-        'msg': msg,
-        'submsg': percentStr
-    })
+export function alertProgress(msg: string, progress: number | string) {
+  const percentStr =
+    typeof progress === "number"
+      ? Math.min(100, Math.max(0, progress)).toFixed(1)
+      : progress;
+  alertStoreImported.set({
+    type: "progress",
+    msg: msg,
+    submsg: percentStr,
+  });
 }
 
-
-export function alertClear(){
-    alertStoreImported.set({
-        'type': 'none',
-        'msg': ''
-    })
+export function alertClear() {
+  alertStoreImported.set({
+    type: "none",
+    msg: "",
+  });
 }
 
-export async function alertSelectChar(){
-    alertStoreImported.set({
-        'type': 'selectChar',
-        'msg': ''
-    })
+export async function alertSelectChar() {
+  alertStoreImported.set({
+    type: "selectChar",
+    msg: "",
+  });
 
-    await waitAlert()
+  await waitAlert();
 
-    return get(alertStoreImported).msg
+  return get(alertStoreImported).msg;
 }
 
-export async function alertConfirm(msg:string){
+export async function alertConfirm(msg: string) {
+  alertStoreImported.set({
+    type: "ask",
+    msg: msg,
+  });
 
-    alertStoreImported.set({
-        'type': 'ask',
-        'msg': msg
-    })
+  await waitAlert();
 
-    await waitAlert()
-
-    return get(alertStoreImported).msg === 'yes'
+  return get(alertStoreImported).msg === "yes";
 }
 
-export async function alertPluginConfirm(msg:string){
+export async function alertPluginConfirm(msg: string) {
+  alertStoreImported.set({
+    type: "pluginconfirm",
+    msg: msg,
+  });
 
-    alertStoreImported.set({
-        'type': 'pluginconfirm',
-        'msg': msg
-    })
+  await waitAlert();
 
-    await waitAlert()
-
-    return get(alertStoreImported).msg === 'yes'
+  return get(alertStoreImported).msg === "yes";
 }
 
-export async function alertCardExport(type:string = ''){
+export async function alertCardExport(type: string = "") {
+  alertStoreImported.set({
+    type: "cardexport",
+    msg: "",
+    submsg: type,
+  });
 
-    alertStoreImported.set({
-        'type': 'cardexport',
-        'msg': '',
-        'submsg': type
-    })
+  await waitAlert();
 
-    await waitAlert()
+  return JSON.parse(get(alertStoreImported).msg) as {
+    type: string;
+    type2: string;
+  };
+}
 
-    return JSON.parse(get(alertStoreImported).msg) as {
-        type: string,
-        type2: string,
+export async function alertTOS() {
+  if (localStorage.getItem("tos4") === "true") {
+    return true;
+  }
+
+  alertStoreImported.set({
+    type: "tos",
+    msg: "tos",
+  });
+
+  await waitAlert();
+
+  if (get(alertStoreImported).msg === "yes") {
+    localStorage.setItem("tos4", "true");
+    return true;
+  }
+
+  if (
+    localStorage.getItem("tos2") &&
+    Date.now() - new Date("2026-05-15").getTime() < 0
+  ) {
+    //apply grace period until 2026-05-15 for users who accepted tos2
+    return true;
+  }
+
+  return false;
+}
+
+export async function alertInput(
+  msg: string,
+  datalist?: [string, string][],
+  defaultValue?: string,
+) {
+  alertStoreImported.set({
+    type: "input",
+    msg: msg,
+    datalist: datalist ?? [],
+    defaultValue: defaultValue ?? "",
+  });
+
+  await waitAlert();
+
+  return get(alertStoreImported).msg;
+}
+
+export async function alertModuleSelect() {
+  alertStoreImported.set({
+    type: "selectModule",
+    msg: "",
+  });
+
+  while (true) {
+    if (get(alertStoreImported).type === "none") {
+      break;
     }
+    await sleep(20);
+  }
+
+  return get(alertStoreImported).msg;
 }
 
-export async function alertTOS(){
-
-    if(localStorage.getItem('tos4') === 'true'){
-        return true
-    }
-
-    alertStoreImported.set({
-        'type': 'tos',
-        'msg': 'tos'
-    })
-
-    await waitAlert()
-
-    if(get(alertStoreImported).msg === 'yes'){
-        localStorage.setItem('tos4', 'true')
-        return true
-    }
-
-    if(localStorage.getItem('tos2') && Date.now() - new Date('2026-05-15').getTime() < 0){
-        //apply grace period until 2026-05-15 for users who accepted tos2
-        return true
-    }
-
-    return false
+export function alertRequestData(info: AlertGenerationInfoStoreData) {
+  alertGenerationInfoStore.set(info);
+  alertStoreImported.set({
+    type: "requestdata",
+    msg: info.genInfo.generationId ?? "none",
+  });
 }
 
-export async function alertInput(msg:string, datalist?:[string, string][], defaultValue?:string) {
-
-    alertStoreImported.set({
-        'type': 'input',
-        'msg': msg,
-        'datalist': datalist ?? [],
-        'defaultValue': defaultValue ?? ''
-    })
-
-    await waitAlert()
-
-    return get(alertStoreImported).msg
+export function showHypaV2Alert() {
+  alertStoreImported.set({
+    type: "hypaV2",
+    msg: "",
+  });
 }
 
-export async function alertModuleSelect(){
-
-    alertStoreImported.set({
-        'type': 'selectModule',
-        'msg': ''
-    })
-
-    while(true){
-        if (get(alertStoreImported).type === 'none'){
-            break
-        }
-        await sleep(20)
-    }
-
-    return get(alertStoreImported).msg
-}
-
-export function alertRequestData(info:AlertGenerationInfoStoreData){
-    alertGenerationInfoStore.set(info)
-    alertStoreImported.set({
-        'type': 'requestdata',
-        'msg': info.genInfo.generationId ?? 'none'
-    })
-}
-
-export function showHypaV2Alert(){
-    alertStoreImported.set({
-        'type': 'hypaV2',
-        'msg': ""
-    })
-}
-
-export function alertRequestLogs(){
-    alertStoreImported.set({
-        'type': 'requestlogs',
-        'msg': ''
-    })
+export function alertRequestLogs() {
+  alertStoreImported.set({
+    type: "requestlogs",
+    msg: "",
+  });
 }

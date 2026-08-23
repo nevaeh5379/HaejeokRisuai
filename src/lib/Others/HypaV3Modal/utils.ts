@@ -8,7 +8,7 @@ import { language } from "src/lang";
 
 export async function alertConfirmTwice(
   firstMessage: string,
-  secondMessage: string
+  secondMessage: string,
 ): Promise<boolean> {
   return (
     (await alertConfirm(firstMessage)) && (await alertConfirm(secondMessage))
@@ -22,7 +22,7 @@ export type DualActionParams = {
 
 export function handleDualAction(
   element: HTMLElement,
-  params: DualActionParams = {}
+  params: DualActionParams = {},
 ) {
   const DOUBLE_TAP_DELAY = 300;
 
@@ -87,18 +87,19 @@ export function handleDualAction(
 
 export function getFirstMessage(): string | null {
   const char = characterStore.characters[get(selectedCharID)];
-  const chat = char.chats[characterStore.characters[get(selectedCharID)].chatPage];
+  const chat =
+    char.chats[characterStore.characters[get(selectedCharID)].chatPage];
 
   return chat.fmIndex === -1
     ? char.firstMessage
     : char.alternateGreetings?.[chat.fmIndex]
-    ? char.alternateGreetings[chat.fmIndex]
-    : null;
+      ? char.alternateGreetings[chat.fmIndex]
+      : null;
 }
 
 export async function processRegexScript(
   msg: Message,
-  msgIndex: number = -1
+  msgIndex: number = -1,
 ): Promise<Message> {
   const char = characterStore.characters[get(selectedCharID)];
   const newData: string = (
@@ -109,7 +110,7 @@ export async function processRegexScript(
       msgIndex,
       {
         chatRole: msg.role,
-      }
+      },
     )
   ).data;
 
@@ -119,8 +120,11 @@ export async function processRegexScript(
   };
 }
 
-export function getCategoryName(categoryId: string | undefined, categories: any[]): string {
-  const category = categories.find(c => c.id === (categoryId || ""));
+export function getCategoryName(
+  categoryId: string | undefined,
+  categories: any[],
+): string {
+  const category = categories.find((c) => c.id === (categoryId || ""));
   return category?.name || language.hypaV3Modal.unclassified;
 }
 
@@ -129,10 +133,10 @@ export function createCategoryId(): string {
 }
 
 export function shouldShowSummary(
-  summary: any, 
-  index: number, 
-  showImportantOnly: boolean, 
-  selectedCategoryFilter: string
+  summary: any,
+  index: number,
+  showImportantOnly: boolean,
+  selectedCategoryFilter: string,
 ): boolean {
   if (showImportantOnly && !summary.isImportant) {
     return false;
@@ -154,13 +158,19 @@ export function isGuidLike(str: string): boolean {
   return /^[0-9a-f]{4,12}(-[0-9a-f]{4,12}){0,4}-?$/i.test(strTrimed);
 }
 
-export function parseSelectionInput(input: string, totalCount: number): Set<number> {
+export function parseSelectionInput(
+  input: string,
+  totalCount: number,
+): Set<number> {
   const newSelection = new Set<number>();
-  const parts = input.split(',').map(s => s.trim()).filter(s => s);
+  const parts = input
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s);
 
   for (const part of parts) {
-    if (part.includes('-')) {
-      const [startStr, endStr] = part.split('-').map(s => s.trim());
+    if (part.includes("-")) {
+      const [startStr, endStr] = part.split("-").map((s) => s.trim());
       const start = parseInt(startStr);
       const end = parseInt(endStr);
 

@@ -36,9 +36,9 @@ API 2.1 works like 2.0, mostly compatible and working in same document context, 
 - Document: Direct access to the Document object has been removed. instead, `safeDocument` is provided for secure DOM manipulations. `document` will be redirected to `safeDocument`.
 
 - Storage APIs: Direct access to localStorage, sessionStorage, cookieStorage, and IndexedDB has been removed. instead, `safeLocalStorage`, and `safeIdbFactory` are provided for secure storage operations.
-`localStorage` will be redirected to `safeLocalStorage`, and `indexedDB` will be redirected to `safeIdbFactory`. `sessionStorage` and `cookieStorage` are no longer accessible.
+  `localStorage` will be redirected to `safeLocalStorage`, and `indexedDB` will be redirected to `safeIdbFactory`. `sessionStorage` and `cookieStorage` are no longer accessible.
 
-- Internal APIs: Although it wasn't never intended for plugins to access internal APIs, due to wrongful implementation, internal APIs were accessible. This has been fixed, and plugins can no longer access internal APIs. however, some APIs are added officially for plugin usage, but with limitations. 
+- Internal APIs: Although it wasn't never intended for plugins to access internal APIs, due to wrongful implementation, internal APIs were accessible. This has been fixed, and plugins can no longer access internal APIs. however, some APIs are added officially for plugin usage, but with limitations.
 
 - Now run inside a independent function scope, preventing access to the outer scope.
 
@@ -47,6 +47,7 @@ If your plugin relies on any of the above APIs, you will need to modify your cod
 ### Added APIs
 
 `safeGlobalThis`: A secure version of the global object that plugins can use to access safe APIs and data. contains:
+
 - `console`
 - `TextEncoder`
 - `TextDecoder`
@@ -86,6 +87,7 @@ If your plugin relies on any of the above APIs, you will need to modify your cod
 `safeDocument`: A secure wrapper around the Document object that restricts access to sensitive data and methods. still it can be used to create elements, query elements, and manipulate the DOM. can also be accessed using `document`.
 
 `pluginStorage`: A storage object specific to the plugin, which is shared plugins. unlike `safeLocalStorage`, its data is safed safe file wise, not device wise, making it syncable between devices using the same save file.
+
 - `getItem(key: string): any | null`
 - `setItem(key: string, value: any): void`
 - `removeItem(key: string): void`
@@ -176,10 +178,10 @@ Better-named alternatives to match API naming conventions:
 
 ```javascript
 // Get current character
-await risuai.getCharacter()
+await risuai.getCharacter();
 
 // Set character data
-await risuai.setCharacter(characterData)
+await risuai.setCharacter(characterData);
 ```
 
 #### Argument APIs (v3.0)
@@ -188,10 +190,10 @@ Type-safe argument management:
 
 ```javascript
 // Get a plugin argument by key
-const value = await risuai.getArgument(key)
+const value = await risuai.getArgument(key);
 
 // Set a plugin argument
-await risuai.setArgument(key, value)
+await risuai.setArgument(key, value);
 ```
 
 **Note:** These replace the deprecated `getArg`/`setArg` methods.
@@ -202,13 +204,14 @@ Control the plugin's iframe visibility and display mode:
 
 ```javascript
 // Show the plugin container in fullscreen mode
-risuai.showContainer('fullscreen')
+risuai.showContainer("fullscreen");
 
 // Hide the plugin container
-risuai.hideContainer()
+risuai.hideContainer();
 ```
 
 When shown in fullscreen mode:
+
 - The iframe is moved to document.body
 - Positioned fixed at top-left (0, 0)
 - Sized to 100% width and height
@@ -221,15 +224,15 @@ Access the main document through a secure wrapper:
 
 ```javascript
 // Get the root document (returns SafeDocument)
-const rootDoc = risuai.getRootDocument()
+const rootDoc = risuai.getRootDocument();
 
 // Create elements
-const div = rootDoc.createElement('div')
-const anchor = rootDoc.createAnchorElement('https://example.com')
+const div = rootDoc.createElement("div");
+const anchor = rootDoc.createAnchorElement("https://example.com");
 
 // Query elements
-const element = rootDoc.querySelector('.some-class')
-const elements = rootDoc.querySelectorAll('div')
+const element = rootDoc.querySelector(".some-class");
+const elements = rootDoc.querySelectorAll("div");
 ```
 
 #### SafeElement API
@@ -237,107 +240,116 @@ const elements = rootDoc.querySelectorAll('div')
 The `SafeElement` class provides secure DOM manipulation with restricted access to prevent security vulnerabilities:
 
 ##### Element Manipulation
+
 ```javascript
 // Append/remove/replace children
-element.appendChild(childElement)
-element.removeChild(childElement)
-element.replaceChild(newChild, oldChild)
-element.replaceWith(newElement)
-element.prepend(childElement)
-element.remove()
+element.appendChild(childElement);
+element.removeChild(childElement);
+element.replaceChild(newChild, oldChild);
+element.replaceWith(newElement);
+element.prepend(childElement);
+element.remove();
 
 // Clone nodes
-const cloned = element.cloneNode(deep)
+const cloned = element.cloneNode(deep);
 ```
 
 ##### Text Content
+
 ```javascript
 // Get text content
-const text = element.innerText()
-const content = element.textContent()
+const text = element.innerText();
+const content = element.textContent();
 
 // Set text content
-element.setInnerText('Hello World')
-element.setTextContent('Hello World')
+element.setInnerText("Hello World");
+element.setTextContent("Hello World");
 ```
 
 ##### Attributes (Restricted)
+
 ```javascript
 // Only 'x-' prefixed attributes allowed for security
-element.setAttribute('x-custom-id', 'value')
-const value = element.getAttribute('x-custom-id')
+element.setAttribute("x-custom-id", "value");
+const value = element.getAttribute("x-custom-id");
 ```
 
 **Security Note:** Only attributes starting with `x-` can be get/set directly. Use dedicated methods for other attributes.
 
 ##### Styling
+
 ```javascript
 // Style properties
-element.setStyle('color', 'red')
-const color = element.getStyle('color')
+element.setStyle("color", "red");
+const color = element.getStyle("color");
 
 // Style attribute
-element.setStyleAttribute('color: red; font-size: 16px')
-const styleStr = element.getStyleAttribute()
+element.setStyleAttribute("color: red; font-size: 16px");
+const styleStr = element.getStyleAttribute();
 
 // CSS classes
-element.addClass('active')
-element.removeClass('inactive')
-element.setClassName('container active')
-const className = element.getClassName()
-const hasClass = element.hasClass('active')
+element.addClass("active");
+element.removeClass("inactive");
+element.setClassName("container active");
+const className = element.getClassName();
+const hasClass = element.hasClass("active");
 ```
 
 ##### HTML Content (Sanitized)
+
 ```javascript
 // Get HTML
-const inner = element.getInnerHTML()
-const outer = element.getOuterHTML()
+const inner = element.getInnerHTML();
+const outer = element.getOuterHTML();
 
 // Set HTML (automatically sanitized with DOMPurify)
-element.setInnerHTML('<div>Safe HTML</div>')
-element.setOuterHTML('<span>Safe HTML</span>')
+element.setInnerHTML("<div>Safe HTML</div>");
+element.setOuterHTML("<span>Safe HTML</span>");
 
 //This won't work expected
-element.setInnerHTML('<script>alert("XSS")</script>') // script tag will be removed
+element.setInnerHTML('<script>alert("XSS")</script>'); // script tag will be removed
 ```
 
 ##### Traversal and Querying
+
 ```javascript
 // Navigation
-const children = element.getChildren()
-const parent = element.getParent()
+const children = element.getChildren();
+const parent = element.getParent();
 
 // Querying
-const matches = element.querySelectorAll('.child-class')
-const single = element.querySelector('#child-id')
-const byId = element.getElementById('some-id')
-const byClass = element.getElementsByClassName('some-class')
+const matches = element.querySelectorAll(".child-class");
+const single = element.querySelector("#child-id");
+const byId = element.getElementById("some-id");
+const byClass = element.getElementsByClassName("some-class");
 
 // Matching
-const matches = element.matches('.some-selector')
+const matches = element.matches(".some-selector");
 ```
 
 ##### Dimensions and Position
-```javascript
-const height = element.clientHeight()
-const width = element.clientWidth()
-const top = element.clientTop()
-const left = element.clientLeft()
 
-const rects = element.getClientRects()
-const rect = element.getBoundingClientRect()
+```javascript
+const height = element.clientHeight();
+const width = element.clientWidth();
+const top = element.clientTop();
+const left = element.clientLeft();
+
+const rects = element.getClientRects();
+const rect = element.getBoundingClientRect();
 ```
 
 ##### Node Information
+
 ```javascript
-const name = element.nodeName()
-const type = element.nodeType()
+const name = element.nodeName();
+const type = element.nodeType();
 ```
 
 ##### Focus
+
 ```javascript
-element.focus()
+element.focus();
 ```
 
 ##### Event Listeners
@@ -346,20 +358,26 @@ Event listeners have security restrictions to prevent fingerprinting and malicio
 
 ```javascript
 // Add event listener (returns unique ID)
-const listenerId = await element.addEventListener('click', (event) => {
-  console.log('Clicked!', event)
-}, options)
+const listenerId = await element.addEventListener(
+  "click",
+  (event) => {
+    console.log("Clicked!", event);
+  },
+  options,
+);
 
 // Remove event listener
-element.removeEventListener('click', listenerId, options)
+element.removeEventListener("click", listenerId, options);
 ```
 
 **Allowed Events (unlimited):**
+
 - Mouse events: `click`, `dblclick`, `contextmenu`, `mousedown`, `mouseup`, `mousemove`, `mouseover`, `mouseleave`
 - Pointer events: `pointercancel`, `pointerdown`, `pointerenter`, `pointerleave`, `pointermove`, `pointerout`, `pointerover`, `pointerup`
 - Scroll events: `scroll`, `scrollend`
 
 **Allowed Events (with random delay for fingerprinting protection):**
+
 - Keyboard events: `keydown`, `keyup`, `keypress`
 
 These events are delayed by a random number of milliseconds to prevent timing-based fingerprinting attacks.
@@ -372,14 +390,15 @@ Extends `SafeElement` with document-specific methods:
 
 ```javascript
 // Create regular elements (restricted to whitelist)
-const div = safeDoc.createElement('div')
-const span = safeDoc.createElement('span')
+const div = safeDoc.createElement("div");
+const span = safeDoc.createElement("span");
 
 // Create anchor elements (with URL validation)
-const link = safeDoc.createAnchorElement('https://example.com')
+const link = safeDoc.createAnchorElement("https://example.com");
 ```
 
 **Security Features:**
+
 - Only whitelisted HTML tags can be created
 - Non-whitelisted tags are replaced with `<div>`
 - Anchor elements validate URLs (only http/https protocols allowed)
@@ -392,22 +411,23 @@ Monitor DOM changes safely:
 ```javascript
 // Create mutation observer
 const observer = risuai.createMutationObserver((mutations) => {
-  mutations.forEach(mutation => {
-    console.log('Type:', mutation.type)
-    console.log('Target:', mutation.target)
-    console.log('Added nodes:', mutation.addedNodes)
-  })
-})
+  mutations.forEach((mutation) => {
+    console.log("Type:", mutation.type);
+    console.log("Target:", mutation.target);
+    console.log("Added nodes:", mutation.addedNodes);
+  });
+});
 
 // Start observing
 observer.observe(element, {
   childList: true,
   subtree: true,
-  attributes: true
-})
+  attributes: true,
+});
 ```
 
 **Mutation Record Properties:**
+
 - `type`: Type of mutation ('attributes', 'childList', etc.)
 - `target`: SafeElement that was modified
 - `addedNodes`: Array of added SafeElement nodes
@@ -419,27 +439,31 @@ Register custom UI elements:
 ```javascript
 // Register a settings menu item
 risuai.registerSetting(
-  'My Plugin Settings',
+  "My Plugin Settings",
   () => {
     // Callback when clicked
-    risuai.showContainer('fullscreen')
+    risuai.showContainer("fullscreen");
   },
-  '<svg>...</svg>', // Optional icon
-  'html' // Icon type: 'html', 'img', or 'none'
-)
+  "<svg>...</svg>", // Optional icon
+  "html", // Icon type: 'html', 'img', or 'none'
+);
 
 // Register a floating action button
-risuai.registerButton({
-    name: 'My Action',
-    icon: 'https://example.com/icon.png', // Optional icon
-    iconType: 'img', // Icon type: 'html', 'img', or 'none'
-    location: 'action'
-}, () => {
-      // Callback when clicked
-})
+risuai.registerButton(
+  {
+    name: "My Action",
+    icon: "https://example.com/icon.png", // Optional icon
+    iconType: "img", // Icon type: 'html', 'img', or 'none'
+    location: "action",
+  },
+  () => {
+    // Callback when clicked
+  },
+);
 ```
 
 **Parameters:**
+
 - `name`: Display name (required, non-empty string)
 - `callback`: Function to call when activated
 - `icon`: Icon content (HTML string or image URL)
@@ -450,7 +474,7 @@ risuai.registerButton({
 Centralized logging with plugin identification:
 
 ```javascript
-console.log('This is a log message')
+console.log("This is a log message");
 // Output: [Risuai Plugin: YourPluginName] This is a log message
 ```
 
@@ -458,17 +482,17 @@ console.log('This is a log message')
 
 ```javascript
 // API version
-console.log(risuai.apiVersion) // "3.0"
+console.log(risuai.apiVersion); // "3.0"
 
 // Compatible versions
-console.log(risuai.apiVersionCompatibleWith) // ["3.0"]
+console.log(risuai.apiVersionCompatibleWith); // ["3.0"]
 ```
 
 #### Internal Methods
 
 ```javascript
 // Get legacy API keys (for debugging/compatibility checking)
-const oldKeys = risuai._getOldKeys()
+const oldKeys = risuai._getOldKeys();
 ```
 
 **Note:** Methods prefixed with `_` are internal and subject to change without notice.
@@ -479,13 +503,13 @@ Plugins can intercept Text-to-Speech both before synthesis (transform the text) 
 
 ```javascript
 await risuai.addTTSPreprocessor(async (ctx) => {
-  return { text: ctx.text + ' (via plugin)' }
-})
+  return { text: ctx.text + " (via plugin)" };
+});
 
 await risuai.addTTSPostprocessor(async (ctx) => {
   // ctx.audio is the raw encoded bytes; decode to PCM if needed.
   // Return { audio, mimeType } to swap, { skip: true } to suppress playback.
-})
+});
 ```
 
 Sequential pipeline with error isolation, no enforced timeout (same trust model as `addRisuScriptHandler`), no permission prompt, auto-unregister on plugin unload. See `plugins.md` (Advanced Features → TTS Hooks) for the full reference.
@@ -517,141 +541,148 @@ API v3.0 implements multiple security layers:
 #### Migration Steps
 
 1. **Update API declaration:**
+
    ```javascript
    //@api 3.0
    ```
 
 2. **Access APIs through `risuai` object:**
+
    ```javascript
    // Old (v2.0 / v2.1)
-   const db = getDatabase()
+   const db = getDatabase();
 
    // New (v3.0)
-   const db = await risuai.getDatabase()
+   const db = await risuai.getDatabase();
    ```
-
 
 3. **Migrate DOM Modal to Iframe:**
    ```javascript
    // Old (v2.0 / v2.1)
    // Build your Modal at main document
-   const container = document.createElement('div')
-   container.style.innerHTML = '<h1>Hello World Modal</h1>'
-   document.body.appendChild(container)
+   const container = document.createElement("div");
+   container.style.innerHTML = "<h1>Hello World Modal</h1>";
+   document.body.appendChild(container);
 
    // New (v3.0)
    // Build your UI inside the iframe context
 
    //looks same in this example, but its inside the iframe now!
-   const container = document.createElement('div')
-   container.style.innerHTML = '<h1>Hello World Modal</h1>'
+   const container = document.createElement("div");
+   container.style.innerHTML = "<h1>Hello World Modal</h1>";
 
    //don't forget to show the iframe container when needed
-   risuai.showContainer('fullscreen')
+   risuai.showContainer("fullscreen");
    ```
 
 3-1. **Migrate Settings UI Registration:**
-   ```javascript
-   // Old (v2.0 / v2.1)
-   // This was one of the hacky way to build settings button
-    const observer = new MutationObserver(() => {
-      const menu = document.querySelector('.rs-setting-cont-3')
-      if (menu && !document.querySelector('.my-plugin-settings')) {
-        const button = document.createElement('div')
-        button.className = 'my-plugin-settings'
-        button.innerHTML = '⚙️ My Plugin Settings'
-        button.onclick = () => {
-          // Build your Modal at main document...
-        }
-        menu.appendChild(button)
-      }
-    })
-  observer.observe(document.body, { childList: true, subtree: true })
 
+```javascript
+// Old (v2.0 / v2.1)
+// This was one of the hacky way to build settings button
+const observer = new MutationObserver(() => {
+  const menu = document.querySelector(".rs-setting-cont-3");
+  if (menu && !document.querySelector(".my-plugin-settings")) {
+    const button = document.createElement("div");
+    button.className = "my-plugin-settings";
+    button.innerHTML = "⚙️ My Plugin Settings";
+    button.onclick = () => {
+      // Build your Modal at main document...
+    };
+    menu.appendChild(button);
+  }
+});
+observer.observe(document.body, { childList: true, subtree: true });
 
-   // New (v3.0)
-   // Now its officially supported to register settings button
-   risuai.registerSetting(
-     'My Plugin Settings',
-     () => {
-       risuai.showContainer('fullscreen')
-       // Build your UI inside the iframe...
-     },
-     '⚙️',
-     'html'
-   )
-   ```
+// New (v3.0)
+// Now its officially supported to register settings button
+risuai.registerSetting(
+  "My Plugin Settings",
+  () => {
+    risuai.showContainer("fullscreen");
+    // Build your UI inside the iframe...
+  },
+  "⚙️",
+  "html",
+);
+```
 
 3-2. **Migrate Action Button Registration:**
-   ```javascript
-   // Old (v2.0 / v2.1)
-   // This was one of the hacky way to build floating action button
-   setInterval(() => {
-     if (!document.querySelector('.my-plugin-action-button')) {
-       const button = document.createElement('div')
-       button.style.position = 'fixed'
-       button.style.top = '10px'
-       button.style.right = '10px'
-       button.style.zIndex = '1000'
-       button.innerHTML = '<img src="https://example.com/icon.png" />'
-        button.className = 'my-plugin-action-button'
-       button.onclick = () => {
-         // Your action here...
-       }
-       document.body.appendChild(button)
-     }
-   },100)
 
-   // New (v3.0)
-   // Now its officially supported to register action buttons
-   risuai.registerButton({
-       name: 'My Action',
-       icon: 'https://example.com/icon.png',
-       iconType: 'img',
-       location: 'action'
-   }, () => {
+```javascript
+// Old (v2.0 / v2.1)
+// This was one of the hacky way to build floating action button
+setInterval(() => {
+  if (!document.querySelector(".my-plugin-action-button")) {
+    const button = document.createElement("div");
+    button.style.position = "fixed";
+    button.style.top = "10px";
+    button.style.right = "10px";
+    button.style.zIndex = "1000";
+    button.innerHTML = '<img src="https://example.com/icon.png" />';
+    button.className = "my-plugin-action-button";
+    button.onclick = () => {
       // Your action here...
-   })
-   ```
+    };
+    document.body.appendChild(button);
+  }
+}, 100);
+
+// New (v3.0)
+// Now its officially supported to register action buttons
+risuai.registerButton(
+  {
+    name: "My Action",
+    icon: "https://example.com/icon.png",
+    iconType: "img",
+    location: "action",
+  },
+  () => {
+    // Your action here...
+  },
+);
+```
 
 3-3. **Or use getRootDocument for main DOM access:**
 
-   Note: We recommend building your UI inside the iframe using standard Document APIs, and using `registerSetting`/`registerButton` for UI integration. however, if you really need to access the main document, use `getRootDocument()`. we don't recommend using this method for building UIs, since it adds more restrictions and complexity.
+Note: We recommend building your UI inside the iframe using standard Document APIs, and using `registerSetting`/`registerButton` for UI integration. however, if you really need to access the main document, use `getRootDocument()`. we don't recommend using this method for building UIs, since it adds more restrictions and complexity.
 
-   ```javascript
-   // Old (v2.0 / v2.1)
-   const element = document.querySelector('.my-class')
+```javascript
+// Old (v2.0 / v2.1)
+const element = document.querySelector(".my-class");
 
-   // New (v3.0)
-   const doc = risuai.getRootDocument()
-   const element = doc.querySelector('.my-class')
-   ```
+// New (v3.0)
+const doc = risuai.getRootDocument();
+const element = doc.querySelector(".my-class");
+```
 
 4. **Handle SafeElement instead of HTMLElement:**
+
    ```javascript
    // Old (v2.0 / v2.1)
-   element.style.color = 'red'
+   element.style.color = "red";
 
    // New (v3.0)
-   element.setStyle('color', 'red')
+   element.setStyle("color", "red");
    ```
 
 5. **Use async/await for all API calls:**
+
    ```javascript
    // Old (v2.0 / v2.1)
-   const char = getChar()
+   const char = getChar();
 
    // New (v3.0)
-   const char = await risuai.getCharacter()
+   const char = await risuai.getCharacter();
    ```
 
 6. **Update event listeners:**
    ```javascript
    // Old (v2.0 / v2.1)
-   element.addEventListener('click', handler)
+   element.addEventListener("click", handler);
 
    // New (v3.0)
-   const id = await element.addEventListener('click', handler)
+   const id = await element.addEventListener("click", handler);
    // Store id for later removal
    ```
 
@@ -673,46 +704,46 @@ API v3.0 implements multiple security layers:
 (async () => {
   try {
     // Log plugin start
-    console.log('Plugin initialized')
+    console.log("Plugin initialized");
 
     // Register a settings button
     risuai.registerSetting(
-      'My Plugin Settings',
+      "My Plugin Settings",
       async () => {
-        risuai.showContainer('fullscreen')
+        risuai.showContainer("fullscreen");
         // Build UI in iframe...
       },
-      '⚙️',
-      'html'
-    )
+      "⚙️",
+      "html",
+    );
 
     // Access main document
-    const doc = risuai.getRootDocument()
+    const doc = risuai.getRootDocument();
 
     // Monitor changes
     const observer = risuai.createMutationObserver((mutations) => {
-      console.log(`Detected ${mutations.length} mutations`)
-    })
+      console.log(`Detected ${mutations.length} mutations`);
+    });
 
-    const body = doc.querySelector('body')
+    const body = doc.querySelector("body");
     if (body) {
-      observer.observe(body, { childList: true, subtree: true })
+      observer.observe(body, { childList: true, subtree: true });
     }
 
     // Get/set data
-    const setting = await risuai.getArgument('mySetting')
+    const setting = await risuai.getArgument("mySetting");
     if (!setting) {
-      await risuai.setArgument('mySetting', 'defaultValue')
+      await risuai.setArgument("mySetting", "defaultValue");
     }
 
     // Use plugin storage
-    risuai.pluginStorage.setItem('lastRun', Date.now())
+    risuai.pluginStorage.setItem("lastRun", Date.now());
 
-    console.log('Plugin setup complete')
+    console.log("Plugin setup complete");
   } catch (error) {
-    console.log(`Error: ${error.message}`)
+    console.log(`Error: ${error.message}`);
   }
-})()
+})();
 ```
 
 ### Making Your Plugin Compatible with 2.0, 2.1, and 3.0
@@ -726,17 +757,16 @@ first, declare the api version at the top of your plugin script:
 This will make the software load the plugin in the highest supported api version. then, you can use feature detection to check which api version is currently running, and adjust your code accordingly:
 
 ```javascript
-
 (async () => {
-
   //This works in all api versions, except 1.0, which is deprecated long ago
-  const apiVersion = (typeof risuai !== 'undefined' ? risuai.apiVersion : apiVersion) || '2.0'
+  const apiVersion =
+    (typeof risuai !== "undefined" ? risuai.apiVersion : apiVersion) || "2.0";
 
-  if (apiVersion === '3.0') {
+  if (apiVersion === "3.0") {
     // Use API v3.0 features
     const doc = risuai.getRootDocument();
     // ...
-  } else if (apiVersion === '2.1') {
+  } else if (apiVersion === "2.1") {
     // Use API v2.1 features
     const doc = safeDocument;
     // ...
@@ -750,9 +780,9 @@ This will make the software load the plugin in the highest supported api version
 
 # Deprecation Schedule
 
-| Version | Deprecation Date | Notes |
-|---------|------------------|-------|
-| 1.0    | Already Deprecated | No longer supported, plugins using this version will not work in current versions. |
-| 2.0     | After Account System Release | Transitional support for legacy plugins, it will quickly be deprecated after account system release. |
-| 2.1     | Unknown (Long-term support) | Will be supported for a long time for compatibility, but security warnings will be shown after 2.0 deprecation. |
-| 3.0     | N/A              | Recommended version for new plugins, will be supported indefinitely, unless major security issues arise. |
+| Version | Deprecation Date             | Notes                                                                                                           |
+| ------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 1.0     | Already Deprecated           | No longer supported, plugins using this version will not work in current versions.                              |
+| 2.0     | After Account System Release | Transitional support for legacy plugins, it will quickly be deprecated after account system release.            |
+| 2.1     | Unknown (Long-term support)  | Will be supported for a long time for compatibility, but security warnings will be shown after 2.0 deprecation. |
+| 3.0     | N/A                          | Recommended version for new plugins, will be supported indefinitely, unless major security issues arise.        |

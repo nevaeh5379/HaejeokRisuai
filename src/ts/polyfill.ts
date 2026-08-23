@@ -1,5 +1,5 @@
-import { Buffer as BufferPolyfill } from 'buffer'
-import rfdc from 'rfdc'
+import { Buffer as BufferPolyfill } from "buffer";
+import rfdc from "rfdc";
 import { isIOS } from "./platform";
 /**
  * Polyfill for structuredClone.
@@ -7,48 +7,53 @@ import { isIOS } from "./platform";
  */
 
 const rfdcClone = rfdc({
-  circles:false,
-})
-export function safeStructuredClone<T>(data:T):T{
+  circles: false,
+});
+export function safeStructuredClone<T>(data: T): T {
   try {
-      return structuredClone(data)
+    return structuredClone(data);
   } catch (error) {
-      return rfdcClone(data)
+    return rfdcClone(data);
   }
 }
 
 try {
-    const testDom = document.createElement('div');
-    const supports  = ('draggable' in testDom) || ('ondragstart' in testDom && 'ondrop' in testDom);
-    testDom.remove()
-    
-    if((!supports) || isIOS()){
-      globalThis.polyfilledDragDrop = true
-      void Promise.all([
-        import('mobile-drag-drop'),
-        import('mobile-drag-drop/scroll-behaviour')
-      ]).then(([{ polyfill }, { scrollBehaviourDragImageTranslateOverride }]) => {
-        polyfill({
-          dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride,
-          forceApply: true
-        })
-      })
-    }
-} catch (error) {
-    
-}
+  const testDom = document.createElement("div");
+  const supports =
+    "draggable" in testDom || ("ondragstart" in testDom && "ondrop" in testDom);
+  testDom.remove();
 
-globalThis.safeStructuredClone = safeStructuredClone
+  if (!supports || isIOS()) {
+    globalThis.polyfilledDragDrop = true;
+    void Promise.all([
+      import("mobile-drag-drop"),
+      import("mobile-drag-drop/scroll-behaviour"),
+    ]).then(([{ polyfill }, { scrollBehaviourDragImageTranslateOverride }]) => {
+      polyfill({
+        dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride,
+        forceApply: true,
+      });
+    });
+  }
+} catch (error) {}
 
-globalThis.Buffer = BufferPolyfill
+globalThis.safeStructuredClone = safeStructuredClone;
 
-if (!globalThis.ReadableStream || !globalThis.WritableStream || !globalThis.TransformStream) {
-  void import('web-streams-polyfill/ponyfill/es2018').then(({ ReadableStream, WritableStream, TransformStream }) => {
-    // @ts-expect-error ponyfill stream types differ slightly from the DOM declarations
-    globalThis.WritableStream ??= WritableStream
-    // @ts-expect-error ponyfill stream types differ slightly from the DOM declarations
-    globalThis.ReadableStream ??= ReadableStream
-    // @ts-expect-error ponyfill stream types differ slightly from the DOM declarations
-    globalThis.TransformStream ??= TransformStream
-  })
+globalThis.Buffer = BufferPolyfill;
+
+if (
+  !globalThis.ReadableStream ||
+  !globalThis.WritableStream ||
+  !globalThis.TransformStream
+) {
+  void import("web-streams-polyfill/ponyfill/es2018").then(
+    ({ ReadableStream, WritableStream, TransformStream }) => {
+      // @ts-expect-error ponyfill stream types differ slightly from the DOM declarations
+      globalThis.WritableStream ??= WritableStream;
+      // @ts-expect-error ponyfill stream types differ slightly from the DOM declarations
+      globalThis.ReadableStream ??= ReadableStream;
+      // @ts-expect-error ponyfill stream types differ slightly from the DOM declarations
+      globalThis.TransformStream ??= TransformStream;
+    },
+  );
 }

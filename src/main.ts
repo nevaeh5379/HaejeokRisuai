@@ -4,22 +4,23 @@ import App from "./App.svelte";
 import { preLoadCheck } from "./preload";
 import { mount } from "svelte";
 
-window.addEventListener('vite:preloadError', (event) => {
-    console.error("Chunk load error detected:", event);
-    alert("The server has been updated or the network connection has been lost. Please refresh the page.");
+window.addEventListener("vite:preloadError", (event) => {
+  console.error("Chunk load error detected:", event);
+  alert(
+    "The server has been updated or the network connection has been lost. Please refresh the page.",
+  );
 });
 
-preLoadCheck()
+preLoadCheck();
 let app = mount(App, {
-    target: document.getElementById("app"),
+  target: document.getElementById("app"),
 });
-void Promise.all([
-    import("./ts/bootstrap"),
-    import("./ts/hotkey")
-]).then(([{ loadData }, { initHotkey }]) => {
-    initHotkey()
-    return loadData()
-})
-document.getElementById('preloading').remove()
+void Promise.all([import("./ts/bootstrap"), import("./ts/hotkey")]).then(
+  ([{ loadData }, { initHotkey }]) => {
+    initHotkey();
+    return loadData();
+  },
+);
+document.getElementById("preloading").remove();
 
 export default app;

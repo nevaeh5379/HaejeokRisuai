@@ -6,49 +6,51 @@ import type { MCPTool, RPCToolCallContent } from "./mcplib";
 //Original MCPClient is located in src/ts/process/mcp/mcplib.ts
 
 export class MCPClientLike {
-    url: string;
-    serverInfo: {
-        protocolVersion: string;
-        capabilities: {
-            [key: string]: any;
-        };
-        serverInfo: {
-            name: string;
-            version: string;
-        };
-        instructions?: string;
+  url: string;
+  serverInfo: {
+    protocolVersion: string;
+    capabilities: {
+      [key: string]: any;
     };
+    serverInfo: {
+      name: string;
+      version: string;
+    };
+    instructions?: string;
+  };
 
-    constructor(url: string) {
-        this.url = url;
-        this.serverInfo = {
-            protocolVersion: "2025-03-26",
-            capabilities: {
-                tools: {}
-            },
-            serverInfo: {
-                name: "Internal Tool",
-                version: "1.0.0"
-            }
-        };
-    }
+  constructor(url: string) {
+    this.url = url;
+    this.serverInfo = {
+      protocolVersion: "2025-03-26",
+      capabilities: {
+        tools: {},
+      },
+      serverInfo: {
+        name: "Internal Tool",
+        version: "1.0.0",
+      },
+    };
+  }
 
-    async checkHandshake() {
-        return this.serverInfo;
-    }
+  async checkHandshake() {
+    return this.serverInfo;
+  }
 
-    async getToolList(): Promise<MCPTool[]> {
-        return [];
-    }
+  async getToolList(): Promise<MCPTool[]> {
+    return [];
+  }
 
-    async callTool(toolName: string, args: any): Promise<RPCToolCallContent[]> {
-        return [{
-            type: 'text',
-            text: `Tool ${toolName} not implemented`
-        }];
-    }
+  async callTool(toolName: string, args: any): Promise<RPCToolCallContent[]> {
+    return [
+      {
+        type: "text",
+        text: `Tool ${toolName} not implemented`,
+      },
+    ];
+  }
 
-    destroy() {
-        // No cleanup needed for internal tools
-    }
+  destroy() {
+    // No cleanup needed for internal tools
+  }
 }

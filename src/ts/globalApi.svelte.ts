@@ -1,571 +1,623 @@
 import {
-    writeFile,
-    BaseDirectory,
-    readFile,
-    exists,
-    mkdir,
-    readDir,
-    remove
-} from "@tauri-apps/plugin-fs"
-import { changeFullscreen, checkNullish, sleep } from "./util"
-import { convertFileSrc, invoke } from "@tauri-apps/api/core"
-import { v4 as uuidv4 } from 'uuid';
+  writeFile,
+  BaseDirectory,
+  readFile,
+  exists,
+  mkdir,
+  readDir,
+  remove,
+} from "@tauri-apps/plugin-fs";
+import { changeFullscreen, checkNullish, sleep } from "./util";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { v4 as uuidv4 } from "uuid";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { get } from "svelte/store";
-import { open } from '@tauri-apps/plugin-shell';
-import { setDatabase, type Database, defaultSdDataFunc, getDatabase, appVer, getCurrentCharacter, type character, type groupChat, appSubVer } from "./storage/database.svelte";
+import { open } from "@tauri-apps/plugin-shell";
+import {
+  setDatabase,
+  type Database,
+  defaultSdDataFunc,
+  getDatabase,
+  appVer,
+  getCurrentCharacter,
+  type character,
+  type groupChat,
+  appSubVer,
+} from "./storage/database.svelte";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { checkRisuUpdate } from "./update";
-import { MobileGUI, botMakerMode, selectedCharID, loadedStore, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, saving } from "./stores.svelte";
+import {
+  MobileGUI,
+  botMakerMode,
+  selectedCharID,
+  loadedStore,
+  LoadingStatusState,
+  selIdState,
+  ReloadGUIPointer,
+  bodyIntercepterStore,
+  saving,
+} from "./stores.svelte";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import { moduleStore } from "./stores/domain/moduleStore.svelte";
 import { characterStore } from "./stores/domain/characterStore.svelte";
-import { alertConfirm, alertError, alertMd, alertNormal, alertSelect, alertTOS, waitAlert } from "./alert";
+import {
+  alertConfirm,
+  alertError,
+  alertMd,
+  alertNormal,
+  alertSelect,
+  alertTOS,
+  waitAlert,
+} from "./alert";
 import { hasher } from "./hash";
-import { hubURL } from './hub';
-import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
+import { hubURL } from "./hub";
+import {
+  defaultJailbreak,
+  defaultMainPrompt,
+  oldJailbreak,
+  oldMainPrompt,
+} from "./storage/defaultPrompts";
 import { loadRisuAccountData } from "./drive/accounter";
 import { decodeRisuSave, encodeRisuSaveLegacy } from "./storage/risuSave";
 import { AutoStorage } from "./storage/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
 import { save } from "@tauri-apps/plugin-dialog";
-import { listen } from '@tauri-apps/api/event'
+import { listen } from "@tauri-apps/api/event";
 import { language } from "src/lang";
 import { startObserveDom } from "./observer.svelte";
 import { updateGuisize } from "./gui/guisize";
 import { initMobileGesture } from "./hotkey";
-import { fetch as TauriHTTPFetch } from '@tauri-apps/plugin-http';
+import { fetch as TauriHTTPFetch } from "@tauri-apps/plugin-http";
 import type { AccountStorage } from "./storage/accountStorage";
 import { isTauri, isNodeServer } from "./platform";
 import { isLocalNetworkUrl } from "./network/localNetwork";
-import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from "./network/proxyJobWs";
 import {
-    getNodeServerProxyAuth,
-    NodeStorage,
-} from "./storage/nodeStorage";
+  decodeProxyJobWsChunk,
+  formatProxyStreamErrorMessage,
+  parseProxyJobWsEvent,
+} from "./network/proxyJobWs";
+import { getNodeServerProxyAuth, NodeStorage } from "./storage/nodeStorage";
 import { generateClientThumbnail } from "./media/thumbnail";
 import { getMimeType } from "./media/mimeType";
 import { BoundedCache } from "./memory/boundedCache";
 import { releaseInactiveChatMessages } from "./stores/domain/messageStore.svelte";
 
-export const forageStorage = new AutoStorage()
+export const forageStorage = new AutoStorage();
 
-const appWindow = isTauri ? getCurrentWebviewWindow() : null
+const appWindow = isTauri ? getCurrentWebviewWindow() : null;
 
 interface fetchLog {
-    body: string
-    header: string
-    response: string
-    success: boolean,
-    date: string
-    url: string
-    responseType?: string
-    chatId?: string
-    status?: number
+  body: string;
+  header: string;
+  response: string;
+  success: boolean;
+  date: string;
+  url: string;
+  responseType?: string;
+  chatId?: string;
+  status?: number;
 }
 
-let fetchLog: fetchLog[] = []
+let fetchLog: fetchLog[] = [];
 
-export async function downloadFile(name: string, dat: Uint8Array | ArrayBuffer | string) {
-    if (typeof (dat) === 'string') {
-        dat = Buffer.from(dat, 'utf-8')
-    }
-    const data = new Uint8Array(dat)
-    const downloadURL = (data: string, fileName: string) => {
-        const a = document.createElement('a')
-        a.href = data
-        a.download = fileName
-        document.body.appendChild(a)
-        a.style.display = 'none'
-        a.click()
-        a.remove()
-    }
+export async function downloadFile(
+  name: string,
+  dat: Uint8Array | ArrayBuffer | string,
+) {
+  if (typeof dat === "string") {
+    dat = Buffer.from(dat, "utf-8");
+  }
+  const data = new Uint8Array(dat);
+  const downloadURL = (data: string, fileName: string) => {
+    const a = document.createElement("a");
+    a.href = data;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.style.display = "none";
+    a.click();
+    a.remove();
+  };
 
-    if (isTauri) {
-        await writeFile(name, data, { baseDir: BaseDirectory.Download })
-    }
-    else {
-        const blob = new Blob([data], { type: 'application/octet-stream' })
-        const url = URL.createObjectURL(blob)
+  if (isTauri) {
+    await writeFile(name, data, { baseDir: BaseDirectory.Download });
+  } else {
+    const blob = new Blob([data], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
 
-        downloadURL(url, name)
+    downloadURL(url, name);
 
-        setTimeout(() => {
-            URL.revokeObjectURL(url)
-        }, 10000)
-
-
-    }
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 10000);
+  }
 }
 
 let fileCache: {
-    origin: string[], res: (Uint8Array | 'loading' | 'done')[]
+  origin: string[];
+  res: (Uint8Array | "loading" | "done")[];
 } = {
-    origin: [],
-    res: []
-}
+  origin: [],
+  res: [],
+};
 
-let pathCache: { [key: string]: string } = {}
-let checkedPaths: string[] = []
+let pathCache: { [key: string]: string } = {};
+let checkedPaths: string[] = [];
 
 const revokeObjectUrl = (url: string) => {
-    if (url.startsWith('blob:')) URL.revokeObjectURL(url)
-}
+  if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+};
 const tauriThumbnailUrls = new BoundedCache<string, string>({
-    maxEntries: () => settingsStore.state.lowSpecMode ? 24 : 96,
-    onEvict: revokeObjectUrl
-})
+  maxEntries: () => (settingsStore.state.lowSpecMode ? 24 : 96),
+  onEvict: revokeObjectUrl,
+});
 
 /**
  * Gets the source URL of a file.
- * 
+ *
  * @param {string} loc - The location of the file.
  * @returns {Promise<string>} - A promise that resolves to the source URL of the file.
  */
 class ThumbnailBatchLoader {
-    private cacheWeights = new Map<string, number>()
-    private cache = new BoundedCache<string, string>({
-        maxEntries: () => settingsStore.state.lowSpecMode ? 24 : 96,
-        maxWeight: () => (settingsStore.state.lowSpecMode ? 3 : 8) * 1024 * 1024,
-        weigh: (_url, loc) => this.cacheWeights.get(loc) ?? 1,
-        onEvict: (url, loc) => {
-            this.cacheWeights.delete(loc)
-            revokeObjectUrl(url)
-        }
-    })
-    private pending = new Map<string, { promise: Promise<string>; resolve: (url: string) => void; reject: (err: any) => void }>()
-    private queue = new Set<string>()
-    private flushScheduled = false
+  private cacheWeights = new Map<string, number>();
+  private cache = new BoundedCache<string, string>({
+    maxEntries: () => (settingsStore.state.lowSpecMode ? 24 : 96),
+    maxWeight: () => (settingsStore.state.lowSpecMode ? 3 : 8) * 1024 * 1024,
+    weigh: (_url, loc) => this.cacheWeights.get(loc) ?? 1,
+    onEvict: (url, loc) => {
+      this.cacheWeights.delete(loc);
+      revokeObjectUrl(url);
+    },
+  });
+  private pending = new Map<
+    string,
+    {
+      promise: Promise<string>;
+      resolve: (url: string) => void;
+      reject: (err: any) => void;
+    }
+  >();
+  private queue = new Set<string>();
+  private flushScheduled = false;
 
-    load(loc: string): Promise<string> {
-        if (!loc || loc === '') return Promise.resolve('')
-        
-        // 1. Memory cache hit (instant)
-        if (this.cache.has(loc)) {
-            return Promise.resolve(this.cache.get(loc)!)
-        }
+  load(loc: string): Promise<string> {
+    if (!loc || loc === "") return Promise.resolve("");
 
-        // 2. Already in-flight
-        if (this.pending.has(loc)) {
-            return this.pending.get(loc)!.promise
-        }
-
-        // 3. Queue for batching
-        let resolveFn!: (url: string) => void
-        let rejectFn!: (err: any) => void
-        const promise = new Promise<string>((resolve, reject) => {
-            resolveFn = resolve
-            rejectFn = reject
-        })
-
-        this.pending.set(loc, { promise, resolve: resolveFn, reject: rejectFn })
-        this.queue.add(loc)
-        this.scheduleFlush()
-
-        return promise
+    // 1. Memory cache hit (instant)
+    if (this.cache.has(loc)) {
+      return Promise.resolve(this.cache.get(loc)!);
     }
 
-    preload(keys: string[]) {
-        const toLoad = keys.filter(k => k && !this.cache.has(k) && !this.pending.has(k))
-        if (toLoad.length === 0) return
-
-        for (const loc of toLoad) {
-            let resolveFn!: (url: string) => void
-            let rejectFn!: (err: any) => void
-            const promise = new Promise<string>((resolve, reject) => {
-                resolveFn = resolve
-                rejectFn = reject
-            })
-            this.pending.set(loc, { promise, resolve: resolveFn, reject: rejectFn })
-            this.queue.add(loc)
-        }
-        this.scheduleFlush()
+    // 2. Already in-flight
+    if (this.pending.has(loc)) {
+      return this.pending.get(loc)!.promise;
     }
 
-    private scheduleFlush() {
-        if (this.flushScheduled) return
-        this.flushScheduled = true
+    // 3. Queue for batching
+    let resolveFn!: (url: string) => void;
+    let rejectFn!: (err: any) => void;
+    const promise = new Promise<string>((resolve, reject) => {
+      resolveFn = resolve;
+      rejectFn = reject;
+    });
 
-        // Debounce window (10ms) to coalesce all components mounting in this tick
-        setTimeout(() => {
-            this.flush()
-        }, 10)
+    this.pending.set(loc, { promise, resolve: resolveFn, reject: rejectFn });
+    this.queue.add(loc);
+    this.scheduleFlush();
+
+    return promise;
+  }
+
+  preload(keys: string[]) {
+    const toLoad = keys.filter(
+      (k) => k && !this.cache.has(k) && !this.pending.has(k),
+    );
+    if (toLoad.length === 0) return;
+
+    for (const loc of toLoad) {
+      let resolveFn!: (url: string) => void;
+      let rejectFn!: (err: any) => void;
+      const promise = new Promise<string>((resolve, reject) => {
+        resolveFn = resolve;
+        rejectFn = reject;
+      });
+      this.pending.set(loc, { promise, resolve: resolveFn, reject: rejectFn });
+      this.queue.add(loc);
     }
+    this.scheduleFlush();
+  }
 
-    private async flush() {
-        this.flushScheduled = false
-        if (this.queue.size === 0) return
+  private scheduleFlush() {
+    if (this.flushScheduled) return;
+    this.flushScheduled = true;
 
-        const batchKeys = Array.from(this.queue)
-        this.queue.clear()
+    // Debounce window (10ms) to coalesce all components mounting in this tick
+    setTimeout(() => {
+      this.flush();
+    }, 10);
+  }
 
-        try {
-            if (forageStorage.realStorage instanceof NodeStorage) {
-                const nodeStorage = forageStorage.realStorage as NodeStorage
-                const maxBatchSize = 48
-                for(let offset=0;offset<batchKeys.length;offset+=maxBatchSize){
-                    const keys = batchKeys.slice(offset, offset + maxBatchSize)
-                    let results = new Map<string, Buffer>()
-                    try{
-                        results = await nodeStorage.getItems(keys, undefined, { thumbnail: true })
-                    } catch(error) {
-                        console.error('Failed to load thumbnail batch', error)
-                    }
+  private async flush() {
+    this.flushScheduled = false;
+    if (this.queue.size === 0) return;
 
-                    for (const loc of keys) {
-                        const buf = results.get(loc)
-                        const pendingItem = this.pending.get(loc)
-                        if (buf && buf.length > 0) {
-                            const blob = new Blob([buf as any], { type: 'image/webp' })
-                            const blobUrl = URL.createObjectURL(blob)
-                            this.cacheWeights.set(loc, buf.byteLength)
-                            this.cache.set(loc, blobUrl)
-                            pendingItem?.resolve(blobUrl)
-                        } else {
-                            this.cacheWeights.set(loc, 1)
-                            this.cache.set(loc, '/none.webp')
-                            pendingItem?.resolve('/none.webp')
-                        }
-                        this.pending.delete(loc)
-                    }
-                }
+    const batchKeys = Array.from(this.queue);
+    this.queue.clear();
+
+    try {
+      if (forageStorage.realStorage instanceof NodeStorage) {
+        const nodeStorage = forageStorage.realStorage as NodeStorage;
+        const maxBatchSize = 48;
+        for (
+          let offset = 0;
+          offset < batchKeys.length;
+          offset += maxBatchSize
+        ) {
+          const keys = batchKeys.slice(offset, offset + maxBatchSize);
+          let results = new Map<string, Buffer>();
+          try {
+            results = await nodeStorage.getItems(keys, undefined, {
+              thumbnail: true,
+            });
+          } catch (error) {
+            console.error("Failed to load thumbnail batch", error);
+          }
+
+          for (const loc of keys) {
+            const buf = results.get(loc);
+            const pendingItem = this.pending.get(loc);
+            if (buf && buf.length > 0) {
+              const blob = new Blob([buf as any], { type: "image/webp" });
+              const blobUrl = URL.createObjectURL(blob);
+              this.cacheWeights.set(loc, buf.byteLength);
+              this.cache.set(loc, blobUrl);
+              pendingItem?.resolve(blobUrl);
             } else {
-                for (const loc of batchKeys) {
-                    const pendingItem = this.pending.get(loc)
-                    this.pending.delete(loc)
-                    pendingItem?.resolve('')
-                }
+              this.cacheWeights.set(loc, 1);
+              this.cache.set(loc, "/none.webp");
+              pendingItem?.resolve("/none.webp");
             }
-        } catch (err) {
-            for (const loc of batchKeys) {
-                const pendingItem = this.pending.get(loc)
-                this.pending.delete(loc)
-                this.cacheWeights.set(loc, 1)
-                this.cache.set(loc, '/none.webp')
-                pendingItem?.resolve('/none.webp')
-            }
+            this.pending.delete(loc);
+          }
         }
+      } else {
+        for (const loc of batchKeys) {
+          const pendingItem = this.pending.get(loc);
+          this.pending.delete(loc);
+          pendingItem?.resolve("");
+        }
+      }
+    } catch (err) {
+      for (const loc of batchKeys) {
+        const pendingItem = this.pending.get(loc);
+        this.pending.delete(loc);
+        this.cacheWeights.set(loc, 1);
+        this.cache.set(loc, "/none.webp");
+        pendingItem?.resolve("/none.webp");
+      }
     }
+  }
 
-    invalidate(loc?: string) {
-        if (loc) {
-            this.cache.delete(loc)
-            this.pending.delete(loc)
-            this.queue.delete(loc)
-        } else {
-            this.cache.clear()
-            this.cacheWeights.clear()
-            this.pending.clear()
-            this.queue.clear()
-        }
+  invalidate(loc?: string) {
+    if (loc) {
+      this.cache.delete(loc);
+      this.pending.delete(loc);
+      this.queue.delete(loc);
+    } else {
+      this.cache.clear();
+      this.cacheWeights.clear();
+      this.pending.clear();
+      this.queue.clear();
     }
+  }
 }
 
-export const thumbnailBatchLoader = new ThumbnailBatchLoader()
+export const thumbnailBatchLoader = new ThumbnailBatchLoader();
 export function preloadThumbnails(keys: string[]) {
-    thumbnailBatchLoader.preload(keys)
+  thumbnailBatchLoader.preload(keys);
 }
 export function invalidateThumbnailCache(loc?: string) {
-    thumbnailBatchLoader.invalidate(loc)
+  thumbnailBatchLoader.invalidate(loc);
 }
 
-const registeredSwCaches = new Set<string>()
-const browserAssetWeights = new Map<string, number>()
+const registeredSwCaches = new Set<string>();
+const browserAssetWeights = new Map<string, number>();
 const browserAssetUrls = new BoundedCache<string, string>({
-    maxEntries: () => settingsStore.state.lowSpecMode ? 16 : 64,
-    maxWeight: () => (settingsStore.state.lowSpecMode ? 8 : 24) * 1024 * 1024,
-    weigh: (_url, key) => browserAssetWeights.get(key) ?? 1,
-    onEvict: (url, key) => {
-        browserAssetWeights.delete(key)
-        revokeObjectUrl(url)
-    }
-})
+  maxEntries: () => (settingsStore.state.lowSpecMode ? 16 : 64),
+  maxWeight: () => (settingsStore.state.lowSpecMode ? 8 : 24) * 1024 * 1024,
+  weigh: (_url, key) => browserAssetWeights.get(key) ?? 1,
+  onEvict: (url, key) => {
+    browserAssetWeights.delete(key);
+    revokeObjectUrl(url);
+  },
+});
 
-export async function getFileSrc(loc: string, options?: { thumbnail?: boolean }) {
-    if (!loc || loc === '') {
-        return ''
-    }
-    const isThumb = options?.thumbnail ?? false
-    if (isTauri) {
-        if (loc.startsWith('assets')) {
-            if (appDataDirPath === '') {
-                appDataDirPath = await appDataDir();
-            }
-            const cached = isThumb ? tauriThumbnailUrls.get(loc) : pathCache[loc]
-            if (cached) {
-                return cached.startsWith('blob:') ? cached : convertFileSrc(cached)
-            }
-            else {
-                const joined = await join(appDataDirPath, loc)
-                if (isThumb) {
-                    try {
-                        const originalData = await readFile(joined)
-                        const thumbData = await generateClientThumbnail(originalData, 128)
-                        const blob = new Blob([thumbData as any], { type: 'image/webp' })
-                        const url = URL.createObjectURL(blob)
-                        tauriThumbnailUrls.set(loc, url)
-                        return url
-                    } catch (e) {
-                        tauriThumbnailUrls.set(loc, joined)
-                        return convertFileSrc(joined)
-                    }
-                }
-                pathCache[loc] = joined
-                return convertFileSrc(joined)
-            }
-        }
-        return convertFileSrc(loc)
-    }
-    if (forageStorage.isAccount && loc.startsWith('assets')) {
-        return hubURL + `/rs/` + loc + (isThumb ? '?thumb=1' : '')
-    }
-    if (isNodeServer || (forageStorage.realStorage instanceof NodeStorage)) {
+export async function getFileSrc(
+  loc: string,
+  options?: { thumbnail?: boolean },
+) {
+  if (!loc || loc === "") {
+    return "";
+  }
+  const isThumb = options?.thumbnail ?? false;
+  if (isTauri) {
+    if (loc.startsWith("assets")) {
+      if (appDataDirPath === "") {
+        appDataDirPath = await appDataDir();
+      }
+      const cached = isThumb ? tauriThumbnailUrls.get(loc) : pathCache[loc];
+      if (cached) {
+        return cached.startsWith("blob:") ? cached : convertFileSrc(cached);
+      } else {
+        const joined = await join(appDataDirPath, loc);
         if (isThumb) {
-            return await thumbnailBatchLoader.load(loc)
+          try {
+            const originalData = await readFile(joined);
+            const thumbData = await generateClientThumbnail(originalData, 128);
+            const blob = new Blob([thumbData as any], { type: "image/webp" });
+            const url = URL.createObjectURL(blob);
+            tauriThumbnailUrls.set(loc, url);
+            return url;
+          } catch (e) {
+            tauriThumbnailUrls.set(loc, joined);
+            return convertFileSrc(joined);
+          }
         }
-        const nodeStorage = forageStorage.realStorage as NodeStorage
-        return await nodeStorage.getDirectUrl(loc, options)
+        pathCache[loc] = joined;
+        return convertFileSrc(joined);
+      }
     }
-    try {
-        const cacheKey = isThumb ? `thumb_${loc}` : loc
-        if (usingSw) {
-            const encoded = Buffer.from(cacheKey, 'utf-8').toString('hex')
-            if (registeredSwCaches.has(cacheKey)) {
-                return "/sw/img/" + encoded
-            }
-            let ind = fileCache.origin.indexOf(cacheKey)
-            if (ind === -1) {
-                ind = fileCache.origin.length
-                fileCache.origin.push(cacheKey)
-                fileCache.res.push('loading')
-                try {
-                    const raw = await forageStorage.getItem(loc) as unknown as Uint8Array
-                    let f: Uint8Array | null = raw
-                    let contentType = isThumb ? 'image/webp' : getMimeType(loc)
-                    if (isThumb && raw) {
-                        f = await generateClientThumbnail(raw, 128)
-                        contentType = 'image/webp'
-                    }
-
-                    if (f) {
-                        await fetch("/sw/register/" + encoded, {
-                            method: "POST",
-                            headers: {
-                                'content-type': contentType
-                            },
-                            body: f as any
-                        })
-                        registeredSwCaches.add(cacheKey)
-                    }
-                    fileCache.res[ind] = 'done'
-                    return "/sw/img/" + encoded
-                } catch (error) {
-
-                }
-            }
-            else {
-                const f = fileCache.res[ind]
-                if (f === 'loading') {
-                    while (fileCache.res[ind] === 'loading') {
-                        await sleep(10)
-                    }
-                }
-                return "/sw/img/" + encoded
-            }
-        }
-        else {
-            const cachedUrl = browserAssetUrls.get(cacheKey)
-            if (cachedUrl) return cachedUrl
-            const raw = await forageStorage.getItem(loc) as unknown as Uint8Array
-            if (!raw) return ''
-            const data = isThumb ? await generateClientThumbnail(raw, 128) : raw
-            const mime = isThumb ? 'image/webp' : getMimeType(loc)
-            const url = URL.createObjectURL(new Blob([data as any], { type: mime }))
-            browserAssetWeights.set(cacheKey, data.byteLength)
-            browserAssetUrls.set(cacheKey, url)
-            return url
-        }
-    } catch (error) {
-        console.error(error)
-        return ''
+    return convertFileSrc(loc);
+  }
+  if (forageStorage.isAccount && loc.startsWith("assets")) {
+    return hubURL + `/rs/` + loc + (isThumb ? "?thumb=1" : "");
+  }
+  if (isNodeServer || forageStorage.realStorage instanceof NodeStorage) {
+    if (isThumb) {
+      return await thumbnailBatchLoader.load(loc);
     }
+    const nodeStorage = forageStorage.realStorage as NodeStorage;
+    return await nodeStorage.getDirectUrl(loc, options);
+  }
+  try {
+    const cacheKey = isThumb ? `thumb_${loc}` : loc;
+    if (usingSw) {
+      const encoded = Buffer.from(cacheKey, "utf-8").toString("hex");
+      if (registeredSwCaches.has(cacheKey)) {
+        return "/sw/img/" + encoded;
+      }
+      let ind = fileCache.origin.indexOf(cacheKey);
+      if (ind === -1) {
+        ind = fileCache.origin.length;
+        fileCache.origin.push(cacheKey);
+        fileCache.res.push("loading");
+        try {
+          const raw = (await forageStorage.getItem(
+            loc,
+          )) as unknown as Uint8Array;
+          let f: Uint8Array | null = raw;
+          let contentType = isThumb ? "image/webp" : getMimeType(loc);
+          if (isThumb && raw) {
+            f = await generateClientThumbnail(raw, 128);
+            contentType = "image/webp";
+          }
+
+          if (f) {
+            await fetch("/sw/register/" + encoded, {
+              method: "POST",
+              headers: {
+                "content-type": contentType,
+              },
+              body: f as any,
+            });
+            registeredSwCaches.add(cacheKey);
+          }
+          fileCache.res[ind] = "done";
+          return "/sw/img/" + encoded;
+        } catch (error) {}
+      } else {
+        const f = fileCache.res[ind];
+        if (f === "loading") {
+          while (fileCache.res[ind] === "loading") {
+            await sleep(10);
+          }
+        }
+        return "/sw/img/" + encoded;
+      }
+    } else {
+      const cachedUrl = browserAssetUrls.get(cacheKey);
+      if (cachedUrl) return cachedUrl;
+      const raw = (await forageStorage.getItem(loc)) as unknown as Uint8Array;
+      if (!raw) return "";
+      const data = isThumb ? await generateClientThumbnail(raw, 128) : raw;
+      const mime = isThumb ? "image/webp" : getMimeType(loc);
+      const url = URL.createObjectURL(new Blob([data as any], { type: mime }));
+      browserAssetWeights.set(cacheKey, data.byteLength);
+      browserAssetUrls.set(cacheKey, url);
+      return url;
+    }
+  } catch (error) {
+    console.error(error);
+    return "";
+  }
 }
 
-let appDataDirPath = ''
+let appDataDirPath = "";
 
 /**
  * Reads an image file and returns its data.
- * 
+ *
  * @param {string} data - The path to the image file.
  * @returns {Promise<Uint8Array>} - A promise that resolves to the data of the image file.
  */
 export async function readImage(data: string) {
-    if (isTauri) {
-        if (data.startsWith('assets')) {
-            if (appDataDirPath === '') {
-                appDataDirPath = await appDataDir();
-            }
-            return await readFile(await join(appDataDirPath, data))
-        }
-        return await readFile(data)
+  if (isTauri) {
+    if (data.startsWith("assets")) {
+      if (appDataDirPath === "") {
+        appDataDirPath = await appDataDir();
+      }
+      return await readFile(await join(appDataDirPath, data));
     }
-    else {
-        return (await forageStorage.getItem(data) as unknown as Uint8Array)
-    }
+    return await readFile(data);
+  } else {
+    return (await forageStorage.getItem(data)) as unknown as Uint8Array;
+  }
 }
 
 /**
  * Saves an asset file with the given data, custom ID, and file name.
- * 
+ *
  * @param {Uint8Array} data - The data of the asset file.
  * @param {string} [customId=''] - The custom ID for the asset file.
  * @param {string} [fileName=''] - The name of the asset file.
  * @returns {Promise<string>} - A promise that resolves to the path of the saved asset file.
  */
-export async function saveAsset(data: Uint8Array, customId: string = '', fileName: string = '') {
-    let id = ''
-    if (customId !== '') {
-        id = customId
+export async function saveAsset(
+  data: Uint8Array,
+  customId: string = "",
+  fileName: string = "",
+) {
+  let id = "";
+  if (customId !== "") {
+    id = customId;
+  } else {
+    try {
+      id = await hasher(data);
+    } catch (error) {
+      id = uuidv4();
     }
-    else {
-        try {
-            id = await hasher(data)
-        } catch (error) {
-            id = uuidv4()
-        }
+  }
+  let fileExtension: string = "png";
+  const nameSource = fileName || customId;
+  if (nameSource && nameSource.includes(".")) {
+    const ext = nameSource.split("?")[0].split(".").pop();
+    if (ext) {
+      fileExtension = ext;
     }
-    let fileExtension: string = 'png'
-    const nameSource = fileName || customId
-    if (nameSource && nameSource.includes('.')) {
-        const ext = nameSource.split('?')[0].split('.').pop()
-        if (ext) {
-            fileExtension = ext
-        }
+  }
+  if (isTauri) {
+    await writeFile(`assets/${id}.${fileExtension}`, data, {
+      baseDir: BaseDirectory.AppData,
+    });
+    invalidateThumbnailCache(`assets/${id}.${fileExtension}`);
+    return `assets/${id}.${fileExtension}`;
+  } else {
+    let form = `assets/${id}.${fileExtension}`;
+    invalidateThumbnailCache(form);
+    const replacer = await forageStorage.setItem(form, data);
+    if (replacer) {
+      invalidateThumbnailCache(replacer);
+      return replacer;
     }
-    if (isTauri) {
-        await writeFile(`assets/${id}.${fileExtension}`, data, {
-            baseDir: BaseDirectory.AppData
-        });
-        invalidateThumbnailCache(`assets/${id}.${fileExtension}`)
-        return `assets/${id}.${fileExtension}`
-    }
-    else {
-        let form = `assets/${id}.${fileExtension}`
-        invalidateThumbnailCache(form)
-        const replacer = await forageStorage.setItem(form, data)
-        if (replacer) {
-            invalidateThumbnailCache(replacer)
-            return replacer
-        }
-        return form
-    }
+    return form;
+  }
 }
 
 /**
  * Loads an asset file with the given ID.
- * 
+ *
  * @param {string} id - The ID of the asset file to load.
  * @returns {Promise<Uint8Array>} - A promise that resolves to the data of the loaded asset file.
  */
 export async function loadAsset(id: string) {
-    if (isTauri) {
-        return await readFile(id, { baseDir: BaseDirectory.AppData })
-    }
-    else {
-        return await forageStorage.getItem(id) as unknown as Uint8Array
-    }
+  if (isTauri) {
+    return await readFile(id, { baseDir: BaseDirectory.AppData });
+  } else {
+    return (await forageStorage.getItem(id)) as unknown as Uint8Array;
+  }
 }
 
-export { saving }
+export { saving };
 
 /**
  * Retrieves the database backups.
- * 
+ *
  * @returns {Promise<number[]>} - A promise that resolves to an array of backup timestamps.
  */
 export async function getDbBackups() {
-    // SQL-only: return revision IDs from the SQL backend.
-    // Legacy database.bin backups are no longer created or managed.
-    try {
-        const { getSqlStorage } = await import('./storage/sqlStorageFactory')
-        const storage = await getSqlStorage()
-        if (!storage.isEnabled()) {
-            return []
-        }
-        const revisions = await storage.listRevisions(20)
-        return revisions.map(r => r.id)
-    } catch {
-        return []
+  // SQL-only: return revision IDs from the SQL backend.
+  // Legacy database.bin backups are no longer created or managed.
+  try {
+    const { getSqlStorage } = await import("./storage/sqlStorageFactory");
+    const storage = await getSqlStorage();
+    if (!storage.isEnabled()) {
+      return [];
     }
+    const revisions = await storage.listRevisions(20);
+    return revisions.map((r) => r.id);
+  } catch {
+    return [];
+  }
 }
 
-let usingSw = false
+let usingSw = false;
 
 export function setUsingSw(value: boolean) {
-    usingSw = value
+  usingSw = value;
 }
 
 /**
  * Retrieves fetch data for a given chat ID.
- * 
+ *
  * @param {string} id - The chat ID to search for in the fetch log.
  * @returns {fetchLog | null} - The fetch log entry if found, otherwise null.
  */
 export function getFetchData(id: string) {
-    for (const log of fetchLog) {
-        if (log.chatId === id) {
-            return log;
-        }
+  for (const log of fetchLog) {
+    if (log.chatId === id) {
+      return log;
     }
-    return null;
+  }
+  return null;
 }
 
 const knownHostes = ["localhost", "127.0.0.1", "0.0.0.0"];
-const webLocalNetworkBlockedMessage = "웹에서는 사설망 직접 호출 불가. Tauri 또는 LAN Node self-host 사용";
+const webLocalNetworkBlockedMessage =
+  "웹에서는 사설망 직접 호출 불가. Tauri 또는 LAN Node self-host 사용";
 const defaultProxyJobHeartbeatSec = 15;
 
 function getProxy2Url() {
-    return !isTauri && !isNodeServer ? `${hubURL}/proxy2` : `/proxy2`;
+  return !isTauri && !isNodeServer ? `${hubURL}/proxy2` : `/proxy2`;
 }
 
 function getProxyStreamJobBaseUrl() {
-    return isNodeServer ? '' : `${hubURL}`;
+  return isNodeServer ? "" : `${hubURL}`;
 }
 
 function buildTimeoutSignal(originalSignal?: AbortSignal, timeoutMs?: number) {
-    if (!timeoutMs || timeoutMs <= 0) {
-        return {
-            signal: originalSignal,
-            cleanup: () => { /* no-op */ }
-        };
-    }
-
-    const controller = new AbortController();
-    const onAbort = () => controller.abort();
-    if (originalSignal) {
-        if (originalSignal.aborted) {
-            controller.abort();
-        }
-        else {
-            originalSignal.addEventListener('abort', onAbort, { once: true });
-        }
-    }
-
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
+  if (!timeoutMs || timeoutMs <= 0) {
     return {
-        signal: controller.signal,
-        cleanup: () => {
-            clearTimeout(timeoutId);
-            originalSignal?.removeEventListener('abort', onAbort);
-        }
+      signal: originalSignal,
+      cleanup: () => {
+        /* no-op */
+      },
     };
+  }
+
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  if (originalSignal) {
+    if (originalSignal.aborted) {
+      controller.abort();
+    } else {
+      originalSignal.addEventListener("abort", onAbort, { once: true });
+    }
+  }
+
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timeoutId);
+      originalSignal?.removeEventListener("abort", onAbort);
+    },
+  };
 }
 
 /**
  * Interface representing the arguments for the global fetch function.
- * 
+ *
  * @interface GlobalFetchArgs
  * @property {boolean} [plainFetchForce] - Whether to force plain fetch.
  * @property {any} [body] - The body of the request.
@@ -577,38 +629,38 @@ function buildTimeoutSignal(originalSignal?: AbortSignal, timeoutMs?: number) {
  * @property {string} [chatId] - The chat ID associated with the request.
  */
 export interface GlobalFetchArgs {
-    plainFetchForce?: boolean;
-    plainFetchDeforce?: boolean;
-    body?: any;
-    headers?: { [key: string]: string };
-    rawResponse?: boolean;
-    method?: 'POST' | 'GET';
-    abortSignal?: AbortSignal;
-    useRisuToken?: boolean;
-    chatId?: string;
-    interceptor?: string;
-    requestTimeoutMs?: number;
-    networkRoute?: 'auto' | 'local_network';
+  plainFetchForce?: boolean;
+  plainFetchDeforce?: boolean;
+  body?: any;
+  headers?: { [key: string]: string };
+  rawResponse?: boolean;
+  method?: "POST" | "GET";
+  abortSignal?: AbortSignal;
+  useRisuToken?: boolean;
+  chatId?: string;
+  interceptor?: string;
+  requestTimeoutMs?: number;
+  networkRoute?: "auto" | "local_network";
 }
 
 /**
  * Interface representing the result of the global fetch function.
- * 
+ *
  * @interface GlobalFetchResult
  * @property {boolean} ok - Whether the request was successful.
  * @property {any} data - The data returned from the request.
  * @property {{ [key: string]: string }} headers - The headers returned from the request.
  */
 interface GlobalFetchResult {
-    ok: boolean;
-    data: any;
-    headers: { [key: string]: string };
-    status: number;
+  ok: boolean;
+  data: any;
+  headers: { [key: string]: string };
+  status: number;
 }
 
 /**
  * Adds a fetch log entry.
- * 
+ *
  * @param {Object} arg - The arguments for the fetch log entry.
  * @param {any} arg.body - The body of the request.
  * @param {{ [key: string]: string }} [arg.headers] - The headers of the request.
@@ -620,427 +672,565 @@ interface GlobalFetchResult {
  * @returns {number} - The index of the added fetch log entry.
  */
 export function addFetchLog(arg: {
-    body: any,
-    headers?: { [key: string]: string },
-    response: any,
-    success: boolean,
-    url: string,
-    resType?: string,
-    chatId?: string,
-    status?: number
+  body: any;
+  headers?: { [key: string]: string };
+  response: any;
+  success: boolean;
+  url: string;
+  resType?: string;
+  chatId?: string;
+  status?: number;
 }): number {
-    fetchLog.unshift({
-        body: typeof (arg.body) === 'string' ? arg.body : JSON.stringify(arg.body, null, 2),
-        header: JSON.stringify(arg.headers ?? {}, null, 2),
-        response: typeof (arg.response) === 'string' ? arg.response : JSON.stringify(arg.response, null, 2),
-        responseType: arg.resType ?? 'json',
-        success: arg.success,
-        date: (new Date()).toLocaleTimeString(),
-        url: arg.url,
-        chatId: arg.chatId,
-        status: arg.status
-    });
-    return 0;
+  fetchLog.unshift({
+    body:
+      typeof arg.body === "string"
+        ? arg.body
+        : JSON.stringify(arg.body, null, 2),
+    header: JSON.stringify(arg.headers ?? {}, null, 2),
+    response:
+      typeof arg.response === "string"
+        ? arg.response
+        : JSON.stringify(arg.response, null, 2),
+    responseType: arg.resType ?? "json",
+    success: arg.success,
+    date: new Date().toLocaleTimeString(),
+    url: arg.url,
+    chatId: arg.chatId,
+    status: arg.status,
+  });
+  return 0;
 }
 
 /**
  * Performs a global fetch request.
- * 
+ *
  * @param {string} url - The URL to fetch.
  * @param {GlobalFetchArgs} [arg={}] - The arguments for the fetch request.
  * @returns {Promise<GlobalFetchResult>} - The result of the fetch request.
  */
-export async function globalFetch(url: string, arg: GlobalFetchArgs = {}): Promise<GlobalFetchResult> {
-    try {
-        const db = getDatabase();
-        if (arg.abortSignal?.aborted) { return { ok: false, data: 'aborted', headers: {}, status: 400 }; }
-
-        const urlHost = new URL(url).hostname
-        const useLocalNetworkRoute = arg.networkRoute === 'local_network' && isLocalNetworkUrl(url)
-        const forcePlainFetch = ((knownHostes.includes(urlHost) && !isTauri) || db.usePlainFetch || arg.plainFetchForce) && !arg.plainFetchDeforce && !useLocalNetworkRoute
-
-        if (useLocalNetworkRoute && !isTauri && !isNodeServer) {
-            return { ok: false, headers: {}, status: 400, data: webLocalNetworkBlockedMessage };
-        }
-
-        if (knownHostes.includes(urlHost) && !isTauri && !isNodeServer) {
-            return { ok: false, headers: {}, status: 400, data: 'You are trying local request on web version. This is not allowed due to browser security policy. Use the desktop version instead, or use a tunneling service like ngrok and set the CORS to allow all.' };
-        }
-
-        if(arg.interceptor){
-            for (const interceptor of bodyIntercepterStore) {
-                try {
-                    arg.body = await interceptor.callback(arg.body, arg.interceptor) || arg.body
-                }
-                catch (e) {
-                    console.error(e)
-                }
-            }
-        }
-
-        const timeoutSignal = buildTimeoutSignal(arg.abortSignal, arg.requestTimeoutMs)
-        const requestArg = timeoutSignal.signal === arg.abortSignal
-            ? arg
-            : { ...arg, abortSignal: timeoutSignal.signal }
-
-        try {
-            if (useLocalNetworkRoute) {
-                if (isTauri) {
-                    return await fetchWithTauri(url, requestArg);
-                }
-                return await fetchWithProxy(url, requestArg);
-            }
-            if (forcePlainFetch) {
-                return await fetchWithPlainFetch(url, requestArg);
-            }
-            //userScriptFetch is provided by userscript
-            if (window.userScriptFetch) {
-                return await fetchWithUSFetch(url, requestArg);
-            }
-            if (isTauri) {
-                return await fetchWithTauri(url, requestArg);
-            }
-            return await fetchWithProxy(url, requestArg);
-        } finally {
-            timeoutSignal.cleanup();
-        }
-
-    } catch (error) {
-        console.error(error);
-        return { ok: false, data: `${error}`, headers: {}, status: 400 };
+export async function globalFetch(
+  url: string,
+  arg: GlobalFetchArgs = {},
+): Promise<GlobalFetchResult> {
+  try {
+    const db = getDatabase();
+    if (arg.abortSignal?.aborted) {
+      return { ok: false, data: "aborted", headers: {}, status: 400 };
     }
+
+    const urlHost = new URL(url).hostname;
+    const useLocalNetworkRoute =
+      arg.networkRoute === "local_network" && isLocalNetworkUrl(url);
+    const forcePlainFetch =
+      ((knownHostes.includes(urlHost) && !isTauri) ||
+        db.usePlainFetch ||
+        arg.plainFetchForce) &&
+      !arg.plainFetchDeforce &&
+      !useLocalNetworkRoute;
+
+    if (useLocalNetworkRoute && !isTauri && !isNodeServer) {
+      return {
+        ok: false,
+        headers: {},
+        status: 400,
+        data: webLocalNetworkBlockedMessage,
+      };
+    }
+
+    if (knownHostes.includes(urlHost) && !isTauri && !isNodeServer) {
+      return {
+        ok: false,
+        headers: {},
+        status: 400,
+        data: "You are trying local request on web version. This is not allowed due to browser security policy. Use the desktop version instead, or use a tunneling service like ngrok and set the CORS to allow all.",
+      };
+    }
+
+    if (arg.interceptor) {
+      for (const interceptor of bodyIntercepterStore) {
+        try {
+          arg.body =
+            (await interceptor.callback(arg.body, arg.interceptor)) || arg.body;
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+
+    const timeoutSignal = buildTimeoutSignal(
+      arg.abortSignal,
+      arg.requestTimeoutMs,
+    );
+    const requestArg =
+      timeoutSignal.signal === arg.abortSignal
+        ? arg
+        : { ...arg, abortSignal: timeoutSignal.signal };
+
+    try {
+      if (useLocalNetworkRoute) {
+        if (isTauri) {
+          return await fetchWithTauri(url, requestArg);
+        }
+        return await fetchWithProxy(url, requestArg);
+      }
+      if (forcePlainFetch) {
+        return await fetchWithPlainFetch(url, requestArg);
+      }
+      //userScriptFetch is provided by userscript
+      if (window.userScriptFetch) {
+        return await fetchWithUSFetch(url, requestArg);
+      }
+      if (isTauri) {
+        return await fetchWithTauri(url, requestArg);
+      }
+      return await fetchWithProxy(url, requestArg);
+    } finally {
+      timeoutSignal.cleanup();
+    }
+  } catch (error) {
+    console.error(error);
+    return { ok: false, data: `${error}`, headers: {}, status: 400 };
+  }
 }
 
 /**
  * Adds a fetch log entry in the global fetch log.
- * 
+ *
  * @param {any} response - The response data.
  * @param {boolean} success - Indicates if the fetch was successful.
  * @param {string} url - The URL of the fetch request.
  * @param {GlobalFetchArgs} arg - The arguments for the fetch request.
  */
-function addFetchLogInGlobalFetch(response: any, success: boolean, url: string, arg: GlobalFetchArgs, status?: number) {
-    try {
-        fetchLog.unshift({
-            body: JSON.stringify(arg.body, null, 2),
-            header: JSON.stringify(arg.headers ?? {}, null, 2),
-            response: JSON.stringify(response, null, 2),
-            success: success,
-            date: (new Date()).toLocaleTimeString(),
-            url: url,
-            chatId: arg.chatId,
-            status: status
-        })
-    }
-    catch {
-        fetchLog.unshift({
-            body: JSON.stringify(arg.body, null, 2),
-            header: JSON.stringify(arg.headers ?? {}, null, 2),
-            response: `${response}`,
-            success: success,
-            date: (new Date()).toLocaleTimeString(),
-            url: url,
-            chatId: arg.chatId,
-            status: status
-        })
-    }
+function addFetchLogInGlobalFetch(
+  response: any,
+  success: boolean,
+  url: string,
+  arg: GlobalFetchArgs,
+  status?: number,
+) {
+  try {
+    fetchLog.unshift({
+      body: JSON.stringify(arg.body, null, 2),
+      header: JSON.stringify(arg.headers ?? {}, null, 2),
+      response: JSON.stringify(response, null, 2),
+      success: success,
+      date: new Date().toLocaleTimeString(),
+      url: url,
+      chatId: arg.chatId,
+      status: status,
+    });
+  } catch {
+    fetchLog.unshift({
+      body: JSON.stringify(arg.body, null, 2),
+      header: JSON.stringify(arg.headers ?? {}, null, 2),
+      response: `${response}`,
+      success: success,
+      date: new Date().toLocaleTimeString(),
+      url: url,
+      chatId: arg.chatId,
+      status: status,
+    });
+  }
 
-    if (fetchLog.length > 20) {
-        fetchLog.pop()
-    }
+  if (fetchLog.length > 20) {
+    fetchLog.pop();
+  }
 }
 
 /**
  * Performs a fetch request using plain fetch.
- * 
+ *
  * @param {string} url - The URL to fetch.
  * @param {GlobalFetchArgs} arg - The arguments for the fetch request.
  * @returns {Promise<GlobalFetchResult>} - The result of the fetch request.
  */
-async function fetchWithPlainFetch(url: string, arg: GlobalFetchArgs): Promise<GlobalFetchResult> {
-    try {
-        const headers = { 'Content-Type': 'application/json', ...arg.headers };
-        const response = await fetch(new URL(url), { body: JSON.stringify(arg.body), headers, method: arg.method ?? "POST", signal: arg.abortSignal });
-        const data = arg.rawResponse ? new Uint8Array(await response.arrayBuffer()) : await response.json();
-        const ok = response.ok && response.status >= 200 && response.status < 300;
-        addFetchLogInGlobalFetch(data, ok, url, arg, response.status);
-        return { ok, data, headers: Object.fromEntries(response.headers), status: response.status };
-    } catch (error) {
-        return { ok: false, data: `${error}`, headers: {}, status: 400 };
-    }
+async function fetchWithPlainFetch(
+  url: string,
+  arg: GlobalFetchArgs,
+): Promise<GlobalFetchResult> {
+  try {
+    const headers = { "Content-Type": "application/json", ...arg.headers };
+    const response = await fetch(new URL(url), {
+      body: JSON.stringify(arg.body),
+      headers,
+      method: arg.method ?? "POST",
+      signal: arg.abortSignal,
+    });
+    const data = arg.rawResponse
+      ? new Uint8Array(await response.arrayBuffer())
+      : await response.json();
+    const ok = response.ok && response.status >= 200 && response.status < 300;
+    addFetchLogInGlobalFetch(data, ok, url, arg, response.status);
+    return {
+      ok,
+      data,
+      headers: Object.fromEntries(response.headers),
+      status: response.status,
+    };
+  } catch (error) {
+    return { ok: false, data: `${error}`, headers: {}, status: 400 };
+  }
 }
 
 /**
  * Performs a fetch request using userscript provided fetch.
- * 
+ *
  * @param {string} url - The URL to fetch.
  * @param {GlobalFetchArgs} arg - The arguments for the fetch request.
  * @returns {Promise<GlobalFetchResult>} - The result of the fetch request.
  */
-async function fetchWithUSFetch(url: string, arg: GlobalFetchArgs): Promise<GlobalFetchResult> {
-    try {
-        const headers = { 'Content-Type': 'application/json', ...arg.headers };
-        const response = await userScriptFetch(url, { body: JSON.stringify(arg.body), headers, method: arg.method ?? "POST", signal: arg.abortSignal });
-        const data = arg.rawResponse ? new Uint8Array(await response.arrayBuffer()) : await response.json();
-        const ok = response.ok && response.status >= 200 && response.status < 300;
-        addFetchLogInGlobalFetch(data, ok, url, arg, response.status);
-        return { ok, data, headers: Object.fromEntries(response.headers), status: response.status };
-    } catch (error) {
-        return { ok: false, data: `${error}`, headers: {}, status: 400 };
-    }
+async function fetchWithUSFetch(
+  url: string,
+  arg: GlobalFetchArgs,
+): Promise<GlobalFetchResult> {
+  try {
+    const headers = { "Content-Type": "application/json", ...arg.headers };
+    const response = await userScriptFetch(url, {
+      body: JSON.stringify(arg.body),
+      headers,
+      method: arg.method ?? "POST",
+      signal: arg.abortSignal,
+    });
+    const data = arg.rawResponse
+      ? new Uint8Array(await response.arrayBuffer())
+      : await response.json();
+    const ok = response.ok && response.status >= 200 && response.status < 300;
+    addFetchLogInGlobalFetch(data, ok, url, arg, response.status);
+    return {
+      ok,
+      data,
+      headers: Object.fromEntries(response.headers),
+      status: response.status,
+    };
+  } catch (error) {
+    return { ok: false, data: `${error}`, headers: {}, status: 400 };
+  }
 }
 
 /**
  * Performs a fetch request using Tauri.
- * 
+ *
  * @param {string} url - The URL to fetch.
  * @param {GlobalFetchArgs} arg - The arguments for the fetch request.
  * @returns {Promise<GlobalFetchResult>} - The result of the fetch request.
  */
-async function fetchWithTauri(url: string, arg: GlobalFetchArgs): Promise<GlobalFetchResult> {
-    try {
-        const headers = { 'Content-Type': 'application/json', ...arg.headers };
-        const response = await TauriHTTPFetch(new URL(url), { body: JSON.stringify(arg.body), headers, method: arg.method ?? "POST", signal: arg.abortSignal });
-        const data = arg.rawResponse ? new Uint8Array(await response.arrayBuffer()) : await response.json();
-        const ok = response.status >= 200 && response.status < 300;
-        addFetchLogInGlobalFetch(data, ok, url, arg, response.status);
-        return { ok, data, headers: Object.fromEntries(response.headers), status: response.status };
-    } catch (error) {
-        return { ok: false, data: `${error}`, headers: {}, status: 400 };
-    }
+async function fetchWithTauri(
+  url: string,
+  arg: GlobalFetchArgs,
+): Promise<GlobalFetchResult> {
+  try {
+    const headers = { "Content-Type": "application/json", ...arg.headers };
+    const response = await TauriHTTPFetch(new URL(url), {
+      body: JSON.stringify(arg.body),
+      headers,
+      method: arg.method ?? "POST",
+      signal: arg.abortSignal,
+    });
+    const data = arg.rawResponse
+      ? new Uint8Array(await response.arrayBuffer())
+      : await response.json();
+    const ok = response.status >= 200 && response.status < 300;
+    addFetchLogInGlobalFetch(data, ok, url, arg, response.status);
+    return {
+      ok,
+      data,
+      headers: Object.fromEntries(response.headers),
+      status: response.status,
+    };
+  } catch (error) {
+    return { ok: false, data: `${error}`, headers: {}, status: 400 };
+  }
 }
 
 /**
  * Performs a fetch request using a proxy.
- * 
+ *
  * @param {string} url - The URL to fetch.
  * @param {GlobalFetchArgs} arg - The arguments for the fetch request.
  * @returns {Promise<GlobalFetchResult>} - The result of the fetch request.
  */
-async function fetchWithProxy(url: string, arg: GlobalFetchArgs): Promise<GlobalFetchResult> {
-    try {
-        const furl = getProxy2Url();
-        arg.headers ??= {};
-        arg.headers["Content-Type"] ??= arg.body instanceof URLSearchParams ? "application/x-www-form-urlencoded" : "application/json";
-        const nodeProxyAuth = isNodeServer ? await getNodeServerProxyAuth() : null;
-        const headers = {
-            "risu-header": encodeURIComponent(JSON.stringify(arg.headers)),
-            "risu-url": encodeURIComponent(url),
-            "Content-Type": arg.body instanceof URLSearchParams ? "application/x-www-form-urlencoded" : "application/json",
-            ...(arg.useRisuToken && { "x-risu-tk": "use" }),
-            ...(arg.requestTimeoutMs && { "risu-timeout-ms": Math.max(1, Math.floor(arg.requestTimeoutMs)).toString() }),
-            ...(nodeProxyAuth && { "risu-auth": nodeProxyAuth }),
-            ...(settingsStore.state.requestLocation && { "risu-location": settingsStore.state.requestLocation }),
-        };
+async function fetchWithProxy(
+  url: string,
+  arg: GlobalFetchArgs,
+): Promise<GlobalFetchResult> {
+  try {
+    const furl = getProxy2Url();
+    arg.headers ??= {};
+    arg.headers["Content-Type"] ??=
+      arg.body instanceof URLSearchParams
+        ? "application/x-www-form-urlencoded"
+        : "application/json";
+    const nodeProxyAuth = isNodeServer ? await getNodeServerProxyAuth() : null;
+    const headers = {
+      "risu-header": encodeURIComponent(JSON.stringify(arg.headers)),
+      "risu-url": encodeURIComponent(url),
+      "Content-Type":
+        arg.body instanceof URLSearchParams
+          ? "application/x-www-form-urlencoded"
+          : "application/json",
+      ...(arg.useRisuToken && { "x-risu-tk": "use" }),
+      ...(arg.requestTimeoutMs && {
+        "risu-timeout-ms": Math.max(
+          1,
+          Math.floor(arg.requestTimeoutMs),
+        ).toString(),
+      }),
+      ...(nodeProxyAuth && { "risu-auth": nodeProxyAuth }),
+      ...(settingsStore.state.requestLocation && {
+        "risu-location": settingsStore.state.requestLocation,
+      }),
+    };
 
-        const body = arg.body instanceof URLSearchParams ? arg.body.toString() : JSON.stringify(arg.body);
+    const body =
+      arg.body instanceof URLSearchParams
+        ? arg.body.toString()
+        : JSON.stringify(arg.body);
 
-        const response = await fetch(furl, { body, headers, method: arg.method ?? "POST", signal: arg.abortSignal });
-        const isSuccess = response.ok && response.status >= 200 && response.status < 300;
+    const response = await fetch(furl, {
+      body,
+      headers,
+      method: arg.method ?? "POST",
+      signal: arg.abortSignal,
+    });
+    const isSuccess =
+      response.ok && response.status >= 200 && response.status < 300;
 
-        if (arg.rawResponse) {
-            const data = new Uint8Array(await response.arrayBuffer());
-            addFetchLogInGlobalFetch("Uint8Array Response", isSuccess, url, arg, response.status);
-            return { ok: isSuccess, data, headers: Object.fromEntries(response.headers), status: response.status };
-        }
-
-        const text = await response.text();
-        try {
-            const data = JSON.parse(text);
-            addFetchLogInGlobalFetch(data, isSuccess, url, arg, response.status);
-            return { ok: isSuccess, data, headers: Object.fromEntries(response.headers), status: response.status };
-        } catch (error) {
-            const errorMsg = text.startsWith('<!DOCTYPE') ? "Responded HTML. Is your URL, API key, and password correct?" : text;
-            addFetchLogInGlobalFetch(text, false, url, arg, response.status);
-            return { ok: false, data: errorMsg, headers: Object.fromEntries(response.headers), status: response.status };
-        }
-    } catch (error) {
-        return { ok: false, data: `${error}`, headers: {}, status: 400 };
+    if (arg.rawResponse) {
+      const data = new Uint8Array(await response.arrayBuffer());
+      addFetchLogInGlobalFetch(
+        "Uint8Array Response",
+        isSuccess,
+        url,
+        arg,
+        response.status,
+      );
+      return {
+        ok: isSuccess,
+        data,
+        headers: Object.fromEntries(response.headers),
+        status: response.status,
+      };
     }
+
+    const text = await response.text();
+    try {
+      const data = JSON.parse(text);
+      addFetchLogInGlobalFetch(data, isSuccess, url, arg, response.status);
+      return {
+        ok: isSuccess,
+        data,
+        headers: Object.fromEntries(response.headers),
+        status: response.status,
+      };
+    } catch (error) {
+      const errorMsg = text.startsWith("<!DOCTYPE")
+        ? "Responded HTML. Is your URL, API key, and password correct?"
+        : text;
+      addFetchLogInGlobalFetch(text, false, url, arg, response.status);
+      return {
+        ok: false,
+        data: errorMsg,
+        headers: Object.fromEntries(response.headers),
+        status: response.status,
+      };
+    }
+  } catch (error) {
+    return { ok: false, data: `${error}`, headers: {}, status: 400 };
+  }
 }
 
 /**
  * Regular expression to match backslashes.
- * 
+ *
  * @constant {RegExp}
  */
 const re = /\\/g;
 
 /**
  * Gets the basename of a given path.
- * 
+ *
  * @param {string} data - The path to get the basename from.
  * @returns {string} - The basename of the path.
  */
 export function getBasename(data: string) {
-    const splited = data.replace(re, '/').split('/');
-    const lasts = splited[splited.length - 1];
-    return lasts;
+  const splited = data.replace(re, "/").split("/");
+  const lasts = splited[splited.length - 1];
+  return lasts;
 }
 
-export async function getUncleanables(db: Database, uptype: 'basename' | 'pure' = 'basename') {
-    let chars: (character|groupChat)[] = []
-    if (db.characters) {
-        for(let cha of db.characters){
-            if(cha?.coldstorage){
-                const { getColdStorageItem } = await import('./process/coldstorage.svelte')
-                const coldData = await getColdStorageItem(cha.coldstorage!)
-                if(coldData?.character && coldData.character.chaId === cha.chaId){
-                    cha = coldData.character
-                }
-            }
-            chars.push(cha)
+export async function getUncleanables(
+  db: Database,
+  uptype: "basename" | "pure" = "basename",
+) {
+  let chars: (character | groupChat)[] = [];
+  if (db.characters) {
+    for (let cha of db.characters) {
+      if (cha?.coldstorage) {
+        const { getColdStorageItem } =
+          await import("./process/coldstorage.svelte");
+        const coldData = await getColdStorageItem(cha.coldstorage!);
+        if (coldData?.character && coldData.character.chaId === cha.chaId) {
+          cha = coldData.character;
         }
+      }
+      chars.push(cha);
     }
+  }
 
-    return getUncleanablesSync(db, uptype, { chars });
+  return getUncleanablesSync(db, uptype, { chars });
 }
 
 /**
  * Retrieves uncleanable resources from the database.
- * 
+ *
  * @param {Database} db - The database to retrieve uncleanable resources from.
  * @param {'basename'|'pure'} [uptype='basename'] - The type of uncleanable resources to retrieve.
  * @returns {Promise<string[]>} - An array of uncleanable resources.
  */
-export function getUncleanablesSync(db: Database, uptype: 'basename' | 'pure' = 'basename', options?:{
-    chars: (character|groupChat)[],
-}) {
-    const uncleanable = new Set<string>();
+export function getUncleanablesSync(
+  db: Database,
+  uptype: "basename" | "pure" = "basename",
+  options?: {
+    chars: (character | groupChat)[];
+  },
+) {
+  const uncleanable = new Set<string>();
 
-    /**
-     * Adds a resource to the uncleanable list if it is not already included.
-     * 
-     * @param {string} data - The resource to add.
-     */
-    function addUncleanable(data: string) {
-        if (!data) {
-            return;
-        }
-        if (data === '') {
-            return;
-        }
-        const bn = uptype === 'basename' ? getBasename(data) : data;
-        uncleanable.add(bn);
+  /**
+   * Adds a resource to the uncleanable list if it is not already included.
+   *
+   * @param {string} data - The resource to add.
+   */
+  function addUncleanable(data: string) {
+    if (!data) {
+      return;
     }
-
-    addUncleanable(db.customBackground);
-    addUncleanable(db.userIcon);
-    const chars = options?.chars ?? db.characters
-
-    for (let cha of chars) {
-        if (cha.image) {
-            addUncleanable(cha.image);
-        }
-        if (cha.emotionImages) {
-            for (const em of cha.emotionImages) {
-                addUncleanable(em[1]);
-            }
-        }
-        if (cha.type !== 'group') {
-            if (cha.additionalAssets) {
-                for (const em of cha.additionalAssets) {
-                    addUncleanable(em[1]);
-                }
-            }
-            if (cha.vits) {
-                const keys = Object.keys(cha.vits.files);
-                for (const key of keys) {
-                    const vit = cha.vits.files[key];
-                    addUncleanable(vit);
-                }
-            }
-            if (cha.ccAssets) {
-                for (const asset of cha.ccAssets) {
-                    addUncleanable(asset.uri);
-                }
-            }
-        }
+    if (data === "") {
+      return;
     }
+    const bn = uptype === "basename" ? getBasename(data) : data;
+    uncleanable.add(bn);
+  }
 
-    for (const module of db.modules ?? moduleStore.list) {
-        const assets = module.assets
+  addUncleanable(db.customBackground);
+  addUncleanable(db.userIcon);
+  const chars = options?.chars ?? db.characters;
+
+  for (let cha of chars) {
+    if (cha.image) {
+      addUncleanable(cha.image);
+    }
+    if (cha.emotionImages) {
+      for (const em of cha.emotionImages) {
+        addUncleanable(em[1]);
+      }
+    }
+    if (cha.type !== "group") {
+      if (cha.additionalAssets) {
+        for (const em of cha.additionalAssets) {
+          addUncleanable(em[1]);
+        }
+      }
+      if (cha.vits) {
+        const keys = Object.keys(cha.vits.files);
+        for (const key of keys) {
+          const vit = cha.vits.files[key];
+          addUncleanable(vit);
+        }
+      }
+      if (cha.ccAssets) {
+        for (const asset of cha.ccAssets) {
+          addUncleanable(asset.uri);
+        }
+      }
+    }
+  }
+
+  for (const module of db.modules ?? moduleStore.list) {
+    const assets = module.assets;
+    if (assets) {
+      for (const asset of assets) {
+        addUncleanable(asset[1]);
+      }
+    }
+    if (module.icon) {
+      addUncleanable(module.icon);
+    }
+  }
+
+  if (db.personas) {
+    db.personas.map((v) => {
+      addUncleanable(v.icon);
+
+      if (v.embeddedModule) {
+        const assets = v.embeddedModule.assets;
         if (assets) {
-            for (const asset of assets) {
-                addUncleanable(asset[1])
-            }
+          for (const asset of assets) {
+            addUncleanable(asset[1]);
+          }
         }
-        if(module.icon){
-            addUncleanable(module.icon)
+        if (v.embeddedModule.icon) {
+          addUncleanable(v.embeddedModule.icon);
         }
-    }
+      }
+    });
+  }
 
-    if (db.personas) {
-        db.personas.map((v) => {
-            addUncleanable(v.icon);
-
-            if(v.embeddedModule){
-                const assets = v.embeddedModule.assets
-                if (assets) {
-                    for (const asset of assets) {
-                        addUncleanable(asset[1])
-                    }
-                }
-                if(v.embeddedModule.icon){
-                    addUncleanable(v.embeddedModule.icon)
-                }
-            }
-        });
-    }
-
-    if (db.characterOrder) {
-        db.characterOrder.forEach((item) => {
-            if (typeof item === 'object' && 'imgFile' in item) {
-                addUncleanable(item.imgFile);
-            }
-        })
-    }
-    return Array.from(uncleanable);
+  if (db.characterOrder) {
+    db.characterOrder.forEach((item) => {
+      if (typeof item === "object" && "imgFile" in item) {
+        addUncleanable(item.imgFile);
+      }
+    });
+  }
+  return Array.from(uncleanable);
 }
-
 
 /**
  * Replaces database resources with the provided replacer object.
- * 
+ *
  * @param {Database} db - The database object containing resources to be replaced.
  * @param {{[key: string]: string}} replacer - An object mapping original resource keys to their replacements.
  * @returns {Database} - The updated database object with replaced resources.
  */
-export function replaceDbResources(db: Database, replacer: { [key: string]: string }): Database {
-    /**
-     * Replaces a given data string with its corresponding value from the replacer object.
-     * 
-     * @param {string} data - The data string to be replaced.
-     * @returns {string} - The replaced data string or the original data if no replacement is found.
-     */
-    function replaceData(data: string): string {
-        if (!data) {
-            return data;
-        }
-        return replacer[data] ?? data;
+export function replaceDbResources(
+  db: Database,
+  replacer: { [key: string]: string },
+): Database {
+  /**
+   * Replaces a given data string with its corresponding value from the replacer object.
+   *
+   * @param {string} data - The data string to be replaced.
+   * @returns {string} - The replaced data string or the original data if no replacement is found.
+   */
+  function replaceData(data: string): string {
+    if (!data) {
+      return data;
     }
+    return replacer[data] ?? data;
+  }
 
-    db.customBackground = replaceData(db.customBackground);
-    db.userIcon = replaceData(db.userIcon);
+  db.customBackground = replaceData(db.customBackground);
+  db.userIcon = replaceData(db.userIcon);
 
-    for (const cha of db.characters) {
-        if (cha.image) {
-            cha.image = replaceData(cha.image);
-        }
-        if (cha.emotionImages) {
-            for (let i = 0; i < cha.emotionImages.length; i++) {
-                cha.emotionImages[i][1] = replaceData(cha.emotionImages[i][1]);
-            }
-        }
-        if (cha.type !== 'group') {
-            if (cha.additionalAssets) {
-                for (let i = 0; i < cha.additionalAssets.length; i++) {
-                    cha.additionalAssets[i][1] = replaceData(cha.additionalAssets[i][1]);
-                }
-            }
-        }
+  for (const cha of db.characters) {
+    if (cha.image) {
+      cha.image = replaceData(cha.image);
     }
-    return db;
+    if (cha.emotionImages) {
+      for (let i = 0; i < cha.emotionImages.length; i++) {
+        cha.emotionImages[i][1] = replaceData(cha.emotionImages[i][1]);
+      }
+    }
+    if (cha.type !== "group") {
+      if (cha.additionalAssets) {
+        for (let i = 0; i < cha.additionalAssets.length; i++) {
+          cha.additionalAssets[i][1] = replaceData(cha.additionalAssets[i][1]);
+        }
+      }
+    }
+  }
+  return db;
 }
 
 /**
@@ -1048,82 +1238,81 @@ export function replaceDbResources(db: Database, replacer: { [key: string]: stri
  * Ensures that all characters are properly ordered and removes any invalid entries.
  */
 export function checkCharOrder() {
-    settingsStore.state.characterOrder = settingsStore.state.characterOrder ?? []
-    let ordered = []
-    for (let i = 0; i < settingsStore.state.characterOrder.length; i++) {
-        const folder = settingsStore.state.characterOrder[i]
-        if (typeof (folder) !== 'string' && folder) {
-            for (const f of folder.data) {
-                ordered.push(f)
-            }
-        }
-        if (typeof (folder) === 'string') {
-            ordered.push(folder)
-        }
+  settingsStore.state.characterOrder = settingsStore.state.characterOrder ?? [];
+  let ordered = [];
+  for (let i = 0; i < settingsStore.state.characterOrder.length; i++) {
+    const folder = settingsStore.state.characterOrder[i];
+    if (typeof folder !== "string" && folder) {
+      for (const f of folder.data) {
+        ordered.push(f);
+      }
     }
-
-    let charIdList: string[] = []
-
-    for (let i = 0; i < characterStore.characters.length; i++) {
-        const char = characterStore.characters[i]
-        const charId = char.chaId
-        if (!char.trashTime) {
-            charIdList.push(charId)
-        }
-        if (!ordered.includes(charId)) {
-            if (charId !== '§temp' && charId !== '§playground' && !char.trashTime) {
-                settingsStore.state.characterOrder.push(charId)
-            }
-        }
+    if (typeof folder === "string") {
+      ordered.push(folder);
     }
+  }
 
+  let charIdList: string[] = [];
 
-    for (let i = 0; i < settingsStore.state.characterOrder.length; i++) {
-        const data = settingsStore.state.characterOrder[i]
-        if (typeof (data) !== 'string') {
-            if (!data) {
-                settingsStore.state.characterOrder.splice(i, 1)
-                i--;
-                continue
-            }
-            if (data.data.length === 0) {
-                settingsStore.state.characterOrder.splice(i, 1)
-                i--;
-                continue
-            }
-            for (let i2 = 0; i2 < data.data.length; i2++) {
-                const data2 = data.data[i2]
-                if (!charIdList.includes(data2)) {
-                    data.data.splice(i2, 1)
-                    i2--;
-                }
-            }
-            settingsStore.state.characterOrder[i] = data
-        }
-        else {
-            if (!charIdList.includes(data)) {
-                settingsStore.state.characterOrder.splice(i, 1)
-                i--;
-            }
-        }
+  for (let i = 0; i < characterStore.characters.length; i++) {
+    const char = characterStore.characters[i];
+    const charId = char.chaId;
+    if (!char.trashTime) {
+      charIdList.push(charId);
     }
+    if (!ordered.includes(charId)) {
+      if (charId !== "§temp" && charId !== "§playground" && !char.trashTime) {
+        settingsStore.state.characterOrder.push(charId);
+      }
+    }
+  }
+
+  for (let i = 0; i < settingsStore.state.characterOrder.length; i++) {
+    const data = settingsStore.state.characterOrder[i];
+    if (typeof data !== "string") {
+      if (!data) {
+        settingsStore.state.characterOrder.splice(i, 1);
+        i--;
+        continue;
+      }
+      if (data.data.length === 0) {
+        settingsStore.state.characterOrder.splice(i, 1);
+        i--;
+        continue;
+      }
+      for (let i2 = 0; i2 < data.data.length; i2++) {
+        const data2 = data.data[i2];
+        if (!charIdList.includes(data2)) {
+          data.data.splice(i2, 1);
+          i2--;
+        }
+      }
+      settingsStore.state.characterOrder[i] = data;
+    } else {
+      if (!charIdList.includes(data)) {
+        settingsStore.state.characterOrder.splice(i, 1);
+        i--;
+      }
+    }
+  }
 }
 
 /**
  * Retrieves the request log as a formatted string.
- * 
+ *
  * @returns {string} The formatted request log.
  */
 export function getRequestLog() {
-    let logString = ''
-    const b = '\n\`\`\`json\n'
-    const bend = '\n\`\`\`\n'
+  let logString = "";
+  const b = "\n\`\`\`json\n";
+  const bend = "\n\`\`\`\n";
 
-    for (const log of fetchLog) {
-        logString += `## ${log.date}\n\n* Request URL\n\n${b}${log.url}${bend}\n\n* Request Body\n\n${b}${log.body}${bend}\n\n* Request Header\n\n${b}${log.header}${bend}\n\n`
-            + `* Response Body\n\n${b}${log.response}${bend}\n\n* Response Success\n\n${b}${log.success}${bend}\n\n`
-    }
-    return logString
+  for (const log of fetchLog) {
+    logString +=
+      `## ${log.date}\n\n* Request URL\n\n${b}${log.url}${bend}\n\n* Request Body\n\n${b}${log.body}${bend}\n\n* Request Header\n\n${b}${log.header}${bend}\n\n` +
+      `* Response Body\n\n${b}${log.response}${bend}\n\n* Response Success\n\n${b}${log.success}${bend}\n\n`;
+  }
+  return logString;
 }
 
 /**
@@ -1132,291 +1321,307 @@ export function getRequestLog() {
  * @returns {fetchLog[]} The fetch logs array.
  */
 export function getFetchLogs() {
-    return fetchLog
+  return fetchLog;
 }
 
 /**
  * Opens a URL in the appropriate environment.
- * 
+ *
  * @param {string} url - The URL to open.
  */
 export function openURL(url: string) {
-    if (isTauri) {
-        open(url)
-    }
-    else {
-        window.open(url, "_blank")
-    }
+  if (isTauri) {
+    open(url);
+  } else {
+    window.open(url, "_blank");
+  }
 }
 
 /**
  * Converts FormData to a URL-encoded string.
- * 
+ *
  * @param {FormData} formData - The FormData to convert.
  * @returns {string} The URL-encoded string.
  */
 function formDataToString(formData: FormData): string {
-    const params: string[] = [];
+  const params: string[] = [];
 
-    for (const [name, value] of formData.entries()) {
-        params.push(`${encodeURIComponent(name)}=${encodeURIComponent(value.toString())}`);
-    }
+  for (const [name, value] of formData.entries()) {
+    params.push(
+      `${encodeURIComponent(name)}=${encodeURIComponent(value.toString())}`,
+    );
+  }
 
-    return params.join('&');
+  return params.join("&");
 }
 
 /**
  * A writer class for Tauri environment.
  */
 export class TauriWriter {
-    path: string
-    firstWrite: boolean = true
+  path: string;
+  firstWrite: boolean = true;
 
-    /**
-     * Creates an instance of TauriWriter.
-     * 
-     * @param {string} path - The file path to write to.
-     */
-    constructor(path: string) {
-        this.path = path
-    }
+  /**
+   * Creates an instance of TauriWriter.
+   *
+   * @param {string} path - The file path to write to.
+   */
+  constructor(path: string) {
+    this.path = path;
+  }
 
-    /**
-     * Writes data to the file.
-     * 
-     * @param {Uint8Array} data - The data to write.
-     */
-    async write(data: Uint8Array) {
-        await writeFile(this.path, data, {
-            append: !this.firstWrite
-        })
-        this.firstWrite = false
-    }
+  /**
+   * Writes data to the file.
+   *
+   * @param {Uint8Array} data - The data to write.
+   */
+  async write(data: Uint8Array) {
+    await writeFile(this.path, data, {
+      append: !this.firstWrite,
+    });
+    this.firstWrite = false;
+  }
 
-    /**
-     * Closes the writer. (No operation for TauriWriter)
-     */
-    async close() {
-        // do nothing
-    }
+  /**
+   * Closes the writer. (No operation for TauriWriter)
+   */
+  async close() {
+    // do nothing
+  }
 }
-
 
 /**
  * Class representing a local writer.
  */
 export class LocalWriter {
-    private tauriWriter: TauriWriter | null = null
-    private port: MessagePort | null = null
-    private bufferSize = 0
-    private buffer: Uint8Array | null = null
-    private bufferLength = 0
+  private tauriWriter: TauriWriter | null = null;
+  private port: MessagePort | null = null;
+  private bufferSize = 0;
+  private buffer: Uint8Array | null = null;
+  private bufferLength = 0;
 
-    setBufferSize(size: number): void {
-        if(!Number.isSafeInteger(size) || size <= 0){
-            throw new Error('Writer buffer size must be a positive integer')
-        }
-        if(this.bufferLength !== 0){
-            throw new Error('Writer buffer size cannot be changed while data is buffered')
-        }
-        this.bufferSize = size
-        this.buffer = null
+  setBufferSize(size: number): void {
+    if (!Number.isSafeInteger(size) || size <= 0) {
+      throw new Error("Writer buffer size must be a positive integer");
+    }
+    if (this.bufferLength !== 0) {
+      throw new Error(
+        "Writer buffer size cannot be changed while data is buffered",
+      );
+    }
+    this.bufferSize = size;
+    this.buffer = null;
+  }
+
+  private async flushBuffer(): Promise<void> {
+    if (!this.buffer || this.bufferLength === 0) {
+      return;
     }
 
-    private async flushBuffer(): Promise<void> {
-        if(!this.buffer || this.bufferLength === 0){
-            return
-        }
+    const data =
+      this.bufferLength === this.buffer.byteLength
+        ? this.buffer
+        : this.buffer.subarray(0, this.bufferLength);
+    this.buffer = null;
+    this.bufferLength = 0;
 
-        const data = this.bufferLength === this.buffer.byteLength
-            ? this.buffer
-            : this.buffer.subarray(0, this.bufferLength)
-        this.buffer = null
-        this.bufferLength = 0
+    if (this.tauriWriter) {
+      await this.tauriWriter.write(data);
+    } else if (this.port) {
+      const buf = data.buffer.slice(
+        data.byteOffset,
+        data.byteOffset + data.byteLength,
+      );
+      this.port.postMessage(new Uint8Array(buf), [buf]);
+    }
+  }
 
-        if (this.tauriWriter) {
-            await this.tauriWriter.write(data)
-        } else if (this.port) {
-            const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
-            this.port.postMessage(new Uint8Array(buf), [buf])
-        }
+  /**
+   * Initializes the writer.
+   *
+   * @param {string} [name='Binary'] - The name of the file.
+   * @param {string[]} [ext=['bin']] - The file extensions.
+   * @returns {Promise<boolean>} - A promise that resolves to a boolean indicating success.
+   */
+  async init(name = "Binary", ext = ["bin"]): Promise<boolean> {
+    const fileName = `${name}.${ext[0]}`;
+    if (isTauri) {
+      const filePath = await save({
+        defaultPath: fileName,
+        filters: [
+          {
+            name: name,
+            extensions: ext,
+          },
+        ],
+      });
+      if (!filePath) {
+        return false;
+      }
+      this.tauriWriter = new TauriWriter(filePath);
+      return true;
     }
 
-    /**
-     * Initializes the writer.
-     * 
-     * @param {string} [name='Binary'] - The name of the file.
-     * @param {string[]} [ext=['bin']] - The file extensions.
-     * @returns {Promise<boolean>} - A promise that resolves to a boolean indicating success.
-     */
-    async init(name = 'Binary', ext = ['bin']): Promise<boolean> {
-        const fileName = `${name}.${ext[0]}`
-        if (isTauri) {
-            const filePath = await save({
-                defaultPath: fileName,
-                filters: [{
-                    name: name,
-                    extensions: ext
-                }]
-            });
-            if (!filePath) {
-                return false
-            }
-            this.tauriWriter = new TauriWriter(filePath)
-            return true
-        }
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.serviceWorker?.controller
+    ) {
+      const id = uuidv4();
+      const channel = new MessageChannel();
 
-        if (typeof navigator !== 'undefined' && navigator.serviceWorker?.controller) {
-            const id = uuidv4()
-            const channel = new MessageChannel()
+      navigator.serviceWorker.controller.postMessage(
+        {
+          type: "REGISTER_STREAM_DOWNLOAD",
+          id,
+          filename: fileName,
+        },
+        [channel.port2],
+      );
 
-            navigator.serviceWorker.controller.postMessage({
-                type: 'REGISTER_STREAM_DOWNLOAD',
-                id,
-                filename: fileName
-            }, [channel.port2])
-
-            this.port = channel.port1
-            const a = document.createElement('a')
-            a.href = `/sw/download?id=${id}`
-            a.download = fileName
-            document.body.appendChild(a)
-            a.click()
-            a.remove()
-            return true
-        }
-
-        throw new Error('Service Worker is not active for stream download')
+      this.port = channel.port1;
+      const a = document.createElement("a");
+      a.href = `/sw/download?id=${id}`;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return true;
     }
 
-    /**
-     * Writes backup data to the file.
-     * 
-     * @param {string} name - The name of the backup.
-     * @param {Uint8Array} data - The data to write.
-     */
-    async writeBackup(name: string, data: Uint8Array): Promise<void> {
-        await this.startBackup(name, data.byteLength)
-        await this.write(data)
+    throw new Error("Service Worker is not active for stream download");
+  }
+
+  /**
+   * Writes backup data to the file.
+   *
+   * @param {string} name - The name of the backup.
+   * @param {Uint8Array} data - The data to write.
+   */
+  async writeBackup(name: string, data: Uint8Array): Promise<void> {
+    await this.startBackup(name, data.byteLength);
+    await this.write(data);
+  }
+
+  /**
+   * Writes a backup entry header so its data can be streamed in chunks.
+   */
+  async startBackup(name: string, dataLength: number | bigint): Promise<void> {
+    const normalizedLength =
+      typeof dataLength === "bigint" ? dataLength : BigInt(dataLength);
+    if (normalizedLength < 0n || normalizedLength > 0xffffffffn) {
+      throw new Error(`Backup entry is too large: ${name}`);
+    }
+    const encodedName = new TextEncoder().encode(getBasename(name));
+    const nameLength = new Uint32Array([encodedName.byteLength]);
+    await this.write(new Uint8Array(nameLength.buffer));
+    await this.write(encodedName);
+    const encodedDataLength = new Uint32Array([Number(normalizedLength)]);
+    await this.write(new Uint8Array(encodedDataLength.buffer));
+  }
+
+  /**
+   * Writes data to the file.
+   *
+   * @param {Uint8Array} data - The data to write.
+   */
+  async write(data: Uint8Array): Promise<void> {
+    if (this.bufferSize === 0) {
+      if (this.tauriWriter) {
+        await this.tauriWriter.write(data);
+      } else if (this.port) {
+        const buf = data.buffer.slice(
+          data.byteOffset,
+          data.byteOffset + data.byteLength,
+        );
+        this.port.postMessage(new Uint8Array(buf), [buf]);
+      }
+      return;
     }
 
-    /**
-     * Writes a backup entry header so its data can be streamed in chunks.
-     */
-    async startBackup(name: string, dataLength: number | bigint): Promise<void> {
-        const normalizedLength = typeof dataLength === 'bigint'
-            ? dataLength
-            : BigInt(dataLength)
-        if(normalizedLength < 0n || normalizedLength > 0xffffffffn){
-            throw new Error(`Backup entry is too large: ${name}`)
-        }
-        const encodedName = new TextEncoder().encode(getBasename(name))
-        const nameLength = new Uint32Array([encodedName.byteLength])
-        await this.write(new Uint8Array(nameLength.buffer))
-        await this.write(encodedName)
-        const encodedDataLength = new Uint32Array([Number(normalizedLength)])
-        await this.write(new Uint8Array(encodedDataLength.buffer))
+    let offset = 0;
+    while (offset < data.byteLength) {
+      if (!this.buffer) {
+        this.buffer = new Uint8Array(this.bufferSize);
+      }
+
+      const writableLength = Math.min(
+        this.bufferSize - this.bufferLength,
+        data.byteLength - offset,
+      );
+      this.buffer.set(
+        data.subarray(offset, offset + writableLength),
+        this.bufferLength,
+      );
+      this.bufferLength += writableLength;
+      offset += writableLength;
+
+      if (this.bufferLength === this.bufferSize) {
+        await this.flushBuffer();
+      }
     }
+  }
 
-    /**
-     * Writes data to the file.
-     * 
-     * @param {Uint8Array} data - The data to write.
-     */
-    async write(data: Uint8Array): Promise<void> {
-        if(this.bufferSize === 0){
-            if (this.tauriWriter) {
-                await this.tauriWriter.write(data)
-            } else if (this.port) {
-                const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
-                this.port.postMessage(new Uint8Array(buf), [buf])
-            }
-            return
-        }
-
-        let offset = 0
-        while(offset < data.byteLength){
-            if(!this.buffer){
-                this.buffer = new Uint8Array(this.bufferSize)
-            }
-
-            const writableLength = Math.min(
-                this.bufferSize - this.bufferLength,
-                data.byteLength - offset
-            )
-            this.buffer.set(
-                data.subarray(offset, offset + writableLength),
-                this.bufferLength
-            )
-            this.bufferLength += writableLength
-            offset += writableLength
-
-            if(this.bufferLength === this.bufferSize){
-                await this.flushBuffer()
-            }
-        }
+  /**
+   * Closes the writer.
+   */
+  async close(): Promise<void> {
+    await this.flushBuffer();
+    if (this.tauriWriter) {
+      await this.tauriWriter.close();
+      this.tauriWriter = null;
     }
-
-    /**
-     * Closes the writer.
-     */
-    async close(): Promise<void> {
-        await this.flushBuffer()
-        if (this.tauriWriter) {
-            await this.tauriWriter.close()
-            this.tauriWriter = null
-        }
-        if (this.port) {
-            this.port.postMessage({ done: true })
-            this.port.close()
-            this.port = null
-        }
+    if (this.port) {
+      this.port.postMessage({ done: true });
+      this.port.close();
+      this.port = null;
     }
+  }
 }
 
 /**
  * Class representing a virtual writer.
  */
 export class VirtualWriter {
-    buf = new AppendableBuffer()
+  buf = new AppendableBuffer();
 
-    /**
-     * Writes data to the buffer.
-     * 
-     * @param {Uint8Array} data - The data to write.
-     */
-    write(data: Uint8Array): void {
-        this.buf.append(data)
-    }
+  /**
+   * Writes data to the buffer.
+   *
+   * @param {Uint8Array} data - The data to write.
+   */
+  write(data: Uint8Array): void {
+    this.buf.append(data);
+  }
 
-    /**
-     * Closes the writer. (No operation for VirtualWriter)
-     */
-    close(): void {
-        // do nothing
-    }
+  /**
+   * Closes the writer. (No operation for VirtualWriter)
+   */
+  close(): void {
+    // do nothing
+  }
 }
 
 /**
  * Index for fetch operations.
  * @type {number}
  */
-let fetchIndex = 0
+let fetchIndex = 0;
 
 /**
  * Stores native fetch data.
  * @type {{ [key: string]: StreamedFetchChunk[] }}
  */
-let nativeFetchData: { [key: string]: StreamedFetchChunk[] } = {}
+let nativeFetchData: { [key: string]: StreamedFetchChunk[] } = {};
 
 /**
  * Interface representing a streamed fetch chunk data.
  * @interface
  */
 interface StreamedFetchChunkData {
-    type: 'chunk',
-    body: string,
-    id: string
+  type: "chunk";
+  body: string;
+  id: string;
 }
 
 /**
@@ -1424,10 +1629,10 @@ interface StreamedFetchChunkData {
  * @interface
  */
 interface StreamedFetchHeaderData {
-    type: 'headers',
-    body: { [key: string]: string },
-    id: string,
-    status: number
+  type: "headers";
+  body: { [key: string]: string };
+  id: string;
+  status: number;
 }
 
 /**
@@ -1435,141 +1640,150 @@ interface StreamedFetchHeaderData {
  * @interface
  */
 interface StreamedFetchEndData {
-    type: 'end',
-    id: string
+  type: "end";
+  id: string;
 }
 
 /**
  * Type representing a streamed fetch chunk.
  * @typedef {StreamedFetchChunkData | StreamedFetchHeaderData | StreamedFetchEndData} StreamedFetchChunk
  */
-type StreamedFetchChunk = StreamedFetchChunkData | StreamedFetchHeaderData | StreamedFetchEndData
+type StreamedFetchChunk =
+  StreamedFetchChunkData | StreamedFetchHeaderData | StreamedFetchEndData;
 
 /**
  * Interface representing a streamed fetch plugin.
  * @interface
  */
 interface StreamedFetchPlugin {
-    /**
-     * Performs a streamed fetch operation.
-     * @param {Object} options - The options for the fetch operation.
-     * @param {string} options.id - The ID of the fetch operation.
-     * @param {string} options.url - The URL to fetch.
-     * @param {string} options.body - The body of the fetch request.
-     * @param {{ [key: string]: string }} options.headers - The headers of the fetch request.
-     * @returns {Promise<{ error: string, success: boolean }>} - The result of the fetch operation.
-     */
-    streamedFetch(options: { id: string, url: string, body: string, headers: { [key: string]: string } }): Promise<{ "error": string, "success": boolean }>;
+  /**
+   * Performs a streamed fetch operation.
+   * @param {Object} options - The options for the fetch operation.
+   * @param {string} options.id - The ID of the fetch operation.
+   * @param {string} options.url - The URL to fetch.
+   * @param {string} options.body - The body of the fetch request.
+   * @param {{ [key: string]: string }} options.headers - The headers of the fetch request.
+   * @returns {Promise<{ error: string, success: boolean }>} - The result of the fetch operation.
+   */
+  streamedFetch(options: {
+    id: string;
+    url: string;
+    body: string;
+    headers: { [key: string]: string };
+  }): Promise<{ error: string; success: boolean }>;
 
-    /**
-     * Adds a listener for the specified event.
-     * @param {string} eventName - The name of the event.
-     * @param {(data: StreamedFetchChunk) => void} listenerFunc - The function to call when the event is triggered.
-     */
-    addListener(eventName: 'streamed_fetch', listenerFunc: (data: StreamedFetchChunk) => void): void;
+  /**
+   * Adds a listener for the specified event.
+   * @param {string} eventName - The name of the event.
+   * @param {(data: StreamedFetchChunk) => void} listenerFunc - The function to call when the event is triggered.
+   */
+  addListener(
+    eventName: "streamed_fetch",
+    listenerFunc: (data: StreamedFetchChunk) => void,
+  ): void;
 }
 
 /**
  * Indicates whether streamed fetch listening is active.
  * @type {boolean}
  */
-let streamedFetchListening = false
+let streamedFetchListening = false;
 
 /**
  * The streamed fetch plugin instance.
  * @type {StreamedFetchPlugin | undefined}
  */
-let capStreamedFetch: StreamedFetchPlugin | undefined
+let capStreamedFetch: StreamedFetchPlugin | undefined;
 
 if (isTauri) {
-    listen('streamed_fetch', (event) => {
-        try {
-            const parsed = JSON.parse(event.payload as string)
-            const id = parsed.id
-            nativeFetchData[id]?.push(parsed)
-        } catch (error) {
-            console.error(error)
-        }
-    }).then((v) => {
-        streamedFetchListening = true
-    })
+  listen("streamed_fetch", (event) => {
+    try {
+      const parsed = JSON.parse(event.payload as string);
+      const id = parsed.id;
+      nativeFetchData[id]?.push(parsed);
+    } catch (error) {
+      console.error(error);
+    }
+  }).then((v) => {
+    streamedFetchListening = true;
+  });
 }
 
 /**
  * A class to manage a buffer that can be appended to and deappended from.
  */
 export class AppendableBuffer {
-    deapended: number = 0
-    #buffer: Uint8Array
-    #byteLength: number = 0
+  deapended: number = 0;
+  #buffer: Uint8Array;
+  #byteLength: number = 0;
 
-    /**
-     * Creates an instance of AppendableBuffer.
-     */
-    constructor() {
-        this.#buffer = new Uint8Array(128)
-    }
+  /**
+   * Creates an instance of AppendableBuffer.
+   */
+  constructor() {
+    this.#buffer = new Uint8Array(128);
+  }
 
-    get buffer(): Uint8Array {
-        return this.#buffer.slice(0, this.#byteLength)
-    }
+  get buffer(): Uint8Array {
+    return this.#buffer.slice(0, this.#byteLength);
+  }
 
-    /**
-     * Appends data to the buffer.
-     * @param {Uint8Array} data - The data to append.
-     */
-    append(data: Uint8Array) {
-        // New way (faster)
-        const requiredLength = this.#byteLength + data.length
-        if (this.#buffer.byteLength < requiredLength) {
-            let newLength = this.#buffer.byteLength * 2
-            while (newLength < requiredLength) {
-                newLength *= 2
-            }
-            const newBuffer = new Uint8Array(newLength)
-            newBuffer.set(this.#buffer)
-            this.#buffer = newBuffer
-        }
-        this.#buffer.set(data, this.#byteLength)
-        this.#byteLength += data.length
+  /**
+   * Appends data to the buffer.
+   * @param {Uint8Array} data - The data to append.
+   */
+  append(data: Uint8Array) {
+    // New way (faster)
+    const requiredLength = this.#byteLength + data.length;
+    if (this.#buffer.byteLength < requiredLength) {
+      let newLength = this.#buffer.byteLength * 2;
+      while (newLength < requiredLength) {
+        newLength *= 2;
+      }
+      const newBuffer = new Uint8Array(newLength);
+      newBuffer.set(this.#buffer);
+      this.#buffer = newBuffer;
     }
+    this.#buffer.set(data, this.#byteLength);
+    this.#byteLength += data.length;
+  }
 
-    /**
-     * Deappends a specified length from the buffer.
-     * @param {number} length - The length to deappend.
-     */
-    deappend(length: number) {
-        this.#buffer = this.#buffer.slice(length)
-        this.deapended += length
-        this.#byteLength -= length
-    }
+  /**
+   * Deappends a specified length from the buffer.
+   * @param {number} length - The length to deappend.
+   */
+  deappend(length: number) {
+    this.#buffer = this.#buffer.slice(length);
+    this.deapended += length;
+    this.#byteLength -= length;
+  }
 
-    /**
-     * Slices the buffer from start to end.
-     * @param {number} start - The start index.
-     * @param {number} end - The end index.
-     * @returns {Uint8Array} - The sliced buffer.
-     */
-    slice(start: number, end: number) {
-        return this.buffer.slice(start - this.deapended, end - this.deapended)
-    }
+  /**
+   * Slices the buffer from start to end.
+   * @param {number} start - The start index.
+   * @param {number} end - The end index.
+   * @returns {Uint8Array} - The sliced buffer.
+   */
+  slice(start: number, end: number) {
+    return this.buffer.slice(start - this.deapended, end - this.deapended);
+  }
 
-    /**
-     * Gets the total length of the buffer including deappended length.
-     * @returns {number} - The total length.
-     */
-    length() {
-        return this.#byteLength + this.deapended
-    }
+  /**
+   * Gets the total length of the buffer including deappended length.
+   * @returns {number} - The total length.
+   */
+  length() {
+    return this.#byteLength + this.deapended;
+  }
 
-    /**
-     * Clears the buffer.
-     */
-    clear() {
-        this.#buffer = new Uint8Array(128)
-        this.#byteLength = 0
-        this.deapended = 0
-    }
+  /**
+   * Clears the buffer.
+   */
+  clear() {
+    this.#buffer = new Uint8Array(128);
+    this.#byteLength = 0;
+    this.deapended = 0;
+  }
 }
 
 /**
@@ -1578,198 +1792,213 @@ export class AppendableBuffer {
  * @param {ReadableStream<Uint8Array>} readableStream - The readable stream to pipe.
  * @returns {ReadableStream<Uint8Array>} - The new readable stream.
  */
-const pipeFetchLog = (fetchLogIndex: number, readableStream: ReadableStream<Uint8Array>) => {
-    
-    const splited = readableStream.tee();
-    
-    (async () => {
-        const text = await (new Response(splited[0])).text()
-        fetchLog[fetchLogIndex].response = text
-    })()
-    
-    return splited[1]
-}
+const pipeFetchLog = (
+  fetchLogIndex: number,
+  readableStream: ReadableStream<Uint8Array>,
+) => {
+  const splited = readableStream.tee();
 
-async function fetchViaProxyJobWs(url: string, arg: {
-    body: Uint8Array,
-    headers?: { [key: string]: string },
-    method: "POST" | "GET" | "PUT" | "DELETE",
-    signal?: AbortSignal,
-    requestTimeoutMs?: number,
-    chatId?: string,
-    fetchLogIndex?: number | null
-}): Promise<Response> {
-    const auth = await getNodeServerProxyAuth();
+  (async () => {
+    const text = await new Response(splited[0]).text();
+    fetchLog[fetchLogIndex].response = text;
+  })();
 
-    const requestSignal = arg.signal;
-    const baseUrl = getProxyStreamJobBaseUrl();
+  return splited[1];
+};
 
-    let jobId = '';
-    const createRes = await fetch(`${baseUrl}/proxy-stream-jobs`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'risu-auth': auth
-        },
-        body: JSON.stringify({
-            url,
-            method: arg.method,
-            headers: arg.headers ?? {},
-            bodyBase64: Buffer.from(arg.body).toString('base64'),
-            timeoutMs: arg.requestTimeoutMs,
-            heartbeatSec: defaultProxyJobHeartbeatSec
-        }),
-        signal: requestSignal
-    });
+async function fetchViaProxyJobWs(
+  url: string,
+  arg: {
+    body: Uint8Array;
+    headers?: { [key: string]: string };
+    method: "POST" | "GET" | "PUT" | "DELETE";
+    signal?: AbortSignal;
+    requestTimeoutMs?: number;
+    chatId?: string;
+    fetchLogIndex?: number | null;
+  },
+): Promise<Response> {
+  const auth = await getNodeServerProxyAuth();
 
-    if (!createRes.ok) {
-        const errText = await createRes.text();
-        throw new Error(`Proxy stream job creation failed: ${createRes.status} ${errText}`);
+  const requestSignal = arg.signal;
+  const baseUrl = getProxyStreamJobBaseUrl();
+
+  let jobId = "";
+  const createRes = await fetch(`${baseUrl}/proxy-stream-jobs`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "risu-auth": auth,
+    },
+    body: JSON.stringify({
+      url,
+      method: arg.method,
+      headers: arg.headers ?? {},
+      bodyBase64: Buffer.from(arg.body).toString("base64"),
+      timeoutMs: arg.requestTimeoutMs,
+      heartbeatSec: defaultProxyJobHeartbeatSec,
+    }),
+    signal: requestSignal,
+  });
+
+  if (!createRes.ok) {
+    const errText = await createRes.text();
+    throw new Error(
+      `Proxy stream job creation failed: ${createRes.status} ${errText}`,
+    );
+  }
+
+  const created = (await createRes.json()) as { jobId?: string };
+  if (!created.jobId) {
+    throw new Error("Proxy stream job creation returned no jobId");
+  }
+  jobId = created.jobId;
+
+  const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${wsProtocol}//${location.host}/proxy-stream-jobs/${encodeURIComponent(jobId)}/ws?risu-auth=${encodeURIComponent(auth)}`;
+
+  let headersReady = false;
+  let status = 200;
+  let responseHeaders: HeadersInit = { "content-type": "text/event-stream" };
+  let settled = false;
+  let resolveHeaders: () => void = () => {};
+  const waitHeaders = new Promise<void>((resolve) => {
+    resolveHeaders = resolve;
+  });
+  let streamController: ReadableStreamDefaultController<Uint8Array> | null =
+    null;
+  const encoder = new TextEncoder();
+
+  const ws = new WebSocket(wsUrl);
+  const readable = new ReadableStream<Uint8Array>({
+    start(controller) {
+      streamController = controller;
+    },
+    cancel() {
+      try {
+        ws.close();
+      } catch {
+        // no-op
+      }
+    },
+  });
+  const pipedReadable =
+    arg.fetchLogIndex != null
+      ? pipeFetchLog(arg.fetchLogIndex, readable)
+      : readable;
+
+  const ensureHeadersReady = () => {
+    if (!headersReady) {
+      headersReady = true;
+      resolveHeaders();
     }
+  };
 
-    const created = await createRes.json() as { jobId?: string };
-    if (!created.jobId) {
-        throw new Error('Proxy stream job creation returned no jobId');
+  const closeAndEnd = () => {
+    if (settled) {
+      return;
     }
-    jobId = created.jobId;
+    settled = true;
+    if (streamController) {
+      try {
+        streamController.close();
+      } catch {
+        // no-op
+      }
+    }
+    try {
+      ws.close();
+    } catch {
+      // no-op
+    }
+  };
 
-    const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${location.host}/proxy-stream-jobs/${encodeURIComponent(jobId)}/ws?risu-auth=${encodeURIComponent(auth)}`;
-
-    let headersReady = false;
-    let status = 200;
-    let responseHeaders: HeadersInit = { 'content-type': 'text/event-stream' };
-    let settled = false;
-    let resolveHeaders: () => void = () => {};
-    const waitHeaders = new Promise<void>((resolve) => {
-        resolveHeaders = resolve;
-    });
-    let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
-    const encoder = new TextEncoder();
-
-    const ws = new WebSocket(wsUrl);
-    const readable = new ReadableStream<Uint8Array>({
-        start(controller) {
-            streamController = controller;
-        },
-        cancel() {
-            try {
-                ws.close();
-            } catch {
-                // no-op
-            }
-        }
-    });
-    const pipedReadable = arg.fetchLogIndex != null ? pipeFetchLog(arg.fetchLogIndex, readable) : readable;
-
-    const ensureHeadersReady = () => {
-        if (!headersReady) {
-            headersReady = true;
-            resolveHeaders();
-        }
-    };
-
-    const closeAndEnd = () => {
-        if (settled) {
-            return;
-        }
-        settled = true;
-        if (streamController) {
-            try {
-                streamController.close();
-            } catch {
-                // no-op
-            }
-        }
-        try {
-            ws.close();
-        } catch {
-            // no-op
-        }
-    };
-
-    ws.onmessage = (event) => {
-        const parsed = parseProxyJobWsEvent(typeof event.data === 'string' ? event.data : '');
-        if (!parsed || !streamController) {
-            return;
-        }
-        switch (parsed.type) {
-            case 'job_accepted':
-            case 'ping':
-                return;
-            case 'upstream_headers':
-                status = parsed.status;
-                responseHeaders = parsed.headers ?? {};
-                ensureHeadersReady();
-                return;
-            case 'chunk':
-                ensureHeadersReady();
-                streamController.enqueue(decodeProxyJobWsChunk(parsed.dataBase64));
-                return;
-            case 'error': {
-                status = parsed.status ?? 502;
-                responseHeaders = { 'content-type': 'text/plain; charset=utf-8' };
-                ensureHeadersReady();
-                const msg = formatProxyStreamErrorMessage(parsed.status, parsed.message);
-                streamController.enqueue(encoder.encode(msg));
-                closeAndEnd();
-                return;
-            }
-            case 'done':
-                ensureHeadersReady();
-                closeAndEnd();
-                return;
-        }
-    };
-
-    ws.onerror = () => {
-        if (!streamController) {
-            return;
-        }
-        status = 502;
-        responseHeaders = { 'content-type': 'text/plain; charset=utf-8' };
+  ws.onmessage = (event) => {
+    const parsed = parseProxyJobWsEvent(
+      typeof event.data === "string" ? event.data : "",
+    );
+    if (!parsed || !streamController) {
+      return;
+    }
+    switch (parsed.type) {
+      case "job_accepted":
+      case "ping":
+        return;
+      case "upstream_headers":
+        status = parsed.status;
+        responseHeaders = parsed.headers ?? {};
         ensureHeadersReady();
-        streamController.enqueue(encoder.encode('Proxy WebSocket stream error'));
-        closeAndEnd();
-    };
-
-    ws.onclose = () => {
-        if (!headersReady) {
-            status = 502;
-            responseHeaders = { 'content-type': 'text/plain; charset=utf-8' };
-            ensureHeadersReady();
-        }
-        closeAndEnd();
-    };
-
-    const abortHandler = () => {
-        status = 499;
-        responseHeaders = { 'content-type': 'text/plain; charset=utf-8' };
+        return;
+      case "chunk":
         ensureHeadersReady();
-        if (streamController && !settled) {
-            streamController.enqueue(encoder.encode('Aborted'));
-        }
-        void fetch(`${baseUrl}/proxy-stream-jobs/${encodeURIComponent(jobId)}`, {
-            method: 'DELETE',
-            headers: {
-                'risu-auth': auth
-            }
-        }).catch(() => {});
+        streamController.enqueue(decodeProxyJobWsChunk(parsed.dataBase64));
+        return;
+      case "error": {
+        status = parsed.status ?? 502;
+        responseHeaders = { "content-type": "text/plain; charset=utf-8" };
+        ensureHeadersReady();
+        const msg = formatProxyStreamErrorMessage(
+          parsed.status,
+          parsed.message,
+        );
+        streamController.enqueue(encoder.encode(msg));
         closeAndEnd();
-    };
-    if (requestSignal?.aborted) {
-        abortHandler();
+        return;
+      }
+      case "done":
+        ensureHeadersReady();
+        closeAndEnd();
+        return;
     }
-    else {
-        requestSignal?.addEventListener('abort', abortHandler, { once: true });
-    }
+  };
 
-    await waitHeaders;
-    requestSignal?.removeEventListener('abort', abortHandler);
-    return new Response(pipedReadable, {
-        status,
-        headers: new Headers(responseHeaders)
-    });
+  ws.onerror = () => {
+    if (!streamController) {
+      return;
+    }
+    status = 502;
+    responseHeaders = { "content-type": "text/plain; charset=utf-8" };
+    ensureHeadersReady();
+    streamController.enqueue(encoder.encode("Proxy WebSocket stream error"));
+    closeAndEnd();
+  };
+
+  ws.onclose = () => {
+    if (!headersReady) {
+      status = 502;
+      responseHeaders = { "content-type": "text/plain; charset=utf-8" };
+      ensureHeadersReady();
+    }
+    closeAndEnd();
+  };
+
+  const abortHandler = () => {
+    status = 499;
+    responseHeaders = { "content-type": "text/plain; charset=utf-8" };
+    ensureHeadersReady();
+    if (streamController && !settled) {
+      streamController.enqueue(encoder.encode("Aborted"));
+    }
+    void fetch(`${baseUrl}/proxy-stream-jobs/${encodeURIComponent(jobId)}`, {
+      method: "DELETE",
+      headers: {
+        "risu-auth": auth,
+      },
+    }).catch(() => {});
+    closeAndEnd();
+  };
+  if (requestSignal?.aborted) {
+    abortHandler();
+  } else {
+    requestSignal?.addEventListener("abort", abortHandler, { once: true });
+  }
+
+  await waitHeaders;
+  requestSignal?.removeEventListener("abort", abortHandler);
+  return new Response(pipedReadable, {
+    status,
+    headers: new Headers(responseHeaders),
+  });
 }
 
 /**
@@ -1788,271 +2017,289 @@ async function fetchViaProxyJobWs(url: string, arg: {
  * @returns {number} status - The response status code.
  * @throws {Error} - Throws an error if the request is aborted or if there is an error in the response.
  */
-export async function fetchNative(url: string, arg: {
-    body?: string | Uint8Array | ArrayBuffer,
-    headers?: { [key: string]: string },
-    method?: "POST" | "GET" | "PUT" | "DELETE",
-    signal?: AbortSignal,
-    useRisuTk?: boolean,
-    chatId?: string
-    interceptor?: string
-    logFetch?: boolean
-    requestTimeoutMs?: number
-    networkRoute?: 'auto' | 'local_network'
-}): Promise<Response> {
+export async function fetchNative(
+  url: string,
+  arg: {
+    body?: string | Uint8Array | ArrayBuffer;
+    headers?: { [key: string]: string };
+    method?: "POST" | "GET" | "PUT" | "DELETE";
+    signal?: AbortSignal;
+    useRisuTk?: boolean;
+    chatId?: string;
+    interceptor?: string;
+    logFetch?: boolean;
+    requestTimeoutMs?: number;
+    networkRoute?: "auto" | "local_network";
+  },
+): Promise<Response> {
+  const useInterceptor = !!arg.interceptor;
+  console.log(arg.body, "body");
+  if (
+    arg.body === undefined &&
+    (arg.method === "POST" || arg.method === "PUT")
+  ) {
+    throw new Error("Body is required for POST and PUT requests");
+  }
 
-    const useInterceptor = !!arg.interceptor
-    console.log(arg.body, 'body')
-    if (arg.body === undefined && (arg.method === 'POST' || arg.method === 'PUT')) {
-        throw new Error('Body is required for POST and PUT requests')
+  arg.method = arg.method ?? "POST";
+
+  let headers = arg.headers ?? {};
+  let realBody: Uint8Array;
+
+  if (arg.method === "GET" || arg.method === "DELETE") {
+    realBody = undefined;
+  } else if (typeof arg.body === "string") {
+    let body: string = arg.body;
+    if (useInterceptor) {
+      for (const interceptor of bodyIntercepterStore) {
+        try {
+          body = (await interceptor.callback(body, arg.interceptor)) || body;
+        } catch (e) {
+          console.error(e);
+        }
+      }
     }
+    realBody = new TextEncoder().encode(body);
+  } else if (arg.body instanceof Uint8Array) {
+    realBody = arg.body;
+  } else if (arg.body instanceof ArrayBuffer) {
+    realBody = new Uint8Array(arg.body);
+  } else {
+    throw new Error("Invalid body type");
+  }
 
-    arg.method = arg.method ?? 'POST'
-
-    let headers = arg.headers ?? {}
-    let realBody: Uint8Array
-
-    if (arg.method === 'GET' || arg.method === 'DELETE') {
-        realBody = undefined
+  const db = getDatabase();
+  const useLocalNetworkRoute =
+    arg.networkRoute === "local_network" && isLocalNetworkUrl(url);
+  if (useLocalNetworkRoute && !isTauri && !isNodeServer) {
+    throw new Error(webLocalNetworkBlockedMessage);
+  }
+  let throughProxy = !isTauri && !isNodeServer && !db.usePlainFetch;
+  if (useLocalNetworkRoute) {
+    if (isNodeServer) {
+      throughProxy = true;
+    } else if (isTauri) {
+      throughProxy = false;
     }
-    else if (typeof arg.body === 'string') {
-        let body: string = arg.body
-        if(useInterceptor) {
-            for (const interceptor of bodyIntercepterStore) {
-                try {
-                    body = await interceptor.callback(body, arg.interceptor) || body
-                }
-                catch (e) {
-                    console.error(e)
-                }
+  }
+  const timeoutSignal = buildTimeoutSignal(arg.signal, arg.requestTimeoutMs);
+  const requestSignal = timeoutSignal.signal;
+  const shouldLogFetch = arg.logFetch ?? true;
+  let fetchLogIndex: number | null = null;
+  if (shouldLogFetch) {
+    fetchLogIndex = addFetchLog({
+      body: new TextDecoder().decode(realBody),
+      headers: arg.headers,
+      response: "Streamed Fetch",
+      success: true,
+      url: url,
+      resType: "stream",
+      chatId: arg.chatId,
+    });
+  }
+  try {
+    if (window.userScriptFetch && !throughProxy) {
+      return await window.userScriptFetch(url, {
+        body: realBody as any,
+        headers: headers,
+        method: arg.method,
+        signal: requestSignal,
+      });
+    } else if (isTauri) {
+      fetchIndex++;
+      if (requestSignal && requestSignal.aborted) {
+        throw new Error("aborted");
+      }
+      if (fetchIndex >= 100000) {
+        fetchIndex = 0;
+      }
+      let fetchId = fetchIndex.toString().padStart(5, "0");
+      nativeFetchData[fetchId] = [];
+      let resolved = false;
+
+      let error = "";
+      while (!streamedFetchListening) {
+        await sleep(100);
+      }
+      if (isTauri) {
+        invoke("streamed_fetch", {
+          id: fetchId,
+          url: url,
+          headers: JSON.stringify(headers),
+          body: realBody ? Buffer.from(realBody).toString("base64") : "",
+          method: arg.method,
+          timeout_secs: arg.requestTimeoutMs
+            ? Math.max(1, Math.ceil(arg.requestTimeoutMs / 1000))
+            : undefined,
+        }).then((res) => {
+          try {
+            const parsedRes = JSON.parse(res as string);
+            if (!parsedRes.success) {
+              error = parsedRes.body;
+              resolved = true;
             }
-        }
-        realBody = new TextEncoder().encode(body)
-    }
-    else if (arg.body instanceof Uint8Array) {
-        realBody = arg.body
-    }
-    else if (arg.body instanceof ArrayBuffer) {
-        realBody = new Uint8Array(arg.body)
-    }
-    else {
-        throw new Error('Invalid body type')
-    }
-
-    const db = getDatabase()
-    const useLocalNetworkRoute = arg.networkRoute === 'local_network' && isLocalNetworkUrl(url)
-    if (useLocalNetworkRoute && !isTauri && !isNodeServer) {
-        throw new Error(webLocalNetworkBlockedMessage)
-    }
-    let throughProxy = (!isTauri) && (!isNodeServer) && (!db.usePlainFetch)
-    if (useLocalNetworkRoute) {
-        if (isNodeServer) {
-            throughProxy = true
-        }
-        else if (isTauri) {
-            throughProxy = false
-        }
-    }
-    const timeoutSignal = buildTimeoutSignal(arg.signal, arg.requestTimeoutMs)
-    const requestSignal = timeoutSignal.signal
-    const shouldLogFetch = arg.logFetch ?? true
-    let fetchLogIndex: number | null = null
-    if (shouldLogFetch) {
-        fetchLogIndex = addFetchLog({
-            body: new TextDecoder().decode(realBody),
-            headers: arg.headers,
-            response: 'Streamed Fetch',
-            success: true,
+          } catch (e) {
+            // Error properties (message/name/stack) are non-enumerable, so
+            // JSON.stringify(e) returns "{}" and discards the real cause.
+            error =
+              e instanceof Error
+                ? e.message || e.name || "streamed_fetch parse failed"
+                : String(e);
+            resolved = true;
+          }
+        });
+      } else if (capStreamedFetch) {
+        capStreamedFetch
+          .streamedFetch({
+            id: fetchId,
             url: url,
-            resType: 'stream',
-            chatId: arg.chatId,
-        })
-    }
-    try {
-        if (window.userScriptFetch && !throughProxy) {
-            return await window.userScriptFetch(url, {
-            body: realBody as any,
             headers: headers,
-            method: arg.method,
-            signal: requestSignal
-        })
-        }
-        else if (isTauri) {
-        fetchIndex++
-        if (requestSignal && requestSignal.aborted) {
-            throw new Error('aborted')
-        }
-        if (fetchIndex >= 100000) {
-            fetchIndex = 0
-        }
-        let fetchId = fetchIndex.toString().padStart(5, '0')
-        nativeFetchData[fetchId] = []
-        let resolved = false
-
-        let error = ''
-        while (!streamedFetchListening) {
-            await sleep(100)
-        }
-        if (isTauri) {
-            invoke('streamed_fetch', {
-                id: fetchId,
-                url: url,
-                headers: JSON.stringify(headers),
-                body: realBody ? Buffer.from(realBody).toString('base64') : '',
-                method: arg.method,
-                timeout_secs: arg.requestTimeoutMs ? Math.max(1, Math.ceil(arg.requestTimeoutMs / 1000)) : undefined
-            }).then((res) => {
-                try {
-                    const parsedRes = JSON.parse(res as string)
-                    if (!parsedRes.success) {
-                        error = parsedRes.body
-                        resolved = true
-                    }
-                } catch (e) {
-                    // Error properties (message/name/stack) are non-enumerable, so
-                    // JSON.stringify(e) returns "{}" and discards the real cause.
-                    error = e instanceof Error
-                        ? (e.message || e.name || 'streamed_fetch parse failed')
-                        : String(e)
-                    resolved = true
-                }
-            })
-        }
-        else if (capStreamedFetch) {
-            capStreamedFetch.streamedFetch({
-                id: fetchId,
-                url: url,
-                headers: headers,
-                body: realBody ? Buffer.from(realBody).toString('base64') : '',
-            }).then((res) => {
-                if (!res.success) {
-                    error = res.error
-                    resolved = true
-                }
-            })
-        }
-
-        let resHeaders: { [key: string]: string } = null
-        let status = 400
-
-        const tauriReadableStream = new ReadableStream<Uint8Array>({
-            async start(controller) {
-                while (!resolved || nativeFetchData[fetchId].length > 0) {
-                    if (nativeFetchData[fetchId].length > 0) {
-                        const data = nativeFetchData[fetchId].shift()
-                        if (data.type === 'chunk') {
-                            const chunk = Buffer.from(data.body, 'base64')
-                            controller.enqueue(chunk as unknown as Uint8Array)
-                        }
-                        if (data.type === 'headers') {
-                            resHeaders = data.body
-                            status = data.status
-                        }
-                        if (data.type === 'end') {
-                            resolved = true
-                        }
-                    }
-                    await sleep(10)
-                }
-                controller.close()
+            body: realBody ? Buffer.from(realBody).toString("base64") : "",
+          })
+          .then((res) => {
+            if (!res.success) {
+              error = res.error;
+              resolved = true;
             }
-        })
+          });
+      }
 
-        let readableStream = tauriReadableStream
-        if (shouldLogFetch && fetchLogIndex !== null) {
-            readableStream = pipeFetchLog(fetchLogIndex, tauriReadableStream)
-        }
+      let resHeaders: { [key: string]: string } = null;
+      let status = 400;
 
-        while (resHeaders === null && !resolved) {
-            await sleep(10)
-        }
-
-        if (resHeaders === null) {
-            resHeaders = {}
-        }
-
-        if (error !== '') {
-            throw new Error(error)
-        }
-
-        return new Response(readableStream, {
-            headers: new Headers(resHeaders),
-            status: status
-        })
-
-
-    }
-    else if (throughProxy) {
-        const useProxyJobWs = isNodeServer
-            && arg.interceptor === 'openai_streaming'
-            && arg.method === 'POST'
-            && useLocalNetworkRoute;
-        const nodeProxyAuth = isNodeServer ? await getNodeServerProxyAuth() : null;
-
-        if (useProxyJobWs) {
-            try {
-                return await fetchViaProxyJobWs(url, {
-                    body: realBody,
-                    headers,
-                    method: arg.method,
-                    signal: requestSignal,
-                    requestTimeoutMs: arg.requestTimeoutMs,
-                    chatId: arg.chatId,
-                    fetchLogIndex
-                });
-            } catch (wsErr) {
-                console.warn('[ProxyJobWS] fallback to /proxy2 due to error:', wsErr);
+      const tauriReadableStream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          while (!resolved || nativeFetchData[fetchId].length > 0) {
+            if (nativeFetchData[fetchId].length > 0) {
+              const data = nativeFetchData[fetchId].shift();
+              if (data.type === "chunk") {
+                const chunk = Buffer.from(data.body, "base64");
+                controller.enqueue(chunk as unknown as Uint8Array);
+              }
+              if (data.type === "headers") {
+                resHeaders = data.body;
+                status = data.status;
+              }
+              if (data.type === "end") {
+                resolved = true;
+              }
             }
-        }
+            await sleep(10);
+          }
+          controller.close();
+        },
+      });
 
-        const r = await fetch(getProxy2Url(), {
-            body: realBody as any,
-            headers: arg.useRisuTk ? {
-                "risu-header": encodeURIComponent(JSON.stringify(headers)),
-                "risu-url": encodeURIComponent(url),
-                "Content-Type": "application/json",
-                "x-risu-tk": "use",
-                ...(arg.requestTimeoutMs && { "risu-timeout-ms": Math.max(1, Math.floor(arg.requestTimeoutMs)).toString() }),
-                ...(nodeProxyAuth ? { "risu-auth": nodeProxyAuth } : {}),
-                ...(settingsStore.state.requestLocation && { "risu-location": settingsStore.state.requestLocation }),
-            } : {
-                "risu-header": encodeURIComponent(JSON.stringify(headers)),
-                "risu-url": encodeURIComponent(url),
-                "Content-Type": "application/json",
-                ...(arg.requestTimeoutMs && { "risu-timeout-ms": Math.max(1, Math.floor(arg.requestTimeoutMs)).toString() }),
-                ...(nodeProxyAuth ? { "risu-auth": nodeProxyAuth } : {}),
-                ...(settingsStore.state.requestLocation && { "risu-location": settingsStore.state.requestLocation }),
-            },
-            method: arg.method,
-            signal: requestSignal
-        })
+      let readableStream = tauriReadableStream;
+      if (shouldLogFetch && fetchLogIndex !== null) {
+        readableStream = pipeFetchLog(fetchLogIndex, tauriReadableStream);
+      }
 
-        return new Response(r.body, {
-            headers: r.headers,
-            status: r.status
-        })
-    }
-    else {
-        return await fetch(url, {
-            body: realBody as any,
-            headers: headers,
+      while (resHeaders === null && !resolved) {
+        await sleep(10);
+      }
+
+      if (resHeaders === null) {
+        resHeaders = {};
+      }
+
+      if (error !== "") {
+        throw new Error(error);
+      }
+
+      return new Response(readableStream, {
+        headers: new Headers(resHeaders),
+        status: status,
+      });
+    } else if (throughProxy) {
+      const useProxyJobWs =
+        isNodeServer &&
+        arg.interceptor === "openai_streaming" &&
+        arg.method === "POST" &&
+        useLocalNetworkRoute;
+      const nodeProxyAuth = isNodeServer
+        ? await getNodeServerProxyAuth()
+        : null;
+
+      if (useProxyJobWs) {
+        try {
+          return await fetchViaProxyJobWs(url, {
+            body: realBody,
+            headers,
             method: arg.method,
             signal: requestSignal,
-        })
+            requestTimeoutMs: arg.requestTimeoutMs,
+            chatId: arg.chatId,
+            fetchLogIndex,
+          });
+        } catch (wsErr) {
+          console.warn("[ProxyJobWS] fallback to /proxy2 due to error:", wsErr);
+        }
+      }
+
+      const r = await fetch(getProxy2Url(), {
+        body: realBody as any,
+        headers: arg.useRisuTk
+          ? {
+              "risu-header": encodeURIComponent(JSON.stringify(headers)),
+              "risu-url": encodeURIComponent(url),
+              "Content-Type": "application/json",
+              "x-risu-tk": "use",
+              ...(arg.requestTimeoutMs && {
+                "risu-timeout-ms": Math.max(
+                  1,
+                  Math.floor(arg.requestTimeoutMs),
+                ).toString(),
+              }),
+              ...(nodeProxyAuth ? { "risu-auth": nodeProxyAuth } : {}),
+              ...(settingsStore.state.requestLocation && {
+                "risu-location": settingsStore.state.requestLocation,
+              }),
+            }
+          : {
+              "risu-header": encodeURIComponent(JSON.stringify(headers)),
+              "risu-url": encodeURIComponent(url),
+              "Content-Type": "application/json",
+              ...(arg.requestTimeoutMs && {
+                "risu-timeout-ms": Math.max(
+                  1,
+                  Math.floor(arg.requestTimeoutMs),
+                ).toString(),
+              }),
+              ...(nodeProxyAuth ? { "risu-auth": nodeProxyAuth } : {}),
+              ...(settingsStore.state.requestLocation && {
+                "risu-location": settingsStore.state.requestLocation,
+              }),
+            },
+        method: arg.method,
+        signal: requestSignal,
+      });
+
+      return new Response(r.body, {
+        headers: r.headers,
+        status: r.status,
+      });
+    } else {
+      return await fetch(url, {
+        body: realBody as any,
+        headers: headers,
+        method: arg.method,
+        signal: requestSignal,
+      });
     }
-    } finally {
-        timeoutSignal.cleanup()
-    }
+  } finally {
+    timeoutSignal.cleanup();
+  }
 }
 
 /**
  * Converts a ReadableStream of Uint8Array to a text string.
- * 
+ *
  * @param {ReadableStream<Uint8Array>} stream - The readable stream to convert.
  * @returns {Promise<string>} A promise that resolves to the text content of the stream.
  */
 export function textifyReadableStream(stream: ReadableStream<Uint8Array>) {
-    return new Response(stream).text()
+  return new Response(stream).text();
 }
 
 /**
@@ -2061,469 +2308,485 @@ export function textifyReadableStream(stream: ReadableStream<Uint8Array>) {
  * If the document is not in fullscreen mode, it requests fullscreen with navigation UI hidden.
  */
 export function toggleFullscreen() {
-    const fullscreenElement = document.fullscreenElement
-    fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen({
-        navigationUI: "hide"
-    })
+  const fullscreenElement = document.fullscreenElement;
+  fullscreenElement
+    ? document.exitFullscreen()
+    : document.documentElement.requestFullscreen({
+        navigationUI: "hide",
+      });
 }
 
 /**
  * Removes non-Latin characters from a string, replaces multiple spaces with a single space, and trims the string.
- * 
+ *
  * @param {string} data - The input string to be processed.
  * @returns {string} The processed string with non-Latin characters removed, multiple spaces replaced by a single space, and trimmed.
  */
 export function trimNonLatin(data: string) {
-    return data.replace(/[^\x00-\x7F]/g, "")
-        .replace(/ +/g, ' ')
-        .trim()
+  return data
+    .replace(/[^\x00-\x7F]/g, "")
+    .replace(/ +/g, " ")
+    .trim();
 }
 
 /**
  * A class that provides a blank writer implementation.
- * 
+ *
  * This class is used to provide a no-op implementation of a writer, making it compatible with other writer interfaces.
  */
 export class BlankWriter {
-    constructor() {
-    }
+  constructor() {}
 
-    /**
-     * Initializes the writer.
-     * 
-     * This method does nothing and is provided for compatibility with other writer interfaces.
-     */
-    async init() {
-        //do nothing, just to make compatible with other writer
-    }
+  /**
+   * Initializes the writer.
+   *
+   * This method does nothing and is provided for compatibility with other writer interfaces.
+   */
+  async init() {
+    //do nothing, just to make compatible with other writer
+  }
 
-    /**
-     * Writes data to the writer.
-     * 
-     * This method does nothing and is provided for compatibility with other writer interfaces.
-     * 
-     * @param {string} key - The key associated with the data.
-     * @param {Uint8Array|string} data - The data to be written.
-     */
-    async write(key: string, data: Uint8Array | string) {
-        //do nothing, just to make compatible with other writer
-    }
+  /**
+   * Writes data to the writer.
+   *
+   * This method does nothing and is provided for compatibility with other writer interfaces.
+   *
+   * @param {string} key - The key associated with the data.
+   * @param {Uint8Array|string} data - The data to be written.
+   */
+  async write(key: string, data: Uint8Array | string) {
+    //do nothing, just to make compatible with other writer
+  }
 
-    /**
-     * Ends the writing process.
-     * 
-     * This method does nothing and is provided for compatibility with other writer interfaces.
-     */
-    async end() {
-        //do nothing, just to make compatible with other writer
-    }
+  /**
+   * Ends the writing process.
+   *
+   * This method does nothing and is provided for compatibility with other writer interfaces.
+   */
+  async end() {
+    //do nothing, just to make compatible with other writer
+  }
 }
 
 export async function loadInternalBackup() {
-
-    const keys = isTauri ? (await readDir('database', { baseDir: BaseDirectory.AppData })).map((v) => {
-        return v.name
-    }) : (await forageStorage.keys())
-    let internalBackups: string[] = []
-    for (const key of keys) {
-        if (key.includes('dbbackup-')) {
-            internalBackups.push(key)
-        }
+  const keys = isTauri
+    ? (await readDir("database", { baseDir: BaseDirectory.AppData })).map(
+        (v) => {
+          return v.name;
+        },
+      )
+    : await forageStorage.keys();
+  let internalBackups: string[] = [];
+  for (const key of keys) {
+    if (key.includes("dbbackup-")) {
+      internalBackups.push(key);
     }
+  }
 
-    const selectOptions = [
-        'Cancel',
-        ...(internalBackups.map((a) => {
-            return (new Date(parseInt(a.replace('database/dbbackup-', '').replace('dbbackup-', '')) * 100)).toLocaleString()
-        }))
-    ]
+  const selectOptions = [
+    "Cancel",
+    ...internalBackups.map((a) => {
+      return new Date(
+        parseInt(a.replace("database/dbbackup-", "").replace("dbbackup-", "")) *
+          100,
+      ).toLocaleString();
+    }),
+  ];
 
-    const alertResult = parseInt(
-        await alertSelect(selectOptions)
-    ) - 1
+  const alertResult = parseInt(await alertSelect(selectOptions)) - 1;
 
-    if (alertResult === -1) {
-        return
-    }
+  if (alertResult === -1) {
+    return;
+  }
 
-    const selectedBackup = internalBackups[alertResult]
+  const selectedBackup = internalBackups[alertResult];
 
-    const data = isTauri ? (
-        await readFile('database/' + selectedBackup, { baseDir: BaseDirectory.AppData })
-    ) : (await forageStorage.getItem(selectedBackup))
+  const data = isTauri
+    ? await readFile("database/" + selectedBackup, {
+        baseDir: BaseDirectory.AppData,
+      })
+    : await forageStorage.getItem(selectedBackup);
 
-    setDatabase(
-        await decodeRisuSave(Buffer.from(data) as unknown as Uint8Array)
-    )
-    alertNormal('Loaded backup')
-
-
-
+  setDatabase(await decodeRisuSave(Buffer.from(data) as unknown as Uint8Array));
+  alertNormal("Loaded backup");
 }
 
 /**
  * A debugging class for performance measurement.
-*/
+ */
 
 export class PerformanceDebugger {
-    kv: { [key: string]: number[] } = {}
-    startTime: number
-    endTime: number
+  kv: { [key: string]: number[] } = {};
+  startTime: number;
+  endTime: number;
 
-    /**
-     * Starts the timing measurement.
-    */
-    start() {
-        this.startTime = performance.now()
+  /**
+   * Starts the timing measurement.
+   */
+  start() {
+    this.startTime = performance.now();
+  }
+
+  /**
+   * Ends the timing measurement and records the time difference.
+   *
+   * @param {string} key - The key to associate with the recorded time.
+   */
+  endAndRecord(key: string) {
+    this.endTime = performance.now();
+    if (!this.kv[key]) {
+      this.kv[key] = [];
+    }
+    this.kv[key].push(this.endTime - this.startTime);
+  }
+
+  /**
+   * Ends the timing measurement, records the time difference, and starts a new timing measurement.
+   *
+   * @param {string} key - The key to associate with the recorded time.
+   */
+  endAndRecordAndStart(key: string) {
+    this.endAndRecord(key);
+    this.start();
+  }
+
+  /**
+   * Logs the average time for each key to the console.
+   */
+  log() {
+    let table: { [key: string]: number } = {};
+
+    for (const key in this.kv) {
+      table[key] =
+        this.kv[key].reduce((a, b) => a + b, 0) / this.kv[key].length;
     }
 
-    /**
-     * Ends the timing measurement and records the time difference.
-     * 
-     * @param {string} key - The key to associate with the recorded time.
-    */
-    endAndRecord(key: string) {
-        this.endTime = performance.now()
-        if (!this.kv[key]) {
-            this.kv[key] = []
-        }
-        this.kv[key].push(this.endTime - this.startTime)
+    console.table(table);
+  }
+
+  combine(other: PerformanceDebugger) {
+    for (const key in other.kv) {
+      if (!this.kv[key]) {
+        this.kv[key] = [];
+      }
+      this.kv[key].push(...other.kv[key]);
     }
-
-    /**
-     * Ends the timing measurement, records the time difference, and starts a new timing measurement.
-     * 
-     * @param {string} key - The key to associate with the recorded time.
-    */
-    endAndRecordAndStart(key: string) {
-        this.endAndRecord(key)
-        this.start()
-    }
-
-    /**
-     * Logs the average time for each key to the console.
-    */
-    log() {
-        let table: { [key: string]: number } = {}
-
-        for (const key in this.kv) {
-            table[key] = this.kv[key].reduce((a, b) => a + b, 0) / this.kv[key].length
-        }
-
-
-        console.table(table)
-    }
-
-    combine(other: PerformanceDebugger) {
-        for (const key in other.kv) {
-            if (!this.kv[key]) {
-                this.kv[key] = []
-            }
-            this.kv[key].push(...other.kv[key])
-        }
-    }
+  }
 }
 
 export function getLanguageCodes() {
-    let languageCodes: {
-        code: string
-        name: string
-    }[] = []
+  let languageCodes: {
+    code: string;
+    name: string;
+  }[] = [];
 
-    for (let i = 0x41; i <= 0x5A; i++) {
-        for (let j = 0x41; j <= 0x5A; j++) {
-            languageCodes.push({
-                code: String.fromCharCode(i) + String.fromCharCode(j),
-                name: ''
-            })
-        }
+  for (let i = 0x41; i <= 0x5a; i++) {
+    for (let j = 0x41; j <= 0x5a; j++) {
+      languageCodes.push({
+        code: String.fromCharCode(i) + String.fromCharCode(j),
+        name: "",
+      });
     }
+  }
 
-    languageCodes = languageCodes.map(v => {
-        return {
-            code: v.code.toLocaleLowerCase(),
-            name: new Intl.DisplayNames([
-                settingsStore.state.language === 'cn' ? 'zh' : settingsStore.state.language
-            ], {
-                type: 'language',
-                fallback: 'none'
-            }).of(v.code)
-        }
-    }).filter((a) => {
-        return a.name
-    }).sort((a, b) => a.name.localeCompare(b.name))
+  languageCodes = languageCodes
+    .map((v) => {
+      return {
+        code: v.code.toLocaleLowerCase(),
+        name: new Intl.DisplayNames(
+          [
+            settingsStore.state.language === "cn"
+              ? "zh"
+              : settingsStore.state.language,
+          ],
+          {
+            type: "language",
+            fallback: "none",
+          },
+        ).of(v.code),
+      };
+    })
+    .filter((a) => {
+      return a.name;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 
-    return languageCodes
+  return languageCodes;
 }
 
 export function getVersionString(): string {
-    let versionString = appVer
-    if(appSubVer) {
-        versionString += '-' + appSubVer
-    }
-    if (window.location.hostname === 'nightly.risuai.xyz') {
-        versionString += ' (Nightly)'
-    }
-    if (window.location.hostname === 'stable.risuai.xyz') {
-        versionString += ' (Stable)';
-    }
-    return versionString
+  let versionString = appVer;
+  if (appSubVer) {
+    versionString += "-" + appSubVer;
+  }
+  if (window.location.hostname === "nightly.risuai.xyz") {
+    versionString += " (Nightly)";
+  }
+  if (window.location.hostname === "stable.risuai.xyz") {
+    versionString += " (Stable)";
+  }
+  return versionString;
 }
 
 export function toGetter<T extends object>(
-    getterFn: () => T,
-    args?: {
-        //blocks this.children from being accessed
-        restrictChildren:string[]
-    }
+  getterFn: () => T,
+  args?: {
+    //blocks this.children from being accessed
+    restrictChildren: string[];
+  },
 ): T {
+  const dummyTarget = () => {};
 
-    const dummyTarget = () => { };
+  return new Proxy(dummyTarget, {
+    get(target, prop, receiver) {
+      const realInstance = getterFn();
 
-    return new Proxy(dummyTarget, {
-        get(target, prop, receiver) {
+      if (
+        args?.restrictChildren &&
+        args.restrictChildren.includes(prop as string)
+      ) {
+        throw new Error(`Access to property '${String(prop)}' is restricted`);
+      }
 
-            const realInstance = getterFn();
-            
-            if (args?.restrictChildren && args.restrictChildren.includes(prop as string)) {
-                throw new Error(`Access to property '${String(prop)}' is restricted`);
-            }
+      if (realInstance === null || realInstance === undefined) {
+        return (realInstance as any)[prop];
+      }
 
-            if (realInstance === null || realInstance === undefined) {
-                return (realInstance as any)[prop];
-            }
+      const value = Reflect.get(realInstance as object, prop);
 
-            const value = Reflect.get(realInstance as object, prop);
+      if (typeof value === "function") {
+        return value.bind(realInstance);
+      }
 
-            if (typeof value === 'function') {
-                return value.bind(realInstance);
-            }
+      return value;
+    },
 
-            return value;
-        },
+    set(target, prop, value, receiver) {
+      if (
+        args?.restrictChildren &&
+        args.restrictChildren.includes(prop as string)
+      ) {
+        throw new Error(`Access to property '${String(prop)}' is restricted`);
+      }
+      const realInstance = getterFn();
+      return Reflect.set(realInstance as object, prop, value, receiver);
+    },
 
-        set(target, prop, value, receiver) {
+    has(target, prop) {
+      const realInstance = getterFn();
+      return Reflect.has(realInstance as object, prop);
+    },
 
-            if(args?.restrictChildren && args.restrictChildren.includes(prop as string)) {
-                throw new Error(`Access to property '${String(prop)}' is restricted`);
-            }
-            const realInstance = getterFn();
-            return Reflect.set(realInstance as object, prop, value, receiver);
-        },
+    ownKeys(target) {
+      const realInstance = getterFn();
+      return Reflect.ownKeys(realInstance as object);
+    },
 
-        has(target, prop) {
-            const realInstance = getterFn();
-            return Reflect.has(realInstance as object, prop);
-        },
+    construct(target, argArray, newTarget) {
+      const realInstance = getterFn() as any;
+      return new realInstance(...argArray);
+    },
 
-        ownKeys(target) {
-            const realInstance = getterFn();
-            return Reflect.ownKeys(realInstance as object);
-        },
+    deleteProperty(target, prop) {
+      const realInstance = getterFn();
+      return Reflect.deleteProperty(realInstance as object, prop);
+    },
 
-        construct(target, argArray, newTarget) {
-            const realInstance = getterFn() as any;
-            return new realInstance(...argArray);
-        },
-
-        deleteProperty(target, prop) {
-            const realInstance = getterFn();
-            return Reflect.deleteProperty(realInstance as object, prop);
-        },
-
-        getPrototypeOf() {
-            const realInstance = getterFn();
-            return Reflect.getPrototypeOf(realInstance as object);
-        }
-    }) as unknown as T;
+    getPrototypeOf() {
+      const realInstance = getterFn();
+      return Reflect.getPrototypeOf(realInstance as object);
+    },
+  }) as unknown as T;
 }
 
 const countriesWithAiLaw = new Set<string>([
+  // EU
+  // AI Act
+  // https://artificialintelligenceact.eu/
 
-    // EU
-    // AI Act
-    // https://artificialintelligenceact.eu/
-    
-    "AT",
-    "BE",
-    "BG",
-    "HR",
-    "CY",
-    "CZ",
-    "DK",
-    "EE",
-    "FI",
-    "FR",
-    "DE",
-    "EL",
-    "GR",
-    "HU",
-    "IE",
-    "IT",
-    "LV",
-    "LT",
-    "LU",
-    "MT",
-    "NL",
-    "PL",
-    "PT",
-    "RO",
-    "SK",
-    "SI",
-    "ES",
-    "SE",
+  "AT",
+  "BE",
+  "BG",
+  "HR",
+  "CY",
+  "CZ",
+  "DK",
+  "EE",
+  "FI",
+  "FR",
+  "DE",
+  "EL",
+  "GR",
+  "HU",
+  "IE",
+  "IT",
+  "LV",
+  "LT",
+  "LU",
+  "MT",
+  "NL",
+  "PL",
+  "PT",
+  "RO",
+  "SK",
+  "SI",
+  "ES",
+  "SE",
 
-    //China 
-    //Measures for Labeling of AI-Generated Synthetic Content
-    // 关于印发《人工智能生成合成内容标识办法》的通知 
-    // https://www.cac.gov.cn/2025-03/14/c_1743654684782215.htm
-    "CN",
+  //China
+  //Measures for Labeling of AI-Generated Synthetic Content
+  // 关于印发《人工智能生成合成内容标识办法》的通知
+  // https://www.cac.gov.cn/2025-03/14/c_1743654684782215.htm
+  "CN",
 
-    //Although CN Law doesn't apply, just in case
-    "HK",
-    "MO",
+  //Although CN Law doesn't apply, just in case
+  "HK",
+  "MO",
 
-    //TW isn't under mainland china jurisdiction
-    //de facto, de jure in TW law, unlike HK and MO,
-    //So we don't include it for now
-    //"TW", 
+  //TW isn't under mainland china jurisdiction
+  //de facto, de jure in TW law, unlike HK and MO,
+  //So we don't include it for now
+  //"TW",
 
-    // Republic of Korea
-    // AI Basic Act
-    // 인공지능 발전과 신뢰 기반 조성 등에 관한 기본법
-    // https://www.law.go.kr/%EB%B2%95%EB%A0%B9/%EC%9D%B8%EA%B3%B5%EC%A7%80%EB%8A%A5%20%EB%B0%9C%EC%A0%84%EA%B3%BC%20%EC%8B%A0%EB%A2%B0%20%EA%B8%B0%EB%B0%98%20%EC%A1%B0%EC%84%B1%20%EB%93%B1%EC%97%90%20%EA%B4%80%ED%95%9C%20%EA%B8%B0%EB%B3%B8%EB%B2%95/(20676,20250121)
-    "KR",
+  // Republic of Korea
+  // AI Basic Act
+  // 인공지능 발전과 신뢰 기반 조성 등에 관한 기본법
+  // https://www.law.go.kr/%EB%B2%95%EB%A0%B9/%EC%9D%B8%EA%B3%B5%EC%A7%80%EB%8A%A5%20%EB%B0%9C%EC%A0%84%EA%B3%BC%20%EC%8B%A0%EB%A2%B0%20%EA%B8%B0%EB%B0%98%20%EC%A1%B0%EC%84%B1%20%EB%93%B1%EC%97%90%20%EA%B4%80%ED%95%9C%20%EA%B8%B0%EB%B3%B8%EB%B2%95/(20676,20250121)
+  "KR",
 
-    // Vietnam
-    // Digital Tech Law
-    // Luật Công nghệ số
-    "VN",
-
-])
+  // Vietnam
+  // Digital Tech Law
+  // Luật Công nghệ số
+  "VN",
+]);
 
 export function aiLawApplies(): boolean {
+  //TODO: implement actual logic
+  //lets now assume it always applies
+  //so we don't have legal issues later
 
-    //TODO: implement actual logic
-    //lets now assume it always applies
-    //so we don't have legal issues later
-
-    return true
+  return true;
 }
 
 export function aiWatermarkingLawApplies(): boolean {
-
-    //TODO: implement actual logic
-    //lets now assume it is false for now,
-    //becuase very few countries have it for now
-    return false
+  //TODO: implement actual logic
+  //lets now assume it is false for now,
+  //becuase very few countries have it for now
+  return false;
 }
 
 export const chatFoldedState = $state<{
-    data: null| {
-        targetCharacterId: string,
-        targetChatId: string,
-        targetMessageId: string,
-    }
+  data: null | {
+    targetCharacterId: string;
+    targetChatId: string;
+    targetMessageId: string;
+  };
 }>({
-    data: null
-})
+  data: null,
+});
 
 //Since its exported, we cannot use $derived here
 export let chatFoldedStateMessageIndex = $state({
-    index: -1
-})
+  index: -1,
+});
 
 $effect.root(() => {
-    $effect(() => {
-        if(!chatFoldedState.data){
-            return
-        }
-        const char = characterStore.characters[selIdState.selId]
-        if (!char || !char.chats) return
-        const chat = char.chats[char.chatPage]
-        if (!chat) return
-        if(chatFoldedState.data.targetCharacterId !== char.chaId){
-            chatFoldedState.data = null
-        }
-        if(chatFoldedState.data.targetChatId !== chat.id){
-            chatFoldedState.data = null
-        }
-    })
+  $effect(() => {
+    if (!chatFoldedState.data) {
+      return;
+    }
+    const char = characterStore.characters[selIdState.selId];
+    if (!char || !char.chats) return;
+    const chat = char.chats[char.chatPage];
+    if (!chat) return;
+    if (chatFoldedState.data.targetCharacterId !== char.chaId) {
+      chatFoldedState.data = null;
+    }
+    if (chatFoldedState.data.targetChatId !== chat.id) {
+      chatFoldedState.data = null;
+    }
+  });
 
-    $effect(() => {
-        if(chatFoldedState.data === null){
-            chatFoldedStateMessageIndex.index = -1
-            return
-        }
-        const char = characterStore.characters[selIdState.selId]
-        if (!char || !char.chats) return
-        const chat = char.chats[char.chatPage]
-        if (!chat) return
-        const messageIndex = chat.message.findIndex((v) => {
-            return chatFoldedState.data?.targetMessageId === v.chatId
-        })
-        if(messageIndex === -1){
-            console.warn('Target message for folding id' + chatFoldedState.data?.targetMessageId + ' not found')
-            chatFoldedStateMessageIndex.index = -1
-            return
-        }
-        chatFoldedStateMessageIndex.index = messageIndex
-    })
-})
+  $effect(() => {
+    if (chatFoldedState.data === null) {
+      chatFoldedStateMessageIndex.index = -1;
+      return;
+    }
+    const char = characterStore.characters[selIdState.selId];
+    if (!char || !char.chats) return;
+    const chat = char.chats[char.chatPage];
+    if (!chat) return;
+    const messageIndex = chat.message.findIndex((v) => {
+      return chatFoldedState.data?.targetMessageId === v.chatId;
+    });
+    if (messageIndex === -1) {
+      console.warn(
+        "Target message for folding id" +
+          chatFoldedState.data?.targetMessageId +
+          " not found",
+      );
+      chatFoldedStateMessageIndex.index = -1;
+      return;
+    }
+    chatFoldedStateMessageIndex.index = messageIndex;
+  });
+});
 
 export function foldChatToMessage(targetMessageIdOrIndex: string | number) {
-    let targetMessageId = ''
-    if (typeof targetMessageIdOrIndex === 'number') {
-        const char = getCurrentCharacter()
-        const chat = char.chats[char.chatPage]
-        const message = chat.message[targetMessageIdOrIndex]
-        targetMessageId = message.chatId
-    }
-    else{
-        targetMessageId = targetMessageIdOrIndex
-    }
-    const char = getCurrentCharacter()
-    const chat = char.chats[char.chatPage]
-    chatFoldedState.data = {
-        targetCharacterId: char.chaId,
-        targetChatId: chat.id,
-        targetMessageId: targetMessageId,
-    }
+  let targetMessageId = "";
+  if (typeof targetMessageIdOrIndex === "number") {
+    const char = getCurrentCharacter();
+    const chat = char.chats[char.chatPage];
+    const message = chat.message[targetMessageIdOrIndex];
+    targetMessageId = message.chatId;
+  } else {
+    targetMessageId = targetMessageIdOrIndex;
+  }
+  const char = getCurrentCharacter();
+  const chat = char.chats[char.chatPage];
+  chatFoldedState.data = {
+    targetCharacterId: char.chaId,
+    targetChatId: chat.id,
+    targetMessageId: targetMessageId,
+  };
 }
 
 export function changeChatTo(IdOrIndex: string | number) {
-    let index = -1
-    if (typeof IdOrIndex === 'number') {
-        index = IdOrIndex
-    }
+  let index = -1;
+  if (typeof IdOrIndex === "number") {
+    index = IdOrIndex;
+  }
 
-    if (typeof IdOrIndex === 'string') {
-        const currentCharacter = getCurrentCharacter()
-        index = currentCharacter.chats.findIndex((v) => {
-            return v.id === IdOrIndex
-        })
-    }
+  if (typeof IdOrIndex === "string") {
+    const currentCharacter = getCurrentCharacter();
+    index = currentCharacter.chats.findIndex((v) => {
+      return v.id === IdOrIndex;
+    });
+  }
 
-    if(index === -1){
-        return
-    }
+  if (index === -1) {
+    return;
+  }
 
-    const nextChat = characterStore.characters[selIdState.selId]?.chats?.[index]
-    if (characterStore.characters[selIdState.selId]) {
-        characterStore.characters[selIdState.selId].chatPage = index
-    }
-    ReloadGUIPointer.set(Math.random())
-    releaseInactiveChatMessages(nextChat?.id)
+  const nextChat = characterStore.characters[selIdState.selId]?.chats?.[index];
+  if (characterStore.characters[selIdState.selId]) {
+    characterStore.characters[selIdState.selId].chatPage = index;
+  }
+  ReloadGUIPointer.set(Math.random());
+  releaseInactiveChatMessages(nextChat?.id);
 }
 
-export function createChatCopyName(originalName: string,type:'Copy'|'Branch'): string {
-    let name = originalName.replaceAll(/\(((Copy|Branch)( \d+)?)\)$/g, '').trim()
-    let copyIndex = 1
-    let newName = `${name} (${type})`
-    const char = getCurrentCharacter()
-    while (char.chats.find((v) => v.name === newName)) {
-        copyIndex++
-        newName = `${name} (${type} ${copyIndex})`
-    }
-    return newName
+export function createChatCopyName(
+  originalName: string,
+  type: "Copy" | "Branch",
+): string {
+  let name = originalName.replaceAll(/\(((Copy|Branch)( \d+)?)\)$/g, "").trim();
+  let copyIndex = 1;
+  let newName = `${name} (${type})`;
+  const char = getCurrentCharacter();
+  while (char.chats.find((v) => v.name === newName)) {
+    copyIndex++;
+    newName = `${name} (${type} ${copyIndex})`;
+  }
+  return newName;
 }

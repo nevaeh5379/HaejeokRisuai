@@ -10,12 +10,14 @@ export interface ContextualEmbeddingProvider {
 }
 
 export function isContextModel(model: string): boolean {
-  return model === 'voyageContext3';
+  return model === "voyageContext3";
 }
 
-export function getContextProvider(model: string): ContextualEmbeddingProvider | null {
+export function getContextProvider(
+  model: string,
+): ContextualEmbeddingProvider | null {
   switch (model) {
-    case 'voyageContext3':
+    case "voyageContext3":
       return new VoyageContext3Provider();
     default:
       return null;
@@ -34,7 +36,7 @@ class VoyageContext3Provider implements ContextualEmbeddingProvider {
     const db = getDatabase();
     const apiKey = db.voyageApiKey?.trim();
     if (!apiKey) {
-      throw new Error('Voyage Context 3 requires a Voyage API Key');
+      throw new Error("Voyage Context 3 requires a Voyage API Key");
     }
     return apiKey;
   }
@@ -48,14 +50,14 @@ class VoyageContext3Provider implements ContextualEmbeddingProvider {
     for (const batch of batches) {
       const response = await globalFetch(VOYAGE_API_URL, {
         headers: {
-          "Authorization": "Bearer " + apiKey,
-          "Content-Type": "application/json"
+          Authorization: "Bearer " + apiKey,
+          "Content-Type": "application/json",
         },
         body: {
-          "model": VOYAGE_MODEL,
-          "inputs": batch,
-          "input_type": "document"
-        }
+          model: VOYAGE_MODEL,
+          inputs: batch,
+          input_type: "document",
+        },
       });
 
       if (!response.ok || !response.data.data) {
@@ -64,7 +66,7 @@ class VoyageContext3Provider implements ContextualEmbeddingProvider {
 
       for (let i = 0; i < batch.length; i++) {
         const groupEmbeddings: VectorArray[] = response.data.data[i].data.map(
-          (item: { embedding: VectorArray }) => item.embedding
+          (item: { embedding: VectorArray }) => item.embedding,
         );
         allResults[groupOffset + i] = groupEmbeddings;
       }
@@ -79,14 +81,14 @@ class VoyageContext3Provider implements ContextualEmbeddingProvider {
     const apiKey = this.getApiKey();
     const response = await globalFetch(VOYAGE_API_URL, {
       headers: {
-        "Authorization": "Bearer " + apiKey,
-        "Content-Type": "application/json"
+        Authorization: "Bearer " + apiKey,
+        "Content-Type": "application/json",
       },
       body: {
-        "inputs": queries.map(s => [s]),
-        "model": VOYAGE_MODEL,
-        "input_type": "query"
-      }
+        inputs: queries.map((s) => [s]),
+        model: VOYAGE_MODEL,
+        input_type: "query",
+      },
     });
 
     if (!response.ok || !response.data.data) {
@@ -94,14 +96,16 @@ class VoyageContext3Provider implements ContextualEmbeddingProvider {
     }
 
     return response.data.data.map(
-      (group: { data: { embedding: VectorArray }[] }) => group.data[0].embedding
+      (group: { data: { embedding: VectorArray }[] }) =>
+        group.data[0].embedding,
     );
   }
 
   getCacheKeySuffix(contextTexts?: string[]): string {
-    const ctxPart = contextTexts && contextTexts.length > 1
-      ? `|ctx:${contextHash(contextTexts)}`
-      : '';
+    const ctxPart =
+      contextTexts && contextTexts.length > 1
+        ? `|ctx:${contextHash(contextTexts)}`
+        : "";
     return `|voyageContext3${ctxPart}`;
   }
 
@@ -114,7 +118,7 @@ class VoyageContext3Provider implements ContextualEmbeddingProvider {
       if (
         currentBatch.length > 0 &&
         (currentBatch.length + 1 > MAX_INPUTS_PER_REQUEST ||
-         currentChunkCount + group.length > MAX_CHUNKS_PER_REQUEST)
+          currentChunkCount + group.length > MAX_CHUNKS_PER_REQUEST)
       ) {
         batches.push(currentBatch);
         currentBatch = [];

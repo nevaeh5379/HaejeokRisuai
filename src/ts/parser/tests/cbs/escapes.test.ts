@@ -1,25 +1,25 @@
-import fc from 'fast-check'
-import { writable } from 'svelte/store'
-import { describe, expect, test, vi } from 'vitest'
-import { risuChatParser, risuUnescape } from '../../parser.svelte'
-import { trimVarPrefix } from './lib'
+import fc from "fast-check";
+import { writable } from "svelte/store";
+import { describe, expect, test, vi } from "vitest";
+import { risuChatParser, risuUnescape } from "../../parser.svelte";
+import { trimVarPrefix } from "./lib";
 
 //#region module mocks
 
 vi.mock(
-  import('../../../storage/database.svelte'),
+  import("../../../storage/database.svelte"),
   () =>
     ({
-      appVer: '1234.5.67',
+      appVer: "1234.5.67",
       getCurrentCharacter: () => ({}),
       getDatabase: () => ({}),
-    }) as typeof import('../../../storage/database.svelte'),
-)
+    }) as typeof import("../../../storage/database.svelte"),
+);
 
-vi.mock(import('../../../globalApi.svelte'), () => ({
+vi.mock(import("../../../globalApi.svelte"), () => ({
   aiWatermarkingLawApplies: () => false,
-  getFileSrc: () => Promise.resolve(''),
-}))
+  getFileSrc: () => Promise.resolve(""),
+}));
 
 /** Returns accessed key as the value. */
 const varStorage = vi.hoisted(
@@ -28,13 +28,13 @@ const varStorage = vi.hoisted(
       {},
       {
         get(_, prop) {
-          return trimVarPrefix(prop)
+          return trimVarPrefix(prop);
         },
       },
     ),
-)
+);
 
-vi.mock(import('../../../stores/domain/characterStore.svelte'), () => {
+vi.mock(import("../../../stores/domain/characterStore.svelte"), () => {
   return {
     characterStore: {
       characters: [
@@ -45,115 +45,119 @@ vi.mock(import('../../../stores/domain/characterStore.svelte'), () => {
               scriptstate: varStorage,
             },
           ],
-          defaultVariables: '',
+          defaultVariables: "",
         },
       ],
     },
-  } as any
-})
+  } as any;
+});
 
-vi.mock(import('../../../stores/domain/settingsStore.svelte'), () => {
+vi.mock(import("../../../stores/domain/settingsStore.svelte"), () => {
   return {
     settingsStore: {
       state: {
         globalChatVariables: varStorage,
-        templateDefaultVariables: '',
+        templateDefaultVariables: "",
       },
     },
-  } as any
-})
+  } as any;
+});
 
-vi.mock(import('../../../stores.svelte'), () => {
+vi.mock(import("../../../stores.svelte"), () => {
   return {
     selIdState: {
       selId: 0,
     },
     selectedCharID: writable(0),
-  } as any
-})
+  } as any;
+});
 
 //#endregion
 
-const parse = (s: string): string => risuUnescape(risuChatParser(s))
+const parse = (s: string): string => risuUnescape(risuChatParser(s));
 
-test('bo, bc', () => {
-  expect(parse('{{bo}}')).toBe('{{')
-  expect(parse('{{bc}}')).toBe('}}')
-})
+test("bo, bc", () => {
+  expect(parse("{{bo}}")).toBe("{{");
+  expect(parse("{{bc}}")).toBe("}}");
+});
 
-test('br', () => {
-  expect(parse('{{br}}')).toBe('\n')
-})
+test("br", () => {
+  expect(parse("{{br}}")).toBe("\n");
+});
 
-test('cbr', () => {
-  expect(parse('{{cbr}}')).toBe('\\n')
+test("cbr", () => {
+  expect(parse("{{cbr}}")).toBe("\\n");
   // FIXME: Broken => cbr::3cbr::3cbr::3
   // expect(parse('{{cbr::3}}')).toBe('\\n\\n\\n')
-})
+});
 
-test('decbo, decbc', () => {
-  expect(parse('{{decbo}}')).toBe('{')
-  expect(parse('{{decbc}}')).toBe('}')
-})
+test("decbo, decbc", () => {
+  expect(parse("{{decbo}}")).toBe("{");
+  expect(parse("{{decbc}}")).toBe("}");
+});
 
-test(';', () => {
-  expect(parse('{{;}}')).toBe(';')
-})
+test(";", () => {
+  expect(parse("{{;}}")).toBe(";");
+});
 
-test(':', () => {
-  expect(parse('{{;}}')).toBe(';')
-})
+test(":", () => {
+  expect(parse("{{;}}")).toBe(";");
+});
 
-test('()', () => {
-  expect(parse('{{(}}')).toBe('(')
-  expect(parse('{{)}}')).toBe(')')
-})
+test("()", () => {
+  expect(parse("{{(}}")).toBe("(");
+  expect(parse("{{)}}")).toBe(")");
+});
 
-test('<>', () => {
-  expect(parse('{{<}}')).toBe('&lt;')
-  expect(parse('{{>}}')).toBe('&gt;')
-})
+test("<>", () => {
+  expect(parse("{{<}}")).toBe("&lt;");
+  expect(parse("{{>}}")).toBe("&gt;");
+});
 
 /** Any string but not `{{/...}} */
 const anythingNotClosing = fc
   .string()
   .filter(
-    (s) => !/{{\/.*}}/.test(s) && /* FIXME opening curly without its pair causes '<' prepended */ !s.includes('{'),
-  )
+    (s) =>
+      !/{{\/.*}}/.test(s) &&
+      /* FIXME opening curly without its pair causes '<' prepended */ !s.includes(
+        "{",
+      ),
+  );
 
-test('#pure', () => {
+test("#pure", () => {
   fc.assert(
     fc.property(anythingNotClosing, (a) => {
-      expect(parse(`{{#pure}}${a}{{/}}`)).toBe(a.trim())
+      expect(parse(`{{#pure}}${a}{{/}}`)).toBe(a.trim());
     }),
-  )
-})
+  );
+});
 
-test('#puredisplay', () => {
+test("#puredisplay", () => {
   fc.assert(
     fc.property(anythingNotClosing, (a) => {
       expect(parse(`{{#puredisplay}}${a}{{/}}`)).toBe(
         // reparsing prevention kicks in for #puredisplay
-        a.trim().replaceAll('{{', '\\{\\{').replaceAll('}}', '\\}\\}'),
-      )
+        a.trim().replaceAll("{{", "\\{\\{").replaceAll("}}", "\\}\\}"),
+      );
     }),
-  )
-})
+  );
+});
 
-describe('#escape', () => {
-  test('escapes any curly braces or parenthesis, trims whitespaces', () => {
+describe("#escape", () => {
+  test("escapes any curly braces or parenthesis, trims whitespaces", () => {
     fc.assert(
       fc.property(anythingNotClosing, (a) => {
-        expect(parse(`{{#escape}}\n${a}\n{{/}}`)).toBe(a.trim())
+        expect(parse(`{{#escape}}\n${a}\n{{/}}`)).toBe(a.trim());
       }),
-    )
-  })
+    );
+  });
 
-  test('::keep preserves all whitespaces', () => {
+  test("::keep preserves all whitespaces", () => {
     fc.assert(
       fc.property(anythingNotClosing, (a) => {
-        expect(parse(`{{#escape::keep}}\n${a}\n{{/}}`)).toBe(`\n${a}\n`)
+        expect(parse(`{{#escape::keep}}\n${a}\n{{/}}`)).toBe(`\n${a}\n`);
       }),
-    )
-  })
-})
+    );
+  });
+});

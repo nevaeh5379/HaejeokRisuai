@@ -1,25 +1,25 @@
-import fc from 'fast-check'
-import { writable } from 'svelte/store'
-import { expect, test, vi } from 'vitest'
-import { risuChatParser } from '../../parser.svelte'
-import { cbs, trimVarPrefix, validCBSArgProp } from './lib'
+import fc from "fast-check";
+import { writable } from "svelte/store";
+import { expect, test, vi } from "vitest";
+import { risuChatParser } from "../../parser.svelte";
+import { cbs, trimVarPrefix, validCBSArgProp } from "./lib";
 
 //#region module mocks
 
 vi.mock(
-  import('../../../storage/database.svelte'),
+  import("../../../storage/database.svelte"),
   () =>
     ({
-      appVer: '1234.5.67',
+      appVer: "1234.5.67",
       getCurrentCharacter: () => ({}),
       getDatabase: () => ({}),
-    } as typeof import('../../../storage/database.svelte'))
-)
+    }) as typeof import("../../../storage/database.svelte"),
+);
 
-vi.mock(import('../../../globalApi.svelte'), () => ({
+vi.mock(import("../../../globalApi.svelte"), () => ({
   aiWatermarkingLawApplies: () => false,
-  getFileSrc: () => Promise.resolve(''),
-}))
+  getFileSrc: () => Promise.resolve(""),
+}));
 
 /** Returns accessed key as the value. */
 const varStorage = vi.hoisted(
@@ -28,13 +28,13 @@ const varStorage = vi.hoisted(
       {},
       {
         get(_, prop) {
-          return trimVarPrefix(prop)
+          return trimVarPrefix(prop);
         },
-      }
-    )
-)
+      },
+    ),
+);
 
-vi.mock(import('../../../stores/domain/characterStore.svelte'), () => {
+vi.mock(import("../../../stores/domain/characterStore.svelte"), () => {
   return {
     characterStore: {
       characters: [
@@ -45,149 +45,158 @@ vi.mock(import('../../../stores/domain/characterStore.svelte'), () => {
               scriptstate: varStorage,
             },
           ],
-          defaultVariables: '',
+          defaultVariables: "",
         },
       ],
     },
-  } as any
-})
+  } as any;
+});
 
-vi.mock(import('../../../stores/domain/settingsStore.svelte'), () => {
+vi.mock(import("../../../stores/domain/settingsStore.svelte"), () => {
   return {
     settingsStore: {
       state: {
         globalChatVariables: varStorage,
-        templateDefaultVariables: '',
+        templateDefaultVariables: "",
       },
     },
-  } as any
-})
+  } as any;
+});
 
-vi.mock(import('../../../stores.svelte'), () => {
+vi.mock(import("../../../stores.svelte"), () => {
   return {
     selIdState: {
       selId: 0,
     },
     selectedCharID: writable(0),
-  } as any
-})
+  } as any;
+});
 
 //#endregion
 
-const validCBSArgPropLong = validCBSArgProp.filter((s) => s.length > 1)
+const validCBSArgPropLong = validCBSArgProp.filter((s) => s.length > 1);
 
-const quickParse = (op: string, ...args: (string | number)[]) => risuChatParser(cbs(op, ...args.map(String)))
+const quickParse = (op: string, ...args: (string | number)[]) =>
+  risuChatParser(cbs(op, ...args.map(String)));
 
-test('startswith, endswith, contains', () => {
-  expect(quickParse('startswith', 'Hello World', 'Hello')).toBe('1')
-  expect(quickParse('endswith', 'Hello World', 'World')).toBe('1')
-  expect(quickParse('contains', 'Hello World', 'lo Wo')).toBe('1')
-
-  fc.assert(
-    fc.property(validCBSArgPropLong, validCBSArgPropLong, (a, b) => {
-      fc.pre(!a.includes(b))
-
-      expect(quickParse('startsWith', a, a.slice(0, -1))).toBe('1')
-      expect(quickParse('startsWith', a, b)).toBe('0')
-
-      expect(quickParse('endsWith', a, a.slice(-1))).toBe('1')
-      expect(quickParse('endsWith', a, b)).toBe('0')
-
-      expect(quickParse('contains', a, a.slice(0, -1))).toBe('1')
-      expect(quickParse('contains', a, a.slice(-1))).toBe('1')
-      expect(quickParse('contains', a, a)).toBe('1')
-      expect(quickParse('contains', a, b)).toBe('0')
-    })
-  )
-})
-
-test('replace', () => {
-  expect(quickParse('replace', 'Hello World', 'o', '0')).toBe('Hell0 W0rld')
+test("startswith, endswith, contains", () => {
+  expect(quickParse("startswith", "Hello World", "Hello")).toBe("1");
+  expect(quickParse("endswith", "Hello World", "World")).toBe("1");
+  expect(quickParse("contains", "Hello World", "lo Wo")).toBe("1");
 
   fc.assert(
     fc.property(validCBSArgPropLong, validCBSArgPropLong, (a, b) => {
-      const randIndex = Math.floor(Math.random() * a.length)
-      expect(quickParse('replace', a, a[randIndex], b)).toBe(a.replaceAll(a[randIndex], b))
+      fc.pre(!a.includes(b));
+
+      expect(quickParse("startsWith", a, a.slice(0, -1))).toBe("1");
+      expect(quickParse("startsWith", a, b)).toBe("0");
+
+      expect(quickParse("endsWith", a, a.slice(-1))).toBe("1");
+      expect(quickParse("endsWith", a, b)).toBe("0");
+
+      expect(quickParse("contains", a, a.slice(0, -1))).toBe("1");
+      expect(quickParse("contains", a, a.slice(-1))).toBe("1");
+      expect(quickParse("contains", a, a)).toBe("1");
+      expect(quickParse("contains", a, b)).toBe("0");
     }),
-  )
-})
+  );
+});
 
-test('split', () => {
-  expect(quickParse('split', 'apple,banana,cherry', ',')).toBe(JSON.stringify(['apple', 'banana', 'cherry']))
+test("replace", () => {
+  expect(quickParse("replace", "Hello World", "o", "0")).toBe("Hell0 W0rld");
+
+  fc.assert(
+    fc.property(validCBSArgPropLong, validCBSArgPropLong, (a, b) => {
+      const randIndex = Math.floor(Math.random() * a.length);
+      expect(quickParse("replace", a, a[randIndex], b)).toBe(
+        a.replaceAll(a[randIndex], b),
+      );
+    }),
+  );
+});
+
+test("split", () => {
+  expect(quickParse("split", "apple,banana,cherry", ",")).toBe(
+    JSON.stringify(["apple", "banana", "cherry"]),
+  );
 
   fc.assert(
     fc.property(fc.array(validCBSArgPropLong), validCBSArgProp, (arr, b) => {
-      const a = arr.join(b)
+      const a = arr.join(b);
 
-      expect(quickParse('split', a, b)).toBe(JSON.stringify(a.split(b)))
+      expect(quickParse("split", a, b)).toBe(JSON.stringify(a.split(b)));
     }),
-  )
-})
+  );
+});
 
-test('trim', () => {
-  expect(quickParse('trim', '  hello world  ')).toBe('hello world')
-  expect(quickParse('trim', '  hello  \n  world  ')).toBe('hello  \n  world')
+test("trim", () => {
+  expect(quickParse("trim", "  hello world  ")).toBe("hello world");
+  expect(quickParse("trim", "  hello  \n  world  ")).toBe("hello  \n  world");
 
   fc.assert(
     fc.property(validCBSArgProp, (a) => {
-      expect(quickParse('trim', a)).toBe(a.trim())
+      expect(quickParse("trim", a)).toBe(a.trim());
     }),
-  )
-})
+  );
+});
 
-test('length', () => {
-  expect(quickParse('length', 'Hello')).toBe('5')
+test("length", () => {
+  expect(quickParse("length", "Hello")).toBe("5");
 
   fc.assert(
     fc.property(validCBSArgProp, (a) => {
-      expect(quickParse('length', a)).toBe(String(a.length))
+      expect(quickParse("length", a)).toBe(String(a.length));
     }),
-  )
-})
+  );
+});
 
-test('capitalize, lower, upper', () => {
-  expect(quickParse('capitalize', 'hello world')).toBe('Hello world')
-  expect(quickParse('lower', 'Hello WORLD')).toBe('hello world')
-  expect(quickParse('upper', 'Hello WORLD')).toBe('HELLO WORLD')
+test("capitalize, lower, upper", () => {
+  expect(quickParse("capitalize", "hello world")).toBe("Hello world");
+  expect(quickParse("lower", "Hello WORLD")).toBe("hello world");
+  expect(quickParse("upper", "Hello WORLD")).toBe("HELLO WORLD");
 
   fc.assert(
     fc.property(validCBSArgProp, (a) => {
-      expect(quickParse('capitalize', a)).toBe(a.charAt(0).toUpperCase() + a.slice(1))
-      expect(quickParse('lower', a)).toBe(a.toLocaleLowerCase())
-      expect(quickParse('upper', a)).toBe(a.toLocaleUpperCase())
+      expect(quickParse("capitalize", a)).toBe(
+        a.charAt(0).toUpperCase() + a.slice(1),
+      );
+      expect(quickParse("lower", a)).toBe(a.toLocaleLowerCase());
+      expect(quickParse("upper", a)).toBe(a.toLocaleUpperCase());
     }),
-  )
-})
+  );
+});
 
-test('reverse', () => {
-  const splitByPoints = (str: string) => [...str].reverse().join('')
+test("reverse", () => {
+  const splitByPoints = (str: string) => [...str].reverse().join("");
 
-  expect(quickParse('reverse', 'Hello World')).toBe('dlroW olleH')
+  expect(quickParse("reverse", "Hello World")).toBe("dlroW olleH");
   // No combiner: 👦‍👧‍👩‍👨
   // Intended behavior. See https://github.com/kwaroran/Risuai/pull/1151#issuecomment-3714792523
-  expect(quickParse('reverse', '👨‍👩‍👧‍👦')).toBe(splitByPoints('👨‍👩‍👧‍👦'))
+  expect(quickParse("reverse", "👨‍👩‍👧‍👦")).toBe(splitByPoints("👨‍👩‍👧‍👦"));
 
   fc.assert(
     fc.property(validCBSArgProp, (a) => {
-      expect(quickParse('reverse', a)).toBe(splitByPoints(a))
+      expect(quickParse("reverse", a)).toBe(splitByPoints(a));
     }),
-  )
-})
+  );
+});
 
-test('unicodeencode', () => {
+test("unicodeencode", () => {
   fc.assert(
     fc.property(validCBSArgProp, (a) => {
-      const randIndex = Math.floor(Math.random() * a.length)
-      expect(quickParse('unicodeencode', a, randIndex)).toBe(String(a.charCodeAt(randIndex)))
+      const randIndex = Math.floor(Math.random() * a.length);
+      expect(quickParse("unicodeencode", a, randIndex)).toBe(
+        String(a.charCodeAt(randIndex)),
+      );
     }),
-  )
-})
+  );
+});
 
-test('unicodedecode, u', () => {
+test("unicodedecode, u", () => {
   fc.assert(
     fc.property(fc.integer(), (a) => {
-      expect(quickParse('unicodedecode', a)).toBe(String.fromCharCode(a))
-      expect(quickParse('u', a.toString(16))).toBe(String.fromCharCode(a))
+      expect(quickParse("unicodedecode", a)).toBe(String.fromCharCode(a));
+      expect(quickParse("u", a.toString(16))).toBe(String.fromCharCode(a));
     }),
-  )
-})
+  );
+});

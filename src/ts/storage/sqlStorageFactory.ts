@@ -1,8 +1,8 @@
-import type { ISqlStorage } from './ISqlStorage'
-import type { SqlCommit, SqlCommitResult } from './sqlCommit'
-import { isTauri, isNodeServer } from '../platform'
+import type { ISqlStorage } from "./ISqlStorage";
+import type { SqlCommit, SqlCommitResult } from "./sqlCommit";
+import { isTauri, isNodeServer } from "../platform";
 
-let storageSingleton: ISqlStorage | null = null
+let storageSingleton: ISqlStorage | null = null;
 
 /**
  * Wraps a storage backend so that every `commit()` call is serialised.
@@ -15,23 +15,23 @@ let storageSingleton: ISqlStorage | null = null
  * previous one has updated it, eliminating same-client conflicts.
  */
 function wrapWithSerializedCommits(inner: ISqlStorage): ISqlStorage {
-    let commitChain: Promise<unknown> = Promise.resolve()
+  let commitChain: Promise<unknown> = Promise.resolve();
 
-    return new Proxy(inner, {
-        get(target, prop, receiver) {
-            if (prop === 'commit') {
-                return async (commit: SqlCommit): Promise<SqlCommitResult> => {
-                    const run = async (): Promise<SqlCommitResult> => {
-                        commit.baseRevision = target.getRevision()
-                        return await target.commit(commit)
-                    }
-                    commitChain = commitChain.then(run, run)
-                    return commitChain as Promise<SqlCommitResult>
-                }
-            }
-            return Reflect.get(target, prop, receiver)
-        },
-    })
+  return new Proxy(inner, {
+    get(target, prop, receiver) {
+      if (prop === "commit") {
+        return async (commit: SqlCommit): Promise<SqlCommitResult> => {
+          const run = async (): Promise<SqlCommitResult> => {
+            commit.baseRevision = target.getRevision();
+            return await target.commit(commit);
+          };
+          commitChain = commitChain.then(run, run);
+          return commitChain as Promise<SqlCommitResult>;
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
 }
 
 /**
@@ -45,34 +45,38 @@ function wrapWithSerializedCommits(inner: ISqlStorage): ISqlStorage {
  * so concurrent domain stores don't race on the shared revision.
  */
 export async function getSqlStorage(): Promise<ISqlStorage> {
-    if (storageSingleton) {
-        return storageSingleton
-    }
+  if (storageSingleton) {
+    return storageSingleton;
+  }
 
-    if (isNodeServer) {
-        // Node server uses NodePostgresStorage via NodeStorage
-        const { forageStorage } = await import('../globalApi.svelte')
-        const { NodeStorage } = await import('./nodeStorage')
-        if (forageStorage.realStorage instanceof NodeStorage) {
-            storageSingleton = wrapWithSerializedCommits(forageStorage.realStorage.postgres as unknown as ISqlStorage)
-            return storageSingleton
-        }
-        // Fallback: create a standalone NodePostgresStorage
-        const { NodePostgresStorage } = await import('./nodePostgresStorage')
-        storageSingleton = wrapWithSerializedCommits(new NodePostgresStorage(async () => '') as unknown as ISqlStorage)
-        return storageSingleton
+  if (isNodeServer) {
+    // Node server uses NodePostgresStorage via NodeStorage
+    const { forageStorage } = await import("../globalApi.svelte");
+    const { NodeStorage } = await import("./nodeStorage");
+    if (forageStorage.realStorage instanceof NodeStorage) {
+      storageSingleton = wrapWithSerializedCommits(
+        forageStorage.realStorage.postgres as unknown as ISqlStorage,
+      );
+      return storageSingleton;
     }
+    // Fallback: create a standalone NodePostgresStorage
+    const { NodePostgresStorage } = await import("./nodePostgresStorage");
+    storageSingleton = wrapWithSerializedCommits(
+      new NodePostgresStorage(async () => "") as unknown as ISqlStorage,
+    );
+    return storageSingleton;
+  }
 
-    if (isTauri) {
-        const { TauriSqliteStorage } = await import('./tauriSqliteStorage')
-        storageSingleton = wrapWithSerializedCommits(new TauriSqliteStorage())
-        return storageSingleton
-    }
+  if (isTauri) {
+    const { TauriSqliteStorage } = await import("./tauriSqliteStorage");
+    storageSingleton = wrapWithSerializedCommits(new TauriSqliteStorage());
+    return storageSingleton;
+  }
 
-    // Web browser
-    const { WebSqliteStorage } = await import('./webSqliteStorage')
-    storageSingleton = wrapWithSerializedCommits(new WebSqliteStorage())
-    return storageSingleton
+  // Web browser
+  const { WebSqliteStorage } = await import("./webSqliteStorage");
+  storageSingleton = wrapWithSerializedCommits(new WebSqliteStorage());
+  return storageSingleton;
 }
 
 /**
@@ -80,9 +84,9 @@ export async function getSqlStorage(): Promise<ISqlStorage> {
  * after configuring SQL on the Node server).
  */
 export function resetSqlStorage(): void {
-    storageSingleton = null
+  storageSingleton = null;
 }
 
 export function setSqlStorageForTesting(storage: ISqlStorage | null): void {
-    storageSingleton = storage ? wrapWithSerializedCommits(storage) : null
+  storageSingleton = storage ? wrapWithSerializedCommits(storage) : null;
 }

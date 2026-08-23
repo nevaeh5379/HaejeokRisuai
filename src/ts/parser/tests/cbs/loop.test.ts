@@ -1,27 +1,27 @@
-import { writable } from 'svelte/store'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
-import { risuChatParser } from '../../parser.svelte'
-import { resetChatVariables } from './lib'
-import { setChatVar } from '../../chatVar.svelte'
+import { writable } from "svelte/store";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { risuChatParser } from "../../parser.svelte";
+import { resetChatVariables } from "./lib";
+import { setChatVar } from "../../chatVar.svelte";
 
 //#region module mocks
 
 vi.mock(
-  import('../../../storage/database.svelte'),
+  import("../../../storage/database.svelte"),
   () =>
     ({
-      appVer: '1234.5.67',
+      appVer: "1234.5.67",
       getCurrentCharacter: () => ({}),
       getDatabase: () => ({}),
-    }) as typeof import('../../../storage/database.svelte'),
-)
+    }) as typeof import("../../../storage/database.svelte"),
+);
 
-vi.mock(import('../../../globalApi.svelte'), () => ({
+vi.mock(import("../../../globalApi.svelte"), () => ({
   aiWatermarkingLawApplies: () => false,
-  getFileSrc: () => Promise.resolve(''),
-}))
+  getFileSrc: () => Promise.resolve(""),
+}));
 
-vi.mock(import('../../../stores/domain/characterStore.svelte'), () => {
+vi.mock(import("../../../stores/domain/characterStore.svelte"), () => {
   return {
     characterStore: {
       characters: [
@@ -32,105 +32,109 @@ vi.mock(import('../../../stores/domain/characterStore.svelte'), () => {
               scriptstate: {},
             },
           ],
-          defaultVariables: '',
+          defaultVariables: "",
         },
       ],
     },
-  } as any
-})
+  } as any;
+});
 
-vi.mock(import('../../../stores/domain/settingsStore.svelte'), () => {
+vi.mock(import("../../../stores/domain/settingsStore.svelte"), () => {
   return {
     settingsStore: {
       state: {
         globalChatVariables: {},
-        templateDefaultVariables: '',
+        templateDefaultVariables: "",
       },
     },
-  } as any
-})
+  } as any;
+});
 
-vi.mock(import('../../../stores.svelte'), () => {
+vi.mock(import("../../../stores.svelte"), () => {
   return {
     selIdState: {
       selId: 0,
     },
     selectedCharID: writable(0),
-  } as any
-})
+  } as any;
+});
 
 //#endregion
 
-const template = (op: string, body: string) => `{{${op}}}${body}{{/}}`
-const quickParse = (...args: Parameters<typeof template>) => risuChatParser(template(...args))
+const template = (op: string, body: string) => `{{${op}}}${body}{{/}}`;
+const quickParse = (...args: Parameters<typeof template>) =>
+  risuChatParser(template(...args));
 
 beforeEach(() => {
-  vi.resetAllMocks()
-  resetChatVariables()
-})
+  vi.resetAllMocks();
+  resetChatVariables();
+});
 
-describe('#each', () => {
-  test('can loop over a simple array literal', () => {
-    expect(quickParse('#each [1, 2, 3] as n', '{{slot::n}} ')).toBe('123')
-  })
+describe("#each", () => {
+  test("can loop over a simple array literal", () => {
+    expect(quickParse("#each [1, 2, 3] as n", "{{slot::n}} ")).toBe("123");
+  });
 
-  test('can loop over a simple array in a variable', () => {
-    setChatVar('arr', JSON.stringify([1, 2, 3]))
-    expect(quickParse('#each {{getvar::arr}} as n', '{{slot::n}} ')).toBe('123')
-  })
+  test("can loop over a simple array in a variable", () => {
+    setChatVar("arr", JSON.stringify([1, 2, 3]));
+    expect(quickParse("#each {{getvar::arr}} as n", "{{slot::n}} ")).toBe(
+      "123",
+    );
+  });
 
-  test('can loop over a 2D array literal', () => {
+  test("can loop over a 2D array literal", () => {
     expect(
       quickParse(
-        '#each::keep [[1, 2], [3, 4]] as x',
-        template(
-          '#each::keep {{slot::x}} as y',
-          '{{slot::y}}\n',
-        ),
+        "#each::keep [[1, 2], [3, 4]] as x",
+        template("#each::keep {{slot::x}} as y", "{{slot::y}}\n"),
       ),
-    ).toBe('1\n2\n3\n4\n')
-  })
+    ).toBe("1\n2\n3\n4\n");
+  });
 
-  test('can loop over a 2D array literal', () => {
-    setChatVar('arr', JSON.stringify([[1, 2], [3, 4]]))
+  test("can loop over a 2D array literal", () => {
+    setChatVar(
+      "arr",
+      JSON.stringify([
+        [1, 2],
+        [3, 4],
+      ]),
+    );
     expect(
       quickParse(
-        '#each::keep {{getvar::arr}} as x',
-        template(
-          '#each::keep {{slot::x}} as y',
-          '{{slot::y}}\n',
-        ),
+        "#each::keep {{getvar::arr}} as x",
+        template("#each::keep {{slot::x}} as y", "{{slot::y}}\n"),
       ),
-    ).toBe('1\n2\n3\n4\n')
-  })
+    ).toBe("1\n2\n3\n4\n");
+  });
 
-  test('empty array produces no output', () => {
-    expect(quickParse('#each [] as n', '{{slot::n}} ')).toBe('')
-  })
+  test("empty array produces no output", () => {
+    expect(quickParse("#each [] as n", "{{slot::n}} ")).toBe("");
+  });
 
-  test('does nothing when not a JSON array, pass the input as is', () => {
-    expect(quickParse('#each a,b,c as n', '{{slot::n}} ')).toBe('a,b,c')
-    expect(quickParse('#each {{getvar::aa}} as n', '{{slot::n}} ')).toBe('null')
-    expect(quickParse('#each [1][2] as n', '{{slot::n}} ')).toBe('[1][2]')
-  })
+  test("does nothing when not a JSON array, pass the input as is", () => {
+    expect(quickParse("#each a,b,c as n", "{{slot::n}} ")).toBe("a,b,c");
+    expect(quickParse("#each {{getvar::aa}} as n", "{{slot::n}} ")).toBe(
+      "null",
+    );
+    expect(quickParse("#each [1][2] as n", "{{slot::n}} ")).toBe("[1][2]");
+  });
 
-  test('trimes whitespaces of its body', () =>{
-    expect(quickParse('#each [1, 2, 3] as n', ' \n - {{slot::n}}\n  ')).toBe(`- 1- 2- 3`)
-  })
+  test("trimes whitespaces of its body", () => {
+    expect(quickParse("#each [1, 2, 3] as n", " \n - {{slot::n}}\n  ")).toBe(
+      `- 1- 2- 3`,
+    );
+  });
 
-  test('can be nested', () => {
+  test("can be nested", () => {
     expect(
       quickParse(
-        '#each::keep [1, 2] as x',
-        template(
-          '#each::keep [3, 4] as y',
-          '{{slot::x}}{{slot::y}}\n',
-        ),
+        "#each::keep [1, 2] as x",
+        template("#each::keep [3, 4] as y", "{{slot::x}}{{slot::y}}\n"),
       ),
-    ).toBe('13\n14\n23\n24\n')
-  })
+    ).toBe("13\n14\n23\n24\n");
+  });
 
-  test('works in #when ... :else', () => {
+  test("works in #when ... :else", () => {
     /*
     :else is sensitive to line breaks
     {{#when A}}
@@ -139,20 +143,23 @@ describe('#each', () => {
       {{#each [3, 2, 1] as n}}{{slot::n}}{{/}}
     {{/}}
     */
-    const nestedTemplate = (a: string) => `{{#when ${a}}}\n{{#each [1, 2, 3] as n}}{{slot::n}}{{/}}\n{{:else}}\n{{#each [3, 2, 1] as n}}{{slot::n}}{{/}}\n{{/}}`
+    const nestedTemplate = (a: string) =>
+      `{{#when ${a}}}\n{{#each [1, 2, 3] as n}}{{slot::n}}{{/}}\n{{:else}}\n{{#each [3, 2, 1] as n}}{{slot::n}}{{/}}\n{{/}}`;
 
-    expect(risuChatParser(nestedTemplate('1'))).toBe('123')
-    expect(risuChatParser(nestedTemplate('0'))).toBe('321')
-  })
+    expect(risuChatParser(nestedTemplate("1"))).toBe("123");
+    expect(risuChatParser(nestedTemplate("0"))).toBe("321");
+  });
 
   test('can omit "as"', () => {
-    expect(quickParse('#each [1, 2, 3] n', '{{slot::n}} ')).toBe('123')
-    expect(quickParse('#each [1, 2, 3] n', '{{slot::n}} ')).toBe('123')
-  })
+    expect(quickParse("#each [1, 2, 3] n", "{{slot::n}} ")).toBe("123");
+    expect(quickParse("#each [1, 2, 3] n", "{{slot::n}} ")).toBe("123");
+  });
 
-  describe('Operators: whitespaces', () => {
-    test('::keep preserves all whitespaces', () => {
-      expect(quickParse('#each::keep [1, 2, 3] as n', '  - {{slot::n}}\n')).toBe(`  - 1\n  - 2\n  - 3\n`)
-    })
-  })
-})
+  describe("Operators: whitespaces", () => {
+    test("::keep preserves all whitespaces", () => {
+      expect(
+        quickParse("#each::keep [1, 2, 3] as n", "  - {{slot::n}}\n"),
+      ).toBe(`  - 1\n  - 2\n  - 3\n`);
+    });
+  });
+});

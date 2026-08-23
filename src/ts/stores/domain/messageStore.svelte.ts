@@ -1,9 +1,9 @@
-import type { Message, Chat } from '../../storage/database.svelte'
-import { getSqlStorage } from '../../storage/sqlStorageFactory'
-import { characterStore } from './characterStore.svelte'
-import { settingsStore } from './settingsStore.svelte'
-import { v4 as uuidv4 } from 'uuid'
-import { sqlMessageData } from '../../storage/sqlCommit'
+import type { Message, Chat } from "../../storage/database.svelte";
+import { getSqlStorage } from "../../storage/sqlStorageFactory";
+import { characterStore } from "./characterStore.svelte";
+import { settingsStore } from "./settingsStore.svelte";
+import { v4 as uuidv4 } from "uuid";
+import { sqlMessageData } from "../../storage/sqlCommit";
 
 /**
  * In-memory retention cap for a single active chat. Messages beyond the most
@@ -14,214 +14,243 @@ import { sqlMessageData } from '../../storage/sqlCommit'
  * Low-spec mode scales the cap down when the cost of keeping thousands of
  * parsed message objects is the primary memory pressure point.
  */
-const getActiveChatMessageRetention = () => settingsStore.state.lowSpecMode ? 40 : 200
+const getActiveChatMessageRetention = () =>
+  settingsStore.state.lowSpecMode ? 40 : 200;
 
 function findChatAcrossCharacters(chatId: string): Chat | undefined {
-    for (const char of characterStore.characters) {
-        const chat = char.chats?.find((c) => c.id === chatId)
-        if (chat) return chat
-    }
-    return characterStore.currentChat?.id === chatId ? characterStore.currentChat : undefined
+  for (const char of characterStore.characters) {
+    const chat = char.chats?.find((c) => c.id === chatId);
+    if (chat) return chat;
+  }
+  return characterStore.currentChat?.id === chatId
+    ? characterStore.currentChat
+    : undefined;
 }
 
 class MessageStore {
-    get currentMessages(): Message[] {
-        return characterStore.currentChat?.message ?? []
+  get currentMessages(): Message[] {
+    return characterStore.currentChat?.message ?? [];
+  }
+
+  async appendMessage(chatId: string, message: Message): Promise<void> {
+    message.chatId ||= uuidv4();
+    const chat = findChatAcrossCharacters(chatId);
+    if (chat) {
+      chat.message ??= [];
+      const existingIndex = chat.message.findIndex(
+        (m) => m.chatId === message.chatId,
+      );
+      if (existingIndex >= 0) {
+        chat.message[existingIndex] = message;
+      } else {
+        chat.message.push(message);
+      }
     }
-
-    async appendMessage(chatId: string, message: Message): Promise<void> {
-        message.chatId ||= uuidv4()
-        const chat = findChatAcrossCharacters(chatId)
-        if (chat) {
-            chat.message ??= []
-            const existingIndex = chat.message.findIndex((m) => m.chatId === message.chatId)
-            if (existingIndex >= 0) {
-                chat.message[existingIndex] = message
-            } else {
-                chat.message.push(message)
-            }
-        }
-        try {
-            const storage = await getSqlStorage()
-            const messages = chat?.message ?? [message]
-            const msgIndex = messages.findIndex((m) => m.chatId === message.chatId)
-            const position = (chat?.messagesFullyLoaded === false ? (chat?.messageOffset ?? 0) : 0) + (msgIndex >= 0 ? msgIndex : messages.length - 1)
-            await storage.commit({
-                baseRevision: storage.getRevision(),
-                action: 'message',
-                root: { upserts: [], deletes: [] },
-                characters: [],
-                chats: [],
-                chatManifests: [],
-                messages: [{
-                    id: message.chatId,
-                    chatId,
-                    position,
-                    data: sqlMessageData(message),
-                }],
-                messageManifests: [],
-            })
-        } catch (error) {
-            console.error('[MessageStore] Failed to commit appendMessage:', error)
-        }
+    try {
+      const storage = await getSqlStorage();
+      const messages = chat?.message ?? [message];
+      const msgIndex = messages.findIndex((m) => m.chatId === message.chatId);
+      const position =
+        (chat?.messagesFullyLoaded === false ? (chat?.messageOffset ?? 0) : 0) +
+        (msgIndex >= 0 ? msgIndex : messages.length - 1);
+      await storage.commit({
+        baseRevision: storage.getRevision(),
+        action: "message",
+        root: { upserts: [], deletes: [] },
+        characters: [],
+        chats: [],
+        chatManifests: [],
+        messages: [
+          {
+            id: message.chatId,
+            chatId,
+            position,
+            data: sqlMessageData(message),
+          },
+        ],
+        messageManifests: [],
+      });
+    } catch (error) {
+      console.error("[MessageStore] Failed to commit appendMessage:", error);
     }
+  }
 
-    async commitMessages(chatId: string, msgs: Message[]): Promise<void> {
-        const chat = findChatAcrossCharacters(chatId)
-        const allMessages = chat?.message ?? msgs
-        const baseOffset = (chat?.messagesFullyLoaded === false ? (chat?.messageOffset ?? 0) : 0)
+  async commitMessages(chatId: string, msgs: Message[]): Promise<void> {
+    const chat = findChatAcrossCharacters(chatId);
+    const allMessages = chat?.message ?? msgs;
+    const baseOffset =
+      chat?.messagesFullyLoaded === false ? (chat?.messageOffset ?? 0) : 0;
 
-        const messageUpserts = msgs.map((m) => {
-            m.chatId ||= uuidv4()
-            const idx = allMessages.findIndex((item) => item.chatId === m.chatId)
-            const position = baseOffset + (idx >= 0 ? idx : allMessages.length - 1)
-            return {
-                id: m.chatId,
-                chatId,
-                position,
-                data: sqlMessageData(m),
-            }
-        })
+    const messageUpserts = msgs.map((m) => {
+      m.chatId ||= uuidv4();
+      const idx = allMessages.findIndex((item) => item.chatId === m.chatId);
+      const position = baseOffset + (idx >= 0 ? idx : allMessages.length - 1);
+      return {
+        id: m.chatId,
+        chatId,
+        position,
+        data: sqlMessageData(m),
+      };
+    });
 
-        try {
-            const storage = await getSqlStorage()
-            await storage.commit({
-                baseRevision: storage.getRevision(),
-                action: 'message',
-                root: { upserts: [], deletes: [] },
-                characters: [],
-                chats: [],
-                chatManifests: [],
-                messages: messageUpserts,
-                messageManifests: chat?.messagesFullyLoaded === false ? [] : [{
-                    chatId,
-                    ids: allMessages.map((m) => m.chatId!).filter(Boolean),
-                }],
-            })
-        } catch (error) {
-            console.error('[MessageStore] Failed to commit messages:', error)
-        }
+    try {
+      const storage = await getSqlStorage();
+      await storage.commit({
+        baseRevision: storage.getRevision(),
+        action: "message",
+        root: { upserts: [], deletes: [] },
+        characters: [],
+        chats: [],
+        chatManifests: [],
+        messages: messageUpserts,
+        messageManifests:
+          chat?.messagesFullyLoaded === false
+            ? []
+            : [
+                {
+                  chatId,
+                  ids: allMessages.map((m) => m.chatId!).filter(Boolean),
+                },
+              ],
+      });
+    } catch (error) {
+      console.error("[MessageStore] Failed to commit messages:", error);
     }
+  }
 
-    async updateMessage(chatId: string, message: Message): Promise<void> {
-        const chat = findChatAcrossCharacters(chatId)
-        let position = 0
-        if (chat && chat.message) {
-            const index = chat.message.findIndex((m) => m.chatId === message.chatId)
-            if (index >= 0) {
-                chat.message[index] = message
-                position = (chat.messagesFullyLoaded === false ? (chat.messageOffset ?? 0) : 0) + index
-            }
-        }
-        try {
-            const storage = await getSqlStorage()
-            await storage.commit({
-                baseRevision: storage.getRevision(),
-                action: 'message',
-                root: { upserts: [], deletes: [] },
-                characters: [],
-                chats: [],
-                chatManifests: [],
-                messages: [{
-                    id: message.chatId!,
-                    chatId,
-                    position,
-                    data: sqlMessageData(message),
-                }],
-                messageManifests: [],
-            })
-        } catch (error) {
-            console.error('[MessageStore] Failed to commit updateMessage:', error)
-        }
+  async updateMessage(chatId: string, message: Message): Promise<void> {
+    const chat = findChatAcrossCharacters(chatId);
+    let position = 0;
+    if (chat && chat.message) {
+      const index = chat.message.findIndex((m) => m.chatId === message.chatId);
+      if (index >= 0) {
+        chat.message[index] = message;
+        position =
+          (chat.messagesFullyLoaded === false ? (chat.messageOffset ?? 0) : 0) +
+          index;
+      }
     }
+    try {
+      const storage = await getSqlStorage();
+      await storage.commit({
+        baseRevision: storage.getRevision(),
+        action: "message",
+        root: { upserts: [], deletes: [] },
+        characters: [],
+        chats: [],
+        chatManifests: [],
+        messages: [
+          {
+            id: message.chatId!,
+            chatId,
+            position,
+            data: sqlMessageData(message),
+          },
+        ],
+        messageManifests: [],
+      });
+    } catch (error) {
+      console.error("[MessageStore] Failed to commit updateMessage:", error);
+    }
+  }
 
-    async deleteMessage(chatId: string, messageId: string): Promise<void> {
-        const chat = findChatAcrossCharacters(chatId)
-        if (chat && chat.message) {
-            const beforeLen = chat.message.length
-            chat.message = chat.message.filter((m) => m.chatId !== messageId)
-            const deletedCount = beforeLen - chat.message.length
-            if (deletedCount > 0 && typeof chat.messageTotal === 'number') {
-                chat.messageTotal = Math.max(0, chat.messageTotal - deletedCount)
-            }
-        }
-        try {
-            const storage = await getSqlStorage()
-            await storage.commit({
-                baseRevision: storage.getRevision(),
-                action: 'message-delete',
-                root: { upserts: [], deletes: [] },
-                characters: [],
-                chats: [],
-                chatManifests: [],
-                messages: [],
-                messageManifests: [],
-                messageDeletes: [{
-                    chatId,
-                    ids: [messageId],
-                }],
-            })
-        } catch (error) {
-            console.error('[MessageStore] Failed to commit deleteMessage:', error)
-        }
+  async deleteMessage(chatId: string, messageId: string): Promise<void> {
+    const chat = findChatAcrossCharacters(chatId);
+    if (chat && chat.message) {
+      const beforeLen = chat.message.length;
+      chat.message = chat.message.filter((m) => m.chatId !== messageId);
+      const deletedCount = beforeLen - chat.message.length;
+      if (deletedCount > 0 && typeof chat.messageTotal === "number") {
+        chat.messageTotal = Math.max(0, chat.messageTotal - deletedCount);
+      }
     }
+    try {
+      const storage = await getSqlStorage();
+      await storage.commit({
+        baseRevision: storage.getRevision(),
+        action: "message-delete",
+        root: { upserts: [], deletes: [] },
+        characters: [],
+        chats: [],
+        chatManifests: [],
+        messages: [],
+        messageManifests: [],
+        messageDeletes: [
+          {
+            chatId,
+            ids: [messageId],
+          },
+        ],
+      });
+    } catch (error) {
+      console.error("[MessageStore] Failed to commit deleteMessage:", error);
+    }
+  }
 
-    async deleteMessages(chatId: string, messageIds: string[]): Promise<void> {
-        if (!messageIds || messageIds.length === 0) return
-        const idSet = new Set(messageIds)
-        const chat = findChatAcrossCharacters(chatId)
-        if (chat && chat.message) {
-            const beforeLen = chat.message.length
-            chat.message = chat.message.filter((m) => !m.chatId || !idSet.has(m.chatId))
-            const deletedCount = beforeLen - chat.message.length
-            if (deletedCount > 0 && typeof chat.messageTotal === 'number') {
-                chat.messageTotal = Math.max(0, chat.messageTotal - deletedCount)
-            }
-        }
-        try {
-            const storage = await getSqlStorage()
-            await storage.commit({
-                baseRevision: storage.getRevision(),
-                action: 'message-delete',
-                root: { upserts: [], deletes: [] },
-                characters: [],
-                chats: [],
-                chatManifests: [],
-                messages: [],
-                messageManifests: [],
-                messageDeletes: [{
-                    chatId,
-                    ids: messageIds,
-                }],
-            })
-        } catch (error) {
-            console.error('[MessageStore] Failed to commit deleteMessages:', error)
-        }
+  async deleteMessages(chatId: string, messageIds: string[]): Promise<void> {
+    if (!messageIds || messageIds.length === 0) return;
+    const idSet = new Set(messageIds);
+    const chat = findChatAcrossCharacters(chatId);
+    if (chat && chat.message) {
+      const beforeLen = chat.message.length;
+      chat.message = chat.message.filter(
+        (m) => !m.chatId || !idSet.has(m.chatId),
+      );
+      const deletedCount = beforeLen - chat.message.length;
+      if (deletedCount > 0 && typeof chat.messageTotal === "number") {
+        chat.messageTotal = Math.max(0, chat.messageTotal - deletedCount);
+      }
     }
+    try {
+      const storage = await getSqlStorage();
+      await storage.commit({
+        baseRevision: storage.getRevision(),
+        action: "message-delete",
+        root: { upserts: [], deletes: [] },
+        characters: [],
+        chats: [],
+        chatManifests: [],
+        messages: [],
+        messageManifests: [],
+        messageDeletes: [
+          {
+            chatId,
+            ids: messageIds,
+          },
+        ],
+      });
+    } catch (error) {
+      console.error("[MessageStore] Failed to commit deleteMessages:", error);
+    }
+  }
 
-    async finalizeStreaming(chatId: string, message: Message): Promise<void> {
-        await this.appendMessage(chatId, message)
-    }
+  async finalizeStreaming(chatId: string, message: Message): Promise<void> {
+    await this.appendMessage(chatId, message);
+  }
 
-    async loadOlderMessages(chatId: string, limit?: number): Promise<number> {
-        return characterStore.loadOlderChatMessages(chatId, limit)
-    }
+  async loadOlderMessages(chatId: string, limit?: number): Promise<number> {
+    return characterStore.loadOlderChatMessages(chatId, limit);
+  }
 }
 
-export const messageStore = new MessageStore()
+export const messageStore = new MessageStore();
 
-let inactiveReleaseGeneration = 0
+let inactiveReleaseGeneration = 0;
 
 function evictInactiveChatMessages(chats: Chat[], activeChatId?: string): void {
-    for (const chat of chats) {
-        if (!chat.id || chat.id === activeChatId) continue
-        if (chat.preventMessageCompaction) continue
-        if (chat.message && chat.message.length > 0 && chat.messagesLoaded !== false) {
-            chat.message = []
-            chat.messagesLoaded = false
-            chat.messagesFullyLoaded = false
-        }
+  for (const chat of chats) {
+    if (!chat.id || chat.id === activeChatId) continue;
+    if (chat.preventMessageCompaction) continue;
+    if (
+      chat.message &&
+      chat.message.length > 0 &&
+      chat.messagesLoaded !== false
+    ) {
+      chat.message = [];
+      chat.messagesLoaded = false;
+      chat.messagesFullyLoaded = false;
     }
+  }
 }
 
 /**
@@ -238,39 +267,42 @@ function evictInactiveChatMessages(chats: Chat[], activeChatId?: string): void {
  * live in the Svelte `$state` tree and cannot be garbage-collected.
  */
 export function releaseInactiveChatMessages(activeChatId?: string): void {
-    const generation = ++inactiveReleaseGeneration
-    const inactiveChats: Chat[] = []
-    for (const char of characterStore.characters) {
-        if (!char.chats) continue
-        for (const chat of char.chats) {
-            if (chat.id && chat.id !== activeChatId) inactiveChats.push(chat)
-        }
+  const generation = ++inactiveReleaseGeneration;
+  const inactiveChats: Chat[] = [];
+  for (const char of characterStore.characters) {
+    if (!char.chats) continue;
+    for (const chat of char.chats) {
+      if (chat.id && chat.id !== activeChatId) inactiveChats.push(chat);
     }
+  }
 
-    if (!settingsStore.state.lowSpecMode) {
-        evictInactiveChatMessages(inactiveChats, activeChatId)
-        return
-    }
+  if (!settingsStore.state.lowSpecMode) {
+    evictInactiveChatMessages(inactiveChats, activeChatId);
+    return;
+  }
 
-    // Releasing many large reactive message arrays at once can trigger a
-    // noticeable garbage-collection pause shortly after character selection.
-    // Drop a small number during each idle period so scrolling stays responsive.
-    let cursor = 0
-    const releaseBatch = () => {
-        if (generation !== inactiveReleaseGeneration) return
-        const nextCursor = Math.min(cursor + 4, inactiveChats.length)
-        evictInactiveChatMessages(inactiveChats.slice(cursor, nextCursor), activeChatId)
-        cursor = nextCursor
-        if (cursor < inactiveChats.length) scheduleBatch()
+  // Releasing many large reactive message arrays at once can trigger a
+  // noticeable garbage-collection pause shortly after character selection.
+  // Drop a small number during each idle period so scrolling stays responsive.
+  let cursor = 0;
+  const releaseBatch = () => {
+    if (generation !== inactiveReleaseGeneration) return;
+    const nextCursor = Math.min(cursor + 4, inactiveChats.length);
+    evictInactiveChatMessages(
+      inactiveChats.slice(cursor, nextCursor),
+      activeChatId,
+    );
+    cursor = nextCursor;
+    if (cursor < inactiveChats.length) scheduleBatch();
+  };
+  const scheduleBatch = () => {
+    if ("requestIdleCallback" in globalThis) {
+      globalThis.requestIdleCallback(releaseBatch);
+    } else {
+      globalThis.setTimeout(releaseBatch, 0);
     }
-    const scheduleBatch = () => {
-        if ('requestIdleCallback' in globalThis) {
-            globalThis.requestIdleCallback(releaseBatch)
-        } else {
-            globalThis.setTimeout(releaseBatch, 0)
-        }
-    }
-    scheduleBatch()
+  };
+  scheduleBatch();
 }
 
 /**
@@ -282,24 +314,24 @@ export function releaseInactiveChatMessages(activeChatId?: string): void {
  * `preventMessageCompaction`.
  */
 export function compactChatMessages(chatId: string): void {
-    const chat = findChatAcrossCharacters(chatId)
-    if (!chat || !chat.id) return
-    if (chat.preventMessageCompaction) return
-    if (chat.messagesFullyLoaded === false) return
-    const messages = chat.message
-    const retention = getActiveChatMessageRetention()
-    if (!messages || messages.length <= retention) return
+  const chat = findChatAcrossCharacters(chatId);
+  if (!chat || !chat.id) return;
+  if (chat.preventMessageCompaction) return;
+  if (chat.messagesFullyLoaded === false) return;
+  const messages = chat.message;
+  const retention = getActiveChatMessageRetention();
+  if (!messages || messages.length <= retention) return;
 
-    const dropCount = messages.length - retention
-    chat.message = messages.slice(dropCount)
-    chat.messageOffset = (chat.messageOffset ?? 0) + dropCount
-    if (typeof chat.messageTotal === 'number') {
-        chat.messageTotal = Math.max(chat.messageTotal, messages.length)
-    } else {
-        chat.messageTotal = messages.length
-    }
-    chat.messagesFullyLoaded = false
-    chat.messagesLoaded = true
+  const dropCount = messages.length - retention;
+  chat.message = messages.slice(dropCount);
+  chat.messageOffset = (chat.messageOffset ?? 0) + dropCount;
+  if (typeof chat.messageTotal === "number") {
+    chat.messageTotal = Math.max(chat.messageTotal, messages.length);
+  } else {
+    chat.messageTotal = messages.length;
+  }
+  chat.messagesFullyLoaded = false;
+  chat.messagesLoaded = true;
 }
 
 /**

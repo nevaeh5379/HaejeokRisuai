@@ -53,14 +53,14 @@ export class HypaProcessorV2<TMetadata> {
   }
 
   public async similaritySearchScored(
-    query: string
+    query: string,
   ): Promise<[EmbeddingResult<TMetadata>, number][]> {
     const results = await this.similaritySearchScoredBatch([query]);
     return results[0];
   }
 
   public async similaritySearchScoredBatch(
-    queries: string[]
+    queries: string[],
   ): Promise<[EmbeddingResult<TMetadata>, number][][]> {
     if (queries.length === 0) {
       return [];
@@ -74,7 +74,7 @@ export class HypaProcessorV2<TMetadata> {
       (query, index) => ({
         id: `query-${index}`,
         content: query,
-      })
+      }),
     );
 
     // Get query embeddings (don't save to memory)
@@ -104,7 +104,7 @@ export class HypaProcessorV2<TMetadata> {
 
   private async getEmbeds(
     ebdTexts: EmbeddingText<TMetadata>[],
-    saveToMemory: boolean = true
+    saveToMemory: boolean = true,
   ): Promise<EmbeddingResult<TMetadata>[]> {
     if (ebdTexts.length === 0) {
       return [];
@@ -113,7 +113,9 @@ export class HypaProcessorV2<TMetadata> {
     const resultMap: Map<string, EmbeddingResult<TMetadata>> = new Map();
     const toEmbed: EmbeddingText<TMetadata>[] = [];
 
-    const ctxProvider = isContextModel(this.options.model) ? getContextProvider(this.options.model) : null;
+    const ctxProvider = isContextModel(this.options.model)
+      ? getContextProvider(this.options.model)
+      : null;
     const ctxGroups = new Map<string, string[]>();
     if (ctxProvider && saveToMemory) {
       const groups = new Map<TMetadata, EmbeddingText<TMetadata>[]>();
@@ -123,7 +125,7 @@ export class HypaProcessorV2<TMetadata> {
         groups.set(item.metadata, g);
       }
       for (const [, g] of groups) {
-        const texts = g.map(item => item.content);
+        const texts = g.map((item) => item.content);
         for (const item of g) {
           ctxGroups.set(item.id, texts);
         }
@@ -142,14 +144,14 @@ export class HypaProcessorV2<TMetadata> {
 
       try {
         const cached = await this.forage.getItem<EmbeddingResult<TMetadata>>(
-          this.getCacheKey(content, ctxGroups.get(id))
+          this.getCacheKey(content, ctxGroups.get(id)),
         );
 
         if (cached) {
           // Debug log for cache hit
           console.debug(
             HypaProcessorV2.LOG_PREFIX,
-            `Cache hit for getting embedding ${index} with model ${this.options.model}`
+            `Cache hit for getting embedding ${index} with model ${this.options.model}`,
           );
 
           // Add metadata
@@ -173,14 +175,14 @@ export class HypaProcessorV2<TMetadata> {
 
     if (ctxProvider && toEmbed.length > 0 && saveToMemory) {
       const missMetadatas = new Set(
-        toEmbed.map((item) => item.metadata).filter(Boolean)
+        toEmbed.map((item) => item.metadata).filter(Boolean),
       );
 
       const additionalItems = ebdTexts.filter(
         (item) =>
           item.metadata &&
           missMetadatas.has(item.metadata) &&
-          !toEmbed.some((e) => e.id === item.id)
+          !toEmbed.some((e) => e.id === item.id),
       );
 
       for (const item of additionalItems) {
@@ -203,7 +205,7 @@ export class HypaProcessorV2<TMetadata> {
     // Debug log for optimal chunk size
     console.debug(
       HypaProcessorV2.LOG_PREFIX,
-      `Optimal chunk size for ${this.options.model}: ${chunkSize}`
+      `Optimal chunk size for ${this.options.model}: ${chunkSize}`,
     );
 
     const chunks = this.chunkArray(toEmbed, chunkSize);
@@ -219,7 +221,7 @@ export class HypaProcessorV2<TMetadata> {
 
       const groupEntries = Array.from(metadataGroups.entries());
       const groups = groupEntries.map(([, group]) =>
-        group.map((item) => item.content)
+        group.map((item) => item.content),
       );
 
       const results = await ctxProvider.embedDocumentGroups(groups);
@@ -233,12 +235,19 @@ export class HypaProcessorV2<TMetadata> {
           const embedding = embeddings[j];
 
           const ebdResult: EmbeddingResult<TMetadata> = {
-            id, content, embedding, metadata
+            id,
+            content,
+            embedding,
+            metadata,
           };
 
-          await this.forage.setItem(this.getCacheKey(content, ctxGroups.get(id)), {
-            content, embedding
-          });
+          await this.forage.setItem(
+            this.getCacheKey(content, ctxGroups.get(id)),
+            {
+              content,
+              embedding,
+            },
+          );
 
           if (saveToMemory) {
             this.vectors.set(id, ebdResult);
@@ -255,7 +264,7 @@ export class HypaProcessorV2<TMetadata> {
 
         const chunk = chunks[i];
         const embeddings = await this.getLocalEmbeds(
-          chunk.map((item) => item.content)
+          chunk.map((item) => item.content),
         );
 
         const savePromises = embeddings.map(async (embedding, j) => {
@@ -295,9 +304,10 @@ export class HypaProcessorV2<TMetadata> {
       // Progress callback
       this.options.rateLimiter.taskQueueChangeCallback = this.progressCallback;
 
-      const batchResult = await this.options.rateLimiter.executeBatch<
-        EmbeddingVector[]
-      >(embeddingTasks);
+      const batchResult =
+        await this.options.rateLimiter.executeBatch<EmbeddingVector[]>(
+          embeddingTasks,
+        );
       const errors: Error[] = [];
 
       const chunksSavePromises = batchResult.results.map(async (result, i) => {
@@ -375,7 +385,9 @@ export class HypaProcessorV2<TMetadata> {
         ? `-${db.hypaCustomSettings.model.trim()}`
         : "";
 
-    const ctxProvider = isContextModel(this.options.model) ? getContextProvider(this.options.model) : null;
+    const ctxProvider = isContextModel(this.options.model)
+      ? getContextProvider(this.options.model)
+      : null;
     const ctxSuffix = ctxProvider
       ? ctxProvider.getCacheKeySuffix(contextTexts)
       : "";
@@ -419,7 +431,7 @@ export class HypaProcessorV2<TMetadata> {
     const results: Float32Array[] = await runEmbedding(
       contents,
       localModels.models[this.options.model],
-      localModels.gpuModels.includes(this.options.model) ? "webgpu" : "wasm"
+      localModels.gpuModels.includes(this.options.model) ? "webgpu" : "wasm",
     );
 
     return results;
@@ -476,7 +488,7 @@ export class HypaProcessorV2<TMetadata> {
 
       response = await globalFetch(
         "https://api.openai.com/v1/embeddings",
-        fetchArgs
+        fetchArgs,
       );
     } else if (isContextModel(this.options.model)) {
       const provider = getContextProvider(this.options.model);
@@ -496,7 +508,7 @@ export class HypaProcessorV2<TMetadata> {
         }
 
         return item.embedding;
-      }
+      },
     );
 
     return embeddings;

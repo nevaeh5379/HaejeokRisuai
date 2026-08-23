@@ -1,7 +1,7 @@
 import type {
   ChatCompletionMessageParam,
   ChatCompletionRequestNonStreaming,
-  MLCEngine
+  MLCEngine,
 } from "@mlc-ai/web-llm";
 
 let engine: MLCEngine = null;
@@ -10,7 +10,7 @@ let lastModel: string = null;
 export async function chatCompletion(
   messages: { role: string; content: string }[],
   model: string,
-  config: Record<string, any>
+  config: Record<string, any>,
 ): Promise<string> {
   try {
     if (!engine || lastModel !== model) {
@@ -27,7 +27,7 @@ export async function chatCompletion(
         {
           initProgressCallback,
         },
-        { context_window_size: 16384 }
+        { context_window_size: 16384 },
       );
 
       lastModel = model;

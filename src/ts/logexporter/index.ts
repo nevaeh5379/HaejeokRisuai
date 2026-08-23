@@ -1,5 +1,5 @@
-import { logExporterStore } from './store.svelte'
-import type { MessageRangeOptions } from './types'
+import { logExporterStore } from "./store.svelte";
+import type { MessageRangeOptions } from "./types";
 
 /**
  * Log Exporter public API.
@@ -11,17 +11,17 @@ import type { MessageRangeOptions } from './types'
  */
 
 export function openLogExporter(options: MessageRangeOptions = {}): void {
-    logExporterStore.open(options)
+  logExporterStore.open(options);
 }
 
 export function openLogExporterFrom(messageIndex: number): void {
-    logExporterStore.open({ startIndex: messageIndex })
+  logExporterStore.open({ startIndex: messageIndex });
 }
 
 export function openLogExporterSingle(messageIndex: number): void {
-    logExporterStore.open({ singleMessage: messageIndex })
+  logExporterStore.open({ singleMessage: messageIndex });
 }
 
-export { logExporterStore }
-export * from './types'
-export { THEMES, COLORS, resolveEffectiveColor } from './constants'
+export { logExporterStore };
+export * from "./types";
+export { THEMES, COLORS, resolveEffectiveColor } from "./constants";

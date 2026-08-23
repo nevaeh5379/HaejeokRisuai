@@ -42,7 +42,7 @@ export class TaskRateLimiter {
   }
 
   public async executeTask<TData>(
-    task: () => Promise<TData>
+    task: () => Promise<TData>,
   ): Promise<TaskResult<TData>> {
     return new Promise<TaskResult<TData>>((resolve) => {
       this.queue.push({
@@ -63,10 +63,10 @@ export class TaskRateLimiter {
   }
 
   public async executeBatch<TData>(
-    tasks: Array<() => Promise<TData>>
+    tasks: Array<() => Promise<TData>>,
   ): Promise<BatchResult<TData>> {
     const taskResults = await Promise.all(
-      tasks.map((task) => this.executeTask(task))
+      tasks.map((task) => this.executeTask(task)),
     );
     const successCount = taskResults.filter((r) => r.success).length;
     const failureCount = taskResults.length - successCount;
@@ -107,21 +107,21 @@ export class TaskRateLimiter {
         "\nActive tasks:",
         this.active + "/" + this.options.maxConcurrentTasks,
         "\nWaiting tasks in queue:",
-        this.queue.length
+        this.queue.length,
       );
 
       return;
     }
 
     this.timestamps = this.timestamps.filter(
-      (ts) => Date.now() - ts <= 60 * 1000
+      (ts) => Date.now() - ts <= 60 * 1000,
     );
 
     if (this.timestamps.length >= this.options.tasksPerMinute) {
       const oldestTimestamp = Math.min(...this.timestamps);
       const timeUntilExpiry = Math.max(
         100,
-        60 * 1000 - (Date.now() - oldestTimestamp)
+        60 * 1000 - (Date.now() - oldestTimestamp),
       );
 
       // Debug log for rate limit hit
@@ -135,7 +135,7 @@ export class TaskRateLimiter {
         "\nWaiting tasks in queue:",
         this.queue.length,
         "\nWill retry in:",
-        timeUntilExpiry + "ms"
+        timeUntilExpiry + "ms",
       );
 
       // Wait until rate limit window advances before retrying
@@ -158,7 +158,7 @@ export class TaskRateLimiter {
       "\nActive tasks:",
       this.active + "/" + this.options.maxConcurrentTasks,
       "\nWaiting tasks in queue:",
-      this.queue.length
+      this.queue.length,
     );
 
     task()
