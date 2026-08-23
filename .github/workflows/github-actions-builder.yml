@@ -65,8 +65,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           BUILD_TAG: ${{ steps.version.outputs.build_tag }}
         run: |
-          RELEASE_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate --slurp \
-            --jq "[.[][] | select(.tag_name == \"${BUILD_TAG}\")][0].id // empty")
+          RELEASE_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate \
+            | jq -sr --arg tag "$BUILD_TAG" '[.[][] | select(.tag_name == $tag)][0].id // empty')
+
+          echo "Existing release id: ${RELEASE_ID:-none}"
 
           jq -n \
             --arg tag "$BUILD_TAG" \
