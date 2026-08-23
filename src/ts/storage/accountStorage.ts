@@ -91,7 +91,11 @@ export class AccountStorage {
         if (da.headers.get("x-risu-status") === "warn") {
           return;
         }
-        localStorage.setItem("fallbackRisuToken", await alertLogin());
+        const fallbackToken = await alertLogin();
+        if (!fallbackToken) {
+          return;
+        }
+        localStorage.setItem("fallbackRisuToken", fallbackToken);
         this.checkAuth();
       }
     }
@@ -132,7 +136,11 @@ export class AccountStorage {
         },
       );
       if (da.status === 403) {
-        localStorage.setItem("fallbackRisuToken", await alertLogin());
+        const fallbackToken = await alertLogin();
+        if (!fallbackToken) {
+          return null;
+        }
+        localStorage.setItem("fallbackRisuToken", fallbackToken);
         this.checkAuth();
       }
     }

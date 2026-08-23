@@ -8,7 +8,7 @@
     import Check from "../UI/GUI/CheckInput.svelte";
     import { addCharEmotion, addingEmotion, getCharImage, rmCharEmotion, selectCharImg, makeGroupImage, removeChar, changeCharImage } from "../../ts/characters";
     import LoreBook from "./LoreBook/LoreBookSetting.svelte";
-    import { alertNormal, alertTOS, showHypaV2Alert } from "../../ts/alert";
+    import { alertNormal, alertRisuServiceTOS, showHypaV2Alert } from "../../ts/alert";
     import BarIcon from "./BarIcon.svelte";
     import { findCharacterbyId, getAuthorNoteDefaultText, selectMultipleFile, selectSingleFile } from "../../ts/util";
     import Help from "../Others/Help.svelte";
@@ -718,7 +718,7 @@
     && characterStore.characters[$selectedCharID].license !== 'CC BY-SA 4.0'
     }
         <Button size="lg" onclick={async () => {
-            if(await alertTOS()){
+            if(await alertRisuServiceTOS()){
                 $ShowRealmFrameStore = 'character'
             }
         }} className="mt-2">

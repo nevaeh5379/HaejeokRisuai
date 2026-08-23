@@ -43,6 +43,15 @@ You can get detailed information on https://github.com/kwaroran/Risuai/wiki (Wor
 
 - [Discord Server](https://discord.gg/JzP8tB9ZK8)
 
+## Legal
+
+- [Haejeok RisuAI Terms of Use](docs/TERMS.md)
+- [Haejeok RisuAI Privacy Notice](docs/PRIVACY.md)
+
+Haejeok RisuAI is an independent fork. Optional RisuAI account, Hub, Realm, and related
+upstream services are operated separately and remain subject to the original service's
+Terms of Service and Privacy Policy.
+
 ## Installation
 
 - [Risuai Website](https://risuai.net) (Recommended)
@@ -55,30 +64,53 @@ You can get detailed information on https://github.com/kwaroran/Risuai/wiki (Wor
 
 ### Docker Installation
 
-You can also run Risuai using Docker. This method is particularly useful for web hosting.
+The recommended server deployment for Haejeok RisuAI is the Docker Compose stack with
+**PostgreSQL 17** for persistent application data and **RustFS** for S3-compatible asset
+storage. This is the primary deployment path currently documented here.
 
-#### Using a pre-built image
+#### Requirements
 
-1. Run the Docker container:
-   ```
-   curl -L https://raw.githubusercontent.com/kwaroran/Risuai/refs/heads/main/docker-compose.yml | docker compose -f - up -d
-   ```
+- Docker Engine or Docker Desktop
+- Docker Compose v2 (`docker compose`)
+- Git
 
-2. Access Risuai at `http://localhost:6001` in your web browser.
+#### Quick start (local)
 
-#### Building from source
-Alternatively, you can build and use the Docker image yourself.
-
-1. Clone and build
 ```sh
-git clone https://github.com/kwaroran/Risuai.git
-cd Risuai
-docker compose -f docker-compose.build.yml up --build -d
+git clone https://github.com/nevaeh5379/HaejeokRisuAI.git
+cd HaejeokRisuAI
+chmod +x risuai.sh
+./risuai.sh install --mode local -y
 ```
 
-2. Access Risuai at `http://localhost:6001` in your web browser.
+When the installation finishes, open `http://localhost:6001`.
 
-For a PostgreSQL + RustFS installation with local, LAN, HTTPS/DDNS, or existing
-reverse-proxy networking, use the interactive `./risuai.sh install` workflow.
-See the [deployment guide](deploy/rustfs/README.md) for automated examples and
-security requirements.
+The installer creates and manages the complete stack:
+
+- Haejeok RisuAI application container
+- PostgreSQL 17 (`postgres:17-alpine`)
+- RustFS S3-compatible object storage
+
+PostgreSQL is kept inside the Docker network and is not published to the host. RustFS
+uses loopback-only host bindings by default (`127.0.0.1:9000` for the S3 API and
+`127.0.0.1:9001` for the console).
+
+#### Managing the installation
+
+```sh
+./risuai.sh status
+./risuai.sh doctor
+./risuai.sh logs --follow
+./risuai.sh stop
+./risuai.sh start
+./risuai.sh restart
+```
+
+Persistent data is stored in Docker volumes for PostgreSQL and RustFS, while application
+state is stored under `./save`. Installer-generated credentials and deployment state are
+kept under `.risuai/`; back these up together with your database and RustFS data.
+
+Additional `lan`, `domain`, `dynv6`, and external reverse-proxy modes are available through
+`./risuai.sh install`, but the local Docker + PostgreSQL + RustFS setup above is the
+recommended starting point. See the [deployment guide](deploy/rustfs/README.md) for the
+advanced modes and security notes.

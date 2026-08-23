@@ -7,7 +7,7 @@ import {
   alertMd,
   alertNormal,
   alertStore,
-  alertTOS,
+  alertRisuServiceTOS,
   alertWait,
 } from "./alert";
 import {
@@ -2197,7 +2197,7 @@ export async function downloadRisuHub(
 ) {
   try {
     if (!arg.forceRedirect) {
-      if (!(await alertTOS())) {
+      if (!(await alertRisuServiceTOS())) {
         return;
       }
       alertStore.set({

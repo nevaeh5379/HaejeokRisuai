@@ -23,6 +23,7 @@ export interface alertData {
     | "select"
     | "login"
     | "tos"
+    | "risu-tos"
     | "cardexport"
     | "requestdata"
     | "addchar"
@@ -147,6 +148,10 @@ export async function alertChatOptions() {
 }
 
 export async function alertLogin() {
+  if (!(await alertRisuServiceTOS())) {
+    return "";
+  }
+
   alertStoreImported.set({
     type: "login",
     msg: "login",
@@ -277,7 +282,8 @@ export async function alertCardExport(type: string = "") {
 }
 
 export async function alertTOS() {
-  if (localStorage.getItem("tos4") === "true") {
+  const acceptanceKey = "haejeok_tos_2026_08_23";
+  if (localStorage.getItem(acceptanceKey) === "true") {
     return true;
   }
 
@@ -289,15 +295,28 @@ export async function alertTOS() {
   await waitAlert();
 
   if (get(alertStoreImported).msg === "yes") {
-    localStorage.setItem("tos4", "true");
+    localStorage.setItem(acceptanceKey, "true");
     return true;
   }
 
-  if (
-    localStorage.getItem("tos2") &&
-    Date.now() - new Date("2026-05-15").getTime() < 0
-  ) {
-    //apply grace period until 2026-05-15 for users who accepted tos2
+  return false;
+}
+
+export async function alertRisuServiceTOS() {
+  const acceptanceKey = "risu_service_tos_2026_08_23";
+  if (localStorage.getItem(acceptanceKey) === "true") {
+    return true;
+  }
+
+  alertStoreImported.set({
+    type: "risu-tos",
+    msg: "risu-tos",
+  });
+
+  await waitAlert();
+
+  if (get(alertStoreImported).msg === "yes") {
+    localStorage.setItem(acceptanceKey, "true");
     return true;
   }
 

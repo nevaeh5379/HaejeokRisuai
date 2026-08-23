@@ -17,6 +17,7 @@ type AlertData = {
     | "select"
     | "login"
     | "tos"
+    | "risu-tos"
     | "cardexport"
     | "requestdata"
     | "addchar"

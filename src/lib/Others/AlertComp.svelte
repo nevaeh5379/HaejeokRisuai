@@ -28,6 +28,12 @@
     import { translateStackTrace } from "../../ts/sourcemap";
     import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from "src/ts/platform";
     import versionData from "../../../version.json";
+    import {
+        HAEJEOK_PRIVACY_URL,
+        HAEJEOK_TERMS_URL,
+        RISU_SERVICE_PRIVACY_URL,
+        RISU_SERVICE_TERMS_URL,
+    } from "src/ts/legal";
 
     let showDetails = $state(false);
     let translatedStackTrace = $state('');
@@ -208,28 +214,37 @@
                         {/await}
                     </span>
                 </div>
-            {:else if $alertStore.type === 'tos'}
+            {:else if $alertStore.type === 'tos' || $alertStore.type === 'risu-tos'}
                 <!-- svelte-ignore a11y_missing_attribute -->
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
 
-                <div class="text-textcolor">
-                    You should accept
-                    <a role="button" tabindex="0" class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer" onclick={() => {
-                        openURL('https://account.sionyw.com/terms')
-                    }}>Terms of Service</a>
-
-                    and
-
-                    <a role="button" tabindex="0" class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer" onclick={() => {
-                        openURL('https://account.sionyw.com/privacy')
-                    }}>Privacy Policy</a>
-
-                    to continue
-                </div>
-
-                {#if localStorage.getItem('tos2') && Date.now() - new Date('2026-05-15').getTime() < 0}
+                {#if $alertStore.type === 'tos'}
+                    <div class="text-textcolor">
+                        To use Haejeok RisuAI, please review and accept the
+                        <a role="button" tabindex="0" class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer" onclick={() => {
+                            openURL(HAEJEOK_TERMS_URL)
+                        }}>Terms of Use</a>
+                        and
+                        <a role="button" tabindex="0" class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer" onclick={() => {
+                            openURL(HAEJEOK_PRIVACY_URL)
+                        }}>Privacy Notice</a>.
+                    </div>
                     <div class="text-gray-500 mt-4 text-sm">
-                        You can still continue using Risuai using original terms until {new Date('2026-05-15').toLocaleDateString()}.
+                        Haejeok RisuAI is an independent fork. Optional RisuAI account, Hub, Realm, and related upstream services are operated separately and may require a separate acceptance.
+                    </div>
+                {:else}
+                    <div class="text-textcolor">
+                        This feature connects to a service operated by the original RisuAI maintainers. To continue, please review and accept their
+                        <a role="button" tabindex="0" class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer" onclick={() => {
+                            openURL(RISU_SERVICE_TERMS_URL)
+                        }}>Terms of Service</a>
+                        and
+                        <a role="button" tabindex="0" class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer" onclick={() => {
+                            openURL(RISU_SERVICE_PRIVACY_URL)
+                        }}>Privacy Policy</a>.
+                    </div>
+                    <div class="text-gray-500 mt-4 text-sm">
+                        These upstream services are not operated by the Haejeok RisuAI project.
                     </div>
                 {/if}
             {:else if $alertStore.type === 'pluginconfirm'}
@@ -310,7 +325,7 @@
                         })
                     }}>NO</Button>
                 </div>
-            {:else if $alertStore.type === 'tos' && (import.meta.env.VITE_RISU_LEGAL_CONFIGURED || globalThis.__RISU_LEGAL_CONFIGURED__)}
+            {:else if ($alertStore.type === 'tos' || $alertStore.type === 'risu-tos') && (import.meta.env.VITE_RISU_LEGAL_CONFIGURED || globalThis.__RISU_LEGAL_CONFIGURED__)}
                 <div class="flex gap-2 w-full">
                     <Button className="mt-4 grow" onclick={() => {
                         alertStore.set({
