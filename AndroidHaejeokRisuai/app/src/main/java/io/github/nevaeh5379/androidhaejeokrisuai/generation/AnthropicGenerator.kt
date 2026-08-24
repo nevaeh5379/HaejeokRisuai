@@ -17,7 +17,7 @@ internal data class AnthropicRequestPayload(
     val system: String?,
     val messages: List<AnthropicMessage>,
     val maxTokens: Int,
-    val temperature: Double,
+    val temperature: Double?,
 )
 
 class AnthropicGenerator {
@@ -103,7 +103,7 @@ class AnthropicGenerator {
             system = systemPrompt.trim().takeIf { it.isNotBlank() },
             messages = messages,
             maxTokens = settings.maxResponse,
-            temperature = settings.temperature,
+            temperature = settings.temperature.takeIf { settings.temperatureEnabled },
         )
     }
 
@@ -122,8 +122,10 @@ class AnthropicGenerator {
             },
         )
         .put("max_tokens", payload.maxTokens)
-        .put("temperature", payload.temperature)
-        .apply { payload.system?.let { put("system", it) } }
+        .apply {
+            payload.temperature?.let { put("temperature", it) }
+            payload.system?.let { put("system", it) }
+        }
 
     private fun extractText(response: JSONObject): String {
         val content = response.optJSONArray("content") ?: JSONArray()

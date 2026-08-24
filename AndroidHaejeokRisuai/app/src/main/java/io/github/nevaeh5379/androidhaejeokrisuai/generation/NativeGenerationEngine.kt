@@ -3,6 +3,7 @@ package io.github.nevaeh5379.androidhaejeokrisuai.generation
 import io.github.nevaeh5379.androidhaejeokrisuai.data.CharacterProfile
 import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
+import io.github.nevaeh5379.androidhaejeokrisuai.data.forModelMode
 
 class NativeGenerationEngine {
     private val openAiCompatible = OpenAiCompatibleGenerator()
@@ -22,7 +23,7 @@ class NativeGenerationEngine {
             settings, character, history, authorNote, greetingIndex, variables, triggerPrompt,
         )
         return dispatchPreparedPrompt(
-            settings, character, history, authorNote, greetingIndex, variables, triggerPrompt, preparedPrompt,
+            settings.forModelMode("model"), character, history, authorNote, greetingIndex, variables, triggerPrompt, preparedPrompt,
         )
     }
 
@@ -34,12 +35,13 @@ class NativeGenerationEngine {
         greetingIndex: Int,
         variables: Map<String, String>,
         prompt: List<NativePromptMessage>,
+        modelMode: String = "model",
     ): String {
         val preparedPrompt = prepareExplicitPrompt(
             settings, character, history, authorNote, greetingIndex, variables, prompt,
         )
         return dispatchPreparedPrompt(
-            settings, character, history, authorNote, greetingIndex, variables,
+            settings.forModelMode(modelMode), character, history, authorNote, greetingIndex, variables,
             NativeTriggerPromptInjection(), preparedPrompt,
         )
     }

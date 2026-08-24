@@ -351,6 +351,7 @@ class NativeLuaTriggerEngineTest {
         var calls = 0
         val bridge = NativeLuaLlmBridge { request ->
             calls++
+            assertEquals("model", request.mode)
             assertEquals(
                 listOf(
                     NativePromptMessage("system", "system text"),
@@ -381,6 +382,40 @@ class NativeLuaTriggerEngineTest {
         )
         assertEquals(1, calls)
         assertEquals("true:multi reply", result.variables["multi"])
+    }
+
+    @Test
+    fun axLlmUsesOtherAxModelModeWithSameStructuredPromptShape() {
+        var calls = 0
+        val bridge = NativeLuaLlmBridge { request ->
+            calls++
+            assertEquals("otherAx", request.mode)
+            assertEquals(
+                listOf(
+                    NativePromptMessage("system", "aux system"),
+                    NativePromptMessage("user", "aux user"),
+                ),
+                request.prompt,
+            )
+            "aux reply"
+        }
+        val code = """
+            function onStart(id)
+                local response = axLLM(id, {
+                    { role = "system", content = "aux system" },
+                    { role = "user", content = "aux user" }
+                })
+                setChatVar(id, "ax", tostring(response.success) .. ":" .. response.result)
+            end
+        """.trimIndent()
+        val result = NativeLuaTriggerEngine.run(
+            code = code, mode = "start", settings = settings, character = character,
+            messages = history, variables = emptyMap(), chatId = "chat", authorNote = "",
+            greetingIndex = -1, inheritedStop = false, inheritedPatch = RuntimeStatePatch(),
+            lowLevelAccess = true, llmBridge = bridge,
+        )
+        assertEquals(1, calls)
+        assertEquals("true:aux reply", result.variables["ax"])
     }
 
     @Test

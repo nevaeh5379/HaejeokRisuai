@@ -2,7 +2,8 @@ package io.github.nevaeh5379.androidhaejeokrisuai.data
 
 object GenerationSettingsMapper {
     val keys = listOf(
-        "aiModel", "username", "loreBookDepth", "loreBookToken", "mainPrompt", "jailbreak", "jailbreakToggle",
+        "aiModel", "subModel", "seperateModelsForAxModels", "seperateModels", "seperateParametersEnabled",
+        "seperateParametersByModel", "seperateParameters", "username", "loreBookDepth", "loreBookToken", "mainPrompt", "jailbreak", "jailbreakToggle",
         "globalNote", "descriptionPrefix", "additionalPrompt", "personaPrompt", "selectedPersona", "personas",
         "templateDefaultVariables", "globalChatVariables", "presetRegex", "promptPreprocess",
         "promptTemplate", "promptSettings", "maxContext", "maxResponse", "temperature", "top_p", "openAIKey", "claudeAPIKey", "proxyKey",
@@ -71,8 +72,21 @@ object GenerationSettingsMapper {
             ?.mapNotNull { it?.toString() }
             ?.takeIf { it.isNotEmpty() }
             ?: GenerationSettings.DEFAULT_FORMATTING_ORDER
+        val rawTemperature = number("temperature") ?: 80.0
         return GenerationSettings(
             aiModel = text("aiModel"),
+            subModel = text("subModel"),
+            seperateModelsForAxModels = bool("seperateModelsForAxModels"),
+            seperateModels = (values["seperateModels"] as? Map<*, *>)
+                ?.entries
+                ?.associate { (key, value) -> key.toString() to value?.toString().orEmpty() }
+                ?: emptyMap(),
+            seperateParametersEnabled = bool("seperateParametersEnabled"),
+            seperateParametersByModel = bool("seperateParametersByModel"),
+            seperateParameters = (values["seperateParameters"] as? Map<*, *>)
+                ?.entries
+                ?.associate { (key, value) -> key.toString() to value }
+                ?: emptyMap(),
             username = text("username", "User"),
             loreBookDepth = number("loreBookDepth")?.toInt()?.coerceAtLeast(0) ?: 5,
             loreBookToken = number("loreBookToken")?.toInt()?.coerceAtLeast(0) ?: 800,
@@ -96,8 +110,9 @@ object GenerationSettingsMapper {
             promptSettings = promptSettings(values["promptSettings"]),
             maxContext = number("maxContext")?.toInt()?.coerceAtLeast(1) ?: 4000,
             maxResponse = number("maxResponse")?.toInt()?.coerceAtLeast(1) ?: 300,
-            temperature = ((number("temperature") ?: 80.0) / 100.0).coerceIn(0.0, 2.0),
-            topP = number("top_p")?.coerceIn(0.0, 1.0),
+            temperature = if (rawTemperature == -1000.0) 0.8 else rawTemperature / 100.0,
+            temperatureEnabled = rawTemperature != -1000.0,
+            topP = number("top_p")?.takeUnless { it == -1000.0 },
             openAIKey = text("openAIKey"),
             claudeAPIKey = text("claudeAPIKey"),
             proxyKey = text("proxyKey"),
@@ -129,8 +144,21 @@ object GenerationSettingsMapper {
             ?.mapNotNull { it?.toString() }
             ?.takeIf { it.isNotEmpty() }
         val requestModel = text("proxyRequestModel") ?: base.proxyRequestModel
+        val rawPresetTemperature = number("temperature")
+        val seperateModels = (preset["seperateModels"] as? Map<*, *>)
+            ?.entries
+            ?.associate { (key, value) -> key.toString() to value?.toString().orEmpty() }
+        val seperateParameters = (preset["seperateParameters"] as? Map<*, *>)
+            ?.entries
+            ?.associate { (key, value) -> key.toString() to value }
         return base.copy(
             aiModel = text("aiModel") ?: base.aiModel,
+            subModel = text("subModel") ?: base.subModel,
+            seperateModelsForAxModels = bool("seperateModelsForAxModels") ?: base.seperateModelsForAxModels,
+            seperateModels = seperateModels ?: base.seperateModels,
+            seperateParametersEnabled = bool("seperateParametersEnabled") ?: base.seperateParametersEnabled,
+            seperateParametersByModel = bool("seperateParametersByModel") ?: base.seperateParametersByModel,
+            seperateParameters = seperateParameters ?: base.seperateParameters,
             mainPrompt = text("mainPrompt") ?: base.mainPrompt,
             jailbreak = text("jailbreak") ?: base.jailbreak,
             globalNote = text("globalNote") ?: base.globalNote,
@@ -140,8 +168,12 @@ object GenerationSettingsMapper {
             promptSettings = if (preset.containsKey("promptSettings")) promptSettings(preset["promptSettings"], base.promptSettings) else base.promptSettings,
             maxContext = number("maxContext")?.toInt()?.coerceAtLeast(1) ?: base.maxContext,
             maxResponse = number("maxResponse")?.toInt()?.coerceAtLeast(1) ?: base.maxResponse,
-            temperature = number("temperature")?.div(100.0)?.coerceIn(0.0, 2.0) ?: base.temperature,
-            topP = number("top_p")?.coerceIn(0.0, 1.0) ?: base.topP,
+            temperature = when (rawPresetTemperature) {
+                null, -1000.0 -> base.temperature
+                else -> rawPresetTemperature / 100.0
+            },
+            temperatureEnabled = rawPresetTemperature?.let { it != -1000.0 } ?: base.temperatureEnabled,
+            topP = if (preset.containsKey("top_p")) number("top_p")?.takeUnless { it == -1000.0 } else base.topP,
             proxyKey = text("proxyKey") ?: base.proxyKey,
             forceReplaceUrl = text("forceReplaceUrl") ?: base.forceReplaceUrl,
             proxyRequestModel = requestModel,

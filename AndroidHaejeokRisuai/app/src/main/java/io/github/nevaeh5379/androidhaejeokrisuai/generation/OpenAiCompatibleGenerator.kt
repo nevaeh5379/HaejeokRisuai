@@ -16,7 +16,7 @@ internal data class OpenAiRequestPayload(
     val model: String,
     val messages: List<OpenAiRequestMessage>,
     val maxTokens: Int,
-    val temperature: Double,
+    val temperature: Double?,
     val topP: Double?,
 )
 
@@ -81,7 +81,7 @@ class OpenAiCompatibleGenerator {
         model = target.model,
         messages = messages.map { OpenAiRequestMessage(it.role, it.content) },
         maxTokens = settings.maxResponse,
-        temperature = settings.temperature,
+        temperature = settings.temperature.takeIf { settings.temperatureEnabled },
         topP = settings.topP,
     )
 
@@ -91,8 +91,10 @@ class OpenAiCompatibleGenerator {
             payload.messages.forEach { put(JSONObject().put("role", it.role).put("content", it.content)) }
         })
         .put("max_tokens", payload.maxTokens)
-        .put("temperature", payload.temperature)
-        .apply { payload.topP?.let { put("top_p", it) } }
+        .apply {
+            payload.temperature?.let { put("temperature", it) }
+            payload.topP?.let { put("top_p", it) }
+        }
 
     internal fun resolveTarget(settings: GenerationSettings): Target {
         val model = settings.aiModel

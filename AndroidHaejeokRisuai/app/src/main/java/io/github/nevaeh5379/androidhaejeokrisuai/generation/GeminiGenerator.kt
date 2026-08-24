@@ -17,7 +17,7 @@ internal data class GeminiRequestPayload(
     val systemInstruction: String?,
     val contents: List<GeminiContent>,
     val maxOutputTokens: Int,
-    val temperature: Double,
+    val temperature: Double?,
     val topP: Double?,
 )
 
@@ -92,7 +92,7 @@ class GeminiGenerator {
             systemInstruction = systemText?.takeIf { it.isNotBlank() },
             contents = contents,
             maxOutputTokens = settings.maxResponse,
-            temperature = settings.temperature,
+            temperature = settings.temperature.takeIf { settings.temperatureEnabled },
             topP = settings.topP,
         )
     }
@@ -113,8 +113,10 @@ class GeminiGenerator {
             "generationConfig",
             JSONObject()
                 .put("maxOutputTokens", payload.maxOutputTokens)
-                .put("temperature", payload.temperature)
-                .apply { payload.topP?.let { put("topP", it) } },
+                .apply {
+                    payload.temperature?.let { put("temperature", it) }
+                    payload.topP?.let { put("topP", it) }
+                },
         )
         payload.systemInstruction?.let { systemText ->
             body.put(

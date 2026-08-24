@@ -24,6 +24,7 @@ internal data class NativeLuaTriggerResult(
 )
 
 internal data class NativeLuaLlmRequest(
+    val mode: String,
     val settings: GenerationSettings,
     val character: CharacterProfile,
     val messages: List<MessageRecord>,
@@ -305,7 +306,7 @@ internal object NativeLuaTriggerEngine {
         }
         register(state, "simpleLLMMain") { lua, execution ->
             if (!execution.lowLevelAccess) return@register 0
-            push(lua, completeLlm(execution, listOf(NativePromptMessage("user", stringArg(lua, 2)))))
+            push(lua, completeLlm(execution, "model", listOf(NativePromptMessage("user", stringArg(lua, 2)))))
         }
         register(state, "LLMMainSync") { lua, execution ->
             if (!execution.lowLevelAccess) return@register 0
@@ -314,7 +315,16 @@ internal object NativeLuaTriggerEngine {
             }
             val prompt = parseLlmPrompt(stringArg(lua, 2))
                 ?: return@register push(lua, llmResult(false, "Error: Invalid LLM prompt"))
-            push(lua, completeLlm(execution, prompt))
+            push(lua, completeLlm(execution, "model", prompt))
+        }
+        register(state, "axLLMMainSync") { lua, execution ->
+            if (!execution.lowLevelAccess) return@register 0
+            if (stringArg(lua, 3) == "true") {
+                return@register push(lua, llmResult(false, "Error: Native Lua multimodal LLM is not supported yet"))
+            }
+            val prompt = parseLlmPrompt(stringArg(lua, 2))
+                ?: return@register push(lua, llmResult(false, "Error: Invalid LLM prompt"))
+            push(lua, completeLlm(execution, "otherAx", prompt))
         }
         register(state, "logMain") { _, _ -> 0 }
         register(state, "reloadDisplay") { _, _ -> 0 }
@@ -510,10 +520,11 @@ internal object NativeLuaTriggerEngine {
     private fun llmResult(success: Boolean, result: String): String =
         NativeRisuParser.stringifyJson(linkedMapOf("success" to success, "result" to result))
 
-    private fun completeLlm(execution: Execution, prompt: List<NativePromptMessage>): String {
+    private fun completeLlm(execution: Execution, mode: String, prompt: List<NativePromptMessage>): String {
         val bridge = execution.llmBridge
             ?: return llmResult(false, "Error: Native LLM bridge is unavailable")
         val request = NativeLuaLlmRequest(
+            mode = mode,
             settings = execution.settings(),
             character = execution.character(),
             messages = execution.messages.toList(),
@@ -652,6 +663,21 @@ function LLM(id, prompt, useMultimodal, options)
     useMultimodal = useMultimodal or false
     options = options or {}
     local raw = LLMMain(id, json.encode(prompt), useMultimodal, json.encode(options)):await()
+    if raw == nil then
+        return nil
+    end
+    return json.decode(raw)
+end
+
+function axLLMMain(id, promptStr, useMultimodal, optionsStr)
+    local raw = axLLMMainSync(id, promptStr, tostring(useMultimodal == true), optionsStr or "")
+    return resolvedPromise(raw)
+end
+
+function axLLM(id, prompt, useMultimodal, options)
+    useMultimodal = useMultimodal or false
+    options = options or {}
+    local raw = axLLMMain(id, json.encode(prompt), useMultimodal, json.encode(options)):await()
     if raw == nil then
         return nil
     end

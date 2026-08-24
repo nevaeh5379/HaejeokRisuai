@@ -50,6 +50,7 @@ internal class NativeRisuController(context: Context) {
                 greetingIndex = request.greetingIndex,
                 variables = request.variables,
                 prompt = request.prompt,
+                modelMode = request.mode,
             )
         }
     }

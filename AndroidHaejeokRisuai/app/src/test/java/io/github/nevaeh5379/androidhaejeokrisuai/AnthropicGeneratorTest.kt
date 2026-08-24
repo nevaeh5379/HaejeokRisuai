@@ -4,6 +4,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.AnthropicGenerator
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativePromptMessage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -26,5 +27,14 @@ class AnthropicGeneratorTest {
         assertTrue(payload.messages.any { it.role == "user" && it.text.contains("System: late note") })
         assertEquals("claude-sonnet-4-6", payload.model)
         assertEquals(600, payload.maxTokens)
+    }
+
+    @Test
+    fun disabledTemperatureIsOmittedFromPayload() {
+        val payload = AnthropicGenerator().buildRequestPayload(
+            listOf(NativePromptMessage("user", "hello")),
+            GenerationSettings(aiModel = "claude-sonnet-4-6", temperatureEnabled = false),
+        )
+        assertNull(payload.temperature)
     }
 }

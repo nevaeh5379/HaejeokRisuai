@@ -1,8 +1,10 @@
 package io.github.nevaeh5379.androidhaejeokrisuai
 
 import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
+import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativePromptMessage
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.OpenAiCompatibleGenerator
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class OpenAiCompatibleGeneratorTest {
@@ -23,6 +25,17 @@ class OpenAiCompatibleGeneratorTest {
         assertEquals("https://example.test/api/v1/chat/completions", target.url)
         assertEquals("my-model", target.model)
         assertEquals("secret", target.key)
+    }
+
+    @Test
+    fun disabledTemperatureIsOmittedFromPurePayload() {
+        val settings = GenerationSettings(aiModel = "gpt4o", temperature = 0.8, temperatureEnabled = false)
+        val payload = generator.buildRequestPayload(
+            listOf(NativePromptMessage("user", "hello")),
+            generator.resolveTarget(settings),
+            settings,
+        )
+        assertNull(payload.temperature)
     }
 
     @Test

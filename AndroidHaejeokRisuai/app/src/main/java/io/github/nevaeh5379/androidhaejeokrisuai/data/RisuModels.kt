@@ -248,6 +248,12 @@ data class NativePromptSettings(
 
 data class GenerationSettings(
     val aiModel: String = "",
+    val subModel: String = "",
+    val seperateModelsForAxModels: Boolean = false,
+    val seperateModels: Map<String, String> = emptyMap(),
+    val seperateParametersEnabled: Boolean = false,
+    val seperateParametersByModel: Boolean = false,
+    val seperateParameters: Map<String, Any?> = emptyMap(),
     val username: String = "User",
     val loreBookDepth: Int = 5,
     val loreBookToken: Int = 800,
@@ -269,6 +275,7 @@ data class GenerationSettings(
     val maxContext: Int = 4000,
     val maxResponse: Int = 300,
     val temperature: Double = 0.8,
+    val temperatureEnabled: Boolean = true,
     val topP: Double? = null,
     val openAIKey: String = "",
     val claudeAPIKey: String = "",
@@ -292,6 +299,40 @@ data class GenerationSettings(
 
 fun GenerationSettings.effectivePersonaPrompt(): String = personaPrompt.ifBlank {
     personas.getOrNull(selectedPersona)?.personaPrompt.orEmpty()
+}
+
+fun GenerationSettings.forModelMode(mode: String): GenerationSettings {
+    val selectedModel = if (mode == "model") {
+        aiModel
+    } else {
+        seperateModels[mode]
+            ?.takeIf { seperateModelsForAxModels && it.isNotBlank() }
+            ?: subModel
+    }
+    var result = copy(aiModel = selectedModel)
+    if (!seperateParametersEnabled || (mode == "model" && !seperateParametersByModel)) return result
+
+    val parameters = if (seperateParametersByModel) {
+        val overrides = seperateParameters["overrides"] as? Map<*, *>
+        val raw = overrides?.get(selectedModel) as? Map<*, *>
+            ?: throw IllegalStateException(
+                "No seperate parameters found for model $selectedModel in model mode $mode. Please set parameters for this model",
+            )
+        raw
+    } else {
+        val key = if (mode == "submodel") "otherAx" else mode
+        seperateParameters[key] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+    }
+    fun number(key: String): Double? = (parameters[key] as? Number)?.toDouble()
+        ?: parameters[key]?.toString()?.toDoubleOrNull()
+    val rawTemperature = number("temperature")
+    val rawTopP = number("top_p")
+    result = result.copy(
+        temperature = if (rawTemperature != null && rawTemperature != -1000.0) rawTemperature / 100.0 else result.temperature,
+        temperatureEnabled = rawTemperature != null && rawTemperature != -1000.0,
+        topP = rawTopP?.takeUnless { it == -1000.0 },
+    )
+    return result
 }
 
 data class DatabaseOverview(
