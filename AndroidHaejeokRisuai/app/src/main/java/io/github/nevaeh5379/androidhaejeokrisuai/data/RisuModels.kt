@@ -54,6 +54,42 @@ fun loreEntryToValue(entry: LoreEntry): Map<String, Any?> = linkedMapOf(
     "selective" to entry.selective, "useRegex" to entry.useRegex,
 ).apply { entry.activationPercent?.let { put("activationPercent", it) } }
 
+data class PersonaProfile(
+    val personaPrompt: String = "",
+    val name: String = "",
+    val icon: String = "",
+    val largePortrait: Boolean = false,
+    val id: String? = null,
+    val note: String? = null,
+    val raw: Map<String, Any?> = emptyMap(),
+)
+
+@Suppress("UNCHECKED_CAST")
+fun personaProfilesFromValue(value: Any?): List<PersonaProfile> =
+    (value as? List<*>)?.mapNotNull { item ->
+        val source = item as? Map<*, *> ?: return@mapNotNull null
+        val raw = source.entries.associateTo(linkedMapOf()) { (key, child) -> key.toString() to child }
+        PersonaProfile(
+            personaPrompt = raw["personaPrompt"]?.toString().orEmpty(),
+            name = raw["name"]?.toString().orEmpty(),
+            icon = raw["icon"]?.toString().orEmpty(),
+            largePortrait = raw["largePortrait"] as? Boolean ?: false,
+            id = raw["id"]?.toString(),
+            note = raw["note"]?.toString(),
+            raw = raw,
+        )
+    } ?: emptyList()
+
+fun personaProfileToValue(persona: PersonaProfile): Map<String, Any?> =
+    LinkedHashMap(persona.raw).apply {
+        put("personaPrompt", persona.personaPrompt)
+        put("name", persona.name)
+        put("icon", persona.icon)
+        put("largePortrait", persona.largePortrait)
+        if (persona.id == null) remove("id") else put("id", persona.id)
+        if (persona.note == null) remove("note") else put("note", persona.note)
+    }
+
 data class RegexScript(
     val comment: String = "",
     val input: String = "",
