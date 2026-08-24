@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, saving, AccountWarning, selectedCharID, PlaygroundStore } from './ts/stores.svelte';
+    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, saving, AccountWarning, selectedCharID, PlaygroundStore } from './ts/stores.svelte';
     import { settingsStore, moduleStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
     import { isNodeServer } from './ts/platform';
@@ -7,8 +7,8 @@
     import { hypaV3ModalOpen, hypaV3ProgressStore } from "./ts/stores.svelte";
     import sendSound from './etc/send.mp3'
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
-    import LazyComponent from './lib/Others/LazyComponent.svelte';
     import AirisuMascot from './lib/UI/AirisuMascot.svelte';
+    import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
 
 
@@ -47,6 +47,7 @@
     const loadoutLoader = () => import('./lib/Others/LoadoutModal.svelte')
     const irisLoader = () => import('./lib/Others/IrisModal.svelte')
     const sidebarConfigLoader = () => import('./lib/Others/CustomSidebarConfig.svelte')
+    const assetManagerLoader = () => import('./lib/Others/AssetManagerModal.svelte')
     const savePopupLoader = () => import('./lib/Others/SavePopupIcon.svelte')
 
     $effect(() => {
@@ -54,6 +55,12 @@
             void import('./lib/UI/Realm/RealmPopUp.svelte').then((module) => {
                 RealmPopUp = module.default
             })
+        }
+    })
+
+    $effect(() => {
+        if ($sideBarStore || $selectedCharID) {
+            preloadLazy(assetManagerLoader)
         }
     })
 
@@ -311,6 +318,9 @@
     {/if}
     {#if customSideBarConfigDialogStore.open}
         <LazyComponent loader={sidebarConfigLoader} />
+    {/if}
+    {#if assetManagerModalStore.open}
+        <LazyComponent loader={assetManagerLoader} />
     {/if}
 </main>
 

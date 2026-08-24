@@ -105,7 +105,14 @@ export interface CharImageOptions {
   height?: number;
 }
 
-const NODE_IMAGE_BATCH_SIZE = 24;
+const NODE_IMAGE_BATCH_SIZE = 48;
+
+export async function getAssetsBatch(
+  locs: string[],
+  options: CharImageOptions = { size: "full" },
+): Promise<Map<string, string>> {
+  return getCharImagesBatch(locs, options);
+}
 
 export async function getCharImagesBatch(
   locs: string[],

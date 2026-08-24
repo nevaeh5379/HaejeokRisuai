@@ -34,6 +34,7 @@
     import { convertCharacterToModule } from "src/ts/interchangeability";
     import { getMimeType } from "src/ts/media";
     import { createDeferredTokenCalculator } from "src/ts/deferredTokenCalculator";
+    import AdditionalAssetsSection from "./Character/AdditionalAssetsSection.svelte";
 
     let iconRemoveMode = $state(false)
     let viewSubMenu = $state(0)
@@ -60,8 +61,6 @@
     onDestroy(() => tokenCalculator.dispose())
 
 
-    let assetFileExtensions:string[] = $state([])
-    let assetFilePath:string[] = $state([])
     let licensed = $state((characterStore.characters[$selectedCharID].type === 'character') ? (characterStore.characters[$selectedCharID] as character).license : '')
 
     $effect.pre(() => {
@@ -81,22 +80,6 @@
         })
         for (const key of changedTokens) {
             tokens[key] = null
-        }
-    });
-
-    $effect.pre(() => {
-        if(characterStore.characters[$selectedCharID].type ==='character' && settingsStore.state.useAdditionalAssetsPreview){
-            if((characterStore.characters[$selectedCharID] as character).additionalAssets){
-                for(let i = 0; i < (characterStore.characters[$selectedCharID] as character).additionalAssets.length; i++){
-                    if((characterStore.characters[$selectedCharID] as character).additionalAssets[i].length > 2 && (characterStore.characters[$selectedCharID] as character).additionalAssets[i][2]) {
-                        assetFileExtensions[i] = (characterStore.characters[$selectedCharID] as character).additionalAssets[i][2]
-                    } else
-                        assetFileExtensions[i] = (characterStore.characters[$selectedCharID] as character).additionalAssets[i][1].split('.').pop()
-                    getFileSrc((characterStore.characters[$selectedCharID] as character).additionalAssets[i][1]).then((filePath) => {
-                        assetFilePath[i] = filePath
-                    })
-                }
-            }
         }
     });
 
@@ -569,102 +552,7 @@
             }}/>
         {/if}
     {:else if viewSubMenu === 2}
-
-            {#if settingsStore.state.newImageHandlingBeta}
-            <CheckInput bind:check={characterStore.characters[$selectedCharID].prebuiltAssetCommand} name={language.insertAssetPrompt}/>
-
-            {#if characterStore.characters[$selectedCharID].prebuiltAssetCommand}
-
-            <span class="text-textcolor mt-2">{language.assetStyle}</span>
-            <SelectInput className="mb-2" bind:value={characterStore.characters[$selectedCharID].prebuiltAssetStyle}>
-                <OptionInput value="">{language.static}</OptionInput>
-                <OptionInput value="dynamic">{language.dynamic}</OptionInput>
-            </SelectInput>
-            {/if}
-            {/if}
-            <div class="w-full max-w-full border border-selected rounded-md p-2 mt-2">
-                <table class="contain w-full max-w-full tabler mt-2">
-                <tbody>
-                    <tr>
-                        <th class="font-medium">{language.value}</th>
-                        <th class="font-medium cursor-pointer w-10">
-                            <button class="hover:text-green-500" onclick={async () => {
-                                if(characterStore.characters[$selectedCharID].type === 'character'){
-                                    const da = await selectMultipleFile(['png', 'webp', 'mp4', 'mp3', 'gif', 'jpeg', 'jpg', 'ttf', 'otf', 'css', 'webm', 'woff', 'woff2', 'svg', 'avif'])
-                                    characterStore.characters[$selectedCharID].additionalAssets = characterStore.characters[$selectedCharID].additionalAssets ?? []
-                                    if(!da){
-                                        return
-                                    }
-                                    for(const f of da){
-                                        const img = f.data
-                                        const name = f.name
-                                        const extension = name.split('.').pop().toLowerCase()
-                                        const imgp = await saveAsset(img,'', extension)
-                                        characterStore.characters[$selectedCharID].additionalAssets.push([name, imgp, extension])
-                                        characterStore.characters[$selectedCharID].additionalAssets = characterStore.characters[$selectedCharID].additionalAssets
-                                    }
-                                }
-                            }}>
-                                <PlusIcon />
-                            </button>
-                        </th>
-                    </tr>
-                    {#if (!characterStore.characters[$selectedCharID].additionalAssets) || characterStore.characters[$selectedCharID].additionalAssets.length === 0}
-                        <tr>
-                            <td class="text-textcolor2"> No Assets</td>
-                        </tr>
-                    {:else}
-                        {#each characterStore.characters[$selectedCharID].additionalAssets as assets, i}
-                            <tr>
-                                <td class="font-medium truncate">
-                                    {#if assetFilePath[i] && settingsStore.state.useAdditionalAssetsPreview}
-                                        {#if ['mp4', 'webm', 'mkv', 'mov', 'avi'].includes(assetFileExtensions[i])}
-                                        <!-- svelte-ignore a11y_media_has_caption -->
-                                            <video controls class="mt-2 px-2 w-full m-1 rounded-md"><source src={assetFilePath[i]} type={getMimeType(assetFileExtensions[i])}></video>
-                                        {:else if ['mp3', 'wav', 'ogg', 'flac', 'aac'].includes(assetFileExtensions[i])}
-                                            <audio controls class="mt-2 px-2 w-full h-16 m-1 rounded-md" loop><source src={assetFilePath[i]} type={getMimeType(assetFileExtensions[i])}></audio>
-                                        {:else if ['png', 'webp', 'jpeg', 'jpg', 'gif', 'avif', 'svg', 'bmp'].includes(assetFileExtensions[i])}
-                                            <img src={assetFilePath[i]} class="w-16 h-16 m-1 rounded-md" alt={assets[0]}/>
-                                        {/if}
-                                    {/if}
-                                    <TextInput size="sm" marginBottom bind:value={characterStore.characters[$selectedCharID].additionalAssets[i][0]} placeholder="..." />
-                                </td>
-                                
-                                <th class="font-medium cursor-pointer w-10">
-                                    <button class="hover:text-blue-500" onclick={() => {
-                                        if(characterStore.characters[$selectedCharID].type === 'character'){
-                                            characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].fmIndex = -1
-                                            let additionalAssets = characterStore.characters[$selectedCharID].additionalAssets
-                                            additionalAssets.splice(i, 1)
-                                            characterStore.characters[$selectedCharID].additionalAssets = additionalAssets
-                                        }
-                                    }}>
-                                        <TrashIcon />
-                                    </button>
-                                    {#if settingsStore.state.useAdditionalAssetsPreview}
-                                        <button class="hover:text-blue-500" class:text-textcolor2={characterStore.characters[$selectedCharID].prebuiltAssetExclude?.includes?.(assets[1])} onclick={() => {
-                                            characterStore.characters[$selectedCharID].prebuiltAssetExclude ??= []
-                                            if(characterStore.characters[$selectedCharID].prebuiltAssetExclude.includes(assets[1])){
-                                                characterStore.characters[$selectedCharID].prebuiltAssetExclude = characterStore.characters[$selectedCharID].prebuiltAssetExclude.filter((e) => e !== assets[1])
-                                            }
-                                            else {
-                                                characterStore.characters[$selectedCharID].prebuiltAssetExclude.push(assets[1])
-                                            }
-                                        }}>
-                                            {#if characterStore.characters[$selectedCharID]?.prebuiltAssetExclude?.includes?.(assets[1])}
-                                                <ImageOffIcon />
-                                             {:else}
-                                                <ImageIcon />
-                                            {/if}
-                                        </button>
-                                    {/if}
-                                </th>
-                            </tr>
-                        {/each}
-                    {/if}
-                </tbody>
-                </table>
-            </div>
+        <AdditionalAssetsSection />
     {/if}
 {:else if $CharConfigSubMenu === 3}
     {#if !$MobileGUI}
