@@ -61,6 +61,44 @@ object NativeTriggerProcessor {
             } else if (trigger.type != mode) continue
             if (!passes(trigger, working, ::parse, ::getVar)) continue
 
+            if (trigger.effects.firstOrNull()?.get("type")?.toString() == "v2Header") {
+                val v2 = NativeTriggerV2Processor.run(
+                    trigger = trigger,
+                    settings = settings,
+                    character = character,
+                    messages = working,
+                    variables = vars,
+                    chatId = chatId,
+                    authorNote = authorNote,
+                    greetingIndex = greetingIndex,
+                    inheritedPrompt = prompt,
+                    inheritedStop = stop,
+                    runManual = { target, nestedMessages, nestedVars, nestedPrompt, nestedStop ->
+                        if (recursion < MAX_RECURSION || trigger.lowLevelAccess) {
+                            run(
+                                mode = "manual",
+                                settings = settings,
+                                character = character,
+                                messages = nestedMessages,
+                                variables = nestedVars,
+                                chatId = chatId,
+                                authorNote = authorNote,
+                                greetingIndex = greetingIndex,
+                                recursion = recursion + 1,
+                                manualName = target,
+                                inheritedPrompt = nestedPrompt,
+                                inheritedStop = nestedStop,
+                            )
+                        } else NativeTriggerResult(nestedMessages, nestedVars, nestedPrompt, nestedStop)
+                    },
+                )
+                working.clear(); working += v2.messages
+                vars.clear(); vars.putAll(v2.variables)
+                prompt = v2.promptInjection
+                stop = v2.stopSending
+                continue
+            }
+
             for (effect in trigger.effects) {
                 when (effect["type"]?.toString()) {
                     "setvar" -> {
@@ -109,7 +147,7 @@ object NativeTriggerProcessor {
                         working += sliced
                     }
                     "stop", "v2StopPromptSending" -> stop = true
-                    "runtrigger" -> if (recursion < MAX_RECURSION) {
+                    "runtrigger" -> if (recursion < MAX_RECURSION || trigger.lowLevelAccess) {
                         val nested = run(
                             mode = "manual",
                             settings = settings,

@@ -47,6 +47,9 @@ internal object NativeRisuParser {
         return NativeRisuMutationResult(parsed, variables.toMap())
     }
 
+    internal fun jsonArrayContains(text: String, needle: String): Boolean? =
+        JsonLite.parseArray(text)?.any { value -> value is String && value == needle }
+
     private fun render(text: String, context: NativeRisuParserContext, depth: Int): String {
         if (text.isEmpty() || depth >= MAX_DEPTH) return evaluateInline(text, context)
         val opening = findNextBlockOpening(text) ?: return evaluateInline(text, context)
