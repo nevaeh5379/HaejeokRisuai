@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QColor>
 #include <QStandardPaths>
 #include <QDir>
@@ -24,6 +25,20 @@ class AppConfig : public QObject {
     Q_PROPERTY(QString selectedPresetId READ selectedPresetId WRITE setSelectedPresetId NOTIFY selectedPresetIdChanged)
     Q_PROPERTY(QString selectedPersonaId READ selectedPersonaId WRITE setSelectedPersonaId NOTIFY selectedPersonaIdChanged)
     Q_PROPERTY(QString language READ language WRITE setLanguage NOTIFY languageChanged)
+
+    // Database Configuration Properties
+    Q_PROPERTY(QString dbDriver READ dbDriver WRITE setDbDriver NOTIFY dbConfigChanged)
+    Q_PROPERTY(QString dbHost READ dbHost WRITE setDbHost NOTIFY dbConfigChanged)
+    Q_PROPERTY(int dbPort READ dbPort WRITE setDbPort NOTIFY dbConfigChanged)
+    Q_PROPERTY(QString dbName READ dbName WRITE setDbName NOTIFY dbConfigChanged)
+    Q_PROPERTY(QString dbUser READ dbUser WRITE setDbUser NOTIFY dbConfigChanged)
+    Q_PROPERTY(QString dbPassword READ dbPassword WRITE setDbPassword NOTIFY dbConfigChanged)
+    Q_PROPERTY(QString dbOptions READ dbOptions WRITE setDbOptions NOTIFY dbConfigChanged)
+    Q_PROPERTY(QString dbUrl READ dbUrl WRITE setDbUrl NOTIFY dbConfigChanged)
+    Q_PROPERTY(QString activeDbDriver READ activeDbDriver NOTIFY dbConnectionStatusChanged)
+    Q_PROPERTY(bool isDbConnected READ isDbConnected NOTIFY dbConnectionStatusChanged)
+    Q_PROPERTY(QString schemaLayout READ schemaLayout CONSTANT)
+    Q_PROPERTY(int schemaVersion READ schemaVersion NOTIFY dbConnectionStatusChanged)
 
 public:
     static AppConfig& instance();
@@ -65,6 +80,40 @@ public:
     QString language() const { return m_language; }
     void setLanguage(const QString& lang);
 
+    // Database Configuration Getters / Setters
+    QString dbDriver() const { return m_dbDriver; }
+    void setDbDriver(const QString& driver);
+
+    QString dbHost() const { return m_dbHost; }
+    void setDbHost(const QString& host);
+
+    int dbPort() const { return m_dbPort; }
+    void setDbPort(int port);
+
+    QString dbName() const { return m_dbName; }
+    void setDbName(const QString& name);
+
+    QString dbUser() const { return m_dbUser; }
+    void setDbUser(const QString& user);
+
+    QString dbPassword() const { return m_dbPassword; }
+    void setDbPassword(const QString& password);
+
+    QString dbOptions() const { return m_dbOptions; }
+    void setDbOptions(const QString& options);
+
+    QString dbUrl() const;
+    void setDbUrl(const QString& url);
+
+    QString activeDbDriver() const;
+    bool isDbConnected() const;
+    QString schemaLayout() const { return QStringLiteral("relational-schema-v3"); }
+    int schemaVersion() const;
+
+    Q_INVOKABLE bool testDbConnection(const QString& driver, const QString& host, int port, const QString& name, const QString& user, const QString& pass, const QString& options);
+    Q_INVOKABLE bool applyDbConnection(const QString& driver, const QString& host, int port, const QString& name, const QString& user, const QString& pass, const QString& options);
+    Q_INVOKABLE QStringList availableDbDrivers() const;
+
     void save();
     void load();
 
@@ -78,6 +127,8 @@ signals:
     void selectedPresetIdChanged(const QString& id);
     void selectedPersonaIdChanged(const QString& id);
     void languageChanged(const QString& lang);
+    void dbConfigChanged();
+    void dbConnectionStatusChanged();
 
 private:
     explicit AppConfig(QObject* parent = nullptr);
@@ -91,6 +142,15 @@ private:
     QString m_selectedPresetId;
     QString m_selectedPersonaId;
     QString m_language = QStringLiteral("ko");
+
+    // Database settings
+    QString m_dbDriver = QStringLiteral("QSQLITE");
+    QString m_dbHost = QStringLiteral("localhost");
+    int m_dbPort = 0;
+    QString m_dbName;
+    QString m_dbUser;
+    QString m_dbPassword;
+    QString m_dbOptions;
 };
 
 } // namespace Risu

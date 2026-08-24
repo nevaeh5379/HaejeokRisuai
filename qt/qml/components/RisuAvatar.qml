@@ -5,8 +5,11 @@ Item {
     id: root
 
     property string imageSource: ""
-    property string fallbackText: "?"
+    property alias avatarSource: root.imageSource
+    property string characterName: ""
+    property string fallbackText: characterName !== "" ? characterName.charAt(0).toUpperCase() : "?"
     property int avatarSize: 52
+    property alias size: root.avatarSize
     property int avatarRadius: Theme.radiusMedium
     property bool isUser: false
     property bool showBorder: false

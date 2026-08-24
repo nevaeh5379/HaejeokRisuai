@@ -27,6 +27,10 @@ class ChatController : public QObject {
     Q_PROPERTY(QString currentChatName READ currentChatName NOTIFY currentChatChanged)
     Q_PROPERTY(int currentChatIndex READ currentChatIndex NOTIFY currentChatChanged)
     Q_PROPERTY(QStringList chatNames READ chatNames NOTIFY chatListChanged)
+    Q_PROPERTY(QVariantList chatSessions READ chatSessions NOTIFY chatListChanged)
+    Q_PROPERTY(int chatSessionCount READ chatSessionCount NOTIFY chatListChanged)
+    Q_PROPERTY(QStringList availableGreetings READ availableGreetings NOTIFY activeCharacterChanged)
+    Q_PROPERTY(int currentGreetingIndex READ currentGreetingIndex NOTIFY currentChatChanged)
     Q_PROPERTY(int tokenEstimate READ tokenEstimate NOTIFY tokenEstimateChanged)
     Q_PROPERTY(int estimatedPromptTokens READ tokenEstimate NOTIFY tokenEstimateChanged)
     Q_PROPERTY(int streamOutputTokens READ streamOutputTokens NOTIFY streamOutputTokensChanged)
@@ -58,6 +62,10 @@ public:
     QString currentChatName() const;
     int currentChatIndex() const { return m_activeChar.currentChatIndex; }
     QStringList chatNames() const;
+    QVariantList chatSessions() const;
+    int chatSessionCount() const { return m_activeChar.chats.size(); }
+    QStringList availableGreetings() const;
+    int currentGreetingIndex() const;
     int tokenEstimate() const { return m_tokenEstimate; }
     int streamOutputTokens() const { return m_streamOutputTokens; }
     int systemTokens() const { return m_breakdown.systemTokens; }
@@ -80,13 +88,18 @@ public slots:
     void forkChat(int messageIndex);
     void clearCurrentChat();
     void clearChatMessages() { clearCurrentChat(); }
+    void clearChat(int chatIndex = -1);
     void createNewChat(const QString& chatName = QString());
     void createNewChatSession(const QString& chatName = QString()) { createNewChat(chatName); }
+    void createNewChatWithGreeting(int greetingIndex, const QString& chatName = QString());
+    void renameChat(int chatIndex, const QString& newName);
+    void duplicateChat(int chatIndex);
     void switchChat(int chatIndex);
     void switchChatSession(int chatIndex) { switchChat(chatIndex); }
     void deleteChat(int chatIndex);
     void deleteChatSession(const QString& chatId);
     void deleteChatSession(int chatIndex) { deleteChat(chatIndex); }
+    bool exportSpecificChat(int chatIndex, const QString& format, const QString& filePath);
     void cancelGeneration();
     void updateTokenEstimate(const QString& draftText = QString());
 

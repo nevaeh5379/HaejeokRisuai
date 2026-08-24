@@ -9,6 +9,10 @@ Button {
     property string iconName: ""
     property int customRadius: Theme.radiusMedium
     property color customColor: "transparent"
+    property alias buttonColor: control.customColor
+    property color customTextColor: "transparent"
+    property color customBorderColor: "transparent"
+    property alias borderColor: control.customBorderColor
 
     font.pixelSize: Theme.fontNormal
     font.family: Theme.fontFamily
@@ -39,6 +43,7 @@ Button {
     }
 
     property color textColor: {
+        if (control.customTextColor !== "transparent" && control.customTextColor.a > 0) return control.customTextColor;
         if (!control.enabled) return Theme.textcolor2;
         if (variant === "primary" || variant === "danger") return "#ffffff";
         return Theme.textcolor;
@@ -68,10 +73,13 @@ Button {
         }
 
         border.color: {
+            if (control.customBorderColor !== "transparent" && control.customBorderColor.a > 0) {
+                return control.customBorderColor;
+            }
             if (control.variant === "outline") return control.hovered ? Theme.textcolor2 : Theme.darkborderc;
             return "transparent";
         }
-        border.width: (control.variant === "outline") ? 1 : 0
+        border.width: (control.variant === "outline" || (control.customBorderColor !== "transparent" && control.customBorderColor.a > 0)) ? 1 : 0
 
         Behavior on color {
             ColorAnimation { duration: Theme.animFast }

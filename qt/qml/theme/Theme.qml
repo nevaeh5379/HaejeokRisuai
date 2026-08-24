@@ -188,6 +188,7 @@ QtObject {
     readonly property int fontTiny: 11
     readonly property int fontSmall: 13
     readonly property int fontNormal: baseFontSize
+    readonly property int fontRegular: baseFontSize
     readonly property int fontMedium: baseFontSize + 2
     readonly property int fontLarge: baseFontSize + 5
     readonly property int fontTitle: baseFontSize + 10

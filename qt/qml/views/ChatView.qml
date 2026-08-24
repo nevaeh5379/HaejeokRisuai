@@ -43,7 +43,103 @@ Item {
         }
 
         onAccepted: {
-            chatCtrl.clearChat();
+            chatCtrl.clearChat(-1);
+        }
+    }
+
+    // Export Chat Dialog
+    FileDialog {
+        id: exportFileDialog
+        title: "Export Chat History / 대화 내보내기"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["Markdown (*.md)", "HTML Document (*.html)", "JSON (*.json)", "Text (*.txt)"]
+        onAccepted: {
+            var path = selectedFile.toString().replace("file://", "");
+            var ext = "md";
+            if (path.endsWith(".html")) ext = "html";
+            else if (path.endsWith(".json")) ext = "json";
+            else if (path.endsWith(".txt")) ext = "txt";
+            chatCtrl.exportChat(ext, path);
+        }
+    }
+
+    // Author Note Dialog
+    RisuDialog {
+        id: authorNoteDialog
+        dialogTitle: "Author's Note / 저자 노트"
+        width: 480
+
+        ColumnLayout {
+            width: parent.width
+            spacing: 12
+
+            Text {
+                text: "Session Specific Author's Note (Injected into context)"
+                color: Theme.textcolor2
+                font.pixelSize: Theme.fontSmall
+                font.family: Theme.fontFamily
+            }
+
+            RisuTextArea {
+                id: authorNoteArea
+                Layout.fillWidth: true
+                Layout.preferredHeight: 120
+                text: chatCtrl.authorNote
+                placeholderText: "[Author's Note: Elena acts shy but observant...]"
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+
+                Text {
+                    text: "Insertion Depth:"
+                    color: Theme.textcolor2
+                    font.pixelSize: Theme.fontSmall
+                    font.family: Theme.fontFamily
+                }
+
+                RisuSlider {
+                    id: depthSlider
+                    Layout.fillWidth: true
+                    from: 0
+                    to: 10
+                    stepSize: 1
+                    value: chatCtrl.authorNoteDepth
+                }
+
+                Text {
+                    text: depthSlider.value.toString()
+                    color: Theme.textcolor
+                    font.pixelSize: Theme.fontNormal
+                    font.weight: Font.Bold
+                    font.family: Theme.fontFamily
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 8
+                spacing: 10
+
+                Item { Layout.fillWidth: true }
+
+                RisuButton {
+                    text: "Cancel"
+                    variant: "ghost"
+                    onClicked: authorNoteDialog.close()
+                }
+
+                RisuButton {
+                    text: "Save / 저장"
+                    variant: "primary"
+                    onClicked: {
+                        chatCtrl.setAuthorNote(authorNoteArea.text);
+                        chatCtrl.setAuthorNoteDepth(depthSlider.value);
+                        authorNoteDialog.close();
+                    }
+                }
+            }
         }
     }
 
@@ -66,15 +162,12 @@ Item {
         anchors.fill: parent
         visible: root.hasCharacter
 
-        // ==========================================
         // Background Embedding (Large Portrait / Custom CSS3 & HTML)
-        // ==========================================
         Item {
             id: backgroundEmbeddingLayer
             anchors.fill: parent
             z: 0
 
-            // Large Portrait Background (Waifu-style immersion)
             Image {
                 id: bgPortraitImg
                 anchors.right: parent.right
@@ -88,7 +181,6 @@ Item {
                 smooth: true
             }
 
-            // Custom Background HTML / Text Embedding
             Text {
                 id: bgHtmlEmbedding
                 anchors.fill: parent
@@ -101,48 +193,243 @@ Item {
             }
         }
 
-        // Top-Left Sidebar Arrow Toggle Button (SideBarArrow in RisuAI)
-        Rectangle {
-            id: sideBarArrow
+        // ==========================================
+        // Chat Sessions Drawer (Left slide-out panel)
+        // ==========================================
+        ChatSessionDrawer {
+            id: sessionDrawer
             anchors.left: parent.left
             anchors.top: parent.top
-            anchors.leftMargin: 12
-            anchors.topMargin: 12
-            width: 36
-            height: 36
-            radius: Theme.radiusMedium
-            color: arrowMouse.containsMouse ? Theme.darkbutton : "transparent"
-            border.color: Theme.darkborderc
-            border.width: 1
-            z: 20
-
-            RisuIcon {
-                anchors.centerIn: parent
-                name: "menu"
-                size: 16
-                color: arrowMouse.containsMouse ? Theme.primaryLight : Theme.textcolor2
-            }
-
-            MouseArea {
-                id: arrowMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.toggleSidebarRequested()
-            }
-
-            ToolTip.visible: arrowMouse.containsMouse
-            ToolTip.text: "Toggle Sidebar / 사이드바 토글"
-            ToolTip.delay: 350
+            anchors.bottom: parent.bottom
+            isOpen: false
+            z: 100
         }
 
-        // Main Chat Column Container (Centered max-w-6xl)
+        // Main Chat Layout Container (Centered)
         ColumnLayout {
-            width: Math.min(1080, parent.width)
-            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.left: sessionDrawer.right
+            anchors.right: parent.right
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             spacing: 0
+
+            // ==========================================
+            // TOP CHAT HEADER BAR & SESSION SWITCHER
+            // ==========================================
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 52
+                color: Theme.bgcolor
+                border.color: Theme.darkborderc
+                border.width: 1
+                z: 10
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 12
+                    anchors.rightMargin: 14
+                    spacing: 8
+
+                    // Sidebar Toggle Button
+                    Rectangle {
+                        width: 34
+                        height: 34
+                        radius: Theme.radiusMedium
+                        color: arrowMouse.containsMouse ? Theme.darkbutton : "transparent"
+                        border.color: Theme.darkborderc
+                        border.width: 1
+
+                        RisuIcon {
+                            anchors.centerIn: parent
+                            name: "menu"
+                            size: 16
+                            color: arrowMouse.containsMouse ? Theme.primaryLight : Theme.textcolor2
+                        }
+
+                        MouseArea {
+                            id: arrowMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.toggleSidebarRequested()
+                        }
+
+                        ToolTip.visible: arrowMouse.containsMouse
+                        ToolTip.text: "Toggle Sidebar / 사이드바 토글"
+                        ToolTip.delay: 350
+                    }
+
+                    // Character Avatar Pill
+                    RisuAvatar {
+                        avatarSource: charCtrl.selectedCharacter.avatarPath || ""
+                        characterName: charCtrl.selectedCharacter.name || ""
+                        size: 32
+                    }
+
+                    // Character Name & Active Session Chip
+                    Column {
+                        spacing: 1
+
+                        Text {
+                            text: charCtrl.selectedCharacter.name || "Character"
+                            font.pixelSize: Theme.fontNormal
+                            font.weight: Font.Bold
+                            font.family: Theme.fontFamily
+                            color: Theme.textcolor
+                        }
+
+                        // Active Session Chip (Clickable to open Sessions Drawer)
+                        Rectangle {
+                            height: 18
+                            width: sessionChipRow.implicitWidth + 12
+                            radius: Theme.radiusFull
+                            color: sessionChipMouse.containsMouse ? Theme.darkbutton : Theme.selected
+                            border.color: sessionChipMouse.containsMouse ? Theme.primary : Theme.darkborderc
+                            border.width: 1
+
+                            RowLayout {
+                                id: sessionChipRow
+                                anchors.centerIn: parent
+                                spacing: 4
+
+                                RisuIcon {
+                                    name: "message-square"
+                                    size: 10
+                                    color: Theme.primaryLight
+                                }
+
+                                Text {
+                                    text: chatCtrl.currentChatName + " (" + chatCtrl.messageModel.rowCount + " msgs)"
+                                    font.pixelSize: Theme.fontTiny
+                                    font.weight: Font.Medium
+                                    font.family: Theme.fontFamily
+                                    color: Theme.primaryLight
+                                }
+
+                                RisuIcon {
+                                    name: "chevron-down"
+                                    size: 10
+                                    color: Theme.textcolor2
+                                }
+                            }
+
+                            MouseArea {
+                                id: sessionChipMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    sessionDrawer.isOpen = !sessionDrawer.isOpen;
+                                }
+                            }
+
+                            ToolTip.visible: sessionChipMouse.containsMouse
+                            ToolTip.text: "Click to open Chat Sessions / 세션 목록 열기"
+                            ToolTip.delay: 300
+                        }
+                    }
+
+                    // Quick "+ New Session" Button
+                    RisuButton {
+                        text: "+ New Session"
+                        variant: "outline"
+                        Layout.preferredHeight: 30
+                        onClicked: {
+                            chatCtrl.createNewChat();
+                        }
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    // Token Breakdown Badge
+                    Rectangle {
+                        Layout.preferredHeight: 28
+                        Layout.preferredWidth: tokRow.implicitWidth + 14
+                        radius: Theme.radiusFull
+                        color: Theme.darkbg
+                        border.color: Theme.darkborderc
+                        border.width: 1
+
+                        RowLayout {
+                            id: tokRow
+                            anchors.centerIn: parent
+                            spacing: 6
+
+                            RisuIcon {
+                                name: "cpu"
+                                size: 12
+                                color: Theme.textcolor2
+                            }
+
+                            Text {
+                                text: (chatCtrl.activePresetModel ? chatCtrl.activePresetModel : "AI") + " | ~" + chatCtrl.tokenEstimate + " tok"
+                                font.pixelSize: Theme.fontTiny
+                                font.family: Theme.fontFamily
+                                color: Theme.textcolor2
+                            }
+                        }
+
+                        ToolTip.visible: tokMouse.containsMouse
+                        ToolTip.text: "Prompt: ~" + chatCtrl.tokenEstimate + " tokens\n(System: " + chatCtrl.systemTokens + ", Lore: " + chatCtrl.lorebookTokens + ", Hist: " + chatCtrl.historyTokens + ", A.Note: " + chatCtrl.authorNoteTokens + ")"
+                        ToolTip.delay: 200
+
+                        MouseArea {
+                            id: tokMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                        }
+                    }
+
+                    // Sessions Drawer Toggle Button
+                    RisuIconButton {
+                        iconName: "message-square"
+                        buttonSize: 32
+                        iconSize: 15
+                        tooltipText: "Chat Sessions (" + chatCtrl.chatSessionCount + ") / 대화 세션 관리"
+                        onClicked: sessionDrawer.isOpen = !sessionDrawer.isOpen
+                    }
+
+                    // Author's Note Popover Button
+                    RisuIconButton {
+                        iconName: "edit-3"
+                        buttonSize: 32
+                        iconSize: 15
+                        tooltipText: "Author's Note / 저자 노트"
+                        onClicked: {
+                            authorNoteArea.text = chatCtrl.authorNote;
+                            depthSlider.value = chatCtrl.authorNoteDepth;
+                            authorNoteDialog.open();
+                        }
+                    }
+
+                    // Visual Novel Mode Button
+                    RisuIconButton {
+                        iconName: "film"
+                        buttonSize: 32
+                        iconSize: 15
+                        tooltipText: "Visual Novel Mode / 비주얼 노벨 모드"
+                        onClicked: root.openVisualNovelRequested()
+                    }
+
+                    // Export Chat Button
+                    RisuIconButton {
+                        iconName: "share"
+                        buttonSize: 32
+                        iconSize: 15
+                        tooltipText: "Export Chat / 대화 내보내기"
+                        onClicked: exportFileDialog.open()
+                    }
+
+                    // Clear Chat Button
+                    RisuIconButton {
+                        iconName: "trash-2"
+                        buttonSize: 32
+                        iconSize: 15
+                        tooltipText: "Clear Messages / 대화 비우기"
+                        onClicked: clearConfirmDialog.open()
+                    }
+                }
+            }
 
             // Message Stream ListView
             ListView {

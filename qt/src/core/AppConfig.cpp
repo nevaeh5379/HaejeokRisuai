@@ -1,4 +1,5 @@
 #include "AppConfig.hpp"
+#include "DatabaseManager.hpp"
 #include <QCoreApplication>
 
 namespace Risu {
@@ -40,6 +41,9 @@ QString AppConfig::coldStorageDir() const {
 }
 
 QString AppConfig::databasePath() const {
+    if (!m_dbName.isEmpty() && m_dbDriver == QStringLiteral("QSQLITE")) {
+        return m_dbName;
+    }
     return appDataDir() + QStringLiteral("/risuai.db");
 }
 
@@ -167,6 +171,139 @@ void AppConfig::setLanguage(const QString& lang) {
     }
 }
 
+void AppConfig::setDbDriver(const QString& driver) {
+    if (m_dbDriver != driver) {
+        m_dbDriver = driver;
+        emit dbConfigChanged();
+        save();
+    }
+}
+
+void AppConfig::setDbHost(const QString& host) {
+    if (m_dbHost != host) {
+        m_dbHost = host;
+        emit dbConfigChanged();
+        save();
+    }
+}
+
+void AppConfig::setDbPort(int port) {
+    if (m_dbPort != port) {
+        m_dbPort = port;
+        emit dbConfigChanged();
+        save();
+    }
+}
+
+void AppConfig::setDbName(const QString& name) {
+    if (m_dbName != name) {
+        m_dbName = name;
+        emit dbConfigChanged();
+        save();
+    }
+}
+
+void AppConfig::setDbUser(const QString& user) {
+    if (m_dbUser != user) {
+        m_dbUser = user;
+        emit dbConfigChanged();
+        save();
+    }
+}
+
+void AppConfig::setDbPassword(const QString& password) {
+    if (m_dbPassword != password) {
+        m_dbPassword = password;
+        emit dbConfigChanged();
+        save();
+    }
+}
+
+void AppConfig::setDbOptions(const QString& options) {
+    if (m_dbOptions != options) {
+        m_dbOptions = options;
+        emit dbConfigChanged();
+        save();
+    }
+}
+
+QString AppConfig::dbUrl() const {
+    DatabaseConfig cfg;
+    cfg.driver = m_dbDriver;
+    cfg.host = m_dbHost;
+    cfg.port = m_dbPort;
+    cfg.databaseName = m_dbName.isEmpty() ? databasePath() : m_dbName;
+    cfg.userName = m_dbUser;
+    cfg.password = m_dbPassword;
+    return cfg.toUrl();
+}
+
+void AppConfig::setDbUrl(const QString& url) {
+    DatabaseConfig cfg = DatabaseConfig::fromUrl(url);
+    m_dbDriver = cfg.driver;
+    m_dbHost = cfg.host;
+    m_dbPort = cfg.port;
+    m_dbName = cfg.databaseName;
+    m_dbUser = cfg.userName;
+    m_dbPassword = cfg.password;
+    emit dbConfigChanged();
+    save();
+}
+
+QString AppConfig::activeDbDriver() const {
+    return DatabaseManager::instance().currentConfig().driver;
+}
+
+bool AppConfig::isDbConnected() const {
+    return DatabaseManager::instance().isConnected();
+}
+
+int AppConfig::schemaVersion() const {
+    return DatabaseManager::instance().currentSchemaVersion();
+}
+
+bool AppConfig::testDbConnection(const QString& driver, const QString& host, int port, const QString& name, const QString& user, const QString& pass, const QString& options) {
+    DatabaseConfig cfg;
+    cfg.driver = driver;
+    cfg.host = host;
+    cfg.port = port;
+    cfg.databaseName = name;
+    cfg.userName = user;
+    cfg.password = pass;
+    cfg.connectionOptions = options;
+    return DatabaseManager::instance().testConnection(cfg);
+}
+
+bool AppConfig::applyDbConnection(const QString& driver, const QString& host, int port, const QString& name, const QString& user, const QString& pass, const QString& options) {
+    DatabaseConfig cfg;
+    cfg.driver = driver;
+    cfg.host = host;
+    cfg.port = port;
+    cfg.databaseName = name;
+    cfg.userName = user;
+    cfg.password = pass;
+    cfg.connectionOptions = options;
+
+    bool ok = DatabaseManager::instance().connectDatabase(cfg);
+    if (ok) {
+        m_dbDriver = driver;
+        m_dbHost = host;
+        m_dbPort = port;
+        m_dbName = name;
+        m_dbUser = user;
+        m_dbPassword = pass;
+        m_dbOptions = options;
+        emit dbConfigChanged();
+        emit dbConnectionStatusChanged();
+        save();
+    }
+    return ok;
+}
+
+QStringList AppConfig::availableDbDrivers() const {
+    return DatabaseManager::instance().availableDrivers();
+}
+
 void AppConfig::save() {
     QSettings settings(appDataDir() + QStringLiteral("/config.ini"), QSettings::IniFormat);
     settings.setValue(QStringLiteral("theme"), m_theme);
@@ -178,6 +315,15 @@ void AppConfig::save() {
     settings.setValue(QStringLiteral("selectedPresetId"), m_selectedPresetId);
     settings.setValue(QStringLiteral("selectedPersonaId"), m_selectedPersonaId);
     settings.setValue(QStringLiteral("language"), m_language);
+
+    // Database
+    settings.setValue(QStringLiteral("dbDriver"), m_dbDriver);
+    settings.setValue(QStringLiteral("dbHost"), m_dbHost);
+    settings.setValue(QStringLiteral("dbPort"), m_dbPort);
+    settings.setValue(QStringLiteral("dbName"), m_dbName);
+    settings.setValue(QStringLiteral("dbUser"), m_dbUser);
+    settings.setValue(QStringLiteral("dbPassword"), m_dbPassword);
+    settings.setValue(QStringLiteral("dbOptions"), m_dbOptions);
 }
 
 void AppConfig::load() {
@@ -191,6 +337,15 @@ void AppConfig::load() {
     m_selectedPresetId = settings.value(QStringLiteral("selectedPresetId"), QString()).toString();
     m_selectedPersonaId = settings.value(QStringLiteral("selectedPersonaId"), QString()).toString();
     m_language = settings.value(QStringLiteral("language"), QStringLiteral("ko")).toString();
+
+    // Database
+    m_dbDriver = settings.value(QStringLiteral("dbDriver"), QStringLiteral("QSQLITE")).toString();
+    m_dbHost = settings.value(QStringLiteral("dbHost"), QStringLiteral("localhost")).toString();
+    m_dbPort = settings.value(QStringLiteral("dbPort"), 0).toInt();
+    m_dbName = settings.value(QStringLiteral("dbName"), QString()).toString();
+    m_dbUser = settings.value(QStringLiteral("dbUser"), QString()).toString();
+    m_dbPassword = settings.value(QStringLiteral("dbPassword"), QString()).toString();
+    m_dbOptions = settings.value(QStringLiteral("dbOptions"), QString()).toString();
 }
 
 } // namespace Risu

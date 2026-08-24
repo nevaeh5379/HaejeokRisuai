@@ -37,6 +37,65 @@ QStringList ChatController::chatNames() const {
     return names;
 }
 
+QVariantList ChatController::chatSessions() const {
+    QVariantList list;
+    for (int i = 0; i < m_activeChar.chats.size(); ++i) {
+        const auto& c = m_activeChar.chats[i];
+        QVariantMap item;
+        item[QStringLiteral("id")] = c.id;
+        item[QStringLiteral("index")] = i;
+        item[QStringLiteral("name")] = c.name.isEmpty() ? QStringLiteral("Chat %1").arg(i + 1) : c.name;
+        item[QStringLiteral("messageCount")] = c.messages.size();
+        item[QStringLiteral("lastDate")] = c.lastDate;
+
+        if (c.lastDate > 0) {
+            QDateTime dt = QDateTime::fromMSecsSinceEpoch(c.lastDate);
+            QDateTime now = QDateTime::currentDateTime();
+            if (dt.date() == now.date()) {
+                item[QStringLiteral("lastDateFormatted")] = dt.toString(QStringLiteral("Today hh:mm"));
+            } else if (dt.date() == now.date().addDays(-1)) {
+                item[QStringLiteral("lastDateFormatted")] = dt.toString(QStringLiteral("Yesterday hh:mm"));
+            } else {
+                item[QStringLiteral("lastDateFormatted")] = dt.toString(QStringLiteral("yyyy-MM-dd hh:mm"));
+            }
+        } else {
+            item[QStringLiteral("lastDateFormatted")] = QStringLiteral("New");
+        }
+
+        QString preview;
+        if (!c.messages.isEmpty()) {
+            const auto& lastMsg = c.messages.last();
+            QString raw = lastMsg.currentContent();
+            preview = raw.length() > 60 ? raw.left(60) + QStringLiteral("...") : raw;
+        }
+        item[QStringLiteral("preview")] = preview;
+        item[QStringLiteral("isActive")] = (i == m_activeChar.currentChatIndex);
+        item[QStringLiteral("firstMessageIndex")] = c.firstMessageIndex;
+        item[QStringLiteral("authorNote")] = c.authorNote;
+        item[QStringLiteral("authorNoteDepth")] = c.authorNoteDepth;
+        list.append(item);
+    }
+    return list;
+}
+
+QStringList ChatController::availableGreetings() const {
+    QStringList greetings;
+    if (!m_activeChar.firstMessage.isEmpty()) {
+        greetings.append(m_activeChar.firstMessage);
+    }
+    for (const auto& alt : m_activeChar.alternateGreetings) {
+        if (!alt.trimmed().isEmpty()) {
+            greetings.append(alt);
+        }
+    }
+    return greetings;
+}
+
+int ChatController::currentGreetingIndex() const {
+    if (m_activeChar.chats.isEmpty()) return 0;
+    return m_activeChar.currentChat().firstMessageIndex;
+}
+
 void ChatController::reloadPreset() {
     QString presetId = AppConfig::instance().selectedPresetId();
     auto optPreset = DatabaseManager::instance().getPreset(presetId);
@@ -205,24 +264,71 @@ void ChatController::clearCurrentChat() {
 
     saveCurrentChatToDb();
     updateTokenEstimate();
+    emit currentChatChanged();
+    emit chatListChanged();
+}
+
+void ChatController::clearChat(int chatIndex) {
+    int idx = (chatIndex < 0) ? m_activeChar.currentChatIndex : chatIndex;
+    if (idx < 0 || idx >= m_activeChar.chats.size()) return;
+
+    if (m_isGenerating) cancelGeneration();
+
+    m_activeChar.chats[idx].messages.clear();
+
+    // Re-seed with initial greeting
+    QStringList greetings = availableGreetings();
+    int gIdx = m_activeChar.chats[idx].firstMessageIndex;
+    QString greeting = (gIdx >= 0 && gIdx < greetings.size()) ? greetings[gIdx] : m_activeChar.firstMessage;
+
+    if (!greeting.isEmpty()) {
+        Message m;
+        m.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        m.role = Role::Assistant;
+        m.name = m_activeChar.name;
+        m.setCurrentContent(greeting);
+        m.timestamp = QDateTime::currentMSecsSinceEpoch();
+        m_activeChar.chats[idx].messages.append(m);
+    }
+
+    if (idx == m_activeChar.currentChatIndex) {
+        m_messageModel.setMessages(m_activeChar.chats[idx].messages);
+    }
+
+    DatabaseManager::instance().saveChat(m_activeChar.id, m_activeChar.chats[idx]);
+    DatabaseManager::instance().saveCharacter(m_activeChar);
+
+    emit currentChatChanged();
+    emit chatListChanged();
+    updateTokenEstimate();
+    emit toastRequested(QStringLiteral("info"), QStringLiteral("Chat messages cleared."));
 }
 
 void ChatController::createNewChat(const QString& chatName) {
+    createNewChatWithGreeting(0, chatName);
+}
+
+void ChatController::createNewChatWithGreeting(int greetingIndex, const QString& chatName) {
     if (m_isGenerating) cancelGeneration();
 
     Chat c;
     c.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     c.name = chatName.isEmpty() ? QStringLiteral("Chat %1").arg(m_activeChar.chats.size() + 1) : chatName;
-    c.firstMessageIndex = 0;
+    c.firstMessageIndex = greetingIndex;
     c.lastDate = QDateTime::currentMSecsSinceEpoch();
 
-    // Add first message
-    if (!m_activeChar.firstMessage.isEmpty()) {
+    QStringList greetings = availableGreetings();
+    QString greetingText = m_activeChar.firstMessage;
+    if (greetingIndex >= 0 && greetingIndex < greetings.size()) {
+        greetingText = greetings[greetingIndex];
+    }
+
+    if (!greetingText.isEmpty()) {
         Message m;
         m.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
         m.role = Role::Assistant;
         m.name = m_activeChar.name;
-        m.setCurrentContent(m_activeChar.firstMessage);
+        m.setCurrentContent(greetingText);
         m.timestamp = c.lastDate;
         c.messages.append(m);
     }
@@ -231,11 +337,57 @@ void ChatController::createNewChat(const QString& chatName) {
     m_activeChar.currentChatIndex = m_activeChar.chats.size() - 1;
     m_messageModel.setMessages(c.messages);
 
+    DatabaseManager::instance().saveChat(m_activeChar.id, c);
     DatabaseManager::instance().saveCharacter(m_activeChar);
 
     emit currentChatChanged();
     emit chatListChanged();
     updateTokenEstimate();
+    emit toastRequested(QStringLiteral("success"), QStringLiteral("New chat session created."));
+}
+
+void ChatController::renameChat(int chatIndex, const QString& newName) {
+    if (chatIndex < 0 || chatIndex >= m_activeChar.chats.size()) return;
+    QString trimmed = newName.trimmed();
+    if (trimmed.isEmpty()) return;
+
+    m_activeChar.chats[chatIndex].name = trimmed;
+    DatabaseManager::instance().saveChat(m_activeChar.id, m_activeChar.chats[chatIndex]);
+    DatabaseManager::instance().saveCharacter(m_activeChar);
+
+    emit currentChatChanged();
+    emit chatListChanged();
+    emit toastRequested(QStringLiteral("info"), QStringLiteral("Chat session renamed."));
+}
+
+void ChatController::duplicateChat(int chatIndex) {
+    if (chatIndex < 0 || chatIndex >= m_activeChar.chats.size()) return;
+
+    Chat source = m_activeChar.chats[chatIndex];
+    Chat copy = source;
+    copy.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    copy.name = QStringLiteral("%1 (Copy)").arg(source.name);
+    copy.lastDate = QDateTime::currentMSecsSinceEpoch();
+
+    // Give cloned messages new unique IDs
+    for (auto& msg : copy.messages) {
+        msg.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        for (auto& sw : msg.swipes) {
+            sw.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        }
+    }
+
+    m_activeChar.chats.append(copy);
+    m_activeChar.currentChatIndex = m_activeChar.chats.size() - 1;
+    m_messageModel.setMessages(copy.messages);
+
+    DatabaseManager::instance().saveChat(m_activeChar.id, copy);
+    DatabaseManager::instance().saveCharacter(m_activeChar);
+
+    emit currentChatChanged();
+    emit chatListChanged();
+    updateTokenEstimate();
+    emit toastRequested(QStringLiteral("info"), QStringLiteral("Chat session duplicated."));
 }
 
 void ChatController::switchChat(int chatIndex) {
@@ -249,6 +401,7 @@ void ChatController::switchChat(int chatIndex) {
     DatabaseManager::instance().saveCharacter(m_activeChar);
 
     emit currentChatChanged();
+    emit chatListChanged();
     updateTokenEstimate();
 }
 
@@ -276,6 +429,7 @@ void ChatController::deleteChat(int chatIndex) {
     emit currentChatChanged();
     emit chatListChanged();
     updateTokenEstimate();
+    emit toastRequested(QStringLiteral("info"), QStringLiteral("Chat session deleted."));
 }
 
 void ChatController::deleteChatSession(const QString& chatId) {
@@ -285,6 +439,20 @@ void ChatController::deleteChatSession(const QString& chatId) {
             return;
         }
     }
+}
+
+bool ChatController::exportSpecificChat(int chatIndex, const QString& format, const QString& filePath) {
+    if (chatIndex < 0 || chatIndex >= m_activeChar.chats.size()) return false;
+    const Chat& targetChat = m_activeChar.chats[chatIndex];
+    QString fmt = format.toLower();
+    if (fmt == QStringLiteral("md") || fmt == QStringLiteral("markdown")) {
+        return ExportImport::exportChatToMarkdown(m_activeChar, targetChat, filePath);
+    } else if (fmt == QStringLiteral("html")) {
+        return ExportImport::exportChatToHtml(m_activeChar, targetChat, filePath);
+    } else if (fmt == QStringLiteral("json")) {
+        return ExportImport::exportChatToJson(m_activeChar, targetChat, filePath);
+    }
+    return ExportImport::exportChatToText(m_activeChar, targetChat, filePath);
 }
 
 void ChatController::cancelGeneration() {

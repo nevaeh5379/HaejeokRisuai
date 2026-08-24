@@ -538,6 +538,229 @@ Rectangle {
                     }
                 }
 
+                // Database & Multi-SQL Configuration (relational-schema-v3)
+                RisuCard {
+                    Layout.fillWidth: true
+                    implicitHeight: dbCardLayout.implicitHeight + 32
+
+                    ColumnLayout {
+                        id: dbCardLayout
+                        anchors.fill: parent
+                        anchors.margins: 16
+                        spacing: 14
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Database & Multi-SQL Storage (relational-schema-v3)"
+                                font.pixelSize: Theme.fontMedium
+                                font.weight: Font.Bold
+                                font.family: Theme.fontFamily
+                                color: Theme.textcolor
+                                Layout.fillWidth: true
+                            }
+
+                            Rectangle {
+                                implicitWidth: statusRow.implicitWidth + 16
+                                implicitHeight: 26
+                                radius: 13
+                                color: appConfig.isDbConnected ? "#50fa7b22" : "#ff555522"
+                                border.color: appConfig.isDbConnected ? "#50fa7b" : "#ff5555"
+                                border.width: 1
+
+                                RowLayout {
+                                    id: statusRow
+                                    anchors.centerIn: parent
+                                    spacing: 6
+                                    Rectangle {
+                                        width: 8
+                                        height: 8
+                                        radius: 4
+                                        color: appConfig.isDbConnected ? "#50fa7b" : "#ff5555"
+                                    }
+                                    Text {
+                                        text: appConfig.schemaLayout + " (v" + String(appConfig.schemaVersion) + ") | " + appConfig.activeDbDriver
+                                        font.pixelSize: Theme.fontTiny
+                                        font.weight: Font.Bold
+                                        font.family: Theme.fontFamily
+                                        color: appConfig.isDbConnected ? "#50fa7b" : "#ff5555"
+                                    }
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: "Connect natively to SQLite, PostgreSQL, Oracle Database, or MySQL/MariaDB with automatic schema migration and normalized relational persistence."
+                            font.pixelSize: Theme.fontSmall
+                            font.family: Theme.fontFamily
+                            color: Theme.textcolor2
+                            wrapMode: Text.Wrap
+                            Layout.fillWidth: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 12
+
+                            Text {
+                                text: "Database Engine:"
+                                font.pixelSize: Theme.fontNormal
+                                font.family: Theme.fontFamily
+                                color: Theme.textcolor
+                                Layout.preferredWidth: 140
+                            }
+
+                            RisuComboBox {
+                                id: driverCombo
+                                Layout.fillWidth: true
+                                model: ["SQLite (Local File)", "PostgreSQL (QPSQL)", "Oracle Database (QODBC / QOCI)", "MySQL / MariaDB (QMYSQL)"]
+                                currentIndex: {
+                                    var d = appConfig.dbDriver.toUpperCase();
+                                    if (d.indexOf("PSQL") !== -1 || d.indexOf("POSTGRES") !== -1) return 1;
+                                    if (d.indexOf("OCI") !== -1 || d.indexOf("ORACLE") !== -1 || d.indexOf("ODBC") !== -1) return 2;
+                                    if (d.indexOf("MYSQL") !== -1 || d.indexOf("MARIA") !== -1) return 3;
+                                    return 0;
+                                }
+                                onActivated: function(idx) {
+                                    var drivers = ["QSQLITE", "QPSQL", "QODBC", "QMYSQL"];
+                                    appConfig.dbDriver = drivers[idx];
+                                    if (idx === 1 && portFieldDb.text === "0") portFieldDb.text = "5432";
+                                    else if (idx === 2 && portFieldDb.text === "0") portFieldDb.text = "1521";
+                                    else if (idx === 3 && portFieldDb.text === "0") portFieldDb.text = "3306";
+                                }
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            visible: driverCombo.currentIndex !== 0
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 12
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 3
+                                    spacing: 4
+                                    Text { text: "Host / Server Address:"; font.pixelSize: Theme.fontSmall; font.family: Theme.fontFamily; color: Theme.textcolor2 }
+                                    RisuTextField {
+                                        id: hostFieldDb
+                                        Layout.fillWidth: true
+                                        text: appConfig.dbHost
+                                        placeholderText: "localhost or IP"
+                                        onEditingFinished: appConfig.dbHost = text
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 1
+                                    spacing: 4
+                                    Text { text: "Port:"; font.pixelSize: Theme.fontSmall; font.family: Theme.fontFamily; color: Theme.textcolor2 }
+                                    RisuTextField {
+                                        id: portFieldDb
+                                        Layout.fillWidth: true
+                                        text: String(appConfig.dbPort > 0 ? appConfig.dbPort : (driverCombo.currentIndex === 1 ? 5432 : (driverCombo.currentIndex === 2 ? 1521 : 3306)))
+                                        placeholderText: "Port"
+                                        onEditingFinished: appConfig.dbPort = parseInt(text) || 0
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 12
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+                                    Text { text: driverCombo.currentIndex === 2 ? "Database / Service Name (SID):" : "Database Name:"; font.pixelSize: Theme.fontSmall; font.family: Theme.fontFamily; color: Theme.textcolor2 }
+                                    RisuTextField {
+                                        id: nameFieldDb
+                                        Layout.fillWidth: true
+                                        text: appConfig.dbName
+                                        placeholderText: driverCombo.currentIndex === 2 ? "ORCLPDB1" : "risuai"
+                                        onEditingFinished: appConfig.dbName = text
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+                                    Text { text: "Username:"; font.pixelSize: Theme.fontSmall; font.family: Theme.fontFamily; color: Theme.textcolor2 }
+                                    RisuTextField {
+                                        id: userFieldDb
+                                        Layout.fillWidth: true
+                                        text: appConfig.dbUser
+                                        placeholderText: driverCombo.currentIndex === 1 ? "postgres" : (driverCombo.currentIndex === 2 ? "system" : "root")
+                                        onEditingFinished: appConfig.dbUser = text
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+                                    Text { text: "Password:"; font.pixelSize: Theme.fontSmall; font.family: Theme.fontFamily; color: Theme.textcolor2 }
+                                    RisuTextField {
+                                        id: passFieldDb
+                                        Layout.fillWidth: true
+                                        text: appConfig.dbPassword
+                                        echoMode: TextInput.Password
+                                        placeholderText: "Password"
+                                        onEditingFinished: appConfig.dbPassword = text
+                                    }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 12
+
+                            RisuButton {
+                                text: "Test Connection"
+                                iconName: "wifi"
+                                variant: "secondary"
+                                onClicked: {
+                                    var drivers = ["QSQLITE", "QPSQL", "QODBC", "QMYSQL"];
+                                    var drv = drivers[driverCombo.currentIndex];
+                                    var port = parseInt(portFieldDb.text) || 0;
+                                    var ok = appConfig.testDbConnection(drv, hostFieldDb.text, port, nameFieldDb.text, userFieldDb.text, passFieldDb.text, "");
+                                    if (ok) {
+                                        appCtrl.showToast("success", "Connection test succeeded! Database is reachable.");
+                                    } else {
+                                        appCtrl.showToast("error", "Connection test failed. Check host, port, credentials and drivers.");
+                                    }
+                                }
+                            }
+
+                            RisuButton {
+                                text: "Connect & Switch Database"
+                                iconName: "database"
+                                variant: "primary"
+                                onClicked: {
+                                    var drivers = ["QSQLITE", "QPSQL", "QODBC", "QMYSQL"];
+                                    var drv = drivers[driverCombo.currentIndex];
+                                    var port = parseInt(portFieldDb.text) || 0;
+                                    var ok = appConfig.applyDbConnection(drv, hostFieldDb.text, port, nameFieldDb.text, userFieldDb.text, passFieldDb.text, "");
+                                    if (ok) {
+                                        charCtrl.refreshCharacters();
+                                        presetCtrl.refreshPresets();
+                                        personaCtrl.refreshPersonas();
+                                        loreCtrl.refreshLorebooks();
+                                        groupCtrl.refreshGroups();
+                                        appCtrl.showToast("success", "Connected and migrated database to " + drv + " (relational-schema-v3)!");
+                                    } else {
+                                        appCtrl.showToast("error", "Failed to connect database. Check logs.");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Data Management & Backups
                 RisuCard {
                     Layout.fillWidth: true

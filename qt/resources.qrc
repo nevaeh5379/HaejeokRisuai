@@ -18,6 +18,7 @@
         <file>qml/components/RisuAvatar.qml</file>
         <file>qml/components/RisuNavRail.qml</file>
         <file>qml/components/RisuChatBubble.qml</file>
+        <file>qml/components/ChatSessionDrawer.qml</file>
         <file>qml/components/MarkdownView.qml</file>
         <file>qml/components/CommandPalette.qml</file>
         <file>qml/views/HomeScreenView.qml</file>

@@ -32,6 +32,7 @@
 #include "network/SyncEngine.hpp"
 #include "controllers/TTSController.hpp"
 #include "controllers/ImageGenController.hpp"
+#include "controllers/ChatController.hpp"
 #include "models/ChatMessageModel.hpp"
 
 using namespace Risu;
@@ -1097,6 +1098,224 @@ void testCBSAssetMacrosAndHtmlPipeline() {
     qInfo() << "[TEST 27 PASSED] CBS Asset Macros & HTML Pipeline working perfectly.\n";
 }
 
+void testRelationalSchemaV3MultiSQL() {
+    qInfo() << "[TEST 28] Testing relational-schema-v3 Specification & Multi-SQL Connectors...";
+
+    auto& db = DatabaseManager::instance();
+    assert(db.isRelationalV3() && "Database must report relational-schema-v3 compliance");
+    assert(db.currentSchemaLayout() == QStringLiteral("relational-schema-v3") && "Schema layout must be relational-schema-v3");
+
+    // 1. Test DatabaseConfig URL Parsing for PostgreSQL, Oracle, MySQL, SQLite
+    DatabaseConfig pgCfg = DatabaseConfig::fromUrl(QStringLiteral("postgresql://risuuser:secretpass@127.0.0.1:5432/risuai_prod"));
+    assert(pgCfg.driver == QStringLiteral("QPSQL") && pgCfg.host == QStringLiteral("127.0.0.1") && pgCfg.port == 5432 && pgCfg.databaseName == QStringLiteral("risuai_prod") && pgCfg.userName == QStringLiteral("risuuser") && pgCfg.password == QStringLiteral("secretpass"));
+    assert(pgCfg.dialect() == DatabaseDialect::PostgreSQL);
+    qInfo() << "  -> PostgreSQL Connection URL parsed:" << pgCfg.toUrl();
+
+    DatabaseConfig oraCfg = DatabaseConfig::fromUrl(QStringLiteral("oracle://system:manager@oracle-host:1521/ORCLPDB1"));
+    assert(oraCfg.driver == QStringLiteral("QODBC") && oraCfg.host == QStringLiteral("oracle-host") && oraCfg.port == 1521 && oraCfg.databaseName == QStringLiteral("ORCLPDB1"));
+    assert(oraCfg.dialect() == DatabaseDialect::Oracle);
+    qInfo() << "  -> Oracle Database Connection URL parsed:" << oraCfg.toUrl();
+
+    DatabaseConfig myCfg = DatabaseConfig::fromUrl(QStringLiteral("mysql://root:mariadbpass@localhost:3306/risu_db"));
+    assert(myCfg.driver == QStringLiteral("QMYSQL") && myCfg.dialect() == DatabaseDialect::MySQL);
+    qInfo() << "  -> MySQL / MariaDB Connection URL parsed:" << myCfg.toUrl();
+
+    DatabaseConfig sqCfg = DatabaseConfig::fromUrl(QStringLiteral("sqlite:///tmp/test_relational_v3.db"));
+    assert(sqCfg.driver == QStringLiteral("QSQLITE") && sqCfg.dialect() == DatabaseDialect::SQLite);
+    qInfo() << "  -> SQLite Database Connection URL parsed:" << sqCfg.toUrl();
+
+    // 2. Test Relational Multi-Table Normalization
+    Character relChar;
+    relChar.id = QStringLiteral("char-relational-v3-hero");
+    relChar.name = QStringLiteral("Astra Nova");
+    relChar.description = QStringLiteral("A cosmic starship captain navigating the outer rim.");
+    relChar.tags = QStringList{QStringLiteral("SciFi"), QStringLiteral("Captain"), QStringLiteral("Cyberpunk")};
+    relChar.alternateGreetings.append(QStringLiteral("Welcome aboard the Starlight Cruiser, {{user}}!"));
+    relChar.alternateGreetings.append(QStringLiteral("Emergency alert! Shields are at 40%! What are your orders, {{user}}?"));
+    relChar.emotionSprites[QStringLiteral("confident")] = QStringLiteral("assets/astra_confident.png");
+    relChar.emotionSprites[QStringLiteral("shocked")] = QStringLiteral("assets/astra_shocked.png");
+
+    RegexScript scr;
+    scr.comment = QStringLiteral("Warp speed formatter");
+    scr.findRegex = QStringLiteral(R"(\bwarp\b)");
+    scr.replaceString = QStringLiteral("FTL warp-drive");
+    scr.type = QStringLiteral("editdisplay");
+    relChar.customScripts.append(scr);
+
+    ChatFolder fld;
+    fld.id = QStringLiteral("fld-space-missions");
+    fld.name = QStringLiteral("Deep Space Expeditions");
+    fld.color = QStringLiteral("#bd93f9");
+    relChar.chatFolders.append(fld);
+
+    LorebookEntry lb;
+    lb.id = QStringLiteral("lore-starlight-engine");
+    lb.key = QStringLiteral("starlight engine, FTL, reactor");
+    lb.content = QStringLiteral("[Lore: The Starlight Engine produces 500 Terawatts of zero-point warp energy.]");
+    lb.enabled = true;
+    relChar.globalLore.append(lb);
+
+    Chat relChat;
+    relChat.id = QStringLiteral("chat-mission-01");
+    relChat.name = QStringLiteral("Mission to Alpha Centauri");
+    relChat.chatVariables[QStringLiteral("shield_integrity")] = QStringLiteral("95%");
+    relChat.chatVariables[QStringLiteral("warp_status")] = QStringLiteral("engaged");
+    relChat.bookmarks.append(QStringLiteral("msg-rel-1"));
+    relChat.suggestMessages.append(QStringLiteral("Check system diagnostics."));
+
+    Message m1;
+    m1.id = QStringLiteral("msg-rel-1");
+    m1.role = Role::Assistant;
+    m1.name = relChar.name;
+    m1.setCurrentContent(QStringLiteral("Captain Astra reporting. All engines are running smoothly."));
+    m1.addSwipe(QStringLiteral("Captain Astra: Sensors detect an unknown anomaly ahead!"));
+    m1.generationInfo.model = QStringLiteral("gpt-4o");
+    m1.generationInfo.inputTokens = 120;
+    m1.generationInfo.outputTokens = 45;
+    relChat.messages.append(m1);
+
+    relChar.chats.append(relChat);
+
+    bool saved = db.saveCharacter(relChar);
+    assert(saved && "Saving character in relational-schema-v3 must succeed");
+
+    // 3. Verify that relational tables were actually populated
+    auto loadedOpt = db.getCharacter(relChar.id);
+    assert(loadedOpt.has_value() && "Character must be retrievable from relational tables");
+    assert(loadedOpt->tags.size() == 3 && "All 3 normalized tags must be loaded");
+    assert(loadedOpt->alternateGreetings.size() == 2 && "All 2 greetings must be loaded");
+    assert(loadedOpt->emotionSprites.size() == 2 && "All 2 emotion sprites must be loaded");
+    assert(loadedOpt->customScripts.size() == 1 && "Custom script must be loaded");
+    assert(loadedOpt->chatFolders.size() == 1 && "Chat folder must be loaded");
+    assert(loadedOpt->globalLore.size() == 1 && "Lorebook entry must be loaded");
+    assert(loadedOpt->chats.size() == 1 && "Chat must be loaded");
+    assert(loadedOpt->chats[0].chatVariables.value(QStringLiteral("shield_integrity")) == QStringLiteral("95%"));
+    assert(loadedOpt->chats[0].messages.size() == 1);
+    assert(loadedOpt->chats[0].messages[0].swipes.size() == 2 && "Swipes must be preserved");
+    assert(loadedOpt->chats[0].messages[0].generationInfo.model == QStringLiteral("gpt-4o"));
+
+    // 4. Test System Settings & Plugin Storage
+    bool setOk = db.setSystemSetting(QStringLiteral("telemetry_enabled"), true);
+    assert(setOk && "System setting must save");
+    QVariant readVal = db.getSystemSetting(QStringLiteral("telemetry_enabled"));
+    assert(readVal.toBool() == true && "System setting must restore");
+
+    QJsonObject pluginData;
+    pluginData[QStringLiteral("custom_theme_accent")] = QStringLiteral("#ff79c6");
+    pluginData[QStringLiteral("version")] = QStringLiteral("3.0");
+    bool plugOk = db.setPluginCustomStorage(QStringLiteral("com.risu.starship"), pluginData);
+    assert(plugOk && "Plugin custom storage must save");
+    QJsonObject restoredPlugin = db.getPluginCustomStorage(QStringLiteral("com.risu.starship"));
+    assert(restoredPlugin.value(QStringLiteral("custom_theme_accent")).toString() == QStringLiteral("#ff79c6"));
+
+    // 5. Test Full Export Schema Layout
+    QJsonObject fullExport = db.exportFullDatabase();
+    assert(fullExport.value(QStringLiteral("schema_layout")).toString() == QStringLiteral("relational-schema-v3"));
+    assert(fullExport.value(QStringLiteral("version")).toInt() >= 3);
+
+    // Clean up
+    db.deleteCharacter(relChar.id);
+
+    qInfo() << "  -> Relational normalization, multi-swipes, metadata, and multi-SQL dialects verified!";
+    qInfo() << "[TEST 28 PASSED] relational-schema-v3 Specification & Multi-SQL Connectors working with 100% fidelity.\n";
+}
+
+void testCharacterSessionsAndSwitching() {
+    qInfo() << "[TEST 29] Testing Character Chat Sessions (Creation, Alternate Greetings, Switching, Isolation, Forking, Duplication)...";
+
+    auto& db = DatabaseManager::instance();
+
+    // 1. Create a test character with multiple alternate greetings
+    Character cynthia;
+    cynthia.id = QStringLiteral("char_cynthia_sessions_001");
+    cynthia.name = QStringLiteral("Cynthia");
+    cynthia.firstMessage = QStringLiteral("Hello, Explorer! Welcome to our sanctuary.");
+    cynthia.alternateGreetings.append(QStringLiteral("Greetings! The stars shine bright tonight."));
+    cynthia.alternateGreetings.append(QStringLiteral("Ah, you have returned earlier than expected!"));
+
+    // Initial default chat session
+    Chat session1;
+    session1.id = QStringLiteral("chat_cynthia_001");
+    session1.name = QStringLiteral("Main Sanctuary Chat");
+    session1.firstMessageIndex = 0;
+    session1.lastDate = QDateTime::currentMSecsSinceEpoch();
+
+    Message m1;
+    m1.id = QStringLiteral("msg_cyn_001");
+    m1.role = Role::Assistant;
+    m1.name = cynthia.name;
+    m1.setCurrentContent(cynthia.firstMessage);
+    session1.messages.append(m1);
+    cynthia.chats.append(session1);
+    cynthia.currentChatIndex = 0;
+
+    bool saved = db.saveCharacter(cynthia);
+    assert(saved && "Character must save successfully");
+
+    // 2. Initialize ChatController
+    ChatController ctrl;
+    ctrl.loadCharacter(cynthia.id);
+
+    assert(ctrl.chatSessionCount() == 1 && "Initial session count must be 1");
+    assert(ctrl.currentChatName() == QStringLiteral("Main Sanctuary Chat") && "Initial session name must match");
+    assert(ctrl.messageModel()->rowCount() == 1 && "Initial session must have 1 message");
+    assert(ctrl.availableGreetings().size() == 3 && "Character must have 3 available greetings");
+
+    // 3. Create second session with alternate greeting #1 ("Greetings! The stars shine bright tonight.")
+    ctrl.createNewChatWithGreeting(1, QStringLiteral("Stargazing Session"));
+    assert(ctrl.chatSessionCount() == 2 && "Session count must become 2");
+    assert(ctrl.currentChatIndex() == 1 && "Active session index must be 1");
+    assert(ctrl.currentChatName() == QStringLiteral("Stargazing Session") && "New session name must match");
+    assert(ctrl.messageModel()->rowCount() == 1 && "New session must have 1 message");
+    assert(ctrl.messageModel()->messageAt(0).currentContent() == QStringLiteral("Greetings! The stars shine bright tonight.") && "Greeting text must match alternate greeting #1");
+
+    // 4. Add user message in Session 2 to verify session message isolation
+    Message userMsg;
+    userMsg.id = QStringLiteral("msg_user_session2");
+    userMsg.role = Role::User;
+    userMsg.name = QStringLiteral("Explorer");
+    userMsg.setCurrentContent(QStringLiteral("The constellation over there looks fascinating."));
+    ctrl.messageModel()->appendMessage(userMsg);
+    assert(ctrl.messageModel()->rowCount() == 2 && "Session 2 must now have 2 messages");
+
+    // 5. Switch back to Session 0 (Main Sanctuary Chat)
+    ctrl.switchChat(0);
+    assert(ctrl.currentChatIndex() == 0 && "Active session must be 0");
+    assert(ctrl.currentChatName() == QStringLiteral("Main Sanctuary Chat") && "Session 0 name must be restored");
+    assert(ctrl.messageModel()->rowCount() == 1 && "Session 0 must still have only 1 message (Isolation verified!)");
+
+    // 6. Duplicate Session 1
+    ctrl.duplicateChat(1);
+    assert(ctrl.chatSessionCount() == 3 && "Session count must become 3");
+    assert(ctrl.currentChatIndex() == 2 && "Cloned session must become active");
+    assert(ctrl.currentChatName() == QStringLiteral("Stargazing Session (Copy)") && "Cloned session name must have (Copy)");
+
+    // 7. Rename the cloned session
+    ctrl.renameChat(2, QStringLiteral("Deep Night Astronomy"));
+    assert(ctrl.currentChatName() == QStringLiteral("Deep Night Astronomy") && "Session must be renamed");
+
+    // 8. Test chatSessions QVariantList detailed metadata
+    QVariantList sessionsList = ctrl.chatSessions();
+    assert(sessionsList.size() == 3 && "chatSessions must return 3 items");
+    QVariantMap s0 = sessionsList[0].toMap();
+    assert(s0.value(QStringLiteral("name")).toString() == QStringLiteral("Main Sanctuary Chat"));
+    assert(s0.value(QStringLiteral("messageCount")).toInt() == 1);
+    assert(!s0.value(QStringLiteral("isActive")).toBool());
+    QVariantMap s2 = sessionsList[2].toMap();
+    assert(s2.value(QStringLiteral("name")).toString() == QStringLiteral("Deep Night Astronomy"));
+    assert(s2.value(QStringLiteral("isActive")).toBool());
+
+    // 9. Delete session 2
+    ctrl.deleteChat(2);
+    assert(ctrl.chatSessionCount() == 2 && "Session count must return to 2 after deletion");
+
+    // 10. Clean up test character
+    db.deleteCharacter(cynthia.id);
+
+    qInfo() << "  -> Multiple chat sessions per character, alternate greeting seeding, message isolation, renaming, and duplication verified!";
+    qInfo() << "[TEST 29 PASSED] Character Chat Sessions & Switching working with 100% fidelity.\n";
+}
+
 int main(int argc, char *argv[]) {
     QtWebEngineQuick::initialize();
     QCoreApplication app(argc, argv);
@@ -1132,10 +1351,13 @@ int main(int argc, char *argv[]) {
     testColdStorageManager();
     testBinaryBackupLoading();
     testCBSAssetMacrosAndHtmlPipeline();
+    testRelationalSchemaV3MultiSQL();
+    testCharacterSessionsAndSwitching();
 
     qInfo() << "==================================================";
-    qInfo() << "   ALL INTEGRATION & UNIT TESTS PASSED (27/27)!   ";
+    qInfo() << "   ALL INTEGRATION & UNIT TESTS PASSED (29/29)!   ";
     qInfo() << "==================================================";
 
     return 0;
 }
+

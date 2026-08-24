@@ -435,6 +435,14 @@ Rectangle {
         property string targetCharId: ""
 
         MenuItem {
+            text: "Start New Session / 새 세션 시작"
+            onTriggered: {
+                charCtrl.selectCharacter(charContextMenu.targetCharId);
+                chatCtrl.createNewChat();
+                root.goHome();
+            }
+        }
+        MenuItem {
             text: "Edit Character / 수정"
             onTriggered: root.openCharacterEditor(charContextMenu.targetCharId)
         }

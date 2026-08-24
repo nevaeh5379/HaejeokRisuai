@@ -313,6 +313,9 @@ struct LorebookEntry {
     bool caseSensitive = false;
     int scanDepth = 5;            // How many messages back to scan
     bool enabled = true;
+    double activationPercent = 1.0;
+    int bookVersion = 1;
+    QString folder;
 
     QJsonObject toJson() const {
         QJsonObject obj;
@@ -329,6 +332,9 @@ struct LorebookEntry {
         obj[QStringLiteral("caseSensitive")] = caseSensitive;
         obj[QStringLiteral("scanDepth")] = scanDepth;
         obj[QStringLiteral("enabled")] = enabled;
+        obj[QStringLiteral("activationPercent")] = activationPercent;
+        obj[QStringLiteral("bookVersion")] = bookVersion;
+        obj[QStringLiteral("folder")] = folder;
         return obj;
     }
 
@@ -362,6 +368,9 @@ struct LorebookEntry {
         e.caseSensitive = obj.value(QStringLiteral("caseSensitive")).toBool(false);
         e.scanDepth = obj.value(QStringLiteral("scanDepth")).toInt(5);
         e.enabled = obj.value(QStringLiteral("enabled")).toBool(true);
+        e.activationPercent = obj.value(QStringLiteral("activationPercent")).toDouble(1.0);
+        e.bookVersion = obj.value(QStringLiteral("bookVersion")).toInt(1);
+        e.folder = obj.value(QStringLiteral("folder")).toString();
         return e;
     }
 };
@@ -456,6 +465,9 @@ struct Chat {
     QString sdData;
     QString supaMemoryData;
     QStringList suggestMessages;
+    QString lastMemory;
+    bool isStreaming = false;
+    QString streamingOptimizationMode;
 
     QJsonObject toJson() const {
         QJsonObject obj;
@@ -471,6 +483,9 @@ struct Chat {
         obj[QStringLiteral("authorNoteDepth")] = authorNoteDepth;
         obj[QStringLiteral("sdData")] = sdData;
         obj[QStringLiteral("supaMemoryData")] = supaMemoryData;
+        obj[QStringLiteral("lastMemory")] = lastMemory;
+        obj[QStringLiteral("isStreaming")] = isStreaming;
+        obj[QStringLiteral("streamingOptimizationMode")] = streamingOptimizationMode;
 
         QJsonArray bmArr;
         for (const auto& b : bookmarks) bmArr.append(b);
@@ -514,6 +529,9 @@ struct Chat {
         c.authorNoteDepth = obj.value(QStringLiteral("authorNoteDepth")).toInt(obj.value(QStringLiteral("author_note_depth")).toInt(3));
         c.sdData = obj.value(QStringLiteral("sdData")).toString();
         c.supaMemoryData = obj.value(QStringLiteral("supaMemoryData")).toString();
+        c.lastMemory = obj.value(QStringLiteral("lastMemory")).toString(obj.value(QStringLiteral("last_memory")).toString());
+        c.isStreaming = obj.value(QStringLiteral("isStreaming")).toBool(obj.value(QStringLiteral("is_streaming")).toBool(false));
+        c.streamingOptimizationMode = obj.value(QStringLiteral("streamingOptimizationMode")).toString(obj.value(QStringLiteral("streaming_optimization_mode")).toString());
 
         if (obj.contains(QStringLiteral("bookmarks")) && obj.value(QStringLiteral("bookmarks")).isArray()) {
             for (const auto& b : obj.value(QStringLiteral("bookmarks")).toArray()) c.bookmarks.append(b.toString());
@@ -1140,6 +1158,7 @@ struct GroupMember {
     QString avatarPath;
     bool enabled = true;
     int order = 0;
+    double talkWeight = 1.0;
 
     QJsonObject toJson() const {
         QJsonObject obj;
@@ -1148,6 +1167,7 @@ struct GroupMember {
         obj[QStringLiteral("avatarPath")] = avatarPath;
         obj[QStringLiteral("enabled")] = enabled;
         obj[QStringLiteral("order")] = order;
+        obj[QStringLiteral("talkWeight")] = talkWeight;
         return obj;
     }
 
@@ -1158,6 +1178,7 @@ struct GroupMember {
         m.avatarPath = obj.value(QStringLiteral("avatarPath")).toString();
         m.enabled = obj.value(QStringLiteral("enabled")).toBool(true);
         m.order = obj.value(QStringLiteral("order")).toInt(0);
+        m.talkWeight = obj.value(QStringLiteral("talkWeight")).toDouble(1.0);
         return m;
     }
 };
@@ -1179,12 +1200,20 @@ inline QString speakerModeToString(SpeakerSelectionMode mode) {
     return QStringLiteral("round_robin");
 }
 
+inline QString speakerSelectionModeToString(SpeakerSelectionMode mode) {
+    return speakerModeToString(mode);
+}
+
 inline SpeakerSelectionMode stringToSpeakerMode(const QString& str) {
     QString lower = str.toLower();
     if (lower.contains(QStringLiteral("random"))) return SpeakerSelectionMode::Random;
     if (lower.contains(QStringLiteral("manual"))) return SpeakerSelectionMode::Manual;
     if (lower.contains(QStringLiteral("llm"))) return SpeakerSelectionMode::LLMDecide;
     return SpeakerSelectionMode::RoundRobin;
+}
+
+inline SpeakerSelectionMode stringToSpeakerSelectionMode(const QString& str) {
+    return stringToSpeakerMode(str);
 }
 
 struct GroupChatRoom {
