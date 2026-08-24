@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const {
@@ -162,6 +162,53 @@ describe('PostgreSQL sync payload validation', () => {
     it('returns DO NOTHING when valueColumns is empty', () => {
         const clause = buildUpsertClause('character.tags', ['character_id', 'position'], [])
         expect(clause).toBe('ON CONFLICT ("character_id", "position") DO NOTHING')
+    })
+
+    it('reinitializes a missing schema before queries on a newly connected pool client', async () => {
+        const storage = new PostgresStorage({})
+        const listeners: Record<string, (value: any) => void> = {}
+        const queries: string[] = []
+        let schemaPresent = false
+        storage.loadPostgresSchemaSql = vi.fn(async () => 'SCHEMA SQL')
+        const client:any = {
+            query: vi.fn((sql:string, valuesOrCallback?:any, maybeCallback?:any) => {
+                const callback = typeof valuesOrCallback === 'function' ? valuesOrCallback : maybeCallback
+                const run = async () => {
+                    queries.push(sql)
+                    if (sql.includes("to_regclass('system.storage_meta')")) {
+                        return { rows: [{ table_name: schemaPresent ? 'system.storage_meta' : null }] }
+                    }
+                    if (sql === 'SCHEMA SQL') {
+                        schemaPresent = true
+                        return { rows: [] }
+                    }
+                    if (sql.includes('SELECT schema_version, schema_layout')) {
+                        return { rows: [{ schema_version: 4, schema_layout: 'relational-schema-v3' }] }
+                    }
+                    return { rows: [{ ok: true }] }
+                }
+                const result = run()
+                if (callback) {
+                    result.then((value) => callback(null, value), callback)
+                    return undefined
+                }
+                return result
+            }),
+        }
+        const pool:any = {
+            on: vi.fn((event:string, handler:(value:any) => void) => {
+                listeners[event] = handler
+            }),
+        }
+
+        storage.installPoolSchemaRecovery(pool)
+        listeners.connect(client)
+        const result = await client.query('SELECT application_data')
+
+        expect(result.rows[0].ok).toBe(true)
+        expect(schemaPresent).toBe(true)
+        expect(queries.indexOf('SCHEMA SQL')).toBeLessThan(queries.indexOf('SELECT application_data'))
+        expect(storage.loadPostgresSchemaSql).toHaveBeenCalledTimes(1)
     })
 
     it('has revision methods on PostgresStorage prototype', () => {
