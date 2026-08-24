@@ -18,6 +18,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.PositionedMessage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntriesFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.regexScriptsFromValue
+import io.github.nevaeh5379.androidhaejeokrisuai.data.triggerScriptsFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RelationalNodeCodec
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RelationalNodeRow
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RisuStorage
@@ -90,6 +91,7 @@ class LocalRisuStorage(context: Context) : RisuStorage {
             exampleMessage = full["exampleMessage"]?.toString().orEmpty(),
             defaultVariables = full["defaultVariables"]?.toString().orEmpty(),
             regexScripts = regexScriptsFromValue(full["customscript"]),
+            triggerScripts = triggerScriptsFromValue(full["triggerscript"]),
             description = full["desc"]?.toString().orEmpty(),
             personality = full["personality"]?.toString().orEmpty(),
             scenario = full["scenario"]?.toString().orEmpty(),

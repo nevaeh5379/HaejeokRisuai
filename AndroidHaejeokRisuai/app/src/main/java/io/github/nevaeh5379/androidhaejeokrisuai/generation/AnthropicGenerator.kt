@@ -28,12 +28,13 @@ class AnthropicGenerator {
         authorNote: String = "",
         greetingIndex: Int = -1,
         variables: Map<String, String> = emptyMap(),
+        triggerPrompt: NativeTriggerPromptInjection = NativeTriggerPromptInjection(),
     ): String = withContext(Dispatchers.IO) {
         require(settings.claudeAPIKey.isNotBlank()) { "Anthropic API key (claudeAPIKey) is empty" }
         require(settings.aiModel.startsWith("claude", ignoreCase = true)) {
             "Unsupported Anthropic model '${settings.aiModel}'"
         }
-        val prompt = NativePromptBuilder.build(settings, character, history, authorNote, greetingIndex, variables)
+        val prompt = NativePromptBuilder.build(settings, character, history, authorNote, greetingIndex, variables, triggerPrompt)
         val payload = buildRequestPayload(prompt, settings)
         val body = buildRequestBody(payload)
         val connection = URI("https://api.anthropic.com/v1/messages").toURL().openConnection() as HttpURLConnection

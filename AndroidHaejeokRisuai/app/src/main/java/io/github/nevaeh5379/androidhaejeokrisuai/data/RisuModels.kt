@@ -65,6 +65,26 @@ fun regexScriptsFromValue(value: Any?): List<RegexScript> = (value as? List<*>)?
     )
 } ?: emptyList()
 
+data class TriggerScript(
+    val comment: String = "",
+    val type: String = "",
+    val conditions: List<Map<String, Any?>> = emptyList(),
+    val effects: List<Map<String, Any?>> = emptyList(),
+    val lowLevelAccess: Boolean = false,
+)
+
+@Suppress("UNCHECKED_CAST")
+fun triggerScriptsFromValue(value: Any?): List<TriggerScript> = (value as? List<*>)?.mapNotNull { raw ->
+    val map = raw as? Map<*, *> ?: return@mapNotNull null
+    TriggerScript(
+        comment = map["comment"]?.toString().orEmpty(),
+        type = map["type"]?.toString().orEmpty(),
+        conditions = (map["conditions"] as? List<*>)?.mapNotNull { it as? Map<String, Any?> }.orEmpty(),
+        effects = (map["effect"] as? List<*>)?.mapNotNull { it as? Map<String, Any?> }.orEmpty(),
+        lowLevelAccess = map["lowLevelAccess"] as? Boolean ?: false,
+    )
+} ?: emptyList()
+
 data class CharacterProfile(
     val id: String,
     val name: String,
@@ -73,6 +93,7 @@ data class CharacterProfile(
     val exampleMessage: String = "",
     val defaultVariables: String = "",
     val regexScripts: List<RegexScript> = emptyList(),
+    val triggerScripts: List<TriggerScript> = emptyList(),
     val description: String = "",
     val personality: String = "",
     val scenario: String = "",

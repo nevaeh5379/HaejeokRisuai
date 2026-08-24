@@ -15,6 +15,7 @@ object NativePromptBuilder {
         authorNote: String = "",
         greetingIndex: Int = -1,
         variables: Map<String, String> = emptyMap(),
+        triggerPrompt: NativeTriggerPromptInjection = NativeTriggerPromptInjection(),
     ): List<NativePromptMessage> {
         val parserContext = NativeRisuParserContext(
             settings = settings,
@@ -104,6 +105,15 @@ object NativePromptBuilder {
             ?.defaultText
             .orEmpty()
         add("authorNote", text = authorNote.ifBlank { templateDefaultAuthorNote })
+        if (triggerPrompt.start.isNotBlank()) {
+            val parsed = NativeRisuParser.parse(triggerPrompt.start, parserContext).trim()
+            if (parsed.isNotBlank()) {
+                buckets.getOrPut("lastChat") { mutableListOf() }
+                    .add(0, NativePromptMessage("system", parsed))
+            }
+        }
+        add("lastChat", text = triggerPrompt.historyEnd)
+        add("postEverything", text = triggerPrompt.promptEnd)
 
         if (settings.promptTemplate != null) {
             return mergeAdjacentSystemMessages(

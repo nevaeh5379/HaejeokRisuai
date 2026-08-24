@@ -21,6 +21,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeChatRuntimePro
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeGenerationEngine
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeRegexProcessor
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeRisuParserContext
+import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeTriggerProcessor
 import io.github.nevaeh5379.androidhaejeokrisuai.importing.CharacterCardImporter
 import java.io.ByteArrayOutputStream
 import java.util.UUID
@@ -151,13 +152,23 @@ internal class NativeRisuController(context: Context) {
         val history = storage.loadAllChatMessages(chat.id)
         val profile = storage.loadCharacterProfile(character.id)
         val promptContext = storage.loadChatPromptContext(chat.id)
+        val inputTrigger = NativeTriggerProcessor.run(
+            mode = "input",
+            settings = freshOverview.generationSettings,
+            character = profile,
+            messages = history,
+            variables = promptContext.variables,
+            chatId = chat.id,
+            authorNote = chat.note,
+            greetingIndex = promptContext.greetingIndex,
+        )
         val parserContext = NativeRisuParserContext(
             settings = freshOverview.generationSettings,
             character = profile,
-            history = history,
+            history = inputTrigger.messages,
             authorNote = chat.note,
             greetingIndex = promptContext.greetingIndex,
-            variables = promptContext.variables,
+            variables = inputTrigger.variables,
         )
         val processedInput = NativeRegexProcessor.process(
             data = trimmed,
@@ -173,38 +184,45 @@ internal class NativeRisuController(context: Context) {
             data = processedInput,
             time = System.currentTimeMillis(),
         )
-        val rawMessages = history + userMessage
         val prepared = NativeChatRuntimeProcessor.prepare(
             settings = freshOverview.generationSettings,
             character = profile,
-            messages = rawMessages,
+            messages = inputTrigger.messages + userMessage,
             authorNote = chat.note,
             greetingIndex = promptContext.greetingIndex,
-            variables = promptContext.variables,
+            variables = inputTrigger.variables,
         )
-        val changedMessages = prepared.messages.mapIndexedNotNull { index, message ->
-            val original = rawMessages[index]
-            if (index >= history.size || message.data != original.data) PositionedMessage(index, message) else null
-        }
+        val startTrigger = NativeTriggerProcessor.run(
+            mode = "start",
+            settings = freshOverview.generationSettings,
+            character = profile,
+            messages = prepared.messages,
+            variables = prepared.variables,
+            chatId = chat.id,
+            authorNote = chat.note,
+            greetingIndex = promptContext.greetingIndex,
+        )
         val chatPosition = chats.indexOfFirst { it.id == chat.id }
         require(chatPosition >= 0) { "Selected chat is missing from the character chat list" }
         val userRevision = storage.commitPreparedTurn(
             characterId = character.id,
             chatId = chat.id,
             chatPosition = chatPosition,
-            messages = changedMessages,
-            variables = prepared.variables,
+            messages = changedMessages(history, startTrigger.messages),
+            variables = startTrigger.variables,
         )
         overview = freshOverview.copy(revision = userRevision)
         messagePage = storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE)
+        if (startTrigger.stopSending) return@runBusy
 
         val generated = generator.generate(
             settings = freshOverview.generationSettings,
             character = profile.copy(globalLore = profile.globalLore + promptContext.localLore),
-            history = prepared.messages,
+            history = startTrigger.messages,
             authorNote = chat.note,
             greetingIndex = promptContext.greetingIndex,
-            variables = prepared.variables,
+            variables = startTrigger.variables,
+            triggerPrompt = startTrigger.promptInjection,
         )
         val rawAssistant = MessageRecord(
             id = UUID.randomUUID().toString(),
@@ -214,39 +232,52 @@ internal class NativeRisuController(context: Context) {
             name = profile.name,
             time = System.currentTimeMillis(),
         )
-        val outputBase = prepared.messages + rawAssistant.copy(
+        val processedAssistant = rawAssistant.copy(
             data = NativeRegexProcessor.process(
                 data = generated,
                 mode = "editoutput",
                 settings = freshOverview.generationSettings,
                 character = profile,
                 parserContext = parserContext.copy(
-                    history = prepared.messages + rawAssistant,
-                    variables = prepared.variables,
+                    history = startTrigger.messages + rawAssistant,
+                    variables = startTrigger.variables,
                 ),
             ),
         )
         val outputPrepared = NativeChatRuntimeProcessor.prepare(
             settings = freshOverview.generationSettings,
             character = profile,
-            messages = outputBase,
+            messages = startTrigger.messages + processedAssistant,
             authorNote = chat.note,
             greetingIndex = promptContext.greetingIndex,
-            variables = prepared.variables,
+            variables = startTrigger.variables,
         )
-        val outputChanges = outputPrepared.messages.mapIndexedNotNull { index, message ->
-            val original = outputBase[index]
-            if (index == outputBase.lastIndex || message.data != original.data) PositionedMessage(index, message) else null
-        }
+        val outputTrigger = NativeTriggerProcessor.run(
+            mode = "output",
+            settings = freshOverview.generationSettings,
+            character = profile,
+            messages = outputPrepared.messages,
+            variables = outputPrepared.variables,
+            chatId = chat.id,
+            authorNote = chat.note,
+            greetingIndex = promptContext.greetingIndex,
+        )
         val assistantRevision = storage.commitPreparedTurn(
             characterId = character.id,
             chatId = chat.id,
             chatPosition = chatPosition,
-            messages = outputChanges,
-            variables = outputPrepared.variables,
+            messages = changedMessages(startTrigger.messages, outputTrigger.messages),
+            variables = outputTrigger.variables,
         )
         overview = freshOverview.copy(revision = assistantRevision)
         messagePage = storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE)
+    }
+
+    private fun changedMessages(before: List<MessageRecord>, after: List<MessageRecord>): List<PositionedMessage> {
+        val previous = before.associateBy(MessageRecord::id)
+        return after.mapIndexedNotNull { index, message ->
+            if (previous[message.id] != message) PositionedMessage(index, message) else null
+        }
     }
 
     fun back() {

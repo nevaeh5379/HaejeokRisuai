@@ -16,13 +16,14 @@ class NativeGenerationEngine {
         authorNote: String = "",
         greetingIndex: Int = -1,
         variables: Map<String, String> = emptyMap(),
+        triggerPrompt: NativeTriggerPromptInjection = NativeTriggerPromptInjection(),
     ): String = when {
         settings.aiModel.startsWith("gemini", ignoreCase = true) -> gemini.generate(
-            settings, character, history, authorNote, greetingIndex, variables,
+            settings, character, history, authorNote, greetingIndex, variables, triggerPrompt,
         )
         settings.aiModel.startsWith("claude", ignoreCase = true) -> anthropic.generate(
-            settings, character, history, authorNote, greetingIndex, variables,
+            settings, character, history, authorNote, greetingIndex, variables, triggerPrompt,
         )
-        else -> openAiCompatible.generate(settings, character, history, authorNote, greetingIndex, variables)
+        else -> openAiCompatible.generate(settings, character, history, authorNote, greetingIndex, variables, triggerPrompt)
     }
 }

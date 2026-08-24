@@ -19,9 +19,10 @@ class OpenAiCompatibleGenerator {
         authorNote: String = "",
         greetingIndex: Int = -1,
         variables: Map<String, String> = emptyMap(),
+        triggerPrompt: NativeTriggerPromptInjection = NativeTriggerPromptInjection(),
     ): String = withContext(Dispatchers.IO) {
         val target = resolveTarget(settings)
-        val messages = NativePromptBuilder.build(settings, character, history, authorNote, greetingIndex, variables)
+        val messages = NativePromptBuilder.build(settings, character, history, authorNote, greetingIndex, variables, triggerPrompt)
         require(messages.isNotEmpty()) { "The generated prompt is empty" }
 
         val body = JSONObject()

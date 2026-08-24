@@ -13,6 +13,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.PositionedMessage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntriesFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.regexScriptsFromValue
+import io.github.nevaeh5379.androidhaejeokrisuai.data.triggerScriptsFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RisuStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -85,6 +86,7 @@ class RemoteRisuStorage(
             exampleMessage = character.optString("exampleMessage"),
             defaultVariables = character.optString("defaultVariables"),
             regexScripts = regexScriptsFromValue(jsonValue(character.opt("customscript"))),
+            triggerScripts = triggerScriptsFromValue(jsonValue(character.opt("triggerscript"))),
             description = character.optString("desc"),
             personality = character.optString("personality"),
             scenario = character.optString("scenario"),
