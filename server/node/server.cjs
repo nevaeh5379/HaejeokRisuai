@@ -43,6 +43,8 @@ const {
 } = require('./localBackupFormat.cjs');
 const { normalizePageInteger, paginateMessages } = require('./messagePagination.cjs');
 const { countTokensBatch } = require('./tokenizeCount.cjs');
+const { resolveLoreEntries } = require('./loreResolve.cjs');
+const { syncVectorIndex, upsertVectorIndex, searchVectorIndex } = require('./vectorIndex.cjs');
 const { matchLoreBatch } = require('./loreMatch.cjs');
 const {
     PostgresPayloadError,
@@ -990,6 +992,15 @@ async function hashJSON(json){
     const hash = crypto.createHash('sha256');
     hash.update(JSON.stringify(json));
     return hash.digest('hex');
+}
+
+async function getAuthenticatedIndexScope(req) {
+    const authHeader = normalizeAuthHeader(req.headers['risu-auth']);
+    const parts = authHeader.split('.');
+    if (parts.length !== 3) throw new TypeError('Invalid authentication token');
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
+    if (!payload?.pub) throw new TypeError('Authentication token has no public key');
+    return await hashJSON(payload.pub);
 }
 
 function isAuthorizedRequest(req) {
@@ -3469,6 +3480,61 @@ app.post('/api/lore-match-batch', authenticatedRouteLimiter, async (req, res, ne
             res.status(400).send({ error: error.message });
             return;
         }
+        next(error);
+    }
+});
+
+
+app.post('/api/lore-resolve', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    try {
+        const result = resolveLoreEntries(req.body?.messages, req.body?.entries, {
+            username: req.body?.username,
+            charName: req.body?.charName,
+        });
+        res.send(result);
+    } catch (error) {
+        if (error instanceof TypeError || error instanceof RangeError) {
+            res.status(400).send({ error: error.message });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.post('/api/vector-index/status', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        const scope = await getAuthenticatedIndexScope(req);
+        res.send(syncVectorIndex(`${scope}:${req.body?.indexId}`, req.body?.descriptors));
+    } catch (error) {
+        if (error instanceof TypeError || error instanceof RangeError) return res.status(400).send({ error: error.message });
+        next(error);
+    }
+});
+
+app.post('/api/vector-index/upsert', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        const scope = await getAuthenticatedIndexScope(req);
+        res.send(upsertVectorIndex(`${scope}:${req.body?.indexId}`, req.body?.entries));
+    } catch (error) {
+        if (error instanceof TypeError || error instanceof RangeError) return res.status(400).send({ error: error.message });
+        next(error);
+    }
+});
+
+app.post('/api/vector-index/search', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        const scope = await getAuthenticatedIndexScope(req);
+        const results = searchVectorIndex(`${scope}:${req.body?.indexId}`, req.body?.queries);
+        if (results === null) return res.status(404).send({ error: 'Vector index not found', code: 'vector_index_missing' });
+        res.send({ results });
+    } catch (error) {
+        if (error instanceof TypeError || error instanceof RangeError) return res.status(400).send({ error: error.message });
         next(error);
     }
 });

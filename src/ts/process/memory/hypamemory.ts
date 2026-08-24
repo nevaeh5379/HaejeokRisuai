@@ -1,8 +1,10 @@
 import localforage from "localforage";
-import { globalFetch } from "src/ts/globalApi.svelte";
+import { forageStorage, globalFetch } from "src/ts/globalApi.svelte";
 import { appendLastPath } from "src/ts/util";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { isContextModel, getContextProvider } from "./contextualEmbedding";
+import { isNodeServer } from "src/ts/platform";
+import { NodeStorage } from "src/ts/storage/nodeStorage";
 
 export type HypaModel =
   | "custom"
@@ -12,6 +14,15 @@ export type HypaModel =
   | "voyageContext3";
 
 export const DEFAULT_HYPA_MODEL: HypaModel = "openai3small";
+
+function vectorContentSignature(content: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < content.length; i++) {
+    hash ^= content.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${content.length}:${(hash >>> 0).toString(16)}`;
+}
 
 const supportedHypaModels = new Set<HypaModel>([
   "custom",
@@ -34,8 +45,9 @@ export class HypaProcesser {
   forage: LocalForage;
   model: HypaModel;
   customEmbeddingUrl: string;
+  serverIndexId?: string;
 
-  constructor(model: HypaModel | "auto" = "auto", customEmbeddingUrl?: string) {
+  constructor(model: HypaModel | "auto" = "auto", customEmbeddingUrl?: string, serverIndexId?: string) {
     this.forage = localforage.createInstance({
       name: "hypaVector",
     });
@@ -44,6 +56,7 @@ export class HypaProcesser {
     this.model = normalizeHypaModel(model === "auto" ? db.hypaModel : model);
     this.customEmbeddingUrl =
       customEmbeddingUrl?.trim() || db.hypaCustomSettings?.url?.trim() || "";
+    this.serverIndexId = serverIndexId;
   }
 
   async embedDocuments(texts: string[]): Promise<VectorArray[]> {
@@ -209,9 +222,12 @@ export class HypaProcesser {
     );
   }
 
-  private similaritySearchVectorWithScore(
+  private async similaritySearchVectorWithScore(
     query: VectorArray,
-  ): [string, number][] {
+  ): Promise<[string, number][]> {
+    const serverResult = await this.tryServerSimilaritySearch(query);
+    if (serverResult) return serverResult;
+
     const memoryVectors = this.vectors;
     const sim = similarity;
     const searches = memoryVectors
@@ -221,12 +237,50 @@ export class HypaProcesser {
       }))
       .sort((a, b) => (a.similarity > b.similarity ? -1 : 0));
 
-    const result: [string, number][] = searches.map((search) => [
+    return searches.map((search) => [
       memoryVectors[search.index].content,
       search.similarity,
     ]);
+  }
 
-    return result;
+  private async tryServerSimilaritySearch(query: VectorArray): Promise<[string, number][] | null> {
+    if (!this.serverIndexId || isContextModel(this.model)) return null;
+    if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) return null;
+    const db = getDatabase();
+    const indexId = [
+      this.serverIndexId,
+      this.model,
+      this.model === "custom" ? this.customEmbeddingUrl : "",
+      this.model === "custom" ? db.hypaCustomSettings?.model?.trim() || "" : "",
+    ].join("|");
+    const descriptors = this.vectors.map((vector, index) => ({
+      id: String(index),
+      signature: vectorContentSignature(vector.content),
+    }));
+
+    try {
+      const storage = forageStorage.realStorage;
+      const status = await storage.vectorIndexStatus(indexId, descriptors);
+      if (status.missingIds.length > 0) {
+        const missing = new Set(status.missingIds);
+        await storage.vectorIndexUpsert(
+          indexId,
+          this.vectors.flatMap((vector, index) =>
+            missing.has(String(index))
+              ? [{ id: String(index), signature: vectorContentSignature(vector.content), embedding: Array.from(vector.embedding) }]
+              : [],
+          ),
+        );
+      }
+      const ranked = await storage.vectorIndexSearch(indexId, [Array.from(query)]);
+      return (ranked[0] ?? []).flatMap(([id, score]) => {
+        const vector = this.vectors[Number(id)];
+        return vector ? [[vector.content, score] as [string, number]] : [];
+      });
+    } catch (error) {
+      console.warn("[HypaProcesser] Server vector search failed; using browser fallback", error);
+      return null;
+    }
   }
 
   similarityCheck(query1: number[], query2: number[]) {

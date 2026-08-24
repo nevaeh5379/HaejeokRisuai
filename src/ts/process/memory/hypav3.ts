@@ -604,6 +604,7 @@ async function hypaMemoryV3MainExp(
 
     // Initialize embedding processor
     const processor = new HypaProcessorV2<Summary>({
+      serverIndexId: `hypav3-exp:${char.chaId}:${room.id}`,
       rateLimiter: new TaskRateLimiter({
         tasksPerMinute: settings.embeddingRequestsPerMinute,
         maxConcurrentTasks: settings.embeddingMaxConcurrent,
@@ -1325,7 +1326,11 @@ async function hypaMemoryV3Main(
     });
 
     // Initialize embedding processor
-    const processor = new HypaProcesserEx(db.hypaModel);
+    const processor = new HypaProcesserEx(
+      db.hypaModel,
+      undefined,
+      `hypav3:${char.chaId}:${room.id}`,
+    );
     processor.oaikey = db.supaMemoryKey;
 
     // Add summaryChunks to processor for similarity search

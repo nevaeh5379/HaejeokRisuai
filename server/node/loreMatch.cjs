@@ -28,6 +28,13 @@ function matchLoreRequest(messages, rawRequest, options = {}) {
         String(options.username ?? ''),
         String(options.charName ?? ''),
     );
+    if (!request.dontSearchWhenRecursive && Array.isArray(options.recursivePrompts)) {
+        messageList = messageList.concat(options.recursivePrompts.map((item) => ({
+            source: 'lorebook ' + String(item?.source ?? ''),
+            prompt: String(item?.prompt ?? ''),
+            data: String(item?.data ?? ''),
+        })));
+    }
     if (request.regex) {
         for (const message of messageList) {
             for (const regexString of request.keys) {

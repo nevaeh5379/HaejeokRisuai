@@ -15,6 +15,7 @@ import { CCardLib } from "@risuai/ccardlib";
 import { v4 } from "uuid";
 import { isNodeServer } from "../platform";
 import { NodeStorage } from "../storage/nodeStorage";
+import { prepareLoreEntriesForServer, type PreparedServerLoreEntry } from "./loreServerPrepare";
 
 export function addLorebook(type: number) {
   const selectedID = get(selectedCharID);
@@ -354,7 +355,52 @@ export async function loadLoreBookV3Prompt() {
     }
   }
 
-  await prepareServerLoreMatches();
+  async function prepareServerRecursiveLore(): Promise<{
+    entries: Map<number, PreparedServerLoreEntry>;
+    activatedIndexes: number[];
+    logs: LoreMatchResult["logs"];
+  } | null> {
+    if (!recursiveScanning || !isNodeServer) return null;
+    if (!(forageStorage.realStorage instanceof NodeStorage)) return null;
+
+    const prepared = prepareLoreEntriesForServer(fullLore, {
+      scanDepth: loreDepth,
+      fullWordMatching: fullWordMatchingSetting,
+      recursiveScanning,
+      chatLength,
+      greetingIndex: (char.chats[page].fmIndex ?? -1) + 1,
+    });
+    if (!prepared) return null;
+
+    const maxDepth = Math.max(...prepared.map((entry) => entry.scanDepth), 0);
+    const messages = (maxDepth > 0 ? currentChat.slice(-maxDepth) : []).map((msg) => ({
+      role: msg.role,
+      data: msg.data,
+      displayName: msg.name ?? (msg.saying ? findCharacterbyId(msg.saying)?.name : null) ?? char.name,
+    }));
+
+    try {
+      const result = await forageStorage.realStorage.loreResolve({
+        messages,
+        entries: prepared,
+        username: settingsStore.state.username,
+        charName: char.name,
+      });
+      return {
+        entries: new Map(prepared.map((entry) => [entry.index, entry])),
+        activatedIndexes: result.activatedIndexes,
+        logs: result.logs,
+      };
+    } catch (error) {
+      console.warn("Server recursive lore resolution failed; using browser engine", error);
+      return null;
+    }
+  }
+
+  const serverRecursiveLore = await prepareServerRecursiveLore();
+  if (!serverRecursiveLore) {
+    await prepareServerLoreMatches();
+  }
 
   let selectedTokens = 0;
   let selectedCount = 0;
@@ -374,7 +420,7 @@ export async function loadLoreBookV3Prompt() {
     index: number;
   }[] = [];
 
-  let matching = true;
+  let matching = !serverRecursiveLore;
   let actives: {
     depth: number;
     pos: string;
@@ -397,6 +443,28 @@ export async function loadLoreBookV3Prompt() {
   let matchTimes = 0;
   let keepActivateAfterMatch = false;
   let dontActivateAfterMatch = false;
+
+  if (serverRecursiveLore) {
+    matchLog.push(...serverRecursiveLore.logs);
+    for (const index of serverRecursiveLore.activatedIndexes) {
+      const entry = serverRecursiveLore.entries.get(index);
+      if (!entry) continue;
+      activeTokenTexts.push(risuChatParser(entry.content, { chara: char }));
+      actives.push({
+        depth: entry.depth,
+        pos: entry.pos,
+        prompt: entry.content,
+        role: entry.role,
+        order: entry.order,
+        tokens: 0,
+        priority: entry.priority,
+        source: entry.source,
+        inject: entry.inject,
+      });
+      activatedIndexes.push(index);
+    }
+  }
+
   while (matching) {
     matching = false;
     for (let i = 0; i < fullLore.length; i++) {

@@ -2,15 +2,18 @@ import localforage from "localforage";
 import { normalizeHypaModel, type HypaModel } from "./hypamemory";
 import { isContextModel, getContextProvider } from "./contextualEmbedding";
 import { TaskRateLimiter, TaskCanceledError } from "./taskRateLimiter";
-import { globalFetch } from "src/ts/globalApi.svelte";
+import { forageStorage, globalFetch } from "src/ts/globalApi.svelte";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { appendLastPath } from "src/ts/util";
+import { isNodeServer } from "src/ts/platform";
+import { NodeStorage } from "src/ts/storage/nodeStorage";
 
 export interface HypaProcessorV2Options {
   model?: HypaModel;
   customEmbeddingUrl?: string;
   oaiKey?: string;
   rateLimiter?: TaskRateLimiter;
+  serverIndexId?: string;
 }
 
 export interface EmbeddingText<TMetadata> {
@@ -24,6 +27,15 @@ export interface EmbeddingResult<TMetadata> extends EmbeddingText<TMetadata> {
 }
 
 export type EmbeddingVector = number[] | Float32Array;
+
+function vectorContentSignature(content: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < content.length; i++) {
+    hash ^= content.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${content.length}:${(hash >>> 0).toString(16)}`;
+}
 
 export class HypaProcessorV2<TMetadata> {
   private static readonly LOG_PREFIX = "[HypaProcessorV2]";
@@ -78,6 +90,15 @@ export class HypaProcessorV2<TMetadata> {
 
     // Get query embeddings (don't save to memory)
     const ebdResults = await this.getEmbeds(ebdTexts, false);
+
+    const serverScoredResults = await this.tryServerSimilaritySearch(ebdResults);
+    if (serverScoredResults) {
+      const serverResultMap = new Map<string, [EmbeddingResult<TMetadata>, number][]>();
+      for (let i = 0; i < uniqueQueries.length; i++) {
+        serverResultMap.set(uniqueQueries[i], serverScoredResults[i]);
+      }
+      return queries.map((query) => serverResultMap.get(query));
+    }
 
     const scoredResultsMap = new Map<
       string,
@@ -324,6 +345,60 @@ export class HypaProcessorV2<TMetadata> {
     }
 
     return ebdTexts.map((item) => resultMap.get(item.id));
+  }
+
+  private async tryServerSimilaritySearch(
+    queryResults: EmbeddingResult<TMetadata>[],
+  ): Promise<[EmbeddingResult<TMetadata>, number][][] | null> {
+    if (!this.options.serverIndexId || isContextModel(this.options.model)) return null;
+    if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) return null;
+
+    const db = getDatabase();
+    const indexId = [
+      this.options.serverIndexId,
+      this.options.model,
+      this.options.model === "custom" ? this.options.customEmbeddingUrl : "",
+      this.options.model === "custom" ? db.hypaCustomSettings?.model?.trim() || "" : "",
+    ].join("|");
+    const vectors = Array.from(this.vectors.values());
+    const descriptors = vectors.map((vector) => ({
+      id: vector.id,
+      signature: vectorContentSignature(vector.content),
+    }));
+
+    try {
+      const storage = forageStorage.realStorage;
+      const status = await storage.vectorIndexStatus(indexId, descriptors);
+      if (status.missingIds.length > 0) {
+        const missing = new Set(status.missingIds);
+        await storage.vectorIndexUpsert(
+          indexId,
+          vectors
+            .filter((vector) => missing.has(vector.id))
+            .map((vector) => ({
+              id: vector.id,
+              signature: vectorContentSignature(vector.content),
+              embedding: Array.from(vector.embedding),
+            })),
+        );
+      }
+
+      const ranked = await storage.vectorIndexSearch(
+        indexId,
+        queryResults.map((result) => Array.from(result.embedding)),
+      );
+      return ranked.map((rows) =>
+        rows
+          .map(([id, score]): [EmbeddingResult<TMetadata>, number] | null => {
+            const vector = this.vectors.get(id);
+            return vector ? [vector, score] : null;
+          })
+          .filter((row): row is [EmbeddingResult<TMetadata>, number] => row !== null),
+      );
+    } catch (error) {
+      console.warn(`${HypaProcessorV2.LOG_PREFIX} Server vector search failed; using browser fallback`, error);
+      return null;
+    }
   }
 
   private similarity(a: EmbeddingVector, b: EmbeddingVector): number {

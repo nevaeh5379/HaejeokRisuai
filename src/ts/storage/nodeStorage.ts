@@ -207,6 +207,73 @@ export class NodeStorage {
     return data.results;
   }
 
+  async loreResolve(payload: {
+    messages: Array<{ role: string; data: string; displayName?: string }>;
+    entries: Array<Record<string, unknown>>;
+    username: string;
+    charName: string;
+  }): Promise<{
+    activatedIndexes: number[];
+    logs: Array<{ prompt: string; source: string; activated: string }>;
+  }> {
+    const response = await fetch("/api/lore-resolve", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "risu-auth": await this.getCachedAuth(),
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error(`Server recursive lore resolution failed (${response.status}): ${await response.text()}`);
+    }
+    const data = await response.json();
+    if (!Array.isArray(data.activatedIndexes) || !Array.isArray(data.logs)) {
+      throw new Error("Server recursive lore resolution returned an invalid response");
+    }
+    return data;
+  }
+
+  async vectorIndexStatus(
+    indexId: string,
+    descriptors: Array<{ id: string; signature: string }>,
+  ): Promise<{ missingIds: string[]; size: number }> {
+    const response = await fetch("/api/vector-index/status", {
+      method: "POST",
+      headers: { "content-type": "application/json", "risu-auth": await this.getCachedAuth() },
+      body: JSON.stringify({ indexId, descriptors }),
+    });
+    if (!response.ok) throw new Error(`Vector index status failed (${response.status}): ${await response.text()}`);
+    return await response.json();
+  }
+
+  async vectorIndexUpsert(
+    indexId: string,
+    entries: Array<{ id: string; signature: string; embedding: number[] }>,
+  ): Promise<void> {
+    const auth = await this.getCachedAuth();
+    for (let offset = 0; offset < entries.length; offset += 64) {
+      const response = await fetch("/api/vector-index/upsert", {
+        method: "POST",
+        headers: { "content-type": "application/json", "risu-auth": auth },
+        body: JSON.stringify({ indexId, entries: entries.slice(offset, offset + 64) }),
+      });
+      if (!response.ok) throw new Error(`Vector index upsert failed (${response.status}): ${await response.text()}`);
+    }
+  }
+
+  async vectorIndexSearch(indexId: string, queries: number[][]): Promise<Array<Array<[string, number]>>> {
+    const response = await fetch("/api/vector-index/search", {
+      method: "POST",
+      headers: { "content-type": "application/json", "risu-auth": await this.getCachedAuth() },
+      body: JSON.stringify({ indexId, queries }),
+    });
+    if (!response.ok) throw new Error(`Vector index search failed (${response.status}): ${await response.text()}`);
+    const data = await response.json();
+    if (!Array.isArray(data.results)) throw new Error("Vector index search returned an invalid response");
+    return data.results;
+  }
+
   async getKeyPair(): Promise<CryptoKeyPair> {
     const storedKey = await getKeypairStore("node");
 
