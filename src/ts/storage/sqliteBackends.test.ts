@@ -6,6 +6,7 @@ import {
   SqlRevisionConflictError,
 } from "./sqlCommit";
 import { WebSqliteStorage } from "./webSqliteStorage";
+import { rebuildRelationalValue } from "./relationalNodeCodec";
 
 const invokeMock = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
@@ -128,8 +129,53 @@ function makeWebStorage(database: DatabaseSync) {
       }
     },
     selectBatch: async (
-      statements: Array<{ sql: string; bind?: unknown[] }>,
-    ) => statements.map(({ sql, bind = [] }) => selectRows(sql, bind)),
+      statements: Array<{
+        sql: string;
+        bind?: unknown[];
+        transform?: "relational" | "messages";
+      }>,
+    ) =>
+      statements.map(({ sql, bind = [], transform }) => {
+        const selected = selectRows(sql, bind);
+        if (transform === "relational") {
+          return {
+            value: selected.rows.length
+              ? rebuildRelationalValue(selected.rows)
+              : undefined,
+          };
+        }
+        if (transform === "messages") {
+          const nodeGroups = new Map<string, Record<string, unknown>[]>();
+          const coreRows = new Map<string, Record<string, unknown>>();
+          const orderedIds: string[] = [];
+          for (const row of selected.rows) {
+            const id = String(row.message_id);
+            if (!coreRows.has(id)) {
+              coreRows.set(id, row);
+              orderedIds.push(id);
+            }
+            if (row.node_id === null || row.node_id === undefined) continue;
+            const nodes = nodeGroups.get(id) ?? [];
+            nodes.push(row);
+            nodeGroups.set(id, nodes);
+          }
+          return {
+            value: orderedIds.map((id) => {
+              const core = coreRows.get(id)!;
+              const nodes = nodeGroups.get(id);
+              const message = (nodes?.length
+                ? rebuildRelationalValue(nodes)
+                : {
+                    role: String(core.message_role ?? "char"),
+                    data: String(core.message_content_text ?? ""),
+                  }) as Record<string, unknown>;
+              message.chatId = id;
+              return message;
+            }),
+          };
+        }
+        return selected;
+      }),
     select: async (sql: string, bind: unknown[] = []) => selectRows(sql, bind),
     selectOne: async (sql: string, bind: unknown[] = []) =>
       selectRows(sql, bind).rows[0] ?? null,
@@ -194,10 +240,17 @@ describe("WebSqliteStorage", () => {
     const character = await storage.loadCharacterForSelection("char-1");
 
     expect(batchSpy).toHaveBeenCalledTimes(1);
-    const statements = batchSpy.mock.calls[0][0] as Array<{ sql: string }>;
+    const statements = batchSpy.mock.calls[0][0] as Array<{
+      sql: string;
+      transform?: "relational";
+    }>;
     expect(statements.some(({ sql }) => sql.includes("chat_extension_nodes"))).toBe(
       false,
     );
+    expect(
+      statements.find(({ sql }) => sql.includes("character_extension_nodes"))
+        ?.transform,
+    ).toBe("relational");
     expect(character?.chats.map((chat) => chat.id)).toEqual([
       "chat-1",
       "chat-2",
@@ -218,6 +271,17 @@ describe("WebSqliteStorage", () => {
     const chat = await storage.loadChat("chat-1", { messageLimit: 2 });
 
     expect(batchSpy).toHaveBeenCalledTimes(1);
+    const statements = batchSpy.mock.calls[0][0] as Array<{
+      sql: string;
+      transform?: "relational" | "messages";
+    }>;
+    expect(
+      statements.find(({ sql }) => sql.includes("chat_extension_nodes"))?.transform,
+    ).toBe("relational");
+    expect(
+      statements.find(({ sql }) => sql.includes("message_extension_nodes"))
+        ?.transform,
+    ).toBe("messages");
     expect(chat?.message.map((message) => message.chatId)).toEqual(["m2", "m3"]);
     expect(chat?.messageOffset).toBe(1);
     database.close();

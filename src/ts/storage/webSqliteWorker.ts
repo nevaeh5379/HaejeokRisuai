@@ -28,6 +28,7 @@
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
 import {
+  rebuildRelationalValue,
   SQLITE_SCHEMA_VERSION,
   RELATIONAL_SCHEMA_LAYOUT,
   SqlSchemaResetRequiredError,
@@ -70,9 +71,11 @@ function selectRowsInternal(
   try {
     if (bind.length > 0) stmt.bind(bind);
     const results: Record<string, unknown>[] = [];
-    let cols: string[] = [];
+    // Column metadata is stable for the lifetime of the prepared statement and
+    // may be read before the first step. Avoid a JS↔WASM metadata call per row,
+    // which is especially costly on large relational result sets in Firefox.
+    const cols = stmt.getColumnNames([]);
     while (stmt.step()) {
-      cols = stmt.getColumnNames([]);
       const row = stmt.get([]) as unknown[];
       const obj: Record<string, unknown> = {};
       for (let i = 0; i < cols.length; i++) obj[cols[i]] = row[i];
@@ -89,6 +92,47 @@ function selectOneInternal(
   bind: unknown[] = [],
 ): Record<string, unknown> | null {
   return selectRowsInternal(sql, bind).rows[0] ?? null;
+}
+
+function rebuildMessagesFromRows(
+  rows: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  const nodeGroups = new Map<string, Record<string, unknown>[]>();
+  const coreRows = new Map<string, Record<string, unknown>>();
+  const orderedIds: string[] = [];
+  for (const row of rows) {
+    const id = String(row.message_id);
+    if (!coreRows.has(id)) {
+      coreRows.set(id, row);
+      orderedIds.push(id);
+    }
+    if (row.node_id === null || row.node_id === undefined) continue;
+    const nodes = nodeGroups.get(id) ?? [];
+    nodes.push(row);
+    nodeGroups.set(id, nodes);
+  }
+  return orderedIds.map((id) => {
+    const core = coreRows.get(id)!;
+    const nodes = nodeGroups.get(id);
+    const rebuilt = nodes?.length
+      ? rebuildRelationalValue(nodes)
+      : {
+          role: String(core.message_role ?? "char"),
+          data: String(core.message_content_text ?? ""),
+          ...(core.message_sender_name != null
+            ? { name: String(core.message_sender_name) }
+            : {}),
+          ...(core.message_sent_time != null
+            ? { time: Number(core.message_sent_time) }
+            : {}),
+        };
+    const message =
+      rebuilt && typeof rebuilt === "object"
+        ? (rebuilt as Record<string, unknown>)
+        : { role: "char", data: String(rebuilt ?? "") };
+    message.chatId = id;
+    return message;
+  });
 }
 
 function runInternal(sql: string, bind: unknown[] = []): void {
@@ -177,7 +221,11 @@ type ReqMsg =
   | {
       id: number;
       type: "selectBatch";
-      statements: { sql: string; bind?: unknown[] }[];
+      statements: {
+        sql: string;
+        bind?: unknown[];
+        transform?: "relational" | "messages";
+      }[];
     }
   | { id: number; type: "select"; sql: string; bind?: unknown[] }
   | { id: number; type: "selectOne"; sql: string; bind?: unknown[] }
@@ -206,9 +254,20 @@ self.onmessage = async (e: MessageEvent<ReqMsg>) => {
         break;
       }
       case "selectBatch": {
-        const result = msg.statements.map((statement) =>
-          selectRowsInternal(statement.sql, statement.bind ?? []),
-        );
+        const result = msg.statements.map((statement) => {
+          const selected = selectRowsInternal(statement.sql, statement.bind ?? []);
+          if (statement.transform === "relational") {
+            return {
+              value: selected.rows.length
+                ? rebuildRelationalValue(selected.rows)
+                : undefined,
+            };
+          }
+          if (statement.transform === "messages") {
+            return { value: rebuildMessagesFromRows(selected.rows) };
+          }
+          return selected;
+        });
         (self as any).postMessage({ id: msg.id, ok: true, result });
         break;
       }

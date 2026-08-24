@@ -53,7 +53,17 @@ import {
 
 // ── Worker RPC plumbing ──────────────────────────────────────────────
 
-type SqliteBatchStatement = { sql: string; bind?: unknown[] };
+type SqliteBatchStatement = {
+  sql: string;
+  bind?: unknown[];
+  transform?: "relational" | "messages";
+};
+
+type SqliteBatchResult = {
+  rows?: Record<string, unknown>[];
+  columns?: string[];
+  value?: unknown;
+};
 
 type ReqMsg =
   | { id: number; type: "init" }
@@ -84,9 +94,7 @@ interface WorkerRpc {
   init(): Promise<{ enabled: boolean; revision: number }>;
   exec(sql: string, bind?: unknown[]): Promise<void>;
   execBatch(statements: SqliteBatchStatement[]): Promise<void>;
-  selectBatch(
-    statements: SqliteBatchStatement[],
-  ): Promise<{ rows: Record<string, unknown>[]; columns: string[] }[]>;
+  selectBatch(statements: SqliteBatchStatement[]): Promise<SqliteBatchResult[]>;
   select(
     sql: string,
     bind?: unknown[],
@@ -157,7 +165,7 @@ function getWorkerRpc(): WorkerRpc {
     execBatch: (statements) =>
       call<void>({ type: "execBatch", statements }).then(() => undefined),
     selectBatch: (statements) =>
-      call<{ rows: Record<string, unknown>[]; columns: string[] }[]>({
+      call<SqliteBatchResult[]>({
         type: "selectBatch",
         statements,
       }),
@@ -254,12 +262,18 @@ export class WebSqliteStorage implements ISqlStorage {
     return this.rpc.selectOne(sql, bind);
   }
 
+  private async selectBatchResults(
+    statements: SqliteBatchStatement[],
+  ): Promise<SqliteBatchResult[]> {
+    if (!this.rpc) throw new Error("Database not opened");
+    return this.rpc.selectBatch(statements);
+  }
+
   private async selectBatch(
     statements: SqliteBatchStatement[],
   ): Promise<Record<string, unknown>[][]> {
-    if (!this.rpc) throw new Error("Database not opened");
-    const results = await this.rpc.selectBatch(statements);
-    return results.map((result) => result.rows);
+    const results = await this.selectBatchResults(statements);
+    return results.map((result) => result.rows ?? []);
   }
 
   private async run(sql: string, bind: unknown[] = []): Promise<void> {
@@ -307,47 +321,6 @@ export class WebSqliteStorage implements ISqlStorage {
     );
   }
 
-  private rebuildMessagesFromRows(
-    rows: Record<string, unknown>[],
-  ): Message[] {
-    const nodeGroups = new Map<string, Record<string, unknown>[]>();
-    const coreRows = new Map<string, Record<string, unknown>>();
-    const orderedIds: string[] = [];
-    for (const row of rows) {
-      const id = String(row.message_id);
-      if (!coreRows.has(id)) {
-        coreRows.set(id, row);
-        orderedIds.push(id);
-      }
-      if (row.node_id === null || row.node_id === undefined) continue;
-      const nodes = nodeGroups.get(id) ?? [];
-      nodes.push(row);
-      nodeGroups.set(id, nodes);
-    }
-    return orderedIds.map((id) => {
-      const nodes = nodeGroups.get(id);
-      const core = coreRows.get(id)!;
-      const rebuilt = nodes?.length
-        ? rebuildRelationalValue(nodes)
-        : {
-            role: String(core.message_role ?? "char"),
-            data: String(core.message_content_text ?? ""),
-            ...(core.message_sender_name != null
-              ? { name: String(core.message_sender_name) }
-              : {}),
-            ...(core.message_sent_time != null
-              ? { time: Number(core.message_sent_time) }
-              : {}),
-          };
-      const message =
-        rebuilt && typeof rebuilt === "object"
-          ? (rebuilt as Message)
-          : ({ role: "char", data: String(rebuilt ?? "") } as Message);
-      message.chatId = id;
-      return message;
-    });
-  }
-
   private messageRowsStatement(
     chatId: string,
     limit?: number,
@@ -388,8 +361,10 @@ export class WebSqliteStorage implements ISqlStorage {
     offset = 0,
   ): Promise<Message[]> {
     const statement = this.messageRowsStatement(chatId, limit, offset);
-    const rows = await this.selectRows(statement.sql, statement.bind);
-    return this.rebuildMessagesFromRows(rows);
+    const [result] = await this.selectBatchResults([
+      { ...statement, transform: "messages" },
+    ]);
+    return (result.value ?? []) as Message[];
   }
 
   private async loadCharacterChats(characterId: string): Promise<Chat[]> {
@@ -661,7 +636,7 @@ export class WebSqliteStorage implements ISqlStorage {
   async loadCharacterForSelection(
     characterId: string,
   ): Promise<character | groupChat | null> {
-    const [characterRows, nodeRows, chatRows] = await this.selectBatch([
+    const [characterResult, nodeResult, chatResult] = await this.selectBatchResults([
       {
         sql: "SELECT id FROM characters WHERE id = ?",
         bind: [characterId],
@@ -673,16 +648,19 @@ export class WebSqliteStorage implements ISqlStorage {
               FROM character_extension_nodes
               WHERE character_id = ? ORDER BY node_id`,
         bind: [characterId],
+        transform: "relational",
       },
       {
         sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
         bind: [characterId],
       },
     ]);
+    const characterRows = characterResult.rows ?? [];
+    const chatRows = chatResult.rows ?? [];
     if (characterRows.length === 0) return null;
-    const characterData = (nodeRows.length
-      ? rebuildRelationalValue(nodeRows)
-      : {}) as any;
+    // Rebuild large relational trees in the SQLite Worker so the UI thread
+    // receives the final object instead of cloning thousands of node rows.
+    const characterData = (nodeResult.value ?? {}) as any;
     characterData.chaId = characterId;
     characterData.detailsLoaded = true;
     characterData.chats = chatRows.map((row) => ({
@@ -708,34 +686,39 @@ export class WebSqliteStorage implements ISqlStorage {
       requestedLimit === undefined
         ? undefined
         : normalizeSqliteLimit(requestedLimit);
-    const [chatRows, nodeRows, totalRows, messageRows] = await this.selectBatch([
-      {
-        sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
-        bind: [chatId],
-      },
-      {
-        sql: `SELECT node_id, parent_node_id, node_order, object_key,
-                     object_key_encoded, value_type, text_value, encoded_text_value,
-                     number_value, boolean_value
-              FROM chat_extension_nodes WHERE chat_id = ? ORDER BY node_id`,
-        bind: [chatId],
-      },
-      {
-        sql: "SELECT COUNT(*) AS total FROM messages WHERE chat_id = ?",
-        bind: [chatId],
-      },
-      this.messageRowsStatement(chatId, limit, 0, limit !== undefined),
-    ]);
-    const cr = chatRows[0];
+    const [chatResult, nodeResult, totalResult, messageResult] =
+      await this.selectBatchResults([
+        {
+          sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
+          bind: [chatId],
+        },
+        {
+          sql: `SELECT node_id, parent_node_id, node_order, object_key,
+                       object_key_encoded, value_type, text_value, encoded_text_value,
+                       number_value, boolean_value
+                FROM chat_extension_nodes WHERE chat_id = ? ORDER BY node_id`,
+          bind: [chatId],
+          transform: "relational",
+        },
+        {
+          sql: "SELECT COUNT(*) AS total FROM messages WHERE chat_id = ?",
+          bind: [chatId],
+        },
+        {
+          ...this.messageRowsStatement(chatId, limit, 0, limit !== undefined),
+          transform: "messages",
+        },
+      ]);
+    const cr = chatResult.rows?.[0];
     if (!cr) return null;
-    const cd = (nodeRows.length ? rebuildRelationalValue(nodeRows) : {}) as any;
+    const cd = (nodeResult.value ?? {}) as any;
     cd.id = cr.id;
     cd.name = (cr.name as string) ?? "";
     cd.note = (cr.note as string) ?? "";
     cd.folderId = (cr.folder_id as string) ?? undefined;
     cd.lastDate = (cr.last_message_time as number) ?? undefined;
-    const total = Number(totalRows[0]?.total ?? 0);
-    cd.message = this.rebuildMessagesFromRows(messageRows);
+    const total = Number(totalResult.rows?.[0]?.total ?? 0);
+    cd.message = (messageResult.value ?? []) as Message[];
     const offset = Math.max(0, total - cd.message.length);
     cd.messageOffset = offset;
     cd.messageTotal = total;
