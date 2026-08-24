@@ -39,6 +39,7 @@ const { createJsonStream } = require('./streamJson.cjs');
 const { streamZip } = require('./zipStream.cjs');
 const {
     createEntryHeader: createLocalBackupEntryHeader,
+    makeLegacyCompatibleDatabase: makeLegacyCompatibleBackupDatabase,
     encodeDatabase: encodeLocalBackupDatabase,
 } = require('./localBackupFormat.cjs');
 const { normalizePageInteger, paginateMessages } = require('./messagePagination.cjs');
@@ -2705,7 +2706,9 @@ async function buildPortableServerDatabase() {
 }
 
 async function encodePortableServerDatabase(database) {
-    return await encodeLocalBackupDatabase(database);
+    return await encodeLocalBackupDatabase(
+        makeLegacyCompatibleBackupDatabase(database)
+    );
 }
 
 async function streamServerLocalBackup(res) {

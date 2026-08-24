@@ -1,5 +1,11 @@
 export type AssetTuple = [string, string, string];
 
+export type AssetFolder = {
+  id: string;
+  name: string;
+  parentId?: string;
+};
+
 export type BatchRenameOptions = {
   pattern: string;
   replacement: string;
@@ -128,4 +134,45 @@ export function selectAssetRange(
   const start = Math.min(anchorPosition, targetPosition);
   const end = Math.max(anchorPosition, targetPosition);
   return orderedIndices.slice(start, end + 1);
+}
+
+export function remapAssetFolderAssignments(
+  assignments: Record<string, string> | undefined,
+  renames: Array<{ oldName: string; newName: string }>,
+): Record<string, string> {
+  const next = { ...(assignments ?? {}) };
+  for (const { oldName, newName } of renames) {
+    if (oldName === newName || !(oldName in next)) continue;
+    const folderId = next[oldName];
+    delete next[oldName];
+    next[newName] = folderId;
+  }
+  return next;
+}
+
+export function stripAdditionalAssetFolderMetadata<T extends Record<string, any>>(
+  character: T,
+): T {
+  const copy = { ...character };
+  delete copy.additionalAssetFolders;
+  delete copy.additionalAssetFolderAssignments;
+  return copy as T;
+}
+
+export function collectAssetFolderSubtree(
+  folders: AssetFolder[],
+  rootId: string,
+): Set<string> {
+  const result = new Set<string>([rootId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const folder of folders) {
+      if (folder.parentId && result.has(folder.parentId) && !result.has(folder.id)) {
+        result.add(folder.id);
+        changed = true;
+      }
+    }
+  }
+  return result;
 }

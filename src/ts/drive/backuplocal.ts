@@ -51,9 +51,19 @@ import {
 import { getSqlStorage } from "../storage/sqlStorageFactory";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import { decryptLegacyAccountBackup } from "./legacyBackupEncryption";
+import { stripAdditionalAssetFolderMetadata } from "../assetManagerUtils";
 
 const alertProgress = (msg: string, progress: number | string) =>
   showProgressAlert(msg, progress, "backup");
+
+function getLegacyCompatibleBackupValue(key: string, value: any) {
+  if (key !== "characters" || !Array.isArray(value)) return value;
+  return value.map((character) =>
+    character && typeof character === "object"
+      ? stripAdditionalAssetFolderMetadata(character)
+      : character,
+  );
+}
 
 const SQL_DOMAIN_ROOT_KEYS: Record<
   (typeof POSTGRES_DOMAINS)[number],
@@ -716,7 +726,7 @@ export async function SaveLocalBackup() {
     const cleanDb: Record<string, any> = {};
     for (const [key, value] of Object.entries(db)) {
       if (key === "account" || typeof value === "function") continue;
-      cleanDb[key] = value;
+      cleanDb[key] = getLegacyCompatibleBackupValue(key, value);
     }
     cleanDb.pluginCustomStorage ??= {};
     let dbData = await encodeRisuSaveLegacyAsync(cleanDb, "compression");
@@ -1033,7 +1043,7 @@ export async function SavePartialLocalBackup() {
     const cleanDb: Record<string, any> = {};
     for (const [key, value] of Object.entries(db)) {
       if (key === "account" || typeof value === "function") continue;
-      cleanDb[key] = value;
+      cleanDb[key] = getLegacyCompatibleBackupValue(key, value);
     }
     cleanDb.pluginCustomStorage ??= {};
     const dbData = await encodeRisuSaveLegacyAsync(cleanDb, "compression");

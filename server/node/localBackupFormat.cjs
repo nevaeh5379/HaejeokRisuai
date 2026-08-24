@@ -26,6 +26,21 @@ function createEntryHeader(name, size) {
     return header;
 }
 
+function makeLegacyCompatibleDatabase(database) {
+    if (!database || typeof database !== 'object') return database;
+    const portable = { ...database };
+    if (Array.isArray(database.characters)) {
+        portable.characters = database.characters.map((character) => {
+            if (!character || typeof character !== 'object') return character;
+            const copy = { ...character };
+            delete copy.additionalAssetFolders;
+            delete copy.additionalAssetFolderAssignments;
+            return copy;
+        });
+    }
+    return portable;
+}
+
 async function encodeDatabase(database) {
     const packed = packr.encode(database);
     const compressed = await promisify(zlib.deflate)(packed);
@@ -42,4 +57,9 @@ function decodeDatabase(data) {
     return unpackr.decode(data);
 }
 
-module.exports = { createEntryHeader, encodeDatabase, decodeDatabase };
+module.exports = {
+    createEntryHeader,
+    makeLegacyCompatibleDatabase,
+    encodeDatabase,
+    decodeDatabase,
+};

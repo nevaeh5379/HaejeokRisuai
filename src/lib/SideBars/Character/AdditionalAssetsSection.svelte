@@ -144,9 +144,15 @@
         if (currentChar.chats?.[currentChar.chatPage]) {
             currentChar.chats[currentChar.chatPage].fmIndex = -1;
         }
+        const assetName = currentChar.additionalAssets[originalIndex]?.[0];
         const updated = [...currentChar.additionalAssets];
         updated.splice(originalIndex, 1);
         currentChar.additionalAssets = updated;
+        if (assetName && currentChar.additionalAssetFolderAssignments?.[assetName]) {
+            const assignments = { ...currentChar.additionalAssetFolderAssignments };
+            delete assignments[assetName];
+            currentChar.additionalAssetFolderAssignments = assignments;
+        }
     }
 
     function togglePromptExclude(e: MouseEvent, assetId: string) {

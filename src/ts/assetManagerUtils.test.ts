@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   applyBatchRenamePreview,
   buildBatchRenamePreview,
+  collectAssetFolderSubtree,
+  remapAssetFolderAssignments,
   selectAssetRange,
+  stripAdditionalAssetFolderMetadata,
   type AssetTuple,
 } from "./assetManagerUtils";
 
@@ -83,5 +86,43 @@ describe("selectAssetRange", () => {
 
   it("falls back to the target when the anchor is no longer visible", () => {
     expect(selectAssetRange([7, 2, 9], 100, 9)).toEqual([9]);
+  });
+});
+
+describe("asset folder metadata", () => {
+  it("keeps folder assignments attached when assets are renamed", () => {
+    expect(
+      remapAssetFolderAssignments(
+        { "face_happy.png": "portraits", "voice_01.mp3": "voices" },
+        [{ oldName: "face_happy.png", newName: "happy.png" }],
+      ),
+    ).toEqual({ "happy.png": "portraits", "voice_01.mp3": "voices" });
+  });
+
+  it("collects nested folders when a folder tree is removed", () => {
+    const folders = [
+      { id: "a", name: "A" },
+      { id: "b", name: "B", parentId: "a" },
+      { id: "c", name: "C", parentId: "b" },
+      { id: "d", name: "D" },
+    ];
+    expect(Array.from(collectAssetFolderSubtree(folders, "a")).sort()).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+  });
+
+  it("strips folder-only metadata for legacy-compatible exports", () => {
+    const character = {
+      name: "test",
+      additionalAssets: [["a.png", "asset-a", "png"]],
+      additionalAssetFolders: [{ id: "folder", name: "Folder" }],
+      additionalAssetFolderAssignments: { "a.png": "folder" },
+    };
+    const portable = stripAdditionalAssetFolderMetadata(character);
+    expect(portable.additionalAssets).toEqual(character.additionalAssets);
+    expect("additionalAssetFolders" in portable).toBe(false);
+    expect("additionalAssetFolderAssignments" in portable).toBe(false);
   });
 });

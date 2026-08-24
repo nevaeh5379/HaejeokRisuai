@@ -23,7 +23,10 @@
         ChevronRightIcon,
         LayersIcon,
         Edit3Icon,
-        Maximize2Icon
+        Maximize2Icon,
+        FolderIcon,
+        FolderPlusIcon,
+        HomeIcon
     } from "@lucide/svelte";
     import { selectedCharID, assetManagerModalStore } from "src/ts/stores.svelte";
     import { characterStore, settingsStore } from "src/ts/stores/domain";
@@ -31,7 +34,8 @@
     import { language } from "src/lang";
     import { getFileSrc } from "src/ts/globalApi.svelte";
     import { selectMultipleFile } from "src/ts/util";
-    import { alertConfirm } from "src/ts/alert";
+    import { alertConfirm, alertInput } from "src/ts/alert";
+    import { v4 as uuidv4 } from "uuid";
     import {
         getAssetCategory,
         getDefaultMacroTag,
@@ -43,7 +47,10 @@
     import {
         applyBatchRenamePreview,
         buildBatchRenamePreview,
-        selectAssetRange
+        collectAssetFolderSubtree,
+        remapAssetFolderAssignments,
+        selectAssetRange,
+        type AssetFolder
     } from "src/ts/assetManagerUtils";
 
     // View & layout states
@@ -54,6 +61,7 @@
     let sortOption: "index" | "nameAsc" | "nameDesc" | "ext" = $state("index");
     let selectedIndices = $state<Set<number>>(new Set());
     let selectionAnchor: number | null = $state(null);
+    let currentFolderId: string | null = $state(null);
 
     type MarqueeRect = { left: number; top: number; width: number; height: number };
     let marqueeRect: MarqueeRect | null = $state(null);
@@ -90,6 +98,28 @@
     );
 
     let rawAssets = $derived(currentChar?.additionalAssets ?? []);
+    let assetFolders = $derived((currentChar?.additionalAssetFolders ?? []) as AssetFolder[]);
+    let assetFolderAssignments = $derived(currentChar?.additionalAssetFolderAssignments ?? {});
+    let validFolderIds = $derived(new Set(assetFolders.map((folder) => folder.id)));
+    let visibleFolders = $derived.by(() => {
+        const q = searchQuery.trim().toLowerCase();
+        return assetFolders.filter((folder) =>
+            (folder.parentId ?? null) === currentFolderId && (!q || folder.name.toLowerCase().includes(q))
+        );
+    });
+    let folderBreadcrumbs = $derived.by(() => {
+        const result: AssetFolder[] = [];
+        let id = currentFolderId;
+        const seen = new Set<string>();
+        while (id && !seen.has(id)) {
+            seen.add(id);
+            const folder = assetFolders.find((candidate) => candidate.id === id);
+            if (!folder) break;
+            result.unshift(folder);
+            id = folder.parentId ?? null;
+        }
+        return result;
+    });
 
     // Category counts for filter badges
     let categoryCounts = $derived.by(() => {
@@ -249,6 +279,15 @@
             category: getAssetCategory(item[2] || item[1]?.split(".").pop() || "png")
         }));
 
+        // Folder metadata is deliberately separate from the legacy asset tuple.
+        list = list.filter((asset) => {
+            const assignedFolder = assetFolderAssignments[asset.name];
+            const normalizedFolder = assignedFolder && validFolderIds.has(assignedFolder)
+                ? assignedFolder
+                : null;
+            return normalizedFolder === currentFolderId;
+        });
+
         // Filter by category
         if (selectedCategory !== "all") {
             list = list.filter((a) => a.category === selectedCategory);
@@ -284,7 +323,12 @@
         void selectedCategory;
         void searchQuery;
         void sortOption;
+        void currentFolderId;
         displayLimit = 48;
+    });
+
+    $effect(() => {
+        if (currentFolderId && !validFolderIds.has(currentFolderId)) currentFolderId = null;
     });
 
     let displayedAssets = $derived(processedAssets.slice(0, displayLimit));
@@ -450,7 +494,7 @@
     function handleGalleryPointerDown(e: PointerEvent) {
         if (!galleryEl || e.pointerType !== "mouse" || e.button !== 0) return;
         const target = e.target as HTMLElement | null;
-        if (target?.closest("[data-asset-index], button, input, textarea, select, a, table")) return;
+        if (target?.closest("[data-asset-index], [data-folder-id], button, input, textarea, select, a, table")) return;
         const point = getGalleryPoint(e);
         if (!point) return;
 
@@ -506,13 +550,26 @@
         };
     });
 
+    function assignNewAssetsToFolder(
+        previousLength: number,
+        updated: [string, string, string][],
+        folderId: string | null
+    ) {
+        if (!currentChar || !folderId) return;
+        const assignments = { ...(currentChar.additionalAssetFolderAssignments ?? {}) };
+        for (const asset of updated.slice(previousLength)) assignments[asset[0]] = folderId;
+        currentChar.additionalAssetFolderAssignments = assignments;
+    }
+
     async function handleAddFiles() {
         if (currentChar?.type !== "character") return;
         const files = await selectMultipleFile(SUPPORTED_ASSET_EXTENSIONS);
         if (!files || files.length === 0) return;
 
+        const previousLength = currentChar.additionalAssets?.length ?? 0;
         const updated = await processAssetUploads(files, currentChar.additionalAssets ?? []);
         currentChar.additionalAssets = updated;
+        assignNewAssetsToFolder(previousLength, updated, currentFolderId);
     }
 
     async function handleDropFiles(e: DragEvent) {
@@ -524,9 +581,157 @@
         const files = e.dataTransfer?.files;
         if (!files || files.length === 0) return;
 
+        const previousLength = currentChar.additionalAssets?.length ?? 0;
         const fileArray = Array.from(files);
         const updated = await processAssetUploads(fileArray, currentChar.additionalAssets ?? []);
         currentChar.additionalAssets = updated;
+        assignNewAssetsToFolder(previousLength, updated, currentFolderId);
+    }
+
+    function navigateToFolder(folderId: string | null) {
+        currentFolderId = folderId;
+        selectedIndices = new Set();
+        selectionAnchor = null;
+        displayLimit = 48;
+    }
+
+    function getFolderPathLabel(folder: AssetFolder) {
+        const parts = [folder.name];
+        let parentId = folder.parentId;
+        const seen = new Set<string>([folder.id]);
+        while (parentId && !seen.has(parentId)) {
+            seen.add(parentId);
+            const parent = assetFolders.find((candidate) => candidate.id === parentId);
+            if (!parent) break;
+            parts.unshift(parent.name);
+            parentId = parent.parentId;
+        }
+        return parts.join(" / ");
+    }
+
+    async function createFolder() {
+        if (!currentChar) return;
+        const name = (await alertInput("Folder name"))?.trim();
+        if (!name) return;
+        const duplicate = assetFolders.some(
+            (folder) => (folder.parentId ?? null) === currentFolderId && folder.name === name
+        );
+        if (duplicate) return;
+        currentChar.additionalAssetFolders = [
+            ...(currentChar.additionalAssetFolders ?? []),
+            { id: uuidv4(), name, ...(currentFolderId ? { parentId: currentFolderId } : {}) }
+        ];
+    }
+
+    async function renameFolder(folder: AssetFolder) {
+        if (!currentChar) return;
+        const name = (await alertInput("Rename folder", undefined, folder.name))?.trim();
+        if (!name || name === folder.name) return;
+        const duplicate = assetFolders.some(
+            (candidate) => candidate.id !== folder.id &&
+                (candidate.parentId ?? null) === (folder.parentId ?? null) &&
+                candidate.name === name
+        );
+        if (duplicate) return;
+        currentChar.additionalAssetFolders = assetFolders.map((candidate) =>
+            candidate.id === folder.id ? { ...candidate, name } : candidate
+        );
+    }
+
+    async function deleteFolder(folder: AssetFolder) {
+        if (!currentChar) return;
+        const confirmed = await alertConfirm(
+            `Delete folder "${folder.name}"? Assets inside it will be moved to the parent folder.`
+        );
+        if (!confirmed) return;
+        const removedIds = collectAssetFolderSubtree(assetFolders, folder.id);
+        const assignments = { ...(currentChar.additionalAssetFolderAssignments ?? {}) };
+        for (const [assetName, folderId] of Object.entries(assignments)) {
+            if (!removedIds.has(folderId)) continue;
+            if (folder.parentId) assignments[assetName] = folder.parentId;
+            else delete assignments[assetName];
+        }
+        currentChar.additionalAssetFolderAssignments = assignments;
+        currentChar.additionalAssetFolders = assetFolders.filter((candidate) => !removedIds.has(candidate.id));
+        if (currentFolderId && removedIds.has(currentFolderId)) navigateToFolder(folder.parentId ?? null);
+    }
+
+    function moveAssetIndicesToFolder(indices: Iterable<number>, folderId: string | null) {
+        if (!currentChar?.additionalAssets) return;
+        const assignments = { ...(currentChar.additionalAssetFolderAssignments ?? {}) };
+        for (const index of indices) {
+            const asset = currentChar.additionalAssets[index];
+            if (!asset) continue;
+            if (folderId) assignments[asset[0]] = folderId;
+            else delete assignments[asset[0]];
+        }
+        currentChar.additionalAssetFolderAssignments = assignments;
+        selectedIndices = new Set();
+        selectionAnchor = null;
+    }
+
+    function moveSelectedToFolder(folderId: string | null) {
+        if (selectedIndices.size === 0) return;
+        moveAssetIndicesToFolder(selectedIndices, folderId);
+    }
+
+    const INTERNAL_ASSET_DRAG_TYPE = "application/x-risu-additional-assets";
+
+    function handleAssetDragStart(e: DragEvent, originalIndex: number) {
+        if (!e.dataTransfer) return;
+        const indices = selectedIndices.has(originalIndex)
+            ? Array.from(selectedIndices)
+            : [originalIndex];
+        if (!selectedIndices.has(originalIndex)) {
+            selectedIndices = new Set(indices);
+            selectionAnchor = originalIndex;
+        }
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData(INTERNAL_ASSET_DRAG_TYPE, JSON.stringify(indices));
+    }
+
+    function handleFolderDragOver(e: DragEvent) {
+        const types = e.dataTransfer?.types;
+        if (!types?.includes(INTERNAL_ASSET_DRAG_TYPE) && !types?.includes("Files")) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.dataTransfer) {
+            e.dataTransfer.dropEffect = types.includes(INTERNAL_ASSET_DRAG_TYPE) ? "move" : "copy";
+        }
+    }
+
+    async function handleFolderDrop(e: DragEvent, folderId: string | null) {
+        const dataTransfer = e.dataTransfer;
+        if (!dataTransfer) return;
+
+        const encoded = dataTransfer.getData(INTERNAL_ASSET_DRAG_TYPE);
+        if (encoded) {
+            e.preventDefault();
+            e.stopPropagation();
+            try {
+                const indices = JSON.parse(encoded);
+                if (Array.isArray(indices)) {
+                    moveAssetIndicesToFolder(
+                        indices.filter((index): index is number => Number.isInteger(index)),
+                        folderId
+                    );
+                }
+            } catch {}
+            return;
+        }
+
+        if (!dataTransfer.types.includes("Files") || dataTransfer.files.length === 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        isDraggingFiles = false;
+        if (currentChar?.type !== "character") return;
+        const previousLength = currentChar.additionalAssets?.length ?? 0;
+        const updated = await processAssetUploads(
+            Array.from(dataTransfer.files),
+            currentChar.additionalAssets ?? []
+        );
+        currentChar.additionalAssets = updated;
+        assignNewAssetsToFolder(previousLength, updated, folderId);
     }
 
     async function handleCopyTag(tag: string, keyIdentifier: string) {
@@ -569,6 +774,11 @@
         const updated = [...currentChar.additionalAssets];
         updated.splice(originalIndex, 1);
         currentChar.additionalAssets = updated;
+        if (assetName && currentChar.additionalAssetFolderAssignments?.[assetName]) {
+            const assignments = { ...currentChar.additionalAssetFolderAssignments };
+            delete assignments[assetName];
+            currentChar.additionalAssetFolderAssignments = assignments;
+        }
 
         if (inspectingIndex === originalIndex) {
             inspectingIndex = null;
@@ -650,10 +860,18 @@
             currentChar.chats[currentChar.chatPage].fmIndex = -1;
         }
 
+        const deletedNames = Array.from(selectedIndices)
+            .map((index) => currentChar.additionalAssets?.[index]?.[0])
+            .filter(Boolean) as string[];
         const updated = currentChar.additionalAssets.filter(
             (_, idx) => !selectedIndices.has(idx)
         );
         currentChar.additionalAssets = updated;
+        if (deletedNames.length > 0) {
+            const assignments = { ...(currentChar.additionalAssetFolderAssignments ?? {}) };
+            for (const name of deletedNames) delete assignments[name];
+            currentChar.additionalAssetFolderAssignments = assignments;
+        }
         selectedIndices = new Set();
         selectionAnchor = null;
         inspectingIndex = null;
@@ -714,6 +932,12 @@
         );
         if (!confirmed) return;
 
+        currentChar.additionalAssetFolderAssignments = remapAssetFolderAssignments(
+            currentChar.additionalAssetFolderAssignments,
+            batchRenamePreview.items
+                .filter((item) => item.changed)
+                .map((item) => ({ oldName: item.oldName, newName: item.newName }))
+        );
         currentChar.additionalAssets = applyBatchRenamePreview(
             currentChar.additionalAssets,
             batchRenamePreview
@@ -729,6 +953,11 @@
             (asset, index) => index !== originalIndex && asset[0] === trimmed
         );
         if (collision) return;
+        const oldName = currentChar.additionalAssets[originalIndex][0];
+        currentChar.additionalAssetFolderAssignments = remapAssetFolderAssignments(
+            currentChar.additionalAssetFolderAssignments,
+            [{ oldName, newName: trimmed }]
+        );
         currentChar.additionalAssets[originalIndex][0] = trimmed;
     }
 
@@ -748,6 +977,11 @@
             return;
         }
 
+        const oldName = currentChar.additionalAssets[inspectingAsset.originalIndex][0];
+        currentChar.additionalAssetFolderAssignments = remapAssetFolderAssignments(
+            currentChar.additionalAssetFolderAssignments,
+            [{ oldName, newName: trimmed }]
+        );
         currentChar.additionalAssets[inspectingAsset.originalIndex][0] = trimmed;
         renameError = "";
         isEditingName = false;
@@ -773,8 +1007,18 @@
     <div
         class="relative flex flex-col w-full max-w-7xl h-[92vh] max-h-[920px] bg-darkbg border border-darkborderc rounded-2xl shadow-2xl overflow-hidden text-textcolor"
         onclick={(e) => e.stopPropagation()}
-        ondragover={(e) => { e.preventDefault(); e.stopPropagation(); isDraggingFiles = true; }}
-        ondragleave={(e) => { e.preventDefault(); e.stopPropagation(); isDraggingFiles = false; }}
+        ondragover={(e) => {
+            if (!e.dataTransfer?.types.includes("Files")) return;
+            e.preventDefault();
+            e.stopPropagation();
+            isDraggingFiles = true;
+        }}
+        ondragleave={(e) => {
+            if (!e.dataTransfer?.types.includes("Files")) return;
+            e.preventDefault();
+            e.stopPropagation();
+            isDraggingFiles = false;
+        }}
         ondrop={handleDropFiles}
     >
         <!-- Drag & Drop Full Window Overlay Feedback -->
@@ -931,6 +1175,16 @@
                     </select>
                 </div>
 
+                <button
+                    type="button"
+                    class="p-2 rounded-lg border bg-darkbg text-textcolor2 hover:text-textcolor hover:border-selected border-darkborderc transition-colors cursor-pointer flex items-center gap-1 text-xs"
+                    title="Create folder"
+                    onclick={createFolder}
+                >
+                    <FolderPlusIcon size={15} />
+                    <span class="hidden lg:inline">New Folder</span>
+                </button>
+
                 <!-- Regex batch rename -->
                 <button
                     type="button"
@@ -985,6 +1239,23 @@
                 </div>
 
                 <div class="flex items-center gap-2">
+                    <select
+                        aria-label="Move selected assets"
+                        class="px-2 py-1 rounded-md bg-darkbg border border-darkborderc text-textcolor text-xs cursor-pointer"
+                        value=""
+                        onchange={(e) => {
+                            if (!e.currentTarget.value) return;
+                            moveSelectedToFolder(e.currentTarget.value === "__root__" ? null : e.currentTarget.value);
+                            e.currentTarget.value = "";
+                        }}
+                    >
+                        <option value="">Move to…</option>
+                        <option value="__root__" disabled={currentFolderId === null}>Assets (root)</option>
+                        {#each assetFolders.filter((folder) => folder.id !== currentFolderId) as folder}
+                            <option value={folder.id}>{getFolderPathLabel(folder)}</option>
+                        {/each}
+                    </select>
+
                     <button
                         type="button"
                         disabled={selectedIndices.size === 0}
@@ -1145,7 +1416,66 @@
                 ></div>
             {/if}
 
-            {#if rawAssets.length === 0}
+            <div class="mb-4 flex flex-wrap items-center gap-1.5 text-xs text-textcolor2">
+                <button
+                    type="button"
+                    class="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-textcolor/10 hover:text-textcolor cursor-pointer"
+                    onclick={() => navigateToFolder(null)}
+                    ondragover={handleFolderDragOver}
+                    ondrop={(e) => handleFolderDrop(e, null)}
+                >
+                    <HomeIcon size={13} />
+                    <span>Assets</span>
+                </button>
+                {#each folderBreadcrumbs as folder}
+                    <ChevronRightIcon size={12} class="opacity-50" />
+                    <button
+                        type="button"
+                        class="rounded-md px-2 py-1 hover:bg-textcolor/10 hover:text-textcolor cursor-pointer"
+                        onclick={() => navigateToFolder(folder.id)}
+                        ondragover={handleFolderDragOver}
+                        ondrop={(e) => handleFolderDrop(e, folder.id)}
+                    >{folder.name}</button>
+                {/each}
+            </div>
+
+            {#if visibleFolders.length > 0}
+                <div class="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                    {#each visibleFolders as folder}
+                        <div
+                            data-folder-id={folder.id}
+                            class="group relative flex items-center gap-2 rounded-xl border border-darkborderc bg-bgcolor/70 p-2.5 hover:border-selected/70 hover:bg-bgcolor transition-colors"
+                            ondragover={handleFolderDragOver}
+                            ondrop={(e) => handleFolderDrop(e, folder.id)}
+                        >
+                            <button
+                                type="button"
+                                class="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
+                                onclick={() => navigateToFolder(folder.id)}
+                            >
+                                <FolderIcon size={22} class="shrink-0 text-selected" />
+                                <span class="truncate text-xs font-semibold text-textcolor" title={folder.name}>{folder.name}</span>
+                            </button>
+                            <div class="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                    type="button"
+                                    class="rounded p-1 text-textcolor2 hover:bg-textcolor/10 hover:text-textcolor cursor-pointer"
+                                    title="Rename folder"
+                                    onclick={() => renameFolder(folder)}
+                                ><Edit3Icon size={12} /></button>
+                                <button
+                                    type="button"
+                                    class="rounded p-1 text-textcolor2 hover:bg-red-500/15 hover:text-red-400 cursor-pointer"
+                                    title="Delete folder"
+                                    onclick={() => deleteFolder(folder)}
+                                ><TrashIcon size={12} /></button>
+                            </div>
+                        </div>
+                    {/each}
+                </div>
+            {/if}
+
+            {#if rawAssets.length === 0 && visibleFolders.length === 0}
                 <!-- Empty State -->
                 <div class="flex flex-col items-center justify-center h-full min-h-[300px] text-center text-textcolor2 gap-4">
                     <div class="p-6 rounded-2xl bg-bgcolor/50 border border-darkborderc">
@@ -1164,7 +1494,7 @@
                         <span>{language.addAsset}</span>
                     </button>
                 </div>
-            {:else if processedAssets.length === 0}
+            {:else if processedAssets.length === 0 && visibleFolders.length === 0}
                 <div class="flex flex-col items-center justify-center h-full min-h-[300px] text-center text-textcolor2 gap-2">
                     <SearchIcon size={36} class="opacity-40" />
                     <span class="text-sm font-medium">{language.noAssetsFound}</span>
@@ -1180,8 +1510,10 @@
                         <!-- svelte-ignore a11y_click_events_have_key_events -->
                         <div
                             data-asset-index={originalIndex}
+                            draggable="true"
                             class="group relative flex flex-col rounded-xl bg-bgcolor/80 border transition-all duration-150 overflow-hidden cursor-pointer {isSelected ? 'border-selected ring-2 ring-selected/40 shadow-lg' : 'border-darkborderc hover:border-selected/80 hover:shadow-md'}"
                             onclick={(e) => handleAssetClick(e, originalIndex)}
+                            ondragstart={(e) => handleAssetDragStart(e, originalIndex)}
                         >
                             <!-- Card Thumbnail Container -->
                             <div
@@ -1323,7 +1655,9 @@
 
                                 <tr
                                     data-asset-index={originalIndex}
+                                    draggable="true"
                                     class="border-b border-darkborderc/60 hover:bg-bgcolor/40 transition-colors {isSelected ? 'bg-selected/10' : ''}"
+                                    ondragstart={(e) => handleAssetDragStart(e, originalIndex)}
                                 >
                                     <!-- Checkbox -->
                                     <td class="py-2 px-3 text-center">

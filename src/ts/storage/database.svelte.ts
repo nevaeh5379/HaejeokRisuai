@@ -1619,6 +1619,13 @@ export interface character {
   };
   supaMemory?: boolean;
   additionalAssets?: [string, string, string][];
+  additionalAssetFolders?: Array<{
+    id: string;
+    name: string;
+    parentId?: string;
+  }>;
+  /** Folder id keyed by the unique additional-asset display name. */
+  additionalAssetFolderAssignments?: Record<string, string>;
   ttsReadOnlyQuoted?: boolean;
   replaceGlobalNote: string;
   backgroundHTML?: string;
