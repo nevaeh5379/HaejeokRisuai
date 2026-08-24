@@ -100,6 +100,7 @@ class RemoteRisuStorage(
             scenario = character.optString("scenario"),
             systemPrompt = character.optString("systemPrompt"),
             replaceGlobalNote = character.optString("replaceGlobalNote"),
+            backgroundHtml = character.optString("backgroundHTML"),
             globalLore = loreEntriesFromValue(jsonValue(character.opt("globalLore"))),
             globalLoreRaw = loreEntryMapsFromValue(jsonValue(character.opt("globalLore"))),
         )
@@ -341,7 +342,10 @@ class RemoteRisuStorage(
             @Suppress("UNCHECKED_CAST")
             val characterData = ((jsonValue(characterJson) as? Map<String, Any?>) ?: emptyMap()).toMutableMap()
             listOf("chats", "chaId", "detailsLoaded").forEach(characterData::remove)
+            runtimePatch.characterName?.let { characterData["name"] = it }
+            runtimePatch.characterFirstMessage?.let { characterData["firstMessage"] = it }
             runtimePatch.characterDescription?.let { characterData["desc"] = it }
+            runtimePatch.characterBackgroundHtml?.let { characterData["backgroundHTML"] = it }
             runtimePatch.replaceGlobalNote?.let { characterData["replaceGlobalNote"] = it }
             runtimePatch.globalLoreRaw?.let { characterData["globalLore"] = it }
             characterUpserts.put(

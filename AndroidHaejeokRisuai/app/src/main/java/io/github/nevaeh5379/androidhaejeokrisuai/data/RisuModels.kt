@@ -145,6 +145,7 @@ data class CharacterProfile(
     val scenario: String = "",
     val systemPrompt: String = "",
     val replaceGlobalNote: String = "",
+    val backgroundHtml: String = "",
     val globalLore: List<LoreEntry> = emptyList(),
     val globalLoreRaw: List<Map<String, Any?>> = emptyList(),
 )
@@ -185,21 +186,28 @@ data class PositionedMessage(
 
 data class RuntimeStatePatch(
     val authorNote: String? = null,
+    val characterName: String? = null,
+    val characterFirstMessage: String? = null,
     val characterDescription: String? = null,
+    val characterBackgroundHtml: String? = null,
     val replaceGlobalNote: String? = null,
     val globalLoreRaw: List<Map<String, Any?>>? = null,
     val personaPrompt: String? = null,
     val personas: List<PersonaProfile>? = null,
 ) {
     val hasCharacterChanges: Boolean
-        get() = characterDescription != null || replaceGlobalNote != null || globalLoreRaw != null
+        get() = characterName != null || characterFirstMessage != null || characterDescription != null ||
+            characterBackgroundHtml != null || replaceGlobalNote != null || globalLoreRaw != null
     val hasSettingChanges: Boolean
         get() = personaPrompt != null || personas != null
 
     fun applyTo(character: CharacterProfile): CharacterProfile {
         val patchedLore = globalLoreRaw
         return character.copy(
+            name = characterName ?: character.name,
+            firstMessage = characterFirstMessage ?: character.firstMessage,
             description = characterDescription ?: character.description,
+            backgroundHtml = characterBackgroundHtml ?: character.backgroundHtml,
             replaceGlobalNote = replaceGlobalNote ?: character.replaceGlobalNote,
             globalLore = patchedLore?.let(::loreEntriesFromValue) ?: character.globalLore,
             globalLoreRaw = patchedLore ?: character.globalLoreRaw,

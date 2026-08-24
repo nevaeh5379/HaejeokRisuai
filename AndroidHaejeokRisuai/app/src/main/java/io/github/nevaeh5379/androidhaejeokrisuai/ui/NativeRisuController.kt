@@ -12,6 +12,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.DatabaseOverview
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessagePage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.PositionedMessage
+import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.StorageConfig
 import io.github.nevaeh5379.androidhaejeokrisuai.data.StorageConfigStore
@@ -230,6 +231,7 @@ internal class NativeRisuController(context: Context) {
             runtimePatch = startTrigger.runtimePatch,
         )
         overview = freshOverview.copy(revision = userRevision, generationSettings = startSettings)
+        applyRuntimeCharacterSummary(startTrigger.runtimePatch)
         updateSelectedChatNote(startAuthorNote)
         publishMessagePage(storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE))
         if (startTrigger.stopSending) return@runBusy
@@ -298,6 +300,7 @@ internal class NativeRisuController(context: Context) {
             runtimePatch = outputTrigger.runtimePatch,
         )
         overview = freshOverview.copy(revision = assistantRevision, generationSettings = finalSettings)
+        applyRuntimeCharacterSummary(outputTrigger.runtimePatch)
         updateSelectedChatNote(finalAuthorNote)
         publishMessagePage(storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE))
     }
@@ -348,6 +351,17 @@ internal class NativeRisuController(context: Context) {
         val id = selectedChat?.id ?: return
         selectedChat = selectedChat?.copy(note = note)
         chats = chats.map { item -> if (item.id == id) item.copy(note = note) else item }
+    }
+
+    private fun applyRuntimeCharacterSummary(patch: RuntimeStatePatch) {
+        val name = patch.characterName ?: return
+        val id = selectedCharacter?.id ?: return
+        selectedCharacter = selectedCharacter?.copy(name = name)
+        overview = overview?.copy(
+            characters = overview?.characters.orEmpty().map { item ->
+                if (item.id == id) item.copy(name = name) else item
+            },
+        )
     }
 
     private fun changedMessages(before: List<MessageRecord>, after: List<MessageRecord>): List<PositionedMessage> {

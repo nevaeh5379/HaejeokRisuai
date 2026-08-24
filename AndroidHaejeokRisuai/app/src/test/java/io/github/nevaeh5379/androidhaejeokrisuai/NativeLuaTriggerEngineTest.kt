@@ -124,4 +124,32 @@ class NativeLuaTriggerEngineTest {
             assertFalse(result.variables.containsKey("unsafe"))
         }
     }
+
+    @Test
+    fun characterMutationApisAreImmediatelyReadableAndPatchAllPersistedFields() {
+        val code = """
+            function onStart(id)
+                setName(id, "Renamed")
+                setCharacterFirstMessage(id, "new greeting")
+                setDescription(id, "new description")
+                setBackgroundEmbedding(id, "<div>new background</div>")
+                setChatVar(id, "snapshot", table.concat({
+                    getName(id), getCharacterFirstMessage(id), getDescription(id), getBackgroundEmbedding(id)
+                }, "|"))
+            end
+        """.trimIndent()
+        val base = character.copy(firstMessage = "old greeting", backgroundHtml = "old background")
+        val result = NativeLuaTriggerEngine.run(
+            code = code, mode = "start", settings = settings, character = base,
+            messages = history, variables = emptyMap(), chatId = "chat", authorNote = "",
+            greetingIndex = -1, inheritedStop = false, inheritedPatch = RuntimeStatePatch(),
+        )
+        assertEquals("Renamed|new greeting|new description|<div>new background</div>", result.variables["snapshot"])
+        val patched = result.runtimePatch.applyTo(base)
+        assertEquals("Renamed", patched.name)
+        assertEquals("new greeting", patched.firstMessage)
+        assertEquals("new description", patched.description)
+        assertEquals("<div>new background</div>", patched.backgroundHtml)
+        assertTrue(result.runtimePatch.hasCharacterChanges)
+    }
 }

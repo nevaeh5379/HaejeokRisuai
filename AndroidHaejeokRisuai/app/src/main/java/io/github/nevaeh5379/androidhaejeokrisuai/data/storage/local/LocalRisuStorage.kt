@@ -100,6 +100,7 @@ class LocalRisuStorage(context: Context) : RisuStorage {
             scenario = full["scenario"]?.toString().orEmpty(),
             systemPrompt = full["systemPrompt"]?.toString().orEmpty(),
             replaceGlobalNote = full["replaceGlobalNote"]?.toString().orEmpty(),
+            backgroundHtml = full["backgroundHTML"]?.toString().orEmpty(),
             globalLore = loreEntriesFromValue(full["globalLore"]),
             globalLoreRaw = loreEntryMapsFromValue(full["globalLore"]),
         )
@@ -435,11 +436,17 @@ class LocalRisuStorage(context: Context) : RisuStorage {
                     db, "character_extension_nodes", "character_id = ?", arrayOf(characterId),
                 ) as? Map<String, Any?>)?.toMutableMap()
                     ?: error("Character relational data is missing: $characterId")
+                runtimePatch.characterName?.let { characterData["name"] = it }
+                runtimePatch.characterFirstMessage?.let { characterData["firstMessage"] = it }
                 runtimePatch.characterDescription?.let { characterData["desc"] = it }
+                runtimePatch.characterBackgroundHtml?.let { characterData["backgroundHTML"] = it }
                 runtimePatch.replaceGlobalNote?.let { characterData["replaceGlobalNote"] = it }
                 runtimePatch.globalLoreRaw?.let { characterData["globalLore"] = it }
                 db.delete("character_extension_nodes", "character_id = ?", arrayOf(characterId))
                 RelationalNodeCodec.flatten(characterData).forEach { row -> insertCharacterNode(db, characterId, row) }
+                runtimePatch.characterName?.let { name ->
+                    db.execSQL("UPDATE characters SET name = ? WHERE id = ?", arrayOf(name, characterId))
+                }
                 db.execSQL(
                     "UPDATE characters SET modification_time = ?, updated_at = datetime('now') WHERE id = ?",
                     arrayOf<Any?>(System.currentTimeMillis(), characterId),

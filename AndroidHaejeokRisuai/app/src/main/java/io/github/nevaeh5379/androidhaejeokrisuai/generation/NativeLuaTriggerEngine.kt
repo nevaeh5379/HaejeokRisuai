@@ -260,7 +260,10 @@ internal object NativeLuaTriggerEngine {
         register(state, "reloadDisplay") { _, _ -> 0 }
         register(state, "reloadChat") { _, _ -> 0 }
         register(state, "getName") { lua, execution -> push(lua, execution.character().name) }
-        register(state, "setName") { lua, _ -> push(lua, false) }
+        register(state, "setName") { lua, execution ->
+            execution.runtimePatch = execution.runtimePatch.copy(characterName = stringArg(lua, 2))
+            0
+        }
         register(state, "getDescription") { lua, execution -> push(lua, execution.character().description) }
         register(state, "setDescription") { lua, execution ->
             execution.runtimePatch = execution.runtimePatch.copy(characterDescription = stringArg(lua, 2))
@@ -269,7 +272,10 @@ internal object NativeLuaTriggerEngine {
         register(state, "getCharacterFirstMessage") { lua, execution ->
             push(lua, execution.character().firstMessage)
         }
-        register(state, "setCharacterFirstMessage") { lua, _ -> push(lua, false) }
+        register(state, "setCharacterFirstMessage") { lua, execution ->
+            execution.runtimePatch = execution.runtimePatch.copy(characterFirstMessage = stringArg(lua, 2))
+            push(lua, true)
+        }
         register(state, "getPersonaName") { lua, execution -> push(lua, execution.settings().username) }
         register(state, "getPersonaDescription") { lua, execution ->
             val parsed = NativeRisuParser.parse(execution.settings().effectivePersonaPrompt(), execution.parserContext())
@@ -278,8 +284,13 @@ internal object NativeLuaTriggerEngine {
         register(state, "getAuthorsNote") { lua, execution ->
             push(lua, execution.runtimePatch.resolveAuthorNote(execution.authorNote))
         }
-        register(state, "getBackgroundEmbedding") { lua, _ -> push(lua, "") }
-        register(state, "setBackgroundEmbedding") { lua, _ -> push(lua, false) }
+        register(state, "getBackgroundEmbedding") { lua, execution ->
+            push(lua, execution.character().backgroundHtml)
+        }
+        register(state, "setBackgroundEmbedding") { lua, execution ->
+            execution.runtimePatch = execution.runtimePatch.copy(characterBackgroundHtml = stringArg(lua, 2))
+            push(lua, true)
+        }
         register(state, "getCharacterLastMessage") { lua, execution ->
             push(lua, execution.messages.asReversed().firstOrNull { it.role != "user" }?.data
                 ?: execution.character().firstMessage)
