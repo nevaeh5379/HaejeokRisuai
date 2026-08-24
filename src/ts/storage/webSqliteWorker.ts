@@ -174,6 +174,11 @@ type ReqMsg =
       type: "execBatch";
       statements: { sql: string; bind?: unknown[] }[];
     }
+  | {
+      id: number;
+      type: "selectBatch";
+      statements: { sql: string; bind?: unknown[] }[];
+    }
   | { id: number; type: "select"; sql: string; bind?: unknown[] }
   | { id: number; type: "selectOne"; sql: string; bind?: unknown[] }
   | { id: number; type: "close" };
@@ -198,6 +203,13 @@ self.onmessage = async (e: MessageEvent<ReqMsg>) => {
           runInternal(statement.sql, statement.bind ?? []);
         }
         (self as any).postMessage({ id: msg.id, ok: true });
+        break;
+      }
+      case "selectBatch": {
+        const result = msg.statements.map((statement) =>
+          selectRowsInternal(statement.sql, statement.bind ?? []),
+        );
+        (self as any).postMessage({ id: msg.id, ok: true, result });
         break;
       }
       case "select": {

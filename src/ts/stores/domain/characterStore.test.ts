@@ -52,6 +52,23 @@ describe("CharacterStore", () => {
     } as unknown as ISqlStorage;
   });
 
+  it("prefers the interactive character loader when the backend provides one", async () => {
+    const shallow = makeChar("selection-loader", 0);
+    shallow.detailsLoaded = false;
+    const loaded = makeChar("selection-loader", 1);
+    loaded.chaId = shallow.chaId;
+    loaded.detailsLoaded = true;
+    loaded.chats[0].id = "chat-selection-loader";
+    const selectionLoader = vi.fn(async () => loaded);
+    (mockStorage as any).loadCharacterForSelection = selectionLoader;
+    characterStore.init([shallow], mockStorage);
+
+    await characterStore.ensureCharacterDetails(shallow.chaId!);
+
+    expect(selectionLoader).toHaveBeenCalledWith(shallow.chaId);
+    expect(mockStorage.loadCharacter).not.toHaveBeenCalled();
+  });
+
   it("keeps chat summaries returned by lazy character hydration", async () => {
     const shallow = makeChar("lazy", 0);
     shallow.detailsLoaded = false;

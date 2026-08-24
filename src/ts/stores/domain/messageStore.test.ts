@@ -1,5 +1,9 @@
+import { vi } from "vitest";
 import { describe, expect, it, beforeEach } from "vitest";
-import { messageStore } from "./messageStore.svelte";
+import {
+  messageStore,
+  releaseInactiveChatMessages,
+} from "./messageStore.svelte";
 import { characterStore } from "./characterStore.svelte";
 import { setSqlStorageForTesting } from "../../storage/sqlStorageFactory";
 import type { ISqlStorage } from "../../storage/ISqlStorage";
@@ -74,6 +78,29 @@ describe("messageStore", () => {
     } as any;
 
     characterStore.init([testChar], mockStorage as unknown as ISqlStorage);
+  });
+
+  it("defers inactive chat eviction until after character selection can paint", async () => {
+    vi.useFakeTimers();
+    try {
+      const character = characterStore.characters[0];
+      character.chats.push({
+        id: "chat-2",
+        name: "Chat 2",
+        message: [{ chatId: "msg-old", role: "char", data: "old" }],
+        messagesLoaded: true,
+        messagesFullyLoaded: true,
+      } as any);
+
+      releaseInactiveChatMessages("chat-1");
+
+      expect(character.chats[1].message).toHaveLength(1);
+      await vi.runAllTimersAsync();
+      expect(character.chats[1].message).toEqual([]);
+      expect(character.chats[1].messagesLoaded).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("deletes a single message selectively and commits messageDeletes", async () => {

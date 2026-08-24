@@ -124,6 +124,10 @@ export interface ISqlStorage {
   // ── Per-entity lazy loaders ──────────────────────────────────────────
 
   loadCharacter(characterId: string): Promise<character | groupChat | null>;
+  /** Lightweight character hydration for interactive selection. Chat rows may be summaries. */
+  loadCharacterForSelection?(
+    characterId: string,
+  ): Promise<character | groupChat | null>;
   loadChat(chatId: string, options?: SqlChatLoadOptions): Promise<Chat | null>;
   loadChatMessages(
     chatId: string,

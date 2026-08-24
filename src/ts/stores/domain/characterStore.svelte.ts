@@ -502,7 +502,8 @@ class CharacterStore {
     const storage = this.storage || (await getSqlStorage());
     const promise = (async () => {
       try {
-        const fullChar = await storage.loadCharacter(chaId);
+        const fullChar = await (storage.loadCharacterForSelection?.(chaId) ??
+          storage.loadCharacter(chaId));
         if (fullChar) {
           const idx = this.characters.findIndex((c) => c.chaId === chaId);
           if (idx >= 0) {

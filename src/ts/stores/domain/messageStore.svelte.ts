@@ -268,41 +268,42 @@ function evictInactiveChatMessages(chats: Chat[], activeChatId?: string): void {
  */
 export function releaseInactiveChatMessages(activeChatId?: string): void {
   const generation = ++inactiveReleaseGeneration;
-  const inactiveChats: Chat[] = [];
-  for (const char of characterStore.characters) {
-    if (!char.chats) continue;
-    for (const chat of char.chats) {
-      if (chat.id && chat.id !== activeChatId) inactiveChats.push(chat);
-    }
-  }
+  const batchSize = settingsStore.state.lowSpecMode ? 4 : 32;
 
-  if (!settingsStore.state.lowSpecMode) {
-    evictInactiveChatMessages(inactiveChats, activeChatId);
-    return;
-  }
-
-  // Releasing many large reactive message arrays at once can trigger a
-  // noticeable garbage-collection pause shortly after character selection.
-  // Drop a small number during each idle period so scrolling stays responsive.
-  let cursor = 0;
-  const releaseBatch = () => {
-    if (generation !== inactiveReleaseGeneration) return;
-    const nextCursor = Math.min(cursor + 4, inactiveChats.length);
-    evictInactiveChatMessages(
-      inactiveChats.slice(cursor, nextCursor),
-      activeChatId,
-    );
-    cursor = nextCursor;
-    if (cursor < inactiveChats.length) scheduleBatch();
-  };
-  const scheduleBatch = () => {
+  const scheduleIdle = (callback: () => void) => {
     if ("requestIdleCallback" in globalThis) {
-      globalThis.requestIdleCallback(releaseBatch);
+      globalThis.requestIdleCallback(callback);
     } else {
-      globalThis.setTimeout(releaseBatch, 0);
+      globalThis.setTimeout(callback, 0);
     }
   };
-  scheduleBatch();
+
+  // Character selection should become paintable before we traverse and mutate
+  // every previously visited chat. Even on fast devices, clearing many large
+  // reactive arrays in the same task can turn into a visible GC/Svelte pause.
+  scheduleIdle(() => {
+    if (generation !== inactiveReleaseGeneration) return;
+    const inactiveChats: Chat[] = [];
+    for (const char of characterStore.characters) {
+      if (!char.chats) continue;
+      for (const chat of char.chats) {
+        if (chat.id && chat.id !== activeChatId) inactiveChats.push(chat);
+      }
+    }
+
+    let cursor = 0;
+    const releaseBatch = () => {
+      if (generation !== inactiveReleaseGeneration) return;
+      const nextCursor = Math.min(cursor + batchSize, inactiveChats.length);
+      evictInactiveChatMessages(
+        inactiveChats.slice(cursor, nextCursor),
+        activeChatId,
+      );
+      cursor = nextCursor;
+      if (cursor < inactiveChats.length) scheduleIdle(releaseBatch);
+    };
+    releaseBatch();
+  });
 }
 
 /**

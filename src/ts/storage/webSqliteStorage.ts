@@ -59,6 +59,7 @@ type ReqMsg =
   | { id: number; type: "init" }
   | { id: number; type: "exec"; sql: string; bind?: unknown[] }
   | { id: number; type: "execBatch"; statements: SqliteBatchStatement[] }
+  | { id: number; type: "selectBatch"; statements: SqliteBatchStatement[] }
   | { id: number; type: "select"; sql: string; bind?: unknown[] }
   | { id: number; type: "selectOne"; sql: string; bind?: unknown[] }
   | { id: number; type: "close" };
@@ -74,6 +75,7 @@ type ReqMsgWithoutId =
   | { type: "init" }
   | { type: "exec"; sql: string; bind?: unknown[] }
   | { type: "execBatch"; statements: SqliteBatchStatement[] }
+  | { type: "selectBatch"; statements: SqliteBatchStatement[] }
   | { type: "select"; sql: string; bind?: unknown[] }
   | { type: "selectOne"; sql: string; bind?: unknown[] }
   | { type: "close" };
@@ -82,6 +84,9 @@ interface WorkerRpc {
   init(): Promise<{ enabled: boolean; revision: number }>;
   exec(sql: string, bind?: unknown[]): Promise<void>;
   execBatch(statements: SqliteBatchStatement[]): Promise<void>;
+  selectBatch(
+    statements: SqliteBatchStatement[],
+  ): Promise<{ rows: Record<string, unknown>[]; columns: string[] }[]>;
   select(
     sql: string,
     bind?: unknown[],
@@ -151,6 +156,11 @@ function getWorkerRpc(): WorkerRpc {
       call<void>({ type: "exec", sql, bind }).then(() => undefined),
     execBatch: (statements) =>
       call<void>({ type: "execBatch", statements }).then(() => undefined),
+    selectBatch: (statements) =>
+      call<{ rows: Record<string, unknown>[]; columns: string[] }[]>({
+        type: "selectBatch",
+        statements,
+      }),
     select: (sql, bind) =>
       call<{ rows: Record<string, unknown>[]; columns: string[] }>({
         type: "select",
@@ -244,6 +254,14 @@ export class WebSqliteStorage implements ISqlStorage {
     return this.rpc.selectOne(sql, bind);
   }
 
+  private async selectBatch(
+    statements: SqliteBatchStatement[],
+  ): Promise<Record<string, unknown>[][]> {
+    if (!this.rpc) throw new Error("Database not opened");
+    const results = await this.rpc.selectBatch(statements);
+    return results.map((result) => result.rows);
+  }
+
   private async run(sql: string, bind: unknown[] = []): Promise<void> {
     if (!this.rpc) throw new Error("Database not opened");
     await this.rpc.exec(sql, bind);
@@ -289,30 +307,9 @@ export class WebSqliteStorage implements ISqlStorage {
     );
   }
 
-  private async loadMessagesBatch(
-    chatId: string,
-    limit?: number,
-    offset = 0,
-  ): Promise<Message[]> {
-    const bounded = limit === undefined ? "" : " LIMIT ? OFFSET ?";
-    const bind = limit === undefined ? [chatId] : [chatId, limit, offset];
-    const rows = await this.selectRows(
-      `WITH selected AS (
-         SELECT chat_id, id, position, role, content_text, sender_name, sent_time
-         FROM messages WHERE chat_id = ? ORDER BY position${bounded}
-       )
-       SELECT selected.id AS message_id, selected.position AS message_position,
-              selected.role AS message_role, selected.content_text AS message_content_text,
-              selected.sender_name AS message_sender_name, selected.sent_time AS message_sent_time,
-              n.node_id, n.parent_node_id, n.node_order, n.object_key,
-              n.object_key_encoded, n.value_type, n.text_value, n.encoded_text_value,
-              n.number_value, n.boolean_value
-       FROM selected
-       LEFT JOIN message_extension_nodes n
-         ON n.chat_id = selected.chat_id AND n.message_id = selected.id
-       ORDER BY selected.position, n.node_id`,
-      bind,
-    );
+  private rebuildMessagesFromRows(
+    rows: Record<string, unknown>[],
+  ): Message[] {
     const nodeGroups = new Map<string, Record<string, unknown>[]>();
     const coreRows = new Map<string, Record<string, unknown>>();
     const orderedIds: string[] = [];
@@ -349,6 +346,50 @@ export class WebSqliteStorage implements ISqlStorage {
       message.chatId = id;
       return message;
     });
+  }
+
+  private messageRowsStatement(
+    chatId: string,
+    limit?: number,
+    offset = 0,
+    newest = false,
+  ): SqliteBatchStatement {
+    let selectedSql =
+      "SELECT chat_id, id, position, role, content_text, sender_name, sent_time FROM messages WHERE chat_id = ?";
+    const bind: unknown[] = [chatId];
+    if (limit === undefined) {
+      selectedSql += " ORDER BY position";
+    } else if (newest) {
+      selectedSql = `SELECT * FROM (${selectedSql} ORDER BY position DESC LIMIT ?) ORDER BY position`;
+      bind.push(limit);
+    } else {
+      selectedSql += " ORDER BY position LIMIT ? OFFSET ?";
+      bind.push(limit, offset);
+    }
+    return {
+      sql: `WITH selected AS (${selectedSql})
+       SELECT selected.id AS message_id, selected.position AS message_position,
+              selected.role AS message_role, selected.content_text AS message_content_text,
+              selected.sender_name AS message_sender_name, selected.sent_time AS message_sent_time,
+              n.node_id, n.parent_node_id, n.node_order, n.object_key,
+              n.object_key_encoded, n.value_type, n.text_value, n.encoded_text_value,
+              n.number_value, n.boolean_value
+       FROM selected
+       LEFT JOIN message_extension_nodes n
+         ON n.chat_id = selected.chat_id AND n.message_id = selected.id
+       ORDER BY selected.position, n.node_id`,
+      bind,
+    };
+  }
+
+  private async loadMessagesBatch(
+    chatId: string,
+    limit?: number,
+    offset = 0,
+  ): Promise<Message[]> {
+    const statement = this.messageRowsStatement(chatId, limit, offset);
+    const rows = await this.selectRows(statement.sql, statement.bind);
+    return this.rebuildMessagesFromRows(rows);
   }
 
   private async loadCharacterChats(characterId: string): Promise<Chat[]> {
@@ -617,37 +658,85 @@ export class WebSqliteStorage implements ISqlStorage {
     return fc;
   }
 
+  async loadCharacterForSelection(
+    characterId: string,
+  ): Promise<character | groupChat | null> {
+    const [characterRows, nodeRows, chatRows] = await this.selectBatch([
+      {
+        sql: "SELECT id FROM characters WHERE id = ?",
+        bind: [characterId],
+      },
+      {
+        sql: `SELECT node_id, parent_node_id, node_order, object_key,
+                     object_key_encoded, value_type, text_value, encoded_text_value,
+                     number_value, boolean_value
+              FROM character_extension_nodes
+              WHERE character_id = ? ORDER BY node_id`,
+        bind: [characterId],
+      },
+      {
+        sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
+        bind: [characterId],
+      },
+    ]);
+    if (characterRows.length === 0) return null;
+    const characterData = (nodeRows.length
+      ? rebuildRelationalValue(nodeRows)
+      : {}) as any;
+    characterData.chaId = characterId;
+    characterData.detailsLoaded = true;
+    characterData.chats = chatRows.map((row) => ({
+      id: row.id as string,
+      name: (row.name as string) ?? "",
+      note: (row.note as string) ?? "",
+      folderId: (row.folder_id as string) ?? undefined,
+      lastDate: (row.last_message_time as number) ?? undefined,
+      message: [],
+      messagesLoaded: false,
+      messagesFullyLoaded: false,
+      detailsLoaded: false,
+    })) as Chat[];
+    return characterData;
+  }
+
   async loadChat(
     chatId: string,
     options?: { messageLimit?: number },
   ): Promise<Chat | null> {
-    const cr = await this.selectOne(
-      "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
-      [chatId],
-    );
-    if (!cr) return null;
-    const cd = ((await this.loadNodeValue(
-      "chat_extension_nodes",
-      "chat_id = ?",
-      [chatId],
-    )) ?? {}) as any;
-    cd.id = cr.id;
-    cd.name = (cr.name as string) ?? "";
-    cd.note = (cr.note as string) ?? "";
-    cd.folderId = (cr.folder_id as string) ?? undefined;
-    cd.lastDate = (cr.last_message_time as number) ?? undefined;
-    const totalRow = await this.selectOne(
-      "SELECT COUNT(*) AS total FROM messages WHERE chat_id = ?",
-      [chatId],
-    );
-    const total = Number(totalRow?.total ?? 0);
     const requestedLimit = options?.messageLimit;
     const limit =
       requestedLimit === undefined
         ? undefined
         : normalizeSqliteLimit(requestedLimit);
-    const offset = limit === undefined ? 0 : Math.max(0, total - limit);
-    cd.message = await this.loadMessagesBatch(chatId, limit, offset);
+    const [chatRows, nodeRows, totalRows, messageRows] = await this.selectBatch([
+      {
+        sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
+        bind: [chatId],
+      },
+      {
+        sql: `SELECT node_id, parent_node_id, node_order, object_key,
+                     object_key_encoded, value_type, text_value, encoded_text_value,
+                     number_value, boolean_value
+              FROM chat_extension_nodes WHERE chat_id = ? ORDER BY node_id`,
+        bind: [chatId],
+      },
+      {
+        sql: "SELECT COUNT(*) AS total FROM messages WHERE chat_id = ?",
+        bind: [chatId],
+      },
+      this.messageRowsStatement(chatId, limit, 0, limit !== undefined),
+    ]);
+    const cr = chatRows[0];
+    if (!cr) return null;
+    const cd = (nodeRows.length ? rebuildRelationalValue(nodeRows) : {}) as any;
+    cd.id = cr.id;
+    cd.name = (cr.name as string) ?? "";
+    cd.note = (cr.note as string) ?? "";
+    cd.folderId = (cr.folder_id as string) ?? undefined;
+    cd.lastDate = (cr.last_message_time as number) ?? undefined;
+    const total = Number(totalRows[0]?.total ?? 0);
+    cd.message = this.rebuildMessagesFromRows(messageRows);
+    const offset = Math.max(0, total - cd.message.length);
     cd.messageOffset = offset;
     cd.messageTotal = total;
     cd.messagesFullyLoaded = offset === 0;

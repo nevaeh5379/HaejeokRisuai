@@ -127,6 +127,9 @@ function makeWebStorage(database: DatabaseSync) {
         }
       }
     },
+    selectBatch: async (
+      statements: Array<{ sql: string; bind?: unknown[] }>,
+    ) => statements.map(({ sql, bind = [] }) => selectRows(sql, bind)),
     select: async (sql: string, bind: unknown[] = []) => selectRows(sql, bind),
     selectOne: async (sql: string, bind: unknown[] = []) =>
       selectRows(sql, bind).rows[0] ?? null,
@@ -175,6 +178,48 @@ describe("WebSqliteStorage", () => {
 
     const page = await storage.loadChatMessagePage("chat-1", undefined, 2);
     expect(page.messages.map((message) => message.chatId)).toEqual(["m2", "m3"]);
+    database.close();
+  });
+
+  it("loads interactive character summaries without hydrating every chat detail", async () => {
+    const database = new DatabaseSync(":memory:");
+    seedChat(database);
+    database.exec(
+      "INSERT INTO chats (id, character_id, position, name) VALUES ('chat-2', 'char-1', 1, 'Second')",
+    );
+    const storage = makeWebStorage(database);
+    const rpc = (storage as any).rpc;
+    const batchSpy = vi.spyOn(rpc, "selectBatch");
+
+    const character = await storage.loadCharacterForSelection("char-1");
+
+    expect(batchSpy).toHaveBeenCalledTimes(1);
+    const statements = batchSpy.mock.calls[0][0] as Array<{ sql: string }>;
+    expect(statements.some(({ sql }) => sql.includes("chat_extension_nodes"))).toBe(
+      false,
+    );
+    expect(character?.chats.map((chat) => chat.id)).toEqual([
+      "chat-1",
+      "chat-2",
+    ]);
+    expect(character?.chats.every((chat) => chat.detailsLoaded === false)).toBe(
+      true,
+    );
+    database.close();
+  });
+
+  it("loads an opened chat with one batched worker read", async () => {
+    const database = new DatabaseSync(":memory:");
+    seedChat(database);
+    const storage = makeWebStorage(database);
+    const rpc = (storage as any).rpc;
+    const batchSpy = vi.spyOn(rpc, "selectBatch");
+
+    const chat = await storage.loadChat("chat-1", { messageLimit: 2 });
+
+    expect(batchSpy).toHaveBeenCalledTimes(1);
+    expect(chat?.message.map((message) => message.chatId)).toEqual(["m2", "m3"]);
+    expect(chat?.messageOffset).toBe(1);
     database.close();
   });
 
