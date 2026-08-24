@@ -24,6 +24,13 @@ object NativePromptBuilder {
             greetingIndex = greetingIndex,
             variables = variables,
         )
+        fun processChatText(text: String): String = NativeRegexProcessor.process(
+            data = text,
+            mode = "editprocess",
+            settings = settings,
+            character = character,
+            parserContext = parserContext,
+        )
         val usingPromptTemplate = settings.promptTemplate != null
         val buckets = linkedMapOf<String, MutableList<NativePromptMessage>>()
         fun add(bucket: String, role: String = "system", text: String) {
@@ -64,23 +71,23 @@ object NativePromptBuilder {
         val greeting = if (greetingIndex >= 0) {
             character.alternateGreetings.getOrNull(greetingIndex) ?: character.firstMessage
         } else character.firstMessage
-        add("chats", role = "assistant", text = greeting)
+        add("chats", role = "assistant", text = processChatText(greeting))
         if (usingPromptTemplate) {
             history.forEach { message ->
                 if (message.data.isBlank()) return@forEach
                 val role = if (message.role == "user") "user" else "assistant"
-                add("chats", role, message.data)
+                add("chats", role, processChatText(message.data))
             }
         } else {
             history.dropLast(1).forEach { message ->
                 if (message.data.isBlank()) return@forEach
                 val role = if (message.role == "user") "user" else "assistant"
-                add("chats", role, message.data)
+                add("chats", role, processChatText(message.data))
             }
             history.lastOrNull()?.let { message ->
                 if (message.data.isNotBlank()) {
                     val role = if (message.role == "user") "user" else "assistant"
-                    add("lastChat", role, message.data)
+                    add("lastChat", role, processChatText(message.data))
                 }
             }
         }

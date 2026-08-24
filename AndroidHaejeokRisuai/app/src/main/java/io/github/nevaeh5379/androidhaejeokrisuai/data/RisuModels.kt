@@ -44,6 +44,27 @@ fun loreEntriesFromValue(value: Any?): List<LoreEntry> = (value as? List<*>)?.ma
     )
 } ?: emptyList()
 
+data class RegexScript(
+    val comment: String = "",
+    val input: String = "",
+    val output: String = "",
+    val type: String = "",
+    val flag: String = "",
+    val ableFlag: Boolean = false,
+)
+
+fun regexScriptsFromValue(value: Any?): List<RegexScript> = (value as? List<*>)?.mapNotNull { raw ->
+    val map = raw as? Map<*, *> ?: return@mapNotNull null
+    RegexScript(
+        comment = map["comment"]?.toString().orEmpty(),
+        input = map["in"]?.toString().orEmpty(),
+        output = map["out"]?.toString().orEmpty(),
+        type = map["type"]?.toString().orEmpty(),
+        flag = map["flag"]?.toString().orEmpty(),
+        ableFlag = map["ableFlag"] as? Boolean ?: false,
+    )
+} ?: emptyList()
+
 data class CharacterProfile(
     val id: String,
     val name: String,
@@ -51,6 +72,7 @@ data class CharacterProfile(
     val alternateGreetings: List<String> = emptyList(),
     val exampleMessage: String = "",
     val defaultVariables: String = "",
+    val regexScripts: List<RegexScript> = emptyList(),
     val description: String = "",
     val personality: String = "",
     val scenario: String = "",
@@ -129,6 +151,7 @@ data class GenerationSettings(
     val personaPrompt: String = "",
     val templateDefaultVariables: String = "",
     val globalChatVariables: Map<String, String> = emptyMap(),
+    val presetRegex: List<RegexScript> = emptyList(),
     val promptPreprocess: Boolean = false,
     val promptTemplate: List<PromptTemplateItem>? = null,
     val promptSettings: NativePromptSettings = NativePromptSettings(),

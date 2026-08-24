@@ -93,4 +93,20 @@ class NativeRisuParserTest {
         )
         assertEquals("{{literal}}\n", NativeRisuParser.parse("{{bo}}literal{{bc}}{{br}}", c))
     }
+    @Test
+    fun mutatingVariablesExecuteOnlyInRunVarMode() {
+        val c = context(variables = mapOf("count" to "1"))
+        assertEquals("{{setvar::name::Lua}}", NativeRisuParser.parse("{{setvar::name::Lua}}", c))
+
+        val result = NativeRisuParser.parseMutating(
+            "{{addvar::count::2}}{{setvar::name::Lua}}{{setdefaultvar::name::Ignored}}" +
+                "{{setdefaultvar::missing::fallback}}{{getvar::count}}/{{getvar::name}}/{{getvar::missing}}",
+            c,
+        )
+        assertEquals("3/Lua/fallback", result.text)
+        assertEquals("3", result.variables["count"])
+        assertEquals("Lua", result.variables["name"])
+        assertEquals("fallback", result.variables["missing"])
+    }
+
 }

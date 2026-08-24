@@ -15,6 +15,7 @@ class GenerationSettingsMapperTest {
             "aiModel" to "gpt-5",
             "maxContext" to 32768,
             "promptSettings" to mapOf("sendChatAsSystem" to true, "trimStartNewChat" to true),
+            "presetRegex" to listOf(mapOf("in" to "foo", "out" to "bar", "type" to "editprocess")),
             "promptTemplate" to listOf(
                 mapOf(
                     "type" to "chat",
@@ -32,5 +33,7 @@ class GenerationSettingsMapperTest {
         assertEquals(-4, result.promptTemplate!!.single().rangeStart)
         assertEquals(null, result.promptTemplate!!.single().rangeEnd)
         assertFalse(result.promptTemplate!!.single().chatAsOriginalOnSystem)
+        assertEquals("foo", result.presetRegex.single().input)
+        assertEquals("bar", result.presetRegex.single().output)
     }
 }

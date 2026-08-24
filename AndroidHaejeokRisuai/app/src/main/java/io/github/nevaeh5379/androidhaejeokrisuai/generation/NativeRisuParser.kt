@@ -12,6 +12,12 @@ internal data class NativeRisuParserContext(
     val greetingIndex: Int = -1,
     val variables: Map<String, String> = emptyMap(),
     val slots: Map<String, String> = emptyMap(),
+    val mutationVariables: MutableMap<String, String>? = null,
+)
+
+internal data class NativeRisuMutationResult(
+    val text: String,
+    val variables: Map<String, String>,
 )
 
 /**
@@ -33,6 +39,12 @@ internal object NativeRisuParser {
             .replace("<char>", context.character.name)
             .replace("<user>", context.settings.username)
         return restoreEscapes(render(normalized, context, 0))
+    }
+
+    fun parseMutating(text: String, context: NativeRisuParserContext): NativeRisuMutationResult {
+        val variables = context.variables.toMutableMap()
+        val parsed = parse(text, context.copy(mutationVariables = variables))
+        return NativeRisuMutationResult(parsed, variables.toMap())
     }
 
     private fun render(text: String, context: NativeRisuParserContext, depth: Int): String {
@@ -268,6 +280,17 @@ internal object NativeRisuParser {
             "previoususerchat", "lastusermessage" -> previousMessage(context, user = true)
             "firstmsgindex", "firstmessageindex", "first_msg_index" -> context.greetingIndex.toString()
             "chatindex", "chat_index" -> context.history.lastIndex.toString()
+            "setvar" -> mutateVariable(context) { variables ->
+                variables[arg(0)] = arg(1)
+            }
+            "setdefaultvar" -> mutateVariable(context) { variables ->
+                val current = getVar(arg(0), context)
+                if (current.isEmpty() || current == "null") variables[arg(0)] = arg(1)
+            }
+            "addvar" -> mutateVariable(context) { variables ->
+                val sum = jsNumber(getVar(arg(0), context)) + jsNumber(arg(1))
+                variables[arg(0)] = jsNumberString(sum)
+            }
             "getvar" -> getVar(arg(0), context)
             "getglobalvar" -> getGlobalVar(arg(0), context)
             "slot" -> context.slots[arg(0)].orEmpty()
@@ -323,6 +346,7 @@ internal object NativeRisuParser {
     }
 
     private fun getVar(key: String, context: NativeRisuParserContext): String {
+        context.mutationVariables?.get(key)?.let { return it }
         context.variables[key]?.let { return it }
         parseKeyValue(context.character.defaultVariables)[key]?.let { return it }
         parseKeyValue(context.settings.templateDefaultVariables)[key]?.let { return it }
@@ -331,6 +355,30 @@ internal object NativeRisuParser {
 
     private fun getGlobalVar(key: String, context: NativeRisuParserContext): String =
         context.settings.globalChatVariables[key] ?: "null"
+
+    private inline fun mutateVariable(
+        context: NativeRisuParserContext,
+        operation: (MutableMap<String, String>) -> Unit,
+    ): String? {
+        val variables = context.mutationVariables ?: return null
+        operation(variables)
+        return ""
+    }
+
+    private fun jsNumber(value: String): Double {
+        val trimmed = value.trim()
+        if (trimmed.isEmpty()) return 0.0
+        return trimmed.toDoubleOrNull() ?: Double.NaN
+    }
+
+    private fun jsNumberString(value: Double): String = when {
+        value.isNaN() -> "NaN"
+        value == Double.POSITIVE_INFINITY -> "Infinity"
+        value == Double.NEGATIVE_INFINITY -> "-Infinity"
+        value == 0.0 -> "0"
+        value.isFinite() && value % 1.0 == 0.0 && value in Long.MIN_VALUE.toDouble()..Long.MAX_VALUE.toDouble() -> value.toLong().toString()
+        else -> value.toString()
+    }
 
     private fun parseKeyValue(text: String): Map<String, String> = buildMap {
         for (line in text.split('\n')) {

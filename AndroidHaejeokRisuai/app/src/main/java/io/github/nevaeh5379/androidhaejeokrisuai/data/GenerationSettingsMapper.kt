@@ -3,7 +3,7 @@ package io.github.nevaeh5379.androidhaejeokrisuai.data
 object GenerationSettingsMapper {
     val keys = listOf(
         "aiModel", "username", "loreBookDepth", "loreBookToken", "mainPrompt", "jailbreak", "jailbreakToggle",
-        "globalNote", "descriptionPrefix", "additionalPrompt", "personaPrompt", "templateDefaultVariables", "globalChatVariables", "promptPreprocess",
+        "globalNote", "descriptionPrefix", "additionalPrompt", "personaPrompt", "templateDefaultVariables", "globalChatVariables", "presetRegex", "promptPreprocess",
         "promptTemplate", "promptSettings", "maxContext", "maxResponse", "temperature", "top_p", "openAIKey", "claudeAPIKey", "proxyKey",
         "openrouterKey", "google", "forceReplaceUrl", "proxyRequestModel",
         "customProxyRequestModel", "openrouterRequestModel", "autofillRequestUrl",
@@ -87,6 +87,7 @@ object GenerationSettingsMapper {
                 ?.entries
                 ?.associate { (key, value) -> key.toString() to value?.toString().orEmpty() }
                 ?: emptyMap(),
+            presetRegex = regexScriptsFromValue(values["presetRegex"]),
             promptPreprocess = bool("promptPreprocess"),
             promptTemplate = promptTemplate(values["promptTemplate"]),
             promptSettings = promptSettings(values["promptSettings"]),
@@ -130,6 +131,7 @@ object GenerationSettingsMapper {
             mainPrompt = text("mainPrompt") ?: base.mainPrompt,
             jailbreak = text("jailbreak") ?: base.jailbreak,
             globalNote = text("globalNote") ?: base.globalNote,
+            presetRegex = if (preset.containsKey("presetRegex")) regexScriptsFromValue(preset["presetRegex"]) else base.presetRegex,
             promptPreprocess = bool("promptPreprocess") ?: base.promptPreprocess,
             promptTemplate = if (preset.containsKey("promptTemplate")) promptTemplate(preset["promptTemplate"]) else base.promptTemplate,
             promptSettings = if (preset.containsKey("promptSettings")) promptSettings(preset["promptSettings"], base.promptSettings) else base.promptSettings,

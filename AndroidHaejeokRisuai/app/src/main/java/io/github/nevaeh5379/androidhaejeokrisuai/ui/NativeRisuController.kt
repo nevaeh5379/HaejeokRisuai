@@ -11,12 +11,16 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.CharacterSummary
 import io.github.nevaeh5379.androidhaejeokrisuai.data.DatabaseOverview
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessagePage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
+import io.github.nevaeh5379.androidhaejeokrisuai.data.PositionedMessage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.StorageConfig
 import io.github.nevaeh5379.androidhaejeokrisuai.data.StorageConfigStore
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RisuStorage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RisuStorageFactory
+import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeChatRuntimeProcessor
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeGenerationEngine
+import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeRegexProcessor
+import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeRisuParserContext
 import io.github.nevaeh5379.androidhaejeokrisuai.importing.CharacterCardImporter
 import java.io.ByteArrayOutputStream
 import java.util.UUID
@@ -137,7 +141,7 @@ internal class NativeRisuController(context: Context) {
     suspend fun sendUserMessage(text: String) = runBusy {
         val chat = selectedChat ?: error("No chat selected")
         val character = selectedCharacter ?: error("No character selected")
-        val current = messagePage ?: error("Chat messages are not loaded")
+        messagePage ?: error("Chat messages are not loaded")
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return@runBusy
 
@@ -145,31 +149,64 @@ internal class NativeRisuController(context: Context) {
         val freshOverview = storage.loadDatabase()
         overview = freshOverview
         val history = storage.loadAllChatMessages(chat.id)
-        val userMessage = MessageRecord(
-            id = UUID.randomUUID().toString(),
-            chatId = chat.id,
-            role = "user",
-            data = trimmed,
-            time = System.currentTimeMillis(),
-        )
-        val userRevision = storage.appendMessage(chat.id, history.size, userMessage)
-        overview = freshOverview.copy(revision = userRevision)
-        messagePage = current.copy(
-            messages = current.messages + userMessage,
-            total = history.size + 1,
-        )
-
         val profile = storage.loadCharacterProfile(character.id)
         val promptContext = storage.loadChatPromptContext(chat.id)
-        val generated = generator.generate(
+        val parserContext = NativeRisuParserContext(
             settings = freshOverview.generationSettings,
-            character = profile.copy(globalLore = profile.globalLore + promptContext.localLore),
-            history = history + userMessage,
+            character = profile,
+            history = history,
             authorNote = chat.note,
             greetingIndex = promptContext.greetingIndex,
             variables = promptContext.variables,
         )
-        val assistantMessage = MessageRecord(
+        val processedInput = NativeRegexProcessor.process(
+            data = trimmed,
+            mode = "editinput",
+            settings = freshOverview.generationSettings,
+            character = profile,
+            parserContext = parserContext,
+        )
+        val userMessage = MessageRecord(
+            id = UUID.randomUUID().toString(),
+            chatId = chat.id,
+            role = "user",
+            data = processedInput,
+            time = System.currentTimeMillis(),
+        )
+        val rawMessages = history + userMessage
+        val prepared = NativeChatRuntimeProcessor.prepare(
+            settings = freshOverview.generationSettings,
+            character = profile,
+            messages = rawMessages,
+            authorNote = chat.note,
+            greetingIndex = promptContext.greetingIndex,
+            variables = promptContext.variables,
+        )
+        val changedMessages = prepared.messages.mapIndexedNotNull { index, message ->
+            val original = rawMessages[index]
+            if (index >= history.size || message.data != original.data) PositionedMessage(index, message) else null
+        }
+        val chatPosition = chats.indexOfFirst { it.id == chat.id }
+        require(chatPosition >= 0) { "Selected chat is missing from the character chat list" }
+        val userRevision = storage.commitPreparedTurn(
+            characterId = character.id,
+            chatId = chat.id,
+            chatPosition = chatPosition,
+            messages = changedMessages,
+            variables = prepared.variables,
+        )
+        overview = freshOverview.copy(revision = userRevision)
+        messagePage = storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE)
+
+        val generated = generator.generate(
+            settings = freshOverview.generationSettings,
+            character = profile.copy(globalLore = profile.globalLore + promptContext.localLore),
+            history = prepared.messages,
+            authorNote = chat.note,
+            greetingIndex = promptContext.greetingIndex,
+            variables = prepared.variables,
+        )
+        val rawAssistant = MessageRecord(
             id = UUID.randomUUID().toString(),
             chatId = chat.id,
             role = "char",
@@ -177,7 +214,37 @@ internal class NativeRisuController(context: Context) {
             name = profile.name,
             time = System.currentTimeMillis(),
         )
-        val assistantRevision = storage.appendMessage(chat.id, history.size + 1, assistantMessage)
+        val outputBase = prepared.messages + rawAssistant.copy(
+            data = NativeRegexProcessor.process(
+                data = generated,
+                mode = "editoutput",
+                settings = freshOverview.generationSettings,
+                character = profile,
+                parserContext = parserContext.copy(
+                    history = prepared.messages + rawAssistant,
+                    variables = prepared.variables,
+                ),
+            ),
+        )
+        val outputPrepared = NativeChatRuntimeProcessor.prepare(
+            settings = freshOverview.generationSettings,
+            character = profile,
+            messages = outputBase,
+            authorNote = chat.note,
+            greetingIndex = promptContext.greetingIndex,
+            variables = prepared.variables,
+        )
+        val outputChanges = outputPrepared.messages.mapIndexedNotNull { index, message ->
+            val original = outputBase[index]
+            if (index == outputBase.lastIndex || message.data != original.data) PositionedMessage(index, message) else null
+        }
+        val assistantRevision = storage.commitPreparedTurn(
+            characterId = character.id,
+            chatId = chat.id,
+            chatPosition = chatPosition,
+            messages = outputChanges,
+            variables = outputPrepared.variables,
+        )
         overview = freshOverview.copy(revision = assistantRevision)
         messagePage = storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE)
     }
