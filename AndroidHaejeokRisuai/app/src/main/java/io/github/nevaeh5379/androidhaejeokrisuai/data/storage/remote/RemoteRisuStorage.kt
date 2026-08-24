@@ -14,6 +14,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.PositionedMessage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntriesFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntryMapsFromValue
+import io.github.nevaeh5379.androidhaejeokrisuai.data.personaProfileToValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.regexScriptsFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.triggerScriptsFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RisuStorage
@@ -59,6 +60,11 @@ class RemoteRisuStorage(
         if (database != null) {
             for (key in GenerationSettingsMapper.keys) {
                 if (database.has(key) && !database.isNull(key)) settingValues[key] = jsonValue(database.opt(key))
+            }
+        }
+        for (key in listOf("personaPrompt", "selectedPersona", "personas")) {
+            if (!settingValues.containsKey(key)) {
+                loadSettingValueOptional(key)?.let { settingValues[key] = it }
             }
         }
         val baseSettings = GenerationSettingsMapper.fromMap(settingValues)
@@ -176,6 +182,9 @@ class RemoteRisuStorage(
 
         val rootUpdates = linkedMapOf<String, Any?>(
             "username" to settings.username,
+            "personaPrompt" to settings.personaPrompt,
+            "selectedPersona" to settings.selectedPersona,
+            "personas" to settings.personas.map(::personaProfileToValue),
             "openAIKey" to settings.openAIKey,
             "claudeAPIKey" to settings.claudeAPIKey,
             "openrouterKey" to settings.openrouterKey,
@@ -340,6 +349,19 @@ class RemoteRisuStorage(
             )
         }
 
+        val rootUpserts = JSONArray().apply {
+            runtimePatch.personaPrompt?.let { value ->
+                put(JSONObject().put("key", "personaPrompt").put("value", value))
+            }
+            runtimePatch.personas?.let { personas ->
+                put(
+                    JSONObject()
+                        .put("key", "personas")
+                        .put("value", toJsonValue(personas.map(::personaProfileToValue))),
+                )
+            }
+        }
+
         val messageUpserts = JSONArray().apply {
             messages.forEach { positioned ->
                 val message = positioned.message
@@ -360,7 +382,7 @@ class RemoteRisuStorage(
         val commit = JSONObject()
             .put("baseRevision", revision)
             .put("action", "android:prepared-turn")
-            .put("root", JSONObject().put("upserts", JSONArray()).put("deletes", JSONArray()))
+            .put("root", JSONObject().put("upserts", rootUpserts).put("deletes", JSONArray()))
             .put("characters", characterUpserts)
             .put(
                 "chats",

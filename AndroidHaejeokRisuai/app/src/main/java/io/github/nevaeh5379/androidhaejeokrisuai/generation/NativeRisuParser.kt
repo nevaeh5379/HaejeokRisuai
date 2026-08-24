@@ -3,6 +3,7 @@ package io.github.nevaeh5379.androidhaejeokrisuai.generation
 import io.github.nevaeh5379.androidhaejeokrisuai.data.CharacterProfile
 import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
+import io.github.nevaeh5379.androidhaejeokrisuai.data.effectivePersonaPrompt
 
 internal data class NativeRisuParserContext(
     val settings: GenerationSettings,
@@ -285,7 +286,7 @@ internal object NativeRisuParser {
             "description", "chardesc" -> parseNested(context.character.description, context)
             "scenario" -> parseNested(context.character.scenario, context)
             "exampledialogue", "examplemessage", "example_dialogue" -> parseNested(context.character.exampleMessage, context)
-            "persona", "userpersona" -> parseNested(context.settings.personaPrompt, context)
+            "persona", "userpersona" -> parseNested(context.settings.effectivePersonaPrompt(), context)
             "mainprompt", "systemprompt", "main_prompt" -> parseNested(context.settings.mainPrompt, context)
             "jb", "jailbreak" -> parseNested(context.settings.jailbreak, context)
             "globalnote", "systemnote", "ujb" -> parseNested(context.settings.globalNote, context)

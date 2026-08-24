@@ -4,7 +4,10 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.CharacterProfile
 import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.LoreEntry
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
+import io.github.nevaeh5379.androidhaejeokrisuai.data.PersonaProfile
 import io.github.nevaeh5379.androidhaejeokrisuai.data.TriggerScript
+import io.github.nevaeh5379.androidhaejeokrisuai.data.effectivePersonaPrompt
+import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativePromptBuilder
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativePromptMessage
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeTriggerProcessor
 import org.junit.Assert.assertEquals
@@ -452,6 +455,69 @@ class NativeTriggerV2ProcessorTest {
         )
         assertEquals("condition-passed", result.requestState!!.single().content)
         assertTrue(result.variables.isEmpty())
+    }
+
+    @Test
+    fun personaSetterUpdatesLegacyAndSelectedPersonaForSameTurnGeneration() {
+        val trigger = TriggerScript(
+            comment = "persona", type = "start",
+            effects = listOf(
+                mapOf("type" to "v2Header", "indent" to 0),
+                mapOf("type" to "v2GetPersonaDesc", "outputVar" to "before", "indent" to 0),
+                mapOf("type" to "v2SetPersonaDesc", "value" to "Changed {{user}}", "valueType" to "value", "indent" to 0),
+                mapOf("type" to "v2GetPersonaDesc", "outputVar" to "after", "indent" to 0),
+            ),
+        )
+        val baseSettings = settings.copy(
+            personaPrompt = "",
+            selectedPersona = 1,
+            personas = listOf(
+                PersonaProfile(personaPrompt = "first", name = "First"),
+                PersonaProfile(
+                    personaPrompt = "selected-old", name = "Second",
+                    raw = mapOf("embeddedModule" to mapOf("vendor" to "keep-me")),
+                ),
+            ),
+        )
+        val character = CharacterProfile("c", "Lua", triggerScripts = listOf(trigger))
+        val history = listOf(MessageRecord("m", "chat", "user", "hello"))
+        val result = NativeTriggerProcessor.run(
+            mode = "start", settings = baseSettings, character = character,
+            messages = history, variables = emptyMap(), chatId = "chat",
+        )
+        assertEquals("selected-old", result.variables["before"])
+        assertEquals("Changed Alice", result.variables["after"])
+        assertTrue(result.runtimePatch.hasSettingChanges)
+
+        val patched = result.runtimePatch.applyTo(baseSettings)
+        assertEquals("Changed Alice", patched.personaPrompt)
+        assertEquals("Changed Alice", patched.personas[1].personaPrompt)
+        assertEquals(mapOf("vendor" to "keep-me"), patched.personas[1].raw["embeddedModule"])
+        assertEquals("Changed Alice", patched.effectivePersonaPrompt())
+        assertTrue(
+            NativePromptBuilder.build(patched, character, history)
+                .any { "Changed Alice" in it.content },
+        )
+    }
+
+    @Test
+    fun personaSetterIsNoOpWhenSelectedPersonaDoesNotExist() {
+        val trigger = TriggerScript(
+            comment = "persona", type = "start",
+            effects = listOf(
+                mapOf("type" to "v2Header", "indent" to 0),
+                mapOf("type" to "v2SetPersonaDesc", "value" to "ignored", "valueType" to "value", "indent" to 0),
+            ),
+        )
+        val baseSettings = settings.copy(personaPrompt = "legacy", selectedPersona = 7, personas = emptyList())
+        val result = NativeTriggerProcessor.run(
+            mode = "start", settings = baseSettings,
+            character = CharacterProfile("c", "Lua", triggerScripts = listOf(trigger)),
+            messages = listOf(MessageRecord("m", "chat", "user", "hello")),
+            variables = emptyMap(), chatId = "chat",
+        )
+        assertFalse(result.runtimePatch.hasSettingChanges)
+        assertEquals("legacy", result.runtimePatch.applyTo(baseSettings).personaPrompt)
     }
 
 }

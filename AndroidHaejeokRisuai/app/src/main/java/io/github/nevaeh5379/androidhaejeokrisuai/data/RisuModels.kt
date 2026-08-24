@@ -188,9 +188,13 @@ data class RuntimeStatePatch(
     val characterDescription: String? = null,
     val replaceGlobalNote: String? = null,
     val globalLoreRaw: List<Map<String, Any?>>? = null,
+    val personaPrompt: String? = null,
+    val personas: List<PersonaProfile>? = null,
 ) {
     val hasCharacterChanges: Boolean
         get() = characterDescription != null || replaceGlobalNote != null || globalLoreRaw != null
+    val hasSettingChanges: Boolean
+        get() = personaPrompt != null || personas != null
 
     fun applyTo(character: CharacterProfile): CharacterProfile {
         val patchedLore = globalLoreRaw
@@ -203,6 +207,11 @@ data class RuntimeStatePatch(
     }
 
     fun resolveAuthorNote(fallback: String): String = authorNote ?: fallback
+
+    fun applyTo(settings: GenerationSettings): GenerationSettings = settings.copy(
+        personaPrompt = personaPrompt ?: settings.personaPrompt,
+        personas = personas ?: settings.personas,
+    )
 }
 
 data class PromptTemplateItem(
@@ -239,6 +248,8 @@ data class GenerationSettings(
     val descriptionPrefix: String = "",
     val additionalPrompt: String = "",
     val personaPrompt: String = "",
+    val selectedPersona: Int = 0,
+    val personas: List<PersonaProfile> = emptyList(),
     val templateDefaultVariables: String = "",
     val globalChatVariables: Map<String, String> = emptyMap(),
     val presetRegex: List<RegexScript> = emptyList(),
@@ -267,6 +278,10 @@ data class GenerationSettings(
             "jailbreak", "lorebook", "globalNote", "authorNote",
         )
     }
+}
+
+fun GenerationSettings.effectivePersonaPrompt(): String = personaPrompt.ifBlank {
+    personas.getOrNull(selectedPersona)?.personaPrompt.orEmpty()
 }
 
 data class DatabaseOverview(

@@ -56,13 +56,14 @@ object NativeTriggerProcessor {
         var stop = inheritedStop
         var runtimePatch = inheritedPatch
         var runtimeCharacter = runtimePatch.applyTo(character)
+        var runtimeSettings = runtimePatch.applyTo(settings)
         var runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
         var currentRequestState = requestState
         var currentDisplayState = displayState
         val temporaryVariables = mutableMapOf<String, String>()
 
         fun context() = NativeRisuParserContext(
-            settings = settings,
+            settings = runtimeSettings,
             character = runtimeCharacter,
             history = working,
             authorNote = runtimeAuthorNote,
@@ -86,7 +87,7 @@ object NativeTriggerProcessor {
             if (trigger.effects.firstOrNull()?.get("type")?.toString() == "v2Header") {
                 val v2 = NativeTriggerV2Processor.run(
                     trigger = trigger,
-                    settings = settings,
+                    settings = runtimeSettings,
                     character = runtimeCharacter,
                     messages = working,
                     variables = vars,
@@ -127,6 +128,7 @@ object NativeTriggerProcessor {
                 stop = v2.stopSending
                 runtimePatch = v2.runtimePatch
                 runtimeCharacter = runtimePatch.applyTo(character)
+                runtimeSettings = runtimePatch.applyTo(settings)
                 runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
                 currentRequestState = v2.requestState
                 currentDisplayState = v2.displayState
@@ -204,6 +206,7 @@ object NativeTriggerProcessor {
                         stop = nested.stopSending
                         runtimePatch = nested.runtimePatch
                         runtimeCharacter = runtimePatch.applyTo(character)
+                        runtimeSettings = runtimePatch.applyTo(settings)
                         runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
                     }
                 }

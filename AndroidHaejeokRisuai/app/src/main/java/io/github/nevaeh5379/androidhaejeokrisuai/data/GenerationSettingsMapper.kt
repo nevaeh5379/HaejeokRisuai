@@ -3,7 +3,8 @@ package io.github.nevaeh5379.androidhaejeokrisuai.data
 object GenerationSettingsMapper {
     val keys = listOf(
         "aiModel", "username", "loreBookDepth", "loreBookToken", "mainPrompt", "jailbreak", "jailbreakToggle",
-        "globalNote", "descriptionPrefix", "additionalPrompt", "personaPrompt", "templateDefaultVariables", "globalChatVariables", "presetRegex", "promptPreprocess",
+        "globalNote", "descriptionPrefix", "additionalPrompt", "personaPrompt", "selectedPersona", "personas",
+        "templateDefaultVariables", "globalChatVariables", "presetRegex", "promptPreprocess",
         "promptTemplate", "promptSettings", "maxContext", "maxResponse", "temperature", "top_p", "openAIKey", "claudeAPIKey", "proxyKey",
         "openrouterKey", "google", "forceReplaceUrl", "proxyRequestModel",
         "customProxyRequestModel", "openrouterRequestModel", "autofillRequestUrl",
@@ -82,6 +83,8 @@ object GenerationSettingsMapper {
             descriptionPrefix = text("descriptionPrefix"),
             additionalPrompt = text("additionalPrompt"),
             personaPrompt = text("personaPrompt"),
+            selectedPersona = number("selectedPersona")?.toInt() ?: 0,
+            personas = personaProfilesFromValue(values["personas"]),
             templateDefaultVariables = text("templateDefaultVariables"),
             globalChatVariables = (values["globalChatVariables"] as? Map<*, *>)
                 ?.entries

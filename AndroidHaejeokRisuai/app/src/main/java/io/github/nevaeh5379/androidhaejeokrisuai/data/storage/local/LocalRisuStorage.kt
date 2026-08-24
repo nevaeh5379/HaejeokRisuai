@@ -19,6 +19,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.PositionedMessage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntriesFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntryMapsFromValue
+import io.github.nevaeh5379.androidhaejeokrisuai.data.personaProfileToValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.regexScriptsFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.triggerScriptsFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RelationalNodeCodec
@@ -222,6 +223,9 @@ class LocalRisuStorage(context: Context) : RisuStorage {
 
             val rootUpdates = linkedMapOf<String, Any?>(
                 "username" to settings.username,
+                "personaPrompt" to settings.personaPrompt,
+                "selectedPersona" to settings.selectedPersona,
+                "personas" to settings.personas.map(::personaProfileToValue),
                 "openAIKey" to settings.openAIKey,
                 "claudeAPIKey" to settings.claudeAPIKey,
                 "openrouterKey" to settings.openrouterKey,
@@ -440,6 +444,13 @@ class LocalRisuStorage(context: Context) : RisuStorage {
                     "UPDATE characters SET modification_time = ?, updated_at = datetime('now') WHERE id = ?",
                     arrayOf<Any?>(System.currentTimeMillis(), characterId),
                 )
+            }
+
+            if (runtimePatch.hasSettingChanges) {
+                runtimePatch.personaPrompt?.let { writeSetting(db, "personaPrompt", it) }
+                runtimePatch.personas?.let { personas ->
+                    writeSetting(db, "personas", personas.map(::personaProfileToValue))
+                }
             }
 
             if (messageManifest != null) {

@@ -5,6 +5,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.TriggerScript
+import io.github.nevaeh5379.androidhaejeokrisuai.data.effectivePersonaPrompt
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntryToValue
 import java.util.UUID
 
@@ -46,6 +47,7 @@ internal object NativeTriggerV2Processor {
         var stopSending = inheritedStop
         var runtimePatch = inheritedPatch
         var runtimeCharacter = runtimePatch.applyTo(character)
+        var runtimeSettings = runtimePatch.applyTo(settings)
         var runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
         val mutableRequestState = requestState?.toMutableList()
         var mutableDisplayState = displayState
@@ -54,7 +56,7 @@ internal object NativeTriggerV2Processor {
         var steps = 0
 
         fun context() = NativeRisuParserContext(
-            settings = settings,
+            settings = runtimeSettings,
             character = runtimeCharacter,
             history = working,
             authorNote = runtimeAuthorNote,
@@ -480,7 +482,19 @@ internal object NativeTriggerV2Processor {
                     pc++
                 }
                 "v2GetPersonaDesc" -> {
-                    setVar(parse(effect["outputVar"]), settings.personaPrompt)
+                    setVar(parse(effect["outputVar"]), runtimeSettings.effectivePersonaPrompt())
+                    pc++
+                }
+                "v2SetPersonaDesc" -> {
+                    val index = runtimeSettings.selectedPersona
+                    if (index in runtimeSettings.personas.indices) {
+                        val value = resolve(effect["value"], effect["valueType"])
+                        val updated = runtimeSettings.personas.toMutableList().apply {
+                            this[index] = this[index].copy(personaPrompt = value)
+                        }.toList()
+                        runtimePatch = runtimePatch.copy(personaPrompt = value, personas = updated)
+                        runtimeSettings = runtimeSettings.copy(personaPrompt = value, personas = updated)
+                    }
                     pc++
                 }
                 "v2SetCharacterDesc" -> {

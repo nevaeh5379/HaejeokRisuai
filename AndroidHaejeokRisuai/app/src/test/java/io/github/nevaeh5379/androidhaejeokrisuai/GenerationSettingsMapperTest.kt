@@ -2,6 +2,8 @@ package io.github.nevaeh5379.androidhaejeokrisuai
 
 import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettingsMapper
+import io.github.nevaeh5379.androidhaejeokrisuai.data.effectivePersonaPrompt
+import io.github.nevaeh5379.androidhaejeokrisuai.data.personaProfileToValue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -35,5 +37,28 @@ class GenerationSettingsMapperTest {
         assertFalse(result.promptTemplate!!.single().chatAsOriginalOnSystem)
         assertEquals("foo", result.presetRegex.single().input)
         assertEquals("bar", result.presetRegex.single().output)
+    }
+
+    @Test
+    fun personaSettingsDecodeSelectedFallbackAndPreserveUnknownFields() {
+        val result = GenerationSettingsMapper.fromMap(
+            mapOf(
+                "personaPrompt" to "",
+                "selectedPersona" to 1,
+                "personas" to listOf(
+                    mapOf("name" to "First", "personaPrompt" to "first"),
+                    mapOf(
+                        "name" to "Second", "personaPrompt" to "second", "id" to "p2",
+                        "embeddedModule" to mapOf("vendor" to "keep-me"),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(1, result.selectedPersona)
+        assertEquals("second", result.effectivePersonaPrompt())
+        assertEquals("p2", result.personas[1].id)
+        val encoded = personaProfileToValue(result.personas[1].copy(personaPrompt = "edited"))
+        assertEquals("edited", encoded["personaPrompt"])
+        assertEquals(mapOf("vendor" to "keep-me"), encoded["embeddedModule"])
     }
 }

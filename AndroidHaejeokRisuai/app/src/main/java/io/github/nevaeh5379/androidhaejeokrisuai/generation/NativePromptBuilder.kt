@@ -4,6 +4,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.CharacterProfile
 import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.PromptTemplateItem
+import io.github.nevaeh5379.androidhaejeokrisuai.data.effectivePersonaPrompt
 
 data class NativePromptMessage(val role: String, val content: String, val removable: Boolean = false)
 
@@ -63,7 +64,7 @@ object NativePromptBuilder {
             }
         }
         add("description", text = description)
-        add("personaPrompt", text = settings.personaPrompt)
+        add("personaPrompt", text = settings.effectivePersonaPrompt())
 
         parseExampleMessages(character.exampleMessage, parserContext).forEach { example ->
             add("chats", example.role, example.content)

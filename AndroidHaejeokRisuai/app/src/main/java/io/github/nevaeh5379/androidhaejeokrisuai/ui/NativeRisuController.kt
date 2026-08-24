@@ -171,9 +171,10 @@ internal class NativeRisuController(context: Context) {
             greetingIndex = promptContext.greetingIndex,
         )
         val inputProfile = inputTrigger.runtimePatch.applyTo(profile)
+        val inputSettings = inputTrigger.runtimePatch.applyTo(freshOverview.generationSettings)
         val inputAuthorNote = inputTrigger.runtimePatch.resolveAuthorNote(chat.note)
         val parserContext = NativeRisuParserContext(
-            settings = freshOverview.generationSettings,
+            settings = inputSettings,
             character = inputProfile,
             history = inputTrigger.messages,
             authorNote = inputAuthorNote,
@@ -183,7 +184,7 @@ internal class NativeRisuController(context: Context) {
         val processedInput = NativeRegexProcessor.process(
             data = trimmed,
             mode = "editinput",
-            settings = freshOverview.generationSettings,
+            settings = inputSettings,
             character = inputProfile,
             parserContext = parserContext,
         )
@@ -195,7 +196,7 @@ internal class NativeRisuController(context: Context) {
             time = System.currentTimeMillis(),
         )
         val prepared = NativeChatRuntimeProcessor.prepare(
-            settings = freshOverview.generationSettings,
+            settings = inputSettings,
             character = inputProfile,
             messages = inputTrigger.messages + userMessage,
             authorNote = inputAuthorNote,
@@ -214,6 +215,7 @@ internal class NativeRisuController(context: Context) {
             inheritedPatch = inputTrigger.runtimePatch,
         )
         val startProfile = startTrigger.runtimePatch.applyTo(profile)
+        val startSettings = startTrigger.runtimePatch.applyTo(freshOverview.generationSettings)
         val startAuthorNote = startTrigger.runtimePatch.resolveAuthorNote(chat.note)
         val chatPosition = chats.indexOfFirst { it.id == chat.id }
         require(chatPosition >= 0) { "Selected chat is missing from the character chat list" }
@@ -227,13 +229,13 @@ internal class NativeRisuController(context: Context) {
             characterPosition = characterPosition,
             runtimePatch = startTrigger.runtimePatch,
         )
-        overview = freshOverview.copy(revision = userRevision)
+        overview = freshOverview.copy(revision = userRevision, generationSettings = startSettings)
         updateSelectedChatNote(startAuthorNote)
         publishMessagePage(storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE))
         if (startTrigger.stopSending) return@runBusy
 
         val generated = generator.generate(
-            settings = freshOverview.generationSettings,
+            settings = startSettings,
             character = startProfile.copy(globalLore = startProfile.globalLore + promptContext.localLore),
             history = startTrigger.messages,
             authorNote = startAuthorNote,
@@ -253,9 +255,10 @@ internal class NativeRisuController(context: Context) {
             data = NativeRegexProcessor.process(
                 data = generated,
                 mode = "editoutput",
-                settings = freshOverview.generationSettings,
+                settings = startSettings,
                 character = startProfile,
                 parserContext = parserContext.copy(
+                    settings = startSettings,
                     character = startProfile,
                     history = startTrigger.messages + rawAssistant,
                     authorNote = startAuthorNote,
@@ -264,7 +267,7 @@ internal class NativeRisuController(context: Context) {
             ),
         )
         val outputPrepared = NativeChatRuntimeProcessor.prepare(
-            settings = freshOverview.generationSettings,
+            settings = startSettings,
             character = startProfile,
             messages = startTrigger.messages + processedAssistant,
             authorNote = startAuthorNote,
@@ -282,6 +285,7 @@ internal class NativeRisuController(context: Context) {
             greetingIndex = promptContext.greetingIndex,
             inheritedPatch = startTrigger.runtimePatch,
         )
+        val finalSettings = outputTrigger.runtimePatch.applyTo(freshOverview.generationSettings)
         val finalAuthorNote = outputTrigger.runtimePatch.resolveAuthorNote(chat.note)
         val assistantRevision = storage.commitPreparedTurn(
             characterId = character.id,
@@ -293,7 +297,7 @@ internal class NativeRisuController(context: Context) {
             characterPosition = characterPosition,
             runtimePatch = outputTrigger.runtimePatch,
         )
-        overview = freshOverview.copy(revision = assistantRevision)
+        overview = freshOverview.copy(revision = assistantRevision, generationSettings = finalSettings)
         updateSelectedChatNote(finalAuthorNote)
         publishMessagePage(storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE))
     }
