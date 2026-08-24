@@ -3,6 +3,7 @@ package io.github.nevaeh5379.androidhaejeokrisuai.generation
 import io.github.nevaeh5379.androidhaejeokrisuai.data.CharacterProfile
 import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
+import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.TriggerScript
 import java.util.UUID
 
@@ -11,6 +12,7 @@ internal data class NativeTriggerV2Result(
     val variables: Map<String, String>,
     val promptInjection: NativeTriggerPromptInjection,
     val stopSending: Boolean,
+    val runtimePatch: RuntimeStatePatch,
 )
 
 internal object NativeTriggerV2Processor {
@@ -25,7 +27,8 @@ internal object NativeTriggerV2Processor {
         greetingIndex: Int,
         inheritedPrompt: NativeTriggerPromptInjection,
         inheritedStop: Boolean,
-        runManual: (String, List<MessageRecord>, Map<String, String>, NativeTriggerPromptInjection, Boolean) -> NativeTriggerResult,
+        inheritedPatch: RuntimeStatePatch,
+        runManual: (String, List<MessageRecord>, Map<String, String>, NativeTriggerPromptInjection, Boolean, RuntimeStatePatch) -> NativeTriggerResult,
     ): NativeTriggerV2Result {
         val working = messages.toMutableList()
         val persistent = variables.toMutableMap()
@@ -33,15 +36,18 @@ internal object NativeTriggerV2Processor {
         val loopCounters = mutableMapOf<Int, Int>()
         var prompt = inheritedPrompt
         var stopSending = inheritedStop
+        var runtimePatch = inheritedPatch
+        var runtimeCharacter = runtimePatch.applyTo(character)
+        var runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
         var currentIndent = 0
         var pc = 0
         var steps = 0
 
         fun context() = NativeRisuParserContext(
             settings = settings,
-            character = character,
+            character = runtimeCharacter,
             history = working,
-            authorNote = authorNote,
+            authorNote = runtimeAuthorNote,
             greetingIndex = greetingIndex,
             variables = persistent,
         )
@@ -73,7 +79,7 @@ internal object NativeTriggerV2Processor {
             return if (type?.toString() == "var") getVar(parsed) else parsed
         }
         fun returnResult() = NativeTriggerV2Result(
-            working.toList(), persistent.toMap(), prompt, stopSending,
+            working.toList(), persistent.toMap(), prompt, stopSending, runtimePatch,
         )
 
         val effects = trigger.effects
@@ -180,12 +186,15 @@ internal object NativeTriggerV2Processor {
                 "v2RunTrigger" -> {
                     val nested = runManual(
                         effect["target"]?.toString().orEmpty(),
-                        working.toList(), persistent.toMap(), prompt, stopSending,
+                        working.toList(), persistent.toMap(), prompt, stopSending, runtimePatch,
                     )
                     working.clear(); working += nested.messages
                     persistent.clear(); persistent.putAll(nested.variables)
                     prompt = nested.promptInjection
                     stopSending = nested.stopSending
+                    runtimePatch = nested.runtimePatch
+                    runtimeCharacter = runtimePatch.applyTo(character)
+                    runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
                     pc++
                 }
                 "v2ConsoleLog" -> {
@@ -259,8 +268,8 @@ internal object NativeTriggerV2Processor {
                     pc++
                 }
                 "v2GetFirstMessage" -> {
-                    val first = if (greetingIndex == -1) character.firstMessage
-                        else character.alternateGreetings.getOrNull(greetingIndex) ?: "null"
+                    val first = if (greetingIndex == -1) runtimeCharacter.firstMessage
+                        else runtimeCharacter.alternateGreetings.getOrNull(greetingIndex) ?: "null"
                     setVar(parse(effect["outputVar"]), first)
                     pc++
                 }
@@ -421,15 +430,33 @@ internal object NativeTriggerV2Processor {
                     pc++
                 }
                 "v2GetCharacterDesc" -> {
-                    setVar(parse(effect["outputVar"]), character.description)
+                    setVar(parse(effect["outputVar"]), runtimeCharacter.description)
+                    pc++
+                }
+                "v2SetCharacterDesc" -> {
+                    val value = resolve(effect["value"], effect["valueType"])
+                    runtimePatch = runtimePatch.copy(characterDescription = value)
+                    runtimeCharacter = runtimePatch.applyTo(character)
                     pc++
                 }
                 "v2GetReplaceGlobalNote" -> {
-                    setVar(parse(effect["outputVar"]), character.replaceGlobalNote)
+                    setVar(parse(effect["outputVar"]), runtimeCharacter.replaceGlobalNote)
+                    pc++
+                }
+                "v2SetReplaceGlobalNote" -> {
+                    val value = resolve(effect["value"], effect["valueType"])
+                    runtimePatch = runtimePatch.copy(replaceGlobalNote = value)
+                    runtimeCharacter = runtimePatch.applyTo(character)
                     pc++
                 }
                 "v2GetAuthorNote" -> {
-                    setVar(parse(effect["outputVar"]), authorNote)
+                    setVar(parse(effect["outputVar"]), runtimeAuthorNote)
+                    pc++
+                }
+                "v2SetAuthorNote" -> {
+                    val value = resolve(effect["value"], effect["valueType"])
+                    runtimePatch = runtimePatch.copy(authorNote = value)
+                    runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
                     pc++
                 }
                 "v2MakeDictVar" -> {

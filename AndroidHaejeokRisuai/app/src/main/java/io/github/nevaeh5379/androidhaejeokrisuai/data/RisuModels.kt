@@ -136,6 +136,22 @@ data class PositionedMessage(
     val message: MessageRecord,
 )
 
+data class RuntimeStatePatch(
+    val authorNote: String? = null,
+    val characterDescription: String? = null,
+    val replaceGlobalNote: String? = null,
+) {
+    val hasCharacterChanges: Boolean
+        get() = characterDescription != null || replaceGlobalNote != null
+
+    fun applyTo(character: CharacterProfile): CharacterProfile = character.copy(
+        description = characterDescription ?: character.description,
+        replaceGlobalNote = replaceGlobalNote ?: character.replaceGlobalNote,
+    )
+
+    fun resolveAuthorNote(fallback: String): String = authorNote ?: fallback
+}
+
 data class PromptTemplateItem(
     val type: String,
     val type2: String = "",

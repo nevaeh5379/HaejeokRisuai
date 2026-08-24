@@ -3,6 +3,7 @@ package io.github.nevaeh5379.androidhaejeokrisuai.generation
 import io.github.nevaeh5379.androidhaejeokrisuai.data.CharacterProfile
 import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
+import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.TriggerScript
 import java.util.UUID
 
@@ -17,6 +18,7 @@ data class NativeTriggerResult(
     val variables: Map<String, String>,
     val promptInjection: NativeTriggerPromptInjection = NativeTriggerPromptInjection(),
     val stopSending: Boolean = false,
+    val runtimePatch: RuntimeStatePatch = RuntimeStatePatch(),
 )
 
 object NativeTriggerProcessor {
@@ -35,27 +37,31 @@ object NativeTriggerProcessor {
         manualName: String? = null,
         inheritedPrompt: NativeTriggerPromptInjection = NativeTriggerPromptInjection(),
         inheritedStop: Boolean = false,
+        inheritedPatch: RuntimeStatePatch = RuntimeStatePatch(),
     ): NativeTriggerResult {
         if (character.triggerScripts.isEmpty()) {
-            return NativeTriggerResult(messages, variables, inheritedPrompt, inheritedStop)
+            return NativeTriggerResult(messages, variables, inheritedPrompt, inheritedStop, inheritedPatch)
         }
         val working = messages.toMutableList()
         val vars = variables.toMutableMap()
         var prompt = inheritedPrompt
         var stop = inheritedStop
+        var runtimePatch = inheritedPatch
+        var runtimeCharacter = runtimePatch.applyTo(character)
+        var runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
 
         fun context() = NativeRisuParserContext(
             settings = settings,
-            character = character,
+            character = runtimeCharacter,
             history = working,
-            authorNote = authorNote,
+            authorNote = runtimeAuthorNote,
             greetingIndex = greetingIndex,
             variables = vars,
         )
         fun parse(value: Any?): String = NativeRisuParser.parse(value?.toString().orEmpty(), context())
         fun getVar(key: String): String = NativeRisuParser.parse("{{getvar::$key}}", context())
 
-        for (trigger in character.triggerScripts) {
+        for (trigger in runtimeCharacter.triggerScripts) {
             if (manualName != null) {
                 if (trigger.comment != manualName) continue
             } else if (trigger.type != mode) continue
@@ -65,15 +71,16 @@ object NativeTriggerProcessor {
                 val v2 = NativeTriggerV2Processor.run(
                     trigger = trigger,
                     settings = settings,
-                    character = character,
+                    character = runtimeCharacter,
                     messages = working,
                     variables = vars,
                     chatId = chatId,
-                    authorNote = authorNote,
+                    authorNote = runtimeAuthorNote,
                     greetingIndex = greetingIndex,
                     inheritedPrompt = prompt,
                     inheritedStop = stop,
-                    runManual = { target, nestedMessages, nestedVars, nestedPrompt, nestedStop ->
+                    inheritedPatch = runtimePatch,
+                    runManual = { target, nestedMessages, nestedVars, nestedPrompt, nestedStop, nestedPatch ->
                         if (recursion < MAX_RECURSION || trigger.lowLevelAccess) {
                             run(
                                 mode = "manual",
@@ -88,14 +95,18 @@ object NativeTriggerProcessor {
                                 manualName = target,
                                 inheritedPrompt = nestedPrompt,
                                 inheritedStop = nestedStop,
+                                inheritedPatch = nestedPatch,
                             )
-                        } else NativeTriggerResult(nestedMessages, nestedVars, nestedPrompt, nestedStop)
+                        } else NativeTriggerResult(nestedMessages, nestedVars, nestedPrompt, nestedStop, nestedPatch)
                     },
                 )
                 working.clear(); working += v2.messages
                 vars.clear(); vars.putAll(v2.variables)
                 prompt = v2.promptInjection
                 stop = v2.stopSending
+                runtimePatch = v2.runtimePatch
+                runtimeCharacter = runtimePatch.applyTo(character)
+                runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
                 continue
             }
 
@@ -161,16 +172,20 @@ object NativeTriggerProcessor {
                             manualName = effect["value"]?.toString().orEmpty(),
                             inheritedPrompt = prompt,
                             inheritedStop = stop,
+                            inheritedPatch = runtimePatch,
                         )
                         working.clear(); working += nested.messages
                         vars.clear(); vars.putAll(nested.variables)
                         prompt = nested.promptInjection
                         stop = nested.stopSending
+                        runtimePatch = nested.runtimePatch
+                        runtimeCharacter = runtimePatch.applyTo(character)
+                        runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
                     }
                 }
             }
         }
-        return NativeTriggerResult(working, vars, prompt, stop)
+        return NativeTriggerResult(working, vars, prompt, stop, runtimePatch)
     }
 
     private fun passes(

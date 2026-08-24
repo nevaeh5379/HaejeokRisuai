@@ -16,6 +16,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.MessagePage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.LoreEntry
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.PositionedMessage
+import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntriesFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.regexScriptsFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.triggerScriptsFromValue
@@ -389,6 +390,8 @@ class LocalRisuStorage(context: Context) : RisuStorage {
         messages: List<PositionedMessage>,
         variables: Map<String, String>,
         messageManifest: List<String>?,
+        characterPosition: Int,
+        runtimePatch: RuntimeStatePatch,
     ): Long = withContext(Dispatchers.IO) {
         val db = helper.writableDatabase
         db.beginTransaction()
@@ -413,8 +416,28 @@ class LocalRisuStorage(context: Context) : RisuStorage {
                 ?: linkedMapOf()
             variables.forEach { (key, value) -> scriptState["$$key"] = value }
             chatData["scriptstate"] = scriptState
+            runtimePatch.authorNote?.let { note ->
+                chatData["note"] = note
+                db.execSQL("UPDATE chats SET note = ? WHERE id = ?", arrayOf(note, chatId))
+            }
             db.delete("chat_extension_nodes", "chat_id = ?", arrayOf(chatId))
             RelationalNodeCodec.flatten(chatData).forEach { row -> insertChatNode(db, chatId, row) }
+
+            if (runtimePatch.hasCharacterChanges) {
+                @Suppress("UNCHECKED_CAST")
+                val characterData = (loadNodeValue(
+                    db, "character_extension_nodes", "character_id = ?", arrayOf(characterId),
+                ) as? Map<String, Any?>)?.toMutableMap()
+                    ?: error("Character relational data is missing: $characterId")
+                runtimePatch.characterDescription?.let { characterData["desc"] = it }
+                runtimePatch.replaceGlobalNote?.let { characterData["replaceGlobalNote"] = it }
+                db.delete("character_extension_nodes", "character_id = ?", arrayOf(characterId))
+                RelationalNodeCodec.flatten(characterData).forEach { row -> insertCharacterNode(db, characterId, row) }
+                db.execSQL(
+                    "UPDATE characters SET modification_time = ?, updated_at = datetime('now') WHERE id = ?",
+                    arrayOf<Any?>(System.currentTimeMillis(), characterId),
+                )
+            }
 
             if (messageManifest != null) {
                 if (messageManifest.isEmpty()) {

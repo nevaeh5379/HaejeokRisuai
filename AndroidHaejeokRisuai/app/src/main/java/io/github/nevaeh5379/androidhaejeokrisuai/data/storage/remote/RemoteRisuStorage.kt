@@ -11,6 +11,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.MessagePage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.LoreEntry
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.PositionedMessage
+import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntriesFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.regexScriptsFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.triggerScriptsFromValue
@@ -305,6 +306,8 @@ class RemoteRisuStorage(
         messages: List<PositionedMessage>,
         variables: Map<String, String>,
         messageManifest: List<String>?,
+        characterPosition: Int,
+        runtimePatch: RuntimeStatePatch,
     ): Long = withContext(Dispatchers.IO) {
         val chat = JSONObject(
             request("GET", "/api/database-v2/chats/${encodePath(chatId)}?messageLimit=0"),
@@ -316,6 +319,23 @@ class RemoteRisuStorage(
             "messagesLoaded", "detailsLoaded", "preventMessageCompaction",
         ).forEach(chatData::remove)
         chatData["scriptstate"] = variables.entries.associate { (key, value) -> "$$key" to value }
+        runtimePatch.authorNote?.let { chatData["note"] = it }
+
+        val characterUpserts = JSONArray()
+        if (runtimePatch.hasCharacterChanges) {
+            require(characterPosition >= 0) { "Character position is required for trigger character updates" }
+            val characterJson = JSONObject(
+                request("GET", "/api/database-v2/characters/${encodePath(characterId)}"),
+            ).getJSONObject("character")
+            @Suppress("UNCHECKED_CAST")
+            val characterData = ((jsonValue(characterJson) as? Map<String, Any?>) ?: emptyMap()).toMutableMap()
+            listOf("chats", "chaId", "detailsLoaded").forEach(characterData::remove)
+            runtimePatch.characterDescription?.let { characterData["desc"] = it }
+            runtimePatch.replaceGlobalNote?.let { characterData["replaceGlobalNote"] = it }
+            characterUpserts.put(
+                JSONObject().put("id", characterId).put("position", characterPosition).put("data", toJsonValue(characterData)),
+            )
+        }
 
         val messageUpserts = JSONArray().apply {
             messages.forEach { positioned ->
@@ -338,7 +358,7 @@ class RemoteRisuStorage(
             .put("baseRevision", revision)
             .put("action", "android:prepared-turn")
             .put("root", JSONObject().put("upserts", JSONArray()).put("deletes", JSONArray()))
-            .put("characters", JSONArray())
+            .put("characters", characterUpserts)
             .put(
                 "chats",
                 JSONArray().put(

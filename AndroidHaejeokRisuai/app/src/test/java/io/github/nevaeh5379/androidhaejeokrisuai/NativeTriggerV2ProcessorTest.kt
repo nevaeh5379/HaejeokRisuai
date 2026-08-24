@@ -243,5 +243,36 @@ class NativeTriggerV2ProcessorTest {
         assertEquals("untouched", result.variables["invalid"])
     }
 
+    @Test
+    fun mutableCharacterAndAuthorStateIsVisibleImmediately() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf("type" to "v2SetCharacterDesc", "value" to "new {{user}}", "valueType" to "value", "indent" to 0),
+            mapOf("type" to "v2SetAuthorNote", "value" to "note-new", "valueType" to "value", "indent" to 0),
+            mapOf("type" to "v2SetReplaceGlobalNote", "value" to "global-new", "valueType" to "value", "indent" to 0),
+            mapOf("type" to "v2GetCharacterDesc", "outputVar" to "desc", "indent" to 0),
+            mapOf("type" to "v2GetAuthorNote", "outputVar" to "note", "indent" to 0),
+            mapOf("type" to "v2GetReplaceGlobalNote", "outputVar" to "global", "indent" to 0),
+            mapOf("type" to "v2SystemPrompt", "location" to "promptend", "value" to "{{description}}|{{authornote}}", "valueType" to "value", "indent" to 0),
+        )
+        val trigger = TriggerScript("mutable", "start", effects = effects)
+        val result = NativeTriggerProcessor.run(
+            mode = "start",
+            settings = settings,
+            character = CharacterProfile("c", "Lua", description = "old", replaceGlobalNote = "global-old", triggerScripts = listOf(trigger)),
+            messages = listOf(MessageRecord("m", "chat", "user", "hello")),
+            variables = emptyMap(),
+            chatId = "chat",
+            authorNote = "note-old",
+        )
+        assertEquals("new Alice", result.runtimePatch.characterDescription)
+        assertEquals("note-new", result.runtimePatch.authorNote)
+        assertEquals("global-new", result.runtimePatch.replaceGlobalNote)
+        assertEquals("new Alice", result.variables["desc"])
+        assertEquals("note-new", result.variables["note"])
+        assertEquals("global-new", result.variables["global"])
+        assertEquals("new Alice|note-new\n\n", result.promptInjection.promptEnd)
+    }
+
 }
 

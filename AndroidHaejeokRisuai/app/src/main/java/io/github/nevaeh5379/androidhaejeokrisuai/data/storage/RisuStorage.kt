@@ -11,6 +11,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.MessagePage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.LoreEntry
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.PositionedMessage
+import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 
 interface RisuStorage {
     suspend fun init()
@@ -30,6 +31,8 @@ interface RisuStorage {
         messages: List<PositionedMessage>,
         variables: Map<String, String>,
         messageManifest: List<String>? = null,
+        characterPosition: Int = -1,
+        runtimePatch: RuntimeStatePatch = RuntimeStatePatch(),
     ): Long
     suspend fun appendMessage(chatId: String, position: Int, message: MessageRecord): Long
 }
