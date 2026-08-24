@@ -187,5 +187,61 @@ class NativeTriggerV2ProcessorTest {
         assertEquals("123-abc-$-abc123", result.variables["extracted"])
     }
 
+    @Test
+    fun dictAndCalculateEffectsPreserveRisuStateSemantics() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf("type" to "v2MakeDictVar", "var" to "dict", "indent" to 0),
+            mapOf("type" to "v2SetDictVar", "var" to "dict", "varType" to "var", "key" to "score", "keyType" to "value", "value" to "7", "valueType" to "value", "indent" to 0),
+            mapOf("type" to "v2SetDictVar", "var" to "dict", "varType" to "var", "key" to "name", "keyType" to "value", "value" to "Alice", "valueType" to "value", "indent" to 0),
+            mapOf("type" to "v2HasDictKey", "var" to "dict", "varType" to "var", "key" to "name", "keyType" to "value", "outputVar" to "has", "indent" to 0),
+            mapOf("type" to "v2GetDictSize", "var" to "dict", "varType" to "var", "outputVar" to "size", "indent" to 0),
+            mapOf("type" to "v2GetDictKeys", "var" to "dict", "varType" to "var", "outputVar" to "keys", "indent" to 0),
+            mapOf("type" to "v2GetDictValues", "var" to "dict", "varType" to "var", "outputVar" to "values", "indent" to 0),
+            mapOf("type" to "v2GetDictVar", "var" to "dict", "varType" to "var", "key" to "score", "keyType" to "value", "outputVar" to "got", "indent" to 0),
+            mapOf("type" to "v2Calculate", "expression" to "(\$score+3)*2>=20 && 1", "expressionType" to "value", "outputVar" to "calc", "indent" to 0),
+            mapOf("type" to "v2DeleteDictKey", "var" to "dict", "varType" to "var", "key" to "name", "keyType" to "value", "indent" to 0),
+            mapOf("type" to "v2GetDictSize", "var" to "dict", "varType" to "var", "outputVar" to "size2", "indent" to 0),
+        )
+        val result = run(effects, mapOf("score" to "7"))
+        assertEquals("1", result.variables["has"])
+        assertEquals("2", result.variables["size"])
+        assertEquals("[\"score\",\"name\"]", result.variables["keys"])
+        assertEquals("[\"7\",\"Alice\"]", result.variables["values"])
+        assertEquals("7", result.variables["got"])
+        assertEquals("1", result.variables["calc"])
+        assertEquals("{\"score\":\"7\"}", result.variables["dict"])
+        assertEquals("1", result.variables["size2"])
+    }
+
+    @Test
+    fun replaceStringSupportsFirstGlobalAndCaptureTargetModes() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf(
+                "type" to "v2ReplaceString", "source" to "a1 b2", "sourceType" to "value",
+                "regex" to "([a-z])(\\d)", "regexType" to "value", "result" to "$2", "resultType" to "value",
+                "replacement" to "X", "replacementType" to "value", "flags" to "g", "flagsType" to "value",
+                "outputVar" to "global", "indent" to 0,
+            ),
+            mapOf(
+                "type" to "v2ReplaceString", "source" to "a1 b2", "sourceType" to "value",
+                "regex" to "([a-z])(\\d)", "regexType" to "value", "result" to "$1-$2", "resultType" to "value",
+                "replacement" to "ignored", "replacementType" to "value", "flags" to "", "flagsType" to "value",
+                "outputVar" to "first", "indent" to 0,
+            ),
+            mapOf(
+                "type" to "v2ReplaceString", "source" to "untouched", "sourceType" to "value",
+                "regex" to "[", "regexType" to "value", "result" to "$&", "resultType" to "value",
+                "replacement" to "x", "replacementType" to "value", "flags" to "", "flagsType" to "value",
+                "outputVar" to "invalid", "indent" to 0,
+            ),
+        )
+        val result = run(effects)
+        assertEquals("aX bX", result.variables["global"])
+        assertEquals("a-1 b2", result.variables["first"])
+        assertEquals("untouched", result.variables["invalid"])
+    }
+
 }
 

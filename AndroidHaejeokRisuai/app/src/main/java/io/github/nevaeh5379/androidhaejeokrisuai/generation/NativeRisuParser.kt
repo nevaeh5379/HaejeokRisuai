@@ -53,6 +53,9 @@ internal object NativeRisuParser {
     internal fun parseJsonArray(text: String): MutableList<Any?>? =
         JsonLite.parseArray(text)?.toMutableList()
 
+    internal fun parseJsonObject(text: String): LinkedHashMap<String, Any?>? =
+        JsonLite.parseObject(text)?.toMap(LinkedHashMap())
+
     internal fun stringifyJson(value: Any?): String = JsonLite.stringify(value)
 
     internal fun jsonValueString(value: Any?): String = JsonLite.slotString(value)
@@ -412,12 +415,17 @@ internal object NativeRisuParser {
     private fun restoreEscapes(value: String): String = value.replace(OPEN_SENTINEL, "{{").replace(CLOSE_SENTINEL, "}}")
 
     private object JsonLite {
-        fun parseArray(text: String): List<Any?>? = runCatching {
+        fun parseArray(text: String): List<Any?>? = parseContainer(text) as? List<Any?>
+
+        @Suppress("UNCHECKED_CAST")
+        fun parseObject(text: String): Map<String, Any?>? = parseContainer(text) as? Map<String, Any?>
+
+        private fun parseContainer(text: String): Any? = runCatching {
             val reader = Reader(text)
             val value = reader.parseValue()
             reader.skipWhitespace()
-            if (!reader.atEnd() || value !is List<*>) null else value
-        }.getOrNull() as? List<Any?>
+            if (!reader.atEnd()) null else value
+        }.getOrNull()
 
         fun stringify(value: Any?): String = when (value) {
             null -> "null"
@@ -425,6 +433,9 @@ internal object NativeRisuParser {
             is Boolean -> value.toString()
             is Number -> numberString(value)
             is List<*> -> value.joinToString(prefix = "[", postfix = "]", separator = ",") { stringify(it) }
+            is Map<*, *> -> value.entries.joinToString(prefix = "{", postfix = "}", separator = ",") { (key, child) ->
+                stringify(key?.toString().orEmpty()) + ":" + stringify(child)
+            }
             else -> stringify(value.toString())
         }
 
@@ -433,7 +444,7 @@ internal object NativeRisuParser {
             is String -> value
             is Number -> numberString(value)
             is Boolean -> value.toString()
-            is List<*> -> stringify(value)
+            is List<*>, is Map<*, *> -> stringify(value)
             else -> value.toString()
         }
 
@@ -452,6 +463,7 @@ internal object NativeRisuParser {
                 if (atEnd()) error("unexpected end")
                 return when (text[index]) {
                     '[' -> parseArray()
+                    '{' -> parseObject()
                     '"' -> parseString()
                     else -> parseLiteral()
                 }
@@ -470,6 +482,28 @@ internal object NativeRisuParser {
                         ']' -> return result
                         ',' -> Unit
                         else -> error("invalid array separator")
+                    }
+                }
+            }
+
+            private fun parseObject(): Map<String, Any?> {
+                index++
+                val result = linkedMapOf<String, Any?>()
+                skipWhitespace()
+                if (!atEnd() && text[index] == '}') { index++; return result }
+                while (true) {
+                    skipWhitespace()
+                    if (atEnd() || text[index] != '"') error("object key must be a string")
+                    val key = parseString()
+                    skipWhitespace()
+                    if (atEnd() || text[index++] != ':') error("missing object colon")
+                    result[key] = parseValue()
+                    skipWhitespace()
+                    if (atEnd()) error("unterminated object")
+                    when (text[index++]) {
+                        '}' -> return result
+                        ',' -> Unit
+                        else -> error("invalid object separator")
                     }
                 }
             }

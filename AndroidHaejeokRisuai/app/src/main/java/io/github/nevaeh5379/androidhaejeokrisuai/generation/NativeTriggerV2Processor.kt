@@ -420,6 +420,79 @@ internal object NativeTriggerV2Processor {
                     }
                     pc++
                 }
+                "v2GetCharacterDesc" -> {
+                    setVar(parse(effect["outputVar"]), character.description)
+                    pc++
+                }
+                "v2GetReplaceGlobalNote" -> {
+                    setVar(parse(effect["outputVar"]), character.replaceGlobalNote)
+                    pc++
+                }
+                "v2GetAuthorNote" -> {
+                    setVar(parse(effect["outputVar"]), authorNote)
+                    pc++
+                }
+                "v2MakeDictVar" -> {
+                    val key = parse(effect["var"])
+                    if (key.startsWith("{") && key.endsWith("}")) return returnResult()
+                    setVar(key, "{}")
+                    pc++
+                }
+                "v2GetDictVar" -> {
+                    val dict = NativeRisuParser.parseJsonObject(resolve(effect["var"], effect["varType"]))
+                    val key = resolve(effect["key"], effect["keyType"])
+                    setVar(parse(effect["outputVar"]), dict?.get(key)?.let(NativeRisuParser::jsonValueString) ?: "null")
+                    pc++
+                }
+                "v2SetDictVar" -> {
+                    if (effect["varType"]?.toString() == "var") {
+                        val variable = parse(effect["var"])
+                        val dict = NativeRisuParser.parseJsonObject(getVar(variable)) ?: linkedMapOf()
+                        dict[resolve(effect["key"], effect["keyType"])] = resolve(effect["value"], effect["valueType"])
+                        setVar(variable, NativeRisuParser.stringifyJson(dict))
+                    }
+                    pc++
+                }
+                "v2DeleteDictKey" -> {
+                    if (effect["varType"]?.toString() == "var") {
+                        val variable = parse(effect["var"])
+                        val dict = NativeRisuParser.parseJsonObject(getVar(variable))
+                        if (dict == null) setVar(variable, "{}") else {
+                            dict.remove(resolve(effect["key"], effect["keyType"]))
+                            setVar(variable, NativeRisuParser.stringifyJson(dict))
+                        }
+                    }
+                    pc++
+                }
+                "v2HasDictKey" -> {
+                    val dict = NativeRisuParser.parseJsonObject(resolve(effect["var"], effect["varType"]))
+                    val key = resolve(effect["key"], effect["keyType"])
+                    setVar(parse(effect["outputVar"]), if (dict?.containsKey(key) == true) "1" else "0")
+                    pc++
+                }
+                "v2ClearDict" -> {
+                    val key = parse(effect["var"])
+                    if (key.startsWith("{") && key.endsWith("}")) return returnResult()
+                    setVar(key, "{}")
+                    pc++
+                }
+                "v2GetDictSize" -> {
+                    val size = NativeRisuParser.parseJsonObject(resolve(effect["var"], effect["varType"]))?.size ?: 0
+                    setVar(parse(effect["outputVar"]), size.toString())
+                    pc++
+                }
+                "v2GetDictKeys", "v2GetDictValues" -> {
+                    val dict = NativeRisuParser.parseJsonObject(resolve(effect["var"], effect["varType"]))
+                    val value = if (dict == null) emptyList() else if (type == "v2GetDictKeys") dict.keys.toList() else dict.values.toList()
+                    setVar(parse(effect["outputVar"]), NativeRisuParser.stringifyJson(value))
+                    pc++
+                }
+                "v2Calculate" -> {
+                    val expression = resolve(effect["expression"], effect["expressionType"])
+                    val result = runCatching { NativeRisuCalculator.calculate(expression, ::getVar) }.getOrDefault(0.0)
+                    setVar(parse(effect["outputVar"]), jsNumberString(result))
+                    pc++
+                }
                 "v2RegexTest" -> {
                     val value = resolve(effect["value"], effect["valueType"])
                     val pattern = resolve(effect["regex"], effect["regexType"])
@@ -436,6 +509,26 @@ internal object NativeTriggerV2Processor {
                     val result = runCatching {
                         expandRegexTemplate(format, findJsRegex(value, pattern, flags))
                     }.getOrElse { expandRegexTemplate(format, null) }
+                    setVar(parse(effect["outputVar"]), result)
+                    pc++
+                }
+                "v2ReplaceString" -> {
+                    val source = resolve(effect["source"], effect["sourceType"])
+                    val pattern = resolve(effect["regex"], effect["regexType"])
+                    val format = resolve(effect["result"], effect["resultType"])
+                    val replacement = resolve(effect["replacement"], effect["replacementType"])
+                    val flags = resolve(effect["flags"], effect["flagsType"])
+                    val result = runCatching {
+                        replaceJsRegex(source, pattern, flags) { match ->
+                            val target = Regex("^\\$(\\d+)$").matchEntire(format)?.groupValues?.get(1)?.toIntOrNull()
+                            if (target == 0) replacement
+                            else if (target != null) {
+                                val group = match.groups[target]?.value
+                                if (group.isNullOrEmpty()) expandRegexTemplate(format, match)
+                                else match.value.replaceFirst(group, replacement)
+                            } else expandRegexTemplate(format, match)
+                        }
+                    }.getOrDefault(source)
                     setVar(parse(effect["outputVar"]), result)
                     pc++
                 }
@@ -514,6 +607,23 @@ internal object NativeTriggerV2Processor {
     private fun findJsRegex(source: String, pattern: String, flags: String): MatchResult? {
         val match = compileJsRegex(pattern, flags).find(source) ?: return null
         return if ('y' !in flags || match.range.first == 0) match else null
+    }
+
+    private fun replaceJsRegex(
+        source: String,
+        pattern: String,
+        flags: String,
+        replacement: (MatchResult) -> String,
+    ): String {
+        val regex = compileJsRegex(pattern, flags)
+        if ('y' in flags) {
+            val match = regex.find(source) ?: return source
+            if (match.range.first != 0) return source
+            return replacement(match) + source.substring(match.range.last + 1)
+        }
+        if ('g' in flags) return regex.replace(source, replacement)
+        val match = regex.find(source) ?: return source
+        return source.substring(0, match.range.first) + replacement(match) + source.substring(match.range.last + 1)
     }
 
     private fun expandRegexTemplate(template: String, match: MatchResult?): String = template
