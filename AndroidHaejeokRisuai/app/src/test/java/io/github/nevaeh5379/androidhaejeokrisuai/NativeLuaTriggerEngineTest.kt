@@ -347,6 +347,69 @@ class NativeLuaTriggerEngineTest {
     }
 
     @Test
+    fun multiMessageLlmMapsRisuRolesAndReturnsAwaitableResult() {
+        var calls = 0
+        val bridge = NativeLuaLlmBridge { request ->
+            calls++
+            assertEquals(
+                listOf(
+                    NativePromptMessage("system", "system text"),
+                    NativePromptMessage("user", "user text"),
+                    NativePromptMessage("assistant", "char text"),
+                    NativePromptMessage("assistant", "fallback text"),
+                ),
+                request.prompt,
+            )
+            "multi reply"
+        }
+        val code = """
+            function onStart(id)
+                local response = LLM(id, {
+                    { role = "sys", content = "system text" },
+                    { role = "user", content = "user text" },
+                    { role = "char", content = "char text" },
+                    { role = "unknown", content = "fallback text" }
+                }, false, { streaming = true })
+                setChatVar(id, "multi", tostring(response.success) .. ":" .. response.result)
+            end
+        """.trimIndent()
+        val result = NativeLuaTriggerEngine.run(
+            code = code, mode = "start", settings = settings, character = character,
+            messages = history, variables = emptyMap(), chatId = "chat", authorNote = "",
+            greetingIndex = -1, inheritedStop = false, inheritedPatch = RuntimeStatePatch(),
+            lowLevelAccess = true, llmBridge = bridge,
+        )
+        assertEquals(1, calls)
+        assertEquals("true:multi reply", result.variables["multi"])
+    }
+
+    @Test
+    fun multiMessageLlmRejectsMultimodalUntilNativeAssetBridgeExists() {
+        var calls = 0
+        val bridge = NativeLuaLlmBridge {
+            calls++
+            "should not run"
+        }
+        val code = """
+            function onStart(id)
+                local response = LLM(id, {{ role = "user", content = "{{inlay::asset}}" }}, true)
+                setChatVar(id, "multi", tostring(response.success) .. ":" .. response.result)
+            end
+        """.trimIndent()
+        val result = NativeLuaTriggerEngine.run(
+            code = code, mode = "start", settings = settings, character = character,
+            messages = history, variables = emptyMap(), chatId = "chat", authorNote = "",
+            greetingIndex = -1, inheritedStop = false, inheritedPatch = RuntimeStatePatch(),
+            lowLevelAccess = true, llmBridge = bridge,
+        )
+        assertEquals(0, calls)
+        assertEquals(
+            "false:Error: Native Lua multimodal LLM is not supported yet",
+            result.variables["multi"],
+        )
+    }
+
+    @Test
     fun simpleLlmIsDeniedWithoutLowLevelAccessAndReportsBridgeFailures() {
         var calls = 0
         val bridge = NativeLuaLlmBridge {
