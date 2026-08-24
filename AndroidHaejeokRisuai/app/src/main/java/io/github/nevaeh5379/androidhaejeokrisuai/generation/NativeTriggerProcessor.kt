@@ -79,12 +79,40 @@ object NativeTriggerProcessor {
         }
 
         for (trigger in runtimeCharacter.triggerScripts) {
-            if (manualName != null) {
+            val firstEffectType = trigger.effects.firstOrNull()?.get("type")?.toString().orEmpty()
+            val isLuaTrigger = firstEffectType == "triggerlua"
+            if (isLuaTrigger) {
+                if (mode in TRANSIENT_MODES) continue
+            } else if (manualName != null) {
                 if (trigger.comment != manualName) continue
             } else if (trigger.type != mode) continue
             if (!passes(trigger, working, messageCount, ::parse, ::getVar)) continue
 
-            if (trigger.effects.firstOrNull()?.get("type")?.toString() == "v2Header") {
+            if (isLuaTrigger) {
+                val luaResult = NativeLuaTriggerEngine.run(
+                    code = trigger.effects.first()["code"]?.toString().orEmpty(),
+                    mode = manualName ?: mode,
+                    settings = settings,
+                    character = character,
+                    messages = working,
+                    variables = vars,
+                    chatId = chatId,
+                    authorNote = authorNote,
+                    greetingIndex = greetingIndex,
+                    inheritedStop = stop,
+                    inheritedPatch = runtimePatch,
+                )
+                working.clear(); working += luaResult.messages
+                vars.clear(); vars.putAll(luaResult.variables)
+                stop = luaResult.stopSending
+                runtimePatch = luaResult.runtimePatch
+                runtimeCharacter = runtimePatch.applyTo(character)
+                runtimeSettings = runtimePatch.applyTo(settings)
+                runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
+                continue
+            }
+
+            if (firstEffectType == "v2Header") {
                 val v2 = NativeTriggerV2Processor.run(
                     trigger = trigger,
                     settings = runtimeSettings,
