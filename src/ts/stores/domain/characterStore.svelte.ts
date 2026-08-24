@@ -34,6 +34,29 @@ function persistedFieldsFingerprint(
   return snapshotFingerprint(persisted);
 }
 
+function mergeLoadedChats(loaded: Chat[], current: Chat[]): Chat[] {
+  if (current.length === 0) return loaded;
+
+  const currentById = new Map(
+    current.filter((chat) => chat.id).map((chat) => [chat.id!, chat]),
+  );
+  const loadedIds = new Set<string>();
+  const merged = loaded.map((chat) => {
+    if (!chat.id) return chat;
+    loadedIds.add(chat.id);
+    const existing = currentById.get(chat.id);
+    if (!existing) return chat;
+    Object.assign(chat, existing);
+    chat.detailsLoaded = true;
+    return chat;
+  });
+
+  for (const chat of current) {
+    if (chat.id && !loadedIds.has(chat.id)) merged.push(chat);
+  }
+  return merged;
+}
+
 function mergeLoadedMessages(
   loaded: Chat["message"],
   current: Chat["message"],
@@ -483,12 +506,13 @@ class CharacterStore {
         if (fullChar) {
           const idx = this.characters.findIndex((c) => c.chaId === chaId);
           if (idx >= 0) {
-            const existingChats = this.characters[idx].chats;
+            const existingChats = this.characters[idx].chats ?? [];
+            const loadedChats = fullChar.chats ?? [];
             this.characters[idx] = Object.assign(
               this.characters[idx],
               fullChar,
               {
-                chats: existingChats,
+                chats: mergeLoadedChats(loadedChats, existingChats),
                 detailsLoaded: true,
               },
             );

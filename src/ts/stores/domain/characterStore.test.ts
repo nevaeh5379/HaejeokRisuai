@@ -52,6 +52,25 @@ describe("CharacterStore", () => {
     } as unknown as ISqlStorage;
   });
 
+  it("keeps chat summaries returned by lazy character hydration", async () => {
+    const shallow = makeChar("lazy", 0);
+    shallow.detailsLoaded = false;
+    const loaded = makeChar("lazy", 2);
+    loaded.chaId = shallow.chaId;
+    loaded.detailsLoaded = true;
+    loaded.chats[0].id = "chat-lazy-1";
+    loaded.chats[1].id = "chat-lazy-2";
+    vi.mocked(mockStorage.loadCharacter).mockResolvedValue(loaded);
+    characterStore.init([shallow], mockStorage);
+
+    await characterStore.ensureCharacterDetails(shallow.chaId!);
+
+    expect(characterStore.characters[0].chats.map((chat) => chat.id)).toEqual([
+      "chat-lazy-1",
+      "chat-lazy-2",
+    ]);
+    expect(characterStore.characters[0].detailsLoaded).toBe(true);
+  });
 
   it("hydrates only messages when full generation history is requested from a paged chat", async () => {
     const chars = [makeChar("paged")];

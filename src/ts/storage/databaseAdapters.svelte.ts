@@ -270,6 +270,27 @@ export function createSqlDatabaseAdapter(
     }
   }
 
+  function mergeLoadedChats(loaded: Chat[], current: Chat[]): Chat[] {
+    if (current.length === 0) return loaded;
+    const currentById = new Map(
+      current.filter((chat) => chat.id).map((chat) => [chat.id!, chat]),
+    );
+    const loadedIds = new Set<string>();
+    const merged = loaded.map((chat) => {
+      if (!chat.id) return chat;
+      loadedIds.add(chat.id);
+      const existing = currentById.get(chat.id);
+      if (!existing) return chat;
+      Object.assign(chat, existing);
+      chat.detailsLoaded = true;
+      return chat;
+    });
+    for (const chat of current) {
+      if (chat.id && !loadedIds.has(chat.id)) merged.push(chat);
+    }
+    return merged;
+  }
+
   async function ensureCharacterDetails(chaId: string): Promise<void> {
     if (characterDetailPromises.has(chaId)) {
       return characterDetailPromises.get(chaId);
@@ -283,9 +304,10 @@ export function createSqlDatabaseAdapter(
           )[];
           const idx = chars.findIndex((c) => c.chaId === chaId);
           if (idx >= 0) {
-            const existingChats = chars[idx].chats;
+            const existingChats = chars[idx].chats ?? [];
+            const loadedChats = fullChar.chats ?? [];
             chars[idx] = Object.assign(chars[idx], fullChar, {
-              chats: existingChats,
+              chats: mergeLoadedChats(loadedChats, existingChats),
               detailsLoaded: true,
             });
           }

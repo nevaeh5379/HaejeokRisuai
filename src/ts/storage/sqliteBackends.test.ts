@@ -111,6 +111,22 @@ function makeWebStorage(database: DatabaseSync) {
         }
       }
     },
+    execBatch: async (
+      statements: Array<{ sql: string; bind?: unknown[] }>,
+    ) => {
+      for (const { sql, bind = [] } of statements) {
+        if (bind.length === 0) db.exec(sql);
+        else {
+          const stmt = db.prepare(sql);
+          try {
+            stmt.bind(bind);
+            stmt.step();
+          } finally {
+            stmt.finalize();
+          }
+        }
+      }
+    },
     select: async (sql: string, bind: unknown[] = []) => selectRows(sql, bind),
     selectOne: async (sql: string, bind: unknown[] = []) =>
       selectRows(sql, bind).rows[0] ?? null,
@@ -127,12 +143,56 @@ function makeWebStorage(database: DatabaseSync) {
 }
 
 describe("WebSqliteStorage", () => {
-  it("normalizes messageLimit before binding LIMIT", async () => {    const database = new DatabaseSync(":memory:");
+  it("normalizes messageLimit before binding LIMIT", async () => {
+    const database = new DatabaseSync(":memory:");
     seedChat(database);
     const storage = makeWebStorage(database);
     const chat = await storage.loadChat("chat-1", { messageLimit: 0 });
     expect(chat?.messageOffset).toBe(2);
     expect(chat?.message).toHaveLength(1);
+    database.close();
+  });
+
+  it("restores stable message ids across full and paged loads", async () => {
+    const database = new DatabaseSync(":memory:");
+    seedChat(database);
+    const storage = makeWebStorage(database);
+
+    const chat = await storage.loadChat("chat-1");
+    expect(chat?.message.map((message) => message.chatId)).toEqual([
+      "m1",
+      "m2",
+      "m3",
+    ]);
+    expect(chat?.message.map((message) => message.data)).toEqual([
+      "one",
+      "two",
+      "three",
+    ]);
+
+    const all = await storage.loadChatMessages("chat-1");
+    expect(all.map((message) => message.chatId)).toEqual(["m1", "m2", "m3"]);
+
+    const page = await storage.loadChatMessagePage("chat-1", undefined, 2);
+    expect(page.messages.map((message) => message.chatId)).toEqual(["m2", "m3"]);
+    database.close();
+  });
+
+  it("batches commit statements into a single worker RPC", async () => {
+    const database = new DatabaseSync(":memory:");
+    database.exec(sqliteSchemaSql);
+    const storage = makeWebStorage(database);
+    const rpc = (storage as any).rpc;
+    const batchSpy = vi.spyOn(rpc, "execBatch");
+
+    await storage.commit(createEmptySqlCommit(0, "batched"));
+
+    expect(batchSpy).toHaveBeenCalledTimes(1);
+    const batchedStatements = batchSpy.mock.calls[0][0] as Array<{
+      sql: string;
+      bind?: unknown[];
+    }>;
+    expect(batchedStatements.length).toBeGreaterThan(1);
     database.close();
   });
 

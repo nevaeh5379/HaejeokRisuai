@@ -27,7 +27,10 @@ import type {
   NodePostgresCharacterSearchResult,
   NodePostgresBotChatStats,
 } from "./nodePostgresStorage";
-import { createSqlDatabaseAdapter } from "./databaseAdapters.svelte";
+import {
+  createSqlDatabaseAdapter,
+  PROMPT_SETTING_KEYS,
+} from "./databaseAdapters.svelte";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
 import {
   buildSqlReplaceCommit,
@@ -50,9 +53,12 @@ import {
 
 // ── Worker RPC plumbing ──────────────────────────────────────────────
 
+type SqliteBatchStatement = { sql: string; bind?: unknown[] };
+
 type ReqMsg =
   | { id: number; type: "init" }
   | { id: number; type: "exec"; sql: string; bind?: unknown[] }
+  | { id: number; type: "execBatch"; statements: SqliteBatchStatement[] }
   | { id: number; type: "select"; sql: string; bind?: unknown[] }
   | { id: number; type: "selectOne"; sql: string; bind?: unknown[] }
   | { id: number; type: "close" };
@@ -67,6 +73,7 @@ interface ResMsg {
 type ReqMsgWithoutId =
   | { type: "init" }
   | { type: "exec"; sql: string; bind?: unknown[] }
+  | { type: "execBatch"; statements: SqliteBatchStatement[] }
   | { type: "select"; sql: string; bind?: unknown[] }
   | { type: "selectOne"; sql: string; bind?: unknown[] }
   | { type: "close" };
@@ -74,6 +81,7 @@ type ReqMsgWithoutId =
 interface WorkerRpc {
   init(): Promise<{ enabled: boolean; revision: number }>;
   exec(sql: string, bind?: unknown[]): Promise<void>;
+  execBatch(statements: SqliteBatchStatement[]): Promise<void>;
   select(
     sql: string,
     bind?: unknown[],
@@ -141,6 +149,8 @@ function getWorkerRpc(): WorkerRpc {
     init: () => call<{ enabled: boolean; revision: number }>({ type: "init" }),
     exec: (sql, bind) =>
       call<void>({ type: "exec", sql, bind }).then(() => undefined),
+    execBatch: (statements) =>
+      call<void>({ type: "execBatch", statements }).then(() => undefined),
     select: (sql, bind) =>
       call<{ rows: Record<string, unknown>[]; columns: string[] }>({
         type: "select",
@@ -163,6 +173,14 @@ function getWorkerRpc(): WorkerRpc {
 // ── Storage implementation ────────────────────────────────────────────
 
 const DB_FILE = "/risuai-local.sqlite3";
+const DEFERRED_STARTUP_SETTING_KEYS = [
+  "personas",
+  "loreBook",
+  "modules",
+  "globalscript",
+  "pluginCustomStorage",
+  ...PROMPT_SETTING_KEYS,
+] as const;
 
 export class WebSqliteStorage implements ISqlStorage {
   readonly backendKind = "web-sqlite" as const;
@@ -251,6 +269,121 @@ export class WebSqliteStorage implements ISqlStorage {
     ]);
   }
 
+  private rebuildGroupedNodeValues(
+    rows: Record<string, unknown>[],
+    ownerKey: string,
+  ): Map<string, unknown> {
+    const grouped = new Map<string, Record<string, unknown>[]>();
+    for (const row of rows) {
+      const owner = String(row[ownerKey] ?? "");
+      if (!owner) continue;
+      const list = grouped.get(owner) ?? [];
+      list.push(row);
+      grouped.set(owner, list);
+    }
+    return new Map(
+      Array.from(grouped, ([owner, nodes]) => [
+        owner,
+        rebuildRelationalValue(nodes),
+      ]),
+    );
+  }
+
+  private async loadMessagesBatch(
+    chatId: string,
+    limit?: number,
+    offset = 0,
+  ): Promise<Message[]> {
+    const bounded = limit === undefined ? "" : " LIMIT ? OFFSET ?";
+    const bind = limit === undefined ? [chatId] : [chatId, limit, offset];
+    const rows = await this.selectRows(
+      `WITH selected AS (
+         SELECT chat_id, id, position, role, content_text, sender_name, sent_time
+         FROM messages WHERE chat_id = ? ORDER BY position${bounded}
+       )
+       SELECT selected.id AS message_id, selected.position AS message_position,
+              selected.role AS message_role, selected.content_text AS message_content_text,
+              selected.sender_name AS message_sender_name, selected.sent_time AS message_sent_time,
+              n.node_id, n.parent_node_id, n.node_order, n.object_key,
+              n.object_key_encoded, n.value_type, n.text_value, n.encoded_text_value,
+              n.number_value, n.boolean_value
+       FROM selected
+       LEFT JOIN message_extension_nodes n
+         ON n.chat_id = selected.chat_id AND n.message_id = selected.id
+       ORDER BY selected.position, n.node_id`,
+      bind,
+    );
+    const nodeGroups = new Map<string, Record<string, unknown>[]>();
+    const coreRows = new Map<string, Record<string, unknown>>();
+    const orderedIds: string[] = [];
+    for (const row of rows) {
+      const id = String(row.message_id);
+      if (!coreRows.has(id)) {
+        coreRows.set(id, row);
+        orderedIds.push(id);
+      }
+      if (row.node_id === null || row.node_id === undefined) continue;
+      const nodes = nodeGroups.get(id) ?? [];
+      nodes.push(row);
+      nodeGroups.set(id, nodes);
+    }
+    return orderedIds.map((id) => {
+      const nodes = nodeGroups.get(id);
+      const core = coreRows.get(id)!;
+      const rebuilt = nodes?.length
+        ? rebuildRelationalValue(nodes)
+        : {
+            role: String(core.message_role ?? "char"),
+            data: String(core.message_content_text ?? ""),
+            ...(core.message_sender_name != null
+              ? { name: String(core.message_sender_name) }
+              : {}),
+            ...(core.message_sent_time != null
+              ? { time: Number(core.message_sent_time) }
+              : {}),
+          };
+      const message =
+        rebuilt && typeof rebuilt === "object"
+          ? (rebuilt as Message)
+          : ({ role: "char", data: String(rebuilt ?? "") } as Message);
+      message.chatId = id;
+      return message;
+    });
+  }
+
+  private async loadCharacterChats(characterId: string): Promise<Chat[]> {
+    const chatRows = await this.selectRows(
+      "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
+      [characterId],
+    );
+    if (chatRows.length === 0) return [];
+    const nodeRows = await this.selectRows(
+      `SELECT chat_id, node_id, parent_node_id, node_order, object_key,
+              object_key_encoded, value_type, text_value, encoded_text_value,
+              number_value, boolean_value
+       FROM chat_extension_nodes
+       WHERE chat_id IN (SELECT id FROM chats WHERE character_id = ?)
+       ORDER BY chat_id, node_id`,
+      [characterId],
+    );
+    const values = this.rebuildGroupedNodeValues(nodeRows, "chat_id");
+    return chatRows.map((row) => {
+      const id = row.id as string;
+      const loaded = values.get(id);
+      const chat =
+        loaded && typeof loaded === "object" ? (loaded as Chat) : ({} as Chat);
+      chat.id = id;
+      chat.name = (row.name as string) ?? "";
+      chat.note = (row.note as string) ?? "";
+      chat.folderId = (row.folder_id as string) ?? undefined;
+      chat.lastDate = (row.last_message_time as number) ?? undefined;
+      chat.message = [];
+      chat.messagesLoaded = false;
+      chat.detailsLoaded = true;
+      return chat;
+    });
+  }
+
   private async validatePresetCommit(commit: SqlCommit): Promise<void> {
     if (!commit.presets) return;
     const originalIds = (
@@ -304,16 +437,38 @@ export class WebSqliteStorage implements ISqlStorage {
     const db: Database = {} as any;
 
     const settingsRows = await this.selectRows("SELECT key FROM system_settings");
+    const deferredKeyList = shallow ? [...DEFERRED_STARTUP_SETTING_KEYS] : [];
+    const deferredKeys = new Set<string>(deferredKeyList);
+    const deferredWhere = deferredKeyList.length
+      ? ` WHERE setting_key NOT IN (${deferredKeyList.map(() => "?").join(",")})`
+      : "";
+    const settingNodeRows = await this.selectRows(
+      `SELECT setting_key, node_id, parent_node_id, node_order, object_key,
+              object_key_encoded, value_type, text_value, encoded_text_value,
+              number_value, boolean_value
+       FROM setting_extension_nodes${deferredWhere}
+       ORDER BY setting_key, node_id`,
+      deferredKeyList,
+    );
+    const settingValues = this.rebuildGroupedNodeValues(
+      settingNodeRows,
+      "setting_key",
+    );
     for (const row of settingsRows) {
-      (db as any)[row.key as string] = await this.loadSettingValue(
-        row.key as string,
-      );
+      const key = row.key as string;
+      if (deferredKeys.has(key)) continue;
+      (db as any)[key] = settingValues.has(key)
+        ? settingValues.get(key)
+        : await this.loadSettingValue(key);
     }
 
-    // Also merge plugin_custom_storage table if present
+    // A shallow startup only needs plugin-storage keys, which are loaded via
+    // the dedicated API later. Pulling every plugin value here defeats lazy
+    // loading and can clone a large payload across the Worker boundary.
     if (
-      !db.pluginCustomStorage ||
-      Object.keys(db.pluginCustomStorage).length === 0
+      !shallow &&
+      (!db.pluginCustomStorage ||
+        Object.keys(db.pluginCustomStorage).length === 0)
     ) {
       const pluginStorageRows = await this.selectRows(
         "SELECT key, value FROM plugin_custom_storage",
@@ -360,28 +515,7 @@ export class WebSqliteStorage implements ISqlStorage {
         )) ?? {}) as any;
         fullChar.chaId = row.id;
         fullChar.detailsLoaded = true;
-        const chatRows = await this.selectRows(
-          "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
-          [row.id],
-        );
-        const chats: Chat[] = [];
-        for (const cr of chatRows) {
-          const cd = ((await this.loadNodeValue(
-            "chat_extension_nodes",
-            "chat_id = ?",
-            [cr.id],
-          )) ?? {}) as any;
-          cd.id = cr.id;
-          cd.name = (cr.name as string) ?? "";
-          cd.note = (cr.note as string) ?? "";
-          cd.folderId = (cr.folder_id as string) ?? undefined;
-          cd.lastDate = (cr.last_message_time as number) ?? undefined;
-          cd.message = [];
-          cd.messagesLoaded = false;
-          cd.detailsLoaded = true;
-          chats.push(cd);
-        }
-        fullChar.chats = chats;
+        fullChar.chats = await this.loadCharacterChats(row.id as string);
         characters.push(fullChar);
       }
     }
@@ -397,13 +531,7 @@ export class WebSqliteStorage implements ISqlStorage {
     if (!isInit)
       return { status: "empty", revision: this.revision, database: null };
     if (shallow) {
-      const adapter = createSqlDatabaseAdapter(db, this, [
-        "personas",
-        "loreBook",
-        "modules",
-        "prompts",
-        "scripts",
-      ]);
+      const adapter = createSqlDatabaseAdapter(db, this);
       return { status: "ready", revision: this.revision, database: adapter };
     }
     return { status: "ready", revision: this.revision, database: db };
@@ -426,23 +554,29 @@ export class WebSqliteStorage implements ISqlStorage {
       if (commit.baseRevision !== currentRevision)
         throw new SqlRevisionConflictError(currentRevision);
       await this.validatePresetCommit(commit);
+      const statements: SqliteBatchStatement[] = [];
+      const append = async (sql: string, bind: unknown[] = []) => {
+        statements.push({ sql, bind });
+      };
       if (commit.replaceAll) {
-        await this.run("DELETE FROM system_settings");
-        await this.run("DELETE FROM plugin_custom_storage");
-        await this.run("DELETE FROM characters");
+        await append("DELETE FROM system_settings");
+        await append("DELETE FROM plugin_custom_storage");
+        await append("DELETE FROM characters");
       }
-      await applySqliteCommit(commit, (sql, bind = []) => this.run(sql, bind));
+      await applySqliteCommit(commit, append);
       const revision = currentRevision + 1;
-      await this.run(
+      await append(
         "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
         [revision],
       );
       const action =
         commit.action || (commit.replaceAll ? "replace-all" : "sync");
-      await this.run(
+      await append(
         "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
         [revision, action],
       );
+      if (!this.rpc) throw new Error("Database not opened");
+      await this.rpc.execBatch(statements);
       await this.run("COMMIT");
       this.revision = revision;
       return { revision };
@@ -479,28 +613,7 @@ export class WebSqliteStorage implements ISqlStorage {
     )) ?? {}) as any;
     fc.chaId = characterId;
     fc.detailsLoaded = true;
-    const cr = await this.selectRows(
-      "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
-      [characterId],
-    );
-    const chats: Chat[] = [];
-    for (const r of cr) {
-      const cd = ((await this.loadNodeValue(
-        "chat_extension_nodes",
-        "chat_id = ?",
-        [r.id],
-      )) ?? {}) as any;
-      cd.id = r.id;
-      cd.name = (r.name as string) ?? "";
-      cd.note = (r.note as string) ?? "";
-      cd.folderId = (r.folder_id as string) ?? undefined;
-      cd.lastDate = (r.last_message_time as number) ?? undefined;
-      cd.message = [];
-      cd.messagesLoaded = false;
-      cd.detailsLoaded = true;
-      chats.push(cd);
-    }
-    fc.chats = chats;
+    fc.chats = await this.loadCharacterChats(characterId);
     return fc;
   }
 
@@ -534,26 +647,7 @@ export class WebSqliteStorage implements ISqlStorage {
         ? undefined
         : normalizeSqliteLimit(requestedLimit);
     const offset = limit === undefined ? 0 : Math.max(0, total - limit);
-    const mr =
-      limit === undefined
-        ? await this.selectRows(
-            "SELECT id FROM messages WHERE chat_id = ? ORDER BY position",
-            [chatId],
-          )
-        : await this.selectRows(
-            "SELECT id FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?",
-            [chatId, limit, offset],
-          );
-    cd.message = [];
-    for (const r of mr) {
-      cd.message.push(
-        await this.loadNodeValue(
-          "message_extension_nodes",
-          "chat_id = ? AND message_id = ?",
-          [chatId, r.id],
-        ),
-      );
-    }
+    cd.message = await this.loadMessagesBatch(chatId, limit, offset);
     cd.messageOffset = offset;
     cd.messageTotal = total;
     cd.messagesFullyLoaded = offset === 0;
@@ -563,21 +657,7 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   async loadChatMessages(chatId: string): Promise<Message[]> {
-    const rows = await this.selectRows(
-      "SELECT id FROM messages WHERE chat_id = ? ORDER BY position",
-      [chatId],
-    );
-    const messages: Message[] = [];
-    for (const r of rows) {
-      messages.push(
-        (await this.loadNodeValue(
-          "message_extension_nodes",
-          "chat_id = ? AND message_id = ?",
-          [chatId, r.id],
-        )) as Message,
-      );
-    }
-    return messages;
+    return this.loadMessagesBatch(chatId);
   }
 
   async loadChatMessagePage(
@@ -593,20 +673,11 @@ export class WebSqliteStorage implements ISqlStorage {
     const end = normalizeSqlitePageEnd(before, total);
     const normalizedLimit = normalizeSqliteLimit(limit);
     const offset = Math.max(0, end - normalizedLimit);
-    const rows = await this.selectRows(
-      "SELECT id FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?",
-      [chatId, end - offset, offset],
+    const messages = await this.loadMessagesBatch(
+      chatId,
+      end - offset,
+      offset,
     );
-    const messages: Message[] = [];
-    for (const row of rows) {
-      messages.push(
-        (await this.loadNodeValue(
-          "message_extension_nodes",
-          "chat_id = ? AND message_id = ?",
-          [chatId, row.id],
-        )) as Message,
-      );
-    }
     return {
       messages,
       offset,
@@ -663,10 +734,24 @@ export class WebSqliteStorage implements ISqlStorage {
     const rows = await this.selectRows(
       "SELECT key FROM system_settings WHERE domain = 'prompt'",
     );
-    const p: Record<string, any> = {};
-    for (const r of rows)
-      p[r.key as string] = await this.loadSettingValue(r.key as string);
-    return p;
+    if (rows.length === 0) return {};
+    const nodeRows = await this.selectRows(
+      `SELECT setting_key, node_id, parent_node_id, node_order, object_key,
+              object_key_encoded, value_type, text_value, encoded_text_value,
+              number_value, boolean_value
+       FROM setting_extension_nodes
+       WHERE setting_key IN (SELECT key FROM system_settings WHERE domain = 'prompt')
+       ORDER BY setting_key, node_id`,
+    );
+    const values = this.rebuildGroupedNodeValues(nodeRows, "setting_key");
+    const prompts: Record<string, any> = {};
+    for (const row of rows) {
+      const key = row.key as string;
+      prompts[key] = values.has(key)
+        ? values.get(key)
+        : await this.loadSettingValue(key);
+    }
+    return prompts;
   }
   async loadScripts(): Promise<customscript[]> {
     return (

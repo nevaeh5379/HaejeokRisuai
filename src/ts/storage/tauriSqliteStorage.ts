@@ -555,13 +555,15 @@ export class TauriSqliteStorage implements ISqlStorage {
             [chatId, limit, offset],
           );
     chatData.message = await Promise.all(
-      msgRows.map((r) =>
-        this.loadNodeValue(
+      msgRows.map(async (r) => {
+        const message = (await this.loadNodeValue(
           "message_extension_nodes",
           "chat_id = ? AND message_id = ?",
           [chatId, r.id],
-        ),
-      ),
+        )) as Message;
+        if (message && typeof message === "object") message.chatId = r.id;
+        return message;
+      }),
     );
     chatData.messageOffset = offset;
     chatData.messageTotal = total;
@@ -577,14 +579,15 @@ export class TauriSqliteStorage implements ISqlStorage {
       [chatId],
     );
     return Promise.all(
-      msgRows.map(
-        (r) =>
-          this.loadNodeValue(
-            "message_extension_nodes",
-            "chat_id = ? AND message_id = ?",
-            [chatId, r.id],
-          ) as Promise<Message>,
-      ),
+      msgRows.map(async (r) => {
+        const message = (await this.loadNodeValue(
+          "message_extension_nodes",
+          "chat_id = ? AND message_id = ?",
+          [chatId, r.id],
+        )) as Message;
+        if (message && typeof message === "object") message.chatId = r.id;
+        return message;
+      }),
     );
   }
 
@@ -607,14 +610,15 @@ export class TauriSqliteStorage implements ISqlStorage {
     );
     return {
       messages: await Promise.all(
-        msgRows.map(
-          (row) =>
-            this.loadNodeValue(
-              "message_extension_nodes",
-              "chat_id = ? AND message_id = ?",
-              [chatId, row.id],
-            ) as Promise<Message>,
-        ),
+        msgRows.map(async (row) => {
+          const message = (await this.loadNodeValue(
+            "message_extension_nodes",
+            "chat_id = ? AND message_id = ?",
+            [chatId, row.id],
+          )) as Message;
+          if (message && typeof message === "object") message.chatId = row.id;
+          return message;
+        }),
       ),
       offset,
       total,

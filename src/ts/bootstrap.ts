@@ -644,7 +644,11 @@ async function cleanChunks(
 ) {
   const cleanColdStorage = options.cleanColdStorage ?? false;
   const db = getDatabase();
-  if (isNodeServer) {
+  // SQL startup intentionally keeps character details lazy. A destructive
+  // asset sweep cannot prove that images referenced by unhydrated fields
+  // (emotionImages/additionalAssets/VITS/etc.) are unused, so never delete
+  // local assets from a partial SQL snapshot.
+  if (isNodeServer || getSqlRuntime().isSql) {
     return;
   }
   if (db.coldstorage && !cleanColdStorage) {

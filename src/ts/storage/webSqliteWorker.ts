@@ -169,6 +169,11 @@ async function handleInit(): Promise<{ enabled: boolean; revision: number }> {
 type ReqMsg =
   | { id: number; type: "init" }
   | { id: number; type: "exec"; sql: string; bind?: unknown[] }
+  | {
+      id: number;
+      type: "execBatch";
+      statements: { sql: string; bind?: unknown[] }[];
+    }
   | { id: number; type: "select"; sql: string; bind?: unknown[] }
   | { id: number; type: "selectOne"; sql: string; bind?: unknown[] }
   | { id: number; type: "close" };
@@ -185,6 +190,13 @@ self.onmessage = async (e: MessageEvent<ReqMsg>) => {
       }
       case "exec": {
         runInternal(msg.sql, msg.bind ?? []);
+        (self as any).postMessage({ id: msg.id, ok: true });
+        break;
+      }
+      case "execBatch": {
+        for (const statement of msg.statements) {
+          runInternal(statement.sql, statement.bind ?? []);
+        }
         (self as any).postMessage({ id: msg.id, ok: true });
         break;
       }
