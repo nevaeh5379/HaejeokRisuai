@@ -42,6 +42,11 @@ import {
   SQLITE_SCHEMA_VERSION,
   SqlSchemaResetRequiredError,
 } from "./relationalNodeCodec";
+import {
+  AsyncSerialQueue,
+  normalizeSqliteLimit,
+  normalizeSqlitePageEnd,
+} from "./sqliteStorageUtils";
 
 interface Sqlite3Module {
   oo1: {
@@ -66,29 +71,33 @@ interface SqliteDb {
 }
 
 let sqlite3Singleton: Sqlite3Module | null = null;
+let sqlite3InitPromise: Promise<Sqlite3Module> | null = null;
 let sqlite3InitFailed = false;
 
 async function getSqlite3(): Promise<Sqlite3Module> {
   if (sqlite3InitFailed) {
     throw new Error("SQLite WASM is not available in this browser");
   }
-  if (sqlite3Singleton) {
-    return sqlite3Singleton;
+  if (sqlite3Singleton) return sqlite3Singleton;
+  if (!sqlite3InitPromise) {
+    sqlite3InitPromise = (async () => {
+      try {
+        const mod = await import("@sqlite.org/sqlite-wasm");
+        const sqlite3InitModule = mod.default ?? (mod as any).sqlite3InitModule;
+        if (!sqlite3InitModule) {
+          throw new Error("sqlite3InitModule not found in module");
+        }
+        const sqlite3 = await sqlite3InitModule();
+        sqlite3Singleton = sqlite3 as unknown as Sqlite3Module;
+        return sqlite3Singleton;
+      } catch (error) {
+        sqlite3InitFailed = true;
+        console.error("Failed to load SQLite WASM:", error);
+        throw new Error("SQLite WASM is not available in this browser");
+      }
+    })();
   }
-  try {
-    const mod = await import("@sqlite.org/sqlite-wasm");
-    const sqlite3InitModule = mod.default ?? (mod as any).sqlite3InitModule;
-    if (!sqlite3InitModule) {
-      throw new Error("sqlite3InitModule not found in module");
-    }
-    const sqlite3 = await sqlite3InitModule();
-    sqlite3Singleton = sqlite3 as unknown as Sqlite3Module;
-    return sqlite3Singleton;
-  } catch (error) {
-    sqlite3InitFailed = true;
-    console.error("Failed to load SQLite WASM:", error);
-    throw new Error("SQLite WASM is not available in this browser");
-  }
+  return sqlite3InitPromise;
 }
 
 const DB_FILE = "/risuai-local.sqlite3";
@@ -99,6 +108,8 @@ export class WebSqliteStorage implements ISqlStorage {
   private db: SqliteDb | null = null;
   private revision = 0;
   private initialized = false;
+  private initPromise: Promise<boolean> | null = null;
+  private readonly writeQueue = new AsyncSerialQueue();
   private _enabled = false;
 
   isEnabled(): boolean {
@@ -110,14 +121,19 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   async init(): Promise<boolean> {
-    if (this.initialized) {
-      return this._enabled;
+    if (this.initialized) return this._enabled;
+    if (!this.initPromise) {
+      this.initPromise = this.initialize().finally(() => {
+        this.initPromise = null;
+      });
     }
+    return this.initPromise;
+  }
+
+  private async initialize(): Promise<boolean> {
     try {
       const sqlite3 = await getSqlite3();
-      if (!("opfs" in sqlite3)) {
-        throw new Error("OPFS not available");
-      }
+      if (!("opfs" in sqlite3)) throw new Error("OPFS not available");
       this.db = new sqlite3.oo1.OpfsDb(DB_FILE);
       const existingMeta = this.selectRows(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'system_storage_meta'",
@@ -137,18 +153,21 @@ export class WebSqliteStorage implements ISqlStorage {
         }
       }
       this.db.exec(sqliteSchemaSql);
-
       const rows = this.selectRows(
         "SELECT initialized, revision FROM system_storage_meta WHERE singleton = 1",
       );
-      if (rows.length > 0) {
-        this.revision = Number(rows[0].revision) || 0;
-      }
+      if (rows.length > 0) this.revision = Number(rows[0].revision) || 0;
       this._enabled = true;
       this.initialized = true;
-      return this._enabled;
+      return true;
     } catch (error) {
       console.error("WebSqliteStorage init failed:", error);
+      try {
+        this.db?.close();
+      } catch {
+        // Ignore cleanup failures and preserve the initialization error.
+      }
+      this.db = null;
       this.initialized = true;
       this._enabled = false;
       if (error instanceof SqlSchemaResetRequiredError) throw error;
@@ -374,6 +393,10 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   async commit(commit: SqlCommit): Promise<SqlCommitResult> {
+    return this.writeQueue.run(() => this.commitInternal(commit));
+  }
+
+  private async commitInternal(commit: SqlCommit): Promise<SqlCommitResult> {
     if (!this._enabled) throw new Error("SQLite storage is not enabled");
     this.run("BEGIN IMMEDIATE");
     try {
@@ -398,14 +421,18 @@ export class WebSqliteStorage implements ISqlStorage {
       const action =
         commit.action || (commit.replaceAll ? "replace-all" : "sync");
       this.run(
-        "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', datetime('now'))",
+        "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
         [revision, action],
       );
       this.run("COMMIT");
       this.revision = revision;
       return { revision };
     } catch (error) {
-      this.run("ROLLBACK");
+      try {
+        this.run("ROLLBACK");
+      } catch {
+        // Preserve the original transaction error.
+      }
       throw error;
     }
   }
@@ -478,11 +505,12 @@ export class WebSqliteStorage implements ISqlStorage {
       [chatId],
     );
     const total = Number(totalRow?.total ?? 0);
-    const limit = options?.messageLimit;
-    const offset =
-      limit === undefined
-        ? 0
-        : Math.max(0, total - Math.max(1, Math.floor(limit)));
+    const requestedLimit = options?.messageLimit;
+    const limit =
+      requestedLimit === undefined
+        ? undefined
+        : normalizeSqliteLimit(requestedLimit);
+    const offset = limit === undefined ? 0 : Math.max(0, total - limit);
     const mr =
       limit === undefined
         ? this.selectRows(
@@ -532,8 +560,9 @@ export class WebSqliteStorage implements ISqlStorage {
       [chatId],
     );
     const total = Number(totalRow?.total ?? 0);
-    const end = Math.min(total, Math.max(0, before ?? total));
-    const offset = Math.max(0, end - Math.max(1, Math.floor(limit)));
+    const end = normalizeSqlitePageEnd(before, total);
+    const normalizedLimit = normalizeSqliteLimit(limit);
+    const offset = Math.max(0, end - normalizedLimit);
     const rows = this.selectRows(
       "SELECT id FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?",
       [chatId, end - offset, offset],
@@ -663,34 +692,59 @@ export class WebSqliteStorage implements ISqlStorage {
     };
   }
   async setColdStorageItem(key: string, value: unknown): Promise<boolean> {
-    await writeSqliteColdStorage(
-      (sql, bind = []) => this.run(sql, bind),
-      key,
-      value,
-    );
-    return true;
+    return this.writeQueue.run(async () => {
+      this.run("BEGIN IMMEDIATE");
+      try {
+        await writeSqliteColdStorage(
+          (sql, bind = []) => this.run(sql, bind),
+          key,
+          value,
+        );
+        this.run("COMMIT");
+        return true;
+      } catch (error) {
+        try {
+          this.run("ROLLBACK");
+        } catch {
+          // Preserve the original cold-storage error.
+        }
+        throw error;
+      }
+    });
   }
   async removeColdStorageItems(keys: string[]): Promise<number> {
     if (keys.length === 0) return 0;
-    const ph = keys.map(() => "?").join(",");
-    this.run(`DELETE FROM cold_archives WHERE archive_id IN (${ph})`, keys);
-    return keys.length;
+    return this.writeQueue.run(async () => {
+      const ph = keys.map(() => "?").join(",");
+      this.run(`DELETE FROM cold_archives WHERE archive_id IN (${ph})`, keys);
+      return keys.length;
+    });
   }
   async pruneColdStorage(retainedKeys: string[]): Promise<number> {
-    const all = this.selectRows("SELECT archive_id FROM cold_archives").map(
-      (r) => r.archive_id as string,
-    );
-    return this.removeColdStorageItems(
-      all.filter((k) => !retainedKeys.includes(k)),
-    );
+    return this.writeQueue.run(async () => {
+      const all = this.selectRows("SELECT archive_id FROM cold_archives").map(
+        (r) => r.archive_id as string,
+      );
+      const removed = all.filter((k) => !retainedKeys.includes(k));
+      if (removed.length === 0) return 0;
+      const ph = removed.map(() => "?").join(",");
+      this.run(`DELETE FROM cold_archives WHERE archive_id IN (${ph})`, removed);
+      return removed.length;
+    });
   }
 
   async listRevisions(limit?: number): Promise<NodePostgresRevision[]> {
-    const hasLimit = limit !== undefined && limit !== null && limit > 0;
+    const normalizedLimit =
+      limit !== undefined && Number.isFinite(limit) && limit > 0
+        ? normalizeSqliteLimit(limit)
+        : undefined;
     const sql =
       "SELECT id, storage_revision, database_initialized, scope, action, restored_from_revision, created_at FROM system_revisions ORDER BY created_at DESC, id DESC" +
-      (hasLimit ? " LIMIT ?" : "");
-    const rows = this.selectRows(sql, hasLimit ? [limit] : []);
+      (normalizedLimit !== undefined ? " LIMIT ?" : "");
+    const rows = this.selectRows(
+      sql,
+      normalizedLimit !== undefined ? [normalizedLimit] : [],
+    );
     return rows.map((r) => ({
       id: Number(r.id),
       storage_revision:
@@ -777,7 +831,7 @@ export class WebSqliteStorage implements ISqlStorage {
     const rows = this.selectRows(
       `SELECT chat_id, id, position, role, sent_time, sender_name, content_text
              FROM messages WHERE content_text LIKE ? ORDER BY sent_time DESC LIMIT ?`,
-      [`%${query}%`, limit],
+      [`%${query}%`, normalizeSqliteLimit(limit)],
     );
     return rows.map((r) => {
       return {
@@ -943,7 +997,7 @@ export class WebSqliteStorage implements ISqlStorage {
     const rows = this.selectRows(
       `SELECT DISTINCT c.id, c.name, c.image, c.kind FROM characters c
             JOIN character_tags t ON t.character_id = c.id WHERE t.tag LIKE ? LIMIT ?`,
-      [`%${tag}%`, limit],
+      [`%${tag}%`, normalizeSqliteLimit(limit)],
     );
     return rows.map((r) => ({
       id: r.id as string,
@@ -958,7 +1012,7 @@ export class WebSqliteStorage implements ISqlStorage {
   ): Promise<NodePostgresCharacterSearchResult[]> {
     const rows = this.selectRows(
       "SELECT id, name, image, kind FROM characters WHERE name LIKE ? LIMIT ?",
-      [`%${name}%`, limit],
+      [`%${name}%`, normalizeSqliteLimit(limit)],
     );
     return rows.map((r) => ({
       id: r.id as string,
