@@ -3,7 +3,11 @@
 package io.github.nevaeh5379.androidhaejeokrisuai.ui
 
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +30,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -39,10 +44,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import io.github.nevaeh5379.androidhaejeokrisuai.data.ChatSummary
 import io.github.nevaeh5379.androidhaejeokrisuai.data.CharacterSummary
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
+import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.StorageConfig
 import io.github.nevaeh5379.androidhaejeokrisuai.data.StorageMode
 import kotlinx.coroutines.launch
@@ -57,6 +64,7 @@ internal fun NativeRisuApp(context: Context) {
             when (controller.screen) {
                 NativeScreen.SETUP -> SetupScreen(controller)
                 NativeScreen.CHARACTERS -> CharacterScreen(controller)
+                NativeScreen.MODEL_SETTINGS -> ModelSettingsScreen(controller)
                 NativeScreen.CHATS -> ChatListScreen(controller)
                 NativeScreen.CHAT -> MessageScreen(controller)
             }
@@ -153,11 +161,16 @@ private fun StorageModeRow(
 private fun CharacterScreen(controller: NativeRisuController) {
     val scope = rememberCoroutineScope()
     val overview = controller.overview
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch { controller.importCharacterCard(uri) }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("캐릭터") },
                 actions = {
+                    TextButton(onClick = controller::openGenerationSettings) { Text("모델") }
+                    TextButton(onClick = { importLauncher.launch(arrayOf("image/png", "application/json")) }) { Text("가져오기") }
                     TextButton(onClick = { scope.launch { controller.refreshCharacters() } }) { Text("새로고침") }
                     TextButton(onClick = controller::resetStorageSelection) { Text("저장소") }
                 },
@@ -171,7 +184,7 @@ private fun CharacterScreen(controller: NativeRisuController) {
                 style = MaterialTheme.typography.labelMedium,
             )
             if (overview?.characters.isNullOrEmpty()) {
-                EmptyState("아직 캐릭터가 없답니다. 로컬 모드는 다음 단계에서 카드 가져오기/생성을 연결할 것이와요.")
+                EmptyState("아직 캐릭터가 없답니다. 위의 가져오기에서 PNG 또는 JSON 캐릭터 카드를 고르시와요.")
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
                     items(overview!!.characters, key = CharacterSummary::id) { character ->
@@ -181,6 +194,162 @@ private fun CharacterScreen(controller: NativeRisuController) {
             }
         }
     }
+}
+
+@Composable
+private fun ModelSettingsScreen(controller: NativeRisuController) {
+    val scope = rememberCoroutineScope()
+    val current = controller.overview?.generationSettings ?: GenerationSettings()
+    var aiModel by remember(current) { mutableStateOf(current.aiModel.ifBlank { "gemini-3-flash-preview" }) }
+    var username by remember(current) { mutableStateOf(current.username.ifBlank { "User" }) }
+    var maxResponse by remember(current) { mutableStateOf(current.maxResponse.toString()) }
+    var temperature by remember(current) { mutableStateOf(current.temperature.toString()) }
+    var topP by remember(current) { mutableStateOf(current.topP?.toString().orEmpty()) }
+    var googleKey by remember(current) { mutableStateOf(current.googleApiKey) }
+    var claudeKey by remember(current) { mutableStateOf(current.claudeAPIKey) }
+    var openAiKey by remember(current) { mutableStateOf(current.openAIKey) }
+    var openRouterKey by remember(current) { mutableStateOf(current.openrouterKey) }
+    var openRouterModel by remember(current) { mutableStateOf(current.openrouterRequestModel) }
+    var proxyUrl by remember(current) { mutableStateOf(current.forceReplaceUrl) }
+    var proxyKey by remember(current) { mutableStateOf(current.proxyKey) }
+    var proxyModel by remember(current) {
+        mutableStateOf(if (current.proxyRequestModel == "custom") current.customProxyRequestModel else current.proxyRequestModel)
+    }
+    var autofillProxyUrl by remember(current) { mutableStateOf(current.autofillRequestUrl) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("모델 설정") },
+                navigationIcon = { TextButton(onClick = controller::back) { Text("←") } },
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                "네이티브 생성 지원: Gemini · Claude · GPT/OpenAI · OpenRouter · OpenAI-compatible reverse proxy",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedTextField(
+                value = aiModel,
+                onValueChange = { aiModel = it },
+                label = { Text("Risu aiModel / 모델 ID") },
+                supportingText = { Text("예: gemini-3-flash-preview, claude-sonnet-4-6, gpt-4o, openrouter, reverse_proxy") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = username,
+                onValueChange = { username = it },
+                label = { Text("사용자 이름") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = maxResponse,
+                    onValueChange = { maxResponse = it.filter(Char::isDigit) },
+                    label = { Text("최대 응답 토큰") },
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = temperature,
+                    onValueChange = { temperature = it },
+                    label = { Text("Temperature") },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            OutlinedTextField(
+                value = topP,
+                onValueChange = { topP = it },
+                label = { Text("Top P (선택)") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            when {
+                aiModel.startsWith("gemini", ignoreCase = true) -> {
+                    SecretField(googleKey, { googleKey = it }, "Gemini API Key")
+                }
+                aiModel.startsWith("claude", ignoreCase = true) -> {
+                    SecretField(claudeKey, { claudeKey = it }, "Anthropic API Key")
+                }
+                aiModel.equals("openrouter", ignoreCase = true) -> {
+                    OutlinedTextField(
+                        value = openRouterModel,
+                        onValueChange = { openRouterModel = it },
+                        label = { Text("OpenRouter 모델") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    SecretField(openRouterKey, { openRouterKey = it }, "OpenRouter API Key")
+                }
+                aiModel.equals("reverse_proxy", ignoreCase = true) -> {
+                    OutlinedTextField(
+                        value = proxyUrl,
+                        onValueChange = { proxyUrl = it },
+                        label = { Text("Reverse proxy base URL") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = proxyModel,
+                        onValueChange = { proxyModel = it },
+                        label = { Text("Reverse proxy 모델") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    SecretField(proxyKey, { proxyKey = it }, "Reverse proxy API Key")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("/v1/chat/completions 자동 완성", modifier = Modifier.weight(1f))
+                        Switch(checked = autofillProxyUrl, onCheckedChange = { autofillProxyUrl = it })
+                    }
+                }
+                else -> SecretField(openAiKey, { openAiKey = it }, "OpenAI API Key")
+            }
+
+            Button(
+                onClick = {
+                    val next = current.copy(
+                        aiModel = aiModel.trim(),
+                        username = username.ifBlank { "User" },
+                        maxResponse = maxResponse.toIntOrNull()?.coerceIn(1, 131072) ?: current.maxResponse,
+                        temperature = temperature.toDoubleOrNull()?.coerceIn(0.0, 2.0) ?: current.temperature,
+                        topP = topP.toDoubleOrNull()?.coerceIn(0.0, 1.0),
+                        googleApiKey = googleKey.trim(),
+                        claudeAPIKey = claudeKey.trim(),
+                        openAIKey = openAiKey.trim(),
+                        openrouterKey = openRouterKey.trim(),
+                        openrouterRequestModel = openRouterModel.trim(),
+                        forceReplaceUrl = proxyUrl.trim(),
+                        proxyKey = proxyKey.trim(),
+                        proxyRequestModel = proxyModel.trim(),
+                        customProxyRequestModel = "",
+                        autofillRequestUrl = autofillProxyUrl,
+                    )
+                    scope.launch { controller.saveGenerationSettings(next) }
+                },
+                enabled = aiModel.isNotBlank() && !controller.loading,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("SQL에 저장") }
+        }
+    }
+}
+
+@Composable
+private fun SecretField(value: String, onValueChange: (String) -> Unit, label: String) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        visualTransformation = PasswordVisualTransformation(),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable
@@ -201,6 +370,13 @@ private fun ChatListScreen(controller: NativeRisuController) {
                 title = { Text(controller.selectedCharacter?.name ?: "채팅") },
                 navigationIcon = { TextButton(onClick = controller::back) { Text("←") } },
             )
+        },
+        bottomBar = {
+            Button(
+                onClick = { scope.launch { controller.createNewChat() } },
+                enabled = !controller.loading,
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
+            ) { Text("새 채팅") }
         },
     ) { padding ->
         if (controller.chats.isEmpty()) {
@@ -249,11 +425,11 @@ private fun MessageScreen(controller: NativeRisuController) {
                     onClick = {
                         val text = input
                         input = ""
-                        scope.launch { controller.appendUserMessage(text) }
+                        scope.launch { controller.sendUserMessage(text) }
                     },
                     modifier = Modifier.padding(start = 8.dp),
-                    enabled = input.isNotBlank(),
-                ) { Text("추가") }
+                    enabled = input.isNotBlank() && !controller.loading,
+                ) { Text(if (controller.loading) "생성 중" else "전송") }
             }
         },
     ) { padding ->

@@ -1,6 +1,8 @@
 package io.github.nevaeh5379.androidhaejeokrisuai.ui
 
 import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -9,18 +11,25 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.CharacterSummary
 import io.github.nevaeh5379.androidhaejeokrisuai.data.DatabaseOverview
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessagePage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
+import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.StorageConfig
 import io.github.nevaeh5379.androidhaejeokrisuai.data.StorageConfigStore
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RisuStorage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RisuStorageFactory
+import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeGenerationEngine
+import io.github.nevaeh5379.androidhaejeokrisuai.importing.CharacterCardImporter
+import java.io.ByteArrayOutputStream
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
-internal enum class NativeScreen { SETUP, CHARACTERS, CHATS, CHAT }
+internal enum class NativeScreen { SETUP, CHARACTERS, MODEL_SETTINGS, CHATS, CHAT }
 
 internal class NativeRisuController(context: Context) {
     private val appContext = context.applicationContext
     private val configStore = StorageConfigStore(appContext)
     private var storage: RisuStorage? = null
+    private val generator = NativeGenerationEngine()
 
     var screen by mutableStateOf(NativeScreen.SETUP)
         private set
@@ -69,6 +78,24 @@ internal class NativeRisuController(context: Context) {
         overview = requireStorage().loadDatabase()
     }
 
+    fun openGenerationSettings() {
+        error = null
+        screen = NativeScreen.MODEL_SETTINGS
+    }
+
+    suspend fun saveGenerationSettings(settings: GenerationSettings) = runBusy {
+        requireStorage().updateGenerationSettings(settings)
+        overview = requireStorage().loadDatabase()
+        screen = NativeScreen.CHARACTERS
+    }
+
+    suspend fun importCharacterCard(uri: Uri) = runBusy {
+        val (fileName, bytes) = withContext(Dispatchers.IO) { readImportFile(uri) }
+        val payload = withContext(Dispatchers.Default) { CharacterCardImporter.parse(fileName, bytes) }
+        requireStorage().importCharacter(payload)
+        overview = requireStorage().loadDatabase()
+    }
+
     suspend fun openCharacter(character: CharacterSummary) = runBusy {
         selectedCharacter = character
         selectedChat = null
@@ -83,6 +110,18 @@ internal class NativeRisuController(context: Context) {
         screen = NativeScreen.CHAT
     }
 
+    suspend fun createNewChat() = runBusy {
+        val character = selectedCharacter ?: error("No character selected")
+        val storage = requireStorage()
+        overview = storage.loadDatabase()
+        val chat = storage.createChat(character.id, "New Chat ${chats.size + 1}")
+        chats = storage.loadCharacterChats(character.id)
+        selectedChat = chat
+        messagePage = storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE)
+        screen = NativeScreen.CHAT
+        overview = overview?.copy(revision = (overview?.revision ?: 0) + 1)
+    }
+
     suspend fun loadOlderMessages() = runBusy {
         val chat = selectedChat ?: return@runBusy
         val current = messagePage ?: return@runBusy
@@ -95,31 +134,59 @@ internal class NativeRisuController(context: Context) {
         )
     }
 
-    suspend fun appendUserMessage(text: String) = runBusy {
+    suspend fun sendUserMessage(text: String) = runBusy {
         val chat = selectedChat ?: error("No chat selected")
+        val character = selectedCharacter ?: error("No character selected")
         val current = messagePage ?: error("Chat messages are not loaded")
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return@runBusy
-        val message = MessageRecord(
+
+        val storage = requireStorage()
+        val freshOverview = storage.loadDatabase()
+        overview = freshOverview
+        val history = storage.loadAllChatMessages(chat.id)
+        val userMessage = MessageRecord(
             id = UUID.randomUUID().toString(),
             chatId = chat.id,
             role = "user",
             data = trimmed,
             time = System.currentTimeMillis(),
         )
-        val newRevision = requireStorage().appendMessage(chat.id, current.total, message)
-        overview = overview?.copy(revision = newRevision)
+        val userRevision = storage.appendMessage(chat.id, history.size, userMessage)
+        overview = freshOverview.copy(revision = userRevision)
         messagePage = current.copy(
-            messages = current.messages + message,
-            total = current.total + 1,
+            messages = current.messages + userMessage,
+            total = history.size + 1,
         )
+
+        val profile = storage.loadCharacterProfile(character.id)
+        val promptContext = storage.loadChatPromptContext(chat.id)
+        val generated = generator.generate(
+            settings = freshOverview.generationSettings,
+            character = profile.copy(globalLore = profile.globalLore + promptContext.localLore),
+            history = history + userMessage,
+            authorNote = chat.note,
+            greetingIndex = promptContext.greetingIndex,
+            variables = promptContext.variables,
+        )
+        val assistantMessage = MessageRecord(
+            id = UUID.randomUUID().toString(),
+            chatId = chat.id,
+            role = "char",
+            data = generated,
+            name = profile.name,
+            time = System.currentTimeMillis(),
+        )
+        val assistantRevision = storage.appendMessage(chat.id, history.size + 1, assistantMessage)
+        overview = freshOverview.copy(revision = assistantRevision)
+        messagePage = storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE)
     }
 
     fun back() {
         error = null
         when (screen) {
             NativeScreen.CHAT -> screen = NativeScreen.CHATS
-            NativeScreen.CHATS -> screen = NativeScreen.CHARACTERS
+            NativeScreen.CHATS, NativeScreen.MODEL_SETTINGS -> screen = NativeScreen.CHARACTERS
             NativeScreen.CHARACTERS, NativeScreen.SETUP -> Unit
         }
     }
@@ -141,6 +208,41 @@ internal class NativeRisuController(context: Context) {
         error = null
     }
 
+    private fun readImportFile(uri: Uri): Pair<String, ByteArray> {
+        val resolver = appContext.contentResolver
+        var fileName = uri.lastPathSegment ?: "character-card"
+        var declaredSize: Long? = null
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (nameIndex >= 0 && !cursor.isNull(nameIndex)) fileName = cursor.getString(nameIndex)
+                if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) declaredSize = cursor.getLong(sizeIndex)
+            }
+        }
+        require(declaredSize == null || declaredSize!! <= MAX_IMPORT_BYTES) {
+            "Character card is larger than ${MAX_IMPORT_BYTES / (1024 * 1024)} MiB"
+        }
+        val input = resolver.openInputStream(uri) ?: error("Unable to open selected character card")
+        val output = ByteArrayOutputStream(
+            (declaredSize ?: 64 * 1024L).coerceAtMost(1024 * 1024L).toInt(),
+        )
+        input.use { stream ->
+            val buffer = ByteArray(64 * 1024)
+            var total = 0L
+            while (true) {
+                val count = stream.read(buffer)
+                if (count < 0) break
+                total += count
+                require(total <= MAX_IMPORT_BYTES) {
+                    "Character card is larger than ${MAX_IMPORT_BYTES / (1024 * 1024)} MiB"
+                }
+                output.write(buffer, 0, count)
+            }
+        }
+        return fileName to output.toByteArray()
+    }
+
     private fun requireStorage(): RisuStorage = storage ?: error("Storage is not connected")
 
     private suspend fun runBusy(block: suspend () -> Unit) {
@@ -158,5 +260,6 @@ internal class NativeRisuController(context: Context) {
 
     companion object {
         private const val PAGE_SIZE = 80
+        private const val MAX_IMPORT_BYTES = 64L * 1024 * 1024
     }
 }
