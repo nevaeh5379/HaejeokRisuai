@@ -65,6 +65,8 @@ QVariantMap PresetController::activePreset() const {
     map[QStringLiteral("postHistoryInstructions")] = m_activePreset.postHistoryInstructions;
     map[QStringLiteral("enableJailbreak")] = m_activePreset.enableJailbreak;
     map[QStringLiteral("formattingOrder")] = m_activePreset.formattingOrder;
+    map[QStringLiteral("promptTemplate")] = m_activePreset.promptTemplate.toVariantList();
+    map[QStringLiteral("usesPromptTemplate")] = !m_activePreset.promptTemplate.isEmpty();
 
     return map;
 }

@@ -63,6 +63,10 @@ Rectangle {
                     onClicked: {
                         var newId = personaCtrl.createPersona("New User", "A user profile");
                         root.selectedPersonaId = newId;
+                        nameField.text = "New User";
+                        promptField.text = "A user profile";
+                        noteField.text = "";
+                        activeSwitch.checked = false;
                     }
                 }
             }
@@ -166,7 +170,8 @@ Rectangle {
                             onClicked: {
                                 root.selectedPersonaId = modelData.id;
                                 nameField.text = modelData.name;
-                                descField.text = modelData.description;
+                                promptField.text = modelData.personaPrompt || "";
+                                noteField.text = modelData.description || "";
                                 activeSwitch.checked = modelData.isActive;
                             }
                         }
@@ -213,18 +218,33 @@ Rectangle {
                     }
 
                     Text {
-                        text: "Persona Description (Traits, Appearance, Personality)"
+                        text: "Persona Prompt (Sent to the AI)"
                         font.pixelSize: Theme.fontSmall
                         font.weight: Font.Bold
                         font.family: Theme.fontFamily
                         color: Theme.textcolor2
                     }
                     RisuTextArea {
-                        id: descField
+                        id: promptField
                         Layout.fillWidth: true
-                        implicitHeight: 160
+                        implicitHeight: 180
+                        text: personaCtrl.activePersona.personaPrompt || ""
+                        placeholderText: "Describe the user persona, traits, appearance, personality, and other information the AI should receive..."
+                    }
+
+                    Text {
+                        text: "Persona Notes (Not injected into prompts)"
+                        font.pixelSize: Theme.fontSmall
+                        font.weight: Font.Bold
+                        font.family: Theme.fontFamily
+                        color: Theme.textcolor2
+                    }
+                    RisuTextArea {
+                        id: noteField
+                        Layout.fillWidth: true
+                        implicitHeight: 100
                         text: personaCtrl.activePersona.description || ""
-                        placeholderText: "Describe your user persona so the AI understands who you are..."
+                        placeholderText: "Optional private notes about this persona..."
                     }
 
                     RisuButton {
@@ -237,7 +257,8 @@ Rectangle {
                             var data = {
                                 id: idToSave,
                                 name: nameField.text,
-                                description: descField.text,
+                                personaPrompt: promptField.text,
+                                description: noteField.text,
                                 isActive: activeSwitch.checked
                             };
                             personaCtrl.savePersona(data);

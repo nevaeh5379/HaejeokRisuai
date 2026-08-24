@@ -32,6 +32,7 @@ QVariantList PersonaController::personas() const {
         map[QStringLiteral("name")] = p.name;
         map[QStringLiteral("avatarPath")] = p.avatarPath;
         map[QStringLiteral("description")] = p.description;
+        map[QStringLiteral("personaPrompt")] = p.personaPrompt.isEmpty() ? p.description : p.personaPrompt;
         map[QStringLiteral("isActive")] = p.isActive;
         list.append(map);
     }
@@ -44,6 +45,7 @@ QVariantMap PersonaController::activePersona() const {
     map[QStringLiteral("name")] = m_activePersona.name;
     map[QStringLiteral("avatarPath")] = m_activePersona.avatarPath;
     map[QStringLiteral("description")] = m_activePersona.description;
+    map[QStringLiteral("personaPrompt")] = m_activePersona.personaPrompt.isEmpty() ? m_activePersona.description : m_activePersona.personaPrompt;
     map[QStringLiteral("isActive")] = m_activePersona.isActive;
     return map;
 }
@@ -56,7 +58,9 @@ QString PersonaController::createPersona(const QString& name, const QString& des
     Persona p;
     p.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     p.name = name.isEmpty() ? QStringLiteral("User") : name;
-    p.description = description;
+    // Keep the two-argument QML API for compatibility, but treat its text as the
+    // actual Risu persona prompt. Persona::description is the separate note field.
+    p.personaPrompt = description;
     p.isActive = false;
 
     DatabaseManager::instance().savePersona(p);
@@ -68,12 +72,15 @@ bool PersonaController::savePersona(const QVariantMap& data) {
     QString id = data.value(QStringLiteral("id")).toString();
     if (id.isEmpty()) return false;
 
-    Persona p;
+    // Start from the persisted record so an editor payload that omits fields such
+    // as avatarPath cannot accidentally erase them.
+    Persona p = DatabaseManager::instance().getPersona(id).value_or(Persona{});
     p.id = id;
-    p.name = data.value(QStringLiteral("name")).toString();
-    p.avatarPath = data.value(QStringLiteral("avatarPath")).toString();
-    p.description = data.value(QStringLiteral("description")).toString();
-    p.isActive = data.value(QStringLiteral("isActive")).toBool();
+    if (data.contains(QStringLiteral("name"))) p.name = data.value(QStringLiteral("name")).toString();
+    if (data.contains(QStringLiteral("avatarPath"))) p.avatarPath = data.value(QStringLiteral("avatarPath")).toString();
+    if (data.contains(QStringLiteral("description"))) p.description = data.value(QStringLiteral("description")).toString();
+    if (data.contains(QStringLiteral("personaPrompt"))) p.personaPrompt = data.value(QStringLiteral("personaPrompt")).toString();
+    if (data.contains(QStringLiteral("isActive"))) p.isActive = data.value(QStringLiteral("isActive")).toBool();
 
     bool ok = DatabaseManager::instance().savePersona(p);
     if (ok) {

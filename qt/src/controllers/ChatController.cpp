@@ -11,8 +11,9 @@
 namespace Risu {
 
 ChatController::ChatController(QObject* parent) : QObject(parent) {
-    // Listen for preset / persona changes from db
+    // Keep prompt state synchronized with preset and persona changes.
     connect(&DatabaseManager::instance(), &DatabaseManager::presetsChanged, this, &ChatController::reloadPreset);
+    connect(&DatabaseManager::instance(), &DatabaseManager::personasChanged, this, &ChatController::reloadPersona);
 
     QString charId = AppConfig::instance().selectedCharacterId();
     if (!charId.isEmpty()) {
@@ -110,15 +111,35 @@ void ChatController::reloadPreset() {
         }
     }
 
-    auto optPersona = DatabaseManager::instance().getActivePersona();
-    if (optPersona) {
-        m_activePersona = *optPersona;
+    emit activePresetChanged();
+    reloadPersona();
+}
+
+void ChatController::reloadPersona() {
+    std::optional<Persona> resolved;
+
+    // Risu chats may pin a persona per session. Prefer that binding over the
+    // globally active persona so prompt macros, message names, and modules all
+    // observe the same user identity after switching chats.
+    if (!m_activeChar.chats.isEmpty()) {
+        const QString boundId = m_activeChar.currentChat().bindedPersona.trimmed();
+        if (!boundId.isEmpty()) {
+            resolved = DatabaseManager::instance().getPersona(boundId);
+        }
+    }
+
+    if (!resolved) {
+        resolved = DatabaseManager::instance().getActivePersona();
+    }
+
+    if (resolved) {
+        m_activePersona = *resolved;
     } else {
+        m_activePersona = Persona{};
         m_activePersona.id = QStringLiteral("persona-default");
         m_activePersona.name = QStringLiteral("User");
     }
 
-    emit activePresetChanged();
     updateTokenEstimate();
 }
 
@@ -140,7 +161,7 @@ void ChatController::loadCharacter(const QString& characterId) {
     emit activeCharacterChanged();
     emit currentChatChanged();
     emit chatListChanged();
-    updateTokenEstimate();
+    reloadPersona();
 }
 
 QList<RegexScript> ChatController::activeRegexScripts() const {
@@ -232,11 +253,14 @@ void ChatController::deleteMessage(int messageIndex) {
 void ChatController::forkChat(int messageIndex) {
     if (m_isGenerating || messageIndex < 0 || messageIndex >= m_messageModel.messages().size()) return;
 
-    Chat newChat;
+    // Risu branches clone the entire chat session and only truncate its message list.
+    // Preserve persona bindings, modules, lore, author notes, variables, and other
+    // chat-scoped settings so branching cannot silently change prompt behavior.
+    Chat newChat = m_activeChar.currentChat();
     newChat.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     newChat.name = QStringLiteral("Branch from ") + m_activeChar.currentChat().name;
-    newChat.firstMessageIndex = m_activeChar.currentChat().firstMessageIndex;
     newChat.lastDate = QDateTime::currentMSecsSinceEpoch();
+    newChat.messages.clear();
 
     for (int i = 0; i <= messageIndex; ++i) {
         newChat.messages.append(m_messageModel.messageAt(i));
@@ -250,6 +274,7 @@ void ChatController::forkChat(int messageIndex) {
 
     emit currentChatChanged();
     emit chatListChanged();
+    reloadPersona();
     emit toastRequested(QStringLiteral("info"), QStringLiteral("Created new chat branch!"));
 }
 
@@ -352,7 +377,7 @@ void ChatController::createNewChatWithGreeting(int greetingIndex, const QString&
 
     emit currentChatChanged();
     emit chatListChanged();
-    updateTokenEstimate();
+    reloadPersona();
     emit toastRequested(QStringLiteral("success"), QStringLiteral("New chat session created."));
 }
 
@@ -396,7 +421,7 @@ void ChatController::duplicateChat(int chatIndex) {
 
     emit currentChatChanged();
     emit chatListChanged();
-    updateTokenEstimate();
+    reloadPersona();
     emit toastRequested(QStringLiteral("info"), QStringLiteral("Chat session duplicated."));
 }
 
@@ -412,7 +437,7 @@ void ChatController::switchChat(int chatIndex) {
 
     emit currentChatChanged();
     emit chatListChanged();
-    updateTokenEstimate();
+    reloadPersona();
 }
 
 void ChatController::deleteChat(int chatIndex) {
@@ -438,7 +463,7 @@ void ChatController::deleteChat(int chatIndex) {
 
     emit currentChatChanged();
     emit chatListChanged();
-    updateTokenEstimate();
+    reloadPersona();
     emit toastRequested(QStringLiteral("info"), QStringLiteral("Chat session deleted."));
 }
 
@@ -539,10 +564,10 @@ QString ChatController::formatInChat(const QString& rawContent) const {
     // 1. Apply inChat / editdisplay regex scripts
     QString formatted = RegexEngine::applyInChatRegex(rawContent, activeRegexScripts());
 
-    // 2. Resolve CBS macros including {{raw::asset}}, {{img::asset}}, {{source::char}}, variables
-    Persona userPersona = DatabaseManager::instance().getActivePersona().value_or(Persona());
+    // 2. Resolve CBS macros using the same persona that prompt generation uses.
+    // A chat-bound persona must not fall back to the unrelated global active persona here.
     const Chat* curChat = m_activeChar.chats.isEmpty() ? nullptr : &m_activeChar.currentChat();
-    formatted = PromptEngine::replaceMacros(formatted, m_activeChar, userPersona, curChat);
+    formatted = PromptEngine::replaceMacros(formatted, m_activeChar, m_activePersona, curChat);
 
     return formatted;
 }

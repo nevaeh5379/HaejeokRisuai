@@ -42,7 +42,7 @@ QString PromptEngine::replaceMacros(
     QString result = text;
     QString charName = character.name.isEmpty() ? QStringLiteral("Character") : character.name;
     QString userName = persona.name.isEmpty() ? QStringLiteral("User") : persona.name;
-    QString personaDesc = persona.description;
+    QString personaDesc = persona.personaPrompt.isEmpty() ? persona.description : persona.personaPrompt;
 
     // Basic Character & User macros
     result.replace(QStringLiteral("{{char}}"), charName, Qt::CaseInsensitive);
@@ -412,7 +412,12 @@ CompiledPrompt PromptEngine::buildPrompt(
     QString charDesc = replaceMacros(character.description, character, persona, &chat);
     QString charPersonality = replaceMacros(character.personality, character, persona, &chat);
     QString charScenario = replaceMacros(character.scenario, character, persona, &chat);
-    QString personaPrompt = replaceMacros(persona.description, character, persona, &chat);
+    // In Risu, Persona::description maps to the persona "note" field while
+    // Persona::personaPrompt is the text that is actually injected into prompts.
+    // Fall back to description only for older native-Qt data created before the
+    // personaPrompt field was wired through the editor/controller.
+    const QString personaPromptSource = persona.personaPrompt.isEmpty() ? persona.description : persona.personaPrompt;
+    QString personaPrompt = replaceMacros(personaPromptSource, character, persona, &chat);
     QString jailbreakPrompt = preset.enableJailbreak ? replaceMacros(preset.jailbreakPrompt, character, persona, &chat) : QString();
     QString globalNote = replaceMacros(preset.globalNote, character, persona, &chat);
     QString postHistoryInstructions = replaceMacros(character.postHistoryInstructions.isEmpty() ? preset.postHistoryInstructions : character.postHistoryInstructions, character, persona, &chat);
@@ -558,6 +563,52 @@ CompiledPrompt PromptEngine::buildPrompt(
             return format;
         };
 
+        auto parseChatML = [&](QString data) {
+            QList<CompiledPromptMessage> parsed;
+            const QString starter = QStringLiteral("<|im_start|>");
+            const QString separator = QStringLiteral("<|im_sep|>");
+            const QString ender = QStringLiteral("<|im_end|>");
+            data = data.trimmed();
+            if (!data.startsWith(starter)) return parsed;
+
+            const QStringList blocks = data.split(starter, Qt::SkipEmptyParts);
+            static const QRegularExpression thoughtsRe(
+                QStringLiteral(R"(<Thoughts>(.+)</Thoughts>)"),
+                QRegularExpression::DotMatchesEverythingOption);
+
+            for (QString block : blocks) {
+                QString role = QStringLiteral("user");
+                auto consumeRole = [&](const QString& prefix, const QString& resolvedRole) {
+                    if (!block.startsWith(prefix)) return false;
+                    role = resolvedRole;
+                    block = block.mid(prefix.size());
+                    return true;
+                };
+
+                if (!consumeRole(QStringLiteral("user") + separator, QStringLiteral("user")) &&
+                    !consumeRole(QStringLiteral("system") + separator, QStringLiteral("system")) &&
+                    !consumeRole(QStringLiteral("assistant") + separator, QStringLiteral("assistant")) &&
+                    !consumeRole(QStringLiteral("user "), QStringLiteral("user")) &&
+                    !consumeRole(QStringLiteral("user\n"), QStringLiteral("user")) &&
+                    !consumeRole(QStringLiteral("system "), QStringLiteral("system")) &&
+                    !consumeRole(QStringLiteral("system\n"), QStringLiteral("system")) &&
+                    !consumeRole(QStringLiteral("assistant "), QStringLiteral("assistant"))) {
+                    consumeRole(QStringLiteral("assistant\n"), QStringLiteral("assistant"));
+                }
+
+                block = block.trimmed();
+                if (block.endsWith(ender)) block.chop(ender.size());
+                block.remove(thoughtsRe);
+                block = replaceMacros(block, character, persona, &chat).trimmed();
+
+                CompiledPromptMessage message;
+                message.role = role;
+                message.content = block;
+                parsed.append(message);
+            }
+            return parsed;
+        };
+
         QString descriptionBlock = charDesc;
         if (!charPersonality.isEmpty()) {
             if (!descriptionBlock.isEmpty()) descriptionBlock += QStringLiteral("\n\n");
@@ -568,8 +619,7 @@ CompiledPrompt PromptEngine::buildPrompt(
             descriptionBlock += QStringLiteral("Circumstances and context of the dialogue: ") + charScenario;
         }
 
-        QString templatePersona = persona.personaPrompt.isEmpty() ? personaPrompt
-                                                                   : replaceMacros(persona.personaPrompt, character, persona, &chat);
+        QString templatePersona = personaPrompt;
         QString authorNoteRaw = chat.authorNote.isEmpty() ? character.authorNote : chat.authorNote;
         authorNoteRaw = replaceMacros(authorNoteRaw, character, persona, &chat);
 
@@ -679,10 +729,17 @@ CompiledPrompt PromptEngine::buildPrompt(
             }
 
             if (type == QStringLiteral("chatML")) {
-                // Keep ChatML content rather than dropping an unfamiliar template card.
-                // Full ChatML splitting can be layered on later without losing user data now.
-                appendTemplateMessage(QStringLiteral("system"),
-                                      replaceMacros(card.value(QStringLiteral("text")).toString(), character, persona, &chat));
+                const QString rawChatML = card.value(QStringLiteral("text")).toString();
+                const auto parsed = parseChatML(rawChatML);
+                if (!parsed.isEmpty()) {
+                    for (const auto& msg : parsed) {
+                        appendTemplateMessage(msg.role, msg.content, msg.name);
+                    }
+                } else {
+                    // Preserve malformed/legacy content rather than silently dropping it.
+                    appendTemplateMessage(QStringLiteral("system"),
+                                          replaceMacros(rawChatML, character, persona, &chat));
+                }
                 continue;
             }
 

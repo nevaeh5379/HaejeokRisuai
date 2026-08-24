@@ -3,6 +3,8 @@
 #include <QFile>
 #include <QDir>
 #include <QDebug>
+#include <QTemporaryDir>
+#include <algorithm>
 #include <cassert>
 
 #include "core/Types.hpp"
@@ -33,6 +35,7 @@
 #include "controllers/TTSController.hpp"
 #include "controllers/ImageGenController.hpp"
 #include "controllers/ChatController.hpp"
+#include "controllers/PersonaController.hpp"
 #include "models/ChatMessageModel.hpp"
 
 using namespace Risu;
@@ -94,6 +97,8 @@ void testDatabaseAndTypes() {
     msg3.role = Role::Assistant;
     msg3.name = customChar.name;
     msg3.setCurrentContent(QStringLiteral("I am running inside the native Linux Qt RisuAI engine!"));
+    msg3.promptInfo = QJsonObject{{QStringLiteral("promptName"), QStringLiteral("Persistence Test")},
+                                  {QStringLiteral("customFlag"), true}};
     msg3.addSwipe(QStringLiteral("Alternative swipe response #2: Everything is running natively at maximum speed!"));
     msg3.currentSwipeIndex = 1;
     testChat.messages.append(msg3);
@@ -109,6 +114,10 @@ void testDatabaseAndTypes() {
     assert(retrieved->chats.size() == 1);
     assert(retrieved->chats[0].messages.size() == 3);
     assert(retrieved->chats[0].modules.contains(QStringLiteral("module-chat-test")) && "Chat-scoped module IDs must survive relational persistence");
+    assert(retrieved->chats[0].messages[2].promptInfo.value(QStringLiteral("promptName")).toString() == QStringLiteral("Persistence Test") &&
+           "Message promptInfo JSON must survive relational persistence");
+    assert(retrieved->chats[0].messages[2].promptInfo.value(QStringLiteral("customFlag")).toBool() &&
+           "Unknown promptInfo extension fields must survive relational persistence");
     assert(retrieved->chats[0].messages[2].swipes.size() == 2);
     assert(retrieved->chats[0].messages[2].currentSwipeIndex == 1);
 
@@ -185,6 +194,8 @@ void testPromptEngineAndMacros() {
 
     Persona persona;
     persona.name = QStringLiteral("Astronaut");
+    persona.description = QStringLiteral("PRIVATE_PERSONA_NOTE_MUST_NOT_BE_INJECTED");
+    persona.personaPrompt = QStringLiteral("The user is an experienced orbital research astronaut.");
 
     CompiledPrompt compiled = engine.buildPrompt(testChar, chat, preset, persona, QList<LorebookEntry>{}, QString());
     assert(!compiled.messages.isEmpty() && "Compiled prompt must contain messages");
@@ -198,7 +209,11 @@ void testPromptEngineAndMacros() {
         }
     }
     assert(loreTriggered && "Lorebook entry must be triggered and included in compiled prompt!");
-    qInfo() << "  -> Lorebook keyword trigger successfully activated!";
+    assert(compiled.systemPromptCombined.contains(QStringLiteral("experienced orbital research astronaut")) &&
+           "Legacy personaPrompt block must inject Persona::personaPrompt");
+    assert(!compiled.systemPromptCombined.contains(QStringLiteral("PRIVATE_PERSONA_NOTE_MUST_NOT_BE_INJECTED")) &&
+           "Persona notes must not be injected when a dedicated personaPrompt exists");
+    qInfo() << "  -> Lorebook keyword and dedicated persona prompt successfully activated!";
     qInfo() << "  -> Total compiled messages:" << compiled.messages.size() << ", Estimated Tokens:" << compiled.estimatedTokens;
 
     // Modern Risu promptTemplate execution must override the legacy formatingOrder path.
@@ -209,6 +224,11 @@ void testPromptEngineAndMacros() {
                     {QStringLiteral("type2"), QStringLiteral("normal")},
                     {QStringLiteral("role"), QStringLiteral("system")},
                     {QStringLiteral("text"), QStringLiteral("TEMPLATE_HEAD")}},
+        QJsonObject{{QStringLiteral("type"), QStringLiteral("persona")},
+                    {QStringLiteral("role2"), QStringLiteral("system")},
+                    {QStringLiteral("innerFormat"), QStringLiteral("PERSONA={{slot}}")}},
+        QJsonObject{{QStringLiteral("type"), QStringLiteral("chatML")},
+                    {QStringLiteral("text"), QStringLiteral("<|im_start|>system<|im_sep|>CHATML_SYSTEM {{char}}<|im_end|><|im_start|>user\nCHATML_USER {{user}}<|im_end|><|im_start|>assistant<|im_sep|><Thoughts>hidden reasoning</Thoughts>CHATML_ASSISTANT<|im_end|>")}},
         QJsonObject{{QStringLiteral("type"), QStringLiteral("lorebook")}},
         QJsonObject{{QStringLiteral("type"), QStringLiteral("chat")},
                     {QStringLiteral("rangeStart"), -1},
@@ -225,13 +245,54 @@ void testPromptEngineAndMacros() {
     assert(templated.messages.last().content == QStringLiteral("TEMPLATE_TAIL") && "promptTemplate tail must be preserved");
     bool legacyLeaked = false;
     bool templateLoreFound = false;
+    bool templatePersonaFound = false;
+    bool personaNoteLeaked = false;
+    bool chatMlSystemFound = false;
+    bool chatMlUserFound = false;
+    bool chatMlAssistantFound = false;
+    bool chatMlThoughtLeaked = false;
     for (const auto& msg : templated.messages) {
         legacyLeaked |= msg.content.contains(QStringLiteral("LEGACY_PROMPT_MUST_NOT_LEAK"));
         templateLoreFound |= msg.content.contains(QStringLiteral("Celestial magic harnesses cosmic stellar energy"));
+        templatePersonaFound |= msg.content.contains(QStringLiteral("PERSONA=The user is an experienced orbital research astronaut."));
+        personaNoteLeaked |= msg.content.contains(QStringLiteral("PRIVATE_PERSONA_NOTE_MUST_NOT_BE_INJECTED"));
+        chatMlSystemFound |= msg.role == QStringLiteral("system") && msg.content == QStringLiteral("CHATML_SYSTEM Elena");
+        chatMlUserFound |= msg.role == QStringLiteral("user") && msg.content == QStringLiteral("CHATML_USER Astronaut");
+        chatMlAssistantFound |= msg.role == QStringLiteral("assistant") && msg.content == QStringLiteral("CHATML_ASSISTANT");
+        chatMlThoughtLeaked |= msg.content.contains(QStringLiteral("hidden reasoning"));
     }
     assert(!legacyLeaked && "legacy formatingOrder prompt must not be injected when promptTemplate is active");
     assert(templateLoreFound && "lorebook promptTemplate card must inject active lore");
-    qInfo() << "  -> Modern promptTemplate ordering and lorebook cards verified!";
+    assert(templatePersonaFound && "persona promptTemplate card must inject Persona::personaPrompt with innerFormat");
+    assert(!personaNoteLeaked && "persona note must remain separate from the generated prompt");
+    assert(chatMlSystemFound && chatMlUserFound && chatMlAssistantFound &&
+           "chatML prompt cards must split into their declared system/user/assistant roles");
+    assert(!chatMlThoughtLeaked && "ChatML <Thoughts> blocks must not leak into visible prompt content");
+    qInfo() << "  -> Modern promptTemplate ordering, ChatML roles, persona, and lorebook cards verified!";
+
+    // promptTemplate and formattingOrder live in the preset JSON extension payload and
+    // must survive SQL save/reload, including getAllPresets().
+    templatePreset.id = QStringLiteral("preset-template-roundtrip-test");
+    templatePreset.name = QStringLiteral("Template Roundtrip Test");
+    templatePreset.formattingOrder = QStringList{QStringLiteral("main"), QStringLiteral("personaPrompt"), QStringLiteral("chats")};
+    assert(DatabaseManager::instance().savePreset(templatePreset));
+    auto reloadedTemplatePreset = DatabaseManager::instance().getPreset(templatePreset.id);
+    assert(reloadedTemplatePreset.has_value());
+    assert(reloadedTemplatePreset->promptTemplate.size() == templatePreset.promptTemplate.size() &&
+           "promptTemplate must survive SQL preset round-trip");
+    assert(reloadedTemplatePreset->formattingOrder == templatePreset.formattingOrder &&
+           "formattingOrder must survive SQL preset round-trip");
+    bool listRoundTripFound = false;
+    for (const auto& candidate : DatabaseManager::instance().getAllPresets()) {
+        if (candidate.id == templatePreset.id) {
+            listRoundTripFound = candidate.promptTemplate.size() == templatePreset.promptTemplate.size() &&
+                                 candidate.formattingOrder == templatePreset.formattingOrder;
+            break;
+        }
+    }
+    assert(listRoundTripFound && "getAllPresets must restore JSON-only prompt fields");
+    assert(DatabaseManager::instance().deletePreset(templatePreset.id));
+    qInfo() << "  -> Prompt template SQL persistence verified!";
 
     // Native-compatible modules must contribute lorebooks and regex scripts when selected by the chat.
     QJsonObject moduleLore{{QStringLiteral("id"), QStringLiteral("module-lore")},
@@ -1284,6 +1345,32 @@ void testCharacterSessionsAndSwitching() {
 
     auto& db = DatabaseManager::instance();
 
+    Persona boundPersona;
+    boundPersona.id = QStringLiteral("persona_cynthia_bound_001");
+    boundPersona.name = QStringLiteral("Bound Explorer");
+    boundPersona.avatarPath = QStringLiteral("/tmp/preserved-persona-avatar.png");
+    boundPersona.description = QStringLiteral("Private test note");
+    boundPersona.personaPrompt = QStringLiteral("Bound persona prompt");
+    boundPersona.isActive = false;
+    assert(db.savePersona(boundPersona));
+    assert(db.getPersona(boundPersona.id).has_value() && "Persona lookup by id must succeed");
+
+    // Persona editor saves must preserve omitted fields such as avatarPath and keep
+    // the Risu prompt separate from private notes.
+    PersonaController personaEditor;
+    QVariantMap personaEdit;
+    personaEdit[QStringLiteral("id")] = boundPersona.id;
+    personaEdit[QStringLiteral("name")] = boundPersona.name;
+    personaEdit[QStringLiteral("personaPrompt")] = QStringLiteral("Bound persona prompt after edit");
+    personaEdit[QStringLiteral("description")] = QStringLiteral("Private note after edit");
+    personaEdit[QStringLiteral("isActive")] = false;
+    assert(personaEditor.savePersona(personaEdit));
+    auto editedPersona = db.getPersona(boundPersona.id);
+    assert(editedPersona.has_value());
+    assert(editedPersona->avatarPath == boundPersona.avatarPath && "Persona save must preserve omitted avatarPath");
+    assert(editedPersona->personaPrompt == QStringLiteral("Bound persona prompt after edit"));
+    assert(editedPersona->description == QStringLiteral("Private note after edit"));
+
     // 1. Create a test character with multiple alternate greetings
     Character cynthia;
     cynthia.id = QStringLiteral("char_cynthia_sessions_001");
@@ -1298,6 +1385,17 @@ void testCharacterSessionsAndSwitching() {
     session1.name = QStringLiteral("Main Sanctuary Chat");
     session1.firstMessageIndex = 0;
     session1.lastDate = QDateTime::currentMSecsSinceEpoch();
+    session1.bindedPersona = boundPersona.id;
+    session1.modules = QStringList{QStringLiteral("module-session-settings-test")};
+    session1.authorNote = QStringLiteral("Keep the sanctuary atmosphere calm and observant.");
+    session1.authorNoteDepth = 2;
+
+    LorebookEntry sessionLore;
+    sessionLore.id = QStringLiteral("session-lore-cynthia");
+    sessionLore.key = QStringLiteral("sanctuary");
+    sessionLore.content = QStringLiteral("The sanctuary is hidden beneath an ancient observatory.");
+    sessionLore.enabled = true;
+    session1.localLore.append(sessionLore);
 
     Message m1;
     m1.id = QStringLiteral("msg_cyn_001");
@@ -1319,6 +1417,8 @@ void testCharacterSessionsAndSwitching() {
     assert(ctrl.currentChatName() == QStringLiteral("Main Sanctuary Chat") && "Initial session name must match");
     assert(ctrl.messageModel()->rowCount() == 1 && "Initial session must have 1 message");
     assert(ctrl.availableGreetings().size() == 3 && "Character must have 3 available greetings");
+    assert(ctrl.formatInChat(QStringLiteral("Hello {{user}}")) == QStringLiteral("Hello Bound Explorer") &&
+           "Chat-bound persona must drive CBS/user macro rendering");
 
     // 3. Create second session with alternate greeting #1 ("Greetings! The stars shine bright tonight.")
     ctrl.createNewChatWithGreeting(1, QStringLiteral("Stargazing Session"));
@@ -1327,6 +1427,8 @@ void testCharacterSessionsAndSwitching() {
     assert(ctrl.currentChatName() == QStringLiteral("Stargazing Session") && "New session name must match");
     assert(ctrl.messageModel()->rowCount() == 1 && "New session must have 1 message");
     assert(ctrl.messageModel()->messageAt(0).currentContent() == QStringLiteral("Greetings! The stars shine bright tonight.") && "Greeting text must match alternate greeting #1");
+    assert(!ctrl.formatInChat(QStringLiteral("Hello {{user}}")).contains(QStringLiteral("Bound Explorer")) &&
+           "Unbound chats must fall back to the globally active persona");
 
     // 4. Add user message in Session 2 to verify session message isolation
     Message userMsg;
@@ -1342,18 +1444,39 @@ void testCharacterSessionsAndSwitching() {
     assert(ctrl.currentChatIndex() == 0 && "Active session must be 0");
     assert(ctrl.currentChatName() == QStringLiteral("Main Sanctuary Chat") && "Session 0 name must be restored");
     assert(ctrl.messageModel()->rowCount() == 1 && "Session 0 must still have only 1 message (Isolation verified!)");
+    assert(ctrl.formatInChat(QStringLiteral("Hello {{user}}")) == QStringLiteral("Hello Bound Explorer") &&
+           "Switching back must restore the chat-bound persona");
 
-    // 6. Duplicate Session 1
+    // 6. Branch Session 0 and verify all chat-scoped prompt settings survive.
+    ctrl.forkChat(0);
+    assert(ctrl.chatSessionCount() == 3 && "Forking must create a third session");
+    const QString branchId = ctrl.chatSessions().last().toMap().value(QStringLiteral("id")).toString();
+    auto branchedCharacter = db.getCharacter(cynthia.id);
+    assert(branchedCharacter.has_value());
+    const auto branchIt = std::find_if(branchedCharacter->chats.cbegin(), branchedCharacter->chats.cend(),
+        [&](const Chat& candidate) { return candidate.id == branchId; });
+    assert(branchIt != branchedCharacter->chats.cend() && "Persisted branch must be retrievable by id");
+    const Chat& branch = *branchIt;
+    assert(branch.bindedPersona == boundPersona.id && "Branch must preserve persona binding");
+    assert(branch.modules.contains(QStringLiteral("module-session-settings-test")) && "Branch must preserve chat modules");
+    assert(branch.authorNote == session1.authorNote && branch.authorNoteDepth == session1.authorNoteDepth &&
+           "Branch must preserve author-note settings");
+    assert(branch.localLore.size() == 1 && branch.localLore.first().id == sessionLore.id &&
+           "Branch must preserve local lorebooks");
+    ctrl.deleteChat(2);
+    assert(ctrl.chatSessionCount() == 2 && "Deleting the branch must restore two sessions");
+
+    // 7. Duplicate Session 1
     ctrl.duplicateChat(1);
     assert(ctrl.chatSessionCount() == 3 && "Session count must become 3");
     assert(ctrl.currentChatIndex() == 2 && "Cloned session must become active");
     assert(ctrl.currentChatName() == QStringLiteral("Stargazing Session (Copy)") && "Cloned session name must have (Copy)");
 
-    // 7. Rename the cloned session
+    // 8. Rename the cloned session
     ctrl.renameChat(2, QStringLiteral("Deep Night Astronomy"));
     assert(ctrl.currentChatName() == QStringLiteral("Deep Night Astronomy") && "Session must be renamed");
 
-    // 8. Test chatSessions QVariantList detailed metadata
+    // 9. Test chatSessions QVariantList detailed metadata
     QVariantList sessionsList = ctrl.chatSessions();
     assert(sessionsList.size() == 3 && "chatSessions must return 3 items");
     QVariantMap s0 = sessionsList[0].toMap();
@@ -1364,11 +1487,18 @@ void testCharacterSessionsAndSwitching() {
     assert(s2.value(QStringLiteral("name")).toString() == QStringLiteral("Deep Night Astronomy"));
     assert(s2.value(QStringLiteral("isActive")).toBool());
 
-    // 9. Delete session 2
+    // 10. Delete session 2
     ctrl.deleteChat(2);
     assert(ctrl.chatSessionCount() == 2 && "Session count must return to 2 after deletion");
 
-    // 10. Clean up test character
+    // 11. A deleted bound persona must fall back cleanly to the global persona.
+    ctrl.switchChat(0);
+    assert(ctrl.formatInChat(QStringLiteral("Hello {{user}}")) == QStringLiteral("Hello Bound Explorer"));
+    assert(db.deletePersona(boundPersona.id));
+    assert(!ctrl.formatInChat(QStringLiteral("Hello {{user}}")).contains(QStringLiteral("Bound Explorer")) &&
+           "Missing bound persona must fall back after personasChanged");
+
+    // 12. Clean up test character
     db.deleteCharacter(cynthia.id);
 
     qInfo() << "  -> Multiple chat sessions per character, alternate greeting seeding, message isolation, renaming, and duplication verified!";
@@ -1376,6 +1506,16 @@ void testCharacterSessionsAndSwitching() {
 }
 
 int main(int argc, char *argv[]) {
+    // Keep integration tests fully isolated from a developer's persistent RisuAI data.
+    // Reusing ~/.local/share/risuai_tests caused the test database to grow indefinitely
+    // across runs and turned simple CRUD coverage into multi-minute SQLite page scans.
+    QTemporaryDir isolatedDataHome(QDir::tempPath() + QStringLiteral("/risuai-qt-tests-XXXXXX"));
+    assert(isolatedDataHome.isValid() && "Temporary test data directory must be created");
+    qputenv("XDG_DATA_HOME", isolatedDataHome.path().toUtf8());
+    qunsetenv("RISUAI_DATABASE_URL");
+    qunsetenv("DATABASE_URL");
+    qunsetenv("RISUAI_DB_DRIVER");
+
     QCoreApplication app(argc, argv);
 
     qInfo() << "==================================================";
@@ -1416,6 +1556,7 @@ int main(int argc, char *argv[]) {
     qInfo() << "   ALL INTEGRATION & UNIT TESTS PASSED (29/29)!   ";
     qInfo() << "==================================================";
 
+    DatabaseManager::instance().closeDatabase();
     return 0;
 }
 

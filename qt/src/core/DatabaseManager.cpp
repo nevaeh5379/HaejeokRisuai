@@ -12,6 +12,18 @@
 
 namespace Risu {
 
+static void restorePresetJsonFields(Preset& preset, const QString& rawJson) {
+    if (rawJson.trimmed().isEmpty()) return;
+
+    const QJsonDocument doc = QJsonDocument::fromJson(rawJson.toUtf8());
+    if (!doc.isObject()) return;
+
+    preset.rawData = doc.object();
+    const Preset jsonPreset = Preset::fromJson(preset.rawData);
+    preset.promptTemplate = jsonPreset.promptTemplate;
+    preset.formattingOrder = jsonPreset.formattingOrder;
+}
+
 // DatabaseConfig implementation
 DatabaseDialect DatabaseConfig::dialect() const {
     QString d = driver.toUpper();
@@ -2575,6 +2587,12 @@ QList<Message> DatabaseManager::getMessagesForChat(const QString& chatId) {
             m.attachmentPath = q.value(QStringLiteral("attachment_path")).toString();
             m.timestamp = q.value(QStringLiteral("timestamp")).toLongLong();
 
+            const QString promptInfoJson = q.value(QStringLiteral("prompt_info_json")).toString();
+            if (!promptInfoJson.isEmpty()) {
+                const QJsonDocument promptInfoDoc = QJsonDocument::fromJson(promptInfoJson.toUtf8());
+                if (promptInfoDoc.isObject()) m.promptInfo = promptInfoDoc.object();
+            }
+
             // Load Swipes
             QSqlQuery swQ(m_db);
             swQ.prepare(QStringLiteral("SELECT swipe_id, content_text, thought_text, model_used, input_tokens, output_tokens, timestamp FROM message_swipes WHERE chat_id = :cid AND message_id = :mid ORDER BY swipe_index ASC"));
@@ -2821,10 +2839,7 @@ QList<Preset> DatabaseManager::getAllPresets() {
             for (const auto& item : arr) p.stopSequences.append(item.toString());
         }
 
-        QString rawStr = q.value(QStringLiteral("raw_data_json")).toString();
-        if (!rawStr.isEmpty()) {
-            p.rawData = QJsonDocument::fromJson(rawStr.toUtf8()).object();
-        }
+        restorePresetJsonFields(p, q.value(QStringLiteral("raw_data_json")).toString());
 
         list.append(p);
     }
@@ -2888,7 +2903,10 @@ bool DatabaseManager::savePreset(const Preset& p) {
     q.bindValue(QStringLiteral(":pr_post_hist"), p.postHistoryInstructions);
     q.bindValue(QStringLiteral(":pr_enable_jb"), p.enableJailbreak ? 1 : 0);
     q.bindValue(QStringLiteral(":pr_proxy_key"), p.proxyKey);
-    q.bindValue(QStringLiteral(":pr_raw_data_json"), QString::fromUtf8(QJsonDocument(p.rawData).toJson(QJsonDocument::Compact)));
+    // Store the merged preset representation, not only the opaque import payload.
+    // This keeps promptTemplate/formattingOrder and other JSON-only Risu fields
+    // synchronized after native editor saves and subsequent database reloads.
+    q.bindValue(QStringLiteral(":pr_raw_data_json"), QString::fromUtf8(QJsonDocument(p.toJson()).toJson(QJsonDocument::Compact)));
 
     bool ok = q.exec();
     if (!ok) {
@@ -2953,10 +2971,7 @@ std::optional<Preset> DatabaseManager::getPreset(const QString& presetId) {
             for (const auto& item : arr) p.stopSequences.append(item.toString());
         }
 
-        QString rawStr = q.value(QStringLiteral("raw_data_json")).toString();
-        if (!rawStr.isEmpty()) {
-            p.rawData = QJsonDocument::fromJson(rawStr.toUtf8()).object();
-        }
+        restorePresetJsonFields(p, q.value(QStringLiteral("raw_data_json")).toString());
 
         return p;
     }
@@ -2979,6 +2994,25 @@ QList<Persona> DatabaseManager::getAllPersonas() {
         list.append(p);
     }
     return list;
+}
+
+std::optional<Persona> DatabaseManager::getPersona(const QString& personaId) {
+    if (personaId.trimmed().isEmpty()) return std::nullopt;
+
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral("SELECT * FROM personas WHERE id = :id LIMIT 1"));
+    q.bindValue(QStringLiteral(":id"), personaId);
+    if (!q.exec() || !q.next()) return std::nullopt;
+
+    Persona p;
+    p.id = q.value(QStringLiteral("id")).toString();
+    p.name = q.value(QStringLiteral("name")).toString();
+    p.avatarPath = q.value(QStringLiteral("avatar_path")).toString();
+    p.description = q.value(QStringLiteral("description")).toString();
+    p.personaPrompt = q.value(QStringLiteral("persona_prompt")).toString();
+    p.largePortrait = q.value(QStringLiteral("large_portrait")).toBool();
+    p.isActive = q.value(QStringLiteral("is_active")).toBool();
+    return p;
 }
 
 bool DatabaseManager::savePersona(const Persona& p) {

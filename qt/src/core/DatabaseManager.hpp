@@ -79,6 +79,7 @@ public:
 
     // Personas CRUD
     QList<Persona> getAllPersonas();
+    std::optional<Persona> getPersona(const QString& personaId);
     bool savePersona(const Persona& persona);
     bool deletePersona(const QString& personaId);
     std::optional<Persona> getActivePersona();

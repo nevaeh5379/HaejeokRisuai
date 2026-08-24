@@ -323,6 +323,16 @@ Rectangle {
                         }
 
                         Text {
+                            Layout.fillWidth: true
+                            visible: presetCtrl.activePreset.usesPromptTemplate || false
+                            text: "This preset uses a Risu promptTemplate (" + ((presetCtrl.activePreset.promptTemplate || []).length) + " blocks). Template cards control the final prompt order; the legacy fields below are only used by compatible/empty template cards."
+                            wrapMode: Text.Wrap
+                            font.pixelSize: Theme.fontSmall
+                            font.family: Theme.fontFamily
+                            color: Theme.warning
+                        }
+
+                        Text {
                             text: "Main System Prompt"
                             font.pixelSize: Theme.fontSmall
                             font.weight: Font.DemiBold
