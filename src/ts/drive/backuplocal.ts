@@ -1066,374 +1066,395 @@ export async function SavePartialLocalBackup() {
   }
 }
 
+export async function restoreLocalBackupFile(file: File) {
+  const encryptionMeta: {
+    type: "none" | "account";
+    time?: number;
+  } = {
+    type: "none",
+  };
+
+  let pendingDatabase: Uint8Array | null = null;
+  const restoredColdStorageKeys = new Set<string>();
+  const useNodeBulkRestore = isNodeServer && !forageStorage.isAccount;
+  const pendingNodeAssets = new Map<string, Uint8Array>();
+  const nodeBulkMaxFiles = 64;
+  const nodeBulkMaxBytes = 64 * 1024 * 1024;
+  let pendingNodeAssetBytes = 0;
+  let entriesRestored = 0;
+  let entriesWritten = 0;
+  let currentEntryName = "";
+  let bytesRead = 0;
+
+  const flushNodeAssets = async (): Promise<number> => {
+    if (pendingNodeAssets.size === 0) {
+      return 0;
+    }
+    const count = pendingNodeAssets.size;
+    await (forageStorage.realStorage as NodeStorage).setItems(
+      pendingNodeAssets,
+    );
+    pendingNodeAssets.clear();
+    pendingNodeAssetBytes = 0;
+    return count;
+  };
+
+  const restoreBackupEntry = async (name: string, data: Uint8Array) => {
+    currentEntryName = name;
+    if (name === "encryption.risudat") {
+      let meta: typeof encryptionMeta;
+      try {
+        meta = JSON.parse(new TextDecoder().decode(data));
+      } catch (error) {
+        console.error("Failed to parse encryption metadata:", error);
+        throw new Error(
+          "This backup is encrypted, but its encryption metadata is invalid.",
+        );
+      }
+
+      if (
+        meta.type !== "account" ||
+        typeof meta.time !== "number" ||
+        !Number.isFinite(meta.time) ||
+        meta.time <= 0
+      ) {
+        throw new Error(
+          "This backup is encrypted, but its encryption metadata is incomplete.",
+        );
+      }
+      encryptionMeta.type = "account";
+      encryptionMeta.time = meta.time;
+    } else if (name === "database.risudat") {
+      pendingDatabase = new Uint8Array(data);
+    } else {
+      const coldStorageKey = getColdStorageBackupKey(name);
+      let handledAsColdStorage = false;
+
+      if (coldStorageKey) {
+        handledAsColdStorage = true;
+        try {
+          const text = new TextDecoder().decode(data);
+          const jsonData = JSON.parse(text);
+
+          if (isColdStorageBackupData(jsonData)) {
+            if (await setColdStorageItem(coldStorageKey, jsonData)) {
+              restoredColdStorageKeys.add(coldStorageKey);
+            } else {
+              console.error(
+                `Failed to restore cold storage item ${coldStorageKey}`,
+              );
+            }
+          } else {
+            console.warn(
+              `Skipping invalid cold storage backup item ${name}`,
+            );
+          }
+        } catch (e) {
+          console.error(
+            `Failed to parse cold storage item ${coldStorageKey}:`,
+            e,
+          );
+        }
+      }
+
+      if (!handledAsColdStorage) {
+        if (isTauri) {
+          await writeFile(`assets/` + name, data, {
+            baseDir: BaseDirectory.AppData,
+          });
+        } else if (useNodeBulkRestore) {
+          const key = "assets/" + name;
+          const previous = pendingNodeAssets.get(key);
+          if (previous) {
+            pendingNodeAssetBytes -= previous.byteLength;
+          }
+          pendingNodeAssets.set(key, data);
+          pendingNodeAssetBytes += data.byteLength;
+
+          if (
+            pendingNodeAssets.size >= nodeBulkMaxFiles ||
+            pendingNodeAssetBytes >= nodeBulkMaxBytes
+          ) {
+            const flushed = await flushNodeAssets();
+            if (flushed) {
+              entriesWritten += flushed;
+            }
+          }
+        } else {
+          await forageStorage.setItem("assets/" + name, data);
+        }
+      }
+    }
+
+    entriesRestored++;
+    currentEntryName = "";
+    if (!useNodeBulkRestore) {
+      await sleep(10);
+    }
+    if (forageStorage.isAccount) {
+      await sleep(1000);
+    }
+  };
+
+  try {
+    const reader = file.stream().getReader();
+    let lastUiUpdate = 0;
+    type BackupParserPhase = "nameLength" | "name" | "dataLength" | "data";
+    let parserPhase: BackupParserPhase = "nameLength";
+    const lengthBuffer = new Uint8Array(4);
+    let lengthOffset = 0;
+    let entryNameBuffer = new Uint8Array();
+    let entryNameOffset = 0;
+    let entryName = "";
+    let entryDataLength = 0;
+    let entryDataReceived = 0;
+    let entryDataChunks: Uint8Array[] = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      bytesRead += value.length;
+      const now = Date.now();
+      if (now - lastUiUpdate > 30) {
+        lastUiUpdate = now;
+        const readPercent =
+          file.size === 0 ? 90 : Math.floor((bytesRead / file.size) * 90);
+        let message = `Parsing backup... (${readPercent}%) (${entriesRestored} entries parsed`;
+        if (useNodeBulkRestore && entriesWritten > 0) {
+          message += `, ${entriesWritten} written`;
+        }
+        message += ")";
+        if (currentEntryName) {
+          message += `\n${currentEntryName}`;
+        }
+        alertProgress(message, readPercent);
+      }
+
+      let chunkOffset = 0;
+      while (chunkOffset < value.length) {
+        if (parserPhase === "nameLength" || parserPhase === "dataLength") {
+          const copyLength = Math.min(
+            lengthBuffer.length - lengthOffset,
+            value.length - chunkOffset,
+          );
+          lengthBuffer.set(
+            value.subarray(chunkOffset, chunkOffset + copyLength),
+            lengthOffset,
+          );
+          lengthOffset += copyLength;
+          chunkOffset += copyLength;
+          if (lengthOffset < lengthBuffer.length) {
+            continue;
+          }
+
+          const length = new DataView(lengthBuffer.buffer).getUint32(0, true);
+          lengthOffset = 0;
+
+          if (parserPhase === "nameLength") {
+            if (length === 0 || length > 1024 * 1024) {
+              throw new Error("Invalid backup entry name length");
+            }
+            entryNameBuffer = new Uint8Array(length);
+            entryNameOffset = 0;
+            parserPhase = "name";
+          } else {
+            if (length > file.size) {
+              throw new Error("Invalid backup entry data length");
+            }
+            entryDataLength = length;
+            entryDataReceived = 0;
+            entryDataChunks = [];
+            parserPhase = "data";
+
+            if (entryDataLength === 0) {
+              await restoreBackupEntry(entryName, new Uint8Array());
+              entryName = "";
+              parserPhase = "nameLength";
+            }
+          }
+          continue;
+        }
+
+        if (parserPhase === "name") {
+          const copyLength = Math.min(
+            entryNameBuffer.length - entryNameOffset,
+            value.length - chunkOffset,
+          );
+          entryNameBuffer.set(
+            value.subarray(chunkOffset, chunkOffset + copyLength),
+            entryNameOffset,
+          );
+          entryNameOffset += copyLength;
+          chunkOffset += copyLength;
+
+          if (entryNameOffset === entryNameBuffer.length) {
+            entryName = new TextDecoder().decode(entryNameBuffer);
+            parserPhase = "dataLength";
+          }
+          continue;
+        }
+
+        const copyLength = Math.min(
+          entryDataLength - entryDataReceived,
+          value.length - chunkOffset,
+        );
+        entryDataChunks.push(
+          value.subarray(chunkOffset, chunkOffset + copyLength),
+        );
+        entryDataReceived += copyLength;
+        chunkOffset += copyLength;
+
+        if (entryDataReceived === entryDataLength) {
+          let data: Uint8Array;
+          if (entryDataChunks.length === 1) {
+            data = entryDataChunks[0];
+          } else {
+            data = new Uint8Array(entryDataLength);
+            let dataOffset = 0;
+            for (const chunk of entryDataChunks) {
+              data.set(chunk, dataOffset);
+              dataOffset += chunk.length;
+            }
+          }
+
+          await restoreBackupEntry(entryName, data);
+          entryName = "";
+          entryDataChunks = [];
+          parserPhase = "nameLength";
+        }
+      }
+    }
+  } catch (streamErr) {
+    // If chunked container failed, try fallback for raw database.bin
+    console.warn("Stream backup container parsing failed, trying raw database.bin fallback:", streamErr);
+    try {
+      const buffer = await file.arrayBuffer();
+      const rawBytes = new Uint8Array(buffer);
+      const rawDb = await decodeRisuSave(rawBytes);
+      if (rawDb && typeof rawDb === "object") {
+        pendingDatabase = rawBytes;
+      }
+    } catch {
+      throw streamErr;
+    }
+  }
+
+  if (useNodeBulkRestore && pendingNodeAssets.size > 0) {
+    alertProgress(
+      `Flushing remaining assets... (${pendingNodeAssets.size} files)`,
+      90,
+    );
+    const flushed = await flushNodeAssets();
+    if (flushed) {
+      entriesWritten += flushed;
+    }
+  }
+
+  if (!pendingDatabase) {
+    // Try raw database decode fallback
+    try {
+      const buffer = await file.arrayBuffer();
+      const rawBytes = new Uint8Array(buffer);
+      const rawDb = await decodeRisuSave(rawBytes);
+      if (rawDb && typeof rawDb === "object") {
+        pendingDatabase = rawBytes;
+      } else {
+        alertError("Failed, Is file corrupted?");
+        return;
+      }
+    } catch {
+      alertError("Failed, Is file corrupted?");
+      return;
+    }
+  }
+
+  let db = pendingDatabase;
+  if (encryptionMeta.type === "account" && encryptionMeta.time) {
+    try {
+      db = await decryptLegacyAccountBackup(
+        db,
+        encryptionMeta.time,
+        decryptBuffer,
+      );
+    } catch (error) {
+      console.error("Failed to decrypt database backup:", error);
+      const detail = error instanceof Error ? error.message : `${error}`;
+      throw new Error(
+        `This backup is encrypted and could not be decrypted. ${detail}`,
+      );
+    }
+  }
+  alertProgress("Decoding database...", 95);
+  const dbData = await decodeRisuSave(db);
+  normalizeDatabaseDefaults(dbData);
+  dbData.pluginCustomStorage ??= {};
+  const missingColdStorageKeys: string[] = [];
+  for (const key of await listColdDataKeys(dbData)) {
+    if (restoredColdStorageKeys.has(key)) {
+      continue;
+    }
+    const existingColdStorage = await getColdStorageItem(key);
+    if (!isColdStorageBackupData(existingColdStorage)) {
+      missingColdStorageKeys.push(key);
+    }
+  }
+  if (
+    !(await confirmIncompleteColdStorageOperation(
+      dbData,
+      missingColdStorageKeys,
+      "restore",
+    ))
+  ) {
+    return;
+  }
+
+  const totalChars = dbData.characters?.length ?? 0;
+  let totalChats = 0;
+  for (const c of dbData.characters ?? []) {
+    totalChats += c.chats?.length ?? 0;
+  }
+  const baseMsg = `Syncing SQL (${totalChars} characters, ${totalChats} chats)`;
+  alertProgress(`${baseMsg}...`, 98);
+  const storage = await getSqlStorage();
+  await storage.replaceDatabase(dbData, (step) => {
+    alertWait(`${baseMsg} - ${step}`);
+  });
+
+  if (isTauri) {
+    await relaunch();
+    alertStore.set({
+      type: "wait",
+      msg: "Success, Refreshing your app.",
+    });
+  } else {
+    location.search = "";
+    alertStore.set({
+      type: "wait",
+      msg: "Success, Refreshing your app.",
+    });
+    location.reload();
+  }
+
+  alertNormal("Success");
+}
+
 export function LoadLocalBackup() {
   try {
     const input = document.createElement("input");
-    const encryptionMeta: {
-      type: "none" | "account";
-      time?: number;
-    } = {
-      type: "none",
-    };
     input.type = "file";
     input.accept = ".bin,.risubackup";
-    const runLoadLocalBackup = async () => {
+    input.onchange = async () => {
       if (!input.files || input.files.length === 0) {
         input.remove();
         return;
       }
       const file = input.files[0];
       input.remove();
-
-      let pendingDatabase: Uint8Array | null = null;
-      const restoredColdStorageKeys = new Set<string>();
-      const useNodeBulkRestore = isNodeServer && !forageStorage.isAccount;
-      const pendingNodeAssets = new Map<string, Uint8Array>();
-      const nodeBulkMaxFiles = 64;
-      const nodeBulkMaxBytes = 64 * 1024 * 1024;
-      let pendingNodeAssetBytes = 0;
-      let entriesRestored = 0;
-      let entriesWritten = 0;
-      let currentEntryName = "";
-      let bytesRead = 0;
-
-      const flushNodeAssets = async (): Promise<number> => {
-        if (pendingNodeAssets.size === 0) {
-          return 0;
-        }
-        const count = pendingNodeAssets.size;
-        const parsedPercent =
-          file.size === 0 ? 90 : Math.floor((bytesRead / file.size) * 90);
-        await (forageStorage.realStorage as NodeStorage).setItems(
-          pendingNodeAssets,
-        );
-        pendingNodeAssets.clear();
-        pendingNodeAssetBytes = 0;
-        return count;
-      };
-
-      const restoreBackupEntry = async (name: string, data: Uint8Array) => {
-        currentEntryName = name;
-        if (name === "encryption.risudat") {
-          let meta: typeof encryptionMeta;
-          try {
-            meta = JSON.parse(new TextDecoder().decode(data));
-          } catch (error) {
-            console.error("Failed to parse encryption metadata:", error);
-            throw new Error(
-              "This backup is encrypted, but its encryption metadata is invalid.",
-            );
-          }
-
-          if (
-            meta.type !== "account" ||
-            typeof meta.time !== "number" ||
-            !Number.isFinite(meta.time) ||
-            meta.time <= 0
-          ) {
-            throw new Error(
-              "This backup is encrypted, but its encryption metadata is incomplete.",
-            );
-          }
-          encryptionMeta.type = "account";
-          encryptionMeta.time = meta.time;
-        } else if (name === "database.risudat") {
-          pendingDatabase = new Uint8Array(data);
-        } else {
-          const coldStorageKey = getColdStorageBackupKey(name);
-          let handledAsColdStorage = false;
-
-          if (coldStorageKey) {
-            handledAsColdStorage = true;
-            try {
-              const text = new TextDecoder().decode(data);
-              const jsonData = JSON.parse(text);
-
-              if (isColdStorageBackupData(jsonData)) {
-                if (await setColdStorageItem(coldStorageKey, jsonData)) {
-                  restoredColdStorageKeys.add(coldStorageKey);
-                } else {
-                  console.error(
-                    `Failed to restore cold storage item ${coldStorageKey}`,
-                  );
-                }
-              } else {
-                console.warn(
-                  `Skipping invalid cold storage backup item ${name}`,
-                );
-              }
-            } catch (e) {
-              console.error(
-                `Failed to parse cold storage item ${coldStorageKey}:`,
-                e,
-              );
-            }
-          }
-
-          if (!handledAsColdStorage) {
-            if (isTauri) {
-              await writeFile(`assets/` + name, data, {
-                baseDir: BaseDirectory.AppData,
-              });
-            } else if (useNodeBulkRestore) {
-              const key = "assets/" + name;
-              const previous = pendingNodeAssets.get(key);
-              if (previous) {
-                pendingNodeAssetBytes -= previous.byteLength;
-              }
-              pendingNodeAssets.set(key, data);
-              pendingNodeAssetBytes += data.byteLength;
-
-              if (
-                pendingNodeAssets.size >= nodeBulkMaxFiles ||
-                pendingNodeAssetBytes >= nodeBulkMaxBytes
-              ) {
-                const flushed = await flushNodeAssets();
-                if (flushed) {
-                  entriesWritten += flushed;
-                }
-              }
-            } else {
-              await forageStorage.setItem("assets/" + name, data);
-            }
-          }
-        }
-
-        entriesRestored++;
-        currentEntryName = "";
-        if (!useNodeBulkRestore) {
-          await sleep(10);
-        }
-        if (forageStorage.isAccount) {
-          await sleep(1000);
-        }
-      };
-
-      const reader = file.stream().getReader();
-      let lastUiUpdate = 0;
-      type BackupParserPhase = "nameLength" | "name" | "dataLength" | "data";
-      let parserPhase: BackupParserPhase = "nameLength";
-      const lengthBuffer = new Uint8Array(4);
-      let lengthOffset = 0;
-      let entryNameBuffer = new Uint8Array();
-      let entryNameOffset = 0;
-      let entryName = "";
-      let entryDataLength = 0;
-      let entryDataReceived = 0;
-      let entryDataChunks: Uint8Array[] = [];
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-
-        bytesRead += value.length;
-        const now = Date.now();
-        if (now - lastUiUpdate > 30) {
-          lastUiUpdate = now;
-          const readPercent =
-            file.size === 0 ? 90 : Math.floor((bytesRead / file.size) * 90);
-          let message = `Parsing backup... (${readPercent}%) (${entriesRestored} entries parsed`;
-          if (useNodeBulkRestore && entriesWritten > 0) {
-            message += `, ${entriesWritten} written`;
-          }
-          message += ")";
-          if (currentEntryName) {
-            message += `\n${currentEntryName}`;
-          }
-          alertProgress(message, readPercent);
-        }
-
-        let chunkOffset = 0;
-        while (chunkOffset < value.length) {
-          if (parserPhase === "nameLength" || parserPhase === "dataLength") {
-            const copyLength = Math.min(
-              lengthBuffer.length - lengthOffset,
-              value.length - chunkOffset,
-            );
-            lengthBuffer.set(
-              value.subarray(chunkOffset, chunkOffset + copyLength),
-              lengthOffset,
-            );
-            lengthOffset += copyLength;
-            chunkOffset += copyLength;
-            if (lengthOffset < lengthBuffer.length) {
-              continue;
-            }
-
-            const length = new DataView(lengthBuffer.buffer).getUint32(0, true);
-            lengthOffset = 0;
-
-            if (parserPhase === "nameLength") {
-              if (length === 0 || length > 1024 * 1024) {
-                throw new Error("Invalid backup entry name length");
-              }
-              entryNameBuffer = new Uint8Array(length);
-              entryNameOffset = 0;
-              parserPhase = "name";
-            } else {
-              if (length > file.size) {
-                throw new Error("Invalid backup entry data length");
-              }
-              entryDataLength = length;
-              entryDataReceived = 0;
-              entryDataChunks = [];
-              parserPhase = "data";
-
-              if (entryDataLength === 0) {
-                await restoreBackupEntry(entryName, new Uint8Array());
-                entryName = "";
-                parserPhase = "nameLength";
-              }
-            }
-            continue;
-          }
-
-          if (parserPhase === "name") {
-            const copyLength = Math.min(
-              entryNameBuffer.length - entryNameOffset,
-              value.length - chunkOffset,
-            );
-            entryNameBuffer.set(
-              value.subarray(chunkOffset, chunkOffset + copyLength),
-              entryNameOffset,
-            );
-            entryNameOffset += copyLength;
-            chunkOffset += copyLength;
-
-            if (entryNameOffset === entryNameBuffer.length) {
-              entryName = new TextDecoder().decode(entryNameBuffer);
-              parserPhase = "dataLength";
-            }
-            continue;
-          }
-
-          const copyLength = Math.min(
-            entryDataLength - entryDataReceived,
-            value.length - chunkOffset,
-          );
-          entryDataChunks.push(
-            value.subarray(chunkOffset, chunkOffset + copyLength),
-          );
-          entryDataReceived += copyLength;
-          chunkOffset += copyLength;
-
-          if (entryDataReceived === entryDataLength) {
-            let data: Uint8Array;
-            if (entryDataChunks.length === 1) {
-              data = entryDataChunks[0];
-            } else {
-              data = new Uint8Array(entryDataLength);
-              let dataOffset = 0;
-              for (const chunk of entryDataChunks) {
-                data.set(chunk, dataOffset);
-                dataOffset += chunk.length;
-              }
-            }
-
-            await restoreBackupEntry(entryName, data);
-            entryName = "";
-            entryDataChunks = [];
-            parserPhase = "nameLength";
-          }
-        }
-      }
-
-      if (parserPhase !== "nameLength" || lengthOffset !== 0) {
-        alertError("Failed, backup file ended with an incomplete entry.");
-        return;
-      }
-
-      if (useNodeBulkRestore && pendingNodeAssets.size > 0) {
-        alertProgress(
-          `Flushing remaining assets... (${pendingNodeAssets.size} files)`,
-          90,
-        );
-        const flushed = await flushNodeAssets();
-        if (flushed) {
-          entriesWritten += flushed;
-        }
-      }
-
-      if (!pendingDatabase) {
-        alertError("Failed, Is file corrupted?");
-        return;
-      }
-
-      let db = pendingDatabase;
-      if (encryptionMeta.type === "account" && encryptionMeta.time) {
-        try {
-          db = await decryptLegacyAccountBackup(
-            db,
-            encryptionMeta.time,
-            decryptBuffer,
-          );
-        } catch (error) {
-          console.error("Failed to decrypt database backup:", error);
-          const detail = error instanceof Error ? error.message : `${error}`;
-          throw new Error(
-            `This backup is encrypted and could not be decrypted. ${detail}`,
-          );
-        }
-      }
-      alertProgress("Decoding database...", 95);
-      const dbData = await decodeRisuSave(db);
-      normalizeDatabaseDefaults(dbData);
-      dbData.pluginCustomStorage ??= {};
-      const missingColdStorageKeys: string[] = [];
-      for (const key of await listColdDataKeys(dbData)) {
-        if (restoredColdStorageKeys.has(key)) {
-          continue;
-        }
-        const existingColdStorage = await getColdStorageItem(key);
-        if (!isColdStorageBackupData(existingColdStorage)) {
-          missingColdStorageKeys.push(key);
-        }
-      }
-      if (
-        !(await confirmIncompleteColdStorageOperation(
-          dbData,
-          missingColdStorageKeys,
-          "restore",
-        ))
-      ) {
-        return;
-      }
-
-      const totalChars = dbData.characters?.length ?? 0;
-      let totalChats = 0;
-      for (const c of dbData.characters ?? []) {
-        totalChats += c.chats?.length ?? 0;
-      }
-      const baseMsg = `Syncing SQL (${totalChars} characters, ${totalChats} chats)`;
-      alertProgress(`${baseMsg}...`, 98);
-      const storage = await getSqlStorage();
-      await storage.replaceDatabase(dbData, (step) => {
-        alertWait(`${baseMsg} - ${step}`);
-      });
-
-      if (isTauri) {
-        await relaunch();
-        alertStore.set({
-          type: "wait",
-          msg: "Success, Refreshing your app.",
-        });
-      } else {
-        location.search = "";
-        alertStore.set({
-          type: "wait",
-          msg: "Success, Refreshing your app.",
-        });
-        location.reload();
-      }
-
-      alertNormal("Success");
-    };
-
-    input.onchange = async () => {
       try {
-        await runLoadLocalBackup();
+        await restoreLocalBackupFile(file);
       } catch (error) {
         console.error(error);
         const detail = error instanceof Error ? error.message : `${error}`;
@@ -1442,7 +1463,6 @@ export function LoadLocalBackup() {
         );
       }
     };
-
     input.click();
   } catch (error) {
     console.error(error);

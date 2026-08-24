@@ -1,4 +1,5 @@
 import type { Database } from "./database.svelte";
+import { normalizeDatabaseDefaults } from "./database.svelte";
 import { decodeRisuSave } from "./risuSave";
 import type { ISqlStorage } from "./ISqlStorage";
 import { isTauri } from "../platform";
@@ -153,6 +154,8 @@ export async function migrateLegacyDatabase(
 ): Promise<boolean> {
   try {
     onProgress?.("Migrating data to SQL storage...");
+    normalizeDatabaseDefaults(legacyDb);
+    legacyDb.pluginCustomStorage ??= {};
     await storage.replaceDatabase(legacyDb, onProgress);
     onProgress?.("Migration complete");
 
@@ -201,4 +204,3 @@ export async function markLegacyAsMigrated(): Promise<void> {
     console.error("Failed to mark legacy as migrated:", error);
   }
 }
-
