@@ -18,6 +18,7 @@ Item {
 
     implicitWidth: mainColumn.implicitWidth
     implicitHeight: mainColumn.implicitHeight
+    height: implicitHeight
 
     Column {
         id: mainColumn
@@ -85,39 +86,31 @@ Item {
                     }
                 }
 
-                TextEdit {
+                Text {
                     id: thoughtBody
                     visible: root.showThought
                     width: parent.width
-                    readOnly: true
-                    selectByMouse: true
-                    wrapMode: TextEdit.Wrap
+                    wrapMode: Text.Wrap
                     font.family: Theme.monoFontFamily
                     font.pixelSize: Theme.fontSmall
                     color: Theme.textcolor2
                     text: root.thoughtText
-                    textFormat: TextEdit.PlainText
-                    selectedTextColor: "#ffffff"
-                    selectionColor: Theme.primary
+                    textFormat: Text.PlainText
                 }
             }
         }
 
         // 1. High-Performance Native RichText Mode (for normal text/markdown)
-        TextEdit {
+        Text {
             id: messageText
             visible: !root.hasComplexHtml
             width: parent.width
-            readOnly: true
-            selectByMouse: true
-            wrapMode: TextEdit.Wrap
+            wrapMode: Text.Wrap
             color: root.textColor
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontNormal
             text: (!root.hasComplexHtml) ? root.renderRisuRichText(root.rawText) : ""
-            textFormat: TextEdit.RichText
-            selectedTextColor: "#ffffff"
-            selectionColor: Theme.primary
+            textFormat: Text.RichText
         }
 
         // 2. Full Chromium WebEngine Mode (for complex HTML5/CSS3/DOM elements like unicon-image-container)

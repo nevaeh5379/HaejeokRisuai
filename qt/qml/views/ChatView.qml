@@ -436,17 +436,77 @@ Item {
                 id: messageListView
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                Layout.preferredHeight: 0
                 Layout.leftMargin: 16
                 Layout.rightMargin: 16
                 Layout.topMargin: 10
                 Layout.bottomMargin: 8
                 clip: true
                 spacing: 8
+                interactive: true
                 model: chatCtrl.messageModel
+                boundsBehavior: Flickable.StopAtBounds
+                flickableDirection: Flickable.VerticalFlick
+                pixelAligned: true
+
+                // Generous cache buffer to eliminate delegate creation jitter & popping
+                cacheBuffer: 5000
+                displayMarginBeginning: 2000
+                displayMarginEnd: 2000
 
                 ScrollBar.vertical: ScrollBar {
                     id: vScrollBar
                     policy: ScrollBar.AsNeeded
+                    width: 8
+                    active: true
+                }
+
+                // Smooth and precise desktop mouse wheel handler
+                WheelHandler {
+                    id: desktopWheelHandler
+                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                    target: null
+                    onWheel: function(event) {
+                        var delta = event.angleDelta.y !== 0 ? event.angleDelta.y : event.pixelDelta.y;
+                        if (delta === 0) return;
+
+                        var scrollStep = -delta * 0.9;
+                        var maxScrollY = Math.max(0, messageListView.contentHeight - messageListView.height);
+                        var targetY = Math.max(0, Math.min(maxScrollY, messageListView.contentY + scrollStep));
+
+                        messageListView.contentY = targetY;
+                        event.accepted = true;
+                    }
+                }
+
+                // Scroll to bottom when a new message is appended
+                onCountChanged: {
+                    Qt.callLater(function() {
+                        messageListView.positionViewAtEnd();
+                    });
+                }
+
+                // Stream follow: only scroll down if already at the bottom
+                Connections {
+                    target: chatCtrl.messageModel
+                    function onMessageUpdated(row) {
+                        if (messageListView.atYEnd) {
+                            Qt.callLater(function() {
+                                messageListView.positionViewAtEnd();
+                            });
+                        }
+                    }
+                }
+
+                Connections {
+                    target: chatCtrl
+                    function onGenerationFinished(response) {
+                        if (messageListView.atYEnd) {
+                            Qt.callLater(function() {
+                                messageListView.positionViewAtEnd();
+                            });
+                        }
+                    }
                 }
 
                 delegate: RisuChatBubble {
@@ -486,12 +546,6 @@ Item {
                     onForkRequested: function(row) {
                         chatCtrl.forkChat(row);
                     }
-                }
-
-                onCountChanged: {
-                    Qt.callLater(function() {
-                        messageListView.positionViewAtEnd();
-                    });
                 }
             }
 

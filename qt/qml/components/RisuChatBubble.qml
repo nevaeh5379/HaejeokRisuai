@@ -23,7 +23,7 @@ Rectangle {
     property string modelName: ""
 
     property bool isEditing: false
-    property bool isHovered: bubbleMouseArea.containsMouse
+    property bool isHovered: bubbleHoverHandler.hovered
 
     signal swipeLeftRequested(int row)
     signal swipeRightRequested(int row)
@@ -35,6 +35,7 @@ Rectangle {
 
     width: parent ? parent.width : 600
     implicitHeight: mainLayout.implicitHeight + 20
+    height: implicitHeight
     color: isPinned ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.08) : (isHovered ? Qt.rgba(255, 255, 255, 0.02) : "transparent")
     border.color: isPinned ? Theme.primary : "transparent"
     border.width: isPinned ? 1 : 0
@@ -347,10 +348,7 @@ Rectangle {
         }
     }
 
-    MouseArea {
-        id: bubbleMouseArea
-        anchors.fill: parent
-        hoverEnabled: true
-        acceptedButtons: Qt.NoButton
+    HoverHandler {
+        id: bubbleHoverHandler
     }
 }
