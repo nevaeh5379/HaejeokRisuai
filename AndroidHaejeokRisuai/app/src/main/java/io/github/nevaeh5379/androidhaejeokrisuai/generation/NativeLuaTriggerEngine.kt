@@ -23,6 +23,20 @@ internal data class NativeLuaTriggerResult(
     val runtimePatch: RuntimeStatePatch,
 )
 
+internal data class NativeLuaLlmRequest(
+    val settings: GenerationSettings,
+    val character: CharacterProfile,
+    val messages: List<MessageRecord>,
+    val variables: Map<String, String>,
+    val authorNote: String,
+    val greetingIndex: Int,
+    val prompt: List<NativePromptMessage>,
+)
+
+internal fun interface NativeLuaLlmBridge {
+    fun complete(request: NativeLuaLlmRequest): String
+}
+
 /**
  * Native, plugin-free Risu trigger Lua host.
  *
@@ -40,6 +54,7 @@ internal object NativeLuaTriggerEngine {
         val greetingIndex: Int,
         val baseLocalLoreRaw: List<Map<String, Any?>>,
         val lowLevelAccess: Boolean,
+        val llmBridge: NativeLuaLlmBridge?,
         val messages: MutableList<MessageRecord>,
         val variables: MutableMap<String, String>,
         var runtimePatch: RuntimeStatePatch,
@@ -86,6 +101,7 @@ internal object NativeLuaTriggerEngine {
         inheritedPatch: RuntimeStatePatch,
         localLoreRaw: List<Map<String, Any?>> = emptyList(),
         lowLevelAccess: Boolean = false,
+        llmBridge: NativeLuaLlmBridge? = null,
     ): NativeLuaTriggerResult {
         if (code.isBlank()) {
             return NativeLuaTriggerResult(messages, variables, inheritedStop, inheritedPatch)
@@ -106,6 +122,7 @@ internal object NativeLuaTriggerEngine {
                 greetingIndex = greetingIndex,
                 baseLocalLoreRaw = localLoreRaw,
                 lowLevelAccess = lowLevelAccess,
+                llmBridge = llmBridge,
                 messages = messages.toMutableList(),
                 variables = variables.toMutableMap(),
                 runtimePatch = inheritedPatch,
@@ -285,6 +302,26 @@ internal object NativeLuaTriggerEngine {
         register(state, "requestMain") { lua, execution ->
             if (!execution.lowLevelAccess) return@register 0
             push(lua, scriptedRequest(stringArg(lua, 2)))
+        }
+        register(state, "simpleLLMMain") { lua, execution ->
+            if (!execution.lowLevelAccess) return@register 0
+            val bridge = execution.llmBridge
+                ?: return@register push(lua, llmResult(false, "Error: Native LLM bridge is unavailable"))
+            val request = NativeLuaLlmRequest(
+                settings = execution.settings(),
+                character = execution.character(),
+                messages = execution.messages.toList(),
+                variables = execution.variables.toMap(),
+                authorNote = execution.runtimePatch.resolveAuthorNote(execution.authorNote),
+                greetingIndex = execution.greetingIndex,
+                prompt = listOf(NativePromptMessage("user", stringArg(lua, 2))),
+            )
+            val result = runCatching { bridge.complete(request) }
+                .fold(
+                    onSuccess = { llmResult(true, it) },
+                    onFailure = { llmResult(false, "Error: ${it.message ?: it::class.java.simpleName}") },
+                )
+            push(lua, result)
         }
         register(state, "logMain") { _, _ -> 0 }
         register(state, "reloadDisplay") { _, _ -> 0 }
@@ -477,6 +514,9 @@ internal object NativeLuaTriggerEngine {
     private fun requestResult(status: Int, data: String): String =
         NativeRisuParser.stringifyJson(linkedMapOf("status" to status, "data" to data))
 
+    private fun llmResult(success: Boolean, result: String): String =
+        NativeRisuParser.stringifyJson(linkedMapOf("success" to success, "result" to result))
+
     private fun push(lua: Lua, value: String): Int {
         lua.push(value)
         return 1
@@ -569,6 +609,14 @@ end
 
 function request(id, url)
     return resolvedPromise(requestMain(id, url))
+end
+
+function simpleLLM(id, prompt)
+    local raw = simpleLLMMain(id, prompt)
+    if raw == nil then
+        return resolvedPromise(nil)
+    end
+    return resolvedPromise(json.decode(raw))
 end
 
 function getChat(id, index)

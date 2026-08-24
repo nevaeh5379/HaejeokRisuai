@@ -5,7 +5,9 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.TriggerScript
+import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeLuaLlmBridge
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeLuaTriggerEngine
+import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativePromptMessage
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeTriggerProcessor
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -315,6 +317,72 @@ class NativeLuaTriggerEngineTest {
             lowLevelAccess = true,
         )
         assertEquals("429", rate.variables["rate"])
+    }
+
+    @Test
+    fun simpleLlmUsesLowLevelBridgeAndCurrentRuntimeState() {
+        var calls = 0
+        val bridge = NativeLuaLlmBridge { request ->
+            calls++
+            assertEquals("Runtime Lua", request.character.name)
+            assertEquals("Alice", request.settings.username)
+            assertEquals(listOf(NativePromptMessage("user", "raw {{user}} prompt")), request.prompt)
+            "model reply"
+        }
+        val code = """
+            function onStart(id)
+                setName(id, "Runtime Lua")
+                local response = simpleLLM(id, "raw {{user}} prompt"):await()
+                setChatVar(id, "llm", tostring(response.success) .. ":" .. response.result)
+            end
+        """.trimIndent()
+        val result = NativeLuaTriggerEngine.run(
+            code = code, mode = "start", settings = settings, character = character,
+            messages = history, variables = emptyMap(), chatId = "chat", authorNote = "note",
+            greetingIndex = -1, inheritedStop = false, inheritedPatch = RuntimeStatePatch(),
+            lowLevelAccess = true, llmBridge = bridge,
+        )
+        assertEquals(1, calls)
+        assertEquals("true:model reply", result.variables["llm"])
+    }
+
+    @Test
+    fun simpleLlmIsDeniedWithoutLowLevelAccessAndReportsBridgeFailures() {
+        var calls = 0
+        val bridge = NativeLuaLlmBridge {
+            calls++
+            error("bridge exploded")
+        }
+        val deniedCode = """
+            function onStart(id)
+                local response = simpleLLM(id, "test"):await()
+                setChatVar(id, "denied", tostring(response == nil))
+            end
+        """.trimIndent()
+        val denied = NativeLuaTriggerEngine.run(
+            code = deniedCode, mode = "start", settings = settings, character = character,
+            messages = history, variables = emptyMap(), chatId = "chat", authorNote = "",
+            greetingIndex = -1, inheritedStop = false, inheritedPatch = RuntimeStatePatch(),
+            lowLevelAccess = false, llmBridge = bridge,
+        )
+        assertEquals("true", denied.variables["denied"])
+        assertEquals(0, calls)
+
+        NativeLuaTriggerEngine.clearForTests()
+        val failureCode = """
+            function onStart(id)
+                local response = simpleLLM(id, "test"):await()
+                setChatVar(id, "failure", tostring(response.success) .. ":" .. response.result)
+            end
+        """.trimIndent()
+        val failure = NativeLuaTriggerEngine.run(
+            code = failureCode, mode = "start", settings = settings, character = character,
+            messages = history, variables = emptyMap(), chatId = "chat", authorNote = "",
+            greetingIndex = -1, inheritedStop = false, inheritedPatch = RuntimeStatePatch(),
+            lowLevelAccess = true, llmBridge = bridge,
+        )
+        assertEquals("false:Error: bridge exploded", failure.variables["failure"])
+        assertEquals(1, calls)
     }
 
     @Test

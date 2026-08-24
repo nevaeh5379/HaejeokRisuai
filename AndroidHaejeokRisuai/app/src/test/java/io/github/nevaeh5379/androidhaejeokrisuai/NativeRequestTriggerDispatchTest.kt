@@ -7,6 +7,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.TriggerScript
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.AnthropicGenerator
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.GeminiGenerator
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeGenerationEngine
+import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativePromptMessage
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.OpenAiCompatibleGenerator
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -42,6 +43,24 @@ class NativeRequestTriggerDispatchTest {
         ),
         history = listOf(MessageRecord("m", "chat", "user", "hello")),
     )
+
+    @Test
+    fun explicitLowLevelPromptAlsoPassesThroughRequestTriggers() {
+        val prompt = NativeGenerationEngine().prepareExplicitPrompt(
+            settings = GenerationSettings(aiModel = "gpt4o", maxContext = 4096, maxResponse = 128),
+            character = CharacterProfile(
+                id = "c",
+                name = "Lua",
+                triggerScripts = listOf(requestTrigger),
+            ),
+            history = listOf(MessageRecord("m", "chat", "user", "hello")),
+            authorNote = "",
+            greetingIndex = -1,
+            variables = emptyMap(),
+            prompt = listOf(NativePromptMessage("user", "raw low-level prompt")),
+        )
+        assertEquals(listOf(NativePromptMessage("assistant", "request-mutated")), prompt)
+    }
 
     @Test
     fun generationEngineAppliesRequestMutationBeforeProviderSerialization() {

@@ -22,6 +22,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RisuStorageFactory
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeChatRuntimeProcessor
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeDisplayProcessor
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeGenerationEngine
+import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeLuaLlmBridge
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeRegexProcessor
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeRisuParserContext
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeTriggerProcessor
@@ -29,6 +30,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.importing.CharacterCardImporter
 import java.io.ByteArrayOutputStream
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 internal enum class NativeScreen { SETUP, CHARACTERS, MODEL_SETTINGS, CHATS, CHAT }
@@ -38,6 +40,19 @@ internal class NativeRisuController(context: Context) {
     private val configStore = StorageConfigStore(appContext)
     private var storage: RisuStorage? = null
     private val generator = NativeGenerationEngine()
+    private val luaLlmBridge = NativeLuaLlmBridge { request ->
+        runBlocking {
+            generator.generateExplicitPrompt(
+                settings = request.settings,
+                character = request.character,
+                history = request.messages,
+                authorNote = request.authorNote,
+                greetingIndex = request.greetingIndex,
+                variables = request.variables,
+                prompt = request.prompt,
+            )
+        }
+    }
 
     var screen by mutableStateOf(NativeScreen.SETUP)
         private set
@@ -173,6 +188,7 @@ internal class NativeRisuController(context: Context) {
                 authorNote = chat.note,
                 greetingIndex = promptContext.greetingIndex,
                 localLoreRaw = promptContext.localLoreRaw,
+                luaLlmBridge = luaLlmBridge,
             )
         }
         val inputProfile = inputTrigger.runtimePatch.applyTo(profile)
@@ -220,6 +236,7 @@ internal class NativeRisuController(context: Context) {
                 greetingIndex = promptContext.greetingIndex,
                 inheritedPatch = inputTrigger.runtimePatch,
                 localLoreRaw = promptContext.localLoreRaw,
+                luaLlmBridge = luaLlmBridge,
             )
         }
         val startProfile = startTrigger.runtimePatch.applyTo(profile)
@@ -298,6 +315,7 @@ internal class NativeRisuController(context: Context) {
                 greetingIndex = promptContext.greetingIndex,
                 inheritedPatch = startTrigger.runtimePatch,
                 localLoreRaw = promptContext.localLoreRaw,
+                luaLlmBridge = luaLlmBridge,
             )
         }
         val finalSettings = outputTrigger.runtimePatch.applyTo(freshOverview.generationSettings)

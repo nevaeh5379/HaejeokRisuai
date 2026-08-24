@@ -21,17 +21,75 @@ class NativeGenerationEngine {
         val preparedPrompt = preparePrompt(
             settings, character, history, authorNote, greetingIndex, variables, triggerPrompt,
         )
-        return when {
-            settings.aiModel.startsWith("gemini", ignoreCase = true) -> gemini.generate(
-                settings, character, history, authorNote, greetingIndex, variables, triggerPrompt, preparedPrompt,
-            )
-            settings.aiModel.startsWith("claude", ignoreCase = true) -> anthropic.generate(
-                settings, character, history, authorNote, greetingIndex, variables, triggerPrompt, preparedPrompt,
-            )
-            else -> openAiCompatible.generate(
-                settings, character, history, authorNote, greetingIndex, variables, triggerPrompt, preparedPrompt,
-            )
-        }
+        return dispatchPreparedPrompt(
+            settings, character, history, authorNote, greetingIndex, variables, triggerPrompt, preparedPrompt,
+        )
+    }
+
+    internal suspend fun generateExplicitPrompt(
+        settings: GenerationSettings,
+        character: CharacterProfile,
+        history: List<MessageRecord>,
+        authorNote: String,
+        greetingIndex: Int,
+        variables: Map<String, String>,
+        prompt: List<NativePromptMessage>,
+    ): String {
+        val preparedPrompt = prepareExplicitPrompt(
+            settings, character, history, authorNote, greetingIndex, variables, prompt,
+        )
+        return dispatchPreparedPrompt(
+            settings, character, history, authorNote, greetingIndex, variables,
+            NativeTriggerPromptInjection(), preparedPrompt,
+        )
+    }
+
+    internal fun prepareExplicitPrompt(
+        settings: GenerationSettings,
+        character: CharacterProfile,
+        history: List<MessageRecord>,
+        authorNote: String,
+        greetingIndex: Int,
+        variables: Map<String, String>,
+        prompt: List<NativePromptMessage>,
+    ): List<NativePromptMessage> {
+        val requestTrigger = NativeTriggerProcessor.run(
+            mode = "request",
+            settings = settings,
+            character = character,
+            messages = history,
+            variables = variables,
+            chatId = history.lastOrNull()?.chatId.orEmpty(),
+            authorNote = authorNote,
+            greetingIndex = greetingIndex,
+            requestState = prompt,
+        )
+        return NativeContextWindow.trim(
+            requestTrigger.requestState ?: prompt,
+            settings.maxContext,
+            settings.maxResponse,
+        )
+    }
+
+    private suspend fun dispatchPreparedPrompt(
+        settings: GenerationSettings,
+        character: CharacterProfile,
+        history: List<MessageRecord>,
+        authorNote: String,
+        greetingIndex: Int,
+        variables: Map<String, String>,
+        triggerPrompt: NativeTriggerPromptInjection,
+        preparedPrompt: List<NativePromptMessage>,
+    ): String = when {
+        settings.aiModel.startsWith("gemini", ignoreCase = true) -> gemini.generate(
+            settings, character, history, authorNote, greetingIndex, variables, triggerPrompt, preparedPrompt,
+        )
+        settings.aiModel.startsWith("claude", ignoreCase = true) -> anthropic.generate(
+            settings, character, history, authorNote, greetingIndex, variables, triggerPrompt, preparedPrompt,
+        )
+        else -> openAiCompatible.generate(
+            settings, character, history, authorNote, greetingIndex, variables, triggerPrompt, preparedPrompt,
+        )
     }
 
     internal fun preparePrompt(

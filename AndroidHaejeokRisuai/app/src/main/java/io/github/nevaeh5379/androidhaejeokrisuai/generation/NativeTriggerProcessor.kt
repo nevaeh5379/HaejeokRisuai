@@ -27,7 +27,7 @@ object NativeTriggerProcessor {
     private const val MAX_RECURSION = 10
     private val TRANSIENT_MODES = setOf("display", "request")
 
-    fun run(
+    internal fun run(
         mode: String,
         settings: GenerationSettings,
         character: CharacterProfile,
@@ -45,6 +45,7 @@ object NativeTriggerProcessor {
         displayState: String? = null,
         messageCount: Int = messages.size,
         localLoreRaw: List<Map<String, Any?>> = emptyList(),
+        luaLlmBridge: NativeLuaLlmBridge? = null,
     ): NativeTriggerResult {
         if (character.triggerScripts.isEmpty()) {
             return NativeTriggerResult(
@@ -104,6 +105,7 @@ object NativeTriggerProcessor {
                     inheritedPatch = runtimePatch,
                     localLoreRaw = localLoreRaw,
                     lowLevelAccess = trigger.lowLevelAccess,
+                    llmBridge = luaLlmBridge,
                 )
                 working.clear(); working += luaResult.messages
                 vars.clear(); vars.putAll(luaResult.variables)
@@ -150,6 +152,7 @@ object NativeTriggerProcessor {
                                 inheritedStop = nestedStop,
                                 inheritedPatch = nestedPatch,
                                 localLoreRaw = localLoreRaw,
+                                luaLlmBridge = luaLlmBridge,
                             )
                         } else NativeTriggerResult(nestedMessages, nestedVars, nestedPrompt, nestedStop, nestedPatch)
                     },
@@ -232,6 +235,7 @@ object NativeTriggerProcessor {
                             inheritedStop = stop,
                             inheritedPatch = runtimePatch,
                             localLoreRaw = localLoreRaw,
+                            luaLlmBridge = luaLlmBridge,
                         )
                         working.clear(); working += nested.messages
                         vars.clear(); vars.putAll(nested.variables)
