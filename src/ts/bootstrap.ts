@@ -120,10 +120,15 @@ export async function loadData() {
           // (loadedStore stays false → app blocked until configured)
           return;
         }
-        // Web/Tauri: SQLite should always work on modern browsers
-        alertError(
-          "This browser does not support SQLite WASM (OPFS required). Please use a modern browser.",
-        );
+        if (isTauri) {
+          alertError(
+            "Failed to initialize native SQLite storage. Please check the application logs for details.",
+          );
+        } else {
+          alertError(
+            "This browser does not support SQLite WASM (OPFS required). Please use a modern browser.",
+          );
+        }
         return;
       }
 
