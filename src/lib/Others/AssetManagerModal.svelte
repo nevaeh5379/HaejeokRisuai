@@ -52,12 +52,16 @@
     let searchQuery = $state("");
     let selectedCategory: AssetCategory = $state(assetManagerModalStore.filterType || "all");
     let sortOption: "index" | "nameAsc" | "nameDesc" | "ext" = $state("index");
-    let multiSelectMode = $state(false);
     let selectedIndices = $state<Set<number>>(new Set());
     let selectionAnchor: number | null = $state(null);
-    let pointerSelectionActive = false;
-    let pointerSelectionMode: "select" | "deselect" | null = null;
-    let suppressNextSelectionClick: number | null = null;
+
+    type MarqueeRect = { left: number; top: number; width: number; height: number };
+    let marqueeRect: MarqueeRect | null = $state(null);
+    let marqueePointerId: number | null = $state(null);
+    let marqueeStart = { x: 0, y: 0 };
+    let marqueeInitialSelection = new Set<number>();
+    let marqueeAdditive = false;
+    let marqueeKeepBulkBar = $state(false);
 
     // Professional batch rename workspace
     let batchRenameOpen = $state(false);
@@ -391,7 +395,6 @@
 
         if (!isInputFocused && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
             e.preventDefault();
-            multiSelectMode = true;
             selectAll();
             return;
         }
@@ -408,27 +411,98 @@
         }
     }
 
-    function finishPointerSelection() {
-        pointerSelectionActive = false;
-        pointerSelectionMode = null;
-        const pendingClick = suppressNextSelectionClick;
-        if (pendingClick !== null) {
-            setTimeout(() => {
-                if (suppressNextSelectionClick === pendingClick) {
-                    suppressNextSelectionClick = null;
-                }
-            }, 0);
+    function getGalleryPoint(e: PointerEvent) {
+        if (!galleryEl) return null;
+        const bounds = galleryEl.getBoundingClientRect();
+        return {
+            x: e.clientX - bounds.left + galleryEl.scrollLeft,
+            y: e.clientY - bounds.top + galleryEl.scrollTop
+        };
+    }
+
+    function updateMarqueeSelection() {
+        if (!galleryEl || !marqueeRect) return;
+        const galleryBounds = galleryEl.getBoundingClientRect();
+        const selectionBounds = {
+            left: galleryBounds.left + marqueeRect.left - galleryEl.scrollLeft,
+            top: galleryBounds.top + marqueeRect.top - galleryEl.scrollTop,
+            right: galleryBounds.left + marqueeRect.left + marqueeRect.width - galleryEl.scrollLeft,
+            bottom: galleryBounds.top + marqueeRect.top + marqueeRect.height - galleryEl.scrollTop
+        };
+        const next = marqueeAdditive
+            ? new Set(marqueeInitialSelection)
+            : new Set<number>();
+
+        for (const element of galleryEl.querySelectorAll<HTMLElement>("[data-asset-index]")) {
+            const index = Number(element.dataset.assetIndex);
+            if (!Number.isInteger(index)) continue;
+            const bounds = element.getBoundingClientRect();
+            const intersects =
+                selectionBounds.left <= bounds.right &&
+                selectionBounds.right >= bounds.left &&
+                selectionBounds.top <= bounds.bottom &&
+                selectionBounds.bottom >= bounds.top;
+            if (intersects) next.add(index);
         }
+        selectedIndices = next;
+    }
+
+    function handleGalleryPointerDown(e: PointerEvent) {
+        if (!galleryEl || e.pointerType !== "mouse" || e.button !== 0) return;
+        const target = e.target as HTMLElement | null;
+        if (target?.closest("[data-asset-index], button, input, textarea, select, a, table")) return;
+        const point = getGalleryPoint(e);
+        if (!point) return;
+
+        e.preventDefault();
+        marqueePointerId = e.pointerId;
+        marqueeStart = point;
+        marqueeInitialSelection = new Set(selectedIndices);
+        marqueeAdditive = e.ctrlKey || e.metaKey;
+        marqueeKeepBulkBar = selectedIndices.size > 0;
+        if (!marqueeAdditive) selectedIndices = new Set();
+        selectionAnchor = null;
+        marqueeRect = { left: point.x, top: point.y, width: 0, height: 0 };
+        galleryEl.setPointerCapture?.(e.pointerId);
+    }
+
+    function handleGalleryPointerMove(e: PointerEvent) {
+        if (!galleryEl || marqueePointerId !== e.pointerId) return;
+        e.preventDefault();
+
+        const bounds = galleryEl.getBoundingClientRect();
+        const edge = 36;
+        if (e.clientY < bounds.top + edge) galleryEl.scrollTop -= 14;
+        else if (e.clientY > bounds.bottom - edge) galleryEl.scrollTop += 14;
+
+        const point = getGalleryPoint(e);
+        if (!point) return;
+        marqueeRect = {
+            left: Math.min(marqueeStart.x, point.x),
+            top: Math.min(marqueeStart.y, point.y),
+            width: Math.abs(point.x - marqueeStart.x),
+            height: Math.abs(point.y - marqueeStart.y)
+        };
+        updateMarqueeSelection();
+    }
+
+    function finishMarqueeSelection(e: PointerEvent, cancelled = false) {
+        if (!galleryEl || marqueePointerId !== e.pointerId) return;
+        if (cancelled) selectedIndices = new Set(marqueeInitialSelection);
+        if (galleryEl.hasPointerCapture?.(e.pointerId)) {
+            galleryEl.releasePointerCapture(e.pointerId);
+        }
+        marqueePointerId = null;
+        marqueeRect = null;
+        marqueeInitialSelection = new Set();
+        marqueeAdditive = false;
+        marqueeKeepBulkBar = false;
     }
 
     onMount(() => {
         window.addEventListener("keydown", handleKeyDown);
-        window.addEventListener("pointerup", finishPointerSelection);
-        window.addEventListener("pointercancel", finishPointerSelection);
         return () => {
             window.removeEventListener("keydown", handleKeyDown);
-            window.removeEventListener("pointerup", finishPointerSelection);
-            window.removeEventListener("pointercancel", finishPointerSelection);
         };
     });
 
@@ -528,7 +602,6 @@
             const next = e.ctrlKey || e.metaKey ? new Set(selectedIndices) : new Set<number>();
             for (const index of range) next.add(index);
             selectedIndices = next;
-            multiSelectMode = true;
             return;
         }
 
@@ -537,33 +610,10 @@
             selectedIndices.has(originalIndex) ? "deselect" : "select"
         );
         selectionAnchor = originalIndex;
-        if (e?.ctrlKey || e?.metaKey) multiSelectMode = true;
-    }
-
-    function handleSelectionPointerDown(e: PointerEvent, originalIndex: number) {
-        if (!multiSelectMode || e.button !== 0 || e.shiftKey || e.ctrlKey || e.metaKey) return;
-        const target = e.target as HTMLElement | null;
-        if (target?.closest("button, input, textarea, select, a")) return;
-
-        e.preventDefault();
-        pointerSelectionActive = true;
-        pointerSelectionMode = selectedIndices.has(originalIndex) ? "deselect" : "select";
-        suppressNextSelectionClick = originalIndex;
-        selectionAnchor = originalIndex;
-        applySelectionMode(originalIndex, pointerSelectionMode);
-    }
-
-    function handleSelectionPointerEnter(e: PointerEvent, originalIndex: number) {
-        if (!pointerSelectionActive || !pointerSelectionMode || e.buttons !== 1) return;
-        applySelectionMode(originalIndex, pointerSelectionMode);
     }
 
     function handleAssetClick(e: MouseEvent, originalIndex: number) {
-        if (suppressNextSelectionClick === originalIndex) {
-            suppressNextSelectionClick = null;
-            return;
-        }
-        if (multiSelectMode || e.shiftKey || e.ctrlKey || e.metaKey) {
+        if (e.shiftKey || e.ctrlKey || e.metaKey) {
             toggleSelect(originalIndex, e);
         } else {
             inspectingIndex = originalIndex;
@@ -865,7 +915,7 @@
                 {/each}
             </div>
 
-            <!-- Right Actions: Sort, Multi-select, Upload -->
+            <!-- Right Actions: Sort, Rename, Upload -->
             <div class="flex items-center gap-2 ml-auto">
                 <!-- Sort Dropdown -->
                 <div class="flex items-center bg-darkbg border border-darkborderc rounded-lg px-2 py-1 text-xs gap-1.5">
@@ -880,20 +930,6 @@
                         <option value="ext" class="bg-darkbg">{language.sortExtension}</option>
                     </select>
                 </div>
-
-                <!-- Multi-select toggle -->
-                <button
-                    type="button"
-                    class="p-2 rounded-lg border transition-colors cursor-pointer flex items-center gap-1 text-xs {multiSelectMode ? 'bg-selected text-white border-selected' : 'bg-darkbg text-textcolor2 hover:text-textcolor border-darkborderc'}"
-                    title={language.multiSelectMode}
-                    onclick={() => {
-                        multiSelectMode = !multiSelectMode;
-                        if (!multiSelectMode) selectedIndices = new Set();
-                    }}
-                >
-                    <CheckSquareIcon size={15} />
-                    <span class="hidden md:inline">{language.multiSelectMode}</span>
-                </button>
 
                 <!-- Regex batch rename -->
                 <button
@@ -918,8 +954,8 @@
             </div>
         </div>
 
-        <!-- Bulk Actions Floating Bar (when multi-select is active or items are selected) -->
-        {#if multiSelectMode || selectedIndices.size > 0}
+        <!-- Bulk Actions Floating Bar (when items are selected) -->
+        {#if selectedIndices.size > 0 || (marqueePointerId !== null && marqueeKeepBulkBar)}
             <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-2.5 bg-selected/10 border-b border-selected/20 animate-in slide-in-from-top-2 duration-150 shrink-0">
                 <div class="flex items-center gap-3">
                     <span class="text-xs font-semibold text-selected">
@@ -1095,9 +1131,20 @@
         <!-- Workspace Gallery (Full Width Clean Layout) -->
         <div
             bind:this={galleryEl}
-            class="flex-1 overflow-y-auto p-5 scrollbar-thin"
+            class="relative flex-1 overflow-y-auto p-5 scrollbar-thin"
             onscroll={handleGalleryScroll}
+            onpointerdown={handleGalleryPointerDown}
+            onpointermove={handleGalleryPointerMove}
+            onpointerup={(e) => finishMarqueeSelection(e)}
+            onpointercancel={(e) => finishMarqueeSelection(e, true)}
         >
+            {#if marqueeRect}
+                <div
+                    class="absolute z-40 pointer-events-none border border-selected bg-selected/15 shadow-sm"
+                    style="left: {marqueeRect.left}px; top: {marqueeRect.top}px; width: {marqueeRect.width}px; height: {marqueeRect.height}px;"
+                ></div>
+            {/if}
+
             {#if rawAssets.length === 0}
                 <!-- Empty State -->
                 <div class="flex flex-col items-center justify-center h-full min-h-[300px] text-center text-textcolor2 gap-4">
@@ -1132,9 +1179,8 @@
 
                         <!-- svelte-ignore a11y_click_events_have_key_events -->
                         <div
+                            data-asset-index={originalIndex}
                             class="group relative flex flex-col rounded-xl bg-bgcolor/80 border transition-all duration-150 overflow-hidden cursor-pointer {isSelected ? 'border-selected ring-2 ring-selected/40 shadow-lg' : 'border-darkborderc hover:border-selected/80 hover:shadow-md'}"
-                            onpointerdown={(e) => handleSelectionPointerDown(e, originalIndex)}
-                            onpointerenter={(e) => handleSelectionPointerEnter(e, originalIndex)}
                             onclick={(e) => handleAssetClick(e, originalIndex)}
                         >
                             <!-- Card Thumbnail Container -->
@@ -1170,7 +1216,7 @@
                                 <!-- Selection Checkbox -->
                                 <button
                                     type="button"
-                                    class="absolute top-2 left-2 p-1 rounded-md bg-black/70 text-white backdrop-blur-sm transition-opacity cursor-pointer {isSelected || multiSelectMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}"
+                                    class="absolute top-2 left-2 p-1 rounded-md bg-black/70 text-white backdrop-blur-sm transition-opacity cursor-pointer {isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}"
                                     onclick={(e) => toggleSelect(originalIndex, e)}
                                 >
                                     {#if isSelected}
@@ -1276,9 +1322,8 @@
                                 {@const isSelected = selectedIndices.has(originalIndex)}
 
                                 <tr
+                                    data-asset-index={originalIndex}
                                     class="border-b border-darkborderc/60 hover:bg-bgcolor/40 transition-colors {isSelected ? 'bg-selected/10' : ''}"
-                                    onpointerdown={(e) => handleSelectionPointerDown(e, originalIndex)}
-                                    onpointerenter={(e) => handleSelectionPointerEnter(e, originalIndex)}
                                 >
                                     <!-- Checkbox -->
                                     <td class="py-2 px-3 text-center">
