@@ -162,17 +162,19 @@ internal class NativeRisuController(context: Context) {
         val promptContext = storage.loadChatPromptContext(chat.id)
         val characterPosition = freshOverview.characters.indexOfFirst { it.id == character.id }
         require(characterPosition >= 0) { "Selected character is missing from the database overview" }
-        val inputTrigger = NativeTriggerProcessor.run(
-            mode = "input",
-            settings = freshOverview.generationSettings,
-            character = profile,
-            messages = history,
-            variables = promptContext.variables,
-            chatId = chat.id,
-            authorNote = chat.note,
-            greetingIndex = promptContext.greetingIndex,
-            localLoreRaw = promptContext.localLoreRaw,
-        )
+        val inputTrigger = withContext(Dispatchers.Default) {
+            NativeTriggerProcessor.run(
+                mode = "input",
+                settings = freshOverview.generationSettings,
+                character = profile,
+                messages = history,
+                variables = promptContext.variables,
+                chatId = chat.id,
+                authorNote = chat.note,
+                greetingIndex = promptContext.greetingIndex,
+                localLoreRaw = promptContext.localLoreRaw,
+            )
+        }
         val inputProfile = inputTrigger.runtimePatch.applyTo(profile)
         val inputSettings = inputTrigger.runtimePatch.applyTo(freshOverview.generationSettings)
         val inputAuthorNote = inputTrigger.runtimePatch.resolveAuthorNote(chat.note)
@@ -206,18 +208,20 @@ internal class NativeRisuController(context: Context) {
             greetingIndex = promptContext.greetingIndex,
             variables = inputTrigger.variables,
         )
-        val startTrigger = NativeTriggerProcessor.run(
-            mode = "start",
-            settings = freshOverview.generationSettings,
-            character = profile,
-            messages = prepared.messages,
-            variables = prepared.variables,
-            chatId = chat.id,
-            authorNote = chat.note,
-            greetingIndex = promptContext.greetingIndex,
-            inheritedPatch = inputTrigger.runtimePatch,
-            localLoreRaw = promptContext.localLoreRaw,
-        )
+        val startTrigger = withContext(Dispatchers.Default) {
+            NativeTriggerProcessor.run(
+                mode = "start",
+                settings = freshOverview.generationSettings,
+                character = profile,
+                messages = prepared.messages,
+                variables = prepared.variables,
+                chatId = chat.id,
+                authorNote = chat.note,
+                greetingIndex = promptContext.greetingIndex,
+                inheritedPatch = inputTrigger.runtimePatch,
+                localLoreRaw = promptContext.localLoreRaw,
+            )
+        }
         val startProfile = startTrigger.runtimePatch.applyTo(profile)
         val startSettings = startTrigger.runtimePatch.applyTo(freshOverview.generationSettings)
         val startAuthorNote = startTrigger.runtimePatch.resolveAuthorNote(chat.note)
@@ -282,18 +286,20 @@ internal class NativeRisuController(context: Context) {
             greetingIndex = promptContext.greetingIndex,
             variables = startTrigger.variables,
         )
-        val outputTrigger = NativeTriggerProcessor.run(
-            mode = "output",
-            settings = freshOverview.generationSettings,
-            character = profile,
-            messages = outputPrepared.messages,
-            variables = outputPrepared.variables,
-            chatId = chat.id,
-            authorNote = chat.note,
-            greetingIndex = promptContext.greetingIndex,
-            inheritedPatch = startTrigger.runtimePatch,
-            localLoreRaw = promptContext.localLoreRaw,
-        )
+        val outputTrigger = withContext(Dispatchers.Default) {
+            NativeTriggerProcessor.run(
+                mode = "output",
+                settings = freshOverview.generationSettings,
+                character = profile,
+                messages = outputPrepared.messages,
+                variables = outputPrepared.variables,
+                chatId = chat.id,
+                authorNote = chat.note,
+                greetingIndex = promptContext.greetingIndex,
+                inheritedPatch = startTrigger.runtimePatch,
+                localLoreRaw = promptContext.localLoreRaw,
+            )
+        }
         val finalSettings = outputTrigger.runtimePatch.applyTo(freshOverview.generationSettings)
         val finalAuthorNote = outputTrigger.runtimePatch.resolveAuthorNote(chat.note)
         val assistantRevision = storage.commitPreparedTurn(
