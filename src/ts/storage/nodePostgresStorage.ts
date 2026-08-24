@@ -95,6 +95,23 @@ export interface NodePostgresServerConfig {
   poolMax: number;
   revision: number | null;
   initialized: boolean;
+  runtime?: NodeSqlStorageRuntime;
+}
+
+export interface NodeSqlStorageRuntimeError {
+  code: string;
+  message: string;
+  hint: string;
+  operation: string;
+  failedAt: string;
+}
+
+export interface NodeSqlStorageRuntime {
+  status: "starting" | "ready" | "degraded" | "unconfigured";
+  vendor: DbVendor;
+  error: NodeSqlStorageRuntimeError | null;
+  attemptStartedAt: string | null;
+  readyAt: string | null;
 }
 
 export interface NodePostgresServerConfigUpdate {
@@ -357,7 +374,7 @@ export class NodePostgresPayloadTooLargeError extends Error {
 
 export class NodePostgresStorage implements INodeSqlStorageAdmin {
   readonly backendKind = "node" as const;
-  private status: "unknown" | "enabled" | "disabled" = "unknown";
+  private status: "unknown" | "enabled" | "disabled" | "degraded" = "unknown";
   private revision = 0;
   private pluginsCacheForage = localforage.createInstance({
     name: "risuaiPostgresPlugins",
@@ -427,7 +444,11 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (this.status === "unknown") {
       try {
         const config = await this.getDatabaseConfig();
-        this.status = config.enabled ? "enabled" : "disabled";
+        this.status = config.runtime?.status === "ready"
+          ? "enabled"
+          : config.runtime?.status === "degraded"
+            ? "degraded"
+            : "disabled";
       } catch {
         this.status = "disabled";
         return false;
@@ -515,7 +536,13 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       throw await responseError(response, "DB configuration load failed");
     }
     const config = await response.json();
-    this.status = config.enabled ? "enabled" : "disabled";
+    this.status = config.runtime?.status === "ready"
+      ? "enabled"
+      : config.runtime?.status === "degraded"
+        ? "degraded"
+        : config.enabled
+          ? "enabled"
+          : "disabled";
     if (config.revision != null) {
       this.revision = config.revision;
     }
@@ -529,7 +556,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
   async applyDatabaseConfig(
     vendor: DbVendor,
     params: Record<string, any>,
-    migrate: boolean,
+    migrate = false,
   ): Promise<
     NodePostgresServerConfig & {
       params: Record<string, any>;
@@ -552,10 +579,36 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       throw await responseError(response, "DB configuration update failed");
     }
     const body = await response.json();
-    this.status = body.enabled ? "enabled" : "disabled";
+    this.status = body.runtime?.status === "ready" || body.enabled
+      ? "enabled"
+      : body.runtime?.status === "degraded"
+        ? "degraded"
+        : "disabled";
     if (body.revision != null) {
       this.revision = body.revision;
     }
+    return body;
+  }
+
+  async retryDatabaseConnection(): Promise<
+    NodePostgresServerConfig & {
+      params: Record<string, any>;
+      storedVendor: DbVendor | null;
+    }
+  > {
+    const response = await fetch("/api/db-config/retry", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(await this.authHeaders()),
+      },
+    });
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(response, "DB reconnection failed");
+    }
+    const body = await response.json();
+    this.status = body.runtime?.status === "ready" ? "enabled" : "degraded";
+    if (body.revision != null) this.revision = body.revision;
     return body;
   }
 

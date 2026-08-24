@@ -1023,6 +1023,16 @@ export const languageEnglish = {
   sqlQuickSetupTitle: "SQL Database Setup",
   sqlQuickSetupDescription:
     "Connect an external SQL database to store your application data. Choose your database provider and enter the connection details.",
+  sqlRecoveryTitle: "SQL Database Recovery",
+  sqlRecoveryDescription:
+    "The configured SQL database is unavailable. Application data remains locked until the same SQL source of truth is reachable again.",
+  sqlRecoveryConnectionFailed: "SQL database connection failed",
+  sqlRecoveryFailedOperation: "Failed operation",
+  sqlRecoveryEnvironmentManaged:
+    "This connection is managed by server environment variables. Update the environment, then restart the server or retry the connection here.",
+  sqlRecoveryRetry: "Retry Current Connection",
+  sqlRecoveryRetrying: "Retrying...",
+  sqlRecoveryLoading: "Loading database recovery status...",
   sqlQuickSetupChooseVendor: "Choose your database",
   sqlQuickSetupMigration: "Migrate existing local data to the SQL database",
   sqlQuickSetupMigrationDescription:

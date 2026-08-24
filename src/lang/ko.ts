@@ -945,6 +945,16 @@ export const languageKorean = {
   sqlQuickSetupTitle: "SQL 데이터베이스 설정",
   sqlQuickSetupDescription:
     "외부 SQL 데이터베이스를 연결하여 애플리케이션 데이터를 저장하세요. 데이터베이스 제공자를 선택하고 연결 정보를 입력하세요.",
+  sqlRecoveryTitle: "SQL 데이터베이스 복구",
+  sqlRecoveryDescription:
+    "설정된 SQL 데이터베이스에 연결할 수 없습니다. 동일한 단일 진실 공급원에 다시 연결될 때까지 애플리케이션 데이터 기능은 잠깁니다.",
+  sqlRecoveryConnectionFailed: "SQL 데이터베이스 연결 실패",
+  sqlRecoveryFailedOperation: "실패한 작업",
+  sqlRecoveryEnvironmentManaged:
+    "이 연결은 서버 환경변수로 관리됩니다. 환경변수를 수정한 뒤 서버를 재시작하거나 여기서 다시 연결하세요.",
+  sqlRecoveryRetry: "현재 연결 다시 시도",
+  sqlRecoveryRetrying: "다시 연결하는 중...",
+  sqlRecoveryLoading: "데이터베이스 복구 상태를 불러오는 중...",
   sqlQuickSetupChooseVendor: "데이터베이스 선택",
   sqlQuickSetupMigration: "기존 로컬 데이터를 SQL 데이터베이스로 마이그레이션",
   sqlQuickSetupMigrationDescription:

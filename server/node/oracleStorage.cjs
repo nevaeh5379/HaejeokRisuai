@@ -23,6 +23,12 @@ const path = require('path');
 const { promisify } = require('util');
 const { deflate, unzip } = require('zlib');
 const {
+    describeOracleTarget,
+    readStorageStartupSettings,
+    runStartupStage,
+    sanitizeSensitiveText,
+} = require('./startupDiagnostics.cjs');
+const {
     decodePostgresJsonValue,
     encodePostgresJsonValue,
 } = require('./postgresJsonCodec.cjs');
@@ -612,6 +618,7 @@ class OracleStorage extends SqlStorageBase {
         this.walletPassword = options.walletPassword || '';
         this.poolMax = Number.parseInt(options.poolMax || '10', 10);
         this.enabled = Boolean(options.enabled !== false && this.tnsAlias && this.user && this.password);
+        this.startupSettings = readStorageStartupSettings();
         this.pool = null;
     }
 
@@ -620,67 +627,89 @@ class OracleStorage extends SqlStorageBase {
             console.log('[Oracle] DATABASE not configured; using legacy file storage.');
             return;
         }
+        console.log(
+            `[Oracle startup] Target: ${describeOracleTarget(this.tnsAlias, this.walletPath)}; ` +
+            `pool max: ${this.poolMax}.`
+        );
         this.pool = await this.createInitializedPool();
         console.log('[Oracle] Structured storage is ready.');
     }
 
+    runStartupStep(operation, task) {
+        return runStartupStage({
+            scope: 'Oracle startup',
+            operation,
+            heartbeatMs: this.startupSettings.heartbeatMs,
+        }, task);
+    }
+
     async createInitializedPool() {
-        const pool = await oracledb.createPool({
-            user: this.user,
-            password: this.password,
-            connectString: this.tnsAlias,
-            configDir: this.walletPath,
-            walletLocation: this.walletPath,
-            walletPassword: this.walletPassword,
-            poolMax: Number.isSafeInteger(this.poolMax) && this.poolMax > 0 ? this.poolMax : 10,
-            poolMin: 1,
-            poolIncrement: 1,
-            poolTimeout: 60,
-            queueTimeout: 120000,
-        });
+        const pool = await this.runStartupStep('1/8 create connection pool', () => oracledb.createPool({
+                user: this.user,
+                password: this.password,
+                connectString: this.tnsAlias,
+                configDir: this.walletPath,
+                walletLocation: this.walletPath,
+                walletPassword: this.walletPassword,
+                poolMax: Number.isSafeInteger(this.poolMax) && this.poolMax > 0 ? this.poolMax : 10,
+                poolMin: 1,
+                poolIncrement: 1,
+                poolTimeout: 60,
+                queueTimeout: this.startupSettings.startupTimeoutMs,
+            }));
         // 모든 연결이 빈 문자열 sentinel 정규화 래퍼를 통과하도록 getConnection 래핑
         const realGetConnection = pool.getConnection.bind(pool);
         pool.getConnection = async (...args) => wrapConnectionForEmptyStrings(await realGetConnection(...args));
         try {
             // 연결 테스트
-            const testConn = await pool.getConnection();
-            await testConn.execute('SELECT 1 FROM dual');
+            const testConn = await this.runStartupStep('2/8 acquire test connection', () => pool.getConnection());
+            await this.runStartupStep('3/8 ping database', () => testConn.execute('SELECT 1 FROM dual'));
             // 스키마 기적용 여부 확인
             let alreadyInitialized = false;
-            try {
-                const checkRes = await testConn.execute(
-                    `SELECT schema_version, schema_layout FROM system_storage_meta WHERE singleton = 1`,
-                    [], { outFormat: oracledb.OUT_FORMAT_OBJECT }
-                );
-                const v = checkRes.rows[0]?.SCHEMA_VERSION;
-                const l = checkRes.rows[0]?.SCHEMA_LAYOUT;
-                if (v === ORACLE_SCHEMA_VERSION && l === RELATIONAL_SCHEMA_LAYOUT) {
-                    alreadyInitialized = true;
-                } else if (v !== undefined) {
-                    throw new Error(
-                        `Unsupported Oracle schema ${v}/${l}; expected ${ORACLE_SCHEMA_VERSION}/${RELATIONAL_SCHEMA_LAYOUT}. ` +
-                        'Reset the configured development database explicitly before retrying.'
+            await this.runStartupStep('4/8 inspect storage schema metadata', async () => {
+                try {
+                    const checkRes = await testConn.execute(
+                        `SELECT schema_version, schema_layout FROM system_storage_meta WHERE singleton = 1`,
+                        [], { outFormat: oracledb.OUT_FORMAT_OBJECT }
+                    );
+                    const v = checkRes.rows[0]?.SCHEMA_VERSION;
+                    const l = checkRes.rows[0]?.SCHEMA_LAYOUT;
+                    if (v === ORACLE_SCHEMA_VERSION && l === RELATIONAL_SCHEMA_LAYOUT) {
+                        alreadyInitialized = true;
+                    } else if (v !== undefined) {
+                        throw new Error(
+                            `Unsupported Oracle schema ${v}/${l}; expected ${ORACLE_SCHEMA_VERSION}/${RELATIONAL_SCHEMA_LAYOUT}. ` +
+                            'Reset the configured development database explicitly before retrying.'
+                        );
+                    }
+                } catch (error) {
+                    if (String(error?.message || '').startsWith('Unsupported Oracle schema')) throw error;
+                    console.log(
+                        `[Oracle startup] Storage metadata is not available yet; schema setup will run ` +
+                        `(${sanitizeSensitiveText(error?.code || error?.message || 'metadata table missing')}).`
                     );
                 }
-            } catch (e) {
-                if (String(e?.message || '').startsWith('Unsupported Oracle schema')) throw e;
-                // meta 테이블이 없으면 applySchema 진행
-            }
+            });
 
             if (!alreadyInitialized) {
                 // 스키마 적용
-                const schema = await fs.readFile(path.join(__dirname, 'oracle-schema.sql'), 'utf8');
-                await this.applySchema(testConn, schema);
+                const schema = await this.runStartupStep(
+                    '5/8 load bundled storage schema',
+                    () => fs.readFile(path.join(__dirname, 'oracle-schema.sql'), 'utf8')
+                );
+                await this.runStartupStep('6/8 apply storage schema', () => this.applySchema(testConn, schema));
+            } else {
+                console.log('[Oracle startup] 5/8 and 6/8 existing storage schema is current; schema apply skipped.');
             }
-            await this.ensureAssetCatalogSchema(testConn);
+            await this.runStartupStep('7/8 ensure asset catalog schema', () => this.ensureAssetCatalogSchema(testConn));
             await testConn.close();
 
             // 스키마 버전 확인
             const verifyConn = await pool.getConnection();
-            const result = await verifyConn.execute(
-                `SELECT schema_version, schema_layout FROM system_storage_meta WHERE singleton = 1`,
-                [], { outFormat: oracledb.OUT_FORMAT_OBJECT }
-            );
+            const result = await this.runStartupStep('8/8 verify applied storage schema', () => verifyConn.execute(
+                    `SELECT schema_version, schema_layout FROM system_storage_meta WHERE singleton = 1`,
+                    [], { outFormat: oracledb.OUT_FORMAT_OBJECT }
+                ));
             await verifyConn.close();
             const schemaVersion = result.rows[0]?.SCHEMA_VERSION;
             const schemaLayout = result.rows[0]?.SCHEMA_LAYOUT;

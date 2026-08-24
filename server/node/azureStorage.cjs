@@ -12,6 +12,10 @@ const path = require('path');
 const { promisify } = require('util');
 const { deflate, unzip } = require('zlib');
 const {
+    readStorageStartupSettings,
+    runStartupStage,
+} = require('./startupDiagnostics.cjs');
+const {
     decodePostgresJsonValue,
     encodePostgresJsonValue,
 } = require('./postgresJsonCodec.cjs');
@@ -295,6 +299,7 @@ class AzureStorage extends SqlStorageBase {
         this.port = parseInt(options.port || process.env.AZURE_PORT || '1433', 10);
         this.poolMax = parseInt(options.poolMax || process.env.AZURE_POOL_MAX || '10', 10);
         this.enabled = options.enabled !== false;
+        this.startupSettings = readStorageStartupSettings();
         this.schemaPath = options.schemaPath || path.join(__dirname, 'azure-schema.sql');
         this.pool = null;
         this.poolPromise = null;
@@ -317,7 +322,7 @@ class AzureStorage extends SqlStorageBase {
                 database: this.database,
                 user: this.user,
                 password: this.password,
-                connectionTimeout: 60000,
+                connectionTimeout: this.startupSettings.connectTimeoutMs,
                 requestTimeout: 120000,
                 options: {
                     encrypt: true,
@@ -334,7 +339,7 @@ class AzureStorage extends SqlStorageBase {
             p.on('error', (err) => {
                 console.error('[AzureStorage] Pool error:', err);
             });
-            await p.connect();
+            await this.runStartupStep('1/7 connect to database', () => p.connect());
             this.pool = p;
             return p;
         })();
@@ -343,6 +348,14 @@ class AzureStorage extends SqlStorageBase {
         } finally {
             this.poolPromise = null;
         }
+    }
+
+    runStartupStep(operation, task) {
+        return runStartupStage({
+            scope: 'Azure SQL startup',
+            operation,
+            heartbeatMs: this.startupSettings.heartbeatMs,
+        }, task);
     }
 
     assertEnabled() {
@@ -377,14 +390,19 @@ class AzureStorage extends SqlStorageBase {
     }
 
     async initialize() {
-        const pool = await this.getPool();
-        const existing = await pool.request().query(
-            "SELECT OBJECT_ID(N'[system].[storage_meta]', N'U') AS table_id"
+        console.log(
+            `[Azure SQL startup] Target: ${this.server || '(missing server)'}:${this.port}/` +
+            `${this.database || '(missing database)'}; pool max: ${this.poolMax}; ` +
+            `connect timeout: ${this.startupSettings.connectTimeoutMs}ms.`
         );
+        const pool = await this.getPool();
+        const existing = await this.runStartupStep('2/7 inspect storage schema metadata', () => pool.request().query(
+                "SELECT OBJECT_ID(N'[system].[storage_meta]', N'U') AS table_id"
+            ));
         if (existing.recordset[0]?.table_id) {
-            const current = (await pool.request().query(
-                'SELECT schema_version, schema_layout FROM [system].[storage_meta] WHERE singleton = 1'
-            )).recordset[0];
+            const current = (await this.runStartupStep('3/7 validate existing storage schema version', () => pool.request().query(
+                    'SELECT schema_version, schema_layout FROM [system].[storage_meta] WHERE singleton = 1'
+                ))).recordset[0];
             if (current && (Number(current.schema_version) !== AZURE_SCHEMA_VERSION || current.schema_layout !== RELATIONAL_SCHEMA_LAYOUT)) {
                 throw new Error(
                     `Unsupported Azure SQL schema ${current.schema_version}/${current.schema_layout}; ` +
@@ -392,22 +410,26 @@ class AzureStorage extends SqlStorageBase {
                     'Reset the configured development database explicitly before retrying.'
                 );
             }
+        } else {
+            console.log('[Azure SQL startup] 3/7 no existing storage schema found; a new schema will be created.');
         }
-        const schemaSql = await fs.readFile(this.schemaPath, 'utf8');
+        const schemaSql = await this.runStartupStep('4/7 load bundled storage schema', () => fs.readFile(this.schemaPath, 'utf8'));
         const req = pool.request();
-        await req.batch(schemaSql);
+        await this.runStartupStep('5/7 apply storage schema', () => req.batch(schemaSql));
 
         // Ensure storage_meta exists
-        const metaRes = await pool.request().query('SELECT * FROM [system].[storage_meta] WHERE singleton = 1');
+        const metaRes = await this.runStartupStep('6/7 ensure storage metadata row', () => pool.request().query(
+            'SELECT * FROM [system].[storage_meta] WHERE singleton = 1'
+        ));
         if (metaRes.recordset.length === 0) {
             await pool.request().query(`
                 INSERT INTO [system].[storage_meta] (singleton, schema_version, schema_layout, revision, initialized)
                 VALUES (1, ${AZURE_SCHEMA_VERSION}, '${RELATIONAL_SCHEMA_LAYOUT}', 0, 0)
             `);
         }
-        const meta = (await pool.request().query(
-            'SELECT schema_version, schema_layout FROM [system].[storage_meta] WHERE singleton = 1'
-        )).recordset[0];
+        const meta = (await this.runStartupStep('7/7 verify applied storage schema', () => pool.request().query(
+                'SELECT schema_version, schema_layout FROM [system].[storage_meta] WHERE singleton = 1'
+            ))).recordset[0];
         if (Number(meta?.schema_version) !== AZURE_SCHEMA_VERSION || meta?.schema_layout !== RELATIONAL_SCHEMA_LAYOUT) {
             throw new Error(
                 `Unsupported Azure SQL schema ${meta?.schema_version}/${meta?.schema_layout}; ` +

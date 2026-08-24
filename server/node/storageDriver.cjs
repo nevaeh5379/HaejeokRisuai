@@ -6,6 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { readStorageStartupSettings } = require('./startupDiagnostics.cjs');
 
 const {
     PostgresRevisionConflictError,
@@ -331,6 +332,7 @@ function isVendorConfigComplete(vendor, params = {}) {
 // throw 또는 error 반환하지 않고 { success, error } 형태로 반환.
 async function testConnection(vendor, rawParams = {}) {
     const params = normalizeVendorParams(vendor, rawParams);
+    const startupSettings = readStorageStartupSettings();
     if (!isVendorConfigComplete(vendor, params)) {
         return { success: false, error: 'Required connection parameters are missing' };
     }
@@ -344,6 +346,7 @@ async function testConnection(vendor, rawParams = {}) {
                 connectionString: params.connectionString,
                 max: 1,
                 application_name: 'risuai-test',
+                connectionTimeoutMillis: startupSettings.connectTimeoutMs,
             });
             try {
                 await pool.query('SELECT 1');
@@ -377,7 +380,7 @@ async function testConnection(vendor, rawParams = {}) {
                 database: params.database,
                 user: params.user,
                 password: params.password,
-                connectionTimeout: 60000,
+                connectionTimeout: startupSettings.connectTimeoutMs,
                 requestTimeout: 10000,
                 options: { encrypt: true, trustServerCertificate: true, enableArithAbort: true },
                 pool: { max: 1, min: 0, idleTimeoutMillis: 30000 },

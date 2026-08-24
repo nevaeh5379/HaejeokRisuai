@@ -5,6 +5,11 @@ const { Pool } = require('pg');
 const { promisify } = require('util');
 const { deflate, unzip } = require('zlib');
 const {
+    describePostgresTarget,
+    readStorageStartupSettings,
+    runStartupStage,
+} = require('./startupDiagnostics.cjs');
+const {
     decodePostgresJsonValue,
     encodePostgresJsonValue,
 } = require('./postgresJsonCodec.cjs');
@@ -315,6 +320,7 @@ class PostgresStorage extends SqlStorageBase {
         this.connectionString = options.connectionString || '';
         this.poolMax = Number.parseInt(options.poolMax || '10', 10);
         this.enabled = Boolean(this.connectionString);
+        this.startupSettings = readStorageStartupSettings();
         this.pool = null;
         this.schemaRecoveryPromise = null;
         this.postgresSchemaSql = null;
@@ -326,8 +332,20 @@ class PostgresStorage extends SqlStorageBase {
             return;
         }
 
+        console.log(
+            `[PostgreSQL startup] Target: ${describePostgresTarget(this.connectionString)}; ` +
+            `pool max: ${this.poolMax}; connect timeout: ${this.startupSettings.connectTimeoutMs}ms.`
+        );
         this.pool = await this.createInitializedPool(this.connectionString, this.poolMax);
         console.log('[PostgreSQL] Structured storage is ready.');
+    }
+
+    runStartupStep(operation, task) {
+        return runStartupStage({
+            scope: 'PostgreSQL startup',
+            operation,
+            heartbeatMs: this.startupSettings.heartbeatMs,
+        }, task);
     }
 
     async loadPostgresSchemaSql() {
@@ -410,15 +428,31 @@ class PostgresStorage extends SqlStorageBase {
             connectionString,
             max: Number.isSafeInteger(poolMax) && poolMax > 0 ? poolMax : 10,
             application_name: 'risuai-node',
+            connectionTimeoutMillis: this.startupSettings.connectTimeoutMs,
         });
         try {
-            await pool.query('SELECT 1');
-            const existingMeta = await pool.query("SELECT to_regclass('system.storage_meta') AS table_name");
+            await this.runStartupStep('1/6 connect and ping database', () => pool.query('SELECT 1'));
+            const existingMeta = await this.runStartupStep(
+                '2/6 inspect storage schema metadata',
+                () => pool.query("SELECT to_regclass('system.storage_meta') AS table_name")
+            );
             if (existingMeta.rows[0]?.table_name) {
-                await this.verifyPostgresSchema(pool.query.bind(pool));
+                await this.runStartupStep(
+                    '3/6 validate existing storage schema version',
+                    () => this.verifyPostgresSchema(pool.query.bind(pool))
+                );
+            } else {
+                console.log('[PostgreSQL startup] 3/6 no existing storage schema found; a new schema will be created.');
             }
-            await pool.query(await this.loadPostgresSchemaSql());
-            await this.verifyPostgresSchema(pool.query.bind(pool));
+            const schemaSql = await this.runStartupStep(
+                '4/6 load bundled storage schema',
+                () => this.loadPostgresSchemaSql()
+            );
+            await this.runStartupStep('5/6 apply storage schema', () => pool.query(schemaSql));
+            await this.runStartupStep(
+                '6/6 verify applied storage schema',
+                () => this.verifyPostgresSchema(pool.query.bind(pool))
+            );
             this.installPoolSchemaRecovery(pool);
             return pool;
         } catch (error) {

@@ -27,10 +27,19 @@ services:
     environment:
       RISU_POSTGRES_BOOTSTRAP_URL: postgresql://risuai:${POSTGRES_PASSWORD}@postgres:5432/risuai
       RISU_POSTGRES_POOL_MAX: 10
+      RISU_STORAGE_CONNECT_TIMEOUT_MS: ${RISU_STORAGE_CONNECT_TIMEOUT_MS:-30000}
+      RISU_STORAGE_STARTUP_TIMEOUT_MS: ${RISU_STORAGE_STARTUP_TIMEOUT_MS:-180000}
+      RISU_STORAGE_STARTUP_HEARTBEAT_MS: ${RISU_STORAGE_STARTUP_HEARTBEAT_MS:-10000}
     ports:
       - 6001:6001
     volumes:
       - ./save:/app/save
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:6001/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
 
   cloudbeaver:
     image: dbeaver/cloudbeaver:${CLOUDBEAVER_VERSION:-latest}

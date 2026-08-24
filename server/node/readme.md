@@ -16,13 +16,23 @@ DATABASE_URL=postgresql://risuai:password@127.0.0.1:5432/risuai pnpm runserver
 
 `RISU_POSTGRES_POOL_MAX` optionally controls the connection pool size and defaults to `10`. TLS and other connection settings can be supplied through the PostgreSQL connection string. When `DATABASE_URL` is present, the settings UI is read-only so a browser cannot override deployment-managed credentials.
 
+Server startup reports each database phase separately (connect/ping, metadata inspection, schema version validation, schema loading, schema application, and final verification), including elapsed-time heartbeats. Connection targets are logged without usernames, passwords, tokens, or unrelated URL query parameters. These environment variables control failure detection:
+
+| Variable | Default | Description |
+| :--- | ---: | :--- |
+| `RISU_STORAGE_CONNECT_TIMEOUT_MS` | `30000` | Maximum initial database connection wait. |
+| `RISU_STORAGE_STARTUP_TIMEOUT_MS` | `180000` | Hard limit for the complete structured-storage startup step. |
+| `RISU_STORAGE_STARTUP_HEARTBEAT_MS` | `10000` | Interval for “still running” progress logs. |
+
+If startup exceeds the hard limit or the connection fails, the HTTP server continues in SQL recovery mode instead of remaining indefinitely at `Step 1`. The last numbered database phase identifies whether the delay is network/DNS/authentication, a schema query, or schema DDL (which can also indicate a database lock or heavy load). Application data endpoints return `503 storage_unavailable` until the configured SQL database is ready; static UI, authentication, health, and database configuration endpoints remain available. RisuAI never falls back to `database.bin` while SQL is configured. `SIGTERM` and `SIGINT` are logged explicitly during graceful shutdown, so a container stop can be distinguished from a startup failure.
+
 Large initial migrations and cold-storage writes use an authenticated PostgreSQL-only JSON parser with a `1gb` decompressed-body limit. Set `RISU_POSTGRES_JSON_BODY_LIMIT` (for example, `512mb` or `2gb`) to tune this for the available server memory. Other Node API routes retain the existing `100mb` limit.
 
 Large relational mutations are serialized before body parsing so concurrent clients cannot hold multiple migration payloads in the Node heap. SQL inserts use bounded batches (`RISUAI_SQL_BATCH_ROWS`, default `1000`), and plugin/custom-storage objects are not retained in a process-wide cache by default. Set `RISUAI_SQL_OBJECT_CACHE=1` only when lower database latency matters more than minimum resident memory.
 
 `RISU_POSTGRES_BOOTSTRAP_URL` can seed an editable server-side configuration on the first start. The provided Docker Compose example uses this mode. `RISU_SAVE_PATH` optionally changes the Node server save directory and defaults to `<working directory>/save`.
 
-If PostgreSQL is disabled, the Node server continues to use the legacy files in `save/`.
+If SQL storage has not been configured, the Node server exposes the same configuration-only recovery surface. Legacy files in `save/` are retained for an explicit import, but they are not activated as an automatic application database.
 
 PostgreSQL mode is a relational replacement for `database/database.bin`. After the initial migration, the browser sends only changed records instead of uploading the whole database after every save. Character and chat scalars are columns; tags, greetings, group members, folders, scripts, lore, assets references, bookmarks, memory, messages, generation metadata, and prompt metadata use child or link tables. JSONB is limited to values whose shape is intentionally dynamic, such as extension properties, memory payloads, and provider-specific prompt items. Individually addressable binary asset files remain in `save/`.
 
@@ -32,18 +42,19 @@ PostgreSQL text and JSONB cannot represent the NUL character (`U+0000`). Message
 
 Every database and cold-storage transaction creates a row in `system.revisions`. Row-level before/after images are appended to `system.audit_log` by PostgreSQL triggers. Advanced Settings shows the recent history. Restoring a revision reverses later audited changes inside one transaction and records the result as a new `restore` revision, so restore never rewrites or deletes history. This application history complements rather than replaces `pg_dump`, WAL archiving, or managed point-in-time recovery.
 
-Changing or disabling an active connection from the settings page first writes a current `database.bin` rollback snapshot and exports PostgreSQL cold storage back to the legacy file format. Legacy cold-storage files that are no longer present in SQL are moved to `save/__postgres_cold_storage_rollback/` instead of being deleted, so pruned entries do not reappear in file mode while the old copy remains recoverable. The server then validates and swaps the connection and the browser reloads, avoiding a split between stale BIN data and PostgreSQL.
+Changing an active connection validates and initializes the replacement SQL database before changing the stored configuration or closing the current connection. A failed candidate leaves the existing SQL configuration untouched. Configuration changes never create, export, or import `database.bin`, and the server configuration APIs do not allow SQL storage to be disabled. Legacy migration remains a separate, explicit user action.
 
 ### Existing data migration
 
-Migration is automatic and non-destructive:
+Migration requires explicit user confirmation and is non-destructive. Server startup never imports `database.bin` automatically:
 
 1. Start the Node server and enable PostgreSQL in Advanced Settings, or configure `DATABASE_URL`.
 2. Sign in through the existing Node server login.
-3. The client loads the existing `save/database/database.bin` once.
-4. `DataSession` writes only changed settings or entity rows to PostgreSQL in a transaction; normal saves never rebuild a full database snapshot.
-5. On server startup, legacy `coldstorage/` files are decompressed locally and imported into relational cold-storage tables without browser traffic.
-6. Subsequent loads and saves use PostgreSQL. Legacy BIN and cold-storage files are retained as rollback copies and are not overwritten by PostgreSQL saves.
+3. If the SQL database is empty and a legacy `database.bin` exists, the client shows a migration confirmation prompt.
+4. Only after the user confirms does the client copy the legacy data to SQL. Cancelling the prompt leaves both SQL and `database.bin` unchanged.
+5. `DataSession` writes only changed settings or entity rows to PostgreSQL in a transaction; normal saves never rebuild a full database snapshot.
+6. Legacy cold-storage migration is likewise triggered only by an explicit configuration/migration action.
+7. Subsequent loads and saves use SQL exclusively. Legacy BIN and cold-storage files are retained as recovery copies and are never used as an automatic fallback.
 
 Imported cold-storage IDs are recorded separately so that a retained rollback file cannot resurrect an item after PostgreSQL cleanup. Invalid legacy payloads are skipped and reported in the server log.
 

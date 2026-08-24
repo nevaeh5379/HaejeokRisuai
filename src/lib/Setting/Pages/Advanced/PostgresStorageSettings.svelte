@@ -2,7 +2,6 @@
     import { onMount } from 'svelte'
     import { language } from 'src/lang'
     import Button from 'src/lib/UI/GUI/Button.svelte'
-    import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
     import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
     import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
     import { alertConfirm, alertError, alertNormal } from 'src/ts/alert'
@@ -14,7 +13,6 @@
     import { ensureDatabaseFullyLoaded } from 'src/ts/drive/backuplocal'
 
     let config = $state<NodePostgresServerConfig|null>(null)
-    let enabled = $state(false)
     let connectionString = $state('')
     let poolMax = $state(10)
     let busy = $state(false)
@@ -34,7 +32,6 @@
         loadError = ''
         try {
             config = await getNodeStorage().postgres.getServerConfig()
-            enabled = config.enabled
             poolMax = config.poolMax
             revisions = config.enabled ? await getNodeStorage().postgres.listRevisions(20) : []
             tokenUsage = config.enabled ? await getNodeStorage().postgres.getTokenUsage() : []
@@ -71,11 +68,10 @@
         busy = true
         try {
             const storage = getNodeStorage()
-            await storage.postgres.configureServer({
-                enabled,
-                connectionString: connectionString.trim() || undefined,
+            await storage.postgres.applyDatabaseConfig('postgres', {
+                connectionString: connectionString.trim(),
                 poolMax,
-            })
+            }, false)
             alertNormal(language.postgresApplySuccess)
             setTimeout(() => location.reload(), 300)
         } catch (error) {
@@ -110,10 +106,6 @@
                 {language.postgresEnvironmentManaged}
             </p>
         {/if}
-
-        <div class="mt-4 {config.managedByEnvironment ? 'pointer-events-none opacity-60' : ''}">
-            <CheckInput bind:check={enabled} name={language.usePostgresStorage} />
-        </div>
 
         <label class="mt-4 block text-sm text-textcolor2" for="postgres-connection-string">
             {language.postgresConnectionString}

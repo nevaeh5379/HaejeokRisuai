@@ -183,19 +183,7 @@
         try {
             const storage = getNodeStorage()
 
-            try {
-                await storage.postgres.applyDatabaseConfig(vendor, params, migrate)
-            } catch (e) {
-                if (vendor === 'postgres') {
-                    await storage.postgres.configureServer({
-                        enabled: true,
-                        connectionString: connectionString.trim() || undefined,
-                        poolMax,
-                    })
-                } else {
-                    throw e
-                }
-            }
+            await storage.postgres.applyDatabaseConfig(vendor, params, migrate)
             alertNormal(language.postgresApplySuccess)
             onConfigChanged?.()
             setTimeout(() => location.reload(), 300)

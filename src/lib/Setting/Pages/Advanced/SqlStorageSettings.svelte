@@ -204,21 +204,7 @@
         try {
             const storage = getNodeStorage()
 
-            // 범용 API가 있으면 사용, 없으면 레거시 configureServer로 폴백
-            try {
-                await storage.postgres.applyDatabaseConfig(vendor, params, migrate)
-            } catch (e) {
-                // 폴백: PostgreSQL 레거시 API
-                if (vendor === 'postgres') {
-                    await storage.postgres.configureServer({
-                        enabled: true,
-                        connectionString: connectionString.trim() || undefined,
-                        poolMax,
-                    })
-                } else {
-                    throw e
-                }
-            }
+            await storage.postgres.applyDatabaseConfig(vendor, params, migrate)
             alertNormal(language.postgresApplySuccess)
             setTimeout(() => location.reload(), 300)
         } catch (error) {

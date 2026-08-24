@@ -12,19 +12,24 @@
         buildSqlVendorParams,
         isSqlVendorParamsComplete,
         type DbVendor,
+        type NodeSqlStorageRuntime,
         type SqlVendorFormValues,
     } from 'src/ts/storage/nodePostgresStorage'
     import { sqlConfiguredStore } from 'src/ts/stores.svelte'
-    import { get } from 'svelte/store'
 
     type Step = 'welcome' | 'vendor' | 'connection'
     let step = $state<Step>('welcome')
 
     let selectedVendor = $state<DbVendor | null>(null)
-    let migrate = $state(true)
+    let migrate = $state(false)
     let busy = $state(false)
     let testing = $state(false)
+    let retrying = $state(false)
+    let loadingConfig = $state(true)
     let testResult = $state<{ success: boolean; error?: string } | null>(null)
+    let runtime = $state<NodeSqlStorageRuntime | null>(null)
+    let managedByEnvironment = $state(false)
+    let configured = $state(false)
 
     // PostgreSQL
     let pgConnectionString = $state('')
@@ -45,7 +50,7 @@
     let azurePort = $state(1433)
     let azurePoolMax = $state(10)
 
-    let dismissed = $state(false)
+    let recoveryMode = $derived(runtime?.status === 'degraded')
 
     function getNodeStorage() {
         if (!(forageStorage.realStorage instanceof NodeStorage)) {
@@ -115,7 +120,7 @@
         busy = true
         try {
             const params = buildParams(selectedVendor)
-            await getNodeStorage().postgres.applyDatabaseConfig(selectedVendor, params, migrate)
+            await getNodeStorage().postgres.applyDatabaseConfig(selectedVendor, params, recoveryMode ? false : migrate)
             alertNormal(language.postgresApplySuccess)
             sqlConfiguredStore.set(true)
             setTimeout(() => location.reload(), 500)
@@ -125,33 +130,101 @@
         }
     }
 
-    function skip() {
-        dismissed = true
-        localStorage.setItem('sqlQuickSetupDismissed', '1')
-        alertNormal(language.sqlSetupSkipped)
+    async function retryConnection() {
+        retrying = true
+        try {
+            await getNodeStorage().postgres.retryDatabaseConnection()
+            alertNormal(language.sqlConnectionSuccess)
+            sqlConfiguredStore.set(true)
+            setTimeout(() => location.reload(), 300)
+        } catch (error) {
+            alertError(error)
+            try {
+                const config = await getNodeStorage().postgres.getDatabaseConfig()
+                runtime = config.runtime ?? null
+            } catch {}
+        } finally {
+            retrying = false
+        }
     }
 
-    onMount(() => {
-        if (localStorage.getItem('sqlQuickSetupDismissed') === '1') {
-            dismissed = true
+    function populateForm(vendor: DbVendor, params: Record<string, any>) {
+        if (vendor === 'postgres') {
+            pgConnectionString = params.connectionString || ''
+            pgPoolMax = params.poolMax || 10
+        } else if (vendor === 'oracle') {
+            oracleUser = params.user || ''
+            oracleTnsAlias = params.tnsAlias || ''
+            oracleWalletPath = params.walletPath || ''
+            pgPoolMax = params.poolMax || 10
+        } else {
+            azureHost = params.server || ''
+            azureDatabase = params.database || ''
+            azureUsername = params.user || ''
+            azurePort = params.port || 1433
+            azurePoolMax = params.poolMax || 10
         }
-        // 이미 설정되어 있으면 표시하지 않음
-        const configured = get(sqlConfiguredStore)
-        if (configured) {
-            dismissed = true
+    }
+
+    onMount(async () => {
+        try {
+            const config = await getNodeStorage().postgres.getDatabaseConfig()
+            runtime = config.runtime ?? null
+            managedByEnvironment = config.managedByEnvironment
+            configured = config.configured
+            const vendor = (config.storedVendor || config.vendor) as DbVendor
+            if (vendor) {
+                selectedVendor = vendor
+                populateForm(vendor, config.params || {})
+                if (config.configured || config.runtime?.status === 'degraded') {
+                    step = 'connection'
+                }
+            }
+            if (config.runtime?.status === 'ready') {
+                sqlConfiguredStore.set(true)
+                location.reload()
+            }
+        } catch (error) {
+            alertError(error)
+        } finally {
+            loadingConfig = false
         }
     })
 </script>
 
-{#if !dismissed}
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
     <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg border border-darkborderc bg-bgcolor p-6 text-textcolor shadow-xl">
         <!-- 헤더 -->
-        <h2 class="text-xl font-bold">{language.sqlQuickSetupTitle}</h2>
-        <p class="mt-2 text-sm text-textcolor2">{language.sqlQuickSetupDescription}</p>
+        <h2 class="text-xl font-bold">{recoveryMode ? language.sqlRecoveryTitle : language.sqlQuickSetupTitle}</h2>
+        <p class="mt-2 text-sm text-textcolor2">
+            {recoveryMode ? language.sqlRecoveryDescription : language.sqlQuickSetupDescription}
+        </p>
+
+        {#if runtime?.error}
+            <div class="mt-4 rounded-lg border border-draculared/50 bg-draculared/10 p-4" role="alert">
+                <div class="font-semibold text-draculared">{language.sqlRecoveryConnectionFailed}</div>
+                <div class="mt-2 text-sm text-textcolor">{runtime.error.message}</div>
+                <div class="mt-1 text-xs text-textcolor2">
+                    {language.sqlRecoveryFailedOperation}: {runtime.error.operation}
+                </div>
+                {#if runtime.error.hint}
+                    <div class="mt-2 text-sm text-textcolor2">{runtime.error.hint}</div>
+                {/if}
+            </div>
+        {/if}
+
+        {#if managedByEnvironment}
+            <div class="mt-4 rounded-lg border border-borderc bg-darkbg/50 p-4 text-sm text-textcolor2">
+                {language.sqlRecoveryEnvironmentManaged}
+            </div>
+        {/if}
+
+        {#if loadingConfig}
+            <div class="mt-6 text-sm text-textcolor2">{language.sqlRecoveryLoading}</div>
+        {/if}
 
         <!-- 단계 1: 환영 -->
-        {#if step === 'welcome'}
+        {#if !loadingConfig && step === 'welcome'}
             <div class="mt-6 space-y-4">
                 <p class="text-sm text-textcolor2">
                     {language.sqlQuickSetupChooseVendor}
@@ -183,11 +256,13 @@
         {/if}
 
         <!-- 단계 2: 연결 정보 입력 -->
-        {#if step === 'connection'}
+        {#if !loadingConfig && step === 'connection'}
             <div class="mt-6 space-y-4">
-                <button class="text-sm text-textcolor2 hover:text-textcolor" onclick={() => step = 'welcome'}>
-                    ← {language.sqlQuickSetupChooseVendor}
-                </button>
+                {#if !configured && !managedByEnvironment}
+                    <button class="text-sm text-textcolor2 hover:text-textcolor" onclick={() => step = 'welcome'}>
+                        ← {language.sqlQuickSetupChooseVendor}
+                    </button>
+                {/if}
 
                 <div class="rounded-md border border-borderc bg-darkbg/40 p-2 text-sm font-medium">
                     {selectedVendor === 'postgres' ? language.sqlVendorPostgres :
@@ -195,6 +270,7 @@
                      language.sqlVendorAzure}
                 </div>
 
+                <fieldset disabled={managedByEnvironment} class="space-y-4 disabled:opacity-60">
                 <!-- PostgreSQL 폼 -->
                 {#if selectedVendor === 'postgres'}
                     <label class="block text-sm text-textcolor2" for="quick-pg-conn">
@@ -275,13 +351,15 @@
                 {/if}
 
                 <!-- 마이그레이션 옵션 -->
-                <div class="mt-4 rounded-md border border-borderc bg-bgcolor/30 p-3">
-                    <CheckInput bind:check={migrate} name={language.sqlQuickSetupMigration} />
-                    <p class="mt-1 pl-7 text-xs text-textcolor2">{language.sqlQuickSetupMigrationDescription}</p>
-                </div>
+                {#if !recoveryMode}
+                    <div class="mt-4 rounded-md border border-borderc bg-bgcolor/30 p-3">
+                        <CheckInput bind:check={migrate} name={language.sqlQuickSetupMigration} />
+                        <p class="mt-1 pl-7 text-xs text-textcolor2">{language.sqlQuickSetupMigrationDescription}</p>
+                    </div>
+                {/if}
 
                 <!-- 버튼 -->
-                <div class="flex flex-wrap gap-2">
+                <div class="flex flex-wrap gap-2 pt-1">
                     <Button disabled={testing} onclick={testConnection}>
                         {testing ? language.sqlTesting : language.sqlTestConnection}
                     </Button>
@@ -289,15 +367,16 @@
                         {busy ? language.postgresApplying : language.sqlApplyAndConnect}
                     </Button>
                 </div>
+                </fieldset>
+
+                {#if configured || recoveryMode}
+                    <div class="flex flex-wrap gap-2 border-t border-borderc pt-4">
+                        <Button disabled={retrying} onclick={retryConnection}>
+                            {retrying ? language.sqlRecoveryRetrying : language.sqlRecoveryRetry}
+                        </Button>
+                    </div>
+                {/if}
             </div>
         {/if}
-
-        <!-- 건너뛰기 (공통) -->
-        <div class="mt-6 flex justify-end">
-            <Button styled="outlined" onclick={skip}>
-                {language.sqlSkipSetup}
-            </Button>
-        </div>
     </div>
 </div>
-{/if}

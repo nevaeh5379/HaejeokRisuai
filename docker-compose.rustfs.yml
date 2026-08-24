@@ -52,6 +52,9 @@ services:
     environment:
       RISU_POSTGRES_BOOTSTRAP_URL: postgresql://risuai:${POSTGRES_PASSWORD}@postgres:5432/risuai
       RISU_POSTGRES_POOL_MAX: 10
+      RISU_STORAGE_CONNECT_TIMEOUT_MS: ${RISU_STORAGE_CONNECT_TIMEOUT_MS:-30000}
+      RISU_STORAGE_STARTUP_TIMEOUT_MS: ${RISU_STORAGE_STARTUP_TIMEOUT_MS:-180000}
+      RISU_STORAGE_STARTUP_HEARTBEAT_MS: ${RISU_STORAGE_STARTUP_HEARTBEAT_MS:-10000}
       RISUAI_MIGRATE_CONCURRENCY: ${RISUAI_MIGRATE_CONCURRENCY:-4}
       RISU_STORAGE_TYPE: s3
       RISU_S3_BOOTSTRAP_ENDPOINT: http://rustfs:9000
@@ -65,7 +68,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:6001').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+          "fetch('http://127.0.0.1:6001/api/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
         ]
       interval: 5s
       timeout: 5s

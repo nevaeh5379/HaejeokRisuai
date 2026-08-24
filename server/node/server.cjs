@@ -47,6 +47,13 @@ const { resolveLoreEntries } = require('./loreResolve.cjs');
 const { checkVectorIndexRevision, syncVectorIndex, upsertVectorIndex, searchVectorIndex } = require('./vectorIndex.cjs');
 const { matchLoreBatch } = require('./loreMatch.cjs');
 const {
+    describeStorageTarget,
+    readStorageStartupSettings,
+    runStartupStage,
+    sanitizeSensitiveText,
+    startupErrorHint,
+} = require('./startupDiagnostics.cjs');
+const {
     PostgresPayloadError,
     PostgresRevisionConflictError,
     PostgresStorage,
@@ -63,7 +70,6 @@ const {
     normalizeVendorParams,
     isVendorConfigComplete,
     testConnection,
-    applyDbConfig,
     isStorageManagedByEnvironment,
     SUPPORTED_VENDORS,
     normalizeBackupConfigSection,
@@ -82,6 +88,7 @@ const defaultJsonParser = express.json({ limit: '100mb' });
 const postgresJsonBodyLimit = process.env.RISU_POSTGRES_JSON_BODY_LIMIT || '1gb';
 const postgresJsonParser = express.json({ limit: postgresJsonBodyLimit });
 const rawBodyParser = express.raw({ type: 'application/octet-stream', limit: '100mb' });
+const storageStartupSettings = readStorageStartupSettings();
 
 function isStreamingAssetWriteRequest(req) {
     return req.method === 'POST' && req.path === '/api/write' && req.is('application/octet-stream');
@@ -281,6 +288,130 @@ let { storage: postgresStorage, vendor: dbVendor } = createServerStorage(savePat
 });
 // vendor 확정 후 환경 변수 관리 여부 갱신
 storageManagedByEnvironment = isStorageManagedByEnvironment(dbVendor);
+
+let primaryStorageRuntime = {
+    status: postgresStorage.enabled ? 'starting' : 'unconfigured',
+    vendor: dbVendor,
+    error: null,
+    attemptStartedAt: null,
+    readyAt: null,
+};
+let primaryStorageAttempt = null;
+
+function createPrimaryStorageFailure(error) {
+    const rawCode = typeof error?.code === 'string' ? error.code : '';
+    const message = sanitizeSensitiveText(error?.message || error || 'Unknown database error');
+    return {
+        code: rawCode || 'storage_connection_failed',
+        message,
+        hint: startupErrorHint(error),
+        operation: sanitizeSensitiveText(error?.startupOperation || 'initialize SQL storage'),
+        failedAt: new Date().toISOString(),
+    };
+}
+
+function setPrimaryStorageRuntime(status, error = null) {
+    primaryStorageRuntime = {
+        status,
+        vendor: dbVendor,
+        error,
+        attemptStartedAt: status === 'starting' ? new Date().toISOString() : primaryStorageRuntime.attemptStartedAt,
+        readyAt: status === 'ready' ? new Date().toISOString() : primaryStorageRuntime.readyAt,
+    };
+}
+
+function getPrimaryStorageRuntimeResponse() {
+    return {
+        status: primaryStorageRuntime.status,
+        vendor: primaryStorageRuntime.vendor,
+        error: primaryStorageRuntime.error,
+        attemptStartedAt: primaryStorageRuntime.attemptStartedAt,
+        readyAt: primaryStorageRuntime.readyAt,
+    };
+}
+
+function isPrimaryStorageReady() {
+    return primaryStorageRuntime.status === 'ready';
+}
+
+async function initializePrimaryStorage(storage, vendor, operation = `initialize ${vendor} storage`) {
+    if (!storage.enabled) {
+        if (storage === postgresStorage) setPrimaryStorageRuntime('unconfigured');
+        return false;
+    }
+
+    if (primaryStorageAttempt?.storage === storage) {
+        return await primaryStorageAttempt.guardedPromise;
+    }
+
+    if (storage === postgresStorage) setPrimaryStorageRuntime('starting');
+    const rawPromise = Promise.resolve().then(() => storage.initialize());
+    const guardedPromise = runStartupStage({
+        scope: 'Server startup',
+        operation,
+        detail: describeStorageTarget(vendor, storage),
+        timeoutMs: storageStartupSettings.startupTimeoutMs,
+        heartbeatMs: storageStartupSettings.heartbeatMs,
+    }, () => rawPromise);
+    const attempt = { storage, rawPromise, guardedPromise };
+    primaryStorageAttempt = attempt;
+
+    rawPromise.then(() => {
+        if (storage === postgresStorage) {
+            setPrimaryStorageRuntime('ready');
+            console.log(`[Server startup] ${vendor} storage became ready.`);
+        } else if (typeof storage.close === 'function') {
+            void storage.close().catch(() => {});
+        }
+    }, (error) => {
+        if (storage === postgresStorage) {
+            setPrimaryStorageRuntime('degraded', createPrimaryStorageFailure(error));
+        }
+    }).finally(() => {
+        if (primaryStorageAttempt === attempt) primaryStorageAttempt = null;
+    });
+
+    try {
+        await guardedPromise;
+        return true;
+    } catch (error) {
+        if (storage === postgresStorage) {
+            setPrimaryStorageRuntime('degraded', createPrimaryStorageFailure(error));
+        }
+        throw error;
+    }
+}
+
+const recoveryApiPrefixes = [
+    '/api/health',
+    '/api/test_auth',
+    '/api/login',
+    '/api/crypto',
+    '/api/set_password',
+    '/api/db-config',
+    '/api/postgres-config',
+];
+
+function isRecoveryApiRequest(req) {
+    const path = String(req.originalUrl || req.url || '').split('?', 1)[0];
+    return recoveryApiPrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
+// SQL is the application's single source of truth. While it is unavailable,
+// expose only the authentication/configuration surface needed to repair it.
+// Static frontend files are registered before this middleware and remain
+// available so the browser can render the recovery UI.
+app.use('/api', (req, res, next) => {
+    if (isPrimaryStorageReady() || isRecoveryApiRequest(req)) {
+        next();
+        return;
+    }
+    res.status(503).send({
+        error: 'SQL storage is unavailable; restore the configured database connection before using application APIs.',
+        code: 'storage_unavailable',
+        runtime: getPrimaryStorageRuntimeResponse(),
+    });
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 백업 데이터베이스 (메인 SQL DB → 백업 SQL DB 미러링/스냅샷)
@@ -955,7 +1086,7 @@ async function persistPostgresServerConfig(config) {
 async function getPostgresConfigResponse() {
     let revision = null;
     let initialized = false;
-    if (postgresStorage.enabled) {
+    if (postgresStorage.enabled && isPrimaryStorageReady()) {
         const state = await postgresStorage.getState();
         revision = state.revision;
         initialized = state.initialized;
@@ -969,6 +1100,7 @@ async function getPostgresConfigResponse() {
         poolMax: postgresServerConfig.poolMax,
         revision,
         initialized,
+        runtime: getPrimaryStorageRuntimeResponse(),
     };
 }
 
@@ -2067,6 +2199,15 @@ app.get('/api/test_auth', authRouteLimiter, async(req, res) => {
     }
 })
 
+app.get('/api/health', (req, res) => {
+    const runtime = getPrimaryStorageRuntimeResponse();
+    const healthy = runtime.status === 'ready' || runtime.status === 'unconfigured';
+    res.status(healthy ? 200 : 503).send({
+        status: healthy ? 'ok' : 'degraded',
+        storage: runtime,
+    });
+});
+
 app.post('/api/login', loginRouteLimiter, async (req, res) => {
     if(password === ''){
         res.status(400).send({error: 'Password not set'})
@@ -2840,6 +2981,88 @@ app.post('/api/write-bulk', authenticatedRouteLimiter, async(req, res, next) => 
     }
 });
 
+async function replacePrimaryStorageConfiguration(vendor, params, { migrate = false } = {}) {
+    if (!SUPPORTED_VENDORS.includes(vendor)) {
+        throw new StoragePayloadError(`Unsupported vendor: ${vendor}`);
+    }
+    const normalized = normalizeVendorParams(vendor, params);
+    if (!isVendorConfigComplete(vendor, normalized)) {
+        throw new StoragePayloadError('Required connection parameters are missing');
+    }
+
+    // 후보 연결을 먼저 완전히 검증한다. 성공하기 전에는 현재 설정과
+    // 현재 storage를 건드리지 않아 SQL 단일 진실성을 유지한다.
+    const candidateStorage = instantiateVendorStorage(vendor, normalized, {
+        poolMax: normalized.poolMax || 10,
+    });
+    const candidateInitPromise = Promise.resolve().then(() => candidateStorage.initialize());
+    try {
+        await runStartupStage({
+            scope: 'Database recovery',
+            operation: `validate replacement ${vendor} storage`,
+            detail: describeStorageTarget(vendor, candidateStorage),
+            timeoutMs: storageStartupSettings.startupTimeoutMs,
+            heartbeatMs: storageStartupSettings.heartbeatMs,
+        }, () => candidateInitPromise);
+    } catch (error) {
+        void candidateInitPromise.finally(() => candidateStorage.close?.()).catch(() => {});
+        throw error;
+    }
+
+    const previousStored = readStoredDbConfig(savePath);
+    const previousPostgresConfig = { ...postgresServerConfig };
+    try {
+        writeStoredDbConfig(savePath, {
+            vendor,
+            enabled: true,
+            poolMax: normalized.poolMax || 10,
+            params: normalized,
+            backup: previousStored.backup,
+        });
+        if (vendor === 'postgres') {
+            postgresServerConfig = {
+                enabled: true,
+                connectionString: normalized.connectionString,
+                poolMax: normalized.poolMax || 10,
+            };
+            await persistPostgresServerConfig(postgresServerConfig);
+        }
+    } catch (persistError) {
+        writeStoredDbConfig(savePath, previousStored);
+        postgresServerConfig = previousPostgresConfig;
+        await candidateStorage.close?.().catch(() => {});
+        throw persistError;
+    }
+
+    const previousStorage = postgresStorage;
+    postgresStorage = candidateStorage;
+    dbVendor = vendor;
+    storageManagedByEnvironment = isStorageManagedByEnvironment(dbVendor);
+    setPrimaryStorageRuntime('ready');
+    if (typeof previousStorage.close === 'function') {
+        try { await previousStorage.close(); } catch (error) {
+            console.warn('[db-config] Previous storage close failed:', sanitizeSensitiveText(error?.message || error));
+        }
+    }
+
+    // database.bin 가져오기는 사용자가 명시적으로 요청한 경우에만 수행한다.
+    if (migrate && postgresStorage.enabled) {
+        try {
+            await postgresStorage.migrateLegacyColdStorage(savePath);
+        } catch (error) {
+            console.warn('[db-config] Explicit legacy migration failed:', sanitizeSensitiveText(error?.message || error));
+        }
+    }
+
+    const response = getDbConfigResponse();
+    try {
+        const state = await postgresStorage.getState();
+        response.revision = state.revision;
+        response.initialized = state.initialized;
+    } catch {}
+    return response;
+}
+
 app.get('/api/postgres-config', authenticatedRouteLimiter, async (req, res, next) => {
     if (!await checkAuth(req, res)) {
         return;
@@ -2855,7 +3078,7 @@ app.post('/api/postgres-config', authenticatedRouteLimiter, async (req, res, nex
     if (!await checkAuth(req, res)) {
         return;
     }
-    if (postgresManagedByEnvironment) {
+    if (storageManagedByEnvironment) {
         res.status(403).send({
             error: 'PostgreSQL is managed by server environment variables',
             code: 'postgres_environment_managed',
@@ -2870,64 +3093,36 @@ app.post('/api/postgres-config', authenticatedRouteLimiter, async (req, res, nex
         return;
     }
 
-    const previousConfig = { ...postgresServerConfig };
     try {
         if (typeof req.body?.enabled !== 'boolean') {
             throw new PostgresPayloadError('enabled must be a boolean');
         }
+        if (!req.body.enabled) {
+            res.status(400).send({
+                error: 'SQL storage cannot be disabled because it is the application source of truth',
+                code: 'storage_disable_not_supported',
+            });
+            return;
+        }
         const connectionString = typeof req.body.connectionString === 'string' && req.body.connectionString.trim()
             ? req.body.connectionString.trim()
-            : previousConfig.connectionString;
-        const poolMax = normalizePostgresPoolMax(req.body.poolMax ?? previousConfig.poolMax);
-        if (req.body.enabled) {
-            validatePostgresConnectionString(connectionString);
-        }
-
-        const connectionChanged = connectionString !== previousConfig.connectionString;
-        const mustExportLegacy = postgresStorage.enabled && (!req.body.enabled || connectionChanged);
-        if (mustExportLegacy && typeof postgresStorage.exportColdStorageToLegacy === 'function') {
-            try {
-                await postgresStorage.exportColdStorageToLegacy(savePath);
-            } catch (e) {
-                console.warn('[postgres-config] Legacy cold storage export skipped:', e.message);
-            }
-        }
-
-        const needsReconfigure = postgresStorage.enabled !== req.body.enabled ||
-            (req.body.enabled && (connectionChanged || poolMax !== previousConfig.poolMax));
-        if (needsReconfigure) {
-            await postgresStorage.reconfigure({
-                connectionString: req.body.enabled ? connectionString : '',
-                poolMax,
-            });
-        }
-
-        postgresServerConfig = {
-            enabled: req.body.enabled,
-            connectionString,
-            poolMax,
-        };
-        try {
-            await persistPostgresServerConfig(postgresServerConfig);
-        } catch (persistError) {
-            postgresServerConfig = previousConfig;
-            await postgresStorage.reconfigure({
-                connectionString: previousConfig.enabled ? previousConfig.connectionString : '',
-                poolMax: previousConfig.poolMax,
-            });
-            throw persistError;
-        }
-
-        if (postgresStorage.enabled) {
-            await postgresStorage.migrateLegacyColdStorage(savePath);
-        }
+            : postgresServerConfig.connectionString;
+        const poolMax = normalizePostgresPoolMax(req.body.poolMax ?? postgresServerConfig.poolMax);
+        validatePostgresConnectionString(connectionString);
+        await replacePrimaryStorageConfiguration('postgres', { connectionString, poolMax });
         res.send({ success: true, ...await getPostgresConfigResponse() });
     } catch (error) {
         if (error instanceof PostgresPayloadError) {
             res.status(400).send({ error: error.message, code: 'invalid_postgres_configuration' });
             return;
         }
-        next(error);
+        const failure = createPrimaryStorageFailure(error);
+        res.status(502).send({
+            error: failure.message,
+            code: 'storage_connection_failed',
+            failure,
+            runtime: getPrimaryStorageRuntimeResponse(),
+        });
     }
 })
 
@@ -2950,10 +3145,12 @@ function getDbConfigResponse() {
     const params = stored.params || {};
     // vendor별 마스킹된 params 구성
     const maskedParams = {};
-    if (stored.vendor === 'postgres') {
-        maskedParams.connectionString = maskPostgresConnectionString(params.connectionString || '');
-        maskedParams.poolMax = params.poolMax || 10;
-    } else if (stored.vendor === 'oracle') {
+    const effectiveVendor = stored.vendor || dbVendor;
+    if (effectiveVendor === 'postgres') {
+        const connectionString = params.connectionString || postgresServerConfig.connectionString || postgresStorage.connectionString || '';
+        maskedParams.connectionString = maskPostgresConnectionString(connectionString);
+        maskedParams.poolMax = params.poolMax || postgresServerConfig.poolMax || postgresStorage.poolMax || 10;
+    } else if (effectiveVendor === 'oracle') {
         maskedParams.user = params.user || '';
         maskedParams.tnsAlias = params.tnsAlias || '';
         maskedParams.walletPath = params.walletPath || '';
@@ -2961,7 +3158,7 @@ function getDbConfigResponse() {
         // password/walletPassword는 마스킹
         maskedParams.hasPassword = Boolean(params.password);
         maskedParams.hasWalletPassword = Boolean(params.walletPassword);
-    } else if (stored.vendor === 'azure') {
+    } else if (effectiveVendor === 'azure') {
         maskedParams.server = params.server || '';
         maskedParams.database = params.database || '';
         maskedParams.user = params.user || '';
@@ -2978,6 +3175,7 @@ function getDbConfigResponse() {
         initialized: false,
         params: maskedParams,
         storedVendor: stored.vendor,
+        runtime: getPrimaryStorageRuntimeResponse(),
     };
 }
 
@@ -3027,7 +3225,37 @@ app.post('/api/db-config/test', authenticatedRouteLimiter, async (req, res, next
         const result = await testConnection(vendor, params);
         res.send(result);
     } catch (error) {
-        res.send({ success: false, error: error.message || String(error) });
+        res.send({ success: false, error: sanitizeSensitiveText(error.message || String(error)) });
+    }
+});
+
+app.post('/api/db-config/retry', authenticatedRouteLimiter, async (req, res) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(409).send({
+            error: 'SQL storage is not configured',
+            code: 'storage_unconfigured',
+            runtime: getPrimaryStorageRuntimeResponse(),
+        });
+        return;
+    }
+    try {
+        await initializePrimaryStorage(postgresStorage, dbVendor, `retry ${dbVendor} storage connection`);
+        const response = getDbConfigResponse();
+        try {
+            const state = await postgresStorage.getState();
+            response.revision = state.revision;
+            response.initialized = state.initialized;
+        } catch {}
+        res.send({ success: true, ...response });
+    } catch (error) {
+        res.status(503).send({
+            error: sanitizeSensitiveText(error?.message || error),
+            code: 'storage_connection_failed',
+            runtime: getPrimaryStorageRuntimeResponse(),
+        });
     }
 });
 
@@ -3050,72 +3278,37 @@ app.post('/api/db-config', authenticatedRouteLimiter, async (req, res, next) => 
         return;
     }
     try {
-        const vendor = req.body?.vendor;
-        const params = req.body?.params || {};
-        const migrate = req.body?.migrate === true;
-        if (!SUPPORTED_VENDORS.includes(vendor)) {
-            throw new StoragePayloadError(`Unsupported vendor: ${vendor}`);
-        }
-        const normalized = normalizeVendorParams(vendor, params);
-        if (!isVendorConfigComplete(vendor, normalized)) {
-            throw new StoragePayloadError('Required connection parameters are missing');
-        }
-
-        // 기존 storage가 활성 상태면 cold storage를 legacy로 export (롤백 가능하도록)
-        if (postgresStorage.enabled && typeof postgresStorage.exportColdStorageToLegacy === 'function') {
-            try {
-                await postgresStorage.exportColdStorageToLegacy(savePath);
-            } catch (e) {
-                console.warn('[db-config] Cold storage export skipped:', e.message);
-            }
-        }
-
-        // 신규 config 저장 + 신규 storage 인스턴스 생성
-        const result = applyDbConfig(savePath, { vendor, params: normalized, enabled: true });
-        // 기존 storage 풀 정리
-        if (typeof postgresStorage.close === 'function') {
-            try { await postgresStorage.close(); } catch (e) {}
-        }
-        postgresStorage = result.storage;
-        dbVendor = result.vendor;
-        storageManagedByEnvironment = isStorageManagedByEnvironment(dbVendor);
-
-        // 신규 storage 초기화
-        await postgresStorage.initialize();
-
-        // 마이그레이션 명시적 수행
-        if (migrate && postgresStorage.enabled) {
-            try {
-                await postgresStorage.migrateLegacyColdStorage(savePath);
-            } catch (e) {
-                console.warn('[db-config] Legacy cold storage migration skipped:', e.message);
-            }
-        }
-        // PostgreSQL 호환 config 파일도 갱신 (기존 /api/postgres-config와 호환성)
-        if (vendor === 'postgres') {
-            await persistPostgresServerConfig({
-                enabled: true,
-                connectionString: normalized.connectionString,
-                poolMax: normalized.poolMax || 10,
-            });
-        }
-
-        const resp = getDbConfigResponse();
-        try {
-            if (postgresStorage.enabled) {
-                const state = await postgresStorage.getState();
-                resp.revision = state.revision;
-                resp.initialized = state.initialized;
-            }
-        } catch (e) {}
-        res.send({ success: true, ...resp });
+        const response = await replacePrimaryStorageConfiguration(
+            req.body?.vendor,
+            req.body?.params || {},
+            { migrate: req.body?.migrate === true },
+        );
+        res.send({ success: true, ...response });
     } catch (error) {
         if (error instanceof StoragePayloadError) {
             res.status(400).send({ error: error.message, code: 'invalid_db_configuration' });
             return;
         }
-        next(error);
+        const failure = createPrimaryStorageFailure(error);
+        res.status(502).send({
+            error: failure.message,
+            code: 'storage_connection_failed',
+            failure,
+            runtime: getPrimaryStorageRuntimeResponse(),
+        });
     }
+});
+
+app.use('/api/database-v2', (req, res, next) => {
+    if (isPrimaryStorageReady()) {
+        next();
+        return;
+    }
+    res.status(503).send({
+        error: 'SQL storage is unavailable; restore the configured database connection before using application data.',
+        code: 'storage_unavailable',
+        runtime: getPrimaryStorageRuntimeResponse(),
+    });
 });
 
 app.post('/api/database-v2/migrate-legacy', authenticatedRouteLimiter, async (req, res, next) => {
@@ -5410,45 +5603,132 @@ function setupProxyStreamWebSocket(server) {
     });
 }
 
+let activeHttpServer = null;
+let shutdownInProgress = false;
+
+function listenHttpServer(server, port) {
+    return new Promise((resolve, reject) => {
+        const onError = (error) => {
+            server.off('listening', onListening);
+            reject(error);
+        };
+        const onListening = () => {
+            server.off('error', onError);
+            resolve();
+        };
+        server.once('error', onError);
+        server.once('listening', onListening);
+        server.listen(port);
+    });
+}
+
 async function startServer() {
     try {
-        console.log('[Server] Step 1: initializing storage...');
-        await postgresStorage.initialize();
-        console.log('[Server] Step 2: storage initialized, initializing asset storage...');
-        await assetStorageManager.init();
-        console.log('[Server] Step 3: asset storage initialized, checking bootstrap config...');
-        if (!postgresManagedByEnvironment && !postgresConfigExists && postgresBootstrapUrl) {
-            await persistPostgresServerConfig(postgresServerConfig);
+        const storageTarget = describeStorageTarget(dbVendor, postgresStorage);
+        console.log(
+            `[Server startup] Storage vendor: ${dbVendor}; target: ${storageTarget}; ` +
+            `startup timeout: ${storageStartupSettings.startupTimeoutMs}ms; ` +
+            `progress interval: ${storageStartupSettings.heartbeatMs}ms.`
+        );
+        try {
+            await initializePrimaryStorage(
+                postgresStorage,
+                dbVendor,
+                `Step 1/4 initialize ${dbVendor} storage`
+            );
+        } catch (error) {
+            console.error(
+                `[Server startup] SQL storage is unavailable; continuing in recovery mode: ` +
+                sanitizeSensitiveText(error?.message || error)
+            );
         }
+        await runStartupStage({
+            scope: 'Server startup',
+            operation: 'Step 2/4 initialize asset storage',
+            heartbeatMs: storageStartupSettings.heartbeatMs,
+        }, () => assetStorageManager.init());
+        await runStartupStage({
+            scope: 'Server startup',
+            operation: 'Step 3/4 persist bootstrap configuration',
+            heartbeatMs: storageStartupSettings.heartbeatMs,
+        }, async () => {
+            if (!postgresManagedByEnvironment && !postgresConfigExists && postgresBootstrapUrl) {
+                await persistPostgresServerConfig(postgresServerConfig);
+            }
+        });
         // 자동 마이그레이션 제거: 사용자가 명시적으로 마이그레이션을 승인할 때만 수행.
         // /api/db-config POST (migrate: true) 또는 /api/database-v2/migrate-legacy 에서 트리거.
-        console.log('[Server] Step 4: starting HTTP/HTTPS server...');
         const port = process.env.PORT || 6001;
         const httpsOptions = await getHttpsOptions();
-        let server = null;
+        const protocol = httpsOptions ? 'HTTPS' : 'HTTP';
+        const server = httpsOptions
+            ? https.createServer(httpsOptions, app)
+            : http.createServer(app);
+        activeHttpServer = server;
+        setupProxyStreamWebSocket(server);
 
-        if (httpsOptions) {
-            // HTTPS
-            server = https.createServer(httpsOptions, app);
-            setupProxyStreamWebSocket(server);
-            server.listen(port, () => {
-                console.log("[Server] HTTPS server is running.");
-                console.log(`[Server] https://localhost:${port}/`);
-            });
-        } else {
-            // HTTP
-            server = http.createServer(app);
-            setupProxyStreamWebSocket(server);
-            server.listen(port, () => {
-                console.log("[Server] HTTP server is running.");
-                console.log(`[Server] http://localhost:${port}/`);
-            });
+        await runStartupStage({
+            scope: 'Server startup',
+            operation: `Step 4/4 listen for ${protocol} requests`,
+            detail: `port=${port}`,
+            timeoutMs: 30000,
+            heartbeatMs: storageStartupSettings.heartbeatMs,
+        }, () => listenHttpServer(server, port));
+        console.log(`[Server] ${protocol} server is running.`);
+        console.log(`[Server] ${httpsOptions ? 'https' : 'http'}://localhost:${port}/`);
+        if (!isPrimaryStorageReady()) {
+            console.warn(
+                `[Server startup] Recovery mode is active (${primaryStorageRuntime.status}). ` +
+                'Application data APIs are locked until SQL storage is ready.'
+            );
         }
     } catch (error) {
-        console.error('[Server] Failed to start server :', error);
+        console.error(
+            `[Server startup] Fatal startup failure: ` +
+            `${sanitizeSensitiveText(error?.name || 'Error')}: ${sanitizeSensitiveText(error?.message || error)}`
+        );
         process.exit(1);
     }
 }
+
+async function shutdownServer(signal) {
+    if (shutdownInProgress) {
+        console.warn(`[Server shutdown] Received ${signal} while shutdown is already in progress.`);
+        return;
+    }
+    shutdownInProgress = true;
+    console.warn(`[Server shutdown] Received ${signal}; stopping HTTP and storage resources.`);
+    const forceExitTimer = setTimeout(() => {
+        console.error('[Server shutdown] Graceful shutdown exceeded 10s; forcing process exit.');
+        process.exit(1);
+    }, 10000);
+    forceExitTimer.unref?.();
+
+    try {
+        if (activeHttpServer?.listening) {
+            await new Promise((resolve) => activeHttpServer.close(resolve));
+        }
+        if (backupStorage && typeof backupStorage.close === 'function') {
+            await backupStorage.close();
+        }
+        if (postgresStorage && typeof postgresStorage.close === 'function') {
+            await postgresStorage.close();
+        }
+        clearTimeout(forceExitTimer);
+        console.log(`[Server shutdown] Graceful shutdown after ${signal} completed.`);
+        process.exit(0);
+    } catch (error) {
+        clearTimeout(forceExitTimer);
+        console.error(
+            `[Server shutdown] Shutdown after ${signal} failed: ` +
+            sanitizeSensitiveText(error?.message || error)
+        );
+        process.exit(1);
+    }
+}
+
+process.once('SIGTERM', () => void shutdownServer('SIGTERM'));
+process.once('SIGINT', () => void shutdownServer('SIGINT'));
 
 (async () => {
     setInterval(() => {

@@ -86,6 +86,62 @@ describe("NodePostgresStorage browser client", () => {
     );
   });
 
+  it("keeps SQL disabled in the browser while the server is in recovery mode", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        enabled: true,
+        configured: true,
+        managedByEnvironment: false,
+        vendor: "postgres",
+        params: { connectionString: "postgresql://db/risuai", poolMax: 10 },
+        storedVendor: "postgres",
+        revision: null,
+        initialized: false,
+        runtime: {
+          status: "degraded",
+          vendor: "postgres",
+          error: { code: "28P01", message: "authentication failed" },
+          attemptStartedAt: "2026-08-24T00:00:00.000Z",
+          readyAt: null,
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const storage = new NodePostgresStorage(async () => "test-auth");
+
+    await expect(storage.init()).resolves.toBe(false);
+    expect(storage.isEnabled()).toBe(false);
+  });
+
+  it("retries the configured SQL connection through the recovery endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        success: true,
+        enabled: true,
+        configured: true,
+        managedByEnvironment: false,
+        vendor: "postgres",
+        params: { connectionString: "postgresql://db/risuai", poolMax: 10 },
+        storedVendor: "postgres",
+        revision: 7,
+        initialized: true,
+        runtime: { status: "ready", vendor: "postgres", error: null },
+      }), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const storage = new NodePostgresStorage(async () => "test-auth");
+    const result = await storage.retryDatabaseConnection();
+
+    expect(result.runtime?.status).toBe("ready");
+    expect(storage.isEnabled()).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/db-config/retry",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("submits updated connection options and normalizes pool size", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       status: 200,
@@ -117,6 +173,43 @@ describe("NodePostgresStorage browser client", () => {
           enabled: true,
           connectionString: "postgresql://user:pass@remote/risuai",
           poolMax: 15,
+        }),
+      }),
+    );
+  });
+
+  it("does not request database.bin migration for a normal SQL config change", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          enabled: true,
+          configured: true,
+          runtime: { status: "ready", vendor: "postgres", error: null },
+          params: { connectionString: "postgresql://remote/risuai", poolMax: 10 },
+          storedVendor: "postgres",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const storage = new NodePostgresStorage(async () => "test-auth");
+    await storage.applyDatabaseConfig("postgres", {
+      connectionString: "postgresql://user:pass@remote/risuai",
+      poolMax: 10,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/db-config",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          vendor: "postgres",
+          params: {
+            connectionString: "postgresql://user:pass@remote/risuai",
+            poolMax: 10,
+          },
+          migrate: false,
         }),
       }),
     );
