@@ -5,6 +5,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.effectivePersonaPrompt
+import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntriesFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntryToValue
 import java.util.UUID
 import party.iroiro.luajava.JFunction
@@ -34,6 +35,7 @@ internal object NativeLuaTriggerEngine {
         val authorNote: String,
         val greetingIndex: Int,
         val baseLocalLoreRaw: List<Map<String, Any?>>,
+        val lowLevelAccess: Boolean,
         val messages: MutableList<MessageRecord>,
         val variables: MutableMap<String, String>,
         var runtimePatch: RuntimeStatePatch,
@@ -76,6 +78,7 @@ internal object NativeLuaTriggerEngine {
         inheritedStop: Boolean,
         inheritedPatch: RuntimeStatePatch,
         localLoreRaw: List<Map<String, Any?>> = emptyList(),
+        lowLevelAccess: Boolean = false,
     ): NativeLuaTriggerResult {
         if (code.isBlank()) {
             return NativeLuaTriggerResult(messages, variables, inheritedStop, inheritedPatch)
@@ -95,6 +98,7 @@ internal object NativeLuaTriggerEngine {
                 authorNote = authorNote,
                 greetingIndex = greetingIndex,
                 baseLocalLoreRaw = localLoreRaw,
+                lowLevelAccess = lowLevelAccess,
                 messages = messages.toMutableList(),
                 variables = variables.toMutableMap(),
                 runtimePatch = inheritedPatch,
@@ -312,6 +316,32 @@ internal object NativeLuaTriggerEngine {
             }
             push(lua, NativeRisuParser.stringifyJson(found))
         }
+        register(state, "loadLoreBooksMain") { lua, execution ->
+            if (!execution.lowLevelAccess) return@register 0
+            val settings = execution.settings()
+            val reserve = integerArg(lua, 2).coerceAtLeast(0)
+            val remainingContext = settings.maxContext - reserve
+            if (remainingContext < 0) return@register push(lua, "[]")
+            val character = execution.character()
+            val globalLore = character.globalLore.takeIf { it.isNotEmpty() }
+                ?: loreEntriesFromValue(character.globalLoreRaw)
+            val combinedLore = globalLore + loreEntriesFromValue(execution.localLoreRaw())
+            val activeLore = NativeLorebookProcessor.resolve(combinedLore, execution.messages, settings)
+            val payload = mutableListOf<Map<String, Any?>>()
+            var usedTokens = 0
+            for (lore in activeLore) {
+                val parsed = NativeRisuParser.parse(lore.content, execution.parserContext()).trim()
+                if (parsed.isEmpty()) continue
+                val estimatedTokens = ((parsed.length + 3) / 4).coerceAtLeast(1)
+                if (usedTokens + estimatedTokens > remainingContext) break
+                usedTokens += estimatedTokens
+                payload += linkedMapOf(
+                    "data" to parsed,
+                    "role" to if (lore.role == "assistant") "char" else lore.role,
+                )
+            }
+            push(lua, NativeRisuParser.stringifyJson(payload))
+        }
         register(state, "upsertLocalLoreBook") { lua, execution ->
             val name = stringArg(lua, 2)
             val content = stringArg(lua, 3)
@@ -460,6 +490,10 @@ end
 
 function getLoreBooks(id, search)
     return json.decode(getLoreBooksMain(id, search))
+end
+
+function loadLoreBooks(id, reserve)
+    return json.decode(loadLoreBooksMain(id, reserve or 0))
 end
 
 function setFullChat(id, value)

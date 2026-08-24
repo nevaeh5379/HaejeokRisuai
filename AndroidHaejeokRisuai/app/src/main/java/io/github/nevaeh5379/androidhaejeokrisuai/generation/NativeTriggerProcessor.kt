@@ -103,6 +103,7 @@ object NativeTriggerProcessor {
                     inheritedStop = stop,
                     inheritedPatch = runtimePatch,
                     localLoreRaw = localLoreRaw,
+                    lowLevelAccess = trigger.lowLevelAccess,
                 )
                 working.clear(); working += luaResult.messages
                 vars.clear(); vars.putAll(luaResult.variables)

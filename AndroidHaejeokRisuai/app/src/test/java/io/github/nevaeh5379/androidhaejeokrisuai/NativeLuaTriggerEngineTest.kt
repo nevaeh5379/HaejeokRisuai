@@ -194,4 +194,58 @@ class NativeLuaTriggerEngineTest {
         assertEquals(true, updated["selective"])
         assertEquals(true, updated["useRegex"])
     }
+
+    @Test
+    fun loadLoreBooksRequiresLowLevelAccessAndAppliesContextReserve() {
+        val code = """
+            function onStart(id)
+                local raw = loadLoreBooksMain(id, 0)
+                if raw == nil then
+                    setChatVar(id, "denied", "yes")
+                    return
+                end
+                local books = loadLoreBooks(id, 0)
+                local sawGlobal, sawLocal, globalRole = false, false, ""
+                for _, book in ipairs(books) do
+                    if book.data == "Global Alice" then sawGlobal = true; globalRole = book.role end
+                    if book.data == "Local Lua" then sawLocal = true end
+                end
+                local exhausted = loadLoreBooks(id, 101)
+                setChatVar(id, "loaded", tostring(#books) .. ":" .. tostring(sawGlobal) .. ":" .. tostring(sawLocal) .. ":" .. globalRole)
+                setChatVar(id, "exhausted", tostring(#exhausted))
+            end
+        """.trimIndent()
+        val base = character.copy(
+            globalLoreRaw = listOf(
+                mapOf(
+                    "comment" to "global", "content" to "@@role assistant\nGlobal {{user}}",
+                    "alwaysActive" to true, "insertorder" to 10,
+                ),
+            ),
+        )
+        val localRaw = listOf(
+            mapOf(
+                "comment" to "local", "content" to "Local {{char}}",
+                "alwaysActive" to true, "insertorder" to 20,
+            ),
+        )
+        val runtimeSettings = settings.copy(loreBookToken = 100, maxContext = 100)
+        val denied = NativeLuaTriggerEngine.run(
+            code = code, mode = "start", settings = runtimeSettings, character = base,
+            messages = history, variables = emptyMap(), chatId = "chat", authorNote = "",
+            greetingIndex = -1, inheritedStop = false, inheritedPatch = RuntimeStatePatch(),
+            localLoreRaw = localRaw, lowLevelAccess = false,
+        )
+        assertEquals("yes", denied.variables["denied"])
+
+        NativeLuaTriggerEngine.clearForTests()
+        val allowed = NativeLuaTriggerEngine.run(
+            code = code, mode = "start", settings = runtimeSettings, character = base,
+            messages = history, variables = emptyMap(), chatId = "chat", authorNote = "",
+            greetingIndex = -1, inheritedStop = false, inheritedPatch = RuntimeStatePatch(),
+            localLoreRaw = localRaw, lowLevelAccess = true,
+        )
+        assertEquals("2:true:true:char", allowed.variables["loaded"])
+        assertEquals("0", allowed.variables["exhausted"])
+    }
 }
