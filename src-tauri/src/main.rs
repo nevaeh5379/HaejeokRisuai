@@ -1,6 +1,8 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod sqlite_transaction;
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -598,7 +600,8 @@ fn main() {
             run_py_server,
             install_py_dependencies,
             streamed_fetch,
-            oauth_login
+            oauth_login,
+            sqlite_transaction::sqlite_execute_transaction
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application")

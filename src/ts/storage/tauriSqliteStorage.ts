@@ -29,6 +29,7 @@ import type {
 } from "./nodePostgresStorage";
 import { createSqlDatabaseAdapter } from "./databaseAdapters.svelte";
 import { isTauri } from "../platform";
+import { invoke } from "@tauri-apps/api/core";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
 import {
@@ -44,6 +45,12 @@ import {
   SQLITE_SCHEMA_VERSION,
   SqlSchemaResetRequiredError,
 } from "./relationalNodeCodec";
+import {
+  AsyncSerialQueue,
+  normalizeSqliteLimit,
+  normalizeSqlitePageEnd,
+  type SqliteTransactionStatement,
+} from "./sqliteStorageUtils";
 
 type SqlDatabase = import("@tauri-apps/plugin-sql").default;
 
@@ -68,8 +75,11 @@ export class TauriSqliteStorage implements ISqlStorage {
   readonly backendKind = "tauri-sqlite" as const;
 
   private db: SqlDatabase | null = null;
+  private dbPath: string | null = null;
   private revision = 0;
   private initialized = false;
+  private initPromise: Promise<boolean> | null = null;
+  private readonly writeQueue = new AsyncSerialQueue();
   private _enabled = false;
 
   isEnabled(): boolean {
@@ -81,19 +91,26 @@ export class TauriSqliteStorage implements ISqlStorage {
   }
 
   async init(): Promise<boolean> {
-    if (this.initialized) {
-      return this._enabled;
-    }
+    if (this.initialized) return this._enabled;
     if (!isTauri) {
       this.initialized = true;
       this._enabled = false;
       return false;
     }
+    if (!this.initPromise) {
+      this.initPromise = this.initialize().finally(() => {
+        this.initPromise = null;
+      });
+    }
+    return this.initPromise;
+  }
+
+  private async initialize(): Promise<boolean> {
     try {
       const sql = await getSQL();
       const appDir = await appDataDir();
-      const dbPath = await join(appDir, "risuai-local.sqlite3");
-      this.db = await sql.default.load(`sqlite:${dbPath}`);
+      this.dbPath = await join(appDir, "risuai-local.sqlite3");
+      this.db = await sql.default.load(`sqlite:${this.dbPath}`);
 
       const existingMeta = await this.db.select<{ name: string }[]>(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'system_storage_meta'",
@@ -116,21 +133,24 @@ export class TauriSqliteStorage implements ISqlStorage {
         }
       }
       await this.db.execute(sqliteSchemaSql);
-
-      // Read revision
       const rows = await this.db.select<
         { initialized: number; revision: number }[]
       >(
         "SELECT initialized, revision FROM system_storage_meta WHERE singleton = 1",
       );
-      if (rows && rows.length > 0) {
-        this.revision = Number(rows[0].revision) || 0;
-      }
+      if (rows.length > 0) this.revision = Number(rows[0].revision) || 0;
       this._enabled = true;
       this.initialized = true;
       return true;
     } catch (error) {
       console.error("TauriSqliteStorage init failed:", error);
+      try {
+        await this.db?.close(this.db.path);
+      } catch {
+        // Ignore cleanup failures and preserve the initialization error.
+      }
+      this.db = null;
+      this.dbPath = null;
       this.initialized = true;
       this._enabled = false;
       if (error instanceof SqlSchemaResetRequiredError) throw error;
@@ -364,44 +384,68 @@ export class TauriSqliteStorage implements ISqlStorage {
     return { status: "ready", revision: this.revision, database: db };
   }
 
-  async commit(commit: SqlCommit): Promise<SqlCommitResult> {
-    if (!this._enabled || !this.db)
-      throw new Error("SQLite storage is not enabled");
-    await this.execute("BEGIN IMMEDIATE");
+  private async executeNativeTransaction(
+    expectedRevision: number | null,
+    statements: SqliteTransactionStatement[],
+  ): Promise<void> {
+    if (!this.dbPath) throw new Error("SQLite storage is not enabled");
     try {
-      const meta = await this.selectOne<{ revision: number }>(
-        "SELECT revision FROM system_storage_meta WHERE singleton = 1",
-      );
-      const currentRevision = Number(meta?.revision) || 0;
-      if (commit.baseRevision !== currentRevision)
-        throw new SqlRevisionConflictError(currentRevision);
-      await this.validatePresetCommit(commit);
-      if (commit.replaceAll) {
-        await this.execute("DELETE FROM system_settings");
-        await this.execute("DELETE FROM plugin_custom_storage");
-        await this.execute("DELETE FROM characters");
-      }
-      await applySqliteCommit(commit, (sql, bind = []) =>
-        this.execute(sql, bind),
-      );
-      const revision = currentRevision + 1;
-      await this.execute(
-        "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
-        [revision],
-      );
-      const action =
-        commit.action || (commit.replaceAll ? "replace-all" : "sync");
-      await this.execute(
-        "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
-        [revision, action],
-      );
-      await this.execute("COMMIT");
-      this.revision = revision;
-      return { revision };
+      await invoke("sqlite_execute_transaction", {
+        expectedRevision,
+        statements,
+      });
     } catch (error) {
-      await this.execute("ROLLBACK").catch(() => undefined);
+      const message = String(error);
+      const marker = "RISU_SQL_REVISION_CONFLICT:";
+      const markerIndex = message.indexOf(marker);
+      if (markerIndex >= 0) {
+        const currentRevision = Number(message.slice(markerIndex + marker.length));
+        if (Number.isFinite(currentRevision)) {
+          throw new SqlRevisionConflictError(currentRevision);
+        }
+      }
       throw error;
     }
+  }
+
+  async commit(commit: SqlCommit): Promise<SqlCommitResult> {
+    return this.writeQueue.run(() => this.commitInternal(commit));
+  }
+
+  private async commitInternal(commit: SqlCommit): Promise<SqlCommitResult> {
+    if (!this._enabled || !this.db || !this.dbPath)
+      throw new Error("SQLite storage is not enabled");
+    const meta = await this.selectOne<{ revision: number }>(
+      "SELECT revision FROM system_storage_meta WHERE singleton = 1",
+    );
+    const currentRevision = Number(meta?.revision) || 0;
+    if (commit.baseRevision !== currentRevision)
+      throw new SqlRevisionConflictError(currentRevision);
+    await this.validatePresetCommit(commit);
+
+    const statements: SqliteTransactionStatement[] = [];
+    const append = async (sql: string, bind: unknown[] = []) => {
+      statements.push({ sql, bind });
+    };
+    if (commit.replaceAll) {
+      await append("DELETE FROM system_settings");
+      await append("DELETE FROM plugin_custom_storage");
+      await append("DELETE FROM characters");
+    }
+    await applySqliteCommit(commit, append);
+    const revision = currentRevision + 1;
+    await append(
+      "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
+      [revision],
+    );
+    const action = commit.action || (commit.replaceAll ? "replace-all" : "sync");
+    await append(
+      "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
+      [revision, action],
+    );
+    await this.executeNativeTransaction(currentRevision, statements);
+    this.revision = revision;
+    return { revision };
   }
 
   async replaceDatabase(
@@ -494,11 +538,12 @@ export class TauriSqliteStorage implements ISqlStorage {
       [chatId],
     );
     const total = Number(totalRow?.total ?? 0);
-    const limit = options?.messageLimit;
-    const offset =
-      limit === undefined
-        ? 0
-        : Math.max(0, total - Math.max(1, Math.floor(limit)));
+    const requestedLimit = options?.messageLimit;
+    const limit =
+      requestedLimit === undefined
+        ? undefined
+        : normalizeSqliteLimit(requestedLimit);
+    const offset = limit === undefined ? 0 : Math.max(0, total - limit);
     const msgRows =
       limit === undefined
         ? await this.selectRows<{ id: string }>(
@@ -553,8 +598,9 @@ export class TauriSqliteStorage implements ISqlStorage {
       [chatId],
     );
     const total = Number(totalRow?.total ?? 0);
-    const end = Math.min(total, Math.max(0, before ?? total));
-    const offset = Math.max(0, end - Math.max(1, Math.floor(limit)));
+    const end = normalizeSqlitePageEnd(before, total);
+    const normalizedLimit = normalizeSqliteLimit(limit);
+    const offset = Math.max(0, end - normalizedLimit);
     const msgRows = await this.selectRows<{ id: string }>(
       "SELECT id FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?",
       [chatId, end - offset, offset],
@@ -718,41 +764,64 @@ export class TauriSqliteStorage implements ISqlStorage {
   }
 
   async setColdStorageItem(key: string, value: unknown): Promise<boolean> {
-    await writeSqliteColdStorage(
-      (sql, bind = []) => this.execute(sql, bind),
-      key,
-      value,
-    );
-    return true;
+    return this.writeQueue.run(async () => {
+      const statements: SqliteTransactionStatement[] = [];
+      await writeSqliteColdStorage(
+        async (sql, bind = []) => {
+          statements.push({ sql, bind });
+        },
+        key,
+        value,
+      );
+      await this.executeNativeTransaction(null, statements);
+      return true;
+    });
   }
 
   async removeColdStorageItems(keys: string[]): Promise<number> {
     if (keys.length === 0) return 0;
-    const placeholders = keys.map(() => "?").join(",");
-    await this.execute(
-      `DELETE FROM cold_archives WHERE archive_id IN (${placeholders})`,
-      keys,
-    );
-    return keys.length;
+    return this.writeQueue.run(async () => {
+      const placeholders = keys.map(() => "?").join(",");
+      await this.executeNativeTransaction(null, [
+        {
+          sql: `DELETE FROM cold_archives WHERE archive_id IN (${placeholders})`,
+          bind: keys,
+        },
+      ]);
+      return keys.length;
+    });
   }
 
   async pruneColdStorage(retainedKeys: string[]): Promise<number> {
-    const allRows = await this.selectRows<{ archive_id: string }>(
-      "SELECT archive_id FROM cold_archives",
-    );
-    const toDelete = allRows
-      .map((r) => r.archive_id)
-      .filter((k) => !retainedKeys.includes(k));
-    return this.removeColdStorageItems(toDelete);
+    return this.writeQueue.run(async () => {
+      const allRows = await this.selectRows<{ archive_id: string }>(
+        "SELECT archive_id FROM cold_archives",
+      );
+      const toDelete = allRows
+        .map((r) => r.archive_id)
+        .filter((k) => !retainedKeys.includes(k));
+      if (toDelete.length === 0) return 0;
+      const placeholders = toDelete.map(() => "?").join(",");
+      await this.executeNativeTransaction(null, [
+        {
+          sql: `DELETE FROM cold_archives WHERE archive_id IN (${placeholders})`,
+          bind: toDelete,
+        },
+      ]);
+      return toDelete.length;
+    });
   }
 
   // ── Revisions ────────────────────────────────────────────────────────
 
   async listRevisions(limit?: number): Promise<NodePostgresRevision[]> {
-    const hasLimit = limit !== undefined && limit !== null && limit > 0;
+    const normalizedLimit =
+      limit !== undefined && Number.isFinite(limit) && limit > 0
+        ? normalizeSqliteLimit(limit)
+        : undefined;
     const sql =
       "SELECT id, storage_revision, database_initialized, scope, action, restored_from_revision, created_at FROM system_revisions ORDER BY created_at DESC, id DESC" +
-      (hasLimit ? " LIMIT ?" : "");
+      (normalizedLimit !== undefined ? " LIMIT ?" : "");
     const rows = await this.selectRows<{
       id: number;
       storage_revision: number | null;
@@ -761,7 +830,7 @@ export class TauriSqliteStorage implements ISqlStorage {
       action: string;
       restored_from_revision: number | null;
       created_at: string;
-    }>(sql, hasLimit ? [limit] : []);
+    }>(sql, normalizedLimit !== undefined ? [normalizedLimit] : []);
     return rows.map((r) => ({
       id: Number(r.id),
       storage_revision:
@@ -865,7 +934,7 @@ export class TauriSqliteStorage implements ISqlStorage {
       content_text: string | null;
     }>(
       `SELECT chat_id, id, position, role, sent_time, sender_name, content_text FROM messages WHERE content_text LIKE ? ORDER BY sent_time DESC LIMIT ?`,
-      [`%${query}%`, limit],
+      [`%${query}%`, normalizeSqliteLimit(limit)],
     );
     return rows.map((r) => {
       return {
@@ -1042,7 +1111,7 @@ export class TauriSqliteStorage implements ISqlStorage {
     }>(
       `SELECT DISTINCT c.id, c.name, c.image, c.kind FROM characters c
              JOIN character_tags t ON t.character_id = c.id WHERE t.tag LIKE ? LIMIT ?`,
-      [`%${tag}%`, limit],
+      [`%${tag}%`, normalizeSqliteLimit(limit)],
     );
     return rows.map((r) => ({
       id: r.id,
@@ -1063,7 +1132,7 @@ export class TauriSqliteStorage implements ISqlStorage {
       kind: string;
     }>(
       `SELECT id, name, image, kind FROM characters WHERE name LIKE ? LIMIT ?`,
-      [`%${name}%`, limit],
+      [`%${name}%`, normalizeSqliteLimit(limit)],
     );
     return rows.map((r) => ({
       id: r.id,
