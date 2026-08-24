@@ -2,6 +2,7 @@ package io.github.nevaeh5379.androidhaejeokrisuai
 
 import io.github.nevaeh5379.androidhaejeokrisuai.data.CharacterProfile
 import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
+import io.github.nevaeh5379.androidhaejeokrisuai.data.LoreEntry
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.TriggerScript
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeTriggerProcessor
@@ -272,6 +273,49 @@ class NativeTriggerV2ProcessorTest {
         assertEquals("note-new", result.variables["note"])
         assertEquals("global-new", result.variables["global"])
         assertEquals("new Alice|note-new\n\n", result.promptInjection.promptEnd)
+    }
+
+    @Test
+    fun readOnlyPersonaLorebookAndQuickSearchEffectsUseNativeRuntimeState() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf("type" to "v2GetPersonaDesc", "outputVar" to "persona", "indent" to 0),
+            mapOf("type" to "v2QuickSearchChat", "value" to "SECRET", "valueType" to "value", "depth" to "2", "depthType" to "value", "condition" to "loose", "outputVar" to "found", "indent" to 0),
+            mapOf("type" to "v2GetAllLorebooks", "outputVar" to "all", "indent" to 0),
+            mapOf("type" to "v2GetLorebookByName", "name" to "combat|world", "nameType" to "value", "outputVar" to "indices", "indent" to 0),
+            mapOf("type" to "v2GetLorebookByIndex", "index" to "1", "indexType" to "value", "outputVar" to "second", "indent" to 0),
+            mapOf("type" to "v2GetLorebook", "target" to "dragon", "targetType" to "value", "outputVar" to "bykey", "indent" to 0),
+            mapOf("type" to "v2GetLorebookIndexViaName", "name" to "Combat", "nameType" to "value", "outputVar" to "exactIndex", "indent" to 0),
+            mapOf("type" to "v2GetLorebookCountNew", "outputVar" to "count", "indent" to 0),
+        )
+        val trigger = TriggerScript("read", "start", effects = effects)
+        val character = CharacterProfile(
+            "c", "Lua",
+            globalLore = listOf(
+                LoreEntry(key = "dragon", comment = "World", content = "Dragons exist."),
+                LoreEntry(key = "sword", comment = "Combat", content = "Swords are sharp."),
+            ),
+            triggerScripts = listOf(trigger),
+        )
+        val result = NativeTriggerProcessor.run(
+            mode = "start",
+            settings = settings.copy(personaPrompt = "A curious traveler"),
+            character = character,
+            messages = listOf(
+                MessageRecord("m0", "chat", "user", "old secret"),
+                MessageRecord("m1", "chat", "char", "ordinary"),
+                MessageRecord("m2", "chat", "user", "SECRET door"),
+            ),
+            variables = emptyMap(), chatId = "chat",
+        )
+        assertEquals("A curious traveler", result.variables["persona"])
+        assertEquals("1", result.variables["found"])
+        assertEquals("[\"Dragons exist.\",\"Swords are sharp.\"]", result.variables["all"])
+        assertEquals("[0,1]", result.variables["indices"])
+        assertEquals("Swords are sharp.", result.variables["second"])
+        assertEquals("Dragons exist.", result.variables["bykey"])
+        assertEquals("1", result.variables["exactIndex"])
+        assertEquals("2", result.variables["count"])
     }
 
 }

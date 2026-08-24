@@ -433,6 +433,10 @@ internal object NativeTriggerV2Processor {
                     setVar(parse(effect["outputVar"]), runtimeCharacter.description)
                     pc++
                 }
+                "v2GetPersonaDesc" -> {
+                    setVar(parse(effect["outputVar"]), settings.personaPrompt)
+                    pc++
+                }
                 "v2SetCharacterDesc" -> {
                     val value = resolve(effect["value"], effect["valueType"])
                     runtimePatch = runtimePatch.copy(characterDescription = value)
@@ -518,6 +522,59 @@ internal object NativeTriggerV2Processor {
                     val expression = resolve(effect["expression"], effect["expressionType"])
                     val result = runCatching { NativeRisuCalculator.calculate(expression, ::getVar) }.getOrDefault(0.0)
                     setVar(parse(effect["outputVar"]), jsNumberString(result))
+                    pc++
+                }
+                "v2QuickSearchChat" -> {
+                    val value = resolve(effect["value"], effect["valueType"])
+                    val depthNumber = jsNumber(resolve(effect["depth"], effect["depthType"]))
+                    val matched = if (depthNumber.isNaN()) false else {
+                        val depth = depthNumber.toInt()
+                        val scoped = when {
+                            depth == 0 -> working
+                            depth > 0 -> working.takeLast(depth)
+                            else -> working.drop((-depth).coerceAtMost(working.size))
+                        }
+                        val haystack = scoped.joinToString(" ") { it.data }
+                        when (effect["condition"]?.toString()) {
+                            "strict" -> haystack.split(" ").contains(value)
+                            "loose" -> haystack.contains(value, ignoreCase = true)
+                            "regex" -> runCatching { Regex(value).containsMatchIn(haystack) }.getOrDefault(false)
+                            else -> false
+                        }
+                    }
+                    setVar(parse(effect["outputVar"]), if (matched) "1" else "0")
+                    pc++
+                }
+                "v2GetAllLorebooks" -> {
+                    setVar(parse(effect["outputVar"]), NativeRisuParser.stringifyJson(runtimeCharacter.globalLore.map { it.content }))
+                    pc++
+                }
+                "v2GetLorebookByName" -> {
+                    val name = resolve(effect["name"], effect["nameType"])
+                    val indices = runCatching {
+                        val regex = Regex(name, RegexOption.IGNORE_CASE)
+                        runtimeCharacter.globalLore.mapIndexedNotNull { index, lore -> index.takeIf { regex.containsMatchIn(lore.comment) } }
+                    }.getOrDefault(emptyList())
+                    setVar(parse(effect["outputVar"]), NativeRisuParser.stringifyJson(indices))
+                    pc++
+                }
+                "v2GetLorebookByIndex", "v2GetLorebookEntry" -> {
+                    val index = jsArrayIndex(resolve(effect["index"], effect["indexType"]))
+                    setVar(parse(effect["outputVar"]), runtimeCharacter.globalLore.getOrNull(index)?.content ?: "null")
+                    pc++
+                }
+                "v2GetLorebookCountNew", "v2GetLorebookCount" -> {
+                    setVar(parse(effect["outputVar"]), runtimeCharacter.globalLore.size.toString())
+                    pc++
+                }
+                "v2GetLorebook" -> {
+                    val target = resolve(effect["target"], effect["targetType"])
+                    setVar(parse(effect["outputVar"]), runtimeCharacter.globalLore.firstOrNull { it.key == target }?.content ?: "null")
+                    pc++
+                }
+                "v2GetLorebookIndexViaName" -> {
+                    val name = resolve(effect["name"], effect["nameType"])
+                    setVar(parse(effect["outputVar"]), runtimeCharacter.globalLore.indexOfFirst { it.comment == name }.toString())
                     pc++
                 }
                 "v2RegexTest" -> {
