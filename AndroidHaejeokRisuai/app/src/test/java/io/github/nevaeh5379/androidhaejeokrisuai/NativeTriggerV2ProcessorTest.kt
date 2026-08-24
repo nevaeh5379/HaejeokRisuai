@@ -158,5 +158,34 @@ class NativeTriggerV2ProcessorTest {
         assertEquals(listOf("b"), result.messages.map(MessageRecord::id))
         assertFalse(result.stopSending)
     }
+
+    @Test
+    fun pureMessageStringArrayAndRegexEffectsComposeInOneProgram() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf("type" to "v2GetMessageCount", "outputVar" to "count", "indent" to 0),
+            mapOf("type" to "v2GetLastMessage", "outputVar" to "last", "indent" to 0),
+            mapOf("type" to "v2MakeArrayVar", "var" to "arr", "indent" to 0),
+            mapOf("type" to "v2PushArrayVar", "var" to "arr", "valueType" to "value", "value" to "a", "indent" to 0),
+            mapOf("type" to "v2PushArrayVar", "var" to "arr", "valueType" to "value", "value" to "b", "indent" to 0),
+            mapOf("type" to "v2GetArrayVarLength", "var" to "arr", "outputVar" to "len", "indent" to 0),
+            mapOf("type" to "v2PopArrayVar", "var" to "arr", "outputVar" to "popped", "indent" to 0),
+            mapOf("type" to "v2UnshiftArrayVar", "var" to "arr", "valueType" to "value", "value" to "z", "indent" to 0),
+            mapOf("type" to "v2JoinArrayVar", "var" to "arr", "varType" to "var", "delimiter" to "|", "delimiterType" to "value", "outputVar" to "joined", "indent" to 0),
+            mapOf("type" to "v2SplitString", "source" to "a,b,", "sourceType" to "value", "delimiter" to ",", "delimiterType" to "value", "outputVar" to "split", "indent" to 0),
+            mapOf("type" to "v2RegexTest", "value" to "abc123", "valueType" to "value", "regex" to "\\d+", "regexType" to "value", "flags" to "", "flagsType" to "value", "outputVar" to "matched", "indent" to 0),
+            mapOf("type" to "v2ExtractRegex", "value" to "abc123", "valueType" to "value", "regex" to "([a-z]+)(\\d+)", "regexType" to "value", "flags" to "", "flagsType" to "value", "result" to "$2-$1-$$-$&", "resultType" to "value", "outputVar" to "extracted", "indent" to 0),
+        )
+        val result = run(effects)
+        assertEquals("1", result.variables["count"])
+        assertEquals("hello", result.variables["last"])
+        assertEquals("2", result.variables["len"])
+        assertEquals("b", result.variables["popped"])
+        assertEquals("z|a", result.variables["joined"])
+        assertEquals("[\"a\",\"b\",\"\"]", result.variables["split"])
+        assertEquals("1", result.variables["matched"])
+        assertEquals("123-abc-$-abc123", result.variables["extracted"])
+    }
+
 }
 

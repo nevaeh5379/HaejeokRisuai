@@ -50,6 +50,13 @@ internal object NativeRisuParser {
     internal fun jsonArrayContains(text: String, needle: String): Boolean? =
         JsonLite.parseArray(text)?.any { value -> value is String && value == needle }
 
+    internal fun parseJsonArray(text: String): MutableList<Any?>? =
+        JsonLite.parseArray(text)?.toMutableList()
+
+    internal fun stringifyJson(value: Any?): String = JsonLite.stringify(value)
+
+    internal fun jsonValueString(value: Any?): String = JsonLite.slotString(value)
+
     private fun render(text: String, context: NativeRisuParserContext, depth: Int): String {
         if (text.isEmpty() || depth >= MAX_DEPTH) return evaluateInline(text, context)
         val opening = findNextBlockOpening(text) ?: return evaluateInline(text, context)

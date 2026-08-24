@@ -237,11 +237,244 @@ internal object NativeTriggerV2Processor {
                     )
                     pc++
                 }
+                "v2GetLastMessage" -> {
+                    setVar(parse(effect["outputVar"]), working.lastOrNull()?.data ?: "null")
+                    pc++
+                }
+                "v2GetMessageAtIndex" -> {
+                    val index = jsArrayIndex(resolve(effect["index"], effect["indexType"]))
+                    setVar(parse(effect["outputVar"]), working.getOrNull(index)?.data ?: "null")
+                    pc++
+                }
+                "v2GetMessageCount" -> {
+                    setVar(parse(effect["outputVar"]), working.size.toString())
+                    pc++
+                }
+                "v2GetLastUserMessage" -> {
+                    setVar(parse(effect["outputVar"]), working.asReversed().firstOrNull { it.role == "user" }?.data ?: "null")
+                    pc++
+                }
+                "v2GetLastCharMessage" -> {
+                    setVar(parse(effect["outputVar"]), working.asReversed().firstOrNull { it.role == "char" }?.data ?: "null")
+                    pc++
+                }
+                "v2GetFirstMessage" -> {
+                    val first = if (greetingIndex == -1) character.firstMessage
+                        else character.alternateGreetings.getOrNull(greetingIndex) ?: "null"
+                    setVar(parse(effect["outputVar"]), first)
+                    pc++
+                }
+                "v2Random" -> {
+                    val min = jsNumber(resolve(effect["min"], effect["minType"]))
+                    val max = jsNumber(resolve(effect["max"], effect["maxType"]))
+                    val value = kotlin.math.floor(Math.random() * (max - min + 1.0) + min)
+                    setVar(parse(effect["outputVar"]), jsNumberString(value))
+                    pc++
+                }
+                "v2GetCharAt" -> {
+                    val source = resolve(effect["source"], effect["sourceType"])
+                    val index = jsArrayIndex(resolve(effect["index"], effect["indexType"]))
+                    setVar(parse(effect["outputVar"]), source.getOrNull(index)?.toString() ?: "null")
+                    pc++
+                }
+                "v2GetCharCount" -> {
+                    setVar(parse(effect["outputVar"]), resolve(effect["source"], effect["sourceType"]).length.toString())
+                    pc++
+                }
+                "v2ToLowerCase" -> {
+                    setVar(parse(effect["outputVar"]), resolve(effect["source"], effect["sourceType"]).lowercase())
+                    pc++
+                }
+                "v2ToUpperCase" -> {
+                    setVar(parse(effect["outputVar"]), resolve(effect["source"], effect["sourceType"]).uppercase())
+                    pc++
+                }
+                "v2ConcatString" -> {
+                    val left = resolve(effect["source1"], effect["source1Type"])
+                    val right = resolve(effect["source2"], effect["source2Type"])
+                    setVar(parse(effect["outputVar"]), left + right)
+                    pc++
+                }
+                "v2SetCharAt" -> {
+                    val source = resolve(effect["source"], effect["sourceType"])
+                    val index = jsArrayIndex(resolve(effect["index"], effect["indexType"]))
+                    val value = resolve(effect["value"], effect["valueType"])
+                    val chars = source.codePoints().toArray().map { String(Character.toChars(it)) }.toMutableList()
+                    if (index >= 0) {
+                        while (chars.size < index) chars += ""
+                        if (index < chars.size) chars[index] = value else if (index == chars.size) chars += value
+                    }
+                    setVar(parse(effect["outputVar"]), chars.joinToString(""))
+                    pc++
+                }
+                "v2SplitString" -> {
+                    val source = resolve(effect["source"], effect["sourceType"])
+                    val delimiter = if (effect["delimiterType"]?.toString() == "var")
+                        getVar(parse(effect["delimiter"])) else parse(effect["delimiter"])
+                    val parts = if (effect["delimiterType"]?.toString() == "regex")
+                        splitRegex(source, delimiter) else splitLiteral(source, delimiter)
+                    setVar(parse(effect["outputVar"]), NativeRisuParser.stringifyJson(parts))
+                    pc++
+                }
+                "v2JoinArrayVar" -> {
+                    val raw = resolve(effect["var"], effect["varType"])
+                    val delimiter = resolve(effect["delimiter"], effect["delimiterType"])
+                    val arr = NativeRisuParser.parseJsonArray(raw)
+                    val joined = arr?.joinToString(delimiter) { jsJoinValue(it) } ?: ""
+                    setVar(parse(effect["outputVar"]), joined)
+                    pc++
+                }
+                "v2MakeArrayVar" -> {
+                    val key = parse(effect["var"])
+                    if (key.startsWith("[") && key.endsWith("]")) return returnResult()
+                    setVar(key, "[]")
+                    pc++
+                }
+                "v2GetArrayVarLength" -> {
+                    val key = parse(effect["var"])
+                    val size = NativeRisuParser.parseJsonArray(getVar(key))?.size ?: 0
+                    setVar(parse(effect["outputVar"]), size.toString())
+                    pc++
+                }
+                "v2GetArrayVar" -> {
+                    val key = parse(effect["var"])
+                    val arr = NativeRisuParser.parseJsonArray(getVar(key))
+                    val index = jsArrayIndex(resolve(effect["index"], effect["indexType"]))
+                    setVar(parse(effect["outputVar"]), arr?.getOrNull(index)?.let(NativeRisuParser::jsonValueString) ?: "null")
+                    pc++
+                }
+                "v2SetArrayVar" -> {
+                    val key = parse(effect["var"])
+                    val arr = NativeRisuParser.parseJsonArray(getVar(key))
+                    val index = jsArrayIndex(resolve(effect["index"], effect["indexType"]))
+                    if (arr != null && index >= 0) {
+                        while (arr.size < index) arr += null
+                        val value = resolve(effect["value"], effect["valueType"])
+                        if (index < arr.size) arr[index] = value else arr += value
+                        setVar(key, NativeRisuParser.stringifyJson(arr))
+                    }
+                    pc++
+                }
+                "v2PushArrayVar", "v2UnshiftArrayVar" -> {
+                    val key = parse(effect["var"])
+                    val arr = NativeRisuParser.parseJsonArray(getVar(key))
+                    if (arr == null) setVar(key, "[]") else {
+                        val value = resolve(effect["value"], effect["valueType"])
+                        if (type == "v2PushArrayVar") arr += value else arr.add(0, value)
+                        setVar(key, NativeRisuParser.stringifyJson(arr))
+                    }
+                    pc++
+                }
+                "v2PopArrayVar", "v2ShiftArrayVar" -> {
+                    val key = parse(effect["var"])
+                    val arr = NativeRisuParser.parseJsonArray(getVar(key))
+                    if (arr == null) {
+                        setVar(key, "[]")
+                        setVar(parse(effect["outputVar"]), "null")
+                    } else {
+                        val removed = if (arr.isEmpty()) null else if (type == "v2PopArrayVar") arr.removeAt(arr.lastIndex) else arr.removeAt(0)
+                        setVar(parse(effect["outputVar"]), removed?.let(NativeRisuParser::jsonValueString) ?: "null")
+                        setVar(key, NativeRisuParser.stringifyJson(arr))
+                    }
+                    pc++
+                }
+                "v2SpliceArrayVar" -> {
+                    val key = parse(effect["var"])
+                    val arr = NativeRisuParser.parseJsonArray(getVar(key))
+                    if (arr == null) setVar(key, "[]") else {
+                        val start = jsSliceIndex(resolve(effect["start"], effect["startType"]), arr.size, 0)
+                        arr.add(start, resolve(effect["item"], effect["itemType"]))
+                        setVar(key, NativeRisuParser.stringifyJson(arr))
+                    }
+                    pc++
+                }
+                "v2SliceArrayVar" -> {
+                    val key = parse(effect["var"])
+                    val arr = NativeRisuParser.parseJsonArray(getVar(key))
+                    if (arr == null) {
+                        setVar(parse(effect["outputVar"]), "[]")
+                    } else {
+                        val start = jsSliceIndex(resolve(effect["start"], effect["startType"]), arr.size, 0)
+                        val end = jsSliceIndex(resolve(effect["end"], effect["endType"]), arr.size, 0)
+                        val sliced = if (start < end) arr.subList(start, end).toList() else emptyList()
+                        setVar(parse(effect["outputVar"]), NativeRisuParser.stringifyJson(sliced))
+                    }
+                    pc++
+                }
+                "v2GetIndexOfValueInArrayVar" -> {
+                    val key = parse(effect["var"])
+                    val value = resolve(effect["value"], effect["valueType"])
+                    val arr = NativeRisuParser.parseJsonArray(getVar(key))
+                    val index = arr?.indexOfFirst { it is String && it == value } ?: -1
+                    setVar(parse(effect["outputVar"]), index.toString())
+                    pc++
+                }
+                "v2RemoveIndexFromArrayVar" -> {
+                    val key = parse(effect["var"])
+                    val arr = NativeRisuParser.parseJsonArray(getVar(key))
+                    if (arr == null) setVar(key, "[]") else {
+                        val indexRaw = resolve(effect["index"], effect["indexType"])
+                        val index = jsSpliceIndex(indexRaw, arr.size)
+                        if (index in arr.indices) arr.removeAt(index)
+                        setVar(key, NativeRisuParser.stringifyJson(arr))
+                    }
+                    pc++
+                }
+                "v2RegexTest" -> {
+                    val value = resolve(effect["value"], effect["valueType"])
+                    val pattern = resolve(effect["regex"], effect["regexType"])
+                    val flags = resolve(effect["flags"], effect["flagsType"])
+                    val matched = runCatching { findJsRegex(value, pattern, flags) != null }.getOrDefault(false)
+                    setVar(parse(effect["outputVar"]), if (matched) "1" else "0")
+                    pc++
+                }
+                "v2ExtractRegex" -> {
+                    val value = resolve(effect["value"], effect["valueType"])
+                    val pattern = resolve(effect["regex"], effect["regexType"])
+                    val flags = resolve(effect["flags"], effect["flagsType"])
+                    val format = resolve(effect["result"], effect["resultType"])
+                    val result = runCatching {
+                        expandRegexTemplate(format, findJsRegex(value, pattern, flags))
+                    }.getOrElse { expandRegexTemplate(format, null) }
+                    setVar(parse(effect["outputVar"]), result)
+                    pc++
+                }
                 else -> pc++
             }
         }
         return returnResult()
     }
+
+    private fun splitLiteral(source: String, delimiter: String): List<Any?> {
+        if (delimiter.isEmpty()) return source.map { it.toString() }
+        val result = mutableListOf<Any?>()
+        var start = 0
+        while (true) {
+            val index = source.indexOf(delimiter, start)
+            if (index < 0) {
+                result += source.substring(start)
+                return result
+            }
+            result += source.substring(start, index)
+            start = index + delimiter.length
+        }
+    }
+
+    private fun splitRegex(source: String, delimiter: String): List<Any?> = runCatching {
+        val wrapped = Regex("^/(.+)/([gimuy]*)$").matchEntire(delimiter)
+        val pattern = wrapped?.groupValues?.get(1) ?: delimiter
+        val flags = wrapped?.groupValues?.get(2).orEmpty()
+        val regex = compileJsRegex(pattern, flags)
+        val result = mutableListOf<Any?>()
+        var end = 0
+        for (match in regex.findAll(source)) {
+            result += source.substring(end, match.range.first)
+            for (index in 1 until match.groups.size) result += match.groups[index]?.value
+            end = match.range.last + 1
+        }
+        result += source.substring(end)
+        result
+    }.getOrElse { listOf(source) }
 
     private fun compare(source: String, target: String, operator: String): Boolean {
         val sourceNumber = jsNumber(source)
@@ -268,6 +501,39 @@ internal object NativeTriggerV2Processor {
             else -> false
         }
     }
+
+    private fun compileJsRegex(pattern: String, flags: String): Regex {
+        val options = buildSet {
+            if ('i' in flags) add(RegexOption.IGNORE_CASE)
+            if ('m' in flags) add(RegexOption.MULTILINE)
+            if ('s' in flags) add(RegexOption.DOT_MATCHES_ALL)
+        }
+        return Regex(pattern, options)
+    }
+
+    private fun findJsRegex(source: String, pattern: String, flags: String): MatchResult? {
+        val match = compileJsRegex(pattern, flags).find(source) ?: return null
+        return if ('y' !in flags || match.range.first == 0) match else null
+    }
+
+    private fun expandRegexTemplate(template: String, match: MatchResult?): String = template
+        .replace(Regex("\\$[0-9]+")) { token ->
+            val index = token.value.drop(1).toIntOrNull() ?: return@replace ""
+            match?.groupValues?.getOrNull(index).orEmpty()
+        }
+        .replace("\$&", match?.value.orEmpty())
+        .replace("\$\$", "\$")
+
+    private fun jsJoinValue(value: Any?): String = when (value) {
+        null -> ""
+        is String -> value
+        is Boolean -> value.toString()
+        is Number -> jsNumberString(value.toDouble())
+        is List<*> -> value.joinToString(",") { jsJoinValue(it) }
+        else -> value.toString()
+    }
+
+    private fun jsSpliceIndex(value: String, size: Int): Int = jsSliceIndex(value, size, 0)
 
     private fun jsNumber(value: String): Double {
         val normalized = value.trim()
