@@ -1,6 +1,7 @@
 import { vi } from "vitest";
 import { describe, expect, it, beforeEach } from "vitest";
 import {
+  cancelInactiveChatMessageRelease,
   messageStore,
   releaseInactiveChatMessages,
 } from "./messageStore.svelte";
@@ -98,6 +99,29 @@ describe("messageStore", () => {
       await vi.runAllTimersAsync();
       expect(character.chats[1].message).toEqual([]);
       expect(character.chats[1].messagesLoaded).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels stale idle eviction before the next character starts loading", async () => {
+    vi.useFakeTimers();
+    try {
+      const character = characterStore.characters[0];
+      character.chats.push({
+        id: "chat-2",
+        name: "Chat 2",
+        message: [{ chatId: "msg-old", role: "char", data: "old" }],
+        messagesLoaded: true,
+        messagesFullyLoaded: true,
+      } as any);
+
+      releaseInactiveChatMessages("chat-1");
+      cancelInactiveChatMessageRelease();
+
+      await vi.runAllTimersAsync();
+      expect(character.chats[1].message).toHaveLength(1);
+      expect(character.chats[1].messagesLoaded).not.toBe(false);
     } finally {
       vi.useRealTimers();
     }

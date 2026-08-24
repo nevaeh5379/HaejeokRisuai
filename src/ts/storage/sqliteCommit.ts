@@ -346,6 +346,13 @@ export async function applySqliteCommit(
           );
       }
   }
+  for (const touch of commit.characterTouches ?? []) {
+    await execute(
+      "UPDATE characters SET last_interaction_time = ?, updated_at = datetime('now') WHERE id = ?",
+      [touch.lastInteraction, touch.id],
+    );
+  }
+
   if (commit.characterIds !== undefined) {
     if (!commit.characterIds.length) await execute("DELETE FROM characters");
     else

@@ -1406,6 +1406,20 @@ class AzureStorage extends SqlStorageBase {
                 }
             }
 
+            if (payload.characterTouches.length > 0) {
+                for (const touch of payload.characterTouches) {
+                    const touchRequest = tx.request();
+                    touchRequest.input('character_touch_id', this.sql.NVarChar(450), touch.id);
+                    touchRequest.input('character_touch_time', this.sql.BigInt, touch.lastInteraction);
+                    await touchRequest.query(`
+                        UPDATE [character].[characters]
+                        SET last_interaction_time = @character_touch_time,
+                            updated_at = SYSDATETIMEOFFSET()
+                        WHERE id = @character_touch_id
+                    `);
+                }
+            }
+
             // 5. Chats
             if (payload.chats && payload.chats.length > 0) {
                 if (onProgress) onProgress({ stage: 'chats', message: `Inserting ${payload.chats.length} chats` });

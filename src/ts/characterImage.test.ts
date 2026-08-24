@@ -106,6 +106,22 @@ describe("getCharImagesBatch", () => {
     vi.unstubAllGlobals();
   });
 
+  it("bounds full-resolution character blobs while browsing many bots", () => {
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(), revokeObjectURL });
+    mocks.settingsState.lowSpecMode = true;
+
+    for (let index = 0; index < 7; index++) {
+      fullImageBlobCache.set(`assets/full-${index}.png`, `blob:full-${index}`);
+    }
+
+    expect(fullImageBlobCache.size).toBe(4);
+    expect(fullImageBlobCache.has("assets/full-0.png")).toBe(false);
+    expect(fullImageBlobCache.has("assets/full-6.png")).toBe(true);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:full-0");
+    vi.unstubAllGlobals();
+  });
+
   it("releases only matching cached blob URLs", () => {
     const revokeObjectURL = vi.fn();
     vi.stubGlobal("URL", { createObjectURL: vi.fn(), revokeObjectURL });

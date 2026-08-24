@@ -237,6 +237,11 @@ export const messageStore = new MessageStore();
 
 let inactiveReleaseGeneration = 0;
 
+/** Cancel any idle eviction work from a previous character/chat transition. */
+export function cancelInactiveChatMessageRelease(): void {
+  inactiveReleaseGeneration += 1;
+}
+
 function evictInactiveChatMessages(chats: Chat[], activeChatId?: string): void {
   for (const chat of chats) {
     if (!chat.id || chat.id === activeChatId) continue;
@@ -287,7 +292,10 @@ export function releaseInactiveChatMessages(activeChatId?: string): void {
     for (const char of characterStore.characters) {
       if (!char.chats) continue;
       for (const chat of char.chats) {
-        if (chat.id && chat.id !== activeChatId) inactiveChats.push(chat);
+        if (!chat.id || chat.id === activeChatId) continue;
+        if (chat.preventMessageCompaction) continue;
+        if (chat.messagesLoaded === false || !chat.message?.length) continue;
+        inactiveChats.push(chat);
       }
     }
 

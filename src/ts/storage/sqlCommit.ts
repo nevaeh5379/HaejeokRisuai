@@ -20,6 +20,11 @@ export interface SqlCharacterUpsert {
   data: unknown;
 }
 
+export interface SqlCharacterTouch {
+  id: string;
+  lastInteraction: number;
+}
+
 export interface SqlChatUpsert {
   id: string;
   characterId: string;
@@ -66,6 +71,7 @@ export interface SqlCommit {
     activeId?: string;
   };
   characters: SqlCharacterUpsert[];
+  characterTouches?: SqlCharacterTouch[];
   characterIds?: string[];
   chats: SqlChatUpsert[];
   chatManifests: { characterId: string; ids: string[] }[];
@@ -94,6 +100,7 @@ export function createEmptySqlCommit(
     action,
     root: { upserts: [], deletes: [] },
     characters: [],
+    characterTouches: [],
     chats: [],
     chatManifests: [],
     messages: [],
@@ -121,6 +128,7 @@ export function hasSqlCommitChanges(commit: SqlCommit): boolean {
         commit.presets.activeId !== undefined),
     ) ||
     commit.characters.length > 0 ||
+    (commit.characterTouches !== undefined && commit.characterTouches.length > 0) ||
     commit.characterIds !== undefined ||
     commit.chats.length > 0 ||
     commit.chatManifests.length > 0 ||

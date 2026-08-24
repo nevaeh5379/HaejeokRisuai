@@ -2391,6 +2391,17 @@ class PostgresStorage extends SqlStorageBase {
             await prunePositionalChildren(client, 'character.lore_entries', 'character_id',
                 splitCharacters.map((c) => ({ ownerId: c.core.id, length: (c.lore || []).length })));
 
+            if (payload.characterTouches.length > 0) {
+                for (const touch of payload.characterTouches) {
+                    await client.query(
+                        `UPDATE character.characters
+                         SET last_interaction_time = $2, updated_at = NOW()
+                         WHERE id = $1`,
+                        [touch.id, touch.lastInteraction]
+                    );
+                }
+            }
+
             onProgress?.({ stage: 'chats', message: `Syncing chats (${payload.chats.length})`, count: payload.chats.length });
             const splitChats = payload.chats.map(splitChat);
             const chatColumns = ['id', 'character_id', 'position', 'name', 'note', 'sd_data', 'supa_memory_data', 'last_memory', 'is_streaming', 'streaming_optimization_mode', 'bound_persona_id', 'first_message_index', 'folder_id', 'last_message_time'];

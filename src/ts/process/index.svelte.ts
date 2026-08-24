@@ -290,7 +290,7 @@ export async function sendChat(
     doingChat.set(false);
     return false;
   }
-  nowChatroom.lastInteraction = Date.now();
+  characterStore.touchCharacterInteraction(selectedChar);
   selectedChat = nowChatroom.chatPage;
   // Prompt construction, scripts, and memory systems require absolute chat
   // history. The chat screen itself stays paged, but generation hydrates the

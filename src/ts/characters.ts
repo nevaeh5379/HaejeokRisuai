@@ -52,6 +52,7 @@ import { importCharacter } from "./characterCards";
 import { PngChunk } from "./pngChunk";
 import { getColdStorageItem, preLoadChat } from "./process/coldstorage.svelte";
 import {
+  cancelInactiveChatMessageRelease,
   releaseInactiveChatMessages,
   messageStore,
 } from "./stores/domain/messageStore.svelte";
@@ -666,15 +667,28 @@ export function characterFormatUpdate(
     typeof indexOrCharacter === "number"
       ? getCharacterByIndex(indexOrCharacter)
       : indexOrCharacter;
+  const characterIndex =
+    typeof indexOrCharacter === "number" ? indexOrCharacter : null;
   if (formattedCharacters.has(cha)) {
     if (arg.updateInteraction) {
-      cha.lastInteraction = Date.now();
-      if (typeof indexOrCharacter === "number") {
-        setCharacterByIndex(indexOrCharacter, cha);
+      const interactionTime = Date.now();
+      if (characterIndex !== null) {
+        characterStore.touchCharacterInteraction(characterIndex, interactionTime);
+      } else {
+        cha.lastInteraction = interactionTime;
       }
     }
     return cha;
   }
+
+  // SQL lazy hydration already gives us the persisted character object. Most of
+  // the assignments below are runtime default normalization and must not turn a
+  // first visit into a rewrite of every asset/lore/script relational row.
+  const sqlHydrated = characterIndex !== null && cha.detailsLoaded === true;
+  let needsFullCharacterPersistence = false;
+  let chatManifestChanged = false;
+  const dirtyChatIds = new Set<string>();
+
   if (cha.chats.length === 0) {
     cha.chats = [
       {
@@ -684,18 +698,22 @@ export function characterFormatUpdate(
         localLore: [],
       },
     ];
+    chatManifestChanged = true;
   }
   if (!cha.chats[cha.chatPage]) {
     cha.chatPage = 0;
+    needsFullCharacterPersistence = true;
   }
   if (!cha.chats[cha.chatPage].message) {
     cha.chats[cha.chatPage].message = [];
   }
   if (!cha.type) {
     cha.type = "character";
+    needsFullCharacterPersistence = true;
   }
   if (!cha.chaId) {
     cha.chaId = uuidv4();
+    needsFullCharacterPersistence = true;
   }
   if (cha.type !== "group") {
     if (checkNullish(cha.sdData)) {
@@ -730,6 +748,9 @@ export function characterFormatUpdate(
       cha.chats[cha.chatPage].note += "\n" + cha.postHistoryInstructions;
       cha.chats[cha.chatPage].note = cha.chats[cha.chatPage].note.trim();
       cha.postHistoryInstructions = null;
+      needsFullCharacterPersistence = true;
+      const activeChatId = cha.chats[cha.chatPage].id;
+      if (activeChatId) dirtyChatIds.add(activeChatId);
     }
     cha.additionalText ??= "";
     cha.depth_prompt ??= {
@@ -743,14 +764,17 @@ export function characterFormatUpdate(
     cha.backgroundHTML ??= "";
     cha.backgroundCSS ??= "";
     cha.creation_date ??= Date.now();
-    cha.globalLore = updateLorebooks(cha.globalLore);
+    // Lore normalization can touch a very large tree. Apply the legacy migration
+    // in memory, but do not rewrite every lore/asset row merely because the bot
+    // was opened; a later real character edit will persist the normalized form.
+    cha.globalLore = updateLorebooks(cha.globalLore ?? []);
     if (!cha.newGenData) {
       cha = updateInlayScreen(cha);
     }
-    // Migrate legacy 'none' value to '' for UI dropdown compatibility
-    // Using '' because it's falsy, so `if (ttsMode)` correctly detects enabled TTS
+    // Migrate legacy 'none' value to '' for UI dropdown compatibility.
     if (cha.ttsMode === "none") {
       cha.ttsMode = "";
+      needsFullCharacterPersistence = true;
     }
     cha.ttsMode ??= "";
   } else {
@@ -762,6 +786,7 @@ export function characterFormatUpdate(
       for (let i = 0; i < cha.characters.length; i++) {
         cha.characterTalks.push((1 / 6) * 4);
       }
+      needsFullCharacterPersistence = true;
     }
     if (
       !cha.characterActive ||
@@ -771,26 +796,52 @@ export function characterFormatUpdate(
       for (let i = 0; i < cha.characters.length; i++) {
         cha.characterActive.push(true);
       }
+      needsFullCharacterPersistence = true;
     }
   }
   if (checkNullish(cha.customscript)) {
     cha.customscript = [];
   }
-  if (arg.updateInteraction) {
-    cha.lastInteraction = Date.now();
-  }
-  formattedCharacters.add(cha);
-  if (typeof indexOrCharacter === "number") {
-    setCharacterByIndex(indexOrCharacter, cha);
-  }
+
   for (let i = 0; i < cha.chats.length; i++) {
     const chat = cha.chats[i];
-    chat.fmIndex ??= cha.firstMsgIndex ?? -1;
+    let chatChanged = false;
+    if (chat.fmIndex === undefined || chat.fmIndex === null) {
+      chat.fmIndex = cha.firstMsgIndex ?? -1;
+      chatChanged = true;
+    }
     if (!chat.id) {
       chat.id = uuidv4();
+      chatChanged = true;
+      chatManifestChanged = true;
     }
     if (!chat.localLore) {
       chat.localLore = [];
+      chatChanged = true;
+    }
+    if (chatChanged && chat.id) dirtyChatIds.add(chat.id);
+  }
+
+  const interactionTime = arg.updateInteraction ? Date.now() : null;
+  if (interactionTime !== null && (!sqlHydrated || needsFullCharacterPersistence)) {
+    cha.lastInteraction = interactionTime;
+  }
+  formattedCharacters.add(cha);
+
+  if (characterIndex !== null) {
+    if (!sqlHydrated) {
+      // Legacy/non-SQL objects retain the historical eager persistence path.
+      setCharacterByIndex(characterIndex, cha);
+    } else {
+      if (needsFullCharacterPersistence) {
+        characterStore.markCharacterDirty(cha.chaId);
+      } else if (interactionTime !== null) {
+        characterStore.touchCharacterInteraction(characterIndex, interactionTime);
+      }
+      for (const chatId of dirtyChatIds) characterStore.markChatDirty(chatId);
+      if (chatManifestChanged) {
+        characterStore.markChatManifestDirty(cha.chaId);
+      }
     }
   }
   return cha;
@@ -991,6 +1042,9 @@ export async function changeChar(
     }
     return;
   }
+  // Do not let the previous character's idle eviction/GC work compete with
+  // SQL hydration and first paint for the character we are opening now.
+  cancelInactiveChatMessageRelease();
   void preloadCharacterImage(characterStore.characters?.[index]?.image);
   reseter();
   pendingCharID.set(index);

@@ -377,6 +377,13 @@ function createSqlStorageHelpers({
             assertData(row, `characters[${index}].data`);
             return { id: row.id, position: row.position, data: row.data };
         });
+        const characterTouches = validateRows(payload.characterTouches, 'characterTouches', (row, index) => {
+            assertId(row.id, `characterTouches[${index}].id`);
+            if (!Number.isSafeInteger(row.lastInteraction) || row.lastInteraction < 0) {
+                throw new PayloadError(`characterTouches[${index}].lastInteraction must be a non-negative safe integer`);
+            }
+            return { id: row.id, lastInteraction: row.lastInteraction };
+        });
         const chats = validateRows(payload.chats, 'chats', (row, index) => {
             assertId(row.id, `chats[${index}].id`);
             assertId(row.characterId, `chats[${index}].characterId`);
@@ -418,6 +425,7 @@ function createSqlStorageHelpers({
             pluginStorageClear,
             presets,
             characters,
+            characterTouches,
             chats,
             messages,
             chatManifests,

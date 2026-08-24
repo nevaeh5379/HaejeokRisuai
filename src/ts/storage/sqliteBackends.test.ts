@@ -223,6 +223,38 @@ describe("WebSqliteStorage", () => {
     database.close();
   });
 
+  it("updates character interaction time without rewriting extension nodes", async () => {
+    const database = new DatabaseSync(":memory:");
+    database.exec(sqliteSchemaSql);
+    database.exec(
+      "INSERT INTO characters (id, position, name) VALUES ('char-touch', 0, 'Touch')",
+    );
+    const storage = makeWebStorage(database);
+    const rpc = (storage as any).rpc;
+    const batchSpy = vi.spyOn(rpc, "execBatch");
+    const commit = createEmptySqlCommit(0, "character-touch");
+    commit.characterTouches = [
+      { id: "char-touch", lastInteraction: 123456789 },
+    ];
+
+    await storage.commit(commit);
+
+    const row = database
+      .prepare(
+        "SELECT last_interaction_time FROM characters WHERE id = 'char-touch'",
+      )
+      .get() as { last_interaction_time: number };
+    expect(row.last_interaction_time).toBe(123456789);
+    const statements = batchSpy.mock.calls[0][0] as Array<{ sql: string }>;
+    expect(
+      statements.some(({ sql }) => sql.includes("last_interaction_time")),
+    ).toBe(true);
+    expect(
+      statements.some(({ sql }) => sql.includes("character_extension_nodes")),
+    ).toBe(false);
+    database.close();
+  });
+
   it("batches commit statements into a single worker RPC", async () => {
     const database = new DatabaseSync(":memory:");
     database.exec(sqliteSchemaSql);

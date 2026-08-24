@@ -3,22 +3,94 @@ import { forageStorage, getFileSrc } from "./globalApi.svelte";
 import { NodeStorage } from "./storage/nodeStorage";
 import { getMimeType } from "./media/mimeType";
 
-// Global cache for character images across the application session
-export const fullImageBlobCache = new Map<string, string>();
+// Character images can be multi-megabyte blobs. Keep Map compatibility for the
+// existing UI while bounding the number of decoded/object-URL resources retained
+// as users browse through many characters.
+class CharacterImageCache extends Map<string, string> {
+  private isFullResolutionKey(key: string): boolean {
+    return !key.startsWith("thumb_") && !key.startsWith("display_");
+  }
+
+  private revokeIfUnused(value: string): void {
+    if (!value.startsWith("blob:")) return;
+    for (const other of super.values()) {
+      if (other === value) return;
+    }
+    if (
+      typeof URL !== "undefined" &&
+      typeof URL.revokeObjectURL === "function"
+    ) {
+      URL.revokeObjectURL(value);
+    }
+  }
+
+  override get(key: string): string | undefined {
+    const value = super.get(key);
+    if (value === undefined) return undefined;
+    // Promote on access so frequently revisited avatars survive eviction.
+    super.delete(key);
+    super.set(key, value);
+    return value;
+  }
+
+  override set(key: string, value: string): this {
+    const previous = super.get(key);
+    if (previous !== undefined) {
+      super.delete(key);
+      if (previous !== value) this.revokeIfUnused(previous);
+    }
+    super.set(key, value);
+    this.trim();
+    return this;
+  }
+
+  override delete(key: string): boolean {
+    const value = super.get(key);
+    if (value === undefined) return false;
+    const deleted = super.delete(key);
+    if (deleted) this.revokeIfUnused(value);
+    return deleted;
+  }
+
+  override clear(): void {
+    const urls = new Set(
+      [...super.values()].filter((value) => value.startsWith("blob:")),
+    );
+    super.clear();
+    if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+      for (const url of urls) URL.revokeObjectURL(url);
+    }
+  }
+
+  private trim(): void {
+    const maxEntries = settingsStore.state.lowSpecMode ? 32 : 128;
+    const maxFullResolution = settingsStore.state.lowSpecMode ? 4 : 12;
+    let fullResolutionCount = 0;
+    for (const key of super.keys()) {
+      if (this.isFullResolutionKey(key)) fullResolutionCount += 1;
+    }
+    if (fullResolutionCount > maxFullResolution) {
+      for (const key of [...super.keys()]) {
+        if (!this.isFullResolutionKey(key)) continue;
+        this.delete(key);
+        fullResolutionCount -= 1;
+        if (fullResolutionCount <= maxFullResolution) break;
+      }
+    }
+    while (this.size > maxEntries) {
+      const oldest = super.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.delete(oldest);
+    }
+  }
+}
+
+export const fullImageBlobCache = new CharacterImageCache();
 const characterImagePreloads = new Map<string, Promise<void>>();
 
 export function releaseCharacterImageCache(prefix: string): void {
-  const releasedUrls = new Set<string>();
-  for (const [key, value] of fullImageBlobCache) {
-    if (!key.startsWith(prefix)) continue;
-    fullImageBlobCache.delete(key);
-    if (value.startsWith("blob:")) releasedUrls.add(value);
-  }
-
-  for (const url of releasedUrls) {
-    if (![...fullImageBlobCache.values()].includes(url)) {
-      URL.revokeObjectURL(url);
-    }
+  for (const key of [...fullImageBlobCache.keys()]) {
+    if (key.startsWith(prefix)) fullImageBlobCache.delete(key);
   }
 }
 
@@ -59,11 +131,14 @@ export function preloadCharacterImage(loc: string): Promise<void> {
         reject(new Error(`Failed to preload character image: ${loc}`));
       image.src = source;
     });
-  })().catch(() => {
-    characterImagePreloads.delete(loc);
-  });
+  })().catch(() => undefined);
 
   characterImagePreloads.set(loc, preload);
+  void preload.finally(() => {
+    if (characterImagePreloads.get(loc) === preload) {
+      characterImagePreloads.delete(loc);
+    }
+  });
   return preload;
 }
 

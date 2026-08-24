@@ -16,6 +16,7 @@ import {
 } from "./defaultPrompts";
 import type { ISqlStorage } from "./ISqlStorage";
 import { cancelChatMessageCompaction } from "../stores/domain/messageStore.svelte";
+import { getInitialChatLoadPages } from "../chatLoadPages";
 
 export interface IDatabaseAdapter extends Database {
   readonly isSql?: boolean;
@@ -258,7 +259,7 @@ export function createSqlDatabaseAdapter(
   const characterDetailPromises = new Map<string, Promise<void>>();
   const chatDetailPromises = new Map<string, Promise<void>>();
   const olderChatPromises = new Map<string, Promise<number>>();
-  const initialMessagePageSize = initialData.lowSpecMode ? 24 : 60;
+  const initialMessagePageSize = getInitialChatLoadPages(initialData);
 
   function findChat(chatId: string): Chat | undefined {
     const chars = internalState.coreData.characters as (

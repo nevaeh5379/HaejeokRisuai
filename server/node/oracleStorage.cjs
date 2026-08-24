@@ -1921,6 +1921,15 @@ class OracleStorage extends SqlStorageBase {
             await this._bulkInsertRows(conn, 'character_assets', ['character_id', 'position', 'asset_source', 'asset_type', 'uri', 'name', 'extension', 'extra_value'], characterRows('assets'), onProgress);
             await this._bulkInsertRows(conn, 'character_lore_entries', ['character_id', 'position', 'lore_id', 'primarykey', 'secondary_key', 'insert_order', 'comment_text', 'content', 'lore_mode', 'always_active', 'selective', 'case_sensitive', 'activation_percent', 'use_regex', 'book_version', 'folder', 'cache_payload'], characterRows('lore'), onProgress);
 
+            if (payload.characterTouches.length > 0) {
+                await conn.executeMany(
+                    `UPDATE character_characters
+                     SET last_interaction_time = :2, updated_at = SYSTIMESTAMP
+                     WHERE id = :1`,
+                    payload.characterTouches.map((touch) => [touch.id, touch.lastInteraction])
+                );
+            }
+
             // 채팅 upsert
             onProgress?.({ stage: 'chats', message: `채팅 목록 저장 중... (${payload.chats.length}개)`, percent: 45 });
             const splitChats = payload.chats.map(splitChat);

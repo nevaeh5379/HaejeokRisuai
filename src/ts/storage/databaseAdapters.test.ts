@@ -123,6 +123,7 @@ describe("SQL chat message paging", () => {
       loadChatMessages: vi.fn(async () => all),
     } as any;
     const database = {
+      chatLoadInitialPages: 7,
       characters: [
         {
           chaId: "character-1",
@@ -146,7 +147,7 @@ describe("SQL chat message paging", () => {
     await adapter.ensureChatMessages!("chat-1");
     const chat = adapter.characters[0].chats[0];
     expect(storage.loadChat).toHaveBeenCalledWith("chat-1", {
-      messageLimit: expect.any(Number),
+      messageLimit: 7,
     });
     expect(chat).toMatchObject({
       messageOffset: 76,

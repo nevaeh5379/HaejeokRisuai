@@ -117,6 +117,22 @@ describe('shared SQL storage helpers', () => {
         })).toThrow(TestPayloadError)
     })
 
+    it('validates scalar character interaction touches', () => {
+        const helpers = createSqlStorageHelpers({ PayloadError: TestPayloadError })
+        const payload = helpers.validateSyncPayload({
+            baseRevision: 3,
+            characterTouches: [{ id: 'character-1', lastInteraction: 123456789 }],
+        })
+
+        expect(payload.characterTouches).toEqual([
+            { id: 'character-1', lastInteraction: 123456789 },
+        ])
+        expect(() => helpers.validateSyncPayload({
+            baseRevision: 3,
+            characterTouches: [{ id: 'character-1', lastInteraction: -1 }],
+        })).toThrow(TestPayloadError)
+    })
+
     it('normalizes ID-based preset mutations and rejects legacy root arrays', () => {
         const helpers = createSqlStorageHelpers({ PayloadError: TestPayloadError })
         const id = '123e4567-e89b-42d3-a456-426614174000'

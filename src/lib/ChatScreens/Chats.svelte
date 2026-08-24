@@ -41,7 +41,6 @@
     } = $props();
 
     let chatBody: HTMLDivElement;
-    let hashes: Set<number> = new Set();
     type ChatInstance = {
         updateStreamingDisplay?: (state: {
             isOptimizedStreamingMessage: boolean
@@ -49,28 +48,47 @@
             rawStreamingText: string
         }) => void
     }
-    let mountInstances: Map<number, ChatInstance> = new Map();
-
-    //Non-cryptographic hash function to generate a unique hash for each message
-    function hashCode(str:string):number {
-        let hash = 0;
-        for (let i = 0, len = str.length; i < len; i++) {
-            let chr = str.charCodeAt(i);
-            hash = (hash << 5) - hash + chr;
-            hash |= 0; // Convert to 32bit integer
-        }
-        if(hash == 0){
-            hash = 1; // Ensure hash is not zero
-        }
-        return hash;
+    type RenderSignature = {
+        data: string
+        idx: number
+        role: string
+        name: string
+        largePortrait: boolean
+        disabled: Message['disabled']
+        reloadPointer: number
+        hideButtons: boolean
+        isComment: boolean
+        activeStreaming: boolean
+        generationInfo: Message['generationInfo']
     }
+    type RenderEntry = {
+        signature: RenderSignature
+        instance: ChatInstance
+        element: HTMLDivElement
+    }
+    const renderEntries = new Map<string, RenderEntry>();
+
+    const messageRenderKey = (message: Message, index: number) =>
+        message.chatId ? `message:${message.chatId}` : `index:${index}`;
+
+    const sameRenderSignature = (left: RenderSignature, right: RenderSignature) =>
+        left.data === right.data &&
+        left.idx === right.idx &&
+        left.role === right.role &&
+        left.name === right.name &&
+        left.largePortrait === right.largePortrait &&
+        left.disabled === right.disabled &&
+        left.reloadPointer === right.reloadPointer &&
+        left.hideButtons === right.hideButtons &&
+        left.isComment === right.isComment &&
+        left.activeStreaming === right.activeStreaming &&
+        left.generationInfo === right.generationInfo;
 
     const clearChatBody = () => {
-        hashes.clear();
-        mountInstances.forEach((inst) => {
-            try { unmount(inst); } catch (e) {}
+        renderEntries.forEach(({ instance }) => {
+            try { unmount(instance); } catch (e) {}
         });
-        mountInstances.clear();
+        renderEntries.clear();
         if (chatBody) {
             chatBody.innerHTML = '';
         }
@@ -81,8 +99,8 @@
             return
         }
 
-        let nextHash = 0;
-        let currentHashes: Set<number> = new Set();
+        let nextKey: string | null = null;
+        const currentKeys = new Set<string>();
         const charImage = getCharImage(currentCharacter.image, 'css', { thumbnail: true })
         const userImage = getCharImage(userIcon, 'css', { thumbnail: true })
         const simpleChar = createSimpleCharacter(currentCharacter);
@@ -105,21 +123,45 @@
         const reloadPointerMap = get(ReloadChatPointer);
 
         for(let i=loadStart ; i >= loadEnd; i--){
-            if(i < 0) break; // Prevent out of bounds
+            if(i < 0) break;
             const message = messages[i];
+            const key = messageRenderKey(message, i);
+            currentKeys.add(key);
             const messageLargePortrait = message.role === 'user' ? (userIconPortrait ?? false) : ((currentCharacter as character).largePortrait ?? false);
             const reloadPointer = reloadPointerMap[i] ?? 0;
             const activeStreamingMessage = i === activeStreamingIndex && message.role === 'char';
-            const hashMessageData = activeStreamingMessage ? '' : message.data;
-            let hashd = hashMessageData + (message.chatId ?? '') + i.toString() + messageLargePortrait.toString() + message.disabled?.toString() + reloadPointer.toString() + hideButtons.toString();
-            const currentHash = hashCode(hashd);
-            currentHashes.add(currentHash);
-            if(!hashes.has(currentHash)){
-                const b = document.createElement('div');
-                b.setAttribute('x-hashed', currentHash.toString());
-                b.classList.add('chat-message-container');
-                const inst = mount(Chat, {
-                    target: b,
+            const signature: RenderSignature = {
+                data: activeStreamingMessage ? '' : message.data,
+                idx: i,
+                role: message.role,
+                name: message.role === 'user' ? currentUsername : (message.name || currentCharacter.name),
+                largePortrait: messageLargePortrait,
+                disabled: message.disabled,
+                reloadPointer,
+                hideButtons,
+                isComment: message.isComment ?? false,
+                activeStreaming: activeStreamingMessage,
+                generationInfo: message.generationInfo,
+            };
+            let entry = renderEntries.get(key);
+            const needsMount = !entry || !sameRenderSignature(entry.signature, signature);
+            if(needsMount){
+                let element: HTMLDivElement;
+                if(entry){
+                    try { unmount(entry.instance); } catch (e) {}
+                    element = entry.element;
+                } else {
+                    element = document.createElement('div');
+                    element.classList.add('chat-message-container');
+                    const nextElement = nextKey ? renderEntries.get(nextKey)?.element : null;
+                    if(nextElement){
+                        chatBody.insertBefore(element, nextElement.nextSibling);
+                    } else {
+                        chatBody.prepend(element);
+                    }
+                }
+                const instance = mount(Chat, {
+                    target: element,
                     props: {
                         message: message.data,
                         isLastMemory: false,
@@ -133,60 +175,36 @@
                         largePortrait: messageLargePortrait,
                         messageGenerationInfo: message.generationInfo,
                         role: message.role,
-                        name: message.role === 'user' ? currentUsername : (message.name || currentCharacter.name),
-                        isComment: message.isComment ?? false,
+                        name: signature.name,
+                        isComment: signature.isComment,
                         disabled: message.disabled ?? false,
                         isOptimizedStreamingMessage: activeStreamingMessage,
                         streamingOptimizationMode: performanceMode,
                         rawStreamingText: message.data,
                         hideButtons: hideButtons,
                     },
-
                 })
-                mountInstances.set(currentHash, inst);
-                const nextElement = nextHash === 0 ? null : chatBody.querySelector(`[x-hashed="${nextHash}"]`);
-                if(nextElement){
-                    chatBody.insertBefore(b, nextElement?.nextSibling);
-                }
-                else{
-                    chatBody.prepend(b);
-                }
-            }
-            else{
-                mountInstances.get(currentHash)?.updateStreamingDisplay?.({
+                entry = { signature, instance, element };
+                renderEntries.set(key, entry);
+            } else {
+                entry.instance.updateStreamingDisplay?.({
                     isOptimizedStreamingMessage: activeStreamingMessage,
                     streamingOptimizationMode: performanceMode,
                     rawStreamingText: message.data,
                 })
             }
-            nextHash = currentHash;
-            
+            nextKey = key;
         }
 
-        const toRemove: number[] = [];
-        for (const hash of hashes) {
-            if (!currentHashes.has(hash)) {
-                toRemove.push(hash);
-            }
+        for (const [key, entry] of renderEntries) {
+            if (currentKeys.has(key)) continue;
+            try { unmount(entry.instance); } catch (e) {}
+            entry.element.remove();
+            renderEntries.delete(key);
         }
-        toRemove.forEach((hash) => {
-            const inst = mountInstances.get(hash);
-            if(inst){
-                try { unmount(inst); } catch (e) {}
-                mountInstances.delete(hash);
-            }
-            const element = chatBody.querySelector(`[x-hashed="${hash}"]`);
-            if(element){
-                chatBody.removeChild(element);
-            }
-        });
-
-        hashes = currentHashes;
-        
     };
 
     onDestroy(() => {
-        console.log('Unmounting Chats');
         clearChatBody();
     })
 
@@ -213,7 +231,6 @@
     let previousChatRoomId: string | null = null;
 
     $effect(() => {
-        console.log('Updating Chats');
         if(!hideButtons){
             void $ReloadChatPointer; // Make $effect track ReloadChatPointer changes
         }

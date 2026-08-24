@@ -5,7 +5,7 @@
     import { alertError } from "../../ts/alert"
     import { addMetadataToElement, getDistance, ParseMarkdown, postTranslationParse, trimMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
     import { getLLMCache, translateHTML } from "../../ts/translator/translator"
-    import { getModuleAssets } from "src/ts/process/modules";
+    import { resolveCurrentChatAsset } from "src/ts/chatAssetResolver";
     import { getCurrentCharacter } from "src/ts/storage/database.svelte";
     import { getFileSrc } from "src/ts/globalApi.svelte";
 
@@ -178,18 +178,9 @@
         if (imgs.length > 0) {
             const currentCharacter = getCurrentCharacter()
             const styl = currentCharacter.prebuiltAssetStyle
-            const assets = getModuleAssets().concat(currentCharacter.additionalAssets ?? [])
-            const normalizedAssets = assets.map((asset) => {
-                return {
-                    name: asset[0].toLocaleLowerCase(),
-                    path: asset[1]
-                }
-            })
-            const exactAssets = new Map(normalizedAssets.map((asset) => [asset.name, asset.path]))
 
             imgs.forEach(async (img) => {
                 const name = img.getAttribute('src')?.toLocaleLowerCase() || ''
-                console.log(name)
 
                 if(
                     name.length > 200 ||
@@ -198,34 +189,12 @@
                     img.setAttribute('noimage', 'true')
                     return
                 }
-                
-                const foundAsset = exactAssets.get(name)
-                console.log('Checking image:', name, 'Assets:', assets)
-                if(foundAsset){
-                    img.classList.add('root-loaded-image')
-                    img.classList.add('root-loaded-image-' + styl)
-                    img.src = await getFileSrc(foundAsset)
-                    return
-                }
 
                 if(name.length < 3){
                     img.setAttribute('noimage', 'true')
                     return
                 }
-                const prefixLoc = name.lastIndexOf('.')
-                const prefix = prefixLoc > 0 ? name.substring(0, prefixLoc) : ''
-                let currentDistance = 1000
-                let currentFound = ''
-                for(const asset of normalizedAssets){
-                    if(!asset.name.startsWith(prefix)){
-                        continue
-                    }
-                    const distance = getDistance(name, asset.name)
-                    if(distance < currentDistance){
-                        currentDistance = distance
-                        currentFound = asset.path
-                    }
-                }
+                const currentFound = resolveCurrentChatAsset(currentCharacter, name, getDistance)
                 if(currentFound){
                     const got = await getFileSrc(currentFound)
                     const name2 = img.getAttribute('src')?.toLocaleLowerCase() || ''

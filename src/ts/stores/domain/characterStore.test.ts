@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { characterStore } from "./characterStore.svelte";
+import { settingsStore } from "./settingsStore.svelte";
 import type { ISqlStorage } from "../../storage/ISqlStorage";
 import type { SqlCommit } from "../../storage/sqlCommit";
 import type { character, Chat, groupChat } from "../../storage/database.svelte";
@@ -69,6 +70,23 @@ describe("CharacterStore", () => {
     expect(mockStorage.loadCharacter).not.toHaveBeenCalled();
   });
 
+  it("persists interaction timestamps without rewriting the character tree", async () => {
+    const char = makeChar("touch", 1);
+    const charId = char.chaId!;
+    characterStore.init([char], mockStorage);
+
+    characterStore.touchCharacterInteraction(0, 123456789);
+    await characterStore.flush();
+
+    expect(characterStore.characters[0].lastInteraction).toBe(123456789);
+    expect(committed).toHaveLength(1);
+    expect(committed[0]).toMatchObject({
+      action: "character-touch",
+      characters: [],
+      characterTouches: [{ id: charId, lastInteraction: 123456789 }],
+    });
+  });
+
   it("keeps chat summaries returned by lazy character hydration", async () => {
     const shallow = makeChar("lazy", 0);
     shallow.detailsLoaded = false;
@@ -87,6 +105,34 @@ describe("CharacterStore", () => {
       "chat-lazy-2",
     ]);
     expect(characterStore.characters[0].detailsLoaded).toBe(true);
+  });
+
+  it("matches the initial SQL message page to the configured render window", async () => {
+    const chars = [makeChar("initial-page")];
+    const chat = chars[0].chats[0];
+    chat.id = "chat-initial-page";
+    chat.messagesLoaded = false;
+    chat.detailsLoaded = false;
+    vi.mocked(mockStorage.loadChat).mockResolvedValue({
+      ...chat,
+      message: [],
+      messageOffset: 0,
+      messageTotal: 0,
+      messagesFullyLoaded: true,
+      messagesLoaded: true,
+      detailsLoaded: true,
+    });
+    settingsStore.hydrate((state) => {
+      state.lowSpecMode = false;
+      state.chatLoadInitialPages = 7;
+    });
+    characterStore.init(chars, mockStorage);
+
+    await characterStore.ensureChatMessages(chat.id);
+
+    expect(mockStorage.loadChat).toHaveBeenCalledWith(chat.id, {
+      messageLimit: 7,
+    });
   });
 
   it("hydrates only messages when full generation history is requested from a paged chat", async () => {

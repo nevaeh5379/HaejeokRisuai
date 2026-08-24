@@ -4,12 +4,20 @@ import { getSqlStorage } from "../../storage/sqlStorageFactory";
 import { v4 as uuidv4 } from "uuid";
 import { sqlCharacterData, sqlChatData } from "../../storage/sqlCommit";
 import { settingsStore } from "./settingsStore.svelte";
+import { getInitialChatLoadPages } from "../../chatLoadPages";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 
 // Keep persisted history ordering, overlay newer in-memory fields, and retain
 // stable-ID messages that have not reached storage yet.
 
-const CHARACTER_RUNTIME_KEYS = new Set(["chats", "chaId", "detailsLoaded"]);
+const CHARACTER_RUNTIME_KEYS = new Set([
+  "chats",
+  "chaId",
+  "detailsLoaded",
+  // Persisted through the scalar-only character touch path. Tracking it here
+  // would turn every selection/generation timestamp into a full character write.
+  "lastInteraction",
+]);
 const CHAT_RUNTIME_KEYS = new Set([
   "message",
   "id",
@@ -88,6 +96,7 @@ class CharacterStore {
 
   // Dirty sets — only IDs, no snapshots.  Serialised at flush time.
   private dirtyCharacters = new Set<string>();
+  private dirtyCharacterTouches = new Map<string, number>();
   private dirtyChats = new Set<string>();
   private dirtyChatManifests = new Set<string>(); // character IDs whose chat list changed
   private dirtyCharacterIds = false; // character order changed
@@ -123,6 +132,7 @@ class CharacterStore {
     this.activeDispose?.();
     this.activeDispose = null;
     this.dirtyCharacters.clear();
+    this.dirtyCharacterTouches.clear();
     this.dirtyChats.clear();
     this.dirtyChatManifests.clear();
     this.generationOnlyMetadataChats.clear();
@@ -215,6 +225,7 @@ class CharacterStore {
         );
         if (fingerprint === lastCharFingerprint) return;
         lastCharFingerprint = fingerprint;
+        this.dirtyCharacterTouches.delete(char.chaId);
         this.dirtyCharacters.add(char.chaId);
         this.scheduleCommit();
       });
@@ -272,7 +283,18 @@ class CharacterStore {
   // ── Explicit dirty marking for non-active characters/chats ───────
 
   markCharacterDirty(chaId: string): void {
+    this.dirtyCharacterTouches.delete(chaId);
     this.dirtyCharacters.add(chaId);
+    this.scheduleCommit();
+  }
+
+  touchCharacterInteraction(index: number, timestamp = Date.now()): void {
+    const char = this.characters[index];
+    if (!char?.chaId) return;
+    char.lastInteraction = timestamp;
+    if (!this.dirtyCharacters.has(char.chaId)) {
+      this.dirtyCharacterTouches.set(char.chaId, timestamp);
+    }
     this.scheduleCommit();
   }
 
@@ -310,6 +332,7 @@ class CharacterStore {
     }
     if (
       this.dirtyCharacters.size === 0 &&
+      this.dirtyCharacterTouches.size === 0 &&
       this.dirtyChats.size === 0 &&
       this.dirtyChatManifests.size === 0 &&
       !this.dirtyCharacterIds
@@ -331,6 +354,11 @@ class CharacterStore {
         });
       }
     }
+
+    const characterTouches = Array.from(
+      this.dirtyCharacterTouches,
+      ([id, lastInteraction]) => ({ id, lastInteraction }),
+    ).filter((touch) => !this.dirtyCharacters.has(touch.id));
 
     // Serialise dirty chats
     const chats: {
@@ -376,11 +404,14 @@ class CharacterStore {
       action = "character";
     } else if (chats.length > 0 || chatManifests.length > 0) {
       action = "chat";
+    } else if (characterTouches.length > 0) {
+      action = "character-touch";
     } else if (characterIds !== undefined) {
       action = "order";
     }
 
     this.dirtyCharacters.clear();
+    this.dirtyCharacterTouches.clear();
     this.dirtyChats.clear();
     this.dirtyChatManifests.clear();
     this.dirtyCharacterIds = false;
@@ -391,6 +422,7 @@ class CharacterStore {
         action,
         root: { upserts: [], deletes: [] },
         characters,
+        characterTouches,
         characterIds,
         chats,
         chatManifests,
@@ -432,6 +464,7 @@ class CharacterStore {
     if (this.selectedId >= 0 && this.selectedId < this.characters.length) {
       char.chaId ||= this.characters[this.selectedId].chaId || uuidv4();
       this.characters[this.selectedId] = char;
+      this.dirtyCharacterTouches.delete(char.chaId);
       this.dirtyCharacters.add(char.chaId);
       this.scheduleCommit();
       this.observeActive();
@@ -449,6 +482,7 @@ class CharacterStore {
     if (index >= 0 && index < this.characters.length) {
       char.chaId ||= this.characters[index].chaId || uuidv4();
       this.characters[index] = char;
+      this.dirtyCharacterTouches.delete(char.chaId);
       this.dirtyCharacters.add(char.chaId);
       this.scheduleCommit();
       if (index === this.selectedId) {
@@ -476,6 +510,7 @@ class CharacterStore {
 
   add(char: character | groupChat): number {
     char.chaId ||= uuidv4();
+    this.dirtyCharacterTouches.delete(char.chaId);
     this.dirtyCharacters.add(char.chaId);
     this.dirtyCharacterIds = true;
     this.characters.push(char);
@@ -539,7 +574,7 @@ class CharacterStore {
     chatId: string,
     options: { full?: boolean; generation?: boolean } = {},
   ): Promise<void> {
-    const initialMessagePageSize = settingsStore.state.lowSpecMode ? 12 : 60;
+    const initialMessagePageSize = getInitialChatLoadPages(settingsStore.state);
     const char = this.characters.find((c) =>
       c.chats?.some((ch) => ch.id === chatId),
     );
