@@ -7,6 +7,8 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.effectivePersonaPrompt
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntriesFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntryToValue
+import java.net.HttpURLConnection
+import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.UUID
@@ -66,6 +68,9 @@ internal object NativeLuaTriggerEngine {
 
     private val states = mutableMapOf<String, EngineState>()
     private val modeLocks = mutableMapOf<String, Any>()
+    private val requestRateLock = Any()
+    private var lastRequestResetTime = 0L
+    private var lastRequestsCount = 0
 
     fun run(
         code: String,
@@ -129,6 +134,10 @@ internal object NativeLuaTriggerEngine {
             states.clear()
         }
         synchronized(modeLocks) { modeLocks.clear() }
+        synchronized(requestRateLock) {
+            lastRequestResetTime = 0L
+            lastRequestsCount = 0
+        }
     }
 
     private fun createState(code: String): EngineState {
@@ -268,6 +277,15 @@ internal object NativeLuaTriggerEngine {
             push(lua, NativeRisuParser.parse(stringArg(lua, 1), execution.parserContext()))
         }
         register(state, "hashMain") { lua, _ -> push(lua, sha256Hex(stringArg(lua, 2))) }
+        register(state, "sleepMain") { lua, _ ->
+            val millis = integerArg(lua, 2).coerceAtLeast(0).toLong()
+            if (millis > 0) Thread.sleep(millis)
+            push(lua, true)
+        }
+        register(state, "requestMain") { lua, execution ->
+            if (!execution.lowLevelAccess) return@register 0
+            push(lua, scriptedRequest(stringArg(lua, 2)))
+        }
         register(state, "logMain") { _, _ -> 0 }
         register(state, "reloadDisplay") { _, _ -> 0 }
         register(state, "reloadChat") { _, _ -> 0 }
@@ -419,6 +437,46 @@ internal object NativeLuaTriggerEngine {
         }
     }
 
+    private fun scriptedRequest(url: String): String {
+        val rateLimited = synchronized(requestRateLock) {
+            val now = System.currentTimeMillis()
+            if (lastRequestResetTime + REQUEST_WINDOW_MS < now) {
+                lastRequestsCount = 0
+                lastRequestResetTime = now
+            }
+            if (lastRequestsCount > REQUEST_LIMIT_THRESHOLD) true else {
+                lastRequestsCount++
+                false
+            }
+        }
+        if (rateLimited) return requestResult(429, "Too many requests. you can request 5 times per minute")
+        if (url.length > MAX_SCRIPT_REQUEST_URL_LENGTH) {
+            return requestResult(413, "URL to large. max is 120 characters")
+        }
+        if (!url.startsWith("https://")) return requestResult(400, "Only https requests are allowed")
+        if (BANNED_SCRIPT_REQUEST_PREFIXES.any(url::startsWith)) {
+            return requestResult(400, "request to $url is not allowed")
+        }
+        return try {
+            val connection = URL(url).openConnection() as HttpURLConnection
+            try {
+                connection.requestMethod = "GET"
+                connection.instanceFollowRedirects = true
+                val status = connection.responseCode
+                val stream = if (status >= 400) connection.errorStream else connection.inputStream
+                val body = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
+                requestResult(status, body)
+            } finally {
+                connection.disconnect()
+            }
+        } catch (_: Throwable) {
+            requestResult(400, "internal error")
+        }
+    }
+
+    private fun requestResult(status: Int, data: String): String =
+        NativeRisuParser.stringifyJson(linkedMapOf("status" to status, "data" to data))
+
     private fun push(lua: Lua, value: String): Int {
         lua.push(value)
         return 1
@@ -486,6 +544,12 @@ internal object NativeLuaTriggerEngine {
         execution.messages += replacement
     }
 
+    private const val REQUEST_WINDOW_MS = 60_000L
+    private const val REQUEST_LIMIT_THRESHOLD = 5
+    private const val MAX_SCRIPT_REQUEST_URL_LENGTH = 120
+    private val BANNED_SCRIPT_REQUEST_PREFIXES = listOf(
+        "https://realm.risuai.net", "https://risuai.net", "https://risuai.xyz",
+    )
     private val SANDBOXED_GLOBALS = listOf(
         "java", "io", "os", "debug", "package", "require", "dofile", "loadfile",
     )
@@ -497,6 +561,14 @@ end
 
 function hash(id, value)
     return resolvedPromise(hashMain(id, value))
+end
+
+function sleep(id, time)
+    return resolvedPromise(sleepMain(id, time))
+end
+
+function request(id, url)
+    return resolvedPromise(requestMain(id, url))
 end
 
 function getChat(id, index)

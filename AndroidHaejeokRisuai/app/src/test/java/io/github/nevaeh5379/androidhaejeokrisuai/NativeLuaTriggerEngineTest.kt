@@ -250,6 +250,74 @@ class NativeLuaTriggerEngineTest {
     }
 
     @Test
+    fun sleepReturnsAwaitableTrueWithoutChangingLuaCallShape() {
+        val code = """
+            function onStart(id)
+                local pending = sleep(id, 1)
+                setChatVar(id, "sleep", type(pending) .. ":" .. tostring(pending:await()))
+            end
+        """.trimIndent()
+        val result = NativeLuaTriggerEngine.run(
+            code = code, mode = "start", settings = settings, character = character,
+            messages = history, variables = emptyMap(), chatId = "chat", authorNote = "",
+            greetingIndex = -1, inheritedStop = false, inheritedPatch = RuntimeStatePatch(),
+        )
+        assertEquals("table:true", result.variables["sleep"])
+    }
+
+    @Test
+    fun requestPreservesLowLevelValidationAndRateLimitSemantics() {
+        val deniedCode = """
+            function onStart(id)
+                setChatVar(id, "denied", tostring(request(id, "http://example.com"):await() == nil))
+            end
+        """.trimIndent()
+        val denied = NativeLuaTriggerEngine.run(
+            code = deniedCode, mode = "start", settings = settings, character = character,
+            messages = history, variables = emptyMap(), chatId = "chat", authorNote = "",
+            greetingIndex = -1, inheritedStop = false, inheritedPatch = RuntimeStatePatch(),
+            lowLevelAccess = false,
+        )
+        assertEquals("true", denied.variables["denied"])
+
+        NativeLuaTriggerEngine.clearForTests()
+        val validationCode = """
+            function onStart(id)
+                local insecure = json.decode(request(id, "http://example.com"):await())
+                local banned = json.decode(request(id, "https://risuai.net/test"):await())
+                local longUrl = "https://example.com/" .. string.rep("a", 121)
+                local tooLong = json.decode(request(id, longUrl):await())
+                setChatVar(id, "validation", tostring(insecure.status) .. ":" .. tostring(banned.status) .. ":" .. tostring(tooLong.status))
+            end
+        """.trimIndent()
+        val validation = NativeLuaTriggerEngine.run(
+            code = validationCode, mode = "start", settings = settings, character = character,
+            messages = history, variables = emptyMap(), chatId = "chat", authorNote = "",
+            greetingIndex = -1, inheritedStop = false, inheritedPatch = RuntimeStatePatch(),
+            lowLevelAccess = true,
+        )
+        assertEquals("400:400:413", validation.variables["validation"])
+
+        NativeLuaTriggerEngine.clearForTests()
+        val rateCode = """
+            function onStart(id)
+                local status = 0
+                for i = 1, 7 do
+                    status = json.decode(request(id, "http://x"):await()).status
+                end
+                setChatVar(id, "rate", tostring(status))
+            end
+        """.trimIndent()
+        val rate = NativeLuaTriggerEngine.run(
+            code = rateCode, mode = "start", settings = settings, character = character,
+            messages = history, variables = emptyMap(), chatId = "chat", authorNote = "",
+            greetingIndex = -1, inheritedStop = false, inheritedPatch = RuntimeStatePatch(),
+            lowLevelAccess = true,
+        )
+        assertEquals("429", rate.variables["rate"])
+    }
+
+    @Test
     fun hashReturnsRisuCompatibleSha256ThroughAwaitableValue() {
         val code = """
             function onStart(id)
