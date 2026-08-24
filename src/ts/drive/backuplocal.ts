@@ -1067,6 +1067,7 @@ export async function SavePartialLocalBackup() {
 }
 
 export async function restoreLocalBackupFile(file: File) {
+  const textDecoder = new TextDecoder();
   const encryptionMeta: {
     type: "none" | "account";
     time?: number;
@@ -1075,6 +1076,7 @@ export async function restoreLocalBackupFile(file: File) {
   };
 
   let pendingDatabase: Uint8Array | null = null;
+  let decodedDatabase: Database | null = null;
   const restoredColdStorageKeys = new Set<string>();
   const useNodeBulkRestore = isNodeServer && !forageStorage.isAccount;
   const pendingNodeAssets = new Map<string, Uint8Array>();
@@ -1104,7 +1106,7 @@ export async function restoreLocalBackupFile(file: File) {
     if (name === "encryption.risudat") {
       let meta: typeof encryptionMeta;
       try {
-        meta = JSON.parse(new TextDecoder().decode(data));
+        meta = JSON.parse(textDecoder.decode(data));
       } catch (error) {
         console.error("Failed to parse encryption metadata:", error);
         throw new Error(
@@ -1125,7 +1127,7 @@ export async function restoreLocalBackupFile(file: File) {
       encryptionMeta.type = "account";
       encryptionMeta.time = meta.time;
     } else if (name === "database.risudat") {
-      pendingDatabase = new Uint8Array(data);
+      pendingDatabase = data;
     } else {
       const coldStorageKey = getColdStorageBackupKey(name);
       let handledAsColdStorage = false;
@@ -1133,8 +1135,7 @@ export async function restoreLocalBackupFile(file: File) {
       if (coldStorageKey) {
         handledAsColdStorage = true;
         try {
-          const text = new TextDecoder().decode(data);
-          const jsonData = JSON.parse(text);
+          const jsonData = JSON.parse(textDecoder.decode(data));
 
           if (isColdStorageBackupData(jsonData)) {
             if (await setColdStorageItem(coldStorageKey, jsonData)) {
@@ -1208,7 +1209,7 @@ export async function restoreLocalBackupFile(file: File) {
     let entryName = "";
     let entryDataLength = 0;
     let entryDataReceived = 0;
-    let entryDataChunks: Uint8Array[] = [];
+    let entryDataBuffer = new Uint8Array();
 
     while (true) {
       const { done, value } = await reader.read();
@@ -1266,7 +1267,7 @@ export async function restoreLocalBackupFile(file: File) {
             }
             entryDataLength = length;
             entryDataReceived = 0;
-            entryDataChunks = [];
+            entryDataBuffer = new Uint8Array(length);
             parserPhase = "data";
 
             if (entryDataLength === 0) {
@@ -1291,7 +1292,7 @@ export async function restoreLocalBackupFile(file: File) {
           chunkOffset += copyLength;
 
           if (entryNameOffset === entryNameBuffer.length) {
-            entryName = new TextDecoder().decode(entryNameBuffer);
+            entryName = textDecoder.decode(entryNameBuffer);
             parserPhase = "dataLength";
           }
           continue;
@@ -1301,31 +1302,24 @@ export async function restoreLocalBackupFile(file: File) {
           entryDataLength - entryDataReceived,
           value.length - chunkOffset,
         );
-        entryDataChunks.push(
+        entryDataBuffer.set(
           value.subarray(chunkOffset, chunkOffset + copyLength),
+          entryDataReceived,
         );
         entryDataReceived += copyLength;
         chunkOffset += copyLength;
 
         if (entryDataReceived === entryDataLength) {
-          let data: Uint8Array;
-          if (entryDataChunks.length === 1) {
-            data = entryDataChunks[0];
-          } else {
-            data = new Uint8Array(entryDataLength);
-            let dataOffset = 0;
-            for (const chunk of entryDataChunks) {
-              data.set(chunk, dataOffset);
-              dataOffset += chunk.length;
-            }
-          }
-
-          await restoreBackupEntry(entryName, data);
+          await restoreBackupEntry(entryName, entryDataBuffer);
           entryName = "";
-          entryDataChunks = [];
+          entryDataBuffer = new Uint8Array();
           parserPhase = "nameLength";
         }
       }
+    }
+
+    if (parserPhase !== "nameLength" || lengthOffset !== 0) {
+      throw new Error("Backup file ended with an incomplete entry");
     }
   } catch (streamErr) {
     // If chunked container failed, try fallback for raw database.bin
@@ -1334,9 +1328,11 @@ export async function restoreLocalBackupFile(file: File) {
       const buffer = await file.arrayBuffer();
       const rawBytes = new Uint8Array(buffer);
       const rawDb = await decodeRisuSave(rawBytes);
-      if (rawDb && typeof rawDb === "object") {
-        pendingDatabase = rawBytes;
+      if (!rawDb || typeof rawDb !== "object") {
+        throw streamErr;
       }
+      pendingDatabase = rawBytes;
+      decodedDatabase = rawDb as Database;
     } catch {
       throw streamErr;
     }
@@ -1354,21 +1350,7 @@ export async function restoreLocalBackupFile(file: File) {
   }
 
   if (!pendingDatabase) {
-    // Try raw database decode fallback
-    try {
-      const buffer = await file.arrayBuffer();
-      const rawBytes = new Uint8Array(buffer);
-      const rawDb = await decodeRisuSave(rawBytes);
-      if (rawDb && typeof rawDb === "object") {
-        pendingDatabase = rawBytes;
-      } else {
-        alertError("Failed, Is file corrupted?");
-        return;
-      }
-    } catch {
-      alertError("Failed, Is file corrupted?");
-      return;
-    }
+    throw new Error("Backup does not contain a database entry");
   }
 
   let db = pendingDatabase;
@@ -1388,7 +1370,7 @@ export async function restoreLocalBackupFile(file: File) {
     }
   }
   alertProgress("Decoding database...", 95);
-  const dbData = await decodeRisuSave(db);
+  const dbData = decodedDatabase ?? ((await decodeRisuSave(db)) as Database);
   normalizeDatabaseDefaults(dbData);
   dbData.pluginCustomStorage ??= {};
   const missingColdStorageKeys: string[] = [];

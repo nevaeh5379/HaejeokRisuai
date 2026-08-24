@@ -12,15 +12,12 @@
     User,
     Key,
     RefreshCw,
-    Layers,
     Bot,
     Zap,
     ChevronRight,
     FileUp,
     FolderCheck,
-    MessageSquare,
     ExternalLink,
-    Sliders,
     Server,
     Cpu,
     Hash
@@ -77,7 +74,6 @@
   ];
 
   // Migration State
-  let isCheckingLocal = $state(true);
   let detectedLocalDb = $state<LegacyDatabaseInfo | null>(null);
   let isDragging = $state(false);
   let isMigrating = $state(false);
@@ -239,13 +235,10 @@
     });
 
     void detectLocalLegacyDatabase().then((info) => {
-      isCheckingLocal = false;
       if (info && info.stats.characterCount > 0) {
         detectedLocalDb = info;
       }
-    }).catch(() => {
-      isCheckingLocal = false;
-    });
+    }).catch(() => {});
   });
 
   // Handle drag and drop or manual file selection
@@ -265,13 +258,6 @@
     isDragging = false;
     if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
       void processSelectedFile(e.dataTransfer.files[0]);
-    }
-  }
-
-  function handleFileInputChange(e: Event) {
-    const target = e.target as HTMLInputElement;
-    if (target.files && target.files.length > 0) {
-      void processSelectedFile(target.files[0]);
     }
   }
 
@@ -317,51 +303,64 @@
     settingsStore.state.textTheme = 'highcontrast';
     updateTextThemeAndCSS();
 
-    if (username.trim()) {
-      settingsStore.state.username = username.trim();
+    const trimmedUsername = username.trim();
+    const trimmedModel = modelName.trim();
+    const trimmedUrl = customURL.trim();
+    const trimmedApiKey = apiKey.trim();
+    const contextTokens = Number(maxContext);
+    const responseTokens = Number(maxResponse);
+
+    if (trimmedUsername) {
+      settingsStore.state.username = trimmedUsername;
     }
 
-    // Direct Context & Response Token Limit
-    settingsStore.state.maxContext = Number(maxContext) || 16000;
-    settingsStore.state.maxResponse = Number(maxResponse) || 1000;
+    // Match the limits enforced by the numeric inputs even when values are set programmatically.
+    settingsStore.state.maxContext = Number.isFinite(contextTokens)
+      ? Math.min(2_000_000, Math.max(1_000, contextTokens))
+      : 16_000;
+    settingsStore.state.maxResponse = Number.isFinite(responseTokens)
+      ? Math.min(8_192, Math.max(100, responseTokens))
+      : 1_000;
 
-    // Provider & model setup
+    // Provider & model setup. aiModel stores Risu's registry ID, not always the API model slug.
     if (selectedProvider === 'claude') {
-      const targetModel = modelName.trim() || 'claude-3-7-sonnet-20250219';
+      const targetModel = trimmedModel || 'claude-3-7-sonnet-20250219';
       settingsStore.state.aiModel = targetModel;
       settingsStore.state.subModel = targetModel;
-      if (apiKey.trim()) settingsStore.state.claudeAPIKey = apiKey.trim();
+      if (trimmedApiKey) settingsStore.state.claudeAPIKey = trimmedApiKey;
       settingsStore.state.claudeCachingExperimental = true;
     } else if (selectedProvider === 'openai') {
-      const targetModel = modelName.trim() || 'gpt-4o';
+      const apiModel = trimmedModel || 'gpt-4o';
+      const targetModel = apiModel === 'gpt-4o' ? 'gpt4o' : apiModel === 'gpt-4o-mini' ? 'gpt4om' : apiModel;
       settingsStore.state.aiModel = targetModel;
       settingsStore.state.subModel = targetModel;
-      if (apiKey.trim()) settingsStore.state.openAIKey = apiKey.trim();
+      if (trimmedApiKey) settingsStore.state.openAIKey = trimmedApiKey;
     } else if (selectedProvider === 'gemini') {
-      const targetModel = modelName.trim() || 'gemini-2.5-flash';
+      const targetModel = trimmedModel || 'gemini-2.5-flash';
       settingsStore.state.aiModel = targetModel;
       settingsStore.state.subModel = targetModel;
-      if (apiKey.trim()) settingsStore.state.googleKey = apiKey.trim();
+      if (trimmedApiKey) settingsStore.state.google.accessToken = trimmedApiKey;
     } else if (selectedProvider === 'openrouter') {
       settingsStore.state.aiModel = 'openrouter';
       settingsStore.state.subModel = 'openrouter';
-      settingsStore.state.openrouterRequestModel = modelName.trim() || 'anthropic/claude-3.7-sonnet';
-      if (apiKey.trim()) settingsStore.state.openrouterKey = apiKey.trim();
+      settingsStore.state.openrouterRequestModel = trimmedModel || 'anthropic/claude-3.7-sonnet';
+      if (trimmedApiKey) settingsStore.state.openrouterKey = trimmedApiKey;
     } else if (selectedProvider === 'reverse_proxy') {
       settingsStore.state.aiModel = 'reverse_proxy';
       settingsStore.state.subModel = 'reverse_proxy';
-      if (customURL.trim()) settingsStore.state.reverseProxy = customURL.trim();
-      if (modelName.trim()) settingsStore.state.customModel = modelName.trim();
-      if (apiKey.trim()) settingsStore.state.proxyKey = apiKey.trim();
+      if (trimmedUrl) settingsStore.state.forceReplaceUrl = trimmedUrl;
+      if (trimmedModel) settingsStore.state.customProxyRequestModel = trimmedModel;
+      if (trimmedApiKey) settingsStore.state.proxyKey = trimmedApiKey;
     } else if (selectedProvider === 'ollama') {
-      settingsStore.state.aiModel = 'ollama';
-      settingsStore.state.subModel = 'ollama';
-      if (modelName.trim()) settingsStore.state.customModel = modelName.trim();
-      if (customURL.trim()) settingsStore.state.ollamaURL = customURL.trim();
+      settingsStore.state.aiModel = 'ollama-hosted';
+      settingsStore.state.subModel = 'ollama-hosted';
+      if (trimmedModel) settingsStore.state.ollamaModel = trimmedModel;
+      if (trimmedUrl) settingsStore.state.ollamaURL = trimmedUrl;
+      settingsStore.state.ollamaModelSource = 'local';
     } else if (selectedProvider === 'horde') {
       settingsStore.state.aiModel = 'horde:::auto';
       settingsStore.state.subModel = 'horde:::auto';
-      if (apiKey.trim()) settingsStore.state.hordeKey = apiKey.trim();
+      if (trimmedApiKey) settingsStore.state.hordeConfig.apiKey = trimmedApiKey;
     }
 
     // Translation setup
@@ -563,7 +562,6 @@
               onclick={() => {
                 if (!isMigrating) {
                   currentStage = 'gateway';
-                  parsedDbInfo = null;
                   migrationError = null;
                 }
               }}
