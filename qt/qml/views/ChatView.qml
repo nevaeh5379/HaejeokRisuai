@@ -449,10 +449,36 @@ Item {
                 flickableDirection: Flickable.VerticalFlick
                 pixelAligned: true
 
-                // Generous cache buffer to eliminate delegate creation jitter & popping
-                cacheBuffer: 5000
-                displayMarginBeginning: 2000
-                displayMarginEnd: 2000
+                // Keep only a modest off-screen cache. A huge cache is especially expensive
+                // when messages contain WebEngineView-backed HTML delegates.
+                cacheBuffer: Math.max(600, height)
+                displayMarginBeginning: 160
+                displayMarginEnd: 320
+
+                // Sticky-tail scrolling: streaming content may grow after atYEnd becomes false,
+                // so remember whether the user intentionally left the bottom instead.
+                property bool followTail: true
+
+                function isNearEnd() {
+                    return contentHeight <= height || contentY >= Math.max(0, contentHeight - height - 96);
+                }
+
+                function scrollToTail() {
+                    if (!root.hasCharacter) return;
+                    Qt.callLater(function() {
+                        messageListView.positionViewAtEnd();
+                    });
+                }
+
+                onMovementStarted: {
+                    if (!messageListView.isNearEnd()) {
+                        messageListView.followTail = false;
+                    }
+                }
+
+                onMovementEnded: {
+                    messageListView.followTail = messageListView.isNearEnd();
+                }
 
                 ScrollBar.vertical: ScrollBar {
                     id: vScrollBar
@@ -461,39 +487,23 @@ Item {
                     active: true
                 }
 
-                // Smooth and precise desktop mouse wheel handler
-                WheelHandler {
-                    id: desktopWheelHandler
-                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                    target: null
-                    onWheel: function(event) {
-                        var delta = event.angleDelta.y !== 0 ? event.angleDelta.y : event.pixelDelta.y;
-                        if (delta === 0) return;
+                // Let ListView handle mouse wheels and touchpads natively. A second WheelHandler
+                // makes high-resolution touchpad deltas fight Flickable's own scrolling.
 
-                        var scrollStep = -delta * 0.9;
-                        var maxScrollY = Math.max(0, messageListView.contentHeight - messageListView.height);
-                        var targetY = Math.max(0, Math.min(maxScrollY, messageListView.contentY + scrollStep));
-
-                        messageListView.contentY = targetY;
-                        event.accepted = true;
+                // Scroll on append only while the user is following the tail.
+                onCountChanged: {
+                    if (messageListView.followTail && (typeof appConfig === "undefined" || appConfig.autoScroll)) {
+                        messageListView.scrollToTail();
                     }
                 }
 
-                // Scroll to bottom when a new message is appended
-                onCountChanged: {
-                    Qt.callLater(function() {
-                        messageListView.positionViewAtEnd();
-                    });
-                }
-
-                // Stream follow: only scroll down if already at the bottom
+                // Keep following a streaming response even though delegate growth temporarily
+                // makes atYEnd false. Stop only after the user intentionally scrolls away.
                 Connections {
                     target: chatCtrl.messageModel
                     function onMessageUpdated(row) {
-                        if (messageListView.atYEnd) {
-                            Qt.callLater(function() {
-                                messageListView.positionViewAtEnd();
-                            });
+                        if (messageListView.followTail && (typeof appConfig === "undefined" || appConfig.autoScroll)) {
+                            messageListView.scrollToTail();
                         }
                     }
                 }
@@ -501,11 +511,17 @@ Item {
                 Connections {
                     target: chatCtrl
                     function onGenerationFinished(response) {
-                        if (messageListView.atYEnd) {
-                            Qt.callLater(function() {
-                                messageListView.positionViewAtEnd();
-                            });
+                        if (messageListView.followTail && (typeof appConfig === "undefined" || appConfig.autoScroll)) {
+                            messageListView.scrollToTail();
                         }
+                    }
+                    function onCurrentChatChanged() {
+                        messageListView.followTail = true;
+                        messageListView.scrollToTail();
+                    }
+                    function onActiveCharacterChanged() {
+                        messageListView.followTail = true;
+                        messageListView.scrollToTail();
                     }
                 }
 
@@ -780,8 +796,11 @@ Item {
         var text = messageInput.text.trim();
         if (text.length === 0 && root.currentAttachmentPath === "") return;
 
+        // Sending from the input dock is an explicit request to follow the new turn.
+        messageListView.followTail = true;
+
         if (root.currentAttachmentPath !== "") {
-            chatCtrl.sendMessageWithAttachment(text, root.currentAttachmentPath);
+            chatCtrl.sendMessage(text, root.currentAttachmentPath);
             root.currentAttachmentPath = "";
         } else {
             chatCtrl.sendMessage(text);

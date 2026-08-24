@@ -2355,7 +2355,18 @@ QList<Chat> DatabaseManager::getChatsForCharacter(const QString& characterId) {
             varQ.bindValue(QStringLiteral(":cid"), chat.id);
             if (varQ.exec()) {
                 while (varQ.next()) {
-                    chat.chatVariables[varQ.value(0).toString()] = varQ.value(1).toString();
+                    const QString key = varQ.value(0).toString();
+                    const QString value = varQ.value(1).toString();
+                    if (key == QStringLiteral("__risu_modules")) {
+                        const QJsonDocument moduleDoc = QJsonDocument::fromJson(value.toUtf8());
+                        if (moduleDoc.isArray()) {
+                            for (const auto& moduleId : moduleDoc.array()) {
+                                if (moduleId.isString() && !moduleId.toString().isEmpty()) chat.modules.append(moduleId.toString());
+                            }
+                        }
+                    } else {
+                        chat.chatVariables[key] = value;
+                    }
                 }
             }
 
@@ -2468,12 +2479,26 @@ bool DatabaseManager::saveChat(const QString& characterId, const Chat& chat) {
     delVars.exec();
 
     for (auto it = chat.chatVariables.constBegin(); it != chat.chatVariables.constEnd(); ++it) {
+        if (it.key() == QStringLiteral("__risu_modules")) continue;
         QSqlQuery insV(m_db);
         insV.prepare(QStringLiteral("INSERT INTO chat_variables (chat_id, key, value) VALUES (:cid, :k, :v)"));
         insV.bindValue(QStringLiteral(":cid"), chat.id);
         insV.bindValue(QStringLiteral(":k"), it.key());
         insV.bindValue(QStringLiteral(":v"), it.value());
         insV.exec();
+    }
+
+    // Preserve Risu's chat-scoped module IDs without a schema-breaking migration.
+    // chat_variables is already a durable string KV table across all supported SQL dialects.
+    if (!chat.modules.isEmpty()) {
+        QJsonArray moduleIds;
+        for (const auto& moduleId : chat.modules) moduleIds.append(moduleId);
+        QSqlQuery insModules(m_db);
+        insModules.prepare(QStringLiteral("INSERT INTO chat_variables (chat_id, key, value) VALUES (:cid, :k, :v)"));
+        insModules.bindValue(QStringLiteral(":cid"), chat.id);
+        insModules.bindValue(QStringLiteral(":k"), QStringLiteral("__risu_modules"));
+        insModules.bindValue(QStringLiteral(":v"), QString::fromUtf8(QJsonDocument(moduleIds).toJson(QJsonDocument::Compact)));
+        insModules.exec();
     }
 
     // 4. Bookmarks
@@ -3422,6 +3447,17 @@ QJsonObject DatabaseManager::exportFullDatabase() {
     }
     root[QStringLiteral("groups")] = groupArr;
 
+    // Preserve native-compatible Risu module definitions and activation state.
+    auto exportJsonArraySetting = [&](const QString& key) {
+        const QString raw = getSystemSetting(key, QString()).toString();
+        const QJsonDocument doc = QJsonDocument::fromJson(raw.toUtf8());
+        if (doc.isArray()) root[key] = doc.array();
+    };
+    exportJsonArraySetting(QStringLiteral("modules"));
+    exportJsonArraySetting(QStringLiteral("enabledModules"));
+    const QString moduleIntegration = getSystemSetting(QStringLiteral("moduleIntergration"), QString()).toString();
+    if (!moduleIntegration.isEmpty()) root[QStringLiteral("moduleIntergration")] = moduleIntegration;
+
     return root;
 }
 
@@ -3464,6 +3500,22 @@ bool DatabaseManager::importFullDatabase(const QJsonObject& rootObj) {
     }
 
     m_db.commit();
+
+    auto importJsonArraySetting = [&](const QString& key) {
+        const QJsonValue value = rootObj.value(key);
+        if (value.isArray()) {
+            setSystemSetting(key,
+                QString::fromUtf8(QJsonDocument(value.toArray()).toJson(QJsonDocument::Compact)),
+                QStringLiteral("modules"));
+        }
+    };
+    importJsonArraySetting(QStringLiteral("modules"));
+    importJsonArraySetting(QStringLiteral("enabledModules"));
+    const QJsonValue moduleIntegration = rootObj.value(QStringLiteral("moduleIntergration"));
+    if (moduleIntegration.isString()) {
+        setSystemSetting(QStringLiteral("moduleIntergration"), moduleIntegration.toString(), QStringLiteral("modules"));
+    }
+
     return true;
 }
 

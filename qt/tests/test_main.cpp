@@ -4,7 +4,6 @@
 #include <QDir>
 #include <QDebug>
 #include <cassert>
-#include <QtWebEngineQuick/qtwebenginequickglobal.h>
 
 #include "core/Types.hpp"
 #include "core/AppConfig.hpp"
@@ -14,6 +13,7 @@
 #include "core/SoundEffectManager.hpp"
 #include "engine/Tokenizer.hpp"
 #include "engine/RegexEngine.hpp"
+#include "engine/ModuleEngine.hpp"
 #include "engine/PromptEngine.hpp"
 #include "engine/MemoryManager.hpp"
 #include "engine/TriggerEngine.hpp"
@@ -73,6 +73,7 @@ void testDatabaseAndTypes() {
     testChat.name = QStringLiteral("Integration Test Chat");
     testChat.firstMessageIndex = 0;
     testChat.lastDate = customChar.lastInteraction;
+    testChat.modules = QStringList{QStringLiteral("module-chat-test")};
 
     Message msg1;
     msg1.id = QStringLiteral("msg-1");
@@ -107,6 +108,7 @@ void testDatabaseAndTypes() {
     assert(retrieved->name == customChar.name);
     assert(retrieved->chats.size() == 1);
     assert(retrieved->chats[0].messages.size() == 3);
+    assert(retrieved->chats[0].modules.contains(QStringLiteral("module-chat-test")) && "Chat-scoped module IDs must survive relational persistence");
     assert(retrieved->chats[0].messages[2].swipes.size() == 2);
     assert(retrieved->chats[0].messages[2].currentSwipeIndex == 1);
 
@@ -198,6 +200,63 @@ void testPromptEngineAndMacros() {
     assert(loreTriggered && "Lorebook entry must be triggered and included in compiled prompt!");
     qInfo() << "  -> Lorebook keyword trigger successfully activated!";
     qInfo() << "  -> Total compiled messages:" << compiled.messages.size() << ", Estimated Tokens:" << compiled.estimatedTokens;
+
+    // Modern Risu promptTemplate execution must override the legacy formatingOrder path.
+    Preset templatePreset = preset;
+    templatePreset.mainPrompt = QStringLiteral("LEGACY_PROMPT_MUST_NOT_LEAK");
+    templatePreset.promptTemplate = QJsonArray{
+        QJsonObject{{QStringLiteral("type"), QStringLiteral("plain")},
+                    {QStringLiteral("type2"), QStringLiteral("normal")},
+                    {QStringLiteral("role"), QStringLiteral("system")},
+                    {QStringLiteral("text"), QStringLiteral("TEMPLATE_HEAD")}},
+        QJsonObject{{QStringLiteral("type"), QStringLiteral("lorebook")}},
+        QJsonObject{{QStringLiteral("type"), QStringLiteral("chat")},
+                    {QStringLiteral("rangeStart"), -1},
+                    {QStringLiteral("rangeEnd"), QStringLiteral("end")}},
+        QJsonObject{{QStringLiteral("type"), QStringLiteral("plain")},
+                    {QStringLiteral("type2"), QStringLiteral("normal")},
+                    {QStringLiteral("role"), QStringLiteral("system")},
+                    {QStringLiteral("text"), QStringLiteral("TEMPLATE_TAIL")}}
+    };
+
+    CompiledPrompt templated = engine.buildPrompt(testChar, chat, templatePreset, persona, QList<LorebookEntry>{}, QString());
+    assert(!templated.messages.isEmpty());
+    assert(templated.messages.first().content == QStringLiteral("TEMPLATE_HEAD") && "promptTemplate order must be honored");
+    assert(templated.messages.last().content == QStringLiteral("TEMPLATE_TAIL") && "promptTemplate tail must be preserved");
+    bool legacyLeaked = false;
+    bool templateLoreFound = false;
+    for (const auto& msg : templated.messages) {
+        legacyLeaked |= msg.content.contains(QStringLiteral("LEGACY_PROMPT_MUST_NOT_LEAK"));
+        templateLoreFound |= msg.content.contains(QStringLiteral("Celestial magic harnesses cosmic stellar energy"));
+    }
+    assert(!legacyLeaked && "legacy formatingOrder prompt must not be injected when promptTemplate is active");
+    assert(templateLoreFound && "lorebook promptTemplate card must inject active lore");
+    qInfo() << "  -> Modern promptTemplate ordering and lorebook cards verified!";
+
+    // Native-compatible modules must contribute lorebooks and regex scripts when selected by the chat.
+    QJsonObject moduleLore{{QStringLiteral("id"), QStringLiteral("module-lore")},
+                           {QStringLiteral("content"), QStringLiteral("[Module Lore: native module injection works]")},
+                           {QStringLiteral("alwaysActive"), true}};
+    QJsonObject moduleRegex{{QStringLiteral("id"), QStringLiteral("module-regex")},
+                            {QStringLiteral("in"), QStringLiteral("MODULE_INPUT")},
+                            {QStringLiteral("out"), QStringLiteral("MODULE_OUTPUT")},
+                            {QStringLiteral("type"), QStringLiteral("editinput")}};
+    QJsonObject module{{QStringLiteral("id"), QStringLiteral("module-prompt-test")},
+                       {QStringLiteral("lorebook"), QJsonArray{moduleLore}},
+                       {QStringLiteral("regex"), QJsonArray{moduleRegex}}};
+    DatabaseManager::instance().setSystemSetting(QStringLiteral("modules"),
+        QString::fromUtf8(QJsonDocument(QJsonArray{module}).toJson(QJsonDocument::Compact)), QStringLiteral("modules"));
+    chat.modules = QStringList{QStringLiteral("module-prompt-test")};
+
+    ActiveModuleData resolvedModule = ModuleEngine::resolveActiveModules(testChar, chat);
+    assert(resolvedModule.lorebooks.size() == 1 && resolvedModule.regexScripts.size() == 1);
+    assert(RegexEngine::applyPreGenRegex(QStringLiteral("MODULE_INPUT"), resolvedModule.regexScripts) == QStringLiteral("MODULE_OUTPUT"));
+    CompiledPrompt modulePrompt = engine.buildPrompt(testChar, chat, templatePreset, persona, QList<LorebookEntry>{}, QString());
+    bool moduleLoreFound = false;
+    for (const auto& msg : modulePrompt.messages) moduleLoreFound |= msg.content.contains(QStringLiteral("native module injection works"));
+    assert(moduleLoreFound && "active module lorebook must participate in prompt compilation");
+    DatabaseManager::instance().setSystemSetting(QStringLiteral("modules"), QStringLiteral("[]"), QStringLiteral("modules"));
+    qInfo() << "  -> Chat-scoped module lorebook and regex integration verified!";
 
     qInfo() << "[TEST 2 PASSED] Prompt Engine & Macros working perfectly.\n";
 }
@@ -1317,7 +1376,6 @@ void testCharacterSessionsAndSwitching() {
 }
 
 int main(int argc, char *argv[]) {
-    QtWebEngineQuick::initialize();
     QCoreApplication app(argc, argv);
 
     qInfo() << "==================================================";

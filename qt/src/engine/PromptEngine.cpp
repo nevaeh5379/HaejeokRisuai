@@ -2,6 +2,7 @@
 #include "Tokenizer.hpp"
 #include "ScriptingEngine.hpp"
 #include "EmbeddingEngine.hpp"
+#include "ModuleEngine.hpp"
 #include "../core/AppConfig.hpp"
 #include <QDateTime>
 #include <QRandomGenerator>
@@ -403,6 +404,8 @@ CompiledPrompt PromptEngine::buildPrompt(
     allLore.append(globalLorebooks);
     allLore.append(character.globalLore);
     allLore.append(chat.localLore);
+    const ActiveModuleData moduleData = ModuleEngine::resolveActiveModules(character, chat);
+    allLore.append(moduleData.lorebooks);
 
     // Build system sections
     QString mainPrompt = replaceMacros(preset.mainPrompt.isEmpty() ? character.systemPrompt : preset.mainPrompt, character, persona, &chat);
@@ -418,6 +421,9 @@ CompiledPrompt PromptEngine::buildPrompt(
     QString loreContent = scanAndInjectLorebooks(allLore, chat.messages, character, persona, &chat);
     result.breakdown.lorebookTokens = Tokenizer::estimateTokens(loreContent);
 
+    // Legacy presets use formatingOrder. Modern Risu presets use promptTemplate,
+    // which is an executable sequence and must be assembled after chatHistory exists.
+    if (preset.promptTemplate.isEmpty()) {
     // Assemble system prompt in specified formatting order
     QStringList systemBlocks;
     QStringList order = preset.formattingOrder;
@@ -475,6 +481,7 @@ CompiledPrompt PromptEngine::buildPrompt(
         result.messages.append(exMsg);
         result.breakdown.systemTokens += Tokenizer::estimateTokens(exMsg.content);
     }
+    } // legacy formatingOrder assembly
 
     // First greeting message
     QString greeting;
@@ -516,6 +523,225 @@ CompiledPrompt PromptEngine::buildPrompt(
         extra.name = persona.name;
         extra.content = replaceMacros(extraUserMessage, character, persona, &chat);
         chatHistory.append(extra);
+    }
+
+    // Modern Risu promptTemplate execution. The old port loaded this JSON but then
+    // completely ignored it, so imported presets silently generated a different prompt.
+    if (!preset.promptTemplate.isEmpty()) {
+        QList<CompiledPromptMessage> templatedMessages;
+        QList<bool> removableHistory;
+
+        auto normalizeTemplateRole = [](QString role) {
+            role = role.trimmed().toLower();
+            if (role == QStringLiteral("user")) return QStringLiteral("user");
+            if (role == QStringLiteral("bot") || role == QStringLiteral("assistant") || role == QStringLiteral("char")) {
+                return QStringLiteral("assistant");
+            }
+            return QStringLiteral("system");
+        };
+
+        auto appendTemplateMessage = [&](const QString& role, const QString& content,
+                                         const QString& name = QString(), bool isHistory = false) {
+            if (content.trimmed().isEmpty()) return;
+            CompiledPromptMessage msg;
+            msg.role = role;
+            msg.content = content;
+            msg.name = name;
+            templatedMessages.append(msg);
+            removableHistory.append(isHistory);
+        };
+
+        auto wrapSlot = [&](QString format, const QString& slot) {
+            if (format.isEmpty()) return slot;
+            format = replaceMacros(format, character, persona, &chat);
+            format.replace(QStringLiteral("{{slot}}"), slot);
+            return format;
+        };
+
+        QString descriptionBlock = charDesc;
+        if (!charPersonality.isEmpty()) {
+            if (!descriptionBlock.isEmpty()) descriptionBlock += QStringLiteral("\n\n");
+            descriptionBlock += QStringLiteral("Description of %1: %2").arg(character.name, charPersonality);
+        }
+        if (!charScenario.isEmpty()) {
+            if (!descriptionBlock.isEmpty()) descriptionBlock += QStringLiteral("\n\n");
+            descriptionBlock += QStringLiteral("Circumstances and context of the dialogue: ") + charScenario;
+        }
+
+        QString templatePersona = persona.personaPrompt.isEmpty() ? personaPrompt
+                                                                   : replaceMacros(persona.personaPrompt, character, persona, &chat);
+        QString authorNoteRaw = chat.authorNote.isEmpty() ? character.authorNote : chat.authorNote;
+        authorNoteRaw = replaceMacros(authorNoteRaw, character, persona, &chat);
+
+        int includedLoreTokens = 0;
+        int includedAuthorNoteTokens = 0;
+        bool hasPostEverything = false;
+
+        if (!character.exampleMessage.isEmpty()) {
+            appendTemplateMessage(QStringLiteral("system"),
+                                  QStringLiteral("<START>\n") + replaceMacros(character.exampleMessage, character, persona, &chat));
+        }
+
+        for (const QJsonValue& value : preset.promptTemplate) {
+            if (!value.isObject()) continue;
+            const QJsonObject card = value.toObject();
+            const QString type = card.value(QStringLiteral("type")).toString().trimmed();
+
+            if (type == QStringLiteral("plain") || type == QStringLiteral("jailbreak") || type == QStringLiteral("cot")) {
+                if (type == QStringLiteral("jailbreak") && !preset.enableJailbreak) continue;
+
+                QString content = card.value(QStringLiteral("text")).toString();
+                const QString type2 = card.value(QStringLiteral("type2")).toString();
+                // Compatibility fallback for older preset exports where main/globalNote
+                // lived beside an otherwise-empty template card.
+                if (content.isEmpty() && type == QStringLiteral("plain") && type2 == QStringLiteral("main")) {
+                    content = mainPrompt;
+                } else if (content.isEmpty() && type == QStringLiteral("plain") && type2 == QStringLiteral("globalNote")) {
+                    content = globalNote;
+                } else if (content.isEmpty() && type == QStringLiteral("jailbreak")) {
+                    content = jailbreakPrompt;
+                } else {
+                    content = replaceMacros(content, character, persona, &chat);
+                }
+                appendTemplateMessage(normalizeTemplateRole(card.value(QStringLiteral("role")).toString()), content);
+                continue;
+            }
+
+            if (type == QStringLiteral("description")) {
+                QString content = descriptionBlock;
+                const QString inner = card.value(QStringLiteral("innerFormat")).toString();
+                if (!inner.isEmpty()) content = wrapSlot(inner, content);
+                appendTemplateMessage(normalizeTemplateRole(card.value(QStringLiteral("role2")).toString()), content);
+                continue;
+            }
+
+            if (type == QStringLiteral("persona")) {
+                QString content = templatePersona;
+                const QString inner = card.value(QStringLiteral("innerFormat")).toString();
+                if (!inner.isEmpty()) content = wrapSlot(inner, content);
+                appendTemplateMessage(normalizeTemplateRole(card.value(QStringLiteral("role2")).toString()), content);
+                continue;
+            }
+
+            if (type == QStringLiteral("lorebook")) {
+                if (!loreContent.isEmpty()) {
+                    appendTemplateMessage(QStringLiteral("system"), loreContent);
+                    includedLoreTokens += Tokenizer::estimateTokens(loreContent);
+                }
+                continue;
+            }
+
+            if (type == QStringLiteral("authornote")) {
+                QString content = authorNoteRaw;
+                if (content.isEmpty()) content = card.value(QStringLiteral("defaultText")).toString();
+                const QString inner = card.value(QStringLiteral("innerFormat")).toString();
+                if (!inner.isEmpty()) content = wrapSlot(inner, content);
+                if (!content.isEmpty()) {
+                    content = replaceMacros(content, character, persona, &chat);
+                    result.authorNoteText = content;
+                    includedAuthorNoteTokens += Tokenizer::estimateTokens(content);
+                    appendTemplateMessage(normalizeTemplateRole(card.value(QStringLiteral("role2")).toString()), content);
+                }
+                continue;
+            }
+
+            if (type == QStringLiteral("chat")) {
+                int start = card.contains(QStringLiteral("rangeStart"))
+                                ? card.value(QStringLiteral("rangeStart")).toInt(0) : 0;
+                int end = chatHistory.size();
+                const QJsonValue rangeEnd = card.value(QStringLiteral("rangeEnd"));
+                if (rangeEnd.isDouble()) end = rangeEnd.toInt(chatHistory.size());
+                else if (rangeEnd.isString() && rangeEnd.toString() != QStringLiteral("end")) end = rangeEnd.toString().toInt();
+
+                if (start == -1000) {
+                    start = 0;
+                    end = chatHistory.size();
+                }
+                if (start < 0) start = qMax(0, chatHistory.size() + start);
+                if (end < 0) end = qMax(0, chatHistory.size() + end);
+                start = qBound(0, start, chatHistory.size());
+                end = qBound(0, end, chatHistory.size());
+                if (start >= end) continue;
+
+                for (int i = start; i < end; ++i) {
+                    const auto& historyMsg = chatHistory[i];
+                    appendTemplateMessage(historyMsg.role, historyMsg.content, historyMsg.name, true);
+                }
+                continue;
+            }
+
+            if (type == QStringLiteral("postEverything")) {
+                hasPostEverything = true;
+                if (!postHistoryInstructions.isEmpty()) {
+                    appendTemplateMessage(QStringLiteral("system"), postHistoryInstructions);
+                }
+                continue;
+            }
+
+            if (type == QStringLiteral("chatML")) {
+                // Keep ChatML content rather than dropping an unfamiliar template card.
+                // Full ChatML splitting can be layered on later without losing user data now.
+                appendTemplateMessage(QStringLiteral("system"),
+                                      replaceMacros(card.value(QStringLiteral("text")).toString(), character, persona, &chat));
+                continue;
+            }
+
+            // memory/cache cards require Risu's separate memory/cache subsystems; preserving
+            // ordering by ignoring only those special control cards is safer than inventing text.
+        }
+
+        // Risu appends postEverything when the template omitted it.
+        if (!hasPostEverything && !postHistoryInstructions.isEmpty()) {
+            appendTemplateMessage(QStringLiteral("system"), postHistoryInstructions);
+        }
+
+        int maxContext = preset.contextLimit > 0 ? preset.contextLimit : 16000;
+        int reservedResponseTokens = preset.maxTokens > 0 ? preset.maxTokens : 1000;
+        int availableTokensForPrompt = qMax(500, maxContext - reservedResponseTokens);
+
+        int totalTokens = 0;
+        int historyCount = 0;
+        for (int i = 0; i < templatedMessages.size(); ++i) {
+            totalTokens += Tokenizer::estimateTokens(templatedMessages[i].content);
+            if (removableHistory.value(i)) ++historyCount;
+        }
+
+        while (totalTokens > availableTokensForPrompt && historyCount > 1) {
+            int removeIndex = -1;
+            for (int i = 0; i < removableHistory.size(); ++i) {
+                if (removableHistory[i]) {
+                    removeIndex = i;
+                    break;
+                }
+            }
+            if (removeIndex < 0) break;
+            totalTokens -= Tokenizer::estimateTokens(templatedMessages[removeIndex].content);
+            templatedMessages.removeAt(removeIndex);
+            removableHistory.removeAt(removeIndex);
+            --historyCount;
+        }
+
+        int historyTokens = 0;
+        int fixedTokens = 0;
+        QStringList systemPieces;
+        for (int i = 0; i < templatedMessages.size(); ++i) {
+            const int tokens = Tokenizer::estimateTokens(templatedMessages[i].content);
+            if (removableHistory.value(i)) historyTokens += tokens;
+            else fixedTokens += tokens;
+            if (!removableHistory.value(i) && templatedMessages[i].role == QStringLiteral("system")) {
+                systemPieces.append(templatedMessages[i].content);
+            }
+        }
+
+        result.messages = templatedMessages;
+        result.systemPromptCombined = systemPieces.join(QStringLiteral("\n\n"));
+        result.breakdown.historyTokens = historyTokens;
+        result.breakdown.lorebookTokens = includedLoreTokens;
+        result.breakdown.authorNoteTokens = includedAuthorNoteTokens;
+        result.breakdown.systemTokens = qMax(0, fixedTokens - includedLoreTokens - includedAuthorNoteTokens);
+        result.estimatedTokens = historyTokens + fixedTokens;
+        result.breakdown.totalTokens = result.estimatedTokens;
+        return result;
     }
 
     // Author's Note Injection (Chat author note overrides Character author note)

@@ -3,6 +3,7 @@
 #include "../core/AppConfig.hpp"
 #include "../engine/PromptEngine.hpp"
 #include "../engine/RegexEngine.hpp"
+#include "../engine/ModuleEngine.hpp"
 #include "../engine/Tokenizer.hpp"
 #include "../storage/ExportImport.hpp"
 #include <QDebug>
@@ -142,11 +143,20 @@ void ChatController::loadCharacter(const QString& characterId) {
     updateTokenEstimate();
 }
 
+QList<RegexScript> ChatController::activeRegexScripts() const {
+    QList<RegexScript> scripts = m_activeChar.customScripts;
+    if (!m_activeChar.chats.isEmpty()) {
+        const ActiveModuleData modules = ModuleEngine::resolveActiveModules(m_activeChar, m_activeChar.currentChat());
+        scripts.append(modules.regexScripts);
+    }
+    return scripts;
+}
+
 void ChatController::sendMessage(const QString& userText, const QString& attachmentPath) {
     if (m_isGenerating || (userText.trimmed().isEmpty() && attachmentPath.isEmpty())) return;
 
     // Apply preGen regex scripts if any
-    QString processedUserText = RegexEngine::applyPreGenRegex(userText, m_activeChar.customScripts);
+    QString processedUserText = RegexEngine::applyPreGenRegex(userText, activeRegexScripts());
 
     // Create User Message
     Message userMsg;
@@ -527,7 +537,7 @@ QStringList ChatController::availableEmotions() const {
 QString ChatController::formatInChat(const QString& rawContent) const {
     if (rawContent.isEmpty()) return QString();
     // 1. Apply inChat / editdisplay regex scripts
-    QString formatted = RegexEngine::applyInChatRegex(rawContent, m_activeChar.customScripts);
+    QString formatted = RegexEngine::applyInChatRegex(rawContent, activeRegexScripts());
 
     // 2. Resolve CBS macros including {{raw::asset}}, {{img::asset}}, {{source::char}}, variables
     Persona userPersona = DatabaseManager::instance().getActivePersona().value_or(Persona());
@@ -664,7 +674,7 @@ void ChatController::onProviderFinished(const QString& fullResponse, const QStri
     }
 
     // Apply postGen regex scripts if any
-    QString finalResponse = RegexEngine::applyPostGenRegex(fullResponse, m_activeChar.customScripts);
+    QString finalResponse = RegexEngine::applyPostGenRegex(fullResponse, activeRegexScripts());
 
     m_messageModel.finalizeLastMessage(finalResponse, thought, inTok, outTok);
     if (!detectedEmotion.isEmpty()) {

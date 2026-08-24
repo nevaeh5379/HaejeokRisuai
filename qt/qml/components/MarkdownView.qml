@@ -11,9 +11,12 @@ Item {
     property color textColor: Theme.fontStandard
     property bool showThought: false
 
+    // Any real HTML is rendered by Chromium. Qt Quick Text.RichText only implements
+    // a small HTML subset and silently mangles modern CSS, SVG and custom DOM markup.
     readonly property bool hasComplexHtml: {
         if (!root.rawText) return false;
-        return /<(?:div|style|svg|canvas|video|audio|details|iframe|table|script)\b|class=["']|style=["'](?=.*(?:flex|grid|position|animation|transform))/i.test(root.rawText);
+        var withoutThink = root.rawText.replace(/<think>[\s\S]*?<\/think>/gi, "");
+        return /<!--[\s\S]*?-->|<\/?[a-zA-Z][a-zA-Z0-9:-]*(?:\s[^>]*)?>/i.test(withoutThink);
     }
 
     implicitWidth: mainColumn.implicitWidth
@@ -113,33 +116,50 @@ Item {
             textFormat: Text.RichText
         }
 
-        // 2. Full Chromium WebEngine Mode (for complex HTML5/CSS3/DOM elements like unicon-image-container)
+        // 2. Full Chromium WebEngine Mode for actual HTML/CSS/SVG content.
         Item {
             id: webContainer
             visible: root.hasComplexHtml
             width: parent.width
-            height: webView.contentHeight > 0 ? webView.contentHeight : 240
+            height: root.hasComplexHtml ? Math.max(1, webView.contentHeight) : 0
 
             WebEngineView {
                 id: webView
                 anchors.fill: parent
                 backgroundColor: "transparent"
-                property int contentHeight: 240
+                property int contentHeight: 1
 
                 settings.javascriptEnabled: true
                 settings.localContentCanAccessRemoteUrls: true
                 settings.localContentCanAccessFileUrls: true
 
+                function measureContentHeight() {
+                    webView.runJavaScript(
+                        "Math.ceil(Math.max(document.body ? document.body.scrollHeight : 0, document.documentElement ? document.documentElement.scrollHeight : 0));",
+                        function(result) {
+                            if (result && result > 0) {
+                                webView.contentHeight = Math.max(1, Number(result));
+                            }
+                        }
+                    );
+                }
+
                 onLoadingChanged: function(loadRequest) {
                     if (loadRequest.status === WebEngineView.LoadSucceededStatus) {
-                        webView.runJavaScript(
-                            "Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);",
-                            function(result) {
-                                if (result && result > 0) {
-                                    webView.contentHeight = result + 16;
-                                }
-                            }
-                        );
+                        webView.measureContentHeight();
+                    }
+                }
+
+                // The generated document reports ResizeObserver/MutationObserver changes
+                // through a private title prefix, so late images and script DOM updates resize
+                // the ListView delegate instead of clipping or leaving a giant blank region.
+                onTitleChanged: {
+                    var prefix = "__RISU_HEIGHT__:";
+                    if (title.indexOf(prefix) === 0) {
+                        var measured = Number(title.substring(prefix.length));
+                        if (isFinite(measured) && measured > 0) {
+                            webView.contentHeight = Math.max(1, Math.ceil(measured));
+                        }
                     }
                 }
 
@@ -165,83 +185,100 @@ Item {
     }
 
     function buildFullWebEngineDocument(bodyHtml) {
+        var resizeBridge =
+            "<script>(function(){" +
+            "var last=-1;" +
+            "function report(){" +
+            "var b=document.body,d=document.documentElement;" +
+            "var h=Math.ceil(Math.max(b?b.scrollHeight:0,d?d.scrollHeight:0,b?b.offsetHeight:0,d?d.offsetHeight:0));" +
+            "if(h>0&&h!==last){last=h;document.title='__RISU_HEIGHT__:'+h;}" +
+            "}" +
+            "if(window.ResizeObserver){new ResizeObserver(function(){requestAnimationFrame(report);}).observe(document.documentElement);}" +
+            "if(window.MutationObserver&&document.body){new MutationObserver(function(){requestAnimationFrame(report);}).observe(document.body,{subtree:true,childList:true,attributes:true,characterData:true});}" +
+            "window.addEventListener('load',report);" +
+            "document.addEventListener('DOMContentLoaded',report);" +
+            "requestAnimationFrame(report);setTimeout(report,50);setTimeout(report,250);" +
+            "})();</script>";
+
         return "<!DOCTYPE html><html><head><meta charset='utf-8'/>" +
+               "<meta name='viewport' content='width=device-width, initial-scale=1'/>" +
                "<style>" +
-               "  * { box-sizing: border-box; margin: 0; padding: 0; }" +
-               "  body { font-family: " + Theme.fontFamily + ", sans-serif; font-size: 15px; line-height: 1.6; color: " + root.textColor + "; background: transparent; overflow: hidden; }" +
-               "  img { max-width: 100%; height: auto; }" +
-               "  pre { background: " + Theme.darkbg + "; border: 1px solid " + Theme.darkborderc + "; padding: 8px 12px; border-radius: 6px; font-family: " + Theme.monoFontFamily + "; font-size: 13px; margin: 6px 0; white-space: pre-wrap; }" +
+               "  * { box-sizing: border-box; }" +
+               "  html, body { margin: 0; padding: 0; width: 100%; min-height: 1px; }" +
+               "  body { font-family: " + Theme.fontFamily + ", sans-serif; font-size: " + Theme.fontNormal + "px; line-height: 1.6; color: " + root.textColor + "; background: transparent; overflow-x: hidden; overflow-y: hidden; overflow-wrap: anywhere; }" +
+               "  img, video, svg, canvas { max-width: 100%; height: auto; }" +
+               "  pre { background: " + Theme.darkbg + "; border: 1px solid " + Theme.darkborderc + "; padding: 8px 12px; border-radius: 6px; font-family: " + Theme.monoFontFamily + "; font-size: 13px; margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }" +
                "  code { background: " + Theme.darkbutton + "; padding: 2px 6px; border-radius: 4px; font-family: " + Theme.monoFontFamily + "; font-size: 13px; }" +
                "  .unicon-image-container { display: inline-flex; align-items: center; justify-content: center; max-width: 100%; margin: 8px 0; border-radius: 8px; overflow: hidden; }" +
                "  .unicon-image-content { max-width: 100%; height: auto; display: block; border-radius: 8px; }" +
-               "</style></head><body>" + bodyHtml + "</body></html>";
+               "</style></head><body>" + bodyHtml + resizeBridge + "</body></html>";
+    }
+
+    function escapeHtml(text) {
+        return String(text)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
     }
 
     function renderRisuRichText(input) {
         if (!input) return "";
 
-        // Remove <think>...</think> if present in raw text
+        // Remove model reasoning blocks before either the native or Chromium renderer sees them.
         var cleaned = input.replace(/<think>[\s\S]*?<\/think>/gi, "");
 
-        // 1. Protect code blocks first
+        // Protect code first so HTML-looking examples remain literal code.
         var codeBlocks = [];
-        cleaned = cleaned.replace(/```([\s\S]*?)```/g, function(match, code) {
+        cleaned = cleaned.replace(/```(?:[^\n]*)\n?([\s\S]*?)```/g, function(match, code) {
             var token = "___RISU_CODE_BLOCK_" + codeBlocks.length + "___";
-            codeBlocks.push("<pre style='background-color:" + Theme.darkbg + "; border: 1px solid " + Theme.darkborderc + "; padding: 8px 12px; border-radius: 6px; font-family: " + Theme.monoFontFamily + "; font-size: 13px; margin: 6px 0; white-space: pre-wrap;'>" + code + "</pre>");
+            codeBlocks.push("<pre>" + root.escapeHtml(code) + "</pre>");
             return token;
         });
 
-        // 2. Protect inline code
         var inlineCodes = [];
         cleaned = cleaned.replace(/`([^`\n]+)`/g, function(match, code) {
             var token = "___RISU_INLINE_CODE_" + inlineCodes.length + "___";
-            inlineCodes.push("<code style='background-color:" + Theme.darkbutton + "; padding: 2px 6px; border-radius: 4px; font-family: " + Theme.monoFontFamily + "; font-size: 13px;'>" + code + "</code>");
+            inlineCodes.push("<code>" + root.escapeHtml(code) + "</code>");
             return token;
         });
 
-        // 3. Protect ALL valid HTML tags (<...>) so their attributes (class="...", src="...", style="...") aren't corrupted by markdown/quote parsers
+        // CSS/JS/SVG are opaque raw blocks. The old renderer protected only their tags,
+        // then inserted <br> and dialogue <span> elements INTO the source itself.
+        var rawBlocks = [];
+        function protectRaw(match) {
+            var token = "___RISU_RAW_BLOCK_" + rawBlocks.length + "___";
+            rawBlocks.push(match);
+            return token;
+        }
+        cleaned = cleaned.replace(/<!--[\s\S]*?-->/g, protectRaw);
+        cleaned = cleaned.replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, protectRaw);
+        cleaned = cleaned.replace(/<svg\b[^>]*>[\s\S]*?<\/svg\s*>/gi, protectRaw);
+
+        // Protect tags so attribute quotes/styles are never touched by markdown styling.
         var htmlTags = [];
-        cleaned = cleaned.replace(/<(\/?[a-zA-Z0-9\-]+(?:\s+[^>]*?)?\/?)>/g, function(match) {
+        cleaned = cleaned.replace(/<(\/?[a-zA-Z][a-zA-Z0-9:-]*(?:\s+[^>]*?)?\/?)>/g, function(match) {
             var token = "___RISU_HTML_TAG_" + htmlTags.length + "___";
             htmlTags.push(match);
             return token;
         });
 
-        // 4. Bold **text**
         cleaned = cleaned.replace(/\*\*([^*]+)\*\*/g, "<b style='color:" + Theme.fontBold + ";'>$1</b>");
-
-        // 5. Italic *text* (Narration styling)
-        var narrationColor = Theme.fontItalic;
-        cleaned = cleaned.replace(/(^|[^*])\*([^*]+)\*([^*]|$)/g, "$1<i style='color:" + narrationColor + ";'>$2</i>$3");
-
-        // 6. Dialogue Quotes "..." (Only matches quotes in raw text, not within HTML tags)
-        var quote1Color = Theme.fontQuote1;
-        cleaned = cleaned.replace(/("([^"\n]+)")/g, "<span style='color:" + quote1Color + "; font-weight: 500;'>$1</span>");
-
-        // 7. Dialogue Quotes 2 “...” or 「...」 or 『...』
-        var quote2Color = Theme.fontQuote2;
-        cleaned = cleaned.replace(/(“[\s\S]*?”)/g, "<span style='color:" + quote2Color + "; font-weight: 500;'>$1</span>");
-        cleaned = cleaned.replace(/(「[\s\S]*?」)/g, "<span style='color:" + quote2Color + "; font-weight: 500;'>$1</span>");
-        cleaned = cleaned.replace(/(『[\s\S]*?』)/g, "<span style='color:" + quote2Color + "; font-weight: 500;'>$1</span>");
-
-        // 8. Convert standard newlines to <br/>
+        cleaned = cleaned.replace(/(^|[^*])\*([^*]+)\*([^*]|$)/g, "$1<i style='color:" + Theme.fontItalic + ";'>$2</i>$3");
+        cleaned = cleaned.replace(/("([^"\n]+)")/g, "<span style='color:" + Theme.fontQuote1 + "; font-weight: 500;'>$1</span>");
+        cleaned = cleaned.replace(/(“[\s\S]*?”)/g, "<span style='color:" + Theme.fontQuote2 + "; font-weight: 500;'>$1</span>");
+        cleaned = cleaned.replace(/(「[\s\S]*?」)/g, "<span style='color:" + Theme.fontQuote2 + "; font-weight: 500;'>$1</span>");
+        cleaned = cleaned.replace(/(『[\s\S]*?』)/g, "<span style='color:" + Theme.fontQuote2 + "; font-weight: 500;'>$1</span>");
         cleaned = cleaned.replace(/\r\n/g, "<br/>").replace(/\n/g, "<br/>");
 
-        // 9. Restore protected HTML tags
-        for (var h = 0; h < htmlTags.length; ++h) {
+        for (var h = 0; h < htmlTags.length; ++h)
             cleaned = cleaned.replace("___RISU_HTML_TAG_" + h + "___", htmlTags[h]);
-        }
-
-        // 10. Restore inline codes
-        for (var i = 0; i < inlineCodes.length; ++i) {
+        for (var r = 0; r < rawBlocks.length; ++r)
+            cleaned = cleaned.replace("___RISU_RAW_BLOCK_" + r + "___", rawBlocks[r]);
+        for (var i = 0; i < inlineCodes.length; ++i)
             cleaned = cleaned.replace("___RISU_INLINE_CODE_" + i + "___", inlineCodes[i]);
-        }
-
-        // 11. Restore code blocks
-        for (var j = 0; j < codeBlocks.length; ++j) {
+        for (var j = 0; j < codeBlocks.length; ++j)
             cleaned = cleaned.replace("___RISU_CODE_BLOCK_" + j + "___", codeBlocks[j]);
-        }
 
-        return "<div style='line-height: 1.6; font-family: " + Theme.fontFamily + "; color: " + root.textColor + ";'>" + cleaned + "</div>";
+        return "<div style='line-height:1.6;font-family:" + Theme.fontFamily + ";color:" + root.textColor + ";'>" + cleaned + "</div>";
     }
 }

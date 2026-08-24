@@ -458,6 +458,7 @@ struct Chat {
     qint64 lastDate = 0;
     QString bindedPersona;        // bindedPersona / bindedPersonaId
     QString folderId;
+    QStringList modules;          // Risu module IDs enabled only for this chat
     QStringList bookmarks;
     QString authorNote;
     int authorNoteDepth = 3;
@@ -486,6 +487,10 @@ struct Chat {
         obj[QStringLiteral("lastMemory")] = lastMemory;
         obj[QStringLiteral("isStreaming")] = isStreaming;
         obj[QStringLiteral("streamingOptimizationMode")] = streamingOptimizationMode;
+
+        QJsonArray moduleArr;
+        for (const auto& moduleId : modules) moduleArr.append(moduleId);
+        obj[QStringLiteral("modules")] = moduleArr;
 
         QJsonArray bmArr;
         for (const auto& b : bookmarks) bmArr.append(b);
@@ -532,6 +537,12 @@ struct Chat {
         c.lastMemory = obj.value(QStringLiteral("lastMemory")).toString(obj.value(QStringLiteral("last_memory")).toString());
         c.isStreaming = obj.value(QStringLiteral("isStreaming")).toBool(obj.value(QStringLiteral("is_streaming")).toBool(false));
         c.streamingOptimizationMode = obj.value(QStringLiteral("streamingOptimizationMode")).toString(obj.value(QStringLiteral("streaming_optimization_mode")).toString());
+
+        if (obj.contains(QStringLiteral("modules")) && obj.value(QStringLiteral("modules")).isArray()) {
+            for (const auto& moduleId : obj.value(QStringLiteral("modules")).toArray()) {
+                if (moduleId.isString() && !moduleId.toString().isEmpty()) c.modules.append(moduleId.toString());
+            }
+        }
 
         if (obj.contains(QStringLiteral("bookmarks")) && obj.value(QStringLiteral("bookmarks")).isArray()) {
             for (const auto& b : obj.value(QStringLiteral("bookmarks")).toArray()) c.bookmarks.append(b.toString());

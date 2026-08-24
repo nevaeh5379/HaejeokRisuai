@@ -135,6 +135,7 @@ private slots:
 private:
     void saveCurrentChatToDb();
     void startGeneration(const QString& userText = QString(), bool isRegenerate = false);
+    QList<RegexScript> activeRegexScripts() const;
 
     Character m_activeChar;
     Preset m_activePreset;

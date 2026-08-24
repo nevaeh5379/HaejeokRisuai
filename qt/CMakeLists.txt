@@ -43,6 +43,8 @@ set(CORE_SOURCES
     src/engine/Tokenizer.cpp
     src/engine/RegexEngine.hpp
     src/engine/RegexEngine.cpp
+    src/engine/ModuleEngine.hpp
+    src/engine/ModuleEngine.cpp
     src/engine/PromptEngine.hpp
     src/engine/PromptEngine.cpp
     src/engine/MemoryManager.hpp

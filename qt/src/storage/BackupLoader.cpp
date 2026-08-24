@@ -50,6 +50,24 @@ static std::vector<uint8_t> decompressGzip(const uint8_t* data, size_t size) {
     return out;
 }
 
+static void persistModuleSettings(const QJsonObject& rootObj, DatabaseManager& db) {
+    auto saveArray = [&](const QString& key) {
+        const QJsonValue value = rootObj.value(key);
+        if (value.isArray()) {
+            db.setSystemSetting(key,
+                QString::fromUtf8(QJsonDocument(value.toArray()).toJson(QJsonDocument::Compact)),
+                QStringLiteral("modules"));
+        }
+    };
+    saveArray(QStringLiteral("modules"));
+    saveArray(QStringLiteral("enabledModules"));
+
+    const QJsonValue integration = rootObj.value(QStringLiteral("moduleIntergration"));
+    if (integration.isString()) {
+        db.setSystemSetting(QStringLiteral("moduleIntergration"), integration.toString(), QStringLiteral("modules"));
+    }
+}
+
 BackupLoader::BackupLoader(QObject* parent) : QObject(parent) {
 }
 
@@ -249,6 +267,7 @@ BackupImportResult BackupLoader::importBinaryBackup(const QString& filePath, std
 
     // Import into DatabaseManager
     DatabaseManager& db = DatabaseManager::instance();
+    persistModuleSettings(rootObj, db);
 
     // 1. Characters
     if (rootObj.contains(QStringLiteral("characters"))) {
@@ -399,6 +418,7 @@ BackupImportResult BackupLoader::importJsonBackup(const QString& filePath, std::
 
     QJsonObject rootObj = doc.object();
     DatabaseManager& db = DatabaseManager::instance();
+    persistModuleSettings(rootObj, db);
 
     if (progressCb) progressCb(50, 100, QStringLiteral("Writing database to SQLite..."));
     emit progress(50, 100, QStringLiteral("Writing database to SQLite..."));
