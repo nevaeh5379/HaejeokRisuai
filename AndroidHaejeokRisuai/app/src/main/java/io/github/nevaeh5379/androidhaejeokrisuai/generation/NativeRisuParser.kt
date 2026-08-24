@@ -13,6 +13,7 @@ internal data class NativeRisuParserContext(
     val variables: Map<String, String> = emptyMap(),
     val slots: Map<String, String> = emptyMap(),
     val mutationVariables: MutableMap<String, String>? = null,
+    val messageCount: Int? = null,
 )
 
 internal data class NativeRisuMutationResult(
@@ -292,7 +293,7 @@ internal object NativeRisuParser {
             "previouscharchat", "lastcharmessage" -> previousMessage(context, user = false)
             "previoususerchat", "lastusermessage" -> previousMessage(context, user = true)
             "firstmsgindex", "firstmessageindex", "first_msg_index" -> context.greetingIndex.toString()
-            "chatindex", "chat_index" -> context.history.lastIndex.toString()
+            "chatindex", "chat_index" -> ((context.messageCount ?: context.history.size) - 1).toString()
             "setvar" -> mutateVariable(context) { variables ->
                 variables[arg(0)] = arg(1)
             }

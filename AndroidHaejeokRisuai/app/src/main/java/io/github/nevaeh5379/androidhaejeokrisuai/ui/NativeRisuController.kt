@@ -18,6 +18,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.StorageConfigStore
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RisuStorage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RisuStorageFactory
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeChatRuntimeProcessor
+import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeDisplayProcessor
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeGenerationEngine
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeRegexProcessor
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeRisuParserContext
@@ -46,6 +47,7 @@ internal class NativeRisuController(context: Context) {
         private set
     var messagePage by mutableStateOf<MessagePage?>(null)
         private set
+    private var rawMessagePage: MessagePage? = null
     var selectedCharacter by mutableStateOf<CharacterSummary?>(null)
         private set
     var selectedChat by mutableStateOf<ChatSummary?>(null)
@@ -71,6 +73,7 @@ internal class NativeRisuController(context: Context) {
             config = newConfig
             overview = loaded
             chats = emptyList()
+            rawMessagePage = null
             messagePage = null
             selectedCharacter = null
             selectedChat = null
@@ -104,6 +107,7 @@ internal class NativeRisuController(context: Context) {
     suspend fun openCharacter(character: CharacterSummary) = runBusy {
         selectedCharacter = character
         selectedChat = null
+        rawMessagePage = null
         messagePage = null
         chats = requireStorage().loadCharacterChats(character.id)
         screen = NativeScreen.CHATS
@@ -111,7 +115,7 @@ internal class NativeRisuController(context: Context) {
 
     suspend fun openChat(chat: ChatSummary) = runBusy {
         selectedChat = chat
-        messagePage = requireStorage().loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE)
+        publishMessagePage(requireStorage().loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE))
         screen = NativeScreen.CHAT
     }
 
@@ -122,20 +126,22 @@ internal class NativeRisuController(context: Context) {
         val chat = storage.createChat(character.id, "New Chat ${chats.size + 1}")
         chats = storage.loadCharacterChats(character.id)
         selectedChat = chat
-        messagePage = storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE)
+        publishMessagePage(storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE))
         screen = NativeScreen.CHAT
         overview = overview?.copy(revision = (overview?.revision ?: 0) + 1)
     }
 
     suspend fun loadOlderMessages() = runBusy {
         val chat = selectedChat ?: return@runBusy
-        val current = messagePage ?: return@runBusy
+        val current = rawMessagePage ?: return@runBusy
         if (!current.hasMore) return@runBusy
         val older = requireStorage().loadChatMessagePage(chat.id, before = current.offset, limit = PAGE_SIZE)
-        messagePage = older.copy(
-            messages = older.messages + current.messages,
-            total = current.total,
-            hasMore = older.offset > 0,
+        publishMessagePage(
+            older.copy(
+                messages = older.messages + current.messages,
+                total = current.total,
+                hasMore = older.offset > 0,
+            ),
         )
     }
 
@@ -222,8 +228,8 @@ internal class NativeRisuController(context: Context) {
             runtimePatch = startTrigger.runtimePatch,
         )
         overview = freshOverview.copy(revision = userRevision)
-        messagePage = storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE)
         updateSelectedChatNote(startAuthorNote)
+        publishMessagePage(storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE))
         if (startTrigger.stopSending) return@runBusy
 
         val generated = generator.generate(
@@ -288,8 +294,50 @@ internal class NativeRisuController(context: Context) {
             runtimePatch = outputTrigger.runtimePatch,
         )
         overview = freshOverview.copy(revision = assistantRevision)
-        messagePage = storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE)
         updateSelectedChatNote(finalAuthorNote)
+        publishMessagePage(storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE))
+    }
+
+    private suspend fun publishMessagePage(raw: MessagePage) {
+        rawMessagePage = raw
+        val character = selectedCharacter
+        val chat = selectedChat
+        val settings = overview?.generationSettings
+        if (character == null || chat == null || settings == null || raw.messages.isEmpty()) {
+            messagePage = raw
+            return
+        }
+
+        val storage = requireStorage()
+        val profile = storage.loadCharacterProfile(character.id)
+        val promptContext = storage.loadChatPromptContext(chat.id)
+        val requiredDepth = NativeDisplayProcessor.requiredHistoryDepth(profile)
+        val history = when {
+            requiredDepth == null -> storage.loadAllChatMessages(chat.id)
+            requiredDepth <= raw.messages.size -> raw.messages
+            requiredDepth <= MAX_DISPLAY_CONDITION_DEPTH -> storage.loadChatMessagePage(
+                chat.id,
+                before = null,
+                limit = requiredDepth.coerceAtLeast(1),
+            ).messages
+            else -> storage.loadAllChatMessages(chat.id)
+        }
+        val rendered = raw.messages.map { message ->
+            message.copy(
+                data = NativeDisplayProcessor.process(
+                    data = message.data,
+                    settings = settings,
+                    character = profile,
+                    history = history,
+                    variables = promptContext.variables,
+                    chatId = chat.id,
+                    authorNote = chat.note,
+                    greetingIndex = promptContext.greetingIndex,
+                    messageCount = raw.total,
+                ),
+            )
+        }
+        messagePage = raw.copy(messages = rendered)
     }
 
     private fun updateSelectedChatNote(note: String) {
@@ -321,6 +369,7 @@ internal class NativeRisuController(context: Context) {
         config = null
         overview = null
         chats = emptyList()
+        rawMessagePage = null
         messagePage = null
         selectedCharacter = null
         selectedChat = null
@@ -384,6 +433,7 @@ internal class NativeRisuController(context: Context) {
 
     companion object {
         private const val PAGE_SIZE = 80
+        private const val MAX_DISPLAY_CONDITION_DEPTH = 500
         private const val MAX_IMPORT_BYTES = 64L * 1024 * 1024
     }
 }

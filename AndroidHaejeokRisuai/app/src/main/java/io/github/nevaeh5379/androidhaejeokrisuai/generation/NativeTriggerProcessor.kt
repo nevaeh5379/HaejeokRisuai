@@ -20,10 +20,12 @@ data class NativeTriggerResult(
     val stopSending: Boolean = false,
     val runtimePatch: RuntimeStatePatch = RuntimeStatePatch(),
     val requestState: List<NativePromptMessage>? = null,
+    val displayState: String? = null,
 )
 
 object NativeTriggerProcessor {
     private const val MAX_RECURSION = 10
+    private val TRANSIENT_MODES = setOf("display", "request")
 
     fun run(
         mode: String,
@@ -40,9 +42,13 @@ object NativeTriggerProcessor {
         inheritedStop: Boolean = false,
         inheritedPatch: RuntimeStatePatch = RuntimeStatePatch(),
         requestState: List<NativePromptMessage>? = null,
+        displayState: String? = null,
+        messageCount: Int = messages.size,
     ): NativeTriggerResult {
         if (character.triggerScripts.isEmpty()) {
-            return NativeTriggerResult(messages, variables, inheritedPrompt, inheritedStop, inheritedPatch, requestState)
+            return NativeTriggerResult(
+                messages, variables, inheritedPrompt, inheritedStop, inheritedPatch, requestState, displayState,
+            )
         }
         val working = messages.toMutableList()
         val vars = variables.toMutableMap()
@@ -52,7 +58,8 @@ object NativeTriggerProcessor {
         var runtimeCharacter = runtimePatch.applyTo(character)
         var runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
         var currentRequestState = requestState
-        val requestTempVars = mutableMapOf<String, String>()
+        var currentDisplayState = displayState
+        val temporaryVariables = mutableMapOf<String, String>()
 
         fun context() = NativeRisuParserContext(
             settings = settings,
@@ -61,19 +68,20 @@ object NativeTriggerProcessor {
             authorNote = runtimeAuthorNote,
             greetingIndex = greetingIndex,
             variables = vars,
+            messageCount = messageCount,
         )
         fun parse(value: Any?): String = NativeRisuParser.parse(value?.toString().orEmpty(), context())
         fun getVar(key: String): String {
             val persistentValue = NativeRisuParser.parse("{{getvar::$key}}", context())
             if (persistentValue != "null") return persistentValue
-            return if (mode == "request") requestTempVars[key] ?: "null" else persistentValue
+            return if (mode in TRANSIENT_MODES) temporaryVariables[key] ?: "null" else persistentValue
         }
 
         for (trigger in runtimeCharacter.triggerScripts) {
             if (manualName != null) {
                 if (trigger.comment != manualName) continue
             } else if (trigger.type != mode) continue
-            if (!passes(trigger, working, ::parse, ::getVar)) continue
+            if (!passes(trigger, working, messageCount, ::parse, ::getVar)) continue
 
             if (trigger.effects.firstOrNull()?.get("type")?.toString() == "v2Header") {
                 val v2 = NativeTriggerV2Processor.run(
@@ -90,7 +98,9 @@ object NativeTriggerProcessor {
                     inheritedPatch = runtimePatch,
                     mode = mode,
                     requestState = currentRequestState,
-                    requestTempVariables = requestTempVars,
+                    displayState = currentDisplayState,
+                    messageCount = messageCount,
+                    temporaryVariables = temporaryVariables,
                     runManual = { target, nestedMessages, nestedVars, nestedPrompt, nestedStop, nestedPatch ->
                         if (recursion < MAX_RECURSION || trigger.lowLevelAccess) {
                             run(
@@ -119,10 +129,11 @@ object NativeTriggerProcessor {
                 runtimeCharacter = runtimePatch.applyTo(character)
                 runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
                 currentRequestState = v2.requestState
+                currentDisplayState = v2.displayState
                 continue
             }
 
-            if (mode == "request") continue
+            if (mode in TRANSIENT_MODES) continue
             for (effect in trigger.effects) {
                 when (effect["type"]?.toString()) {
                     "setvar" -> {
@@ -198,12 +209,15 @@ object NativeTriggerProcessor {
                 }
             }
         }
-        return NativeTriggerResult(working, vars, prompt, stop, runtimePatch, currentRequestState)
+        return NativeTriggerResult(
+            working, vars, prompt, stop, runtimePatch, currentRequestState, currentDisplayState,
+        )
     }
 
     private fun passes(
         trigger: TriggerScript,
         messages: List<MessageRecord>,
+        messageCount: Int,
         parse: (Any?) -> String,
         getVar: (String) -> String,
     ): Boolean {
@@ -225,7 +239,7 @@ object NativeTriggerProcessor {
 
             val left = when (type) {
                 "var" -> getVar(condition["var"]?.toString().orEmpty())
-                "chatindex" -> messages.size.toString()
+                "chatindex" -> messageCount.toString()
                 "value" -> condition["var"]?.toString().orEmpty()
                 else -> continue
             }.let(parse)

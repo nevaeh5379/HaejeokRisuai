@@ -15,6 +15,7 @@ internal data class NativeTriggerV2Result(
     val stopSending: Boolean,
     val runtimePatch: RuntimeStatePatch,
     val requestState: List<NativePromptMessage>? = null,
+    val displayState: String? = null,
 )
 
 internal object NativeTriggerV2Processor {
@@ -32,7 +33,9 @@ internal object NativeTriggerV2Processor {
         inheritedPatch: RuntimeStatePatch,
         mode: String,
         requestState: List<NativePromptMessage>?,
-        requestTempVariables: MutableMap<String, String>,
+        displayState: String?,
+        messageCount: Int,
+        temporaryVariables: MutableMap<String, String>,
         runManual: (String, List<MessageRecord>, Map<String, String>, NativeTriggerPromptInjection, Boolean, RuntimeStatePatch) -> NativeTriggerResult,
     ): NativeTriggerV2Result {
         val working = messages.toMutableList()
@@ -45,6 +48,7 @@ internal object NativeTriggerV2Processor {
         var runtimeCharacter = runtimePatch.applyTo(character)
         var runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
         val mutableRequestState = requestState?.toMutableList()
+        var mutableDisplayState = displayState
         var currentIndent = 0
         var pc = 0
         var steps = 0
@@ -56,6 +60,7 @@ internal object NativeTriggerV2Processor {
             authorNote = runtimeAuthorNote,
             greetingIndex = greetingIndex,
             variables = persistent,
+            messageCount = messageCount,
         )
         fun parse(value: Any?): String = NativeRisuParser.parse(value?.toString().orEmpty(), context())
         fun getLocal(key: String): String? {
@@ -66,11 +71,11 @@ internal object NativeTriggerV2Processor {
             getLocal(key)?.let { return it }
             val persistentValue = NativeRisuParser.parse("{{getvar::$key}}", context())
             if (persistentValue != "null") return persistentValue
-            return if (mode == "request") requestTempVariables[key] ?: "null" else persistentValue
+            return if (mode in TRANSIENT_MODES) temporaryVariables[key] ?: "null" else persistentValue
         }
         fun setVar(key: String, value: String) {
-            if (mode == "request") {
-                requestTempVariables[key] = value
+            if (mode in TRANSIENT_MODES) {
+                temporaryVariables[key] = value
                 return
             }
             for (indent in currentIndent downTo 0) {
@@ -110,7 +115,8 @@ internal object NativeTriggerV2Processor {
             runtimeCharacter = runtimePatch.applyTo(character)
         }
         fun returnResult() = NativeTriggerV2Result(
-            working.toList(), persistent.toMap(), prompt, stopSending, runtimePatch, mutableRequestState?.toList(),
+            working.toList(), persistent.toMap(), prompt, stopSending, runtimePatch,
+            mutableRequestState?.toList(), mutableDisplayState,
         )
 
         val effects = trigger.effects
@@ -138,7 +144,12 @@ internal object NativeTriggerV2Processor {
             val effect = effects[pc]
             val type = effect["type"]?.toString().orEmpty()
             currentIndent = (effect["indent"] as? Number)?.toInt() ?: 0
-            if (mode == "request" && type !in REQUEST_ALLOWED) {
+            val allowed = when (mode) {
+                "request" -> REQUEST_ALLOWED
+                "display" -> DISPLAY_ALLOWED
+                else -> null
+            }
+            if (allowed != null && type !in allowed) {
                 pc++
                 continue
             }
@@ -559,6 +570,14 @@ internal object NativeTriggerV2Processor {
                     setVar(parse(effect["outputVar"]), jsNumberString(result))
                     pc++
                 }
+                "v2GetDisplayState" -> {
+                    setVar(parse(effect["outputVar"]), mutableDisplayState ?: "null")
+                    pc++
+                }
+                "v2SetDisplayState" -> {
+                    mutableDisplayState = resolve(effect["value"], effect["valueType"])
+                    pc++
+                }
                 "v2GetRequestState" -> {
                     val index = jsArrayIndex(resolve(effect["index"], effect["indexType"]))
                     setVar(parse(effect["outputVar"]), mutableRequestState?.getOrNull(index)?.content ?: "null")
@@ -742,16 +761,20 @@ internal object NativeTriggerV2Processor {
     }
 
     private val REQUEST_ROLES = setOf("user", "assistant", "system")
-    private val REQUEST_ALLOWED = setOf(
-        "v2Header", "v2GetRequestState", "v2SetRequestState", "v2GetRequestStateRole",
-        "v2SetRequestStateRole", "v2GetRequestStateLength", "v2SetVar", "v2If", "v2IfAdvanced",
-        "v2Else", "v2EndIndent", "v2LoopNTimes", "v2BreakLoop", "v2ConsoleLog", "v2StopTrigger",
-        "v2Random", "v2ExtractRegex", "v2RegexTest", "v2GetCharAt", "v2GetCharCount",
-        "v2ToLowerCase", "v2ToUpperCase", "v2SetCharAt", "v2SplitString", "v2JoinArrayVar",
-        "v2ConcatString", "v2MakeArrayVar", "v2GetArrayVarLength", "v2GetArrayVar", "v2SetArrayVar",
-        "v2PushArrayVar", "v2PopArrayVar", "v2ShiftArrayVar", "v2UnshiftArrayVar", "v2SpliceArrayVar",
-        "v2SliceArrayVar", "v2GetIndexOfValueInArrayVar", "v2RemoveIndexFromArrayVar", "v2Calculate",
-        "v2Comment", "v2DeclareLocalVar",
+    private val TRANSIENT_MODES = setOf("display", "request")
+    private val SAFE_ALLOWED = setOf(
+        "v2Header", "v2SetVar", "v2If", "v2IfAdvanced", "v2Else", "v2EndIndent", "v2LoopNTimes",
+        "v2BreakLoop", "v2ConsoleLog", "v2StopTrigger", "v2Random", "v2ExtractRegex", "v2RegexTest",
+        "v2GetCharAt", "v2GetCharCount", "v2ToLowerCase", "v2ToUpperCase", "v2SetCharAt",
+        "v2SplitString", "v2JoinArrayVar", "v2ConcatString", "v2MakeArrayVar", "v2GetArrayVarLength",
+        "v2GetArrayVar", "v2SetArrayVar", "v2PushArrayVar", "v2PopArrayVar", "v2ShiftArrayVar",
+        "v2UnshiftArrayVar", "v2SpliceArrayVar", "v2SliceArrayVar", "v2GetIndexOfValueInArrayVar",
+        "v2RemoveIndexFromArrayVar", "v2Calculate", "v2Comment", "v2DeclareLocalVar",
+    )
+    private val DISPLAY_ALLOWED = SAFE_ALLOWED + setOf("v2GetDisplayState", "v2SetDisplayState")
+    private val REQUEST_ALLOWED = SAFE_ALLOWED + setOf(
+        "v2GetRequestState", "v2SetRequestState", "v2GetRequestStateRole", "v2SetRequestStateRole",
+        "v2GetRequestStateLength",
     )
 
     private fun splitLiteral(source: String, delimiter: String): List<Any?> {
