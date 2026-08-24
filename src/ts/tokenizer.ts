@@ -11,17 +11,20 @@ import type { MultiModal, OpenAIChat } from "./process/index.svelte";
 import { supportsInlayImage } from "./process/files/inlays";
 import { risuChatParser } from "./parser/parser.svelte";
 import { tokenizeGGUFModel } from "./process/models/local";
-import { globalFetch } from "./globalApi.svelte";
+import { forageStorage, globalFetch } from "./globalApi.svelte";
 import { getModelInfo, LLMTokenizer, type LLMModel } from "./model/modellist";
 import { pluginV2 } from "./plugins/plugins.svelte";
 import type { GemmaTokenizer } from "@huggingface/transformers";
 import { LRUMap } from "mnemonist";
+import { isNodeServer } from "./platform";
+import { NodeStorage } from "./storage/nodeStorage";
 
 const MAX_CACHE_SIZE = 128;
 
 const encodeCache = new LRUMap<string, number[] | Uint32Array | Int32Array>(
   MAX_CACHE_SIZE,
 );
+const tokenCountCache = new LRUMap<string, number>(MAX_CACHE_SIZE * 4);
 
 function getHash(
   data: string,
@@ -86,6 +89,78 @@ export async function encodeWithTokenizer(
     default:
       return await tikJS(data, "cl100k_base");
   }
+}
+
+type ServerTiktokenEncoding = "cl100k_base" | "o200k_base";
+
+function resolveServerTiktokenEncoding(
+  modelInfo: LLMModel,
+  pluginTokenizer: string,
+): ServerTiktokenEncoding | null {
+  const db = getDatabase();
+  const nonTiktoken = new Set([
+    "mistral", "llama", "novelai", "claude", "novellist", "llama3",
+    "gemma", "cohere", "deepseek", "deepseek-v4", "glm4", "glm5",
+  ]);
+
+  if (db.aiModel === "openrouter" || db.aiModel === "reverse_proxy") {
+    return nonTiktoken.has(db.customTokenizer) ? null : "o200k_base";
+  }
+  if (db.aiModel === "custom" && pluginTokenizer) {
+    if (pluginTokenizer === "custom") return null;
+    if (pluginTokenizer === "cl100k_base") return "cl100k_base";
+    if (pluginTokenizer === "o200k_base") return "o200k_base";
+    return nonTiktoken.has(pluginTokenizer) ? null : "o200k_base";
+  }
+  if (modelInfo.tokenizer === LLMTokenizer.tiktokenO200Base) return "o200k_base";
+  if (modelInfo.tokenizer === LLMTokenizer.tiktokenCl100kBase) return "cl100k_base";
+  if (modelInfo.tokenizer === LLMTokenizer.Unknown) return "cl100k_base";
+  return null;
+}
+
+export async function countTokenTexts(texts: string[]): Promise<number[]> {
+  if (texts.length === 0) return [];
+  const db = getDatabase();
+  const modelInfo = getModelInfo(db.aiModel);
+  const pluginTokenizer =
+    pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizer ?? "none";
+  const results = new Array<number>(texts.length);
+  const missingTexts: string[] = [];
+  const missingIndexes: number[] = [];
+
+  for (let i = 0; i < texts.length; i++) {
+    const key = getHash(texts[i], db.aiModel, db.customTokenizer,
+      db.currentPluginProvider, db.googleClaudeTokenizing, modelInfo, pluginTokenizer);
+    const cached = db.useTokenizerCaching ? tokenCountCache.get(key) : undefined;
+    if (cached !== undefined) results[i] = cached;
+    else { missingTexts.push(texts[i]); missingIndexes.push(i); }
+  }
+
+  if (missingTexts.length > 0) {
+    let counts: number[] | null = null;
+    const encoding = resolveServerTiktokenEncoding(modelInfo, pluginTokenizer);
+    if (encoding && isNodeServer && forageStorage.realStorage instanceof NodeStorage) {
+      try {
+        counts = await forageStorage.realStorage.tokenizeCountBatch(missingTexts, encoding);
+      } catch (error) {
+        console.warn("Server tokenization failed; falling back to browser tokenizer", error);
+      }
+    }
+    if (!counts) {
+      counts = [];
+      for (const text of missingTexts) counts.push((await encode(text)).length);
+    }
+    for (let i = 0; i < missingIndexes.length; i++) {
+      const index = missingIndexes[i];
+      results[index] = counts[i];
+      if (db.useTokenizerCaching) {
+        const key = getHash(texts[index], db.aiModel, db.customTokenizer,
+          db.currentPluginProvider, db.googleClaudeTokenizing, modelInfo, pluginTokenizer);
+        tokenCountCache.set(key, counts[i]);
+      }
+    }
+  }
+  return results;
 }
 
 export async function encode(
@@ -519,12 +594,48 @@ export class ChatTokenizer {
     }
     return encoded;
   }
-  async tokenizeChats(data: OpenAIChat[]) {
-    let encoded = 0;
+  async tokenizeChatsDetailed(
+    data: OpenAIChat[],
+    args: { countThoughts?: boolean } = {},
+  ): Promise<number[]> {
+    const texts: string[] = [];
     for (const chat of data) {
-      encoded += await this.tokenizeChat(chat);
+      texts.push(chat.content);
+      if (chat.name && this.useName === "name") texts.push(chat.name);
+      if (args.countThoughts && chat.thoughts?.length) {
+        texts.push(...chat.thoughts);
+      }
     }
-    return encoded;
+
+    const counts = await countTokenTexts(texts);
+    let countIndex = 0;
+    const detailed: number[] = [];
+    for (const chat of data) {
+      let encoded = counts[countIndex++] + this.chatAdditionalTokens;
+      if (chat.name && this.useName === "name") {
+        encoded += counts[countIndex++] + 1;
+      }
+      if (args.countThoughts && chat.thoughts?.length) {
+        for (let i = 0; i < chat.thoughts.length; i++) {
+          encoded += counts[countIndex++] + 1;
+        }
+      }
+      if (chat.multimodals?.length) {
+        for (const multimodal of chat.multimodals) {
+          encoded += await this.tokenizeMultiModal(multimodal);
+        }
+      }
+      detailed.push(encoded);
+    }
+    return detailed;
+  }
+
+  async tokenizeChats(
+    data: OpenAIChat[],
+    args: { countThoughts?: boolean } = {},
+  ) {
+    const counts = await this.tokenizeChatsDetailed(data, args);
+    return counts.reduce((total, count) => total + count, 0);
   }
 
   tokenizeMultiModal(data: MultiModal) {
@@ -621,57 +732,43 @@ export async function strongBan(data: string, bias: { [key: number]: number }) {
 }
 
 export async function getCharToken(char?: character | groupChat | null) {
-  let persistant = 0;
-  let dynamic = 0;
-
   if (!char) {
-    const c = getCurrentCharacter();
-    char = c;
+    char = getCurrentCharacter();
   }
   if (char.type === "group") {
     return { persistant: 0, dynamic: 0 };
   }
 
-  const basicTokenize = async (data: string) => {
-    data = data.replace(/{{char}}/g, char.name).replace(/<char>/g, char.name);
-    return await tokenize(data);
-  };
-
-  persistant += await basicTokenize(char.desc);
-  persistant += await basicTokenize(char.personality ?? "");
-  persistant += await basicTokenize(char.scenario ?? "");
-  for (const lore of char.globalLore) {
-    let cont = lore.content
-      .split("\n")
-      .filter((line) => {
-        if (line.startsWith("@@")) {
-          return false;
-        }
-        if (line === "") {
-          return false;
-        }
-        return true;
-      })
-      .join("\n");
-    dynamic += await basicTokenize(cont);
-  }
-
+  const normalize = (data: string) =>
+    data.replace(/{{char}}/g, char.name).replace(/<char>/g, char.name);
+  const persistentTexts = [
+    normalize(char.desc),
+    normalize(char.personality ?? ""),
+    normalize(char.scenario ?? ""),
+  ];
+  const dynamicTexts = char.globalLore.map((lore) =>
+    normalize(
+      lore.content
+        .split("\n")
+        .filter((line) => !line.startsWith("@@") && line !== "")
+        .join("\n"),
+    ),
+  );
+  const counts = await countTokenTexts([...persistentTexts, ...dynamicTexts]);
+  const persistant = counts
+    .slice(0, persistentTexts.length)
+    .reduce((total, count) => total + count, 0);
+  const dynamic = counts
+    .slice(persistentTexts.length)
+    .reduce((total, count) => total + count, 0);
   return { persistant, dynamic };
 }
 
 export async function getChatToken(chat: Chat) {
-  let persistant = 0;
-
   const chatTokenizer = new ChatTokenizer(0, "name");
-  const chatf = chat.message.map((d) => {
-    return {
-      role: d.role === "user" ? "user" : "assistant",
-      content: d.data,
-    } as OpenAIChat;
-  });
-  for (const chat of chatf) {
-    persistant += await chatTokenizer.tokenizeChat(chat);
-  }
-
-  return persistant;
+  const chatf = chat.message.map((message) => ({
+    role: message.role === "user" ? "user" : "assistant",
+    content: message.data,
+  })) as OpenAIChat[];
+  return await chatTokenizer.tokenizeChats(chatf);
 }

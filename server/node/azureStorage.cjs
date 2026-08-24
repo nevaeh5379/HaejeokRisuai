@@ -893,6 +893,47 @@ class AzureStorage extends SqlStorageBase {
         return chat;
     }
 
+    async loadChatMessages(chatId, options = {}) {
+        const pool = await this.getPool();
+        const includeMetadata = options.mode !== 'generation';
+        const queries = [
+            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[messages] WHERE chat_id = @id ORDER BY position, id'),
+            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[message_attributes] WHERE chat_id = @id ORDER BY chat_id, message_id, [key]'),
+        ];
+        if (includeMetadata) {
+            queries.push(
+                pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[message_generation] WHERE chat_id = @id'),
+                pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[message_prompt_info] WHERE chat_id = @id'),
+                pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[message_prompt_toggles] WHERE chat_id = @id ORDER BY chat_id, message_id, position'),
+                pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[message_prompt_items] WHERE chat_id = @id ORDER BY chat_id, message_id, position'),
+            );
+        }
+        const results = await Promise.all(queries);
+        const messagesRes = results[0];
+        const attrsRes = results[1];
+        const generationRows = results[2]?.recordset ?? [];
+        const promptInfoRows = results[3]?.recordset ?? [];
+        const promptToggleRows = results[4]?.recordset ?? [];
+        const promptItemRows = results[5]?.recordset ?? [];
+        const relations = {
+            attributes: groupMessageRows(attrsRes.recordset),
+            generation: new Map(generationRows.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+            promptInfo: new Map(promptInfoRows.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+            promptToggles: groupMessageRows(promptToggleRows),
+            promptItems: groupMessageRows(promptItemRows),
+        };
+        return messagesRes.recordset.map((row) => {
+            const key = `${row.chat_id}\0${row.id}`;
+            return rebuildMessage(row, {
+                attributes: relations.attributes.get(key) || [],
+                generation: relations.generation.get(key) || null,
+                promptInfo: relations.promptInfo.get(key) || null,
+                promptToggles: relations.promptToggles.get(key) || [],
+                promptItems: relations.promptItems.get(key) || [],
+            });
+        });
+    }
+
     async loadPlugins() {
         if (this.pluginsCache) {
             return this.pluginsCache;

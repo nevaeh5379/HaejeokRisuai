@@ -33,10 +33,21 @@ describe("SQL database defaults", () => {
     expect(adapter.promptTemplate).toEqual([]);
     expect(adapter.instructChatTemplate).toBe("chatml");
     expect(adapter.customTokenizer).toBe("tik");
+    expect(adapter.hypaModel).toBe("openai3small");
     expect(adapter.getLoadedDomains!()).not.toContain("prompts");
 
     await vi.waitFor(() => expect(storage.loadPrompts).toHaveBeenCalledOnce());
     expect(adapter.promptSettings).toMatchObject({ maxThoughtTagDepth: -1 });
+  });
+
+  it("migrates removed browser embedding models to the API default", () => {
+    const adapter = createSqlDatabaseAdapter(
+      { hypaModel: "MiniLMGPU" } as any,
+      {} as any,
+    );
+    adapter.applyCoreDefaults!(normalizeDatabaseDefaults);
+
+    expect(adapter.hypaModel).toBe("openai3small");
   });
 
   it("repairs partially populated nested settings", () => {

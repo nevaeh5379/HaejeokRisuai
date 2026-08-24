@@ -27,6 +27,7 @@ import { HypaProcesser } from "./memory/hypamemory";
 import { runLuaEditTrigger } from "./scriptings";
 import { pluginV2 } from "../plugins/plugins.svelte";
 import { runTrigger } from "./triggers";
+import { RegexCompileCache } from "./regexCompileCache";
 
 const dreg = /{{data}}/g;
 const randomness = /\|\|\|/g;
@@ -93,6 +94,7 @@ let processScriptCache = new Map<string, string>();
 const SCRIPT_CACHE_MAX_ENTRIES = 128;
 const SCRIPT_CACHE_MAX_CHARS = 1024 * 1024;
 let processScriptCacheChars = 0;
+const compiledRegexCache = new RegexCompileCache(256);
 
 function generateScriptCacheKey(
   scripts: customscript[],
@@ -137,6 +139,7 @@ export function resetScriptCache() {
   processScriptCache = new Map();
   processScriptCacheChars = 0;
   bestMatchCache.clear();
+  compiledRegexCache.clear();
 }
 
 export async function processScriptFull(
@@ -242,9 +245,11 @@ export async function processScriptFull(
         input = risuChatParser(input, { chatID: chatID, cbsConditions });
       }
 
-      const reg = new RegExp(input, flag);
+      const reg = compiledRegexCache.get(input, flag);
       if (outScript.startsWith("@@") || pscript.actions.length > 0) {
+        reg.lastIndex = 0;
         if (reg.test(data)) {
+          reg.lastIndex = 0;
           if (outScript.startsWith("@@emo ")) {
             const emoName = script.out.substring(6).trim();
             let charemotions = get(CharEmotion);
@@ -286,7 +291,9 @@ export async function processScriptFull(
             pscript.actions.includes("move_bottom")
           ) {
             const isGlobal = flag.includes("g");
+            reg.lastIndex = 0;
             const matchAll = isGlobal ? data.matchAll(reg) : [data.match(reg)];
+            reg.lastIndex = 0;
             data = data.replace(reg, "");
             for (const matched of matchAll) {
               if (matched) {
@@ -347,6 +354,7 @@ export async function processScriptFull(
               pointer--;
             }
 
+            reg.lastIndex = 0;
             const r = lastChat.match(reg);
             if (!v) {
               data = data + r[0];
@@ -369,6 +377,7 @@ export async function processScriptFull(
           }
         }
       } else {
+        reg.lastIndex = 0;
         data = risuChatParser(data.replace(reg, outScript), {
           chatID: chatID,
           cbsConditions,
@@ -449,8 +458,21 @@ export async function processScriptFull(
       }
     }
 
-    const processer = new HypaProcesser();
-    await processer.addText(assetNames);
+    const assetNameSet = new Set(assetNames);
+    let processer: HypaProcesser | null = null;
+    const getAssetProcesser = async () => {
+      if (processer) return processer;
+      processer = new HypaProcesser(
+        "auto",
+        undefined,
+        char.chaId ? `dynamic-assets:${char.chaId}` : undefined,
+      );
+      const serverReady = await processer.prepareServerTextIndex(assetNames);
+      if (!serverReady) {
+        await processer.addText(assetNames);
+      }
+      return processer;
+    };
     const matches = data.matchAll(assetRegex);
 
     for (const match of matches) {
@@ -463,8 +485,8 @@ export async function processScriptFull(
             match[0],
             `{{${type}::${bestMatchCache.get(cacheKey)}}}`,
           );
-        } else if (!assetNames.includes(assetName)) {
-          const searched = await processer.similaritySearch(assetName);
+        } else if (!assetNameSet.has(assetName)) {
+          const searched = await (await getAssetProcesser()).similaritySearch(assetName, 1);
           const bestMatch = searched[0];
           if (bestMatch) {
             data = data.replaceAll(match[0], `{{${type}::${bestMatch}}}`);

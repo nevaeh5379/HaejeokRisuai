@@ -111,6 +111,15 @@ export default defineConfig(({command, mode}) => {
                 priority: 100,
               },
               {
+                // Heavy runtimes used only by optional/lazy features. Keeping
+                // them in the catch-all vendor chunk makes Rolldown preload
+                // Lua, browser inference, transpilation, audio and tokenizer
+                // code on the initial screen even when those features are idle.
+                name: 'optional-runtime',
+                test: /node_modules[\/](?:@dqbd[\/]tiktoken|sucrase|onnxruntime(?:-web|-common)?|@breezystack[\/]lamejs|sortablejs|wavefile|wasmoon|acorn(?:-walk)?|astring|peerjs|peerjs-js-binarypack|webrtc-adapter|sdp|diff|source-map|html-to-image|@huggingface[\/]jinja|@risuai[\/]ccardlib|svelte-awesome-color-picker|ts-interface-checker|svelte-awesome-slider|colord|@jridgewell[\/](?:trace-mapping|sourcemap-codec|resolve-uri|gen-mapping)|ollama)(?=[\/]|$)/,
+                priority: 95,
+              },
+              {
                 // Lucide icons are shared by many lazy Svelte screens. Leaving
                 // them to automatic splitting creates one sub-kilobyte request
                 // per icon as soon as the first screens mount.

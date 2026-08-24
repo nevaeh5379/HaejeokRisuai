@@ -1,18 +1,20 @@
 import localforage from "localforage";
-import { type HypaModel, localModels } from "./hypamemory";
+import { normalizeHypaModel, type HypaModel } from "./hypamemory";
 import { isContextModel, getContextProvider } from "./contextualEmbedding";
 import { TaskRateLimiter, TaskCanceledError } from "./taskRateLimiter";
-import { runEmbedding } from "../transformers";
-import { globalFetch } from "src/ts/globalApi.svelte";
+import { forageStorage, globalFetch } from "src/ts/globalApi.svelte";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { appendLastPath } from "src/ts/util";
-import { isMobile } from "src/ts/platform";
+import { isNodeServer } from "src/ts/platform";
+import { NodeStorage } from "src/ts/storage/nodeStorage";
+import { vectorContentSignature, vectorDescriptorRevision } from "./vectorIndexSignature";
 
 export interface HypaProcessorV2Options {
   model?: HypaModel;
   customEmbeddingUrl?: string;
   oaiKey?: string;
   rateLimiter?: TaskRateLimiter;
+  serverIndexId?: string;
 }
 
 export interface EmbeddingText<TMetadata> {
@@ -27,6 +29,7 @@ export interface EmbeddingResult<TMetadata> extends EmbeddingText<TMetadata> {
 
 export type EmbeddingVector = number[] | Float32Array;
 
+
 export class HypaProcessorV2<TMetadata> {
   private static readonly LOG_PREFIX = "[HypaProcessorV2]";
   public readonly options: HypaProcessorV2Options;
@@ -39,12 +42,13 @@ export class HypaProcessorV2<TMetadata> {
   public constructor(options?: HypaProcessorV2Options) {
     const db = getDatabase();
 
+    const model = normalizeHypaModel(options?.model ?? db.hypaModel);
     this.options = {
-      model: db.hypaModel || "MiniLM",
       customEmbeddingUrl: db.hypaCustomSettings?.url?.trim() || "",
       oaiKey: db.supaMemoryKey?.trim() || "",
       rateLimiter: new TaskRateLimiter(),
       ...options,
+      model,
     };
   }
 
@@ -79,6 +83,15 @@ export class HypaProcessorV2<TMetadata> {
 
     // Get query embeddings (don't save to memory)
     const ebdResults = await this.getEmbeds(ebdTexts, false);
+
+    const serverScoredResults = await this.tryServerSimilaritySearch(ebdResults);
+    if (serverScoredResults) {
+      const serverResultMap = new Map<string, [EmbeddingResult<TMetadata>, number][]>();
+      for (let i = 0; i < uniqueQueries.length; i++) {
+        serverResultMap.set(uniqueQueries[i], serverScoredResults[i]);
+      }
+      return queries.map((query) => serverResultMap.get(query));
+    }
 
     const scoredResultsMap = new Map<
       string,
@@ -256,43 +269,6 @@ export class HypaProcessorV2<TMetadata> {
           resultMap.set(id, ebdResult);
         }
       }
-    } else if (this.isLocalModel()) {
-      // Local model: Sequential processing
-      for (let i = 0; i < chunks.length; i++) {
-        // Progress callback
-        this.progressCallback?.(chunks.length - i - 1);
-
-        const chunk = chunks[i];
-        const embeddings = await this.getLocalEmbeds(
-          chunk.map((item) => item.content),
-        );
-
-        const savePromises = embeddings.map(async (embedding, j) => {
-          const { id, content, metadata } = chunk[j];
-
-          const ebdResult: EmbeddingResult<TMetadata> = {
-            id,
-            content,
-            embedding,
-            metadata,
-          };
-
-          // Save to DB
-          await this.forage.setItem(this.getCacheKey(content), {
-            content,
-            embedding,
-          });
-
-          // Save to memory
-          if (saveToMemory) {
-            this.vectors.set(id, ebdResult);
-          }
-
-          resultMap.set(id, ebdResult);
-        });
-
-        await Promise.all(savePromises);
-      }
     } else {
       // API model: Parallel processing
       const embeddingTasks = chunks.map((chunk) => {
@@ -364,6 +340,68 @@ export class HypaProcessorV2<TMetadata> {
     return ebdTexts.map((item) => resultMap.get(item.id));
   }
 
+  private async tryServerSimilaritySearch(
+    queryResults: EmbeddingResult<TMetadata>[],
+  ): Promise<[EmbeddingResult<TMetadata>, number][][] | null> {
+    if (!this.options.serverIndexId || isContextModel(this.options.model)) return null;
+    if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) return null;
+
+    const db = getDatabase();
+    const indexId = [
+      this.options.serverIndexId,
+      this.options.model,
+      this.options.model === "custom" ? this.options.customEmbeddingUrl : "",
+      this.options.model === "custom" ? db.hypaCustomSettings?.model?.trim() || "" : "",
+    ].join("|");
+    const vectors = Array.from(this.vectors.values());
+    const descriptors = vectors.map((vector) => ({
+      id: vector.id,
+      signature: vectorContentSignature(vector.content),
+    }));
+    const revision = vectorDescriptorRevision(descriptors);
+
+    try {
+      const storage = forageStorage.realStorage;
+      const revisionStatus = await storage.vectorIndexStatus(
+        indexId,
+        undefined,
+        revision,
+      );
+      const status = revisionStatus.ready
+        ? revisionStatus
+        : await storage.vectorIndexStatus(indexId, descriptors, revision);
+      if (status.missingIds.length > 0) {
+        const missing = new Set(status.missingIds);
+        await storage.vectorIndexUpsert(
+          indexId,
+          vectors
+            .filter((vector) => missing.has(vector.id))
+            .map((vector) => ({
+              id: vector.id,
+              signature: vectorContentSignature(vector.content),
+              embedding: Array.from(vector.embedding),
+            })),
+        );
+      }
+
+      const ranked = await storage.vectorIndexSearch(
+        indexId,
+        queryResults.map((result) => Array.from(result.embedding)),
+      );
+      return ranked.map((rows) =>
+        rows
+          .map(([id, score]): [EmbeddingResult<TMetadata>, number] | null => {
+            const vector = this.vectors.get(id);
+            return vector ? [vector, score] : null;
+          })
+          .filter((row): row is [EmbeddingResult<TMetadata>, number] => row !== null),
+      );
+    } catch (error) {
+      console.warn(`${HypaProcessorV2.LOG_PREFIX} Server vector search failed; using browser fallback`, error);
+      return null;
+    }
+  }
+
   private similarity(a: EmbeddingVector, b: EmbeddingVector): number {
     let dot = 0;
     let magA = 0;
@@ -396,25 +434,7 @@ export class HypaProcessorV2<TMetadata> {
   }
 
   private getOptimalChunkSize(): number {
-    // API
-    if (!this.isLocalModel()) {
-      return 50;
-    }
-
-    // WebGPU
-    if ("gpu" in navigator) {
-      return isMobile ? 5 : 10;
-    }
-
-    // WASM
-    const cpuCores = (navigator as Navigator).hardwareConcurrency || 4;
-    const baseChunkSize = isMobile ? Math.floor(cpuCores / 2) : cpuCores;
-
-    return Math.min(baseChunkSize, 10);
-  }
-
-  private isLocalModel(): boolean {
-    return Object.keys(localModels.models).includes(this.options.model);
+    return 50;
   }
 
   private chunkArray<T>(array: T[], size: number): T[][] {
@@ -425,16 +445,6 @@ export class HypaProcessorV2<TMetadata> {
     }
 
     return chunks;
-  }
-
-  private async getLocalEmbeds(contents: string[]): Promise<EmbeddingVector[]> {
-    const results: Float32Array[] = await runEmbedding(
-      contents,
-      localModels.models[this.options.model],
-      localModels.gpuModels.includes(this.options.model) ? "webgpu" : "wasm",
-    );
-
-    return results;
   }
 
   private async getAPIEmbeds(contents: string[]): Promise<EmbeddingVector[]> {

@@ -374,7 +374,7 @@
                 continue:continued
             })
             if(previousLength < characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.length){
-                rerolls.push(safeStructuredClone(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message).slice(previousLength))
+                rerolls.push(safeStructuredClone(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.slice(previousLength)))
                 rerollid = rerolls.length - 1
                 while (rerolls.length > rerollHistoryLimit) {
                     const removed = rerolls.shift()!

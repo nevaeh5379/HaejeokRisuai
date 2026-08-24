@@ -440,6 +440,58 @@ describe("NodePostgresStorage browser client", () => {
     expect(fetchMock.mock.calls[1][0]).toBe("/api/database-v2/chats/chat-123");
   });
 
+  it("loads full chat history from the message-only endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          messages: [
+            { chatId: "msg-1", role: "user", data: "oldest" },
+            { chatId: "msg-2", role: "char", data: "newest" },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const storage = new NodePostgresStorage(async () => "test-auth");
+    (storage as any).status = "enabled";
+
+    const messages = await storage.loadChatMessages("chat-123");
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0].chatId).toBe("msg-1");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/database-v2/chats/chat-123/messages",
+    );
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: "GET",
+      cache: "no-cache",
+      headers: { "risu-auth": "test-auth" },
+    });
+  });
+
+  it("requests generation history without heavy message metadata", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          messages: [{ chatId: "msg-1", role: "user", data: "hello" }],
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const storage = new NodePostgresStorage(async () => "test-auth");
+    (storage as any).status = "enabled";
+
+    await storage.loadChatMessages("chat-123", { mode: "generation" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/database-v2/chats/chat-123/messages?mode=generation",
+    );
+  });
+
   it("requests bounded chat pages with absolute offsets", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

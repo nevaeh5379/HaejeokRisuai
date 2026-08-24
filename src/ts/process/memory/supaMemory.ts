@@ -34,6 +34,21 @@ export async function supaMemory(
   currentTokens += 10;
 
   if (currentTokens > maxContextTokens) {
+    // SupaMemory repeatedly trims and probes the same prompt history. Compute
+    // per-message token costs once so Node deployments can batch the work and
+    // every later prefix operation becomes simple arithmetic.
+    let chatTokenCounts = await tokenizer.tokenizeChatsDetailed(chats);
+    const tokenPrefixSum = (count: number) =>
+      chatTokenCounts
+        .slice(0, Math.max(0, count))
+        .reduce((total, tokens) => total + tokens, 0);
+    const discardPrefix = (count: number) => {
+      if (count <= 0) return;
+      currentTokens -= tokenPrefixSum(count);
+      chats.splice(0, count);
+      chatTokenCounts.splice(0, count);
+    };
+
     let coIndex = -1;
     for (let i = 0; i < chats.length; i++) {
       if (chats[i].memo === "NewChat") {
@@ -42,10 +57,7 @@ export async function supaMemory(
       }
     }
     if (coIndex !== -1) {
-      for (let i = 0; i < coIndex; i++) {
-        currentTokens -= await tokenizer.tokenizeChat(chats[0]);
-        chats.splice(0, 1);
-      }
+      discardPrefix(coIndex);
     }
 
     let supaMemory = "";
@@ -81,27 +93,14 @@ export async function supaMemory(
 
           let indexSelected = -1;
           for (let j = 0; j < HypaData.length; j++) {
-            let i = 0;
-            let countTokens = currentTokens;
-            let countChats = safeStructuredClone(chats);
-            while (true) {
-              if (countChats.length === 0) {
-                break;
-              }
-              if (countChats[0].memo === HypaData[j].id) {
-                lastId = HypaData[j].id;
-                currentTokens = countTokens;
-                chats = countChats;
-                indexSelected = j;
-                break;
-              }
-              countTokens -= await tokenizer.tokenizeChat(countChats[0]);
-              countChats.splice(0, 1);
-              i += 1;
-            }
-            if (indexSelected !== -1) {
-              break;
-            }
+            const chatIndex = chats.findIndex(
+              (chat) => chat.memo === HypaData[j].id,
+            );
+            if (chatIndex === -1) continue;
+            lastId = HypaData[j].id;
+            discardPrefix(chatIndex);
+            indexSelected = j;
+            break;
           }
           if (indexSelected === -1) {
             return {
@@ -114,23 +113,16 @@ export async function supaMemory(
           supaMemory = HypaData[indexSelected].supa;
           hypaChunks = HypaData[indexSelected].hypa;
         } else {
-          let i = 0;
-          while (true) {
-            if (chats.length === 0) {
-              return {
-                currentTokens: currentTokens,
-                chats: chats,
-                error: "SupaMemory: chat ID not found",
-              };
-            }
-            if (chats[0].memo === id) {
-              lastId = id;
-              break;
-            }
-            currentTokens -= await tokenizer.tokenizeChat(chats[0]);
-            chats.splice(0, 1);
-            i += 1;
+          const chatIndex = chats.findIndex((chat) => chat.memo === id);
+          if (chatIndex === -1) {
+            return {
+              currentTokens: currentTokens,
+              chats: chats,
+              error: "SupaMemory: chat ID not found",
+            };
           }
+          discardPrefix(chatIndex);
+          lastId = id;
 
           supaMemory = data;
           if (db.removePunctuationHypa) {
@@ -147,33 +139,36 @@ export async function supaMemory(
     let hypaResult = "";
 
     if (arg.asHyper) {
-      const hypa = new HypaProcesser(db.hypaModel);
+      const hypa = new HypaProcesser(
+        db.hypaModel,
+        undefined,
+        room.id ? `supa-hypa:${char.chaId}:${room.id}` : undefined,
+      );
       hypa.oaikey = db.supaMemoryKey;
-      hypa.vectors = [];
       hypaChunks = hypaChunks.filter((value) => value.length > 1);
       if (hypaChunks.length > 0) {
-        await hypa.addText(
-          hypaChunks
-            .filter((value, index, self) => {
-              return self.indexOf(value) === index;
-            })
-            .map((value) => {
-              if (db.removePunctuationHypa) {
-                value = value.replace(/[\.,\/#!$%\^&\*;:{}=\-_`~()]/g, "");
-              }
-              return value;
-            })
-            .filter((v) => {
-              return !supaMemory
-                .replace(/[\.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
-                .includes(v.replace(/[\.,\/#!$%\^&\*;:{}=\-_`~()]/g, ""));
-            }),
-        );
+        const retrievalTexts = hypaChunks
+          .filter((value, index, self) => self.indexOf(value) === index)
+          .map((value) => {
+            if (db.removePunctuationHypa) {
+              return value.replace(/[\.,\/#!$%\^&\*;:{}=\-_`~()]/g, "");
+            }
+            return value;
+          })
+          .filter((value) => {
+            return !supaMemory
+              .replace(/[\.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
+              .includes(value.replace(/[\.,\/#!$%\^&\*;:{}=\-_`~()]/g, ""));
+          });
+        if (!(await hypa.prepareServerTextIndex(retrievalTexts))) {
+          await hypa.addText(retrievalTexts);
+        }
         const filteredChat = chats.filter(
           (r) => r.role !== "system" && r.role !== "function",
         );
         const s = await hypa.similaritySearch(
           stringlizeChat(filteredChat.slice(0, 4), char?.name ?? "", false),
+          3,
         );
         hypaResult = "";
         if (s.length > 0) {
@@ -353,7 +348,7 @@ export async function supaMemory(
           }
           continue;
         }
-        const tokens = await tokenizer.tokenizeChat(cont);
+        const tokens = chatTokenCounts[spiceLen];
         if (chunkSize + tokens > maxChunkSize) {
           if (stringlizedChat === "") {
             if (cont.role !== "function" && cont.role !== "system") {
@@ -372,6 +367,7 @@ export async function supaMemory(
         chunkSize += tokens;
       }
       chats.splice(0, spiceLen);
+      chatTokenCounts.splice(0, spiceLen);
 
       if (stringlizedChat !== "") {
         const result = await summarize(stringlizedChat);

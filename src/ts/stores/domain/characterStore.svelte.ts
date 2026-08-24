@@ -6,6 +6,59 @@ import { sqlCharacterData, sqlChatData } from "../../storage/sqlCommit";
 import { settingsStore } from "./settingsStore.svelte";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 
+// Keep persisted history ordering, overlay newer in-memory fields, and retain
+// stable-ID messages that have not reached storage yet.
+
+const CHARACTER_RUNTIME_KEYS = new Set(["chats", "chaId", "detailsLoaded"]);
+const CHAT_RUNTIME_KEYS = new Set([
+  "message",
+  "id",
+  "messagesLoaded",
+  "messageOffset",
+  "messageTotal",
+  "messagesFullyLoaded",
+  "preventMessageCompaction",
+  "detailsLoaded",
+]);
+
+function persistedFieldsFingerprint(
+  value: Record<string, unknown>,
+  excluded: Set<string>,
+): string {
+  const persisted: Record<string, unknown> = {};
+  for (const key of Object.keys(value)) {
+    if (excluded.has(key)) continue;
+    persisted[key] = value[key];
+  }
+  trackDeep(persisted);
+  return snapshotFingerprint(persisted);
+}
+
+function mergeLoadedMessages(
+  loaded: Chat["message"],
+  current: Chat["message"],
+): Chat["message"] {
+  if (current.length === 0) return loaded;
+
+  const currentById = new Map(
+    current
+      .filter((message) => message.chatId)
+      .map((message) => [message.chatId!, message]),
+  );
+  const loadedIds = new Set<string>();
+  const merged = loaded.map((message) => {
+    if (!message.chatId) return message;
+    loadedIds.add(message.chatId);
+    const existing = currentById.get(message.chatId);
+    return existing ? { ...message, ...existing } : message;
+  });
+
+  for (const message of current) {
+    if (message.chatId && !loadedIds.has(message.chatId)) merged.push(message);
+  }
+  return merged;
+}
+
 class CharacterStore {
   private storage: ISqlStorage | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -24,6 +77,8 @@ class CharacterStore {
   private characterDetailPromises = new Map<string, Promise<void>>();
   private chatDetailPromises = new Map<string, Promise<void>>();
   private olderChatPromises = new Map<string, Promise<number>>();
+  // Full history can be loaded without expensive historical generation/prompt metadata.
+  private generationOnlyMetadataChats = new Set<string>();
 
   characters = $state<(character | groupChat)[]>([]);
   selectedId = $state<number>(-1);
@@ -47,6 +102,7 @@ class CharacterStore {
     this.dirtyCharacters.clear();
     this.dirtyChats.clear();
     this.dirtyChatManifests.clear();
+    this.generationOnlyMetadataChats.clear();
     this.dirtyCharacterIds = false;
 
     for (const char of characters) {
@@ -109,96 +165,81 @@ class CharacterStore {
       if (!c.id) c.id = uuidv4();
     }
 
-    // Synchronous baselines taken at observe time.  The first (async) effect
-    // run compares against these so mutations occurring between observe and
-    // the first flush are still detected; later runs mark unconditionally.
-    const charBaseline = snapshotFingerprint(
-      sqlCharacterData($state.snapshot(char)),
+    // Track only data that is actually persisted. Message bodies live in the
+    // message store and must not cause character/chat metadata commits while
+    // streaming. Fingerprints also suppress broad Svelte proxy invalidations
+    // when the persisted metadata itself did not change.
+    let lastCharFingerprint = persistedFieldsFingerprint(
+      char as unknown as Record<string, unknown>,
+      CHARACTER_RUNTIME_KEYS,
     );
     const activeChatAtObserve = char.chats?.[char.chatPage ?? 0];
-    const chatBaselineId = activeChatAtObserve?.id;
-    const chatBaselineFp =
-      activeChatAtObserve && activeChatAtObserve.id !== undefined
-        ? snapshotFingerprint(sqlChatData($state.snapshot(activeChatAtObserve)))
-        : "";
-    const manifestBaseline = (char.chats ?? []).map((c) => c.id).join(",");
-    // Chats already known to storage when observation started; additions get marked
+    let lastChatId = activeChatAtObserve?.id;
+    let lastChatFingerprint = activeChatAtObserve
+      ? persistedFieldsFingerprint(
+          activeChatAtObserve as unknown as Record<string, unknown>,
+          CHAT_RUNTIME_KEYS,
+        )
+      : "";
+    let lastManifestKey = (char.chats ?? []).map((c) => c.id).join(",");
     const knownChatIds = new Set<string>((char.chats ?? []).map((c) => c.id));
 
-    let charInitial = true;
-    let manifestInitial = true;
-    // Deduplicates chat switches: only mutations to the *same* chat count as changes
-    let lastChatId: string | undefined = undefined;
-
     this.activeDispose = $effect.root(() => {
-      // Track active character property changes
       $effect(() => {
-        trackDeep(char);
-        if (charInitial) {
-          charInitial = false;
-          if (
-            snapshotFingerprint(sqlCharacterData($state.snapshot(char))) !==
-            charBaseline
-          ) {
-            this.dirtyCharacters.add(char.chaId);
-            this.scheduleCommit();
-          }
-          return;
-        }
+        const fingerprint = persistedFieldsFingerprint(
+          char as unknown as Record<string, unknown>,
+          CHARACTER_RUNTIME_KEYS,
+        );
+        if (fingerprint === lastCharFingerprint) return;
+        lastCharFingerprint = fingerprint;
         this.dirtyCharacters.add(char.chaId);
         this.scheduleCommit();
       });
 
-      // Track active chat (follows chatPage) property changes
+      // Chat switches should not persist a chat row by themselves. The new
+      // active chat becomes the comparison baseline; only later metadata
+      // changes to that same chat are committed.
       $effect(() => {
-        const chat = char.chats?.[char.chatPage ?? 0];
-        if (!chat) return;
-        trackDeep(chat);
-        if (lastChatId === undefined && chat.id === chatBaselineId) {
-          // First observation of the baseline chat — compare against observe-time state
-          lastChatId = chat.id;
-          if (
-            chatBaselineFp !== "" &&
-            snapshotFingerprint(sqlChatData($state.snapshot(chat))) !==
-              chatBaselineFp
-          ) {
-            this.dirtyChats.add(chat.id);
-            this.scheduleCommit();
-          }
+        const page = char.chatPage ?? 0;
+        const chat = char.chats?.[page];
+        if (!chat) {
+          lastChatId = undefined;
+          lastChatFingerprint = "";
           return;
         }
-        const isSameChat = lastChatId === chat.id;
-        lastChatId = chat.id;
-        if (!isSameChat) return;
-        this.dirtyChats.add(chat.id);
-        this.scheduleCommit();
+        const fingerprint = persistedFieldsFingerprint(
+          chat as unknown as Record<string, unknown>,
+          CHAT_RUNTIME_KEYS,
+        );
+        if (chat.id !== lastChatId) {
+          lastChatId = chat.id;
+          lastChatFingerprint = fingerprint;
+          return;
+        }
+        if (fingerprint === lastChatFingerprint) return;
+        lastChatFingerprint = fingerprint;
+        if (chat.id) {
+          this.dirtyChats.add(chat.id);
+          this.scheduleCommit();
+        }
       });
 
-      // Track chat list structural changes (add/remove/reorder).
-      // Also assigns ids to newly added chats (legacy observe-loop duty)
-      // and marks added chats so their metadata rows get persisted.
+      // Track chat list structure only. Broad proxy invalidations from message
+      // mutations may rerun this effect, but an unchanged manifest is a no-op.
       $effect(() => {
         const chats = char.chats ?? [];
         let added = false;
         for (const c of chats) {
-          if (!c.id) {
-            c.id = uuidv4();
-          }
+          if (!c.id) c.id = uuidv4();
           if (!knownChatIds.has(c.id)) {
             knownChatIds.add(c.id);
             this.dirtyChats.add(c.id);
             added = true;
           }
         }
-        if (manifestInitial) {
-          manifestInitial = false;
-          const manifestKey = chats.map((c) => c.id).join(",");
-          if (manifestKey !== manifestBaseline || added) {
-            this.dirtyChatManifests.add(char.chaId);
-            this.scheduleCommit();
-          }
-          return;
-        }
+        const manifestKey = chats.map((c) => c.id).join(",");
+        if (manifestKey === lastManifestKey && !added) return;
+        lastManifestKey = manifestKey;
         this.dirtyChatManifests.add(char.chaId);
         this.scheduleCommit();
       });
@@ -471,29 +512,63 @@ class CharacterStore {
 
   async ensureChatMessages(
     chatId: string,
-    options: { full?: boolean } = {},
+    options: { full?: boolean; generation?: boolean } = {},
   ): Promise<void> {
     const initialMessagePageSize = settingsStore.state.lowSpecMode ? 12 : 60;
     const char = this.characters.find((c) =>
       c.chats?.some((ch) => ch.id === chatId),
     );
     const chat = char?.chats?.find((ch) => ch.id === chatId);
+    const needsFullMetadata =
+      options.full &&
+      !options.generation &&
+      this.generationOnlyMetadataChats.has(chatId);
     if (
       chat?.messagesLoaded !== false &&
       chat?.detailsLoaded !== false &&
-      (!options.full || chat.messagesFullyLoaded !== false)
+      (!options.full || chat.messagesFullyLoaded !== false) &&
+      !needsFullMetadata
     ) {
       return;
     }
 
     if (this.chatDetailPromises.has(chatId)) {
       await this.chatDetailPromises.get(chatId);
+      if (
+        options.full &&
+        (chat?.messagesFullyLoaded === false ||
+          (!options.generation && this.generationOnlyMetadataChats.has(chatId)))
+      ) {
+        await this.ensureChatMessages(chatId, options);
+      }
       return;
     }
 
     const storage = this.storage || (await getSqlStorage());
     const promise = (async () => {
       try {
+        if (
+          options.full &&
+          chat?.detailsLoaded !== false &&
+          chat?.messagesLoaded !== false
+        ) {
+          const previousMessages = chat.message ?? [];
+          const messages = await storage.loadChatMessages(chatId, {
+            mode: options.generation ? "generation" : "full",
+          });
+          chat.message = mergeLoadedMessages(messages, previousMessages);
+          chat.messageOffset = 0;
+          chat.messageTotal = chat.message.length;
+          chat.messagesFullyLoaded = true;
+          chat.messagesLoaded = true;
+          if (options.generation) {
+            this.generationOnlyMetadataChats.add(chatId);
+          } else {
+            this.generationOnlyMetadataChats.delete(chatId);
+          }
+          return;
+        }
+
         const fullChat = await storage.loadChat(
           chatId,
           options.full ? undefined : { messageLimit: initialMessagePageSize },
@@ -556,6 +631,7 @@ class CharacterStore {
     this.arrayDispose = null;
     this.activeDispose?.();
     this.activeDispose = null;
+    this.generationOnlyMetadataChats.clear();
   }
 }
 

@@ -42,6 +42,10 @@ const {
     encodeDatabase: encodeLocalBackupDatabase,
 } = require('./localBackupFormat.cjs');
 const { normalizePageInteger, paginateMessages } = require('./messagePagination.cjs');
+const { countTokensBatch } = require('./tokenizeCount.cjs');
+const { resolveLoreEntries } = require('./loreResolve.cjs');
+const { checkVectorIndexRevision, syncVectorIndex, upsertVectorIndex, searchVectorIndex } = require('./vectorIndex.cjs');
+const { matchLoreBatch } = require('./loreMatch.cjs');
 const {
     PostgresPayloadError,
     PostgresRevisionConflictError,
@@ -972,6 +976,15 @@ async function hashJSON(json){
     const hash = crypto.createHash('sha256');
     hash.update(JSON.stringify(json));
     return hash.digest('hex');
+}
+
+async function getAuthenticatedIndexScope(req) {
+    const authHeader = normalizeAuthHeader(req.headers['risu-auth']);
+    const parts = authHeader.split('.');
+    if (parts.length !== 3) throw new TypeError('Invalid authentication token');
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
+    if (!payload?.pub) throw new TypeError('Authentication token has no public key');
+    return await hashJSON(payload.pub);
 }
 
 function isAuthorizedRequest(req) {
@@ -3414,6 +3427,116 @@ app.delete('/api/db-backup', authenticatedRouteLimiter, async (req, res, next) =
     }
 });
 
+app.post('/api/tokenize-count', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    try {
+        const counts = countTokensBatch(req.body?.texts, req.body?.encoding);
+        res.send({ counts });
+    } catch (error) {
+        if (error instanceof TypeError || error instanceof RangeError) {
+            res.status(400).send({ error: error.message });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.post('/api/lore-match-batch', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    try {
+        const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
+        const requests = Array.isArray(req.body?.requests) ? req.body.requests : [];
+        if (messages.length > 10000) {
+            res.status(400).send({ error: 'Too many lore scan messages' });
+            return;
+        }
+        const results = matchLoreBatch(messages, requests, {
+            username: req.body?.username,
+            charName: req.body?.charName,
+        });
+        res.send({ results });
+    } catch (error) {
+        if (error instanceof TypeError || error instanceof RangeError) {
+            res.status(400).send({ error: error.message });
+            return;
+        }
+        next(error);
+    }
+});
+
+
+app.post('/api/lore-resolve', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    try {
+        const result = resolveLoreEntries(req.body?.messages, req.body?.entries, {
+            username: req.body?.username,
+            charName: req.body?.charName,
+        });
+        res.send(result);
+    } catch (error) {
+        if (error instanceof TypeError || error instanceof RangeError) {
+            res.status(400).send({ error: error.message });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.post('/api/vector-index/status', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        const scope = await getAuthenticatedIndexScope(req);
+        const scopedIndexId = `${scope}:${req.body?.indexId}`;
+        if (!Object.prototype.hasOwnProperty.call(req.body ?? {}, 'descriptors')) {
+            res.send(checkVectorIndexRevision(scopedIndexId, req.body?.revision));
+            return;
+        }
+        res.send(syncVectorIndex(
+            scopedIndexId,
+            req.body?.descriptors,
+            req.body?.revision ?? null,
+        ));
+    } catch (error) {
+        if (error instanceof TypeError || error instanceof RangeError) return res.status(400).send({ error: error.message });
+        next(error);
+    }
+});
+
+app.post('/api/vector-index/upsert', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        const scope = await getAuthenticatedIndexScope(req);
+        res.send(upsertVectorIndex(`${scope}:${req.body?.indexId}`, req.body?.entries));
+    } catch (error) {
+        if (error instanceof TypeError || error instanceof RangeError) return res.status(400).send({ error: error.message });
+        next(error);
+    }
+});
+
+app.post('/api/vector-index/search', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        const scope = await getAuthenticatedIndexScope(req);
+        const results = searchVectorIndex(
+            `${scope}:${req.body?.indexId}`,
+            req.body?.queries,
+            req.body?.metric,
+            req.body?.topK ?? null,
+        );
+        if (results === null) return res.status(404).send({ error: 'Vector index not found', code: 'vector_index_missing' });
+        res.send({ results });
+    } catch (error) {
+        if (error instanceof TypeError || error instanceof RangeError) return res.status(400).send({ error: error.message });
+        next(error);
+    }
+});
+
 app.get('/api/database-v2', authenticatedRouteLimiter, async (req, res, next) => {
     if (!await checkAuth(req, res)) {
         return;
@@ -3870,7 +3993,9 @@ app.get('/api/database-v2/chats/:chatId/messages', authenticatedRouteLimiter, as
     }
 
     try {
-        const messages = await postgresStorage.loadChatMessages(req.params.chatId);
+        const messages = await postgresStorage.loadChatMessages(req.params.chatId, {
+            mode: req.query.mode === 'generation' ? 'generation' : 'full',
+        });
         if (req.query.limit !== undefined || req.query.before !== undefined) {
             const page = paginateMessages(messages, {
                 before: normalizePageInteger(req.query.before, undefined),

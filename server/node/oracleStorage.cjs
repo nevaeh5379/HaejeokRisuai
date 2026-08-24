@@ -1466,6 +1466,59 @@ class OracleStorage extends SqlStorageBase {
         }
     }
 
+    async loadChatMessages(chatId, options = {}) {
+        this.assertEnabled();
+        assertId(chatId, 'chatId');
+        const conn = await this.pool.getConnection();
+        const includeMetadata = options.mode !== 'generation';
+        try {
+            await conn.execute('SET TRANSACTION READ ONLY');
+            const queries = [
+                fetchRows(conn, `SELECT * FROM chat_messages WHERE chat_id = :1 ORDER BY position, id`, [chatId], { clobColumns: ['content_text'], blobColumns: ['content_binary'] }),
+                fetchRows(conn, `SELECT * FROM chat_message_attributes WHERE chat_id = :1 ORDER BY message_id, key_value`, [chatId]),
+            ];
+            if (includeMetadata) {
+                queries.push(
+                    fetchRows(conn, `SELECT * FROM chat_message_generation WHERE chat_id = :1`, [chatId]),
+                    fetchRows(conn, `SELECT * FROM chat_message_prompt_info WHERE chat_id = :1`, [chatId]),
+                    fetchRows(conn, `SELECT * FROM chat_message_prompt_toggles WHERE chat_id = :1 ORDER BY message_id, position`, [chatId], { clobColumns: ['toggle_value'] }),
+                    fetchRows(conn, `SELECT * FROM chat_message_prompt_items WHERE chat_id = :1 ORDER BY message_id, position`, [chatId]),
+                );
+            }
+            const results = await Promise.all(queries);
+            const messages = results[0];
+            const attributes = results[1];
+            const generations = results[2] ?? [];
+            const promptInfos = results[3] ?? [];
+            const promptToggles = results[4] ?? [];
+            const promptItems = results[5] ?? [];
+            const relations = {
+                attributes: groupMessageRows(attributes),
+                generation: new Map(generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+                promptInfo: new Map(promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+                promptToggles: groupMessageRows(promptToggles),
+                promptItems: groupMessageRows(promptItems),
+            };
+            const rebuilt = messages.map((row) => {
+                const key = `${row.chat_id}\0${row.id}`;
+                return rebuildMessage(row, {
+                    attributes: relations.attributes.get(key),
+                    generation: relations.generation.get(key),
+                    promptInfo: relations.promptInfo.get(key),
+                    promptToggles: relations.promptToggles.get(key),
+                    promptItems: relations.promptItems.get(key),
+                });
+            });
+            await conn.rollback();
+            return rebuilt;
+        } catch (error) {
+            try { await conn.rollback(); } catch (e) {}
+            throw error;
+        } finally {
+            try { await conn.close(); } catch (e) {}
+        }
+    }
+
     // ============================================================
     // 설정 로드: loadPlugins, loadPluginCustomStorage, ...
     // ============================================================

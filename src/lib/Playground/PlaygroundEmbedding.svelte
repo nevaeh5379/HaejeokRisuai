@@ -8,7 +8,7 @@
     import { settingsStore } from "src/ts/stores/domain";
 
     let query = $state("");
-    let model = $state("MiniLM");
+    let model = $state("openai3small");
     let customEmbeddingUrl = $state("");
     let data:string[] = $state([]);
     let dataresult:[string, number][] = $state([]);
@@ -29,23 +29,10 @@
 
 <span class="text-textcolor text-lg">Model</span>
 <SelectInput bind:value={model} className="mb-4">
-    {#if 'gpu' in navigator}
-        <OptionInput value="MiniLMGPU">MiniLM L6 v2 (GPU)</OptionInput>
-        <OptionInput value="nomicGPU">Nomic Embed Text v1.5 (GPU)</OptionInput>
-        <OptionInput value="bgeSmallEnGPU">BGE Small English (GPU)</OptionInput>
-        <OptionInput value="bgem3GPU">BGE Medium 3 (GPU)</OptionInput>
-        <OptionInput value="multiMiniLMGPU">Multilingual MiniLM L12 v2 (GPU)</OptionInput>
-        <OptionInput value="bgeM3KoGPU">BGE Medium 3 Korean (GPU)</OptionInput>
-    {/if}
-    <OptionInput value="MiniLM">MiniLM L6 v2 (CPU)</OptionInput>
-    <OptionInput value="nomic">Nomic Embed Text v1.5 (CPU)</OptionInput>
-    <OptionInput value="bgeSmallEn">BGE Small English (CPU)</OptionInput>
-    <OptionInput value="bgem3">BGE Medium 3 (CPU)</OptionInput>
-    <OptionInput value="multiMiniLM">Multilingual MiniLM L12 v2 (CPU)</OptionInput>
-    <OptionInput value="bgeM3Ko">BGE Medium 3 Korean (CPU)</OptionInput>
     <OptionInput value="openai3small">OpenAI text-embedding-3-small</OptionInput>
     <OptionInput value="openai3large">OpenAI text-embedding-3-large</OptionInput>
     <OptionInput value="ada">OpenAI Ada</OptionInput>
+    <OptionInput value="voyageContext3">Voyage Context 3</OptionInput>
     <OptionInput value="custom">Custom (OpenAI-compatible)</OptionInput>
 </SelectInput>
 
@@ -61,6 +48,11 @@
     <TextInput size="sm" marginBottom bind:value={settingsStore.state.hypaCustomSettings.key}/>
     <span class="text-textcolor text-lg">Request Model</span>
     <TextInput size="sm" marginBottom bind:value={settingsStore.state.hypaCustomSettings.model}/>
+{/if}
+
+{#if model === 'voyageContext3'}
+    <span class="text-textcolor text-lg">Voyage API Key</span>
+    <TextInput size="sm" marginBottom bind:value={settingsStore.state.voyageApiKey}/>
 {/if}
 
 <div class="mb-4"></div>

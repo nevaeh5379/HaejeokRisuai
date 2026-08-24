@@ -183,6 +183,10 @@ async function hypaMemoryV3MainExp(
     cleanOrphanedSummary(chats, data);
   }
 
+  // Chat history is immutable throughout HypaV3 processing. Tokenize it once so
+  // all summary-window calculations reuse the same batched per-message costs.
+  const chatTokenCounts = await tokenizer.tokenizeChatsDetailed(chats);
+
   // Determine starting index
   let startIdx = 0;
 
@@ -196,10 +200,9 @@ async function hypaMemoryV3MainExp(
       startIdx = lastChatIndex + 1;
 
       // Exclude tokens from summarized chats
-      const summarizedChats = chats.slice(0, lastChatIndex + 1);
-      for (const chat of summarizedChats) {
-        currentTokens -= await tokenizer.tokenizeChat(chat);
-      }
+      currentTokens -= chatTokenCounts
+        .slice(0, lastChatIndex + 1)
+        .reduce((total, tokens) => total + tokens, 0);
     }
   }
 
@@ -270,7 +273,7 @@ async function hypaMemoryV3MainExp(
       currentIndex < chats.length - settings.queryChatCount
     ) {
       const chat = chats[currentIndex];
-      const chatTokens = await tokenizer.tokenizeChat(chat);
+      const chatTokens = chatTokenCounts[currentIndex];
 
       console.log(
         logPrefix,
@@ -473,6 +476,19 @@ async function hypaMemoryV3MainExp(
     };
   }
 
+  const summaryTokenCounts = await tokenizer.tokenizeChatsDetailed(
+    data.summaries.map((summary) => ({
+      role: "system",
+      content: summary.text + summarySeparator,
+    })),
+  );
+  const summaryTokenMap = new Map(
+    data.summaries.map((summary, index) => [
+      summary,
+      summaryTokenCounts[index] ?? 0,
+    ]),
+  );
+
   const selectedSummaries: Summary[] = [];
   const randomMemoryRatio =
     1 - settings.recentMemoryRatio - settings.similarMemoryRatio;
@@ -482,10 +498,7 @@ async function hypaMemoryV3MainExp(
   {
     for (const summary of data.summaries) {
       if (summary.isImportant) {
-        const summaryTokens = await tokenizer.tokenizeChat({
-          role: "system",
-          content: summary.text + summarySeparator,
-        });
+        const summaryTokens = summaryTokenMap.get(summary) ?? 0;
 
         if (summaryTokens > availableMemoryTokens) {
           break;
@@ -527,10 +540,7 @@ async function hypaMemoryV3MainExp(
     // Add one by one from the end
     for (let i = unusedSummaries.length - 1; i >= 0; i--) {
       const summary = unusedSummaries[i];
-      const summaryTokens = await tokenizer.tokenizeChat({
-        role: "system",
-        content: summary.text + summarySeparator,
-      });
+      const summaryTokens = summaryTokenMap.get(summary) ?? 0;
 
       if (
         summaryTokens + consumedRecentMemoryTokens >
@@ -604,6 +614,7 @@ async function hypaMemoryV3MainExp(
 
     // Initialize embedding processor
     const processor = new HypaProcessorV2<Summary>({
+      serverIndexId: `hypav3-exp:${char.chaId}:${room.id}`,
       rateLimiter: new TaskRateLimiter({
         tasksPerMinute: settings.embeddingRequestsPerMinute,
         maxConcurrentTasks: settings.embeddingMaxConcurrent,
@@ -728,10 +739,7 @@ async function hypaMemoryV3MainExp(
 
         while (rankedSummaries.length > 0) {
           const summary = rankedSummaries.shift();
-          const summaryTokens = await tokenizer.tokenizeChat({
-            role: "system",
-            content: summary.text + summarySeparator,
-          });
+          const summaryTokens = summaryTokenMap.get(summary) ?? 0;
 
           if (
             summaryTokens + consumedSimilarMemoryTokens >
@@ -813,10 +821,7 @@ async function hypaMemoryV3MainExp(
       .sort(() => Math.random() - 0.5); // Random shuffle
 
     for (const summary of unusedSummaries) {
-      const summaryTokens = await tokenizer.tokenizeChat({
-        role: "system",
-        content: summary.text + summarySeparator,
-      });
+      const summaryTokens = summaryTokenMap.get(summary) ?? 0;
 
       if (
         summaryTokens + consumedRandomMemoryTokens >
@@ -965,6 +970,10 @@ async function hypaMemoryV3Main(
     cleanOrphanedSummary(chats, data);
   }
 
+  // Chat history is immutable throughout HypaV3 processing. Tokenize it once so
+  // all summary-window calculations reuse the same batched per-message costs.
+  const chatTokenCounts = await tokenizer.tokenizeChatsDetailed(chats);
+
   // Determine starting index
   let startIdx = 0;
 
@@ -978,10 +987,9 @@ async function hypaMemoryV3Main(
       startIdx = lastChatIndex + 1;
 
       // Exclude tokens from summarized chats
-      const summarizedChats = chats.slice(0, lastChatIndex + 1);
-      for (const chat of summarizedChats) {
-        currentTokens -= await tokenizer.tokenizeChat(chat);
-      }
+      currentTokens -= chatTokenCounts
+        .slice(0, lastChatIndex + 1)
+        .reduce((total, tokens) => total + tokens, 0);
     }
   }
 
@@ -1059,7 +1067,7 @@ async function hypaMemoryV3Main(
 
     for (let i = startIdx; i < endIdx; i++) {
       const chat = chats[i];
-      const chatTokens = await tokenizer.tokenizeChat(chat);
+      const chatTokens = chatTokenCounts[i];
 
       console.log(
         logPrefix,
@@ -1194,6 +1202,19 @@ async function hypaMemoryV3Main(
     };
   }
 
+  const summaryTokenCounts = await tokenizer.tokenizeChatsDetailed(
+    data.summaries.map((summary) => ({
+      role: "system",
+      content: summary.text + summarySeparator,
+    })),
+  );
+  const summaryTokenMap = new Map(
+    data.summaries.map((summary, index) => [
+      summary,
+      summaryTokenCounts[index] ?? 0,
+    ]),
+  );
+
   const selectedSummaries: Summary[] = [];
   const randomMemoryRatio =
     1 - settings.recentMemoryRatio - settings.similarMemoryRatio;
@@ -1203,10 +1224,7 @@ async function hypaMemoryV3Main(
   {
     for (const summary of data.summaries) {
       if (summary.isImportant) {
-        const summaryTokens = await tokenizer.tokenizeChat({
-          role: "system",
-          content: summary.text + summarySeparator,
-        });
+        const summaryTokens = summaryTokenMap.get(summary) ?? 0;
 
         if (summaryTokens > availableMemoryTokens) {
           break;
@@ -1248,10 +1266,7 @@ async function hypaMemoryV3Main(
     // Add one by one from the end
     for (let i = unusedSummaries.length - 1; i >= 0; i--) {
       const summary = unusedSummaries[i];
-      const summaryTokens = await tokenizer.tokenizeChat({
-        role: "system",
-        content: summary.text + summarySeparator,
-      });
+      const summaryTokens = summaryTokenMap.get(summary) ?? 0;
 
       if (
         summaryTokens + consumedRecentMemoryTokens >
@@ -1325,7 +1340,11 @@ async function hypaMemoryV3Main(
     });
 
     // Initialize embedding processor
-    const processor = new HypaProcesserEx(db.hypaModel);
+    const processor = new HypaProcesserEx(
+      db.hypaModel,
+      undefined,
+      `hypav3:${char.chaId}:${room.id}`,
+    );
     processor.oaikey = db.supaMemoryKey;
 
     // Add summaryChunks to processor for similarity search
@@ -1400,10 +1419,7 @@ async function hypaMemoryV3Main(
 
         while (rankedSummaries.length > 0) {
           const summary = rankedSummaries.shift();
-          const summaryTokens = await tokenizer.tokenizeChat({
-            role: "system",
-            content: summary.text + summarySeparator,
-          });
+          const summaryTokens = summaryTokenMap.get(summary) ?? 0;
 
           if (
             summaryTokens + consumedSimilarMemoryTokens >
@@ -1478,10 +1494,7 @@ async function hypaMemoryV3Main(
       .sort(() => Math.random() - 0.5); // Random shuffle
 
     for (const summary of unusedSummaries) {
-      const summaryTokens = await tokenizer.tokenizeChat({
-        role: "system",
-        content: summary.text + summarySeparator,
-      });
+      const summaryTokens = summaryTokenMap.get(summary) ?? 0;
 
       if (
         summaryTokens + consumedRandomMemoryTokens >
@@ -1861,7 +1874,9 @@ interface SummaryChunkVector {
 
 class HypaProcesserEx extends HypaProcesser {
   // Maintain references to SummaryChunks and their associated memoryVectors
+  // only for browser/contextual fallback. Node text indexes keep just chunks.
   summaryChunkVectors: SummaryChunkVector[] = [];
+  private serverSummaryChunks: SummaryChunk[] | null = null;
 
   async addSummaryChunks(chunks: SummaryChunk[]): Promise<void> {
     if (isContextModel(this.model)) {
@@ -1870,6 +1885,10 @@ class HypaProcesserEx extends HypaProcesser {
     }
 
     const texts = chunks.map((chunk) => chunk.text);
+    if (await this.prepareServerTextIndex(texts)) {
+      this.serverSummaryChunks = chunks.slice();
+      return;
+    }
     await this.addText(texts);
 
     const newSummaryChunkVectors: SummaryChunkVector[] = [];
@@ -1976,6 +1995,20 @@ class HypaProcesserEx extends HypaProcesser {
     query: string,
   ): Promise<[SummaryChunk, number][]> {
     const queryVector = (await this.getEmbeds(query))[0];
+
+    if (this.serverSummaryChunks) {
+      const scoredTexts = await this.similaritySearchVectorWithScore(queryVector);
+      const chunksByText = new Map<string, SummaryChunk[]>();
+      for (const chunk of this.serverSummaryChunks) {
+        const bucket = chunksByText.get(chunk.text) ?? [];
+        bucket.push(chunk);
+        chunksByText.set(chunk.text, bucket);
+      }
+      return scoredTexts.flatMap(([text, score]) => {
+        const chunk = chunksByText.get(text)?.shift();
+        return chunk ? [[chunk, score] as [SummaryChunk, number]] : [];
+      });
+    }
 
     return this.summaryChunkVectors
       .map((scv) => ({

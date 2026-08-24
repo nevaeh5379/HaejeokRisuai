@@ -48,6 +48,14 @@ export let appSubVer = "preview";
 
 export type StreamingDisplayOptimizationMode = "off" | "balanced" | "strong";
 
+const supportedHypaModels = new Set([
+  "custom",
+  "ada",
+  "openai3small",
+  "openai3large",
+  "voyageContext3",
+]);
+
 /**
  * Applies schema defaults and migrations without installing the database.
  * SQL adapters use this on their plain core-data snapshot without accessing
@@ -446,7 +454,10 @@ export function normalizeDatabaseDefaults(data: Database) {
     data.colorSchemeName === "custom" ? data.colorScheme : defaultColorScheme,
   );
   data.NAIsettings.starter ??= "";
-  data.hypaModel ??= "MiniLM";
+  data.hypaModel ??= "openai3small";
+  if (!supportedHypaModels.has(data.hypaModel as string)) {
+    data.hypaModel = "openai3small";
+  }
   data.mancerHeader ??= "";
   data.emotionProcesser ??= "submodel";
   data.translatorType ??= "google";

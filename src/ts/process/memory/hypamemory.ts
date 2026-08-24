@@ -1,56 +1,41 @@
 import localforage from "localforage";
-import { globalFetch } from "src/ts/globalApi.svelte";
-import { runEmbedding } from "../transformers";
+import { forageStorage, globalFetch } from "src/ts/globalApi.svelte";
 import { appendLastPath } from "src/ts/util";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { isContextModel, getContextProvider } from "./contextualEmbedding";
+import { isNodeServer } from "src/ts/platform";
+import { NodeStorage } from "src/ts/storage/nodeStorage";
+import {
+  vectorContentSignature,
+  vectorDescriptorRevision,
+  vectorTextRevision,
+} from "./vectorIndexSignature";
 
 export type HypaModel =
   | "custom"
   | "ada"
   | "openai3small"
   | "openai3large"
-  | "MiniLM"
-  | "MiniLMGPU"
-  | "nomic"
-  | "nomicGPU"
-  | "bgeSmallEn"
-  | "bgeSmallEnGPU"
-  | "bgem3"
-  | "bgem3GPU"
-  | "multiMiniLM"
-  | "multiMiniLMGPU"
-  | "bgeM3Ko"
-  | "bgeM3KoGPU"
   | "voyageContext3";
 
-// In a typical environment, bge-m3 is a heavy model.
-// If your GPU can't handle this model, you'll see errror below.
-// Failed to execute 'mapAsync' on 'GPUBuffer': [Device] is lost
-export const localModels = {
-  models: {
-    MiniLM: "Xenova/all-MiniLM-L6-v2",
-    MiniLMGPU: "Xenova/all-MiniLM-L6-v2",
-    nomic: "nomic-ai/nomic-embed-text-v1.5",
-    nomicGPU: "nomic-ai/nomic-embed-text-v1.5",
-    bgeSmallEn: "Xenova/bge-small-en-v1.5",
-    bgeSmallEnGPU: "Xenova/bge-small-en-v1.5",
-    bgem3: "Xenova/bge-m3",
-    bgem3GPU: "Xenova/bge-m3",
-    multiMiniLM: "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
-    multiMiniLMGPU: "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
-    bgeM3Ko: "HyperBlaze/BGE-m3-ko",
-    bgeM3KoGPU: "HyperBlaze/BGE-m3-ko",
-  },
-  gpuModels: [
-    "MiniLMGPU",
-    "nomicGPU",
-    "bgeSmallEnGPU",
-    "bgem3GPU",
-    "multiMiniLMGPU",
-    "bgeM3KoGPU",
-  ],
-};
+export const DEFAULT_HYPA_MODEL: HypaModel = "openai3small";
+const EMBEDDING_CACHE_BATCH_SIZE = 128;
+
+
+const supportedHypaModels = new Set<HypaModel>([
+  "custom",
+  "ada",
+  "openai3small",
+  "openai3large",
+  "voyageContext3",
+]);
+
+export function normalizeHypaModel(model: unknown): HypaModel {
+  if (typeof model === "string" && supportedHypaModels.has(model as HypaModel)) {
+    return model as HypaModel;
+  }
+  return DEFAULT_HYPA_MODEL;
+}
 
 export class HypaProcesser {
   oaikey: string;
@@ -58,20 +43,19 @@ export class HypaProcesser {
   forage: LocalForage;
   model: HypaModel;
   customEmbeddingUrl: string;
+  serverIndexId?: string;
+  private serverIndexedContents: string[] | null = null;
 
-  constructor(model: HypaModel | "auto" = "auto", customEmbeddingUrl?: string) {
+  constructor(model: HypaModel | "auto" = "auto", customEmbeddingUrl?: string, serverIndexId?: string) {
     this.forage = localforage.createInstance({
       name: "hypaVector",
     });
     this.vectors = [];
     const db = getDatabase();
-    if (model === "auto") {
-      this.model = db.hypaModel || "MiniLM";
-    } else {
-      this.model = model;
-    }
+    this.model = normalizeHypaModel(model === "auto" ? db.hypaModel : model);
     this.customEmbeddingUrl =
       customEmbeddingUrl?.trim() || db.hypaCustomSettings?.url?.trim() || "";
+    this.serverIndexId = serverIndexId;
   }
 
   async embedDocuments(texts: string[]): Promise<VectorArray[]> {
@@ -103,15 +87,6 @@ export class HypaProcesser {
       const groups = inputs.map((s) => [s]);
       const results = await provider.embedDocumentGroups(groups);
       return results.map((group) => group[0]);
-    }
-    if (Object.keys(localModels.models).includes(this.model)) {
-      const inputs: string[] = Array.isArray(input) ? input : [input];
-      let results: Float32Array[] = await runEmbedding(
-        inputs,
-        localModels.models[this.model],
-        localModels.gpuModels.includes(this.model) ? "webgpu" : "wasm",
-      );
-      return results;
     }
     let gf = null;
     if (this.model === "custom") {
@@ -187,68 +162,202 @@ export class HypaProcesser {
     return vec;
   }
 
-  async addText(texts: string[]) {
+  private getEmbeddingCacheKey(text: string): string {
     const db = getDatabase();
     const suffix =
       this.model === "custom" && db.hypaCustomSettings?.model?.trim()
         ? `-${db.hypaCustomSettings.model.trim()}`
         : "";
+    return text + "|" + this.model + suffix;
+  }
 
-    for (let i = 0; i < texts.length; i++) {
-      const itm: memoryVector = await this.forage.getItem(
-        texts[i] + "|" + this.model + suffix,
+  private getServerVectorIndexId(): string | null {
+    if (!this.serverIndexId || isContextModel(this.model)) return null;
+    const db = getDatabase();
+    return [
+      this.serverIndexId,
+      this.model,
+      this.model === "custom" ? this.customEmbeddingUrl : "",
+      this.model === "custom" ? db.hypaCustomSettings?.model?.trim() || "" : "",
+    ].join("|");
+  }
+
+  private async loadCachedVectors(
+    texts: string[],
+  ): Promise<Array<memoryVector | null>> {
+    const results: Array<memoryVector | null> = [];
+    for (
+      let offset = 0;
+      offset < texts.length;
+      offset += EMBEDDING_CACHE_BATCH_SIZE
+    ) {
+      const batch = texts.slice(offset, offset + EMBEDDING_CACHE_BATCH_SIZE);
+      const loaded = await Promise.all(
+        batch.map((text) =>
+          this.forage.getItem<memoryVector>(this.getEmbeddingCacheKey(text)),
+        ),
       );
-      if (itm) {
-        itm.alreadySaved = true;
-        this.vectors.push(itm);
-      }
+      results.push(...loaded);
+    }
+    return results;
+  }
+
+  private async saveCachedVectors(vectors: memoryVector[]): Promise<void> {
+    for (
+      let offset = 0;
+      offset < vectors.length;
+      offset += EMBEDDING_CACHE_BATCH_SIZE
+    ) {
+      const batch = vectors.slice(offset, offset + EMBEDDING_CACHE_BATCH_SIZE);
+      await Promise.all(
+        batch.map((vector) =>
+          this.forage.setItem(this.getEmbeddingCacheKey(vector.content), vector),
+        ),
+      );
+    }
+  }
+
+  async addText(texts: string[]) {
+    const cached = await this.loadCachedVectors(texts);
+    for (const item of cached) {
+      if (!item) continue;
+      item.alreadySaved = true;
+      this.vectors.push(item);
     }
 
-    texts = texts.filter((v) => {
-      for (let i = 0; i < this.vectors.length; i++) {
-        if (this.vectors[i].content === v) {
-          return false;
-        }
-      }
-      return true;
-    });
+    const existingContents = new Set(this.vectors.map((vector) => vector.content));
+    texts = texts.filter((text) => !existingContents.has(text));
+    if (texts.length === 0) return;
 
-    if (texts.length === 0) {
-      return;
-    }
     const vectors = await this.embedDocuments(texts);
-
-    const memoryVectors: memoryVector[] = vectors.map((embedding, idx) => ({
-      content: texts[idx],
+    const memoryVectors: memoryVector[] = vectors.map((embedding, index) => ({
+      content: texts[index],
       embedding,
     }));
-
-    for (let i = 0; i < memoryVectors.length; i++) {
-      const vec = memoryVectors[i];
-      if (!vec.alreadySaved) {
-        await this.forage.setItem(texts[i] + "|" + this.model + suffix, vec);
-      }
-    }
-
+    await this.saveCachedVectors(memoryVectors);
     this.vectors = memoryVectors.concat(this.vectors);
   }
 
-  async similaritySearch(query: string) {
+  /**
+   * Prepare a Node-side text vector index without materializing every cached
+   * embedding in browser memory. Only vectors missing from the server index are
+   * read from IndexedDB or requested from the embedding API.
+   */
+  async prepareServerTextIndex(texts: string[]): Promise<boolean> {
+    if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
+      return false;
+    }
+    const indexId = this.getServerVectorIndexId();
+    if (!indexId) return false;
+
+    const revision = vectorTextRevision(texts);
+
+    try {
+      const storage = forageStorage.realStorage;
+      const revisionStatus = await storage.vectorIndexStatus(
+        indexId,
+        undefined,
+        revision,
+      );
+      if (revisionStatus.ready) {
+        this.serverIndexedContents = texts.slice();
+        return true;
+      }
+      const descriptors = texts.map((text, index) => ({
+        id: String(index),
+        signature: vectorContentSignature(text),
+      }));
+      const status = await storage.vectorIndexStatus(
+        indexId,
+        descriptors,
+        revision,
+      );
+      if (status.missingIds.length > 0) {
+        const missing = status.missingIds
+          .map((id) => ({ id, index: Number(id) }))
+          .filter(
+            (entry) =>
+              Number.isSafeInteger(entry.index) &&
+              entry.index >= 0 &&
+              entry.index < texts.length,
+          );
+        const uniqueTexts = [...new Set(missing.map((entry) => texts[entry.index]))];
+        const cached = await this.loadCachedVectors(uniqueTexts);
+        const embeddingByText = new Map<string, VectorArray>();
+        const uncachedTexts: string[] = [];
+
+        for (let i = 0; i < uniqueTexts.length; i++) {
+          const vector = cached[i];
+          if (vector?.embedding?.length) {
+            embeddingByText.set(uniqueTexts[i], vector.embedding);
+          } else {
+            uncachedTexts.push(uniqueTexts[i]);
+          }
+        }
+
+        if (uncachedTexts.length > 0) {
+          const embeddings = await this.embedDocuments(uncachedTexts);
+          const generated = uncachedTexts.map((content, index) => ({
+            content,
+            embedding: embeddings[index],
+          }));
+          await this.saveCachedVectors(generated);
+          for (const vector of generated) {
+            embeddingByText.set(vector.content, vector.embedding);
+          }
+        }
+
+        await storage.vectorIndexUpsert(
+          indexId,
+          missing.map((entry) => {
+            const content = texts[entry.index];
+            const embedding = embeddingByText.get(content);
+            if (!embedding) {
+              throw new Error(`Missing embedding for vector index entry ${entry.id}`);
+            }
+            return {
+              id: entry.id,
+              signature: vectorContentSignature(content),
+              embedding: Array.from(embedding),
+            };
+          }),
+        );
+      }
+
+      this.serverIndexedContents = texts.slice();
+      return true;
+    } catch (error) {
+      console.warn(
+        "[HypaProcesser] Failed to prepare server text index; using browser vectors",
+        error,
+      );
+      this.serverIndexedContents = null;
+      return false;
+    }
+  }
+
+  async similaritySearch(query: string, topK?: number) {
     const results = await this.similaritySearchVectorWithScore(
       (await this.getEmbeds(query))[0],
+      topK,
     );
     return results.map((result) => result[0]);
   }
 
-  async similaritySearchScored(query: string) {
+  async similaritySearchScored(query: string, topK?: number) {
     return await this.similaritySearchVectorWithScore(
       (await this.getEmbeds(query))[0],
+      topK,
     );
   }
 
-  private similaritySearchVectorWithScore(
+  protected async similaritySearchVectorWithScore(
     query: VectorArray,
-  ): [string, number][] {
+    topK?: number,
+  ): Promise<[string, number][]> {
+    const serverResult = await this.tryServerSimilaritySearch(query, topK);
+    if (serverResult) return serverResult;
+
     const memoryVectors = this.vectors;
     const sim = similarity;
     const searches = memoryVectors
@@ -256,14 +365,78 @@ export class HypaProcesser {
         similarity: sim(query, vector.embedding),
         index,
       }))
-      .sort((a, b) => (a.similarity > b.similarity ? -1 : 0));
+      .sort((a, b) => b.similarity - a.similarity);
 
-    const result: [string, number][] = searches.map((search) => [
+    const ranked = searches.map((search) => [
       memoryVectors[search.index].content,
       search.similarity,
-    ]);
+    ] as [string, number]);
+    return topK ? ranked.slice(0, topK) : ranked;
+  }
 
-    return result;
+  private async tryServerSimilaritySearch(
+    query: VectorArray,
+    topK?: number,
+  ): Promise<[string, number][] | null> {
+    if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
+      return null;
+    }
+    const indexId = this.getServerVectorIndexId();
+    if (!indexId) return null;
+
+    try {
+      const storage = forageStorage.realStorage;
+      if (this.serverIndexedContents) {
+        const ranked = await storage.vectorIndexSearch(indexId, [Array.from(query)], "dot", topK);
+        return (ranked[0] ?? []).flatMap(([id, score]) => {
+          const content = this.serverIndexedContents?.[Number(id)];
+          return content ? [[content, score] as [string, number]] : [];
+        });
+      }
+
+      const descriptors = this.vectors.map((vector, index) => ({
+        id: String(index),
+        signature: vectorContentSignature(vector.content),
+      }));
+      const status = await storage.vectorIndexStatus(
+        indexId,
+        descriptors,
+        vectorDescriptorRevision(descriptors),
+      );
+      if (status.missingIds.length > 0) {
+        const missing = new Set(status.missingIds);
+        await storage.vectorIndexUpsert(
+          indexId,
+          this.vectors.flatMap((vector, index) =>
+            missing.has(String(index))
+              ? [
+                  {
+                    id: String(index),
+                    signature: vectorContentSignature(vector.content),
+                    embedding: Array.from(vector.embedding),
+                  },
+                ]
+              : [],
+          ),
+        );
+      }
+      const ranked = await storage.vectorIndexSearch(indexId, [Array.from(query)], "dot", topK);
+      return (ranked[0] ?? []).flatMap(([id, score]) => {
+        const vector = this.vectors[Number(id)];
+        return vector ? [[vector.content, score] as [string, number]] : [];
+      });
+    } catch (error) {
+      console.warn(
+        "[HypaProcesser] Server vector search failed; using browser fallback",
+        error,
+      );
+      if (this.serverIndexedContents && this.vectors.length === 0) {
+        const fallbackTexts = this.serverIndexedContents;
+        this.serverIndexedContents = null;
+        await this.addText(fallbackTexts);
+      }
+      return null;
+    }
   }
 
   similarityCheck(query1: number[], query2: number[]) {

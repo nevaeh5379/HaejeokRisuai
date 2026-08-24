@@ -12,11 +12,16 @@ export async function hanuraiMemory(
     currentTokens: number;
     maxContextTokens: number;
     tokenizer: ChatTokenizer;
+    serverIndexId?: string;
   },
 ) {
   const db = getDatabase();
   const tokenizer = arg.tokenizer;
-  const processer = new HypaProcesser();
+  const processer = new HypaProcesser(
+    "auto",
+    undefined,
+    arg.serverIndexId ? `hanurai:${arg.serverIndexId}` : undefined,
+  );
   let addTexts: string[] = [];
   const queryStartIndex = chats.length - maxRecentChatQuery;
   console.log(chats.length, maxRecentChatQuery, queryStartIndex);
@@ -39,7 +44,9 @@ export async function hanuraiMemory(
       addTexts.push(`search_document: ${chat.content?.trim()}`);
     }
   });
-  await processer.addText(addTexts);
+  if (!(await processer.prepareServerTextIndex(addTexts))) {
+    await processer.addText(addTexts);
+  }
 
   let scoredResults: { [key: string]: number } = {};
   for (let i = 1; i < maxRecentChatQuery; i++) {
@@ -66,37 +73,43 @@ export async function hanuraiMemory(
 
   let tokens = arg.currentTokens + db.hanuraiTokens;
 
-  while (tokens > arg.maxContextTokens) {
-    const poped = chats.shift();
-    if (!poped) {
+  if (tokens > arg.maxContextTokens) {
+    const chatTokenCounts = await tokenizer.tokenizeChatsDetailed(chats);
+    let removeCount = 0;
+    while (tokens > arg.maxContextTokens && removeCount < chats.length) {
+      tokens -= chatTokenCounts[removeCount];
+      removeCount += 1;
+    }
+    if (tokens > arg.maxContextTokens) {
       alertError(
         language.errors.toomuchtoken + "\n\nRequired Tokens: " + tokens,
       );
       return false;
     }
-    tokens -= await tokenizer.tokenizeChat(poped);
+    if (removeCount > 0) chats.splice(0, removeCount);
   }
 
   tokens -= db.hanuraiTokens;
 
+  const existingContents = new Set(chats.map((chat) => chat.content));
+  const candidateTexts = vectorResult
+    .map((vector) => vector[0].substring(16))
+    .filter((content) => !existingContents.has(content));
+  const candidateChats = candidateTexts.map((content) => ({
+    role: "system" as const,
+    memo: "supaMemory",
+    content,
+  }));
+  const candidateTokenCounts = await tokenizer.tokenizeChatsDetailed(candidateChats);
   let resultTexts: string[] = [];
-  for (const vector of vectorResult) {
-    const chat = chats.find((chat) => chat.content === vector[0].substring(16));
-    if (chat) {
-      continue;
-    }
-    const tokenized =
-      (await tokenizer.tokenizeChat({
-        role: "system",
-        memo: "supaMemory",
-        content: vector[0].substring(16),
-      })) + 2;
+  for (let i = 0; i < candidateTexts.length; i++) {
+    const tokenized = candidateTokenCounts[i] + 2;
     tokens += tokenized;
     if (tokens >= arg.maxContextTokens) {
       tokens -= tokenized;
       break;
     }
-    resultTexts.push(vector[0].substring(16));
+    resultTexts.push(candidateTexts[i]);
   }
   chats.unshift({
     role: "system",

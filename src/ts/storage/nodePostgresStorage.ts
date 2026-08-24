@@ -1176,9 +1176,30 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     return body.chat ?? null;
   }
 
-  async loadChatMessages(chatId: string): Promise<Message[]> {
-    const chat = await this.loadChat(chatId);
-    return chat?.message ?? [];
+  async loadChatMessages(
+    chatId: string,
+    options: { mode?: "full" | "generation" } = {},
+  ): Promise<Message[]> {
+    if (!(await this.ensureEnabled())) {
+      return [];
+    }
+    const mode = options.mode === "generation" ? "?mode=generation" : "";
+    const response = await fetch(
+      `/api/database-v2/chats/${encodeURIComponent(chatId)}/messages${mode}`,
+      {
+        method: "GET",
+        cache: "no-cache",
+        headers: await this.authHeaders(),
+      },
+    );
+    if (response.status === 404) {
+      return [];
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(response, "PostgreSQL chat messages load failed");
+    }
+    const body: { messages?: Message[] } = await response.json();
+    return body.messages ?? [];
   }
 
   async loadChatMessagePage(

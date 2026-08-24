@@ -125,7 +125,10 @@ export interface ISqlStorage {
 
   loadCharacter(characterId: string): Promise<character | groupChat | null>;
   loadChat(chatId: string, options?: SqlChatLoadOptions): Promise<Chat | null>;
-  loadChatMessages(chatId: string): Promise<Message[]>;
+  loadChatMessages(
+    chatId: string,
+    options?: { mode?: "full" | "generation" },
+  ): Promise<Message[]>;
   loadChatMessagePage(
     chatId: string,
     before: number | undefined,
