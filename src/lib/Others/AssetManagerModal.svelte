@@ -493,6 +493,18 @@
 
     function handleGalleryPointerDown(e: PointerEvent) {
         if (!galleryEl || e.pointerType !== "mouse" || e.button !== 0) return;
+
+        // Native scrollbar thumbs/gutters dispatch pointer events to the scroll container.
+        // Never steal those events for marquee selection, or dragging the scrollbar
+        // becomes a selection drag instead of scrolling.
+        const bounds = galleryEl.getBoundingClientRect();
+        const verticalScrollbarWidth = galleryEl.offsetWidth - galleryEl.clientWidth;
+        const horizontalScrollbarHeight = galleryEl.offsetHeight - galleryEl.clientHeight;
+        if (
+            (verticalScrollbarWidth > 0 && e.clientX >= bounds.right - verticalScrollbarWidth) ||
+            (horizontalScrollbarHeight > 0 && e.clientY >= bounds.bottom - horizontalScrollbarHeight)
+        ) return;
+
         const target = e.target as HTMLElement | null;
         if (target?.closest("[data-asset-index], [data-folder-id], button, input, textarea, select, a, table")) return;
         const point = getGalleryPoint(e);
