@@ -3,8 +3,9 @@ package io.github.nevaeh5379.androidhaejeokrisuai.generation
 import io.github.nevaeh5379.androidhaejeokrisuai.data.CharacterProfile
 import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
+import io.github.nevaeh5379.androidhaejeokrisuai.data.PromptTemplateItem
 
-data class NativePromptMessage(val role: String, val content: String)
+data class NativePromptMessage(val role: String, val content: String, val removable: Boolean = false)
 
 object NativePromptBuilder {
     fun build(
@@ -23,11 +24,12 @@ object NativePromptBuilder {
             greetingIndex = greetingIndex,
             variables = variables,
         )
+        val usingPromptTemplate = settings.promptTemplate != null
         val buckets = linkedMapOf<String, MutableList<NativePromptMessage>>()
         fun add(bucket: String, role: String = "system", text: String) {
             val parsed = NativeRisuParser.parse(text, parserContext).trim()
             if (parsed.isNotEmpty()) buckets.getOrPut(bucket) { mutableListOf() }
-                .add(NativePromptMessage(role, parsed))
+                .add(NativePromptMessage(role, parsed, removable = bucket == "chats" || bucket == "lastChat"))
         }
         fun addPromptBlocks(bucket: String, text: String) {
             parsePromptBlocks(NativeRisuParser.parse(text, parserContext)).forEach {
@@ -58,20 +60,28 @@ object NativePromptBuilder {
         parseExampleMessages(character.exampleMessage, parserContext).forEach { example ->
             add("chats", example.role, example.content)
         }
-        add("chats", text = "[Start a new chat]")
+        if (!settings.promptSettings.trimStartNewChat) add("chats", text = "[Start a new chat]")
         val greeting = if (greetingIndex >= 0) {
             character.alternateGreetings.getOrNull(greetingIndex) ?: character.firstMessage
         } else character.firstMessage
         add("chats", role = "assistant", text = greeting)
-        history.dropLast(1).forEach { message ->
-            if (message.data.isBlank()) return@forEach
-            val role = if (message.role == "user") "user" else "assistant"
-            add("chats", role, message.data)
-        }
-        history.lastOrNull()?.let { message ->
-            if (message.data.isNotBlank()) {
+        if (usingPromptTemplate) {
+            history.forEach { message ->
+                if (message.data.isBlank()) return@forEach
                 val role = if (message.role == "user") "user" else "assistant"
-                add("lastChat", role, message.data)
+                add("chats", role, message.data)
+            }
+        } else {
+            history.dropLast(1).forEach { message ->
+                if (message.data.isBlank()) return@forEach
+                val role = if (message.role == "user") "user" else "assistant"
+                add("chats", role, message.data)
+            }
+            history.lastOrNull()?.let { message ->
+                if (message.data.isNotBlank()) {
+                    val role = if (message.role == "user") "user" else "assistant"
+                    add("lastChat", role, message.data)
+                }
             }
         }
         NativeLorebookProcessor.resolve(character.globalLore, history, settings).forEach { lore ->
@@ -82,7 +92,21 @@ object NativePromptBuilder {
             character.replaceGlobalNote.replace("{{original}}", settings.globalNote)
         } else settings.globalNote
         addPromptBlocks("globalNote", globalNote)
-        add("authorNote", text = authorNote)
+        val templateDefaultAuthorNote = settings.promptTemplate
+            ?.firstOrNull { it.type == "authornote" }
+            ?.defaultText
+            .orEmpty()
+        add("authorNote", text = authorNote.ifBlank { templateDefaultAuthorNote })
+
+        if (settings.promptTemplate != null) {
+            return mergeAdjacentSystemMessages(
+                NativeContextWindow.trim(
+                    formatPromptTemplate(settings.promptTemplate, buckets, parserContext, settings, character),
+                    settings.maxContext,
+                    settings.maxResponse,
+                ),
+            )
+        }
 
         val result = mutableListOf<NativePromptMessage>()
         val seen = mutableSetOf<String>()
@@ -91,7 +115,121 @@ object NativePromptBuilder {
             result += buckets[key].orEmpty()
         }
         for ((key, messages) in buckets) if (key !in seen) result += messages
-        return mergeAdjacentSystemMessages(result)
+        return mergeAdjacentSystemMessages(
+            NativeContextWindow.trim(result, settings.maxContext, settings.maxResponse),
+        )
+    }
+
+    private fun formatPromptTemplate(
+        rawTemplate: List<PromptTemplateItem>,
+        buckets: Map<String, List<NativePromptMessage>>,
+        parserContext: NativeRisuParserContext,
+        settings: GenerationSettings,
+        character: CharacterProfile,
+    ): List<NativePromptMessage> {
+        val template = if (rawTemplate.any { it.type == "postEverything" }) rawTemplate
+            else rawTemplate + PromptTemplateItem(type = "postEverything")
+        val result = mutableListOf<NativePromptMessage>()
+
+        fun role(value: String?): String = when (value) {
+            "bot", "assistant" -> "assistant"
+            "user" -> "user"
+            else -> "system"
+        }
+        fun withRole(messages: List<NativePromptMessage>, forced: String?): List<NativePromptMessage> =
+            if (forced == null) messages else messages.map { it.copy(role = role(forced)) }
+        fun innerFormat(format: String, slot: String): String {
+            if (format.isBlank()) return slot
+            val marker = "\uE220"
+            val parsed = NativeRisuParser.parse(format.replace("{{slot}}", marker), parserContext)
+            return parsed.replace(marker, slot)
+        }
+        fun addTyped(bucket: String, card: PromptTemplateItem) {
+            val prompts = withRole(buckets[bucket].orEmpty(), card.role2).map { message ->
+                if (card.innerFormat.isBlank()) message else message.copy(
+                    content = innerFormat(card.innerFormat, message.content),
+                )
+            }
+            result += prompts.filter { it.content.isNotBlank() }
+        }
+
+        for (card in template) {
+            when (card.type) {
+                "persona" -> addTyped("personaPrompt", card)
+                "description" -> addTyped("description", card)
+                "authornote" -> addTyped("authorNote", card)
+                "lorebook" -> result += buckets["lorebook"].orEmpty()
+                "postEverything" -> {
+                    result += buckets["postEverything"].orEmpty()
+                    if (settings.promptSettings.postEndInnerFormat.isNotBlank()) {
+                        result += NativePromptMessage(
+                            "system",
+                            NativeRisuParser.parse(settings.promptSettings.postEndInnerFormat, parserContext),
+                        )
+                    }
+                }
+                "plain", "jailbreak", "cot" -> {
+                    if (card.type == "jailbreak" && !settings.jailbreakToggle) continue
+                    if (card.type == "cot") continue // Native chain-of-thought controls are not ported yet.
+                    var content = card.text
+                    if (card.type2 == "globalNote" && character.replaceGlobalNote.isNotBlank()) {
+                        content = character.replaceGlobalNote.replace("{{original}}", content)
+                    }
+                    content = NativeRisuParser.parse(content, parserContext)
+                    if (content.isNotBlank()) result += NativePromptMessage(role(card.role), content)
+                }
+                "chatML" -> result += parseChatMl(card.text, parserContext)
+                "chat" -> {
+                    val all = buckets["chats"].orEmpty()
+                    var start = card.rangeStart
+                    var end = card.rangeEnd ?: all.size
+                    if (start == -1000) {
+                        start = 0
+                        end = all.size
+                    }
+                    if (start < 0) start = (all.size + start).coerceAtLeast(0)
+                    if (end < 0) end = (all.size + end).coerceAtLeast(0)
+                    start = start.coerceIn(0, all.size)
+                    end = end.coerceIn(0, all.size)
+                    if (start < end) {
+                        var selected = all.subList(start, end).map { it.copy() }
+                        if (settings.promptSettings.sendChatAsSystem && !card.chatAsOriginalOnSystem) {
+                            selected = selected.map { message ->
+                                if (message.role == "user" || message.role == "assistant") {
+                                    NativePromptMessage("system", "${message.role}: ${message.content}", message.removable)
+                                } else message
+                            }
+                        }
+                        result += selected
+                    }
+                }
+                "memory", "cache" -> Unit // Native memory/cache-point engines are separate future work.
+            }
+        }
+        return result
+    }
+
+    private fun parseChatMl(text: String, parserContext: NativeRisuParserContext): List<NativePromptMessage> {
+        val starter = "<|im_start|>"
+        val separator = "<|im_sep|>"
+        val ender = "<|im_end|>"
+        val parsed = NativeRisuParser.parse(text, parserContext).trim()
+        if (!parsed.startsWith(starter)) return emptyList()
+        return parsed.split(starter).filter { it.isNotEmpty() }.map { raw ->
+            var body = raw
+            var role = "user"
+            when {
+                body.startsWith("user$separator") -> { role = "user"; body = body.substring(4 + separator.length) }
+                body.startsWith("system$separator") -> { role = "system"; body = body.substring(6 + separator.length) }
+                body.startsWith("assistant$separator") -> { role = "assistant"; body = body.substring(9 + separator.length) }
+                body.startsWith("user ") || body.startsWith("user\n") -> { role = "user"; body = body.substring(5) }
+                body.startsWith("system ") || body.startsWith("system\n") -> { role = "system"; body = body.substring(7) }
+                body.startsWith("assistant ") || body.startsWith("assistant\n") -> { role = "assistant"; body = body.substring(10) }
+            }
+            body = body.trim()
+            if (body.endsWith(ender)) body = body.dropLast(ender.length)
+            NativePromptMessage(role, body.replace(Regex("<Thoughts>(.+)</Thoughts>", RegexOption.DOT_MATCHES_ALL), "").trim())
+        }
     }
 
     internal fun parseExampleMessages(
@@ -157,7 +295,10 @@ object NativePromptBuilder {
         for (message in messages) {
             val previous = result.lastOrNull()
             if (message.role == "system" && previous?.role == "system") {
-                result[result.lastIndex] = previous.copy(content = previous.content + "\n\n" + message.content)
+                result[result.lastIndex] = previous.copy(
+                    content = previous.content + "\n\n" + message.content,
+                    removable = previous.removable && message.removable,
+                )
             } else result += message
         }
         return result

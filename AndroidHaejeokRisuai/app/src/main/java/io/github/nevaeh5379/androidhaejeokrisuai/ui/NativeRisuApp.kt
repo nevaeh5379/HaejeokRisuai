@@ -202,6 +202,7 @@ private fun ModelSettingsScreen(controller: NativeRisuController) {
     val current = controller.overview?.generationSettings ?: GenerationSettings()
     var aiModel by remember(current) { mutableStateOf(current.aiModel.ifBlank { "gemini-3-flash-preview" }) }
     var username by remember(current) { mutableStateOf(current.username.ifBlank { "User" }) }
+    var maxContext by remember(current) { mutableStateOf(current.maxContext.toString()) }
     var maxResponse by remember(current) { mutableStateOf(current.maxResponse.toString()) }
     var temperature by remember(current) { mutableStateOf(current.temperature.toString()) }
     var topP by remember(current) { mutableStateOf(current.topP?.toString().orEmpty()) }
@@ -252,18 +253,24 @@ private fun ModelSettingsScreen(controller: NativeRisuController) {
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
-                    value = maxResponse,
-                    onValueChange = { maxResponse = it.filter(Char::isDigit) },
-                    label = { Text("최대 응답 토큰") },
+                    value = maxContext,
+                    onValueChange = { maxContext = it.filter(Char::isDigit) },
+                    label = { Text("컨텍스트 토큰") },
                     modifier = Modifier.weight(1f),
                 )
                 OutlinedTextField(
-                    value = temperature,
-                    onValueChange = { temperature = it },
-                    label = { Text("Temperature") },
+                    value = maxResponse,
+                    onValueChange = { maxResponse = it.filter(Char::isDigit) },
+                    label = { Text("응답 토큰") },
                     modifier = Modifier.weight(1f),
                 )
             }
+            OutlinedTextField(
+                value = temperature,
+                onValueChange = { temperature = it },
+                label = { Text("Temperature") },
+                modifier = Modifier.fillMaxWidth(),
+            )
             OutlinedTextField(
                 value = topP,
                 onValueChange = { topP = it },
@@ -317,6 +324,7 @@ private fun ModelSettingsScreen(controller: NativeRisuController) {
                     val next = current.copy(
                         aiModel = aiModel.trim(),
                         username = username.ifBlank { "User" },
+                        maxContext = maxContext.toIntOrNull()?.coerceIn(256, 4_194_304) ?: current.maxContext,
                         maxResponse = maxResponse.toIntOrNull()?.coerceIn(1, 131072) ?: current.maxResponse,
                         temperature = temperature.toDoubleOrNull()?.coerceIn(0.0, 2.0) ?: current.temperature,
                         topP = topP.toDoubleOrNull()?.coerceIn(0.0, 1.0),

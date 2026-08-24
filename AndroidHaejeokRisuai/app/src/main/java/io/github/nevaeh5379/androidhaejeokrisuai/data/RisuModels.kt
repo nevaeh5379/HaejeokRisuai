@@ -88,6 +88,33 @@ data class MessageRecord(
     val time: Long? = null,
 )
 
+data class PositionedMessage(
+    val position: Int,
+    val message: MessageRecord,
+)
+
+data class PromptTemplateItem(
+    val type: String,
+    val type2: String = "",
+    val text: String = "",
+    val role: String = "system",
+    val role2: String? = null,
+    val innerFormat: String = "",
+    val defaultText: String = "",
+    val rangeStart: Int = 0,
+    val rangeEnd: Int? = null,
+    val chatAsOriginalOnSystem: Boolean = false,
+)
+
+data class NativePromptSettings(
+    val assistantPrefill: String = "",
+    val postEndInnerFormat: String = "",
+    val sendChatAsSystem: Boolean = false,
+    val sendName: Boolean = false,
+    val utilOverride: Boolean = false,
+    val trimStartNewChat: Boolean = false,
+)
+
 data class GenerationSettings(
     val aiModel: String = "",
     val username: String = "User",
@@ -103,6 +130,9 @@ data class GenerationSettings(
     val templateDefaultVariables: String = "",
     val globalChatVariables: Map<String, String> = emptyMap(),
     val promptPreprocess: Boolean = false,
+    val promptTemplate: List<PromptTemplateItem>? = null,
+    val promptSettings: NativePromptSettings = NativePromptSettings(),
+    val maxContext: Int = 4000,
     val maxResponse: Int = 300,
     val temperature: Double = 0.8,
     val topP: Double? = null,

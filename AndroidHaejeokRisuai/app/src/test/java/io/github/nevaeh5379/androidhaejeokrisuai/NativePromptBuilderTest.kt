@@ -3,6 +3,8 @@ package io.github.nevaeh5379.androidhaejeokrisuai
 import io.github.nevaeh5379.androidhaejeokrisuai.data.CharacterProfile
 import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
+import io.github.nevaeh5379.androidhaejeokrisuai.data.NativePromptSettings
+import io.github.nevaeh5379.androidhaejeokrisuai.data.PromptTemplateItem
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativePromptBuilder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -68,4 +70,51 @@ class NativePromptBuilderTest {
         assertTrue(prompt.any { it.role == "assistant" && it.content == "Alternate hello" })
         assertTrue(prompt.none { it.content == "Default hello" })
     }
+
+    @Test
+    fun customPromptTemplateUsesCardOrderRangesRolesAndInnerFormats() {
+        val settings = GenerationSettings(
+            username = "Alice",
+            promptSettings = NativePromptSettings(trimStartNewChat = true),
+            promptTemplate = listOf(
+                PromptTemplateItem(type = "plain", type2 = "main", role = "system", text = "MAIN {{char}}"),
+                PromptTemplateItem(type = "description", role2 = "user", innerFormat = "D=[{{slot}}]"),
+                PromptTemplateItem(type = "authornote", innerFormat = "N=[{{slot}}]", defaultText = "default note"),
+                PromptTemplateItem(type = "chat", rangeStart = -2, rangeEnd = null),
+            ),
+        )
+        val character = CharacterProfile(id = "c1", name = "Lua", description = "noble")
+        val history = listOf(
+            MessageRecord("m1", "chat", "user", "one"),
+            MessageRecord("m2", "chat", "char", "two"),
+            MessageRecord("m3", "chat", "user", "three"),
+        )
+
+        val prompt = NativePromptBuilder.build(settings, character, history)
+
+        assertEquals("system", prompt[0].role)
+        assertEquals("MAIN Lua", prompt[0].content)
+        assertEquals("user", prompt[1].role)
+        assertEquals("D=[noble]", prompt[1].content)
+        assertEquals("system", prompt[2].role)
+        assertEquals("N=[default note]", prompt[2].content)
+        assertEquals(listOf("two", "three"), prompt.takeLast(2).map { it.content })
+        assertEquals(listOf("assistant", "user"), prompt.takeLast(2).map { it.role })
+    }
+
+    @Test
+    fun customPromptTemplateCanSystemizeSelectedChatRange() {
+        val settings = GenerationSettings(
+            promptSettings = NativePromptSettings(trimStartNewChat = true, sendChatAsSystem = true),
+            promptTemplate = listOf(PromptTemplateItem(type = "chat", rangeStart = 0, rangeEnd = null)),
+        )
+        val history = listOf(
+            MessageRecord("m1", "chat", "user", "hello"),
+            MessageRecord("m2", "chat", "char", "world"),
+        )
+        val prompt = NativePromptBuilder.build(settings, CharacterProfile("c", "Lua"), history)
+        assertEquals(listOf("system"), prompt.map { it.role })
+        assertEquals("user: hello\n\nassistant: world", prompt.single().content)
+    }
+
 }

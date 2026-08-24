@@ -4,11 +4,57 @@ object GenerationSettingsMapper {
     val keys = listOf(
         "aiModel", "username", "loreBookDepth", "loreBookToken", "mainPrompt", "jailbreak", "jailbreakToggle",
         "globalNote", "descriptionPrefix", "additionalPrompt", "personaPrompt", "templateDefaultVariables", "globalChatVariables", "promptPreprocess",
-        "maxResponse", "temperature", "top_p", "openAIKey", "claudeAPIKey", "proxyKey",
+        "promptTemplate", "promptSettings", "maxContext", "maxResponse", "temperature", "top_p", "openAIKey", "claudeAPIKey", "proxyKey",
         "openrouterKey", "google", "forceReplaceUrl", "proxyRequestModel",
         "customProxyRequestModel", "openrouterRequestModel", "autofillRequestUrl",
         "formatingOrder",
     )
+
+    private fun promptTemplate(value: Any?): List<PromptTemplateItem>? {
+        val list = value as? List<*> ?: return null
+        return list.mapNotNull { raw ->
+            val map = raw as? Map<*, *> ?: return@mapNotNull null
+            val type = map["type"]?.toString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val rangeEndValue = map["rangeEnd"]
+            PromptTemplateItem(
+                type = type,
+                type2 = map["type2"]?.toString().orEmpty(),
+                text = map["text"]?.toString().orEmpty(),
+                role = map["role"]?.toString()?.ifBlank { "system" } ?: "system",
+                role2 = map["role2"]?.toString()?.takeIf { it.isNotBlank() },
+                innerFormat = map["innerFormat"]?.toString().orEmpty(),
+                defaultText = map["defaultText"]?.toString().orEmpty(),
+                rangeStart = (map["rangeStart"] as? Number)?.toInt()
+                    ?: map["rangeStart"]?.toString()?.toIntOrNull() ?: 0,
+                rangeEnd = if (rangeEndValue?.toString() == "end" || rangeEndValue == null) null
+                    else (rangeEndValue as? Number)?.toInt() ?: rangeEndValue.toString().toIntOrNull(),
+                chatAsOriginalOnSystem = boolValue(map["chatAsOriginalOnSystem"], false),
+            )
+        }
+    }
+
+    private fun promptSettings(value: Any?, fallback: NativePromptSettings = NativePromptSettings()): NativePromptSettings {
+        val map = value as? Map<*, *> ?: return fallback
+        return NativePromptSettings(
+            assistantPrefill = map["assistantPrefill"]?.toString() ?: fallback.assistantPrefill,
+            postEndInnerFormat = map["postEndInnerFormat"]?.toString() ?: fallback.postEndInnerFormat,
+            sendChatAsSystem = boolValue(map["sendChatAsSystem"], fallback.sendChatAsSystem),
+            sendName = boolValue(map["sendName"], fallback.sendName),
+            utilOverride = boolValue(map["utilOverride"], fallback.utilOverride),
+            trimStartNewChat = boolValue(map["trimStartNewChat"], fallback.trimStartNewChat),
+        )
+    }
+
+    private fun boolValue(value: Any?, fallback: Boolean): Boolean = when (value) {
+        is Boolean -> value
+        is Number -> value.toInt() != 0
+        is String -> when {
+            value.equals("true", true) || value == "1" -> true
+            value.equals("false", true) || value == "0" -> false
+            else -> fallback
+        }
+        else -> fallback
+    }
 
     fun fromMap(values: Map<String, Any?>): GenerationSettings {
         fun text(key: String, fallback: String = "") = values[key]?.toString() ?: fallback
@@ -42,6 +88,9 @@ object GenerationSettingsMapper {
                 ?.associate { (key, value) -> key.toString() to value?.toString().orEmpty() }
                 ?: emptyMap(),
             promptPreprocess = bool("promptPreprocess"),
+            promptTemplate = promptTemplate(values["promptTemplate"]),
+            promptSettings = promptSettings(values["promptSettings"]),
+            maxContext = number("maxContext")?.toInt()?.coerceAtLeast(1) ?: 4000,
             maxResponse = number("maxResponse")?.toInt()?.coerceAtLeast(1) ?: 300,
             temperature = ((number("temperature") ?: 80.0) / 100.0).coerceIn(0.0, 2.0),
             topP = number("top_p")?.coerceIn(0.0, 1.0),
@@ -82,6 +131,9 @@ object GenerationSettingsMapper {
             jailbreak = text("jailbreak") ?: base.jailbreak,
             globalNote = text("globalNote") ?: base.globalNote,
             promptPreprocess = bool("promptPreprocess") ?: base.promptPreprocess,
+            promptTemplate = if (preset.containsKey("promptTemplate")) promptTemplate(preset["promptTemplate"]) else base.promptTemplate,
+            promptSettings = if (preset.containsKey("promptSettings")) promptSettings(preset["promptSettings"], base.promptSettings) else base.promptSettings,
+            maxContext = number("maxContext")?.toInt()?.coerceAtLeast(1) ?: base.maxContext,
             maxResponse = number("maxResponse")?.toInt()?.coerceAtLeast(1) ?: base.maxResponse,
             temperature = number("temperature")?.div(100.0)?.coerceIn(0.0, 2.0) ?: base.temperature,
             topP = number("top_p")?.coerceIn(0.0, 1.0) ?: base.topP,

@@ -10,6 +10,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessagePage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.LoreEntry
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
+import io.github.nevaeh5379.androidhaejeokrisuai.data.PositionedMessage
 
 interface RisuStorage {
     suspend fun init()
@@ -22,5 +23,12 @@ interface RisuStorage {
     suspend fun loadChatPromptContext(chatId: String): ChatPromptContext
     suspend fun loadChatMessagePage(chatId: String, before: Int?, limit: Int): MessagePage
     suspend fun loadAllChatMessages(chatId: String): List<MessageRecord>
+    suspend fun commitPreparedTurn(
+        characterId: String,
+        chatId: String,
+        chatPosition: Int,
+        messages: List<PositionedMessage>,
+        variables: Map<String, String>,
+    ): Long
     suspend fun appendMessage(chatId: String, position: Int, message: MessageRecord): Long
 }

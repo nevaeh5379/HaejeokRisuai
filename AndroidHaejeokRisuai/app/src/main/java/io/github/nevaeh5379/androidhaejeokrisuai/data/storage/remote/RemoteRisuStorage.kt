@@ -10,6 +10,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettingsMapper
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessagePage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.LoreEntry
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
+import io.github.nevaeh5379.androidhaejeokrisuai.data.PositionedMessage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntriesFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RisuStorage
 import kotlinx.coroutines.Dispatchers
@@ -293,6 +294,64 @@ class RemoteRisuStorage(
         }
     }
 
+    override suspend fun commitPreparedTurn(
+        characterId: String,
+        chatId: String,
+        chatPosition: Int,
+        messages: List<PositionedMessage>,
+        variables: Map<String, String>,
+    ): Long = withContext(Dispatchers.IO) {
+        val chat = JSONObject(
+            request("GET", "/api/database-v2/chats/${encodePath(chatId)}?messageLimit=0"),
+        ).getJSONObject("chat")
+        @Suppress("UNCHECKED_CAST")
+        val chatData = ((jsonValue(chat) as? Map<String, Any?>) ?: emptyMap()).toMutableMap()
+        listOf(
+            "id", "message", "messageOffset", "messageTotal", "messagesFullyLoaded",
+            "messagesLoaded", "detailsLoaded", "preventMessageCompaction",
+        ).forEach(chatData::remove)
+        chatData["scriptstate"] = variables.entries.associate { (key, value) -> "$$key" to value }
+
+        val messageUpserts = JSONArray().apply {
+            messages.forEach { positioned ->
+                val message = positioned.message
+                val data = JSONObject()
+                    .put("role", message.role)
+                    .put("data", message.data)
+                message.time?.let { data.put("time", it) }
+                message.name?.let { data.put("name", it) }
+                put(
+                    JSONObject()
+                        .put("id", message.id)
+                        .put("chatId", chatId)
+                        .put("position", positioned.position)
+                        .put("data", data),
+                )
+            }
+        }
+        val commit = JSONObject()
+            .put("baseRevision", revision)
+            .put("action", "android:prepared-turn")
+            .put("root", JSONObject().put("upserts", JSONArray()).put("deletes", JSONArray()))
+            .put("characters", JSONArray())
+            .put(
+                "chats",
+                JSONArray().put(
+                    JSONObject()
+                        .put("id", chatId)
+                        .put("characterId", characterId)
+                        .put("position", chatPosition)
+                        .put("data", toJsonValue(chatData)),
+                ),
+            )
+            .put("chatManifests", JSONArray())
+            .put("messages", messageUpserts)
+            .put("messageManifests", JSONArray())
+        val response = JSONObject(request("POST", "/api/database-v2/commit", commit.toString()))
+        revision = response.optLong("revision", revision + 1)
+        revision
+    }
+
     override suspend fun appendMessage(
         chatId: String,
         position: Int,
@@ -343,6 +402,7 @@ class RemoteRisuStorage(
         settings: io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings,
     ): LinkedHashMap<String, Any?> = linkedMapOf(
         "aiModel" to settings.aiModel,
+        "maxContext" to settings.maxContext,
         "maxResponse" to settings.maxResponse,
         "temperature" to settings.temperature * 100.0,
         "top_p" to settings.topP,

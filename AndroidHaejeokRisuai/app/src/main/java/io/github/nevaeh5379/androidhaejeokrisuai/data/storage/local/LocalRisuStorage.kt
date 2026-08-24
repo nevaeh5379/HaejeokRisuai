@@ -15,6 +15,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettingsMapper
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessagePage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.LoreEntry
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
+import io.github.nevaeh5379.androidhaejeokrisuai.data.PositionedMessage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntriesFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RelationalNodeCodec
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RelationalNodeRow
@@ -377,6 +378,66 @@ class LocalRisuStorage(context: Context) : RisuStorage {
         messages
     }
 
+    override suspend fun commitPreparedTurn(
+        characterId: String,
+        chatId: String,
+        chatPosition: Int,
+        messages: List<PositionedMessage>,
+        variables: Map<String, String>,
+    ): Long = withContext(Dispatchers.IO) {
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            val belongsToCharacter = db.rawQuery(
+                "SELECT 1 FROM chats WHERE id = ? AND character_id = ?",
+                arrayOf(chatId, characterId),
+            ).use { it.moveToFirst() }
+            require(belongsToCharacter) { "Chat $chatId does not belong to character $characterId" }
+
+            val revision = currentRevision(db)
+            @Suppress("UNCHECKED_CAST")
+            val chatData = (loadNodeValue(
+                db,
+                "chat_extension_nodes",
+                "chat_id = ?",
+                arrayOf(chatId),
+            ) as? Map<String, Any?>)?.toMutableMap() ?: linkedMapOf()
+            val scriptState = (chatData["scriptstate"] as? Map<*, *>)
+                ?.entries
+                ?.associateTo(linkedMapOf<String, Any?>()) { (key, value) -> key.toString() to value }
+                ?: linkedMapOf()
+            variables.forEach { (key, value) -> scriptState["$$key"] = value }
+            chatData["scriptstate"] = scriptState
+            db.delete("chat_extension_nodes", "chat_id = ?", arrayOf(chatId))
+            RelationalNodeCodec.flatten(chatData).forEach { row -> insertChatNode(db, chatId, row) }
+
+            messages.forEach { positioned ->
+                writeMessage(db, chatId, positioned.position, positioned.message)
+            }
+            val latest = messages.maxByOrNull(PositionedMessage::position)?.message
+            if (latest != null) {
+                db.execSQL(
+                    "UPDATE chats SET last_message_time = ?, updated_at = datetime('now') WHERE id = ?",
+                    arrayOf<Any?>(latest.time, chatId),
+                )
+            }
+
+            val nextRevision = revision + 1
+            db.execSQL(
+                "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
+                arrayOf(nextRevision),
+            )
+            db.execSQL(
+                "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', 'android:chat-runtime', datetime('now'))",
+                arrayOf(nextRevision),
+            )
+            db.setTransactionSuccessful()
+            nextRevision
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     override suspend fun appendMessage(
         chatId: String,
         position: Int,
@@ -386,25 +447,7 @@ class LocalRisuStorage(context: Context) : RisuStorage {
         db.beginTransaction()
         try {
             val revision = currentRevision(db)
-            val messageValue = linkedMapOf<String, Any?>(
-                "role" to message.role,
-                "data" to message.data,
-                "time" to message.time,
-            ).apply { if (message.name != null) put("name", message.name) }
-
-            val values = ContentValues().apply {
-                put("chat_id", chatId)
-                put("id", message.id)
-                put("position", position)
-                put("role", message.role)
-                if ('\u0000' !in message.data) put("content_text", message.data) else putNull("content_text")
-                putNull("content_encoded")
-                if (message.name != null) put("sender_name", message.name) else putNull("sender_name")
-                if (message.time != null) put("sent_time", message.time) else putNull("sent_time")
-            }
-            db.insertWithOnConflict("messages", null, values, SQLiteDatabase.CONFLICT_REPLACE)
-            db.delete("message_extension_nodes", "chat_id = ? AND message_id = ?", arrayOf(chatId, message.id))
-            RelationalNodeCodec.flatten(messageValue).forEach { row -> insertNode(db, chatId, message.id, row) }
+            writeMessage(db, chatId, position, message)
             db.execSQL("UPDATE chats SET last_message_time = ?, updated_at = datetime('now') WHERE id = ?", arrayOf<Any?>(message.time, chatId))
 
             val nextRevision = revision + 1
@@ -421,6 +464,27 @@ class LocalRisuStorage(context: Context) : RisuStorage {
         } finally {
             db.endTransaction()
         }
+    }
+
+    private fun writeMessage(db: SQLiteDatabase, chatId: String, position: Int, message: MessageRecord) {
+        val messageValue = linkedMapOf<String, Any?>(
+            "role" to message.role,
+            "data" to message.data,
+            "time" to message.time,
+        ).apply { if (message.name != null) put("name", message.name) }
+        val values = ContentValues().apply {
+            put("chat_id", chatId)
+            put("id", message.id)
+            put("position", position)
+            put("role", message.role)
+            if ('\u0000' !in message.data) put("content_text", message.data) else putNull("content_text")
+            putNull("content_encoded")
+            if (message.name != null) put("sender_name", message.name) else putNull("sender_name")
+            if (message.time != null) put("sent_time", message.time) else putNull("sent_time")
+        }
+        db.insertWithOnConflict("messages", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        db.delete("message_extension_nodes", "chat_id = ? AND message_id = ?", arrayOf(chatId, message.id))
+        RelationalNodeCodec.flatten(messageValue).forEach { row -> insertNode(db, chatId, message.id, row) }
     }
 
     private fun writeSetting(db: SQLiteDatabase, key: String, value: Any?) {
@@ -497,6 +561,7 @@ class LocalRisuStorage(context: Context) : RisuStorage {
 
     private fun editablePresetSettings(settings: GenerationSettings): LinkedHashMap<String, Any?> = linkedMapOf(
         "aiModel" to settings.aiModel,
+        "maxContext" to settings.maxContext,
         "maxResponse" to settings.maxResponse,
         "temperature" to settings.temperature * 100.0,
         "top_p" to settings.topP,
