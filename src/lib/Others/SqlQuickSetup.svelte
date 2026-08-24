@@ -203,7 +203,6 @@
                     <TextInput
                         id="quick-pg-conn"
                         bind:value={pgConnectionString}
-                        hideText={true}
                         fullwidth={true}
                         placeholder="postgresql://user:password@host:5432/database"
                     />

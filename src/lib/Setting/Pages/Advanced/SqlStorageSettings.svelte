@@ -500,7 +500,6 @@
             <TextInput
                 id="postgres-connection-string"
                 bind:value={connectionString}
-                hideText={true}
                 fullwidth={true}
                 disabled={config.managedByEnvironment}
                 placeholder={config.connectionDisplay || 'postgresql://user:password@host:5432/database'}
@@ -803,7 +802,6 @@
             <TextInput
                 id="backup-pg-connection-string"
                 bind:value={backupPgConnectionString}
-                hideText={true}
                 fullwidth={true}
                 placeholder="postgresql://user:password@host:5432/database"
                 className="mt-1"

@@ -947,7 +947,6 @@
                                 <TextInput
                                     id="backup-pg-connection-string"
                                     bind:value={backupPgConnectionString}
-                                    hideText={true}
                                     fullwidth={true}
                                     placeholder="postgresql://user:password@host:5432/backup_database"
                                     className="mt-1 text-xs"

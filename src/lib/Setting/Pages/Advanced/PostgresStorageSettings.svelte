@@ -121,7 +121,6 @@
         <TextInput
             id="postgres-connection-string"
             bind:value={connectionString}
-            hideText={true}
             fullwidth={true}
             disabled={config.managedByEnvironment}
             placeholder={config.connectionDisplay || 'postgresql://user:password@host:5432/database'}

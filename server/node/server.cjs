@@ -896,23 +896,7 @@ function validatePostgresConnectionString(value) {
 }
 
 function maskPostgresConnectionString(value) {
-    if (!value) {
-        return '';
-    }
-    try {
-        const parsed = new URL(value);
-        if (parsed.password) {
-            parsed.password = '********';
-        }
-        for (const key of new Set(parsed.searchParams.keys())) {
-            if (/^(?:password|passfile|sslpassword|sslkey|token|secret|api[_-]?key)$/i.test(key)) {
-                parsed.searchParams.set(key, '********');
-            }
-        }
-        return parsed.toString();
-    } catch {
-        return 'Configured connection string';
-    }
+    return value || '';
 }
 
 function normalizePostgresPoolMax(value) {
