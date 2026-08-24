@@ -1612,6 +1612,59 @@ class PostgresStorage extends SqlStorageBase {
         }
     }
 
+    async loadChatMessages(chatId, options = {}) {
+        this.assertEnabled();
+        assertId(chatId, 'chatId');
+        const client = await this.pool.connect();
+        const includeMetadata = options.mode !== 'generation';
+        try {
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+            const queries = [
+                'SELECT * FROM chat.messages WHERE chat_id = $1 ORDER BY position, id',
+                'SELECT * FROM chat.message_attributes WHERE chat_id = $1 ORDER BY chat_id, message_id, key',
+            ];
+            if (includeMetadata) {
+                queries.push(
+                    'SELECT * FROM chat.message_generation WHERE chat_id = $1',
+                    'SELECT * FROM chat.message_prompt_info WHERE chat_id = $1',
+                    'SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 ORDER BY chat_id, message_id, position',
+                    'SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 ORDER BY chat_id, message_id, position',
+                );
+            }
+            const results = await Promise.all(queries.map((query) => client.query(query, [chatId])));
+            const messagesRes = results[0];
+            const attributesRes = results[1];
+            const generations = results[2]?.rows ?? [];
+            const promptInfos = results[3]?.rows ?? [];
+            const promptToggles = results[4]?.rows ?? [];
+            const promptItems = results[5]?.rows ?? [];
+            const relations = {
+                attributes: groupMessageRows(attributesRes.rows),
+                generation: new Map(generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+                promptInfo: new Map(promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+                promptToggles: groupMessageRows(promptToggles),
+                promptItems: groupMessageRows(promptItems),
+            };
+            const messages = messagesRes.rows.map((row) => {
+                const key = `${row.chat_id}\0${row.id}`;
+                return rebuildMessage(row, {
+                    attributes: relations.attributes.get(key),
+                    generation: relations.generation.get(key),
+                    promptInfo: relations.promptInfo.get(key),
+                    promptToggles: relations.promptToggles.get(key),
+                    promptItems: relations.promptItems.get(key),
+                });
+            });
+            await client.query('COMMIT');
+            return messages;
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
     async loadPlugins() {
         this.assertEnabled();
         if (this.pluginsCache) {

@@ -471,7 +471,7 @@ class CharacterStore {
 
   async ensureChatMessages(
     chatId: string,
-    options: { full?: boolean } = {},
+    options: { full?: boolean; generation?: boolean } = {},
   ): Promise<void> {
     const initialMessagePageSize = settingsStore.state.lowSpecMode ? 12 : 60;
     const char = this.characters.find((c) =>
@@ -488,12 +488,46 @@ class CharacterStore {
 
     if (this.chatDetailPromises.has(chatId)) {
       await this.chatDetailPromises.get(chatId);
+      if (options.full && chat?.messagesFullyLoaded === false) {
+        await this.ensureChatMessages(chatId, options);
+      }
       return;
     }
 
     const storage = this.storage || (await getSqlStorage());
     const promise = (async () => {
       try {
+        if (
+          options.full &&
+          chat?.detailsLoaded !== false &&
+          chat?.messagesLoaded !== false
+        ) {
+          const previousMessages = chat.message ?? [];
+          const messages = await storage.loadChatMessages(chatId, {
+            mode: options.generation ? "generation" : "full",
+          });
+          if (options.generation && previousMessages.length > 0) {
+            const previousById = new Map(
+              previousMessages
+                .filter((message) => message.chatId)
+                .map((message) => [message.chatId!, message]),
+            );
+            chat.message = messages.map((message) => {
+              const previous = message.chatId
+                ? previousById.get(message.chatId)
+                : undefined;
+              return previous ? { ...message, ...previous } : message;
+            });
+          } else {
+            chat.message = messages;
+          }
+          chat.messageOffset = 0;
+          chat.messageTotal = chat.message.length;
+          chat.messagesFullyLoaded = true;
+          chat.messagesLoaded = true;
+          return;
+        }
+
         const fullChat = await storage.loadChat(
           chatId,
           options.full ? undefined : { messageLimit: initialMessagePageSize },

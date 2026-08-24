@@ -3530,7 +3530,11 @@ app.post('/api/vector-index/search', authenticatedRouteLimiter, async (req, res,
     if (!await checkAuth(req, res)) return;
     try {
         const scope = await getAuthenticatedIndexScope(req);
-        const results = searchVectorIndex(`${scope}:${req.body?.indexId}`, req.body?.queries);
+        const results = searchVectorIndex(
+            `${scope}:${req.body?.indexId}`,
+            req.body?.queries,
+            req.body?.metric,
+        );
         if (results === null) return res.status(404).send({ error: 'Vector index not found', code: 'vector_index_missing' });
         res.send({ results });
     } catch (error) {
@@ -3995,7 +3999,9 @@ app.get('/api/database-v2/chats/:chatId/messages', authenticatedRouteLimiter, as
     }
 
     try {
-        const messages = await postgresStorage.loadChatMessages(req.params.chatId);
+        const messages = await postgresStorage.loadChatMessages(req.params.chatId, {
+            mode: req.query.mode === 'generation' ? 'generation' : 'full',
+        });
         if (req.query.limit !== undefined || req.query.before !== undefined) {
             const page = paginateMessages(messages, {
                 before: normalizePageInteger(req.query.before, undefined),

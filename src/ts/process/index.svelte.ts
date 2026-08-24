@@ -295,7 +295,10 @@ export async function sendChat(
   // Prompt construction, scripts, and memory systems require absolute chat
   // history. The chat screen itself stays paged, but generation hydrates the
   // complete message list immediately before processing.
-  await preLoadChat(selectedChar, selectedChat, { full: true });
+  await preLoadChat(selectedChar, selectedChat, {
+    full: true,
+    generation: pluginV2.chatOutput.size === 0,
+  });
   nowChatroom.chats[nowChatroom.chatPage].message = nowChatroom.chats[
     nowChatroom.chatPage
   ].message.map((v) => {
@@ -1280,6 +1283,7 @@ export async function sendChat(
         currentTokens,
         maxContextTokens,
         tokenizer,
+        serverIndexId: currentChat.id,
       });
 
       if (hn === false) {
@@ -1376,19 +1380,22 @@ export async function sendChat(
     chatProcessStage.set(1);
   } else {
     stageTimings.stage1Duration = Date.now() - stageTimings.stage1Start;
-    while (currentTokens > maxContextTokens) {
-      if (chats.length <= 1) {
+    if (currentTokens > maxContextTokens) {
+      const chatTokenCounts = await tokenizer.tokenizeChatsDetailed(chats);
+      let removeCount = 0;
+      while (currentTokens > maxContextTokens && removeCount < chats.length - 1) {
+        currentTokens -= chatTokenCounts[removeCount];
+        removeCount += 1;
+      }
+      if (currentTokens > maxContextTokens) {
         throwError(
           language.errors.toomuchtoken +
             "\n\nRequired Tokens: " +
             currentTokens,
         );
-
         return false;
       }
-
-      currentTokens -= await tokenizer.tokenizeChat(chats[0]);
-      chats.splice(0, 1);
+      if (removeCount > 0) chats.splice(0, removeCount);
     }
     currentChat.lastMemory = chats[0].memo;
   }
@@ -1857,8 +1864,10 @@ export async function sendChat(
     promptInfo.promptText = promptBodyformatedForChatStore;
   }
 
-  //token rechecking
-  let inputTokens = await tokenizer.tokenizeChats(formated);
+  // Token rechecking. Compute every per-message count in one batch so Node
+  // deployments avoid a request/tokenizer pass for each removable prompt.
+  const formatedTokenCounts = await tokenizer.tokenizeChatsDetailed(formated);
+  let inputTokens = formatedTokenCounts.reduce((total, count) => total + count, 0);
 
   if (inputTokens > maxContextTokens) {
     let pointer = 0;
@@ -1872,7 +1881,7 @@ export async function sendChat(
         return false;
       }
       if (formated[pointer].removable) {
-        inputTokens -= await tokenizer.tokenizeChat(formated[pointer]);
+        inputTokens -= formatedTokenCounts[pointer];
         formated[pointer].content = "";
       }
       pointer++;

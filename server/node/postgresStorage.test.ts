@@ -164,6 +164,43 @@ describe('PostgreSQL sync payload validation', () => {
         expect(clause).toBe('ON CONFLICT ("character_id", "position") DO NOTHING')
     })
 
+    it('skips generation and prompt metadata queries for generation history loads', async () => {
+        const queries:string[] = []
+        const client = {
+            query: async (sql:string) => {
+                queries.push(sql)
+                if (sql.includes('FROM chat.messages ')) {
+                    return { rows: [{
+                        chat_id: '00000000-0000-4000-8000-000000000001',
+                        id: '00000000-0000-4000-8000-000000000002',
+                        position: 0, role: 'user', content_text: 'hello',
+                        content_binary: null, saying_character_id: null, sent_time: null,
+                        sender_name: null, other_user: null, disabled_scope: null, is_comment: null,
+                    }] }
+                }
+                return { rows: [] }
+            },
+            release: () => {},
+        }
+        const storage = new PostgresStorage({ connectionString: 'postgres://test' })
+        storage.pool = { connect: async () => client }
+
+        const messages = await storage.loadChatMessages(
+            '00000000-0000-4000-8000-000000000001',
+            { mode: 'generation' },
+        )
+
+        const selects = queries.filter((query) => query.startsWith('SELECT'))
+        expect(selects).toHaveLength(2)
+        expect(selects.some((query) => query.includes('message_generation'))).toBe(false)
+        expect(selects.some((query) => query.includes('message_prompt'))).toBe(false)
+        expect(messages).toEqual([{
+            role: 'user',
+            data: 'hello',
+            chatId: '00000000-0000-4000-8000-000000000002',
+        }])
+    })
+
     it('has revision methods on PostgresStorage prototype', () => {
         expect(typeof PostgresStorage.prototype.listRevisions).toBe('function')
         expect(typeof PostgresStorage.prototype.getRevisionDetails).toBe('function')

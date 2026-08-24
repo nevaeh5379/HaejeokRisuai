@@ -387,6 +387,10 @@ export async function hypaMemoryV2(
   // Clean invalid HypaV2 data
   cleanInvalidChunks(chats, data);
 
+  // HypaV2 never mutates the source chat history. Keep one batched token-count
+  // snapshot and reuse it across summarized-prefix and chunk-selection loops.
+  const chatTokenCounts = await tokenizer.tokenizeChatsDetailed(chats);
+
   let allocatedTokens = db.hypaAllocatedTokens;
   let chunkSize = db.hypaChunkSize;
   currentTokens += allocatedTokens; // WARNING: VIRTUAL VALUE. This token is NOT real. This is a placeholder appended to calculate the maximum amount of HypaV2 memory retrieved data.
@@ -406,10 +410,9 @@ export async function hypaMemoryV2(
       idx = lastChatIndex + 1;
 
       // Subtract tokens of summarized chats
-      const summarizedChats = chats.slice(0, lastChatIndex + 1);
-      for (const chat of summarizedChats) {
-        currentTokens -= await tokenizer.tokenizeChat(chat);
-      }
+      currentTokens -= chatTokenCounts
+        .slice(0, lastChatIndex + 1)
+        .reduce((total, tokens) => total + tokens, 0);
     }
   }
   // Starting chat index of new mainChunk to be generated
@@ -439,7 +442,7 @@ export async function hypaMemoryV2(
       idx < chats.length - 4 // keep the last two chats from summarizing(else, the roles will be fucked up)
     ) {
       const chat = chats[idx];
-      const chatTokens = await tokenizer.tokenizeChat(chat);
+      const chatTokens = chatTokenCounts[idx];
 
       console.log(
         "[HypaV2] Evaluating chat for summarization:",
@@ -511,7 +514,7 @@ export async function hypaMemoryV2(
       }
 
       // Case 2: Chat too large for chunk size
-      const chatTokens = await tokenizer.tokenizeChat(chats[idx]);
+      const chatTokens = chatTokenCounts[idx];
       return {
         currentTokens: currentTokens,
         chats: chats,
@@ -616,18 +619,24 @@ export async function hypaMemoryV2(
   }
 
   // Fetch additional memory from chunks
-  const processor = new HypaProcesser(db.hypaModel);
+  const processor = new HypaProcesser(
+    db.hypaModel,
+    undefined,
+    room.id ? `hypav2:${char.chaId}:${room.id}` : undefined,
+  );
   processor.oaikey = db.supaMemoryKey;
 
   const searchDocumentPrefix = "search_document: ";
   const prefixLength = searchDocumentPrefix.length;
+  const retrievalTexts = data.chunks
+    .filter((v) => v.text.trim().length > 0)
+    .map((v) => searchDocumentPrefix + v.text.trim());
 
-  // Add chunks to processor for similarity search
-  await processor.addText(
-    data.chunks
-      .filter((v) => v.text.trim().length > 0)
-      .map((v) => searchDocumentPrefix + v.text.trim()), // sometimes this should not be used at all. Risuai does not support embedding model that this is meaningful, isn't it?
-  );
+  // Add chunks to processor for similarity search. Node deployments can keep
+  // the full retrieval vectors server-side and load only missing embeddings.
+  if (!(await processor.prepareServerTextIndex(retrievalTexts))) {
+    await processor.addText(retrievalTexts);
+  }
 
   let scoredResults: { [key: string]: number } = {};
   for (let i = 0; i < 3; i++) {

@@ -387,7 +387,7 @@ export async function confirmIncompleteColdStorageOperation(
 export async function preLoadChat(
   characterIndex: number,
   chatIndex: number,
-  options: { full?: boolean } = {},
+  options: { full?: boolean; generation?: boolean } = {},
 ) {
   const chat = characterStore.characters?.[characterIndex]?.chats?.[chatIndex];
 

@@ -46,6 +46,7 @@ export class HypaProcesser {
   model: HypaModel;
   customEmbeddingUrl: string;
   serverIndexId?: string;
+  private serverIndexedContents: string[] | null = null;
 
   constructor(model: HypaModel | "auto" = "auto", customEmbeddingUrl?: string, serverIndexId?: string) {
     this.forage = localforage.createInstance({
@@ -163,50 +164,158 @@ export class HypaProcesser {
     return vec;
   }
 
-  async addText(texts: string[]) {
+  private getEmbeddingCacheKey(text: string): string {
     const db = getDatabase();
     const suffix =
       this.model === "custom" && db.hypaCustomSettings?.model?.trim()
         ? `-${db.hypaCustomSettings.model.trim()}`
         : "";
+    return text + "|" + this.model + suffix;
+  }
 
-    for (let i = 0; i < texts.length; i++) {
-      const itm: memoryVector = await this.forage.getItem(
-        texts[i] + "|" + this.model + suffix,
+  private getServerVectorIndexId(): string | null {
+    if (!this.serverIndexId || isContextModel(this.model)) return null;
+    const db = getDatabase();
+    return [
+      this.serverIndexId,
+      this.model,
+      this.model === "custom" ? this.customEmbeddingUrl : "",
+      this.model === "custom" ? db.hypaCustomSettings?.model?.trim() || "" : "",
+    ].join("|");
+  }
+
+  private async loadCachedVectors(
+    texts: string[],
+  ): Promise<Array<memoryVector | null>> {
+    const results: Array<memoryVector | null> = [];
+    const batchSize = 128;
+    for (let offset = 0; offset < texts.length; offset += batchSize) {
+      const batch = texts.slice(offset, offset + batchSize);
+      const loaded = await Promise.all(
+        batch.map((text) =>
+          this.forage.getItem<memoryVector>(this.getEmbeddingCacheKey(text)),
+        ),
       );
-      if (itm) {
-        itm.alreadySaved = true;
-        this.vectors.push(itm);
-      }
+      results.push(...loaded);
+    }
+    return results;
+  }
+
+  private async saveCachedVectors(vectors: memoryVector[]): Promise<void> {
+    const batchSize = 128;
+    for (let offset = 0; offset < vectors.length; offset += batchSize) {
+      const batch = vectors.slice(offset, offset + batchSize);
+      await Promise.all(
+        batch.map((vector) =>
+          this.forage.setItem(this.getEmbeddingCacheKey(vector.content), vector),
+        ),
+      );
+    }
+  }
+
+  async addText(texts: string[]) {
+    const cached = await this.loadCachedVectors(texts);
+    for (const item of cached) {
+      if (!item) continue;
+      item.alreadySaved = true;
+      this.vectors.push(item);
     }
 
-    texts = texts.filter((v) => {
-      for (let i = 0; i < this.vectors.length; i++) {
-        if (this.vectors[i].content === v) {
-          return false;
-        }
-      }
-      return true;
-    });
+    const existingContents = new Set(this.vectors.map((vector) => vector.content));
+    texts = texts.filter((text) => !existingContents.has(text));
+    if (texts.length === 0) return;
 
-    if (texts.length === 0) {
-      return;
-    }
     const vectors = await this.embedDocuments(texts);
-
-    const memoryVectors: memoryVector[] = vectors.map((embedding, idx) => ({
-      content: texts[idx],
+    const memoryVectors: memoryVector[] = vectors.map((embedding, index) => ({
+      content: texts[index],
       embedding,
     }));
-
-    for (let i = 0; i < memoryVectors.length; i++) {
-      const vec = memoryVectors[i];
-      if (!vec.alreadySaved) {
-        await this.forage.setItem(texts[i] + "|" + this.model + suffix, vec);
-      }
-    }
-
+    await this.saveCachedVectors(memoryVectors);
     this.vectors = memoryVectors.concat(this.vectors);
+  }
+
+  /**
+   * Prepare a Node-side text vector index without materializing every cached
+   * embedding in browser memory. Only vectors missing from the server index are
+   * read from IndexedDB or requested from the embedding API.
+   */
+  async prepareServerTextIndex(texts: string[]): Promise<boolean> {
+    if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
+      return false;
+    }
+    const indexId = this.getServerVectorIndexId();
+    if (!indexId) return false;
+
+    const descriptors = texts.map((text, index) => ({
+      id: String(index),
+      signature: vectorContentSignature(text),
+    }));
+
+    try {
+      const storage = forageStorage.realStorage;
+      const status = await storage.vectorIndexStatus(indexId, descriptors);
+      if (status.missingIds.length > 0) {
+        const missing = status.missingIds
+          .map((id) => ({ id, index: Number(id) }))
+          .filter(
+            (entry) =>
+              Number.isSafeInteger(entry.index) &&
+              entry.index >= 0 &&
+              entry.index < texts.length,
+          );
+        const uniqueTexts = [...new Set(missing.map((entry) => texts[entry.index]))];
+        const cached = await this.loadCachedVectors(uniqueTexts);
+        const embeddingByText = new Map<string, VectorArray>();
+        const uncachedTexts: string[] = [];
+
+        for (let i = 0; i < uniqueTexts.length; i++) {
+          const vector = cached[i];
+          if (vector?.embedding?.length) {
+            embeddingByText.set(uniqueTexts[i], vector.embedding);
+          } else {
+            uncachedTexts.push(uniqueTexts[i]);
+          }
+        }
+
+        if (uncachedTexts.length > 0) {
+          const embeddings = await this.embedDocuments(uncachedTexts);
+          const generated = uncachedTexts.map((content, index) => ({
+            content,
+            embedding: embeddings[index],
+          }));
+          await this.saveCachedVectors(generated);
+          for (const vector of generated) {
+            embeddingByText.set(vector.content, vector.embedding);
+          }
+        }
+
+        await storage.vectorIndexUpsert(
+          indexId,
+          missing.map((entry) => {
+            const content = texts[entry.index];
+            const embedding = embeddingByText.get(content);
+            if (!embedding) {
+              throw new Error(`Missing embedding for vector index entry ${entry.id}`);
+            }
+            return {
+              id: entry.id,
+              signature: vectorContentSignature(content),
+              embedding: Array.from(embedding),
+            };
+          }),
+        );
+      }
+
+      this.serverIndexedContents = texts.slice();
+      return true;
+    } catch (error) {
+      console.warn(
+        "[HypaProcesser] Failed to prepare server text index; using browser vectors",
+        error,
+      );
+      this.serverIndexedContents = null;
+      return false;
+    }
   }
 
   async similaritySearch(query: string) {
@@ -222,7 +331,7 @@ export class HypaProcesser {
     );
   }
 
-  private async similaritySearchVectorWithScore(
+  protected async similaritySearchVectorWithScore(
     query: VectorArray,
   ): Promise<[string, number][]> {
     const serverResult = await this.tryServerSimilaritySearch(query);
@@ -243,23 +352,29 @@ export class HypaProcesser {
     ]);
   }
 
-  private async tryServerSimilaritySearch(query: VectorArray): Promise<[string, number][] | null> {
-    if (!this.serverIndexId || isContextModel(this.model)) return null;
-    if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) return null;
-    const db = getDatabase();
-    const indexId = [
-      this.serverIndexId,
-      this.model,
-      this.model === "custom" ? this.customEmbeddingUrl : "",
-      this.model === "custom" ? db.hypaCustomSettings?.model?.trim() || "" : "",
-    ].join("|");
-    const descriptors = this.vectors.map((vector, index) => ({
-      id: String(index),
-      signature: vectorContentSignature(vector.content),
-    }));
+  private async tryServerSimilaritySearch(
+    query: VectorArray,
+  ): Promise<[string, number][] | null> {
+    if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
+      return null;
+    }
+    const indexId = this.getServerVectorIndexId();
+    if (!indexId) return null;
 
     try {
       const storage = forageStorage.realStorage;
+      if (this.serverIndexedContents) {
+        const ranked = await storage.vectorIndexSearch(indexId, [Array.from(query)], "dot");
+        return (ranked[0] ?? []).flatMap(([id, score]) => {
+          const content = this.serverIndexedContents?.[Number(id)];
+          return content ? [[content, score] as [string, number]] : [];
+        });
+      }
+
+      const descriptors = this.vectors.map((vector, index) => ({
+        id: String(index),
+        signature: vectorContentSignature(vector.content),
+      }));
       const status = await storage.vectorIndexStatus(indexId, descriptors);
       if (status.missingIds.length > 0) {
         const missing = new Set(status.missingIds);
@@ -267,18 +382,32 @@ export class HypaProcesser {
           indexId,
           this.vectors.flatMap((vector, index) =>
             missing.has(String(index))
-              ? [{ id: String(index), signature: vectorContentSignature(vector.content), embedding: Array.from(vector.embedding) }]
+              ? [
+                  {
+                    id: String(index),
+                    signature: vectorContentSignature(vector.content),
+                    embedding: Array.from(vector.embedding),
+                  },
+                ]
               : [],
           ),
         );
       }
-      const ranked = await storage.vectorIndexSearch(indexId, [Array.from(query)]);
+      const ranked = await storage.vectorIndexSearch(indexId, [Array.from(query)], "dot");
       return (ranked[0] ?? []).flatMap(([id, score]) => {
         const vector = this.vectors[Number(id)];
         return vector ? [[vector.content, score] as [string, number]] : [];
       });
     } catch (error) {
-      console.warn("[HypaProcesser] Server vector search failed; using browser fallback", error);
+      console.warn(
+        "[HypaProcesser] Server vector search failed; using browser fallback",
+        error,
+      );
+      if (this.serverIndexedContents && this.vectors.length === 0) {
+        const fallbackTexts = this.serverIndexedContents;
+        this.serverIndexedContents = null;
+        await this.addText(fallbackTexts);
+      }
       return null;
     }
   }

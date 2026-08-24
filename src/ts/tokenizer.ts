@@ -594,23 +594,48 @@ export class ChatTokenizer {
     }
     return encoded;
   }
-  async tokenizeChats(data: OpenAIChat[]) {
+  async tokenizeChatsDetailed(
+    data: OpenAIChat[],
+    args: { countThoughts?: boolean } = {},
+  ): Promise<number[]> {
     const texts: string[] = [];
     for (const chat of data) {
       texts.push(chat.content);
       if (chat.name && this.useName === "name") texts.push(chat.name);
-    }
-    const counts = await countTokenTexts(texts);
-    let countIndex = 0;
-    let encoded = 0;
-    for (const chat of data) {
-      encoded += counts[countIndex++] + this.chatAdditionalTokens;
-      if (chat.name && this.useName === "name") encoded += counts[countIndex++] + 1;
-      if (chat.multimodals?.length) {
-        for (const multimodal of chat.multimodals) encoded += await this.tokenizeMultiModal(multimodal);
+      if (args.countThoughts && chat.thoughts?.length) {
+        texts.push(...chat.thoughts);
       }
     }
-    return encoded;
+
+    const counts = await countTokenTexts(texts);
+    let countIndex = 0;
+    const detailed: number[] = [];
+    for (const chat of data) {
+      let encoded = counts[countIndex++] + this.chatAdditionalTokens;
+      if (chat.name && this.useName === "name") {
+        encoded += counts[countIndex++] + 1;
+      }
+      if (args.countThoughts && chat.thoughts?.length) {
+        for (let i = 0; i < chat.thoughts.length; i++) {
+          encoded += counts[countIndex++] + 1;
+        }
+      }
+      if (chat.multimodals?.length) {
+        for (const multimodal of chat.multimodals) {
+          encoded += await this.tokenizeMultiModal(multimodal);
+        }
+      }
+      detailed.push(encoded);
+    }
+    return detailed;
+  }
+
+  async tokenizeChats(
+    data: OpenAIChat[],
+    args: { countThoughts?: boolean } = {},
+  ) {
+    const counts = await this.tokenizeChatsDetailed(data, args);
+    return counts.reduce((total, count) => total + count, 0);
   }
 
   tokenizeMultiModal(data: MultiModal) {
@@ -707,57 +732,43 @@ export async function strongBan(data: string, bias: { [key: number]: number }) {
 }
 
 export async function getCharToken(char?: character | groupChat | null) {
-  let persistant = 0;
-  let dynamic = 0;
-
   if (!char) {
-    const c = getCurrentCharacter();
-    char = c;
+    char = getCurrentCharacter();
   }
   if (char.type === "group") {
     return { persistant: 0, dynamic: 0 };
   }
 
-  const basicTokenize = async (data: string) => {
-    data = data.replace(/{{char}}/g, char.name).replace(/<char>/g, char.name);
-    return await tokenize(data);
-  };
-
-  persistant += await basicTokenize(char.desc);
-  persistant += await basicTokenize(char.personality ?? "");
-  persistant += await basicTokenize(char.scenario ?? "");
-  for (const lore of char.globalLore) {
-    let cont = lore.content
-      .split("\n")
-      .filter((line) => {
-        if (line.startsWith("@@")) {
-          return false;
-        }
-        if (line === "") {
-          return false;
-        }
-        return true;
-      })
-      .join("\n");
-    dynamic += await basicTokenize(cont);
-  }
-
+  const normalize = (data: string) =>
+    data.replace(/{{char}}/g, char.name).replace(/<char>/g, char.name);
+  const persistentTexts = [
+    normalize(char.desc),
+    normalize(char.personality ?? ""),
+    normalize(char.scenario ?? ""),
+  ];
+  const dynamicTexts = char.globalLore.map((lore) =>
+    normalize(
+      lore.content
+        .split("\n")
+        .filter((line) => !line.startsWith("@@") && line !== "")
+        .join("\n"),
+    ),
+  );
+  const counts = await countTokenTexts([...persistentTexts, ...dynamicTexts]);
+  const persistant = counts
+    .slice(0, persistentTexts.length)
+    .reduce((total, count) => total + count, 0);
+  const dynamic = counts
+    .slice(persistentTexts.length)
+    .reduce((total, count) => total + count, 0);
   return { persistant, dynamic };
 }
 
 export async function getChatToken(chat: Chat) {
-  let persistant = 0;
-
   const chatTokenizer = new ChatTokenizer(0, "name");
-  const chatf = chat.message.map((d) => {
-    return {
-      role: d.role === "user" ? "user" : "assistant",
-      content: d.data,
-    } as OpenAIChat;
-  });
-  for (const chat of chatf) {
-    persistant += await chatTokenizer.tokenizeChat(chat);
-  }
-
-  return persistant;
+  const chatf = chat.message.map((message) => ({
+    role: message.role === "user" ? "user" : "assistant",
+    content: message.data,
+  })) as OpenAIChat[];
+  return await chatTokenizer.tokenizeChats(chatf);
 }

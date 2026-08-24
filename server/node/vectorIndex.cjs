@@ -1,8 +1,25 @@
 const MAX_INDEXES = 32;
 const MAX_VECTORS_PER_INDEX = 100000;
 const MAX_DIMENSIONS = 8192;
-const MAX_FLOATS_PER_INDEX = 8_000_000;
-const MAX_TOTAL_FLOATS = 32_000_000;
+const FLOAT_BYTES = 4;
+
+function readMemoryLimitMb(name, fallbackMb) {
+    const parsed = Number.parseInt(process.env[name] || '', 10);
+    if (!Number.isSafeInteger(parsed) || parsed <= 0) return fallbackMb;
+    return Math.min(Math.max(parsed, 8), 4096);
+}
+
+const MAX_INDEX_MEMORY_MB = readMemoryLimitMb('RISU_VECTOR_INDEX_MAX_MB', 128);
+const MAX_TOTAL_MEMORY_MB = Math.max(
+    MAX_INDEX_MEMORY_MB,
+    readMemoryLimitMb('RISU_VECTOR_INDEX_TOTAL_MAX_MB', 256),
+);
+const MAX_FLOATS_PER_INDEX = Math.floor(
+    (MAX_INDEX_MEMORY_MB * 1024 * 1024) / FLOAT_BYTES,
+);
+const MAX_TOTAL_FLOATS = Math.floor(
+    (MAX_TOTAL_MEMORY_MB * 1024 * 1024) / FLOAT_BYTES,
+);
 const indexes = new Map();
 
 function validateIndexId(indexId) {
@@ -115,8 +132,16 @@ function cosineSimilarity(a, b) {
     return denominator === 0 ? -Infinity : dot / denominator;
 }
 
-function searchVectorIndex(indexId, queries) {
+function dotProduct(a, b) {
+    if (a.length !== b.length || a.length === 0) return -Infinity;
+    let dot = 0;
+    for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
+    return dot;
+}
+
+function searchVectorIndex(indexId, queries, metric = 'cosine') {
     if (!Array.isArray(queries)) throw new TypeError('queries must be an array');
+    if (metric !== 'cosine' && metric !== 'dot') throw new TypeError('Invalid vector search metric');
     const index = touchIndex(indexId, false);
     if (!index) return null;
 
@@ -130,7 +155,12 @@ function searchVectorIndex(indexId, queries) {
             throw new RangeError('Query dimensions do not match the vector index');
         }
         return vectors
-            .map(([id, value]) => [id, cosineSimilarity(query, value.embedding)])
+            .map(([id, value]) => [
+                id,
+                metric === 'dot'
+                    ? dotProduct(query, value.embedding)
+                    : cosineSimilarity(query, value.embedding),
+            ])
             .sort((a, b) => b[1] - a[1]);
     });
 }

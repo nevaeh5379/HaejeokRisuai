@@ -38,6 +38,7 @@ describe("CharacterStore active-tracking persistence", () => {
       getRevision: vi.fn(() => committed.length),
       loadCharacter: vi.fn(async () => null),
       loadChat: vi.fn(async () => null),
+      loadChatMessages: vi.fn(async () => []),
       loadChatMessagePage: vi.fn(async () => ({
         messages: [],
         offset: 0,
@@ -49,6 +50,119 @@ describe("CharacterStore active-tracking persistence", () => {
         return { revision: committed.length };
       }),
     } as unknown as ISqlStorage;
+  });
+
+
+  it("hydrates only messages when full generation history is requested from a paged chat", async () => {
+    const chars = [makeChar("paged")];
+    const chat = chars[0].chats[0];
+    chat.id = "chat-paged";
+    chat.message = [{ role: "user", data: "recent" } as any];
+    chat.messagesLoaded = true;
+    chat.detailsLoaded = true;
+    chat.messagesFullyLoaded = false;
+    chat.messageOffset = 2;
+    chat.messageTotal = 3;
+
+    const allMessages = [
+      { role: "user", data: "oldest" },
+      { role: "char", data: "older" },
+      { role: "user", data: "recent" },
+    ] as any[];
+    vi.mocked(mockStorage.loadChatMessages).mockResolvedValue(allMessages);
+    characterStore.init(chars, mockStorage);
+
+    await characterStore.ensureChatMessages(chat.id, { full: true });
+
+    const loadedChat = characterStore.characters[0].chats[0];
+    expect(mockStorage.loadChatMessages).toHaveBeenCalledWith(chat.id, {
+      mode: "full",
+    });
+    expect(mockStorage.loadChat).not.toHaveBeenCalled();
+    expect(loadedChat.message).toEqual(allMessages);
+    expect(loadedChat.messageOffset).toBe(0);
+    expect(loadedChat.messageTotal).toBe(3);
+    expect(loadedChat.messagesFullyLoaded).toBe(true);
+  });
+
+  it("uses lightweight generation history while preserving metadata from the loaded page", async () => {
+    const chars = [makeChar("generation")];
+    const chat = chars[0].chats[0];
+    chat.id = "chat-generation";
+    chat.message = [
+      {
+        chatId: "msg-recent",
+        role: "char",
+        data: "recent",
+        generationInfo: { model: "model-a" },
+        promptInfo: { promptName: "saved-prompt" },
+      } as any,
+    ];
+    chat.messagesLoaded = true;
+    chat.detailsLoaded = true;
+    chat.messagesFullyLoaded = false;
+    chat.messageOffset = 1;
+    chat.messageTotal = 2;
+
+    vi.mocked(mockStorage.loadChatMessages).mockResolvedValue([
+      { chatId: "msg-old", role: "user", data: "old" } as any,
+      { chatId: "msg-recent", role: "char", data: "recent" } as any,
+    ]);
+    characterStore.init(chars, mockStorage);
+
+    await characterStore.ensureChatMessages(chat.id, {
+      full: true,
+      generation: true,
+    });
+
+    const loaded = characterStore.characters[0].chats[0];
+    expect(mockStorage.loadChatMessages).toHaveBeenCalledWith(chat.id, {
+      mode: "generation",
+    });
+    expect(loaded.message).toHaveLength(2);
+    expect(loaded.message[0].generationInfo).toBeUndefined();
+    expect(loaded.message[1].generationInfo?.model).toBe("model-a");
+    expect(loaded.message[1].promptInfo?.promptName).toBe("saved-prompt");
+  });
+
+  it("upgrades an in-flight paged load when a full history request arrives", async () => {
+    const chars = [makeChar("race")];
+    const chat = chars[0].chats[0];
+    chat.id = "chat-race";
+    chat.messagesLoaded = false;
+    chat.detailsLoaded = false;
+    chat.messagesFullyLoaded = false;
+
+    let resolvePartial!: (chat: Chat) => void;
+    vi.mocked(mockStorage.loadChat).mockImplementationOnce(
+      () => new Promise<Chat>((resolve) => (resolvePartial = resolve)),
+    );
+    vi.mocked(mockStorage.loadChatMessages).mockResolvedValue([
+      { role: "user", data: "old" } as any,
+      { role: "char", data: "new" } as any,
+    ]);
+    characterStore.init(chars, mockStorage);
+
+    const partialLoad = characterStore.ensureChatMessages(chat.id);
+    const fullLoad = characterStore.ensureChatMessages(chat.id, { full: true });
+    resolvePartial({
+      ...makeChat("partial"),
+      id: chat.id,
+      message: [{ role: "char", data: "new" } as any],
+      messageOffset: 1,
+      messageTotal: 2,
+      messagesLoaded: true,
+      messagesFullyLoaded: false,
+      detailsLoaded: true,
+    } as Chat);
+
+    await Promise.all([partialLoad, fullLoad]);
+
+    const loadedChat = characterStore.characters[0].chats[0];
+    expect(mockStorage.loadChat).toHaveBeenCalledTimes(1);
+    expect(mockStorage.loadChatMessages).toHaveBeenCalledTimes(1);
+    expect(loadedChat.message).toHaveLength(2);
+    expect(loadedChat.messagesFullyLoaded).toBe(true);
   });
 
   it("does not commit on init or selection", async () => {

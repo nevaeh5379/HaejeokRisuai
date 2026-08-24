@@ -262,11 +262,15 @@ export class NodeStorage {
     }
   }
 
-  async vectorIndexSearch(indexId: string, queries: number[][]): Promise<Array<Array<[string, number]>>> {
+  async vectorIndexSearch(
+    indexId: string,
+    queries: number[][],
+    metric: "cosine" | "dot" = "cosine",
+  ): Promise<Array<Array<[string, number]>>> {
     const response = await fetch("/api/vector-index/search", {
       method: "POST",
       headers: { "content-type": "application/json", "risu-auth": await this.getCachedAuth() },
-      body: JSON.stringify({ indexId, queries }),
+      body: JSON.stringify({ indexId, queries, metric }),
     });
     if (!response.ok) throw new Error(`Vector index search failed (${response.status}): ${await response.text()}`);
     const data = await response.json();

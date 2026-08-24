@@ -44,6 +44,22 @@ describe("vectorIndex", () => {
     expect(result?.[0][0][1]).toBeGreaterThan(result?.[0][1][1]);
   });
 
+  it("supports legacy dot-product ranking separately from cosine", () => {
+    syncVectorIndex("chat-dot", [
+      { id: "large", signature: "large" },
+      { id: "aligned", signature: "aligned" },
+    ]);
+    upsertVectorIndex("chat-dot", [
+      { id: "large", signature: "large", embedding: [10, 10] },
+      { id: "aligned", signature: "aligned", embedding: [1, 0] },
+    ]);
+
+    const cosine = searchVectorIndex("chat-dot", [[1, 0]], "cosine");
+    const dot = searchVectorIndex("chat-dot", [[1, 0]], "dot");
+    expect(cosine?.[0][0][0]).toBe("aligned");
+    expect(dot?.[0][0][0]).toBe("large");
+  });
+
   it("invalidates a vector when its signature changes", () => {
     syncVectorIndex("chat-3", [{ id: "x", signature: "old" }]);
     upsertVectorIndex("chat-3", [
