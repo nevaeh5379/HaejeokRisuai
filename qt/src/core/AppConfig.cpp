@@ -1,6 +1,8 @@
 #include "AppConfig.hpp"
 #include "DatabaseManager.hpp"
 #include <QCoreApplication>
+#include <QFileInfo>
+#include <QUrl>
 
 namespace Risu {
 
@@ -94,7 +96,7 @@ QString AppConfig::resolveAssetUrl(const QString& assetRef) const {
     QString path = resolveAssetPath(assetRef);
     if (path.isEmpty()) return QString();
     if (QFileInfo::exists(path)) {
-        return QStringLiteral("file://") + path;
+        return QUrl::fromLocalFile(QFileInfo(path).absoluteFilePath()).toString();
     }
     return QString();
 }

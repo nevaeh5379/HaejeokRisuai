@@ -176,9 +176,11 @@ Item {
                 height: parent.height
                 fillMode: Image.PreserveAspectFit
                 opacity: 0.22
-                source: (chatCtrl.largePortrait && chatCtrl.activeCharacterAvatar) ? (chatCtrl.activeCharacterAvatar.startsWith("file://") ? chatCtrl.activeCharacterAvatar : ("file://" + chatCtrl.activeCharacterAvatar)) : ""
+                source: (chatCtrl.largePortrait && chatCtrl.activeCharacterAvatar) ? (chatCtrl.activeCharacterAvatar.startsWith("file://") ? chatCtrl.activeCharacterAvatar : (appConfig.resolveAssetUrl(chatCtrl.activeCharacterAvatar) || "")) : ""
                 visible: chatCtrl.largePortrait && source !== ""
                 smooth: true
+                asynchronous: true
+                sourceSize.height: 1200
             }
 
             Text {
@@ -451,9 +453,8 @@ Item {
 
                 // Keep only a modest off-screen cache. A huge cache is especially expensive
                 // when messages contain WebEngineView-backed HTML delegates.
-                cacheBuffer: Math.max(600, height)
-                displayMarginBeginning: 160
-                displayMarginEnd: 320
+                cacheBuffer: 600
+                reuseItems: true
 
                 // Sticky-tail scrolling: streaming content may grow after atYEnd becomes false,
                 // so remember whether the user intentionally left the bottom instead.

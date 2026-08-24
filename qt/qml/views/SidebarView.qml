@@ -150,10 +150,13 @@ Rectangle {
 
                             Image {
                                 anchors.fill: parent
-                                source: model.avatarPath ? ("file://" + model.avatarPath) : ""
+                                source: model.avatarPath ? (appConfig.resolveAssetUrl(model.avatarPath) || "") : ""
                                 fillMode: Image.PreserveAspectCrop
                                 smooth: true
                                 visible: model.avatarPath !== ""
+                                asynchronous: true
+                                sourceSize.width: 96
+                                sourceSize.height: 96
                             }
 
                             Text {

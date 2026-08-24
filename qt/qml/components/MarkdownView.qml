@@ -23,6 +23,29 @@ Item {
     implicitHeight: mainColumn.implicitHeight
     height: implicitHeight
 
+    property int webContentHeight: 1
+
+    Timer {
+        id: webReloadThrottle
+        interval: 200
+        repeat: false
+        onTriggered: root.updateWebEngineHtml()
+    }
+
+    function scheduleWebEngineUpdate() {
+        if (!root.hasComplexHtml) return;
+        webReloadThrottle.restart();
+    }
+
+    function findFlickable(item) {
+        var p = item.parent;
+        while (p) {
+            if (p instanceof Flickable) return p;
+            p = p.parent;
+        }
+        return null;
+    }
+
     Column {
         id: mainColumn
         width: parent.width
@@ -117,71 +140,119 @@ Item {
         }
 
         // 2. Full Chromium WebEngine Mode for actual HTML/CSS/SVG content.
+        // The view itself is created asynchronously so fast scrolling never blocks
+        // the GUI thread on Chromium startup, and page (re)loads are throttled.
         Item {
             id: webContainer
-            visible: root.hasComplexHtml
+            visible: root.hasComplexHtml && webLoader.status === Loader.Ready
             width: parent.width
-            height: root.hasComplexHtml ? Math.max(1, webView.contentHeight) : 0
+            height: root.hasComplexHtml ? Math.max(1, root.webContentHeight) : 0
 
-            WebEngineView {
-                id: webView
+            Loader {
+                id: webLoader
                 anchors.fill: parent
-                backgroundColor: "transparent"
-                property int contentHeight: 1
+                active: root.hasComplexHtml
+                asynchronous: true
+                sourceComponent: webEngineComponent
+            }
 
-                settings.javascriptEnabled: true
-                settings.localContentCanAccessRemoteUrls: true
-                settings.localContentCanAccessFileUrls: true
+            // Chromium consumes every wheel event above the view instead of
+            // propagating it to the enclosing chat ListView, which makes the
+            // whole session impossible to scroll whenever the cursor hovers an
+            // HTML-formatted message. The document is always laid out at full
+            // height here, so internal scrolling is never needed: catch wheels
+            // on top of the view and drive the outer Flickable manually.
+            // acceptedButtons: NoButton keeps clicks (links, selection) working.
+            MouseArea {
+                id: wheelForwarder
+                anchors.fill: parent
+                acceptedButtons: Qt.NoButton
+                enabled: webLoader.status === Loader.Ready
 
-                function measureContentHeight() {
-                    webView.runJavaScript(
-                        "Math.ceil(Math.max(document.body ? document.body.scrollHeight : 0, document.documentElement ? document.documentElement.scrollHeight : 0));",
-                        function(result) {
-                            if (result && result > 0) {
-                                webView.contentHeight = Math.max(1, Number(result));
-                            }
+                onWheel: function(wheel) {
+                    var fl = root.findFlickable(wheelForwarder);
+                    if (!fl) {
+                        wheel.accepted = false;
+                        return;
+                    }
+
+                    var step;
+                    if (wheel.pixelDelta.y !== 0) {
+                        step = -wheel.pixelDelta.y;
+                    } else {
+                        var lines = Qt.styleHints ? Qt.styleHints.wheelScrollLines : 3;
+                        step = -(wheel.angleDelta.y / 120.0) * lines * 20.0;
+                    }
+
+                    var minY = -fl.originY;
+                    var maxY = Math.max(minY, fl.originY + fl.contentHeight - fl.height);
+                    fl.contentY = Math.min(maxY, Math.max(minY, fl.contentY + step));
+                    wheel.accepted = true;
+                }
+            }
+        }
+    }
+
+    Component {
+        id: webEngineComponent
+
+        WebEngineView {
+            id: webView
+            anchors.fill: parent
+            backgroundColor: "transparent"
+
+            settings.javascriptEnabled: true
+            settings.localContentCanAccessRemoteUrls: true
+            settings.localContentCanAccessFileUrls: true
+
+            function measureContentHeight() {
+                webView.runJavaScript(
+                    "Math.ceil(Math.max(document.body ? document.body.scrollHeight : 0, document.documentElement ? document.documentElement.scrollHeight : 0));",
+                    function(result) {
+                        if (result && result > 0) {
+                            root.webContentHeight = Math.max(1, Number(result));
                         }
-                    );
-                }
+                    }
+                );
+            }
 
-                onLoadingChanged: function(loadRequest) {
-                    if (loadRequest.status === WebEngineView.LoadSucceededStatus) {
-                        webView.measureContentHeight();
+            onLoadingChanged: function(loadRequest) {
+                if (loadRequest.status === WebEngineView.LoadSucceededStatus) {
+                    webView.measureContentHeight();
+                }
+            }
+
+            // The generated document reports ResizeObserver/MutationObserver changes
+            // through a private title prefix, so late images and script DOM updates resize
+            // the ListView delegate instead of clipping or leaving a giant blank region.
+            onTitleChanged: {
+                var prefix = "__RISU_HEIGHT__:";
+                if (title.indexOf(prefix) === 0) {
+                    var measured = Number(title.substring(prefix.length));
+                    if (isFinite(measured) && measured > 0) {
+                        root.webContentHeight = Math.max(1, Math.ceil(measured));
                     }
                 }
+            }
 
-                // The generated document reports ResizeObserver/MutationObserver changes
-                // through a private title prefix, so late images and script DOM updates resize
-                // the ListView delegate instead of clipping or leaving a giant blank region.
-                onTitleChanged: {
-                    var prefix = "__RISU_HEIGHT__:";
-                    if (title.indexOf(prefix) === 0) {
-                        var measured = Number(title.substring(prefix.length));
-                        if (isFinite(measured) && measured > 0) {
-                            webView.contentHeight = Math.max(1, Math.ceil(measured));
-                        }
-                    }
-                }
-
-                Component.onCompleted: {
-                    if (root.hasComplexHtml) {
-                        root.updateWebEngineHtml();
-                    }
-                }
+            Component.onCompleted: {
+                root.scheduleWebEngineUpdate();
             }
         }
     }
 
     onRawTextChanged: {
         if (root.hasComplexHtml) {
-            root.updateWebEngineHtml();
+            root.scheduleWebEngineUpdate();
         }
     }
 
     function updateWebEngineHtml() {
-        if (!root.rawText) return;
+        if (!root.hasComplexHtml || !root.rawText) return;
+        var view = webLoader.item;
+        if (!view) return;
         var fullHtml = root.buildFullWebEngineDocument(root.renderRisuRichText(root.rawText));
-        webView.loadHtml(fullHtml, "file://");
+        view.loadHtml(fullHtml, "file://");
     }
 
     function buildFullWebEngineDocument(bodyHtml) {

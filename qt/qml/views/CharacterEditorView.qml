@@ -156,9 +156,12 @@ Rectangle {
 
                             Image {
                                 anchors.fill: parent
-                                source: charCtrl.selectedCharacter.avatarPath ? ("file://" + charCtrl.selectedCharacter.avatarPath) : ""
+                                source: charCtrl.selectedCharacter.avatarPath ? (appConfig.resolveAssetUrl(charCtrl.selectedCharacter.avatarPath) || "") : ""
                                 fillMode: Image.PreserveAspectCrop
                                 visible: status === Image.Ready
+                                asynchronous: true
+                                sourceSize.width: 300
+                                sourceSize.height: 300
                             }
 
                             Text {

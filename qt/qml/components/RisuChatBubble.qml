@@ -25,6 +25,25 @@ Rectangle {
     property bool isEditing: false
     property bool isHovered: bubbleHoverHandler.hovered
 
+    // Coalesce rapid streaming updates so markdown re-rendering runs at most
+    // ~8 times per second instead of once per received token chunk.
+    property string displayedContent: contentText
+    onContentTextChanged: renderThrottle.restart()
+
+    Timer {
+        id: renderThrottle
+        interval: 120
+        onTriggered: root.displayedContent = root.contentText
+    }
+
+    Component.onCompleted: root.displayedContent = root.contentText
+
+    ListView.onReused: {
+        root.isEditing = false;
+        root.displayedContent = root.contentText;
+        renderThrottle.stop();
+    }
+
     signal swipeLeftRequested(int row)
     signal swipeRightRequested(int row)
     signal editRequested(int row, string newContent)
@@ -296,15 +315,18 @@ Rectangle {
 
                     Image {
                         anchors.fill: parent
-                        source: root.attachmentPath ? (root.attachmentPath.startsWith("file://") ? root.attachmentPath : "file://" + root.attachmentPath) : ""
+                        source: root.attachmentPath ? (root.attachmentPath.startsWith("file://") ? root.attachmentPath : (appConfig.resolveAssetUrl(root.attachmentPath) || "")) : ""
                         fillMode: Image.PreserveAspectFit
                         smooth: true
+                        asynchronous: true
+                        sourceSize.width: 720
+                        sourceSize.height: 440
                     }
                 }
 
                 MarkdownView {
                     Layout.fillWidth: true
-                    rawText: (typeof chatCtrl !== "undefined") ? chatCtrl.formatInChat(root.contentText) : root.contentText
+                    rawText: (typeof chatCtrl !== "undefined") ? chatCtrl.formatInChat(root.displayedContent) : root.displayedContent
                     thoughtText: root.thoughtText
                     textColor: Theme.fontStandard
                 }

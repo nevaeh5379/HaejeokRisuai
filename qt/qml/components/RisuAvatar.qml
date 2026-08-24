@@ -31,12 +31,14 @@ Item {
         Image {
             id: avatarImg
             anchors.fill: parent
-            source: root.imageSource ? (root.imageSource.startsWith("file://") ? root.imageSource : "file://" + root.imageSource) : ""
+            source: root.imageSource ? (root.imageSource.startsWith("file://") ? root.imageSource : (typeof appConfig !== "undefined" ? (appConfig.resolveAssetUrl(root.imageSource) || "") : "")) : ""
             fillMode: Image.PreserveAspectCrop
             visible: status === Image.Ready
             asynchronous: true
             cache: true
             smooth: true
+            sourceSize.width: 128
+            sourceSize.height: 128
         }
 
         Item {

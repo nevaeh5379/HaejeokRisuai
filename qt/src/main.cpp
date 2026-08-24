@@ -20,6 +20,15 @@
 #include "models/LorebookListModel.hpp"
 
 int main(int argc, char *argv[]) {
+    // QtWebEngine's GPU compositor can hand back null textures on some
+    // Linux/Wayland driver combos ("Compositor returned null texture"), which
+    // corrupts rendering and eventually aborts the process. The embedded HTML
+    // message views are tiny, so default to software compositing unless the
+    // user explicitly opts into GPU acceleration via the environment.
+    if (qEnvironmentVariableIsEmpty("QTWEBENGINE_CHROMIUM_FLAGS")) {
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", QByteArrayLiteral("--disable-gpu --disable-gpu-compositing"));
+    }
+
     QtWebEngineQuick::initialize();
     QApplication app(argc, argv);
     app.setOrganizationName(QStringLiteral("RisuAI"));

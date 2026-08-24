@@ -268,14 +268,16 @@ Rectangle {
 
                         Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
 
-                        // Background Avatar Image
                         Image {
                             id: cardImg
                             anchors.fill: parent
-                            source: model.avatarPath ? (model.avatarPath.startsWith("file://") ? model.avatarPath : ("file://" + model.avatarPath)) : ""
+                            source: model.avatarPath ? (appConfig.resolveAssetUrl(model.avatarPath) || "") : ""
                             fillMode: Image.PreserveAspectCrop
                             smooth: true
                             visible: model.avatarPath !== ""
+                            asynchronous: true
+                            sourceSize.width: 256
+                            sourceSize.height: 256
                             scale: cardMouse.containsMouse ? 1.05 : 1.0
                             Behavior on scale { NumberAnimation { duration: Theme.animNormal } }
                         }

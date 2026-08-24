@@ -108,9 +108,10 @@ Rectangle {
             anchors.bottom: parent.bottom
             height: Math.min(parent.height * 0.9, 700)
             width: height * 0.75
-            source: root.spriteSource ? ("file://" + root.spriteSource) : ""
+            source: root.spriteSource ? (root.spriteSource.startsWith("file://") ? root.spriteSource : "file://" + root.spriteSource) : ""
             fillMode: Image.PreserveAspectFit
             smooth: true
+            asynchronous: true
 
             Behavior on opacity {
                 NumberAnimation { duration: 300 }
