@@ -6,6 +6,33 @@ import { sqlCharacterData, sqlChatData } from "../../storage/sqlCommit";
 import { settingsStore } from "./settingsStore.svelte";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 
+// Keep persisted history ordering, overlay newer in-memory fields, and retain
+// stable-ID messages that have not reached storage yet.
+function mergeLoadedMessages(
+  loaded: Chat["message"],
+  current: Chat["message"],
+): Chat["message"] {
+  if (current.length === 0) return loaded;
+
+  const currentById = new Map(
+    current
+      .filter((message) => message.chatId)
+      .map((message) => [message.chatId!, message]),
+  );
+  const loadedIds = new Set<string>();
+  const merged = loaded.map((message) => {
+    if (!message.chatId) return message;
+    loadedIds.add(message.chatId);
+    const existing = currentById.get(message.chatId);
+    return existing ? { ...message, ...existing } : message;
+  });
+
+  for (const message of current) {
+    if (message.chatId && !loadedIds.has(message.chatId)) merged.push(message);
+  }
+  return merged;
+}
+
 class CharacterStore {
   private storage: ISqlStorage | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -24,6 +51,8 @@ class CharacterStore {
   private characterDetailPromises = new Map<string, Promise<void>>();
   private chatDetailPromises = new Map<string, Promise<void>>();
   private olderChatPromises = new Map<string, Promise<number>>();
+  // Full history can be loaded without expensive historical generation/prompt metadata.
+  private generationOnlyMetadataChats = new Set<string>();
 
   characters = $state<(character | groupChat)[]>([]);
   selectedId = $state<number>(-1);
@@ -47,6 +76,7 @@ class CharacterStore {
     this.dirtyCharacters.clear();
     this.dirtyChats.clear();
     this.dirtyChatManifests.clear();
+    this.generationOnlyMetadataChats.clear();
     this.dirtyCharacterIds = false;
 
     for (const char of characters) {
@@ -478,17 +508,26 @@ class CharacterStore {
       c.chats?.some((ch) => ch.id === chatId),
     );
     const chat = char?.chats?.find((ch) => ch.id === chatId);
+    const needsFullMetadata =
+      options.full &&
+      !options.generation &&
+      this.generationOnlyMetadataChats.has(chatId);
     if (
       chat?.messagesLoaded !== false &&
       chat?.detailsLoaded !== false &&
-      (!options.full || chat.messagesFullyLoaded !== false)
+      (!options.full || chat.messagesFullyLoaded !== false) &&
+      !needsFullMetadata
     ) {
       return;
     }
 
     if (this.chatDetailPromises.has(chatId)) {
       await this.chatDetailPromises.get(chatId);
-      if (options.full && chat?.messagesFullyLoaded === false) {
+      if (
+        options.full &&
+        (chat?.messagesFullyLoaded === false ||
+          (!options.generation && this.generationOnlyMetadataChats.has(chatId)))
+      ) {
         await this.ensureChatMessages(chatId, options);
       }
       return;
@@ -506,25 +545,16 @@ class CharacterStore {
           const messages = await storage.loadChatMessages(chatId, {
             mode: options.generation ? "generation" : "full",
           });
-          if (options.generation && previousMessages.length > 0) {
-            const previousById = new Map(
-              previousMessages
-                .filter((message) => message.chatId)
-                .map((message) => [message.chatId!, message]),
-            );
-            chat.message = messages.map((message) => {
-              const previous = message.chatId
-                ? previousById.get(message.chatId)
-                : undefined;
-              return previous ? { ...message, ...previous } : message;
-            });
-          } else {
-            chat.message = messages;
-          }
+          chat.message = mergeLoadedMessages(messages, previousMessages);
           chat.messageOffset = 0;
           chat.messageTotal = chat.message.length;
           chat.messagesFullyLoaded = true;
           chat.messagesLoaded = true;
+          if (options.generation) {
+            this.generationOnlyMetadataChats.add(chatId);
+          } else {
+            this.generationOnlyMetadataChats.delete(chatId);
+          }
           return;
         }
 
@@ -590,6 +620,7 @@ class CharacterStore {
     this.arrayDispose = null;
     this.activeDispose?.();
     this.activeDispose = null;
+    this.generationOnlyMetadataChats.clear();
   }
 }
 

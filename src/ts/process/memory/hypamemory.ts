@@ -14,6 +14,7 @@ export type HypaModel =
   | "voyageContext3";
 
 export const DEFAULT_HYPA_MODEL: HypaModel = "openai3small";
+const EMBEDDING_CACHE_BATCH_SIZE = 128;
 
 function vectorContentSignature(content: string): string {
   let hash = 0x811c9dc5;
@@ -188,9 +189,12 @@ export class HypaProcesser {
     texts: string[],
   ): Promise<Array<memoryVector | null>> {
     const results: Array<memoryVector | null> = [];
-    const batchSize = 128;
-    for (let offset = 0; offset < texts.length; offset += batchSize) {
-      const batch = texts.slice(offset, offset + batchSize);
+    for (
+      let offset = 0;
+      offset < texts.length;
+      offset += EMBEDDING_CACHE_BATCH_SIZE
+    ) {
+      const batch = texts.slice(offset, offset + EMBEDDING_CACHE_BATCH_SIZE);
       const loaded = await Promise.all(
         batch.map((text) =>
           this.forage.getItem<memoryVector>(this.getEmbeddingCacheKey(text)),
@@ -202,9 +206,12 @@ export class HypaProcesser {
   }
 
   private async saveCachedVectors(vectors: memoryVector[]): Promise<void> {
-    const batchSize = 128;
-    for (let offset = 0; offset < vectors.length; offset += batchSize) {
-      const batch = vectors.slice(offset, offset + batchSize);
+    for (
+      let offset = 0;
+      offset < vectors.length;
+      offset += EMBEDDING_CACHE_BATCH_SIZE
+    ) {
+      const batch = vectors.slice(offset, offset + EMBEDDING_CACHE_BATCH_SIZE);
       await Promise.all(
         batch.map((vector) =>
           this.forage.setItem(this.getEmbeddingCacheKey(vector.content), vector),
@@ -344,7 +351,7 @@ export class HypaProcesser {
         similarity: sim(query, vector.embedding),
         index,
       }))
-      .sort((a, b) => (a.similarity > b.similarity ? -1 : 0));
+      .sort((a, b) => b.similarity - a.similarity);
 
     return searches.map((search) => [
       memoryVectors[search.index].content,

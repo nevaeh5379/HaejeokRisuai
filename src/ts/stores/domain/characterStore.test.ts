@@ -28,7 +28,7 @@ function makeChar(name: string, chatCount = 1): character {
   } as unknown as character;
 }
 
-describe("CharacterStore active-tracking persistence", () => {
+describe("CharacterStore", () => {
   let committed: SqlCommit[];
   let mockStorage: ISqlStorage;
 
@@ -123,6 +123,66 @@ describe("CharacterStore active-tracking persistence", () => {
     expect(loaded.message[0].generationInfo).toBeUndefined();
     expect(loaded.message[1].generationInfo?.model).toBe("model-a");
     expect(loaded.message[1].promptInfo?.promptName).toBe("saved-prompt");
+  });
+
+  it("reloads full message metadata after lightweight generation hydration", async () => {
+    const chars = [makeChar("generation-upgrade")];
+    const chat = chars[0].chats[0];
+    chat.id = "chat-generation-upgrade";
+    chat.message = [
+      { chatId: "msg-recent", role: "char", data: "recent" } as any,
+    ];
+    chat.messagesLoaded = true;
+    chat.detailsLoaded = true;
+    chat.messagesFullyLoaded = false;
+    chat.messageOffset = 1;
+    chat.messageTotal = 2;
+
+    vi.mocked(mockStorage.loadChatMessages)
+      .mockResolvedValueOnce([
+        { chatId: "msg-old", role: "user", data: "old" } as any,
+        { chatId: "msg-recent", role: "char", data: "recent" } as any,
+      ])
+      .mockResolvedValueOnce([
+        {
+          chatId: "msg-old",
+          role: "user",
+          data: "old",
+          promptInfo: { promptName: "old-prompt" },
+        } as any,
+        {
+          chatId: "msg-recent",
+          role: "char",
+          data: "recent",
+          generationInfo: { model: "model-b" },
+        } as any,
+      ]);
+    characterStore.init(chars, mockStorage);
+
+    await characterStore.ensureChatMessages(chat.id, {
+      full: true,
+      generation: true,
+    });
+    characterStore.characters[0].chats[0].message.push({
+      chatId: "msg-local",
+      role: "char",
+      data: "not committed yet",
+    } as any);
+    await characterStore.ensureChatMessages(chat.id, { full: true });
+
+    expect(mockStorage.loadChatMessages).toHaveBeenNthCalledWith(1, chat.id, {
+      mode: "generation",
+    });
+    expect(mockStorage.loadChatMessages).toHaveBeenNthCalledWith(2, chat.id, {
+      mode: "full",
+    });
+    const loaded = characterStore.characters[0].chats[0];
+    expect(loaded.message[0].promptInfo?.promptName).toBe("old-prompt");
+    expect(loaded.message[1].generationInfo?.model).toBe("model-b");
+    expect(loaded.message[2]).toMatchObject({
+      chatId: "msg-local",
+      data: "not committed yet",
+    });
   });
 
   it("upgrades an in-flight paged load when a full history request arrives", async () => {
