@@ -40,6 +40,11 @@
         SUPPORTED_ASSET_EXTENSIONS,
         type AssetCategory
     } from "src/ts/assetUtils";
+    import {
+        applyBatchRenamePreview,
+        buildBatchRenamePreview,
+        selectAssetRange
+    } from "src/ts/assetManagerUtils";
 
     // View & layout states
     let viewMode: "grid" | "list" = $state("grid");
@@ -49,6 +54,18 @@
     let sortOption: "index" | "nameAsc" | "nameDesc" | "ext" = $state("index");
     let multiSelectMode = $state(false);
     let selectedIndices = $state<Set<number>>(new Set());
+    let selectionAnchor: number | null = $state(null);
+    let pointerSelectionActive = false;
+    let pointerSelectionMode: "select" | "deselect" | null = null;
+    let suppressNextSelectionClick: number | null = null;
+
+    // Professional batch rename workspace
+    let batchRenameOpen = $state(false);
+    let batchRenamePattern = $state("");
+    let batchRenameReplacement = $state("");
+    let batchRenameFlags = $state("g");
+    let batchRenameStartAt = $state(1);
+    let batchRenameScope: "selected" | "filtered" = $state("selected");
 
     // Lightbox full-size preview state
     let inspectingIndex: number | null = $state(
@@ -268,6 +285,29 @@
 
     let displayedAssets = $derived(processedAssets.slice(0, displayLimit));
 
+    let batchRenameTargetIndices = $derived.by(() => {
+        if (batchRenameScope === "filtered") {
+            return processedAssets.map((asset) => asset.originalIndex);
+        }
+        const ordered = processedAssets
+            .filter((asset) => selectedIndices.has(asset.originalIndex))
+            .map((asset) => asset.originalIndex);
+        const visibleSet = new Set(ordered);
+        const hidden = Array.from(selectedIndices)
+            .filter((index) => !visibleSet.has(index))
+            .sort((a, b) => a - b);
+        return [...ordered, ...hidden];
+    });
+
+    let batchRenamePreview = $derived(
+        buildBatchRenamePreview(rawAssets, batchRenameTargetIndices, {
+            pattern: batchRenamePattern,
+            replacement: batchRenameReplacement,
+            flags: batchRenameFlags,
+            startAt: batchRenameStartAt
+        })
+    );
+
     function handleGalleryScroll(e: UIEvent) {
         const target = e.currentTarget as HTMLElement;
         if (target.scrollTop + target.clientHeight >= target.scrollHeight - 400) {
@@ -335,29 +375,60 @@
     }
 
     function handleKeyDown(e: KeyboardEvent) {
-        // If an input is focused, don't hijack left/right arrows
         const target = e.target as HTMLElement | null;
-        const isInputFocused = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA";
+        const isInputFocused = Boolean(target?.closest("input, textarea, select, [contenteditable='true']"));
 
         if (e.key === "Escape") {
-            if (inspectingIndex !== null) {
+            if (batchRenameOpen) {
+                batchRenameOpen = false;
+            } else if (inspectingIndex !== null) {
                 inspectingIndex = null;
             } else {
                 closeModal();
             }
-        } else if (inspectingIndex !== null && !isInputFocused) {
-            if (e.key === "ArrowLeft") {
-                navigateInspector(-1);
-            } else if (e.key === "ArrowRight") {
-                navigateInspector(1);
-            }
+            return;
+        }
+
+        if (!isInputFocused && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
+            e.preventDefault();
+            multiSelectMode = true;
+            selectAll();
+            return;
+        }
+
+        if (!isInputFocused && (e.key === "Delete" || e.key === "Backspace") && selectedIndices.size > 0) {
+            e.preventDefault();
+            void handleBatchDelete();
+            return;
+        }
+
+        if (inspectingIndex !== null && !isInputFocused) {
+            if (e.key === "ArrowLeft") navigateInspector(-1);
+            else if (e.key === "ArrowRight") navigateInspector(1);
+        }
+    }
+
+    function finishPointerSelection() {
+        pointerSelectionActive = false;
+        pointerSelectionMode = null;
+        const pendingClick = suppressNextSelectionClick;
+        if (pendingClick !== null) {
+            setTimeout(() => {
+                if (suppressNextSelectionClick === pendingClick) {
+                    suppressNextSelectionClick = null;
+                }
+            }, 0);
         }
     }
 
     onMount(() => {
         window.addEventListener("keydown", handleKeyDown);
+        window.addEventListener("pointerup", finishPointerSelection);
+        window.addEventListener("pointercancel", finishPointerSelection);
         return () => {
             window.removeEventListener("keydown", handleKeyDown);
+            window.removeEventListener("pointerup", finishPointerSelection);
+            window.removeEventListener("pointercancel", finishPointerSelection);
         };
     });
 
@@ -430,40 +501,92 @@
         } else if (inspectingIndex !== null && inspectingIndex > originalIndex) {
             inspectingIndex--;
         }
-        selectedIndices.delete(originalIndex);
-        selectedIndices = new Set(selectedIndices);
+        selectedIndices = new Set(
+            Array.from(selectedIndices)
+                .filter((index) => index !== originalIndex)
+                .map((index) => index > originalIndex ? index - 1 : index)
+        );
+        if (selectionAnchor === originalIndex) selectionAnchor = null;
+        else if (selectionAnchor !== null && selectionAnchor > originalIndex) selectionAnchor--;
+    }
+
+    function applySelectionMode(originalIndex: number, mode: "select" | "deselect") {
+        const next = new Set(selectedIndices);
+        if (mode === "select") next.add(originalIndex);
+        else next.delete(originalIndex);
+        selectedIndices = next;
     }
 
     function toggleSelect(originalIndex: number, e?: MouseEvent) {
-        if (e) e.stopPropagation();
-        if (selectedIndices.has(originalIndex)) {
-            selectedIndices.delete(originalIndex);
-        } else {
-            selectedIndices.add(originalIndex);
+        e?.stopPropagation();
+        if (e?.shiftKey && selectionAnchor !== null) {
+            const range = selectAssetRange(
+                processedAssets.map((asset) => asset.originalIndex),
+                selectionAnchor,
+                originalIndex
+            );
+            const next = e.ctrlKey || e.metaKey ? new Set(selectedIndices) : new Set<number>();
+            for (const index of range) next.add(index);
+            selectedIndices = next;
+            multiSelectMode = true;
+            return;
         }
-        selectedIndices = new Set(selectedIndices);
+
+        applySelectionMode(
+            originalIndex,
+            selectedIndices.has(originalIndex) ? "deselect" : "select"
+        );
+        selectionAnchor = originalIndex;
+        if (e?.ctrlKey || e?.metaKey) multiSelectMode = true;
+    }
+
+    function handleSelectionPointerDown(e: PointerEvent, originalIndex: number) {
+        if (!multiSelectMode || e.button !== 0 || e.shiftKey || e.ctrlKey || e.metaKey) return;
+        const target = e.target as HTMLElement | null;
+        if (target?.closest("button, input, textarea, select, a")) return;
+
+        e.preventDefault();
+        pointerSelectionActive = true;
+        pointerSelectionMode = selectedIndices.has(originalIndex) ? "deselect" : "select";
+        suppressNextSelectionClick = originalIndex;
+        selectionAnchor = originalIndex;
+        applySelectionMode(originalIndex, pointerSelectionMode);
+    }
+
+    function handleSelectionPointerEnter(e: PointerEvent, originalIndex: number) {
+        if (!pointerSelectionActive || !pointerSelectionMode || e.buttons !== 1) return;
+        applySelectionMode(originalIndex, pointerSelectionMode);
+    }
+
+    function handleAssetClick(e: MouseEvent, originalIndex: number) {
+        if (suppressNextSelectionClick === originalIndex) {
+            suppressNextSelectionClick = null;
+            return;
+        }
+        if (multiSelectMode || e.shiftKey || e.ctrlKey || e.metaKey) {
+            toggleSelect(originalIndex, e);
+        } else {
+            inspectingIndex = originalIndex;
+        }
     }
 
     function selectAll() {
-        const next = new Set<number>();
-        for (const item of processedAssets) {
-            next.add(item.originalIndex);
-        }
-        selectedIndices = next;
+        selectedIndices = new Set(processedAssets.map((item) => item.originalIndex));
+        selectionAnchor = processedAssets[0]?.originalIndex ?? null;
     }
 
     function deselectAll() {
         selectedIndices = new Set();
+        selectionAnchor = null;
     }
 
     function invertSelection() {
         const next = new Set<number>();
         for (const item of processedAssets) {
-            if (!selectedIndices.has(item.originalIndex)) {
-                next.add(item.originalIndex);
-            }
+            if (!selectedIndices.has(item.originalIndex)) next.add(item.originalIndex);
         }
         selectedIndices = next;
+        selectionAnchor = null;
     }
 
     async function handleBatchDelete() {
@@ -482,6 +605,7 @@
         );
         currentChar.additionalAssets = updated;
         selectedIndices = new Set();
+        selectionAnchor = null;
         inspectingIndex = null;
     }
 
@@ -520,6 +644,42 @@
             .join("\n");
 
         await handleCopyTag(tags, "batch-tags");
+    }
+
+    function openBatchRename() {
+        batchRenameScope = selectedIndices.size > 0 ? "selected" : "filtered";
+        batchRenameOpen = true;
+    }
+
+    async function handleApplyBatchRename() {
+        if (
+            !currentChar?.additionalAssets ||
+            batchRenamePreview.error ||
+            batchRenamePreview.conflictCount > 0 ||
+            batchRenamePreview.changedCount === 0
+        ) return;
+
+        const confirmed = await alertConfirm(
+            `Rename ${batchRenamePreview.changedCount} asset${batchRenamePreview.changedCount === 1 ? "" : "s"}?`
+        );
+        if (!confirmed) return;
+
+        currentChar.additionalAssets = applyBatchRenamePreview(
+            currentChar.additionalAssets,
+            batchRenamePreview
+        );
+        batchRenameOpen = false;
+    }
+
+    function handleInlineRename(originalIndex: number, value: string) {
+        if (!currentChar?.additionalAssets?.[originalIndex]) return;
+        const trimmed = value.trim();
+        if (!trimmed) return;
+        const collision = currentChar.additionalAssets.some(
+            (asset, index) => index !== originalIndex && asset[0] === trimmed
+        );
+        if (collision) return;
+        currentChar.additionalAssets[originalIndex][0] = trimmed;
     }
 
     function handleRenameSave() {
@@ -735,6 +895,17 @@
                     <span class="hidden md:inline">{language.multiSelectMode}</span>
                 </button>
 
+                <!-- Regex batch rename -->
+                <button
+                    type="button"
+                    class="p-2 rounded-lg border bg-darkbg text-textcolor2 hover:text-textcolor hover:border-selected border-darkborderc transition-colors cursor-pointer flex items-center gap-1 text-xs"
+                    title="Regex batch rename"
+                    onclick={openBatchRename}
+                >
+                    <Edit3Icon size={15} />
+                    <span class="hidden lg:inline">Regex Rename</span>
+                </button>
+
                 <!-- Add Files Button -->
                 <button
                     type="button"
@@ -811,6 +982,116 @@
             </div>
         {/if}
 
+        {#if batchRenameOpen}
+            <div class="shrink-0 border-b border-selected/30 bg-bgcolor/70 px-5 py-3.5">
+                <div class="flex flex-wrap items-start gap-3">
+                    <div class="min-w-[180px] flex-1">
+                        <label for="asset-batch-regex" class="mb-1 block text-[11px] font-semibold text-textcolor2">Regular expression</label>
+                        <input
+                            id="asset-batch-regex"
+                            type="text"
+                            bind:value={batchRenamePattern}
+                            placeholder="^prefix_(.*)$"
+                            class="w-full rounded-lg border border-darkborderc bg-darkbg px-2.5 py-1.5 font-mono text-xs text-textcolor focus:border-selected focus:outline-none"
+                        />
+                    </div>
+                    <div class="min-w-[180px] flex-1">
+                        <label for="asset-batch-replacement" class="mb-1 block text-[11px] font-semibold text-textcolor2">Replacement</label>
+                        <input
+                            id="asset-batch-replacement"
+                            type="text"
+                            bind:value={batchRenameReplacement}
+                            placeholder="renamed_$1_&#123;n:03&#125;"
+                            class="w-full rounded-lg border border-darkborderc bg-darkbg px-2.5 py-1.5 font-mono text-xs text-textcolor focus:border-selected focus:outline-none"
+                        />
+                    </div>
+                    <div class="w-20">
+                        <label for="asset-batch-flags" class="mb-1 block text-[11px] font-semibold text-textcolor2">Flags</label>
+                        <input
+                            id="asset-batch-flags"
+                            type="text"
+                            bind:value={batchRenameFlags}
+                            placeholder="gi"
+                            class="w-full rounded-lg border border-darkborderc bg-darkbg px-2.5 py-1.5 font-mono text-xs text-textcolor focus:border-selected focus:outline-none"
+                        />
+                    </div>
+                    <div class="w-24">
+                        <label for="asset-batch-start" class="mb-1 block text-[11px] font-semibold text-textcolor2">Start #</label>
+                        <input
+                            id="asset-batch-start"
+                            type="number"
+                            bind:value={batchRenameStartAt}
+                            class="w-full rounded-lg border border-darkborderc bg-darkbg px-2.5 py-1.5 text-xs text-textcolor focus:border-selected focus:outline-none"
+                        />
+                    </div>
+                    <div class="min-w-[150px]">
+                        <label for="asset-batch-scope" class="mb-1 block text-[11px] font-semibold text-textcolor2">Scope</label>
+                        <select
+                            id="asset-batch-scope"
+                            bind:value={batchRenameScope}
+                            class="w-full rounded-lg border border-darkborderc bg-darkbg px-2.5 py-1.5 text-xs text-textcolor focus:border-selected focus:outline-none"
+                        >
+                            <option value="selected" disabled={selectedIndices.size === 0}>Selected ({selectedIndices.size})</option>
+                            <option value="filtered">Filtered ({processedAssets.length})</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <div class="text-[11px] text-textcolor2">
+                        JS replacement groups such as <code>$1</code> are supported.
+                        Use <code>&#123;n&#125;</code>/<code>&#123;n:03&#125;</code> for sequence numbers and
+                        <code>&#123;index&#125;</code> for the original asset index.
+                    </div>
+                    <div class="flex items-center gap-2">
+                        {#if batchRenamePreview.error}
+                            <span class="max-w-[360px] truncate text-xs text-red-400" title={batchRenamePreview.error}>
+                                {batchRenamePreview.error}
+                            </span>
+                        {:else if batchRenamePreview.conflictCount > 0}
+                            <span class="text-xs font-semibold text-red-400">
+                                {batchRenamePreview.conflictCount} conflict(s)
+                            </span>
+                        {:else}
+                            <span class="text-xs text-textcolor2">
+                                {batchRenamePreview.changedCount} change(s)
+                            </span>
+                        {/if}
+                        <button
+                            type="button"
+                            class="rounded-lg border border-darkborderc bg-darkbg px-3 py-1.5 text-xs text-textcolor2 hover:text-textcolor cursor-pointer"
+                            onclick={() => { batchRenameOpen = false; }}
+                        >Cancel</button>
+                        <button
+                            type="button"
+                            disabled={batchRenamePreview.changedCount === 0 || batchRenamePreview.conflictCount > 0 || Boolean(batchRenamePreview.error)}
+                            class="rounded-lg bg-selected px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 cursor-pointer"
+                            onclick={handleApplyBatchRename}
+                        >Apply Rename</button>
+                    </div>
+                </div>
+
+                {#if batchRenamePreview.items.length > 0}
+                    <div class="mt-3 max-h-32 overflow-auto rounded-lg border border-darkborderc bg-darkbg/70">
+                        {#each batchRenamePreview.items.slice(0, 40) as item}
+                            <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-darkborderc/50 px-2.5 py-1 text-[11px] last:border-b-0">
+                                <span class="truncate font-mono text-textcolor2" title={item.oldName}>{item.oldName}</span>
+                                <span class="text-textcolor2/50">→</span>
+                                <span class="truncate font-mono {item.error ? 'text-red-400' : item.changed ? 'text-textcolor' : 'text-textcolor2/50'}" title={item.error || item.newName}>
+                                    {item.newName || "(empty)"}{item.error ? ` — ${item.error}` : ""}
+                                </span>
+                            </div>
+                        {/each}
+                        {#if batchRenamePreview.items.length > 40}
+                            <div class="px-2.5 py-1.5 text-center text-[10px] text-textcolor2">
+                                +{batchRenamePreview.items.length - 40} more
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
+            </div>
+        {/if}
+
         <!-- Workspace Gallery (Full Width Clean Layout) -->
         <div
             bind:this={galleryEl}
@@ -852,13 +1133,9 @@
                         <!-- svelte-ignore a11y_click_events_have_key_events -->
                         <div
                             class="group relative flex flex-col rounded-xl bg-bgcolor/80 border transition-all duration-150 overflow-hidden cursor-pointer {isSelected ? 'border-selected ring-2 ring-selected/40 shadow-lg' : 'border-darkborderc hover:border-selected/80 hover:shadow-md'}"
-                            onclick={() => {
-                                if (multiSelectMode) {
-                                    toggleSelect(originalIndex);
-                                } else {
-                                    inspectingIndex = originalIndex;
-                                }
-                            }}
+                            onpointerdown={(e) => handleSelectionPointerDown(e, originalIndex)}
+                            onpointerenter={(e) => handleSelectionPointerEnter(e, originalIndex)}
+                            onclick={(e) => handleAssetClick(e, originalIndex)}
                         >
                             <!-- Card Thumbnail Container -->
                             <div
@@ -1000,13 +1277,15 @@
 
                                 <tr
                                     class="border-b border-darkborderc/60 hover:bg-bgcolor/40 transition-colors {isSelected ? 'bg-selected/10' : ''}"
+                                    onpointerdown={(e) => handleSelectionPointerDown(e, originalIndex)}
+                                    onpointerenter={(e) => handleSelectionPointerEnter(e, originalIndex)}
                                 >
                                     <!-- Checkbox -->
                                     <td class="py-2 px-3 text-center">
                                         <button
                                             type="button"
                                             class="cursor-pointer text-textcolor2 hover:text-textcolor"
-                                            onclick={() => toggleSelect(originalIndex)}
+                                            onclick={(e) => toggleSelect(originalIndex, e)}
                                         >
                                             {#if isSelected}
                                                 <CheckSquareIcon size={15} class="text-selected" />
@@ -1045,7 +1324,11 @@
                                         <div class="flex items-center gap-2">
                                             <input
                                                 type="text"
-                                                bind:value={currentChar.additionalAssets[originalIndex][0]}
+                                                value={currentChar.additionalAssets[originalIndex][0]}
+                                                onchange={(e) => {
+                                                    handleInlineRename(originalIndex, e.currentTarget.value);
+                                                    e.currentTarget.value = currentChar.additionalAssets[originalIndex][0];
+                                                }}
                                                 class="bg-transparent text-textcolor font-medium hover:bg-bgcolor focus:bg-bgcolor rounded px-1.5 py-0.5 border border-transparent focus:border-selected text-xs transition-colors max-w-sm truncate"
                                             />
                                             <span class="px-1.5 py-0.5 text-[10px] font-mono uppercase bg-textcolor/10 text-textcolor2 rounded">
