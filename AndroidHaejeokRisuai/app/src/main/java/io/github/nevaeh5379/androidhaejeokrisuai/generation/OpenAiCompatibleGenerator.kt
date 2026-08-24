@@ -11,6 +11,15 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.nio.charset.StandardCharsets
 
+internal data class OpenAiRequestMessage(val role: String, val content: String)
+internal data class OpenAiRequestPayload(
+    val model: String,
+    val messages: List<OpenAiRequestMessage>,
+    val maxTokens: Int,
+    val temperature: Double,
+    val topP: Double?,
+)
+
 class OpenAiCompatibleGenerator {
     suspend fun generate(
         settings: GenerationSettings,
@@ -20,19 +29,13 @@ class OpenAiCompatibleGenerator {
         greetingIndex: Int = -1,
         variables: Map<String, String> = emptyMap(),
         triggerPrompt: NativeTriggerPromptInjection = NativeTriggerPromptInjection(),
+        preparedPrompt: List<NativePromptMessage>? = null,
     ): String = withContext(Dispatchers.IO) {
         val target = resolveTarget(settings)
-        val messages = NativePromptBuilder.build(settings, character, history, authorNote, greetingIndex, variables, triggerPrompt)
+        val messages = preparedPrompt ?: NativePromptBuilder.build(settings, character, history, authorNote, greetingIndex, variables, triggerPrompt)
         require(messages.isNotEmpty()) { "The generated prompt is empty" }
 
-        val body = JSONObject()
-            .put("model", target.model)
-            .put("messages", JSONArray().apply {
-                messages.forEach { put(JSONObject().put("role", it.role).put("content", it.content)) }
-            })
-            .put("max_tokens", settings.maxResponse)
-            .put("temperature", settings.temperature)
-        settings.topP?.let { body.put("top_p", it) }
+        val body = buildRequestBody(buildRequestPayload(messages, target, settings))
 
         val connection = URI(target.url).toURL().openConnection() as HttpURLConnection
         try {
@@ -69,6 +72,27 @@ class OpenAiCompatibleGenerator {
             connection.disconnect()
         }
     }
+
+    internal fun buildRequestPayload(
+        messages: List<NativePromptMessage>,
+        target: Target,
+        settings: GenerationSettings,
+    ) = OpenAiRequestPayload(
+        model = target.model,
+        messages = messages.map { OpenAiRequestMessage(it.role, it.content) },
+        maxTokens = settings.maxResponse,
+        temperature = settings.temperature,
+        topP = settings.topP,
+    )
+
+    private fun buildRequestBody(payload: OpenAiRequestPayload): JSONObject = JSONObject()
+        .put("model", payload.model)
+        .put("messages", JSONArray().apply {
+            payload.messages.forEach { put(JSONObject().put("role", it.role).put("content", it.content)) }
+        })
+        .put("max_tokens", payload.maxTokens)
+        .put("temperature", payload.temperature)
+        .apply { payload.topP?.let { put("top_p", it) } }
 
     internal fun resolveTarget(settings: GenerationSettings): Target {
         val model = settings.aiModel

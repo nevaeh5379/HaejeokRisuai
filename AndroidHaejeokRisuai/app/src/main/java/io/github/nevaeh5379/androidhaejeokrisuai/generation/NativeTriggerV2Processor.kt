@@ -14,6 +14,7 @@ internal data class NativeTriggerV2Result(
     val promptInjection: NativeTriggerPromptInjection,
     val stopSending: Boolean,
     val runtimePatch: RuntimeStatePatch,
+    val requestState: List<NativePromptMessage>? = null,
 )
 
 internal object NativeTriggerV2Processor {
@@ -29,6 +30,9 @@ internal object NativeTriggerV2Processor {
         inheritedPrompt: NativeTriggerPromptInjection,
         inheritedStop: Boolean,
         inheritedPatch: RuntimeStatePatch,
+        mode: String,
+        requestState: List<NativePromptMessage>?,
+        requestTempVariables: MutableMap<String, String>,
         runManual: (String, List<MessageRecord>, Map<String, String>, NativeTriggerPromptInjection, Boolean, RuntimeStatePatch) -> NativeTriggerResult,
     ): NativeTriggerV2Result {
         val working = messages.toMutableList()
@@ -40,6 +44,7 @@ internal object NativeTriggerV2Processor {
         var runtimePatch = inheritedPatch
         var runtimeCharacter = runtimePatch.applyTo(character)
         var runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
+        val mutableRequestState = requestState?.toMutableList()
         var currentIndent = 0
         var pc = 0
         var steps = 0
@@ -57,9 +62,17 @@ internal object NativeTriggerV2Processor {
             for (indent in currentIndent downTo 0) locals[indent]?.get(key)?.let { return it }
             return null
         }
-        fun getVar(key: String): String = getLocal(key)
-            ?: NativeRisuParser.parse("{{getvar::$key}}", context())
+        fun getVar(key: String): String {
+            getLocal(key)?.let { return it }
+            val persistentValue = NativeRisuParser.parse("{{getvar::$key}}", context())
+            if (persistentValue != "null") return persistentValue
+            return if (mode == "request") requestTempVariables[key] ?: "null" else persistentValue
+        }
         fun setVar(key: String, value: String) {
+            if (mode == "request") {
+                requestTempVariables[key] = value
+                return
+            }
             for (indent in currentIndent downTo 0) {
                 val scope = locals[indent]
                 if (scope?.containsKey(key) == true) {
@@ -97,7 +110,7 @@ internal object NativeTriggerV2Processor {
             runtimeCharacter = runtimePatch.applyTo(character)
         }
         fun returnResult() = NativeTriggerV2Result(
-            working.toList(), persistent.toMap(), prompt, stopSending, runtimePatch,
+            working.toList(), persistent.toMap(), prompt, stopSending, runtimePatch, mutableRequestState?.toList(),
         )
 
         val effects = trigger.effects
@@ -125,6 +138,10 @@ internal object NativeTriggerV2Processor {
             val effect = effects[pc]
             val type = effect["type"]?.toString().orEmpty()
             currentIndent = (effect["indent"] as? Number)?.toInt() ?: 0
+            if (mode == "request" && type !in REQUEST_ALLOWED) {
+                pc++
+                continue
+            }
             when (type) {
                 "v2Header", "v2Loop", "v2LoopNTimes" -> pc++
                 "v2SetVar" -> {
@@ -542,6 +559,37 @@ internal object NativeTriggerV2Processor {
                     setVar(parse(effect["outputVar"]), jsNumberString(result))
                     pc++
                 }
+                "v2GetRequestState" -> {
+                    val index = jsArrayIndex(resolve(effect["index"], effect["indexType"]))
+                    setVar(parse(effect["outputVar"]), mutableRequestState?.getOrNull(index)?.content ?: "null")
+                    pc++
+                }
+                "v2SetRequestState" -> {
+                    val index = jsArrayIndex(resolve(effect["index"], effect["indexType"]))
+                    if (mutableRequestState != null && index in mutableRequestState.indices) {
+                        mutableRequestState[index] = mutableRequestState[index].copy(
+                            content = resolve(effect["value"], effect["valueType"]),
+                        )
+                    }
+                    pc++
+                }
+                "v2GetRequestStateRole" -> {
+                    val index = jsArrayIndex(resolve(effect["index"], effect["indexType"]))
+                    setVar(parse(effect["outputVar"]), mutableRequestState?.getOrNull(index)?.role ?: "null")
+                    pc++
+                }
+                "v2SetRequestStateRole" -> {
+                    val index = jsArrayIndex(resolve(effect["index"], effect["indexType"]))
+                    val role = resolve(effect["value"], effect["valueType"])
+                    if (mutableRequestState != null && index in mutableRequestState.indices && role in REQUEST_ROLES) {
+                        mutableRequestState[index] = mutableRequestState[index].copy(role = role)
+                    }
+                    pc++
+                }
+                "v2GetRequestStateLength" -> {
+                    setVar(parse(effect["outputVar"]), (mutableRequestState?.size ?: 0).toString())
+                    pc++
+                }
                 "v2QuickSearchChat" -> {
                     val value = resolve(effect["value"], effect["valueType"])
                     val depthNumber = jsNumber(resolve(effect["depth"], effect["depthType"]))
@@ -692,6 +740,19 @@ internal object NativeTriggerV2Processor {
         }
         return returnResult()
     }
+
+    private val REQUEST_ROLES = setOf("user", "assistant", "system")
+    private val REQUEST_ALLOWED = setOf(
+        "v2Header", "v2GetRequestState", "v2SetRequestState", "v2GetRequestStateRole",
+        "v2SetRequestStateRole", "v2GetRequestStateLength", "v2SetVar", "v2If", "v2IfAdvanced",
+        "v2Else", "v2EndIndent", "v2LoopNTimes", "v2BreakLoop", "v2ConsoleLog", "v2StopTrigger",
+        "v2Random", "v2ExtractRegex", "v2RegexTest", "v2GetCharAt", "v2GetCharCount",
+        "v2ToLowerCase", "v2ToUpperCase", "v2SetCharAt", "v2SplitString", "v2JoinArrayVar",
+        "v2ConcatString", "v2MakeArrayVar", "v2GetArrayVarLength", "v2GetArrayVar", "v2SetArrayVar",
+        "v2PushArrayVar", "v2PopArrayVar", "v2ShiftArrayVar", "v2UnshiftArrayVar", "v2SpliceArrayVar",
+        "v2SliceArrayVar", "v2GetIndexOfValueInArrayVar", "v2RemoveIndexFromArrayVar", "v2Calculate",
+        "v2Comment", "v2DeclareLocalVar",
+    )
 
     private fun splitLiteral(source: String, delimiter: String): List<Any?> {
         if (delimiter.isEmpty()) return source.map { it.toString() }

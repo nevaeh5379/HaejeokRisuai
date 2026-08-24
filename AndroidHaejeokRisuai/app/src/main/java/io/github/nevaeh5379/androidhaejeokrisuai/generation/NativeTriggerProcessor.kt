@@ -19,6 +19,7 @@ data class NativeTriggerResult(
     val promptInjection: NativeTriggerPromptInjection = NativeTriggerPromptInjection(),
     val stopSending: Boolean = false,
     val runtimePatch: RuntimeStatePatch = RuntimeStatePatch(),
+    val requestState: List<NativePromptMessage>? = null,
 )
 
 object NativeTriggerProcessor {
@@ -38,9 +39,10 @@ object NativeTriggerProcessor {
         inheritedPrompt: NativeTriggerPromptInjection = NativeTriggerPromptInjection(),
         inheritedStop: Boolean = false,
         inheritedPatch: RuntimeStatePatch = RuntimeStatePatch(),
+        requestState: List<NativePromptMessage>? = null,
     ): NativeTriggerResult {
         if (character.triggerScripts.isEmpty()) {
-            return NativeTriggerResult(messages, variables, inheritedPrompt, inheritedStop, inheritedPatch)
+            return NativeTriggerResult(messages, variables, inheritedPrompt, inheritedStop, inheritedPatch, requestState)
         }
         val working = messages.toMutableList()
         val vars = variables.toMutableMap()
@@ -49,6 +51,8 @@ object NativeTriggerProcessor {
         var runtimePatch = inheritedPatch
         var runtimeCharacter = runtimePatch.applyTo(character)
         var runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
+        var currentRequestState = requestState
+        val requestTempVars = mutableMapOf<String, String>()
 
         fun context() = NativeRisuParserContext(
             settings = settings,
@@ -59,7 +63,11 @@ object NativeTriggerProcessor {
             variables = vars,
         )
         fun parse(value: Any?): String = NativeRisuParser.parse(value?.toString().orEmpty(), context())
-        fun getVar(key: String): String = NativeRisuParser.parse("{{getvar::$key}}", context())
+        fun getVar(key: String): String {
+            val persistentValue = NativeRisuParser.parse("{{getvar::$key}}", context())
+            if (persistentValue != "null") return persistentValue
+            return if (mode == "request") requestTempVars[key] ?: "null" else persistentValue
+        }
 
         for (trigger in runtimeCharacter.triggerScripts) {
             if (manualName != null) {
@@ -80,6 +88,9 @@ object NativeTriggerProcessor {
                     inheritedPrompt = prompt,
                     inheritedStop = stop,
                     inheritedPatch = runtimePatch,
+                    mode = mode,
+                    requestState = currentRequestState,
+                    requestTempVariables = requestTempVars,
                     runManual = { target, nestedMessages, nestedVars, nestedPrompt, nestedStop, nestedPatch ->
                         if (recursion < MAX_RECURSION || trigger.lowLevelAccess) {
                             run(
@@ -107,9 +118,11 @@ object NativeTriggerProcessor {
                 runtimePatch = v2.runtimePatch
                 runtimeCharacter = runtimePatch.applyTo(character)
                 runtimeAuthorNote = runtimePatch.resolveAuthorNote(authorNote)
+                currentRequestState = v2.requestState
                 continue
             }
 
+            if (mode == "request") continue
             for (effect in trigger.effects) {
                 when (effect["type"]?.toString()) {
                     "setvar" -> {
@@ -185,7 +198,7 @@ object NativeTriggerProcessor {
                 }
             }
         }
-        return NativeTriggerResult(working, vars, prompt, stop, runtimePatch)
+        return NativeTriggerResult(working, vars, prompt, stop, runtimePatch, currentRequestState)
     }
 
     private fun passes(

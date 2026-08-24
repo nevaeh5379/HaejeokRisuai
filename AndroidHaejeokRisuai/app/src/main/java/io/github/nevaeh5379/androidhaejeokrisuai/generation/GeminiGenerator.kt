@@ -30,10 +30,11 @@ class GeminiGenerator {
         greetingIndex: Int = -1,
         variables: Map<String, String> = emptyMap(),
         triggerPrompt: NativeTriggerPromptInjection = NativeTriggerPromptInjection(),
+        preparedPrompt: List<NativePromptMessage>? = null,
     ): String = withContext(Dispatchers.IO) {
         require(settings.googleApiKey.isNotBlank()) { "Gemini API key (google.accessToken) is empty" }
         require(settings.aiModel.isNotBlank()) { "Gemini model is empty" }
-        val prompt = NativePromptBuilder.build(settings, character, history, authorNote, greetingIndex, variables, triggerPrompt)
+        val prompt = preparedPrompt ?: NativePromptBuilder.build(settings, character, history, authorNote, greetingIndex, variables, triggerPrompt)
         require(prompt.isNotEmpty()) { "The generated prompt is empty" }
 
         val body = buildRequestBody(buildRequestPayload(prompt, settings))

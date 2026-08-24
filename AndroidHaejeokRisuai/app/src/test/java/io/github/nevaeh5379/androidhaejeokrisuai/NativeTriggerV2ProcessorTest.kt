@@ -5,6 +5,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.LoreEntry
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.TriggerScript
+import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativePromptMessage
 import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeTriggerProcessor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -27,6 +28,28 @@ class NativeTriggerV2ProcessorTest {
             variables = variables,
             chatId = "chat",
         )
+
+    private fun runRequest(
+        effects: List<Map<String, Any?>>,
+        variables: Map<String, String> = emptyMap(),
+        requestState: List<NativePromptMessage> = listOf(
+            NativePromptMessage("system", "system-old"),
+            NativePromptMessage("user", "user-old"),
+        ),
+    ) = NativeTriggerProcessor.run(
+        mode = "request",
+        settings = settings,
+        character = CharacterProfile(
+            id = "c",
+            name = "Lua",
+            triggerScripts = listOf(TriggerScript("request", "request", effects = effects)),
+        ),
+        messages = listOf(MessageRecord("m", "chat", "user", "hello")),
+        variables = variables,
+        chatId = "chat",
+        requestState = requestState,
+    )
+
     @Test
     fun ifElseUsesNumericEqualityAndSkipsOppositeBranch() {
         val effects = listOf(
@@ -366,6 +389,69 @@ class NativeTriggerV2ProcessorTest {
         val patched = result.runtimePatch.applyTo(character)
         assertEquals("World Plus", patched.globalLore.single().comment)
         assertTrue(patched.globalLore.single().alwaysActive)
+    }
+
+    @Test
+    fun requestStateEffectsMutateContentRoleAndExposeGetters() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf("type" to "v2GetRequestState", "index" to "1", "indexType" to "value", "outputVar" to "savedContent", "indent" to 0),
+            mapOf("type" to "v2SetRequestState", "index" to "0", "indexType" to "value", "value" to "savedContent", "valueType" to "var", "indent" to 0),
+            mapOf("type" to "v2GetRequestStateLength", "outputVar" to "length", "indent" to 0),
+            mapOf("type" to "v2SetRequestState", "index" to "1", "indexType" to "value", "value" to "length", "valueType" to "var", "indent" to 0),
+            mapOf("type" to "v2GetRequestStateRole", "index" to "0", "indexType" to "value", "outputVar" to "savedRole", "indent" to 0),
+            mapOf("type" to "v2SetRequestStateRole", "index" to "1", "indexType" to "value", "value" to "savedRole", "valueType" to "var", "indent" to 0),
+            mapOf("type" to "v2SetRequestStateRole", "index" to "0", "indexType" to "value", "value" to "invalid-role", "valueType" to "value", "indent" to 0),
+        )
+        val state = runRequest(effects).requestState!!
+        assertEquals("user-old", state[0].content)
+        assertEquals("system", state[0].role)
+        assertEquals("2", state[1].content)
+        assertEquals("system", state[1].role)
+    }
+
+    @Test
+    fun requestVariablesStayTemporaryAndUnsafeEffectsAreSkipped() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf("type" to "v2SetVar", "operator" to "=", "var" to "temp", "value" to "temporary", "valueType" to "value", "indent" to 0),
+            mapOf("type" to "v2SetRequestState", "index" to "0", "indexType" to "value", "value" to "temp", "valueType" to "var", "indent" to 0),
+            mapOf("type" to "v2SetCharacterDesc", "value" to "must-not-persist", "valueType" to "value", "indent" to 0),
+            mapOf("type" to "v2SetAuthorNote", "value" to "must-not-persist", "valueType" to "value", "indent" to 0),
+        )
+        val result = runRequest(effects, variables = mapOf("persistent" to "keep"))
+        assertEquals("temporary", result.requestState!![0].content)
+        assertEquals(mapOf("persistent" to "keep"), result.variables)
+        assertFalse(result.runtimePatch.hasCharacterChanges)
+        assertNull(result.runtimePatch.authorNote)
+    }
+
+    @Test
+    fun requestTempVariablesAreVisibleToFollowingTriggerConditions() {
+        val first = TriggerScript(
+            comment = "seed", type = "request",
+            effects = listOf(
+                mapOf("type" to "v2Header", "indent" to 0),
+                mapOf("type" to "v2SetVar", "operator" to "=", "var" to "gate", "value" to "open", "valueType" to "value", "indent" to 0),
+            ),
+        )
+        val second = TriggerScript(
+            comment = "consume", type = "request",
+            conditions = listOf(mapOf("type" to "var", "var" to "gate", "operator" to "=", "value" to "open")),
+            effects = listOf(
+                mapOf("type" to "v2Header", "indent" to 0),
+                mapOf("type" to "v2SetRequestState", "index" to "0", "indexType" to "value", "value" to "condition-passed", "valueType" to "value", "indent" to 0),
+            ),
+        )
+        val result = NativeTriggerProcessor.run(
+            mode = "request", settings = settings,
+            character = CharacterProfile("c", "Lua", triggerScripts = listOf(first, second)),
+            messages = listOf(MessageRecord("m", "chat", "user", "hello")),
+            variables = emptyMap(), chatId = "chat",
+            requestState = listOf(NativePromptMessage("user", "old")),
+        )
+        assertEquals("condition-passed", result.requestState!!.single().content)
+        assertTrue(result.variables.isEmpty())
     }
 
 }
