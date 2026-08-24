@@ -248,4 +248,23 @@ class NativeLuaTriggerEngineTest {
         assertEquals("2:true:true:char", allowed.variables["loaded"])
         assertEquals("0", allowed.variables["exhausted"])
     }
+
+    @Test
+    fun hashReturnsRisuCompatibleSha256ThroughAwaitableValue() {
+        val code = """
+            function onStart(id)
+                local pending = hash(id, "hello")
+                setChatVar(id, "hash", type(pending) .. ":" .. pending:await())
+            end
+        """.trimIndent()
+        val result = NativeLuaTriggerEngine.run(
+            code = code, mode = "start", settings = settings, character = character,
+            messages = history, variables = emptyMap(), chatId = "chat", authorNote = "",
+            greetingIndex = -1, inheritedStop = false, inheritedPatch = RuntimeStatePatch(),
+        )
+        assertEquals(
+            "table:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+            result.variables["hash"],
+        )
+    }
 }

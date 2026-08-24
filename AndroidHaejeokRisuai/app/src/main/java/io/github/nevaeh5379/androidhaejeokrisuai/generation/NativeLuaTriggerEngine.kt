@@ -7,6 +7,8 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.effectivePersonaPrompt
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntriesFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntryToValue
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.UUID
 import party.iroiro.luajava.JFunction
 import party.iroiro.luajava.Lua
@@ -265,6 +267,7 @@ internal object NativeLuaTriggerEngine {
         register(state, "cbs") { lua, execution ->
             push(lua, NativeRisuParser.parse(stringArg(lua, 1), execution.parserContext()))
         }
+        register(state, "hashMain") { lua, _ -> push(lua, sha256Hex(stringArg(lua, 2))) }
         register(state, "logMain") { _, _ -> 0 }
         register(state, "reloadDisplay") { _, _ -> 0 }
         register(state, "reloadChat") { _, _ -> 0 }
@@ -404,6 +407,18 @@ internal object NativeLuaTriggerEngine {
     private fun optionInt(value: Any?, fallback: Int): Int =
         (value as? Number)?.toInt() ?: value?.toString()?.toDoubleOrNull()?.toInt() ?: fallback
 
+    private fun sha256Hex(value: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(StandardCharsets.UTF_8))
+        val digits = "0123456789abcdef"
+        return buildString(digest.size * 2) {
+            for (byte in digest) {
+                val unsigned = byte.toInt() and 0xff
+                append(digits[unsigned ushr 4])
+                append(digits[unsigned and 0x0f])
+            }
+        }
+    }
+
     private fun push(lua: Lua, value: String): Int {
         lua.push(value)
         return 1
@@ -476,6 +491,14 @@ internal object NativeLuaTriggerEngine {
     )
 
     private const val COMPAT_WRAPPER = """
+local function resolvedPromise(value)
+    return { await = function(self) return value end }
+end
+
+function hash(id, value)
+    return resolvedPromise(hashMain(id, value))
+end
+
 function getChat(id, index)
     return json.decode(getChatMain(id, index))
 end
