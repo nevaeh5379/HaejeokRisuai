@@ -316,6 +316,8 @@ class PostgresStorage extends SqlStorageBase {
         this.poolMax = Number.parseInt(options.poolMax || '10', 10);
         this.enabled = Boolean(this.connectionString);
         this.pool = null;
+        this.schemaRecoveryPromise = null;
+        this.postgresSchemaSql = null;
     }
 
     async initialize() {
@@ -328,6 +330,81 @@ class PostgresStorage extends SqlStorageBase {
         console.log('[PostgreSQL] Structured storage is ready.');
     }
 
+    async loadPostgresSchemaSql() {
+        if (!this.postgresSchemaSql) {
+            this.postgresSchemaSql = await fs.readFile(path.join(__dirname, 'postgres-schema.sql'), 'utf8');
+        }
+        return this.postgresSchemaSql;
+    }
+
+    async verifyPostgresSchema(query) {
+        const result = await query(
+            'SELECT schema_version, schema_layout FROM system.storage_meta WHERE singleton = TRUE'
+        );
+        const schemaVersion = Number(result.rows[0]?.schema_version);
+        const schemaLayout = result.rows[0]?.schema_layout;
+        if (schemaVersion !== POSTGRES_SCHEMA_VERSION || schemaLayout !== RELATIONAL_SCHEMA_LAYOUT) {
+            throw new Error(
+                `Unsupported PostgreSQL schema ${schemaVersion}/${schemaLayout}; ` +
+                `expected ${POSTGRES_SCHEMA_VERSION}/${RELATIONAL_SCHEMA_LAYOUT}. ` +
+                'Reset the configured development database explicitly before retrying.'
+            );
+        }
+    }
+
+    async recoverMissingPostgresSchema(query) {
+        if (this.schemaRecoveryPromise) {
+            return this.schemaRecoveryPromise;
+        }
+        const recovery = (async () => {
+            const existingMeta = await query("SELECT to_regclass('system.storage_meta') AS table_name");
+            if (!existingMeta.rows[0]?.table_name) {
+                console.warn('[PostgreSQL] Storage schema disappeared; reinitializing it on the current database.');
+                await query(await this.loadPostgresSchemaSql());
+                this.invalidateBootstrapCache();
+            }
+            await this.verifyPostgresSchema(query);
+        })();
+        this.schemaRecoveryPromise = recovery;
+        try {
+            return await recovery;
+        } finally {
+            if (this.schemaRecoveryPromise === recovery) {
+                this.schemaRecoveryPromise = null;
+            }
+        }
+    }
+
+    async ensureConnectedClientSchema(query) {
+        const existingMeta = await query("SELECT to_regclass('system.storage_meta') AS table_name");
+        if (!existingMeta.rows[0]?.table_name) {
+            await this.recoverMissingPostgresSchema(query);
+            return;
+        }
+        await this.verifyPostgresSchema(query);
+    }
+
+    installPoolSchemaRecovery(pool) {
+        pool.on('error', (error) => {
+            console.warn('[PostgreSQL] Idle pool connection failed; a later request will reconnect:', error.message || error);
+        });
+        pool.on('connect', (client) => {
+            const originalQuery = client.query.bind(client);
+            const schemaReady = this.ensureConnectedClientSchema(originalQuery);
+            schemaReady.catch(() => {});
+            client.query = (...args) => {
+                const callback = typeof args[args.length - 1] === 'function' ? args.pop() : null;
+                if (callback) {
+                    schemaReady
+                        .then(() => originalQuery(...args, callback))
+                        .catch((error) => callback(error));
+                    return;
+                }
+                return schemaReady.then(() => originalQuery(...args));
+            };
+        });
+    }
+
     async createInitializedPool(connectionString, poolMax) {
         const pool = new Pool({
             connectionString,
@@ -338,31 +415,11 @@ class PostgresStorage extends SqlStorageBase {
             await pool.query('SELECT 1');
             const existingMeta = await pool.query("SELECT to_regclass('system.storage_meta') AS table_name");
             if (existingMeta.rows[0]?.table_name) {
-                const current = (await pool.query(
-                    'SELECT schema_version, schema_layout FROM system.storage_meta WHERE singleton = TRUE'
-                )).rows[0];
-                if (current && (Number(current.schema_version) !== POSTGRES_SCHEMA_VERSION || current.schema_layout !== RELATIONAL_SCHEMA_LAYOUT)) {
-                    throw new Error(
-                        `Unsupported PostgreSQL schema ${current.schema_version}/${current.schema_layout}; ` +
-                        `expected ${POSTGRES_SCHEMA_VERSION}/${RELATIONAL_SCHEMA_LAYOUT}. ` +
-                        'Reset the configured development database explicitly before retrying.'
-                    );
-                }
+                await this.verifyPostgresSchema(pool.query.bind(pool));
             }
-            const schema = await fs.readFile(path.join(__dirname, 'postgres-schema.sql'), 'utf8');
-            await pool.query(schema);
-            const result = await pool.query(
-                'SELECT schema_version, schema_layout FROM system.storage_meta WHERE singleton = TRUE'
-            );
-            const schemaVersion = result.rows[0]?.schema_version;
-            const schemaLayout = result.rows[0]?.schema_layout;
-            if (schemaVersion !== POSTGRES_SCHEMA_VERSION || schemaLayout !== RELATIONAL_SCHEMA_LAYOUT) {
-                throw new Error(
-                    `Unsupported PostgreSQL schema ${schemaVersion}/${schemaLayout}; ` +
-                    `expected ${POSTGRES_SCHEMA_VERSION}/${RELATIONAL_SCHEMA_LAYOUT}. ` +
-                    'Reset the configured development database explicitly before retrying.'
-                );
-            }
+            await pool.query(await this.loadPostgresSchemaSql());
+            await this.verifyPostgresSchema(pool.query.bind(pool));
+            this.installPoolSchemaRecovery(pool);
             return pool;
         } catch (error) {
             await pool.end().catch(() => {});
