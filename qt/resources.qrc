@@ -1,0 +1,33 @@
+<RCC>
+    <qresource prefix="/">
+        <file>qml/Main.qml</file>
+        <file>qml/theme/qmldir</file>
+        <file>qml/theme/Theme.qml</file>
+        <file>qml/components/RisuButton.qml</file>
+        <file>qml/components/RisuIconButton.qml</file>
+        <file>qml/components/RisuIcon.qml</file>
+        <file>qml/components/RisuTextField.qml</file>
+        <file>qml/components/RisuTextArea.qml</file>
+        <file>qml/components/RisuComboBox.qml</file>
+        <file>qml/components/RisuSwitch.qml</file>
+        <file>qml/components/RisuSlider.qml</file>
+        <file>qml/components/RisuCard.qml</file>
+        <file>qml/components/RisuDialog.qml</file>
+        <file>qml/components/RisuBadge.qml</file>
+        <file>qml/components/RisuToast.qml</file>
+        <file>qml/components/RisuAvatar.qml</file>
+        <file>qml/components/RisuNavRail.qml</file>
+        <file>qml/components/RisuChatBubble.qml</file>
+        <file>qml/components/MarkdownView.qml</file>
+        <file>qml/components/CommandPalette.qml</file>
+        <file>qml/views/HomeScreenView.qml</file>
+        <file>qml/views/ChatView.qml</file>
+        <file>qml/views/SidebarView.qml</file>
+        <file>qml/views/CharacterEditorView.qml</file>
+        <file>qml/views/PresetSettingsView.qml</file>
+        <file>qml/views/LorebookEditorView.qml</file>
+        <file>qml/views/PersonaEditorView.qml</file>
+        <file>qml/views/GlobalSettingsView.qml</file>
+        <file>qml/views/VisualNovelView.qml</file>
+    </qresource>
+</RCC>
