@@ -92,23 +92,23 @@
     );
 
     // Cache resolved file src URLs for visible assets only (efficient!)
+    const MISSING_ASSET_SRC = "/none.webp";
     let assetSrcMap = $state<Record<string, string>>({});
 
     $effect(() => {
         if (!paginatedAssets) return;
         const pathsToLoad = paginatedAssets
             .map(({ item }) => item[1])
-            .filter((p): p is string => Boolean(p && !assetSrcMap[p]));
+            .filter((p): p is string => Boolean(p && assetSrcMap[p] === undefined));
 
         if (pathsToLoad.length === 0) return;
 
         getAssetsBatch(pathsToLoad, { size: "full" })
             .then((map) => {
                 const updated = { ...assetSrcMap };
-                for (const [path, url] of map) {
-                    if (url && url !== "/none.webp") {
-                        updated[path] = url;
-                    }
+                for (const path of pathsToLoad) {
+                    const url = map.get(path);
+                    updated[path] = url || MISSING_ASSET_SRC;
                 }
                 assetSrcMap = updated;
             })
@@ -339,7 +339,7 @@
                         >
                             <!-- Image Display Container (Large & Clear) -->
                             <div class="relative w-full aspect-square bg-black/40 flex items-center justify-center overflow-hidden">
-                                {#if cat === "image" && srcUrl}
+                                {#if cat === "image" && srcUrl && srcUrl !== MISSING_ASSET_SRC}
                                     <img
                                         src={srcUrl}
                                         alt={name}

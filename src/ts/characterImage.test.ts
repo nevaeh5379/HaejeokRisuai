@@ -73,10 +73,10 @@ describe("getCharImagesBatch", () => {
 
     const result = await getCharImagesBatch(locations, { size: "display" });
 
-    expect(mocks.storage.getItems).toHaveBeenCalledTimes(3);
+    expect(mocks.storage.getItems).toHaveBeenCalledTimes(2);
     expect(
       mocks.storage.getItems.mock.calls.map((call) => call[0].length),
-    ).toEqual([24, 24, 2]);
+    ).toEqual([48, 2]);
     expect(mocks.storage.getDirectUrl).not.toHaveBeenCalled();
     expect(mocks.getFileSrc).not.toHaveBeenCalled();
     expect([...result.values()]).toEqual(Array(50).fill("/none.webp"));
