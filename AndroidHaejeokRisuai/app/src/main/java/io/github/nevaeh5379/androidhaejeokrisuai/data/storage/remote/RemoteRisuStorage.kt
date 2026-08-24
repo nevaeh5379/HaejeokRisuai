@@ -13,6 +13,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.PositionedMessage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntriesFromValue
+import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntryMapsFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.regexScriptsFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.triggerScriptsFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RisuStorage
@@ -94,6 +95,7 @@ class RemoteRisuStorage(
             systemPrompt = character.optString("systemPrompt"),
             replaceGlobalNote = character.optString("replaceGlobalNote"),
             globalLore = loreEntriesFromValue(jsonValue(character.opt("globalLore"))),
+            globalLoreRaw = loreEntryMapsFromValue(jsonValue(character.opt("globalLore"))),
         )
     }
 
@@ -332,6 +334,7 @@ class RemoteRisuStorage(
             listOf("chats", "chaId", "detailsLoaded").forEach(characterData::remove)
             runtimePatch.characterDescription?.let { characterData["desc"] = it }
             runtimePatch.replaceGlobalNote?.let { characterData["replaceGlobalNote"] = it }
+            runtimePatch.globalLoreRaw?.let { characterData["globalLore"] = it }
             characterUpserts.put(
                 JSONObject().put("id", characterId).put("position", characterPosition).put("data", toJsonValue(characterData)),
             )

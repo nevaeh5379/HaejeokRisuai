@@ -5,6 +5,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.TriggerScript
+import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntryToValue
 import java.util.UUID
 
 internal data class NativeTriggerV2Result(
@@ -77,6 +78,23 @@ internal object NativeTriggerV2Processor {
         fun resolve(value: Any?, type: Any?): String {
             val parsed = parse(value)
             return if (type?.toString() == "var") getVar(parsed) else parsed
+        }
+        fun resolveKeepingSlot(value: Any?, type: Any?): String {
+            if (type?.toString() == "var") return getVar(parse(value))
+            val sentinel = "\uE210"
+            return parse(value?.toString().orEmpty().replace("{{slot}}", sentinel))
+                .replace(sentinel, "{{slot}}")
+        }
+        fun currentLoreRaw(): MutableList<LinkedHashMap<String, Any?>> {
+            val raw = runtimePatch.globalLoreRaw ?: runtimeCharacter.globalLoreRaw
+            val source = if (raw.isNotEmpty() || runtimeCharacter.globalLore.isEmpty()) raw
+                else runtimeCharacter.globalLore.map(::loreEntryToValue)
+            return source.mapTo(mutableListOf()) { LinkedHashMap(it) }
+        }
+        fun updateLoreRaw(entries: List<Map<String, Any?>>) {
+            val preserved = entries.map { LinkedHashMap(it) as Map<String, Any?> }
+            runtimePatch = runtimePatch.copy(globalLoreRaw = preserved)
+            runtimeCharacter = runtimePatch.applyTo(character)
         }
         fun returnResult() = NativeTriggerV2Result(
             working.toList(), persistent.toMap(), prompt, stopSending, runtimePatch,
@@ -543,6 +561,59 @@ internal object NativeTriggerV2Processor {
                         }
                     }
                     setVar(parse(effect["outputVar"]), if (matched) "1" else "0")
+                    pc++
+                }
+                "v2CreateLorebook" -> {
+                    val insertOrder = jsNumber(resolve(effect["insertOrder"], effect["insertOrderType"]))
+                    val entries = currentLoreRaw()
+                    entries += linkedMapOf(
+                        "key" to resolve(effect["key"], effect["keyType"]),
+                        "comment" to resolve(effect["name"], effect["nameType"]),
+                        "content" to resolve(effect["content"], effect["contentType"]),
+                        "mode" to "normal",
+                        "insertorder" to if (insertOrder.isNaN()) 100 else insertOrder.toInt(),
+                        "alwaysActive" to false,
+                        "secondkey" to "",
+                        "selective" to false,
+                    )
+                    updateLoreRaw(entries)
+                    pc++
+                }
+                "v2ModifyLorebookByIndex" -> {
+                    val index = jsArrayIndex(resolve(effect["index"], effect["indexType"]))
+                    val entries = currentLoreRaw()
+                    val current = entries.getOrNull(index)
+                    if (current != null) {
+                        val oldComment = current["comment"]?.toString().orEmpty()
+                        val oldKey = current["key"]?.toString().orEmpty()
+                        val oldContent = current["content"]?.toString().orEmpty()
+                        val oldOrder = (current["insertorder"] as? Number)?.toInt()?.takeIf { it != 0 } ?: 100
+                        current["comment"] = resolveKeepingSlot(effect["name"], effect["nameType"]).replace("{{slot}}", oldComment)
+                        current["key"] = resolveKeepingSlot(effect["key"], effect["keyType"]).replace("{{slot}}", oldKey)
+                        current["content"] = resolveKeepingSlot(effect["content"], effect["contentType"]).replace("{{slot}}", oldContent)
+                        val orderText = resolveKeepingSlot(effect["insertOrder"], effect["insertOrderType"]).replace("{{slot}}", oldOrder.toString())
+                        orderText.toDoubleOrNull()?.let { current["insertorder"] = it }
+                        updateLoreRaw(entries)
+                    }
+                    pc++
+                }
+                "v2DeleteLorebookByIndex" -> {
+                    val index = jsArrayIndex(resolve(effect["index"], effect["indexType"]))
+                    val entries = currentLoreRaw()
+                    if (index in entries.indices) {
+                        entries.removeAt(index)
+                        updateLoreRaw(entries)
+                    }
+                    pc++
+                }
+                "v2SetLorebookAlwaysActive" -> {
+                    val index = jsArrayIndex(resolve(effect["index"], effect["indexType"]))
+                    val entries = currentLoreRaw()
+                    val current = entries.getOrNull(index)
+                    if (current != null) {
+                        current["alwaysActive"] = effect["value"] as? Boolean ?: effect["value"]?.toString().toBoolean()
+                        updateLoreRaw(entries)
+                    }
                     pc++
                 }
                 "v2GetAllLorebooks" -> {

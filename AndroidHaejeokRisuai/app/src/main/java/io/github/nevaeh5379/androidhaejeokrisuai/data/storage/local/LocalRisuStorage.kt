@@ -18,6 +18,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.PositionedMessage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntriesFromValue
+import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntryMapsFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.regexScriptsFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.triggerScriptsFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RelationalNodeCodec
@@ -99,6 +100,7 @@ class LocalRisuStorage(context: Context) : RisuStorage {
             systemPrompt = full["systemPrompt"]?.toString().orEmpty(),
             replaceGlobalNote = full["replaceGlobalNote"]?.toString().orEmpty(),
             globalLore = loreEntriesFromValue(full["globalLore"]),
+            globalLoreRaw = loreEntryMapsFromValue(full["globalLore"]),
         )
     }
 
@@ -431,6 +433,7 @@ class LocalRisuStorage(context: Context) : RisuStorage {
                     ?: error("Character relational data is missing: $characterId")
                 runtimePatch.characterDescription?.let { characterData["desc"] = it }
                 runtimePatch.replaceGlobalNote?.let { characterData["replaceGlobalNote"] = it }
+                runtimePatch.globalLoreRaw?.let { characterData["globalLore"] = it }
                 db.delete("character_extension_nodes", "character_id = ?", arrayOf(characterId))
                 RelationalNodeCodec.flatten(characterData).forEach { row -> insertCharacterNode(db, characterId, row) }
                 db.execSQL(

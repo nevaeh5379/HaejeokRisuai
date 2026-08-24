@@ -29,8 +29,12 @@ data class LoreEntry(
 )
 
 @Suppress("UNCHECKED_CAST")
-fun loreEntriesFromValue(value: Any?): List<LoreEntry> = (value as? List<*>)?.mapNotNull { raw ->
-    val map = raw as? Map<String, Any?> ?: return@mapNotNull null
+fun loreEntryMapsFromValue(value: Any?): List<Map<String, Any?>> =
+    (value as? List<*>)?.mapNotNull { raw ->
+        (raw as? Map<*, *>)?.entries?.associateTo(linkedMapOf()) { (key, child) -> key.toString() to child }
+    } ?: emptyList()
+
+fun loreEntriesFromValue(value: Any?): List<LoreEntry> = loreEntryMapsFromValue(value).map { map ->
     LoreEntry(
         key = map["key"]?.toString().orEmpty(),
         secondKey = map["secondkey"]?.toString().orEmpty(),
@@ -42,7 +46,13 @@ fun loreEntriesFromValue(value: Any?): List<LoreEntry> = (value as? List<*>)?.ma
         useRegex = map["useRegex"] as? Boolean ?: false,
         activationPercent = (map["activationPercent"] as? Number)?.toDouble(),
     )
-} ?: emptyList()
+}
+
+fun loreEntryToValue(entry: LoreEntry): Map<String, Any?> = linkedMapOf(
+    "key" to entry.key, "secondkey" to entry.secondKey, "insertorder" to entry.insertOrder,
+    "comment" to entry.comment, "content" to entry.content, "alwaysActive" to entry.alwaysActive,
+    "selective" to entry.selective, "useRegex" to entry.useRegex,
+).apply { entry.activationPercent?.let { put("activationPercent", it) } }
 
 data class RegexScript(
     val comment: String = "",
@@ -100,6 +110,7 @@ data class CharacterProfile(
     val systemPrompt: String = "",
     val replaceGlobalNote: String = "",
     val globalLore: List<LoreEntry> = emptyList(),
+    val globalLoreRaw: List<Map<String, Any?>> = emptyList(),
 )
 
 data class ChatPromptContext(
@@ -140,14 +151,20 @@ data class RuntimeStatePatch(
     val authorNote: String? = null,
     val characterDescription: String? = null,
     val replaceGlobalNote: String? = null,
+    val globalLoreRaw: List<Map<String, Any?>>? = null,
 ) {
     val hasCharacterChanges: Boolean
-        get() = characterDescription != null || replaceGlobalNote != null
+        get() = characterDescription != null || replaceGlobalNote != null || globalLoreRaw != null
 
-    fun applyTo(character: CharacterProfile): CharacterProfile = character.copy(
-        description = characterDescription ?: character.description,
-        replaceGlobalNote = replaceGlobalNote ?: character.replaceGlobalNote,
-    )
+    fun applyTo(character: CharacterProfile): CharacterProfile {
+        val patchedLore = globalLoreRaw
+        return character.copy(
+            description = characterDescription ?: character.description,
+            replaceGlobalNote = replaceGlobalNote ?: character.replaceGlobalNote,
+            globalLore = patchedLore?.let(::loreEntriesFromValue) ?: character.globalLore,
+            globalLoreRaw = patchedLore ?: character.globalLoreRaw,
+        )
+    }
 
     fun resolveAuthorNote(fallback: String): String = authorNote ?: fallback
 }

@@ -318,5 +318,55 @@ class NativeTriggerV2ProcessorTest {
         assertEquals("2", result.variables["count"])
     }
 
+    @Test
+    fun lorebookMutationsPreserveUnknownRawFieldsAndRefreshTypedView() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf(
+                "type" to "v2ModifyLorebookByIndex", "index" to "0", "indexType" to "value",
+                "name" to "{{slot}} Plus", "nameType" to "value", "key" to "{{slot}}-new", "keyType" to "value",
+                "content" to "{{slot}} edited", "contentType" to "value", "insertOrder" to "{{slot}}", "insertOrderType" to "value",
+                "indent" to 0,
+            ),
+            mapOf("type" to "v2SetLorebookAlwaysActive", "index" to "0", "indexType" to "value", "value" to true, "indent" to 0),
+            mapOf("type" to "v2GetLorebookByIndex", "index" to "0", "indexType" to "value", "outputVar" to "edited", "indent" to 0),
+            mapOf(
+                "type" to "v2CreateLorebook", "name" to "Created", "nameType" to "value",
+                "key" to "new-key", "keyType" to "value", "content" to "new content", "contentType" to "value",
+                "insertOrder" to "not-a-number", "insertOrderType" to "value", "indent" to 0,
+            ),
+            mapOf("type" to "v2GetLorebookCountNew", "outputVar" to "countBeforeDelete", "indent" to 0),
+            mapOf("type" to "v2DeleteLorebookByIndex", "index" to "1", "indexType" to "value", "indent" to 0),
+            mapOf("type" to "v2GetLorebookCountNew", "outputVar" to "countAfterDelete", "indent" to 0),
+        )
+        val originalRaw = linkedMapOf<String, Any?>(
+            "key" to "dragon", "comment" to "World", "content" to "Dragons exist.",
+            "insertorder" to 5, "alwaysActive" to false, "secondkey" to "", "selective" to false,
+            "extensionFlag" to mapOf("vendor" to "preserve-me"),
+        )
+        val trigger = TriggerScript("lore mutation", "start", effects = effects)
+        val character = CharacterProfile(
+            "c", "Lua", globalLore = listOf(LoreEntry(key = "dragon", comment = "World", content = "Dragons exist.", insertOrder = 5)),
+            globalLoreRaw = listOf(originalRaw), triggerScripts = listOf(trigger),
+        )
+        val result = NativeTriggerProcessor.run(
+            mode = "start", settings = settings, character = character,
+            messages = listOf(MessageRecord("m", "chat", "user", "hello")), variables = emptyMap(), chatId = "chat",
+        )
+        val raw = result.runtimePatch.globalLoreRaw!!
+        assertEquals(1, raw.size)
+        assertEquals(mapOf("vendor" to "preserve-me"), raw[0]["extensionFlag"])
+        assertEquals("World Plus", raw[0]["comment"])
+        assertEquals("dragon-new", raw[0]["key"])
+        assertEquals("Dragons exist. edited", raw[0]["content"])
+        assertEquals(true, raw[0]["alwaysActive"])
+        assertEquals("Dragons exist. edited", result.variables["edited"])
+        assertEquals("2", result.variables["countBeforeDelete"])
+        assertEquals("1", result.variables["countAfterDelete"])
+        val patched = result.runtimePatch.applyTo(character)
+        assertEquals("World Plus", patched.globalLore.single().comment)
+        assertTrue(patched.globalLore.single().alwaysActive)
+    }
+
 }
 
