@@ -1114,6 +1114,91 @@ export async function restoreLocalBackupFile(file: File) {
     return count;
   };
 
+  // Browser storage (IndexedDB/localForage) has no bulk API, but writing
+  // assets one-by-one serializes every IndexedDB transaction and makes
+  // restoring large backups extremely slow. Batch them instead and write
+  // each batch in a single IndexedDB transaction when possible.
+  const useBrowserBulkRestore = !isTauri && !useNodeBulkRestore;
+  let pendingBrowserAssets = new Map<string, Uint8Array>();
+  const browserBulkMaxFiles = 256;
+  const browserBulkMaxBytes = 64 * 1024 * 1024;
+  const browserBulkWriteConcurrency = 8;
+  let pendingBrowserAssetBytes = 0;
+
+  /**
+   * Reuse localForage's own IndexedDB connection so restored assets land in
+   * exactly the same database/store localForage reads from. Returns null when
+   * the active driver is not IndexedDB (e.g. WebSQL/localStorage fallback).
+   */
+  const getLocalForageIdb = async (): Promise<{
+    db: IDBDatabase;
+    storeName: string;
+  } | null> => {
+    try {
+      const storage = forageStorage.realStorage as any;
+      if (typeof storage?.ready !== "function") return null;
+      await storage.ready();
+      const dbInfo = storage._dbInfo;
+      if (!dbInfo?.db || !dbInfo.storeName) return null;
+      return { db: dbInfo.db, storeName: dbInfo.storeName };
+    } catch {
+      return null;
+    }
+  };
+
+  const writeBrowserAssetBatchWithLocalForage = async (
+    entries: Array<[string, Uint8Array]>,
+  ) => {
+    let cursor = 0;
+    const workers = Array.from(
+      { length: Math.min(browserBulkWriteConcurrency, entries.length) },
+      async () => {
+        while (cursor < entries.length) {
+          const [key, data] = entries[cursor++];
+          await forageStorage.setItem(key, data);
+        }
+      },
+    );
+    await Promise.all(workers);
+  };
+
+  const flushBrowserAssets = async (): Promise<number> => {
+    if (pendingBrowserAssets.size === 0) {
+      return 0;
+    }
+    const count = pendingBrowserAssets.size;
+    const entries = Array.from(pendingBrowserAssets);
+    pendingBrowserAssets = new Map();
+    pendingBrowserAssetBytes = 0;
+
+    try {
+      const idb = await getLocalForageIdb();
+      if (idb) {
+        await new Promise<void>((resolve, reject) => {
+          const tx = idb.db.transaction(idb.storeName, "readwrite");
+          const store = tx.objectStore(idb.storeName);
+          for (const [key, data] of entries) {
+            store.put(data, key);
+          }
+          tx.oncomplete = () => resolve();
+          tx.onerror = () =>
+            reject(tx.error ?? new Error("IndexedDB bulk write failed"));
+          tx.onabort = () =>
+            reject(tx.error ?? new Error("IndexedDB bulk write aborted"));
+        });
+        return count;
+      }
+    } catch (error) {
+      console.warn(
+        "IndexedDB bulk asset write failed, falling back to per-item writes:",
+        error,
+      );
+    }
+
+    await writeBrowserAssetBatchWithLocalForage(entries);
+    return count;
+  };
+
   const restoreBackupEntry = async (name: string, data: Uint8Array) => {
     currentEntryName = name;
     if (name === "encryption.risudat") {
@@ -1195,19 +1280,29 @@ export async function restoreLocalBackupFile(file: File) {
             }
           }
         } else {
-          await forageStorage.setItem("assets/" + name, data);
+          const key = "assets/" + name;
+          const previous = pendingBrowserAssets.get(key);
+          if (previous) {
+            pendingBrowserAssetBytes -= previous.byteLength;
+          }
+          pendingBrowserAssets.set(key, data);
+          pendingBrowserAssetBytes += data.byteLength;
+
+          if (
+            pendingBrowserAssets.size >= browserBulkMaxFiles ||
+            pendingBrowserAssetBytes >= browserBulkMaxBytes
+          ) {
+            const flushed = await flushBrowserAssets();
+            if (flushed) {
+              entriesWritten += flushed;
+            }
+          }
         }
       }
     }
 
     entriesRestored++;
     currentEntryName = "";
-    if (!useNodeBulkRestore) {
-      await sleep(10);
-    }
-    if (forageStorage.isAccount) {
-      await sleep(1000);
-    }
   };
 
   try {
@@ -1237,7 +1332,8 @@ export async function restoreLocalBackupFile(file: File) {
         const readPercent =
           file.size === 0 ? 90 : Math.floor((bytesRead / file.size) * 90);
         let message = `Parsing backup... (${readPercent}%) (${entriesRestored} entries parsed`;
-        if (useNodeBulkRestore && entriesWritten > 0) {
+        const isBulkRestore = useNodeBulkRestore || useBrowserBulkRestore;
+        if (isBulkRestore && entriesWritten > 0) {
           message += `, ${entriesWritten} written`;
         }
         message += ")";
@@ -1357,6 +1453,17 @@ export async function restoreLocalBackupFile(file: File) {
       90,
     );
     const flushed = await flushNodeAssets();
+    if (flushed) {
+      entriesWritten += flushed;
+    }
+  }
+
+  if (useBrowserBulkRestore && pendingBrowserAssets.size > 0) {
+    alertProgress(
+      `Flushing remaining assets... (${pendingBrowserAssets.size} files)`,
+      90,
+    );
+    const flushed = await flushBrowserAssets();
     if (flushed) {
       entriesWritten += flushed;
     }
