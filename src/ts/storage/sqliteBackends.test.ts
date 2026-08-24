@@ -74,9 +74,53 @@ function seedChat(database: DatabaseSync) {
   `);
 }
 
+/** In-process mock of the Worker RPC protocol used by WebSqliteStorage. */
 function makeWebStorage(database: DatabaseSync) {
   const storage = new WebSqliteStorage();
-  (storage as any).db = new WebDatabaseAdapter(database);
+  const db = new WebDatabaseAdapter(database);
+
+  const selectRows = (sql: string, bind: unknown[] = []) => {
+    const stmt = db.prepare(sql);
+    try {
+      if (bind.length > 0) stmt.bind(bind);
+      const results: Record<string, unknown>[] = [];
+      const cols = stmt.columnNames;
+      while (stmt.step()) {
+        const row = stmt.get() as unknown[];
+        const obj: Record<string, unknown> = {};
+        for (let i = 0; i < cols.length; i++) obj[cols[i]] = row[i];
+        results.push(obj);
+      }
+      return { rows: results, columns: cols };
+    } finally {
+      stmt.finalize();
+    }
+  };
+
+  const rpc = {
+    init: async () => ({ enabled: true, revision: 0 }),
+    exec: async (sql: string, bind: unknown[] = []) => {
+      if (bind.length === 0) db.exec(sql);
+      else {
+        const stmt = db.prepare(sql);
+        try {
+          stmt.bind(bind);
+          stmt.step();
+        } finally {
+          stmt.finalize();
+        }
+      }
+    },
+    select: async (sql: string, bind: unknown[] = []) => selectRows(sql, bind),
+    selectOne: async (sql: string, bind: unknown[] = []) =>
+      selectRows(sql, bind).rows[0] ?? null,
+    close: async () => {
+      db.close();
+    },
+    terminate: () => {},
+  };
+
+  (storage as any).rpc = rpc;
   (storage as any)._enabled = true;
   (storage as any).initialized = true;
   return storage;

@@ -120,6 +120,12 @@ const STATIC_MIME_TYPES = {
     '.ttf': 'font/ttf',
 };
 
+app.use((req, res, next) => {
+    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    next();
+});
+
 app.use(async (req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
         return next();

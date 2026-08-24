@@ -48,69 +48,131 @@ import {
   normalizeSqlitePageEnd,
 } from "./sqliteStorageUtils";
 
-interface Sqlite3Module {
-  oo1: {
-    OpfsDb: new (filename: string) => SqliteDb;
-    DB: new (filename: string, mode: string) => SqliteDb;
+// ── Worker RPC plumbing ──────────────────────────────────────────────
+
+type ReqMsg =
+  | { id: number; type: "init" }
+  | { id: number; type: "exec"; sql: string; bind?: unknown[] }
+  | { id: number; type: "select"; sql: string; bind?: unknown[] }
+  | { id: number; type: "selectOne"; sql: string; bind?: unknown[] }
+  | { id: number; type: "close" };
+
+interface ResMsg {
+  id: number;
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+}
+
+type ReqMsgWithoutId =
+  | { type: "init" }
+  | { type: "exec"; sql: string; bind?: unknown[] }
+  | { type: "select"; sql: string; bind?: unknown[] }
+  | { type: "selectOne"; sql: string; bind?: unknown[] }
+  | { type: "close" };
+
+interface WorkerRpc {
+  init(): Promise<{ enabled: boolean; revision: number }>;
+  exec(sql: string, bind?: unknown[]): Promise<void>;
+  select(
+    sql: string,
+    bind?: unknown[],
+  ): Promise<{ rows: Record<string, unknown>[]; columns: string[] }>;
+  selectOne(
+    sql: string,
+    bind?: unknown[],
+  ): Promise<Record<string, unknown> | null>;
+  close(): Promise<void>;
+  terminate(): void;
+}
+
+let workerSingleton: Worker | null = null;
+let rpcSingleton: WorkerRpc | null = null;
+let workerInitFailed = false;
+
+function getWorkerRpc(): WorkerRpc {
+  if (workerInitFailed) {
+    throw new Error("SQLite WASM worker is not available");
+  }
+  if (rpcSingleton) return rpcSingleton;
+
+  // Vite understands `new Worker(new URL(..., import.meta.url), { type: 'module' })`
+  // and bundles the worker module + its WASM dependency correctly.
+  workerSingleton = new Worker(
+    new URL("./webSqliteWorker.ts", import.meta.url),
+    { type: "module" },
+  );
+
+  const pending = new Map<number, (res: ResMsg) => void>();
+  let nextId = 1;
+
+  workerSingleton.onmessage = (e: MessageEvent<ResMsg>) => {
+    const res = e.data;
+    const resolver = pending.get(res.id);
+    if (resolver) {
+      pending.delete(res.id);
+      resolver(res);
+    }
   };
-  version: { libVersion: string };
-}
 
-interface SqliteStmt {
-  bind: (params: unknown[]) => void;
-  step: () => boolean;
-  get: () => unknown[];
-  columnNames: string[];
-  finalize: () => void;
-}
+  workerSingleton.onerror = (e) => {
+    console.error("SQLite WASM worker error:", e.message ?? e);
+    workerInitFailed = true;
+    // Reject all pending requests.
+    for (const resolver of pending.values()) {
+      resolver({ id: 0, ok: false, error: "Worker crashed" });
+    }
+    pending.clear();
+  };
 
-interface SqliteDb {
-  exec: (sql: string) => void;
-  prepare: (sql: string) => SqliteStmt;
-  close: () => void;
-}
-
-let sqlite3Singleton: Sqlite3Module | null = null;
-let sqlite3InitPromise: Promise<Sqlite3Module> | null = null;
-let sqlite3InitFailed = false;
-
-async function getSqlite3(): Promise<Sqlite3Module> {
-  if (sqlite3InitFailed) {
-    throw new Error("SQLite WASM is not available in this browser");
+  function call<T>(msg: ReqMsgWithoutId): Promise<T> {
+    const id = nextId++;
+    return new Promise<T>((resolve, reject) => {
+      pending.set(id, (res: ResMsg) => {
+        if (res.ok) resolve(res.result as T);
+        else reject(new Error(res.error ?? "Unknown worker error"));
+      });
+      const full: ReqMsg = { ...msg, id } as ReqMsg;
+      workerSingleton!.postMessage(full);
+    });
   }
-  if (sqlite3Singleton) return sqlite3Singleton;
-  if (!sqlite3InitPromise) {
-    sqlite3InitPromise = (async () => {
-      try {
-        const mod = await import("@sqlite.org/sqlite-wasm");
-        const sqlite3InitModule = mod.default ?? (mod as any).sqlite3InitModule;
-        if (!sqlite3InitModule) {
-          throw new Error("sqlite3InitModule not found in module");
-        }
-        const sqlite3 = await sqlite3InitModule();
-        sqlite3Singleton = sqlite3 as unknown as Sqlite3Module;
-        return sqlite3Singleton;
-      } catch (error) {
-        sqlite3InitFailed = true;
-        console.error("Failed to load SQLite WASM:", error);
-        throw new Error("SQLite WASM is not available in this browser");
-      }
-    })();
-  }
-  return sqlite3InitPromise;
+
+  rpcSingleton = {
+    init: () => call<{ enabled: boolean; revision: number }>({ type: "init" }),
+    exec: (sql, bind) =>
+      call<void>({ type: "exec", sql, bind }).then(() => undefined),
+    select: (sql, bind) =>
+      call<{ rows: Record<string, unknown>[]; columns: string[] }>({
+        type: "select",
+        sql,
+        bind,
+      }),
+    selectOne: (sql, bind) =>
+      call<Record<string, unknown> | null>({ type: "selectOne", sql, bind }),
+    close: () => call<void>({ type: "close" }),
+    terminate: () => {
+      workerSingleton?.terminate();
+      workerSingleton = null;
+      rpcSingleton = null;
+    },
+  };
+
+  return rpcSingleton;
 }
+
+// ── Storage implementation ────────────────────────────────────────────
 
 const DB_FILE = "/risuai-local.sqlite3";
 
 export class WebSqliteStorage implements ISqlStorage {
   readonly backendKind = "web-sqlite" as const;
 
-  private db: SqliteDb | null = null;
   private revision = 0;
   private initialized = false;
   private initPromise: Promise<boolean> | null = null;
   private readonly writeQueue = new AsyncSerialQueue();
   private _enabled = false;
+  private rpc: WorkerRpc | null = null;
 
   isEnabled(): boolean {
     return this._enabled;
@@ -132,42 +194,15 @@ export class WebSqliteStorage implements ISqlStorage {
 
   private async initialize(): Promise<boolean> {
     try {
-      const sqlite3 = await getSqlite3();
-      if (!("opfs" in sqlite3)) throw new Error("OPFS not available");
-      this.db = new sqlite3.oo1.OpfsDb(DB_FILE);
-      const existingMeta = this.selectRows(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'system_storage_meta'",
-      );
-      if (existingMeta.length) {
-        const meta = this.selectOne(
-          "SELECT schema_version, schema_layout FROM system_storage_meta WHERE singleton = 1",
-        );
-        if (
-          Number(meta?.schema_version) !== SQLITE_SCHEMA_VERSION ||
-          meta?.schema_layout !== RELATIONAL_SCHEMA_LAYOUT
-        ) {
-          throw new SqlSchemaResetRequiredError(
-            meta?.schema_version,
-            meta?.schema_layout,
-          );
-        }
-      }
-      this.db.exec(sqliteSchemaSql);
-      const rows = this.selectRows(
-        "SELECT initialized, revision FROM system_storage_meta WHERE singleton = 1",
-      );
-      if (rows.length > 0) this.revision = Number(rows[0].revision) || 0;
-      this._enabled = true;
+      const rpc = getWorkerRpc();
+      this.rpc = rpc;
+      const result = await rpc.init();
+      this._enabled = result.enabled;
+      this.revision = result.revision;
       this.initialized = true;
-      return true;
+      return result.enabled;
     } catch (error) {
       console.error("WebSqliteStorage init failed:", error);
-      try {
-        this.db?.close();
-      } catch {
-        // Ignore cleanup failures and preserve the initialization error.
-      }
-      this.db = null;
       this.initialized = true;
       this._enabled = false;
       if (error instanceof SqlSchemaResetRequiredError) throw error;
@@ -175,56 +210,33 @@ export class WebSqliteStorage implements ISqlStorage {
     }
   }
 
-  private selectRows(
+  private async selectRows(
     sql: string,
     bind: unknown[] = [],
-  ): Record<string, unknown>[] {
-    if (!this.db) throw new Error("Database not opened");
-    const stmt = this.db.prepare(sql);
-    try {
-      if (bind.length > 0) stmt.bind(bind);
-      const results: Record<string, unknown>[] = [];
-      const cols = stmt.columnNames;
-      while (stmt.step()) {
-        const row = stmt.get() as unknown[];
-        const obj: Record<string, unknown> = {};
-        for (let i = 0; i < cols.length; i++) obj[cols[i]] = row[i];
-        results.push(obj);
-      }
-      return results;
-    } finally {
-      stmt.finalize();
-    }
+  ): Promise<Record<string, unknown>[]> {
+    if (!this.rpc) throw new Error("Database not opened");
+    return (await this.rpc.select(sql, bind)).rows;
   }
 
-  private selectOne(
+  private async selectOne(
     sql: string,
     bind: unknown[] = [],
-  ): Record<string, unknown> | null {
-    return this.selectRows(sql, bind)[0] ?? null;
+  ): Promise<Record<string, unknown> | null> {
+    if (!this.rpc) throw new Error("Database not opened");
+    return this.rpc.selectOne(sql, bind);
   }
 
-  private run(sql: string, bind: unknown[] = []): void {
-    if (!this.db) throw new Error("Database not opened");
-    if (bind.length === 0) {
-      this.db.exec(sql);
-    } else {
-      const stmt = this.db.prepare(sql);
-      try {
-        stmt.bind(bind);
-        stmt.step();
-      } finally {
-        stmt.finalize();
-      }
-    }
+  private async run(sql: string, bind: unknown[] = []): Promise<void> {
+    if (!this.rpc) throw new Error("Database not opened");
+    await this.rpc.exec(sql, bind);
   }
 
-  private loadNodeValue(
+  private async loadNodeValue(
     table: string,
     ownerWhere: string,
     bind: unknown[],
-  ): unknown {
-    const rows = this.selectRows(
+  ): Promise<unknown> {
+    const rows = await this.selectRows(
       `SELECT node_id, parent_node_id, node_order, object_key,
             object_key_encoded, value_type, text_value, encoded_text_value, number_value,
             boolean_value FROM ${table} WHERE ${ownerWhere} ORDER BY node_id`,
@@ -233,16 +245,18 @@ export class WebSqliteStorage implements ISqlStorage {
     return rows.length ? rebuildRelationalValue(rows) : undefined;
   }
 
-  private loadSettingValue(key: string): unknown {
+  private async loadSettingValue(key: string): Promise<unknown> {
     return this.loadNodeValue("setting_extension_nodes", "setting_key = ?", [
       key,
     ]);
   }
 
-  private validatePresetCommit(commit: SqlCommit): void {
+  private async validatePresetCommit(commit: SqlCommit): Promise<void> {
     if (!commit.presets) return;
-    const originalIds = this.selectRows(
-      "SELECT preset_id FROM bot_presets ORDER BY position",
+    const originalIds = (
+      await this.selectRows(
+        "SELECT preset_id FROM bot_presets ORDER BY position",
+      )
     ).map((row) => row.preset_id as string);
     const ids = new Set(originalIds);
     if (commit.replaceAll) ids.clear();
@@ -263,8 +277,9 @@ export class WebSqliteStorage implements ISqlStorage {
     )
       throw new Error("Active bot preset does not exist");
     if (commit.presets.activeId === undefined) {
-      const current = this.loadSettingValue("activeBotPresetId") as
-        string | undefined;
+      const current = (await this.loadSettingValue("activeBotPresetId")) as
+        | string
+        | undefined;
       if (!current || !ids.has(current)) {
         const index = originalIds.indexOf(current ?? "");
         commit.presets.activeId =
@@ -288,9 +303,11 @@ export class WebSqliteStorage implements ISqlStorage {
     const shallow = options?.shallow !== false;
     const db: Database = {} as any;
 
-    const settingsRows = this.selectRows("SELECT key FROM system_settings");
+    const settingsRows = await this.selectRows("SELECT key FROM system_settings");
     for (const row of settingsRows) {
-      (db as any)[row.key as string] = this.loadSettingValue(row.key as string);
+      (db as any)[row.key as string] = await this.loadSettingValue(
+        row.key as string,
+      );
     }
 
     // Also merge plugin_custom_storage table if present
@@ -298,7 +315,7 @@ export class WebSqliteStorage implements ISqlStorage {
       !db.pluginCustomStorage ||
       Object.keys(db.pluginCustomStorage).length === 0
     ) {
-      const pluginStorageRows = this.selectRows(
+      const pluginStorageRows = await this.selectRows(
         "SELECT key, value FROM plugin_custom_storage",
       );
       if (pluginStorageRows.length > 0) {
@@ -316,7 +333,7 @@ export class WebSqliteStorage implements ISqlStorage {
     }
     db.pluginCustomStorage ??= {};
 
-    const charRows = this.selectRows(
+    const charRows = await this.selectRows(
       "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
     );
     const characters: (character | groupChat)[] = [];
@@ -336,24 +353,24 @@ export class WebSqliteStorage implements ISqlStorage {
           chatPage: 0,
         } as any);
       } else {
-        const fullChar = (this.loadNodeValue(
+        const fullChar = ((await this.loadNodeValue(
           "character_extension_nodes",
           "character_id = ?",
           [row.id],
-        ) ?? {}) as any;
+        )) ?? {}) as any;
         fullChar.chaId = row.id;
         fullChar.detailsLoaded = true;
-        const chatRows = this.selectRows(
+        const chatRows = await this.selectRows(
           "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
           [row.id],
         );
         const chats: Chat[] = [];
         for (const cr of chatRows) {
-          const cd = (this.loadNodeValue(
+          const cd = ((await this.loadNodeValue(
             "chat_extension_nodes",
             "chat_id = ?",
             [cr.id],
-          ) ?? {}) as any;
+          )) ?? {}) as any;
           cd.id = cr.id;
           cd.name = (cr.name as string) ?? "";
           cd.note = (cr.note as string) ?? "";
@@ -370,7 +387,7 @@ export class WebSqliteStorage implements ISqlStorage {
     }
     db.characters = characters;
 
-    const metaRow = this.selectOne(
+    const metaRow = await this.selectOne(
       "SELECT initialized FROM system_storage_meta WHERE singleton = 1",
     );
     const isInit =
@@ -396,40 +413,42 @@ export class WebSqliteStorage implements ISqlStorage {
     return this.writeQueue.run(() => this.commitInternal(commit));
   }
 
-  private async commitInternal(commit: SqlCommit): Promise<SqlCommitResult> {
+  private async commitInternal(
+    commit: SqlCommit,
+  ): Promise<SqlCommitResult> {
     if (!this._enabled) throw new Error("SQLite storage is not enabled");
-    this.run("BEGIN IMMEDIATE");
+    await this.run("BEGIN IMMEDIATE");
     try {
-      const meta = this.selectOne(
+      const meta = await this.selectOne(
         "SELECT revision FROM system_storage_meta WHERE singleton = 1",
       );
       const currentRevision = Number(meta?.revision) || 0;
       if (commit.baseRevision !== currentRevision)
         throw new SqlRevisionConflictError(currentRevision);
-      this.validatePresetCommit(commit);
+      await this.validatePresetCommit(commit);
       if (commit.replaceAll) {
-        this.run("DELETE FROM system_settings");
-        this.run("DELETE FROM plugin_custom_storage");
-        this.run("DELETE FROM characters");
+        await this.run("DELETE FROM system_settings");
+        await this.run("DELETE FROM plugin_custom_storage");
+        await this.run("DELETE FROM characters");
       }
       await applySqliteCommit(commit, (sql, bind = []) => this.run(sql, bind));
       const revision = currentRevision + 1;
-      this.run(
+      await this.run(
         "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
         [revision],
       );
       const action =
         commit.action || (commit.replaceAll ? "replace-all" : "sync");
-      this.run(
+      await this.run(
         "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
         [revision, action],
       );
-      this.run("COMMIT");
+      await this.run("COMMIT");
       this.revision = revision;
       return { revision };
     } catch (error) {
       try {
-        this.run("ROLLBACK");
+        await this.run("ROLLBACK");
       } catch {
         // Preserve the original transaction error.
       }
@@ -449,26 +468,28 @@ export class WebSqliteStorage implements ISqlStorage {
   async loadCharacter(
     characterId: string,
   ): Promise<character | groupChat | null> {
-    const row = this.selectOne("SELECT id FROM characters WHERE id = ?", [
+    const row = await this.selectOne("SELECT id FROM characters WHERE id = ?", [
       characterId,
     ]);
     if (!row) return null;
-    const fc = (this.loadNodeValue(
+    const fc = ((await this.loadNodeValue(
       "character_extension_nodes",
       "character_id = ?",
       [characterId],
-    ) ?? {}) as any;
+    )) ?? {}) as any;
     fc.chaId = characterId;
     fc.detailsLoaded = true;
-    const cr = this.selectRows(
+    const cr = await this.selectRows(
       "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
       [characterId],
     );
     const chats: Chat[] = [];
     for (const r of cr) {
-      const cd = (this.loadNodeValue("chat_extension_nodes", "chat_id = ?", [
-        r.id,
-      ]) ?? {}) as any;
+      const cd = ((await this.loadNodeValue(
+        "chat_extension_nodes",
+        "chat_id = ?",
+        [r.id],
+      )) ?? {}) as any;
       cd.id = r.id;
       cd.name = (r.name as string) ?? "";
       cd.note = (r.note as string) ?? "";
@@ -487,20 +508,22 @@ export class WebSqliteStorage implements ISqlStorage {
     chatId: string,
     options?: { messageLimit?: number },
   ): Promise<Chat | null> {
-    const cr = this.selectOne(
+    const cr = await this.selectOne(
       "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
       [chatId],
     );
     if (!cr) return null;
-    const cd = (this.loadNodeValue("chat_extension_nodes", "chat_id = ?", [
-      chatId,
-    ]) ?? {}) as any;
+    const cd = ((await this.loadNodeValue(
+      "chat_extension_nodes",
+      "chat_id = ?",
+      [chatId],
+    )) ?? {}) as any;
     cd.id = cr.id;
     cd.name = (cr.name as string) ?? "";
     cd.note = (cr.note as string) ?? "";
     cd.folderId = (cr.folder_id as string) ?? undefined;
     cd.lastDate = (cr.last_message_time as number) ?? undefined;
-    const totalRow = this.selectOne(
+    const totalRow = await this.selectOne(
       "SELECT COUNT(*) AS total FROM messages WHERE chat_id = ?",
       [chatId],
     );
@@ -513,21 +536,24 @@ export class WebSqliteStorage implements ISqlStorage {
     const offset = limit === undefined ? 0 : Math.max(0, total - limit);
     const mr =
       limit === undefined
-        ? this.selectRows(
+        ? await this.selectRows(
             "SELECT id FROM messages WHERE chat_id = ? ORDER BY position",
             [chatId],
           )
-        : this.selectRows(
+        : await this.selectRows(
             "SELECT id FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?",
             [chatId, limit, offset],
           );
-    cd.message = mr.map((r) =>
-      this.loadNodeValue(
-        "message_extension_nodes",
-        "chat_id = ? AND message_id = ?",
-        [chatId, r.id],
-      ),
-    );
+    cd.message = [];
+    for (const r of mr) {
+      cd.message.push(
+        await this.loadNodeValue(
+          "message_extension_nodes",
+          "chat_id = ? AND message_id = ?",
+          [chatId, r.id],
+        ),
+      );
+    }
     cd.messageOffset = offset;
     cd.messageTotal = total;
     cd.messagesFullyLoaded = offset === 0;
@@ -537,17 +563,21 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   async loadChatMessages(chatId: string): Promise<Message[]> {
-    return this.selectRows(
+    const rows = await this.selectRows(
       "SELECT id FROM messages WHERE chat_id = ? ORDER BY position",
       [chatId],
-    ).map(
-      (r) =>
-        this.loadNodeValue(
+    );
+    const messages: Message[] = [];
+    for (const r of rows) {
+      messages.push(
+        (await this.loadNodeValue(
           "message_extension_nodes",
           "chat_id = ? AND message_id = ?",
           [chatId, r.id],
-        ) as Message,
-    );
+        )) as Message,
+      );
+    }
+    return messages;
   }
 
   async loadChatMessagePage(
@@ -555,7 +585,7 @@ export class WebSqliteStorage implements ISqlStorage {
     before: number | undefined,
     limit: number,
   ) {
-    const totalRow = this.selectOne(
+    const totalRow = await this.selectOne(
       "SELECT COUNT(*) AS total FROM messages WHERE chat_id = ?",
       [chatId],
     );
@@ -563,19 +593,22 @@ export class WebSqliteStorage implements ISqlStorage {
     const end = normalizeSqlitePageEnd(before, total);
     const normalizedLimit = normalizeSqliteLimit(limit);
     const offset = Math.max(0, end - normalizedLimit);
-    const rows = this.selectRows(
+    const rows = await this.selectRows(
       "SELECT id FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?",
       [chatId, end - offset, offset],
     );
+    const messages: Message[] = [];
+    for (const row of rows) {
+      messages.push(
+        (await this.loadNodeValue(
+          "message_extension_nodes",
+          "chat_id = ? AND message_id = ?",
+          [chatId, row.id],
+        )) as Message,
+      );
+    }
     return {
-      messages: rows.map(
-        (row) =>
-          this.loadNodeValue(
-            "message_extension_nodes",
-            "chat_id = ? AND message_id = ?",
-            [chatId, row.id],
-          ) as Message,
-      ),
+      messages,
       offset,
       total,
       hasMore: offset > 0,
@@ -584,12 +617,16 @@ export class WebSqliteStorage implements ISqlStorage {
 
   async loadPersonas(): Promise<RisuPersona[]> {
     return (
-      (this.loadSettingValue("personas") as RisuPersona[] | undefined) ?? []
+      ((await this.loadSettingValue("personas")) as
+        | RisuPersona[]
+        | undefined) ?? []
     );
   }
   async listBotPresets(): Promise<BotPresetSummary[]> {
-    return this.selectRows(
-      "SELECT preset_id, position, name, image, api_type, ai_model, content_hash FROM bot_presets ORDER BY position",
+    return (
+      await this.selectRows(
+        "SELECT preset_id, position, name, image, api_type, ai_model, content_hash FROM bot_presets ORDER BY position",
+      )
     ).map((row) => ({
       id: row.preset_id as string,
       position: Number(row.position),
@@ -601,7 +638,7 @@ export class WebSqliteStorage implements ISqlStorage {
     }));
   }
   async loadBotPreset(id: string): Promise<StoredBotPreset | null> {
-    const row = this.selectOne(
+    const row = await this.selectOne(
       "SELECT data FROM bot_presets WHERE preset_id = ?",
       [id],
     );
@@ -610,34 +647,40 @@ export class WebSqliteStorage implements ISqlStorage {
   }
   async loadLorebooks(): Promise<{ name: string; data: loreBook[] }[]> {
     return (
-      (this.loadSettingValue("loreBook") as
-        { name: string; data: loreBook[] }[] | undefined) ?? []
+      ((await this.loadSettingValue("loreBook")) as
+        | { name: string; data: loreBook[] }[]
+        | undefined) ?? []
     );
   }
   async loadModules(): Promise<RisuModule[]> {
-    return (this.loadSettingValue("modules") as RisuModule[] | undefined) ?? [];
+    return (
+      ((await this.loadSettingValue("modules")) as
+        | RisuModule[]
+        | undefined) ?? []
+    );
   }
   async loadPrompts(): Promise<Record<string, any>> {
-    const rows = this.selectRows(
+    const rows = await this.selectRows(
       "SELECT key FROM system_settings WHERE domain = 'prompt'",
     );
     const p: Record<string, any> = {};
     for (const r of rows)
-      p[r.key as string] = this.loadSettingValue(r.key as string);
+      p[r.key as string] = await this.loadSettingValue(r.key as string);
     return p;
   }
   async loadScripts(): Promise<customscript[]> {
     return (
-      (this.loadSettingValue("globalscript") as customscript[] | undefined) ??
-      []
+      ((await this.loadSettingValue("globalscript")) as
+        | customscript[]
+        | undefined) ?? []
     );
   }
 
   async loadPlugins(): Promise<any[] | null> {
-    return (this.loadSettingValue("plugins") as any[] | undefined) ?? null;
+    return ((await this.loadSettingValue("plugins")) as any[] | undefined) ?? null;
   }
   async loadPluginCustomStorage(): Promise<Record<string, any> | null> {
-    const rows = this.selectRows(
+    const rows = await this.selectRows(
       "SELECT key, value FROM plugin_custom_storage",
     );
     if (rows.length === 0) return null;
@@ -653,13 +696,15 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   async listPluginCustomStorageKeys(): Promise<string[]> {
-    return this.selectRows(
-      "SELECT key FROM plugin_custom_storage ORDER BY key",
+    return (
+      await this.selectRows(
+        "SELECT key FROM plugin_custom_storage ORDER BY key",
+      )
     ).map((row) => row.key as string);
   }
 
   async loadPluginCustomStorageKey(key: string): Promise<any> {
-    const row = this.selectOne(
+    const row = await this.selectOne(
       "SELECT value FROM plugin_custom_storage WHERE key = ?",
       [key],
     );
@@ -676,7 +721,7 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   async getColdStorageItem(key: string): Promise<unknown | null> {
-    const r = this.selectOne(
+    const r = await this.selectOne(
       "SELECT archive_id FROM cold_archives WHERE archive_id = ?",
       [key],
     );
@@ -686,25 +731,25 @@ export class WebSqliteStorage implements ISqlStorage {
   }
   async listColdStorageItems(): Promise<{ items: string[] }> {
     return {
-      items: this.selectRows("SELECT archive_id FROM cold_archives").map(
-        (r) => r.archive_id as string,
-      ),
+      items: (
+        await this.selectRows("SELECT archive_id FROM cold_archives")
+      ).map((r) => r.archive_id as string),
     };
   }
   async setColdStorageItem(key: string, value: unknown): Promise<boolean> {
     return this.writeQueue.run(async () => {
-      this.run("BEGIN IMMEDIATE");
+      await this.run("BEGIN IMMEDIATE");
       try {
         await writeSqliteColdStorage(
           (sql, bind = []) => this.run(sql, bind),
           key,
           value,
         );
-        this.run("COMMIT");
+        await this.run("COMMIT");
         return true;
       } catch (error) {
         try {
-          this.run("ROLLBACK");
+          await this.run("ROLLBACK");
         } catch {
           // Preserve the original cold-storage error.
         }
@@ -716,19 +761,25 @@ export class WebSqliteStorage implements ISqlStorage {
     if (keys.length === 0) return 0;
     return this.writeQueue.run(async () => {
       const ph = keys.map(() => "?").join(",");
-      this.run(`DELETE FROM cold_archives WHERE archive_id IN (${ph})`, keys);
+      await this.run(
+        `DELETE FROM cold_archives WHERE archive_id IN (${ph})`,
+        keys,
+      );
       return keys.length;
     });
   }
   async pruneColdStorage(retainedKeys: string[]): Promise<number> {
     return this.writeQueue.run(async () => {
-      const all = this.selectRows("SELECT archive_id FROM cold_archives").map(
-        (r) => r.archive_id as string,
-      );
+      const all = (
+        await this.selectRows("SELECT archive_id FROM cold_archives")
+      ).map((r) => r.archive_id as string);
       const removed = all.filter((k) => !retainedKeys.includes(k));
       if (removed.length === 0) return 0;
       const ph = removed.map(() => "?").join(",");
-      this.run(`DELETE FROM cold_archives WHERE archive_id IN (${ph})`, removed);
+      await this.run(
+        `DELETE FROM cold_archives WHERE archive_id IN (${ph})`,
+        removed,
+      );
       return removed.length;
     });
   }
@@ -741,7 +792,7 @@ export class WebSqliteStorage implements ISqlStorage {
     const sql =
       "SELECT id, storage_revision, database_initialized, scope, action, restored_from_revision, created_at FROM system_revisions ORDER BY created_at DESC, id DESC" +
       (normalizedLimit !== undefined ? " LIMIT ?" : "");
-    const rows = this.selectRows(
+    const rows = await this.selectRows(
       sql,
       normalizedLimit !== undefined ? [normalizedLimit] : [],
     );
@@ -765,7 +816,7 @@ export class WebSqliteStorage implements ISqlStorage {
   async getRevisionDetails(
     revisionId: number,
   ): Promise<NodePostgresRevisionDetails | null> {
-    const rows = this.selectRows(
+    const rows = await this.selectRows(
       "SELECT id, storage_revision, database_initialized, scope, action, restored_from_revision, created_at FROM system_revisions WHERE id = ?",
       [revisionId],
     );
@@ -828,7 +879,7 @@ export class WebSqliteStorage implements ISqlStorage {
     scope: "all" | "active" | "cold" = "all",
     limit: number = 50,
   ): Promise<NodePostgresMessageSearchResult[]> {
-    const rows = this.selectRows(
+    const rows = await this.selectRows(
       `SELECT chat_id, id, position, role, sent_time, sender_name, content_text
              FROM messages WHERE content_text LIKE ? ORDER BY sent_time DESC LIMIT ?`,
       [`%${query}%`, normalizeSqliteLimit(limit)],
@@ -851,11 +902,13 @@ export class WebSqliteStorage implements ISqlStorage {
     });
   }
   async getTokenUsage(): Promise<NodePostgresTokenUsage[]> {
-    return this.selectRows(
-      `SELECT COALESCE(generation_model, 'unknown') AS model,
+    return (
+      await this.selectRows(
+        `SELECT COALESCE(generation_model, 'unknown') AS model,
             COUNT(*) AS message_count, COALESCE(SUM(input_tokens), 0) AS input_tokens,
             COALESCE(SUM(output_tokens), 0) AS output_tokens FROM messages
             WHERE generation_model IS NOT NULL GROUP BY generation_model`,
+      )
     ).map((row) => ({
       model: row.model as string,
       messageCount: Number(row.message_count),
@@ -864,25 +917,25 @@ export class WebSqliteStorage implements ISqlStorage {
     }));
   }
   async getBotChatStats(): Promise<NodePostgresBotChatStats[]> {
-    const chars = this.selectRows(
+    const chars = (await this.selectRows(
       "SELECT id, name, image, kind, last_interaction_time FROM characters ORDER BY position ASC",
-    ) as {
+    )) as {
       id: string;
       name: string;
       image: string | null;
       kind: string;
       last_interaction_time: number | null;
     }[];
-    const chatRows = this.selectRows(
+    const chatRows = (await this.selectRows(
       "SELECT id, character_id, last_message_time FROM chats",
-    ) as {
+    )) as {
       id: string;
       character_id: string;
       last_message_time: number | null;
     }[];
-    const msgRows = this.selectRows(
+    const msgRows = (await this.selectRows(
       "SELECT chat_id, role, sent_time, length(COALESCE(content_text, content_encoded, '')) AS content_length FROM messages",
-    ) as {
+    )) as {
       chat_id: string;
       role: string;
       sent_time: number | null;
@@ -994,7 +1047,7 @@ export class WebSqliteStorage implements ISqlStorage {
     tag: string,
     limit: number = 100,
   ): Promise<NodePostgresCharacterSearchResult[]> {
-    const rows = this.selectRows(
+    const rows = await this.selectRows(
       `SELECT DISTINCT c.id, c.name, c.image, c.kind FROM characters c
             JOIN character_tags t ON t.character_id = c.id WHERE t.tag LIKE ? LIMIT ?`,
       [`%${tag}%`, normalizeSqliteLimit(limit)],
@@ -1010,7 +1063,7 @@ export class WebSqliteStorage implements ISqlStorage {
     name: string,
     limit: number = 100,
   ): Promise<NodePostgresCharacterSearchResult[]> {
-    const rows = this.selectRows(
+    const rows = await this.selectRows(
       "SELECT id, name, image, kind FROM characters WHERE name LIKE ? LIMIT ?",
       [`%${name}%`, normalizeSqliteLimit(limit)],
     );
