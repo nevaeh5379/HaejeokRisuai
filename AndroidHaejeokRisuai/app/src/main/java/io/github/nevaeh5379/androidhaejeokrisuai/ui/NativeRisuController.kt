@@ -210,6 +210,7 @@ internal class NativeRisuController(context: Context) {
             chatPosition = chatPosition,
             messages = changedMessages(history, startTrigger.messages),
             variables = startTrigger.variables,
+            messageManifest = startTrigger.messages.map(MessageRecord::id),
         )
         overview = freshOverview.copy(revision = userRevision)
         messagePage = storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE)
@@ -268,15 +269,17 @@ internal class NativeRisuController(context: Context) {
             chatPosition = chatPosition,
             messages = changedMessages(startTrigger.messages, outputTrigger.messages),
             variables = outputTrigger.variables,
+            messageManifest = outputTrigger.messages.map(MessageRecord::id),
         )
         overview = freshOverview.copy(revision = assistantRevision)
         messagePage = storage.loadChatMessagePage(chat.id, before = null, limit = PAGE_SIZE)
     }
 
     private fun changedMessages(before: List<MessageRecord>, after: List<MessageRecord>): List<PositionedMessage> {
-        val previous = before.associateBy(MessageRecord::id)
+        val previous = before.mapIndexed { index, message -> message.id to (index to message) }.toMap()
         return after.mapIndexedNotNull { index, message ->
-            if (previous[message.id] != message) PositionedMessage(index, message) else null
+            val old = previous[message.id]
+            if (old == null || old.first != index || old.second != message) PositionedMessage(index, message) else null
         }
     }
 

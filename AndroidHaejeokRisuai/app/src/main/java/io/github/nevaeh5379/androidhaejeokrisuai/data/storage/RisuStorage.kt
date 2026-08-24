@@ -29,6 +29,7 @@ interface RisuStorage {
         chatPosition: Int,
         messages: List<PositionedMessage>,
         variables: Map<String, String>,
+        messageManifest: List<String>? = null,
     ): Long
     suspend fun appendMessage(chatId: String, position: Int, message: MessageRecord): Long
 }

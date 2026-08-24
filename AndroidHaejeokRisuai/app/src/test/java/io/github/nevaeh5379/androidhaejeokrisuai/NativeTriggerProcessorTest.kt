@@ -76,4 +76,25 @@ class NativeTriggerProcessorTest {
         assertEquals("yes", result.variables["nested"])
         assertTrue(result.stopSending)
     }
+
+    @Test
+    fun cutChatUsesJavascriptSliceSemanticsIncludingNegativeIndexes() {
+        val messages = (0..4).map { index ->
+            MessageRecord("m$index", "chat", if (index % 2 == 0) "user" else "char", "message-$index")
+        }
+        val trigger = TriggerScript(
+            comment = "trim",
+            type = "input",
+            effects = listOf(mapOf("type" to "cutchat", "start" to "-3", "end" to "-1")),
+        )
+        val result = NativeTriggerProcessor.run(
+            mode = "input",
+            settings = settings,
+            character = CharacterProfile("c", "Lua", triggerScripts = listOf(trigger)),
+            messages = messages,
+            variables = emptyMap(),
+            chatId = "chat",
+        )
+        assertEquals(listOf("m2", "m3"), result.messages.map(MessageRecord::id))
+    }
 }

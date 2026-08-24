@@ -100,6 +100,14 @@ object NativeTriggerProcessor {
                             working[index] = working[index].copy(data = parse(effect["value"]))
                         }
                     }
+                    "cutchat" -> {
+                        val size = working.size
+                        val start = sliceIndex(parse(effect["start"]), size)
+                        val end = sliceIndex(parse(effect["end"]), size)
+                        val sliced = if (start < end) working.subList(start, end).toList() else emptyList()
+                        working.clear()
+                        working += sliced
+                    }
                     "stop", "v2StopPromptSending" -> stop = true
                     "runtrigger" -> if (recursion < MAX_RECURSION) {
                         val nested = run(
@@ -121,7 +129,6 @@ object NativeTriggerProcessor {
                         prompt = nested.promptInjection
                         stop = nested.stopSending
                     }
-                    // cutchat needs message deletion/reindex persistence and is handled in the next storage stage.
                 }
             }
         }
@@ -171,6 +178,17 @@ object NativeTriggerProcessor {
             if (!matched) return false
         }
         return true
+    }
+
+    private fun sliceIndex(value: String, size: Int): Int {
+        val number = if (value.isBlank()) 0.0 else value.toDoubleOrNull() ?: 0.0
+        val integer = when {
+            number.isNaN() -> 0
+            number >= Int.MAX_VALUE -> Int.MAX_VALUE
+            number <= Int.MIN_VALUE -> Int.MIN_VALUE
+            else -> number.toInt()
+        }
+        return if (integer < 0) (size + integer).coerceAtLeast(0) else integer.coerceAtMost(size)
     }
 
     private fun number(value: String): Double = value.toDoubleOrNull() ?: Double.NaN

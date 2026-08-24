@@ -304,6 +304,7 @@ class RemoteRisuStorage(
         chatPosition: Int,
         messages: List<PositionedMessage>,
         variables: Map<String, String>,
+        messageManifest: List<String>?,
     ): Long = withContext(Dispatchers.IO) {
         val chat = JSONObject(
             request("GET", "/api/database-v2/chats/${encodePath(chatId)}?messageLimit=0"),
@@ -350,7 +351,12 @@ class RemoteRisuStorage(
             )
             .put("chatManifests", JSONArray())
             .put("messages", messageUpserts)
-            .put("messageManifests", JSONArray())
+            .put(
+                "messageManifests",
+                if (messageManifest == null) JSONArray() else JSONArray().put(
+                    JSONObject().put("chatId", chatId).put("ids", JSONArray(messageManifest)),
+                ),
+            )
         val response = JSONObject(request("POST", "/api/database-v2/commit", commit.toString()))
         revision = response.optLong("revision", revision + 1)
         revision

@@ -388,6 +388,7 @@ class LocalRisuStorage(context: Context) : RisuStorage {
         chatPosition: Int,
         messages: List<PositionedMessage>,
         variables: Map<String, String>,
+        messageManifest: List<String>?,
     ): Long = withContext(Dispatchers.IO) {
         val db = helper.writableDatabase
         db.beginTransaction()
@@ -415,16 +416,29 @@ class LocalRisuStorage(context: Context) : RisuStorage {
             db.delete("chat_extension_nodes", "chat_id = ?", arrayOf(chatId))
             RelationalNodeCodec.flatten(chatData).forEach { row -> insertChatNode(db, chatId, row) }
 
+            if (messageManifest != null) {
+                if (messageManifest.isEmpty()) {
+                    db.delete("messages", "chat_id = ?", arrayOf(chatId))
+                } else {
+                    val placeholders = messageManifest.joinToString(",") { "?" }
+                    db.delete(
+                        "messages",
+                        "chat_id = ? AND id NOT IN ($placeholders)",
+                        (listOf(chatId) + messageManifest).toTypedArray(),
+                    )
+                }
+            }
             messages.forEach { positioned ->
                 writeMessage(db, chatId, positioned.position, positioned.message)
             }
-            val latest = messages.maxByOrNull(PositionedMessage::position)?.message
-            if (latest != null) {
-                db.execSQL(
-                    "UPDATE chats SET last_message_time = ?, updated_at = datetime('now') WHERE id = ?",
-                    arrayOf<Any?>(latest.time, chatId),
-                )
-            }
+            val latestTime = db.rawQuery(
+                "SELECT sent_time FROM messages WHERE chat_id = ? ORDER BY position DESC LIMIT 1",
+                arrayOf(chatId),
+            ).use { cursor -> if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null }
+            db.execSQL(
+                "UPDATE chats SET last_message_time = ?, updated_at = datetime('now') WHERE id = ?",
+                arrayOf<Any?>(latestTime, chatId),
+            )
 
             val nextRevision = revision + 1
             db.execSQL(
