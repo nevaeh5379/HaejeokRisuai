@@ -39,6 +39,7 @@ export interface alertData {
   datalist?: [string, string][];
   stackTrace?: string;
   defaultValue?: string;
+  mascot?: "help" | "backup";
 }
 
 type AlertGenerationInfoStoreData = {
@@ -169,10 +170,11 @@ export async function alertErrorWait(msg: string) {
   await waitAlert();
 }
 
-export function alertMd(msg: string) {
+export function alertMd(msg: string, mascot?: "help") {
   alertStoreImported.set({
     type: "markdown",
     msg: msg,
+    mascot,
   });
 }
 
@@ -199,7 +201,11 @@ export function alertWait(msg: string) {
   });
 }
 
-export function alertProgress(msg: string, progress: number | string) {
+export function alertProgress(
+  msg: string,
+  progress: number | string,
+  mascot?: "backup",
+) {
   const percentStr =
     typeof progress === "number"
       ? Math.min(100, Math.max(0, progress)).toFixed(1)
@@ -208,6 +214,7 @@ export function alertProgress(msg: string, progress: number | string) {
     type: "progress",
     msg: msg,
     submsg: percentStr,
+    mascot,
   });
 }
 

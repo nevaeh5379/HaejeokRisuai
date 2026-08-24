@@ -12,7 +12,7 @@ import {
   alertWait,
   alertMd,
   alertConfirm,
-  alertProgress,
+  alertProgress as showProgressAlert,
   alertClear,
 } from "../alert";
 import { LocalWriter, forageStorage } from "../globalApi.svelte";
@@ -51,6 +51,9 @@ import {
 import { getSqlStorage } from "../storage/sqlStorageFactory";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import { decryptLegacyAccountBackup } from "./legacyBackupEncryption";
+
+const alertProgress = (msg: string, progress: number | string) =>
+  showProgressAlert(msg, progress, "backup");
 
 const SQL_DOMAIN_ROOT_KEYS: Record<
   (typeof POSTGRES_DOMAINS)[number],

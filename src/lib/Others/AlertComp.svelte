@@ -5,7 +5,7 @@
     import { getCharImage } from '../../ts/characters';
     import { ParseMarkdown } from '../../ts/parser/parser.svelte';
     import BarIcon from '../SideBars/BarIcon.svelte';
-    import { ChevronRightIcon, User } from '@lucide/svelte';
+    import { ChevronRightIcon, DatabaseBackupIcon, User } from '@lucide/svelte';
     import { isCharacterHasAssets } from 'src/ts/characterCards';
     import TextInput from '../UI/GUI/TextInput.svelte';
     import { aiLawApplies, openURL, getFetchLogs } from 'src/ts/globalApi.svelte';
@@ -23,6 +23,7 @@
     import ModuleChatMenu from "../Setting/Pages/Module/ModuleChatMenu.svelte";
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme";
     import Help from "./Help.svelte";
+    import AirisuMascot from "../UI/AirisuMascot.svelte";
     import { getChatBranches } from "src/ts/gui/branches";
     import { getCurrentCharacter } from "src/ts/storage/database.svelte";
     import { translateStackTrace } from "../../ts/sourcemap";
@@ -63,6 +64,10 @@
         }
 
         return lines.join('\n')
+    });
+    const progressPercent = $derived.by(() => {
+        const value = Number.parseFloat($alertStore.submsg ?? '0')
+        return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0
     });
 
     let btn
@@ -186,7 +191,10 @@
     <div class="absolute w-full h-full z-50 bg-black/50 flex justify-center items-center" class:vis={ $alertStore.type === 'wait2'}>
         <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl  max-h-full overflow-y-auto">
             {#if $alertStore.type === 'error'}
-                <h2 class="text-red-700 mt-0 mb-2 w-40 max-w-full">Error</h2>
+                <div class="mb-3 flex items-center gap-3 border-b border-draculared/20 pb-3">
+                    <AirisuMascot variant="error" className="h-20 w-20 shrink-0 drop-shadow-md" />
+                    <h2 class="m-0 text-xl font-bold text-draculared">Error</h2>
+                </div>
             {:else if $alertStore.type === 'ask'}
                 <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">Confirm</h2>
             {:else if $alertStore.type === 'pluginconfirm'}
@@ -197,6 +205,11 @@
                 <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">Input</h2>
             {/if}
             {#if $alertStore.type === 'markdown'}
+                {#if $alertStore.mascot === 'help'}
+                    <div class="mb-3 flex justify-center border-b border-darkborderc/60 pb-3">
+                        <AirisuMascot variant="help" className="h-28 w-28 drop-shadow-md" />
+                    </div>
+                {/if}
                 <div class="overflow-y-auto">
                     <span class="text-gray-300 chattext prose chattext2" class:prose-invert={$ColorSchemeTypeStore}>
                         {#await ParseMarkdown($alertStore.msg) then msg}
@@ -292,11 +305,31 @@
                 {/if}
             {/if}
             {#if $alertStore.type === 'progress'}
-                <div class="w-full min-w-64 md:min-w-138 h-2 bg-darkbg border border-darkborderc rounded-md mt-6">
-                    <div class="h-full bg-linear-to-r from-blue-500 to-purple-800 saving-animation transition-[width]" style:width={$alertStore.submsg + '%'}></div>
+                {#if $alertStore.mascot === 'backup'}
+                    <div class="mx-auto mt-3 flex items-center gap-1.5 rounded-full border border-textcolor/10 bg-textcolor/5 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-textcolor2">
+                        <DatabaseBackupIcon size={14} aria-hidden="true" />
+                        <span>LOCAL BACKUP</span>
+                    </div>
+                {/if}
+                <div class="relative mt-4 h-24 w-full min-w-64 md:min-w-138" aria-hidden="true">
+                    <div
+                        class="absolute bottom-0 -translate-x-1/2 transition-[left] duration-300 ease-out"
+                        style:left={`calc(10% + ${progressPercent * 0.8}%)`}
+                    >
+                        <AirisuMascot variant="progress" decorative className="h-24 w-24 drop-shadow-md" />
+                    </div>
+                </div>
+                <div
+                    class="w-full min-w-64 md:min-w-138 h-2 bg-bgcolor border border-darkborderc rounded-full overflow-hidden"
+                    role="progressbar"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow={progressPercent}
+                >
+                    <div class="h-full bg-linear-to-r from-blue-500 to-purple-800 saving-animation transition-[width]" style:width={`${progressPercent}%`}></div>
                 </div>
                 <div class="w-full flex justify-center mt-6">
-                    <span class="text-gray-500 text-sm">{$alertStore.submsg + '%'}</span>
+                    <span class="text-textcolor2 text-sm">{progressPercent.toFixed(1) + '%'}</span>
                 </div>
             {/if}
 

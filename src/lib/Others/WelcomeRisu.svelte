@@ -36,7 +36,7 @@
     type LegacyDatabaseInfo
   } from 'src/ts/storage/migration';
   import { LoadLocalBackup, restoreLocalBackupFile } from 'src/ts/drive/backuplocal';
-  import Airisu from '../../etc/Airisu.webp';
+  import AirisuMascot from '../UI/AirisuMascot.svelte';
 
   type Stage = 'gateway' | 'migration' | 'quick-setup' | 'done';
 
@@ -407,11 +407,12 @@
     <!-- Left Column: Iris Mascot & Dialogue Companion -->
     <aside class="flex flex-col items-center md:items-start md:w-64 shrink-0 gap-3.5">
       <!-- Iris Sprite Avatar -->
-      <div class="relative w-32 h-32 md:w-44 md:h-44 rounded-2xl overflow-hidden border border-borderc bg-darkbutton shadow flex items-center justify-center">
-        <img
-          src={Airisu}
-          alt="Iris"
-          class="w-full h-full object-cover object-top"
+      <div class="relative w-36 h-36 md:w-48 md:h-48 rounded-2xl overflow-hidden border border-borderc bg-textcolor/5 shadow flex items-end justify-center p-1">
+        <AirisuMascot
+          variant="welcome"
+          alt="Airisu welcoming you to Haejeok RisuAI"
+          className="w-full h-full"
+          eager
         />
         <span class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/70 text-[10px] text-blue-300 font-semibold border border-blue-400/30 flex items-center gap-1">
           <Sparkles class="w-2.5 h-2.5 text-blue-400" />
@@ -635,8 +636,11 @@
                 onclick={() => LoadLocalBackup()}
                 class="border border-dashed rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors gap-2.5 {isDragging ? 'border-blue-400 bg-blue-500/10' : 'border-borderc bg-darkbutton/30 hover:border-blue-400/60'}"
               >
-                <div class="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                  <FileUp class="w-6 h-6" />
+                <div class="relative flex h-24 w-24 items-center justify-center">
+                  <AirisuMascot variant="progress" decorative className="h-24 w-24 drop-shadow-md" />
+                  <span class="absolute bottom-1 right-0 rounded-full border border-borderc bg-darkbg p-1.5 text-blue-400 shadow-md">
+                    <FileUp class="h-3.5 w-3.5" />
+                  </span>
                 </div>
                 <div>
                   <h3 class="font-bold text-xs md:text-sm text-textcolor">

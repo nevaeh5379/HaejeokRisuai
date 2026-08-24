@@ -9,6 +9,30 @@
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="description" content="An AI frontend for both light and core users.">
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      @keyframes airisu-preload-step {
+        0%, 100% {
+          transform: translate3d(-5px, 0, 0) rotate(-1deg);
+        }
+        50% {
+          transform: translate3d(5px, -5px, 0) rotate(1deg);
+        }
+      }
+
+      #preloading .airisu-preload {
+        width: min(11rem, 42vw);
+        height: auto;
+        animation: airisu-preload-step 0.85s ease-in-out infinite;
+        filter: drop-shadow(0 12px 14px rgb(0 0 0 / 0.28));
+        user-select: none;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #preloading .airisu-preload {
+          animation: none;
+        }
+      }
+    </style>
     <!-- <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; object-src 'none'; require-trusted-types-for 'script'; trusted-types plugin-policy;"> -->
     <title>Risuai</title>
   </head>
@@ -23,7 +47,13 @@
       </noscript>
     </div>
     <!-- Loading screen, will be removed when /src/main.ts is loaded -->
-    <div id="preloading" class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-gray-900 flex-col absolute top-0 left-0 z-50">
+    <div id="preloading" class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-bgcolor flex-col absolute top-0 left-0 z-50" aria-live="polite">
+      <img
+        src="/src/etc/airisu/progress-delivery.png"
+        alt="Airisu carrying a delivery box"
+        class="airisu-preload"
+        draggable="false"
+      />
       <div class="flex flex-row items-center">
           <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-textcolor" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>

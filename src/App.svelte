@@ -8,6 +8,7 @@
     import sendSound from './etc/send.mp3'
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
     import LazyComponent from './lib/Others/LazyComponent.svelte';
+    import AirisuMascot from './lib/UI/AirisuMascot.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
 
 
@@ -213,16 +214,15 @@
         {#if isNodeServer && $sqlConfiguredStore === false}
             <LazyComponent loader={sqlQuickSetupLoader} />
         {:else}
-            <div class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-gray-900 flex-col">
-                <div class="flex flex-row items-center">
-                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-textcolor" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                    </svg>
+            <div class="w-full h-full flex justify-center items-center text-textcolor bg-bgcolor flex-col px-6" aria-live="polite">
+                <div class="airisu-loading-step motion-reduce:animate-none">
+                    <AirisuMascot variant="progress" className="w-36 sm:w-44 drop-shadow-xl" eager />
+                </div>
+                <div class="mt-3 flex items-center gap-2 text-lg font-semibold">
+                    <span class="h-2 w-2 rounded-full bg-textcolor2 motion-safe:animate-pulse"></span>
                     <span>Loading...</span>
                 </div>
-
-                <span class="text-sm mt-2 text-textcolor2">{LoadingStatusState.text}</span>
+                <span class="text-sm mt-1.5 text-center text-textcolor2">{LoadingStatusState.text}</span>
             </div>
         {/if}
     {:else if $CustomGUISettingMenuStore}
@@ -313,3 +313,24 @@
         <LazyComponent loader={sidebarConfigLoader} />
     {/if}
 </main>
+
+<style>
+    @keyframes airisu-loading-step {
+        0%, 100% {
+            transform: translate3d(-5px, 0, 0) rotate(-1deg);
+        }
+        50% {
+            transform: translate3d(5px, -5px, 0) rotate(1deg);
+        }
+    }
+
+    .airisu-loading-step {
+        animation: airisu-loading-step 0.85s ease-in-out infinite;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .airisu-loading-step {
+            animation: none;
+        }
+    }
+</style>

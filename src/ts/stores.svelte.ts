@@ -33,6 +33,7 @@ type AlertData = {
   datalist?: [string, string][];
   stackTrace?: string;
   defaultValue?: string;
+  mascot?: "help" | "backup";
 };
 
 type PluginSafetyError = {
