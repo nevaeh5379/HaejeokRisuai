@@ -5,6 +5,11 @@ import { getDatabase } from "src/ts/storage/database.svelte";
 import { isContextModel, getContextProvider } from "./contextualEmbedding";
 import { isNodeServer } from "src/ts/platform";
 import { NodeStorage } from "src/ts/storage/nodeStorage";
+import {
+  vectorContentSignature,
+  vectorDescriptorRevision,
+  vectorTextRevision,
+} from "./vectorIndexSignature";
 
 export type HypaModel =
   | "custom"
@@ -16,14 +21,6 @@ export type HypaModel =
 export const DEFAULT_HYPA_MODEL: HypaModel = "openai3small";
 const EMBEDDING_CACHE_BATCH_SIZE = 128;
 
-function vectorContentSignature(content: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < content.length; i++) {
-    hash ^= content.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `${content.length}:${(hash >>> 0).toString(16)}`;
-}
 
 const supportedHypaModels = new Set<HypaModel>([
   "custom",
@@ -253,14 +250,28 @@ export class HypaProcesser {
     const indexId = this.getServerVectorIndexId();
     if (!indexId) return false;
 
-    const descriptors = texts.map((text, index) => ({
-      id: String(index),
-      signature: vectorContentSignature(text),
-    }));
+    const revision = vectorTextRevision(texts);
 
     try {
       const storage = forageStorage.realStorage;
-      const status = await storage.vectorIndexStatus(indexId, descriptors);
+      const revisionStatus = await storage.vectorIndexStatus(
+        indexId,
+        undefined,
+        revision,
+      );
+      if (revisionStatus.ready) {
+        this.serverIndexedContents = texts.slice();
+        return true;
+      }
+      const descriptors = texts.map((text, index) => ({
+        id: String(index),
+        signature: vectorContentSignature(text),
+      }));
+      const status = await storage.vectorIndexStatus(
+        indexId,
+        descriptors,
+        revision,
+      );
       if (status.missingIds.length > 0) {
         const missing = status.missingIds
           .map((id) => ({ id, index: Number(id) }))
@@ -325,23 +336,26 @@ export class HypaProcesser {
     }
   }
 
-  async similaritySearch(query: string) {
+  async similaritySearch(query: string, topK?: number) {
     const results = await this.similaritySearchVectorWithScore(
       (await this.getEmbeds(query))[0],
+      topK,
     );
     return results.map((result) => result[0]);
   }
 
-  async similaritySearchScored(query: string) {
+  async similaritySearchScored(query: string, topK?: number) {
     return await this.similaritySearchVectorWithScore(
       (await this.getEmbeds(query))[0],
+      topK,
     );
   }
 
   protected async similaritySearchVectorWithScore(
     query: VectorArray,
+    topK?: number,
   ): Promise<[string, number][]> {
-    const serverResult = await this.tryServerSimilaritySearch(query);
+    const serverResult = await this.tryServerSimilaritySearch(query, topK);
     if (serverResult) return serverResult;
 
     const memoryVectors = this.vectors;
@@ -353,14 +367,16 @@ export class HypaProcesser {
       }))
       .sort((a, b) => b.similarity - a.similarity);
 
-    return searches.map((search) => [
+    const ranked = searches.map((search) => [
       memoryVectors[search.index].content,
       search.similarity,
-    ]);
+    ] as [string, number]);
+    return topK ? ranked.slice(0, topK) : ranked;
   }
 
   private async tryServerSimilaritySearch(
     query: VectorArray,
+    topK?: number,
   ): Promise<[string, number][] | null> {
     if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
       return null;
@@ -371,7 +387,7 @@ export class HypaProcesser {
     try {
       const storage = forageStorage.realStorage;
       if (this.serverIndexedContents) {
-        const ranked = await storage.vectorIndexSearch(indexId, [Array.from(query)], "dot");
+        const ranked = await storage.vectorIndexSearch(indexId, [Array.from(query)], "dot", topK);
         return (ranked[0] ?? []).flatMap(([id, score]) => {
           const content = this.serverIndexedContents?.[Number(id)];
           return content ? [[content, score] as [string, number]] : [];
@@ -382,7 +398,11 @@ export class HypaProcesser {
         id: String(index),
         signature: vectorContentSignature(vector.content),
       }));
-      const status = await storage.vectorIndexStatus(indexId, descriptors);
+      const status = await storage.vectorIndexStatus(
+        indexId,
+        descriptors,
+        vectorDescriptorRevision(descriptors),
+      );
       if (status.missingIds.length > 0) {
         const missing = new Set(status.missingIds);
         await storage.vectorIndexUpsert(
@@ -400,7 +420,7 @@ export class HypaProcesser {
           ),
         );
       }
-      const ranked = await storage.vectorIndexSearch(indexId, [Array.from(query)], "dot");
+      const ranked = await storage.vectorIndexSearch(indexId, [Array.from(query)], "dot", topK);
       return (ranked[0] ?? []).flatMap(([id, score]) => {
         const vector = this.vectors[Number(id)];
         return vector ? [[vector.content, score] as [string, number]] : [];

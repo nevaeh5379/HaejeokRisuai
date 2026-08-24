@@ -259,6 +259,26 @@ describe("CharacterStore", () => {
     expect(data.chats).toBeUndefined();
   });
 
+  it("ignores message-body mutations in metadata observers", async () => {
+    const chars = [makeChar("message-only")];
+    chars[0].chats[0].message = [
+      { chatId: "msg-1", role: "char", data: "before" } as any,
+    ];
+    characterStore.init(chars, mockStorage);
+    await new Promise((r) => setTimeout(r, 30));
+
+    characterStore.select(0);
+    await new Promise((r) => setTimeout(r, 30));
+    await characterStore.flush();
+    committed.length = 0;
+
+    characterStore.characters[0].chats[0].message[0].data = "streamed update";
+    await new Promise((r) => setTimeout(r, 40));
+    await characterStore.flush();
+
+    expect(committed).toHaveLength(0);
+  });
+
   it("ignores mutations of inactive characters", async () => {
     const chars = [makeChar("a"), makeChar("b")];
     characterStore.init(chars, mockStorage);

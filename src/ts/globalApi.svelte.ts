@@ -2110,6 +2110,7 @@ export async function fetchNative(
       }
       let fetchId = fetchIndex.toString().padStart(5, "0");
       nativeFetchData[fetchId] = [];
+      let nativeFetchHead = 0;
       let resolved = false;
 
       let error = "";
@@ -2164,24 +2165,42 @@ export async function fetchNative(
 
       const tauriReadableStream = new ReadableStream<Uint8Array>({
         async start(controller) {
-          while (!resolved || nativeFetchData[fetchId].length > 0) {
-            if (nativeFetchData[fetchId].length > 0) {
-              const data = nativeFetchData[fetchId].shift();
-              if (data.type === "chunk") {
-                const chunk = Buffer.from(data.body, "base64");
-                controller.enqueue(chunk as unknown as Uint8Array);
+          try {
+            while (
+              !resolved ||
+              nativeFetchHead < (nativeFetchData[fetchId]?.length ?? 0)
+            ) {
+              const queue = nativeFetchData[fetchId];
+              if (queue && nativeFetchHead < queue.length) {
+                const data = queue[nativeFetchHead++];
+                if (data.type === "chunk") {
+                  const chunk = Buffer.from(data.body, "base64");
+                  controller.enqueue(chunk as unknown as Uint8Array);
+                }
+                if (data.type === "headers") {
+                  resHeaders = data.body;
+                  status = data.status;
+                }
+                if (data.type === "end") {
+                  resolved = true;
+                }
+
+                // Array.shift() moves every remaining chunk on each read. Keep
+                // a cursor instead and compact only occasionally so long native
+                // streams remain amortized O(n) without retaining old chunks.
+                if (nativeFetchHead >= 256 && nativeFetchHead * 2 >= queue.length) {
+                  queue.splice(0, nativeFetchHead);
+                  nativeFetchHead = 0;
+                }
               }
-              if (data.type === "headers") {
-                resHeaders = data.body;
-                status = data.status;
-              }
-              if (data.type === "end") {
-                resolved = true;
-              }
+              await sleep(10);
             }
-            await sleep(10);
+            controller.close();
+          } finally {
+            // Completed request queues previously stayed in this process-wide
+            // object forever, leaking one array per native fetch.
+            delete nativeFetchData[fetchId];
           }
-          controller.close();
         },
       });
 

@@ -486,7 +486,7 @@ export async function processScriptFull(
             `{{${type}::${bestMatchCache.get(cacheKey)}}}`,
           );
         } else if (!assetNameSet.has(assetName)) {
-          const searched = await (await getAssetProcesser()).similaritySearch(assetName);
+          const searched = await (await getAssetProcesser()).similaritySearch(assetName, 1);
           const bestMatch = searched[0];
           if (bestMatch) {
             data = data.replaceAll(match[0], `{{${type}::${bestMatch}}}`);

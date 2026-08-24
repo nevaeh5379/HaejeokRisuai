@@ -28,11 +28,25 @@ function validateIndexId(indexId) {
     }
 }
 
+function validateRevision(revision) {
+    if (typeof revision !== 'string' || revision.length === 0 || revision.length > 256) {
+        throw new TypeError('Invalid vector index revision');
+    }
+}
+
 function touchIndex(indexId, create = false) {
     validateIndexId(indexId);
     let index = indexes.get(indexId);
     if (!index && create) {
-        index = { vectors: new Map(), floatCount: 0, dimension: null, lastAccess: Date.now() };
+        index = {
+            vectors: new Map(),
+            floatCount: 0,
+            dimension: null,
+            lastAccess: Date.now(),
+            revision: null,
+            pendingRevision: null,
+            pendingSignatures: null,
+        };
         indexes.set(indexId, index);
     }
     if (index) index.lastAccess = Date.now();
@@ -51,12 +65,26 @@ function touchIndex(indexId, create = false) {
     return index;
 }
 
-function syncVectorIndex(indexId, descriptors) {
+function checkVectorIndexRevision(indexId, revision) {
+    validateRevision(revision);
+    const index = touchIndex(indexId, false);
+    return {
+        ready: Boolean(index && index.revision === revision),
+        missingIds: [],
+        size: index?.vectors.size ?? 0,
+    };
+}
+
+function syncVectorIndex(indexId, descriptors, revision = null) {
     if (!Array.isArray(descriptors)) throw new TypeError('descriptors must be an array');
     if (descriptors.length > MAX_VECTORS_PER_INDEX) throw new RangeError('Too many vectors');
+    if (revision !== null) validateRevision(revision);
     const index = touchIndex(indexId, true);
     const activeIds = new Set();
     const missingIds = [];
+    const pendingSignatures = new Map();
+
+    if (revision === null || index.revision !== revision) index.revision = null;
 
     for (const descriptor of descriptors) {
         const id = String(descriptor?.id ?? '');
@@ -64,7 +92,10 @@ function syncVectorIndex(indexId, descriptors) {
         if (!id) throw new TypeError('Vector id is required');
         activeIds.add(id);
         const existing = index.vectors.get(id);
-        if (!existing || existing.signature !== signature) missingIds.push(id);
+        if (!existing || existing.signature !== signature) {
+            missingIds.push(id);
+            pendingSignatures.set(id, signature);
+        }
     }
 
     for (const id of index.vectors.keys()) {
@@ -74,7 +105,26 @@ function syncVectorIndex(indexId, descriptors) {
         }
     }
     if (index.vectors.size === 0) index.dimension = null;
-    return { missingIds, size: index.vectors.size };
+
+    if (revision !== null) {
+        if (missingIds.length === 0) {
+            index.revision = revision;
+            index.pendingRevision = null;
+            index.pendingSignatures = null;
+        } else {
+            index.pendingRevision = revision;
+            index.pendingSignatures = pendingSignatures;
+        }
+    } else {
+        index.pendingRevision = null;
+        index.pendingSignatures = null;
+    }
+
+    return {
+        ready: revision !== null && missingIds.length === 0,
+        missingIds,
+        size: index.vectors.size,
+    };
 }
 function upsertVectorIndex(indexId, entries) {
     if (!Array.isArray(entries)) throw new TypeError('entries must be an array');
@@ -104,6 +154,15 @@ function upsertVectorIndex(indexId, entries) {
         if (nextFloatCount > MAX_FLOATS_PER_INDEX) throw new RangeError('Vector index memory limit exceeded');
         index.floatCount = nextFloatCount;
         index.vectors.set(id, { signature, embedding });
+        if (index.pendingSignatures?.get(id) === signature) {
+            index.pendingSignatures.delete(id);
+        }
+    }
+
+    if (index.pendingRevision && index.pendingSignatures?.size === 0) {
+        index.revision = index.pendingRevision;
+        index.pendingRevision = null;
+        index.pendingSignatures = null;
     }
 
     let totalFloats = Array.from(indexes.values()).reduce((sum, value) => sum + value.floatCount, 0);
@@ -139,9 +198,38 @@ function dotProduct(a, b) {
     return dot;
 }
 
-function searchVectorIndex(indexId, queries, metric = 'cosine') {
+function rankVectors(vectors, query, metric, topK) {
+    const score = (embedding) => metric === 'dot'
+        ? dotProduct(query, embedding)
+        : cosineSimilarity(query, embedding);
+
+    if (topK === null || topK >= vectors.length || topK > 64) {
+        const ranked = vectors
+            .map(([id, value]) => [id, score(value.embedding)])
+            .sort((a, b) => b[1] - a[1]);
+        return topK === null ? ranked : ranked.slice(0, topK);
+    }
+
+    // Retrieval callers usually need only 1-3 hits. Keep a tiny sorted window
+    // instead of allocating and sorting a result for every vector in the index.
+    const best = [];
+    for (const [id, value] of vectors) {
+        const candidate = [id, score(value.embedding)];
+        let insertAt = best.length;
+        while (insertAt > 0 && candidate[1] > best[insertAt - 1][1]) insertAt--;
+        if (insertAt >= topK) continue;
+        best.splice(insertAt, 0, candidate);
+        if (best.length > topK) best.pop();
+    }
+    return best;
+}
+
+function searchVectorIndex(indexId, queries, metric = 'cosine', topK = null) {
     if (!Array.isArray(queries)) throw new TypeError('queries must be an array');
     if (metric !== 'cosine' && metric !== 'dot') throw new TypeError('Invalid vector search metric');
+    if (topK !== null && (!Number.isSafeInteger(topK) || topK <= 0 || topK > MAX_VECTORS_PER_INDEX)) {
+        throw new RangeError('Invalid vector search topK');
+    }
     const index = touchIndex(indexId, false);
     if (!index) return null;
 
@@ -154,14 +242,7 @@ function searchVectorIndex(indexId, queries, metric = 'cosine') {
         if (index.dimension !== null && query.length !== index.dimension) {
             throw new RangeError('Query dimensions do not match the vector index');
         }
-        return vectors
-            .map(([id, value]) => [
-                id,
-                metric === 'dot'
-                    ? dotProduct(query, value.embedding)
-                    : cosineSimilarity(query, value.embedding),
-            ])
-            .sort((a, b) => b[1] - a[1]);
+        return rankVectors(vectors, query, metric, topK);
     });
 }
 
@@ -169,6 +250,7 @@ function clearVectorIndexes() {
     indexes.clear();
 }
 module.exports = {
+    checkVectorIndexRevision,
     syncVectorIndex,
     upsertVectorIndex,
     searchVectorIndex,

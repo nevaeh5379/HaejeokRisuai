@@ -44,7 +44,7 @@ const {
 const { normalizePageInteger, paginateMessages } = require('./messagePagination.cjs');
 const { countTokensBatch } = require('./tokenizeCount.cjs');
 const { resolveLoreEntries } = require('./loreResolve.cjs');
-const { syncVectorIndex, upsertVectorIndex, searchVectorIndex } = require('./vectorIndex.cjs');
+const { checkVectorIndexRevision, syncVectorIndex, upsertVectorIndex, searchVectorIndex } = require('./vectorIndex.cjs');
 const { matchLoreBatch } = require('./loreMatch.cjs');
 const {
     PostgresPayloadError,
@@ -3508,7 +3508,16 @@ app.post('/api/vector-index/status', authenticatedRouteLimiter, async (req, res,
     if (!await checkAuth(req, res)) return;
     try {
         const scope = await getAuthenticatedIndexScope(req);
-        res.send(syncVectorIndex(`${scope}:${req.body?.indexId}`, req.body?.descriptors));
+        const scopedIndexId = `${scope}:${req.body?.indexId}`;
+        if (!Object.prototype.hasOwnProperty.call(req.body ?? {}, 'descriptors')) {
+            res.send(checkVectorIndexRevision(scopedIndexId, req.body?.revision));
+            return;
+        }
+        res.send(syncVectorIndex(
+            scopedIndexId,
+            req.body?.descriptors,
+            req.body?.revision ?? null,
+        ));
     } catch (error) {
         if (error instanceof TypeError || error instanceof RangeError) return res.status(400).send({ error: error.message });
         next(error);
@@ -3534,6 +3543,7 @@ app.post('/api/vector-index/search', authenticatedRouteLimiter, async (req, res,
             `${scope}:${req.body?.indexId}`,
             req.body?.queries,
             req.body?.metric,
+            req.body?.topK ?? null,
         );
         if (results === null) return res.status(404).send({ error: 'Vector index not found', code: 'vector_index_missing' });
         res.send({ results });

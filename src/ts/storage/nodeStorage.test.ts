@@ -158,3 +158,72 @@ describe("NodeStorage.streamItems", () => {
     });
   });
 });
+
+
+describe("NodeStorage vector index requests", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("sends a revision-only warm status request without descriptors", async () => {
+    const { NodeStorage } = await import("./nodeStorage");
+    let requestBody: any;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+        requestBody = JSON.parse(init.body as string);
+        return new Response(
+          JSON.stringify({ ready: true, missingIds: [], size: 19000 }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    const storage = new NodeStorage();
+    vi.spyOn(storage as any, "getCachedAuth").mockResolvedValue("auth");
+    const status = await storage.vectorIndexStatus(
+      "dynamic-assets:char",
+      undefined,
+      "19000:revision",
+    );
+
+    expect(status.ready).toBe(true);
+    expect(requestBody).toEqual({
+      indexId: "dynamic-assets:char",
+      revision: "19000:revision",
+    });
+  });
+
+  it("forwards vector search topK to the server", async () => {
+    const { NodeStorage } = await import("./nodeStorage");
+    let requestBody: any;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+        requestBody = JSON.parse(init.body as string);
+        return new Response(JSON.stringify({ results: [[['a', 1]]] }), {
+          status: 200,
+        });
+      }),
+    );
+
+    const storage = new NodeStorage();
+    vi.spyOn(storage as any, "getCachedAuth").mockResolvedValue("auth");
+    const results = await storage.vectorIndexSearch(
+      "dynamic-assets:char",
+      [[1, 0]],
+      "dot",
+      1,
+    );
+
+
+    expect(results).toEqual([[['a', 1]]]);
+    expect(requestBody).toEqual({
+      indexId: "dynamic-assets:char",
+      queries: [[1, 0]],
+      metric: "dot",
+      topK: 1,
+    });
+  });
+});

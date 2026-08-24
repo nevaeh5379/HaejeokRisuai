@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 const {
+  checkVectorIndexRevision,
   syncVectorIndex,
   upsertVectorIndex,
   searchVectorIndex,
@@ -9,6 +10,33 @@ const {
 
 describe("vectorIndex", () => {
   beforeEach(() => clearVectorIndexes());
+
+  it("uses a compact revision handshake for warm indexes", () => {
+    expect(checkVectorIndexRevision("chat-revision", "rev-a").ready).toBe(false);
+
+    const status = syncVectorIndex(
+      "chat-revision",
+      [
+        { id: "a", signature: "one" },
+        { id: "b", signature: "two" },
+      ],
+      "rev-a",
+    );
+    expect(status.ready).toBe(false);
+    expect(status.missingIds).toEqual(["a", "b"]);
+
+    upsertVectorIndex("chat-revision", [
+      { id: "a", signature: "one", embedding: [1, 0] },
+      { id: "b", signature: "two", embedding: [0, 1] },
+    ]);
+
+    expect(checkVectorIndexRevision("chat-revision", "rev-a")).toMatchObject({
+      ready: true,
+      missingIds: [],
+      size: 2,
+    });
+    expect(checkVectorIndexRevision("chat-revision", "rev-b").ready).toBe(false);
+  });
 
   it("requests missing vectors and reuses matching signatures", () => {
     expect(
@@ -42,6 +70,23 @@ describe("vectorIndex", () => {
     const result = searchVectorIndex("chat-2", [[0.9, 0.1]]);
     expect(result?.[0][0][0]).toBe("x");
     expect(result?.[0][0][1]).toBeGreaterThan(result?.[0][1][1]);
+  });
+
+  it("returns only the requested top K vectors", () => {
+    syncVectorIndex("chat-topk", [
+      { id: "a", signature: "a" },
+      { id: "b", signature: "b" },
+      { id: "c", signature: "c" },
+    ]);
+    upsertVectorIndex("chat-topk", [
+      { id: "a", signature: "a", embedding: [1, 0] },
+      { id: "b", signature: "b", embedding: [0.8, 0.2] },
+      { id: "c", signature: "c", embedding: [0, 1] },
+    ]);
+
+    const result = searchVectorIndex("chat-topk", [[1, 0]], "cosine", 2);
+    expect(result?.[0]).toHaveLength(2);
+    expect(result?.[0].map(([id]) => id)).toEqual(["a", "b"]);
   });
 
   it("supports legacy dot-product ranking separately from cosine", () => {

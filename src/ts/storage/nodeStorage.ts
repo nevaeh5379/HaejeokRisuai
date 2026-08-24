@@ -236,15 +236,31 @@ export class NodeStorage {
 
   async vectorIndexStatus(
     indexId: string,
-    descriptors: Array<{ id: string; signature: string }>,
-  ): Promise<{ missingIds: string[]; size: number }> {
+    descriptors?: Array<{ id: string; signature: string }>,
+    revision?: string,
+  ): Promise<{ ready: boolean; missingIds: string[]; size: number }> {
     const response = await fetch("/api/vector-index/status", {
       method: "POST",
-      headers: { "content-type": "application/json", "risu-auth": await this.getCachedAuth() },
-      body: JSON.stringify({ indexId, descriptors }),
+      headers: {
+        "content-type": "application/json",
+        "risu-auth": await this.getCachedAuth(),
+      },
+      body: JSON.stringify({ indexId, descriptors, revision }),
     });
-    if (!response.ok) throw new Error(`Vector index status failed (${response.status}): ${await response.text()}`);
-    return await response.json();
+    if (!response.ok) {
+      throw new Error(
+        `Vector index status failed (${response.status}): ${await response.text()}`,
+      );
+    }
+    const data = await response.json();
+    if (
+      typeof data.ready !== "boolean" ||
+      !Array.isArray(data.missingIds) ||
+      typeof data.size !== "number"
+    ) {
+      throw new Error("Vector index status returned an invalid response");
+    }
+    return data;
   }
 
   async vectorIndexUpsert(
@@ -266,11 +282,12 @@ export class NodeStorage {
     indexId: string,
     queries: number[][],
     metric: "cosine" | "dot" = "cosine",
+    topK?: number,
   ): Promise<Array<Array<[string, number]>>> {
     const response = await fetch("/api/vector-index/search", {
       method: "POST",
       headers: { "content-type": "application/json", "risu-auth": await this.getCachedAuth() },
-      body: JSON.stringify({ indexId, queries, metric }),
+      body: JSON.stringify({ indexId, queries, metric, topK }),
     });
     if (!response.ok) throw new Error(`Vector index search failed (${response.status}): ${await response.text()}`);
     const data = await response.json();

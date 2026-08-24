@@ -7,6 +7,7 @@ import { getDatabase } from "src/ts/storage/database.svelte";
 import { appendLastPath } from "src/ts/util";
 import { isNodeServer } from "src/ts/platform";
 import { NodeStorage } from "src/ts/storage/nodeStorage";
+import { vectorContentSignature, vectorDescriptorRevision } from "./vectorIndexSignature";
 
 export interface HypaProcessorV2Options {
   model?: HypaModel;
@@ -28,14 +29,6 @@ export interface EmbeddingResult<TMetadata> extends EmbeddingText<TMetadata> {
 
 export type EmbeddingVector = number[] | Float32Array;
 
-function vectorContentSignature(content: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < content.length; i++) {
-    hash ^= content.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `${content.length}:${(hash >>> 0).toString(16)}`;
-}
 
 export class HypaProcessorV2<TMetadata> {
   private static readonly LOG_PREFIX = "[HypaProcessorV2]";
@@ -365,10 +358,18 @@ export class HypaProcessorV2<TMetadata> {
       id: vector.id,
       signature: vectorContentSignature(vector.content),
     }));
+    const revision = vectorDescriptorRevision(descriptors);
 
     try {
       const storage = forageStorage.realStorage;
-      const status = await storage.vectorIndexStatus(indexId, descriptors);
+      const revisionStatus = await storage.vectorIndexStatus(
+        indexId,
+        undefined,
+        revision,
+      );
+      const status = revisionStatus.ready
+        ? revisionStatus
+        : await storage.vectorIndexStatus(indexId, descriptors, revision);
       if (status.missingIds.length > 0) {
         const missing = new Set(status.missingIds);
         await storage.vectorIndexUpsert(

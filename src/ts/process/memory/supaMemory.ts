@@ -168,6 +168,7 @@ export async function supaMemory(
         );
         const s = await hypa.similaritySearch(
           stringlizeChat(filteredChat.slice(0, 4), char?.name ?? "", false),
+          3,
         );
         hypaResult = "";
         if (s.length > 0) {
