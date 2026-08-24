@@ -44,6 +44,7 @@ object NativeTriggerProcessor {
         requestState: List<NativePromptMessage>? = null,
         displayState: String? = null,
         messageCount: Int = messages.size,
+        localLoreRaw: List<Map<String, Any?>> = emptyList(),
     ): NativeTriggerResult {
         if (character.triggerScripts.isEmpty()) {
             return NativeTriggerResult(
@@ -101,6 +102,7 @@ object NativeTriggerProcessor {
                     greetingIndex = greetingIndex,
                     inheritedStop = stop,
                     inheritedPatch = runtimePatch,
+                    localLoreRaw = localLoreRaw,
                 )
                 working.clear(); working += luaResult.messages
                 vars.clear(); vars.putAll(luaResult.variables)
@@ -146,6 +148,7 @@ object NativeTriggerProcessor {
                                 inheritedPrompt = nestedPrompt,
                                 inheritedStop = nestedStop,
                                 inheritedPatch = nestedPatch,
+                                localLoreRaw = localLoreRaw,
                             )
                         } else NativeTriggerResult(nestedMessages, nestedVars, nestedPrompt, nestedStop, nestedPatch)
                     },
@@ -227,6 +230,7 @@ object NativeTriggerProcessor {
                             inheritedPrompt = prompt,
                             inheritedStop = stop,
                             inheritedPatch = runtimePatch,
+                            localLoreRaw = localLoreRaw,
                         )
                         working.clear(); working += nested.messages
                         vars.clear(); vars.putAll(nested.variables)

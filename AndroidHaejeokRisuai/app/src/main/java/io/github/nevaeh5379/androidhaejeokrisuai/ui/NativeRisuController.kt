@@ -14,6 +14,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.PositionedMessage
 import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
+import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntriesFromValue
 import io.github.nevaeh5379.androidhaejeokrisuai.data.StorageConfig
 import io.github.nevaeh5379.androidhaejeokrisuai.data.StorageConfigStore
 import io.github.nevaeh5379.androidhaejeokrisuai.data.storage.RisuStorage
@@ -170,6 +171,7 @@ internal class NativeRisuController(context: Context) {
             chatId = chat.id,
             authorNote = chat.note,
             greetingIndex = promptContext.greetingIndex,
+            localLoreRaw = promptContext.localLoreRaw,
         )
         val inputProfile = inputTrigger.runtimePatch.applyTo(profile)
         val inputSettings = inputTrigger.runtimePatch.applyTo(freshOverview.generationSettings)
@@ -214,10 +216,14 @@ internal class NativeRisuController(context: Context) {
             authorNote = chat.note,
             greetingIndex = promptContext.greetingIndex,
             inheritedPatch = inputTrigger.runtimePatch,
+            localLoreRaw = promptContext.localLoreRaw,
         )
         val startProfile = startTrigger.runtimePatch.applyTo(profile)
         val startSettings = startTrigger.runtimePatch.applyTo(freshOverview.generationSettings)
         val startAuthorNote = startTrigger.runtimePatch.resolveAuthorNote(chat.note)
+        val startLocalLore = startTrigger.runtimePatch.localLoreRaw
+            ?.let(::loreEntriesFromValue)
+            ?: promptContext.localLore
         val chatPosition = chats.indexOfFirst { it.id == chat.id }
         require(chatPosition >= 0) { "Selected chat is missing from the character chat list" }
         val userRevision = storage.commitPreparedTurn(
@@ -238,7 +244,7 @@ internal class NativeRisuController(context: Context) {
 
         val generated = generator.generate(
             settings = startSettings,
-            character = startProfile.copy(globalLore = startProfile.globalLore + promptContext.localLore),
+            character = startProfile.copy(globalLore = startProfile.globalLore + startLocalLore),
             history = startTrigger.messages,
             authorNote = startAuthorNote,
             greetingIndex = promptContext.greetingIndex,
@@ -286,6 +292,7 @@ internal class NativeRisuController(context: Context) {
             authorNote = chat.note,
             greetingIndex = promptContext.greetingIndex,
             inheritedPatch = startTrigger.runtimePatch,
+            localLoreRaw = promptContext.localLoreRaw,
         )
         val finalSettings = outputTrigger.runtimePatch.applyTo(freshOverview.generationSettings)
         val finalAuthorNote = outputTrigger.runtimePatch.resolveAuthorNote(chat.note)

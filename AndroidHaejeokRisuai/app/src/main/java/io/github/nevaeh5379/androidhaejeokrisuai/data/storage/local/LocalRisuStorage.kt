@@ -319,6 +319,7 @@ class LocalRisuStorage(context: Context) : RisuStorage {
             ?: emptyMap()
         ChatPromptContext(
             localLore = loreEntriesFromValue(chat["localLore"]),
+            localLoreRaw = loreEntryMapsFromValue(chat["localLore"]),
             greetingIndex = (chat["fmIndex"] as? Number)?.toInt() ?: -1,
             variables = scriptState,
         )
@@ -427,6 +428,7 @@ class LocalRisuStorage(context: Context) : RisuStorage {
                 chatData["note"] = note
                 db.execSQL("UPDATE chats SET note = ? WHERE id = ?", arrayOf(note, chatId))
             }
+            runtimePatch.localLoreRaw?.let { chatData["localLore"] = it }
             db.delete("chat_extension_nodes", "chat_id = ?", arrayOf(chatId))
             RelationalNodeCodec.flatten(chatData).forEach { row -> insertChatNode(db, chatId, row) }
 

@@ -152,4 +152,46 @@ class NativeLuaTriggerEngineTest {
         assertEquals("<div>new background</div>", patched.backgroundHtml)
         assertTrue(result.runtimePatch.hasCharacterChanges)
     }
+
+    @Test
+    fun loreApisSearchLocalThenGlobalAndUpsertRawLocalLoreImmediately() {
+        val code = """
+            function onStart(id)
+                local before = getLoreBooks(id, "shared")
+                setChatVar(id, "before", tostring(#before) .. ":" .. before[1].content .. ":" .. before[2].content)
+                upsertLocalLoreBook(id, "shared", "updated {{user}}", {
+                    alwaysActive = true, insertOrder = 42, key = "alpha", secondKey = "beta", regex = true
+                })
+                local after = getLoreBooks(id, "shared")
+                setChatVar(id, "after", tostring(#after) .. ":" .. after[1].content .. ":" .. after[2].content)
+            end
+        """.trimIndent()
+        val base = character.copy(
+            globalLoreRaw = listOf(
+                mapOf("comment" to "shared", "content" to "global {{user}}", "vendor" to "global-keep"),
+            ),
+        )
+        val localRaw = listOf(
+            mapOf("comment" to "other", "content" to "untouched", "vendor" to "keep-me"),
+            mapOf("comment" to "shared", "content" to "local {{char}}", "legacy" to "replace-me"),
+        )
+        val result = NativeLuaTriggerEngine.run(
+            code = code, mode = "start", settings = settings, character = base,
+            messages = history, variables = emptyMap(), chatId = "chat", authorNote = "",
+            greetingIndex = -1, inheritedStop = false, inheritedPatch = RuntimeStatePatch(),
+            localLoreRaw = localRaw,
+        )
+        assertEquals("2:local Lua:global Alice", result.variables["before"])
+        assertEquals("2:updated Alice:global Alice", result.variables["after"])
+        val patched = result.runtimePatch.localLoreRaw!!
+        assertEquals("keep-me", patched.first()["vendor"])
+        val updated = patched.single { it["comment"] == "shared" }
+        assertEquals("updated {{user}}", updated["content"])
+        assertEquals(true, updated["alwaysActive"])
+        assertEquals(42, (updated["insertorder"] as Number).toInt())
+        assertEquals("alpha", updated["key"])
+        assertEquals("beta", updated["secondkey"])
+        assertEquals(true, updated["selective"])
+        assertEquals(true, updated["useRegex"])
+    }
 }

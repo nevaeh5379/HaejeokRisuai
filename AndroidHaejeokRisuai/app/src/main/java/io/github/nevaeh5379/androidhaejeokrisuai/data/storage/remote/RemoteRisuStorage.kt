@@ -268,8 +268,10 @@ class RemoteRisuStorage(
             ?.entries
             ?.associate { (key, value) -> key.toString().removePrefix("$") to value?.toString().orEmpty() }
             ?: emptyMap()
+        val localLoreValue = jsonValue(chat.opt("localLore"))
         ChatPromptContext(
-            localLore = loreEntriesFromValue(jsonValue(chat.opt("localLore"))),
+            localLore = loreEntriesFromValue(localLoreValue),
+            localLoreRaw = loreEntryMapsFromValue(localLoreValue),
             greetingIndex = chat.optInt("fmIndex", -1),
             variables = variables,
         )
@@ -332,6 +334,7 @@ class RemoteRisuStorage(
         ).forEach(chatData::remove)
         chatData["scriptstate"] = variables.entries.associate { (key, value) -> "$$key" to value }
         runtimePatch.authorNote?.let { chatData["note"] = it }
+        runtimePatch.localLoreRaw?.let { chatData["localLore"] = it }
 
         val characterUpserts = JSONArray()
         if (runtimePatch.hasCharacterChanges) {

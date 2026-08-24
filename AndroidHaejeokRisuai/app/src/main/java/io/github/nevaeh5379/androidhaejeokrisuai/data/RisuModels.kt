@@ -152,6 +152,7 @@ data class CharacterProfile(
 
 data class ChatPromptContext(
     val localLore: List<LoreEntry> = emptyList(),
+    val localLoreRaw: List<Map<String, Any?>> = emptyList(),
     val greetingIndex: Int = -1,
     val variables: Map<String, String> = emptyMap(),
 )
@@ -192,6 +193,7 @@ data class RuntimeStatePatch(
     val characterBackgroundHtml: String? = null,
     val replaceGlobalNote: String? = null,
     val globalLoreRaw: List<Map<String, Any?>>? = null,
+    val localLoreRaw: List<Map<String, Any?>>? = null,
     val personaPrompt: String? = null,
     val personas: List<PersonaProfile>? = null,
 ) {

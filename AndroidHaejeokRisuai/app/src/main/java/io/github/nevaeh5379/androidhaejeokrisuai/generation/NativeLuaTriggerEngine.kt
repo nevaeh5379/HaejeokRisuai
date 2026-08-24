@@ -5,6 +5,7 @@ import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
 import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
 import io.github.nevaeh5379.androidhaejeokrisuai.data.RuntimeStatePatch
 import io.github.nevaeh5379.androidhaejeokrisuai.data.effectivePersonaPrompt
+import io.github.nevaeh5379.androidhaejeokrisuai.data.loreEntryToValue
 import java.util.UUID
 import party.iroiro.luajava.JFunction
 import party.iroiro.luajava.Lua
@@ -32,6 +33,7 @@ internal object NativeLuaTriggerEngine {
         val chatId: String,
         val authorNote: String,
         val greetingIndex: Int,
+        val baseLocalLoreRaw: List<Map<String, Any?>>,
         val messages: MutableList<MessageRecord>,
         val variables: MutableMap<String, String>,
         var runtimePatch: RuntimeStatePatch,
@@ -39,6 +41,7 @@ internal object NativeLuaTriggerEngine {
     ) {
         fun settings(): GenerationSettings = runtimePatch.applyTo(baseSettings)
         fun character(): CharacterProfile = runtimePatch.applyTo(baseCharacter)
+        fun localLoreRaw(): List<Map<String, Any?>> = runtimePatch.localLoreRaw ?: baseLocalLoreRaw
         fun parserContext() = NativeRisuParserContext(
             settings = settings(),
             character = character(),
@@ -72,6 +75,7 @@ internal object NativeLuaTriggerEngine {
         greetingIndex: Int,
         inheritedStop: Boolean,
         inheritedPatch: RuntimeStatePatch,
+        localLoreRaw: List<Map<String, Any?>> = emptyList(),
     ): NativeLuaTriggerResult {
         if (code.isBlank()) {
             return NativeLuaTriggerResult(messages, variables, inheritedStop, inheritedPatch)
@@ -90,6 +94,7 @@ internal object NativeLuaTriggerEngine {
                 chatId = chatId,
                 authorNote = authorNote,
                 greetingIndex = greetingIndex,
+                baseLocalLoreRaw = localLoreRaw,
                 messages = messages.toMutableList(),
                 variables = variables.toMutableMap(),
                 runtimePatch = inheritedPatch,
@@ -291,6 +296,44 @@ internal object NativeLuaTriggerEngine {
             execution.runtimePatch = execution.runtimePatch.copy(characterBackgroundHtml = stringArg(lua, 2))
             push(lua, true)
         }
+        register(state, "getLoreBooksMain") { lua, execution ->
+            val search = stringArg(lua, 2)
+            val character = execution.character()
+            val globalRaw = character.globalLoreRaw.takeIf { it.isNotEmpty() }
+                ?: character.globalLore.map(::loreEntryToValue)
+            val found = (execution.localLoreRaw() + globalRaw).mapNotNull { raw ->
+                if (raw["comment"]?.toString().orEmpty() != search) return@mapNotNull null
+                LinkedHashMap(raw).apply {
+                    put(
+                        "content",
+                        NativeRisuParser.parse(raw["content"]?.toString().orEmpty(), execution.parserContext()),
+                    )
+                }
+            }
+            push(lua, NativeRisuParser.stringifyJson(found))
+        }
+        register(state, "upsertLocalLoreBook") { lua, execution ->
+            val name = stringArg(lua, 2)
+            val content = stringArg(lua, 3)
+            val options: Map<String, Any?> = if (lua.isTable(4)) {
+                lua.toMap(4)?.entries?.associate { (key, value) -> key.toString() to value }.orEmpty()
+            } else emptyMap()
+            val alwaysActive = optionBoolean(options["alwaysActive"], false)
+            val insertOrder = optionInt(options["insertOrder"], 100)
+            val key = options["key"]?.toString().orEmpty()
+            val secondKey = options["secondKey"]?.toString().orEmpty()
+            val regex = optionBoolean(options["regex"], false)
+            val updated = execution.localLoreRaw()
+                .filterNot { it["comment"]?.toString().orEmpty() == name }
+                .mapTo(mutableListOf<Map<String, Any?>>()) { LinkedHashMap(it) }
+            updated += linkedMapOf(
+                "alwaysActive" to alwaysActive, "comment" to name, "content" to content,
+                "insertorder" to insertOrder, "mode" to "normal", "key" to key,
+                "secondkey" to secondKey, "selective" to secondKey.isNotEmpty(), "useRegex" to regex,
+            )
+            execution.runtimePatch = execution.runtimePatch.copy(localLoreRaw = updated)
+            0
+        }
         register(state, "getCharacterLastMessage") { lua, execution ->
             push(lua, execution.messages.asReversed().firstOrNull { it.role != "user" }?.data
                 ?: execution.character().firstMessage)
@@ -316,6 +359,20 @@ internal object NativeLuaTriggerEngine {
         val value = if (lua.isInteger(index)) lua.toInteger(index) else lua.toNumber(index).toLong()
         return value.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt()
     }
+
+    private fun optionBoolean(value: Any?, fallback: Boolean): Boolean = when (value) {
+        is Boolean -> value
+        is Number -> value.toInt() != 0
+        is String -> when {
+            value.equals("true", ignoreCase = true) || value == "1" -> true
+            value.equals("false", ignoreCase = true) || value == "0" -> false
+            else -> fallback
+        }
+        else -> fallback
+    }
+
+    private fun optionInt(value: Any?, fallback: Int): Int =
+        (value as? Number)?.toInt() ?: value?.toString()?.toDoubleOrNull()?.toInt() ?: fallback
 
     private fun push(lua: Lua, value: String): Int {
         lua.push(value)
@@ -399,6 +456,10 @@ end
 
 function getRecentChats(id, count)
     return json.decode(getRecentChatsMain(id, count))
+end
+
+function getLoreBooks(id, search)
+    return json.decode(getLoreBooksMain(id, search))
 end
 
 function setFullChat(id, value)
