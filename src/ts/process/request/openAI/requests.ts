@@ -13,12 +13,12 @@ import {
   resolveOpenAIRequestEndpoint,
   resolveOpenAIRequestModel,
 } from "@risuai/chat-core/openAIProvider.cjs";
+import { prepareOpenAILogitBias } from "./biasPreparation";
 import { prepareOpenAIProviderMessages } from "./messagePreparation";
 import { interpretOpenAINonStreamingResponse } from "./nonStreamingResponse";
 import { getTranStream, wrapToolStream } from "./streamingResponse";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { LLMFlags, LLMFormat, LLMProvider } from "src/ts/model/modellist";
-import { strongBan, tokenizeNum } from "src/ts/tokenizer";
 import { getFreeOpenRouterModels } from "src/ts/model/openrouter";
 import {
   addFetchLog,
@@ -96,24 +96,7 @@ export async function requestOpenAI(
     developerRole: arg.modelInfo.flags.includes(LLMFlags.DeveloperRole),
   });
 
-  for (let i = 0; i < arg.biasString.length; i++) {
-    const bia = arg.biasString[i];
-    if (bia[0].startsWith("[[") && bia[0].endsWith("]]")) {
-      const num = parseInt(bia[0].replace("[[", "").replace("]]", ""));
-      arg.bias[num] = bia[1];
-      continue;
-    }
-
-    if (bia[1] === -101) {
-      arg.bias = await strongBan(bia[0], arg.bias);
-      continue;
-    }
-    const tokens = await tokenizeNum(bia[0]);
-
-    for (const token of tokens) {
-      arg.bias[token] = bia[1];
-    }
-  }
+  arg.bias = await prepareOpenAILogitBias(arg.biasString, arg.bias);
 
   let requestModel =
     aiModel === "reverse_proxy" || aiModel === "openrouter"
