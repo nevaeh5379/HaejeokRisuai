@@ -425,15 +425,19 @@ export async function getFileSrc(
         return "/sw/img/" + encoded;
       }
     } else {
-      const cachedUrl = browserAssetUrls.get(cacheKey);
+      const cachedUrl = options?.transient
+        ? undefined
+        : browserAssetUrls.get(cacheKey);
       if (cachedUrl) return cachedUrl;
       const raw = (await forageStorage.getItem(loc)) as unknown as Uint8Array;
       if (!raw) return "";
       const data = isThumb ? await generateClientThumbnail(raw, 128) : raw;
       const mime = isThumb ? "image/webp" : getMimeType(loc);
       const url = URL.createObjectURL(new Blob([data as any], { type: mime }));
-      browserAssetWeights.set(cacheKey, data.byteLength);
-      browserAssetUrls.set(cacheKey, url);
+      if (!options?.transient) {
+        browserAssetWeights.set(cacheKey, data.byteLength);
+        browserAssetUrls.set(cacheKey, url);
+      }
       return url;
     }
   } catch (error) {

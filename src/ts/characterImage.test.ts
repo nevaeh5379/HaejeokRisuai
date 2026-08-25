@@ -52,8 +52,10 @@ import {
   fullImageBlobCache,
   getAssetsBatch,
   getCharImagesBatch,
+  pinCharacterImageCache,
   preloadCharacterImage,
   releaseCharacterImageCache,
+  unpinCharacterImageCache,
 } from "./characterImage";
 
 describe("getAssetsBatch", () => {
@@ -163,6 +165,28 @@ describe("getCharImagesBatch", () => {
     expect(fullImageBlobCache.has("assets/full-0.png")).toBe(false);
     expect(fullImageBlobCache.has("assets/full-6.png")).toBe(true);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:full-0");
+    vi.unstubAllGlobals();
+  });
+
+  it("does not revoke pinned full-resolution blobs that are still rendered", () => {
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(), revokeObjectURL });
+    mocks.settingsState.lowSpecMode = true;
+
+    const keys = Array.from({ length: 5 }, (_, index) => `full_assets/card-${index}.png`);
+    for (const key of keys) pinCharacterImageCache(key);
+    for (const [index, key] of keys.entries()) {
+      fullImageBlobCache.set(key, `blob:pinned-${index}`);
+    }
+
+    expect(fullImageBlobCache.size).toBe(5);
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+
+    unpinCharacterImageCache(keys[0]);
+
+    expect(fullImageBlobCache.size).toBe(4);
+    expect(fullImageBlobCache.has(keys[0])).toBe(false);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:pinned-0");
     vi.unstubAllGlobals();
   });
 

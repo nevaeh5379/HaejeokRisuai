@@ -4,7 +4,12 @@
     import { ArrowLeft, StarIcon, SortAscIcon, SearchIcon } from "@lucide/svelte";
     import { getVersionString } from "src/ts/globalApi.svelte";
     import { language } from "src/lang";
-    import { getCharImagesBatch, fullImageBlobCache } from "src/ts/characterImage";
+    import {
+        getCharImagesBatch,
+        fullImageBlobCache,
+        pinCharacterImageCache,
+        unpinCharacterImageCache
+    } from "src/ts/characterImage";
     import { changeChar } from "src/ts/characters";
     import { matchCharacterKorean } from "src/ts/util/koreanSearch";
     import Title from "./Title.svelte";
@@ -16,8 +21,13 @@
     type SortMode = 'default' | 'name' | 'recent' | 'favorite'
 
     let isMounted = true
+    let pinnedImageKeys = new Set<string>()
     onDestroy(() => {
         isMounted = false
+        for (const key of pinnedImageKeys) {
+            unpinCharacterImageCache(key)
+        }
+        pinnedImageKeys.clear()
     })
 
     let sortMode = $state<SortMode>('default')
@@ -147,60 +157,80 @@
         return () => observer?.disconnect()
     })
 
-    // Preload image URLs for visible items in single high-DPI display WebP batch request
+    // Load original-resolution images for cards that are currently rendered.
+    // Pin their cache entries so LRU cleanup cannot revoke a blob URL still used by the DOM.
     $effect(() => {
         const items = visibleCharacters
-        if (settingsStore.state.hideAllImages) return
-
-        const toLoad: typeof items = []
+        const hideImages = settingsStore.state.hideAllImages
+        const nextPinnedImageKeys = new Set<string>()
+        const visibleCharacterIds = new Set<string>()
         let cacheUpdated = false
 
+        if (!hideImages) {
+            for (const { char } of items) {
+                visibleCharacterIds.add(char.chaId)
+                if (char.image) nextPinnedImageKeys.add(`full_${char.image}`)
+            }
+        }
+
+        for (const key of nextPinnedImageKeys) {
+            if (!pinnedImageKeys.has(key)) pinCharacterImageCache(key)
+        }
+        for (const key of pinnedImageKeys) {
+            if (!nextPinnedImageKeys.has(key)) unpinCharacterImageCache(key)
+        }
+        pinnedImageKeys = nextPinnedImageKeys
+
+        for (const chaId of [...imageUrlCache.keys()]) {
+            if (!visibleCharacterIds.has(chaId)) {
+                imageUrlCache.delete(chaId)
+                cacheUpdated = true
+            }
+        }
+
+        if (hideImages) {
+            if (cacheUpdated) imageUrlCache = new Map(imageUrlCache)
+            return
+        }
+
+        const toLoad: typeof items = []
         for (const item of items) {
             const { char } = item
-            if (!char.image) continue
-            if (imageUrlCache.has(char.chaId)) continue
+            if (!char.image || imageUrlCache.has(char.chaId)) continue
 
-            const cached = fullImageBlobCache.get(char.image)
+            const cached = fullImageBlobCache.get(`full_${char.image}`)
             if (cached) {
                 imageUrlCache.set(char.chaId, cached)
                 cacheUpdated = true
                 continue
             }
 
-            if (!inFlightIds.has(char.chaId)) {
-                toLoad.push(item)
-            }
+            if (!inFlightIds.has(char.chaId)) toLoad.push(item)
         }
 
-        if (cacheUpdated) {
-            imageUrlCache = new Map(imageUrlCache)
-        }
-
+        if (cacheUpdated) imageUrlCache = new Map(imageUrlCache)
         if (toLoad.length === 0) return
 
-        for (const { char } of toLoad) {
-            inFlightIds.add(char.chaId)
-        }
+        for (const { char } of toLoad) inFlightIds.add(char.chaId)
 
         const locs = toLoad.map(({ char }) => char.image)
         getCharImagesBatch(locs, { size: 'full' }).then((batchMap) => {
             for (const { char } of toLoad) {
                 inFlightIds.delete(char.chaId)
-                const src = batchMap.get(char.image) ?? null
-                imageUrlCache.set(char.chaId, src)
+                const cacheKey = `full_${char.image}`
+                if (!pinnedImageKeys.has(cacheKey)) continue
+                imageUrlCache.set(char.chaId, batchMap.get(char.image) ?? null)
             }
-            if (isMounted) {
-                imageUrlCache = new Map(imageUrlCache)
-            }
+            if (isMounted) imageUrlCache = new Map(imageUrlCache)
         }).catch((err) => {
             console.error('Failed to batch load character images', err)
             for (const { char } of toLoad) {
                 inFlightIds.delete(char.chaId)
-                imageUrlCache.set(char.chaId, null)
+                if (pinnedImageKeys.has(`full_${char.image}`)) {
+                    imageUrlCache.set(char.chaId, null)
+                }
             }
-            if (isMounted) {
-                imageUrlCache = new Map(imageUrlCache)
-            }
+            if (isMounted) imageUrlCache = new Map(imageUrlCache)
         })
     })
 
@@ -209,14 +239,8 @@
             ? charOrId
             : characterStore.characters?.find((c: any) => c.chaId === charOrId)
         if (!char?.image || settingsStore.state.hideAllImages) return null
-        if (imageUrlCache.has(char.chaId)) {
-            return imageUrlCache.get(char.chaId)
-        }
-        const cached = fullImageBlobCache.get(char.image)
-        if (cached) {
-            return cached
-        }
-        return undefined
+        if (imageUrlCache.has(char.chaId)) return imageUrlCache.get(char.chaId)
+        return fullImageBlobCache.get(`full_${char.image}`) ?? undefined
     }
 
     function toggleFavorite(index: number) {

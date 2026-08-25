@@ -7,8 +7,25 @@ import { getMimeType } from "./media/mimeType";
 // existing UI while bounding the number of decoded/object-URL resources retained
 // as users browse through many characters.
 class CharacterImageCache extends Map<string, string> {
+  private pinnedKeys = new Map<string, number>();
+
   private isFullResolutionKey(key: string): boolean {
     return !key.startsWith("thumb_") && !key.startsWith("display_");
+  }
+
+  private isPinned(key: string): boolean {
+    return (this.pinnedKeys.get(key) ?? 0) > 0;
+  }
+
+  pin(key: string): void {
+    this.pinnedKeys.set(key, (this.pinnedKeys.get(key) ?? 0) + 1);
+  }
+
+  unpin(key: string): void {
+    const count = this.pinnedKeys.get(key) ?? 0;
+    if (count <= 1) this.pinnedKeys.delete(key);
+    else this.pinnedKeys.set(key, count - 1);
+    this.trim();
   }
 
   private revokeIfUnused(value: string): void {
@@ -57,6 +74,7 @@ class CharacterImageCache extends Map<string, string> {
       [...super.values()].filter((value) => value.startsWith("blob:")),
     );
     super.clear();
+    this.pinnedKeys.clear();
     if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
       for (const url of urls) URL.revokeObjectURL(url);
     }
@@ -71,14 +89,14 @@ class CharacterImageCache extends Map<string, string> {
     }
     if (fullResolutionCount > maxFullResolution) {
       for (const key of [...super.keys()]) {
-        if (!this.isFullResolutionKey(key)) continue;
+        if (!this.isFullResolutionKey(key) || this.isPinned(key)) continue;
         this.delete(key);
         fullResolutionCount -= 1;
         if (fullResolutionCount <= maxFullResolution) break;
       }
     }
     while (this.size > maxEntries) {
-      const oldest = super.keys().next().value as string | undefined;
+      const oldest = [...super.keys()].find((key) => !this.isPinned(key));
       if (oldest === undefined) break;
       this.delete(oldest);
     }
@@ -87,6 +105,14 @@ class CharacterImageCache extends Map<string, string> {
 
 export const fullImageBlobCache = new CharacterImageCache();
 const characterImagePreloads = new Map<string, Promise<void>>();
+
+export function pinCharacterImageCache(key: string): void {
+  fullImageBlobCache.pin(key);
+}
+
+export function unpinCharacterImageCache(key: string): void {
+  fullImageBlobCache.unpin(key);
+}
 
 export function releaseCharacterImageCache(prefix: string): void {
   for (const key of [...fullImageBlobCache.keys()]) {
