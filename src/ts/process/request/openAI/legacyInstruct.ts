@@ -1,10 +1,13 @@
+import { DEFAULT_OPENAI_COMPLETIONS_URL } from "@risuai/chat-core/openAIProvider.cjs";
 import { language } from "src/lang";
 import { globalFetch } from "src/ts/globalApi.svelte";
+import { LLMFormat } from "src/ts/model/modellist";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
 } from "../request";
+import { tryExecuteNodeProviderTransport } from "../nodeProviderExecutor";
 import {
   applyAdditionalParameters,
   getAdditionalParameters,
@@ -78,15 +81,24 @@ export async function requestOpenAILegacyInstruct(
     getAdditionalParameters(arg.aiModel),
   );
 
-  const response = await globalFetch(
-    arg.customURL ?? "https://api.openai.com/v1/completions",
-    {
+  const requestURL = arg.customURL ?? DEFAULT_OPENAI_COMPLETIONS_URL;
+  const remoteTransport =
+    requestURL === DEFAULT_OPENAI_COMPLETIONS_URL &&
+    arg.modelInfo.format === LLMFormat.OpenAILegacyInstruct
+      ? await tryExecuteNodeProviderTransport(
+          LLMFormat.OpenAILegacyInstruct,
+          { body, headers },
+          arg.abortSignal,
+        )
+      : null;
+  const response =
+    remoteTransport ??
+    (await globalFetch(requestURL, {
       body,
       headers,
       chatId: arg.chatId,
       abortSignal: arg.abortSignal,
-    },
-  );
+    }));
 
   if (!response.ok) {
     return {

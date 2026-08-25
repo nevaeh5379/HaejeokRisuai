@@ -5,6 +5,7 @@ const { resolveNanoGPTTransportUrl } = require('./nanoGPTProvider.cjs');
 const DEFAULT_OPENAI_CHAT_COMPLETIONS_URL =
   'https://api.openai.com/v1/chat/completions';
 const DEFAULT_OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
+const DEFAULT_OPENAI_COMPLETIONS_URL = 'https://api.openai.com/v1/completions';
 
 function collectOpenAIToolCalls(data) {
   const collected = [];
@@ -311,6 +312,7 @@ function formatOpenAIReasoningText(data, options = {}) {
 module.exports = {
   DEFAULT_OPENAI_CHAT_COMPLETIONS_URL,
   DEFAULT_OPENAI_RESPONSES_URL,
+  DEFAULT_OPENAI_COMPLETIONS_URL,
   OPENAI_MODEL_ALIASES,
   applyOpenAIPostParameterBodyPolicies,
   applyOpenAIPreParameterBodyPolicies,

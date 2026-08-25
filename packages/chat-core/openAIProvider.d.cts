@@ -1,5 +1,6 @@
 export const DEFAULT_OPENAI_CHAT_COMPLETIONS_URL: "https://api.openai.com/v1/chat/completions";
 export const DEFAULT_OPENAI_RESPONSES_URL: "https://api.openai.com/v1/responses";
+export const DEFAULT_OPENAI_COMPLETIONS_URL: "https://api.openai.com/v1/completions";
 
 export interface OpenAIToolCallLike {
   id?: string;

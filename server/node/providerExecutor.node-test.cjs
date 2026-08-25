@@ -20,6 +20,7 @@ test('advertises only implemented provider formats and routes', () => {
     [
       LLM_FORMATS.OpenAICompatible,
       LLM_FORMATS.OpenAIResponseAPI,
+      LLM_FORMATS.OpenAILegacyInstruct,
       LLM_FORMATS.Anthropic,
       LLM_FORMATS.GoogleCloud,
       LLM_FORMATS.Cohere,
@@ -30,6 +31,7 @@ test('advertises only implemented provider formats and routes', () => {
   );
   assert.equal(executor.supportsTransport(LLM_FORMATS.OpenAICompatible), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.OpenAIResponseAPI), true);
+  assert.equal(executor.supportsTransport(LLM_FORMATS.OpenAILegacyInstruct), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.Anthropic), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.GoogleCloud), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.Cohere), true);
@@ -150,6 +152,35 @@ test('executes official OpenAI non-streaming transport without interpreting the 
   assert.equal(calls[0].options.headers['Content-Length'], undefined);
   assert.equal(calls[0].options.headers['risu-auth'], undefined);
   assert.equal(calls[0].options.signal, controller.signal);
+  assert.equal(calls[0].options.redirect, 'error');
+});
+
+test('executes official OpenAI legacy completions transport without interpreting the response', async () => {
+  const calls = [];
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ choices: [{ text: 'legacy response' }] }),
+      };
+    },
+  });
+  const result = await executor.executeTransport({
+    format: LLM_FORMATS.OpenAILegacyInstruct,
+    payload: {
+      body: { model: 'gpt-3.5-turbo-instruct', prompt: 'hello' },
+      headers: { Authorization: 'Bearer openai-key', Host: 'evil.example' },
+    },
+  });
+  assert.equal(result.handled, true);
+  assert.equal(result.response.ok, true);
+  assert.deepEqual(result.response.data, { choices: [{ text: 'legacy response' }] });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.openai.com/v1/completions');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer openai-key');
+  assert.equal(calls[0].options.headers.Host, undefined);
   assert.equal(calls[0].options.redirect, 'error');
 });
 
