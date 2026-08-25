@@ -1,0 +1,33 @@
+'use strict';
+
+const LLM_FLAGS = Object.freeze({
+  hasImageInput: 0,
+  hasImageOutput: 1,
+  hasAudioInput: 2,
+  hasAudioOutput: 3,
+  hasPrefill: 4,
+  hasCache: 5,
+  hasFullSystemPrompt: 6,
+  hasFirstSystemPrompt: 7,
+  hasStreaming: 8,
+  requiresAlternateRole: 9,
+  mustStartWithUserInput: 10,
+  poolSupported: 11,
+  hasVideoInput: 12,
+  OAICompletionTokens: 13,
+  DeveloperRole: 14,
+  geminiThinking: 15,
+  geminiBlockOff: 16,
+  deepSeekPrefix: 17,
+  deepSeekThinkingInput: 18,
+  deepSeekThinkingOutput: 19,
+  noCivilIntegrity: 20,
+  claudeThinking: 21,
+  claudeAdaptiveThinking: 22,
+  claudeXHighEffort: 23,
+  deepSeekThinkingToggle: 24,
+  noStructuredOutput: 25,
+  geminiThinkingNoMinimal: 26,
+});
+
+module.exports = { LLM_FLAGS };

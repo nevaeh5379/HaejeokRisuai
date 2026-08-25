@@ -9,5 +9,6 @@ module.exports = {
   ...require('./requestLoop.cjs'),
   ...require('./providerRouting.cjs'),
   ...require('./providerExecutor.cjs'),
+  ...require('./providerPrompt.cjs'),
   ...require('./tokenAccounting.cjs'),
 };

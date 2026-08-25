@@ -3,7 +3,6 @@ import { language } from "../../../lang";
 import { fetchNative, globalFetch } from "../../globalApi.svelte";
 import {
   getModelInfo,
-  LLMFlags,
   LLMFormat,
   type LLMModel,
 } from "../../model/modellist";
@@ -16,6 +15,7 @@ import {
 } from "../../storage/database.svelte";
 import { tokenizeNum } from "../../tokenizer";
 import { sleep } from "../../util";
+import { formatProviderMessages } from "@risuai/chat-core/providerPrompt.cjs";
 import type {
   ChatModelResponse,
   ChatStreamChunk,
@@ -219,95 +219,6 @@ function normalizeOllamaStreamResponse(response: Response): Response {
   });
 }
 
-export function reformater(
-  formated: OpenAIChat[],
-  modelInfo: LLMModel | LLMFlags[],
-) {
-  const flags = Array.isArray(modelInfo) ? modelInfo : modelInfo.flags;
-
-  const db = getDatabase();
-  let systemPrompt: OpenAIChat | null = null;
-
-  if (!flags.includes(LLMFlags.hasFullSystemPrompt)) {
-    if (flags.includes(LLMFlags.hasFirstSystemPrompt)) {
-      while (formated[0].role === "system") {
-        if (systemPrompt) {
-          systemPrompt.content += "\n\n" + formated[0].content;
-        } else {
-          systemPrompt = formated[0];
-        }
-        formated = formated.slice(1);
-      }
-    }
-
-    for (let i = 0; i < formated.length; i++) {
-      if (formated[i].role === "system") {
-        formated[i].content = db.systemContentReplacement
-          ? db.systemContentReplacement.replace("{{slot}}", formated[i].content)
-          : `system: ${formated[i].content}`;
-        formated[i].role = db.systemRoleReplacement || "user";
-      }
-    }
-  }
-
-  if (flags.includes(LLMFlags.requiresAlternateRole)) {
-    let newFormated: OpenAIChat[] = [];
-    for (let i = 0; i < formated.length; i++) {
-      const m = formated[i];
-      if (newFormated.length === 0) {
-        newFormated.push(m);
-        continue;
-      }
-
-      if (newFormated[newFormated.length - 1].role === m.role) {
-        newFormated[newFormated.length - 1].content += "\n" + m.content;
-
-        if (m.multimodals) {
-          if (!newFormated[newFormated.length - 1].multimodals) {
-            newFormated[newFormated.length - 1].multimodals = [];
-          }
-          newFormated[newFormated.length - 1].multimodals.push(
-            ...m.multimodals,
-          );
-        }
-
-        if (m.thoughts) {
-          if (!newFormated[newFormated.length - 1].thoughts) {
-            newFormated[newFormated.length - 1].thoughts = [];
-          }
-          newFormated[newFormated.length - 1].thoughts.push(...m.thoughts);
-        }
-
-        if (m.cachePoint) {
-          if (!newFormated[newFormated.length - 1].cachePoint) {
-            newFormated[newFormated.length - 1].cachePoint = true;
-          }
-        }
-
-        continue;
-      } else {
-        newFormated.push(m);
-      }
-    }
-    formated = newFormated;
-  }
-
-  if (flags.includes(LLMFlags.mustStartWithUserInput)) {
-    if (formated.length === 0 || formated[0].role !== "user") {
-      formated.unshift({
-        role: "user",
-        content: " ",
-      });
-    }
-  }
-
-  if (systemPrompt) {
-    formated.unshift(systemPrompt);
-  }
-
-  return formated;
-}
-
 const browserProviderExecutor = new BrowserProviderExecutor<RequestDataArgumentExtended>(
   {
     openai: requestOpenAI,
@@ -390,7 +301,10 @@ export async function requestChatDataMain(
 
   const format = targ.modelInfo.format;
 
-  targ.formated = reformater(targ.formated, targ.modelInfo);
+  targ.formated = formatProviderMessages(targ.formated, targ.modelInfo.flags, {
+    systemContentReplacement: db.systemContentReplacement,
+    systemRoleReplacement: db.systemRoleReplacement,
+  });
 
   return browserProviderExecutor.execute(format, targ);
 }

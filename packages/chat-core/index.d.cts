@@ -7,5 +7,6 @@ export * from "./requestPolicy.cjs";
 export * from "./requestLoop.cjs";
 export * from "./providerRouting.cjs";
 export * from "./providerExecutor.cjs";
+export * from "./providerPrompt.cjs";
 export * from "./tokenAccounting.cjs";
 export * from "./executor.cjs";
