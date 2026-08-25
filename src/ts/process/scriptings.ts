@@ -1629,12 +1629,23 @@ export async function runLuaButtonTrigger(
     const triggers =
       char.type === "group"
         ? getModuleTriggers()
-        : char.triggerscript
-            .map<triggerscript>((v) => ({
-              ...v,
-              lowLevelAccess:
-                char.type !== "simple" ? (char.lowLevelAccess ?? false) : false,
-            }))
+        : (char.triggerscript || [])
+            .map((v) => {
+              if (typeof v === "string") {
+                try {
+                  v = JSON.parse(v);
+                } catch (e) {}
+              }
+              if (!v || typeof v !== "object") {
+                return null;
+              }
+              return {
+                ...v,
+                lowLevelAccess:
+                  char.type !== "simple" ? (char.lowLevelAccess ?? false) : false,
+              } as triggerscript;
+            })
+            .filter((v): v is triggerscript => !!v)
             .concat(getModuleTriggers());
 
     for (let trigger of triggers) {

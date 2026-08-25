@@ -3,7 +3,7 @@
     import { mount, onDestroy, unmount } from 'svelte';
     import Chat from './Chat.svelte';
     import { getCharImage } from 'src/ts/characters';
-    import { createSimpleCharacter, selectedCharID, ReloadChatPointer } from 'src/ts/stores.svelte';
+    import { createSimpleCharacter, selectedCharID, ReloadChatPointer, ReloadGUIPointer } from 'src/ts/stores.svelte';
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import { chatFoldedStateMessageIndex } from 'src/ts/globalApi.svelte';
     import { get } from 'svelte/store';
@@ -56,6 +56,7 @@
         largePortrait: boolean
         disabled: Message['disabled']
         reloadPointer: number
+        guiReloadPointer: number
         hideButtons: boolean
         isComment: boolean
         activeStreaming: boolean
@@ -79,6 +80,7 @@
         left.largePortrait === right.largePortrait &&
         left.disabled === right.disabled &&
         left.reloadPointer === right.reloadPointer &&
+        left.guiReloadPointer === right.guiReloadPointer &&
         left.hideButtons === right.hideButtons &&
         left.isComment === right.isComment &&
         left.activeStreaming === right.activeStreaming &&
@@ -138,6 +140,7 @@
                 largePortrait: messageLargePortrait,
                 disabled: message.disabled,
                 reloadPointer,
+                guiReloadPointer: $ReloadGUIPointer,
                 hideButtons,
                 isComment: message.isComment ?? false,
                 activeStreaming: activeStreamingMessage,
@@ -232,7 +235,8 @@
 
     $effect(() => {
         if(!hideButtons){
-            void $ReloadChatPointer; // Make $effect track ReloadChatPointer changes
+            void $ReloadChatPointer; // Make $effect track targeted message reloads
+            void $ReloadGUIPointer; // Make global script/UI reloads invalidate every rendered message
         }
         const currentChatRoomId = getCurrentChatRoomId();
         const isSameChat = currentChatRoomId === previousChatRoomId;

@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { beforeAll, expect, test, vi } from "vitest";
 
 const commitMessages = vi.hoisted(() => vi.fn(async () => undefined));
+const moduleTriggers = vi.hoisted(() => vi.fn(() => []));
 
 vi.mock("../parser/parser.svelte", () => ({
   hasher: vi.fn(),
@@ -56,7 +57,7 @@ vi.mock("../stores.svelte", () => ({
 
 vi.mock("./modules", () => ({
   getModuleLorebooks: vi.fn(() => []),
-  getModuleTriggers: vi.fn(() => []),
+  getModuleTriggers: moduleTriggers,
 }));
 
 vi.mock("./files/inlays", () => ({
@@ -69,6 +70,7 @@ vi.mock("./request/request", () => ({ requestChatData: vi.fn() }));
 vi.mock("./stableDiff", () => ({ generateAIImage: vi.fn() }));
 
 let runScripted: typeof import("./scriptings").runScripted;
+let runLuaButtonTrigger: typeof import("./scriptings").runLuaButtonTrigger;
 
 beforeAll(async () => {
   const jsonLua = await readFile(
@@ -81,6 +83,7 @@ beforeAll(async () => {
   );
   const scriptings = await import("./scriptings");
   runScripted = scriptings.runScripted;
+  runLuaButtonTrigger = scriptings.runLuaButtonTrigger;
 });
 
 test("does not stop generation when setStateChanged is a no-op", async () => {
@@ -163,4 +166,22 @@ test("does not persist when Lua sets a chat message to the same value", async ()
   );
 
   expect(commitMessages).not.toHaveBeenCalled();
+});
+
+test("checks module button triggers when character triggers are missing", async () => {
+  moduleTriggers.mockClear();
+
+  await expect(
+    runLuaButtonTrigger(
+      {
+        type: "simple",
+        chaId: "char-1",
+        customscript: [],
+        triggerscript: undefined,
+      } as never,
+      "module-button",
+    ),
+  ).resolves.toBeUndefined();
+
+  expect(moduleTriggers).toHaveBeenCalledOnce();
 });
