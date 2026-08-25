@@ -1,5 +1,5 @@
 import { Template } from "@huggingface/jinja";
-import type { OpenAIChat } from "../index.svelte";
+import type { OpenAIChat } from "../chat-core/types";
 import {
   getCurrentCharacter,
   getDatabase,

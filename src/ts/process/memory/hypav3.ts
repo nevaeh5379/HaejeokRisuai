@@ -14,7 +14,7 @@ import {
   type groupChat,
   getDatabase,
 } from "src/ts/storage/database.svelte";
-import { type OpenAIChat } from "../index.svelte";
+import { type OpenAIChat } from "../chat-core/types";
 import { requestChatData } from "../request/request";
 import { chatCompletion, unloadEngine } from "../webllm";
 import { hypaV3ProgressStore } from "src/ts/stores.svelte";

@@ -12,7 +12,7 @@ import { registerClaudeObserver } from "src/ts/observer.svelte";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { replaceAsync, simplifySchema, sleep } from "src/ts/util";
 import { v4 } from "uuid";
-import type { MultiModal } from "../index.svelte";
+import type { MultiModal } from "../chat-core/types";
 import { extractJSON } from "../templates/jsonSchema";
 import { callTool, decodeToolCall, encodeToolCall } from "../mcp/mcp";
 import type {

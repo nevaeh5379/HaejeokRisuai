@@ -4,13 +4,11 @@ export { chatProcessStage, doingChat } from "./chatRuntimeState";
 import type { MessageGenerationInfo } from "../storage/database.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { language } from "../../lang";
-import { requestChatData } from "./request/request";
 import {
-  registerDurableGenerationContext,
-  unregisterDurableGenerationContext,
-} from "../network/durableModelJobs";
-import { v4 } from "uuid";
-import { getGenerationModelString } from "./models/modelString";
+  createChatGenerationPlan,
+  executeChatModelRequest,
+} from "./chat-core/generation";
+import { createLocalChatGenerationRuntime } from "./chatLocalRuntime";
 import { processChatResponse } from "./chatResponse.svelte";
 import {
   finalizeChatGeneration,
@@ -109,49 +107,28 @@ export async function sendChat(
     return false;
   }
   currentChat = prompt.currentChat;
-  let formated = prompt.formated;
   const biases = prompt.biases;
-
-  // Token rechecking. Compute every per-message count in one batch so Node
-  // deployments avoid a request/tokenizer pass for each removable prompt.
-  const formatedTokenCounts = await tokenizer.tokenizeChatsDetailed(formated);
-  let inputTokens = formatedTokenCounts.reduce((total, count) => total + count, 0);
-
-  if (inputTokens > maxContextTokens) {
-    let pointer = 0;
-    while (inputTokens > maxContextTokens) {
-      if (pointer >= formated.length) {
-        throwError(
-          language.errors.toomuchtoken +
-            "\n\nAt token rechecking. Required Tokens: " +
-            inputTokens,
-        );
-        return false;
-      }
-      if (formated[pointer].removable) {
-        inputTokens -= formatedTokenCounts[pointer];
-        formated[pointer].content = "";
-      }
-      pointer++;
-    }
-    formated = formated.filter((v) => {
-      return v.content !== "" || (v.multimodals && v.multimodals.length > 0);
-    });
+  const runtime = createLocalChatGenerationRuntime(tokenizer);
+  const plan = await createChatGenerationPlan(runtime, {
+    formated: prompt.formated,
+    maxContextTokens,
+    maxResponseTokens: settingsStore.state.maxResponse,
+  });
+  if (plan.ok === false) {
+    throwError(
+      language.errors.toomuchtoken +
+        "\n\nAt token rechecking. Required Tokens: " +
+        plan.requiredTokens,
+    );
+    return false;
   }
 
-  //estimate tokens
-  let outputTokens = settingsStore.state.maxResponse;
-  if (inputTokens + outputTokens > maxContextTokens) {
-    outputTokens = maxContextTokens - inputTokens;
-  }
-  const generationId = v4();
-  const generationModel = getGenerationModelString();
-
+  const { generationId, generationModel, inputTokens, outputTokens } = plan;
   generationInfo = {
     model: generationModel,
-    generationId: generationId,
-    inputTokens: inputTokens,
-    outputTokens: outputTokens,
+    generationId,
+    inputTokens,
+    outputTokens,
     maxContext: maxContextTokens,
     stageTiming: {
       stage1: stageTimings.stage1Duration,
@@ -165,46 +142,31 @@ export async function sendChat(
   chatProcessStage.set(3);
   stageTimings.stage3Start = Date.now();
   if (arg.preview) {
-    previewFormated = formated;
+    previewFormated = plan.formated;
     return true;
   }
 
-  let req: Awaited<ReturnType<typeof requestChatData>>;
-  const durableChatId = currentChat.id;
-  if (durableChatId) {
-    registerDurableGenerationContext({
-      realChatId: durableChatId,
-      generationId,
-      model: generationModel,
+  const req = await executeChatModelRequest(
+    runtime,
+    {
+      plan,
+      biases,
+      currentChar,
+      isGroupChat: nowChatroom.type === "group",
+      continueGeneration: arg.continue,
+      imageResponse: settingsStore.state.outputImageModal,
+      previewBody: arg.previewPrompt,
+      escape: nowChatroom.type === "character" && nowChatroom.escapeOutput,
+      rememberToolUsage: settingsStore.state.rememberToolUsage,
+      durableChatId: currentChat.id,
       speakerId: currentChar.chaId,
-    });
-  }
-  try {
-    req = await requestChatData(
-      {
-        formated: formated,
-        biasString: biases,
-        currentChar: currentChar,
-        useStreaming: true,
-        isGroupChat: nowChatroom.type === "group",
-        bias: {},
-        continue: arg.continue,
-        chatId: generationId,
-        imageResponse: settingsStore.state.outputImageModal,
-        previewBody: arg.previewPrompt,
-        escape: nowChatroom.type === "character" && nowChatroom.escapeOutput,
-        rememberToolUsage: settingsStore.state.rememberToolUsage,
-      },
-      "model",
-      abortSignal,
-    );
-  } finally {
-    unregisterDurableGenerationContext(generationId);
-  }
+    },
+    abortSignal,
+  );
 
   console.log(req);
   if (req.model) {
-    generationInfo.model = getGenerationModelString(req.model);
+    generationInfo.model = runtime.getGenerationModel(req.model);
     console.log(generationInfo.model, req.model);
   }
 

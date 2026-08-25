@@ -21,7 +21,7 @@ import {
 } from "../../storage/database.svelte";
 import { tokenizeNum } from "../../tokenizer";
 import { sleep } from "../../util";
-import type { OpenAIChat } from "../index.svelte";
+import type { OpenAIChat } from "../chat-core/types";
 import { getTools } from "../mcp/mcp";
 import type { MCPTool } from "../mcp/mcplib";
 import { NovelAIBadWordIds, stringlizeNAIChat } from "../models/nai";

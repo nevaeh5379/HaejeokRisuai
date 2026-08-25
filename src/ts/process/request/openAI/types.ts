@@ -1,4 +1,4 @@
-import type { MultiModal, OpenAIChat } from "../../index.svelte";
+import type { MultiModal, OpenAIChat } from "../../chat-core/types";
 
 export interface ResponseInputItem {
   content: (
