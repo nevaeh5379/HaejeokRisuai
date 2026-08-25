@@ -10,6 +10,7 @@ import {
   normalizeOpenAIProviderMessages,
   resolveOpenAIRequestEndpoint,
   resolveOpenAIRequestModel,
+  shouldUseOpenAIFlexProcessing,
 } from "@risuai/chat-core/openAIProvider.cjs";
 
 describe("OpenAI provider core", () => {
@@ -148,6 +149,26 @@ describe("OpenAI provider core", () => {
       url: "https://proxy.example/v1/chat/completions",
       risuIdentify: true,
     });
+  });
+
+  it("enables flex processing only for official OpenAI traffic", () => {
+    expect(shouldUseOpenAIFlexProcessing({
+      aiModel: "gpt4o",
+      url: "https://example.invalid/v1/chat/completions",
+      isOpenAIProvider: true,
+    })).toBe(true);
+    expect(shouldUseOpenAIFlexProcessing({
+      aiModel: "reverse_proxy",
+      url: "https://api.openai.com/v1/chat/completions",
+    })).toBe(true);
+    expect(shouldUseOpenAIFlexProcessing({
+      aiModel: "reverse_proxy",
+      url: "https://proxy.example/v1/chat/completions",
+    })).toBe(false);
+    expect(shouldUseOpenAIFlexProcessing({
+      aiModel: "openrouter",
+      url: "https://api.openai.com/v1/chat/completions",
+    })).toBe(false);
   });
 
   it("builds provider headers with the existing API key precedence", () => {

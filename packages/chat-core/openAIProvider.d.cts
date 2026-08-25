@@ -54,6 +54,12 @@ export function resolveOpenAIRequestModel(options?: {
   internalID?: string;
 }): string | undefined;
 
+export function shouldUseOpenAIFlexProcessing(options?: {
+  aiModel?: string;
+  url?: string;
+  isOpenAIProvider?: boolean;
+}): boolean;
+
 export function resolveOpenAIRequestEndpoint(options?: {
   aiModel?: string;
   customURL?: string;

@@ -144,6 +144,18 @@ function resolveOpenAIRequestModel(options = {}) {
   return options.internalID || options.requestModel || 'gpt-3.5-turbo';
 }
 
+function shouldUseOpenAIFlexProcessing(options = {}) {
+  if (options.isOpenAIProvider) return true;
+  const isCustomEndpoint =
+    options.aiModel === 'reverse_proxy' || options.aiModel?.startsWith('xcustom:::');
+  if (!isCustomEndpoint) return false;
+  try {
+    return new URL(options.url).hostname === 'api.openai.com';
+  } catch {
+    return false;
+  }
+}
+
 function resolveOpenAIRequestEndpoint(options = {}) {
   let url = options.aiModel === 'nanogpt'
     ? options.nanoGPTUseSubscriptionEndpoint
@@ -308,4 +320,5 @@ module.exports = {
   normalizeOpenAIProviderMessages,
   resolveOpenAIRequestEndpoint,
   resolveOpenAIRequestModel,
+  shouldUseOpenAIFlexProcessing,
 };

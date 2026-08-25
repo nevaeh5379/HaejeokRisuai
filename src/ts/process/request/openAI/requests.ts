@@ -12,6 +12,7 @@ import {
   normalizeOpenAIProviderMessages,
   resolveOpenAIRequestEndpoint,
   resolveOpenAIRequestModel,
+  shouldUseOpenAIFlexProcessing,
 } from "@risuai/chat-core/openAIProvider.cjs";
 import { prepareOpenAILogitBias } from "./biasPreparation";
 import { prepareOpenAIProviderMessages } from "./messagePreparation";
@@ -53,27 +54,6 @@ import {
   type LocalNetworkRequestOptions,
 } from "./shared";
 export { requestOpenAIResponseAPI, __testResponsesAPI } from "./responses";
-function isOfficialOpenAIURL(url: string): boolean {
-  try {
-    return new URL(url).hostname === "api.openai.com";
-  } catch {
-    return false;
-  }
-}
-
-function shouldUseOpenAIFlexProcessing(
-  aiModel: string,
-  url: string,
-  provider: LLMProvider,
-): boolean {
-  const isCustomEndpoint =
-    aiModel === "reverse_proxy" || aiModel.startsWith("xcustom:::");
-  return (
-    provider === LLMProvider.OpenAI ||
-    (isCustomEndpoint && isOfficialOpenAIURL(url))
-  );
-}
-
 export async function requestOpenAI(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
@@ -98,25 +78,13 @@ export async function requestOpenAI(
 
   arg.bias = await prepareOpenAILogitBias(arg.biasString, arg.bias);
 
-  let requestModel =
-    aiModel === "reverse_proxy" || aiModel === "openrouter"
-      ? db.proxyRequestModel
-      : aiModel;
   let openrouterRequestModel = db.openrouterRequestModel;
-  if (aiModel === "reverse_proxy") {
-    requestModel = db.customProxyRequestModel;
-  }
-  if (aiModel === "nanogpt") {
-    requestModel = db.nanogptRequestModel;
-  }
-
   if (aiModel === "openrouter" && db.openrouterRequestModel === "risu/free") {
     openrouterRequestModel = await getFreeOpenRouterModels();
   }
 
   console.log(formatedChat);
   if (arg.modelInfo.format === LLMFormat.Mistral) {
-    requestModel = aiModel;
 
     const reformatedChat = formatMistralMessages(formatedChat);
 
@@ -126,7 +94,7 @@ export async function requestOpenAI(
     const targs = {
       body: applyParameters(
         {
-          model: requestModel,
+          model: aiModel,
           messages: reformatedChat,
           safe_prompt: false,
           max_tokens: arg.maxTokens,
@@ -182,7 +150,8 @@ export async function requestOpenAI(
   } = {
     model: resolveOpenAIRequestModel({
       aiModel,
-      requestModel,
+      requestModel:
+        aiModel === "reverse_proxy" ? db.customProxyRequestModel : aiModel,
       openRouterRequestModel: openrouterRequestModel,
       nanoGPTRequestModel: db.nanogptRequestModel,
       internalID: arg.modelInfo.internalID,
@@ -268,7 +237,11 @@ export async function requestOpenAI(
 
   if (
     db.openAIFlexProcessing &&
-    shouldUseOpenAIFlexProcessing(aiModel, replacerURL, arg.modelInfo.provider)
+    shouldUseOpenAIFlexProcessing({
+      aiModel,
+      url: replacerURL,
+      isOpenAIProvider: arg.modelInfo.provider === LLMProvider.OpenAI,
+    })
   ) {
     body.service_tier = "flex";
   }
