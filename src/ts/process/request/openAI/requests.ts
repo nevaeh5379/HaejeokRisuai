@@ -5,7 +5,6 @@ import {
   formatMistralMessages,
 } from "@risuai/chat-core/mistralProvider.cjs";
 import {
-  DEFAULT_OPENAI_CHAT_COMPLETIONS_URL,
   applyOpenAIPostParameterBodyPolicies,
   applyOpenAIPreParameterBodyPolicies,
   buildOpenAIRequestHeaders,
@@ -16,7 +15,7 @@ import {
 } from "@risuai/chat-core/openAIProvider.cjs";
 import { prepareOpenAILogitBias } from "./biasPreparation";
 import { prepareOpenAIProviderMessages } from "./messagePreparation";
-import { interpretOpenAINonStreamingResponse } from "./nonStreamingResponse";
+import { requestHTTPOpenAI } from "./nonStreamingTransport";
 import { requestOpenAIStreamingTransport } from "./streamingTransport";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { LLMFlags, LLMFormat, LLMProvider } from "src/ts/model/modellist";
@@ -31,10 +30,7 @@ import type {
   RequestDataArgumentExtended,
   requestDataResponse,
 } from "../request";
-import {
-  tryExecuteNodeProvider,
-  tryExecuteNodeProviderTransport,
-} from "../nodeProviderExecutor";
+import { tryExecuteNodeProvider } from "../nodeProviderExecutor";
 import {
   applyAdditionalParameters,
   applyParameters,
@@ -43,11 +39,9 @@ import {
 
 import type { OpenAIChatExtra } from "./types";
 
-import {
-  getLocalNetworkRequestOptions,
-  type LocalNetworkRequestOptions,
-} from "./shared";
+import { getLocalNetworkRequestOptions } from "./shared";
 export { requestOpenAIResponseAPI, __testResponsesAPI } from "./responses";
+export { requestHTTPOpenAI } from "./nonStreamingTransport";
 export async function requestOpenAI(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
@@ -303,45 +297,6 @@ export async function requestOpenAI(
     arg,
     localNetworkOptions,
   );
-}
-
-export async function requestHTTPOpenAI(
-  replacerURL: string,
-  body: any,
-  headers: Record<string, string>,
-  arg: RequestDataArgumentExtended,
-  networkOptions: LocalNetworkRequestOptions = {},
-): Promise<requestDataResponse> {
-  const db = getDatabase();
-  const remoteTransport =
-    replacerURL === DEFAULT_OPENAI_CHAT_COMPLETIONS_URL &&
-    arg.modelInfo.format === LLMFormat.OpenAICompatible
-      ? await tryExecuteNodeProviderTransport(
-          LLMFormat.OpenAICompatible,
-          { body, headers },
-          arg.abortSignal,
-        )
-      : null;
-  const res =
-    remoteTransport ??
-    (await globalFetch(replacerURL, {
-      body: body,
-      headers: headers,
-      abortSignal: arg.abortSignal,
-      chatId: arg.chatId,
-      interceptor: "openai_basic",
-      networkRoute: networkOptions.networkRoute,
-      requestTimeoutMs: networkOptions.requestTimeoutMs,
-    }));
-
-  return interpretOpenAINonStreamingResponse({
-    ok: res.ok,
-    data: res.data,
-    body,
-    arg,
-    retry: () =>
-      requestHTTPOpenAI(replacerURL, body, headers, arg, networkOptions),
-  });
 }
 
 export async function requestOpenAILegacyInstruct(
