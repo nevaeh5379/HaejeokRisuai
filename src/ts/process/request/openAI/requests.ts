@@ -17,17 +17,11 @@ import {
 import { prepareOpenAILogitBias } from "./biasPreparation";
 import { prepareOpenAIProviderMessages } from "./messagePreparation";
 import { interpretOpenAINonStreamingResponse } from "./nonStreamingResponse";
-import { getTranStream, wrapToolStream } from "./streamingResponse";
+import { requestOpenAIStreamingTransport } from "./streamingTransport";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { LLMFlags, LLMFormat, LLMProvider } from "src/ts/model/modellist";
 import { getFreeOpenRouterModels } from "src/ts/model/openrouter";
-import {
-  addFetchLog,
-  fetchNative,
-  globalFetch,
-  textifyReadableStream,
-} from "src/ts/globalApi.svelte";
-import { isNodeServer, isTauri } from "src/ts/platform";
+import { globalFetch } from "src/ts/globalApi.svelte";
 import { simplifySchema } from "src/ts/util";
 
 import { getOpenAIJSONSchema } from "../../templates/jsonSchema";
@@ -282,80 +276,13 @@ export async function requestOpenAI(
   );
 
   if (arg.useStreaming) {
-    body.stream = true;
-    let urlHost = new URL(replacerURL).host;
-    if (
-      urlHost.includes("localhost") ||
-      urlHost.includes("172.0.0.1") ||
-      urlHost.includes("0.0.0.0")
-    ) {
-      if (!isTauri && !isNodeServer) {
-        return {
-          type: "fail",
-          result:
-            "You are trying local request on streaming. this is not allowed dude to browser/os security policy. turn off streaming.",
-        };
-      }
-    }
-
-    if (arg.previewBody) {
-      return {
-        type: "success",
-        result: JSON.stringify({
-          url: replacerURL,
-          body: body,
-          headers: headers,
-        }),
-      };
-    }
-    const da = await fetchNative(replacerURL, {
-      body: JSON.stringify(body),
-      method: "POST",
-      headers: headers,
-      signal: arg.abortSignal,
-      chatId: arg.chatId,
-      interceptor: "openai_streaming",
-      networkRoute: streamingLocalNetworkOptions.networkRoute,
-      requestTimeoutMs: streamingLocalNetworkOptions.requestTimeoutMs,
-    });
-
-    if (da.status !== 200) {
-      return {
-        type: "fail",
-        result: await textifyReadableStream(da.body),
-      };
-    }
-
-    if (!da.headers.get("Content-Type").includes("text/event-stream")) {
-      return {
-        type: "fail",
-        result: await textifyReadableStream(da.body),
-      };
-    }
-
-    addFetchLog({
-      body: body,
-      response: "Streaming",
-      success: true,
-      url: replacerURL,
-      status: da.status,
-    });
-
-    const transtream = getTranStream(arg);
-
-    da.body.pipeTo(transtream.writable);
-
-    return {
-      type: "streaming",
-      result: wrapToolStream(
-        transtream.readable,
-        body,
-        headers,
-        replacerURL,
-        arg,
-        streamingLocalNetworkOptions,
-      ),
-    };
+    return requestOpenAIStreamingTransport(
+      replacerURL,
+      body,
+      headers,
+      arg,
+      streamingLocalNetworkOptions,
+    );
   }
 
   if (arg.previewBody) {
