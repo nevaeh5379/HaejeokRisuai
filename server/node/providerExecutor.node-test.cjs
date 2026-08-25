@@ -5,26 +5,24 @@ const assert = require('node:assert/strict');
 const { LLM_FORMATS } = require('../../packages/protocol/modelFormat.cjs');
 const { createNodeProviderExecutor } = require('./providerExecutor.cjs');
 
-test('advertises only implemented provider routes', () => {
+test('advertises only implemented provider formats and routes', () => {
   const executor = createNodeProviderExecutor();
   assert.equal(executor.supports(LLM_FORMATS.Echo), true);
+  assert.equal(executor.supports(LLM_FORMATS.Mistral), true);
   assert.equal(executor.supports(LLM_FORMATS.OpenAICompatible), false);
-  assert.deepEqual([...executor.formats], [LLM_FORMATS.Echo]);
-  assert.deepEqual([...executor.routes], ['echo']);
+  assert.deepEqual(
+    [...executor.formats],
+    [LLM_FORMATS.Echo, LLM_FORMATS.Mistral],
+  );
+  assert.deepEqual([...executor.routes], ['echo', 'openai']);
 });
 
 
-test('keeps capability support format-specific within a shared route', () => {
-  const executor = createNodeProviderExecutor({
-    extraHandlers: {
-      openai: async () => ({ type: 'success', result: 'ok' }),
-    },
-    extraFormats: [LLM_FORMATS.Mistral],
-  });
+test('keeps Mistral support format-specific within the openai route', () => {
+  const executor = createNodeProviderExecutor();
   assert.equal(executor.supports(LLM_FORMATS.Mistral), true);
   assert.equal(executor.supports(LLM_FORMATS.OpenAICompatible), false);
-  assert.deepEqual([...executor.formats], [LLM_FORMATS.Echo, LLM_FORMATS.Mistral]);
-  assert.deepEqual([...executor.routes], ['echo', 'openai']);
+  assert.equal(executor.supports(LLM_FORMATS.NanoGPT), false);
 });
 
 test('executes echo through the shared provider route', async () => {
@@ -41,6 +39,51 @@ test('executes echo through the shared provider route', async () => {
     response: { type: 'success', result: 'server echo' },
   });
   assert.deepEqual(delays, [125]);
+});
+
+test('executes Mistral through the official server transport', async () => {
+  const calls = [];
+  const controller = new AbortController();
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'server mistral' } }] }),
+      };
+    },
+  });
+  const result = await executor.execute({
+    format: LLM_FORMATS.Mistral,
+    payload: {
+      body: { model: 'mistral-small', messages: [{ role: 'user', content: 'hello' }] },
+      apiKey: 'secret-key',
+      httpErrorPrefix: 'HTTP: ',
+    },
+  }, { signal: controller.signal });
+  assert.deepEqual(result, {
+    handled: true,
+    response: { type: 'success', result: 'server mistral' },
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.mistral.ai/v1/chat/completions');
+  assert.equal(calls[0].options.headers.authorization, 'Bearer secret-key');
+  assert.equal(calls[0].options.signal, controller.signal);
+  assert.equal(calls[0].options.redirect, 'error');
+});
+
+test('returns decoded Mistral HTTP failures without browser fallback', async () => {
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async () => ({
+      ok: false,
+      json: async () => ({ error: { message: 'rate limited' } }),
+    }),
+  });
+  const result = await executor.execute({
+    format: LLM_FORMATS.Mistral,
+    payload: { body: { model: 'm' }, apiKey: '', httpErrorPrefix: 'HTTP: ' },
+  });
+  assert.deepEqual(result.response, { type: 'fail', result: 'HTTP: rate limited' });
 });
 
 test('returns unhandled for unsupported provider formats', async () => {
@@ -60,6 +103,24 @@ test('rejects malformed echo payloads', async () => {
     }),
     /echo message must be a string/,
   );
+});
+
+test('rejects malformed Mistral payloads before fetch', async () => {
+  let called = false;
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async () => {
+      called = true;
+      throw new Error('should not fetch');
+    },
+  });
+  await assert.rejects(
+    executor.execute({
+      format: LLM_FORMATS.Mistral,
+      payload: { body: [], apiKey: 'key' },
+    }),
+    /mistral body must be an object/,
+  );
+  assert.equal(called, false);
 });
 
 test('rejects malformed provider execution requests', async () => {

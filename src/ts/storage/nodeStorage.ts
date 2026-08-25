@@ -178,11 +178,14 @@ export class NodeStorage {
     return auth;
   }
 
-  async getNodeProviderCapabilities(): Promise<NodeProviderCapabilities> {
+  async getNodeProviderCapabilities(
+    abortSignal?: AbortSignal | null,
+  ): Promise<NodeProviderCapabilities> {
     if (this.nodeProviderCapabilities) return this.nodeProviderCapabilities;
     const auth = await this.getCachedAuth();
     const response = await fetch("/api/chat-executor/providers", {
       headers: { "risu-auth": auth },
+      signal: abortSignal ?? undefined,
     });
     if (!response.ok) {
       const message = await response.text();
@@ -203,6 +206,7 @@ export class NodeStorage {
 
   async executeChatProvider(
     request: NodeProviderExecutionRequest,
+    abortSignal?: AbortSignal | null,
   ): Promise<NodeProviderExecutionResult> {
     const auth = await this.getCachedAuth();
     const response = await fetch("/api/chat-executor/provider", {
@@ -212,6 +216,7 @@ export class NodeStorage {
         "risu-auth": auth,
       },
       body: JSON.stringify(request),
+      signal: abortSignal ?? undefined,
     });
     if (!response.ok) {
       const message = await response.text();

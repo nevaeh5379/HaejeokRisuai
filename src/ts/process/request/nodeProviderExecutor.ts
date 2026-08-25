@@ -7,6 +7,7 @@ import { NodeStorage } from "../../storage/nodeStorage";
 export async function tryExecuteNodeProvider(
   format: number,
   payload: Record<string, unknown>,
+  abortSignal?: AbortSignal | null,
 ): Promise<ChatSuccessResponse | ChatFailureResponse | null> {
   if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
     return null;
@@ -17,13 +18,14 @@ export async function tryExecuteNodeProvider(
   const storage = forageStorage.realStorage;
 
   try {
-    const capabilities = await storage.getNodeProviderCapabilities();
+    const capabilities = await storage.getNodeProviderCapabilities(abortSignal);
     if (!capabilities.formats.includes(format) || !capabilities.routes.includes(route)) {
       return null;
     }
-    const result = await storage.executeChatProvider({ format, payload });
+    const result = await storage.executeChatProvider({ format, payload }, abortSignal);
     return result.handled ? result.response : null;
   } catch (error) {
+    if (abortSignal?.aborted) throw error;
     console.warn(
       "Server provider execution failed; falling back to browser provider",
       error,

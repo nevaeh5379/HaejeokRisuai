@@ -26,7 +26,8 @@ async function executeProviderRoute(format, request, handlers, options = {}) {
     };
   }
 
-  return handler(request);
+  if (options.context === undefined) return handler(request);
+  return handler(request, options.context);
 }
 
 module.exports = { canExecuteProviderRoute, executeProviderRoute };

@@ -1,4 +1,9 @@
 import { language } from "src/lang";
+import {
+  DEFAULT_MISTRAL_API_URL,
+  decodeMistralResponse,
+  formatMistralMessages,
+} from "@risuai/chat-core/mistralProvider.cjs";
 import { alertError } from "src/ts/alert";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { LLMFlags, LLMFormat, LLMProvider } from "src/ts/model/modellist";
@@ -22,6 +27,7 @@ import type {
   requestDataResponse,
   StreamResponseChunk,
 } from "../request";
+import { tryExecuteNodeProvider } from "../nodeProviderExecutor";
 import {
   applyAdditionalParameters,
   applyParameters,
@@ -287,54 +293,9 @@ export async function requestOpenAI(
   if (arg.modelInfo.format === LLMFormat.Mistral) {
     requestModel = aiModel;
 
-    let reformatedChat: OpenAIChatExtra[] = [];
+    const reformatedChat = formatMistralMessages(formatedChat);
 
-    for (let i = 0; i < formatedChat.length; i++) {
-      const chat = formatedChat[i];
-      if (i === 0) {
-        if (chat.role === "user" || chat.role === "system") {
-          reformatedChat.push({
-            role: chat.role,
-            content: chat.content,
-          });
-        } else {
-          reformatedChat.push({
-            role: "system",
-            content: chat.role + ":" + chat.content,
-          });
-        }
-      } else {
-        const prevChat = reformatedChat[reformatedChat.length - 1];
-        if (prevChat?.role === chat.role) {
-          reformatedChat[reformatedChat.length - 1].content +=
-            "\n" + chat.content;
-          continue;
-        } else if (chat.role === "system") {
-          if (prevChat?.role === "user") {
-            reformatedChat[reformatedChat.length - 1].content +=
-              "\nSystem:" + chat.content;
-          } else {
-            reformatedChat.push({
-              role: "user",
-              content: "System:" + chat.content,
-            });
-          }
-        } else if (chat.role === "function") {
-          reformatedChat.push({
-            role: "user",
-            content: chat.content,
-          });
-        } else {
-          reformatedChat.push({
-            role: chat.role,
-            content: chat.content,
-          });
-        }
-      }
-    }
-
-    const requestURL =
-      arg.customURL ?? "https://api.mistral.ai/v1/chat/completions";
+    const requestURL = arg.customURL ?? DEFAULT_MISTRAL_API_URL;
     const networkOptions = getLocalNetworkRequestOptions(requestURL, db, false);
 
     const targs = {
@@ -373,35 +334,21 @@ export async function requestOpenAI(
       };
     }
 
-    const res = await globalFetch(requestURL, targs);
-
-    const dat = res.data as any;
-    if (res.ok) {
-      try {
-        const msg: OpenAIChatFull = dat.choices[0].message;
-        return {
-          type: "success",
-          result: msg.content ?? "",
-        };
-      } catch (error) {
-        return {
-          type: "fail",
-          result: language.errors.httpError + `${JSON.stringify(dat)}`,
-        };
-      }
-    } else {
-      if (dat.error && dat.error.message) {
-        return {
-          type: "fail",
-          result: language.errors.httpError + `${dat.error.message}`,
-        };
-      } else {
-        return {
-          type: "fail",
-          result: language.errors.httpError + `${JSON.stringify(res.data)}`,
-        };
-      }
+    if (requestURL === DEFAULT_MISTRAL_API_URL) {
+      const remote = await tryExecuteNodeProvider(
+        LLMFormat.Mistral,
+        {
+          body: targs.body,
+          apiKey: arg.key ?? db.mistralKey,
+          httpErrorPrefix: language.errors.httpError,
+        },
+        arg.abortSignal,
+      );
+      if (remote) return remote;
     }
+
+    const res = await globalFetch(requestURL, targs);
+    return decodeMistralResponse(res.ok, res.data, language.errors.httpError);
   }
 
   db.cipherChat = false;

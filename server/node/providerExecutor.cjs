@@ -5,6 +5,10 @@ const {
   executeProviderRoute,
 } = require('../../packages/chat-core/providerExecutor.cjs');
 const { resolveProviderRoute } = require('../../packages/chat-core/providerRouting.cjs');
+const {
+  DEFAULT_MISTRAL_API_URL,
+  decodeMistralResponse,
+} = require('../../packages/chat-core/mistralProvider.cjs');
 const { LLM_FORMATS } = require('../../packages/protocol/modelFormat.cjs');
 const {
   normalizeNodeProviderExecutionRequest,
@@ -21,8 +25,27 @@ function normalizeEchoPayload(payload) {
   return { message: payload.message, delayMs };
 }
 
+function normalizeMistralPayload(payload) {
+  if (!payload.body || typeof payload.body !== 'object' || Array.isArray(payload.body)) {
+    throw new TypeError('mistral body must be an object');
+  }
+  if (typeof payload.apiKey !== 'string' || payload.apiKey.length > 16_384) {
+    throw new TypeError('mistral apiKey must be a string up to 16384 characters');
+  }
+  const httpErrorPrefix = payload.httpErrorPrefix ?? '';
+  if (typeof httpErrorPrefix !== 'string' || httpErrorPrefix.length > 4096) {
+    throw new TypeError('mistral httpErrorPrefix must be a string up to 4096 characters');
+  }
+  const body = JSON.stringify(payload.body);
+  if (Buffer.byteLength(body) > 16 * 1024 * 1024) {
+    throw new RangeError('mistral body exceeds 16 MiB');
+  }
+  return { body, apiKey: payload.apiKey, httpErrorPrefix };
+}
+
 function createNodeProviderExecutor({
   sleep = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+  fetchImpl = globalThis.fetch,
   extraHandlers = {},
   extraFormats = [],
 } = {}) {
@@ -32,9 +55,24 @@ function createNodeProviderExecutor({
       if (input.delayMs > 0) await sleep(input.delayMs);
       return { type: 'success', result: input.message };
     },
+    openai: async (payload, context) => {
+      const input = normalizeMistralPayload(payload);
+      const response = await fetchImpl(DEFAULT_MISTRAL_API_URL, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${input.apiKey}`,
+        },
+        body: input.body,
+        signal: context?.signal,
+        redirect: 'error',
+      });
+      const data = await response.json();
+      return decodeMistralResponse(response.ok, data, input.httpErrorPrefix);
+    },
     ...extraHandlers,
   };
-  const formats = Object.freeze([LLM_FORMATS.Echo, ...extraFormats]);
+  const formats = Object.freeze([LLM_FORMATS.Echo, LLM_FORMATS.Mistral, ...extraFormats]);
   const supportedFormats = new Set(formats);
   const routes = Object.freeze([...new Set(formats.map(resolveProviderRoute).filter(Boolean))]);
 
@@ -42,7 +80,7 @@ function createNodeProviderExecutor({
     return supportedFormats.has(format) && canExecuteProviderRoute(format, handlers);
   }
 
-  async function execute(rawInput) {
+  async function execute(rawInput, context = {}) {
     const normalized = normalizeNodeProviderExecutionRequest(rawInput);
     if (normalized.error) {
       const error = new TypeError(normalized.error);
@@ -53,7 +91,7 @@ function createNodeProviderExecutor({
     if (!supports(input.format)) return { handled: false };
     return {
       handled: true,
-      response: await executeProviderRoute(input.format, input.payload, handlers),
+      response: await executeProviderRoute(input.format, input.payload, handlers, { context }),
     };
   }
 
@@ -66,8 +104,15 @@ function createNodeProviderExecutor({
 
     app.post('/api/chat-executor/provider', ...guards, async (req, res, next) => {
       if (auth && !await auth(req, res)) return;
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      const abortOnClose = () => {
+        if (!res.writableEnded) controller.abort();
+      };
+      req.once('aborted', abort);
+      res.once('close', abortOnClose);
       try {
-        res.send(await execute(req.body));
+        res.send(await execute(req.body, { signal: controller.signal }));
       } catch (error) {
         if (
           error?.code === 'invalid_provider_execution' ||
@@ -77,7 +122,11 @@ function createNodeProviderExecutor({
           res.status(400).send({ error: error.message });
           return;
         }
+        if (error?.name === 'AbortError' && controller.signal.aborted) return;
         next(error);
+      } finally {
+        req.off('aborted', abort);
+        res.off('close', abortOnClose);
       }
     });
   }
