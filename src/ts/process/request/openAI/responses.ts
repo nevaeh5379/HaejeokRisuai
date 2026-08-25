@@ -1,7 +1,8 @@
 import { language } from "src/lang";
 import { alertError } from "src/ts/alert";
 import { getDatabase } from "src/ts/storage/database.svelte";
-import { LLMFlags } from "src/ts/model/modellist";
+import { LLMFlags, LLMFormat } from "src/ts/model/modellist";
+import { DEFAULT_OPENAI_RESPONSES_URL } from "@risuai/chat-core/openAIProvider.cjs";
 import {
   addFetchLog,
   fetchNative,
@@ -21,6 +22,7 @@ import type {
   requestDataResponse,
   StreamResponseChunk,
 } from "../request";
+import { tryExecuteNodeProviderTransport } from "../nodeProviderExecutor";
 import {
   applyAdditionalParameters,
   applyParameters,
@@ -218,7 +220,7 @@ function getResponsesRequestURL(arg: RequestDataArgumentExtended): {
       ? db.nanogptUseSubscriptionEndpoint
         ? NANOGPT_SUBSCRIPTION_RESPONSES_ENDPOINT
         : NANOGPT_RESPONSES_ENDPOINT
-      : (arg.customURL ?? "https://api.openai.com/v1/responses");
+      : (arg.customURL ?? DEFAULT_OPENAI_RESPONSES_URL);
   if (arg.modelInfo?.endpoint) {
     requestURL = arg.modelInfo.endpoint;
   }
@@ -637,15 +639,27 @@ async function requestHTTPResponsesAPI(
   networkOptions: LocalNetworkRequestOptions,
 ): Promise<requestDataResponse> {
   const db = getDatabase();
-  const response = await globalFetch(requestURL, {
-    body: toExternalResponsesBody(body),
-    headers: headers,
-    chatId: arg.chatId,
-    abortSignal: arg.abortSignal,
-    interceptor: "openai_response_api",
-    networkRoute: networkOptions.networkRoute,
-    requestTimeoutMs: networkOptions.requestTimeoutMs,
-  });
+  const externalBody = toExternalResponsesBody(body);
+  const remoteTransport =
+    requestURL === DEFAULT_OPENAI_RESPONSES_URL &&
+    arg.modelInfo.format === LLMFormat.OpenAIResponseAPI
+      ? await tryExecuteNodeProviderTransport(
+          LLMFormat.OpenAIResponseAPI,
+          { body: externalBody, headers },
+          arg.abortSignal,
+        )
+      : null;
+  const response =
+    remoteTransport ??
+    (await globalFetch(requestURL, {
+      body: externalBody,
+      headers: headers,
+      chatId: arg.chatId,
+      abortSignal: arg.abortSignal,
+      interceptor: "openai_response_api",
+      networkRoute: networkOptions.networkRoute,
+      requestTimeoutMs: networkOptions.requestTimeoutMs,
+    }));
 
   if (!response.ok) {
     return {

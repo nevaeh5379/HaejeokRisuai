@@ -11,6 +11,7 @@ const {
 } = require('../../packages/chat-core/mistralProvider.cjs');
 const {
   DEFAULT_OPENAI_CHAT_COMPLETIONS_URL,
+  DEFAULT_OPENAI_RESPONSES_URL,
 } = require('../../packages/chat-core/openAIProvider.cjs');
 const {
   DEFAULT_ANTHROPIC_MESSAGES_URL,
@@ -83,6 +84,9 @@ function getTransportTarget(format) {
   if (format === LLM_FORMATS.OpenAICompatible) {
     return { name: 'openai', url: DEFAULT_OPENAI_CHAT_COMPLETIONS_URL };
   }
+  if (format === LLM_FORMATS.OpenAIResponseAPI) {
+    return { name: 'openai responses', url: DEFAULT_OPENAI_RESPONSES_URL };
+  }
   if (format === LLM_FORMATS.Anthropic) {
     return { name: 'anthropic', url: DEFAULT_ANTHROPIC_MESSAGES_URL };
   }
@@ -123,6 +127,7 @@ function createNodeProviderExecutor({
   const routes = Object.freeze([...new Set(formats.map(resolveProviderRoute).filter(Boolean))]);
   const transportFormats = Object.freeze([
     LLM_FORMATS.OpenAICompatible,
+    LLM_FORMATS.OpenAIResponseAPI,
     LLM_FORMATS.Anthropic,
   ]);
   const supportedTransportFormats = new Set(transportFormats);

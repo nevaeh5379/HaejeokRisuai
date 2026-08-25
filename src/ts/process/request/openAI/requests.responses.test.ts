@@ -49,6 +49,7 @@ vi.mock("src/ts/storage/database.svelte", () => ({
 vi.mock("src/ts/globalApi.svelte", () => ({
   addFetchLog: vi.fn(),
   fetchNative: mocks.fetchNative,
+  forageStorage: { realStorage: {} },
   globalFetch: mocks.globalFetch,
   textifyReadableStream: vi.fn(),
 }));

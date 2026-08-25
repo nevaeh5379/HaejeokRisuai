@@ -2,6 +2,7 @@
 
 const DEFAULT_OPENAI_CHAT_COMPLETIONS_URL =
   'https://api.openai.com/v1/chat/completions';
+const DEFAULT_OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
 
 function collectOpenAIToolCalls(data) {
   const collected = [];
@@ -309,6 +310,7 @@ function formatOpenAIReasoningText(data, options = {}) {
 
 module.exports = {
   DEFAULT_OPENAI_CHAT_COMPLETIONS_URL,
+  DEFAULT_OPENAI_RESPONSES_URL,
   OPENAI_MODEL_ALIASES,
   applyOpenAIPostParameterBodyPolicies,
   applyOpenAIPreParameterBodyPolicies,

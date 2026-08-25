@@ -17,9 +17,14 @@ test('advertises only implemented provider formats and routes', () => {
   assert.deepEqual([...executor.routes], ['echo', 'openai']);
   assert.deepEqual(
     [...executor.transportFormats],
-    [LLM_FORMATS.OpenAICompatible, LLM_FORMATS.Anthropic],
+    [
+      LLM_FORMATS.OpenAICompatible,
+      LLM_FORMATS.OpenAIResponseAPI,
+      LLM_FORMATS.Anthropic,
+    ],
   );
   assert.equal(executor.supportsTransport(LLM_FORMATS.OpenAICompatible), true);
+  assert.equal(executor.supportsTransport(LLM_FORMATS.OpenAIResponseAPI), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.Anthropic), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.NanoGPT), false);
 });
@@ -135,6 +140,45 @@ test('executes official OpenAI non-streaming transport without interpreting the 
   assert.equal(calls[0].options.headers.Host, undefined);
   assert.equal(calls[0].options.headers['Content-Length'], undefined);
   assert.equal(calls[0].options.headers['risu-auth'], undefined);
+  assert.equal(calls[0].options.signal, controller.signal);
+  assert.equal(calls[0].options.redirect, 'error');
+});
+
+test('executes official OpenAI Responses non-streaming transport without interpreting the response', async () => {
+  const calls = [];
+  const controller = new AbortController();
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          status: 'completed',
+          output: [{ type: 'message', content: [{ type: 'output_text', text: 'raw response' }] }],
+        }),
+      };
+    },
+  });
+  const result = await executor.executeTransport({
+    format: LLM_FORMATS.OpenAIResponseAPI,
+    payload: {
+      body: { model: 'gpt-test', input: [{ role: 'user', content: 'hello' }] },
+      headers: {
+        Authorization: 'Bearer secret-key',
+        'Content-Type': 'application/json',
+        Host: 'evil.example',
+      },
+    },
+  }, { signal: controller.signal });
+  assert.equal(result.handled, true);
+  assert.equal(result.response.ok, true);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.response.data.status, 'completed');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.openai.com/v1/responses');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer secret-key');
+  assert.equal(calls[0].options.headers.Host, undefined);
   assert.equal(calls[0].options.signal, controller.signal);
   assert.equal(calls[0].options.redirect, 'error');
 });
