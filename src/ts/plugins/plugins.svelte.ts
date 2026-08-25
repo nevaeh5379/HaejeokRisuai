@@ -8,7 +8,7 @@ import {
 } from "../storage/database.svelte";
 import { alertConfirm, alertError, alertPluginConfirm } from "../alert";
 import { selectSingleFile, sleep } from "../util";
-import type { OpenAIChat } from "../process/index.svelte";
+import type { OpenAIChat } from "../process/chat-core/types";
 import {
   fetchNative,
   globalFetch,

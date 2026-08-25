@@ -23,24 +23,8 @@ import {
 import { prepareChatSession } from "./chatSession.svelte";
 import { buildGenerationPrompt } from "./chatPromptPipeline";
 
-export interface OpenAIChat {
-  role: "system" | "user" | "assistant" | "function";
-  content: string;
-  memo?: string;
-  name?: string;
-  removable?: boolean;
-  attr?: string[];
-  multimodals?: MultiModal[];
-  thoughts?: string[];
-  cachePoint?: boolean;
-}
-
-export interface MultiModal {
-  type: "image" | "video" | "audio" | "signature";
-  base64: string;
-  height?: number;
-  width?: number;
-}
+export type { MultiModal, OpenAIChat } from "./chat-core/types";
+import type { OpenAIChat } from "./chat-core/types";
 
 export interface requestTokenPart {
   name: string;

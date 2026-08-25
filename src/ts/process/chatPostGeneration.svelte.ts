@@ -8,7 +8,7 @@ import { language } from "../../lang";
 import { requestChatData } from "./request/request";
 import { HypaProcesser } from "./memory/hypamemory";
 import { stableDiff } from "./stableDiff";
-import type { OpenAIChat } from "./index.svelte";
+import type { OpenAIChat } from "./chat-core/types";
 
 type ChatRequestResult = Awaited<ReturnType<typeof requestChatData>>;
 type EmotionAsset = [string, string];

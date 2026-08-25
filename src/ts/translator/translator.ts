@@ -15,7 +15,7 @@ import { globalFetch } from "../globalApi.svelte";
 import { isTauri, isNodeServer } from "src/ts/platform";
 import { alertError } from "../alert";
 import { requestChatData } from "../process/request/request";
-import type { OpenAIChat } from "../process/index.svelte";
+import type { OpenAIChat } from "../process/chat-core/types";
 import { doingChat } from "../process/chatRuntimeState";
 import {
   applyMarkdownToNode,

@@ -7,7 +7,7 @@ import {
   getCurrentCharacter,
   getDatabase,
 } from "./storage/database.svelte";
-import type { MultiModal, OpenAIChat } from "./process/index.svelte";
+import type { MultiModal, OpenAIChat } from "./process/chat-core/types";
 import { supportsInlayImage } from "./process/files/inlays";
 import { risuChatParser } from "./parser/parser.svelte";
 import { tokenizeGGUFModel } from "./process/models/local";

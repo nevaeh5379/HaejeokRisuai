@@ -16,7 +16,7 @@ import {
 import { buildChatHistory } from "./chatHistoryBuilder";
 import { applyChatMemory } from "./chatMemory";
 import type { ChatStageTimings } from "./chatGenerationFinalizer.svelte";
-import type { OpenAIChat } from "./index.svelte";
+import type { OpenAIChat } from "./chat-core/types";
 
 type LorePrompt = Awaited<
   ReturnType<typeof import("./lorebook.svelte").loadLoreBookV3Prompt>

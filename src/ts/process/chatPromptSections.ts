@@ -9,7 +9,7 @@ import { risuChatParser } from "./scripts";
 import { additionalInformations } from "./embedding/addinfo";
 import { loadLoreBookV3Prompt } from "./lorebook.svelte";
 import type { PromptItem, PromptRole } from "./prompt";
-import type { OpenAIChat } from "./index.svelte";
+import type { OpenAIChat } from "./chat-core/types";
 
 export interface PromptSections {
   main: OpenAIChat[];

@@ -2523,7 +2523,7 @@ import { LLMFlags, LLMFormat, LLMTokenizer } from "../model/types";
 import type { HypaModel } from "../process/memory/hypamemory";
 import type { SerializableHypaV3Data } from "../process/memory/hypav3";
 import { defaultHotkeys, type Hotkey } from "../defaulthotkeys";
-import type { OpenAIChat } from "../process/index.svelte";
+import type { OpenAIChat } from "../process/chat-core/types";
 import type { Loadout } from "../loadout";
 
 export async function downloadPreset(

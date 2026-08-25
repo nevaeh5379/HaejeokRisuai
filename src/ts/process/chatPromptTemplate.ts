@@ -18,7 +18,7 @@ import {
   PROMPT_ROLE_TO_OPENAI,
   type PromptSections,
 } from "./chatPromptSections";
-import type { OpenAIChat } from "./index.svelte";
+import type { OpenAIChat } from "./chat-core/types";
 
 interface RenderContext {
   currentChar: character;
