@@ -81,6 +81,27 @@ describe("SQL database defaults", () => {
       overrides: {},
     });
   });
+
+  it("does not persist runtime lazy-loader methods as root settings", async () => {
+    vi.useFakeTimers();
+    try {
+      const storage = {
+        getRevision: vi.fn(() => 0),
+        commit: vi.fn(async () => ({ revision: 1 })),
+      } as any;
+
+      const adapter = createSqlDatabaseAdapter({} as any, storage);
+
+      expect(adapter.ensureCharacterDetails).toBeTypeOf("function");
+      expect(adapter.ensureChatMessages).toBeTypeOf("function");
+      expect(adapter.loadOlderChatMessages).toBeTypeOf("function");
+
+      await vi.advanceTimersByTimeAsync(301);
+      expect(storage.commit).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("SQL chat message paging", () => {

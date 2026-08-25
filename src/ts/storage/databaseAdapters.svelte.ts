@@ -500,6 +500,9 @@ export function createSqlDatabaseAdapter(
 
   const adapterTarget: any = {
     isSql: true,
+    ensureCharacterDetails,
+    ensureChatMessages,
+    loadOlderChatMessages,
 
     applyCoreDefaults(normalize: (coreData: Database) => Database): void {
       normalize(internalState.coreData as Database);
@@ -723,11 +726,6 @@ export function createSqlDatabaseAdapter(
       return Reflect.getOwnPropertyDescriptor(internalState.coreData, prop);
     },
   });
-
-  // Expose lazy loaders on the adapter for external use (e.g. characters.ts)
-  (proxy as any).ensureCharacterDetails = ensureCharacterDetails;
-  (proxy as any).ensureChatMessages = ensureChatMessages;
-  (proxy as any).loadOlderChatMessages = loadOlderChatMessages;
 
   return proxy as IDatabaseAdapter;
 }
