@@ -38,6 +38,7 @@ const zlib = require('zlib');
 const { gzip } = require('zlib');
 const { createJsonStream } = require('./streamJson.cjs');
 const { streamZip } = require('./zipStream.cjs');
+const { createModelJobManager } = require('./modelJobs.cjs');
 const {
     createEntryHeader: createLocalBackupEntryHeader,
     makeLegacyCompatibleDatabase: makeLegacyCompatibleBackupDatabase,
@@ -244,6 +245,7 @@ if(!existsSync(savePath)){
     mkdirSync(savePath)
 }
 
+const modelJobManager = createModelJobManager({ saveDir: savePath, logger: console });
 const postgresConfigPath = path.join(savePath, '__postgres_config.json');
 const postgresManagedByEnvironment = Boolean(process.env.DATABASE_URL);
 // 저장소가 환경 변수로 관리되는지 (세 vendor 공통)
@@ -2084,6 +2086,10 @@ app.get('/hub-proxy/*', authenticatedRouteLimiter, hubProxyFunc);
 app.post('/proxy', authenticatedRouteLimiter, reverseProxyFunc);
 app.post('/proxy2', authenticatedRouteLimiter, reverseProxyFunc);
 app.post('/hub-proxy/*', authenticatedRouteLimiter, hubProxyFunc);
+modelJobManager.registerRoutes(app, {
+    auth: checkProxyAuth,
+    limiter: authenticatedRouteLimiter,
+});
 app.post('/proxy-stream-jobs', authenticatedRouteLimiter, async (req, res) => {
     if (!await checkProxyAuth(req, res)) {
         return;

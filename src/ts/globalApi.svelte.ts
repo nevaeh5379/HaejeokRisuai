@@ -75,6 +75,11 @@ import {
   formatProxyStreamErrorMessage,
   parseProxyJobWsEvent,
 } from "./network/proxyJobWs";
+import {
+  DurableModelJobUnavailableError,
+  fetchViaDurableModelJob,
+  getDurableGenerationContext,
+} from "./network/durableModelJobs";
 import { getNodeServerProxyAuth, NodeStorage } from "./storage/nodeStorage";
 import { generateClientThumbnail } from "./media/thumbnail";
 import { getMimeType } from "./media/mimeType";
@@ -749,6 +754,49 @@ export async function globalFetch(
         } catch (e) {
           console.error(e);
         }
+      }
+    }
+
+    if (
+      isNodeServer &&
+      arg.chatId &&
+      getDurableGenerationContext(arg.chatId) &&
+      (arg.method ?? "POST") === "POST"
+    ) {
+      const durableBody =
+        arg.body instanceof URLSearchParams
+          ? arg.body.toString()
+          : JSON.stringify(arg.body);
+      try {
+        const response = await fetchViaDurableModelJob(url, {
+          body: durableBody,
+          headers: arg.headers,
+          method: "POST",
+          signal: arg.abortSignal,
+          requestTimeoutMs: arg.requestTimeoutMs,
+          generationId: arg.chatId,
+          interceptor: arg.interceptor,
+        });
+        const ok = response.ok;
+        if (arg.rawResponse) {
+          const data = new Uint8Array(await response.arrayBuffer());
+          addFetchLogInGlobalFetch("Uint8Array Response", ok, url, arg, response.status);
+          return { ok, data, headers: Object.fromEntries(response.headers), status: response.status };
+        }
+        const text = await response.text();
+        try {
+          const data = JSON.parse(text);
+          addFetchLogInGlobalFetch(data, ok, url, arg, response.status);
+          return { ok, data, headers: Object.fromEntries(response.headers), status: response.status };
+        } catch {
+          addFetchLogInGlobalFetch(text, ok, url, arg, response.status);
+          return { ok, data: text, headers: Object.fromEntries(response.headers), status: response.status };
+        }
+      } catch (error) {
+        if (!(error instanceof DurableModelJobUnavailableError)) {
+          return { ok: false, data: `${error}`, headers: {}, status: 409 };
+        }
+        console.warn("[ModelJob] durable transport unavailable; using the existing request path", error);
       }
     }
 
@@ -2077,13 +2125,11 @@ export async function fetchNative(
       throughProxy = false;
     }
   }
-  const timeoutSignal = buildTimeoutSignal(arg.signal, arg.requestTimeoutMs);
-  const requestSignal = timeoutSignal.signal;
   const shouldLogFetch = arg.logFetch ?? true;
   let fetchLogIndex: number | null = null;
   if (shouldLogFetch) {
     fetchLogIndex = addFetchLog({
-      body: new TextDecoder().decode(realBody),
+      body: realBody ? new TextDecoder().decode(realBody) : "",
       headers: arg.headers,
       response: "Streamed Fetch",
       success: true,
@@ -2092,6 +2138,38 @@ export async function fetchNative(
       chatId: arg.chatId,
     });
   }
+
+  if (
+    isNodeServer &&
+    arg.method === "POST" &&
+    arg.chatId &&
+    getDurableGenerationContext(arg.chatId)
+  ) {
+    try {
+      const durableResponse = await fetchViaDurableModelJob(url, {
+        body: realBody ? new TextDecoder().decode(realBody) : "",
+        headers,
+        method: arg.method,
+        signal: arg.signal,
+        requestTimeoutMs: arg.requestTimeoutMs,
+        generationId: arg.chatId,
+        interceptor: arg.interceptor,
+      });
+      if (fetchLogIndex !== null && durableResponse.body) {
+        return new Response(pipeFetchLog(fetchLogIndex, durableResponse.body), {
+          headers: durableResponse.headers,
+          status: durableResponse.status,
+        });
+      }
+      return durableResponse;
+    } catch (error) {
+      if (!(error instanceof DurableModelJobUnavailableError)) throw error;
+      console.warn("[ModelJob] durable transport unavailable; using the existing request path", error);
+    }
+  }
+
+  const timeoutSignal = buildTimeoutSignal(arg.signal, arg.requestTimeoutMs);
+  const requestSignal = timeoutSignal.signal;
   try {
     if (window.userScriptFetch && !throughProxy) {
       return await window.userScriptFetch(url, {

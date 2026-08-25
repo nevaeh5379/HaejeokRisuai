@@ -32,6 +32,10 @@ import {
   prebuiltAssetCommand,
 } from "../util";
 import { requestChatData } from "./request/request";
+import {
+  registerDurableGenerationContext,
+  unregisterDurableGenerationContext,
+} from "../network/durableModelJobs";
 import { stableDiff } from "./stableDiff";
 import { processScript, processScriptFull, risuChatParser } from "./scripts";
 import { exampleMessage } from "./exampleMessages";
@@ -1920,24 +1924,38 @@ export async function sendChat(
     return true;
   }
 
-  const req = await requestChatData(
-    {
-      formated: formated,
-      biasString: biases,
-      currentChar: currentChar,
-      useStreaming: true,
-      isGroupChat: nowChatroom.type === "group",
-      bias: {},
-      continue: arg.continue,
-      chatId: generationId,
-      imageResponse: settingsStore.state.outputImageModal,
-      previewBody: arg.previewPrompt,
-      escape: nowChatroom.type === "character" && nowChatroom.escapeOutput,
-      rememberToolUsage: settingsStore.state.rememberToolUsage,
-    },
-    "model",
-    abortSignal,
-  );
+  let req: Awaited<ReturnType<typeof requestChatData>>;
+  const durableChatId = currentChat.id;
+  if (durableChatId) {
+    registerDurableGenerationContext({
+      realChatId: durableChatId,
+      generationId,
+      model: generationModel,
+      speakerId: currentChar.chaId,
+    });
+  }
+  try {
+    req = await requestChatData(
+      {
+        formated: formated,
+        biasString: biases,
+        currentChar: currentChar,
+        useStreaming: true,
+        isGroupChat: nowChatroom.type === "group",
+        bias: {},
+        continue: arg.continue,
+        chatId: generationId,
+        imageResponse: settingsStore.state.outputImageModal,
+        previewBody: arg.previewPrompt,
+        escape: nowChatroom.type === "character" && nowChatroom.escapeOutput,
+        rememberToolUsage: settingsStore.state.rememberToolUsage,
+      },
+      "model",
+      abortSignal,
+    );
+  } finally {
+    unregisterDurableGenerationContext(generationId);
+  }
 
   console.log(req);
   if (req.model) {
