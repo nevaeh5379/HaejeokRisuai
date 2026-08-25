@@ -1,4 +1,8 @@
 import { language } from "src/lang";
+import {
+  collectOpenAIToolCalls,
+  formatOpenAIReasoningText,
+} from "@risuai/chat-core/openAIProvider.cjs";
 import { alertError } from "src/ts/alert";
 import { LLMFlags } from "src/ts/model/modellist";
 import { getDatabase } from "src/ts/storage/database.svelte";
@@ -8,7 +12,7 @@ import type {
   RequestDataArgumentExtended,
   requestDataResponse,
 } from "../request";
-import type { OpenAIChatExtra, OpenAIChatFull, ToolCall } from "./types";
+import type { OpenAIChatExtra, ToolCall } from "./types";
 
 export interface InterpretOpenAINonStreamingOptions {
   ok: boolean;
@@ -41,34 +45,11 @@ export async function interpretOpenAINonStreamingResponse(
     if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
       return extractJSON(dat.choices[0].message.content, arg.extractJson);
     }
-    const msg: OpenAIChatFull = dat.choices[0].message;
-    let result = msg.content ?? "";
-    const reasoningContentField =
-      dat?.choices[0]?.reasoning_content ??
-      dat?.choices[0]?.message?.reasoning_content;
-    if (
-      arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingOutput) &&
-      !reasoningContentField
-    ) {
-      let reasoningContent = "";
-      result = result.replace(/(.*)\<\/think\>/gms, (m, p1) => {
-        reasoningContent = p1;
-        return "";
-      });
-      if (reasoningContent) {
-        reasoningContent = reasoningContent.replace(/\<think\>/gms, "");
-        result = `<Thoughts>\n${reasoningContent}\n</Thoughts>\n${result}`;
-      }
-    }
-    if (reasoningContentField && !result.startsWith("<Thoughts>")) {
-      result = `<Thoughts>\n${reasoningContentField}\n</Thoughts>\n${result}`;
-    }
-    // For openrouter, https://openrouter.ai/docs/api/api-reference/chat/send-chat-completion-request#response.body.choices.message.reasoning
-    if (dat?.choices?.[0]?.message?.reasoning) {
-      result = `<Thoughts>\n${dat.choices[0].message.reasoning}\n</Thoughts>\n${result}`;
-    }
-
-    return result;
+    return formatOpenAIReasoningText(dat, {
+      deepSeekThinkingOutput: arg.modelInfo.flags.includes(
+        LLMFlags.deepSeekThinkingOutput,
+      ),
+    });
   }
 
   const dat = data as any;
@@ -76,17 +57,7 @@ export async function interpretOpenAINonStreamingResponse(
   if (ok) {
     try {
       // Collect all tool_calls from all choices
-      let allToolCalls: ToolCall[] = [];
-      if (dat.choices) {
-        for (const choice of dat.choices) {
-          if (
-            choice.message?.tool_calls &&
-            choice.message.tool_calls.length > 0
-          ) {
-            allToolCalls = allToolCalls.concat(choice.message.tool_calls);
-          }
-        }
-      }
+      const allToolCalls = collectOpenAIToolCalls(dat) as ToolCall[];
 
       // Replace choices[0].message.tool_calls with all collected tool calls
       if (dat.choices?.[0]?.message && allToolCalls.length > 0) {
