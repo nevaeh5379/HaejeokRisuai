@@ -238,46 +238,68 @@ export interface BuildChatHistoryOptions {
   findCharacter: (id: string) => character;
 }
 
-export async function buildChatHistory(options: BuildChatHistoryOptions) {
-  let { currentChat, currentTokens } = options;
+async function initializeHistory(options: BuildChatHistoryOptions) {
   const chats = exampleMessage(options.currentChar, getUserName());
-  currentTokens += await options.tokenizer.tokenizeChats(chats);
-
+  let currentTokens =
+    options.currentTokens + (await options.tokenizer.tokenizeChats(chats));
   if (
     !settingsStore.state.aiModel.startsWith("novelai") &&
     !settingsStore.state.promptSettings?.trimStartNewChat
   ) {
     chats.push({ role: "system", content: "[Start a new chat]", memo: "NewChat" });
   }
-
   const firstMessage = await addFirstMessage(
     chats,
     options.currentChar,
     options.nowChatroom,
-    currentChat,
+    options.currentChat,
     options.usingPromptTemplate,
   );
-  if (firstMessage) currentTokens += await options.tokenizer.tokenizeChat(firstMessage);
+  if (firstMessage) {
+    currentTokens += await options.tokenizer.tokenizeChat(firstMessage);
+  }
+  return { chats, currentTokens };
+}
 
+async function runStartTrigger(
+  options: BuildChatHistoryOptions,
+  currentChat: Chat,
+  currentTokens: number,
+) {
   let active = getActiveMessages(currentChat);
-  const triggerResult = await runTrigger(options.currentChar, "start", { chat: currentChat });
-  if (triggerResult) {
-    currentChat = triggerResult.chat;
-    setCurrentChat(currentChat);
-    active = getActiveMessages(currentChat);
-    currentTokens += triggerResult.tokens;
-    if (triggerResult.stopSending) {
-      return { stopSending: true as const, currentChat, currentTokens };
-    }
+  const triggerResult = await runTrigger(options.currentChar, "start", {
+    chat: currentChat,
+  });
+  if (!triggerResult) {
+    return { stopSending: false as const, currentChat, currentTokens, active, triggerResult };
   }
 
+  currentChat = triggerResult.chat;
+  setCurrentChat(currentChat);
+  active = getActiveMessages(currentChat);
+  currentTokens += triggerResult.tokens;
+  return {
+    stopSending: !!triggerResult.stopSending,
+    currentChat,
+    currentTokens,
+    active,
+    triggerResult,
+  };
+}
+
+async function appendHistoryMessages(
+  options: BuildChatHistoryOptions,
+  chats: OpenAIChat[],
+  messages: Message[],
+  currentTokens: number,
+) {
   const historyStart = chats.length;
-  for (let index = 0; index < active.messages.length; index++) {
+  for (let index = 0; index < messages.length; index++) {
     chats.push(
       await formatHistoryMessage(
-        active.messages[index],
+        messages[index],
         index,
-        active.messages.length,
+        messages.length,
         options.currentChar,
         options.nowChatroom,
         options.usingPromptTemplate,
@@ -285,10 +307,18 @@ export async function buildChatHistory(options: BuildChatHistoryOptions) {
       ),
     );
   }
-  currentTokens += await options.tokenizer.tokenizeChats(chats.slice(historyStart));
+  return currentTokens +
+    (await options.tokenizer.tokenizeChats(chats.slice(historyStart)));
+}
 
+async function collectDepthPrompts(
+  options: BuildChatHistoryOptions,
+  currentTokens: number,
+) {
   const depthPrompts = options.lorePrompt.actives.filter(
-    (prompt) => (prompt.pos === "depth" && prompt.depth > 0) || prompt.pos === "reverse_depth",
+    (prompt) =>
+      (prompt.pos === "depth" && prompt.depth > 0) ||
+      prompt.pos === "reverse_depth",
   );
   for (const depthPrompt of depthPrompts) {
     currentTokens += await options.tokenizer.tokenizeChat({
@@ -298,13 +328,35 @@ export async function buildChatHistory(options: BuildChatHistoryOptions) {
       }),
     });
   }
+  return { depthPrompts: depthPrompts as DepthPrompt[], currentTokens };
+}
 
+export async function buildChatHistory(options: BuildChatHistoryOptions) {
+  let { currentChat } = options;
+  const initialized = await initializeHistory(options);
+  let currentTokens = initialized.currentTokens;
+  const chats = initialized.chats;
+
+  const triggered = await runStartTrigger(options, currentChat, currentTokens);
+  currentChat = triggered.currentChat;
+  currentTokens = triggered.currentTokens;
+  if (triggered.stopSending) {
+    return { stopSending: true as const, currentChat, currentTokens };
+  }
+
+  currentTokens = await appendHistoryMessages(
+    options,
+    chats,
+    triggered.active.messages,
+    currentTokens,
+  );
+  const depth = await collectDepthPrompts(options, currentTokens);
   return {
     stopSending: false as const,
     chats,
     currentChat,
-    currentTokens,
-    triggerResult,
-    depthPrompts: depthPrompts as DepthPrompt[],
+    currentTokens: depth.currentTokens,
+    triggerResult: triggered.triggerResult,
+    depthPrompts: depth.depthPrompts,
   };
 }

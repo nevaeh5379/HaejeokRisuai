@@ -23,6 +23,8 @@ type NonStreamingRequest = Exclude<
   { type: "streaming" } | { type: "fail" }
 >;
 
+type ResponseTuple = readonly [string, string];
+
 interface NonStreamingOptions {
   req: NonStreamingRequest;
   selectedChar: number;
@@ -37,77 +39,129 @@ interface NonStreamingOptions {
   reformatContent: (data: string) => string;
 }
 
+function getResponses(req: NonStreamingRequest): readonly ResponseTuple[] {
+  if (req.type === "success") return [["char", req.result]];
+  if (req.type === "multiline") return req.result;
+  return [];
+}
+
+function getMessages(options: NonStreamingOptions) {
+  return characterStore.characters[options.selectedChar].chats[
+    options.selectedChat
+  ].message;
+}
+
+async function processResponseContent(
+  options: NonStreamingOptions,
+  content: string,
+  msgIndex: number,
+  previousContent = "",
+) {
+  let processed = await processScriptFull(
+    options.nowChatroom,
+    options.reformatContent(previousContent + content),
+    "editoutput",
+    msgIndex,
+  );
+  if (settingsStore.state.removeIncompleteResponse) {
+    processed.data = trimUntilPunctuation(processed.data);
+  }
+  const inlay = runInlayScreen(options.currentChar, processed.data);
+  return {
+    result: inlay.text,
+    emoChanged: processed.emoChanged,
+    inlayPromise: inlay.promise,
+  };
+}
+
+function createGeneratedMessage(
+  options: NonStreamingOptions,
+  role: string,
+  data: string,
+) {
+  return {
+    role: role as "char",
+    data,
+    saying: options.currentChar.chaId,
+    time: Date.now(),
+    generationInfo: options.generationInfo,
+    promptInfo: options.promptInfo,
+    chatId: options.generationId,
+  };
+}
+
+async function storeFirstResponse(
+  options: NonStreamingOptions,
+  response: ResponseTuple,
+  result: string,
+  inlayPromise?: Promise<string>,
+) {
+  const messages = getMessages(options);
+  if (options.continueGeneration) {
+    const index = messages.length - 1;
+    messages[index] = createGeneratedMessage(options, "char", result);
+    if (inlayPromise) messages[index].data = await inlayPromise;
+    return messages[index]?.chatId;
+  }
+
+  messages.push(createGeneratedMessage(options, response[0], result));
+  const index = messages.length - 1;
+  if (inlayPromise) messages[index].data = await inlayPromise;
+  return messages[index]?.chatId;
+}
+
+async function processSingleResponse(
+  options: NonStreamingOptions,
+  response: ResponseTuple,
+  index: number,
+) {
+  const messages = getMessages(options);
+  const isContinuation = index === 0 && !!options.continueGeneration;
+  const msgIndex = isContinuation ? messages.length - 1 : messages.length;
+  const previousContent = isContinuation ? messages[msgIndex].data : "";
+  return processResponseContent(
+    options,
+    response[1],
+    msgIndex,
+    previousContent,
+  );
+}
+
+async function notifyOutputListener(
+  options: NonStreamingOptions,
+  currentChat: Chat,
+  outputMessageId?: string,
+) {
+  if (!outputMessageId) return;
+  await runChatOutputListeners(
+    options.currentChar,
+    currentChat,
+    options.selectedChar,
+    options.selectedChat,
+    findMessageIndexByChatId(currentChat, outputMessageId),
+  );
+}
+
 export async function processNonStreamingResponse(options: NonStreamingOptions) {
-  const responses =
-    options.req.type === "success"
-      ? ([["char", options.req.result]] as const)
-      : options.req.type === "multiline"
-        ? options.req.result
-        : [];
+  const responses = getResponses(options.req);
   const rerolls: string[] = [];
   let result = "";
   let emoChanged = false;
   let outputMessageId: string | undefined;
 
-  for (let i = 0; i < responses.length; i++) {
-    const response = responses[i];
-    const content = response[1];
-    const messages =
-      characterStore.characters[options.selectedChar].chats[
-        options.selectedChat
-      ].message;
-    let msgIndex = messages.length;
-    let processed = await processScriptFull(
-      options.nowChatroom,
-      options.reformatContent(content),
-      "editoutput",
-      msgIndex,
-    );
-
-    if (i === 0 && options.continueGeneration) {
-      msgIndex -= 1;
-      processed = await processScriptFull(
-        options.nowChatroom,
-        options.reformatContent(messages[msgIndex].data + content),
-        "editoutput",
-        msgIndex,
-      );
-    }
-    if (settingsStore.state.removeIncompleteResponse) {
-      processed.data = trimUntilPunctuation(processed.data);
-    }
-
-    result = processed.data;
-    const inlay = runInlayScreen(options.currentChar, result);
-    result = inlay.text;
+  for (let index = 0; index < responses.length; index++) {
+    const processed = await processSingleResponse(options, responses[index], index);
+    result = processed.result;
     emoChanged = processed.emoChanged;
 
-    if (i === 0 && options.continueGeneration) {
-      messages[msgIndex] = {
-        role: "char",
-        data: result,
-        saying: options.currentChar.chaId,
-        time: Date.now(),
-        generationInfo: options.generationInfo,
-        promptInfo: options.promptInfo,
-        chatId: options.generationId,
-      };
-      if (inlay.promise) messages[msgIndex].data = await inlay.promise;
-      outputMessageId = messages[msgIndex]?.chatId;
-    } else if (i === 0) {
-      messages.push({
-        role: response[0],
-        data: result,
-        saying: options.currentChar.chaId,
-        time: Date.now(),
-        generationInfo: options.generationInfo,
-        promptInfo: options.promptInfo,
-        chatId: options.generationId,
-      });
-      const index = messages.length - 1;
-      if (inlay.promise) messages[index].data = await inlay.promise;
-      rerolls.push(result);
-      outputMessageId = messages[index]?.chatId;
+    if (index === 0) {
+      outputMessageId = await storeFirstResponse(
+        options,
+        responses[index],
+        result,
+        processed.inlayPromise,
+      );
+      if (!options.continueGeneration) rerolls.push(result);
     } else {
       rerolls.push(result);
     }
@@ -124,22 +178,13 @@ export async function processNonStreamingResponse(options: NonStreamingOptions) 
     options.selectedChar,
     options.selectedChat,
   );
-  const currentChat = triggered.currentChat;
-  if (outputMessageId) {
-    await runChatOutputListeners(
-      options.currentChar,
-      currentChat,
-      options.selectedChar,
-      options.selectedChat,
-      findMessageIndexByChatId(currentChat, outputMessageId),
-    );
-  }
+  await notifyOutputListener(options, triggered.currentChat, outputMessageId);
 
   return {
     ok: true as const,
     result,
     emoChanged,
     resendChat: triggered.resendChat,
-    currentChat,
+    currentChat: triggered.currentChat,
   };
 }

@@ -112,6 +112,81 @@ function applyTriggerPrompts(
   }
 }
 
+type PreparedPromptSections = Awaited<ReturnType<typeof preparePromptSections>>;
+type ReadyChatHistory = Extract<
+  Awaited<ReturnType<typeof buildChatHistory>>,
+  { stopSending: false }
+>;
+
+function createRenderContext(
+  currentChar: character,
+  sections: PreparedPromptSections,
+) {
+  return {
+    currentChar,
+    unformated: sections.unformated,
+    usingPromptTemplate: sections.usingPromptTemplate,
+    positionParser: sections.positionParser,
+    getDescriptionPrompts: sections.getDescriptionPrompts,
+  };
+}
+
+async function buildHistoryStage(
+  options: BuildGenerationPromptOptions,
+  sections: PreparedPromptSections,
+) {
+  const renderContext = createRenderContext(options.currentChar, sections);
+  const estimate = await estimatePromptTemplateTokens({
+    promptTemplate: sections.promptTemplate,
+    context: renderContext,
+    tokenizer: options.tokenizer,
+  });
+  const history = await buildChatHistory({
+    currentChar: options.currentChar,
+    nowChatroom: options.nowChatroom,
+    currentChat: options.currentChat,
+    usingPromptTemplate: sections.usingPromptTemplate,
+    tokenizer: options.tokenizer,
+    currentTokens: settingsStore.state.maxResponse + 50 + estimate.tokens,
+    lorePrompt: sections.lorepmt,
+    resolvePosition: sections.resolvePosition,
+    findCharacter: options.findCharacter,
+  });
+  if (history.stopSending) {
+    doingChat.set(false);
+    return { ok: false as const };
+  }
+  return {
+    ok: true as const,
+    renderContext,
+    estimate,
+    history: history as ReadyChatHistory,
+  };
+}
+
+async function applyMemoryStage(
+  options: BuildGenerationPromptOptions,
+  history: ReadyChatHistory,
+) {
+  const memory = await applyChatMemory({
+    chats: history.chats,
+    currentTokens: history.currentTokens,
+    maxContextTokens: options.maxContextTokens,
+    currentChat: history.currentChat,
+    nowChatroom: options.nowChatroom,
+    currentChar: options.currentChar,
+    tokenizer: options.tokenizer,
+    selectedChar: options.selectedChar,
+    selectedChat: options.selectedChat,
+    stage1Start: options.stageTimings.stage1Start,
+    throwError: options.throwError,
+  });
+  if (!memory.ok) return memory;
+  options.stageTimings.stage1Duration = memory.stage1Duration;
+  options.stageTimings.stage2Duration = memory.stage2Duration;
+  return memory;
+}
+
 export interface BuildGenerationPromptOptions {
   currentChar: character;
   currentChat: Chat;
@@ -130,94 +205,47 @@ export interface BuildGenerationPromptOptions {
 export async function buildGenerationPrompt(
   options: BuildGenerationPromptOptions,
 ) {
-  let currentChat = options.currentChat;
   chatProcessStage.set(1);
   options.stageTimings.stage1Start = Date.now();
-
   const sections = await preparePromptSections(
     options.currentChar,
-    currentChat,
+    options.currentChat,
     options.nowChatroom,
   );
-  const { unformated, promptTemplate } = sections;
-  const renderContext = {
-    currentChar: options.currentChar,
-    unformated,
-    usingPromptTemplate: sections.usingPromptTemplate,
-    positionParser: sections.positionParser,
-    getDescriptionPrompts: sections.getDescriptionPrompts,
-  };
+  const historyStage = await buildHistoryStage(options, sections);
+  if (!historyStage.ok) return { ok: false as const };
 
-  const estimate = await estimatePromptTemplateTokens({
-    promptTemplate,
-    context: renderContext,
-    tokenizer: options.tokenizer,
-  });
-  let currentTokens = settingsStore.state.maxResponse + 50 + estimate.tokens;
-
-  const history = await buildChatHistory({
-    currentChar: options.currentChar,
-    nowChatroom: options.nowChatroom,
-    currentChat,
-    usingPromptTemplate: sections.usingPromptTemplate,
-    tokenizer: options.tokenizer,
-    currentTokens,
-    lorePrompt: sections.lorepmt,
-    resolvePosition: sections.resolvePosition,
-    findCharacter: options.findCharacter,
-  });
-  if (history.stopSending) {
-    doingChat.set(false);
-    return { ok: false as const };
-  }
-
-  currentChat = history.currentChat;
-  currentTokens = history.currentTokens;
-  const memory = await applyChatMemory({
-    chats: history.chats,
-    currentTokens,
-    maxContextTokens: options.maxContextTokens,
-    currentChat,
-    nowChatroom: options.nowChatroom,
-    currentChar: options.currentChar,
-    tokenizer: options.tokenizer,
-    selectedChar: options.selectedChar,
-    selectedChat: options.selectedChat,
-    stage1Start: options.stageTimings.stage1Start,
-    throwError: options.throwError,
-  });
+  const memory = await applyMemoryStage(options, historyStage.history);
   if (!memory.ok) return { ok: false as const };
-
-  currentChat = memory.currentChat;
-  options.stageTimings.stage1Duration = memory.stage1Duration;
-  options.stageTimings.stage2Duration = memory.stage2Duration;
   const memories = applyMemoryPrompts(
     memory.chats,
-    unformated,
-    promptTemplate,
-    estimate.supaMemoryCardUsed,
+    sections.unformated,
+    sections.promptTemplate,
+    historyStage.estimate.supaMemoryCardUsed,
   );
   applyDepthPrompts(
-    unformated,
-    history.depthPrompts,
+    sections.unformated,
+    historyStage.history.depthPrompts,
     sections.resolvePosition,
     options.currentChar,
   );
-  applyTriggerPrompts(unformated, history.triggerResult);
+  applyTriggerPrompts(
+    sections.unformated,
+    historyStage.history.triggerResult,
+  );
 
   const formated = await formatPromptForRequest({
-    promptTemplate,
-    context: renderContext,
+    promptTemplate: sections.promptTemplate,
+    context: historyStage.renderContext,
     memories,
-    hasCachePoint: estimate.hasCachePoint,
+    hasCachePoint: historyStage.estimate.hasCachePoint,
     continued: options.continued,
     promptInfo: options.promptInfo,
   });
-
   return {
     ok: true as const,
     formated,
     biases: buildBiases(options.currentChar),
-    currentChat,
+    currentChat: memory.currentChat,
   };
 }

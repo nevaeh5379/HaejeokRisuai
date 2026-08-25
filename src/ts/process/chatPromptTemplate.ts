@@ -4,7 +4,13 @@ import { safeStructuredClone } from "../polyfill";
 import { prebuiltAssetCommand } from "../util";
 import { parseChatML } from "../parser/chatML";
 import { ChatTokenizer } from "../tokenizer";
-import type { PromptItem, PromptItemChat, PromptRole } from "./prompt";
+import type {
+  PromptItem,
+  PromptItemAuthorNote,
+  PromptItemChat,
+  PromptItemTyped,
+  PromptRole,
+} from "./prompt";
 import { risuChatParser } from "./scripts";
 import { runLuaEditTrigger } from "./scriptings";
 import {
@@ -146,6 +152,69 @@ function renderChatCard(card: PromptItemChat, context: RenderContext): RenderedC
   return { prompts, promptInfo: [] };
 }
 
+function renderTypedCard(
+  card: PromptItemTyped | PromptItemAuthorNote,
+  context: RenderContext,
+  memories: OpenAIChat[],
+  capturePromptInfo: boolean,
+): RenderedCard {
+  if (card.type === "persona") {
+    return formatTypedPrompts(
+      safeStructuredClone(context.unformated.personaPrompt),
+      card.role2,
+      card.innerFormat,
+      card.type,
+      context,
+      capturePromptInfo,
+    );
+  }
+  if (card.type === "description") {
+    return formatTypedPrompts(
+      context.getDescriptionPrompts(card.role2),
+      undefined,
+      card.innerFormat,
+      card.type,
+      context,
+      capturePromptInfo,
+    );
+  }
+  if (card.type === "authornote") {
+    return formatTypedPrompts(
+      safeStructuredClone(context.unformated.authorNote),
+      card.role2,
+      card.innerFormat,
+      card.type,
+      context,
+      capturePromptInfo,
+      card.defaultText || "",
+    );
+  }
+  return formatTypedPrompts(
+    safeStructuredClone(memories),
+    card.role2,
+    card.innerFormat,
+    card.type,
+    context,
+    capturePromptInfo,
+    "",
+    false,
+  );
+}
+
+function renderPostEverythingCard(context: RenderContext): RenderedCard {
+  const prompts = [...context.unformated.postEverything];
+  if (
+    context.usingPromptTemplate &&
+    settingsStore.state.promptSettings.postEndInnerFormat
+  ) {
+    prompts.push({
+      role: "system",
+      content: settingsStore.state.promptSettings.postEndInnerFormat,
+    });
+  }
+  return { prompts, promptInfo: [] };
+}
+
 function renderCard(
   card: PromptItem,
   context: RenderContext,
@@ -153,76 +222,26 @@ function renderCard(
   capturePromptInfo = false,
 ): RenderedCard {
   if (!isCardEnabled(card)) return { prompts: [], promptInfo: [] };
-
-  switch (card.type) {
-    case "persona":
-      return formatTypedPrompts(
-        safeStructuredClone(context.unformated.personaPrompt),
-        card.role2,
-        card.innerFormat,
-        card.type,
-        context,
-        capturePromptInfo,
-      );
-    case "description":
-      return formatTypedPrompts(
-        context.getDescriptionPrompts(card.role2),
-        undefined,
-        card.innerFormat,
-        card.type,
-        context,
-        capturePromptInfo,
-      );
-    case "authornote":
-      return formatTypedPrompts(
-        safeStructuredClone(context.unformated.authorNote),
-        card.role2,
-        card.innerFormat,
-        card.type,
-        context,
-        capturePromptInfo,
-        card.defaultText || "",
-      );
-    case "memory":
-      return formatTypedPrompts(
-        safeStructuredClone(memories),
-        card.role2,
-        card.innerFormat,
-        card.type,
-        context,
-        capturePromptInfo,
-        "",
-        false,
-      );
-    case "lorebook":
-      return { prompts: context.unformated.lorebook, promptInfo: [] };
-    case "postEverything": {
-      const prompts = [...context.unformated.postEverything];
-      if (
-        context.usingPromptTemplate &&
-        settingsStore.state.promptSettings.postEndInnerFormat
-      ) {
-        prompts.push({
-          role: "system",
-          content: settingsStore.state.promptSettings.postEndInnerFormat,
-        });
-      }
-      return { prompts, promptInfo: [] };
-    }
-    case "plain":
-    case "jailbreak":
-    case "cot":
-      return renderPlainCard(card, context, capturePromptInfo);
-    case "chatML":
-      return {
-        prompts: (parseChatML(card.text) ?? []) as OpenAIChat[],
-        promptInfo: [],
-      };
-    case "chat":
-      return renderChatCard(card, context);
-    case "cache":
-      return { prompts: [], promptInfo: [] };
+  if (
+    card.type === "persona" ||
+    card.type === "description" ||
+    card.type === "authornote" ||
+    card.type === "memory"
+  ) {
+    return renderTypedCard(card, context, memories, capturePromptInfo);
   }
+  if (card.type === "plain" || card.type === "jailbreak" || card.type === "cot") {
+    return renderPlainCard(card, context, capturePromptInfo);
+  }
+  if (card.type === "lorebook") {
+    return { prompts: context.unformated.lorebook, promptInfo: [] };
+  }
+  if (card.type === "postEverything") return renderPostEverythingCard(context);
+  if (card.type === "chatML") {
+    return { prompts: (parseChatML(card.text) ?? []) as OpenAIChat[], promptInfo: [] };
+  }
+  if (card.type === "chat") return renderChatCard(card, context);
+  return { prompts: [], promptInfo: [] };
 }
 
 export async function estimatePromptTemplateTokens(options: {
@@ -310,74 +329,82 @@ function shouldAppendContinuePrompt(continued?: boolean) {
   );
 }
 
-export async function formatPromptForRequest(options: {
+interface FormatPromptOptions {
   promptTemplate: PromptItem[] | null | undefined;
   context: RenderContext;
   memories: OpenAIChat[];
   hasCachePoint: boolean;
   continued?: boolean;
   promptInfo: MessagePresetInfo;
-}) {
-  if (shouldAppendContinuePrompt(options.continued)) {
-    options.context.unformated.postEverything.push({
-      role: "system",
-      content: "[Continue the last response]",
-    });
-  }
+}
 
-  const formated: OpenAIChat[] = [];
-  const promptInfoBody: OpenAIChat[] = [];
-  const capturePromptInfo =
-    settingsStore.state.promptInfoInsideChat &&
-    settingsStore.state.promptTextInfoInsideChat;
+function appendContinuePrompt(options: FormatPromptOptions) {
+  if (!shouldAppendContinuePrompt(options.continued)) return;
+  options.context.unformated.postEverything.push({
+    role: "system",
+    content: "[Continue the last response]",
+  });
+}
 
-  if (options.promptTemplate) {
-    for (const card of options.promptTemplate) {
-      if (card.type === "cache") {
-        applyCachePoint(formated, card.depth, card.role);
-        continue;
-      }
-
-      const rendered = renderCard(
-        card,
-        options.context,
-        options.memories,
-        capturePromptInfo,
-      );
-      mergePrompts(formated, rendered.prompts);
-      if (capturePromptInfo) promptInfoBody.push(...rendered.promptInfo);
-
-      if (
-        card.type === "chat" &&
-        settingsStore.state.automaticCachePoint &&
-        !options.hasCachePoint
-      ) {
-        applyCachePoint(formated, 3, "user");
-      }
+function renderTemplateCards(
+  options: FormatPromptOptions,
+  formated: OpenAIChat[],
+  promptInfoBody: OpenAIChat[],
+  capturePromptInfo: boolean,
+) {
+  for (const card of options.promptTemplate ?? []) {
+    if (card.type === "cache") {
+      applyCachePoint(formated, card.depth, card.role);
+      continue;
     }
-  } else {
-    const formatOrder = safeStructuredClone(settingsStore.state.formatingOrder) ?? [];
-    formatOrder.push("postEverything");
-    for (const key of formatOrder) {
-      mergePrompts(formated, options.context.unformated[key]);
+
+    const rendered = renderCard(
+      card,
+      options.context,
+      options.memories,
+      capturePromptInfo,
+    );
+    mergePrompts(formated, rendered.prompts);
+    if (capturePromptInfo) promptInfoBody.push(...rendered.promptInfo);
+    if (
+      card.type === "chat" &&
+      settingsStore.state.automaticCachePoint &&
+      !options.hasCachePoint
+    ) {
+      applyCachePoint(formated, 3, "user");
     }
   }
+}
 
-  for (const prompt of formated) prompt.content = prompt.content.trim();
-  if (capturePromptInfo) {
-    for (const prompt of promptInfoBody) prompt.content = prompt.content.trim();
+function renderLegacyPromptOrder(options: FormatPromptOptions, formated: OpenAIChat[]) {
+  const formatOrder = safeStructuredClone(settingsStore.state.formatingOrder) ?? [];
+  formatOrder.push("postEverything");
+  for (const key of formatOrder) {
+    mergePrompts(formated, options.context.unformated[key]);
   }
+}
 
+function trimPromptContents(prompts: OpenAIChat[]) {
+  for (const prompt of prompts) prompt.content = prompt.content.trim();
+}
+
+function insertCharacterDepthPrompt(options: FormatPromptOptions, formated: OpenAIChat[]) {
   const depthPrompt = options.context.currentChar.depth_prompt;
-  if (depthPrompt?.prompt) {
-    formated.splice(formated.length - depthPrompt.depth, 0, {
-      role: "system",
-      content: risuChatParser(depthPrompt.prompt, {
-        chara: options.context.currentChar,
-      }),
-    });
-  }
+  if (!depthPrompt?.prompt) return;
+  formated.splice(formated.length - depthPrompt.depth, 0, {
+    role: "system",
+    content: risuChatParser(depthPrompt.prompt, {
+      chara: options.context.currentChar,
+    }),
+  });
+}
 
+async function runPromptEditTriggers(
+  options: FormatPromptOptions,
+  formated: OpenAIChat[],
+  promptInfoBody: OpenAIChat[],
+  capturePromptInfo: boolean,
+) {
   const edited = await runLuaEditTrigger(
     options.context.currentChar,
     "editRequest",
@@ -390,6 +417,30 @@ export async function formatPromptForRequest(options: {
       promptInfoBody,
     );
   }
-
   return edited;
+}
+
+export async function formatPromptForRequest(options: FormatPromptOptions) {
+  appendContinuePrompt(options);
+  const formated: OpenAIChat[] = [];
+  const promptInfoBody: OpenAIChat[] = [];
+  const capturePromptInfo =
+    settingsStore.state.promptInfoInsideChat &&
+    settingsStore.state.promptTextInfoInsideChat;
+
+  if (options.promptTemplate) {
+    renderTemplateCards(options, formated, promptInfoBody, capturePromptInfo);
+  } else {
+    renderLegacyPromptOrder(options, formated);
+  }
+
+  trimPromptContents(formated);
+  if (capturePromptInfo) trimPromptContents(promptInfoBody);
+  insertCharacterDepthPrompt(options, formated);
+  return runPromptEditTriggers(
+    options,
+    formated,
+    promptInfoBody,
+    capturePromptInfo,
+  );
 }

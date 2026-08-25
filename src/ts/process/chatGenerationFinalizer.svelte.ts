@@ -125,6 +125,54 @@ export interface FinalizeChatGenerationOptions {
   resendGeneration: () => Promise<boolean>;
 }
 
+function startPostGenerationStage(options: FinalizeChatGenerationOptions) {
+  options.stageTimings.stage3Duration =
+    Date.now() - options.stageTimings.stage3Start;
+  if (options.generationInfo.stageTiming) {
+    options.generationInfo.stageTiming.stage3 =
+      options.stageTimings.stage3Duration;
+  }
+  chatProcessStage.set(4);
+  options.stageTimings.stage4Start = Date.now();
+}
+
+async function handleResend(options: FinalizeChatGenerationOptions) {
+  if (!options.resendChat) return null;
+  options.stageTimings.stage4Duration =
+    Date.now() - options.stageTimings.stage4Start;
+  updateGenerationStageTimings(options.generationInfo, options.stageTimings);
+  attachGenerationInfoToLastMessage(
+    options.selectedChar,
+    options.selectedChat,
+    options.generationInfo,
+  );
+  doingChat.set(false);
+  return options.resendGeneration();
+}
+
+async function runFinalEffects(options: FinalizeChatGenerationOptions) {
+  await showGenerationNotification(options.result);
+  void peerSync();
+  return processPostGenerationEffects({
+    req: options.req,
+    currentChar: options.currentChar,
+    selectedChar: options.selectedChar,
+    selectedChat: options.selectedChat,
+    chatProcessIndex: options.chatProcessIndex,
+    result: options.result,
+    emoChanged: options.emoChanged,
+    abortSignal: options.abortSignal,
+    throwError: options.throwError,
+  });
+}
+
+function completeGeneration(options: FinalizeChatGenerationOptions) {
+  options.stageTimings.stage4Duration =
+    Date.now() - options.stageTimings.stage4Start;
+  updateGenerationStageTimings(options.generationInfo, options.stageTimings);
+  commitRecentMessages(options.selectedChar, options.selectedChat);
+}
+
 export async function finalizeChatGeneration(
   options: FinalizeChatGenerationOptions,
 ): Promise<boolean> {
@@ -142,48 +190,12 @@ export async function finalizeChatGeneration(
     options.selectedChat,
     options.abortSignal,
   );
+  startPostGenerationStage(options);
+  const resendResult = await handleResend(options);
+  if (resendResult !== null) return resendResult;
 
-  options.stageTimings.stage3Duration =
-    Date.now() - options.stageTimings.stage3Start;
-  if (options.generationInfo.stageTiming) {
-    options.generationInfo.stageTiming.stage3 =
-      options.stageTimings.stage3Duration;
-  }
-  chatProcessStage.set(4);
-  options.stageTimings.stage4Start = Date.now();
-
-  if (options.resendChat) {
-    options.stageTimings.stage4Duration =
-      Date.now() - options.stageTimings.stage4Start;
-    updateGenerationStageTimings(options.generationInfo, options.stageTimings);
-    attachGenerationInfoToLastMessage(
-      options.selectedChar,
-      options.selectedChat,
-      options.generationInfo,
-    );
-    doingChat.set(false);
-    return options.resendGeneration();
-  }
-
-  await showGenerationNotification(options.result);
-  void peerSync();
-
-  const effects = await processPostGenerationEffects({
-    req: options.req,
-    currentChar: options.currentChar,
-    selectedChar: options.selectedChar,
-    selectedChat: options.selectedChat,
-    chatProcessIndex: options.chatProcessIndex,
-    result: options.result,
-    emoChanged: options.emoChanged,
-    abortSignal: options.abortSignal,
-    throwError: options.throwError,
-  });
+  const effects = await runFinalEffects(options);
   if (effects.returnEarly) return true;
-
-  options.stageTimings.stage4Duration =
-    Date.now() - options.stageTimings.stage4Start;
-  updateGenerationStageTimings(options.generationInfo, options.stageTimings);
-  commitRecentMessages(options.selectedChar, options.selectedChat);
+  completeGeneration(options);
   return true;
 }

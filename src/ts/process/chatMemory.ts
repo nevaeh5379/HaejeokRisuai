@@ -10,6 +10,12 @@ import { hypaMemoryV3 } from "./memory/hypav3";
 import { supaMemory } from "./memory/supaMemory";
 import type { OpenAIChat } from "./index.svelte";
 
+interface MemoryState {
+  chats: OpenAIChat[];
+  currentTokens: number;
+  currentChat: Chat;
+}
+
 function memoryEnabled(room: character | groupChat) {
   return (
     room.supaMemory &&
@@ -33,8 +39,7 @@ async function trimHistoryToContext(
   const tokenCounts = await tokenizer.tokenizeChatsDetailed(chats);
   let removeCount = 0;
   while (currentTokens > maxContextTokens && removeCount < chats.length - 1) {
-    currentTokens -= tokenCounts[removeCount];
-    removeCount += 1;
+    currentTokens -= tokenCounts[removeCount++];
   }
   if (currentTokens > maxContextTokens) {
     return { ok: false as const, chats, currentTokens };
@@ -57,129 +62,180 @@ export interface ApplyChatMemoryOptions {
   throwError: (error: string) => void;
 }
 
+function storedChat(options: ApplyChatMemoryOptions) {
+  return characterStore.characters[options.selectedChar].chats[
+    options.selectedChat
+  ];
+}
+
+async function applyWithoutMemory(
+  options: ApplyChatMemoryOptions,
+  state: MemoryState,
+) {
+  const trimmed = await trimHistoryToContext(
+    state.chats,
+    state.currentTokens,
+    options.maxContextTokens,
+    options.tokenizer,
+  );
+  if (!trimmed.ok) {
+    options.throwError(
+      `${language.errors.toomuchtoken}\n\nRequired Tokens: ${trimmed.currentTokens}`,
+    );
+    return { ok: false as const };
+  }
+
+  state.chats = trimmed.chats;
+  state.currentTokens = trimmed.currentTokens;
+  state.currentChat.lastMemory = state.chats[0].memo;
+  return { ok: true as const, state };
+}
+
+async function applyHanuraiMemory(
+  options: ApplyChatMemoryOptions,
+  state: MemoryState,
+) {
+  const result = await hanuraiMemory(state.chats, {
+    currentTokens: state.currentTokens,
+    maxContextTokens: options.maxContextTokens,
+    tokenizer: options.tokenizer,
+    serverIndexId: state.currentChat.id,
+  });
+  if (result === false) return { ok: false as const };
+  return {
+    ok: true as const,
+    state: { ...state, chats: result.chats, currentTokens: result.tokens },
+  };
+}
+
+async function applyHypaV2Memory(
+  options: ApplyChatMemoryOptions,
+  state: MemoryState,
+) {
+  const result = await hypaMemoryV2(
+    state.chats,
+    state.currentTokens,
+    options.maxContextTokens,
+    state.currentChat,
+    options.nowChatroom,
+    options.tokenizer,
+  );
+  if (result.error) {
+    options.throwError(result.error);
+    return { ok: false as const };
+  }
+
+  state.currentChat.hypaV2Data = result.memory ?? state.currentChat.hypaV2Data;
+  storedChat(options).hypaV2Data = state.currentChat.hypaV2Data;
+  return {
+    ok: true as const,
+    state: {
+      chats: result.chats,
+      currentTokens: result.currentTokens,
+      currentChat: storedChat(options),
+    },
+  };
+}
+
+async function applyHypaV3Memory(
+  options: ApplyChatMemoryOptions,
+  state: MemoryState,
+) {
+  const result = await hypaMemoryV3(
+    state.chats,
+    state.currentTokens,
+    options.maxContextTokens,
+    state.currentChat,
+    options.nowChatroom,
+    options.tokenizer,
+  );
+  if (result.error) {
+    if (result.memory) {
+      state.currentChat.hypaV3Data = result.memory;
+      storedChat(options).hypaV3Data = state.currentChat.hypaV3Data;
+    }
+    options.throwError(result.error);
+    return { ok: false as const };
+  }
+
+  state.currentChat.hypaV3Data = result.memory ?? state.currentChat.hypaV3Data;
+  storedChat(options).hypaV3Data = state.currentChat.hypaV3Data;
+  return {
+    ok: true as const,
+    state: {
+      chats: result.chats,
+      currentTokens: result.currentTokens,
+      currentChat: storedChat(options),
+    },
+  };
+}
+
+async function applySupaMemory(
+  options: ApplyChatMemoryOptions,
+  state: MemoryState,
+) {
+  const result = await supaMemory(
+    state.chats,
+    state.currentTokens,
+    options.maxContextTokens,
+    state.currentChat,
+    options.nowChatroom,
+    options.tokenizer,
+    { asHyper: settingsStore.state.hypaMemory },
+  );
+  if (result.error) {
+    options.throwError(result.error);
+    return { ok: false as const };
+  }
+
+  state.currentChat.supaMemoryData = result.memory ?? state.currentChat.supaMemoryData;
+  storedChat(options).supaMemoryData = state.currentChat.supaMemoryData;
+  state.currentChat.lastMemory = result.lastId ?? state.currentChat.lastMemory;
+  return {
+    ok: true as const,
+    state: {
+      ...state,
+      chats: result.chats,
+      currentTokens: result.currentTokens,
+    },
+  };
+}
+
+function runConfiguredMemory(options: ApplyChatMemoryOptions, state: MemoryState) {
+  if (settingsStore.state.hanuraiEnable) return applyHanuraiMemory(options, state);
+  if (settingsStore.state.hypav2) return applyHypaV2Memory(options, state);
+  if (settingsStore.state.hypaV3) return applyHypaV3Memory(options, state);
+  return applySupaMemory(options, state);
+}
+
 export async function applyChatMemory(options: ApplyChatMemoryOptions) {
-  let { chats, currentTokens, currentChat } = options;
   const stage1Duration = Date.now() - options.stage1Start;
-  let stage2Duration = 0;
+  const initialState: MemoryState = {
+    chats: options.chats,
+    currentTokens: options.currentTokens,
+    currentChat: options.currentChat,
+  };
 
   if (!memoryEnabled(options.nowChatroom)) {
-    const trimmed = await trimHistoryToContext(
-      chats,
-      currentTokens,
-      options.maxContextTokens,
-      options.tokenizer,
-    );
-    if (!trimmed.ok) {
-      options.throwError(
-        `${language.errors.toomuchtoken}\n\nRequired Tokens: ${trimmed.currentTokens}`,
-      );
-      return { ok: false as const };
-    }
-    chats = trimmed.chats;
-    currentTokens = trimmed.currentTokens;
-    currentChat.lastMemory = chats[0].memo;
+    const result = await applyWithoutMemory(options, initialState);
+    if (!result.ok) return { ok: false as const };
     return {
       ok: true as const,
-      chats,
-      currentTokens,
-      currentChat,
+      ...result.state,
       stage1Duration,
-      stage2Duration,
+      stage2Duration: 0,
     };
   }
 
   chatProcessStage.set(2);
   const stage2Start = Date.now();
-
-  if (settingsStore.state.hanuraiEnable) {
-    const result = await hanuraiMemory(chats, {
-      currentTokens,
-      maxContextTokens: options.maxContextTokens,
-      tokenizer: options.tokenizer,
-      serverIndexId: currentChat.id,
-    });
-    if (result === false) return { ok: false as const };
-    chats = result.chats;
-    currentTokens = result.tokens;
-  } else if (settingsStore.state.hypav2) {
-    const result = await hypaMemoryV2(
-      chats,
-      currentTokens,
-      options.maxContextTokens,
-      currentChat,
-      options.nowChatroom,
-      options.tokenizer,
-    );
-    if (result.error) {
-      options.throwError(result.error);
-      return { ok: false as const };
-    }
-    chats = result.chats;
-    currentTokens = result.currentTokens;
-    currentChat.hypaV2Data = result.memory ?? currentChat.hypaV2Data;
-    characterStore.characters[options.selectedChar].chats[
-      options.selectedChat
-    ].hypaV2Data = currentChat.hypaV2Data;
-    currentChat =
-      characterStore.characters[options.selectedChar].chats[options.selectedChat];
-  } else if (settingsStore.state.hypaV3) {
-    const result = await hypaMemoryV3(
-      chats,
-      currentTokens,
-      options.maxContextTokens,
-      currentChat,
-      options.nowChatroom,
-      options.tokenizer,
-    );
-    if (result.error) {
-      if (result.memory) {
-        currentChat.hypaV3Data = result.memory;
-        characterStore.characters[options.selectedChar].chats[
-          options.selectedChat
-        ].hypaV3Data = currentChat.hypaV3Data;
-      }
-      options.throwError(result.error);
-      return { ok: false as const };
-    }
-    chats = result.chats;
-    currentTokens = result.currentTokens;
-    currentChat.hypaV3Data = result.memory ?? currentChat.hypaV3Data;
-    characterStore.characters[options.selectedChar].chats[
-      options.selectedChat
-    ].hypaV3Data = currentChat.hypaV3Data;
-    currentChat =
-      characterStore.characters[options.selectedChar].chats[options.selectedChat];
-  } else {
-    const result = await supaMemory(
-      chats,
-      currentTokens,
-      options.maxContextTokens,
-      currentChat,
-      options.nowChatroom,
-      options.tokenizer,
-      { asHyper: settingsStore.state.hypaMemory },
-    );
-    if (result.error) {
-      options.throwError(result.error);
-      return { ok: false as const };
-    }
-    chats = result.chats;
-    currentTokens = result.currentTokens;
-    currentChat.supaMemoryData = result.memory ?? currentChat.supaMemoryData;
-    characterStore.characters[options.selectedChar].chats[
-      options.selectedChat
-    ].supaMemoryData = currentChat.supaMemoryData;
-    currentChat.lastMemory = result.lastId ?? currentChat.lastMemory;
-  }
-
-  stage2Duration = Date.now() - stage2Start;
+  const result = await runConfiguredMemory(options, initialState);
+  if (!result.ok) return { ok: false as const };
   chatProcessStage.set(1);
   return {
     ok: true as const,
-    chats,
-    currentTokens,
-    currentChat,
+    ...result.state,
     stage1Duration,
-    stage2Duration,
+    stage2Duration: Date.now() - stage2Start,
   };
 }

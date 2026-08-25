@@ -1,6 +1,7 @@
 import { get } from "svelte/store";
 import type {
   character,
+  groupChat,
   Chat,
   MessagePresetInfo,
 } from "../storage/database.svelte";
@@ -34,13 +35,22 @@ export interface GroupGenerationRequest {
   signal: AbortSignal;
 }
 
+export interface PrepareChatSessionOptions {
+  chatProcessIndex: number;
+  chatAdditonalTokens?: number;
+  abortSignal: AbortSignal;
+  errorContext: ChatErrorContext;
+  throwError: (error: string) => void;
+  sendGroupMember: (request: GroupGenerationRequest) => Promise<boolean>;
+}
+
 function createCharacterLookup() {
   const cache: Record<string, character> = {};
   return (id: string) => {
     if (cache[id]) return cache[id];
-    const character = findCharacterbyId(id);
-    cache[id] = character;
-    return character;
+    const found = findCharacterbyId(id);
+    cache[id] = found;
+    return found;
   };
 }
 
@@ -103,9 +113,7 @@ function buildPromptInfo(): MessagePresetInfo {
   };
 }
 
-function getGroupOrder(
-  room: Extract<(typeof characterStore.characters)[number], { type: "group" }>,
-) {
+function getGroupOrder(room: groupChat) {
   const lastMessage = room.chats[room.chatPage].message.at(-1);
   let order = room.characters
     .map((id, index) => ({
@@ -122,37 +130,26 @@ function getGroupOrder(
   return order;
 }
 
-export interface PrepareChatSessionOptions {
-  chatProcessIndex: number;
-  chatAdditonalTokens?: number;
-  abortSignal: AbortSignal;
-  errorContext: ChatErrorContext;
-  throwError: (error: string) => void;
-  sendGroupMember: (request: GroupGenerationRequest) => Promise<boolean>;
-}
-
-export async function prepareChatSession(options: PrepareChatSessionOptions) {
+async function initializeGeneration(options: PrepareChatSessionOptions) {
   chatProcessStage.set(0);
   if ((characterStore as any)?.ensureLoaded) {
     await (characterStore as any).ensureLoaded();
   }
+  if (get(doingChat) && options.chatProcessIndex === -1) return false;
 
-  if (get(doingChat) && options.chatProcessIndex === -1) {
-    return { status: "done" as const, result: false };
-  }
   doingChat.set(true);
   await applyPresetChain(options.chatProcessIndex);
-  if (!(await synchronizePeer(options.throwError))) {
-    return { status: "done" as const, result: false };
-  }
+  return synchronizePeer(options.throwError);
+}
 
+async function loadSelectedChat(options: PrepareChatSessionOptions) {
   settingsStore.state.statics.messages += 1;
   const selectedChar = get(selectedCharID);
   options.errorContext.selectedChar = selectedChar;
   const nowChatroom = characterStore.characters[selectedChar];
   if (!nowChatroom) {
     doingChat.set(false);
-    return { status: "done" as const, result: false };
+    return null;
   }
 
   characterStore.touchCharacterInteraction(selectedChar);
@@ -165,59 +162,93 @@ export async function prepareChatSession(options: PrepareChatSessionOptions) {
   for (const message of nowChatroom.chats[selectedChat].message) {
     message.chatId ??= v4();
   }
+  return { selectedChar, selectedChat, nowChatroom };
+}
 
-  const promptInfo = buildPromptInfo();
+async function runGroupGeneration(
+  options: PrepareChatSessionOptions,
+  room: groupChat,
+  calculatedChatTokens: number,
+) {
+  for (const entry of getGroupOrder(room)) {
+    const result = await options.sendGroupMember({
+      chatProcessIndex: entry.index,
+      chatAdditonalTokens: calculatedChatTokens,
+      signal: options.abortSignal,
+    });
+    if (!result) return false;
+  }
+  return true;
+}
+
+async function resolveCurrentCharacter(
+  options: PrepareChatSessionOptions,
+  room: character | groupChat,
+  calculatedChatTokens: number,
+  findCharacter: (id: string) => character,
+) {
+  if (room.type !== "group") {
+    return { status: "ready" as const, currentChar: room };
+  }
+  if (options.chatProcessIndex === -1) {
+    return {
+      status: "done" as const,
+      result: await runGroupGeneration(options, room, calculatedChatTokens),
+    };
+  }
+
+  const characterId = room.characters[options.chatProcessIndex];
+  const currentChar = findCharacter(characterId);
+  if (!currentChar) {
+    options.throwError(`cannot find character: ${characterId}`);
+    return { status: "done" as const, result: false };
+  }
+  return { status: "ready" as const, currentChar };
+}
+
+function createTokenizer(additionalTokens: number) {
+  return new ChatTokenizer(
+    additionalTokens,
+    settingsStore.state.aiModel.startsWith("gpt") ? "noName" : "name",
+  );
+}
+
+export async function prepareChatSession(options: PrepareChatSessionOptions) {
+  if (!(await initializeGeneration(options))) {
+    return { status: "done" as const, result: false };
+  }
+
+  const selection = await loadSelectedChat(options);
+  if (!selection) return { status: "done" as const, result: false };
+
   const calculatedChatTokens = settingsStore.state.aiModel.startsWith("gpt")
     ? 5
     : 3;
   const findCharacter = createCharacterLookup();
-  let currentChar: character;
+  const speaker = await resolveCurrentCharacter(
+    options,
+    selection.nowChatroom,
+    calculatedChatTokens,
+    findCharacter,
+  );
+  if (speaker.status === "done") return speaker;
 
-  if (nowChatroom.type === "group") {
-    if (options.chatProcessIndex === -1) {
-      for (const entry of getGroupOrder(nowChatroom)) {
-        const result = await options.sendGroupMember({
-          chatProcessIndex: entry.index,
-          chatAdditonalTokens: calculatedChatTokens,
-          signal: options.abortSignal,
-        });
-        if (!result) return { status: "done" as const, result: false };
-      }
-      return { status: "done" as const, result: true };
-    }
-
-    currentChar = findCharacter(
-      nowChatroom.characters[options.chatProcessIndex],
-    );
-    if (!currentChar) {
-      options.throwError(
-        `cannot find character: ${nowChatroom.characters[options.chatProcessIndex]}`,
-      );
-      return { status: "done" as const, result: false };
-    }
-  } else {
-    currentChar = nowChatroom;
-  }
-
-  options.errorContext.currentChar = currentChar;
-  const tokenizer = new ChatTokenizer(
+  options.errorContext.currentChar = speaker.currentChar;
+  const tokenizer = createTokenizer(
     options.chatAdditonalTokens ?? calculatedChatTokens,
-    settingsStore.state.aiModel.startsWith("gpt") ? "noName" : "name",
   );
   const currentChat = runCurrentChatVariables(
-    nowChatroom.chats[selectedChat],
-    currentChar,
+    selection.nowChatroom.chats[selection.selectedChat],
+    speaker.currentChar,
   );
-  nowChatroom.chats[selectedChat] = currentChat;
+  selection.nowChatroom.chats[selection.selectedChat] = currentChat;
 
   return {
     status: "ready" as const,
-    selectedChar,
-    selectedChat,
-    nowChatroom,
-    currentChar,
+    ...selection,
+    currentChar: speaker.currentChar,
     currentChat,
-    promptInfo,
+    promptInfo: buildPromptInfo(),
     tokenizer,
     maxContextTokens: settingsStore.state.maxContext,
     findCharacter,
