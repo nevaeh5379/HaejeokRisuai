@@ -145,6 +145,7 @@ async function createThumbnailBuffer(buffer, width = 128, height = 128) {
                 width,
                 height,
                 fit: 'cover',
+                position: 'top',
                 withoutEnlargement: true
             })
             .webp({ quality: 80 })

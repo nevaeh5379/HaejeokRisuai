@@ -18,29 +18,45 @@ export async function generateClientThumbnail(
   try {
     const blob = new Blob([imageData as any]);
 
+    const drawCoverTop = (
+      ctx:
+        | CanvasRenderingContext2D
+        | OffscreenCanvasRenderingContext2D,
+      source: CanvasImageSource,
+      srcW: number,
+      srcH: number,
+    ) => {
+      // Cover-crop anchored to the top: scale so the shorter side fills maxSize,
+      // center horizontally, align to the top.
+      const scale = Math.max(maxSize / srcW, maxSize / srcH);
+      const scaledW = Math.round(srcW * scale);
+      const scaledH = Math.round(srcH * scale);
+      const dx = Math.round((maxSize - scaledW) / 2);
+      const dy = 0;
+      ctx.drawImage(source, 0, 0, srcW, srcH, dx, dy, scaledW, scaledH);
+    };
+
     if ("createImageBitmap" in window) {
-      const bitmap = await createImageBitmap(blob, {
-        resizeWidth: maxSize,
-        resizeHeight: maxSize,
-        resizeQuality: "medium",
-      });
+      const bitmap = await createImageBitmap(blob);
 
       let canvas: HTMLCanvasElement | OffscreenCanvas;
       if (typeof OffscreenCanvas !== "undefined") {
-        canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        canvas = new OffscreenCanvas(maxSize, maxSize);
       } else {
         canvas = document.createElement("canvas");
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
+        canvas.width = maxSize;
+        canvas.height = maxSize;
       }
 
       const ctx = canvas.getContext("2d") as
-        CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+        | CanvasRenderingContext2D
+        | OffscreenCanvasRenderingContext2D
+        | null;
       if (!ctx) {
         bitmap.close();
         return imageData;
       }
-      ctx.drawImage(bitmap, 0, 0);
+      drawCoverTop(ctx, bitmap, bitmap.width, bitmap.height);
       bitmap.close();
 
       if ("convertToBlob" in canvas) {
@@ -64,19 +80,11 @@ export async function generateClientThumbnail(
         img.onload = () => {
           URL.revokeObjectURL(url);
           const canvas = document.createElement("canvas");
-          let { width, height } = img;
-          if (width > height) {
-            height = Math.round((height * maxSize) / width);
-            width = maxSize;
-          } else {
-            width = Math.round((width * maxSize) / height);
-            height = maxSize;
-          }
-          canvas.width = Math.max(1, width);
-          canvas.height = Math.max(1, height);
+          canvas.width = maxSize;
+          canvas.height = maxSize;
           const ctx = canvas.getContext("2d");
           if (ctx) {
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            drawCoverTop(ctx, img, img.width, img.height);
             const dataUrl = canvas.toDataURL("image/webp", 0.8);
             const b64 = dataUrl.split(",")[1];
             resolve(Buffer.from(b64, "base64"));
