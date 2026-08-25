@@ -15,102 +15,17 @@ import {
 } from "./chatPromptTemplate";
 import { buildChatHistory } from "./chatHistoryBuilder";
 import { applyChatMemory } from "./chatMemory";
-import type { ChatStageTimings } from "./chat-core/types";
-import type { OpenAIChat } from "./chat-core/types";
+import type { ChatStageTimings, OpenAIChat } from "./chat-core/types";
+import {
+  applyMemoryPromptPolicy,
+  applyTriggerPromptPolicy,
+  buildPromptBiases,
+  insertDepthPrompts,
+} from "./chat-core/prompt";
 
 type LorePrompt = Awaited<
   ReturnType<typeof import("./lorebook.svelte").loadLoreBookV3Prompt>
 >;
-
-function buildBiases(currentChar: character): [string, number][] {
-  return settingsStore.state.bias.concat(currentChar.bias).map((bias) => [
-    risuChatParser(
-      bias[0]
-        .replaceAll("\\n", "\n")
-        .replaceAll("\\r", "\r")
-        .replaceAll("\\\\", "\\"),
-      { chara: currentChar },
-    ),
-    bias[1],
-  ]);
-}
-
-function applyMemoryPrompts(
-  chats: OpenAIChat[],
-  unformated: Awaited<ReturnType<typeof preparePromptSections>>["unformated"],
-  promptTemplate: Awaited<ReturnType<typeof preparePromptSections>>["promptTemplate"],
-  supaMemoryCardUsed: boolean,
-) {
-  const memories: OpenAIChat[] = [];
-  if (!promptTemplate) {
-    unformated.lastChat.push(chats[chats.length - 1]);
-    chats.splice(chats.length - 1, 1);
-  }
-
-  unformated.chats = chats
-    .map((chat) => {
-      if (chat.memo !== "supaMemory" && chat.memo !== "hypaMemory") {
-        chat.removable = true;
-      } else if (supaMemoryCardUsed) {
-        memories.push(chat);
-        return { role: "system", content: "" } as OpenAIChat;
-      } else {
-        chat.content = `<Previous Conversation>${chat.content}</Previous Conversation>`;
-      }
-      return chat;
-    })
-    .filter((chat) => chat.content.trim() !== "" || !!chat.multimodals?.length);
-  return memories;
-}
-
-function applyDepthPrompts(
-  unformated: Awaited<ReturnType<typeof preparePromptSections>>["unformated"],
-  depthPrompts: LorePrompt["actives"],
-  resolvePosition: (text: string, maxDepth?: number) => string,
-  currentChar: character,
-) {
-  for (const depthPrompt of depthPrompts) {
-    const chat: OpenAIChat = {
-      role: depthPrompt.role,
-      content: risuChatParser(resolvePosition(depthPrompt.prompt), {
-        chara: currentChar,
-      }),
-    };
-    const depth =
-      depthPrompt.pos === "depth"
-        ? depthPrompt.depth
-        : unformated.chats.length - depthPrompt.depth;
-    unformated.chats.splice(depth, 0, chat);
-  }
-}
-
-function applyTriggerPrompts(
-  unformated: Awaited<ReturnType<typeof preparePromptSections>>["unformated"],
-  triggerResult: Exclude<
-    Awaited<ReturnType<typeof buildChatHistory>>,
-    { stopSending: true }
-  >["triggerResult"],
-) {
-  if (!triggerResult) return;
-  if (triggerResult.additonalSysPrompt.promptend) {
-    unformated.postEverything.push({
-      role: "system",
-      content: triggerResult.additonalSysPrompt.promptend,
-    });
-  }
-  if (triggerResult.additonalSysPrompt.historyend) {
-    unformated.lastChat.push({
-      role: "system",
-      content: triggerResult.additonalSysPrompt.historyend,
-    });
-  }
-  if (triggerResult.additonalSysPrompt.start) {
-    unformated.lastChat.unshift({
-      role: "system",
-      content: triggerResult.additonalSysPrompt.start,
-    });
-  }
-}
 
 type PreparedPromptSections = Awaited<ReturnType<typeof preparePromptSections>>;
 type ReadyChatHistory = Extract<
@@ -193,19 +108,19 @@ function applyHistoryPromptDecorations(
   historyStage: Awaited<ReturnType<typeof buildHistoryStage>> & { ok: true },
   memory: Awaited<ReturnType<typeof applyChatMemory>> & { ok: true },
 ) {
-  const memories = applyMemoryPrompts(
+  const memories = applyMemoryPromptPolicy(
     memory.chats,
     sections.unformated,
-    sections.promptTemplate,
+    Boolean(sections.promptTemplate),
     historyStage.estimate.supaMemoryCardUsed,
   );
-  applyDepthPrompts(
+  insertDepthPrompts(
     sections.unformated,
     historyStage.history.depthPrompts,
-    sections.resolvePosition,
-    options.currentChar,
+    (prompt) =>
+      risuChatParser(sections.resolvePosition(prompt), { chara: options.currentChar }),
   );
-  applyTriggerPrompts(
+  applyTriggerPromptPolicy(
     sections.unformated,
     historyStage.history.triggerResult,
   );
@@ -273,7 +188,10 @@ export async function buildGenerationPrompt(
   return {
     ok: true as const,
     formated,
-    biases: buildBiases(options.currentChar),
+    biases: buildPromptBiases(
+      settingsStore.state.bias.concat(options.currentChar.bias),
+      (text) => risuChatParser(text, { chara: options.currentChar }),
+    ),
     currentChat: memory.currentChat,
   };
 }

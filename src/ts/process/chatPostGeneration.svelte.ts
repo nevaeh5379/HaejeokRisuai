@@ -8,9 +8,8 @@ import { language } from "../../lang";
 import { requestChatData } from "./request/request";
 import { HypaProcesser } from "./memory/hypamemory";
 import { stableDiff } from "./stableDiff";
-import type { OpenAIChat } from "./chat-core/types";
+import type { ChatModelResponse, OpenAIChat } from "./chat-core/types";
 
-type ChatRequestResult = Awaited<ReturnType<typeof requestChatData>>;
 type EmotionAsset = [string, string];
 type EmotionHistoryEntry = [string, string, number];
 type EmotionMap = Record<string, EmotionHistoryEntry[]>;
@@ -200,7 +199,7 @@ function buildImageGenerationTranscript(selectedChar: number, selectedChat: numb
 }
 
 export interface PostGenerationEffectsOptions {
-  req: ChatRequestResult;
+  req: ChatModelResponse;
   currentChar: character;
   selectedChar: number;
   selectedChat: number;

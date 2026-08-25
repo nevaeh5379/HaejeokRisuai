@@ -52,3 +52,16 @@ export interface ChatStageTimings {
   stage3Duration: number;
   stage4Duration: number;
 }
+export interface PromptSections {
+  main: OpenAIChat[];
+  jailbreak: OpenAIChat[];
+  chats: OpenAIChat[];
+  lorebook: OpenAIChat[];
+  globalNote: OpenAIChat[];
+  authorNote: OpenAIChat[];
+  lastChat: OpenAIChat[];
+  description: OpenAIChat[];
+  postEverything: OpenAIChat[];
+  personaPrompt: OpenAIChat[];
+}
+

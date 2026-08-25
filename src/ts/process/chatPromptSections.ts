@@ -9,20 +9,9 @@ import { risuChatParser } from "./scripts";
 import { additionalInformations } from "./embedding/addinfo";
 import { loadLoreBookV3Prompt } from "./lorebook.svelte";
 import type { PromptItem, PromptRole } from "./prompt";
-import type { OpenAIChat } from "./chat-core/types";
+import type { OpenAIChat, PromptSections } from "./chat-core/types";
+export type { PromptSections } from "./chat-core/types";
 
-export interface PromptSections {
-  main: OpenAIChat[];
-  jailbreak: OpenAIChat[];
-  chats: OpenAIChat[];
-  lorebook: OpenAIChat[];
-  globalNote: OpenAIChat[];
-  authorNote: OpenAIChat[];
-  lastChat: OpenAIChat[];
-  description: OpenAIChat[];
-  postEverything: OpenAIChat[];
-  personaPrompt: OpenAIChat[];
-}
 
 export const PROMPT_ROLE_TO_OPENAI = {
   system: "system",
