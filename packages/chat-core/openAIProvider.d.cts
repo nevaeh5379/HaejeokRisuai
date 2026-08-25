@@ -74,3 +74,38 @@ export function buildOpenAIRequestHeaders(options?: {
   nanoGPTProvider?: string;
   risuIdentify?: boolean;
 }): Record<string, string>;
+
+export function applyOpenAIPreParameterBodyPolicies<T extends Record<string, any>>(
+  body: T,
+  options?: {
+    useCompletionTokens?: boolean;
+    generationSeed?: number;
+    responseJsonSchema?: unknown;
+    prediction?: string;
+    aiModel?: string;
+    openRouterFallback?: boolean;
+    openRouterMiddleOut?: boolean;
+    openRouterProvider?: {
+      order?: string[];
+      only?: string[];
+      ignore?: string[];
+    };
+    instructPrompt?: string;
+  },
+): T;
+
+export function applyOpenAIPostParameterBodyPolicies<T extends Record<string, any>>(
+  body: T,
+  options?: {
+    deepSeekThinkingToggle?: boolean;
+    deepSeekThinkingType?: string;
+    deepSeekReasoningEffort?: string;
+    toolDefinitions?: unknown[];
+    reverseProxyOobaMode?: boolean;
+    reverseProxyOobaArgs?: object;
+    removeLogitBiasForInlay?: boolean;
+    multiGen?: boolean;
+    hasTools?: boolean;
+    genTime?: number;
+  },
+): { body: T; error: string | null };

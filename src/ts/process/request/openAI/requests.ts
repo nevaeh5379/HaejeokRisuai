@@ -6,6 +6,8 @@ import {
 } from "@risuai/chat-core/mistralProvider.cjs";
 import {
   DEFAULT_OPENAI_CHAT_COMPLETIONS_URL,
+  applyOpenAIPostParameterBodyPolicies,
+  applyOpenAIPreParameterBodyPolicies,
   buildOpenAIRequestHeaders,
   normalizeOpenAIProviderMessages,
   resolveOpenAIRequestEndpoint,
@@ -304,124 +306,67 @@ export async function requestOpenAI(
     stream: false,
   };
 
-  if (Object.keys(body.logit_bias).length === 0) {
-    delete body.logit_bias;
-  }
-
-  if (arg.modelInfo.flags.includes(LLMFlags.OAICompletionTokens)) {
-    body.max_completion_tokens = body.max_tokens;
-    delete body.max_tokens;
-  }
-
-  if (db.generationSeed > 0) {
-    body.seed = db.generationSeed;
-  }
-
-  if (
-    (db.jsonSchemaEnabled || arg.schema) &&
-    !arg.modelInfo.flags.includes(LLMFlags.noStructuredOutput)
-  ) {
-    body.response_format = {
-      type: "json_schema",
-      json_schema: getOpenAIJSONSchema(arg.schema),
-    };
-  }
-
-  if (db.OAIPrediction) {
-    body.prediction = {
-      type: "content",
-      content: db.OAIPrediction,
-    };
-  }
-
-  if (aiModel === "openrouter") {
-    if (db.openrouterFallback) {
-      body.route = "fallback";
-    }
-    body.transforms = db.openrouterMiddleOut ? ["middle-out"] : [];
-
-    if (db.openrouterProvider) {
-      const provider: typeof db.openrouterProvider =
-        {} as typeof db.openrouterProvider;
-      if (db.openrouterProvider.order?.length) {
-        provider.order = db.openrouterProvider.order;
-      }
-      if (db.openrouterProvider.only?.length) {
-        provider.only = db.openrouterProvider.only;
-      }
-      if (db.openrouterProvider.ignore?.length) {
-        provider.ignore = db.openrouterProvider.ignore;
-      }
-      if (Object.keys(provider).length) {
-        body.provider = provider;
-      }
-    }
-
-    if (db.useInstructPrompt) {
-      delete body.messages;
-      const prompt = applyChatTemplate(formated);
-      body.prompt = prompt;
-    }
-  }
+  body = applyOpenAIPreParameterBodyPolicies(body, {
+    useCompletionTokens: arg.modelInfo.flags.includes(
+      LLMFlags.OAICompletionTokens,
+    ),
+    generationSeed: db.generationSeed,
+    responseJsonSchema:
+      (db.jsonSchemaEnabled || arg.schema) &&
+      !arg.modelInfo.flags.includes(LLMFlags.noStructuredOutput)
+        ? getOpenAIJSONSchema(arg.schema)
+        : undefined,
+    prediction: db.OAIPrediction,
+    aiModel,
+    openRouterFallback: db.openrouterFallback,
+    openRouterMiddleOut: db.openrouterMiddleOut,
+    openRouterProvider: db.openrouterProvider,
+    instructPrompt:
+      aiModel === "openrouter" && db.useInstructPrompt
+        ? applyChatTemplate(formated)
+        : undefined,
+  });
 
   body = applyParameters(body, arg.modelInfo.parameters, {}, arg.mode, {
     modelId: arg.modelInfo.id,
   });
 
-  if (arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingToggle)) {
-    if (db.deepseekThinkingType === "enabled") {
-      body.thinking = {
-        type: "enabled",
-        reasoning_effort: db.deepseekReasoningEffort ?? "high",
-      };
-      delete body.temperature;
-      delete body.top_p;
-      delete body.frequency_penalty;
-      delete body.presence_penalty;
-    } else {
-      body.thinking = { type: "disabled" };
-    }
-  }
-
-  if (arg.tools && arg.tools.length > 0) {
-    body.tools = arg.tools.map((tool) => {
-      return {
-        type: "function",
-        function: {
-          name: tool.name,
-          description: tool.description,
-          parameters: simplifySchema(tool.inputSchema),
-        },
-      };
-    });
-  }
-
-  if (aiModel === "reverse_proxy" && db.reverseProxyOobaMode) {
-    const OobaBodyTemplate = db.reverseProxyOobaArgs;
-
-    const keys = Object.keys(OobaBodyTemplate);
-    for (const key of keys) {
-      if (
-        OobaBodyTemplate[key] !== undefined &&
-        OobaBodyTemplate[key] !== null
-      ) {
-        body[key] = OobaBodyTemplate[key];
-      }
-    }
-  }
-
-  if (supportsInlayImage()) {
-    // inlay models doesn't support logit_bias
-    // OpenAI's gpt based llm model supports both logit_bias and inlay image
-    if (!(
-      aiModel.startsWith("gpt") ||
-      (aiModel == "reverse_proxy" &&
-        (db.proxyRequestModel?.startsWith("gpt") ||
-          (db.proxyRequestModel === "custom" &&
-            db.customProxyRequestModel.startsWith("gpt"))))
-    )) {
-      delete body.logit_bias;
-    }
+  const hasTools = Boolean(arg.tools && arg.tools.length > 0);
+  const postPolicies = applyOpenAIPostParameterBodyPolicies(body, {
+    deepSeekThinkingToggle: arg.modelInfo.flags.includes(
+      LLMFlags.deepSeekThinkingToggle,
+    ),
+    deepSeekThinkingType: db.deepseekThinkingType,
+    deepSeekReasoningEffort: db.deepseekReasoningEffort,
+    toolDefinitions: hasTools
+      ? arg.tools.map((tool) => ({
+          type: "function",
+          function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: simplifySchema(tool.inputSchema),
+          },
+        }))
+      : undefined,
+    reverseProxyOobaMode:
+      aiModel === "reverse_proxy" && db.reverseProxyOobaMode,
+    reverseProxyOobaArgs: db.reverseProxyOobaArgs,
+    removeLogitBiasForInlay:
+      supportsInlayImage() &&
+      !(
+        aiModel.startsWith("gpt") ||
+        (aiModel === "reverse_proxy" &&
+          (db.proxyRequestModel?.startsWith("gpt") ||
+            (db.proxyRequestModel === "custom" &&
+              db.customProxyRequestModel.startsWith("gpt"))))
+      ),
+    multiGen: arg.multiGen,
+    hasTools,
+    genTime: db.genTime,
+  });
+  body = postPolicies.body;
+  if (postPolicies.error) {
+    return { type: "fail", result: postPolicies.error };
   }
 
   const endpoint = resolveOpenAIRequestEndpoint({
@@ -453,18 +398,6 @@ export async function requestOpenAI(
     nanoGPTProvider: db.nanogptProvider,
     risuIdentify,
   });
-  if (arg.multiGen) {
-    // Check if tools are enabled - multiGen with tools is not supported
-    if (arg.tools && arg.tools.length > 0) {
-      return {
-        type: "fail",
-        result:
-          "MultiGen mode cannot be used with tool calls. Please disable one of them.",
-      };
-    }
-    body.n = db.genTime;
-  }
-
   body = applyAdditionalParameters(
     body,
     headers,

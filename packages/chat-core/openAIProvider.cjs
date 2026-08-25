@@ -195,6 +195,79 @@ function buildOpenAIRequestHeaders(options = {}) {
   return headers;
 }
 
+function applyOpenAIPreParameterBodyPolicies(body, options = {}) {
+  if (body.logit_bias && Object.keys(body.logit_bias).length === 0) {
+    delete body.logit_bias;
+  }
+  if (options.useCompletionTokens) {
+    body.max_completion_tokens = body.max_tokens;
+    delete body.max_tokens;
+  }
+  if (options.generationSeed > 0) body.seed = options.generationSeed;
+  if (options.responseJsonSchema !== undefined) {
+    body.response_format = {
+      type: 'json_schema',
+      json_schema: options.responseJsonSchema,
+    };
+  }
+  if (options.prediction) {
+    body.prediction = { type: 'content', content: options.prediction };
+  }
+  if (options.aiModel === 'openrouter') {
+    if (options.openRouterFallback) body.route = 'fallback';
+    body.transforms = options.openRouterMiddleOut ? ['middle-out'] : [];
+    const configuredProvider = options.openRouterProvider;
+    if (configuredProvider && typeof configuredProvider === 'object') {
+      const provider = {};
+      if (configuredProvider.order?.length) provider.order = configuredProvider.order;
+      if (configuredProvider.only?.length) provider.only = configuredProvider.only;
+      if (configuredProvider.ignore?.length) provider.ignore = configuredProvider.ignore;
+      if (Object.keys(provider).length) body.provider = provider;
+    }
+    if (options.instructPrompt !== undefined) {
+      delete body.messages;
+      body.prompt = options.instructPrompt;
+    }
+  }
+  return body;
+}
+
+function applyOpenAIPostParameterBodyPolicies(body, options = {}) {
+  if (options.deepSeekThinkingToggle) {
+    if (options.deepSeekThinkingType === 'enabled') {
+      body.thinking = {
+        type: 'enabled',
+        reasoning_effort: options.deepSeekReasoningEffort ?? 'high',
+      };
+      delete body.temperature;
+      delete body.top_p;
+      delete body.frequency_penalty;
+      delete body.presence_penalty;
+    } else {
+      body.thinking = { type: 'disabled' };
+    }
+  }
+  if (Array.isArray(options.toolDefinitions) && options.toolDefinitions.length > 0) {
+    body.tools = options.toolDefinitions;
+  }
+  if (options.reverseProxyOobaMode && options.reverseProxyOobaArgs) {
+    for (const [key, value] of Object.entries(options.reverseProxyOobaArgs)) {
+      if (value !== undefined && value !== null) body[key] = value;
+    }
+  }
+  if (options.removeLogitBiasForInlay) delete body.logit_bias;
+  if (options.multiGen) {
+    if (options.hasTools) {
+      return {
+        body,
+        error: 'MultiGen mode cannot be used with tool calls. Please disable one of them.',
+      };
+    }
+    body.n = options.genTime;
+  }
+  return { body, error: null };
+}
+
 function formatOpenAIReasoningText(data, options = {}) {
   const message = data?.choices?.[0]?.message;
   let result = typeof message?.content === 'string' ? message.content : '';
@@ -225,6 +298,8 @@ function formatOpenAIReasoningText(data, options = {}) {
 module.exports = {
   DEFAULT_OPENAI_CHAT_COMPLETIONS_URL,
   OPENAI_MODEL_ALIASES,
+  applyOpenAIPostParameterBodyPolicies,
+  applyOpenAIPreParameterBodyPolicies,
   appendOpenAIStreamingFragment,
   buildOpenAIRequestHeaders,
   collectOpenAIToolCalls,

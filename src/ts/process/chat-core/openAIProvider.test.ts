@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyOpenAIPostParameterBodyPolicies,
+  applyOpenAIPreParameterBodyPolicies,
   appendOpenAIStreamingFragment,
   buildOpenAIRequestHeaders,
   collectOpenAIToolCalls,
@@ -171,5 +173,81 @@ describe("OpenAI provider core", () => {
       "X-Provider": "provider-a",
       "X-Proxy-Risu": "RisuAI",
     });
+  });
+
+  it("applies pre-parameter OpenAI body policies in one shared step", () => {
+    const body = applyOpenAIPreParameterBodyPolicies({
+      messages: [{ role: "user", content: "hello" }],
+      max_tokens: 123,
+      logit_bias: {},
+    }, {
+      useCompletionTokens: true,
+      generationSeed: 42,
+      responseJsonSchema: { name: "reply" },
+      prediction: "expected",
+      aiModel: "openrouter",
+      openRouterFallback: true,
+      openRouterMiddleOut: true,
+      openRouterProvider: {
+        order: ["a"],
+        only: [],
+        ignore: ["b"],
+      },
+      instructPrompt: "rendered prompt",
+    });
+    expect(body).toEqual({
+      max_completion_tokens: 123,
+      seed: 42,
+      response_format: {
+        type: "json_schema",
+        json_schema: { name: "reply" },
+      },
+      prediction: { type: "content", content: "expected" },
+      route: "fallback",
+      transforms: ["middle-out"],
+      provider: { order: ["a"], ignore: ["b"] },
+      prompt: "rendered prompt",
+    });
+  });
+
+  it("applies post-parameter thinking, tools, proxy args, inlay, and multigen policies", () => {
+    const result = applyOpenAIPostParameterBodyPolicies({
+      temperature: 0.7,
+      top_p: 0.9,
+      frequency_penalty: 0.1,
+      presence_penalty: 0.2,
+      logit_bias: { 1: 5 },
+    }, {
+      deepSeekThinkingToggle: true,
+      deepSeekThinkingType: "enabled",
+      deepSeekReasoningEffort: "medium",
+      toolDefinitions: [{ type: "function", function: { name: "tool" } }],
+      reverseProxyOobaMode: true,
+      reverseProxyOobaArgs: { min_p: 0.05, ignored: null },
+      removeLogitBiasForInlay: true,
+      multiGen: true,
+      hasTools: false,
+      genTime: 3,
+    });
+    expect(result.error).toBeNull();
+    expect(result.body).toEqual({
+      thinking: { type: "enabled", reasoning_effort: "medium" },
+      tools: [{ type: "function", function: { name: "tool" } }],
+      min_p: 0.05,
+      n: 3,
+    });
+  });
+
+  it("rejects multi-generation with tools before additional request parameters", () => {
+    const body = { model: "gpt-test" };
+    const result = applyOpenAIPostParameterBodyPolicies(body, {
+      multiGen: true,
+      hasTools: true,
+      genTime: 4,
+    });
+    expect(result.error).toBe(
+      "MultiGen mode cannot be used with tool calls. Please disable one of them.",
+    );
+    expect(result.body).toEqual({ model: "gpt-test" });
   });
 });
