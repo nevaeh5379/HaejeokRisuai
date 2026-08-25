@@ -2356,6 +2356,8 @@ export const languageEnglish = {
     "Plugin {} is requesting permission to replace content in the chat, which may be used to manipulate the conversation. Do you want to allow this?",
   providerPermissionConsent:
     "Plugin {} is requesting permission to access the provider, which may allow it to make unauthorized API calls. Do you want to allow this?",
+  inlayPermissionConsent:
+    "Plugin {} is requesting permission to access the inlay, which may allow it to read, write or edit the inlay content. Do you want to allow this?",
   sendChatConsent:
     "Plugin {} is requesting permission to send chat messages on your behalf, which will trigger AI responses. Do you want to allow this?",
   pluginV2Warning:
@@ -2627,6 +2629,7 @@ export const languageEnglish = {
     "Successfully restored the backup database into the main database. Reloading...",
   sqlBackupProgressRestoring: "Restoring backup data into main database...",
   sqlBackupRestoringBusy: "Restoring...",
+  localToggles: "Local Toggles",
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;

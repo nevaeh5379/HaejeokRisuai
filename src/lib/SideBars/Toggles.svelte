@@ -13,6 +13,7 @@
     import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
     import TextInput from "../UI/GUI/TextInput.svelte";
     import CustomSideBar from "./CustomSidebar.svelte";
+    import { getGlobalChatVar, isLocallyHandledGlobalChatVar, removeLocallyHandledGlobalChatVar, setGlobalChatVar } from "src/ts/parser/chatVar.svelte";
 
     interface Props {
         chara?: character|groupChat
@@ -83,7 +84,28 @@
             return acc
         }, [])
     })
+
+    const getGlobalChatVarNH = (key: string) => {
+        const value = getGlobalChatVar(key)
+        return value === 'null' ? '' : value
+    }
 </script>
+
+{#snippet localToggle(toggle: sidebarToggle)}
+    {#if isLocallyHandledGlobalChatVar(`toggle_${toggle.key}`)}
+        <button
+            type="button"
+            aria-label={language.localToggles}
+            onclick={() => {
+                removeLocallyHandledGlobalChatVar(`toggle_${toggle.key}`)
+            }}
+        >📌</button>
+    {/if}
+{/snippet}
+
+{#snippet getToggleDisplayName(toggle: sidebarToggle)}
+    {toggle.value}{@render localToggle(toggle)}
+{/snippet}
 
 {#snippet toggles(items: sidebarToggle[], reverse: boolean = false)}
     {#each items as toggle, index}
@@ -95,8 +117,10 @@
             </div>
         {:else if toggle.type === 'select'}
             <div class="w-full flex gap-2 mt-2 items-center" class:justify-end={$MobileGUI} >
-                <span>{toggle.value}</span>
-                <SelectInput className="w-32" bind:value={settingsStore.state.globalChatVariables[`toggle_${toggle.key}`]}>
+                <span>{@render getToggleDisplayName(toggle)}</span>
+                <SelectInput className="w-32" value={getGlobalChatVarNH(`toggle_${toggle.key}`)} onchange={(e) => {
+                    setGlobalChatVar(`toggle_${toggle.key}`, e.currentTarget.value)
+                }}>
                     {#each toggle.options as option, i}
                         <OptionInput value={i.toString()}>{option}</OptionInput>
                     {/each}
@@ -104,13 +128,21 @@
             </div>
         {:else if toggle.type === 'text'}
             <div class="w-full flex gap-2 mt-2 items-center" class:justify-end={$MobileGUI}>
-                <span>{toggle.value}</span>
-                <TextInput className="w-32" bind:value={settingsStore.state.globalChatVariables[`toggle_${toggle.key}`]} />
+                <span>{@render getToggleDisplayName(toggle)}</span>
+                <TextInput className="w-32" value={getGlobalChatVarNH(`toggle_${toggle.key}`)} onchange={(e) => {
+                    setGlobalChatVar(`toggle_${toggle.key}`, e.currentTarget.value)
+                }} />
             </div>
         {:else if toggle.type === 'textarea'}
             <div class="w-full flex gap-2 mt-2 items-start" class:justify-end={$MobileGUI}>
-                <span class="mt-1.5">{toggle.value}</span>
-                <TextAreaInput className="w-32" height='20' bind:value={settingsStore.state.globalChatVariables[`toggle_${toggle.key}`]} />
+                <span class="mt-1.5">{@render getToggleDisplayName(toggle)}</span>
+                <TextAreaInput className="w-32" height='20' value={getGlobalChatVarNH(`toggle_${toggle.key}`)} onchange={(e) => {
+                    if(e.currentTarget instanceof HTMLDivElement){
+                        setGlobalChatVar(`toggle_${toggle.key}`, e.currentTarget.innerText)
+                    } else {
+                        setGlobalChatVar(`toggle_${toggle.key}`, e.currentTarget.value)
+                    }
+                }} />
             </div>
         {:else if toggle.type === 'caption'}
             <div class="w-full mt-1 text-xs text-textcolor2">
@@ -121,16 +153,18 @@
             {#if index === 0 || items[index - 1]?.type !== 'divider' || items[index - 1]?.value !== toggle.value}
                 <div class="w-full min-h-5 flex gap-2 mt-2 items-center" class:justify-end={!reverse}>
                     {#if toggle.value}
-                        <span class="shrink-0">{toggle.value}</span>
+                        <span class="shrink-0">{@render getToggleDisplayName(toggle)}</span>
                     {/if}
                     <hr class="border-t border-darkborderc m-0 grow" />
                 </div>
             {/if}
         {:else}
             <div class="w-full flex mt-2 items-center" class:justify-end={$MobileGUI}>
-                <CheckInput check={settingsStore.state.globalChatVariables[`toggle_${toggle.key}`] === '1'} reverse={reverse} name={toggle.value} onChange={() => {
-                    settingsStore.state.globalChatVariables[`toggle_${toggle.key}`] = settingsStore.state.globalChatVariables[`toggle_${toggle.key}`] === '1' ? '0' : '1'
-                }} />
+                <CheckInput check={getGlobalChatVarNH(`toggle_${toggle.key}`) === '1'} reverse={reverse} name={toggle.value} onChange={() => {
+                    setGlobalChatVar(`toggle_${toggle.key}`, getGlobalChatVarNH(`toggle_${toggle.key}`) === '1' ? '0' : '1')
+                }}>
+                    {@render localToggle(toggle)}
+                </CheckInput>
             </div>
         {/if}
     {/each}
@@ -165,6 +199,16 @@
     {#if chara && (settingsStore.state.supaModelType !== 'none' || settingsStore.state.hanuraiEnable || settingsStore.state.hypaV3)}
         <div class="flex mt-2 items-center">
             <CheckInput bind:check={chara.supaMemory} name={settingsStore.state.hypaV3 ? language.ToggleHypaMemory : settingsStore.state.hanuraiEnable ? language.hanuraiMemory : settingsStore.state.hypaMemory ? language.ToggleHypaMemory : language.ToggleSuperMemory}/>
+        </div>
+    {/if}
+    {#if chara}
+        <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI}>
+            <CheckInput check={characterStore.getCurrentChat()?.useLocallySetGlobalVariables ?? false} name={language.localToggles} onChange={() => {
+                const chat = characterStore.getCurrentChat()
+                if(chat){
+                    chat.useLocallySetGlobalVariables = !chat.useLocallySetGlobalVariables
+                }
+            }} />
         </div>
     {/if}
 {/if}

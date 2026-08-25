@@ -917,79 +917,65 @@ export async function ParseMarkdown(
   return trimMarkdown(data);
 }
 
+const trimPurifyConfig = {
+  ADD_TAGS: [
+    "iframe",
+    "style",
+    "risu-style",
+    "x-em",
+    "annotation",
+    "semantics",
+    "mrow",
+    "mi",
+    "mo",
+    "mn",
+    "msup",
+    "msub",
+    "mfrac",
+    "msqrt",
+  ],
+  ADD_ATTR: [
+    "allow",
+    "allowfullscreen",
+    "frameborder",
+    "scrolling",
+    "risu-ctrl",
+    "risu-btn",
+    "risu-trigger",
+    "risu-mark",
+    "risu-id",
+    "x-hl-lang",
+    "x-hl-text",
+  ],
+};
+
 export function trimMarkdown(data: string) {
-  let sant = DOMPurify.sanitize(data, {
-    ADD_TAGS: [
-      "iframe",
-      "style",
-      "risu-style",
-      "x-em",
-      "annotation",
-      "semantics",
-      "mrow",
-      "mi",
-      "mo",
-      "mn",
-      "msup",
-      "msub",
-      "mfrac",
-      "msqrt",
-    ],
-    ADD_ATTR: [
-      "allow",
-      "allowfullscreen",
-      "frameborder",
-      "scrolling",
-      "risu-ctrl",
-      "risu-btn",
-      "risu-trigger",
-      "risu-mark",
-      "risu-id",
-      "x-hl-lang",
-      "x-hl-text",
-    ],
-  });
-
-  const decoded = decodeStyle(sant);
-
-  if (decoded !== sant) {
-    sant = DOMPurify.sanitize(decoded, {
-      ADD_TAGS: [
-        "iframe",
-        "style",
-        "risu-style",
-        "x-em",
-        "annotation",
-        "semantics",
-        "mrow",
-        "mi",
-        "mo",
-        "mn",
-        "msup",
-        "msub",
-        "mfrac",
-        "msqrt",
-      ],
-      ADD_ATTR: [
-        "allow",
-        "allowfullscreen",
-        "frameborder",
-        "scrolling",
-        "risu-ctrl",
-        "risu-btn",
-        "risu-trigger",
-        "risu-mark",
-        "risu-id",
-        "x-hl-lang",
-        "x-hl-text",
-      ],
-      FORCE_BODY: true,
-    });
-  } else {
-    sant = decoded;
+  if (!data.includes("<risu-style")) {
+    return DOMPurify.sanitize(data, trimPurifyConfig);
   }
 
-  return sant;
+  const root = DOMPurify.sanitize(data, {
+    ...trimPurifyConfig,
+    RETURN_DOM: true,
+  }) as HTMLElement | null;
+  if (!root) {
+    return "";
+  }
+
+  for (const el of Array.from(root.querySelectorAll("risu-style"))) {
+    const decoded = decodeStyleContent(el.textContent ?? "");
+    if (decoded.css === undefined) {
+      el.replaceWith(
+        root.ownerDocument.createTextNode(decoded.fallback ?? ""),
+      );
+      continue;
+    }
+    const style = root.ownerDocument.createElement("style");
+    style.textContent = decoded.css.replaceAll(/<\/(?=style)/gi, "<\\/");
+    el.replaceWith(style);
+  }
+
+  return root.innerHTML;
 }
 
 const metaCodes = [
@@ -1105,8 +1091,6 @@ function encodeStyle(txt: string) {
     return "<risu-style>" + Buffer.from(c1).toString("hex") + "</risu-style>";
   });
 }
-const styleDecodeRegex = /\<risu-style\>(.+?)\<\/risu-style\>/gms;
-
 function decodeStyleRule(rule: CssAtRuleAST) {
   if (rule.type === "rule") {
     if (rule.selectors) {
@@ -1150,30 +1134,37 @@ function decodeStyleRule(rule: CssAtRuleAST) {
   return rule;
 }
 
-function decodeStyle(text: string) {
-  return text.replaceAll(styleDecodeRegex, (full, txt: string) => {
-    try {
-      let text = Buffer.from(txt, "hex").toString("utf-8");
-      text = risuChatParser(text);
-      const ast = css.parse(text);
-      const rules = ast?.stylesheet?.rules;
-      if (rules) {
-        for (let i = 0; i < rules.length; i++) {
-          rules[i] = decodeStyleRule(rules[i]);
-        }
-        ast.stylesheet.rules = rules;
+/**
+ * Decode one sanitized <risu-style> body without reparsing the resulting CSS
+ * as HTML. This preserves CSS containing markup-like text or SVG data URIs.
+ */
+function decodeStyleContent(hexText: string): {
+  css?: string;
+  fallback?: string;
+} {
+  try {
+    let text = Buffer.from(hexText, "hex").toString("utf-8");
+    text = risuChatParser(text);
+    const ast = css.parse(text);
+    const rules = ast?.stylesheet?.rules;
+    if (rules) {
+      for (let i = 0; i < rules.length; i++) {
+        rules[i] = decodeStyleRule(rules[i]);
       }
-      return `<style>${css.stringify(ast, {
+      ast.stylesheet.rules = rules;
+    }
+    return {
+      css: css.stringify(ast, {
         indent: "",
         compress: true,
-      })}</style>`;
-    } catch (error) {
-      if (settingsStore.state.returnCSSError) {
-        return `CSS ERROR: ${error}`;
-      }
-      return "";
+      }),
+    };
+  } catch (error) {
+    if (settingsStore.state.returnCSSError) {
+      return { fallback: `CSS ERROR: ${error}` };
     }
-  });
+    return { fallback: "" };
+  }
 }
 
 export { hasher } from "../hash";

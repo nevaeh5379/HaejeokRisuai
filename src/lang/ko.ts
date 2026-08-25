@@ -2481,4 +2481,5 @@ export const languageKorean = {
     "백업 데이터베이스의 내용을 메인 데이터베이스에 성공적으로 복원했습니다. 페이지를 새로고침합니다...",
   sqlBackupProgressRestoring: "백업 데이터를 메인 데이터베이스로 복원 중...",
   sqlBackupRestoringBusy: "복원 중...",
+  localToggles: "로컬 토글",
 } satisfies DeepPartial<typeof import("./en").languageEnglish>;

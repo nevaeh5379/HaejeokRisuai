@@ -461,11 +461,11 @@ export async function requestGoogleCloudVertex(
   console.log(arg.modelInfo);
 
   const isVertexGlobalOnlyModel = (modelId: string) => {
-    // Gemini 3 preview models and the 3.5/3.6 Flash family are not served from the regions
+    // Gemini 3 preview models and the 3.5/3.6/3.7 Flash family are not served from the regions
     // selectable in settings (us-central1, us-west1); route them through the global endpoint.
     return (
       /^gemini-3-.*-preview$/.test(modelId) ||
-      /^gemini-3\.[56]-flash/.test(modelId)
+      /^gemini-3\.[567]-flash/.test(modelId)
     );
   };
 

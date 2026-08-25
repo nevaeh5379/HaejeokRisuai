@@ -18,7 +18,6 @@ import {
 } from "../globalApi.svelte";
 import {
   hotReloading,
-  pluginAlertModalStore,
   selectedCharID,
 } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
@@ -393,25 +392,14 @@ export async function importPlugin(
     let apiInternalVersion: 2 | "2.1" | "3.0" = "2.1";
 
     if (apiVersion === "2.1") {
-      const safety = await checkCodeSafety(jsFile);
-      if (!safety.isSafe) {
-        pluginAlertModalStore.errors = safety.errors;
-        pluginAlertModalStore.open = true;
-
-        //I can use event but lazy
-        while (pluginAlertModalStore.open) {
-          await sleep(100);
-        }
-
-        if (pluginAlertModalStore.errors.length > 0) {
-          return;
-        }
-      }
-      apiInternalVersion = "2.1";
+      showError(
+        "Your plugin specifies API version 2.1, which is outdated and no longer supported. Please update your plugin to use at least API version 3.0.",
+      );
+      return;
     } else if (apiVersion === "2.0") {
       //Only block installing
       showError(
-        "Your code does not include //@api or specifies API version 2.0, which is outdated. Please update your plugin to use at least API version 2.1.",
+        "Your code does not include //@api or specifies API version 2.0, which is outdated. Please update your plugin to use at least API version 3.0.",
       );
       return;
     } else if (apiVersion === "3.0") {

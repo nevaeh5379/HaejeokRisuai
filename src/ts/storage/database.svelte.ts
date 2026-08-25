@@ -43,8 +43,8 @@ import { characterStore } from "../stores/domain/characterStore.svelte";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
-export let appVer = "2026.8.160"; //<APP_VERSION_POINT>
-export let appSubVer = "preview";
+export let appVer = "2026.8.240"; //<APP_VERSION_POINT>
+export let appSubVer = "";
 
 export type StreamingDisplayOptimizationMode = "off" | "balanced" | "strong";
 
@@ -2037,6 +2037,8 @@ export interface Chat {
   lastDate?: number;
   bookmarks?: string[];
   bookmarkNames?: { [chatId: string]: string };
+  useLocallySetGlobalVariables?: boolean;
+  GLGlobalVariables?: { [key: string]: string };
   messagesLoaded?: boolean;
   /** Absolute index of message[0] when only a recent SQL page is hydrated. */
   messageOffset?: number;

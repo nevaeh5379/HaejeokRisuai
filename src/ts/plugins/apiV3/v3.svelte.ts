@@ -639,7 +639,13 @@ type PluginV3ProviderOptions = PluginV2ProviderOptions & {
 const getPluginPermission = async (
   pluginName: string,
   permissionDesc:
-    "fetchLogs" | "db" | "mainDom" | "replacer" | "provider" | "sendChat",
+    | "fetchLogs"
+    | "db"
+    | "mainDom"
+    | "replacer"
+    | "provider"
+    | "sendChat"
+    | "inlay",
   reconfirm: boolean | "periodically" = false,
 ) => {
   if (permissionGivenPlugins.has(pluginName)) {
@@ -691,7 +697,9 @@ const getPluginPermission = async (
               ? language.providerPermissionConsent.replace("{}", pluginName)
               : permissionDesc === "sendChat"
                 ? language.sendChatConsent.replace("{}", pluginName)
-                : `Error`;
+                : permissionDesc === "inlay"
+                  ? language.inlayPermissionConsent.replace("{}", pluginName)
+                  : `Error`;
   if (alertTitle === "Error") {
     return false;
   }
@@ -850,6 +858,14 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
     },
     removeRisuReplacer: oldApis.removeRisuReplacer,
     addRisuChatListener: async (mode: "output", func: Function) => {
+      const conf = await getPluginPermission(
+        plugin.name,
+        "replacer",
+        "periodically",
+      );
+      if (!conf) {
+        return;
+      }
       oldApis.addRisuChatListener(mode, func as any);
       addPluginUnloadCallback(plugin.name, () =>
         oldApis.removeRisuChatListener(mode, func as any),
@@ -861,6 +877,10 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
     loadPlugins: oldApis.loadPlugins,
     readImage: oldApis.readImage,
     readInlay: async (id: string) => {
+      const conf = await getPluginPermission(plugin.name, "inlay", "periodically");
+      if (!conf) {
+        return null;
+      }
       return await getInlayAsset(id);
     },
     saveAsset: oldApis.saveAsset,
