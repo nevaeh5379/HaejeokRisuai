@@ -174,7 +174,10 @@ jobs:
             libssl-dev \
             libxdo-dev \
             libfuse2 \
+            xdg-utils \
             patchelf
+          command -v xdg-mime
+          command -v xdg-open
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
