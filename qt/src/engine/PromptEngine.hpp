@@ -44,7 +44,8 @@ public:
         const QString& text,
         const Character& character,
         const Persona& persona,
-        const Chat* chat = nullptr
+        const Chat* chat = nullptr,
+        const Preset* preset = nullptr
     );
 
     static QString scanAndInjectLorebooks(

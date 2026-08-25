@@ -567,7 +567,7 @@ QString ChatController::formatInChat(const QString& rawContent) const {
     // 2. Resolve CBS macros using the same persona that prompt generation uses.
     // A chat-bound persona must not fall back to the unrelated global active persona here.
     const Chat* curChat = m_activeChar.chats.isEmpty() ? nullptr : &m_activeChar.currentChat();
-    formatted = PromptEngine::replaceMacros(formatted, m_activeChar, m_activePersona, curChat);
+    formatted = PromptEngine::replaceMacros(formatted, m_activeChar, m_activePersona, curChat, &m_activePreset);
 
     return formatted;
 }

@@ -60,11 +60,21 @@ static QByteArray generateSineWav(int frequency, int durationMs, int sampleRate 
 }
 
 SoundEffectManager& SoundEffectManager::instance() {
-    static SoundEffectManager inst;
-    return inst;
+    static SoundEffectManager* inst = nullptr;
+    if (!inst && QCoreApplication::instance()) {
+        inst = new SoundEffectManager();
+        QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, inst, [inst]() {
+            inst->m_sendEffect.reset();
+            inst->m_recvEffect.reset();
+            inst->m_alertEffect.reset();
+        });
+    }
+    return *inst;
 }
 
 SoundEffectManager::SoundEffectManager(QObject* parent) : QObject(parent) {
+    if (!AppConfig::instance().soundEffects())
+        return;
     m_sendEffect = std::make_unique<QSoundEffect>(this);
     m_recvEffect = std::make_unique<QSoundEffect>(this);
     m_alertEffect = std::make_unique<QSoundEffect>(this);
@@ -73,6 +83,8 @@ SoundEffectManager::SoundEffectManager(QObject* parent) : QObject(parent) {
 }
 
 void SoundEffectManager::initBuiltinSounds() {
+    if (m_sendEffect == nullptr || m_recvEffect == nullptr || m_alertEffect == nullptr)
+        return;
     // Generate built-in WAV buffers
     QString tempDir = QDir::tempPath() + QStringLiteral("/risu_sfx");
     QDir().mkpath(tempDir);
@@ -105,18 +117,24 @@ void SoundEffectManager::initBuiltinSounds() {
 
 void SoundEffectManager::playSendSound() {
     if (AppConfig::instance().soundEffects() && m_sendEffect) {
+        if (m_sendEffect->status() != QSoundEffect::Ready)
+            return;
         m_sendEffect->play();
     }
 }
 
 void SoundEffectManager::playReceiveSound() {
     if (AppConfig::instance().soundEffects() && m_recvEffect) {
+        if (m_recvEffect->status() != QSoundEffect::Ready)
+            return;
         m_recvEffect->play();
     }
 }
 
 void SoundEffectManager::playAlertSound() {
     if (AppConfig::instance().soundEffects() && m_alertEffect) {
+        if (m_alertEffect->status() != QSoundEffect::Ready)
+            return;
         m_alertEffect->play();
     }
 }

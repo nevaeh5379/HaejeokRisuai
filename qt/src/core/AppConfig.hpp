@@ -21,6 +21,7 @@ class AppConfig : public QObject {
     Q_PROPERTY(bool autoScroll READ autoScroll WRITE setAutoScroll NOTIFY autoScrollChanged)
     Q_PROPERTY(bool streamDisplay READ streamDisplay WRITE setStreamDisplay NOTIFY streamDisplayChanged)
     Q_PROPERTY(bool soundEffects READ soundEffects WRITE setSoundEffects NOTIFY soundEffectsChanged)
+    Q_PROPERTY(bool renderMessageHtml READ renderMessageHtml WRITE setRenderMessageHtml NOTIFY renderMessageHtmlChanged)
     Q_PROPERTY(QString selectedCharacterId READ selectedCharacterId WRITE setSelectedCharacterId NOTIFY selectedCharacterIdChanged)
     Q_PROPERTY(QString selectedPresetId READ selectedPresetId WRITE setSelectedPresetId NOTIFY selectedPresetIdChanged)
     Q_PROPERTY(QString selectedPersonaId READ selectedPersonaId WRITE setSelectedPersonaId NOTIFY selectedPersonaIdChanged)
@@ -67,6 +68,9 @@ public:
 
     bool soundEffects() const { return m_soundEffects; }
     void setSoundEffects(bool sound);
+
+    bool renderMessageHtml() const { return m_renderMessageHtml; }
+    void setRenderMessageHtml(bool enabled);
 
     QString selectedCharacterId() const { return m_selectedCharacterId; }
     void setSelectedCharacterId(const QString& id);
@@ -123,6 +127,7 @@ signals:
     void autoScrollChanged(bool autoScroll);
     void streamDisplayChanged(bool stream);
     void soundEffectsChanged(bool sound);
+    void renderMessageHtmlChanged(bool enabled);
     void selectedCharacterIdChanged(const QString& id);
     void selectedPresetIdChanged(const QString& id);
     void selectedPersonaIdChanged(const QString& id);
@@ -138,6 +143,7 @@ private:
     bool m_autoScroll = true;
     bool m_streamDisplay = true;
     bool m_soundEffects = false;
+    bool m_renderMessageHtml = true;
     QString m_selectedCharacterId;
     QString m_selectedPresetId;
     QString m_selectedPersonaId;

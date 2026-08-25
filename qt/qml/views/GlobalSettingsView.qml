@@ -196,6 +196,22 @@ Rectangle {
                             checked: appConfig.soundEffects
                             onToggled: appConfig.soundEffects = checked
                         }
+
+                        RisuSwitch {
+                            text: "Render rich HTML cards and animations"
+                            checked: appConfig.renderMessageHtml
+                            onToggled: appConfig.renderMessageHtml = checked
+                            ToolTip.visible: chatRenderHover.containsMouse
+                            ToolTip.text: "Uses an embedded browser only for messages containing HTML. Turn off for maximum stability; RisuAI-compatible cards render best when enabled."
+                            ToolTip.delay: 300
+
+                            MouseArea {
+                                id: chatRenderHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                acceptedButtons: Qt.NoButton
+                            }
+                        }
                     }
                 }
 

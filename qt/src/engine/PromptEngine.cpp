@@ -35,14 +35,25 @@ QString PromptEngine::replaceMacros(
     const QString& text,
     const Character& character,
     const Persona& persona,
-    const Chat* chat
+    const Chat* chat,
+    const Preset* preset
 ) {
     if (text.isEmpty()) return QString();
 
+    static const Preset emptyPreset;
+    const Preset& promptPreset = preset ? *preset : emptyPreset;
     QString result = text;
     QString charName = character.name.isEmpty() ? QStringLiteral("Character") : character.name;
     QString userName = persona.name.isEmpty() ? QStringLiteral("User") : persona.name;
     QString personaDesc = persona.personaPrompt.isEmpty() ? persona.description : persona.personaPrompt;
+    QString mainPromptSource = promptPreset.mainPrompt.isEmpty() ? character.systemPrompt : promptPreset.mainPrompt;
+    QString jailbreakSource = promptPreset.jailbreakPrompt;
+    QString globalNoteSource = character.replaceGlobalNote;
+    if (!globalNoteSource.isEmpty()) {
+        globalNoteSource.replace(QStringLiteral("{{original}}"), promptPreset.globalNote, Qt::CaseInsensitive);
+    } else {
+        globalNoteSource = promptPreset.globalNote;
+    }
 
     // Basic Character & User macros
     result.replace(QStringLiteral("{{char}}"), charName, Qt::CaseInsensitive);
@@ -62,6 +73,10 @@ QString PromptEngine::replaceMacros(
     result.replace(QStringLiteral("{{creator}}"), character.creator, Qt::CaseInsensitive);
     result.replace(QStringLiteral("{{creator_notes}}"), character.creatorNotes, Qt::CaseInsensitive);
     result.replace(QStringLiteral("{{char_version}}"), character.characterVersion, Qt::CaseInsensitive);
+    result.replace(QStringLiteral("{{exampledialogue}}"), character.exampleMessage, Qt::CaseInsensitive);
+    result.replace(QStringLiteral("{{mainprompt}}"), mainPromptSource, Qt::CaseInsensitive);
+    result.replace(QStringLiteral("{{jb}}"), jailbreakSource, Qt::CaseInsensitive);
+    result.replace(QStringLiteral("{{globalnote}}"), globalNoteSource, Qt::CaseInsensitive);
 
     // Date / Time macros
     QDateTime now = QDateTime::currentDateTime();
@@ -269,6 +284,51 @@ QString PromptEngine::scanAndInjectLorebooks(
     if (lorebooks.isEmpty()) return QString();
 
     int msgCount = messages.size();
+    const int chatLength = msgCount + 1;
+
+    struct LoreDirective {
+        bool activated = true;
+        bool forceActivate = false;
+        bool forceDeactivate = false;
+        int scanDepth = 0;
+        int priority = 0;
+        int probability = -1;
+        int activateAfter = -1;
+    };
+
+    auto parseLoreDirective = [](const QString& rawContent, LoreDirective& directive) {
+        QString content;
+        static const QRegularExpression lineRe(QStringLiteral("(?m)^@@@?([^\\n]+)(?:\\n|$)"));
+        qsizetype offset = 0;
+        while (true) {
+            const QRegularExpressionMatch match = lineRe.match(rawContent, offset);
+            if (!match.hasMatch()) break;
+            content += rawContent.mid(offset, match.capturedStart() - offset);
+            offset = match.capturedEnd();
+
+            const QString directiveText = match.captured(1).trimmed();
+            const QStringList args = directiveText.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+            if (args.isEmpty()) continue;
+            const QString name = args.first().toLower();
+            const int value = args.size() > 1 ? args.value(1).toInt() : 0;
+
+            if (name == QStringLiteral("probability")) {
+                directive.probability = qBound(0, value, 100);
+            } else if (name == QStringLiteral("activate_only_after")) {
+                directive.activateAfter = qMax(1, value);
+            } else if (name == QStringLiteral("priority") || name == QStringLiteral("ignore_on_max_context")) {
+                directive.priority = name == QStringLiteral("ignore_on_max_context") ? -1000 : value;
+            } else if (name == QStringLiteral("scan_depth")) {
+                directive.scanDepth = qMax(0, value);
+            } else if (name == QStringLiteral("dont_activate")) {
+                directive.forceDeactivate = true;
+            } else if (name == QStringLiteral("activate")) {
+                directive.forceActivate = true;
+            }
+        }
+        content += rawContent.mid(offset);
+        return content.trimmed();
+    };
 
     struct ActiveEntry {
         int order;
@@ -317,11 +377,25 @@ QString PromptEngine::scanAndInjectLorebooks(
     for (const auto& entry : lorebooks) {
         if (!entry.enabled) continue;
 
-        bool triggered = false;
-        if (entry.alwaysActive || entry.mode == QStringLiteral("constant")) {
-            triggered = true;
+        LoreDirective directive;
+        directive.scanDepth = entry.scanDepth;
+        directive.priority = entry.insertOrder;
+        QString content = parseLoreDirective(entry.content, directive);
+        if (directive.probability >= 0 && QRandomGenerator::global()->bounded(100) >= directive.probability)
+            directive.activated = false;
+        if (directive.forceDeactivate) directive.activated = false;
+        if (directive.forceActivate) {
+            directive.activated = true;
+            directive.forceDeactivate = false;
+        }
+
+        bool forced = entry.alwaysActive || entry.mode == QStringLiteral("constant");
+        if (forced) {
+            directive.forceDeactivate = false;
+            directive.activateAfter = -1;
+            directive.probability = -1;
         } else {
-            int depth = qMax(1, qMin(entry.scanDepth, msgCount));
+            int depth = qMax(1, qMin(directive.scanDepth, msgCount));
             QString scanText;
             for (int i = qMax(0, msgCount - depth); i < msgCount; ++i) {
                 scanText += QLatin1Char('\n') + messages[i].currentContent();
@@ -330,22 +404,21 @@ QString PromptEngine::scanAndInjectLorebooks(
             if (entry.mode == QStringLiteral("vector") || entry.mode == QStringLiteral("embedding")) {
                 QString entryCorpus = entry.key + QStringLiteral(" ") + entry.content;
                 auto ranked = EmbeddingEngine::rankSimilarEntries(scanText, QStringList{entryCorpus}, 0.15f, 1);
-                triggered = !ranked.isEmpty();
+                directive.activated = !ranked.isEmpty();
             } else {
                 bool primaryMatch = checkKeysMatch(entry.key, scanText, entry.useRegex, entry.caseSensitive);
                 if (primaryMatch) {
                     if (entry.selective && !entry.secondKey.isEmpty()) {
-                        triggered = checkKeysMatch(entry.secondKey, scanText, entry.useRegex, entry.caseSensitive);
+                        directive.activated = checkKeysMatch(entry.secondKey, scanText, entry.useRegex, entry.caseSensitive);
                     } else {
-                        triggered = true;
+                        directive.activated = true;
                     }
                 }
             }
         }
 
-        if (triggered && !entry.content.isEmpty() && !activeIds.contains(entry.id)) {
-            QString processedContent = replaceMacros(entry.content, character, persona, chat);
-            activeList.append({entry.insertOrder, entry.id, processedContent});
+        if (directive.activated && !content.isEmpty() && !activeIds.contains(entry.id)) {
+            activeList.append({directive.priority, entry.id, replaceMacros(content, character, persona, chat)});
             activeIds.insert(entry.id);
         }
     }
@@ -360,17 +433,24 @@ QString PromptEngine::scanAndInjectLorebooks(
         if (!entry.enabled || activeIds.contains(entry.id)) continue;
         if (entry.alwaysActive || entry.mode == QStringLiteral("constant")) continue;
 
+        LoreDirective directive;
+        directive.scanDepth = entry.scanDepth;
+        directive.priority = entry.insertOrder;
+        QString content = parseLoreDirective(entry.content, directive);
+        if (directive.activateAfter >= 0 && chatLength < directive.activateAfter)
+            continue;
+        if (directive.forceDeactivate)
+            continue;
+
         bool primaryMatch = checkKeysMatch(entry.key, cascadeScanText, entry.useRegex, entry.caseSensitive);
         if (primaryMatch) {
             if (entry.selective && !entry.secondKey.isEmpty()) {
                 if (checkKeysMatch(entry.secondKey, cascadeScanText, entry.useRegex, entry.caseSensitive)) {
-                    QString processedContent = replaceMacros(entry.content, character, persona, chat);
-                    activeList.append({entry.insertOrder, entry.id, processedContent});
+                    activeList.append({directive.priority, entry.id, replaceMacros(content, character, persona, chat)});
                     activeIds.insert(entry.id);
                 }
             } else {
-                QString processedContent = replaceMacros(entry.content, character, persona, chat);
-                activeList.append({entry.insertOrder, entry.id, processedContent});
+                activeList.append({directive.priority, entry.id, replaceMacros(content, character, persona, chat)});
                 activeIds.insert(entry.id);
             }
         }
@@ -408,19 +488,26 @@ CompiledPrompt PromptEngine::buildPrompt(
     allLore.append(moduleData.lorebooks);
 
     // Build system sections
-    QString mainPrompt = replaceMacros(preset.mainPrompt.isEmpty() ? character.systemPrompt : preset.mainPrompt, character, persona, &chat);
-    QString charDesc = replaceMacros(character.description, character, persona, &chat);
-    QString charPersonality = replaceMacros(character.personality, character, persona, &chat);
-    QString charScenario = replaceMacros(character.scenario, character, persona, &chat);
+    const Preset* promptPreset = &preset;
+    QString mainPrompt = replaceMacros(preset.mainPrompt.isEmpty() ? character.systemPrompt : preset.mainPrompt, character, persona, &chat, promptPreset);
+    QString charDesc = replaceMacros(character.description, character, persona, &chat, promptPreset);
+    QString charPersonality = replaceMacros(character.personality, character, persona, &chat, promptPreset);
+    QString charScenario = replaceMacros(character.scenario, character, persona, &chat, promptPreset);
     // In Risu, Persona::description maps to the persona "note" field while
     // Persona::personaPrompt is the text that is actually injected into prompts.
     // Fall back to description only for older native-Qt data created before the
     // personaPrompt field was wired through the editor/controller.
     const QString personaPromptSource = persona.personaPrompt.isEmpty() ? persona.description : persona.personaPrompt;
-    QString personaPrompt = replaceMacros(personaPromptSource, character, persona, &chat);
-    QString jailbreakPrompt = preset.enableJailbreak ? replaceMacros(preset.jailbreakPrompt, character, persona, &chat) : QString();
-    QString globalNote = replaceMacros(preset.globalNote, character, persona, &chat);
-    QString postHistoryInstructions = replaceMacros(character.postHistoryInstructions.isEmpty() ? preset.postHistoryInstructions : character.postHistoryInstructions, character, persona, &chat);
+    QString personaPrompt = replaceMacros(personaPromptSource, character, persona, &chat, promptPreset);
+    QString jailbreakPrompt = preset.enableJailbreak ? replaceMacros(preset.jailbreakPrompt, character, persona, &chat, promptPreset) : QString();
+    QString globalNote = character.replaceGlobalNote;
+    if (!globalNote.isEmpty()) {
+        globalNote.replace(QStringLiteral("{{original}}"), preset.globalNote, Qt::CaseInsensitive);
+    } else {
+        globalNote = preset.globalNote;
+    }
+    globalNote = replaceMacros(globalNote, character, persona, &chat, promptPreset);
+    QString postHistoryInstructions = replaceMacros(preset.postHistoryInstructions, character, persona, &chat, promptPreset);
 
     // Lorebook injection
     QString loreContent = scanAndInjectLorebooks(allLore, chat.messages, character, persona, &chat);
@@ -465,7 +552,7 @@ CompiledPrompt PromptEngine::buildPrompt(
         }
     }
 
-    QString systemPromptCombined = replaceMacros(systemBlocks.join(QStringLiteral("\n\n")), character, persona, &chat);
+    QString systemPromptCombined = replaceMacros(systemBlocks.join(QStringLiteral("\n\n")), character, persona, &chat, promptPreset);
     result.systemPromptCombined = systemPromptCombined;
     result.breakdown.systemTokens = Tokenizer::estimateTokens(systemPromptCombined);
 
@@ -479,7 +566,7 @@ CompiledPrompt PromptEngine::buildPrompt(
 
     // Add Example Dialogue if provided
     if (!character.exampleMessage.isEmpty()) {
-        QString processedExamples = replaceMacros(character.exampleMessage, character, persona, &chat);
+        QString processedExamples = replaceMacros(character.exampleMessage, character, persona, &chat, promptPreset);
         CompiledPromptMessage exMsg;
         exMsg.role = QStringLiteral("system");
         exMsg.content = QStringLiteral("<START>\n") + processedExamples;
@@ -496,7 +583,7 @@ CompiledPrompt PromptEngine::buildPrompt(
         greeting = character.firstMessage;
     }
     if (!greeting.isEmpty()) {
-        greeting = replaceMacros(greeting, character, persona, &chat);
+        greeting = replaceMacros(greeting, character, persona, &chat, promptPreset);
     }
 
     // Build dialogue turns from messages
@@ -517,7 +604,7 @@ CompiledPrompt PromptEngine::buildPrompt(
         CompiledPromptMessage m;
         m.role = (msg.role == Role::User) ? QStringLiteral("user") : QStringLiteral("assistant");
         m.name = msg.name.isEmpty() ? (msg.role == Role::User ? persona.name : character.name) : msg.name;
-        m.content = replaceMacros(msg.currentContent(), character, persona, &chat);
+        m.content = replaceMacros(msg.currentContent(), character, persona, &chat, promptPreset);
         chatHistory.append(m);
     }
 
@@ -526,7 +613,7 @@ CompiledPrompt PromptEngine::buildPrompt(
         CompiledPromptMessage extra;
         extra.role = QStringLiteral("user");
         extra.name = persona.name;
-        extra.content = replaceMacros(extraUserMessage, character, persona, &chat);
+        extra.content = replaceMacros(extraUserMessage, character, persona, &chat, promptPreset);
         chatHistory.append(extra);
     }
 
@@ -558,7 +645,7 @@ CompiledPrompt PromptEngine::buildPrompt(
 
         auto wrapSlot = [&](QString format, const QString& slot) {
             if (format.isEmpty()) return slot;
-            format = replaceMacros(format, character, persona, &chat);
+            format = replaceMacros(format, character, persona, &chat, promptPreset);
             format.replace(QStringLiteral("{{slot}}"), slot);
             return format;
         };
@@ -599,7 +686,7 @@ CompiledPrompt PromptEngine::buildPrompt(
                 block = block.trimmed();
                 if (block.endsWith(ender)) block.chop(ender.size());
                 block.remove(thoughtsRe);
-                block = replaceMacros(block, character, persona, &chat).trimmed();
+                block = replaceMacros(block, character, persona, &chat, promptPreset).trimmed();
 
                 CompiledPromptMessage message;
                 message.role = role;
@@ -621,7 +708,7 @@ CompiledPrompt PromptEngine::buildPrompt(
 
         QString templatePersona = personaPrompt;
         QString authorNoteRaw = chat.authorNote.isEmpty() ? character.authorNote : chat.authorNote;
-        authorNoteRaw = replaceMacros(authorNoteRaw, character, persona, &chat);
+        authorNoteRaw = replaceMacros(authorNoteRaw, character, persona, &chat, promptPreset);
 
         int includedLoreTokens = 0;
         int includedAuthorNoteTokens = 0;
@@ -629,7 +716,7 @@ CompiledPrompt PromptEngine::buildPrompt(
 
         if (!character.exampleMessage.isEmpty()) {
             appendTemplateMessage(QStringLiteral("system"),
-                                  QStringLiteral("<START>\n") + replaceMacros(character.exampleMessage, character, persona, &chat));
+                                  QStringLiteral("<START>\n") + replaceMacros(character.exampleMessage, character, persona, &chat, promptPreset));
         }
 
         for (const QJsonValue& value : preset.promptTemplate) {
@@ -651,7 +738,7 @@ CompiledPrompt PromptEngine::buildPrompt(
                 } else if (content.isEmpty() && type == QStringLiteral("jailbreak")) {
                     content = jailbreakPrompt;
                 } else {
-                    content = replaceMacros(content, character, persona, &chat);
+                    content = replaceMacros(content, character, persona, &chat, promptPreset);
                 }
                 appendTemplateMessage(normalizeTemplateRole(card.value(QStringLiteral("role")).toString()), content);
                 continue;
@@ -687,7 +774,7 @@ CompiledPrompt PromptEngine::buildPrompt(
                 const QString inner = card.value(QStringLiteral("innerFormat")).toString();
                 if (!inner.isEmpty()) content = wrapSlot(inner, content);
                 if (!content.isEmpty()) {
-                    content = replaceMacros(content, character, persona, &chat);
+                    content = replaceMacros(content, character, persona, &chat, promptPreset);
                     result.authorNoteText = content;
                     includedAuthorNoteTokens += Tokenizer::estimateTokens(content);
                     appendTemplateMessage(normalizeTemplateRole(card.value(QStringLiteral("role2")).toString()), content);
@@ -738,7 +825,7 @@ CompiledPrompt PromptEngine::buildPrompt(
                 } else {
                     // Preserve malformed/legacy content rather than silently dropping it.
                     appendTemplateMessage(QStringLiteral("system"),
-                                          replaceMacros(rawChatML, character, persona, &chat));
+                                          replaceMacros(rawChatML, character, persona, &chat, promptPreset));
                 }
                 continue;
             }
@@ -807,7 +894,7 @@ CompiledPrompt PromptEngine::buildPrompt(
     if (anDepth <= 0) anDepth = 3;
 
     if (!anText.isEmpty()) {
-        QString formattedAN = QStringLiteral("[Author's Note: ") + replaceMacros(anText, character, persona, &chat) + QStringLiteral("]");
+        QString formattedAN = QStringLiteral("[Author's Note: ") + replaceMacros(anText, character, persona, &chat, promptPreset) + QStringLiteral("]");
         result.authorNoteText = formattedAN;
         result.breakdown.authorNoteTokens = Tokenizer::estimateTokens(formattedAN);
 
@@ -848,12 +935,21 @@ CompiledPrompt PromptEngine::buildPrompt(
     }
 
     // Post history instructions injection
-    if (!postHistoryInstructions.isEmpty()) {
+    if (!character.replaceGlobalNote.isEmpty()) {
         CompiledPromptMessage postMsg;
         postMsg.role = QStringLiteral("system");
-        postMsg.content = postHistoryInstructions;
+        postMsg.content = replaceMacros(character.replaceGlobalNote, character, persona, &chat, promptPreset);
         result.messages.append(postMsg);
         result.breakdown.systemTokens += Tokenizer::estimateTokens(postMsg.content);
+    }
+
+    if (!character.depthPrompt.isEmpty()) {
+        int depthPos = qBound(0, character.depthPromptDepth, result.messages.size());
+        CompiledPromptMessage depthMsg;
+        depthMsg.role = QStringLiteral("system");
+        depthMsg.content = replaceMacros(character.depthPrompt, character, persona, &chat, promptPreset);
+        result.messages.insert(depthPos, depthMsg);
+        result.estimatedTokens += Tokenizer::estimateTokens(depthMsg.content);
     }
 
     // Total estimated tokens

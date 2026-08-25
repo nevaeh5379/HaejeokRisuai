@@ -226,7 +226,7 @@ std::optional<Character> CharacterCardIO::importFromJson(const QByteArray& jsonD
         c.exampleMessage = data.value(QStringLiteral("mes_example")).toString();
         c.creatorNotes = data.value(QStringLiteral("creator_notes")).toString();
         c.systemPrompt = data.value(QStringLiteral("system_prompt")).toString();
-        c.postHistoryInstructions = data.value(QStringLiteral("post_history_instructions")).toString();
+        c.replaceGlobalNote = data.value(QStringLiteral("post_history_instructions")).toString();
         c.creator = data.value(QStringLiteral("creator")).toString();
         c.characterVersion = data.value(QStringLiteral("character_version")).toString();
 
@@ -253,6 +253,13 @@ std::optional<Character> CharacterCardIO::importFromJson(const QByteArray& jsonD
                     l.content = entObj.value(QStringLiteral("content")).toString();
                     l.insertOrder = entObj.value(QStringLiteral("insertion_order")).toInt(100);
                     l.enabled = entObj.value(QStringLiteral("enabled")).toBool(true);
+                    l.mode = entObj.value(QStringLiteral("mode")).toString(
+                        entObj.value(QStringLiteral("constant")).toBool(false)
+                            ? QStringLiteral("constant") : QStringLiteral("normal"));
+                    l.alwaysActive = entObj.value(QStringLiteral("constant")).toBool(false);
+                    l.selective = entObj.value(QStringLiteral("selective")).toBool(false);
+                    l.useRegex = entObj.value(QStringLiteral("use_regex")).toBool(false);
+                    l.caseSensitive = entObj.value(QStringLiteral("case_sensitive")).toBool(false);
 
                     // Keys
                     if (entObj.value(QStringLiteral("keys")).isArray()) {
@@ -281,6 +288,26 @@ std::optional<Character> CharacterCardIO::importFromJson(const QByteArray& jsonD
             QJsonObject ext = data.value(QStringLiteral("extensions")).toObject();
             if (ext.contains(QStringLiteral("risuai")) && ext.value(QStringLiteral("risuai")).isObject()) {
                 QJsonObject risu = ext.value(QStringLiteral("risuai")).toObject();
+                if (risu.contains(QStringLiteral("backgroundHTML")))
+                    c.backgroundHTML = risu.value(QStringLiteral("backgroundHTML")).toString();
+                if (risu.contains(QStringLiteral("additionalText")))
+                    c.additionalText = risu.value(QStringLiteral("additionalText")).toString();
+                if (risu.contains(QStringLiteral("largePortrait")))
+                    c.largePortrait = risu.value(QStringLiteral("largePortrait")).toBool();
+                else if (!ext.contains(QStringLiteral("depth_prompt")))
+                    c.largePortrait = true;
+                if (risu.contains(QStringLiteral("emotionImages")) && risu.value(QStringLiteral("emotionImages")).isArray()) {
+                    for (const auto& item : risu.value(QStringLiteral("emotionImages")).toArray()) {
+                        const QJsonArray pair = item.toArray();
+                        if (pair.size() >= 2) c.emotionImages.append(qMakePair(pair[0].toString(), pair[1].toString()));
+                    }
+                }
+                if (risu.contains(QStringLiteral("additionalAssets")) && risu.value(QStringLiteral("additionalAssets")).isArray()) {
+                    for (const auto& item : risu.value(QStringLiteral("additionalAssets")).toArray()) {
+                        const QJsonArray pair = item.toArray();
+                        if (pair.size() >= 2) c.additionalAssets.append(qMakePair(pair[0].toString(), pair[1].toString()));
+                    }
+                }
                 if (risu.contains(QStringLiteral("customScripts")) && risu.value(QStringLiteral("customScripts")).isArray()) {
                     for (const auto& s : risu.value(QStringLiteral("customScripts")).toArray()) {
                         c.customScripts.append(RegexScript::fromJson(s.toObject()));
@@ -375,7 +402,7 @@ bool CharacterCardIO::exportToPngCard(const Character& character, const QString&
     data[QStringLiteral("mes_example")] = character.exampleMessage;
     data[QStringLiteral("creator_notes")] = character.creatorNotes;
     data[QStringLiteral("system_prompt")] = character.systemPrompt;
-    data[QStringLiteral("post_history_instructions")] = character.postHistoryInstructions;
+    data[QStringLiteral("post_history_instructions")] = character.replaceGlobalNote;
     data[QStringLiteral("creator")] = character.creator;
     data[QStringLiteral("character_version")] = character.characterVersion;
 

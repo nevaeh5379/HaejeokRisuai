@@ -25,6 +25,8 @@ int main(int argc, char *argv[]) {
     // corrupts rendering and eventually aborts the process. The embedded HTML
     // message views are tiny, so default to software compositing unless the
     // user explicitly opts into GPU acceleration via the environment.
+    // Deliberately NOT using --process-per-site: one shared renderer means a
+    // single misbehaving card script freezes every embedded view at once.
     if (qEnvironmentVariableIsEmpty("QTWEBENGINE_CHROMIUM_FLAGS")) {
         qputenv("QTWEBENGINE_CHROMIUM_FLAGS", QByteArrayLiteral("--disable-gpu --disable-gpu-compositing"));
     }

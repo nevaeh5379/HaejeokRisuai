@@ -642,13 +642,13 @@ Rectangle {
                                     anchors.margins: 16
                                     spacing: 10
 
-                                    Text { text: "Post-History Instructions"; font.pixelSize: Theme.fontMedium; font.weight: Font.Bold; font.family: Theme.fontFamily; color: Theme.textcolor }
-                                    Text { text: "Instructions injected at the very end of the chat context window right before generation."; font.pixelSize: Theme.fontSmall; font.family: Theme.fontFamily; color: Theme.textcolor2 }
+                                    Text { text: "Replace Global Note"; font.pixelSize: Theme.fontMedium; font.weight: Font.Bold; font.family: Theme.fontFamily; color: Theme.textcolor }
+                                    Text { text: "Overrides the preset Global Note. Use {{original}} to keep the preset text."; font.pixelSize: Theme.fontSmall; font.family: Theme.fontFamily; color: Theme.textcolor2 }
                                     RisuTextArea {
                                         id: postHistField
                                         Layout.fillWidth: true
                                         implicitHeight: 100
-                                        text: charCtrl.selectedCharacter.postHistoryInstructions || ""
+                                        text: charCtrl.selectedCharacter.replaceGlobalNote || ""
                                     }
                                 }
                             }
@@ -726,7 +726,7 @@ Rectangle {
             scenario: scenarioField.text,
             exampleMessage: exampleMsgField.text,
             systemPrompt: sysPromptField.text,
-            postHistoryInstructions: postHistField.text,
+            replaceGlobalNote: postHistField.text,
             authorNote: charAuthorNoteField.text,
             authorNoteDepth: Math.round(charAnDepthSlider.value),
             creatorNotes: creatorNotesField.text,

@@ -141,6 +141,14 @@ void AppConfig::setSoundEffects(bool sound) {
     }
 }
 
+void AppConfig::setRenderMessageHtml(bool enabled) {
+    if (m_renderMessageHtml != enabled) {
+        m_renderMessageHtml = enabled;
+        emit renderMessageHtmlChanged(m_renderMessageHtml);
+        save();
+    }
+}
+
 void AppConfig::setSelectedCharacterId(const QString& id) {
     if (m_selectedCharacterId != id) {
         m_selectedCharacterId = id;
@@ -313,6 +321,7 @@ void AppConfig::save() {
     settings.setValue(QStringLiteral("autoScroll"), m_autoScroll);
     settings.setValue(QStringLiteral("streamDisplay"), m_streamDisplay);
     settings.setValue(QStringLiteral("soundEffects"), m_soundEffects);
+    settings.setValue(QStringLiteral("renderMessageHtml"), m_renderMessageHtml);
     settings.setValue(QStringLiteral("selectedCharacterId"), m_selectedCharacterId);
     settings.setValue(QStringLiteral("selectedPresetId"), m_selectedPresetId);
     settings.setValue(QStringLiteral("selectedPersonaId"), m_selectedPersonaId);
@@ -335,6 +344,7 @@ void AppConfig::load() {
     m_autoScroll = settings.value(QStringLiteral("autoScroll"), true).toBool();
     m_streamDisplay = settings.value(QStringLiteral("streamDisplay"), true).toBool();
     m_soundEffects = settings.value(QStringLiteral("soundEffects"), false).toBool();
+    m_renderMessageHtml = settings.value(QStringLiteral("renderMessageHtml"), true).toBool();
     m_selectedCharacterId = settings.value(QStringLiteral("selectedCharacterId"), QString()).toString();
     m_selectedPresetId = settings.value(QStringLiteral("selectedPresetId"), QString()).toString();
     m_selectedPersonaId = settings.value(QStringLiteral("selectedPersonaId"), QString()).toString();

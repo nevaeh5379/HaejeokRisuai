@@ -36,7 +36,12 @@ void OpenAIProvider::sendRequest(const CompiledPrompt& prompt, const Preset& pre
     m_outTokens = 0;
     m_finishedEmitted = false;
 
-    QString endpointUrl = preset.customEndpointUrl.isEmpty() ? QStringLiteral("https://api.openai.com/v1/chat/completions") : preset.customEndpointUrl;
+    QString endpointUrl = preset.customEndpointUrl;
+    if (endpointUrl.isEmpty()) {
+        endpointUrl = preset.provider == ProviderType::OpenRouter
+            ? QStringLiteral("https://openrouter.ai/api/v1/chat/completions")
+            : QStringLiteral("https://api.openai.com/v1/chat/completions");
+    }
     if (!endpointUrl.startsWith(QStringLiteral("http://")) && !endpointUrl.startsWith(QStringLiteral("https://"))) {
         endpointUrl = QStringLiteral("https://") + endpointUrl;
     }
@@ -55,6 +60,11 @@ void OpenAIProvider::sendRequest(const CompiledPrompt& prompt, const Preset& pre
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     if (!preset.apiKey.isEmpty()) {
         request.setRawHeader("Authorization", "Bearer " + preset.apiKey.toUtf8());
+    }
+
+    if (preset.provider == ProviderType::OpenRouter) {
+        request.setRawHeader("HTTP-Referer", "https://risuai.app");
+        request.setRawHeader("X-Title", "RisuAI");
     }
 
     // Build Payload

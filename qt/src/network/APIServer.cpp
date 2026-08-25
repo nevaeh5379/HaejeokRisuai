@@ -26,14 +26,16 @@ bool APIServer::startServer(int port) {
     m_server = std::make_unique<QTcpServer>(this);
     connect(m_server.get(), &QTcpServer::newConnection, this, &APIServer::onNewConnection);
 
-    bool ok = m_server->listen(QHostAddress::Any, static_cast<quint16>(m_port));
+    const QHostAddress listenAddress = qEnvironmentVariableIsEmpty("RISUAI_ALLOW_REMOTE_API")
+        ? QHostAddress::LocalHost : QHostAddress::Any;
+    bool ok = m_server->listen(listenAddress, static_cast<quint16>(m_port));
     if (ok) {
         emit runningChanged();
         emit logMessage(QStringLiteral("REST API Server listening on port %1").arg(m_port));
         qInfo() << "REST API Server listening on port" << m_port;
     } else {
         emit logMessage(QStringLiteral("Failed to start REST API Server: ") + m_server->errorString());
-        qWarning() << "Failed to start REST API Server:" << m_server->errorString();
+        qWarning() << "Failed to start REST API Server on port" << m_port << ":" << m_server->errorString();
     }
     return ok;
 }

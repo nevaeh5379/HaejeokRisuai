@@ -23,6 +23,7 @@ Rectangle {
     property string modelName: ""
 
     property bool isEditing: false
+    property bool liveRequested: true
     property bool isHovered: bubbleHoverHandler.hovered
 
     // Coalesce rapid streaming updates so markdown re-rendering runs at most
@@ -37,12 +38,6 @@ Rectangle {
     }
 
     Component.onCompleted: root.displayedContent = root.contentText
-
-    ListView.onReused: {
-        root.isEditing = false;
-        root.displayedContent = root.contentText;
-        renderThrottle.stop();
-    }
 
     signal swipeLeftRequested(int row)
     signal swipeRightRequested(int row)
@@ -329,6 +324,8 @@ Rectangle {
                     rawText: (typeof chatCtrl !== "undefined") ? chatCtrl.formatInChat(root.displayedContent) : root.displayedContent
                     thoughtText: root.thoughtText
                     textColor: Theme.fontStandard
+                    cacheKey: root.messageId !== "" ? (root.messageId + ":" + root.swipeIndex) : ""
+                    liveRequested: root.liveRequested
                 }
             }
 

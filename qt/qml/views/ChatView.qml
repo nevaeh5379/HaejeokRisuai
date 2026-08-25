@@ -207,6 +207,89 @@ Item {
             z: 100
         }
 
+        // Hidden measuring pipeline. While the user reads, it walks the whole
+        // history through one off-screen MarkdownView and records every real
+        // Chromium height into Theme.mdHeightCache. Delegates created later —
+        // by scrollbar drags in particular — then start at exact heights, so
+        // contentHeight stops drifting and dragging the thumb no longer
+        // remaps its position mid-drag (the "teleporting" scroll).
+        MarkdownView {
+            id: heightWarmer
+            visible: false
+            width: Math.max(200, messageListView.width - 36)
+        }
+
+        property var _warmQueue: []
+        property bool _warmingBusy: false
+        property int _warmTries: 0
+
+        function _looksLikeHtml(text) {
+            return text && /<[^>]+>/.test(String(text).replace(/<think>[\s\S]*?<\/think>/gi, ""));
+        }
+
+        function startHeightWarmup() {
+            if (typeof appConfig === "undefined" || !appConfig || !appConfig.renderMessageHtml) return;
+            var q = [];
+            var total = chatCtrl.messageModel.rowCount;
+            for (var i = total - 1; i >= 0; --i) {
+                var m = chatCtrl.messageModel.get(i);
+                if (!m || !m.content || !root._looksLikeHtml(m.content)) continue;
+                if (!m.msgId) continue;
+                var key = m.msgId + ":" + (m.currentSwipeIndex || 0);
+                if (Theme.mdHeightCache[key]) continue;
+                q.push({ key: key, text: m.content });
+                if (q.length >= 120) break;
+            }
+            root._warmQueue = q;
+            root._warmTries = 0;
+            root._advanceWarmup();
+        }
+
+        function _advanceWarmup() {
+            if (root._warmingBusy) return;
+            if (root._warmQueue.length === 0) {
+                root._warmTries = 0;
+                return;
+            }
+            var item = root._warmQueue[0];
+            root._warmingBusy = true;
+            heightWarmer.measureOnce(item.text, item.key);
+        }
+
+        Timer {
+            id: warmWatchdog
+            interval: 1200
+            repeat: true
+            running: root._warmQueue.length > 0
+            onTriggered: {
+                if (!root._warmingBusy) {
+                    root._advanceWarmup();
+                    return;
+                }
+                root._warmTries += 1;
+                if (root._warmTries >= 4) {
+                    root._warmQueue.shift();
+                    root._warmTries = 0;
+                    root._warmingBusy = false;
+                    root._advanceWarmup();
+                } else {
+                    heightWarmer.measureOnce(root._warmQueue[0].text, root._warmQueue[0].key);
+                }
+            }
+        }
+
+        Connections {
+            target: heightWarmer
+            function onHeightMeasured() {
+                if (root._warmQueue.length > 0 && root._warmingBusy) {
+                    root._warmQueue.shift();
+                }
+                root._warmingBusy = false;
+                root._warmTries = 0;
+                Qt.callLater(root._advanceWarmup);
+            }
+        }
+
         // Main Chat Layout Container (Centered)
         ColumnLayout {
             anchors.left: sessionDrawer.right
@@ -433,8 +516,18 @@ Item {
                 }
             }
 
-            // Message Stream ListView
-            ListView {
+            // Message Stream.
+            //
+            // Deliberately a plain Flickable holding a static Column of every
+            // message rather than a ListView: ListView recycles delegate
+            // lifecycles against asynchronously-measured heights (embedded web
+            // views), which forces estimation games whose corrections show up
+            // as disappearing chats, snap-backs and scrollbar teleports. Here
+            // every bubble simply exists for the session's lifetime, so
+            // contentHeight is ground truth and scroll math never shifts under
+            // the user. Far-from-viewport web views detach (their reserved
+            // height stays) so memory stays bounded without touching layout.
+            Flickable {
                 id: messageListView
                 Layout.fillWidth: true
                 Layout.fillHeight: true
@@ -444,41 +537,67 @@ Item {
                 Layout.topMargin: 10
                 Layout.bottomMargin: 8
                 clip: true
-                spacing: 8
                 interactive: true
-                model: chatCtrl.messageModel
                 boundsBehavior: Flickable.StopAtBounds
                 flickableDirection: Flickable.VerticalFlick
                 pixelAligned: true
-
-                // Keep only a modest off-screen cache. A huge cache is especially expensive
-                // when messages contain WebEngineView-backed HTML delegates.
-                cacheBuffer: 600
-                reuseItems: true
+                contentWidth: width
+                contentHeight: messageColumn.height
 
                 // Sticky-tail scrolling: streaming content may grow after atYEnd becomes false,
                 // so remember whether the user intentionally left the bottom instead.
                 property bool followTail: true
+                property real lastContentY: 0
+                property bool tailJumping: false
+                property real _pendingCompensation: 0
 
                 function isNearEnd() {
-                    return contentHeight <= height || contentY >= Math.max(0, contentHeight - height - 96);
+                    return contentHeight <= height || contentY >= Math.max(0, contentHeight - height - 150);
                 }
 
                 function scrollToTail() {
                     if (!root.hasCharacter) return;
+                    messageListView.tailJumping = true;
                     Qt.callLater(function() {
-                        messageListView.positionViewAtEnd();
+                        var maxY = Math.max(0, messageListView.contentHeight - messageListView.height);
+                        if (messageListView.contentY < maxY - 150) {
+                            messageListView.contentY = maxY;
+                        }
+                        messageListView.lastContentY = messageListView.contentY;
+                        messageListView.tailJumping = false;
                     });
                 }
 
-                onMovementStarted: {
-                    if (!messageListView.isNearEnd()) {
-                        messageListView.followTail = false;
-                    }
+                function flushPendingCompensation() {
+                    var pending = messageListView._pendingCompensation;
+                    messageListView._pendingCompensation = 0;
+                    if (pending === 0) return;
+
+                    var minY = 0;
+                    var maxY = Math.max(minY, messageListView.contentHeight - messageListView.height);
+                    var target = Math.min(maxY, Math.max(minY, messageListView.contentY + pending));
+                    messageListView.tailJumping = true;
+                    messageListView.contentY = target;
+                    messageListView.lastContentY = target;
+                    messageListView.tailJumping = false;
                 }
 
-                onMovementEnded: {
-                    messageListView.followTail = messageListView.isNearEnd();
+                Component.onCompleted: messageListView.lastContentY = messageListView.contentY
+
+                onMovementEnded: messageListView.flushPendingCompensation()
+
+                // Release the sticky tail on ANY upward motion, no matter how
+                // small and no matter who caused it: a drag, a flick, a mouse
+                // wheel over native text, or the wheel forwarder inside
+                // MarkdownView writing contentY directly (which never raises
+                // movement events). Programmatic jumps to the tail are exempt
+                // via tailJumping, and content growing underneath while pinned
+                // only increases contentY, so it can never clear this either.
+                onContentYChanged: {
+                    if (!messageListView.tailJumping && contentY < messageListView.lastContentY - 0.5) {
+                        messageListView.followTail = false;
+                    }
+                    messageListView.lastContentY = contentY;
                 }
 
                 ScrollBar.vertical: ScrollBar {
@@ -488,20 +607,14 @@ Item {
                     active: true
                 }
 
-                // Let ListView handle mouse wheels and touchpads natively. A second WheelHandler
-                // makes high-resolution touchpad deltas fight Flickable's own scrolling.
-
                 // Scroll on append only while the user is following the tail.
-                onCountChanged: {
-                    if (messageListView.followTail && (typeof appConfig === "undefined" || appConfig.autoScroll)) {
-                        messageListView.scrollToTail();
-                    }
-                }
-
-                // Keep following a streaming response even though delegate growth temporarily
-                // makes atYEnd false. Stop only after the user intentionally scrolls away.
                 Connections {
                     target: chatCtrl.messageModel
+                    function onCountChanged() {
+                        if (messageListView.followTail && (typeof appConfig === "undefined" || appConfig.autoScroll)) {
+                            messageListView.scrollToTail();
+                        }
+                    }
                     function onMessageUpdated(row) {
                         if (messageListView.followTail && (typeof appConfig === "undefined" || appConfig.autoScroll)) {
                             messageListView.scrollToTail();
@@ -509,6 +622,19 @@ Item {
                     }
                 }
 
+                // Keep chasing the tail while it grows. Right after a chat loads,
+                // bubble heights are still settling, so contentHeight keeps
+                // increasing for a few frames; without this the single
+                // scroll-to-bottom issued at load time aims at a stale height and
+                // leaves the view stranded near the top.
+                onContentHeightChanged: {
+                    if (messageListView.followTail && (typeof appConfig === "undefined" || appConfig.autoScroll)) {
+                        messageListView.scrollToTail();
+                    }
+                }
+
+                // Keep following a streaming response even though growth temporarily
+                // makes atYEnd false. Stop only after the user intentionally scrolls away.
                 Connections {
                     target: chatCtrl
                     function onGenerationFinished(response) {
@@ -517,18 +643,34 @@ Item {
                         }
                     }
                     function onCurrentChatChanged() {
-                        messageListView.followTail = true;
-                        messageListView.scrollToTail();
+                        Qt.callLater(function() {
+                            messageListView.followTail = true;
+                            messageListView.scrollToTail();
+                        });
+                        root.startHeightWarmup();
                     }
                     function onActiveCharacterChanged() {
-                        messageListView.followTail = true;
-                        messageListView.scrollToTail();
+                        Qt.callLater(function() {
+                            messageListView.followTail = true;
+                            messageListView.scrollToTail();
+                        });
+                        root.startHeightWarmup();
                     }
                 }
 
-                delegate: RisuChatBubble {
+                Column {
+                    id: messageColumn
                     width: messageListView.width - 12
-                    messageIndex: index
+                    spacing: 8
+
+                    Repeater {
+                        model: chatCtrl.messageModel
+
+                        delegate: RisuChatBubble {
+                            id: messageBubble
+
+                            width: messageColumn.width
+                            messageIndex: index
                     messageId: model.msgId || ""
                     role: model.role || "user"
                     senderName: model.name || (model.isUser ? "User" : (charCtrl.selectedCharacter.name || "Assistant"))
@@ -541,6 +683,8 @@ Item {
                     isPinned: model.isPinned || false
                     emotion: model.emotion || ""
                     attachmentPath: model.attachmentPath || ""
+
+                    liveRequested: Math.abs(messageBubble.y - messageListView.contentY) < messageListView.height * 2.5
 
                     onSwipeLeftRequested: function(row) {
                         chatCtrl.swipeMessage(row, -1);
@@ -562,6 +706,8 @@ Item {
                     }
                     onForkRequested: function(row) {
                         chatCtrl.forkChat(row);
+                    }
+                    }
                     }
                 }
             }

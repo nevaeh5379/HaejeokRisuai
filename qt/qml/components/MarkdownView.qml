@@ -10,6 +10,11 @@ Item {
     property string thoughtText: ""
     property color textColor: Theme.fontStandard
     property bool showThought: false
+    // Message identity for the shared measured-height cache.
+    property string cacheKey: ""
+
+    // Detach far-away Chromium views while preserving their reserved height.
+    property bool liveRequested: true
 
     // Any real HTML is rendered by Chromium. Qt Quick Text.RichText only implements
     // a small HTML subset and silently mangles modern CSS, SVG and custom DOM markup.
@@ -19,11 +24,60 @@ Item {
         return /<!--[\s\S]*?-->|<\/?[a-zA-Z][a-zA-Z0-9:-]*(?:\s[^>]*)?>/i.test(withoutThink);
     }
 
+    readonly property bool wantsWebEngine: root.hasComplexHtml &&
+        typeof appConfig !== "undefined" && appConfig !== null && appConfig.renderMessageHtml === true
+
+    readonly property bool useWebEngine: root.wantsWebEngine && root.liveRequested
+
     implicitWidth: mainColumn.implicitWidth
     implicitHeight: mainColumn.implicitHeight
     height: implicitHeight
 
-    property int webContentHeight: 1
+    // Seeded from the shared cache (or a text-length estimate) so a recreated
+    // delegate starts near the exact height it had before being destroyed;
+    // Chromium re-measures and only a small correction remains.
+    property int webContentHeight: {
+        if (root.cacheKey !== "" && Theme.mdHeightCache[root.cacheKey]) {
+            return Theme.mdHeightCache[root.cacheKey];
+        }
+        return root.estimateWebHeight();
+    }
+
+    function recordMeasuredHeight(h) {
+        if (root._diagKey !== root.cacheKey) {
+            root._diagKey = root.cacheKey;
+            console.warn("[risu-web] measured key:", root.cacheKey,
+                         "height:", Math.max(1, h),
+                         "rawLen:", root.rawText.length);
+        }
+        root.webContentHeight = Math.max(1, h);
+        if (root.cacheKey !== "") {
+            Theme.mdHeightCache[root.cacheKey] = root.webContentHeight;
+        }
+        root.heightMeasured();
+    }
+
+    property string _diagKey: ""
+
+    // Emitted every time Chromium settles on a height for cacheKey, including
+    // from the background warm-up renderer in ChatView.
+    signal heightMeasured()
+
+    // Loads text into the hidden measuring pipeline immediately (bypassing the
+    // streaming throttle) and resolves its real height into the shared cache.
+    function measureOnce(text, key) {
+        root.cacheKey = key;
+        if (!text) return;
+        if (root.rawText === text) {
+            webReloadThrottle.stop();
+            root.updateWebEngineHtml();
+            return;
+        }
+        root.rawText = "";
+        root.rawText = text;
+        webReloadThrottle.stop();
+        root.updateWebEngineHtml();
+    }
 
     Timer {
         id: webReloadThrottle
@@ -33,8 +87,16 @@ Item {
     }
 
     function scheduleWebEngineUpdate() {
-        if (!root.hasComplexHtml) return;
+        if (!root.useWebEngine) return;
         webReloadThrottle.restart();
+    }
+
+    // Rough synchronous estimate used until Chromium reports the real height.
+    // Uncapped: underestimating a long message clips its reserved box.
+    function estimateWebHeight() {
+        var charsPerLine = 80;
+        var lines = Math.max(1, Math.ceil(root.rawText.length / charsPerLine));
+        return 90 + lines * 26;
     }
 
     function findFlickable(item) {
@@ -129,29 +191,44 @@ Item {
         // 1. High-Performance Native RichText Mode (for normal text/markdown)
         Text {
             id: messageText
-            visible: !root.hasComplexHtml
+            visible: !root.wantsWebEngine
             width: parent.width
             wrapMode: Text.Wrap
             color: root.textColor
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontNormal
-            text: (!root.hasComplexHtml) ? root.renderRisuRichText(root.rawText) : ""
+            text: (!root.wantsWebEngine) ? root.renderRisuRichText(root.rawText) : ""
             textFormat: Text.RichText
         }
 
         // 2. Full Chromium WebEngine Mode for actual HTML/CSS/SVG content.
-        // The view itself is created asynchronously so fast scrolling never blocks
-        // the GUI thread on Chromium startup, and page (re)loads are throttled.
+        // The container ALWAYS occupies its (cached or estimated) height so the
+        // surrounding column never collapses while the view loads or detaches.
+        // Until the asynchronous Loader is ready, a clipped native preview of
+        // the same text fills the box so long messages are readable instantly
+        // instead of showing a blank rectangle.
         Item {
             id: webContainer
-            visible: root.hasComplexHtml && webLoader.status === Loader.Ready
+            visible: root.wantsWebEngine
             width: parent.width
-            height: root.hasComplexHtml ? Math.max(1, root.webContentHeight) : 0
+            height: root.wantsWebEngine ? Math.max(1, root.webContentHeight) : 0
+            clip: true
+
+            Text {
+                anchors.fill: parent
+                visible: webLoader.status !== Loader.Ready
+                wrapMode: Text.Wrap
+                color: root.textColor
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontNormal
+                text: webLoader.status !== Loader.Ready ? root.renderRisuRichText(root.rawText) : ""
+                textFormat: Text.RichText
+            }
 
             Loader {
                 id: webLoader
                 anchors.fill: parent
-                active: root.hasComplexHtml
+                active: root.useWebEngine
                 asynchronous: true
                 sourceComponent: webEngineComponent
             }
@@ -184,6 +261,10 @@ Item {
                         step = -(wheel.angleDelta.y / 120.0) * lines * 20.0;
                     }
 
+                    if (fl.moving || fl.flicking) {
+                        fl.cancelFlick();
+                    }
+
                     var minY = -fl.originY;
                     var maxY = Math.max(minY, fl.originY + fl.contentHeight - fl.height);
                     fl.contentY = Math.min(maxY, Math.max(minY, fl.contentY + step));
@@ -199,7 +280,11 @@ Item {
         WebEngineView {
             id: webView
             anchors.fill: parent
-            backgroundColor: "transparent"
+
+            // Opaque page background. A transparent WebEngineView combined with
+            // software compositing is a known recipe for views that load fine
+            // but paint nothing at all.
+            backgroundColor: Theme.bgcolor
 
             settings.javascriptEnabled: true
             settings.localContentCanAccessRemoteUrls: true
@@ -210,7 +295,7 @@ Item {
                     "Math.ceil(Math.max(document.body ? document.body.scrollHeight : 0, document.documentElement ? document.documentElement.scrollHeight : 0));",
                     function(result) {
                         if (result && result > 0) {
-                            root.webContentHeight = Math.max(1, Number(result));
+                            root.recordMeasuredHeight(Number(result));
                         }
                     }
                 );
@@ -219,7 +304,20 @@ Item {
             onLoadingChanged: function(loadRequest) {
                 if (loadRequest.status === WebEngineView.LoadSucceededStatus) {
                     webView.measureContentHeight();
+                } else if (loadRequest.status === WebEngineView.LoadFailedStatus) {
+                    console.warn("[risu-web] load failed:", loadRequest.errorString);
                 }
+            }
+
+            onRenderProcessTerminated: function(status, exitCode) {
+                console.warn("[risu-web] renderer terminated, status:", status, "exitCode:", exitCode, "- reloading");
+                reviveTimer.restart();
+            }
+
+            Timer {
+                id: reviveTimer
+                interval: 300
+                onTriggered: root.updateWebEngineHtml()
             }
 
             // The generated document reports ResizeObserver/MutationObserver changes
@@ -230,7 +328,7 @@ Item {
                 if (title.indexOf(prefix) === 0) {
                     var measured = Number(title.substring(prefix.length));
                     if (isFinite(measured) && measured > 0) {
-                        root.webContentHeight = Math.max(1, Math.ceil(measured));
+                        root.recordMeasuredHeight(Math.ceil(measured));
                     }
                 }
             }
@@ -242,13 +340,13 @@ Item {
     }
 
     onRawTextChanged: {
-        if (root.hasComplexHtml) {
+        if (root.useWebEngine) {
             root.scheduleWebEngineUpdate();
         }
     }
 
     function updateWebEngineHtml() {
-        if (!root.hasComplexHtml || !root.rawText) return;
+        if (!root.useWebEngine || !root.rawText) return;
         var view = webLoader.item;
         if (!view) return;
         var fullHtml = root.buildFullWebEngineDocument(root.renderRisuRichText(root.rawText));

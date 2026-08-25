@@ -206,4 +206,9 @@ QtObject {
     readonly property int animFast: 120
     readonly property int animNormal: 200
     readonly property int animSlow: 300
+
+    // Shared cache of measured WebEngine message heights keyed by message id.
+    // Recreated ListView delegates seed their height from here so scrolling
+    // never shifts the layout while Chromium re-measures the content.
+    property var mdHeightCache: ({})
 }

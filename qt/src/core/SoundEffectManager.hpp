@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QCoreApplication>
 #include <QString>
 #include <QSoundEffect>
 #include <memory>

@@ -65,7 +65,7 @@ QVariantMap CharacterController::selectedCharacter() const {
     map[QStringLiteral("exampleMessage")] = m_selectedChar.exampleMessage;
     map[QStringLiteral("creatorNotes")] = m_selectedChar.creatorNotes;
     map[QStringLiteral("systemPrompt")] = m_selectedChar.systemPrompt;
-    map[QStringLiteral("postHistoryInstructions")] = m_selectedChar.postHistoryInstructions;
+    map[QStringLiteral("replaceGlobalNote")] = m_selectedChar.replaceGlobalNote;
     map[QStringLiteral("creator")] = m_selectedChar.creator;
     map[QStringLiteral("characterVersion")] = m_selectedChar.characterVersion;
     map[QStringLiteral("authorNote")] = m_selectedChar.authorNote;
@@ -131,7 +131,7 @@ bool CharacterController::saveCharacterDetails(const QVariantMap& data) {
     if (data.contains(QStringLiteral("exampleMessage"))) c.exampleMessage = data.value(QStringLiteral("exampleMessage")).toString();
     if (data.contains(QStringLiteral("creatorNotes"))) c.creatorNotes = data.value(QStringLiteral("creatorNotes")).toString();
     if (data.contains(QStringLiteral("systemPrompt"))) c.systemPrompt = data.value(QStringLiteral("systemPrompt")).toString();
-    if (data.contains(QStringLiteral("postHistoryInstructions"))) c.postHistoryInstructions = data.value(QStringLiteral("postHistoryInstructions")).toString();
+    if (data.contains(QStringLiteral("replaceGlobalNote"))) c.replaceGlobalNote = data.value(QStringLiteral("replaceGlobalNote")).toString();
     if (data.contains(QStringLiteral("creator"))) c.creator = data.value(QStringLiteral("creator")).toString();
     if (data.contains(QStringLiteral("characterVersion"))) c.characterVersion = data.value(QStringLiteral("characterVersion")).toString();
     if (data.contains(QStringLiteral("authorNote"))) c.authorNote = data.value(QStringLiteral("authorNote")).toString();
