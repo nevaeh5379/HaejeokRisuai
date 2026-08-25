@@ -419,6 +419,21 @@ async function checkNewFormat(): Promise<void> {
   // migrated by the storage schema/codec and may only contain shallow
   // entities here; walking it would hydrate every deferred domain.
   if (getSqlRuntime().isSql) {
+    const personas = db.personas ?? [];
+    const selectedPersona =
+      typeof db.selectedPersona === "number" &&
+      db.selectedPersona >= 0 &&
+      db.selectedPersona < personas.length
+        ? db.selectedPersona
+        : 0;
+    const activePersona = personas[selectedPersona];
+    if (activePersona && db.userIcon !== (activePersona.icon ?? "")) {
+      // This is runtime hydration, not a user edit. Avoid an unnecessary SQL
+      // settings commit merely because the legacy active-avatar mirror was lazy.
+      settingsStore.hydrate((state) => {
+        state.userIcon = activePersona.icon ?? "";
+      });
+    }
     checkCharOrder();
     return;
   }
@@ -559,6 +574,13 @@ async function checkNewFormat(): Promise<void> {
     db.selectedPersona >= db.personas.length
   ) {
     db.selectedPersona = 0;
+  }
+
+  // Keep the legacy active-avatar mirror aligned with the persona selected
+  // after file-format migration and selected-index validation.
+  const activePersona = db.personas[db.selectedPersona];
+  if (activePersona) {
+    db.userIcon = activePersona.icon ?? "";
   }
 
   if (!db.formatversion) {

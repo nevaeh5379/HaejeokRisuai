@@ -18,6 +18,8 @@
     let ele: HTMLDivElement = $state()
     let sorted = $state(0)
     let selectedId:string = null
+    let selectedPersona = $derived(settingsStore.state.personas?.[settingsStore.state.selectedPersona])
+    let selectedPersonaIcon = $derived(selectedPersona?.icon ?? settingsStore.state.userIcon ?? '')
 
     $effect(() => {
         if (!settingsStore?.state?.personas || settingsStore.state.personas.length === 0) {
@@ -136,10 +138,10 @@
 <div class="flex w-full items-starts rounded-md border-darkborderc border p-4 max-w-full flex-wrap">
     <div class="flex flex-col mt-4 mr-4">
         <button onclick={() => {selectUserImg()}}>
-            {#if settingsStore.state.userIcon === ''}
+            {#if selectedPersonaIcon === ''}
                 <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"></div>
             {:else}
-                {#await getCharImage(settingsStore.state.userIcon, settingsStore.state.personas[settingsStore.state.selectedPersona]?.largePortrait ? 'lgcss' : 'css')}
+                {#await getCharImage(selectedPersonaIcon, selectedPersona?.largePortrait ? 'lgcss' : 'css')}
                     <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"></div>
                 {:then im} 
                     <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500" style={im}></div>                
