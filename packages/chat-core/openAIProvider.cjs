@@ -15,6 +15,38 @@ function collectOpenAIToolCalls(data) {
   return collected;
 }
 
+function appendOpenAIStreamingFragment(current, incoming) {
+  if (!incoming) return current;
+  if (incoming.length > current.length && incoming.startsWith(current)) {
+    return incoming;
+  }
+  return current + incoming;
+}
+
+function mergeOpenAIStreamingToolCallDeltas(current, deltas) {
+  const merged = current && typeof current === 'object' ? current : {};
+  if (!Array.isArray(deltas)) return merged;
+  for (const toolCall of deltas) {
+    const index = toolCall?.index ?? 0;
+    if (!merged[index]) {
+      merged[index] = {
+        id: toolCall?.id || null,
+        type: 'function',
+        function: { name: null, arguments: '' },
+      };
+    }
+    if (toolCall?.id) merged[index].id = toolCall.id;
+    if (toolCall?.function?.name) merged[index].function.name = toolCall.function.name;
+    if (toolCall?.function?.arguments) {
+      merged[index].function.arguments = appendOpenAIStreamingFragment(
+        merged[index].function.arguments,
+        toolCall.function.arguments,
+      );
+    }
+  }
+  return merged;
+}
+
 function formatOpenAIReasoningText(data, options = {}) {
   const message = data?.choices?.[0]?.message;
   let result = typeof message?.content === 'string' ? message.content : '';
@@ -45,5 +77,7 @@ function formatOpenAIReasoningText(data, options = {}) {
 module.exports = {
   DEFAULT_OPENAI_CHAT_COMPLETIONS_URL,
   collectOpenAIToolCalls,
+  appendOpenAIStreamingFragment,
+  mergeOpenAIStreamingToolCallDeltas,
   formatOpenAIReasoningText,
 };

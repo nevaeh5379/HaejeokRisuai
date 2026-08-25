@@ -12,6 +12,22 @@ export interface OpenAIToolCallLike {
 
 export function collectOpenAIToolCalls(data: unknown): OpenAIToolCallLike[];
 
+export function appendOpenAIStreamingFragment(
+  current: string,
+  incoming?: string,
+): string;
+
+export interface OpenAIStreamingToolCallDelta {
+  index?: number;
+  id?: string;
+  function?: { name?: string; arguments?: string };
+}
+
+export function mergeOpenAIStreamingToolCallDeltas(
+  current: Record<number, OpenAIToolCallLike>,
+  deltas?: OpenAIStreamingToolCallDelta[],
+): Record<number, OpenAIToolCallLike>;
+
 export function formatOpenAIReasoningText(
   data: unknown,
   options?: { deepSeekThinkingOutput?: boolean },

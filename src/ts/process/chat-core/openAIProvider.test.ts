@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  appendOpenAIStreamingFragment,
   collectOpenAIToolCalls,
   formatOpenAIReasoningText,
+  mergeOpenAIStreamingToolCallDeltas,
 } from "@risuai/chat-core/openAIProvider.cjs";
 
 describe("OpenAI provider core", () => {
@@ -49,5 +51,26 @@ describe("OpenAI provider core", () => {
     })).toBe(
       "<Thoughts>\nopenrouter\n</Thoughts>\n<Thoughts>\nstructured\n</Thoughts>\nanswer",
     );
+  });
+
+  it("merges cumulative and incremental streaming fragments without duplication", () => {
+    expect(appendOpenAIStreamingFragment("Hel", "Hello")).toBe("Hello");
+    expect(appendOpenAIStreamingFragment("Hello", " world")).toBe("Hello world");
+    expect(appendOpenAIStreamingFragment("Hello", "")).toBe("Hello");
+  });
+
+  it("merges fragmented streaming tool calls by index", () => {
+    const merged = mergeOpenAIStreamingToolCallDeltas({}, [
+      { index: 0, id: "call-1", function: { name: "weather", arguments: '{"city"' } },
+    ]);
+    expect(mergeOpenAIStreamingToolCallDeltas(merged, [
+      { index: 0, function: { arguments: ':"Seoul"}' } },
+    ])).toEqual({
+      0: {
+        id: "call-1",
+        type: "function",
+        function: { name: "weather", arguments: '{"city":"Seoul"}' },
+      },
+    });
   });
 });

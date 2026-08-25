@@ -1,3 +1,7 @@
+import {
+  appendOpenAIStreamingFragment,
+  mergeOpenAIStreamingToolCallDeltas,
+} from "@risuai/chat-core/openAIProvider.cjs";
 import { alertError } from "src/ts/alert";
 import { addFetchLog, fetchNative } from "src/ts/globalApi.svelte";
 import { LLMFlags } from "src/ts/model/modellist";
@@ -15,16 +19,6 @@ export function getTranStream(
   let reasoningContent = "";
   let reasoningFromStructured = false;
   const db = getDatabase();
-
-  const appendStreamingFragment = (current: string, incoming?: string) => {
-    if (!incoming) {
-      return current;
-    }
-    if (incoming.length > current.length && incoming.startsWith(current)) {
-      return incoming;
-    }
-    return current + incoming;
-  };
 
   return new TransformStream<Uint8Array, StreamResponseChunk>({
     transform(chunk, control) {
@@ -92,61 +86,31 @@ export function getTranStream(
                     if (!readed[ind]) {
                       readed[ind] = "";
                     }
-                    readed[ind] = appendStreamingFragment(readed[ind], chunk);
+                    readed[ind] = appendOpenAIStreamingFragment(readed[ind], chunk);
                   } else {
                     if (!readed["0"]) {
                       readed["0"] = "";
                     }
-                    readed["0"] = appendStreamingFragment(readed["0"], chunk);
+                    readed["0"] = appendOpenAIStreamingFragment(readed["0"], chunk);
                   }
                 }
                 // Check for tool calls in the delta
                 if (choice?.delta?.tool_calls) {
-                  if (!readed["__tool_calls"]) {
-                    readed["__tool_calls"] = JSON.stringify({});
-                  }
-                  const toolCallsData = JSON.parse(readed["__tool_calls"]);
-
-                  for (const toolCall of choice.delta.tool_calls) {
-                    const index = toolCall.index ?? 0;
-                    const toolCallId = toolCall.id;
-
-                    // Initialize tool call data if not exists
-                    if (!toolCallsData[index]) {
-                      toolCallsData[index] = {
-                        id: toolCallId || null,
-                        type: "function",
-                        function: {
-                          name: null,
-                          arguments: "",
-                        },
-                      };
-                    }
-
-                    // Update tool call data incrementally
-                    if (toolCall.id) {
-                      toolCallsData[index].id = toolCall.id;
-                    }
-                    if (toolCall.function?.name) {
-                      toolCallsData[index].function.name =
-                        toolCall.function.name;
-                    }
-                    if (toolCall.function?.arguments) {
-                      toolCallsData[index].function.arguments =
-                        appendStreamingFragment(
-                          toolCallsData[index].function.arguments,
-                          toolCall.function.arguments,
-                        );
-                    }
-                  }
-
-                  readed["__tool_calls"] = JSON.stringify(toolCallsData);
+                  const currentToolCalls = JSON.parse(
+                    readed["__tool_calls"] || "{}",
+                  );
+                  readed["__tool_calls"] = JSON.stringify(
+                    mergeOpenAIStreamingToolCallDeltas(
+                      currentToolCalls,
+                      choice.delta.tool_calls,
+                    ),
+                  );
                 }
                 const reasoningChunk =
                   choice?.delta?.reasoning_content ?? choice?.delta?.reasoning;
                 if (reasoningChunk) {
                   reasoningFromStructured = true;
-                  reasoningContent = appendStreamingFragment(
+                  reasoningContent = appendOpenAIStreamingFragment(
                     reasoningContent,
                     reasoningChunk,
                   );
