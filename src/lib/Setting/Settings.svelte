@@ -307,7 +307,7 @@
                         }}
                     >
                         <div class="flex items-center gap-3.5 min-w-0">
-                            <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
+                            <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center shrink-0">
                                 <KeyIcon size={18} />
                             </div>
                             <span class="text-base font-medium text-textcolor truncate">{language.providerSettings || "API & Providers"}</span>
@@ -324,7 +324,7 @@
                         }}
                     >
                         <div class="flex items-center gap-3.5 min-w-0">
-                            <div class="w-8 h-8 rounded-lg bg-cyan-500/15 text-cyan-400 flex items-center justify-center shrink-0">
+                            <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center shrink-0">
                                 <SlidersHorizontal size={18} />
                             </div>
                             <span class="text-base font-medium text-textcolor truncate">{language.parameters}</span>
@@ -341,7 +341,7 @@
                         }}
                     >
                         <div class="flex items-center gap-3.5 min-w-0">
-                            <div class="w-8 h-8 rounded-lg bg-pink-500/15 text-pink-400 flex items-center justify-center shrink-0">
+                            <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center shrink-0">
                                 <MessageSquareIcon size={18} />
                             </div>
                             <span class="text-base font-medium text-textcolor truncate">{language.prompt}</span>
@@ -355,7 +355,7 @@
                         onclick={() => { $SettingsMenuIndex = 12; }}
                     >
                         <div class="flex items-center gap-3.5 min-w-0">
-                            <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0">
+                            <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center shrink-0">
                                 <ContactIcon size={18} />
                             </div>
                             <span class="text-base font-medium text-textcolor truncate">{language.persona}</span>
@@ -369,7 +369,7 @@
                         onclick={() => { $SettingsMenuIndex = 14; }}
                     >
                         <div class="flex items-center gap-3.5 min-w-0">
-                            <div class="w-8 h-8 rounded-lg bg-amber-500/15 text-amber-400 flex items-center justify-center shrink-0">
+                            <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center shrink-0">
                                 <PackageIcon size={18} />
                             </div>
                             <span class="text-base font-medium text-textcolor truncate">{language.modules}</span>
@@ -383,7 +383,7 @@
                         onclick={() => { $SettingsMenuIndex = 2; }}
                     >
                         <div class="flex items-center gap-3.5 min-w-0">
-                            <div class="w-8 h-8 rounded-lg bg-orange-500/15 text-orange-400 flex items-center justify-center shrink-0">
+                            <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center shrink-0">
                                 <Sailboat size={18} />
                             </div>
                             <span class="text-base font-medium text-textcolor truncate">{language.otherBots}</span>
@@ -404,7 +404,7 @@
                         onclick={() => { $SettingsMenuIndex = 3; }}
                     >
                         <div class="flex items-center gap-3.5 min-w-0">
-                            <div class="w-8 h-8 rounded-lg bg-sky-500/15 text-sky-400 flex items-center justify-center shrink-0">
+                            <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
                                 <MonitorIcon size={18} />
                             </div>
                             <span class="text-base font-medium text-textcolor truncate">{language.display}</span>
@@ -417,7 +417,7 @@
                     onclick={() => { $SettingsMenuIndex = 10; }}
                 >
                     <div class="flex items-center gap-3.5 min-w-0">
-                        <div class="w-8 h-8 rounded-lg bg-indigo-500/15 text-indigo-400 flex items-center justify-center shrink-0">
+                        <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
                             <LanguagesIcon size={18} />
                         </div>
                         <span class="text-base font-medium text-textcolor truncate">{language.language}</span>
@@ -430,7 +430,7 @@
                         onclick={() => { $SettingsMenuIndex = 11; }}
                     >
                         <div class="flex items-center gap-3.5 min-w-0">
-                            <div class="w-8 h-8 rounded-lg bg-teal-500/15 text-teal-400 flex items-center justify-center shrink-0">
+                            <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
                                 <AccessibilityIcon size={18} />
                             </div>
                             <span class="text-base font-medium text-textcolor truncate">{language.accessibility}</span>
@@ -442,7 +442,7 @@
                         onclick={() => { $SettingsMenuIndex = 15; }}
                     >
                         <div class="flex items-center gap-3.5 min-w-0">
-                            <div class="w-8 h-8 rounded-lg bg-orange-500/15 text-orange-400 flex items-center justify-center shrink-0">
+                            <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
                                 <KeyboardIcon size={18} />
                             </div>
                             <span class="text-base font-medium text-textcolor truncate">{language.hotkey}</span>
@@ -462,7 +462,7 @@
                     onclick={() => { $SettingsMenuIndex = 0; }}
                 >
                     <div class="flex items-center gap-3.5 min-w-0">
-                        <div class="w-8 h-8 rounded-lg bg-rose-500/15 text-rose-400 flex items-center justify-center shrink-0">
+                        <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0">
                             <UserIcon size={18} />
                         </div>
                         <span class="text-base font-medium text-textcolor truncate">{language.account} & {language.files}</span>
@@ -475,7 +475,7 @@
                         onclick={() => { $SettingsMenuIndex = 4; }}
                     >
                         <div class="flex items-center gap-3.5 min-w-0">
-                            <div class="w-8 h-8 rounded-lg bg-fuchsia-500/15 text-fuchsia-400 flex items-center justify-center shrink-0">
+                            <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0">
                                 <CodeIcon size={18} />
                             </div>
                             <span class="text-base font-medium text-textcolor truncate">{language.plugin}</span>
@@ -487,7 +487,7 @@
                         onclick={() => { $SettingsMenuIndex = 6; }}
                     >
                         <div class="flex items-center gap-3.5 min-w-0">
-                            <div class="w-8 h-8 rounded-lg bg-red-500/15 text-red-400 flex items-center justify-center shrink-0">
+                            <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0">
                                 <ActivityIcon size={18} />
                             </div>
                             <span class="text-base font-medium text-textcolor truncate">{language.advancedSettings}</span>
@@ -500,7 +500,7 @@
                             onclick={() => { dbExplorerOpen = true; }}
                         >
                             <div class="flex items-center gap-3.5 min-w-0">
-                                <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
+                                <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0">
                                     <DatabaseIcon size={18} />
                                 </div>
                                 <span class="text-base font-medium text-textcolor truncate">{language.postgresDbExplorer}</span>
@@ -512,7 +512,7 @@
                             onclick={() => { storageExplorerOpen = true; }}
                         >
                             <div class="flex items-center gap-3.5 min-w-0">
-                                <div class="w-8 h-8 rounded-lg bg-teal-500/15 text-teal-400 flex items-center justify-center shrink-0">
+                                <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0">
                                     <HardDriveIcon size={18} />
                                 </div>
                                 <span class="text-base font-medium text-textcolor truncate">{language.storageExplorer}</span>
@@ -525,7 +525,7 @@
                         onclick={() => { $SettingsMenuIndex = 77; }}
                     >
                         <div class="flex items-center gap-3.5 min-w-0">
-                            <div class="w-8 h-8 rounded-lg bg-amber-500/15 text-amber-300 flex items-center justify-center shrink-0">
+                            <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0">
                                 <BoxIcon size={18} />
                             </div>
                             <span class="text-base font-medium text-textcolor truncate">{language.supporterThanks}</span>
@@ -538,7 +538,7 @@
                             onclick={() => { menu.callback(); }}
                         >
                             <div class="flex items-center gap-3.5 min-w-0">
-                                <div class="w-8 h-8 rounded-lg bg-textcolor/10 text-textcolor flex items-center justify-center shrink-0">
+                                <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0">
                                     <PluginDefinedIcon ico={menu} />
                                 </div>
                                 <span class="text-base font-medium text-textcolor truncate">{menu.name}</span>
@@ -552,8 +552,8 @@
                             onclick={() => { easyPanelStore.open = true; }}
                         >
                             <div class="flex items-center gap-3.5 min-w-0">
-                                <div class="w-8 h-8 rounded-lg bg-linear-to-br from-indigo-500/20 to-teal-500/20 flex items-center justify-center shrink-0">
-                                    <SparkleIcon size={18} class="text-indigo-400" />
+                                <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0">
+                                    <SparkleIcon size={18} />
                                 </div>
                                 <span class="text-base font-medium text-textcolor truncate">{language.easyPanel}</span>
                             </div>
