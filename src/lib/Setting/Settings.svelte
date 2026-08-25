@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, DatabaseIcon, HardDriveIcon, LanguagesIcon, MonitorIcon, Sailboat, UserIcon, CircleXIcon, KeyboardIcon, SparkleIcon } from "@lucide/svelte";
+    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, DatabaseIcon, HardDriveIcon, LanguagesIcon, MonitorIcon, Sailboat, UserIcon, CircleXIcon, KeyboardIcon, SparkleIcon, ArrowLeft } from "@lucide/svelte";
     import { language } from "src/lang";
     import DisplaySettings from "./Pages/DisplaySettings.svelte";
     import UserSettings from "./Pages/UserSettings.svelte";
@@ -36,6 +36,37 @@
     let dbExplorerOpen = $state(false)
     let storageExplorerOpen = $state(false)
     let searchNavigation = $state<{ menuIndex: number; subTab?: number } | null>(null)
+    let innerWidth = $state(typeof window !== "undefined" ? window.innerWidth : 1200)
+    let isMobile = $derived(innerWidth < 768 || $MobileGUI)
+
+    $effect(() => {
+        if (!isMobile && $SettingsMenuIndex === -1) {
+            $SettingsMenuIndex = 1
+        }
+    })
+
+    let currentMenuTitle = $derived.by(() => {
+        switch ($SettingsMenuIndex) {
+            case 0: return `${language.account} & ${language.files}`;
+            case 1: return language.chatBot;
+            case 2: return language.otherBots;
+            case 3: return language.display;
+            case 4: return language.plugin;
+            case 5: return language.files;
+            case 6: return language.advancedSettings;
+            case 7: return language.community;
+            case 8: return language.globalLoreBook;
+            case 9: return language.globalRegexScript;
+            case 10: return language.language;
+            case 11: return language.accessibility;
+            case 12: return language.persona;
+            case 13: return language.promptTemplate;
+            case 14: return language.modules;
+            case 15: return language.hotkey;
+            case 77: return language.supporterThanks;
+            default: return language.settings;
+        }
+    })
 
     $effect(() => {
         if (searchNavigation && $SettingsMenuIndex !== searchNavigation.menuIndex) {
@@ -64,11 +95,9 @@
         }
     }
 
-    if(window.innerWidth >= 900 && $SettingsMenuIndex === -1 && !$MobileGUI){
-        $SettingsMenuIndex = 1
-    }
-
 </script>
+
+<svelte:window bind:innerWidth />
 {#snippet menuButtons()}
     <SettingsSearch onselect={handleSearchSelect} />
 
@@ -283,16 +312,46 @@
     {/if}
 {/snippet}
 
-{#if $MobileGUI}
-    <div class="h-full w-full flex justify-center bg-bgcolor rs-setting-cont">
-        <div class="h-full w-full flex relative rs-setting-cont-2">
+{#if isMobile}
+    <div class="fixed inset-0 z-40 bg-bgcolor flex flex-col w-full h-full text-textcolor overflow-hidden rs-setting-cont">
+        <!-- Mobile Header -->
+        <div class="w-full px-4 h-14 border-b border-b-darkborderc bg-darkbg flex justify-between items-center shrink-0">
+            <div class="flex items-center gap-3 min-w-0">
+                {#if $SettingsMenuIndex !== -1}
+                    <button
+                        class="p-1 -ml-1 text-textcolor hover:text-textcolor2 transition-colors cursor-pointer"
+                        onclick={() => {
+                            $SettingsMenuIndex = -1;
+                        }}
+                        aria-label="Back"
+                    >
+                        <ArrowLeft size={22} />
+                    </button>
+                {/if}
+                <span class="font-bold text-lg truncate">
+                    {$SettingsMenuIndex === -1 ? language.settings : currentMenuTitle}
+                </span>
+            </div>
+            <button
+                class="p-1 -mr-1 text-textcolor2 hover:text-textcolor transition-colors cursor-pointer"
+                onclick={() => {
+                    settingsOpen.set(false);
+                }}
+                aria-label="Close"
+            >
+                <CircleXIcon size={settingsStore.state.settingsCloseButtonSize || 22} />
+            </button>
+        </div>
+
+        <!-- Mobile Content -->
+        <div class="flex-1 overflow-y-auto min-w-0 bg-bgcolor">
             {#if $SettingsMenuIndex === -1}
-                <div class="flex h-full w-full flex-col p-4 pt-4 gap-2 overflow-y-auto relative rs-setting-cont-3 bg-bgcolor">
+                <div class="flex flex-col p-4 gap-2">
                     {@render menuButtons()}
                 </div>
             {:else}
                 {#key $SettingsMenuIndex}
-                    <div class="grow py-4 px-4 bg-bgcolor flex flex-col text-textcolor overflow-y-auto relative rs-setting-cont-4 min-w-0">
+                    <div class="py-4 px-4 flex flex-col min-w-0">
                         {@render pageContent()}
                     </div>
                 {/key}
@@ -300,10 +359,11 @@
         </div>
     </div>
 {:else}
+    <!-- Desktop Floating Modal -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
-        class="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-2 sm:p-4 md:p-6 rs-setting-backdrop"
+        class="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-4 sm:p-6 md:p-8 rs-setting-backdrop"
         role="presentation"
         onclick={(e) => {
             if (e.target === e.currentTarget) {
@@ -311,48 +371,29 @@
             }
         }}
     >
-        <div class="relative w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] bg-bgcolor rounded-2xl shadow-2xl border border-darkborderc overflow-hidden flex flex-row rs-setting-cont-2">
-            {#if window.innerWidth >= 700 || $SettingsMenuIndex === -1}
-                <div
-                    class="flex h-full flex-col p-4 pt-6 gap-2 overflow-y-auto relative rs-setting-cont-3 shrink-0 bg-darkbg border-r border-darkborderc"
-                    class:w-full={window.innerWidth < 700}
-                    class:w-64={window.innerWidth >= 700}
-                    class:md:w-72={window.innerWidth >= 700}
-                >
-                    {@render menuButtons()}
-                    {#if window.innerWidth < 700}
-                        <button
-                            class="absolute top-2 right-2 text-textcolor2 hover:text-textcolor transition-colors"
-                            onclick={() => {
-                                settingsOpen.set(false);
-                            }}
-                            aria-label="Close"
-                        >
-                            <CircleXIcon size={settingsStore.state.settingsCloseButtonSize || 24} />
-                        </button>
-                    {/if}
+        <div class="relative w-full max-w-5xl h-[86vh] max-h-[880px] bg-bgcolor rounded-2xl shadow-2xl border border-darkborderc overflow-hidden flex flex-row rs-setting-cont-2">
+            <!-- Sidebar -->
+            <div class="flex h-full flex-col p-4 pt-6 gap-2 overflow-y-auto relative rs-setting-cont-3 shrink-0 bg-darkbg border-r border-darkborderc w-64 md:w-72">
+                {@render menuButtons()}
+            </div>
+
+            <!-- Content Area -->
+            {#key $SettingsMenuIndex}
+                <div class="grow py-6 px-6 bg-bgcolor flex flex-col text-textcolor overflow-y-auto relative rs-setting-cont-4 min-w-0">
+                    {@render pageContent()}
                 </div>
-            {/if}
-            {#if window.innerWidth >= 700 || $SettingsMenuIndex !== -1}
-                {#key $SettingsMenuIndex}
-                    <div class="grow py-6 px-6 bg-bgcolor flex flex-col text-textcolor overflow-y-auto relative rs-setting-cont-4 min-w-0">
-                        {@render pageContent()}
-                    </div>
-                {/key}
-                <button
-                    class="absolute top-3 right-3 text-textcolor2 hover:text-textcolor p-1.5 rounded-lg hover:bg-textcolor/10 transition-colors z-10 cursor-pointer"
-                    onclick={() => {
-                        if (window.innerWidth >= 700) {
-                            settingsOpen.set(false);
-                        } else {
-                            $SettingsMenuIndex = -1;
-                        }
-                    }}
-                    aria-label="Close"
-                >
-                    <CircleXIcon size={settingsStore.state.settingsCloseButtonSize || 24} />
-                </button>
-            {/if}
+            {/key}
+
+            <!-- Close Button -->
+            <button
+                class="absolute top-3 right-3 text-textcolor2 hover:text-textcolor p-1.5 rounded-lg hover:bg-textcolor/10 transition-colors z-10 cursor-pointer"
+                onclick={() => {
+                    settingsOpen.set(false);
+                }}
+                aria-label="Close"
+            >
+                <CircleXIcon size={settingsStore.state.settingsCloseButtonSize || 24} />
+            </button>
         </div>
     </div>
 {/if}
