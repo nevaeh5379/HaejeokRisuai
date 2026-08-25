@@ -10,6 +10,7 @@ import { isLastCharPunctuation } from "../util";
 import { parseChatML } from "../parser/chatML";
 import { requestChatData } from "./request/request";
 import type { ChatModelResponse, ChatStageTimings } from "./chat-core/types";
+import { decideAutoContinuation } from "./chat-core/finalization";
 import { risuChatParser } from "./scripts";
 import { chatProcessStage, doingChat } from "./chatRuntimeState";
 import { peerSync } from "../sync/multiuser";
@@ -32,12 +33,12 @@ async function shouldAutoContinue(
   usedContinueTokens: number,
 ) {
   const resultTokens = (await tokenize(result)) + usedContinueTokens;
-  const belowMinimum =
-    settingsStore.state.autoContinueMinTokens > 0 &&
-    resultTokens < settingsStore.state.autoContinueMinTokens;
-  const incomplete =
-    settingsStore.state.autoContinueChat && !isLastCharPunctuation(result);
-  return { shouldContinue: belowMinimum || incomplete, resultTokens };
+  return decideAutoContinuation({
+    resultTokens,
+    minimumTokens: settingsStore.state.autoContinueMinTokens,
+    continueIncomplete: settingsStore.state.autoContinueChat,
+    endsWithPunctuation: isLastCharPunctuation(result),
+  });
 }
 
 async function appendIgpResult(
