@@ -1,0 +1,17 @@
+/*
+ * CSS Custom Highlight API selectors are valid browser syntax, but the
+ * Lightning CSS version used by the current Tailwind/Vite toolchain warns on
+ * ::highlight(name). Keep these tiny rules as an unprocessed public asset.
+ */
+::highlight(cbsnest3) { color: #f59e0b; }
+::highlight(cbsnest2) { color: #22c55e; }
+::highlight(cbsnest1) { color: #3b82f6; }
+::highlight(cbsnest0) { color: #a855f7; }
+::highlight(cbsnest4) { color: #ec4899; }
+::highlight(cbsdisplay) { color: #06b6d4; }
+::highlight(comment) { color: var(--risu-theme-textcolor2); }
+::highlight(decorator) { color: var(--risu-theme-draculared); }
+::highlight(deprecated) {
+  color: var(--risu-theme-textcolor2);
+  text-decoration: line-through;
+}

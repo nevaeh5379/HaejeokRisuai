@@ -1,5 +1,5 @@
 import { defineConfig } from "vite";
-import { svelte, vitePreprocess } from "@sveltejs/vite-plugin-svelte";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
 import wasm from "vite-plugin-wasm";
 import strip from '@rollup/plugin-strip';
 import tailwindcss from '@tailwindcss/vite'
@@ -16,7 +16,6 @@ export default defineConfig(({command, mode}) => {
     },
     plugins: [
       svelte({
-        preprocess: vitePreprocess(),
         onwarn: (warning, handler) => {
           // disable a11y warnings
           if (warning.code.startsWith("a11y-")) return;
@@ -104,11 +103,30 @@ export default defineConfig(({command, mode}) => {
       minify: process.env.TAURI_ENV_DEBUG === 'true' ? false : 'oxc',
       // produce sourcemaps for debug builds
       sourcemap: process.env.TAURI_ENV_DEBUG === 'true',
-      chunkSizeWarningLimit: 2000,
+      // WebLLM/tokenizer runtimes are intentionally shipped as large lazy chunks.
+      // Warn only if a future chunk grows beyond the current expected ceiling.
+      chunkSizeWarningLimit: 6000,
       // Keep the root state module out of Rolldown's large shared feature chunk.
       // Otherwise every lazy screen causes its parser/model dependencies to be
       // module-preloaded with the initial HTML through the shared stores chunk.
       rolldownOptions: {
+        checks: {
+          // Rolldown's relative plugin timing heuristic is noisy for known-heavy
+          // Vite/WASM asset plugins and does not indicate a correctness issue.
+          pluginTimings: false,
+        },
+        onLog(level, log, handler) {
+          // These dynamic imports intentionally preserve lazy/circular-safe call
+          // sites even though the target is also imported elsewhere in the app.
+          if (log.code === 'INEFFECTIVE_DYNAMIC_IMPORT') return;
+
+          // Several browser-oriented WASM libraries contain guarded Node paths.
+          // Vite correctly replaces them with browser externals; the warning is
+          // expected and preserving Vite's shim is safer than aliasing the APIs.
+          if (log.message.includes('has been externalized for browser compatibility')) return;
+
+          handler(level, log);
+        },
         output: {
           codeSplitting: {
             includeDependenciesRecursively: false,
@@ -227,7 +245,16 @@ export default defineConfig(({command, mode}) => {
       }
     },
     worker: {
-      format: 'es'
+      format: 'es',
+      rolldownOptions: {
+        checks: {
+          pluginTimings: false,
+        },
+        onLog(level, log, handler) {
+          if (log.message.includes('has been externalized for browser compatibility')) return;
+          handler(level, log);
+        },
+      },
     }
 }
 });

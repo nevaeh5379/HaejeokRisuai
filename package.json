@@ -14,7 +14,7 @@
     "dev:node-all": "node scripts/dev-node-all.mjs",
     "dev:storage": "docker compose -f docker-compose.dev.yml up -d",
     "dev:storage:down": "docker compose -f docker-compose.dev.yml down",
-    "build": "vite build --sourcemap",
+    "build": "node tooling/vite-build.mjs --sourcemap",
     "tauribuild": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",

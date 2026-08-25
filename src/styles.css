@@ -410,36 +410,6 @@ body {
   @apply border border-darkborderc bg-darkbg text-textcolor rounded-md shadow-xs focus:outline-hidden transition-colors duration-200 px-4 py-2 min-w-0;
 }
 
-::highlight(cbsnest3) {
-  @apply text-amber-500;
-}
-::highlight(cbsnest2) {
-  @apply text-green-500;
-}
-::highlight(cbsnest1) {
-  @apply text-blue-500;
-}
-::highlight(cbsnest0) {
-  @apply text-purple-500;
-}
-::highlight(cbsnest4) {
-  @apply text-pink-500;
-}
-::highlight(cbsdisplay) {
-  @apply text-cyan-500;
-}
-::highlight(comment) {
-  color: var(--risu-theme-textcolor2);
-}
-
-::highlight(decorator) {
-  color: var(--risu-theme-draculared);
-}
-::highlight(deprecated) {
-  color: var(--risu-theme-textcolor2);
-  text-decoration: line-through;
-}
-
 .prose pre {
   background-color: var(--tw-prose-pre-bg);
   color: var(--tw-prose-pre-code);
