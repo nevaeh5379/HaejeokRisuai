@@ -9,80 +9,21 @@ import type {
 } from "./database.svelte";
 import { v4 as uuidv4 } from "uuid";
 
-export interface SqlSettingUpsert {
-  key: string;
-  value: unknown;
-}
+export type {
+  SqlSettingUpsert,
+  SqlCharacterUpsert,
+  SqlCharacterTouch,
+  SqlChatUpsert,
+  SqlMessageUpsert,
+  SqlCommitResult,
+} from "../../../packages/protocol/sqlCommit.cjs";
+import type {
+  SqlCommit as ProtocolSqlCommit,
+  SqlPresetUpsert as ProtocolSqlPresetUpsert,
+} from "../../../packages/protocol/sqlCommit.cjs";
 
-export interface SqlCharacterUpsert {
-  id: string;
-  position: number;
-  data: unknown;
-}
-
-export interface SqlCharacterTouch {
-  id: string;
-  lastInteraction: number;
-}
-
-export interface SqlChatUpsert {
-  id: string;
-  characterId: string;
-  position: number;
-  data: unknown;
-}
-
-export interface SqlMessageUpsert {
-  id: string;
-  chatId: string;
-  position: number;
-  data: unknown;
-}
-
-export interface SqlPresetUpsert {
-  id: string;
-  position?: number;
-  data: botPreset;
-}
-
-/**
- * A bounded, row-oriented database transaction. Unlike the former save
- * payload this is produced at the mutation boundary; building it never walks
- * the complete Database object.
- */
-export interface SqlCommit {
-  baseRevision: number;
-  idempotencyKey?: string;
-  replaceAll?: boolean;
-  action?: string;
-  root: {
-    upserts: SqlSettingUpsert[];
-    deletes: string[];
-  };
-  pluginStorage?: {
-    upserts: SqlSettingUpsert[];
-    deletes: string[];
-    clear?: boolean;
-  };
-  presets?: {
-    upserts: SqlPresetUpsert[];
-    deletes: string[];
-    order?: string[];
-    activeId?: string;
-  };
-  characters: SqlCharacterUpsert[];
-  characterTouches?: SqlCharacterTouch[];
-  characterIds?: string[];
-  chats: SqlChatUpsert[];
-  chatManifests: { characterId: string; ids: string[] }[];
-  messages: SqlMessageUpsert[];
-  messageManifests: { chatId: string; ids: string[] }[];
-  messageDeletes?: { chatId: string; ids: string[] }[];
-}
-
-export interface SqlCommitResult {
-  revision: number;
-}
+export type SqlPresetUpsert = ProtocolSqlPresetUpsert<botPreset>;
+export type SqlCommit = ProtocolSqlCommit<botPreset>;
 
 export class SqlRevisionConflictError extends Error {
   constructor(readonly currentRevision: number) {
