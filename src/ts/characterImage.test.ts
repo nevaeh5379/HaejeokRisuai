@@ -168,6 +168,29 @@ describe("getCharImagesBatch", () => {
     vi.unstubAllGlobals();
   });
 
+  it("keeps a newly loaded preview alive when pinned images exceed the LRU budget", () => {
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(), revokeObjectURL });
+    mocks.settingsState.lowSpecMode = true;
+
+    const pinnedKeys = Array.from(
+      { length: 6 },
+      (_, index) => `full_assets/rendered-${index}.png`,
+    );
+    for (const key of pinnedKeys) {
+      pinCharacterImageCache(key);
+      fullImageBlobCache.set(key, `blob:${key}`);
+    }
+
+    fullImageBlobCache.set("assets/persona-preview.png", "blob:persona-preview");
+
+    expect(fullImageBlobCache.has("assets/persona-preview.png")).toBe(true);
+    expect(revokeObjectURL).not.toHaveBeenCalledWith("blob:persona-preview");
+
+    for (const key of pinnedKeys) unpinCharacterImageCache(key);
+    vi.unstubAllGlobals();
+  });
+
   it("does not revoke pinned full-resolution blobs that are still rendered", () => {
     const revokeObjectURL = vi.fn();
     vi.stubGlobal("URL", { createObjectURL: vi.fn(), revokeObjectURL });
@@ -182,7 +205,7 @@ describe("getCharImagesBatch", () => {
     expect(fullImageBlobCache.size).toBe(5);
     expect(revokeObjectURL).not.toHaveBeenCalled();
 
-    unpinCharacterImageCache(keys[0]);
+    for (const key of keys) unpinCharacterImageCache(key);
 
     expect(fullImageBlobCache.size).toBe(4);
     expect(fullImageBlobCache.has(keys[0])).toBe(false);

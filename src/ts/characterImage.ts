@@ -83,16 +83,21 @@ class CharacterImageCache extends Map<string, string> {
   private trim(): void {
     const maxEntries = settingsStore.state.lowSpecMode ? 32 : 128;
     const maxFullResolution = settingsStore.state.lowSpecMode ? 4 : 12;
-    let fullResolutionCount = 0;
+    // Pinned entries are the currently rendered working set. They must not consume
+    // the disposable full-resolution LRU budget, otherwise any newly loaded preview
+    // can be inserted and immediately revoked while the UI is still using its URL.
+    let evictableFullResolutionCount = 0;
     for (const key of super.keys()) {
-      if (this.isFullResolutionKey(key)) fullResolutionCount += 1;
+      if (this.isFullResolutionKey(key) && !this.isPinned(key)) {
+        evictableFullResolutionCount += 1;
+      }
     }
-    if (fullResolutionCount > maxFullResolution) {
+    if (evictableFullResolutionCount > maxFullResolution) {
       for (const key of [...super.keys()]) {
         if (!this.isFullResolutionKey(key) || this.isPinned(key)) continue;
         this.delete(key);
-        fullResolutionCount -= 1;
-        if (fullResolutionCount <= maxFullResolution) break;
+        evictableFullResolutionCount -= 1;
+        if (evictableFullResolutionCount <= maxFullResolution) break;
       }
     }
     while (this.size > maxEntries) {
