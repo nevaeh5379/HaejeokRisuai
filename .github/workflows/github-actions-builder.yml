@@ -118,12 +118,14 @@ jobs:
           - platform: macos-latest
             target: x86_64-apple-darwin
             args: --target x86_64-apple-darwin
-          - platform: ubuntu-latest
+          - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             args: --target x86_64-unknown-linux-gnu
-          - platform: ubuntu-24.04-arm
+            package_arch: amd64
+          - platform: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
             args: --target aarch64-unknown-linux-gnu
+            package_arch: arm64
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             args: --target x86_64-pc-windows-msvc
@@ -165,7 +167,14 @@ jobs:
         if: startsWith(matrix.settings.platform, 'ubuntu-')
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libxdo-dev \
+            libfuse2 \
+            patchelf
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -214,6 +223,44 @@ jobs:
           releaseDraft: true
           args: ${{ matrix.settings.args }}
           tauriScript: pnpm tauri
+
+      - name: Build Arch Linux package
+        if: startsWith(matrix.settings.platform, 'ubuntu-')
+        shell: bash
+        env:
+          NFPM_ARCH: ${{ matrix.settings.package_arch }}
+          NFPM_VERSION: 0.0.${{ needs.prepare-release.outputs.build_number }}
+          NPM_CONFIG_LOGLEVEL: error
+        run: |
+          DEB_DIR="src-tauri/target/${{ matrix.settings.target }}/release/bundle/deb"
+          DEB_PATH=$(find "$DEB_DIR" -maxdepth 1 -type f -name '*.deb' -print -quit)
+          if [ -z "$DEB_PATH" ]; then
+            echo "Unable to find the Debian bundle in $DEB_DIR" >&2
+            exit 1
+          fi
+
+          rm -rf .linux-package-root dist-linux-packages
+          mkdir -p .linux-package-root dist-linux-packages
+          dpkg-deb --extract "$DEB_PATH" .linux-package-root
+
+          npx --yes @goreleaser/nfpm@2.47.0 package \
+            --packager archlinux \
+            --config tooling/nfpm.archlinux.yaml \
+            --target dist-linux-packages/
+
+      - name: Upload Arch Linux package
+        if: startsWith(matrix.settings.platform, 'ubuntu-')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_TAG: ${{ needs.prepare-release.outputs.build_tag }}
+        run: |
+          ARCH_PACKAGE=$(find dist-linux-packages -maxdepth 1 -type f -name '*.tar.zst' -print -quit)
+          if [ -z "$ARCH_PACKAGE" ]; then
+            echo "Arch Linux package was not generated" >&2
+            exit 1
+          fi
+          gh release upload "$BUILD_TAG" "$ARCH_PACKAGE" --clobber
 
   publish-release:
     needs: [prepare-release, publish-tauri]

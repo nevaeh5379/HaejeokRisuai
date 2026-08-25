@@ -58,6 +58,15 @@ The screenshots below are inherited upstream UI references and may not exactly m
 
 Prebuilt desktop releases are published through the [Haejeok RisuAI Releases](https://github.com/nevaeh5379/HaejeokRisuAI/releases) page.
 
+Linux releases are provided in several formats:
+
+- `.deb` — Debian, Ubuntu, Linux Mint, Pop!_OS, and other Debian-based distributions (`sudo apt install ./<package>.deb`)
+- `.rpm` — Fedora, RHEL, Rocky Linux, AlmaLinux, and other RPM-based distributions (`sudo dnf install ./<package>.rpm`); openSUSE users can use `sudo zypper install ./<package>.rpm`
+- `.pkg.tar.zst` — Arch Linux, Manjaro, EndeavourOS, CachyOS, and other Arch-based distributions (`sudo pacman -U ./<package>.pkg.tar.zst`)
+- `.AppImage` — portable fallback for other compatible glibc-based Linux distributions (`chmod +x <package>.AppImage && ./<package>.AppImage`)
+
+Both x86_64 and ARM64 Linux builds are published.
+
 ### Docker server (recommended)
 
 The recommended server path uses the prebuilt Docker image with **PostgreSQL 17 + RustFS + restic**.
