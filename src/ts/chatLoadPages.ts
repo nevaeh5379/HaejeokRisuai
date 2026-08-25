@@ -41,3 +41,18 @@ export function getAdditionalChatLoadPages(db: {
     DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES,
   );
 }
+/**
+ * Converts an index in a partially hydrated message array into the stable
+ * full-chat index used by CBS/Lua APIs. UI mutations should keep using the
+ * local array index; script-visible indexes must include messageOffset.
+ */
+export function getAbsoluteChatMessageIndex(
+  localIndex: number,
+  messageOffset: number | undefined,
+): number {
+  if (localIndex < 0) return localIndex;
+  const offset = Number.isSafeInteger(messageOffset) && (messageOffset ?? 0) > 0
+    ? messageOffset!
+    : 0;
+  return offset + localIndex;
+}

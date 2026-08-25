@@ -4,6 +4,7 @@ import {
   DEFAULT_CHAT_LOAD_INITIAL_PAGES,
   LOW_SPEC_CHAT_LOAD_ADDITIONAL_PAGES,
   LOW_SPEC_CHAT_LOAD_INITIAL_PAGES,
+  getAbsoluteChatMessageIndex,
   getAdditionalChatLoadPages,
   getInitialChatLoadPages,
   normalizeChatLoadPages,
@@ -59,5 +60,22 @@ describe("normalizeChatLoadPages", () => {
         lowSpecMode: true,
       }),
     ).toBe(LOW_SPEC_CHAT_LOAD_ADDITIONAL_PAGES);
+  });
+});
+
+
+describe("getAbsoluteChatMessageIndex", () => {
+  it("keeps full-chat indexes unchanged when there is no page offset", () => {
+    expect(getAbsoluteChatMessageIndex(5, 0)).toBe(5);
+    expect(getAbsoluteChatMessageIndex(5, undefined)).toBe(5);
+  });
+
+  it("adds the SQL page offset for script-visible chat indexes", () => {
+    expect(getAbsoluteChatMessageIndex(0, 40)).toBe(40);
+    expect(getAbsoluteChatMessageIndex(15, 40)).toBe(55);
+  });
+
+  it("preserves synthetic negative message indexes", () => {
+    expect(getAbsoluteChatMessageIndex(-1, 40)).toBe(-1);
   });
 });

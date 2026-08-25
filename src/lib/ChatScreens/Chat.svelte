@@ -39,6 +39,7 @@
         isLastMemory: boolean;
         img?: string|Promise<string>;
         idx?: number;
+        scriptIdx?: number;
         messageGenerationInfo?: MessageGenerationInfo|null;
         rerollIcon?: boolean|'dynamic';
         role?: string;
@@ -65,6 +66,7 @@
         isLastMemory,
         img = '',
         idx = -1,
+        scriptIdx = idx,
         rerollIcon = false,
         messageGenerationInfo = null,
         role = null,
@@ -209,9 +211,9 @@
             return msgDisplay
         }
         if(!settingsStore.state.legacyTranslation){
-            return await ParseMarkdown(msgDisplay, character, 'pretranslate', idx, getCbsCondition())
+            return await ParseMarkdown(msgDisplay, character, 'pretranslate', scriptIdx, getCbsCondition())
         }
-        return await ParseMarkdown(msgDisplay, character, 'notrim', idx, getCbsCondition())
+        return await ParseMarkdown(msgDisplay, character, 'notrim', scriptIdx, getCbsCondition())
     }
 
     async function loadTranslationForEdit() {
@@ -230,7 +232,7 @@
     }
 
     function displaya(message:string){
-        msgDisplay = risuChatParser(message, {chara: name, chatID: idx, rmVar: true, visualize: true, cbsConditions: getCbsCondition()})
+        msgDisplay = risuChatParser(message, {chara: name, chatID: scriptIdx, rmVar: true, visualize: true, cbsConditions: getCbsCondition()})
     }
 
     const setStatusMessage = (message:string, timeout:number = 0)=>{
@@ -272,7 +274,7 @@
     function RenderGUIHtml(html:string){
         try {
             const parser = new DOMParser()
-            const doc = parser.parseFromString(risuChatParser(html ?? '', {cbsConditions: getCbsCondition()}), 'text/html')
+            const doc = parser.parseFromString(risuChatParser(html ?? '', {chatID: scriptIdx, cbsConditions: getCbsCondition()}), 'text/html')
             return doc.body   
         } catch (error) {
             const placeholder = document.createElement('div')
@@ -530,7 +532,7 @@
                 <ChatBody
                     {character}
                     {firstMessage}
-                    {idx}
+                    idx={scriptIdx}
                     {msgDisplay}
                     {name}
                     {bodyRoot}
@@ -605,7 +607,7 @@
     {#if settingsStore.state.useChatCopy && !blankMessage}
     <button class="flex items-center hover:text-blue-500 transition-colors button-icon-copy" onclick={async ()=>{
         const copyText = renderRawStreaming
-            ? risuChatParser(rawStreamingText, {chara: name, chatID: idx, rmVar: true, visualize: true, cbsConditions: getCbsCondition()})
+            ? risuChatParser(rawStreamingText, {chara: name, chatID: scriptIdx, rmVar: true, visualize: true, cbsConditions: getCbsCondition()})
             : msgDisplay
         if(window.navigator.clipboard.write){
             try {
@@ -614,7 +616,7 @@
 
                 const parser = new DOMParser()
                 const doc = parser.parseFromString(
-                    await ParseMarkdown(copyText, getCurrentCharacter(), 'normal', idx, getCbsCondition())
+                    await ParseMarkdown(copyText, getCurrentCharacter(), 'normal', scriptIdx, getCbsCondition())
                 , 'text/html')
                 
                 doc.querySelectorAll('mark').forEach((el) => {

@@ -7,6 +7,7 @@
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import { chatFoldedStateMessageIndex } from 'src/ts/globalApi.svelte';
     import { get } from 'svelte/store';
+    import { getAbsoluteChatMessageIndex } from 'src/ts/chatLoadPages';
     
     const getCurrentChatRoomId = () => {
         const charId = get(selectedCharID);
@@ -53,6 +54,7 @@
     type RenderSignature = {
         data: string
         idx: number
+        scriptIdx: number
         role: string
         name: string
         largePortrait: boolean
@@ -77,6 +79,7 @@
     const sameRenderSignature = (left: RenderSignature, right: RenderSignature) =>
         left.data === right.data &&
         left.idx === right.idx &&
+        left.scriptIdx === right.scriptIdx &&
         left.role === right.role &&
         left.name === right.name &&
         left.largePortrait === right.largePortrait &&
@@ -133,6 +136,7 @@
         for(let i=loadStart ; i >= loadEnd; i--){
             if(i < 0) break;
             const message = messages[i];
+            const scriptIdx = getAbsoluteChatMessageIndex(i, currentChat?.messageOffset);
             const key = messageRenderKey(message, i);
             currentKeys.add(key);
             const messageLargePortrait = message.role === 'user' ? (userIconPortrait ?? false) : ((currentCharacter as character).largePortrait ?? false);
@@ -141,6 +145,7 @@
             const signature: RenderSignature = {
                 data: activeStreamingMessage ? '' : message.data,
                 idx: i,
+                scriptIdx,
                 role: message.role,
                 name: message.role === 'user' ? currentUsername : (message.name || currentCharacter.name),
                 largePortrait: messageLargePortrait,
@@ -175,6 +180,7 @@
                         message: message.data,
                         isLastMemory: false,
                         idx: i,
+                        scriptIdx,
                         totalLength: messages.length,
                         img: message.role === 'user' ? userImage : charImage,
                         onReroll: onReroll,
