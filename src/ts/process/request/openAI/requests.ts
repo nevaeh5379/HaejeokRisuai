@@ -7,6 +7,7 @@ import {
 import {
   DEFAULT_OPENAI_CHAT_COMPLETIONS_URL,
   buildOpenAIRequestHeaders,
+  normalizeOpenAIProviderMessages,
   resolveOpenAIRequestEndpoint,
   resolveOpenAIRequestModel,
 } from "@risuai/chat-core/openAIProvider.cjs";
@@ -178,76 +179,16 @@ export async function requestOpenAI(
     }
   }
 
-  let oobaSystemPrompts: string[] = [];
-  for (let i = 0; i < formatedChat.length; i++) {
-    if (formatedChat[i].role !== "function") {
-      if (!(
-        formatedChat[i].name &&
-        formatedChat[i].name.startsWith("example_") &&
-        db.newOAIHandle
-      )) {
-        formatedChat[i].name = undefined;
-      }
-      if (
-        db.newOAIHandle &&
-        formatedChat[i].memo &&
-        formatedChat[i].memo.startsWith("NewChat")
-      ) {
-        formatedChat[i].content = "";
-      }
-      if (
-        arg.modelInfo.flags.includes(LLMFlags.deepSeekPrefix) &&
-        i === formatedChat.length - 1 &&
-        formatedChat[i].role === "assistant"
-      ) {
-        formatedChat[i].prefix = true;
-      }
-      if (
-        arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingInput) &&
-        i === formatedChat.length - 1 &&
-        formatedChat[i].thoughts &&
-        formatedChat[i].thoughts.length > 0 &&
-        formatedChat[i].role === "assistant"
-      ) {
-        formatedChat[i].reasoning_content = formatedChat[i].thoughts.join("\n");
-      }
-      delete formatedChat[i].memo;
-      delete formatedChat[i].removable;
-      delete formatedChat[i].attr;
-      delete formatedChat[i].multimodals;
-      delete formatedChat[i].thoughts;
-      delete formatedChat[i].cachePoint;
-    }
-    if (
-      aiModel === "reverse_proxy" &&
-      db.reverseProxyOobaMode &&
-      formatedChat[i].role === "system"
-    ) {
-      const cont = formatedChat[i].content;
-      if (typeof cont === "string") {
-        oobaSystemPrompts.push(cont);
-        formatedChat[i].content = "";
-      }
-    }
-  }
-
-  if (oobaSystemPrompts.length > 0) {
-    formatedChat.push({
-      role: "system",
-      content: oobaSystemPrompts.join("\n"),
-    });
-  }
-
-  if (db.newOAIHandle) {
-    formatedChat = formatedChat.filter((m) => {
-      return (
-        m.content !== "" ||
-        (m.multimodals && m.multimodals.length > 0) ||
-        m.tool_calls ||
-        m.role === "tool"
-      );
-    });
-  }
+  formatedChat = normalizeOpenAIProviderMessages(formatedChat, {
+    newOAIHandle: db.newOAIHandle,
+    deepSeekPrefix: arg.modelInfo.flags.includes(LLMFlags.deepSeekPrefix),
+    deepSeekThinkingInput: arg.modelInfo.flags.includes(
+      LLMFlags.deepSeekThinkingInput,
+    ),
+    reverseProxyOobaMode:
+      aiModel === "reverse_proxy" && db.reverseProxyOobaMode,
+    developerRole: arg.modelInfo.flags.includes(LLMFlags.DeveloperRole),
+  });
 
   for (let i = 0; i < arg.biasString.length; i++) {
     const bia = arg.biasString[i];
@@ -282,15 +223,6 @@ export async function requestOpenAI(
 
   if (aiModel === "openrouter" && db.openrouterRequestModel === "risu/free") {
     openrouterRequestModel = await getFreeOpenRouterModels();
-  }
-
-  if (arg.modelInfo.flags.includes(LLMFlags.DeveloperRole)) {
-    formatedChat = formatedChat.map((v) => {
-      if (v.role === "system") {
-        v.role = "developer";
-      }
-      return v;
-    });
   }
 
   console.log(formatedChat);

@@ -5,6 +5,7 @@ import {
   collectOpenAIToolCalls,
   formatOpenAIReasoningText,
   mergeOpenAIStreamingToolCallDeltas,
+  normalizeOpenAIProviderMessages,
   resolveOpenAIRequestEndpoint,
   resolveOpenAIRequestModel,
 } from "@risuai/chat-core/openAIProvider.cjs";
@@ -75,6 +76,48 @@ describe("OpenAI provider core", () => {
         function: { name: "weather", arguments: '{"city":"Seoul"}' },
       },
     });
+  });
+
+  it("normalizes transient OpenAI message fields and DeepSeek metadata", () => {
+    const messages = [
+      {
+        role: "assistant",
+        content: "answer",
+        name: "temporary",
+        memo: "memo",
+        removable: true,
+        attr: ["x"],
+        multimodals: [{ type: "image", base64: "data" }],
+        thoughts: ["reasoning", "detail"],
+        cachePoint: true,
+      },
+    ];
+    expect(normalizeOpenAIProviderMessages(messages, {
+      deepSeekPrefix: true,
+      deepSeekThinkingInput: true,
+    })).toEqual([{
+      role: "assistant",
+      content: "answer",
+      name: undefined,
+      prefix: true,
+      reasoning_content: "reasoning\ndetail",
+    }]);
+  });
+
+  it("merges reverse-proxy system prompts and applies developer roles", () => {
+    const messages = [
+      { role: "system", content: "one" },
+      { role: "user", content: "hello" },
+      { role: "system", content: "two" },
+    ];
+    expect(normalizeOpenAIProviderMessages(messages, {
+      reverseProxyOobaMode: true,
+      developerRole: true,
+      newOAIHandle: true,
+    })).toEqual([
+      { role: "user", content: "hello", name: undefined },
+      { role: "developer", content: "one\ntwo" },
+    ]);
   });
 
   it("resolves legacy model aliases and provider-specific model overrides", () => {

@@ -77,6 +77,64 @@ const OPENAI_MODEL_ALIASES = Object.freeze({
   'gpt4o1-mini': 'o1-mini',
 });
 
+function normalizeOpenAIProviderMessages(messages, options = {}) {
+  let normalized = Array.isArray(messages) ? messages : [];
+  const oobaSystemPrompts = [];
+  for (let i = 0; i < normalized.length; i++) {
+    const message = normalized[i];
+    if (message.role !== 'function') {
+      if (!(message.name && message.name.startsWith('example_') && options.newOAIHandle)) {
+        message.name = undefined;
+      }
+      if (options.newOAIHandle && message.memo?.startsWith('NewChat')) {
+        message.content = '';
+      }
+      if (options.deepSeekPrefix && i === normalized.length - 1 && message.role === 'assistant') {
+        message.prefix = true;
+      }
+      if (
+        options.deepSeekThinkingInput &&
+        i === normalized.length - 1 &&
+        Array.isArray(message.thoughts) &&
+        message.thoughts.length > 0 &&
+        message.role === 'assistant'
+      ) {
+        message.reasoning_content = message.thoughts.join('\n');
+      }
+      delete message.memo;
+      delete message.removable;
+      delete message.attr;
+      delete message.multimodals;
+      delete message.thoughts;
+      delete message.cachePoint;
+    }
+    if (options.reverseProxyOobaMode && message.role === 'system') {
+      if (typeof message.content === 'string') {
+        oobaSystemPrompts.push(message.content);
+        message.content = '';
+      }
+    }
+  }
+  if (oobaSystemPrompts.length > 0) {
+    normalized.push({ role: 'system', content: oobaSystemPrompts.join('\n') });
+  }
+  if (options.newOAIHandle) {
+    normalized = normalized.filter((message) => (
+      message.content !== '' ||
+      (message.multimodals && message.multimodals.length > 0) ||
+      message.tool_calls ||
+      message.role === 'tool'
+    ));
+  }
+  if (options.developerRole) {
+    normalized = normalized.map((message) => {
+      if (message.role === 'system') message.role = 'developer';
+      return message;
+    });
+  }
+  return normalized;
+}
+
 function resolveOpenAIRequestModel(options = {}) {
   if (options.aiModel === 'nanogpt') return options.nanoGPTRequestModel;
   if (options.aiModel === 'openrouter') return options.openRouterRequestModel;
@@ -172,6 +230,7 @@ module.exports = {
   collectOpenAIToolCalls,
   formatOpenAIReasoningText,
   mergeOpenAIStreamingToolCallDeltas,
+  normalizeOpenAIProviderMessages,
   resolveOpenAIRequestEndpoint,
   resolveOpenAIRequestModel,
 };

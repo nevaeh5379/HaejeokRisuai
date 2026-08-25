@@ -35,6 +35,17 @@ export function formatOpenAIReasoningText(
 
 export const OPENAI_MODEL_ALIASES: Readonly<Record<string, string>>;
 
+export function normalizeOpenAIProviderMessages<T extends Record<string, any>>(
+  messages: T[],
+  options?: {
+    newOAIHandle?: boolean;
+    deepSeekPrefix?: boolean;
+    deepSeekThinkingInput?: boolean;
+    reverseProxyOobaMode?: boolean;
+    developerRole?: boolean;
+  },
+): T[];
+
 export function resolveOpenAIRequestModel(options?: {
   aiModel?: string;
   requestModel?: string;
