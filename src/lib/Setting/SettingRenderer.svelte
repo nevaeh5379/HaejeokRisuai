@@ -32,7 +32,9 @@
     {#if checkCondition(item, ctx)}
         {@const Component = settingRegistry[item.type]}
         {#if Component}
-            <Component {item} {ctx} />
+            <div class="contents" data-setting-id={item.id}>
+                <Component {item} {ctx} />
+            </div>
         {:else}
             <div class="text-draculared text-xs mt-2">Unknown setting type: {item.type}</div>
         {/if}

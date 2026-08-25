@@ -89,9 +89,10 @@
 
     interface Props {
         goPromptTemplate?: any;
+        targetSubmenu?: number;
     }
 
-    let { goPromptTemplate = () => {} }: Props = $props();
+    let { goPromptTemplate = () => {}, targetSubmenu }: Props = $props();
 
     async function loadTokenize(){
         tokens.mainPrompt = await tokenizeAccurate(settingsStore.state.mainPrompt, true)
@@ -113,6 +114,11 @@
 
 
     let submenu = $state(settingsStore.state.useLegacyGUI ? -1 : 0)
+    $effect(() => {
+        if (targetSubmenu !== undefined && !settingsStore.state.useLegacyGUI) {
+            submenu = targetSubmenu
+        }
+    })
     let modelInfo = $derived(getModelInfo(settingsStore.state.aiModel))
     let subModelInfo = $derived(getModelInfo(settingsStore.state.subModel))
     let nanogptInputMode = $state<'list' | 'manual'>(settingsStore.state.nanogptRequestModel && !settingsStore.state.nanogptRequestModelName ? 'manual' : 'list')

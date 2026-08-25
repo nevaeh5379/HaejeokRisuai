@@ -26,10 +26,44 @@
     import PostgresDbExplorerSettings from "./Pages/PostgresDbExplorerSettings.svelte";
     import StorageExplorerSettings from "./Pages/StorageExplorerSettings.svelte";
     import { isNodeServer } from "src/ts/platform";
+    import SettingsSearch from "./SettingsSearch.svelte";
+    import {
+        scrollToSettingAnchor,
+        type SettingSearchResult,
+    } from "src/ts/setting/searchIndex";
 
     let openLoreList = $state(false)
     let dbExplorerOpen = $state(false)
     let storageExplorerOpen = $state(false)
+    let searchNavigation = $state<{ menuIndex: number; subTab?: number } | null>(null)
+
+    $effect(() => {
+        if (searchNavigation && $SettingsMenuIndex !== searchNavigation.menuIndex) {
+            searchNavigation = null
+        }
+    })
+
+    function handleSearchSelect(result: SettingSearchResult) {
+        const target = result.target
+        if (target.kind === "dbExplorer") {
+            storageExplorerOpen = false
+            dbExplorerOpen = true
+            return
+        }
+        if (target.kind === "storageExplorer") {
+            dbExplorerOpen = false
+            storageExplorerOpen = true
+            return
+        }
+        dbExplorerOpen = false
+        storageExplorerOpen = false
+        searchNavigation = { menuIndex: target.menuIndex, subTab: target.subTab }
+        $SettingsMenuIndex = target.menuIndex
+        if (target.itemId) {
+            requestAnimationFrame(() => scrollToSettingAnchor(target.itemId!))
+        }
+    }
+
     if(window.innerWidth >= 900 && $SettingsMenuIndex === -1 && !$MobileGUI){
         $SettingsMenuIndex = 1
     }
@@ -42,7 +76,8 @@
                 class:w-full={window.innerWidth < 700 || $MobileGUI}
                 class:bg-darkbg={!$MobileGUI} class:bg-bgcolor={$MobileGUI}
             >
-                
+                <SettingsSearch onselect={handleSearchSelect} />
+
                 {#if !$isLite}
                     <button class="flex gap-2 items-center hover:text-textcolor"
                         class:text-textcolor={$SettingsMenuIndex === 1 || $SettingsMenuIndex === 13}
@@ -221,13 +256,16 @@
                     {#if $SettingsMenuIndex === 0}
                         <UserSettings />
                     {:else if $SettingsMenuIndex === 1}
-                        <BotSettings goPromptTemplate={() => {
-                            $SettingsMenuIndex = 13
-                        }} />
+                        <BotSettings
+                            targetSubmenu={searchNavigation?.menuIndex === 1 ? searchNavigation.subTab : undefined}
+                            goPromptTemplate={() => {
+                                $SettingsMenuIndex = 13
+                            }}
+                        />
                     {:else if $SettingsMenuIndex === 2}
-                        <OtherBotSettings />
+                        <OtherBotSettings targetSubmenu={searchNavigation?.menuIndex === 2 ? searchNavigation.subTab : undefined} />
                     {:else if $SettingsMenuIndex === 3}
-                        <DisplaySettings />
+                        <DisplaySettings targetSubmenu={searchNavigation?.menuIndex === 3 ? searchNavigation.subTab : undefined} />
                     {:else if $SettingsMenuIndex === 4}
                         <PluginSettings />
                     {:else if $SettingsMenuIndex === 5}

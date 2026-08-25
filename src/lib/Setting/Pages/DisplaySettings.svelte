@@ -8,7 +8,17 @@
         displayThemeSettingsItems,
     } from "src/ts/setting/displaySettingsData.svelte";
 
+    interface Props {
+        targetSubmenu?: number;
+    }
+
+    let { targetSubmenu }: Props = $props();
     let submenu = $state(settingsStore.state.useLegacyGUI ? -1 : 0);
+    $effect(() => {
+        if (targetSubmenu !== undefined && !settingsStore.state.useLegacyGUI) {
+            submenu = targetSubmenu;
+        }
+    });
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.display}</h2>

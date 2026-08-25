@@ -24,7 +24,17 @@
     import { alertError, alertInput, alertConfirm, alertNormal } from "src/ts/alert";
     import { createHypaV3Preset } from "src/ts/process/memory/hypav3";
 
+    interface Props {
+        targetSubmenu?: number;
+    }
+
+    let { targetSubmenu }: Props = $props();
     let submenu = $state(settingsStore.state.useLegacyGUI ? -1 : 0);
+    $effect(() => {
+        if (targetSubmenu !== undefined && !settingsStore.state.useLegacyGUI) {
+            submenu = targetSubmenu;
+        }
+    });
 
     // HypaV3
     $effect(() => {
