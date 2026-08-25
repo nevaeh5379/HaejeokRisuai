@@ -635,13 +635,13 @@
                 </h1>
             </div>
             <button
-                class="w-9 h-9 rounded-full bg-textcolor/10 hover:bg-textcolor/15 active:scale-95 flex items-center justify-center text-textcolor2 hover:text-textcolor transition-all cursor-pointer shrink-0"
+                class="hover:text-green-500 text-textcolor transition-colors cursor-pointer shrink-0 p-1 flex items-center justify-center"
                 onclick={() => {
                     settingsOpen.set(false);
                 }}
                 aria-label="Close"
             >
-                <XIcon size={18} />
+                <CircleXIcon size={settingsStore.state.settingsCloseButtonSize || 24} />
             </button>
         </div>
 
@@ -686,7 +686,7 @@
 
             <!-- Close Button -->
             <button
-                class="absolute top-3 right-3 text-textcolor2 hover:text-textcolor p-1.5 rounded-lg hover:bg-textcolor/10 transition-colors z-10 cursor-pointer"
+                class="absolute top-3 right-3 hover:text-green-500 text-textcolor p-1.5 transition-colors z-10 cursor-pointer"
                 onclick={() => {
                     settingsOpen.set(false);
                 }}
