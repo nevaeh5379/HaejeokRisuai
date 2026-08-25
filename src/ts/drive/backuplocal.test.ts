@@ -113,4 +113,24 @@ describe("hydrateLazyDatabaseFromSnapshot", () => {
       pm_store: { version: 5 },
     });
   });
+
+  it("initializes moduleFolders as an empty array during normalization", async () => {
+    const { normalizeDatabaseDefaults } =
+      await import("../storage/database.svelte");
+    const emptyDb = {} as Database;
+    normalizeDatabaseDefaults(emptyDb);
+    expect(emptyDb.moduleFolders).toEqual([]);
+  });
+
+  it("preserves existing moduleFolders during normalization", async () => {
+    const { normalizeDatabaseDefaults } =
+      await import("../storage/database.svelte");
+    const existingDb = {
+      moduleFolders: [{ id: "f1", name: "Folder 1", color: "" }],
+    } as unknown as Database;
+    normalizeDatabaseDefaults(existingDb);
+    expect(existingDb.moduleFolders).toEqual([
+      { id: "f1", name: "Folder 1", color: "" },
+    ]);
+  });
 });

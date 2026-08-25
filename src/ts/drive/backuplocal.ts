@@ -715,7 +715,7 @@ export async function SaveLocalBackup() {
 
     const cleanDb: Record<string, any> = {};
     for (const [key, value] of Object.entries(db)) {
-      if (key === "account" || typeof value === "function") continue;
+      if (key === "account" || key === "moduleFolders" || typeof value === "function") continue;
       cleanDb[key] = value;
     }
     cleanDb.pluginCustomStorage ??= {};
@@ -1032,7 +1032,7 @@ export async function SavePartialLocalBackup() {
 
     const cleanDb: Record<string, any> = {};
     for (const [key, value] of Object.entries(db)) {
-      if (key === "account" || typeof value === "function") continue;
+      if (key === "account" || key === "moduleFolders" || typeof value === "function") continue;
       cleanDb[key] = value;
     }
     cleanDb.pluginCustomStorage ??= {};

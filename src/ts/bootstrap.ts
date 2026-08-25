@@ -271,7 +271,11 @@ export async function loadData() {
             settingsStore.hydratePluginCustomStorageKeys(
               pluginCustomStorageKeys,
             );
-            moduleStore.init(modules ?? [], activeDb.enabledModules ?? []);
+            moduleStore.init(
+              modules ?? [],
+              activeDb.enabledModules ?? [],
+              activeDb.moduleFolders ?? [],
+            );
             await loadPlugins();
           },
         )

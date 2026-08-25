@@ -1289,6 +1289,12 @@ export const languageSpanish = {
   modules: "Módulos",
   noModules: "No se han instalado módulos.",
   createModule: "Crear Módulo",
+  createFolder: "Crear Carpeta",
+  removeFolder: "Eliminar Carpeta",
+  removeFolderConfirm: "¿Realmente deseas eliminar esta carpeta? Los módulos dentro se moverán a la raíz.",
+  moveToFolder: "Mover a Carpeta",
+  noFolder: "Sin Carpeta",
+  ungrouped: "Sin agrupar",
   basicInfo: "Información Básica",
   moduleContent: "Contenido del Módulo",
   confirmRemoveModuleFeature:

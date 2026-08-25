@@ -110,6 +110,7 @@ const SETTING_DOMAINS: Record<string, ReadonlySet<string>> = {
     "botPresets",
     "personas",
     "modules",
+    "moduleFolders",
     "loreBook",
     "loadouts",
     "plugins",
