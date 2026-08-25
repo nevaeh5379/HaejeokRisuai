@@ -4,6 +4,7 @@ import {
   decodeMistralResponse,
   formatMistralMessages,
 } from "@risuai/chat-core/mistralProvider.cjs";
+import { DEFAULT_OPENAI_CHAT_COMPLETIONS_URL } from "@risuai/chat-core/openAIProvider.cjs";
 import { alertError } from "src/ts/alert";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { LLMFlags, LLMFormat, LLMProvider } from "src/ts/model/modellist";
@@ -27,7 +28,10 @@ import type {
   requestDataResponse,
   StreamResponseChunk,
 } from "../request";
-import { tryExecuteNodeProvider } from "../nodeProviderExecutor";
+import {
+  tryExecuteNodeProvider,
+  tryExecuteNodeProviderTransport,
+} from "../nodeProviderExecutor";
 import {
   applyAdditionalParameters,
   applyParameters,
@@ -563,7 +567,7 @@ export async function requestOpenAI(
         : "https://nano-gpt.com/api/v1/chat/completions"
       : aiModel === "openrouter"
         ? "https://openrouter.ai/api/v1/chat/completions"
-        : (arg.customURL ?? "https://api.openai.com/v1/chat/completions");
+        : (arg.customURL ?? DEFAULT_OPENAI_CHAT_COMPLETIONS_URL);
 
   if (arg.modelInfo?.endpoint) {
     replacerURL = arg.modelInfo.endpoint;
@@ -767,15 +771,26 @@ export async function requestHTTPOpenAI(
   networkOptions: LocalNetworkRequestOptions = {},
 ): Promise<requestDataResponse> {
   const db = getDatabase();
-  const res = await globalFetch(replacerURL, {
-    body: body,
-    headers: headers,
-    abortSignal: arg.abortSignal,
-    chatId: arg.chatId,
-    interceptor: "openai_basic",
-    networkRoute: networkOptions.networkRoute,
-    requestTimeoutMs: networkOptions.requestTimeoutMs,
-  });
+  const remoteTransport =
+    replacerURL === DEFAULT_OPENAI_CHAT_COMPLETIONS_URL &&
+    arg.modelInfo.format === LLMFormat.OpenAICompatible
+      ? await tryExecuteNodeProviderTransport(
+          LLMFormat.OpenAICompatible,
+          { body, headers },
+          arg.abortSignal,
+        )
+      : null;
+  const res =
+    remoteTransport ??
+    (await globalFetch(replacerURL, {
+      body: body,
+      headers: headers,
+      abortSignal: arg.abortSignal,
+      chatId: arg.chatId,
+      interceptor: "openai_basic",
+      networkRoute: networkOptions.networkRoute,
+      requestTimeoutMs: networkOptions.requestTimeoutMs,
+    }));
 
   function processTextResponse(dat: any): string {
     if (dat?.choices[0]?.text) {

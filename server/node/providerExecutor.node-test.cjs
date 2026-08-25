@@ -15,6 +15,9 @@ test('advertises only implemented provider formats and routes', () => {
     [LLM_FORMATS.Echo, LLM_FORMATS.Mistral],
   );
   assert.deepEqual([...executor.routes], ['echo', 'openai']);
+  assert.deepEqual([...executor.transportFormats], [LLM_FORMATS.OpenAICompatible]);
+  assert.equal(executor.supportsTransport(LLM_FORMATS.OpenAICompatible), true);
+  assert.equal(executor.supportsTransport(LLM_FORMATS.NanoGPT), false);
 });
 
 
@@ -84,6 +87,103 @@ test('returns decoded Mistral HTTP failures without browser fallback', async () 
     payload: { body: { model: 'm' }, apiKey: '', httpErrorPrefix: 'HTTP: ' },
   });
   assert.deepEqual(result.response, { type: 'fail', result: 'HTTP: rate limited' });
+});
+
+test('executes official OpenAI non-streaming transport without interpreting the response', async () => {
+  const calls = [];
+  const controller = new AbortController();
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          choices: [{ message: { content: 'raw openai response' } }],
+        }),
+      };
+    },
+  });
+  const result = await executor.executeTransport({
+    format: LLM_FORMATS.OpenAICompatible,
+    payload: {
+      body: { model: 'gpt-test', messages: [{ role: 'user', content: 'hello' }] },
+      headers: {
+        Authorization: 'Bearer secret-key',
+        'Content-Type': 'application/json',
+        Host: 'evil.example',
+        'Content-Length': '999',
+        'risu-auth': 'internal-secret',
+      },
+    },
+  }, { signal: controller.signal });
+  assert.deepEqual(result, {
+    handled: true,
+    response: {
+      ok: true,
+      status: 200,
+      data: { choices: [{ message: { content: 'raw openai response' } }] },
+    },
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.openai.com/v1/chat/completions');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer secret-key');
+  assert.equal(calls[0].options.headers.Host, undefined);
+  assert.equal(calls[0].options.headers['Content-Length'], undefined);
+  assert.equal(calls[0].options.headers['risu-auth'], undefined);
+  assert.equal(calls[0].options.signal, controller.signal);
+  assert.equal(calls[0].options.redirect, 'error');
+});
+
+test('returns raw OpenAI error payloads to the browser interpreter', async () => {
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async () => ({
+      ok: false,
+      status: 429,
+      text: async () => JSON.stringify({ error: { message: 'rate limited' } }),
+    }),
+  });
+  const result = await executor.executeTransport({
+    format: LLM_FORMATS.OpenAICompatible,
+    payload: {
+      body: { model: 'gpt-test' },
+      headers: { Authorization: 'Bearer key' },
+    },
+  });
+  assert.deepEqual(result, {
+    handled: true,
+    response: {
+      ok: false,
+      status: 429,
+      data: { error: { message: 'rate limited' } },
+    },
+  });
+});
+
+test('does not expose raw transport for other openai-route formats', async () => {
+  const executor = createNodeProviderExecutor();
+  assert.deepEqual(await executor.executeTransport({
+    format: LLM_FORMATS.NanoGPT,
+    payload: { body: {}, headers: {} },
+  }), { handled: false });
+});
+
+test('rejects malformed OpenAI transport payloads before fetch', async () => {
+  let called = false;
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async () => {
+      called = true;
+      throw new Error('should not fetch');
+    },
+  });
+  await assert.rejects(
+    executor.executeTransport({
+      format: LLM_FORMATS.OpenAICompatible,
+      payload: { body: [], headers: {} },
+    }),
+    /openai body must be an object/,
+  );
+  assert.equal(called, false);
 });
 
 test('returns unhandled for unsupported provider formats', async () => {

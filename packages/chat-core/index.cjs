@@ -12,5 +12,6 @@ module.exports = {
   ...require('./providerPrompt.cjs'),
   ...require('./providerContext.cjs'),
   ...require('./mistralProvider.cjs'),
+  ...require('./openAIProvider.cjs'),
   ...require('./tokenAccounting.cjs'),
 };

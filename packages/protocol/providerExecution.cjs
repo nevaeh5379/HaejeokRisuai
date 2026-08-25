@@ -18,4 +18,9 @@ function normalizeNodeProviderExecutionRequest(input) {
   };
 }
 
-module.exports = { normalizeNodeProviderExecutionRequest };
+const normalizeNodeProviderTransportRequest = normalizeNodeProviderExecutionRequest;
+
+module.exports = {
+  normalizeNodeProviderExecutionRequest,
+  normalizeNodeProviderTransportRequest,
+};

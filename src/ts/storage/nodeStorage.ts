@@ -14,6 +14,8 @@ import type {
   NodeProviderCapabilities,
   NodeProviderExecutionRequest,
   NodeProviderExecutionResult,
+  NodeProviderTransportRequest,
+  NodeProviderTransportResult,
 } from "../../../packages/protocol/providerExecution.cjs";
 import type {
   LoreMatchBatchRequest,
@@ -196,11 +198,18 @@ export class NodeStorage {
       !Array.isArray(data.formats) ||
       data.formats.some((format) => !Number.isInteger(format)) ||
       !Array.isArray(data.routes) ||
-      data.routes.some((route) => typeof route !== "string")
+      data.routes.some((route) => typeof route !== "string") ||
+      (data.transportFormats !== undefined &&
+        (!Array.isArray(data.transportFormats) ||
+          data.transportFormats.some((format) => !Number.isInteger(format))))
     ) {
       throw new Error("Server provider capabilities returned an invalid response");
     }
-    this.nodeProviderCapabilities = { formats: data.formats, routes: data.routes };
+    this.nodeProviderCapabilities = {
+      formats: data.formats,
+      routes: data.routes,
+      transportFormats: data.transportFormats ?? [],
+    };
     return this.nodeProviderCapabilities;
   }
 
@@ -228,6 +237,39 @@ export class NodeStorage {
     }
     if (data.handled && (!data.response || !["success", "fail"].includes(data.response.type))) {
       throw new Error("Server provider execution returned an invalid provider response");
+    }
+    return data;
+  }
+
+  async executeChatProviderTransport(
+    request: NodeProviderTransportRequest,
+    abortSignal?: AbortSignal | null,
+  ): Promise<NodeProviderTransportResult> {
+    const auth = await this.getCachedAuth();
+    const response = await fetch("/api/chat-executor/transport", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "risu-auth": auth,
+      },
+      body: JSON.stringify(request),
+      signal: abortSignal ?? undefined,
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`Server provider transport failed (${response.status}): ${message}`);
+    }
+    const data = (await response.json()) as NodeProviderTransportResult;
+    if (!data || typeof data.handled !== "boolean") {
+      throw new Error("Server provider transport returned an invalid response");
+    }
+    if (
+      data.handled &&
+      (!data.response ||
+        typeof data.response.ok !== "boolean" ||
+        !Number.isInteger(data.response.status))
+    ) {
+      throw new Error("Server provider transport returned an invalid transport response");
     }
     return data;
   }

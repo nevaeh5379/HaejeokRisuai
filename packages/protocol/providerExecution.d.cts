@@ -15,8 +15,29 @@ export type NodeProviderExecutionResult =
 export interface NodeProviderCapabilities {
   formats: number[];
   routes: ProviderRoute[];
+  transportFormats?: number[];
 }
+
+export interface NodeProviderTransportRequest {
+  format: number;
+  payload: Record<string, unknown>;
+}
+
+export type NodeProviderTransportResult =
+  | { handled: false }
+  | {
+      handled: true;
+      response: {
+        ok: boolean;
+        status: number;
+        data: unknown;
+      };
+    };
 
 export function normalizeNodeProviderExecutionRequest(input: unknown):
   | { value: NodeProviderExecutionRequest }
+  | { error: string };
+
+export function normalizeNodeProviderTransportRequest(input: unknown):
+  | { value: NodeProviderTransportRequest }
   | { error: string };

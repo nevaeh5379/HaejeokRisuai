@@ -10,5 +10,6 @@ export * from "./providerExecutor.cjs";
 export * from "./providerPrompt.cjs";
 export * from "./providerContext.cjs";
 export * from "./mistralProvider.cjs";
+export * from "./openAIProvider.cjs";
 export * from "./tokenAccounting.cjs";
 export * from "./executor.cjs";
