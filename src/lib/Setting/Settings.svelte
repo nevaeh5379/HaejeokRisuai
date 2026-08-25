@@ -578,7 +578,7 @@
         </div>
 
         <!-- Mobile Content -->
-        <div class="flex-1 overflow-y-auto min-w-0 bg-bgcolor">
+        <div class="flex-1 overflow-y-auto min-w-0 bg-bgcolor rs-setting-mobile-view">
             {#if $SettingsMenuIndex === -1}
                 {@render mobileMenuList()}
             {:else}
@@ -639,3 +639,9 @@
 {#if storageExplorerOpen && isNodeServer}
     <StorageExplorerSettings close={() => {storageExplorerOpen = false}} />
 {/if}
+
+<style>
+    :global(.rs-setting-mobile-view h2:first-of-type) {
+        display: none !important;
+    }
+</style>

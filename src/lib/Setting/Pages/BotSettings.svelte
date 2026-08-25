@@ -186,25 +186,29 @@
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.chatBot}</h2>
 
 {#if submenu !== -1}
-    <div class="flex w-full rounded-md border border-darkborderc mb-4">
-        <button onclick={() => {
-            submenu = 0
-        }} class="p-2 flex-1 border-r border-darkborderc" class:bg-darkbutton={submenu === 0}>
+    <div class="flex w-full rounded-xl border border-darkborderc overflow-hidden bg-darkbg p-1 gap-1 mb-4 shadow-xs">
+        <button
+            onclick={() => { submenu = 0; }}
+            class="py-2 px-2 flex-1 rounded-lg text-xs sm:text-sm font-semibold transition-all text-center {submenu === 0 ? 'bg-darkbutton text-textcolor shadow-xs font-bold' : 'text-textcolor2 hover:text-textcolor'}"
+        >
             <span>{language.model}</span>
         </button>
-        <button onclick={() => {
-            submenu = 1
-        }} class="p2 flex-1 border-r border-darkborderc" class:bg-darkbutton={submenu === 1}>
+        <button
+            onclick={() => { submenu = 1; }}
+            class="py-2 px-2 flex-1 rounded-lg text-xs sm:text-sm font-semibold transition-all text-center {submenu === 1 ? 'bg-darkbutton text-textcolor shadow-xs font-bold' : 'text-textcolor2 hover:text-textcolor'}"
+        >
             <span>{language.parameters}</span>
         </button>
-        <button onclick={() => {
-            submenu = 2
-        }} class="p-2 flex-1 border-r border-darkborderc" class:bg-darkbutton={submenu === 2}>
+        <button
+            onclick={() => { submenu = 2; }}
+            class="py-2 px-2 flex-1 rounded-lg text-xs sm:text-sm font-semibold transition-all text-center {submenu === 2 ? 'bg-darkbutton text-textcolor shadow-xs font-bold' : 'text-textcolor2 hover:text-textcolor'}"
+        >
             <span>{language.prompt}</span>
         </button>
-        <button onclick={() => {
-            submenu = 3
-        }} class="p-2 flex-1" class:bg-darkbutton={submenu === 3}>
+        <button
+            onclick={() => { submenu = 3; }}
+            class="py-2 px-2 flex-1 rounded-lg text-xs sm:text-sm font-semibold transition-all text-center {submenu === 3 ? 'bg-darkbutton text-textcolor shadow-xs font-bold' : 'text-textcolor2 hover:text-textcolor'}"
+        >
             <span>{language.others}</span>
         </button>
     </div>
@@ -213,24 +217,24 @@
 {#if submenu === 0 || submenu === -1}
     <div class="flex flex-col gap-4 mt-2">
         <!-- Submenu 0 Tabs: Main Model vs Auxiliary Model vs Provider Credentials (Slim Single Line) -->
-        <div class="flex w-full rounded-xl border border-darkborderc overflow-hidden bg-darkbg/40 p-1 gap-1">
+        <div class="flex w-full rounded-xl border border-darkborderc overflow-x-auto bg-darkbg/60 p-1 gap-1 no-scrollbar">
             <button 
                 onclick={() => { modelTab = 'main'; }}
-                class="py-1.5 px-3 flex-1 rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap {modelTab === 'main' ? 'bg-darkbutton text-textcolor shadow-sm' : 'text-textcolor2 hover:text-textcolor'}"
+                class="py-1.5 px-3 flex-1 min-w-fit rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap {modelTab === 'main' ? 'bg-darkbutton text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
             >
                 <span>{language.mainModelCardTitle || language.model}</span>
                 <Help key="model" />
             </button>
             <button 
                 onclick={() => { modelTab = 'sub'; }}
-                class="py-1.5 px-3 flex-1 rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap {modelTab === 'sub' ? 'bg-darkbutton text-textcolor shadow-sm' : 'text-textcolor2 hover:text-textcolor'}"
+                class="py-1.5 px-3 flex-1 min-w-fit rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap {modelTab === 'sub' ? 'bg-darkbutton text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
             >
                 <span>{language.subModelCardTitle || language.submodel}</span>
                 <Help key="submodel" />
             </button>
             <button 
                 onclick={() => { modelTab = 'provider'; }}
-                class="py-1.5 px-3 flex-1 rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap {modelTab === 'provider' ? 'bg-darkbutton text-textcolor shadow-sm' : 'text-textcolor2 hover:text-textcolor'}"
+                class="py-1.5 px-3 flex-1 min-w-fit rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap {modelTab === 'provider' ? 'bg-darkbutton text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
             >
                 <KeyIcon size={14} />
                 <span>{language.providerSettings || "API & Providers"}</span>
