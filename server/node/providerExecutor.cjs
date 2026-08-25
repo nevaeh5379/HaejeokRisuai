@@ -28,6 +28,9 @@ const {
 const {
   DEFAULT_NOVELLIST_API_URL,
 } = require('../../packages/chat-core/novelListProvider.cjs');
+const {
+  resolveNanoGPTTransportUrl,
+} = require('../../packages/chat-core/nanoGPTProvider.cjs');
 const { LLM_FORMATS } = require('../../packages/protocol/modelFormat.cjs');
 const {
   normalizeNodeProviderExecutionRequest,
@@ -116,6 +119,17 @@ function normalizeNovelAITransportPayload(payload) {
   return { ...normalized, variant: payload.variant };
 }
 
+function normalizeNanoGPTTransportPayload(payload) {
+  const normalized = normalizeJsonTransportPayload(payload, 'nanogpt');
+  if (payload.api !== 'chat' && payload.api !== 'responses') {
+    throw new TypeError('nanogpt api must be chat or responses');
+  }
+  if (typeof payload.subscription !== 'boolean') {
+    throw new TypeError('nanogpt subscription must be a boolean');
+  }
+  return { ...normalized, api: payload.api, subscription: payload.subscription };
+}
+
 function getTransportTarget(format) {
   if (format === LLM_FORMATS.OpenAICompatible) {
     return { name: 'openai', url: DEFAULT_OPENAI_CHAT_COMPLETIONS_URL };
@@ -175,6 +189,7 @@ function createNodeProviderExecutor({
     LLM_FORMATS.Cohere,
     LLM_FORMATS.NovelAI,
     LLM_FORMATS.NovelList,
+    LLM_FORMATS.NanoGPT,
   ]);
   const supportedTransportFormats = new Set(transportFormats);
 
@@ -223,6 +238,12 @@ function createNodeProviderExecutor({
       target = {
         name: 'novelai',
         url: resolveNovelAIGenerateUrl(payload.variant),
+      };
+    } else if (input.format === LLM_FORMATS.NanoGPT) {
+      payload = normalizeNanoGPTTransportPayload(input.payload);
+      target = {
+        name: 'nanogpt',
+        url: resolveNanoGPTTransportUrl(payload.api, payload.subscription),
       };
     } else {
       target = getTransportTarget(input.format);

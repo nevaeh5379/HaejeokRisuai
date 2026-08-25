@@ -25,6 +25,7 @@ test('advertises only implemented provider formats and routes', () => {
       LLM_FORMATS.Cohere,
       LLM_FORMATS.NovelAI,
       LLM_FORMATS.NovelList,
+      LLM_FORMATS.NanoGPT,
     ],
   );
   assert.equal(executor.supportsTransport(LLM_FORMATS.OpenAICompatible), true);
@@ -34,7 +35,7 @@ test('advertises only implemented provider formats and routes', () => {
   assert.equal(executor.supportsTransport(LLM_FORMATS.Cohere), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.NovelAI), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.NovelList), true);
-  assert.equal(executor.supportsTransport(LLM_FORMATS.NanoGPT), false);
+  assert.equal(executor.supportsTransport(LLM_FORMATS.NanoGPT), true);
 });
 
 
@@ -403,6 +404,68 @@ test('executes the default NovelList transport through its pinned endpoint', asy
   assert.equal(calls[0].options.redirect, 'error');
 });
 
+test('executes NanoGPT chat and Responses transports through pinned endpoints', async () => {
+  const calls = [];
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ choices: [{ message: { content: 'nano' } }] }),
+      };
+    },
+  });
+  const cases = [
+    ['chat', false, 'https://nano-gpt.com/api/v1/chat/completions'],
+    ['chat', true, 'https://nano-gpt.com/api/subscription/v1/chat/completions'],
+    ['responses', false, 'https://nano-gpt.com/api/v1/responses'],
+    ['responses', true, 'https://nano-gpt.com/api/subscription/v1/responses'],
+  ];
+  for (const [api, subscription, expectedUrl] of cases) {
+    const result = await executor.executeTransport({
+      format: LLM_FORMATS.NanoGPT,
+      payload: {
+        api,
+        subscription,
+        body: { model: 'nano-model' },
+        headers: { Authorization: 'Bearer nano-key', Host: 'evil.example' },
+      },
+    });
+    assert.equal(result.handled, true);
+    assert.equal(result.response.ok, true);
+    assert.equal(calls.at(-1).url, expectedUrl);
+    assert.equal(calls.at(-1).options.headers.Authorization, 'Bearer nano-key');
+    assert.equal(calls.at(-1).options.headers.Host, undefined);
+    assert.equal(calls.at(-1).options.redirect, 'error');
+  }
+});
+
+test('rejects malformed NanoGPT transport selectors before fetch', async () => {
+  let called = false;
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async () => {
+      called = true;
+      throw new Error('fetch should not run');
+    },
+  });
+  await assert.rejects(
+    executor.executeTransport({
+      format: LLM_FORMATS.NanoGPT,
+      payload: { api: 'custom', subscription: false, body: {}, headers: {} },
+    }),
+    /api must be chat or responses/,
+  );
+  await assert.rejects(
+    executor.executeTransport({
+      format: LLM_FORMATS.NanoGPT,
+      payload: { api: 'chat', subscription: 'yes', body: {}, headers: {} },
+    }),
+    /subscription must be a boolean/,
+  );
+  assert.equal(called, false);
+});
+
 test('returns raw OpenAI error payloads to the browser interpreter', async () => {
   const executor = createNodeProviderExecutor({
     fetchImpl: async () => ({
@@ -428,10 +491,10 @@ test('returns raw OpenAI error payloads to the browser interpreter', async () =>
   });
 });
 
-test('does not expose raw transport for other openai-route formats', async () => {
+test('does not expose raw transport for unsupported NanoGPT variants yet', async () => {
   const executor = createNodeProviderExecutor();
   assert.deepEqual(await executor.executeTransport({
-    format: LLM_FORMATS.NanoGPT,
+    format: LLM_FORMATS.NanoGPTMessages,
     payload: { body: {}, headers: {} },
   }), { handled: false });
 });

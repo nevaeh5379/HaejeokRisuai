@@ -1,5 +1,7 @@
 'use strict';
 
+const { resolveNanoGPTTransportUrl } = require('./nanoGPTProvider.cjs');
+
 const DEFAULT_OPENAI_CHAT_COMPLETIONS_URL =
   'https://api.openai.com/v1/chat/completions';
 const DEFAULT_OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
@@ -159,9 +161,7 @@ function shouldUseOpenAIFlexProcessing(options = {}) {
 
 function resolveOpenAIRequestEndpoint(options = {}) {
   let url = options.aiModel === 'nanogpt'
-    ? options.nanoGPTUseSubscriptionEndpoint
-      ? 'https://nano-gpt.com/api/subscription/v1/chat/completions'
-      : 'https://nano-gpt.com/api/v1/chat/completions'
+    ? resolveNanoGPTTransportUrl('chat', !!options.nanoGPTUseSubscriptionEndpoint)
     : options.aiModel === 'openrouter'
       ? 'https://openrouter.ai/api/v1/chat/completions'
       : (options.customURL || DEFAULT_OPENAI_CHAT_COMPLETIONS_URL);

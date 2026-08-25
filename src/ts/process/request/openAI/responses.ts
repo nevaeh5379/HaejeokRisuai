@@ -10,10 +10,7 @@ import {
   textifyReadableStream,
 } from "src/ts/globalApi.svelte";
 import { simplifySchema } from "src/ts/util";
-import {
-  NANOGPT_RESPONSES_ENDPOINT,
-  NANOGPT_SUBSCRIPTION_RESPONSES_ENDPOINT,
-} from "src/ts/model/providers/nanogpt";
+import { resolveNanoGPTTransportUrl } from "@risuai/chat-core/nanoGPTProvider.cjs";
 
 import { extractJSON, getOpenAIJSONSchema } from "../../templates/jsonSchema";
 import { callTool, decodeToolCall, encodeToolCall } from "../../mcp/mcp";
@@ -217,9 +214,10 @@ function getResponsesRequestURL(arg: RequestDataArgumentExtended): {
   const aiModel = arg.aiModel;
   let requestURL =
     aiModel === "nanogpt"
-      ? db.nanogptUseSubscriptionEndpoint
-        ? NANOGPT_SUBSCRIPTION_RESPONSES_ENDPOINT
-        : NANOGPT_RESPONSES_ENDPOINT
+      ? resolveNanoGPTTransportUrl(
+          "responses",
+          !!db.nanogptUseSubscriptionEndpoint,
+        )!
       : (arg.customURL ?? DEFAULT_OPENAI_RESPONSES_URL);
   if (arg.modelInfo?.endpoint) {
     requestURL = arg.modelInfo.endpoint;
@@ -640,15 +638,34 @@ async function requestHTTPResponsesAPI(
 ): Promise<requestDataResponse> {
   const db = getDatabase();
   const externalBody = toExternalResponsesBody(body);
-  const remoteTransport =
+  let nodeTransport:
+    | { format: LLMFormat; payload: Record<string, unknown> }
+    | null = null;
+  if (
     requestURL === DEFAULT_OPENAI_RESPONSES_URL &&
     arg.modelInfo.format === LLMFormat.OpenAIResponseAPI
-      ? await tryExecuteNodeProviderTransport(
-          LLMFormat.OpenAIResponseAPI,
-          { body: externalBody, headers },
-          arg.abortSignal,
-        )
-      : null;
+  ) {
+    nodeTransport = { format: LLMFormat.OpenAIResponseAPI, payload: {} };
+  } else if (arg.modelInfo.format === LLMFormat.NanoGPT) {
+    for (const subscription of [false, true]) {
+      if (
+        requestURL === resolveNanoGPTTransportUrl("responses", subscription)
+      ) {
+        nodeTransport = {
+          format: LLMFormat.NanoGPT,
+          payload: { api: "responses", subscription },
+        };
+        break;
+      }
+    }
+  }
+  const remoteTransport = nodeTransport
+    ? await tryExecuteNodeProviderTransport(
+        nodeTransport.format,
+        { body: externalBody, headers, ...nodeTransport.payload },
+        arg.abortSignal,
+      )
+    : null;
   const response =
     remoteTransport ??
     (await globalFetch(requestURL, {

@@ -1,4 +1,5 @@
 import { DEFAULT_OPENAI_CHAT_COMPLETIONS_URL } from "@risuai/chat-core/openAIProvider.cjs";
+import { resolveNanoGPTTransportUrl } from "@risuai/chat-core/nanoGPTProvider.cjs";
 import { globalFetch } from "src/ts/globalApi.svelte";
 import { LLMFormat } from "src/ts/model/modellist";
 import type {
@@ -9,14 +10,34 @@ import { tryExecuteNodeProviderTransport } from "../nodeProviderExecutor";
 import { interpretOpenAINonStreamingResponse } from "./nonStreamingResponse";
 import type { LocalNetworkRequestOptions } from "./shared";
 
+function resolveNodeOpenAINonStreamingTransport(
+  replacerURL: string,
+  format: LLMFormat,
+): { format: LLMFormat; payload: Record<string, unknown> } | null {
+  if (
+    replacerURL === DEFAULT_OPENAI_CHAT_COMPLETIONS_URL &&
+    format === LLMFormat.OpenAICompatible
+  ) {
+    return { format: LLMFormat.OpenAICompatible, payload: {} };
+  }
+  if (format === LLMFormat.NanoGPT) {
+    for (const subscription of [false, true]) {
+      if (replacerURL === resolveNanoGPTTransportUrl("chat", subscription)) {
+        return {
+          format: LLMFormat.NanoGPT,
+          payload: { api: "chat", subscription },
+        };
+      }
+    }
+  }
+  return null;
+}
+
 export function shouldUseNodeOpenAINonStreamingTransport(
   replacerURL: string,
   format: LLMFormat,
 ): boolean {
-  return (
-    replacerURL === DEFAULT_OPENAI_CHAT_COMPLETIONS_URL &&
-    format === LLMFormat.OpenAICompatible
-  );
+  return resolveNodeOpenAINonStreamingTransport(replacerURL, format) !== null;
 }
 
 export async function requestHTTPOpenAI(
@@ -26,13 +47,14 @@ export async function requestHTTPOpenAI(
   arg: RequestDataArgumentExtended,
   networkOptions: LocalNetworkRequestOptions = {},
 ): Promise<requestDataResponse> {
-  const remoteTransport = shouldUseNodeOpenAINonStreamingTransport(
+  const nodeTransport = resolveNodeOpenAINonStreamingTransport(
     replacerURL,
     arg.modelInfo.format,
-  )
+  );
+  const remoteTransport = nodeTransport
     ? await tryExecuteNodeProviderTransport(
-        LLMFormat.OpenAICompatible,
-        { body, headers },
+        nodeTransport.format,
+        { body, headers, ...nodeTransport.payload },
         arg.abortSignal,
       )
     : null;

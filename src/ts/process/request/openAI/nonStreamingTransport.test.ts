@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_OPENAI_CHAT_COMPLETIONS_URL } from "@risuai/chat-core/openAIProvider.cjs";
+import { resolveNanoGPTTransportUrl } from "@risuai/chat-core/nanoGPTProvider.cjs";
 import { LLMFormat } from "src/ts/model/modellist";
 import { shouldUseNodeOpenAINonStreamingTransport } from "./nonStreamingTransport";
 
@@ -9,6 +10,15 @@ describe("OpenAI non-streaming transport", () => {
       DEFAULT_OPENAI_CHAT_COMPLETIONS_URL,
       LLMFormat.OpenAICompatible,
     )).toBe(true);
+  });
+
+  it("uses Node transport for both official NanoGPT chat endpoints", () => {
+    for (const subscription of [false, true]) {
+      expect(shouldUseNodeOpenAINonStreamingTransport(
+        resolveNanoGPTTransportUrl("chat", subscription)!,
+        LLMFormat.NanoGPT,
+      )).toBe(true);
+    }
   });
 
   it("keeps custom URLs and other formats on their existing transport path", () => {
