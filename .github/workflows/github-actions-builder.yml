@@ -175,6 +175,23 @@ jobs:
       - name: install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Synchronize Tauri bundle version
+        shell: bash
+        env:
+          HAEJEOK_BUILD_NUMBER: ${{ needs.prepare-release.outputs.build_number }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { resolveBuildVersion } from './tooling/build-version.mjs';
+
+          const configPath = 'src-tauri/tauri.conf.json';
+          const version = resolveBuildVersion();
+          const config = JSON.parse(readFileSync(configPath, 'utf8'));
+          config.version = version.tauriVersion;
+          writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+          console.log(`Tauri bundle version synchronized to ${version.tauriVersion}`);
+          NODE
+
       - name: Build and upload Tauri bundles
         uses: tauri-apps/tauri-action@action-v1.0.0
         env:
