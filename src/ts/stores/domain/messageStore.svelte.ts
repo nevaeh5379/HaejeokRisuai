@@ -92,6 +92,11 @@ class MessageStore {
         data: sqlMessageData(m),
       };
     });
+    const isCompleteSnapshot =
+      !!chat &&
+      chat.messagesFullyLoaded !== false &&
+      msgs.length === allMessages.length &&
+      msgs.every((message, index) => message.chatId === allMessages[index]?.chatId);
 
     try {
       const storage = await getSqlStorage();
@@ -103,15 +108,14 @@ class MessageStore {
         chats: [],
         chatManifests: [],
         messages: messageUpserts,
-        messageManifests:
-          chat?.messagesFullyLoaded === false
-            ? []
-            : [
-                {
-                  chatId,
-                  ids: allMessages.map((m) => m.chatId!).filter(Boolean),
-                },
-              ],
+        messageManifests: isCompleteSnapshot
+          ? [
+              {
+                chatId,
+                ids: allMessages.map((m) => m.chatId!).filter(Boolean),
+              },
+            ]
+          : [],
       });
     } catch (error) {
       console.error("[MessageStore] Failed to commit messages:", error);

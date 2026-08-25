@@ -351,6 +351,11 @@ async function handleInit(): Promise<{
     if (activeVfs === "opfs") db.exec("PRAGMA journal_mode = WAL;");
     else db.exec("PRAGMA journal_mode = DELETE;");
     db.exec("PRAGMA temp_store = MEMORY;");
+    // SQLite defaults to roughly 2 MiB of page cache. Browser-side relational
+    // commits can touch far more pages, so keep a larger on-demand cache to
+    // reduce pager churn and mid-transaction page eviction without disabling
+    // SQLite's normal cache-spill safety behavior.
+    db.exec("PRAGMA cache_size = -16384;");
     db.exec("PRAGMA foreign_keys = ON;");
     // Execute the rest of the schema (CREATE TABLE / INDEX statements)
     const schemaStatements = sqliteSchemaSql

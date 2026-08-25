@@ -250,14 +250,14 @@ describe("messageStore", () => {
     expect(commit.messageManifests).toEqual([]);
   });
 
-  it("includes messageManifests in commitMessages when messages are fully loaded", async () => {
+  it("omits messageManifests for a partial update of a fully loaded chat", async () => {
     const chat = characterStore.characters[0].chats[0];
     chat.messagesFullyLoaded = true;
 
     const newMsg = {
       chatId: "msg-5",
       role: "char" as const,
-      data: "fully loaded commit",
+      data: "fully loaded partial commit",
     };
     chat.message.push(newMsg);
     await messageStore.commitMessages("chat-1", [newMsg]);
@@ -265,10 +265,23 @@ describe("messageStore", () => {
     expect(mockStorage.commits).toHaveLength(1);
     const commit = mockStorage.commits[0];
     expect(commit.messages).toHaveLength(1);
+    expect(commit.messageManifests).toEqual([]);
+  });
+
+  it("includes messageManifests only for a complete fully loaded snapshot", async () => {
+    const chat = characterStore.characters[0].chats[0];
+    chat.messagesFullyLoaded = true;
+
+    await messageStore.commitMessages("chat-1", chat.message);
+
+    expect(mockStorage.commits).toHaveLength(1);
+    const commit = mockStorage.commits[0];
+    expect(commit.messages).toHaveLength(chat.message.length);
     expect(commit.messageManifests).toHaveLength(1);
-    expect(commit.messageManifests[0].chatId).toBe("chat-1");
-    expect(commit.messageManifests[0].ids).toContain("msg-1");
-    expect(commit.messageManifests[0].ids).toContain("msg-5");
+    expect(commit.messageManifests[0]).toEqual({
+      chatId: "chat-1",
+      ids: chat.message.map((message) => message.chatId),
+    });
   });
 
   it("persists an empty fully-loaded message list", async () => {

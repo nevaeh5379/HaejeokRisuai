@@ -132,6 +132,8 @@ function nodeBind(ownerValues: unknown[], row: RelationalNodeRow): unknown[] {
   ];
 }
 
+const RELATIONAL_NODE_BATCH_SIZE = 128;
+
 async function replaceNodes(
   execute: SqliteExecute,
   table: string,
@@ -139,16 +141,82 @@ async function replaceNodes(
   ownerValues: unknown[],
   value: unknown,
 ): Promise<void> {
-  await execute(
-    `DELETE FROM ${table} WHERE ${ownerColumns.map((column) => `${column} = ?`).join(" AND ")}`,
-    ownerValues,
-  );
+  const rows = flattenRelationalValue(value);
+  const ownerWhere = ownerColumns
+    .map((column) => `${column} = ?`)
+    .join(" AND ");
+
+  // Node IDs are dense preorder indices. Preserve the existing prefix and only
+  // remove rows which no longer exist after the value shrinks. This avoids
+  // turning a one-leaf edit into a full DELETE + INSERT rewrite of the tree.
+  await execute(`DELETE FROM ${table} WHERE ${ownerWhere} AND node_id >= ?`, [
+    ...ownerValues,
+    rows.length,
+  ]);
+
   const columns = [...ownerColumns, ...RELATIONAL_NODE_COLUMNS];
-  const placeholders = columns.map(() => "?").join(", ");
-  for (const row of flattenRelationalValue(value)) {
+  const conflictColumns = [...ownerColumns, "node_id"];
+  const mutableColumns = RELATIONAL_NODE_COLUMNS.filter(
+    (column) => column !== "node_id",
+  );
+  const rowPlaceholders = `(${columns.map(() => "?").join(", ")})`;
+  const updateClause = mutableColumns
+    .map((column) => `${column}=excluded.${column}`)
+    .join(", ");
+  const changedClause = mutableColumns
+    .map((column) => `${table}.${column} IS NOT excluded.${column}`)
+    .join(" OR ");
+
+  for (let offset = 0; offset < rows.length; offset += RELATIONAL_NODE_BATCH_SIZE) {
+    const batch = rows.slice(offset, offset + RELATIONAL_NODE_BATCH_SIZE);
     await execute(
-      `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${placeholders})`,
-      nodeBind(ownerValues, row),
+      `INSERT INTO ${table} (${columns.join(", ")}) VALUES ${batch
+        .map(() => rowPlaceholders)
+        .join(", ")}
+       ON CONFLICT (${conflictColumns.join(", ")}) DO UPDATE SET ${updateClause}
+       WHERE ${changedClause}`,
+      batch.flatMap((row) => nodeBind(ownerValues, row)),
+    );
+  }
+}
+
+async function replaceCharacterTags(
+  execute: SqliteExecute,
+  characterId: string,
+  value: unknown,
+): Promise<void> {
+  const tags = Array.isArray(value) ? value : [];
+  await execute(
+    "DELETE FROM character_tags WHERE character_id = ? AND position >= ?",
+    [characterId, tags.length],
+  );
+
+  const stringTags: { position: number; tag: string }[] = [];
+  const removedPositions: number[] = [];
+  for (const [position, tag] of tags.entries()) {
+    if (typeof tag === "string") stringTags.push({ position, tag });
+    else removedPositions.push(position);
+  }
+
+  for (let offset = 0; offset < removedPositions.length; offset += 256) {
+    const batch = removedPositions.slice(offset, offset + 256);
+    await execute(
+      `DELETE FROM character_tags WHERE character_id = ? AND position IN (${batch
+        .map(() => "?")
+        .join(", ")})`,
+      [characterId, ...batch],
+    );
+  }
+
+  for (let offset = 0; offset < stringTags.length; offset += 256) {
+    const batch = stringTags.slice(offset, offset + 256);
+    await execute(
+      `INSERT INTO character_tags (character_id, position, tag) VALUES ${batch
+        .map(() => "(?, ?, ?)")
+        .join(", ")}
+       ON CONFLICT (character_id, position) DO UPDATE SET tag=excluded.tag
+       WHERE character_tags.tag IS NOT excluded.tag`,
+      batch.flatMap(({ position, tag }) => [characterId, position, tag]),
     );
   }
 }
@@ -335,17 +403,7 @@ export async function applySqliteCommit(
       [entry.id],
       data,
     );
-    await execute("DELETE FROM character_tags WHERE character_id = ?", [
-      entry.id,
-    ]);
-    if (Array.isArray(data.tags))
-      for (const [position, tag] of data.tags.entries()) {
-        if (typeof tag === "string")
-          await execute(
-            "INSERT INTO character_tags (character_id, position, tag) VALUES (?, ?, ?)",
-            [entry.id, position, tag],
-          );
-      }
+    await replaceCharacterTags(execute, entry.id, data.tags);
   }
   for (const touch of commit.characterTouches ?? []) {
     await execute(

@@ -603,10 +603,15 @@ export class WebSqliteStorage implements ISqlStorage {
       );
       const action =
         commit.action || (commit.replaceAll ? "replace-all" : "sync");
-      await append(
-        "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
-        [revision, action],
-      );
+      // Interaction timestamps are high-frequency housekeeping, not useful local
+      // restore points. Skipping their audit row avoids touching the revisions
+      // table, its index, and AUTOINCREMENT state on routine character switches.
+      if (action !== "character-touch") {
+        await append(
+          "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
+          [revision, action],
+        );
+      }
       if (!this.rpc) throw new Error("Database not opened");
       await this.rpc.execBatch(statements);
       await this.run("COMMIT");

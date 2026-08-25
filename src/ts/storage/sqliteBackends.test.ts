@@ -6,7 +6,10 @@ import {
   SqlRevisionConflictError,
 } from "./sqlCommit";
 import { WebSqliteStorage } from "./webSqliteStorage";
-import { rebuildRelationalValue } from "./relationalNodeCodec";
+import {
+  flattenRelationalValue,
+  rebuildRelationalValue,
+} from "./relationalNodeCodec";
 
 const invokeMock = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
@@ -316,6 +319,118 @@ describe("WebSqliteStorage", () => {
     expect(
       statements.some(({ sql }) => sql.includes("character_extension_nodes")),
     ).toBe(false);
+    expect(
+      statements.some(({ sql }) => sql.includes("INSERT INTO system_revisions")),
+    ).toBe(false);
+    const revisionRows = database
+      .prepare("SELECT COUNT(*) AS count FROM system_revisions")
+      .get() as { count: number };
+    expect(Number(revisionRows.count)).toBe(0);
+    expect(storage.getRevision()).toBe(1);
+    database.close();
+  });
+
+  it("updates relational trees without rewriting every node", async () => {
+    const database = new DatabaseSync(":memory:");
+    database.exec(sqliteSchemaSql);
+    const storage = makeWebStorage(database);
+    const initialValue = {
+      stable: Array.from({ length: 300 }, (_, index) => index),
+      changed: "before",
+    };
+    const initial = createEmptySqlCommit(0, "seed-tree");
+    initial.root.upserts.push({ key: "writeAmplificationTest", value: initialValue });
+    await storage.commit(initial);
+
+    const rpc = (storage as any).rpc;
+    const batchSpy = vi.spyOn(rpc, "execBatch");
+    const changesBefore = Number(
+      (database.prepare("SELECT total_changes() AS count").get() as { count: number })
+        .count,
+    );
+    const updatedValue = { ...initialValue, changed: "after" };
+    const updated = createEmptySqlCommit(1, "update-tree");
+    updated.root.upserts.push({ key: "writeAmplificationTest", value: updatedValue });
+    await storage.commit(updated);
+    const changesAfter = Number(
+      (database.prepare("SELECT total_changes() AS count").get() as { count: number })
+        .count,
+    );
+    expect(changesAfter - changesBefore).toBeLessThan(10);
+
+    const statements = batchSpy.mock.calls[0][0] as Array<{
+      sql: string;
+      bind?: unknown[];
+    }>;
+    const nodeWrites = statements.filter(({ sql }) =>
+      sql.includes("INSERT INTO setting_extension_nodes"),
+    );
+    expect(nodeWrites.length).toBeLessThan(10);
+    expect(nodeWrites.every(({ sql }) => sql.includes("ON CONFLICT"))).toBe(true);
+    expect(
+      statements.some(
+        ({ sql }) =>
+          sql.trim() ===
+          "DELETE FROM setting_extension_nodes WHERE setting_key = ?",
+      ),
+    ).toBe(false);
+    expect(
+      await (storage as any).loadSettingValue("writeAmplificationTest"),
+    ).toEqual(updatedValue);
+
+    const shrunkValue = { changed: "small" };
+    const shrunk = createEmptySqlCommit(2, "shrink-tree");
+    shrunk.root.upserts.push({ key: "writeAmplificationTest", value: shrunkValue });
+    await storage.commit(shrunk);
+    expect(
+      await (storage as any).loadSettingValue("writeAmplificationTest"),
+    ).toEqual(shrunkValue);
+    const count = database
+      .prepare(
+        "SELECT COUNT(*) AS count FROM setting_extension_nodes WHERE setting_key = 'writeAmplificationTest'",
+      )
+      .get() as { count: number };
+    expect(Number(count.count)).toBe(flattenRelationalValue(shrunkValue).length);
+    database.close();
+  });
+
+  it("preserves unchanged character tags without delete-and-reinsert churn", async () => {
+    const database = new DatabaseSync(":memory:");
+    database.exec(sqliteSchemaSql);
+    const storage = makeWebStorage(database);
+    const tags = Array.from({ length: 300 }, (_, index) => `tag-${index}`);
+    const initial = createEmptySqlCommit(0, "seed-character-tags");
+    initial.characters.push({
+      id: "char-tags",
+      position: 0,
+      data: { name: "Before", tags },
+    });
+    await storage.commit(initial);
+
+    const changesBefore = Number(
+      (database.prepare("SELECT total_changes() AS count").get() as { count: number })
+        .count,
+    );
+    const updated = createEmptySqlCommit(1, "update-character-tags");
+    updated.characters.push({
+      id: "char-tags",
+      position: 0,
+      data: { name: "After", tags },
+    });
+    await storage.commit(updated);
+    const changesAfter = Number(
+      (database.prepare("SELECT total_changes() AS count").get() as { count: number })
+        .count,
+    );
+
+    expect(changesAfter - changesBefore).toBeLessThan(10);
+    const storedTags = database
+      .prepare(
+        "SELECT position, tag FROM character_tags WHERE character_id = ? ORDER BY position",
+      )
+      .all("char-tags") as { position: number; tag: string }[];
+    expect(storedTags).toHaveLength(tags.length);
+    expect(storedTags.map(({ tag }) => tag)).toEqual(tags);
     database.close();
   });
 
