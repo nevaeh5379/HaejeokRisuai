@@ -2,10 +2,10 @@ import { writable } from "svelte/store";
 import { chatProcessStage, doingChat } from "./chatRuntimeState";
 export { chatProcessStage, doingChat } from "./chatRuntimeState";
 import { createLocalChatExecutor } from "./chatLocalExecutor";
-import type { ChatSendOptions } from "./chat-core/executor";
+import type { ChatSendOptions } from "@risuai/chat-core/executor.cjs";
 
-export type { MultiModal, OpenAIChat } from "./chat-core/types";
-import type { OpenAIChat } from "./chat-core/types";
+export type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 
 export interface requestTokenPart {
   name: string;

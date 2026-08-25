@@ -12,7 +12,7 @@ import { setCurrentChat } from "../storage/database.svelte";
 import { getInlayAsset } from "./files/inlays";
 import { runImageEmbedding } from "./transformers";
 import { getModuleAssets } from "./modules";
-import type { MultiModal, OpenAIChat } from "./chat-core/types";
+import type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
 
 type LorePrompt = Awaited<
   ReturnType<typeof import("./lorebook.svelte").loadLoreBookV3Prompt>

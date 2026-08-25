@@ -4,8 +4,8 @@ import {
   applyTriggerPromptPolicy,
   buildPromptBiases,
   insertDepthPrompts,
-} from "./prompt";
-import type { OpenAIChat, PromptSections } from "./types";
+} from "@risuai/chat-core/prompt.cjs";
+import type { OpenAIChat, PromptSections } from "@risuai/chat-core/types.cjs";
 
 function sections(): PromptSections {
   return {

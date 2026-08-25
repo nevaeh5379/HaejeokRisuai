@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import wasm from "vite-plugin-wasm";
@@ -242,6 +243,7 @@ export default defineConfig(({command, mode}) => {
     resolve:{
       alias:{
         'src':'/src',
+        '@risuai/chat-core':resolve(process.cwd(), 'packages/chat-core'),
       }
     },
     worker: {

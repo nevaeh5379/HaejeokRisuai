@@ -5,7 +5,7 @@ import {
   type character,
   type groupChat,
 } from "src/ts/storage/database.svelte";
-import type { OpenAIChat } from "../chat-core/types";
+import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 import type { ChatTokenizer } from "src/ts/tokenizer";
 import { requestChatData } from "../request/request";
 import { HypaProcesser } from "./hypamemory";

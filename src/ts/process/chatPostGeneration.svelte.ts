@@ -8,7 +8,7 @@ import { language } from "../../lang";
 import { requestChatData } from "./request/request";
 import { HypaProcesser } from "./memory/hypamemory";
 import { stableDiff } from "./stableDiff";
-import type { ChatModelResponse, OpenAIChat } from "./chat-core/types";
+import type { ChatModelResponse, OpenAIChat } from "@risuai/chat-core/types.cjs";
 
 type EmotionAsset = [string, string];
 type EmotionHistoryEntry = [string, string, number];

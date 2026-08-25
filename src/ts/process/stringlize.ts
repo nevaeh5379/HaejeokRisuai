@@ -1,4 +1,4 @@
-import type { OpenAIChat } from "./chat-core/types";
+import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 import { getDatabase } from "../storage/database.svelte";
 import { getUserName } from "../util";
 

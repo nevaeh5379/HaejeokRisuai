@@ -1,25 +1,8 @@
-export interface GroupSpeakerCandidate {
-  id: string;
-  name: string;
-  talkness: number;
-  index: number;
-}
+'use strict';
 
-export interface GroupSpeakerOrderInput {
-  candidates: readonly GroupSpeakerCandidate[];
-  lastMessage?: string;
-  lastSpeakerId?: string;
-  preserveOrder?: boolean;
-}
-
-export interface GroupSpeakerRandomSource {
-  random(): number;
-  shuffle<T>(items: readonly T[]): T[];
-}
-
-const defaultRandomSource: GroupSpeakerRandomSource = {
+const defaultRandomSource = {
   random: Math.random,
-  shuffle<T>(items: readonly T[]) {
+  shuffle(items) {
     const result = [...items];
     for (let index = result.length - 1; index > 0; index--) {
       const target = Math.floor(Math.random() * (index + 1));
@@ -29,17 +12,13 @@ const defaultRandomSource: GroupSpeakerRandomSource = {
   },
 };
 
-function words(data: string): string[] {
+function words(data) {
   return data.split(/\n| /g).map((word) => word.toLocaleLowerCase());
 }
 
-export function orderGroupSpeakers(
-  candidates: readonly GroupSpeakerCandidate[],
-  input = "",
-  randomSource: GroupSpeakerRandomSource = defaultRandomSource,
-): GroupSpeakerCandidate[] {
-  const order: GroupSpeakerCandidate[] = [];
-  const ids: string[] = [];
+function orderGroupSpeakers(candidates, input = '', randomSource = defaultRandomSource) {
+  const order = [];
+  const ids = [];
 
   if (input) {
     for (const word of words(input)) {
@@ -67,13 +46,15 @@ export function orderGroupSpeakers(
   return order;
 }
 
-export function selectGroupGenerationOrder(
-  input: GroupSpeakerOrderInput,
-  randomSource: GroupSpeakerRandomSource = defaultRandomSource,
-): GroupSpeakerCandidate[] {
+function selectGroupGenerationOrder(input, randomSource = defaultRandomSource) {
   const active = input.candidates.filter((candidate) => candidate.talkness > 0);
   if (input.preserveOrder) return [...active];
   return orderGroupSpeakers(active, input.lastMessage, randomSource).filter(
     (candidate) => candidate.id !== input.lastSpeakerId,
   );
 }
+
+module.exports = {
+  orderGroupSpeakers,
+  selectGroupGenerationOrder,
+};

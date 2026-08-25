@@ -15,13 +15,13 @@ import {
 } from "./chatPromptTemplate";
 import { buildChatHistory } from "./chatHistoryBuilder";
 import { applyChatMemory } from "./chatMemory";
-import type { ChatStageTimings, OpenAIChat } from "./chat-core/types";
+import type { ChatStageTimings, OpenAIChat } from "@risuai/chat-core/types.cjs";
 import {
   applyMemoryPromptPolicy,
   applyTriggerPromptPolicy,
   buildPromptBiases,
   insertDepthPrompts,
-} from "./chat-core/prompt";
+} from "@risuai/chat-core/prompt.cjs";
 
 type LorePrompt = Awaited<
   ReturnType<typeof import("./lorebook.svelte").loadLoreBookV3Prompt>

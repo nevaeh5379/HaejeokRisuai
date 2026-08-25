@@ -16,6 +16,7 @@ export interface OpenAIChat {
   thoughts?: string[];
   cachePoint?: boolean;
 }
+
 export interface ChatStreamChunk {
   [key: string]: string;
 }
@@ -67,6 +68,7 @@ export interface ChatStageTimings {
   stage3Duration: number;
   stage4Duration: number;
 }
+
 export interface PromptSections {
   main: OpenAIChat[];
   jailbreak: OpenAIChat[];
@@ -79,4 +81,3 @@ export interface PromptSections {
   postEverything: OpenAIChat[];
   personaPrompt: OpenAIChat[];
 }
-

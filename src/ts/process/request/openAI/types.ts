@@ -1,4 +1,4 @@
-import type { MultiModal, OpenAIChat } from "../../chat-core/types";
+import type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
 
 export interface ResponseInputItem {
   content: (

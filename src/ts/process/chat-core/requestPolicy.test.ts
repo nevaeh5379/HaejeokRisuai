@@ -3,7 +3,7 @@ import {
   containsBannedCharacterSet,
   decideFailedRequestRetry,
   shouldFallbackOnBlankResponse,
-} from "./requestPolicy";
+} from "@risuai/chat-core/requestPolicy.cjs";
 
 describe("chat request policy", () => {
   it("detects configured Unicode scripts in successful text", () => {

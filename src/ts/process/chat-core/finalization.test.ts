@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideAutoContinuation } from "./finalization";
+import { decideAutoContinuation } from "@risuai/chat-core/finalization.cjs";
 
 describe("decideAutoContinuation", () => {
   it("continues when the generated token count is below the configured minimum", () => {

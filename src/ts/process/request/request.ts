@@ -25,12 +25,12 @@ import type {
   ChatModelResponse,
   ChatStreamChunk,
   OpenAIChat,
-} from "../chat-core/types";
+} from "@risuai/chat-core/types.cjs";
 import {
   containsBannedCharacterSet,
   decideFailedRequestRetry,
   shouldFallbackOnBlankResponse,
-} from "../chat-core/requestPolicy";
+} from "@risuai/chat-core/requestPolicy.cjs";
 import { getTools } from "../mcp/mcp";
 import type { MCPTool } from "../mcp/mcplib";
 import { NovelAIBadWordIds, stringlizeNAIChat } from "../models/nai";

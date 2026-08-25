@@ -1,5 +1,5 @@
 import { Template } from "@huggingface/jinja";
-import type { OpenAIChat } from "../chat-core/types";
+import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 import {
   getCurrentCharacter,
   getDatabase,

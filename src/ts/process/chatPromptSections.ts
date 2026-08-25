@@ -9,8 +9,8 @@ import { risuChatParser } from "./scripts";
 import { additionalInformations } from "./embedding/addinfo";
 import { loadLoreBookV3Prompt } from "./lorebook.svelte";
 import type { PromptItem, PromptRole } from "./prompt";
-import type { OpenAIChat, PromptSections } from "./chat-core/types";
-export type { PromptSections } from "./chat-core/types";
+import type { OpenAIChat, PromptSections } from "@risuai/chat-core/types.cjs";
+export type { PromptSections } from "@risuai/chat-core/types.cjs";
 
 
 export const PROMPT_ROLE_TO_OPENAI = {

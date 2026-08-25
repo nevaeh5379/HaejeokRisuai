@@ -1,6 +1,6 @@
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { getUserName } from "src/ts/util";
-import type { OpenAIChat } from "../chat-core/types";
+import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 
 export function stringlizeNAIChat(
   formated: OpenAIChat[],

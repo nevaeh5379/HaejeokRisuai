@@ -4,7 +4,7 @@ import {
   selectGroupGenerationOrder,
   type GroupSpeakerCandidate,
   type GroupSpeakerRandomSource,
-} from "./group";
+} from "@risuai/chat-core/group.cjs";
 
 const candidates: GroupSpeakerCandidate[] = [
   { id: "a", name: "Alice", talkness: 1, index: 0 },

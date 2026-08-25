@@ -18,7 +18,7 @@ import {
   PROMPT_ROLE_TO_OPENAI,
   type PromptSections,
 } from "./chatPromptSections";
-import type { OpenAIChat } from "./chat-core/types";
+import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 
 interface RenderContext {
   currentChar: character;

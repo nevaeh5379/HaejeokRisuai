@@ -4,9 +4,9 @@ import { chatProcessStage } from "./chatRuntimeState";
 import {
   createChatGenerationPlan,
   executeChatModelRequest,
-} from "./chat-core/generation";
-import type { ChatExecutor, ChatSendOptions } from "./chat-core/executor";
-import type { ChatStageTimings, OpenAIChat } from "./chat-core/types";
+} from "@risuai/chat-core/generation.cjs";
+import type { ChatExecutor, ChatSendOptions } from "@risuai/chat-core/executor.cjs";
+import type { ChatStageTimings, OpenAIChat } from "@risuai/chat-core/types.cjs";
 import { createLocalChatGenerationRuntime } from "./chatLocalRuntime";
 import { processChatResponse } from "./chatResponse.svelte";
 import { finalizeChatGeneration } from "./chatGenerationFinalizer.svelte";

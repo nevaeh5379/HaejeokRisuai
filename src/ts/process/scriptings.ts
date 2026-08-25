@@ -37,7 +37,7 @@ import {
 import { HypaProcesser } from "./memory/hypamemory";
 import { generateAIImage } from "./stableDiff";
 import { writeInlayImage, getInlayAsset } from "./files/inlays";
-import type { OpenAIChat, MultiModal } from "./chat-core/types";
+import type { OpenAIChat, MultiModal } from "@risuai/chat-core/types.cjs";
 import { requestChatData, type StreamResponseChunk } from "./request/request";
 import { v4 } from "uuid";
 import { getModuleLorebooks, getModuleTriggers } from "./modules";

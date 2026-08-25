@@ -7,7 +7,7 @@ import type {
   StreamingDisplayOptimizationMode,
 } from "../storage/database.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
-import type { ChatModelResponse } from "./chat-core/types";
+import type { ChatModelResponse } from "@risuai/chat-core/types.cjs";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { addRerolls } from "./prereroll";
 import { runInlayScreen } from "./inlayScreen";
