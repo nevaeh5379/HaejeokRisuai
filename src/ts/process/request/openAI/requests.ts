@@ -13,6 +13,7 @@ import {
   resolveOpenAIRequestEndpoint,
   resolveOpenAIRequestModel,
 } from "@risuai/chat-core/openAIProvider.cjs";
+import { prepareOpenAIProviderMessages } from "./messagePreparation";
 import { interpretOpenAINonStreamingResponse } from "./nonStreamingResponse";
 import { getTranStream, wrapToolStream } from "./streamingResponse";
 import { getDatabase } from "src/ts/storage/database.svelte";
@@ -31,7 +32,6 @@ import { simplifySchema } from "src/ts/util";
 import { getOpenAIJSONSchema } from "../../templates/jsonSchema";
 import { applyChatTemplate } from "../../templates/chatTemplate";
 import { supportsInlayImage } from "../../files/inlays";
-import { decodeToolCall } from "../../mcp/mcp";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
@@ -46,7 +46,7 @@ import {
   getAdditionalParameters,
 } from "../shared";
 
-import type { Contents, OpenAIChatExtra } from "./types";
+import type { OpenAIChatExtra } from "./types";
 
 import {
   getLocalNetworkRequestOptions,
@@ -77,109 +77,13 @@ function shouldUseOpenAIFlexProcessing(
 export async function requestOpenAI(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
-  let formatedChat: OpenAIChatExtra[] = [];
   const formated = arg.formated;
   const db = getDatabase();
   const aiModel = arg.aiModel;
-
-  const processToolCalls = async (text: string, originalMessage: any) => {
-    // Split text by tool_call tags and process each segment
-    const segments = text.split(/(<tool_call>.*?<\/tool_call>)/gms);
-    const processedMessages = [];
-
-    let currentContent = "";
-
-    for (let i = 0; i < segments.length; i++) {
-      const segment = segments[i];
-
-      if (segment.match(/<tool_call>(.*?)<\/tool_call>/gms)) {
-        // This is a tool call segment
-        const toolCallMatch = segment.match(/<tool_call>(.*?)<\/tool_call>/s);
-        if (toolCallMatch) {
-          const call = await decodeToolCall(toolCallMatch[1]);
-          if (call) {
-            // Create assistant message with accumulated content and this tool call
-            processedMessages.push({
-              ...originalMessage,
-              role: "assistant",
-              content: currentContent,
-              tool_calls: [
-                {
-                  id: call.call.id,
-                  type: "function",
-                  function: {
-                    name: call.call.name,
-                    arguments: call.call.arg,
-                  },
-                },
-              ],
-            });
-
-            // Add tool response
-            const textContents: string[] = [];
-            for (const m of call.response) {
-              if (m.type === "text") {
-                textContents.push(m.text);
-              }
-            }
-
-            processedMessages.push({
-              role: "tool",
-              content: textContents.join("\n"),
-              tool_call_id: call.call.id,
-              cachePoint: true,
-            });
-
-            // Reset content for next segment
-            currentContent = "";
-          }
-        }
-      } else {
-        // This is regular text content - accumulate it
-        currentContent += segment;
-      }
-    }
-
-    // If there's remaining content without tool calls, add it as a regular message
-    if (currentContent.trim()) {
-      processedMessages.push({
-        ...originalMessage,
-        role: "assistant",
-        content: currentContent,
-      });
-    }
-
-    return processedMessages;
-  };
-  for (let i = 0; i < formated.length; i++) {
-    const m = formated[i];
-
-    // Check if message contains tool calls
-    if (m.content && m.content.includes("<tool_call>")) {
-      const processedMessages = await processToolCalls(m.content, m);
-      formatedChat.push(...processedMessages);
-    } else if (m.multimodals && m.multimodals.length > 0 && m.role === "user") {
-      let v: OpenAIChatExtra = safeStructuredClone(m);
-      let contents: Contents[] = [];
-      for (let j = 0; j < m.multimodals.length; j++) {
-        contents.push({
-          type: "image_url",
-          image_url: {
-            url: m.multimodals[j].base64,
-            detail: db.gptVisionQuality,
-          },
-        });
-      }
-      contents.push({
-        type: "text",
-        text: m.content,
-      });
-      v.content = contents;
-      formatedChat.push(v);
-    } else {
-      formatedChat.push(m);
-    }
-  }
+  let formatedChat = await prepareOpenAIProviderMessages(
+    formated as OpenAIChatExtra[],
+    db.gptVisionQuality,
+  );
 
   formatedChat = normalizeOpenAIProviderMessages(formatedChat, {
     newOAIHandle: db.newOAIHandle,
