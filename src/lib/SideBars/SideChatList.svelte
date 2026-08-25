@@ -31,8 +31,56 @@
 
     let folderEles: HTMLDivElement = $state()
     let listEle: HTMLDivElement = $state()
+    let parentContainerEl: HTMLDivElement = $state()
+    let bottomContainerEl: HTMLDivElement = $state()
     let sorted = $state(0)
     let sortableLoadId = 0
+    let isResizing = $state(false)
+
+    const STORAGE_KEY = 'risu_sidechat_bottom_height'
+    let bottomHeight = $state(
+        typeof localStorage !== 'undefined'
+            ? Math.max(80, parseInt(localStorage.getItem(STORAGE_KEY) || '220', 10) || 220)
+            : 220
+    )
+
+    function startResize(event: PointerEvent) {
+        if (event.pointerType === 'mouse' && event.button !== 0) return
+        event.preventDefault()
+        isResizing = true
+
+        const startY = event.clientY
+        const startHeight = bottomHeight
+        const containerHeight = parentContainerEl ? parentContainerEl.clientHeight : window.innerHeight
+
+        const target = event.currentTarget as HTMLElement
+        target.setPointerCapture(event.pointerId)
+
+        function onPointerMove(e: PointerEvent) {
+            const deltaY = startY - e.clientY
+            const minHeight = 80
+            const maxHeight = Math.max(minHeight, containerHeight - 120)
+            const newHeight = Math.min(Math.max(startHeight + deltaY, minHeight), maxHeight)
+            bottomHeight = newHeight
+        }
+
+        function onPointerUp(e: PointerEvent) {
+            isResizing = false
+            target.removeEventListener('pointermove', onPointerMove)
+            target.removeEventListener('pointerup', onPointerUp)
+            target.removeEventListener('pointercancel', onPointerUp)
+            try {
+                target.releasePointerCapture(e.pointerId)
+            } catch {}
+            if (typeof localStorage !== 'undefined') {
+                localStorage.setItem(STORAGE_KEY, bottomHeight.toString())
+            }
+        }
+
+        target.addEventListener('pointermove', onPointerMove)
+        target.addEventListener('pointerup', onPointerUp)
+        target.addEventListener('pointercancel', onPointerUp)
+    }
 
     const sortableOptions = {
         delay: 300,
@@ -174,8 +222,8 @@
         }
     })
 </script>
-<div class="flex flex-col w-full h-[calc(100%-2rem)] max-h-[calc(100%-2rem)]">
-    <Button className="relative bottom-2" onclick={async () => {
+<div bind:this={parentContainerEl} class="flex flex-col w-full h-[calc(100%-2rem)] max-h-[calc(100%-2rem)]">
+    <Button className="relative bottom-2 shrink-0" onclick={async () => {
         const cha = chara
         const len = chara.chats.length
         const newChat = {
@@ -201,7 +249,7 @@
     }}>{language.newChat}</Button>
 
     {#key sorted}
-    <div class="flex flex-col mt-2 overflow-y-auto grow" bind:this={listEle}>
+    <div class="flex flex-col mt-2 overflow-y-auto flex-1 min-h-[80px]" bind:this={listEle}>
         <!-- folder div -->
         <div class="flex flex-col" bind:this={folderEles}>
             <!-- chat folder -->
@@ -529,26 +577,44 @@
     </div>
     {/key}
 
-    <div class="border-t border-selected mt-2">
-        <div class="flex mt-2 ml-2 items-center">
-            <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" onclick={async () => {
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div
+        role="separator"
+        aria-orientation="horizontal"
+        class="group relative flex items-center justify-center h-3 shrink-0 cursor-row-resize touch-none select-none my-1"
+        class:bg-selected={isResizing}
+        onpointerdown={startResize}
+    >
+        <div class="w-full h-px bg-selected/40 group-hover:bg-selected transition-colors"></div>
+        <div class="absolute px-3 py-0.5 rounded-full bg-darkbg border border-selected/40 group-hover:border-selected flex items-center justify-center shadow-xs transition-colors pointer-events-none">
+            <div class="w-6 h-0.5 rounded-full bg-textcolor2/50 group-hover:bg-selected"></div>
+        </div>
+    </div>
+
+    <div
+        bind:this={bottomContainerEl}
+        style="height: {bottomHeight}px;"
+        class="flex flex-col shrink-0 min-h-[80px] overflow-hidden"
+    >
+        <div class="flex items-center px-1 py-1.5 shrink-0 border-b border-darkborderc/40 gap-2 mb-2">
+            <button class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={async () => {
                 const { exportAllChats } = await import('src/ts/characters')
                 await exportAllChats()
             }}>
                 <DownloadIcon size={18}/>
             </button>
-            <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" onclick={async () => {
+            <button class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={async () => {
                 const { importChat } = await import('src/ts/characters')
                 await importChat()
             }}>
                 <HardDriveUploadIcon size={18}/>
             </button>
-            <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" onclick={() => {
+            <button class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={() => {
                 editMode = !editMode
             }}>
                 <PencilIcon size={18}/>
             </button>
-            <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" onclick={() => {
+            <button class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={() => {
                 alertStore.set({
                   type: "branches",
                   msg: ""
@@ -556,12 +622,12 @@
             }}>
                 <SplitIcon size={18}/>
             </button>
-            <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" onclick={() => {
+            <button class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={() => {
                 $bookmarkListOpen = true;
             }}>
                 <BookmarkCheckIcon size={18}/>
             </button>
-            <button class="ml-auto text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" onclick={() => {
+            <button class="ml-auto text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={() => {
                 if (!chara.chatFolders) {
                     chara.chatFolders = []
                 }
@@ -579,13 +645,15 @@
             </button>
         </div>
 
-        {#if characterStore.characters[$selectedCharID]?.chaId !== '§playground'}            
-            <Toggles bind:chara={chara} />
-        {/if}
+        <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 pr-0.5">
+            {#if characterStore.characters[$selectedCharID]?.chaId !== '§playground'}            
+                <Toggles bind:chara={chara} noContainer />
+            {/if}
+            {#if chara.type === 'group'}
+            <div class="flex mt-2 items-center">
+                <CheckInput bind:check={chara.orderByOrder} name={language.orderByOrder}/>
+            </div>
+            {/if}
+        </div>
     </div>
-    {#if chara.type === 'group'}
-    <div class="flex mt-2 items-center">
-        <CheckInput bind:check={chara.orderByOrder} name={language.orderByOrder}/>
-    </div>
-    {/if}
 </div>

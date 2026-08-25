@@ -30,7 +30,6 @@
     import { applyModule } from "src/ts/process/modules";
     import { exportRegex, importRegex } from "src/ts/process/scripts";
     import SliderInput from "../UI/GUI/SliderInput.svelte";
-    import Toggles from "./Toggles.svelte";
     import { convertCharacterToModule } from "src/ts/interchangeability";
     import { getMimeType } from "src/ts/media";
     import { createDeferredTokenCalculator } from "src/ts/deferredTokenCalculator";
@@ -38,6 +37,7 @@
 
     let iconRemoveMode = $state(false)
     let viewSubMenu = $state(0)
+    let charMainTab = $state(0)
     let emos:[string, string][] = $state([])
     let iconButtonSize = window.innerWidth > 360 ? 24 as const : 20 as const
     let tokens = $state({
@@ -240,13 +240,60 @@
 
 {#if $CharConfigSubMenu === 0}
     {#if characterStore.characters[$selectedCharID].type !== 'group' && licensed !== 'private'}
-        <TextInput size="xl" marginBottom placeholder="Character Name" bind:value={characterStore.characters[$selectedCharID].name} />
-        <span class="text-textcolor">{language.description} <Help key="charDesc"/></span>
-        <TextAreaInput highlight margin="both" autocomplete="off" bind:value={(characterStore.characters[$selectedCharID] as character).desc}></TextAreaInput>
-        <span class="text-textcolor2 mb-6 text-sm">{tokens.desc ?? '…'} {language.tokens}</span>
-        <span class="text-textcolor">{language.firstMessage} <Help key="charFirstMessage"/></span>
-        <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterStore.characters[$selectedCharID].firstMessage}></TextAreaInput>
-        <span class="text-textcolor2 mb-6 text-sm">{tokens.firstMsg ?? '…'} {language.tokens}</span>
+        <div class="flex flex-col flex-1 min-h-0 h-full">
+            <TextInput size="xl" marginBottom placeholder="Character Name" bind:value={characterStore.characters[$selectedCharID].name} />
+
+            <div class="flex w-full rounded-md border border-selected mb-3 shrink-0">
+                <button onclick={() => {
+                    charMainTab = 0
+                }} class="p-2 flex-1" class:bg-selected={charMainTab === 0}>
+                    <span>{language.description}</span>
+                </button>
+                <button onclick={() => {
+                    charMainTab = 1
+                }} class="p-2 flex-1 border-r border-l border-selected" class:bg-selected={charMainTab === 1}>
+                    <span>{language.firstMessage}</span>
+                </button>
+                <button onclick={() => {
+                    charMainTab = 2
+                }} class="p-2 flex-1" class:bg-selected={charMainTab === 2}>
+                    <span>{language.authorNote}</span>
+                </button>
+            </div>
+
+            {#if charMainTab === 0}
+                <div class="flex items-center justify-between mb-1 shrink-0">
+                    <span class="text-textcolor flex items-center gap-1">{language.description} <Help key="charDesc"/></span>
+                    <span class="text-textcolor2 text-sm">{tokens.desc ?? '…'} {language.tokens}</span>
+                </div>
+                <div class="flex-1 min-h-0 flex flex-col mb-1">
+                    <TextAreaInput height="full" className="flex-1 h-full min-h-0" highlight autocomplete="off" bind:value={(characterStore.characters[$selectedCharID] as character).desc}></TextAreaInput>
+                </div>
+            {:else if charMainTab === 1}
+                <div class="flex items-center justify-between mb-1 shrink-0">
+                    <span class="text-textcolor flex items-center gap-1">{language.firstMessage} <Help key="charFirstMessage"/></span>
+                    <span class="text-textcolor2 text-sm">{tokens.firstMsg ?? '…'} {language.tokens}</span>
+                </div>
+                <div class="flex-1 min-h-0 flex flex-col mb-1">
+                    <TextAreaInput height="full" className="flex-1 h-full min-h-0" highlight autocomplete="off" bind:value={characterStore.characters[$selectedCharID].firstMessage}></TextAreaInput>
+                </div>
+            {:else if charMainTab === 2}
+                <div class="flex items-center justify-between mb-1 shrink-0">
+                    <span class="text-textcolor flex items-center gap-1">{language.authorNote} <Help key="chatNote"/></span>
+                    <span class="text-textcolor2 text-sm">{tokens.localNote ?? '…'} {language.tokens}</span>
+                </div>
+                <div class="flex-1 min-h-0 flex flex-col mb-1">
+                    <TextAreaInput
+                        height="full"
+                        className="flex-1 h-full min-h-0"
+                        autocomplete="off"
+                        bind:value={characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].note}
+                        highlight
+                        placeholder={getAuthorNoteDefaultText()}
+                    />
+                </div>
+            {/if}
+        </div>
 
     {:else if licensed !== 'private' && characterStore.characters[$selectedCharID].type === 'group'}
         <TextInput size="xl" marginBottom placeholder="Group Name" bind:value={characterStore.characters[$selectedCharID].name} />
@@ -298,21 +345,17 @@
             </button>
         </div>
 
-    {/if}
-    <span class="text-textcolor">{language.authorNote} <Help key="chatNote"/></span>
-    <TextAreaInput
-        margin="both"
-        autocomplete="off"
-        bind:value={characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].note}
-        highlight
-        placeholder={getAuthorNoteDefaultText()}
-    />
-    <span class="text-textcolor2 mb-6 text-sm">{tokens.localNote ?? '…'} {language.tokens}</span>
+        <span class="text-textcolor">{language.authorNote} <Help key="chatNote"/></span>
+        <TextAreaInput
+            margin="both"
+            autocomplete="off"
+            bind:value={characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].note}
+            highlight
+            placeholder={getAuthorNoteDefaultText()}
+        />
+        <span class="text-textcolor2 mb-6 text-sm">{tokens.localNote ?? '…'} {language.tokens}</span>
 
-    {#if !$MobileGUI}
-        <Toggles bind:chara={characterStore.characters[$selectedCharID]} noContainer />
-
-        {#if characterStore.characters[$selectedCharID].type === 'group'}
+        {#if !$MobileGUI}
             <div class="flex mt-2 items-center">
                 <Check bind:check={(characterStore.characters[$selectedCharID] as groupChat).orderByOrder} name={language.orderByOrder}/>
             </div>
