@@ -1,9 +1,3 @@
-import { language } from "src/lang";
-import {
-  DEFAULT_MISTRAL_API_URL,
-  decodeMistralResponse,
-  formatMistralMessages,
-} from "@risuai/chat-core/mistralProvider.cjs";
 import {
   applyOpenAIPostParameterBodyPolicies,
   applyOpenAIPreParameterBodyPolicies,
@@ -15,12 +9,12 @@ import {
 } from "@risuai/chat-core/openAIProvider.cjs";
 import { prepareOpenAILogitBias } from "./biasPreparation";
 import { prepareOpenAIProviderMessages } from "./messagePreparation";
+import { requestMistral } from "./mistralRequest";
 import { requestHTTPOpenAI } from "./nonStreamingTransport";
 import { requestOpenAIStreamingTransport } from "./streamingTransport";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { LLMFlags, LLMFormat, LLMProvider } from "src/ts/model/modellist";
 import { getFreeOpenRouterModels } from "src/ts/model/openrouter";
-import { globalFetch } from "src/ts/globalApi.svelte";
 import { simplifySchema } from "src/ts/util";
 
 import { getOpenAIJSONSchema } from "../../templates/jsonSchema";
@@ -30,7 +24,6 @@ import type {
   RequestDataArgumentExtended,
   requestDataResponse,
 } from "../request";
-import { tryExecuteNodeProvider } from "../nodeProviderExecutor";
 import {
   applyAdditionalParameters,
   applyParameters,
@@ -74,63 +67,7 @@ export async function requestOpenAI(
 
   console.log(formatedChat);
   if (arg.modelInfo.format === LLMFormat.Mistral) {
-
-    const reformatedChat = formatMistralMessages(formatedChat);
-
-    const requestURL = arg.customURL ?? DEFAULT_MISTRAL_API_URL;
-    const networkOptions = getLocalNetworkRequestOptions(requestURL, db, false);
-
-    const targs = {
-      body: applyParameters(
-        {
-          model: aiModel,
-          messages: reformatedChat,
-          safe_prompt: false,
-          max_tokens: arg.maxTokens,
-        },
-        ["temperature", "presence_penalty", "frequency_penalty", "top_p"],
-        {},
-        arg.mode,
-        {
-          modelId: arg.modelInfo.id,
-        },
-      ),
-      headers: {
-        Authorization: "Bearer " + (arg.key ?? db.mistralKey),
-      },
-      abortSignal: arg.abortSignal,
-      chatId: arg.chatId,
-      interceptor: "mistral",
-      networkRoute: networkOptions.networkRoute,
-      requestTimeoutMs: networkOptions.requestTimeoutMs,
-    } as const;
-
-    if (arg.previewBody) {
-      return {
-        type: "success",
-        result: JSON.stringify({
-          url: requestURL,
-          body: targs.body,
-          headers: targs.headers,
-        }),
-      };
-    }
-
-    if (requestURL === DEFAULT_MISTRAL_API_URL) {
-      const remote = await tryExecuteNodeProvider(
-        LLMFormat.Mistral,
-        {
-          body: targs.body,
-          apiKey: arg.key ?? db.mistralKey,
-          httpErrorPrefix: language.errors.httpError,
-        },
-        arg.abortSignal,
-      );
-      if (remote) return remote;
-    }
-
-    const res = await globalFetch(requestURL, targs);
-    return decodeMistralResponse(res.ok, res.data, language.errors.httpError);
+    return requestMistral(arg, formatedChat);
   }
 
   db.cipherChat = false;
