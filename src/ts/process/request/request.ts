@@ -26,11 +26,7 @@ import type {
   ChatStreamChunk,
   OpenAIChat,
 } from "@risuai/chat-core/types.cjs";
-import {
-  containsBannedCharacterSet,
-  decideFailedRequestRetry,
-  shouldFallbackOnBlankResponse,
-} from "@risuai/chat-core/requestPolicy.cjs";
+import { executeChatRequestFallbacks } from "@risuai/chat-core/requestLoop.cjs";
 import { getTools } from "../mcp/mcp";
 import type { MCPTool } from "../mcp/mcplib";
 import { NovelAIBadWordIds, stringlizeNAIChat } from "../models/nai";
@@ -241,141 +237,87 @@ export async function requestChatData(
   );
   const tools = arg.tools ?? (await getTools());
   fallBackModels.push("");
-  let da: requestDataResponse;
 
   if (arg.escape) {
     arg.useStreaming = false;
     console.warn("Escape is enabled, disabling streaming");
   }
 
-  const originalFormated = safeStructuredClone(arg.formated).map((m) => {
-    m.content = risuUnescape(m.content);
-    return m;
+  const originalFormated = safeStructuredClone(arg.formated).map((message) => {
+    message.content = risuUnescape(message.content);
+    return message;
   });
 
-  for (
-    let fallbackIndex = 0;
-    fallbackIndex < fallBackModels.length;
-    fallbackIndex++
-  ) {
-    let trys = 0;
-    arg.formated = safeStructuredClone(originalFormated);
-
-    if (fallbackIndex !== 0 && !fallBackModels[fallbackIndex]) {
-      continue;
-    }
-
-    while (true) {
-      if (abortSignal?.aborted) {
-        return {
-          type: "fail",
-          result: "Aborted",
-        };
-      }
-
-      if (pluginV2.replacerbeforeRequest.size > 0) {
-        for (const replacer of pluginV2.replacerbeforeRequest) {
-          arg.formated = await replacer(arg.formated, model);
-        }
-      }
-
-      try {
-        const currentChar = getCurrentCharacter();
-        if (currentChar?.type !== "group") {
-          const perf = performance.now();
-          const d = await runTrigger(currentChar, "request", {
-            chat: getCurrentChat(),
-            displayMode: true,
-            displayData: JSON.stringify(arg.formated),
-          });
-
-          const got = JSON.parse(d.displayData);
-          if (!got || !Array.isArray(got)) {
-            throw new Error("Invalid return");
+  return executeChatRequestFallbacks(
+    {
+      fallbackModels: fallBackModels,
+      requestRetries: db.requestRetrys,
+      antiServerOverloads: db.antiServerOverloads,
+      fallbackWhenBlankResponse: db.fallbackWhenBlankResponse,
+      bannedCharacterSets: db.banCharacterset,
+    },
+    {
+      beginFallback: () => {
+        arg.formated = safeStructuredClone(originalFormated);
+      },
+      isAborted: () => Boolean(abortSignal?.aborted),
+      sleep: async (delayMs) => {
+        await sleep(delayMs);
+      },
+      executeAttempt: async ({ fallbackModel }) => {
+        if (pluginV2.replacerbeforeRequest.size > 0) {
+          for (const replacer of pluginV2.replacerbeforeRequest) {
+            arg.formated = await replacer(arg.formated, model);
           }
-          arg.formated = got;
-          console.log("Trigger time", performance.now() - perf);
         }
-      } catch (e) {
-        console.error(e);
-      }
 
-      da = await requestChatDataMain(
-        {
-          ...arg,
-          staticModel: fallBackModels[fallbackIndex],
-          tools: tools,
-        },
-        model,
-        abortSignal,
-      );
+        try {
+          const currentChar = getCurrentCharacter();
+          if (currentChar?.type !== "group") {
+            const perf = performance.now();
+            const triggerResult = await runTrigger(currentChar, "request", {
+              chat: getCurrentChat(),
+              displayMode: true,
+              displayData: JSON.stringify(arg.formated),
+            });
 
-      if (abortSignal?.aborted) {
-        return {
-          type: "fail",
-          result: "Aborted",
-        };
-      }
-
-      if (da.type === "success" && arg.escape) {
-        da.result = risuEscape(da.result);
-      }
-
-      if (da.type === "success" && pluginV2.replacerafterRequest.size > 0) {
-        for (const replacer of pluginV2.replacerafterRequest) {
-          da.result = await replacer(da.result, model);
-        }
-      }
-
-      if (
-        da.type === "success" &&
-        containsBannedCharacterSet(da.result, db.banCharacterset)
-      ) {
-        trys += 1;
-        continue;
-      }
-
-      if (
-        shouldFallbackOnBlankResponse(
-          da,
-          fallbackIndex,
-          fallBackModels.length,
-          db.fallbackWhenBlankResponse,
-        )
-      ) {
-        break;
-      }
-
-      if (da.type !== "fail" || da.noRetry) {
-        const usedModel = fallBackModels[fallbackIndex] || da.model;
-        return usedModel
-          ? {
-              ...da,
-              model: usedModel,
+            const formated = JSON.parse(triggerResult.displayData);
+            if (!formated || !Array.isArray(formated)) {
+              throw new Error("Invalid return");
             }
-          : da;
-      }
+            arg.formated = formated;
+            console.log("Trigger time", performance.now() - perf);
+          }
+        } catch (error) {
+          console.error(error);
+        }
 
-      const retryDecision = decideFailedRequestRetry({
-        response: da,
-        retryCount: trys,
-        requestRetries: db.requestRetrys,
-        antiServerOverloads: db.antiServerOverloads,
-        fallbackIndex,
-        fallbackCount: fallBackModels.length,
-      });
-      trys = retryDecision.retryCount;
-      if (retryDecision.delayMs > 0) await sleep(retryDecision.delayMs);
-      if (retryDecision.action === "return") return da;
-      if (retryDecision.action === "fallback") break;
-    }
-  }
+        const response = await requestChatDataMain(
+          {
+            ...arg,
+            staticModel: fallbackModel,
+            tools,
+          },
+          model,
+          abortSignal,
+        );
 
-  return (
-    da ?? {
-      type: "fail",
-      result: "All models failed",
-    }
+        if (response.type === "success" && arg.escape) {
+          response.result = risuEscape(response.result);
+        }
+
+        if (
+          response.type === "success" &&
+          pluginV2.replacerafterRequest.size > 0
+        ) {
+          for (const replacer of pluginV2.replacerafterRequest) {
+            response.result = await replacer(response.result, model);
+          }
+        }
+
+        return response;
+      },
+    },
   );
 }
 
