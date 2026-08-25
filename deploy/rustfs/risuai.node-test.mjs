@@ -139,7 +139,7 @@ if (composeIndex !== -1) {
         exit(0);
     }
     if (command === "exec") exit(process.env.FAKE_READINESS_FAIL === "1" ? 1 : 0);
-    if (command === "logs") exit(0);
+    if (command === "logs") exit(0, process.env.FAKE_LOG_OUTPUT || "");
     if (command === "ps") {
         if (composeArgs.includes("-q")) {
             const service = composeArgs.at(-1);
@@ -1005,9 +1005,14 @@ test("readiness failure tears down the candidate and restores the previous gener
             "--wait-timeout",
             "10",
         ],
-        { FAKE_READINESS_FAIL: "1" },
+        {
+            FAKE_READINESS_FAIL: "1",
+            FAKE_LOG_OUTPUT: "risuai | database authentication failed\n",
+        },
     );
     assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /RisuAI is still starting after \d+s/);
+    assert.match(result.stderr, /database authentication failed/);
     assert.match(result.stderr, /RisuAI did not become ready within 10s/);
     assert.match(result.stderr, /restoring the previous protected configuration/);
     assert.deepEqual(await protectedSnapshot(fixture), before);

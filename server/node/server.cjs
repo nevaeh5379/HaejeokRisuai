@@ -25,6 +25,7 @@ process.on('unhandledRejection', (err) => {
 const http = require('http');
 const path = require('path');
 const net = require('net');
+const { isSecurePostgresConfigRequest } = require('./requestSecurity.cjs');
 const htmlparser = require('node-html-parser');
 const fsSync = require('fs');
 const { existsSync, mkdirSync, readFileSync, writeFileSync } = require('fs');
@@ -1047,40 +1048,6 @@ function normalizePostgresPoolMax(value) {
         throw new PostgresPayloadError('PostgreSQL pool size must be an integer from 1 to 100');
     }
     return parsed;
-}
-
-function isSecurePostgresConfigRequest(req) {
-    if (req.secure) {
-        return true;
-    }
-    const forwardedProto = req.headers['x-forwarded-proto'];
-    if (typeof forwardedProto === 'string') {
-        const proto = forwardedProto.split(',')[0].trim().toLowerCase();
-        if (proto === 'https') return true;
-    }
-    const forwardedSsl = req.headers['x-forwarded-ssl'];
-    if (typeof forwardedSsl === 'string' && forwardedSsl.toLowerCase() === 'on') {
-        return true;
-    }
-    const frontEndHttps = req.headers['front-end-https'];
-    if (typeof frontEndHttps === 'string' && frontEndHttps.toLowerCase() === 'on') {
-        return true;
-    }
-    const urlScheme = req.headers['x-url-scheme'];
-    if (typeof urlScheme === 'string' && urlScheme.toLowerCase() === 'https') {
-        return true;
-    }
-    const cfVisitor = req.headers['cf-visitor'];
-    if (typeof cfVisitor === 'string' && cfVisitor.includes('"scheme":"https"')) {
-        return true;
-    }
-    const forwarded = req.headers['forwarded'];
-    if (typeof forwarded === 'string' && /proto=https/i.test(forwarded)) {
-        return true;
-    }
-    const remoteAddress = req.socket?.remoteAddress || '';
-    return remoteAddress === '127.0.0.1' || remoteAddress === '::1' ||
-        remoteAddress === '::ffff:127.0.0.1' || remoteAddress === 'localhost';
 }
 
 async function persistPostgresServerConfig(config) {

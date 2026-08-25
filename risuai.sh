@@ -896,24 +896,39 @@ show_deployment_from() {
 expected_services() { compose config --services; }
 
 services_are_running() {
+    report_errors=${1:-true}
     expected_list=$(expected_services 2>/dev/null) || return 1
     running_list=$(compose ps --status running --services 2>/dev/null) || return 1
     services_ok=true
     for expected_service in $expected_list; do
         printf '%s\n' "$running_list" | grep -Fx "$expected_service" >/dev/null 2>&1 || {
-            error "Service is not running: $expected_service"
+            [ "$report_errors" = false ] || error "Service is not running: $expected_service"
             services_ok=false
             continue
         }
         service_id=$(compose ps -q "$expected_service" 2>/dev/null || true)
-        [ -n "$service_id" ] || { error "Cannot resolve container for service: $expected_service"; services_ok=false; continue; }
+        [ -n "$service_id" ] || {
+            [ "$report_errors" = false ] || error "Cannot resolve container for service: $expected_service"
+            services_ok=false
+            continue
+        }
         health_state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$service_id" 2>/dev/null || true)
         case "$health_state" in
             healthy|none) ;;
-            *) error "Service health is not ready ($health_state): $expected_service"; services_ok=false ;;
+            *)
+                [ "$report_errors" = false ] || error "Service health is not ready ($health_state): $expected_service"
+                services_ok=false
+                ;;
         esac
     done
     [ "$services_ok" = true ]
+}
+
+show_readiness_diagnostics() {
+    diagnostic_elapsed=$1
+    warn "RisuAI is still starting after ${diagnostic_elapsed}s; current status and recent app logs follow."
+    compose ps --all >&2 || true
+    compose logs --no-color --tail 40 risuai >&2 || true
 }
 
 wait_for_risuai() {
@@ -921,15 +936,20 @@ wait_for_risuai() {
     info "Waiting up to ${wait_limit}s for RisuAI"
     wait_started=$(date +%s 2>/dev/null || printf '0')
     wait_elapsed=0
+    next_diagnostic=10
     while :; do
         if compose exec -T risuai node -e "fetch('http://127.0.0.1:6001').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))" >/dev/null 2>&1; then
-            if services_are_running; then ok "RisuAI and all services are running"; return 0; fi
+            if services_are_running false; then ok "RisuAI and all services are running"; return 0; fi
         fi
         if [ "$wait_started" -gt 0 ] 2>/dev/null; then
             wait_now=$(date +%s 2>/dev/null || printf '0')
             wait_elapsed=$((wait_now - wait_started))
         else
             wait_elapsed=$((wait_elapsed + 2))
+        fi
+        if [ "$wait_elapsed" -ge "$next_diagnostic" ]; then
+            show_readiness_diagnostics "$wait_elapsed"
+            next_diagnostic=$((next_diagnostic + 30))
         fi
         [ "$wait_elapsed" -lt "$wait_limit" ] || break
         sleep 2

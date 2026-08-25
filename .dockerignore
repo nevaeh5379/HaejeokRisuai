@@ -31,3 +31,5 @@ save/
 *.gz
 *profile.json*
 /server/node/ssl/certificate
+
+.worktree/
