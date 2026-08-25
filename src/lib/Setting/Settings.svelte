@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, DatabaseIcon, HardDriveIcon, LanguagesIcon, MonitorIcon, Sailboat, UserIcon, CircleXIcon, KeyboardIcon, SparkleIcon, ArrowLeft, ChevronRight, XIcon } from "@lucide/svelte";
+    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, DatabaseIcon, HardDriveIcon, LanguagesIcon, MonitorIcon, Sailboat, UserIcon, CircleXIcon, KeyboardIcon, SparkleIcon, ArrowLeft, ChevronRight, XIcon, KeyIcon, SlidersHorizontal, MessageSquareIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import DisplaySettings from "./Pages/DisplaySettings.svelte";
     import UserSettings from "./Pages/UserSettings.svelte";
@@ -36,6 +36,7 @@
     let dbExplorerOpen = $state(false)
     let storageExplorerOpen = $state(false)
     let searchNavigation = $state<{ menuIndex: number; subTab?: number } | null>(null)
+    let mobileBotTarget = $state<{ submenu: number; modelTab?: 'main' | 'sub' | 'provider'; title: string } | null>(null)
     let innerWidth = $state(typeof window !== "undefined" ? window.innerWidth : 1200)
     let isMobile = $derived(innerWidth < 768 || $MobileGUI)
 
@@ -46,6 +47,9 @@
     })
 
     let currentMenuTitle = $derived.by(() => {
+        if (isMobile && $SettingsMenuIndex === 1 && mobileBotTarget?.title) {
+            return mobileBotTarget.title;
+        }
         switch ($SettingsMenuIndex) {
             case 0: return `${language.account} & ${language.files}`;
             case 1: return language.chatBot;
@@ -277,18 +281,75 @@
             <div class="flex flex-col gap-1.5">
                 <span class="text-xs font-semibold text-textcolor2 uppercase tracking-wider px-2">AI & Chat</span>
                 <div class="bg-darkbg rounded-2xl border border-darkborderc overflow-hidden divide-y divide-darkborderc/40 shadow-xs">
+                    <!-- 1. AI Model Selection -->
                     <button
                         class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
-                        onclick={() => { $SettingsMenuIndex = 1; }}
+                        onclick={() => {
+                            mobileBotTarget = { submenu: 0, modelTab: 'main', title: language.model || "AI Model" };
+                            $SettingsMenuIndex = 1;
+                        }}
                     >
                         <div class="flex items-center gap-3.5 min-w-0">
                             <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center shrink-0">
                                 <BotIcon size={18} />
                             </div>
-                            <span class="text-base font-medium text-textcolor truncate">{language.chatBot}</span>
+                            <span class="text-base font-medium text-textcolor truncate">{language.model || "AI Model"}</span>
                         </div>
                         <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                     </button>
+
+                    <!-- 2. API Keys & Providers -->
+                    <button
+                        class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
+                        onclick={() => {
+                            mobileBotTarget = { submenu: 0, modelTab: 'provider', title: language.providerSettings || "API & Providers" };
+                            $SettingsMenuIndex = 1;
+                        }}
+                    >
+                        <div class="flex items-center gap-3.5 min-w-0">
+                            <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
+                                <KeyIcon size={18} />
+                            </div>
+                            <span class="text-base font-medium text-textcolor truncate">{language.providerSettings || "API & Providers"}</span>
+                        </div>
+                        <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
+                    </button>
+
+                    <!-- 3. Generation Parameters -->
+                    <button
+                        class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
+                        onclick={() => {
+                            mobileBotTarget = { submenu: 1, title: language.parameters };
+                            $SettingsMenuIndex = 1;
+                        }}
+                    >
+                        <div class="flex items-center gap-3.5 min-w-0">
+                            <div class="w-8 h-8 rounded-lg bg-cyan-500/15 text-cyan-400 flex items-center justify-center shrink-0">
+                                <SlidersHorizontal size={18} />
+                            </div>
+                            <span class="text-base font-medium text-textcolor truncate">{language.parameters}</span>
+                        </div>
+                        <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
+                    </button>
+
+                    <!-- 4. Prompts & Formats -->
+                    <button
+                        class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
+                        onclick={() => {
+                            mobileBotTarget = { submenu: 2, title: language.prompt };
+                            $SettingsMenuIndex = 1;
+                        }}
+                    >
+                        <div class="flex items-center gap-3.5 min-w-0">
+                            <div class="w-8 h-8 rounded-lg bg-pink-500/15 text-pink-400 flex items-center justify-center shrink-0">
+                                <MessageSquareIcon size={18} />
+                            </div>
+                            <span class="text-base font-medium text-textcolor truncate">{language.prompt}</span>
+                        </div>
+                        <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
+                    </button>
+
+                    <!-- 5. Persona -->
                     <button
                         class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
                         onclick={() => { $SettingsMenuIndex = 12; }}
@@ -301,27 +362,31 @@
                         </div>
                         <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                     </button>
-                    <button
-                        class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
-                        onclick={() => { $SettingsMenuIndex = 2; }}
-                    >
-                        <div class="flex items-center gap-3.5 min-w-0">
-                            <div class="w-8 h-8 rounded-lg bg-amber-500/15 text-amber-400 flex items-center justify-center shrink-0">
-                                <Sailboat size={18} />
-                            </div>
-                            <span class="text-base font-medium text-textcolor truncate">{language.otherBots}</span>
-                        </div>
-                        <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
-                    </button>
+
+                    <!-- 6. Modules -->
                     <button
                         class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
                         onclick={() => { $SettingsMenuIndex = 14; }}
                     >
                         <div class="flex items-center gap-3.5 min-w-0">
-                            <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
+                            <div class="w-8 h-8 rounded-lg bg-amber-500/15 text-amber-400 flex items-center justify-center shrink-0">
                                 <PackageIcon size={18} />
                             </div>
                             <span class="text-base font-medium text-textcolor truncate">{language.modules}</span>
+                        </div>
+                        <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
+                    </button>
+
+                    <!-- 7. Other Bots -->
+                    <button
+                        class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
+                        onclick={() => { $SettingsMenuIndex = 2; }}
+                    >
+                        <div class="flex items-center gap-3.5 min-w-0">
+                            <div class="w-8 h-8 rounded-lg bg-orange-500/15 text-orange-400 flex items-center justify-center shrink-0">
+                                <Sailboat size={18} />
+                            </div>
+                            <span class="text-base font-medium text-textcolor truncate">{language.otherBots}</span>
                         </div>
                         <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                     </button>
@@ -410,7 +475,7 @@
                         onclick={() => { $SettingsMenuIndex = 4; }}
                     >
                         <div class="flex items-center gap-3.5 min-w-0">
-                            <div class="w-8 h-8 rounded-lg bg-violet-500/15 text-violet-400 flex items-center justify-center shrink-0">
+                            <div class="w-8 h-8 rounded-lg bg-fuchsia-500/15 text-fuchsia-400 flex items-center justify-center shrink-0">
                                 <CodeIcon size={18} />
                             </div>
                             <span class="text-base font-medium text-textcolor truncate">{language.plugin}</span>
@@ -422,7 +487,7 @@
                         onclick={() => { $SettingsMenuIndex = 6; }}
                     >
                         <div class="flex items-center gap-3.5 min-w-0">
-                            <div class="w-8 h-8 rounded-lg bg-pink-500/15 text-pink-400 flex items-center justify-center shrink-0">
+                            <div class="w-8 h-8 rounded-lg bg-red-500/15 text-red-400 flex items-center justify-center shrink-0">
                                 <ActivityIcon size={18} />
                             </div>
                             <span class="text-base font-medium text-textcolor truncate">{language.advancedSettings}</span>
@@ -435,7 +500,7 @@
                             onclick={() => { dbExplorerOpen = true; }}
                         >
                             <div class="flex items-center gap-3.5 min-w-0">
-                                <div class="w-8 h-8 rounded-lg bg-blue-600/15 text-blue-400 flex items-center justify-center shrink-0">
+                                <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
                                     <DatabaseIcon size={18} />
                                 </div>
                                 <span class="text-base font-medium text-textcolor truncate">{language.postgresDbExplorer}</span>
@@ -447,7 +512,7 @@
                             onclick={() => { storageExplorerOpen = true; }}
                         >
                             <div class="flex items-center gap-3.5 min-w-0">
-                                <div class="w-8 h-8 rounded-lg bg-yellow-500/15 text-yellow-400 flex items-center justify-center shrink-0">
+                                <div class="w-8 h-8 rounded-lg bg-teal-500/15 text-teal-400 flex items-center justify-center shrink-0">
                                     <HardDriveIcon size={18} />
                                 </div>
                                 <span class="text-base font-medium text-textcolor truncate">{language.storageExplorer}</span>
@@ -506,7 +571,9 @@
         <UserSettings />
     {:else if $SettingsMenuIndex === 1}
         <BotSettings
-            targetSubmenu={searchNavigation?.menuIndex === 1 ? searchNavigation.subTab : undefined}
+            targetSubmenu={searchNavigation?.menuIndex === 1 ? searchNavigation.subTab : (isMobile && mobileBotTarget ? mobileBotTarget.submenu : undefined)}
+            targetModelTab={isMobile && mobileBotTarget?.modelTab ? mobileBotTarget.modelTab : undefined}
+            hideTabs={isMobile && !!mobileBotTarget}
             goPromptTemplate={() => {
                 $SettingsMenuIndex = 13
             }}
@@ -556,6 +623,7 @@
                         class="w-9 h-9 rounded-full bg-textcolor/10 hover:bg-textcolor/15 active:scale-95 flex items-center justify-center text-textcolor transition-all cursor-pointer shrink-0"
                         onclick={() => {
                             $SettingsMenuIndex = -1;
+                            mobileBotTarget = null;
                         }}
                         aria-label="Back"
                     >

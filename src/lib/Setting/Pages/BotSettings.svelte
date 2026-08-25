@@ -90,9 +90,11 @@
     interface Props {
         goPromptTemplate?: any;
         targetSubmenu?: number;
+        targetModelTab?: 'main' | 'sub' | 'provider';
+        hideTabs?: boolean;
     }
 
-    let { goPromptTemplate = () => {}, targetSubmenu }: Props = $props();
+    let { goPromptTemplate = () => {}, targetSubmenu, targetModelTab, hideTabs = false }: Props = $props();
 
     async function loadTokenize(){
         tokens.mainPrompt = await tokenizeAccurate(settingsStore.state.mainPrompt, true)
@@ -117,6 +119,9 @@
     $effect(() => {
         if (targetSubmenu !== undefined && !settingsStore.state.useLegacyGUI) {
             submenu = targetSubmenu
+        }
+        if (targetModelTab !== undefined) {
+            modelTab = targetModelTab
         }
     })
     let modelInfo = $derived(getModelInfo(settingsStore.state.aiModel))
@@ -185,7 +190,7 @@
 </script>
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.chatBot}</h2>
 
-{#if submenu !== -1}
+{#if !hideTabs && submenu !== -1}
     <div class="flex w-full rounded-xl border border-darkborderc overflow-hidden bg-darkbg/80 p-1 gap-1 mb-2.5 shadow-xs">
         <button
             onclick={() => { submenu = 0; }}
@@ -216,30 +221,32 @@
 
 {#if submenu === 0 || submenu === -1}
     <div class="flex flex-col gap-3">
-        <!-- Submenu 0 Tabs: Underline Style Sub-tabs (No boxed nesting) -->
-        <div class="flex w-full border-b border-darkborderc/60 px-1 gap-4 overflow-x-auto no-scrollbar text-xs sm:text-sm">
-            <button 
-                onclick={() => { modelTab = 'main'; }}
-                class="pb-2 pt-0.5 font-bold transition-all flex items-center gap-1.5 shrink-0 border-b-2 {modelTab === 'main' ? 'border-textcolor text-textcolor' : 'border-transparent text-textcolor2 hover:text-textcolor'}"
-            >
-                <span>{language.mainModelCardTitle || language.model}</span>
-                <Help key="model" />
-            </button>
-            <button 
-                onclick={() => { modelTab = 'sub'; }}
-                class="pb-2 pt-0.5 font-bold transition-all flex items-center gap-1.5 shrink-0 border-b-2 {modelTab === 'sub' ? 'border-textcolor text-textcolor' : 'border-transparent text-textcolor2 hover:text-textcolor'}"
-            >
-                <span>{language.subModelCardTitle || language.submodel}</span>
-                <Help key="submodel" />
-            </button>
-            <button 
-                onclick={() => { modelTab = 'provider'; }}
-                class="pb-2 pt-0.5 font-bold transition-all flex items-center gap-1.5 shrink-0 border-b-2 {modelTab === 'provider' ? 'border-textcolor text-textcolor' : 'border-transparent text-textcolor2 hover:text-textcolor'}"
-            >
-                <KeyIcon size={13} />
-                <span>{language.providerSettings || "API & Providers"}</span>
-            </button>
-        </div>
+        {#if !hideTabs}
+            <!-- Submenu 0 Tabs: Underline Style Sub-tabs (No boxed nesting) -->
+            <div class="flex w-full border-b border-darkborderc/60 px-1 gap-4 overflow-x-auto no-scrollbar text-xs sm:text-sm">
+                <button 
+                    onclick={() => { modelTab = 'main'; }}
+                    class="pb-2 pt-0.5 font-bold transition-all flex items-center gap-1.5 shrink-0 border-b-2 {modelTab === 'main' ? 'border-textcolor text-textcolor' : 'border-transparent text-textcolor2 hover:text-textcolor'}"
+                >
+                    <span>{language.mainModelCardTitle || language.model}</span>
+                    <Help key="model" />
+                </button>
+                <button 
+                    onclick={() => { modelTab = 'sub'; }}
+                    class="pb-2 pt-0.5 font-bold transition-all flex items-center gap-1.5 shrink-0 border-b-2 {modelTab === 'sub' ? 'border-textcolor text-textcolor' : 'border-transparent text-textcolor2 hover:text-textcolor'}"
+                >
+                    <span>{language.subModelCardTitle || language.submodel}</span>
+                    <Help key="submodel" />
+                </button>
+                <button 
+                    onclick={() => { modelTab = 'provider'; }}
+                    class="pb-2 pt-0.5 font-bold transition-all flex items-center gap-1.5 shrink-0 border-b-2 {modelTab === 'provider' ? 'border-textcolor text-textcolor' : 'border-transparent text-textcolor2 hover:text-textcolor'}"
+                >
+                    <KeyIcon size={13} />
+                    <span>{language.providerSettings || "API & Providers"}</span>
+                </button>
+            </div>
+        {/if}
 
         {#if modelTab === 'main'}
             <!-- Main Model Inline Browser & Quick Options -->
