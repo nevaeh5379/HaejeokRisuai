@@ -8,5 +8,6 @@ export * from "./requestLoop.cjs";
 export * from "./providerRouting.cjs";
 export * from "./providerExecutor.cjs";
 export * from "./providerPrompt.cjs";
+export * from "./providerContext.cjs";
 export * from "./tokenAccounting.cjs";
 export * from "./executor.cjs";

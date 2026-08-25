@@ -10,5 +10,6 @@ module.exports = {
   ...require('./providerRouting.cjs'),
   ...require('./providerExecutor.cjs'),
   ...require('./providerPrompt.cjs'),
+  ...require('./providerContext.cjs'),
   ...require('./tokenAccounting.cjs'),
 };

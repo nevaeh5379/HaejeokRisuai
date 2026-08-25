@@ -16,6 +16,7 @@ import {
 import { tokenizeNum } from "../../tokenizer";
 import { sleep } from "../../util";
 import { formatProviderMessages } from "@risuai/chat-core/providerPrompt.cjs";
+import { prepareProviderExecutionContext } from "@risuai/chat-core/providerContext.cjs";
 import type {
   ChatModelResponse,
   ChatStreamChunk,
@@ -249,55 +250,42 @@ export async function requestChatDataMain(
   const db = getDatabase();
   const targ: RequestDataArgumentExtended = arg;
 
-  targ.aiModel = arg.staticModel
-    ? arg.staticModel
-    : model === "model"
-      ? db.aiModel
-      : db.subModel;
-  targ.modelInfo = getModelInfo(targ.aiModel);
-  if (db.seperateModelsForAxModels && !arg.staticModel) {
-    if (db.seperateModels[model]) {
-      targ.aiModel = db.seperateModels[model];
-      targ.modelInfo = getModelInfo(targ.aiModel);
-    }
-  }
+  const prepared = prepareProviderExecutionContext(
+    { ...arg, mode: model },
+    {
+      primaryModel: db.aiModel,
+      subModel: db.subModel,
+      separateModelsForAxModels: db.seperateModelsForAxModels,
+      separateModels: db.seperateModels,
+      maxResponseTokens: db.maxResponse,
+      temperaturePercent: db.temperature,
+      useStreaming: db.useStreaming,
+      genTime: db.genTime,
+      extractJson: db.extractJson,
+      reverseProxy: {
+        requestModel: db.customProxyRequestModel,
+        format: db.customAPIFormat,
+        url: db.forceReplaceUrl,
+        key: db.proxyKey,
+      },
+      customModels: db.customModels,
+    },
+    getModelInfo,
+  );
 
-  if (arg.blockPlugins && targ.modelInfo.id.startsWith("pluginmodel:::")) {
+  if (prepared.pluginBlocked) {
     return {
       type: "fail",
       result: "Plugin calls are blocked by the caller.",
     };
   }
 
+  Object.assign(targ, prepared);
   targ.formated = safeStructuredClone(arg.formated);
-  targ.maxTokens = arg.maxTokens ?? db.maxResponse;
-  targ.temperature = arg.temperature ?? db.temperature / 100;
   targ.bias = arg.bias;
   targ.currentChar = arg.currentChar;
-  targ.useStreaming = arg.forceStreaming
-    ? true
-    : db.useStreaming && arg.useStreaming;
-  targ.continue = arg.continue ?? false;
-  targ.biasString = arg.biasString ?? [];
-  targ.multiGen =
-    db.genTime > 1 &&
-    targ.aiModel.startsWith("gpt") &&
-    !arg.continue &&
-    !arg.noMultiGen;
   targ.abortSignal = abortSignal;
   targ.mode = model;
-  targ.extractJson = arg.extractJson ?? db.extractJson;
-  if (targ.aiModel === "reverse_proxy") {
-    targ.modelInfo.internalID = db.customProxyRequestModel;
-    targ.modelInfo.format = db.customAPIFormat;
-    targ.customURL = db.forceReplaceUrl;
-    targ.key = db.proxyKey;
-  }
-  if (targ.aiModel.startsWith("xcustom:::")) {
-    const found = db.customModels.find((m) => m.id === targ.aiModel);
-    targ.customURL = found?.url;
-    targ.key = found?.key;
-  }
 
   const format = targ.modelInfo.format;
 
