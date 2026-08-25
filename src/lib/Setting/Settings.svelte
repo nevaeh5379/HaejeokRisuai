@@ -663,7 +663,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
-        class="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-4 sm:p-6 md:p-8 rs-setting-backdrop"
+        class="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-2 sm:p-4 md:p-6 rs-setting-backdrop"
         role="presentation"
         onclick={(e) => {
             if (e.target === e.currentTarget) {
@@ -671,7 +671,7 @@
             }
         }}
     >
-        <div class="relative w-full max-w-5xl h-[86vh] max-h-[880px] bg-bgcolor rounded-2xl shadow-2xl border border-darkborderc overflow-hidden flex flex-row rs-setting-cont-2">
+        <div class="relative w-[90vw] h-[90vh] bg-bgcolor rounded-2xl shadow-2xl border border-darkborderc overflow-hidden flex flex-row rs-setting-cont-2">
             <!-- Sidebar -->
             <div class="flex h-full flex-col p-4 pt-6 gap-2 overflow-y-auto relative rs-setting-cont-3 shrink-0 bg-darkbg border-r border-darkborderc w-64 md:w-72">
                 {@render desktopMenuButtons()}

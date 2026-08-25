@@ -158,111 +158,107 @@
   }
 </script>
 
-<div class="w-full flex flex-col gap-2.5">
-  <!-- Controls & Smart Filters Bar (Integrated Compact Bar) -->
-  <div class="flex flex-col gap-2 pb-2 border-b border-darkborderc/50">
-    <!-- Row 1: Search Input + Provider Dropdown -->
-    <div class="flex items-center gap-2 w-full">
-      <div class="relative flex-1 min-w-0">
-        <div class="absolute inset-y-0 left-2.5 flex items-center pointer-events-none text-textcolor2">
-          <SearchIcon size={15} />
-        </div>
-        <input 
-          type="text"
-          bind:value={searchQuery}
-          placeholder={language.searchModelPlaceholder || "Search models..."}
-          class="w-full pl-8 pr-7 py-1.5 rounded-lg border border-darkborderc bg-darkbutton/70 text-textcolor placeholder-textcolor2/50 text-xs sm:text-sm focus:outline-none focus:ring-1 focus:ring-textcolor/30 transition-all"
-        />
-        {#if searchQuery}
-          <button 
-            class="absolute inset-y-0 right-2.5 flex items-center text-textcolor2 hover:text-textcolor"
-            onclick={() => { searchQuery = ''; }}
-            title={language.clearSearch || "Clear"}
-          >
-            <XIcon size={13} />
-          </button>
-        {/if}
+<div class="w-full flex flex-col gap-3">
+  <!-- Controls & Smart Filters Bar (Top Bar Integration) -->
+  <div class="flex flex-col gap-2.5 pb-2.5 border-b border-darkborderc/60">
+    <!-- Search Bar -->
+    <div class="relative w-full">
+      <div class="absolute inset-y-0 left-3 flex items-center pointer-events-none text-textcolor2">
+        <SearchIcon size={16} />
       </div>
-
-      <!-- Provider Select Dropdown -->
-      <div class="relative inline-flex items-center shrink-0">
-        <select 
-          bind:value={selectedProvider}
-          class="appearance-none pl-2.5 pr-6 py-1.5 rounded-lg border border-darkborderc bg-darkbutton/70 text-textcolor text-xs font-medium focus:outline-none cursor-pointer max-w-[130px] sm:max-w-none truncate"
+      <input 
+        type="text"
+        bind:value={searchQuery}
+        placeholder={language.searchModelPlaceholder || "Search models (name, ID, provider)..."}
+        class="w-full pl-9 pr-8 py-2 rounded-xl border border-darkborderc bg-darkbutton/80 text-textcolor placeholder-textcolor2/60 text-sm focus:outline-none focus:ring-1 focus:ring-textcolor/30 transition-all"
+      />
+      {#if searchQuery}
+        <button 
+          class="absolute inset-y-0 right-3 flex items-center text-textcolor2 hover:text-textcolor"
+          onclick={() => { searchQuery = ''; }}
+          title={language.clearSearch || "Clear"}
         >
-          <option value="all">{language.providerNames || "All Providers"}</option>
-          {#each providerGroups as group}
-            {#if group.providerName !== '@as-is'}
-              <option value={group.providerName}>{group.providerName} ({group.models.length})</option>
-            {/if}
-          {/each}
-          <option value="Horde">Horde</option>
-        </select>
-        <div class="pointer-events-none absolute right-2 text-textcolor2">
-          <ChevronDownIcon size={12} />
-        </div>
-      </div>
+          <XIcon size={14} />
+        </button>
+      {/if}
     </div>
 
-    <!-- Row 2: Horizontal Scrollable Quick Filter Chips (Including Unrecommended toggle) -->
-    <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar flex-nowrap shrink-0 text-xs">
-      <button 
-        class="px-2.5 py-1 rounded-md transition-colors flex items-center gap-1 text-[11px] shrink-0 whitespace-nowrap {activeCategory === 'all' && !showUnrecommended ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
-        onclick={() => { activeCategory = 'all'; }}
-      >
-        <BotIcon size={12} /> {language.filterAll || "All"}
-      </button>
+    <!-- Filter Buttons & Provider Select Dropdown (All on Top) -->
+    <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+      <!-- Left Category & Tag Chips -->
+      <div class="flex items-center gap-1.5 flex-wrap">
+        <button 
+          class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium {activeCategory === 'all' && selectedProvider === 'all' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
+          onclick={() => { activeCategory = 'all'; selectedProvider = 'all'; }}
+        >
+          <BotIcon size={13} /> {language.filterAll || "All"}
+        </button>
 
-      <button 
-        class="px-2.5 py-1 rounded-md transition-colors flex items-center gap-1 text-[11px] shrink-0 whitespace-nowrap {activeCategory === 'recommended' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
-        onclick={() => { activeCategory = activeCategory === 'recommended' ? 'all' : 'recommended'; }}
-      >
-        <SparkleIcon size={12} /> {language.filterRecommended || "Recommended"}
-      </button>
+        <button 
+          class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium {activeCategory === 'recommended' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
+          onclick={() => { activeCategory = activeCategory === 'recommended' ? 'all' : 'recommended'; }}
+        >
+          <SparkleIcon size={13} /> {language.filterRecommended || "Recommended"}
+        </button>
 
-      <button 
-        class="px-2.5 py-1 rounded-md transition-colors flex items-center gap-1 text-[11px] shrink-0 whitespace-nowrap {activeCategory === 'favorites' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
-        onclick={() => { activeCategory = activeCategory === 'favorites' ? 'all' : 'favorites'; }}
-      >
-        <StarIcon size={12} class={modelFavoritesStore.favorites.length > 0 ? "fill-current" : ""} />
-        <span>{language.filterFavorites || "Favorites"}</span>
-        {#if modelFavoritesStore.favorites.length > 0}
-          <span class="px-1 py-0.2 rounded-full text-[9px] bg-textcolor/10 text-textcolor font-bold">{modelFavoritesStore.favorites.length}</span>
-        {/if}
-      </button>
+        <button 
+          class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium {activeCategory === 'favorites' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
+          onclick={() => { activeCategory = activeCategory === 'favorites' ? 'all' : 'favorites'; }}
+        >
+          <StarIcon size={13} class={modelFavoritesStore.favorites.length > 0 ? "fill-current" : ""} />
+          <span>{language.filterFavorites || "Favorites"}</span>
+          {#if modelFavoritesStore.favorites.length > 0}
+            <span class="px-1 py-0.2 rounded-full text-[9px] bg-textcolor/10 text-textcolor font-bold">{modelFavoritesStore.favorites.length}</span>
+          {/if}
+        </button>
 
-      <button 
-        class="px-2.5 py-1 rounded-md transition-colors flex items-center gap-1 text-[11px] shrink-0 whitespace-nowrap {activeCategory === 'recent' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
-        onclick={() => { activeCategory = activeCategory === 'recent' ? 'all' : 'recent'; }}
-      >
-        <RotateCcwIcon size={12} /> {language.filterRecent || "Recent"}
-      </button>
+        <button 
+          class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium {activeCategory === 'recent' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
+          onclick={() => { activeCategory = activeCategory === 'recent' ? 'all' : 'recent'; }}
+        >
+          <RotateCcwIcon size={13} /> {language.filterRecent || "Recent"}
+        </button>
 
-      <div class="h-3.5 w-px bg-darkborderc/60 mx-0.5 shrink-0"></div>
+        <!-- Provider Select Dropdown -->
+        <div class="relative inline-flex items-center ml-1">
+          <select 
+            bind:value={selectedProvider}
+            class="appearance-none pl-2.5 pr-6 py-1.5 rounded-lg border border-darkborderc bg-darkbutton/70 text-textcolor text-xs font-medium focus:outline-none cursor-pointer"
+          >
+            <option value="all">{language.providerNames || "All Providers"}</option>
+            {#each providerGroups as group}
+              {#if group.providerName !== '@as-is'}
+                <option value={group.providerName}>{group.providerName} ({group.models.length})</option>
+              {/if}
+            {/each}
+            <option value="Horde">Horde</option>
+          </select>
+          <div class="pointer-events-none absolute right-2 text-textcolor2">
+            <ChevronDownIcon size={12} />
+          </div>
+        </div>
 
-      <!-- Capability Tags -->
-      <button 
-        class="px-2 py-0.5 rounded-md transition-colors flex items-center gap-1 text-[11px] shrink-0 whitespace-nowrap {activeTag === 'vision' ? 'bg-selected text-textcolor font-bold' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
-        onclick={() => { activeTag = activeTag === 'vision' ? 'all' : 'vision'; }}
-      >
-        <EyeIcon size={11} /> Vision
-      </button>
-      <button 
-        class="px-2 py-0.5 rounded-md transition-colors flex items-center gap-1 text-[11px] shrink-0 whitespace-nowrap {activeTag === 'thinking' ? 'bg-selected text-textcolor font-bold' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
-        onclick={() => { activeTag = activeTag === 'thinking' ? 'all' : 'thinking'; }}
-      >
-        <BrainIcon size={11} /> Thinking
-      </button>
+        <div class="h-4 w-px bg-darkborderc/60 mx-1 hidden sm:block"></div>
 
-      <div class="h-3.5 w-px bg-darkborderc/60 mx-0.5 shrink-0"></div>
+        <!-- Capability Tags -->
+        <button 
+          class="px-2 py-1 rounded-md transition-colors flex items-center gap-1 text-[11px] {activeTag === 'vision' ? 'bg-selected text-textcolor font-bold' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
+          onclick={() => { activeTag = activeTag === 'vision' ? 'all' : 'vision'; }}
+        >
+          <EyeIcon size={11} /> Vision
+        </button>
+        <button 
+          class="px-2 py-1 rounded-md transition-colors flex items-center gap-1 text-[11px] {activeTag === 'thinking' ? 'bg-selected text-textcolor font-bold' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
+          onclick={() => { activeTag = activeTag === 'thinking' ? 'all' : 'thinking'; }}
+        >
+          <BrainIcon size={11} /> Thinking
+        </button>
+      </div>
 
-      <!-- Show Unrecommended as a filter chip -->
-      <button 
-        class="px-2 py-0.5 rounded-md transition-colors flex items-center gap-1 text-[11px] shrink-0 whitespace-nowrap {showUnrecommended ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30' : 'text-textcolor2/70 hover:bg-darkbutton/50 hover:text-textcolor'}"
-        onclick={() => { showUnrecommended = !showUnrecommended; }}
-      >
-        <span>{showUnrecommended ? "✓ " : ""}{language.showUnrecommended || "Unrecommended"}</span>
-      </button>
+      <!-- Unrecommended toggle -->
+      <div class="text-xs text-textcolor2 flex items-center shrink-0">
+        <CheckInput name={language.showUnrecommended} grayText bind:check={showUnrecommended} />
+      </div>
     </div>
   </div>
 
