@@ -238,8 +238,6 @@
         <LazyComponent loader={welcomeLoader} />
     {:else if isNodeServer && $sqlConfiguredStore === false}
         <LazyComponent loader={sqlQuickSetupLoader} />
-    {:else if $settingsOpen}
-        <LazyComponent loader={settingsLoader} />
     {:else if $MobileGUI}
         <div class="w-full h-full flex flex-col">
             <LazyComponent loader={mobileHeaderLoader} />
@@ -267,6 +265,9 @@
                 <LazyComponent loader={chatScreenLoader} />
             {/if}
         {/if}
+    {/if}
+    {#if $settingsOpen && !$MobileGUI}
+        <LazyComponent loader={settingsLoader} />
     {/if}
     {#if $alertStore.type !== 'none'}
         <LazyComponent loader={alertLoader} />
