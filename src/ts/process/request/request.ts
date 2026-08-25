@@ -26,6 +26,11 @@ import type {
   ChatStreamChunk,
   OpenAIChat,
 } from "../chat-core/types";
+import {
+  containsBannedCharacterSet,
+  decideFailedRequestRetry,
+  shouldFallbackOnBlankResponse,
+} from "../chat-core/requestPolicy";
 import { getTools } from "../mcp/mcp";
 import type { MCPTool } from "../mcp/mcplib";
 import { NovelAIBadWordIds, stringlizeNAIChat } from "../models/nai";
@@ -322,32 +327,23 @@ export async function requestChatData(
         }
       }
 
-      if (da.type === "success" && db.banCharacterset?.length > 0) {
-        let failed = false;
-        for (const set of db.banCharacterset) {
-          console.log(set);
-          const checkRegex = new RegExp(`\\p{Script=${set}}`, "gu");
-
-          if (checkRegex.test(da.result)) {
-            trys += 1;
-            failed = true;
-            break;
-          }
-        }
-
-        if (failed) {
-          continue;
-        }
+      if (
+        da.type === "success" &&
+        containsBannedCharacterSet(da.result, db.banCharacterset)
+      ) {
+        trys += 1;
+        continue;
       }
 
       if (
-        da.type === "success" &&
-        fallbackIndex !== fallBackModels.length - 1 &&
-        db.fallbackWhenBlankResponse
+        shouldFallbackOnBlankResponse(
+          da,
+          fallbackIndex,
+          fallBackModels.length,
+          db.fallbackWhenBlankResponse,
+        )
       ) {
-        if (da.result.trim() === "") {
-          break;
-        }
+        break;
       }
 
       if (da.type !== "fail" || da.noRetry) {
@@ -360,22 +356,18 @@ export async function requestChatData(
           : da;
       }
 
-      if (da.failByServerError) {
-        await sleep(1000);
-        if (db.antiServerOverloads) {
-          trys -= 0.5; // reduce trys by 0.5, so that it will retry twice as much
-        }
-      }
-
-      trys += 1;
-      if (trys > db.requestRetrys) {
-        const isPluginModel =
-          da.model === "custom" || da.model?.startsWith("pluginmodel:::");
-        if (fallbackIndex === fallBackModels.length - 1 || isPluginModel) {
-          return da;
-        }
-        break;
-      }
+      const retryDecision = decideFailedRequestRetry({
+        response: da,
+        retryCount: trys,
+        requestRetries: db.requestRetrys,
+        antiServerOverloads: db.antiServerOverloads,
+        fallbackIndex,
+        fallbackCount: fallBackModels.length,
+      });
+      trys = retryDecision.retryCount;
+      if (retryDecision.delayMs > 0) await sleep(retryDecision.delayMs);
+      if (retryDecision.action === "return") return da;
+      if (retryDecision.action === "fallback") break;
     }
   }
 

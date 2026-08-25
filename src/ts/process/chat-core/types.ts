@@ -20,27 +20,42 @@ export interface ChatStreamChunk {
   [key: string]: string;
 }
 
+export interface ChatSuccessResponse {
+  type: "success";
+  result: string;
+  noRetry?: boolean;
+  special?: { emotion?: string };
+  model?: string;
+}
+
+export interface ChatFailureResponse {
+  type: "fail";
+  result: string;
+  noRetry?: boolean;
+  special?: { emotion?: string };
+  failByServerError?: boolean;
+  model?: string;
+}
+
+export interface ChatStreamingResponse {
+  type: "streaming";
+  result: ReadableStream<ChatStreamChunk>;
+  special?: { emotion?: string };
+  model?: string;
+}
+
+export interface ChatMultilineResponse {
+  type: "multiline";
+  result: ["user" | "char", string][];
+  special?: { emotion?: string };
+  model?: string;
+}
+
 export type ChatModelResponse =
-  | {
-      type: "success" | "fail";
-      result: string;
-      noRetry?: boolean;
-      special?: { emotion?: string };
-      failByServerError?: boolean;
-      model?: string;
-    }
-  | {
-      type: "streaming";
-      result: ReadableStream<ChatStreamChunk>;
-      special?: { emotion?: string };
-      model?: string;
-    }
-  | {
-      type: "multiline";
-      result: ["user" | "char", string][];
-      special?: { emotion?: string };
-      model?: string;
-    };
+  | ChatSuccessResponse
+  | ChatFailureResponse
+  | ChatStreamingResponse
+  | ChatMultilineResponse;
 
 export interface ChatStageTimings {
   stage1Start: number;
