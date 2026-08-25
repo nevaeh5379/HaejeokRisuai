@@ -12,7 +12,7 @@
     import { tokenizeAccurate, tokenizerList } from "src/ts/tokenizer";
     import ModelList from "src/lib/UI/ModelList.svelte";
     import DropList from "src/lib/SideBars/DropList.svelte";
-    import { PlusIcon, TrashIcon, HardDriveUploadIcon, DownloadIcon, UploadIcon } from "@lucide/svelte";
+    import { PlusIcon, TrashIcon, HardDriveUploadIcon, DownloadIcon, UploadIcon, KeyIcon, BotIcon, SparkleIcon, SlidersHorizontal, CpuIcon, RadioIcon, LayersIcon, ChevronDownIcon, ChevronUpIcon } from "@lucide/svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import NumberInput from "src/lib/UI/GUI/NumberInput.svelte";
     import SliderInput from "src/lib/UI/GUI/SliderInput.svelte";
@@ -134,6 +134,54 @@
 
     let usesOllamaLocal = $derived(settingsStore.state.aiModel === 'ollama-hosted' || settingsStore.state.subModel === 'ollama-hosted')
     let usesOllamaCloud = $derived(settingsStore.state.aiModel === 'ollama-cloud' || settingsStore.state.subModel === 'ollama-cloud')
+
+    let activeProviders = $derived.by(() => {
+        const set = new Set<LLMProvider>();
+        if (modelInfo?.provider !== undefined) set.add(modelInfo.provider);
+        if (subModelInfo?.provider !== undefined) set.add(subModelInfo.provider);
+        if (settingsStore.state.seperateModelsForAxModels) {
+            for (const key of ['memory', 'translate', 'emotion', 'otherAx'] as const) {
+                const mId = settingsStore.state.seperateModels[key];
+                if (mId) {
+                    const info = getModelInfo(mId);
+                    if (info?.provider !== undefined) set.add(info.provider);
+                }
+            }
+        }
+        return set;
+    });
+
+    let isProviderActive = (provider: LLMProvider) => activeProviders.has(provider);
+    let usesGoogle = $derived(isProviderActive(LLMProvider.GoogleCloud));
+    let usesVertex = $derived(isProviderActive(LLMProvider.VertexAI));
+    let usesAnthropicOrAWS = $derived(isProviderActive(LLMProvider.Anthropic) || isProviderActive(LLMProvider.AWS));
+    let usesOpenAI = $derived(isProviderActive(LLMProvider.OpenAI));
+    let usesMistral = $derived(isProviderActive(LLMProvider.Mistral));
+    let usesNovelAI = $derived(isProviderActive(LLMProvider.NovelAI));
+    let usesNovelList = $derived(isProviderActive(LLMProvider.NovelList));
+    let usesCohere = $derived(isProviderActive(LLMProvider.Cohere));
+    let usesMancer = $derived(settingsStore.state.aiModel.startsWith('mancer') || settingsStore.state.subModel.startsWith('mancer'));
+    let usesOpenRouter = $derived(settingsStore.state.aiModel === 'openrouter' || settingsStore.state.subModel === 'openrouter');
+    let usesNanoGPT = $derived(settingsStore.state.aiModel === 'nanogpt' || settingsStore.state.subModel === 'nanogpt');
+    let usesReverseProxy = $derived(settingsStore.state.aiModel === 'reverse_proxy' || settingsStore.state.subModel === 'reverse_proxy');
+    let usesHorde = $derived(settingsStore.state.aiModel.startsWith('horde') || settingsStore.state.subModel.startsWith('horde'));
+    let usesKobold = $derived(settingsStore.state.aiModel === 'kobold' || settingsStore.state.subModel === 'kobold');
+    let usesTextGen = $derived(settingsStore.state.aiModel === 'textgen_webui' || settingsStore.state.subModel === 'textgen_webui');
+    let usesOoba = $derived(settingsStore.state.aiModel === 'ooba' || settingsStore.state.subModel === 'ooba');
+    let usesCustomPlugin = $derived(settingsStore.state.aiModel === 'custom' || settingsStore.state.subModel === 'custom');
+    let usesEcho = $derived(settingsStore.state.aiModel === 'echo_model' || settingsStore.state.subModel === 'echo_model');
+    
+    let hasAnyProviderSettings = $derived(
+        usesGoogle || usesVertex || usesAnthropicOrAWS || usesOpenAI || usesMistral ||
+        usesNovelAI || usesNovelList || usesCohere || usesMancer || usesOpenRouter ||
+        usesNanoGPT || usesReverseProxy || usesHorde || usesKobold || usesTextGen ||
+        usesOoba || usesCustomPlugin || usesEcho || usesOllamaLocal || usesOllamaCloud ||
+        !!modelInfo?.keyIdentifier || !!subModelInfo?.keyIdentifier
+    );
+    import ModelBrowser from "src/lib/UI/Model/ModelBrowser.svelte";
+    let modelTab = $state<'main' | 'sub' | 'provider'>('main');
+    let auxSubTab = $state<'memory' | 'translate' | 'emotion' | 'otherAx'>('memory');
+    let openProviders = $state<Record<string, boolean>>({});
 </script>
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.chatBot}</h2>
 
@@ -163,332 +211,759 @@
 {/if}
 
 {#if submenu === 0 || submenu === -1}
-    <span class="text-textcolor mt-4">{language.model} <Help key="model"/></span>
-    <ModelList bind:value={settingsStore.state.aiModel}/>
+    <div class="flex flex-col gap-4 mt-2">
+        <!-- Submenu 0 Tabs: Main Model vs Auxiliary Model vs Provider Credentials (Slim Single Line) -->
+        <div class="flex w-full rounded-xl border border-darkborderc overflow-hidden bg-darkbg/40 p-1 gap-1">
+            <button 
+                onclick={() => { modelTab = 'main'; }}
+                class="py-1.5 px-3 flex-1 rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap {modelTab === 'main' ? 'bg-darkbutton text-textcolor shadow-sm' : 'text-textcolor2 hover:text-textcolor'}"
+            >
+                <span>{language.mainModelCardTitle || language.model}</span>
+                <Help key="model" />
+            </button>
+            <button 
+                onclick={() => { modelTab = 'sub'; }}
+                class="py-1.5 px-3 flex-1 rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap {modelTab === 'sub' ? 'bg-darkbutton text-textcolor shadow-sm' : 'text-textcolor2 hover:text-textcolor'}"
+            >
+                <span>{language.subModelCardTitle || language.submodel}</span>
+                <Help key="submodel" />
+            </button>
+            <button 
+                onclick={() => { modelTab = 'provider'; }}
+                class="py-1.5 px-3 flex-1 rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap {modelTab === 'provider' ? 'bg-darkbutton text-textcolor shadow-sm' : 'text-textcolor2 hover:text-textcolor'}"
+            >
+                <KeyIcon size={14} />
+                <span>{language.providerSettings || "API & Providers"}</span>
+            </button>
+        </div>
 
-    <span class="text-textcolor mt-2">{language.submodel} <Help key="submodel"/></span>
-    <ModelList bind:value={settingsStore.state.subModel}/>
+        {#if modelTab === 'main'}
+            <!-- Main Model Inline Browser & Quick Options -->
+            <div class="flex flex-col gap-3">
+                <ModelBrowser bind:value={settingsStore.state.aiModel} />
 
-    {#if modelInfo.provider === LLMProvider.GoogleCloud || subModelInfo.provider === LLMProvider.GoogleCloud}
-        <span class="text-textcolor">GoogleAI API Key</span>
-        <TextInput marginBottom={true} size={"sm"} placeholder="..." hideText={settingsStore.state.hideApiKey} bind:value={settingsStore.state.google.accessToken}/>
-    {/if}
-    {#if modelInfo.provider === LLMProvider.VertexAI || subModelInfo.provider === LLMProvider.VertexAI}
-        <span class="text-textcolor">Project ID</span>
-        <TextInput marginBottom={true} size={"sm"} placeholder="..." bind:value={settingsStore.state.google.projectId} oninput={clearVertexToken}/>
-        <span class="text-textcolor">Vertex Client Email</span>
-        <TextInput marginBottom={true} size={"sm"} placeholder="..." bind:value={settingsStore.state.vertexClientEmail} oninput={clearVertexToken}/>
-        <span class="text-textcolor">Vertex Private Key</span>
-        <TextInput marginBottom={true} size={"sm"} placeholder="..." hideText={settingsStore.state.hideApiKey} bind:value={settingsStore.state.vertexPrivateKey} oninput={clearVertexToken}/>
-        <span class="text-textcolor">Region</span>
-        <SelectInput value={settingsStore.state.vertexRegion} onchange={(e) => {
-            settingsStore.state.vertexRegion = e.currentTarget.value
-            clearVertexToken()
-        }}>
-            <OptionInput value={'global'}>
-                global
-            </OptionInput>
-            <OptionInput value={'us-central1'}>
-                us-central1
-            </OptionInput>
-            <OptionInput value={'us-west1'}>
-                us-west1
-            </OptionInput>
-        </SelectInput>    
-    {/if}
-    {#if modelInfo.provider === LLMProvider.NovelList || subModelInfo.provider === LLMProvider.NovelList}
-        <span class="text-textcolor">NovelList {language.apiKey}</span>
-        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={true} size={"sm"} placeholder="..." bind:value={settingsStore.state.novellistAPI}/>
-    {/if}
-    {#if settingsStore.state.aiModel.startsWith('mancer') || settingsStore.state.subModel.startsWith('mancer')}
-        <span class="text-textcolor">Mancer {language.apiKey}</span>
-        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={true} size={"sm"} placeholder="..." bind:value={settingsStore.state.mancerHeader}/>
-    {/if}
-    {#if modelInfo.provider === LLMProvider.Anthropic || subModelInfo.provider === LLMProvider.Anthropic
-            || modelInfo.provider === LLMProvider.AWS || subModelInfo.provider === LLMProvider.AWS }
-        <span class="text-textcolor">Claude {language.apiKey}</span>
-        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={true} size={"sm"} placeholder="..." bind:value={settingsStore.state.claudeAPIKey}/>
-    {/if}
-    {#if modelInfo.provider === LLMProvider.Mistral || subModelInfo.provider === LLMProvider.Mistral}
-        <span class="text-textcolor">Mistral {language.apiKey}</span>
-        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={true} size={"sm"} placeholder="..." bind:value={settingsStore.state.mistralKey}/>
-    {/if}
-    {#if modelInfo.provider === LLMProvider.NovelAI || subModelInfo.provider === LLMProvider.NovelAI}
-        <span class="text-textcolor">NovelAI Bearer Token</span>
-        <TextInput bind:value={settingsStore.state.novelai.token}/>
-    {/if}
-    {#if settingsStore.state.aiModel === 'reverse_proxy' || settingsStore.state.subModel === 'reverse_proxy'}
-        <span class="text-textcolor mt-2">URL <Help key="forceUrl"/></span>
-        <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.forceReplaceUrl} placeholder="https//..." />
-        <span class="text-textcolor mt-4"> {language.proxyAPIKey}</span>
-        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} placeholder="leave it blank if it hasn't password" bind:value={settingsStore.state.proxyKey} />
-        <span class="text-textcolor mt-4"> {language.proxyRequestModel}</span>
-        <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.customProxyRequestModel} placeholder="Name" />
-        <span class="text-textcolor mt-4"> {language.format}</span>
-        <SelectInput value={settingsStore.state.customAPIFormat.toString()} onchange={(e) => {
-            settingsStore.state.customAPIFormat = parseInt(e.currentTarget.value) as LLMFormat
-        }}>
-            <OptionInput value={LLMFormat.OpenAICompatible.toString()}>
-                OpenAI Compatible
-            </OptionInput>
-            <OptionInput value={LLMFormat.OpenAIResponseAPI.toString()}>
-                OpenAI Response API
-            </OptionInput>
-            <OptionInput value={LLMFormat.Anthropic.toString()}>
-                Anthropic Claude
-            </OptionInput>
-            <OptionInput value={LLMFormat.Mistral.toString()}>
-                Mistral
-            </OptionInput>
-            <OptionInput value={LLMFormat.GoogleCloud.toString()}>
-                Google Cloud
-            </OptionInput>
-            <OptionInput value={LLMFormat.Cohere.toString()}>
-                Cohere
-            </OptionInput>
-        </SelectInput>
-    {/if}
-    {#if modelInfo.provider === LLMProvider.Cohere || subModelInfo.provider === LLMProvider.Cohere}
-        <span class="text-textcolor mt-4">Cohere {language.apiKey}</span>
-        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.cohereAPIKey} />
-    {/if}
-    {#if usesOllamaLocal || usesOllamaCloud}
-        {#if usesOllamaLocal}
-        <span class="text-textcolor mt-4">Ollama URL</span>
-        <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaURL} />
-        {/if}
+                <!-- Main Model Options (Bottom) -->
+                <div class="flex flex-col gap-2.5 pt-3 border-t border-darkborderc/60">
+                    {#if !usesOllamaCloud && (modelInfo.flags.includes(LLMFlags.hasStreaming) || subModelInfo.flags.includes(LLMFlags.hasStreaming))}
+                        <Check bind:check={settingsStore.state.useStreaming} name={`Response ${language.streaming}`} />
+                        
+                        {#if settingsStore.state.useStreaming && (modelInfo.flags.includes(LLMFlags.geminiThinking) || subModelInfo.flags.includes(LLMFlags.geminiThinking))}
+                            <Check bind:check={settingsStore.state.streamGeminiThoughts} name={`Stream Gemini Thoughts`} />
+                        {/if}
+                    {/if}
 
-        {#if usesOllamaCloud}
-        <span class="text-textcolor mt-4">Ollama {language.model}</span>
-        <SegmentedControl
-            bind:value={settingsStore.state.ollamaInputMode}
-            options={[
-                { value: 'list', label: (language as any).nanoGPTSelectFromList || 'Select from List' },
-                { value: 'manual', label: (language as any).nanoGPTManualInput || 'Manual Input' }
-            ]}
-            size="md"
-        />
+                    {#if settingsStore.state.aiModel === 'reverse_proxy' || settingsStore.state.subModel === 'reverse_proxy'}
+                        <Check bind:check={settingsStore.state.reverseProxyOobaMode} name={`${language.reverseProxyOobaMode}`} />
+                    {/if}
 
-        {#if settingsStore.state.ollamaInputMode === 'manual'}
-            <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaCloudModel} placeholder="Model" oninput={() => settingsStore.state.ollamaCloudModelName = ''} />
-        {:else}
-            {#await getOllamaModels(settingsStore.state.ollamaURL, 'cloud', settingsStore.state.ollamaApiKey)}
-                <ModelGrid bind:value={settingsStore.state.ollamaCloudModel} loading={true} />
-            {:then cloudModels}
-                <ModelGrid
-                    bind:value={settingsStore.state.ollamaCloudModel}
-                    items={cloudModels ?? []}
-                    selectedLabelOverride={settingsStore.state.ollamaCloudModel ? `Cloud / ${settingsStore.state.ollamaCloudModelName || settingsStore.state.ollamaCloudModel}` : undefined}
-                    onselect={(_id, name) => {
-                        settingsStore.state.ollamaModelSource = 'cloud'
-                        settingsStore.state.ollamaCloudModelName = name
-                    }}
-                />
-            {/await}
-        {/if}
-
-            <span class="text-textcolor mt-4">Ollama {language.apiKey}</span>
-            <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaApiKey} />
-
-            <span class="text-textcolor mt-4">Ollama {language.format}</span>
-            <SelectInput value={settingsStore.state.ollamaRequestFormat.toString()} onchange={(e) => {
-                settingsStore.state.ollamaRequestFormat = parseInt(e.currentTarget.value) as LLMFormat
-            }}>
-                <OptionInput value={LLMFormat.Ollama.toString()}>
-                    Ollama SDK
-                </OptionInput>
-                <OptionInput value={LLMFormat.OpenAICompatible.toString()}>
-                    OpenAI Compatible
-                </OptionInput>
-                <OptionInput value={LLMFormat.OpenAIResponseAPI.toString()}>
-                    OpenAI Response API
-                </OptionInput>
-                <OptionInput value={LLMFormat.Anthropic.toString()}>
-                    Anthropic Claude
-                </OptionInput>
-            </SelectInput>
-
-            <div class="mt-2">
-                <CheckInput bind:check={settingsStore.state.useStreaming} name={`Response ${language.streaming}`} />
+                    {#if modelInfo.provider === LLMProvider.NovelAI || subModelInfo.provider === LLMProvider.NovelAI}
+                        <Check bind:check={settingsStore.state.NAIadventure} name={language.textAdventureNAI} />
+                        <Check bind:check={settingsStore.state.NAIappendName} name={language.appendNameNAI} />
+                    {/if}
+                </div>
             </div>
-        {/if}
 
-        {#if usesOllamaLocal}
-        <span class="text-textcolor mt-4">Ollama Model</span>
-        <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaModel} placeholder="Model" oninput={() => { settingsStore.state.ollamaModelSource = 'local'; settingsStore.state.ollamaModelName = '' }} />
-        {/if}
+        {:else if modelTab === 'sub'}
+            <!-- Auxiliary Model Section -->
+            <div class="flex flex-col gap-3">
+                <div class="flex items-center justify-between pb-1">
+                    <Check bind:check={settingsStore.state.seperateModelsForAxModels} name={language.seperateModelsForAxModels} />
+                </div>
 
-        {#if usesOllamaLocal || (usesOllamaCloud && settingsStore.state.ollamaRequestFormat === LLMFormat.Ollama)}
-        <span class="text-textcolor mt-4">Ollama Thinking</span>
-        <SelectInput bind:value={settingsStore.state.ollamaThinkingMode}>
-            <OptionInput value="auto">
-                Auto
-            </OptionInput>
-            <OptionInput value="off">
-                Off
-            </OptionInput>
-            <OptionInput value="on">
-                On
-            </OptionInput>
-            <OptionInput value="low">
-                Low
-            </OptionInput>
-            <OptionInput value="medium">
-                Medium
-            </OptionInput>
-            <OptionInput value="high">
-                High
-            </OptionInput>
-        </SelectInput>
-        {/if}
-    {/if}
-    {#if settingsStore.state.aiModel === 'nanogpt' || settingsStore.state.subModel === 'nanogpt'}
-        <span class="text-textcolor mt-4">NanoGPT {language.apiKey}</span>
-        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.nanogptKey} />
+                {#if !settingsStore.state.seperateModelsForAxModels}
+                    <ModelBrowser bind:value={settingsStore.state.subModel} blankable />
+                {:else}
+                    <div class="flex items-center mb-1">
+                        <Check bind:check={settingsStore.state.doNotChangeSeperateModels} name={language.doNotChangeSeperateModels} />
+                    </div>
 
-        <NanoGPTDashboard apiKey={settingsStore.state.nanogptKey} />
+                    <!-- Aux feature sub-tabs -->
+                    <div class="flex w-full rounded-xl border border-darkborderc overflow-hidden bg-darkbg/40 p-1 gap-1">
+                        <button 
+                            onclick={() => { auxSubTab = 'memory'; }}
+                            class="py-1.5 px-3 flex-1 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 {auxSubTab === 'memory' ? 'bg-darkbutton text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
+                        >
+                            <span>Memory</span>
+                        </button>
+                        <button 
+                            onclick={() => { auxSubTab = 'translate'; }}
+                            class="py-1.5 px-3 flex-1 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 {auxSubTab === 'translate' ? 'bg-darkbutton text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
+                        >
+                            <span>Translations</span>
+                        </button>
+                        <button 
+                            onclick={() => { auxSubTab = 'emotion'; }}
+                            class="py-1.5 px-3 flex-1 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 {auxSubTab === 'emotion' ? 'bg-darkbutton text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
+                        >
+                            <span>Emotion</span>
+                        </button>
+                        <button 
+                            onclick={() => { auxSubTab = 'otherAx'; }}
+                            class="py-1.5 px-3 flex-1 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 {auxSubTab === 'otherAx' ? 'bg-darkbutton text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
+                        >
+                            <span>OtherAux</span>
+                        </button>
+                    </div>
 
-        {#if settingsStore.state.nanogptSubscriptionState === 'active' || settingsStore.state.nanogptSubscriptionState === 'grace'}
-            <div class="flex items-center mt-3">
-                <CheckInput bind:check={settingsStore.state.nanogptUseSubscriptionEndpoint} name={language.nanoGPTUseSubscriptionEndpoint} />
-            </div>
-        {/if}
-
-        <span class="text-textcolor mt-4">NanoGPT {language.model}</span>
-        <SegmentedControl
-            bind:value={nanogptInputMode}
-            options={[
-                { value: 'list', label: (language as any).nanoGPTSelectFromList || 'Select from List' },
-                { value: 'manual', label: (language as any).nanoGPTManualInput || 'Manual Input' }
-            ]}
-            size="md"
-        />
-
-        {#if nanogptInputMode === 'manual'}
-            <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.nanogptRequestModel} placeholder={(language as any).nanoGPTManualModelSelect || "Manual Model Select"} oninput={() => settingsStore.state.nanogptRequestModelName = ''}/>
-        {:else}
-            {#await Promise.all([getNanoGPTModels(), getNanoGPTSubscriptionModels(settingsStore.state.nanogptKey)])}
-                <ModelGrid bind:value={settingsStore.state.nanogptRequestModel} loading={true} />
-            {:then [regular, sub]}
-                <ModelGrid
-                    bind:value={settingsStore.state.nanogptRequestModel}
-                    items={settingsStore.state.nanogptUseSubscriptionEndpoint ? (sub ?? []).map(ngToGridItem) : (regular ?? []).map(ngToGridItem)}
-                    showSubBadge={settingsStore.state.nanogptUseSubscriptionEndpoint}
-                    selectedLabelOverride={settingsStore.state.nanogptRequestModel && !settingsStore.state.nanogptRequestModelName ? settingsStore.state.nanogptRequestModel : undefined}
-                    onselect={(_id, name) => { settingsStore.state.nanogptRequestModelName = name }}
-                />
-                {#if !settingsStore.state.nanogptUseSubscriptionEndpoint}
-                    <NanoGPTProviderPicker
-                        apiKey={settingsStore.state.nanogptKey}
-                        modelId={settingsStore.state.nanogptRequestModel}
-                        bind:value={settingsStore.state.nanogptProvider}
-                    />
+                    <!-- Inline Browser for current aux sub-tab -->
+                    {#if auxSubTab === 'memory'}
+                        <ModelBrowser bind:value={settingsStore.state.seperateModels.memory} blankable />
+                    {:else if auxSubTab === 'translate'}
+                        <ModelBrowser bind:value={settingsStore.state.seperateModels.translate} blankable />
+                    {:else if auxSubTab === 'emotion'}
+                        <ModelBrowser bind:value={settingsStore.state.seperateModels.emotion} blankable />
+                    {:else if auxSubTab === 'otherAx'}
+                        <ModelBrowser bind:value={settingsStore.state.seperateModels.otherAx} blankable />
+                    {/if}
                 {/if}
-            {/await}
-        {/if}
-    {/if}
-    {#if settingsStore.state.aiModel === 'openrouter' || settingsStore.state.subModel === 'openrouter'}
-        <span class="text-textcolor mt-4">OpenRouter {language.apiKey}</span>
-        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.openrouterKey} />
+            </div>
 
-        <span class="text-textcolor mt-4">OpenRouter {language.model}</span>
-        {#await getOpenRouterModels()}
-            <ModelGrid bind:value={settingsStore.state.openrouterRequestModel} pinnedItems={openrouterPinnedItems} loading={true} />
-        {:then m}
-            <ModelGrid bind:value={settingsStore.state.openrouterRequestModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
-        {/await}
-    {/if}
-    {#if settingsStore.state.aiModel === 'openrouter' || settingsStore.state.aiModel === 'reverse_proxy'}
-        <span class="text-textcolor">{language.tokenizer}</span>
-        <SelectInput bind:value={settingsStore.state.customTokenizer}>
-            {#each tokenizerList as entry}
-                <OptionInput value={entry[0]}>{entry[1]}</OptionInput>
-            {/each}
-        </SelectInput>
-    {/if}
-    {#if modelInfo.provider === LLMProvider.OpenAI || subModelInfo.provider === LLMProvider.OpenAI}
-        <span class="text-textcolor">OpenAI {language.apiKey} <Help key="oaiapikey"/></span>
-        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.openAIKey} placeholder="sk-XXXXXXXXXXXXXXXXXXXX"/>
-    {/if}
+        {:else if modelTab === 'provider'}
+            <!-- Dedicated Provider Credentials & Settings Section (Collapsible Accordions) -->
+            <div class="flex flex-col gap-3">
+                <!-- Accordion Global Actions -->
+                <div class="flex items-center justify-between pb-1 border-b border-darkborderc/60 text-xs">
+                    <span class="text-textcolor2 font-medium">Click any provider to configure its API Key & options</span>
+                    <div class="flex items-center gap-2">
+                        <button 
+                            class="px-2 py-1 rounded bg-darkbutton hover:bg-darkbutton/80 text-textcolor text-xs font-medium"
+                            onclick={() => {
+                                const allKeys = ['google', 'vertex', 'openai', 'anthropic', 'openrouter', 'nanogpt', 'ollama', 'proxy', 'mistral', 'cohere', 'novelai', 'novellist', 'mancer', 'horde', 'kobold', 'textgen', 'ooba', 'plugin', 'echo'];
+                                const allOpen = allKeys.every(k => openProviders[k]);
+                                for (const k of allKeys) openProviders[k] = !allOpen;
+                            }}
+                        >
+                            Toggle All
+                        </button>
+                    </div>
+                </div>
 
-    {#if modelInfo.keyIdentifier}
-        <span class="text-textcolor">{modelInfo.name} {language.apiKey}</span>
-        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.OaiCompAPIKeys[modelInfo.keyIdentifier]} placeholder="..."/>
-    {/if}
+                <div class="flex flex-col gap-2.5">
+                    <!-- Google AI Studio -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['google'] = !openProviders['google']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">Google AI Studio</span>
+                                {#if usesGoogle}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['google']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['google'] || (openProviders['google'] === undefined && usesGoogle)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">API Key</span>
+                                <TextInput marginBottom={false} size={"sm"} placeholder="AIza..." hideText={settingsStore.state.hideApiKey} bind:value={settingsStore.state.google.accessToken} />
+                            </div>
+                        {/if}
+                    </div>
 
-    {#if subModelInfo.keyIdentifier && subModelInfo.keyIdentifier !== modelInfo.keyIdentifier}
-        <span class="text-textcolor">{subModelInfo.name} {language.apiKey}</span>
-        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.OaiCompAPIKeys[subModelInfo.keyIdentifier]} placeholder="..."/>
-    {/if}
+                    <!-- Google Cloud Vertex AI -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['vertex'] = !openProviders['vertex']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">Google Cloud Vertex AI</span>
+                                {#if usesVertex}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['vertex']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['vertex'] || (openProviders['vertex'] === undefined && usesVertex)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">Project ID</span>
+                                <TextInput marginBottom={false} size={"sm"} placeholder="..." bind:value={settingsStore.state.google.projectId} oninput={clearVertexToken} />
+                                
+                                <span class="text-xs text-textcolor2">Vertex Client Email</span>
+                                <TextInput marginBottom={false} size={"sm"} placeholder="..." bind:value={settingsStore.state.vertexClientEmail} oninput={clearVertexToken} />
+                                
+                                <span class="text-xs text-textcolor2">Vertex Private Key</span>
+                                <TextInput marginBottom={false} size={"sm"} placeholder="..." hideText={settingsStore.state.hideApiKey} bind:value={settingsStore.state.vertexPrivateKey} oninput={clearVertexToken} />
+                                
+                                <span class="text-xs text-textcolor2">Region</span>
+                                <SelectInput value={settingsStore.state.vertexRegion} onchange={(e) => {
+                                    settingsStore.state.vertexRegion = e.currentTarget.value;
+                                    clearVertexToken();
+                                }}>
+                                    <OptionInput value={'global'}>global</OptionInput>
+                                    <OptionInput value={'us-central1'}>us-central1</OptionInput>
+                                    <OptionInput value={'us-west1'}>us-west1</OptionInput>
+                                </SelectInput>
+                            </div>
+                        {/if}
+                    </div>
 
-    <div class="py-2 flex flex-col gap-2 mb-4">
-        {#if !usesOllamaCloud && (modelInfo.flags.includes(LLMFlags.hasStreaming) || subModelInfo.flags.includes(LLMFlags.hasStreaming))}
-            <Check bind:check={settingsStore.state.useStreaming} name={`Response ${language.streaming}`}/>
-            
-            {#if settingsStore.state.useStreaming && (modelInfo.flags.includes(LLMFlags.geminiThinking) || subModelInfo.flags.includes(LLMFlags.geminiThinking))}
-                <Check bind:check={settingsStore.state.streamGeminiThoughts} name={`Stream Gemini Thoughts`}/>
-            {/if}
-        {/if}
+                    <!-- OpenAI -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['openai'] = !openProviders['openai']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">OpenAI</span>
+                                {#if usesOpenAI}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['openai']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['openai'] || (openProviders['openai'] === undefined && usesOpenAI)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">OpenAI {language.apiKey} <Help key="oaiapikey"/></span>
+                                <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.openAIKey} placeholder="sk-..." />
+                            </div>
+                        {/if}
+                    </div>
 
-        {#if settingsStore.state.aiModel === 'reverse_proxy' || settingsStore.state.subModel === 'reverse_proxy'}
-            <Check bind:check={settingsStore.state.reverseProxyOobaMode} name={`${language.reverseProxyOobaMode}`}/>
-        {/if}
-        {#if modelInfo.provider === LLMProvider.NovelAI || subModelInfo.provider === LLMProvider.NovelAI}
-            <Check bind:check={settingsStore.state.NAIadventure} name={language.textAdventureNAI}/>
+                    <!-- Anthropic Claude / AWS Bedrock -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['anthropic'] = !openProviders['anthropic']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">Anthropic Claude</span>
+                                {#if usesAnthropicOrAWS}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['anthropic']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['anthropic'] || (openProviders['anthropic'] === undefined && usesAnthropicOrAWS)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">Claude {language.apiKey}</span>
+                                <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} placeholder="sk-ant-..." bind:value={settingsStore.state.claudeAPIKey} />
+                            </div>
+                        {/if}
+                    </div>
 
-            <Check bind:check={settingsStore.state.NAIappendName} name={language.appendNameNAI}/>
+                    <!-- OpenRouter -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['openrouter'] = !openProviders['openrouter']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">OpenRouter</span>
+                                {#if usesOpenRouter}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['openrouter']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['openrouter'] || (openProviders['openrouter'] === undefined && usesOpenRouter)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">OpenRouter {language.apiKey}</span>
+                                <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.openrouterKey} />
+
+                                <span class="text-xs text-textcolor2 mt-1">{language.tokenizer}</span>
+                                <SelectInput bind:value={settingsStore.state.customTokenizer}>
+                                    {#each tokenizerList as entry}
+                                        <OptionInput value={entry[0]}>{entry[1]}</OptionInput>
+                                    {/each}
+                                </SelectInput>
+
+                                <span class="text-xs text-textcolor2 mt-1">OpenRouter {language.model}</span>
+                                {#await getOpenRouterModels()}
+                                    <ModelGrid bind:value={settingsStore.state.openrouterRequestModel} pinnedItems={openrouterPinnedItems} loading={true} />
+                                {:then m}
+                                    <ModelGrid bind:value={settingsStore.state.openrouterRequestModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
+                                {/await}
+                            </div>
+                        {/if}
+                    </div>
+
+                    <!-- NanoGPT -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['nanogpt'] = !openProviders['nanogpt']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">NanoGPT</span>
+                                {#if usesNanoGPT}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['nanogpt']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['nanogpt'] || (openProviders['nanogpt'] === undefined && usesNanoGPT)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">NanoGPT {language.apiKey}</span>
+                                <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.nanogptKey} />
+
+                                <NanoGPTDashboard apiKey={settingsStore.state.nanogptKey} />
+
+                                {#if settingsStore.state.nanogptSubscriptionState === 'active' || settingsStore.state.nanogptSubscriptionState === 'grace'}
+                                    <div class="flex items-center">
+                                        <CheckInput bind:check={settingsStore.state.nanogptUseSubscriptionEndpoint} name={language.nanoGPTUseSubscriptionEndpoint} />
+                                    </div>
+                                {/if}
+
+                                <span class="text-xs text-textcolor2 mt-1">NanoGPT {language.model}</span>
+                                <SegmentedControl
+                                    bind:value={nanogptInputMode}
+                                    options={[
+                                        { value: 'list', label: (language as any).nanoGPTSelectFromList || 'Select from List' },
+                                        { value: 'manual', label: (language as any).nanoGPTManualInput || 'Manual Input' }
+                                    ]}
+                                    size="md"
+                                />
+
+                                {#if nanogptInputMode === 'manual'}
+                                    <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.nanogptRequestModel} placeholder={(language as any).nanoGPTManualModelSelect || "Manual Model Select"} oninput={() => settingsStore.state.nanogptRequestModelName = ''}/>
+                                {:else}
+                                    {#await Promise.all([getNanoGPTModels(), getNanoGPTSubscriptionModels(settingsStore.state.nanogptKey)])}
+                                        <ModelGrid bind:value={settingsStore.state.nanogptRequestModel} loading={true} />
+                                    {:then [regular, sub]}
+                                        <ModelGrid
+                                            bind:value={settingsStore.state.nanogptRequestModel}
+                                            items={settingsStore.state.nanogptUseSubscriptionEndpoint ? (sub ?? []).map(ngToGridItem) : (regular ?? []).map(ngToGridItem)}
+                                            showSubBadge={settingsStore.state.nanogptUseSubscriptionEndpoint}
+                                            selectedLabelOverride={settingsStore.state.nanogptRequestModel && !settingsStore.state.nanogptRequestModelName ? settingsStore.state.nanogptRequestModel : undefined}
+                                            onselect={(_id, name) => { settingsStore.state.nanogptRequestModelName = name }}
+                                        />
+                                        {#if !settingsStore.state.nanogptUseSubscriptionEndpoint}
+                                            <NanoGPTProviderPicker
+                                                apiKey={settingsStore.state.nanogptKey}
+                                                modelId={settingsStore.state.nanogptRequestModel}
+                                                bind:value={settingsStore.state.nanogptProvider}
+                                            />
+                                        {/if}
+                                    {/await}
+                                {/if}
+                            </div>
+                        {/if}
+                    </div>
+
+                    <!-- Ollama -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['ollama'] = !openProviders['ollama']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">Ollama</span>
+                                {#if usesOllamaLocal || usesOllamaCloud}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['ollama']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['ollama'] || (openProviders['ollama'] === undefined && (usesOllamaLocal || usesOllamaCloud))}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">Ollama URL</span>
+                                <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaURL} />
+                                
+                                <span class="text-xs text-textcolor2 mt-1">Ollama Model</span>
+                                <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaModel} placeholder="Model" oninput={() => { settingsStore.state.ollamaModelSource = 'local'; settingsStore.state.ollamaModelName = '' }} />
+
+                                <span class="text-xs text-textcolor2 mt-1">Ollama Cloud / Remote</span>
+                                <SegmentedControl
+                                    bind:value={settingsStore.state.ollamaInputMode}
+                                    options={[
+                                        { value: 'list', label: (language as any).nanoGPTSelectFromList || 'Select from List' },
+                                        { value: 'manual', label: (language as any).nanoGPTManualInput || 'Manual Input' }
+                                    ]}
+                                    size="md"
+                                />
+
+                                {#if settingsStore.state.ollamaInputMode === 'manual'}
+                                    <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaCloudModel} placeholder="Model" oninput={() => settingsStore.state.ollamaCloudModelName = ''} />
+                                {:else}
+                                    {#await getOllamaModels(settingsStore.state.ollamaURL, 'cloud', settingsStore.state.ollamaApiKey)}
+                                        <ModelGrid bind:value={settingsStore.state.ollamaCloudModel} loading={true} />
+                                    {:then cloudModels}
+                                        <ModelGrid
+                                            bind:value={settingsStore.state.ollamaCloudModel}
+                                            items={cloudModels ?? []}
+                                            selectedLabelOverride={settingsStore.state.ollamaCloudModel ? `Cloud / ${settingsStore.state.ollamaCloudModelName || settingsStore.state.ollamaCloudModel}` : undefined}
+                                            onselect={(_id, name) => {
+                                                settingsStore.state.ollamaModelSource = 'cloud'
+                                                settingsStore.state.ollamaCloudModelName = name
+                                            }}
+                                        />
+                                    {/await}
+                                {/if}
+
+                                <span class="text-xs text-textcolor2 mt-1">Ollama {language.apiKey}</span>
+                                <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaApiKey} />
+
+                                <span class="text-xs text-textcolor2 mt-1">Ollama {language.format}</span>
+                                <SelectInput value={settingsStore.state.ollamaRequestFormat.toString()} onchange={(e) => {
+                                    settingsStore.state.ollamaRequestFormat = parseInt(e.currentTarget.value) as LLMFormat
+                                }}>
+                                    <OptionInput value={LLMFormat.Ollama.toString()}>Ollama SDK</OptionInput>
+                                    <OptionInput value={LLMFormat.OpenAICompatible.toString()}>OpenAI Compatible</OptionInput>
+                                    <OptionInput value={LLMFormat.OpenAIResponseAPI.toString()}>OpenAI Response API</OptionInput>
+                                    <OptionInput value={LLMFormat.Anthropic.toString()}>Anthropic Claude</OptionInput>
+                                </SelectInput>
+
+                                <span class="text-xs text-textcolor2 mt-1">Ollama Thinking</span>
+                                <SelectInput bind:value={settingsStore.state.ollamaThinkingMode}>
+                                    <OptionInput value="auto">Auto</OptionInput>
+                                    <OptionInput value="off">Off</OptionInput>
+                                    <OptionInput value="on">On</OptionInput>
+                                    <OptionInput value="low">Low</OptionInput>
+                                    <OptionInput value="medium">Medium</OptionInput>
+                                    <OptionInput value="high">High</OptionInput>
+                                </SelectInput>
+                            </div>
+                        {/if}
+                    </div>
+
+                    <!-- Reverse Proxy -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['proxy'] = !openProviders['proxy']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">Reverse Proxy</span>
+                                {#if usesReverseProxy}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['proxy']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['proxy'] || (openProviders['proxy'] === undefined && usesReverseProxy)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">URL <Help key="forceUrl"/></span>
+                                <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.forceReplaceUrl} placeholder="https://..." />
+                                
+                                <span class="text-xs text-textcolor2 mt-1">{language.proxyAPIKey}</span>
+                                <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} placeholder="leave blank if none" bind:value={settingsStore.state.proxyKey} />
+                                
+                                <span class="text-xs text-textcolor2 mt-1">{language.proxyRequestModel}</span>
+                                <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.customProxyRequestModel} placeholder="Model Name" />
+                                
+                                <span class="text-xs text-textcolor2 mt-1">{language.format}</span>
+                                <SelectInput value={settingsStore.state.customAPIFormat.toString()} onchange={(e) => {
+                                    settingsStore.state.customAPIFormat = parseInt(e.currentTarget.value) as LLMFormat
+                                }}>
+                                    <OptionInput value={LLMFormat.OpenAICompatible.toString()}>OpenAI Compatible</OptionInput>
+                                    <OptionInput value={LLMFormat.OpenAIResponseAPI.toString()}>OpenAI Response API</OptionInput>
+                                    <OptionInput value={LLMFormat.Anthropic.toString()}>Anthropic Claude</OptionInput>
+                                    <OptionInput value={LLMFormat.Mistral.toString()}>Mistral</OptionInput>
+                                    <OptionInput value={LLMFormat.GoogleCloud.toString()}>Google Cloud</OptionInput>
+                                    <OptionInput value={LLMFormat.Cohere.toString()}>Cohere</OptionInput>
+                                </SelectInput>
+
+                                <span class="text-xs text-textcolor2 mt-1">{language.tokenizer}</span>
+                                <SelectInput bind:value={settingsStore.state.customTokenizer}>
+                                    {#each tokenizerList as entry}
+                                        <OptionInput value={entry[0]}>{entry[1]}</OptionInput>
+                                    {/each}
+                                </SelectInput>
+                            </div>
+                        {/if}
+                    </div>
+
+                    <!-- Mistral AI -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['mistral'] = !openProviders['mistral']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">Mistral AI</span>
+                                {#if usesMistral}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['mistral']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['mistral'] || (openProviders['mistral'] === undefined && usesMistral)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">Mistral {language.apiKey}</span>
+                                <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} placeholder="..." bind:value={settingsStore.state.mistralKey} />
+                            </div>
+                        {/if}
+                    </div>
+
+                    <!-- Cohere -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['cohere'] = !openProviders['cohere']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">Cohere</span>
+                                {#if usesCohere}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['cohere']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['cohere'] || (openProviders['cohere'] === undefined && usesCohere)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">Cohere {language.apiKey}</span>
+                                <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.cohereAPIKey} />
+                            </div>
+                        {/if}
+                    </div>
+
+                    <!-- NovelAI -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['novelai'] = !openProviders['novelai']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">NovelAI</span>
+                                {#if usesNovelAI}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['novelai']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['novelai'] || (openProviders['novelai'] === undefined && usesNovelAI)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">NovelAI Bearer Token</span>
+                                <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.novelai.token} />
+                            </div>
+                        {/if}
+                    </div>
+
+                    <!-- NovelList -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['novellist'] = !openProviders['novellist']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">NovelList</span>
+                                {#if usesNovelList}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['novellist']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['novellist'] || (openProviders['novellist'] === undefined && usesNovelList)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">NovelList {language.apiKey}</span>
+                                <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} placeholder="..." bind:value={settingsStore.state.novellistAPI} />
+                            </div>
+                        {/if}
+                    </div>
+
+                    <!-- Mancer -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['mancer'] = !openProviders['mancer']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">Mancer</span>
+                                {#if usesMancer}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['mancer']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['mancer'] || (openProviders['mancer'] === undefined && usesMancer)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">Mancer {language.apiKey}</span>
+                                <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} placeholder="..." bind:value={settingsStore.state.mancerHeader} />
+                            </div>
+                        {/if}
+                    </div>
+
+                    <!-- AI Horde -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['horde'] = !openProviders['horde']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">AI Horde</span>
+                                {#if usesHorde}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['horde']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['horde'] || (openProviders['horde'] === undefined && usesHorde)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">Horde {language.apiKey}</span>
+                                <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.hordeConfig.apiKey} />
+                                <ChatFormatSettings />
+                            </div>
+                        {/if}
+                    </div>
+
+                    <!-- Kobold -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['kobold'] = !openProviders['kobold']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">Kobold</span>
+                                {#if usesKobold}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['kobold']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['kobold'] || (openProviders['kobold'] === undefined && usesKobold)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">Kobold URL</span>
+                                <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.koboldURL} />
+                                <ChatFormatSettings />
+                            </div>
+                        {/if}
+                    </div>
+
+                    <!-- TextGen WebUI -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['textgen'] = !openProviders['textgen']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">TextGen WebUI</span>
+                                {#if usesTextGen}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['textgen']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['textgen'] || (openProviders['textgen'] === undefined && usesTextGen)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">Blocking {language.providerURL}</span>
+                                <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.textgenWebUIBlockingURL} placeholder="https://..." />
+                                <span class="text-draculared text-xs">You must use textgen webui with --public-api</span>
+                                
+                                <span class="text-xs text-textcolor2 mt-1">Stream {language.providerURL}</span>
+                                <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.textgenWebUIStreamURL} placeholder="wss://..." />
+                                {#if !isTauri}
+                                    <span class="text-draculared text-xs">You are using web version. You must use ngrok or tunnels for local WebUI.</span>
+                                {/if}
+                                <span class="text-draculared text-xs">Warning: For Ooba version over 1.7, use "Ooba" as model, and use url like http://127.0.0.1:5000/v1/chat/completions</span>
+                            </div>
+                        {/if}
+                    </div>
+
+                    <!-- Ooba -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['ooba'] = !openProviders['ooba']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">Ooba</span>
+                                {#if usesOoba}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['ooba']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['ooba'] || (openProviders['ooba'] === undefined && usesOoba)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">Ooba {language.providerURL}</span>
+                                <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.textgenWebUIBlockingURL} placeholder="https://..." />
+                            </div>
+                        {/if}
+                    </div>
+
+                    <!-- Custom Plugin Provider -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['plugin'] = !openProviders['plugin']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">{language.plugin}</span>
+                                {#if usesCustomPlugin}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['plugin']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['plugin'] || (openProviders['plugin'] === undefined && usesCustomPlugin)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <SelectInput bind:value={settingsStore.state.currentPluginProvider}>
+                                    <OptionInput value="">None</OptionInput>
+                                    {#each $customProviderStore as plugin}
+                                        <OptionInput value={plugin}>{plugin}</OptionInput>
+                                    {/each}
+                                </SelectInput>
+                            </div>
+                        {/if}
+                    </div>
+
+                    <!-- Echo Model -->
+                    <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                        <button 
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
+                            onclick={() => { openProviders['echo'] = !openProviders['echo']; }}
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-textcolor">Echo Model</span>
+                                {#if usesEcho}
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                {/if}
+                            </div>
+                            <span class="text-textcolor2">
+                                {#if openProviders['echo']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                            </span>
+                        </button>
+                        {#if openProviders['echo'] || (openProviders['echo'] === undefined && usesEcho)}
+                            <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                <span class="text-xs text-textcolor2">Echo Message</span>
+                                <TextAreaInput bind:value={settingsStore.state.echoMessage} placeholder={"The message you want to receive as the bot's response\n(e.g., Lumi tilts her head, her white hair sliding down as her pretty green and aqua eyes sparkle…)"} />
+                                <span class="text-xs text-textcolor2 mt-1">Echo Delay (Seconds)</span>
+                                <NumberInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.echoDelay} min={0} />
+                            </div>
+                        {/if}
+                    </div>
+                </div>
+            </div>
         {/if}
     </div>
-
-    {#if settingsStore.state.aiModel === 'custom' || settingsStore.state.subModel === 'custom'}
-        <span class="text-textcolor mt-2">{language.plugin}</span>
-        <SelectInput className="mt-2 mb-4" bind:value={settingsStore.state.currentPluginProvider}>
-            <OptionInput value="">None</OptionInput>
-            {#each $customProviderStore as plugin}
-                <OptionInput value={plugin}>{plugin}</OptionInput>
-            {/each}
-        </SelectInput>
-    {/if}
-
-    {#if settingsStore.state.aiModel === "kobold" || settingsStore.state.subModel === "kobold"}
-        <span class="text-textcolor">Kobold URL</span>
-        <TextInput marginBottom={true} bind:value={settingsStore.state.koboldURL} />
-    {/if}
-
-    {#if settingsStore.state.aiModel === 'echo_model' || settingsStore.state.subModel === 'echo_model'}
-        <span class="text-textcolor mt-2">Echo Message</span>
-        <TextAreaInput margin="bottom" bind:value={settingsStore.state.echoMessage} placeholder={"The message you want to receive as the bot's response\n(e.g., Lumi tilts her head, her white hair sliding down as her pretty green and aqua eyes sparkle…)"}/>
-        <span class="text-textcolor mt-2">Echo Delay (Seconds)</span>
-        <NumberInput marginBottom={true} bind:value={settingsStore.state.echoDelay} min={0}/>
-    {/if}
-
-    {#if settingsStore.state.aiModel.startsWith("horde") || settingsStore.state.subModel.startsWith("horde") }
-        <span class="text-textcolor">Horde {language.apiKey}</span>
-        <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={true} bind:value={settingsStore.state.hordeConfig.apiKey} />
-    {/if}
-    {#if settingsStore.state.aiModel === 'textgen_webui' || settingsStore.state.subModel === 'textgen_webui'
-        || settingsStore.state.aiModel === 'mancer' || settingsStore.state.subModel === 'mancer'}
-        <span class="text-textcolor mt-2">Blocking {language.providerURL}</span>
-        <TextInput marginBottom={true} bind:value={settingsStore.state.textgenWebUIBlockingURL} placeholder="https://..."/>
-        <span class="text-draculared text-xs mb-2">You must use textgen webui with --public-api</span>
-        <span class="text-textcolor mt-2">Stream {language.providerURL}</span>
-        <TextInput marginBottom={true} bind:value={settingsStore.state.textgenWebUIStreamURL} placeholder="wss://..."/>
-        {#if !isTauri}
-            <span class="text-draculared text-xs mb-2">You are using web version. you must use ngrok or other tunnels to use your local webui.</span>
-        {/if}
-        <span class="text-draculared text-xs mb-2">Warning: For Ooba version over 1.7, use "Ooba" as model, and use url like http://127.0.0.1:5000/v1/chat/completions</span>
-    {/if}
-    {#if settingsStore.state.aiModel === 'ooba' || settingsStore.state.subModel === 'ooba'}
-        <span class="text-textcolor mt-2">Ooba {language.providerURL}</span>
-        <TextInput marginBottom={true} bind:value={settingsStore.state.textgenWebUIBlockingURL} placeholder="https://..."/>
-    {/if}
-    {#if settingsStore.state.aiModel.startsWith("horde") || settingsStore.state.aiModel === 'kobold' }
-        <ChatFormatSettings />
-    {/if}
-
-    {#if settingsStore.state.auxModelUnderModelSettings}
-        <AuxModelSelectors />
-    {/if}
 {/if}
 
 {#if submenu === 1 || submenu === -1}

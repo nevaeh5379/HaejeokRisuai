@@ -10,7 +10,7 @@
     import TextInput from '../UI/GUI/TextInput.svelte';
     import { aiLawApplies, openURL, getFetchLogs } from 'src/ts/globalApi.svelte';
     import Button from '../UI/GUI/Button.svelte';
-    import { XIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon, CheckIcon } from "@lucide/svelte";
+    import { XIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon, CheckIcon, SparkleIcon, InfoIcon } from "@lucide/svelte";
     import hljs from 'highlight.js/lib/core';
     import json from 'highlight.js/lib/languages/json';
     import SelectInput from "../UI/GUI/SelectInput.svelte";
@@ -187,8 +187,8 @@
 
 
 {#if $alertStore.type !== 'none' &&  $alertStore.type !== 'toast' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs'}
-    <div class="fixed inset-0 z-[1000] bg-black/50 flex justify-center items-center" class:vis={ $alertStore.type === 'wait2'}>
-        <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl  max-h-full overflow-y-auto">
+    <div class="fixed inset-0 z-[1000] bg-black/50 flex justify-center items-center p-3" class:vis={ $alertStore.type === 'wait2'}>
+        <div class="bg-darkbg p-4 break-any rounded-2xl flex flex-col {$alertStore.mascot === 'help' ? 'w-full max-w-lg shadow-2xl border border-darkborderc' : 'max-w-3xl max-h-full'} overflow-y-auto">
             {#if $alertStore.type === 'error'}
                 <div class="mb-3 flex items-center gap-3 border-b border-draculared/20 pb-3">
                     <AirisuMascot variant="error" className="h-20 w-20 shrink-0 drop-shadow-md" />
@@ -205,17 +205,29 @@
             {/if}
             {#if $alertStore.type === 'markdown'}
                 {#if $alertStore.mascot === 'help'}
-                    <div class="mb-3 flex justify-center border-b border-darkborderc/60 pb-3">
-                        <AirisuMascot variant="help" className="h-28 w-28 drop-shadow-md" />
+                    <div class="flex items-center gap-3.5 py-1">
+                        <AirisuMascot variant="help" className="h-20 w-20 shrink-0 drop-shadow-md" />
+                        <div class="overflow-y-auto max-h-[60vh] flex-1 bg-darkbutton/40 p-3 rounded-xl border border-darkborderc/50 flex flex-col justify-center gap-1">
+                            <div class="flex items-center gap-1 text-[11px] font-bold text-textcolor2 uppercase tracking-wider">
+                                <SparkleIcon size={12} />
+                                <span>{language.showHelp || "Help"}</span>
+                            </div>
+                            <span class="text-textcolor chattext prose chattext2 text-sm leading-relaxed" class:prose-invert={$ColorSchemeTypeStore}>
+                                {#await ParseMarkdown($alertStore.msg) then msg}
+                                    {@html msg}                        
+                                {/await}
+                            </span>
+                        </div>
+                    </div>
+                {:else}
+                    <div class="overflow-y-auto">
+                        <span class="text-gray-300 chattext prose chattext2" class:prose-invert={$ColorSchemeTypeStore}>
+                            {#await ParseMarkdown($alertStore.msg) then msg}
+                                {@html msg}                        
+                            {/await}
+                        </span>
                     </div>
                 {/if}
-                <div class="overflow-y-auto">
-                    <span class="text-gray-300 chattext prose chattext2" class:prose-invert={$ColorSchemeTypeStore}>
-                        {#await ParseMarkdown($alertStore.msg) then msg}
-                            {@html msg}                        
-                        {/await}
-                    </span>
-                </div>
             {:else if $alertStore.type === 'tos' || $alertStore.type === 'risu-tos'}
                 <!-- svelte-ignore a11y_missing_attribute -->
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -387,7 +399,7 @@
                     {/each}
                 {/if}
             {:else if $alertStore.type === 'error' || $alertStore.type === 'normal' || $alertStore.type === 'markdown'}
-               <Button className="mt-4" onclick={() => {
+               <Button className={$alertStore.mascot === 'help' ? "mt-2.5 py-1.5 font-bold" : "mt-4"} onclick={() => {
                     alertStore.set({
                         type: 'none',
                         msg: ''
