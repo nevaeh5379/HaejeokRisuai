@@ -1,120 +1,31 @@
-export type AssetStorageType = "fs" | "s3" | "azuresql";
-
-export interface NodeS3ServerConfig {
-  enabled: boolean;
-  storageType: AssetStorageType;
-  endpoint: string;
-  bucket: string;
-  region: string;
-  forcePathStyle: boolean;
-  autoCreateBucket: boolean;
-  accessKeyId: string;
-  hasSecretAccessKey: boolean;
-  accessKeyDisplay: string;
-  managedByEnvironment: boolean;
-  // Azure SQL asset storage fields (populated regardless of active backend
-  // so the UI can display/switch to Azure SQL without a round-trip).
-  azureServer: string;
-  azureDatabase: string;
-  azureUser: string;
-  azurePort: number;
-  hasAzurePassword: boolean;
-  azureManagedByEnvironment: boolean;
-  s3ManagedByEnvironment: boolean;
-}
-
-export interface NodeS3ServerConfigUpdate {
-  enabled: boolean;
-  storageType?: AssetStorageType;
-  endpoint?: string;
-  bucket?: string;
-  accessKeyId?: string;
-  secretAccessKey?: string;
-  region?: string;
-  forcePathStyle?: boolean;
-  autoCreateBucket?: boolean;
-  // Azure SQL asset storage fields
-  azureServer?: string;
-  azureDatabase?: string;
-  azureUser?: string;
-  azurePassword?: string;
-  azurePort?: number;
-}
-
-export interface NodeS3TestResult {
-  success: boolean;
-  bucketExists: boolean;
-  message: string;
-}
-
-export interface NodeS3Stats {
-  storageType: AssetStorageType;
-  bucketName?: string;
-  endpoint?: string;
-  totalObjects: number;
-  totalSizeBytes: number;
-  /** 'catalog' = derived from the SQL asset catalog instead of S3 */
-  listSource?: "catalog" | "storage";
-}
-
-export interface NodeS3MigrationResult {
-  total: number;
-  migrated: number;
-  skipped: number;
-  errors: string[];
-}
-
-export interface NodeS3RollbackResult {
-  total: number;
-  downloaded: number;
-  errors: string[];
-}
-
-export interface NodeS3ThumbnailsResult {
-  total: number;
-  created: number;
-  skipped: number;
-  errors: string[];
-}
-
-export interface NodeStorageSummary {
-  activeType: AssetStorageType;
-  localFs: NodeS3Stats;
-  s3: NodeS3Stats | null;
-  azuresql: NodeS3Stats | null;
-  config: NodeS3ServerConfig;
-}
-
-export interface NodeStorageAssetItem {
-  key: string;
-  size: number;
-  mtime: number;
-}
-
-export interface NodeStorageAssetDetails {
-  storageType: AssetStorageType;
-  bucketName?: string;
-  endpoint?: string;
-  totalObjects: number;
-  totalSizeBytes: number;
-  assets: NodeStorageAssetItem[];
-  /** 'catalog' = served from the SQL asset catalog, 'storage' = live S3 listing */
-  listSource?: "catalog" | "storage" | "storage-sync";
-  /** The catalog has no rows; the UI may offer an explicit S3 resync. */
-  catalogEmpty?: boolean;
-}
-
-export interface NodeS3ProgressEvent {
-  type: "progress";
-  current: number;
-  total: number;
-  migrated?: number;
-  skipped?: number;
-  downloaded?: number;
-  created?: number;
-  percentage: number;
-  currentKey?: string;
-}
+import type {
+  AssetStorageType,
+  NodeS3MigrationResult,
+  NodeS3ProgressEvent,
+  NodeS3RollbackResult,
+  NodeS3ServerConfig,
+  NodeS3ServerConfigUpdate,
+  NodeS3Stats,
+  NodeS3TestResult,
+  NodeS3ThumbnailsResult,
+  NodeStorageAssetDetails,
+  NodeStorageAssetItem,
+  NodeStorageSummary,
+} from "../../../packages/protocol/storageConfig.cjs";
+export type {
+  AssetStorageType,
+  NodeS3MigrationResult,
+  NodeS3ProgressEvent,
+  NodeS3RollbackResult,
+  NodeS3ServerConfig,
+  NodeS3ServerConfigUpdate,
+  NodeS3Stats,
+  NodeS3TestResult,
+  NodeS3ThumbnailsResult,
+  NodeStorageAssetDetails,
+  NodeStorageAssetItem,
+  NodeStorageSummary,
+} from "../../../packages/protocol/storageConfig.cjs";
 
 async function responseError(response: Response, fallback: string) {
   const body = await response.json().catch(() => null);

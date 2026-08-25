@@ -1,0 +1,27 @@
+{
+  "DEFERRED_SETTING_KEYS": [
+    "plugins", "pluginCustomStorage", "personas", "botPresets", "botPresetsId", "loreBook",
+    "modules", "globalscript", "promptTemplate", "promptSettings", "mainPrompt",
+    "jailbreak", "globalNote", "additionalPrompt", "supaMemoryPrompt",
+    "personaPrompt", "emotionPrompt", "emotionPrompt2", "autoSuggestPrompt",
+    "translatorPrompt", "instructChatTemplate", "JinjaTemplate", "customTokenizer",
+    "customPromptTemplateToggle", "customModels", "translatorPresets", "loadouts",
+    "customBackground"
+  ],
+  "PROMPT_SETTING_KEYS": [
+    "mainPrompt", "jailbreak", "globalNote", "additionalPrompt",
+    "supaMemoryPrompt", "personaPrompt", "emotionPrompt", "emotionPrompt2",
+    "autoSuggestPrompt", "translatorPrompt", "instructChatTemplate",
+    "JinjaTemplate", "customTokenizer", "promptTemplate", "promptSettings",
+    "customPromptTemplateToggle"
+  ],
+  "BOOTSTRAP_SETTING_KEYS": [
+    "plugins", "pluginCustomStorage", "personas", "loreBook", "modules", "globalscript",
+    "customModels", "translatorPresets", "loadouts", "customBackground",
+    "mainPrompt", "jailbreak", "globalNote", "additionalPrompt",
+    "supaMemoryPrompt", "personaPrompt", "emotionPrompt", "emotionPrompt2",
+    "autoSuggestPrompt", "translatorPrompt", "instructChatTemplate",
+    "JinjaTemplate", "customTokenizer", "promptTemplate", "promptSettings",
+    "customPromptTemplateToggle"
+  ]
+}

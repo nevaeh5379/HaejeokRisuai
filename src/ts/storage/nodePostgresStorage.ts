@@ -25,7 +25,20 @@ import {
   type SqlCommitResult,
 } from "./sqlCommit";
 
-export type DbVendor = "postgres" | "oracle" | "azure";
+import type {
+  DbVendor,
+  NodePostgresServerConfig,
+  NodePostgresServerConfigUpdate,
+  NodeSqlStorageRuntime,
+  NodeSqlStorageRuntimeError,
+} from "../../../packages/protocol/storageConfig.cjs";
+export type {
+  DbVendor,
+  NodePostgresServerConfig,
+  NodePostgresServerConfigUpdate,
+  NodeSqlStorageRuntime,
+  NodeSqlStorageRuntimeError,
+} from "../../../packages/protocol/storageConfig.cjs";
 
 export interface SqlVendorFormValues {
   connectionString?: string;
@@ -84,41 +97,6 @@ export function isSqlVendorParamsComplete(
   return Boolean(
     params.server && params.database && params.user && params.password,
   );
-}
-
-export interface NodePostgresServerConfig {
-  enabled: boolean;
-  configured: boolean;
-  managedByEnvironment: boolean;
-  vendor: DbVendor;
-  connectionDisplay: string;
-  poolMax: number;
-  revision: number | null;
-  initialized: boolean;
-  runtime?: NodeSqlStorageRuntime;
-}
-
-export interface NodeSqlStorageRuntimeError {
-  code: string;
-  message: string;
-  hint: string;
-  operation: string;
-  failedAt: string;
-}
-
-export interface NodeSqlStorageRuntime {
-  status: "starting" | "ready" | "degraded" | "unconfigured";
-  vendor: DbVendor;
-  error: NodeSqlStorageRuntimeError | null;
-  attemptStartedAt: string | null;
-  readyAt: string | null;
-}
-
-export interface NodePostgresServerConfigUpdate {
-  enabled: boolean;
-  connectionString?: string;
-  poolMax: number;
-  legacySnapshotReady?: boolean;
 }
 
 export interface NodePostgresRevision {

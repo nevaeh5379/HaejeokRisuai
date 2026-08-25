@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { readStorageStartupSettings } = require('./startupDiagnostics.cjs');
+const { SQL_DATABASE_VENDORS } = require('../../packages/protocol/storageConfig.cjs');
 
 const {
     PostgresRevisionConflictError,
@@ -31,7 +32,7 @@ class StoragePayloadError extends PostgresPayloadError {
 }
 
 // 지원하는 vendor 목록
-const SUPPORTED_VENDORS = ['postgres', 'oracle', 'azure'];
+const SUPPORTED_VENDORS = SQL_DATABASE_VENDORS;
 
 // vendor 결정 우선순위:
 // 1. 명시적 options.vendor

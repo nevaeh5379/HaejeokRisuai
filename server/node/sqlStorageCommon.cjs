@@ -7,32 +7,11 @@ const DEFAULT_MAX_COLD_STORAGE_KEYS = 250000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COMPAT_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{6,12}$/i;
 
-const DEFERRED_SETTING_KEYS = [
-    'plugins', 'pluginCustomStorage', 'personas', 'botPresets', 'botPresetsId', 'loreBook',
-    'modules', 'globalscript', 'promptTemplate', 'promptSettings', 'mainPrompt',
-    'jailbreak', 'globalNote', 'additionalPrompt', 'supaMemoryPrompt',
-    'personaPrompt', 'emotionPrompt', 'emotionPrompt2', 'autoSuggestPrompt',
-    'translatorPrompt', 'instructChatTemplate', 'JinjaTemplate', 'customTokenizer',
-    'customPromptTemplateToggle', 'customModels', 'translatorPresets', 'loadouts',
-    'customBackground',
-];
-
-const PROMPT_SETTING_KEYS = [
-    'mainPrompt', 'jailbreak', 'globalNote', 'additionalPrompt',
-    'supaMemoryPrompt', 'personaPrompt', 'emotionPrompt', 'emotionPrompt2',
-    'autoSuggestPrompt', 'translatorPrompt', 'instructChatTemplate',
-    'JinjaTemplate', 'customTokenizer', 'promptTemplate', 'promptSettings',
-    'customPromptTemplateToggle',
-];
-
-// These domains are touched during application bootstrap. Loading them in one
-// snapshot avoids opening a transaction (and consuming a pool connection) for
-// every lazy domain at the same time.
-const BOOTSTRAP_SETTING_KEYS = [
-    'plugins', 'pluginCustomStorage', 'personas', 'loreBook', 'modules', 'globalscript',
-    'customModels', 'translatorPresets', 'loadouts', 'customBackground',
-    ...PROMPT_SETTING_KEYS,
-];
+const {
+    DEFERRED_SETTING_KEYS,
+    PROMPT_SETTING_KEYS,
+    BOOTSTRAP_SETTING_KEYS,
+} = require('../../packages/protocol/settings.json');
 
 class SqlStorageBase {
     constructor() {

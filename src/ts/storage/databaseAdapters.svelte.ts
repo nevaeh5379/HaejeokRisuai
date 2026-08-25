@@ -17,6 +17,7 @@ import {
 import type { ISqlStorage } from "./ISqlStorage";
 import { cancelChatMessageCompaction } from "../stores/domain/messageStore.svelte";
 import { getInitialChatLoadPages } from "../chatLoadPages";
+import protocolSettings from "../../../packages/protocol/settings.json";
 
 export interface IDatabaseAdapter extends Database {
   readonly isSql?: boolean;
@@ -43,24 +44,7 @@ export const POSTGRES_DOMAINS = [
 
 export type PostgresDomainName = (typeof POSTGRES_DOMAINS)[number];
 
-export const PROMPT_SETTING_KEYS = [
-  "mainPrompt",
-  "jailbreak",
-  "globalNote",
-  "additionalPrompt",
-  "supaMemoryPrompt",
-  "personaPrompt",
-  "emotionPrompt",
-  "emotionPrompt2",
-  "autoSuggestPrompt",
-  "translatorPrompt",
-  "instructChatTemplate",
-  "JinjaTemplate",
-  "customTokenizer",
-  "promptTemplate",
-  "promptSettings",
-  "customPromptTemplateToggle",
-] as const;
+export const PROMPT_SETTING_KEYS = protocolSettings.PROMPT_SETTING_KEYS;
 
 const fallbackBotPreset: botPreset = {
   name: "Default",

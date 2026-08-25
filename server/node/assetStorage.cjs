@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { ASSET_STORAGE_TYPES } = require('../../packages/protocol/storageConfig.cjs');
 const path = require('path');
 const os = require('os');
 const http = require('http');
@@ -1324,7 +1325,7 @@ class S3AssetStorage {
 // Active storage backend selector. 'fs' is always available; 's3' and
 // 'azuresql' are mutually exclusive in the active role but both configs can
 // coexist on disk so the operator can switch back and forth.
-const STORAGE_TYPES = ['fs', 's3', 'azuresql'];
+const STORAGE_TYPES = ASSET_STORAGE_TYPES;
 
 class AssetStorageManager {
     constructor(savePath) {
