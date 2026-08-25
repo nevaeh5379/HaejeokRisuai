@@ -7,6 +7,10 @@ const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
 const { once } = require('events');
+const {
+    MODEL_JOB_TERMINAL_STATUSES,
+    normalizeModelJobCreateRequest,
+} = require('../../packages/protocol/modelJobs.cjs');
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_TIMEOUT_MS = 60 * 60 * 1000;
@@ -14,8 +18,7 @@ const TAIL_WAIT_MS = 1000;
 const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
 const RETAIN_TERMINAL = 50;
 const RETAIN_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-const MAX_BODY_BYTES = 16 * 1024 * 1024;
-const TERMINAL = new Set(['done', 'failed', 'aborted']);
+const TERMINAL = new Set(MODEL_JOB_TERMINAL_STATUSES);
 
 function normalizeTimeout(value) {
     const parsed = Number(value);
@@ -219,21 +222,10 @@ function createModelJobManager({ saveDir, logger = console } = {}) {
         }
     }
     function createJob(arg) {
-        const chatId = typeof arg?.chatId === 'string' ? arg.chatId : '';
-        if (!chatId) return { error: 'chatId is required', httpStatus: 400 };
-        let parsedUrl;
-        try { parsedUrl = new URL(String(arg.targetUrl || '')); }
-        catch { return { error: 'Invalid target URL', httpStatus: 400 }; }
-        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-            return { error: 'Invalid target URL', httpStatus: 400 };
-        }
-        const method = typeof arg.method === 'string' ? arg.method.toUpperCase() : 'POST';
-        if (method !== 'POST') return { error: 'Invalid method', httpStatus: 400 };
-        const body = typeof arg.body === 'string' ? arg.body : '';
-        if (Buffer.byteLength(body, 'utf8') > MAX_BODY_BYTES) {
-            return { error: 'Request body too large', httpStatus: 413 };
-        }
-        const recoverable = arg.recoverable !== false;
+        const normalized = normalizeModelJobCreateRequest(arg);
+        if (normalized.error) return normalized;
+        const request = normalized.value;
+        const { chatId, recoverable } = request;
         if (recoverable) {
             const running = records.find((record) =>
                 record.chatId === chatId && record.status === 'running' && record.recoverable !== false
@@ -247,12 +239,12 @@ function createModelJobManager({ saveDir, logger = console } = {}) {
         const createdAt = Date.now();
         const record = {
             id, chatId,
-            generationId: typeof arg.generationId === 'string' ? arg.generationId : null,
-            protocol: typeof arg.protocol === 'string' ? arg.protocol : 'unknown',
-            model: typeof arg.model === 'string' ? arg.model.slice(0, 160) : null,
-            speakerId: typeof arg.speakerId === 'string' ? arg.speakerId.slice(0, 160) : null,
-            targetOrigin: `${parsedUrl.origin}${parsedUrl.pathname}`,
-            streaming: arg.streaming === true,
+            generationId: request.generationId,
+            protocol: request.protocol,
+            model: request.model,
+            speakerId: request.speakerId,
+            targetOrigin: request.targetOrigin,
+            streaming: request.streaming,
             recoverable,
             status: 'running',
             upstreamStatus: null,
@@ -274,11 +266,11 @@ function createModelJobManager({ saveDir, logger = console } = {}) {
         activeJobs.set(id, job);
         void persist();
         const runPromise = runJob(job, {
-            targetUrl: parsedUrl.toString(),
-            method,
-            headers: normalizeHeaders(arg.headers),
-            bodyBuffer: body ? Buffer.from(body, 'utf8') : undefined,
-            timeoutMs: normalizeTimeout(arg.timeoutMs)
+            targetUrl: request.targetUrl,
+            method: request.method,
+            headers: normalizeHeaders(request.headers),
+            bodyBuffer: request.body ? Buffer.from(request.body, 'utf8') : undefined,
+            timeoutMs: normalizeTimeout(request.timeoutMs)
         }).catch((error) => logger.error('[model-jobs] run failed', error));
         return { jobId: id, runPromise };
     }
@@ -395,20 +387,7 @@ function createModelJobManager({ saveDir, logger = console } = {}) {
 
         app.post('/api/model-jobs', ...guards, async (req, res) => {
             if (!await ensureAuth(req, res)) return;
-            const result = createJob({
-                targetUrl: req.body?.targetUrl,
-                method: req.body?.method,
-                headers: req.body?.headers,
-                body: req.body?.body,
-                chatId: req.body?.chatId,
-                generationId: req.body?.generationId,
-                protocol: req.body?.protocol,
-                model: req.body?.model,
-                speakerId: req.body?.speakerId,
-                streaming: req.body?.streaming === true,
-                recoverable: req.body?.recoverable !== false,
-                timeoutMs: req.body?.timeoutMs
-            });
+            const result = createJob(req.body);
             if (result.error) {
                 res.status(result.httpStatus || 400).send({ error: result.error, jobId: result.jobId });
                 return;

@@ -1,4 +1,9 @@
 import { getNodeServerProxyAuth } from "../storage/nodeStorage";
+import type {
+  CreateModelJobRequest,
+  CreateModelJobResponse,
+  DurableModelJobRecord,
+} from "../../../packages/protocol/modelJobs.cjs";
 
 export interface DurableGenerationContext {
   realChatId: string;
@@ -118,7 +123,7 @@ export async function fetchViaDurableModelJob(
         streaming: isStreamingRequest(arg.interceptor, arg.body),
         recoverable: isRecoverableRequest(arg.body),
         timeoutMs: arg.requestTimeoutMs,
-      }),
+      } satisfies CreateModelJobRequest),
       signal: arg.signal,
     });
   } catch (error) {
@@ -138,7 +143,7 @@ export async function fetchViaDurableModelJob(
   if (!created.ok) {
     throw new Error(`Model job creation failed with HTTP ${created.status}`);
   }
-  const { jobId } = (await created.json()) as { jobId?: string };
+  const { jobId } = (await created.json()) as Partial<CreateModelJobResponse>;
   if (!jobId) {
     throw new Error("Model job creation returned no job id.");
   }
@@ -230,7 +235,7 @@ export async function fetchViaDurableModelJob(
     return false;
   };
 
-  const getJob = async (): Promise<{ status?: string; error?: string } | null> => {
+  const getJob = async (): Promise<Pick<DurableModelJobRecord, "status" | "error"> | null> => {
     try {
       const response = await fetch(`/api/model-jobs/${encodeURIComponent(jobId)}`, {
         headers: await authHeaders(),

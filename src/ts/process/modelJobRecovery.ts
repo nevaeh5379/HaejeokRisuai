@@ -5,21 +5,9 @@ import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";
 import { getNodeServerProxyAuth } from "../storage/nodeStorage";
 import type { Message } from "../storage/database.svelte";
+import type { DurableModelJobRecord } from "../../../packages/protocol/modelJobs.cjs";
 
-export interface DurableModelJobRecord {
-  id: string;
-  chatId: string;
-  generationId?: string | null;
-  protocol?: string | null;
-  model?: string | null;
-  speakerId?: string | null;
-  streaming?: boolean;
-  status: "running" | "done" | "failed" | "aborted";
-  upstreamStatus?: number | null;
-  error?: string | null;
-  recoverable?: boolean;
-  createdAt?: number;
-}
+export type { DurableModelJobRecord } from "../../../packages/protocol/modelJobs.cjs";
 
 async function authHeaders(): Promise<Record<string, string>> {
   return { "risu-auth": await getNodeServerProxyAuth() };
