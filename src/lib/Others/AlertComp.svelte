@@ -25,10 +25,9 @@
     import Help from "./Help.svelte";
     import AirisuMascot from "../UI/AirisuMascot.svelte";
     import { getChatBranches } from "src/ts/gui/branches";
-    import { getCurrentCharacter } from "src/ts/storage/database.svelte";
+    import { appVer, getCurrentCharacter } from "src/ts/storage/database.svelte";
     import { translateStackTrace } from "../../ts/sourcemap";
     import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from "src/ts/platform";
-    import versionData from "../../../version.json";
     import {
         HAEJEOK_PRIVACY_URL,
         HAEJEOK_TERMS_URL,
@@ -42,7 +41,7 @@
     let isTranslating = $state(false);
     let osLabel = $state(getFallbackOSLabel());
     const displayedStackTrace = $derived(translatedStackTrace || $alertStore.stackTrace || '');
-    const risuVersion = versionData.version;
+    const risuVersion = appVer;
     const risuEnvironment = getRisuEnvironmentLabel();
     const userAgent = typeof navigator === "undefined" ? "Unknown" : navigator.userAgent || "Unknown";
     const stackTraceCodeBlock = $derived.by(() => {

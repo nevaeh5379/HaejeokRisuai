@@ -42,9 +42,11 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 
-//APP_VERSION_POINT is to locate the app version in the database file for version bumping
-export let appVer = "2026.8.240"; //<APP_VERSION_POINT>
-export let appSubVer = "";
+// HaejeokRisuAI uses the Git commit count as its public build number (bNNNN).
+// Vite injects this value for local builds, CI builds, Docker, and Tauri.
+// Non-Vite consumers such as isolated tests fall back safely instead of crashing.
+export const appVer = import.meta.env.VITE_HAEJEOK_BUILD_TAG || "bunknown";
+export const appSubVer = "";
 
 export type StreamingDisplayOptimizationMode = "off" | "balanced" | "strong";
 

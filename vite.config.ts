@@ -3,9 +3,17 @@ import { svelte, vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 import wasm from "vite-plugin-wasm";
 import strip from '@rollup/plugin-strip';
 import tailwindcss from '@tailwindcss/vite'
+import { resolveBuildVersion } from './tooling/build-version.mjs'
 // https://vitejs.dev/config/
 export default defineConfig(({command, mode}) => {
+  const buildVersion = resolveBuildVersion()
+  console.log(`[HaejeokRisuAI] Build version: ${buildVersion.buildTag} (${buildVersion.source})`)
+
   return {
+    define: {
+      'import.meta.env.VITE_HAEJEOK_BUILD_TAG': JSON.stringify(buildVersion.buildTag),
+      'import.meta.env.VITE_HAEJEOK_BUILD_NUMBER': JSON.stringify(buildVersion.buildNumber ?? 0),
+    },
     plugins: [
       svelte({
         preprocess: vitePreprocess(),

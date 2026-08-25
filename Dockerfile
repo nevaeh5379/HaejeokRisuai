@@ -20,6 +20,8 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prod --frozen-l
 # ------------------------------------------------------------------------------------------
 
 FROM deps AS builder
+ARG HAEJEOK_BUILD_NUMBER
+ENV HAEJEOK_BUILD_NUMBER=${HAEJEOK_BUILD_NUMBER}
 COPY . .
 # Install including dev deps
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile

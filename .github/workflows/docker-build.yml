@@ -67,11 +67,6 @@ jobs:
           ref: ${{ needs.prepare.outputs.commit_sha }}
           fetch-depth: 0
 
-      - name: Apply build version
-        env:
-          BUILD_NUMBER: ${{ needs.prepare.outputs.build_number }}
-        run: node .github/scripts/set-release-version.mjs "$BUILD_NUMBER"
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -87,11 +82,13 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
           PLATFORM: ${{ matrix.platform }}
+          BUILD_NUMBER: ${{ needs.prepare.outputs.build_number }}
           BUILD_TAG: ${{ needs.prepare.outputs.build_tag }}
           IMAGE: ${{ env.DOCKERHUB_IMAGE }}
         run: |
           docker buildx build \
             --platform "${PLATFORM}" \
+            --build-arg "HAEJEOK_BUILD_NUMBER=${BUILD_NUMBER}" \
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.ref.name=${IMAGE}" \
             --label "org.opencontainers.image.version=${BUILD_TAG}" \

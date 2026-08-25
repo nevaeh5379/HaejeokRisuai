@@ -130,13 +130,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply build version
-        shell: bash
-        env:
-          BUILD_NUMBER: ${{ needs.prepare-release.outputs.build_number }}
-        run: |
-          node .github/scripts/set-release-version.mjs "$BUILD_NUMBER"
-
       - name: setup node
         uses: actions/setup-node@v6
         with:
@@ -186,6 +179,7 @@ jobs:
         uses: tauri-apps/tauri-action@action-v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HAEJEOK_BUILD_NUMBER: ${{ needs.prepare-release.outputs.build_number }}
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
