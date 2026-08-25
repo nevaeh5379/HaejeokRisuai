@@ -15,8 +15,12 @@ test('advertises only implemented provider formats and routes', () => {
     [LLM_FORMATS.Echo, LLM_FORMATS.Mistral],
   );
   assert.deepEqual([...executor.routes], ['echo', 'openai']);
-  assert.deepEqual([...executor.transportFormats], [LLM_FORMATS.OpenAICompatible]);
+  assert.deepEqual(
+    [...executor.transportFormats],
+    [LLM_FORMATS.OpenAICompatible, LLM_FORMATS.Anthropic],
+  );
   assert.equal(executor.supportsTransport(LLM_FORMATS.OpenAICompatible), true);
+  assert.equal(executor.supportsTransport(LLM_FORMATS.Anthropic), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.NanoGPT), false);
 });
 
@@ -131,6 +135,49 @@ test('executes official OpenAI non-streaming transport without interpreting the 
   assert.equal(calls[0].options.headers.Host, undefined);
   assert.equal(calls[0].options.headers['Content-Length'], undefined);
   assert.equal(calls[0].options.headers['risu-auth'], undefined);
+  assert.equal(calls[0].options.signal, controller.signal);
+  assert.equal(calls[0].options.redirect, 'error');
+});
+
+test('executes official Anthropic non-streaming transport without interpreting the response', async () => {
+  const calls = [];
+  const controller = new AbortController();
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          content: [{ type: 'text', text: 'raw anthropic response' }],
+        }),
+      };
+    },
+  });
+  const result = await executor.executeTransport({
+    format: LLM_FORMATS.Anthropic,
+    payload: {
+      body: { model: 'claude-test', messages: [{ role: 'user', content: 'hello' }] },
+      headers: {
+        'x-api-key': 'secret-key',
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+    },
+  }, { signal: controller.signal });
+  assert.deepEqual(result, {
+    handled: true,
+    response: {
+      ok: true,
+      status: 200,
+      data: { content: [{ type: 'text', text: 'raw anthropic response' }] },
+    },
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.anthropic.com/v1/messages');
+  assert.equal(calls[0].options.headers['x-api-key'], 'secret-key');
+  assert.equal(calls[0].options.headers['anthropic-version'], '2023-06-01');
+  assert.equal(calls[0].options.headers['anthropic-dangerous-direct-browser-access'], undefined);
   assert.equal(calls[0].options.signal, controller.signal);
   assert.equal(calls[0].options.redirect, 'error');
 });

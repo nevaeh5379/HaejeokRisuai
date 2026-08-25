@@ -12,6 +12,7 @@ import { registerClaudeObserver } from "src/ts/observer.svelte";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { replaceAsync, simplifySchema, sleep } from "src/ts/util";
 import { v4 } from "uuid";
+import { DEFAULT_ANTHROPIC_MESSAGES_URL } from "@risuai/chat-core/anthropicProvider.cjs";
 import type { MultiModal } from "@risuai/chat-core/types.cjs";
 import { extractJSON } from "../templates/jsonSchema";
 import { callTool, decodeToolCall, encodeToolCall } from "../mcp/mcp";
@@ -20,6 +21,7 @@ import type {
   requestDataResponse,
   StreamResponseChunk,
 } from "./request";
+import { tryExecuteNodeProviderTransport } from "./nodeProviderExecutor";
 import {
   applyAdditionalParameters,
   applyParameters,
@@ -93,7 +95,7 @@ export async function requestClaude(
   const aiModel = arg.aiModel;
   const useStreaming = arg.useStreaming;
   const ollamaCloudAnthropic = aiModel === "ollama-cloud";
-  let replacerURL = arg.customURL ?? "https://api.anthropic.com/v1/messages";
+  let replacerURL = arg.customURL ?? DEFAULT_ANTHROPIC_MESSAGES_URL;
   let apiKey =
     arg.key || (aiModel === "reverse_proxy" ? db.proxyKey : db.claudeAPIKey);
   const maxTokens = arg.maxTokens;
@@ -1122,13 +1124,24 @@ async function requestClaudeHTTP(
   }
 
   const db = getDatabase();
-  const res = await globalFetch(replacerURL, {
-    body: body,
-    headers: headers,
-    method: "POST",
-    chatId: arg.chatId,
-    interceptor: "anthropic_http",
-  });
+  const remoteTransport =
+    replacerURL === DEFAULT_ANTHROPIC_MESSAGES_URL &&
+    arg.modelInfo.format === LLMFormat.Anthropic
+      ? await tryExecuteNodeProviderTransport(
+          LLMFormat.Anthropic,
+          { body, headers },
+          arg.abortSignal,
+        )
+      : null;
+  const res =
+    remoteTransport ??
+    (await globalFetch(replacerURL, {
+      body: body,
+      headers: headers,
+      method: "POST",
+      chatId: arg.chatId,
+      interceptor: "anthropic_http",
+    }));
 
   if (!res.ok) {
     const stringlified = JSON.stringify(res.data);

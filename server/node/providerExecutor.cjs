@@ -12,6 +12,9 @@ const {
 const {
   DEFAULT_OPENAI_CHAT_COMPLETIONS_URL,
 } = require('../../packages/chat-core/openAIProvider.cjs');
+const {
+  DEFAULT_ANTHROPIC_MESSAGES_URL,
+} = require('../../packages/chat-core/anthropicProvider.cjs');
 const { LLM_FORMATS } = require('../../packages/protocol/modelFormat.cjs');
 const {
   normalizeNodeProviderExecutionRequest,
@@ -47,12 +50,12 @@ function normalizeMistralPayload(payload) {
   return { body, apiKey: payload.apiKey, httpErrorPrefix };
 }
 
-function normalizeOpenAITransportPayload(payload) {
+function normalizeJsonTransportPayload(payload, providerName) {
   if (!payload.body || typeof payload.body !== 'object' || Array.isArray(payload.body)) {
-    throw new TypeError('openai body must be an object');
+    throw new TypeError(`${providerName} body must be an object`);
   }
   if (!payload.headers || typeof payload.headers !== 'object' || Array.isArray(payload.headers)) {
-    throw new TypeError('openai headers must be an object');
+    throw new TypeError(`${providerName} headers must be an object`);
   }
   const headers = {};
   const forbiddenHeaders = new Set([
@@ -60,17 +63,30 @@ function normalizeOpenAITransportPayload(payload) {
     'connection',
     'content-length',
     'risu-auth',
+    'anthropic-dangerous-direct-browser-access',
   ]);
   for (const [key, value] of Object.entries(payload.headers)) {
-    if (typeof value !== 'string') throw new TypeError('openai headers must contain string values');
+    if (typeof value !== 'string') {
+      throw new TypeError(`${providerName} headers must contain string values`);
+    }
     if (forbiddenHeaders.has(key.toLowerCase())) continue;
     headers[key] = value;
   }
   const body = JSON.stringify(payload.body);
   if (Buffer.byteLength(body) > 16 * 1024 * 1024) {
-    throw new RangeError('openai body exceeds 16 MiB');
+    throw new RangeError(`${providerName} body exceeds 16 MiB`);
   }
   return { body, headers };
+}
+
+function getTransportTarget(format) {
+  if (format === LLM_FORMATS.OpenAICompatible) {
+    return { name: 'openai', url: DEFAULT_OPENAI_CHAT_COMPLETIONS_URL };
+  }
+  if (format === LLM_FORMATS.Anthropic) {
+    return { name: 'anthropic', url: DEFAULT_ANTHROPIC_MESSAGES_URL };
+  }
+  return null;
 }
 
 function createNodeProviderExecutor({
@@ -105,7 +121,10 @@ function createNodeProviderExecutor({
   const formats = Object.freeze([LLM_FORMATS.Echo, LLM_FORMATS.Mistral, ...extraFormats]);
   const supportedFormats = new Set(formats);
   const routes = Object.freeze([...new Set(formats.map(resolveProviderRoute).filter(Boolean))]);
-  const transportFormats = Object.freeze([LLM_FORMATS.OpenAICompatible]);
+  const transportFormats = Object.freeze([
+    LLM_FORMATS.OpenAICompatible,
+    LLM_FORMATS.Anthropic,
+  ]);
   const supportedTransportFormats = new Set(transportFormats);
 
   function supports(format) {
@@ -140,8 +159,10 @@ function createNodeProviderExecutor({
     }
     const input = normalized.value;
     if (!supportsTransport(input.format)) return { handled: false };
-    const payload = normalizeOpenAITransportPayload(input.payload);
-    const response = await fetchImpl(DEFAULT_OPENAI_CHAT_COMPLETIONS_URL, {
+    const target = getTransportTarget(input.format);
+    if (!target) return { handled: false };
+    const payload = normalizeJsonTransportPayload(input.payload, target.name);
+    const response = await fetchImpl(target.url, {
       method: 'POST',
       headers: payload.headers,
       body: payload.body,
