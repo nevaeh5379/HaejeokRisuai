@@ -6,6 +6,7 @@ export type SqlStorageRuntimeStatus = (typeof SQL_RUNTIME_STATUSES)[number];
 
 export const ASSET_STORAGE_TYPES: readonly ['fs', 's3', 'azuresql'];
 export type AssetStorageType = (typeof ASSET_STORAGE_TYPES)[number];
+export type AssetStorageTarget = 'active' | AssetStorageType;
 
 export interface NodeSqlStorageRuntimeError {
   code: string;

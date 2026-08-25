@@ -18,6 +18,7 @@ import type { GemmaTokenizer } from "@huggingface/transformers";
 import { LRUMap } from "mnemonist";
 import { isNodeServer } from "./platform";
 import { NodeStorage } from "./storage/nodeStorage";
+import type { TokenizerEncoding } from "../../packages/protocol/compute.cjs";
 
 const MAX_CACHE_SIZE = 128;
 
@@ -91,12 +92,10 @@ export async function encodeWithTokenizer(
   }
 }
 
-type ServerTiktokenEncoding = "cl100k_base" | "o200k_base";
-
 function resolveServerTiktokenEncoding(
   modelInfo: LLMModel,
   pluginTokenizer: string,
-): ServerTiktokenEncoding | null {
+): TokenizerEncoding | null {
   const db = getDatabase();
   const nonTiktoken = new Set([
     "mistral", "llama", "novelai", "claude", "novellist", "llama3",

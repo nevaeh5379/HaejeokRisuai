@@ -1,3 +1,5 @@
+const { VECTOR_SEARCH_METRICS } = require('../../packages/protocol/compute.cjs');
+
 const MAX_INDEXES = 32;
 const MAX_VECTORS_PER_INDEX = 100000;
 const MAX_DIMENSIONS = 8192;
@@ -226,7 +228,7 @@ function rankVectors(vectors, query, metric, topK) {
 
 function searchVectorIndex(indexId, queries, metric = 'cosine', topK = null) {
     if (!Array.isArray(queries)) throw new TypeError('queries must be an array');
-    if (metric !== 'cosine' && metric !== 'dot') throw new TypeError('Invalid vector search metric');
+    if (!VECTOR_SEARCH_METRICS.includes(metric)) throw new TypeError('Invalid vector search metric');
     if (topK !== null && (!Number.isSafeInteger(topK) || topK <= 0 || topK > MAX_VECTORS_PER_INDEX)) {
         throw new RangeError('Invalid vector search topK');
     }

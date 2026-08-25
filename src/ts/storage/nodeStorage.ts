@@ -3,12 +3,32 @@ import { alertError, alertInput, waitAlert } from "../alert";
 import { base64url, getKeypairStore, saveKeypairStore } from "../util";
 import { NodePostgresStorage } from "./nodePostgresStorage";
 import { NodeS3Storage } from "./nodeS3Storage";
+import type { AssetStorageTarget } from "../../../packages/protocol/storageConfig.cjs";
+import type {
+  LoreMatchBatchRequest,
+  LoreMatchBatchResponse,
+  LoreResolveRequest,
+  LoreResolveResponse,
+  TokenizeCountRequest,
+  TokenizeCountResponse,
+  TokenizerEncoding,
+  VectorIndexDescriptor,
+  VectorIndexEntry,
+  VectorIndexSearchRequest,
+  VectorIndexSearchResponse,
+  VectorIndexSearchResult,
+  VectorIndexStatusRequest,
+  VectorIndexStatusResponse,
+  VectorIndexUpsertRequest,
+  VectorSearchMetric,
+} from "../../../packages/protocol/compute.cjs";
 
 export {
   NodePostgresPayloadTooLargeError,
   NodePostgresRevisionConflictError,
 } from "./nodePostgresStorage";
 export {
+  type AssetStorageTarget,
   type NodeS3ServerConfig,
   type NodeS3ServerConfigUpdate,
   type NodeS3Stats,
@@ -112,7 +132,7 @@ export class NodeStorage {
       size?: "thumb" | "display" | "full";
       width?: number;
       height?: number;
-      target?: "active" | "fs" | "s3" | "azuresql";
+      target?: AssetStorageTarget;
     },
   ): Promise<string> {
     const auth = await this.getCachedAuth();
@@ -148,7 +168,7 @@ export class NodeStorage {
 
   async tokenizeCountBatch(
     texts: string[],
-    encoding: "cl100k_base" | "o200k_base",
+    encoding: TokenizerEncoding,
   ): Promise<number[]> {
     if (texts.length === 0) return [];
 
@@ -161,13 +181,16 @@ export class NodeStorage {
           "content-type": "application/json",
           "risu-auth": auth,
         },
-        body: JSON.stringify({ encoding, texts: texts.slice(offset, offset + 1024) }),
+        body: JSON.stringify({
+          encoding,
+          texts: texts.slice(offset, offset + 1024),
+        } satisfies TokenizeCountRequest),
       });
       if (!response.ok) {
         const message = await response.text();
         throw new Error(`Server tokenization failed (${response.status}): ${message}`);
       }
-      const data = await response.json();
+      const data = (await response.json()) as Partial<TokenizeCountResponse>;
       if (!Array.isArray(data.counts)) {
         throw new Error("Server tokenization returned an invalid response");
       }
@@ -176,18 +199,9 @@ export class NodeStorage {
     return counts;
   }
 
-  async loreMatchBatch(payload: {
-    messages: Array<{ role: string; data: string; displayName?: string }>;
-    requests: Array<{
-      keys: string[];
-      searchDepth: number;
-      regex: boolean;
-      fullWordMatching: boolean;
-      all?: boolean;
-    }>;
-    username: string;
-    charName: string;
-  }): Promise<Array<{ matched: boolean; logs: Array<{ prompt: string; source: string; activated: string }> }>> {
+  async loreMatchBatch(
+    payload: LoreMatchBatchRequest,
+  ): Promise<LoreMatchBatchResponse["results"]> {
     if (payload.requests.length === 0) return [];
     const response = await fetch("/api/lore-match-batch", {
       method: "POST",
@@ -200,22 +214,14 @@ export class NodeStorage {
     if (!response.ok) {
       throw new Error(`Server lore matching failed (${response.status}): ${await response.text()}`);
     }
-    const data = await response.json();
+    const data = (await response.json()) as Partial<LoreMatchBatchResponse>;
     if (!Array.isArray(data.results)) {
       throw new Error("Server lore matching returned an invalid response");
     }
-    return data.results;
+    return data.results as LoreMatchBatchResponse["results"];
   }
 
-  async loreResolve(payload: {
-    messages: Array<{ role: string; data: string; displayName?: string }>;
-    entries: Array<Record<string, unknown>>;
-    username: string;
-    charName: string;
-  }): Promise<{
-    activatedIndexes: number[];
-    logs: Array<{ prompt: string; source: string; activated: string }>;
-  }> {
+  async loreResolve(payload: LoreResolveRequest): Promise<LoreResolveResponse> {
     const response = await fetch("/api/lore-resolve", {
       method: "POST",
       headers: {
@@ -227,32 +233,36 @@ export class NodeStorage {
     if (!response.ok) {
       throw new Error(`Server recursive lore resolution failed (${response.status}): ${await response.text()}`);
     }
-    const data = await response.json();
+    const data = (await response.json()) as Partial<LoreResolveResponse>;
     if (!Array.isArray(data.activatedIndexes) || !Array.isArray(data.logs)) {
       throw new Error("Server recursive lore resolution returned an invalid response");
     }
-    return data;
+    return data as LoreResolveResponse;
   }
 
   async vectorIndexStatus(
     indexId: string,
-    descriptors?: Array<{ id: string; signature: string }>,
+    descriptors?: VectorIndexDescriptor[],
     revision?: string,
-  ): Promise<{ ready: boolean; missingIds: string[]; size: number }> {
+  ): Promise<VectorIndexStatusResponse> {
     const response = await fetch("/api/vector-index/status", {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "risu-auth": await this.getCachedAuth(),
       },
-      body: JSON.stringify({ indexId, descriptors, revision }),
+      body: JSON.stringify({
+        indexId,
+        descriptors,
+        revision,
+      } satisfies VectorIndexStatusRequest),
     });
     if (!response.ok) {
       throw new Error(
         `Vector index status failed (${response.status}): ${await response.text()}`,
       );
     }
-    const data = await response.json();
+    const data = (await response.json()) as Partial<VectorIndexStatusResponse>;
     if (
       typeof data.ready !== "boolean" ||
       !Array.isArray(data.missingIds) ||
@@ -260,19 +270,22 @@ export class NodeStorage {
     ) {
       throw new Error("Vector index status returned an invalid response");
     }
-    return data;
+    return data as VectorIndexStatusResponse;
   }
 
   async vectorIndexUpsert(
     indexId: string,
-    entries: Array<{ id: string; signature: string; embedding: number[] }>,
+    entries: VectorIndexEntry[],
   ): Promise<void> {
     const auth = await this.getCachedAuth();
     for (let offset = 0; offset < entries.length; offset += 64) {
       const response = await fetch("/api/vector-index/upsert", {
         method: "POST",
         headers: { "content-type": "application/json", "risu-auth": auth },
-        body: JSON.stringify({ indexId, entries: entries.slice(offset, offset + 64) }),
+        body: JSON.stringify({
+          indexId,
+          entries: entries.slice(offset, offset + 64),
+        } satisfies VectorIndexUpsertRequest),
       });
       if (!response.ok) throw new Error(`Vector index upsert failed (${response.status}): ${await response.text()}`);
     }
@@ -281,18 +294,23 @@ export class NodeStorage {
   async vectorIndexSearch(
     indexId: string,
     queries: number[][],
-    metric: "cosine" | "dot" = "cosine",
+    metric: VectorSearchMetric = "cosine",
     topK?: number,
-  ): Promise<Array<Array<[string, number]>>> {
+  ): Promise<VectorIndexSearchResult> {
     const response = await fetch("/api/vector-index/search", {
       method: "POST",
       headers: { "content-type": "application/json", "risu-auth": await this.getCachedAuth() },
-      body: JSON.stringify({ indexId, queries, metric, topK }),
+      body: JSON.stringify({
+        indexId,
+        queries,
+        metric,
+        topK,
+      } satisfies VectorIndexSearchRequest),
     });
     if (!response.ok) throw new Error(`Vector index search failed (${response.status}): ${await response.text()}`);
-    const data = await response.json();
+    const data = (await response.json()) as Partial<VectorIndexSearchResponse>;
     if (!Array.isArray(data.results)) throw new Error("Vector index search returned an invalid response");
-    return data.results;
+    return data.results as VectorIndexSearchResult;
   }
 
   async getKeyPair(): Promise<CryptoKeyPair> {
@@ -444,7 +462,7 @@ export class NodeStorage {
     key: string,
     options?: {
       thumbnail?: boolean;
-      target?: "active" | "fs" | "s3" | "azuresql";
+      target?: AssetStorageTarget;
     },
   ): Promise<Buffer> {
     await this.checkAuth();
@@ -485,7 +503,7 @@ export class NodeStorage {
     key: string,
     options?: {
       thumbnail?: boolean;
-      target?: "active" | "fs" | "s3" | "azuresql";
+      target?: AssetStorageTarget;
     },
   ): Promise<Buffer | null> {
     await this.checkAuth();

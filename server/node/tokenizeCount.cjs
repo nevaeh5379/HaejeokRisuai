@@ -1,6 +1,8 @@
 'use strict';
 
-const SUPPORTED_ENCODINGS = new Set(['cl100k_base', 'o200k_base']);
+const { TOKENIZER_ENCODINGS } = require('../../packages/protocol/compute.cjs');
+
+const SUPPORTED_ENCODINGS = new Set(TOKENIZER_ENCODINGS);
 const encoderCache = new Map();
 
 function getEncoder(encoding) {

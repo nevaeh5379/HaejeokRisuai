@@ -1,4 +1,5 @@
 import type {
+  AssetStorageTarget,
   AssetStorageType,
   NodeS3MigrationResult,
   NodeS3ProgressEvent,
@@ -13,6 +14,7 @@ import type {
   NodeStorageSummary,
 } from "../../../packages/protocol/storageConfig.cjs";
 export type {
+  AssetStorageTarget,
   AssetStorageType,
   NodeS3MigrationResult,
   NodeS3ProgressEvent,
@@ -302,7 +304,7 @@ export class NodeS3Storage {
   }
 
   async getAssetDetails(
-    target: "active" | "fs" | "s3" | "azuresql" = "active",
+    target: AssetStorageTarget = "active",
   ): Promise<NodeStorageAssetDetails> {
     const url =
       target === "active"
@@ -321,7 +323,7 @@ export class NodeS3Storage {
 
   async deleteAssetKeys(
     keys: string[],
-    target: "active" | "fs" | "s3" | "azuresql" = "active",
+    target: AssetStorageTarget = "active",
   ): Promise<{ deleted: number }> {
     const response = await fetch("/api/storage-assets-delete", {
       method: "POST",
