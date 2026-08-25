@@ -187,6 +187,47 @@ async function applyMemoryStage(
   return memory;
 }
 
+function applyHistoryPromptDecorations(
+  options: BuildGenerationPromptOptions,
+  sections: PreparedPromptSections,
+  historyStage: Awaited<ReturnType<typeof buildHistoryStage>> & { ok: true },
+  memory: Awaited<ReturnType<typeof applyChatMemory>> & { ok: true },
+) {
+  const memories = applyMemoryPrompts(
+    memory.chats,
+    sections.unformated,
+    sections.promptTemplate,
+    historyStage.estimate.supaMemoryCardUsed,
+  );
+  applyDepthPrompts(
+    sections.unformated,
+    historyStage.history.depthPrompts,
+    sections.resolvePosition,
+    options.currentChar,
+  );
+  applyTriggerPrompts(
+    sections.unformated,
+    historyStage.history.triggerResult,
+  );
+  return memories;
+}
+
+async function renderGenerationPrompt(
+  options: BuildGenerationPromptOptions,
+  sections: PreparedPromptSections,
+  historyStage: Awaited<ReturnType<typeof buildHistoryStage>> & { ok: true },
+  memories: OpenAIChat[],
+) {
+  return formatPromptForRequest({
+    promptTemplate: sections.promptTemplate,
+    context: historyStage.renderContext,
+    memories,
+    hasCachePoint: historyStage.estimate.hasCachePoint,
+    continued: options.continued,
+    promptInfo: options.promptInfo,
+  });
+}
+
 export interface BuildGenerationPromptOptions {
   currentChar: character;
   currentChat: Chat;
@@ -214,34 +255,21 @@ export async function buildGenerationPrompt(
   );
   const historyStage = await buildHistoryStage(options, sections);
   if (!historyStage.ok) return { ok: false as const };
-
   const memory = await applyMemoryStage(options, historyStage.history);
   if (!memory.ok) return { ok: false as const };
-  const memories = applyMemoryPrompts(
-    memory.chats,
-    sections.unformated,
-    sections.promptTemplate,
-    historyStage.estimate.supaMemoryCardUsed,
-  );
-  applyDepthPrompts(
-    sections.unformated,
-    historyStage.history.depthPrompts,
-    sections.resolvePosition,
-    options.currentChar,
-  );
-  applyTriggerPrompts(
-    sections.unformated,
-    historyStage.history.triggerResult,
-  );
 
-  const formated = await formatPromptForRequest({
-    promptTemplate: sections.promptTemplate,
-    context: historyStage.renderContext,
+  const memories = applyHistoryPromptDecorations(
+    options,
+    sections,
+    historyStage,
+    memory,
+  );
+  const formated = await renderGenerationPrompt(
+    options,
+    sections,
+    historyStage,
     memories,
-    hasCachePoint: historyStage.estimate.hasCachePoint,
-    continued: options.continued,
-    promptInfo: options.promptInfo,
-  });
+  );
   return {
     ok: true as const,
     formated,

@@ -129,12 +129,11 @@ async function finalizeStreamingOutput(
   return { currentChat, resendChat: triggered.resendChat };
 }
 
-export async function processStreamingResponse(options: StreamingOptions) {
+async function streamResponseBody(options: StreamingOptions) {
   const target = prepareStreamingTarget(options);
   const performanceMode: StreamingDisplayOptimizationMode =
     settingsStore.state.streamingDisplayOptimizationMode ?? "off";
   markStreamingActive(options, performanceMode);
-
   const streamed = await consumeStreamingDisplay({
     reader: options.req.result.getReader(),
     abortSignal: options.abortSignal,
@@ -146,6 +145,11 @@ export async function processStreamingResponse(options: StreamingOptions) {
     reformatContent: options.reformatContent,
     performanceMode,
   });
+  return { target, streamed };
+}
+
+export async function processStreamingResponse(options: StreamingOptions) {
+  const { target, streamed } = await streamResponseBody(options);
   if (streamed.aborted) {
     return {
       ok: false as const,

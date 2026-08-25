@@ -142,8 +142,10 @@ async function notifyOutputListener(
   );
 }
 
-export async function processNonStreamingResponse(options: NonStreamingOptions) {
-  const responses = getResponses(options.req);
+async function consumeNonStreamingResponses(
+  options: NonStreamingOptions,
+  responses: readonly ResponseTuple[],
+) {
   const rerolls: string[] = [];
   let result = "";
   let emoChanged = false;
@@ -153,7 +155,6 @@ export async function processNonStreamingResponse(options: NonStreamingOptions) 
     const processed = await processSingleResponse(options, responses[index], index);
     result = processed.result;
     emoChanged = processed.emoChanged;
-
     if (index === 0) {
       outputMessageId = await storeFirstResponse(
         options,
@@ -165,25 +166,33 @@ export async function processNonStreamingResponse(options: NonStreamingOptions) 
     } else {
       rerolls.push(result);
     }
-
     characterStore.characters[options.selectedChar].reloadKeys += 1;
     if (settingsStore.state.ttsAutoSpeech) {
       await sayTTS(options.currentChar, result);
     }
   }
+  return { rerolls, result, emoChanged, outputMessageId };
+}
 
-  if (rerolls.length > 1) addRerolls(options.generationId, rerolls);
+export async function processNonStreamingResponse(options: NonStreamingOptions) {
+  const consumed = await consumeNonStreamingResponses(options, getResponses(options.req));
+  if (consumed.rerolls.length > 1) {
+    addRerolls(options.generationId, consumed.rerolls);
+  }
   const triggered = await applyOutputTrigger(
     options.currentChar,
     options.selectedChar,
     options.selectedChat,
   );
-  await notifyOutputListener(options, triggered.currentChat, outputMessageId);
-
+  await notifyOutputListener(
+    options,
+    triggered.currentChat,
+    consumed.outputMessageId,
+  );
   return {
     ok: true as const,
-    result,
-    emoChanged,
+    result: consumed.result,
+    emoChanged: consumed.emoChanged,
     resendChat: triggered.resendChat,
     currentChat: triggered.currentChat,
   };

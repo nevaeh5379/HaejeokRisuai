@@ -121,35 +121,28 @@ async function processEmbeddingEmotion(
   if (best) commitNamedEmotion(currentChar, state, best);
 }
 
-async function processModelEmotion(
-  currentChar: character,
-  state: EmotionState,
-  result: string,
-  abortSignal: AbortSignal,
-  throwError: (error: string) => void,
-) {
-  const emotionList = state.assets.map((asset) => asset[0]);
-  const promptBody: OpenAIChat[] = [
+function buildModelEmotionPrompt(emotionList: string[], result: string): OpenAIChat[] {
+  const instruction =
+    settingsStore.state.emotionPrompt2 ||
+    "From the list below, choose a word that best represents a character's outfit description, action, or emotion in their dialogue. Prioritize selecting words related to outfit first, then action, and lastly emotion. Print out the chosen word.";
+  return [
     {
       role: "system",
-      content: `${settingsStore.state.emotionPrompt2 || "From the list below, choose a word that best represents a character's outfit description, action, or emotion in their dialogue. Prioritize selecting words related to outfit first, then action, and lastly emotion. Print out the chosen word."}\n\n list: ${shuffleArray([...emotionList]).join(", ")} \noutput only one word.`,
+      content: `${instruction}\n\n list: ${shuffleArray([...emotionList]).join(", ")} \noutput only one word.`,
     },
     { role: "user", content: `"Good morning, Master! Is there anything I can do for you today?"` },
     { role: "assistant", content: "happy" },
     { role: "user", content: result },
   ];
+}
 
-  const response = await requestChatData(
-    {
-      formated: promptBody,
-      bias: await buildEmotionBias(emotionList, state.history),
-      currentChar,
-      maxTokens: 30,
-    },
-    "emotion",
-    abortSignal,
-  );
-
+function handleModelEmotionResponse(
+  response: Awaited<ReturnType<typeof requestChatData>>,
+  currentChar: character,
+  state: EmotionState,
+  abortSignal: AbortSignal,
+  throwError: (error: string) => void,
+) {
   if (response.type === "fail") {
     if (!abortSignal.aborted) throwError(response.result);
     return;
@@ -158,12 +151,38 @@ async function processModelEmotion(
     if (!abortSignal.aborted) throwError("Unexpected response type");
     return;
   }
-
   try {
     commitEmotionFromText(currentChar, state, response.result);
   } catch (error) {
     throwError(language.errors.httpError + `${error}`);
   }
+}
+
+async function processModelEmotion(
+  currentChar: character,
+  state: EmotionState,
+  result: string,
+  abortSignal: AbortSignal,
+  throwError: (error: string) => void,
+) {
+  const emotionList = state.assets.map((asset) => asset[0]);
+  const response = await requestChatData(
+    {
+      formated: buildModelEmotionPrompt(emotionList, result),
+      bias: await buildEmotionBias(emotionList, state.history),
+      currentChar,
+      maxTokens: 30,
+    },
+    "emotion",
+    abortSignal,
+  );
+  handleModelEmotionResponse(
+    response,
+    currentChar,
+    state,
+    abortSignal,
+    throwError,
+  );
 }
 
 function buildImageGenerationTranscript(selectedChar: number, selectedChat: number) {
@@ -192,47 +211,59 @@ export interface PostGenerationEffectsOptions {
   throwError: (error: string) => void;
 }
 
-export async function processPostGenerationEffects({
-  req,
-  currentChar,
-  selectedChar,
-  selectedChat,
-  chatProcessIndex,
-  result,
-  emoChanged,
-  abortSignal,
-  throwError,
-}: PostGenerationEffectsOptions): Promise<{ returnEarly: boolean; emoChanged: boolean }> {
+async function processEmotionEffects(
+  options: PostGenerationEffectsOptions,
+): Promise<{ returnEarly: boolean; emoChanged: boolean }> {
   let emotionState: EmotionState | undefined;
-  const getState = () => (emotionState ??= getEmotionState(currentChar));
+  const getState = () => (emotionState ??= getEmotionState(options.currentChar));
+  let emoChanged = options.emoChanged;
 
   if (
-    req.special?.emotion &&
-    commitNamedEmotion(currentChar, getState(), req.special.emotion)
+    options.req.special?.emotion &&
+    commitNamedEmotion(options.currentChar, getState(), options.req.special.emotion)
   ) {
     emoChanged = true;
   }
-
-  if (currentChar.inlayViewScreen) {
+  if (options.currentChar.inlayViewScreen) return { returnEarly: false, emoChanged };
+  if (
+    options.currentChar.viewScreen !== "emotion" ||
+    emoChanged ||
+    options.abortSignal.aborted
+  ) {
     return { returnEarly: false, emoChanged };
   }
 
-  if (currentChar.viewScreen === "emotion" && !emoChanged && !abortSignal.aborted) {
-    const state = getState();
-    if (settingsStore.state.emotionProcesser === "embedding") {
-      await processEmbeddingEmotion(currentChar, state, result);
-    } else {
-      await processModelEmotion(currentChar, state, result, abortSignal, throwError);
-    }
-    return { returnEarly: true, emoChanged };
+  const state = getState();
+  if (settingsStore.state.emotionProcesser === "embedding") {
+    await processEmbeddingEmotion(options.currentChar, state, options.result);
+  } else {
+    await processModelEmotion(
+      options.currentChar,
+      state,
+      options.result,
+      options.abortSignal,
+      options.throwError,
+    );
   }
+  return { returnEarly: true, emoChanged };
+}
 
-  if (currentChar.viewScreen === "imggen") {
-    if (chatProcessIndex !== -1) {
-      throwError("Stable diffusion in group chat is not supported");
-    }
-    await stableDiff(currentChar, buildImageGenerationTranscript(selectedChar, selectedChat));
+async function processImageGeneration(options: PostGenerationEffectsOptions) {
+  if (options.currentChar.viewScreen !== "imggen") return;
+  if (options.chatProcessIndex !== -1) {
+    options.throwError("Stable diffusion in group chat is not supported");
   }
+  await stableDiff(
+    options.currentChar,
+    buildImageGenerationTranscript(options.selectedChar, options.selectedChat),
+  );
+}
 
-  return { returnEarly: false, emoChanged };
+export async function processPostGenerationEffects(
+  options: PostGenerationEffectsOptions,
+): Promise<{ returnEarly: boolean; emoChanged: boolean }> {
+  const emotion = await processEmotionEffects(options);
+  if (emotion.returnEarly) return emotion;
+  await processImageGeneration(options);
+  return emotion;
 }

@@ -57,58 +57,80 @@ async function writeDisplayResult(
   characterStore.characters[options.selectedChar].reloadKeys += 1;
 }
 
+interface FlushRuntime {
+  timer: ReturnType<typeof setTimeout> | null;
+  frame: number | null;
+  promise: Promise<void> | null;
+  queued: boolean;
+}
+
+function clearFlushSchedule(runtime: FlushRuntime) {
+  if (runtime.timer !== null) clearTimeout(runtime.timer);
+  if (runtime.frame !== null) cancelAnimationFrame(runtime.frame);
+  runtime.timer = null;
+  runtime.frame = null;
+}
+
+function flushPendingResults(
+  options: StreamDisplayOptions,
+  state: StreamDisplayState,
+  runtime: FlushRuntime,
+  deferPostProcessing: boolean,
+) {
+  clearFlushSchedule(runtime);
+  if (runtime.promise) {
+    runtime.queued = true;
+    return runtime.promise;
+  }
+
+  runtime.promise = (async () => {
+    do {
+      runtime.queued = false;
+      const next = state.pendingResult;
+      state.pendingResult = null;
+      if (next !== null) {
+        await writeDisplayResult(options, state, next, deferPostProcessing);
+      }
+    } while (runtime.queued || state.pendingResult !== null);
+  })().finally(() => {
+    runtime.promise = null;
+  });
+  return runtime.promise;
+}
+
+function scheduleDisplayFlush(
+  options: StreamDisplayOptions,
+  state: StreamDisplayState,
+  runtime: FlushRuntime,
+  flush: () => Promise<void>,
+) {
+  if (runtime.timer !== null || runtime.frame !== null) return;
+  runtime.timer = setTimeout(() => {
+    runtime.timer = null;
+    runtime.frame = requestAnimationFrame(() => {
+      runtime.frame = null;
+      void flush().catch((error) => {
+        state.flushError ??= error;
+        void options.reader.cancel().catch(() => {});
+      });
+    });
+  }, 125);
+}
+
 function createFlushController(
   options: StreamDisplayOptions,
   state: StreamDisplayState,
   deferPostProcessing: boolean,
 ) {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  let frame: number | null = null;
-  let promise: Promise<void> | null = null;
-  let queued = false;
-
-  const clearSchedule = () => {
-    if (timer !== null) clearTimeout(timer);
-    if (frame !== null) cancelAnimationFrame(frame);
-    timer = null;
-    frame = null;
+  const runtime: FlushRuntime = {
+    timer: null,
+    frame: null,
+    promise: null,
+    queued: false,
   };
-
-  const flush = async () => {
-    clearSchedule();
-    if (promise) {
-      queued = true;
-      return promise;
-    }
-    promise = (async () => {
-      do {
-        queued = false;
-        const next = state.pendingResult;
-        state.pendingResult = null;
-        if (next !== null) {
-          await writeDisplayResult(options, state, next, deferPostProcessing);
-        }
-      } while (queued || state.pendingResult !== null);
-    })().finally(() => {
-      promise = null;
-    });
-    return promise;
-  };
-
-  const schedule = () => {
-    if (timer !== null || frame !== null) return;
-    timer = setTimeout(() => {
-      timer = null;
-      frame = requestAnimationFrame(() => {
-        frame = null;
-        void flush().catch((error) => {
-          state.flushError ??= error;
-          void options.reader.cancel().catch(() => {});
-        });
-      });
-    }, 125);
-  };
-
+  const flush = () =>
+    flushPendingResults(options, state, runtime, deferPostProcessing);
+  const schedule = () => scheduleDisplayFlush(options, state, runtime, flush);
   return { flush, schedule };
 }
 
@@ -120,6 +142,40 @@ function normalizeChunk(value: Record<string, string>) {
   return result;
 }
 
+async function readNextStreamingChunk(
+  options: StreamDisplayOptions,
+  state: StreamDisplayState,
+) {
+  try {
+    return await options.reader.read();
+  } catch (error) {
+    if (options.abortSignal.aborted || state.streamAborted) {
+      state.streamAborted = true;
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function applyStreamingChunk(
+  options: StreamDisplayOptions,
+  state: StreamDisplayState,
+  value: Record<string, string>,
+  coalesceDisplay: boolean,
+  deferPostProcessing: boolean,
+  scheduleFlush: () => void,
+) {
+  state.receivedResult = true;
+  state.lastResponseChunk = value;
+  state.result = normalizeChunk(value);
+  if (coalesceDisplay) {
+    state.pendingResult = state.result;
+    scheduleFlush();
+    return;
+  }
+  await writeDisplayResult(options, state, state.result, deferPostProcessing);
+}
+
 async function readStreamingChunks(
   options: StreamDisplayOptions,
   state: StreamDisplayState,
@@ -128,32 +184,17 @@ async function readStreamingChunks(
   scheduleFlush: () => void,
 ) {
   while (!state.streamAborted) {
-    let read: ReadableStreamReadResult<Record<string, string>>;
-    try {
-      read = await options.reader.read();
-    } catch (error) {
-      if (options.abortSignal.aborted || state.streamAborted) {
-        state.streamAborted = true;
-        break;
-      }
-      throw error;
-    }
-
+    const read = await readNextStreamingChunk(options, state);
+    if (!read) break;
     if (read.value) {
-      state.receivedResult = true;
-      state.lastResponseChunk = read.value;
-      state.result = normalizeChunk(read.value);
-      if (coalesceDisplay) {
-        state.pendingResult = state.result;
-        scheduleFlush();
-      } else {
-        await writeDisplayResult(
-          options,
-          state,
-          state.result,
-          deferPostProcessing,
-        );
-      }
+      await applyStreamingChunk(
+        options,
+        state,
+        read.value,
+        coalesceDisplay,
+        deferPostProcessing,
+        scheduleFlush,
+      );
     }
     if (read.done) break;
   }
@@ -202,8 +243,8 @@ function resetStreamingState(options: StreamDisplayOptions) {
   void options.reader.cancel().catch(() => {});
 }
 
-export async function consumeStreamingDisplay(options: StreamDisplayOptions) {
-  const state: StreamDisplayState = {
+function createStreamDisplayState(options: StreamDisplayOptions): StreamDisplayState {
+  return {
     result: "",
     emoChanged: false,
     lastResponseChunk: {},
@@ -212,17 +253,21 @@ export async function consumeStreamingDisplay(options: StreamDisplayOptions) {
     pendingResult: null,
     flushError: null,
   };
-  const deferPostProcessing = options.performanceMode === "strong";
-  const coalesceDisplay = options.performanceMode !== "off";
-  const controller = createFlushController(
-    options,
-    state,
-    deferPostProcessing,
-  );
-  const abortReader = () => {
+}
+
+function createAbortReader(options: StreamDisplayOptions, state: StreamDisplayState) {
+  return () => {
     state.streamAborted = true;
     void options.reader.cancel().catch(() => {});
   };
+}
+
+export async function consumeStreamingDisplay(options: StreamDisplayOptions) {
+  const state = createStreamDisplayState(options);
+  const deferPostProcessing = options.performanceMode === "strong";
+  const coalesceDisplay = options.performanceMode !== "off";
+  const controller = createFlushController(options, state, deferPostProcessing);
+  const abortReader = createAbortReader(options, state);
 
   options.abortSignal.addEventListener("abort", abortReader, { once: true });
   try {

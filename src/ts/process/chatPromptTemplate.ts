@@ -152,43 +152,58 @@ function renderChatCard(card: PromptItemChat, context: RenderContext): RenderedC
   return { prompts, promptInfo: [] };
 }
 
-function renderTypedCard(
-  card: PromptItemTyped | PromptItemAuthorNote,
+function renderPersonaCard(
+  card: PromptItemTyped,
+  context: RenderContext,
+  capturePromptInfo: boolean,
+) {
+  return formatTypedPrompts(
+    safeStructuredClone(context.unformated.personaPrompt),
+    card.role2,
+    card.innerFormat,
+    card.type,
+    context,
+    capturePromptInfo,
+  );
+}
+
+function renderDescriptionCard(
+  card: PromptItemTyped,
+  context: RenderContext,
+  capturePromptInfo: boolean,
+) {
+  return formatTypedPrompts(
+    context.getDescriptionPrompts(card.role2),
+    undefined,
+    card.innerFormat,
+    card.type,
+    context,
+    capturePromptInfo,
+  );
+}
+
+function renderAuthorNoteCard(
+  card: PromptItemAuthorNote,
+  context: RenderContext,
+  capturePromptInfo: boolean,
+) {
+  return formatTypedPrompts(
+    safeStructuredClone(context.unformated.authorNote),
+    card.role2,
+    card.innerFormat,
+    card.type,
+    context,
+    capturePromptInfo,
+    card.defaultText || "",
+  );
+}
+
+function renderMemoryCard(
+  card: PromptItemTyped,
   context: RenderContext,
   memories: OpenAIChat[],
   capturePromptInfo: boolean,
-): RenderedCard {
-  if (card.type === "persona") {
-    return formatTypedPrompts(
-      safeStructuredClone(context.unformated.personaPrompt),
-      card.role2,
-      card.innerFormat,
-      card.type,
-      context,
-      capturePromptInfo,
-    );
-  }
-  if (card.type === "description") {
-    return formatTypedPrompts(
-      context.getDescriptionPrompts(card.role2),
-      undefined,
-      card.innerFormat,
-      card.type,
-      context,
-      capturePromptInfo,
-    );
-  }
-  if (card.type === "authornote") {
-    return formatTypedPrompts(
-      safeStructuredClone(context.unformated.authorNote),
-      card.role2,
-      card.innerFormat,
-      card.type,
-      context,
-      capturePromptInfo,
-      card.defaultText || "",
-    );
-  }
+) {
   return formatTypedPrompts(
     safeStructuredClone(memories),
     card.role2,
@@ -199,6 +214,24 @@ function renderTypedCard(
     "",
     false,
   );
+}
+
+function renderTypedCard(
+  card: PromptItemTyped | PromptItemAuthorNote,
+  context: RenderContext,
+  memories: OpenAIChat[],
+  capturePromptInfo: boolean,
+): RenderedCard {
+  if (card.type === "persona") {
+    return renderPersonaCard(card, context, capturePromptInfo);
+  }
+  if (card.type === "description") {
+    return renderDescriptionCard(card, context, capturePromptInfo);
+  }
+  if (card.type === "authornote") {
+    return renderAuthorNoteCard(card, context, capturePromptInfo);
+  }
+  return renderMemoryCard(card, context, memories, capturePromptInfo);
 }
 
 function renderPostEverythingCard(context: RenderContext): RenderedCard {

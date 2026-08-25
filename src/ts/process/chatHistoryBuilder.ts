@@ -182,6 +182,29 @@ function extractThoughts(content: string, index: number, messageCount: number) {
   return { content, thoughts };
 }
 
+async function resolveHistoryMessagePayload(
+  message: Message,
+  index: number,
+  currentChar: character,
+  nowChatroom: character | groupChat,
+) {
+  const processed = await processScriptFull(
+    nowChatroom,
+    risuChatParser(message.data, { chara: currentChar, role: message.role }),
+    "editprocess",
+    index,
+    { chatRole: message.role },
+  );
+  const extracted = extractInlayReferences(processed.data, message.role);
+  const resolved = await resolveInlays(extracted.content, extracted.inlays);
+  const content = await resolveAssetPrompts(
+    resolved.content,
+    resolved.multimodals,
+    currentChar,
+  );
+  return { content, multimodals: resolved.multimodals };
+}
+
 async function formatHistoryMessage(
   message: Message,
   index: number,
@@ -191,27 +214,20 @@ async function formatHistoryMessage(
   usingPromptTemplate: boolean,
   findCharacter: (id: string) => character,
 ): Promise<OpenAIChat> {
-  let content = (
-    await processScriptFull(
-      nowChatroom,
-      risuChatParser(message.data, { chara: currentChar, role: message.role }),
-      "editprocess",
-      index,
-      { chatRole: message.role },
-    )
-  ).data;
   message.chatId ??= v4();
-
-  const extracted = extractInlayReferences(content, message.role);
-  const resolved = await resolveInlays(extracted.content, extracted.inlays);
-  content = await resolveAssetPrompts(resolved.content, resolved.multimodals, currentChar);
+  const payload = await resolveHistoryMessagePayload(
+    message,
+    index,
+    currentChar,
+    nowChatroom,
+  );
   const roleResult = resolveMessageRole(
     message,
     currentChar,
     nowChatroom,
     usingPromptTemplate,
     findCharacter,
-    content,
+    payload.content,
   );
   const thoughtResult = extractThoughts(roleResult.content, index, messageCount);
   const chat: OpenAIChat = {
@@ -219,7 +235,7 @@ async function formatHistoryMessage(
     content: thoughtResult.content,
     memo: message.chatId,
     attr: [],
-    multimodals: resolved.multimodals,
+    multimodals: payload.multimodals,
     thoughts: thoughtResult.thoughts,
   };
   if (chat.multimodals?.length === 0) delete chat.multimodals;

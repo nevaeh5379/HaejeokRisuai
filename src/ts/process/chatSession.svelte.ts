@@ -213,17 +213,42 @@ function createTokenizer(additionalTokens: number) {
   );
 }
 
+function buildReadySession(
+  options: PrepareChatSessionOptions,
+  selection: NonNullable<Awaited<ReturnType<typeof loadSelectedChat>>>,
+  currentChar: character,
+  calculatedChatTokens: number,
+  findCharacter: (id: string) => character,
+) {
+  options.errorContext.currentChar = currentChar;
+  const tokenizer = createTokenizer(
+    options.chatAdditonalTokens ?? calculatedChatTokens,
+  );
+  const currentChat = runCurrentChatVariables(
+    selection.nowChatroom.chats[selection.selectedChat],
+    currentChar,
+  );
+  selection.nowChatroom.chats[selection.selectedChat] = currentChat;
+  return {
+    status: "ready" as const,
+    ...selection,
+    currentChar,
+    currentChat,
+    promptInfo: buildPromptInfo(),
+    tokenizer,
+    maxContextTokens: settingsStore.state.maxContext,
+    findCharacter,
+  };
+}
+
 export async function prepareChatSession(options: PrepareChatSessionOptions) {
   if (!(await initializeGeneration(options))) {
     return { status: "done" as const, result: false };
   }
-
   const selection = await loadSelectedChat(options);
   if (!selection) return { status: "done" as const, result: false };
 
-  const calculatedChatTokens = settingsStore.state.aiModel.startsWith("gpt")
-    ? 5
-    : 3;
+  const calculatedChatTokens = settingsStore.state.aiModel.startsWith("gpt") ? 5 : 3;
   const findCharacter = createCharacterLookup();
   const speaker = await resolveCurrentCharacter(
     options,
@@ -232,25 +257,11 @@ export async function prepareChatSession(options: PrepareChatSessionOptions) {
     findCharacter,
   );
   if (speaker.status === "done") return speaker;
-
-  options.errorContext.currentChar = speaker.currentChar;
-  const tokenizer = createTokenizer(
-    options.chatAdditonalTokens ?? calculatedChatTokens,
-  );
-  const currentChat = runCurrentChatVariables(
-    selection.nowChatroom.chats[selection.selectedChat],
+  return buildReadySession(
+    options,
+    selection,
     speaker.currentChar,
-  );
-  selection.nowChatroom.chats[selection.selectedChat] = currentChat;
-
-  return {
-    status: "ready" as const,
-    ...selection,
-    currentChar: speaker.currentChar,
-    currentChat,
-    promptInfo: buildPromptInfo(),
-    tokenizer,
-    maxContextTokens: settingsStore.state.maxContext,
+    calculatedChatTokens,
     findCharacter,
-  };
+  );
 }

@@ -96,13 +96,7 @@ function parseLegacyPrompt(data: string): OpenAIChat[] {
   return chats;
 }
 
-function buildLegacyPromptSections(
-  sections: PromptSections,
-  currentChar: character,
-  promptTemplate: PromptItem[] | null | undefined,
-) {
-  if (currentChar.utilityBot || promptTemplate) return;
-
+function buildLegacyMainPrompts(sections: PromptSections, currentChar: character) {
   const mainPrompt =
     currentChar.systemPrompt?.replaceAll("{{original}}", settingsStore.state.mainPrompt) ||
     settingsStore.state.mainPrompt;
@@ -110,13 +104,11 @@ function buildLegacyPromptSections(
     settingsStore.state.additionalPrompt && settingsStore.state.promptPreprocess
       ? `\n${settingsStore.state.additionalPrompt}`
       : "";
-
   sections.main.push(
     ...parseLegacyPrompt(
       risuChatParser(mainPrompt + additionalPrompt, { chara: currentChar }),
     ),
   );
-
   if (settingsStore.state.jailbreakToggle) {
     sections.jailbreak.push(
       ...parseLegacyPrompt(
@@ -124,7 +116,9 @@ function buildLegacyPromptSections(
       ),
     );
   }
+}
 
+function buildLegacyGlobalNote(sections: PromptSections, currentChar: character) {
   const globalNote =
     currentChar.replaceGlobalNote?.replaceAll(
       "{{original}}",
@@ -133,6 +127,16 @@ function buildLegacyPromptSections(
   sections.globalNote.push(
     ...parseLegacyPrompt(risuChatParser(globalNote, { chara: currentChar })),
   );
+}
+
+function buildLegacyPromptSections(
+  sections: PromptSections,
+  currentChar: character,
+  promptTemplate: PromptItem[] | null | undefined,
+) {
+  if (currentChar.utilityBot || promptTemplate) return;
+  buildLegacyMainPrompts(sections, currentChar);
+  buildLegacyGlobalNote(sections, currentChar);
 }
 
 function buildAuthorAndControlPrompts(
@@ -161,19 +165,13 @@ function buildAuthorAndControlPrompts(
   }
 }
 
-async function buildDescriptionPrompt(
-  sections: PromptSections,
-  currentChar: character,
-  currentChat: Chat,
-  nowChatroom: character | groupChat,
-) {
+async function buildDescriptionText(currentChar: character, currentChat: Chat) {
   let description = risuChatParser(
     (settingsStore.state.promptPreprocess
       ? settingsStore.state.descriptionPrefix
       : "") + currentChar.desc,
     { chara: currentChar },
   );
-
   const additionalInfo = await additionalInformations(currentChar, currentChat);
   if (additionalInfo) {
     description += `\n\n${risuChatParser(additionalInfo, { chara: currentChar })}`;
@@ -190,15 +188,33 @@ async function buildDescriptionPrompt(
       { chara: currentChar },
     );
   }
+  return description;
+}
 
-  const prompt: OpenAIChat = { role: "system", content: description };
+function appendGroupSpeakerInstruction(
+  sections: PromptSections,
+  currentChar: character,
+  nowChatroom: character | groupChat,
+) {
+  if (nowChatroom.type !== "group") return;
+  sections.postEverything.push({
+    role: "system",
+    content: `[Write the next reply only as ${currentChar.name}]`,
+  });
+}
+
+async function buildDescriptionPrompt(
+  sections: PromptSections,
+  currentChar: character,
+  currentChat: Chat,
+  nowChatroom: character | groupChat,
+) {
+  const prompt: OpenAIChat = {
+    role: "system",
+    content: await buildDescriptionText(currentChar, currentChat),
+  };
   sections.description.push(prompt);
-  if (nowChatroom.type === "group") {
-    sections.postEverything.push({
-      role: "system",
-      content: `[Write the next reply only as ${currentChar.name}]`,
-    });
-  }
+  appendGroupSpeakerInstruction(sections, currentChar, nowChatroom);
   return prompt;
 }
 
@@ -340,6 +356,20 @@ function createPositionParser(
   };
 }
 
+function createDescriptionPromptGetter(
+  sections: PromptSections,
+  lorePrompt: LorePrompt,
+) {
+  const beforeDescriptionCount = lorePrompt.actives.filter(
+    (active) => active.pos === "before_desc",
+  ).length;
+  return (role?: PromptRole) => {
+    const prompts = safeStructuredClone(sections.description);
+    applyPromptBlockRole([prompts[beforeDescriptionCount]], role);
+    return prompts;
+  };
+}
+
 export async function preparePromptSections(
   currentChar: character,
   currentChat: Chat,
@@ -350,7 +380,7 @@ export async function preparePromptSections(
   buildLegacyPromptSections(sections, currentChar, promptTemplate);
   buildAuthorAndControlPrompts(sections, currentChar, currentChat, usingPromptTemplate);
 
-  const baseDescriptionPrompt = await buildDescriptionPrompt(
+  await buildDescriptionPrompt(
     sections,
     currentChar,
     currentChat,
@@ -367,15 +397,6 @@ export async function preparePromptSections(
     resolvePosition,
   );
 
-  const beforeDescriptionCount = lorePrompt.actives.filter(
-    (active) => active.pos === "before_desc",
-  ).length;
-  const getDescriptionPrompts = (role?: PromptRole) => {
-    const prompts = safeStructuredClone(sections.description);
-    applyPromptBlockRole([prompts[beforeDescriptionCount]], role);
-    return prompts;
-  };
-
   return {
     unformated: sections,
     promptTemplate,
@@ -383,6 +404,6 @@ export async function preparePromptSections(
     lorepmt: lorePrompt,
     resolvePosition,
     positionParser: createPositionParser(lorePrompt, resolvePosition),
-    getDescriptionPrompts,
+    getDescriptionPrompts: createDescriptionPromptGetter(sections, lorePrompt),
   };
 }
