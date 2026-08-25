@@ -193,8 +193,8 @@
             })
         }
         chara.chats.unshift(newChat)
-        if (newChat.id && newChat.message.length > 0) {
-            void messageStore.commitMessages(newChat.id, newChat.message)
+        if (newChat.id) {
+            await messageStore.persistNewChat(chara.chaId, newChat.id, newChat.message)
         }
         changeChatTo(0)
         $ReloadGUIPointer += 1
@@ -317,8 +317,8 @@
                                             msg.chatId = v4()
                                         }
                                         chara.chats.unshift(newChat)
-                                        if (newChat.id && newChat.message?.length > 0) {
-                                            void messageStore.commitMessages(newChat.id, newChat.message)
+                                        if (newChat.id) {
+                                            await messageStore.persistNewChat(chara.chaId, newChat.id, newChat.message ?? [])
                                         }
                                         changeChatTo(0)
                                         chara.chats = chara.chats
@@ -440,8 +440,8 @@
                                     msg.chatId = v4()
                                 }
                                 chara.chats.unshift(newChat)
-                                if (newChat.id && newChat.message?.length > 0) {
-                                    void messageStore.commitMessages(newChat.id, newChat.message)
+                                if (newChat.id) {
+                                    await messageStore.persistNewChat(chara.chaId, newChat.id, newChat.message ?? [])
                                 }
                                 changeChatTo(0)
                                 chara.chats = chara.chats

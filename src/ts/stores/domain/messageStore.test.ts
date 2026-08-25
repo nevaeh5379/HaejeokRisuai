@@ -296,4 +296,52 @@ describe("messageStore", () => {
     expect(commit.messages).toEqual([]);
     expect(commit.messageManifests).toEqual([{ chatId: "chat-1", ids: [] }]);
   });
+
+  it("persists a new chat row before committing its messages", async () => {
+    const character = characterStore.characters[0];
+    const newChat = {
+      id: "chat-copy",
+      name: "Chat 1 (Copy)",
+      note: "",
+      localLore: [],
+      message: [
+        { chatId: "copy-msg-1", role: "user", data: "hello" },
+        { chatId: "copy-msg-2", role: "char", data: "hi there" },
+      ],
+      messagesFullyLoaded: true,
+    } as any;
+    character.chats.unshift(newChat);
+
+    await messageStore.persistNewChat(
+      character.chaId,
+      newChat.id,
+      newChat.message,
+    );
+
+    expect(mockStorage.commits).toHaveLength(2);
+    expect(mockStorage.commits[0].chats).toEqual([
+      expect.objectContaining({
+        id: "chat-copy",
+        characterId: "char-1",
+        position: 0,
+      }),
+    ]);
+    expect(mockStorage.commits[0].chatManifests).toEqual([
+      { characterId: "char-1", ids: ["chat-copy", "chat-1"] },
+    ]);
+
+    expect(mockStorage.commits[1].action).toBe("chat-create-messages");
+    expect(
+      mockStorage.commits[1].messages.map(({ chatId, position }) => ({
+        chatId,
+        position,
+      })),
+    ).toEqual([
+      { chatId: "chat-copy", position: 0 },
+      { chatId: "chat-copy", position: 1 },
+    ]);
+    expect(mockStorage.commits[1].messageManifests).toEqual([
+      { chatId: "chat-copy", ids: ["copy-msg-1", "copy-msg-2"] },
+    ]);
+  });
 });

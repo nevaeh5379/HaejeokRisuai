@@ -974,8 +974,8 @@
         })
 
         characterStore.characters[selIdState.selId].chats.unshift(newChat)
-        if (newChat.id && newChat.message?.length > 0) {
-            void messageStore.commitMessages(newChat.id, newChat.message)
+        if (newChat.id) {
+            await messageStore.persistNewChat(characterStore.characters[selIdState.selId].chaId, newChat.id, newChat.message ?? [])
         }
         changeChatTo(0)
     }}>

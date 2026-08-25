@@ -32,6 +32,60 @@ class MessageStore {
     return characterStore.currentChat?.message ?? [];
   }
 
+  async persistNewChat(
+    characterId: string,
+    chatId: string,
+    messages: Message[],
+  ): Promise<void> {
+    await this.persistNewChats(characterId, [{ chatId, messages }]);
+  }
+
+  async persistNewChats(
+    characterId: string,
+    chats: Array<{ chatId: string; messages: Message[] }>,
+  ): Promise<void> {
+    if (chats.length === 0) return;
+
+    // Messages reference their parent chat through a foreign key in every SQL
+    // backend. Persist all parent chat rows and the manifest before inserting
+    // any child messages, avoiding the debounced CharacterStore race.
+    for (const { chatId } of chats) {
+      characterStore.markChatDirty(chatId);
+    }
+    characterStore.markChatManifestDirty(characterId);
+    await characterStore.flush();
+
+    const nonEmptyChats = chats.filter(({ messages }) => messages.length > 0);
+    if (nonEmptyChats.length === 0) return;
+
+    const storage = await getSqlStorage();
+    const messageUpserts = nonEmptyChats.flatMap(({ chatId, messages }) =>
+      messages.map((message, position) => {
+        message.chatId ||= uuidv4();
+        return {
+          id: message.chatId,
+          chatId,
+          position,
+          data: sqlMessageData(message),
+        };
+      }),
+    );
+
+    await storage.commit({
+      baseRevision: storage.getRevision(),
+      action: "chat-create-messages",
+      root: { upserts: [], deletes: [] },
+      characters: [],
+      chats: [],
+      chatManifests: [],
+      messages: messageUpserts,
+      messageManifests: nonEmptyChats.map(({ chatId, messages }) => ({
+        chatId,
+        ids: messages.map((message) => message.chatId!).filter(Boolean),
+      })),
+    });
+  }
+
   async appendMessage(chatId: string, message: Message): Promise<void> {
     message.chatId ||= uuidv4();
     const chat = findChatAcrossCharacters(chatId);

@@ -498,8 +498,12 @@ export async function importChat() {
       }
 
       characterStore.characters[selectedID].chats.unshift(newChat);
-      if (newChat.id && newChat.message?.length > 0) {
-        void messageStore.commitMessages(newChat.id, newChat.message);
+      if (newChat.id) {
+        await messageStore.persistNewChat(
+          characterStore.characters[selectedID].chaId,
+          newChat.id,
+          newChat.message ?? [],
+        );
       }
       changeChatTo(0);
       alertNormal(language.successImport);
@@ -538,11 +542,12 @@ export async function importChat() {
           chat.id = v4();
         });
         characterStore.characters[selectedID].chats.unshift(...chats);
-        for (const chat of chats) {
-          if (chat.id && chat.message?.length > 0) {
-            void messageStore.commitMessages(chat.id, chat.message);
-          }
-        }
+        await messageStore.persistNewChats(
+          characterStore.characters[selectedID].chaId,
+          chats
+            .filter((chat) => chat.id)
+            .map((chat) => ({ chatId: chat.id!, messages: chat.message ?? [] })),
+        );
         alertNormal(language.successImport);
         return;
       }
@@ -560,11 +565,12 @@ export async function importChat() {
             return v;
           });
           characterStore.characters[selectedID].chats.unshift(...mappedChats);
-          for (const chat of mappedChats) {
-            if (chat.id && chat.message?.length > 0) {
-              void messageStore.commitMessages(chat.id, chat.message);
-            }
-          }
+          await messageStore.persistNewChats(
+            characterStore.characters[selectedID].chaId,
+            mappedChats
+              .filter((chat) => chat.id)
+              .map((chat) => ({ chatId: chat.id!, messages: chat.message ?? [] })),
+          );
           alertNormal(language.successImport);
           return;
         } else {
@@ -583,8 +589,12 @@ export async function importChat() {
           das.fmIndex ??= -1;
           das.id = v4();
           characterStore.characters[selectedID].chats.unshift(das);
-          if (das.id && das.message?.length > 0) {
-            void messageStore.commitMessages(das.id, das.message);
+          if (das.id) {
+            await messageStore.persistNewChat(
+              characterStore.characters[selectedID].chaId,
+              das.id,
+              das.message ?? [],
+            );
           }
           alertNormal(language.successImport);
           return;

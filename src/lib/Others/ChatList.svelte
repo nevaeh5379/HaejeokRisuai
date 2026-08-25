@@ -69,7 +69,7 @@
             </button>
         {/each}
         <div class="flex mt-2 items-center">
-            <button class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1" onclick={() => {
+            <button class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1" onclick={async () => {
                 const cha = characterStore.characters[$selectedCharID]
                 const len = cha.chats.length
                 const newChat = {
@@ -91,8 +91,8 @@
                     })
                 }
                 cha.chats.unshift(newChat)
-                if (newChat.id && newChat.message.length > 0) {
-                    void messageStore.commitMessages(newChat.id, newChat.message)
+                if (newChat.id) {
+                    await messageStore.persistNewChat(cha.chaId, newChat.id, newChat.message)
                 }
                 changeChatTo(0)
                 close()
