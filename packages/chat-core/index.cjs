@@ -7,5 +7,6 @@ module.exports = {
   ...require('./group.cjs'),
   ...require('./requestPolicy.cjs'),
   ...require('./requestLoop.cjs'),
+  ...require('./providerRouting.cjs'),
   ...require('./tokenAccounting.cjs'),
 };

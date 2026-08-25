@@ -1,0 +1,27 @@
+export const LLM_FORMATS: Readonly<{
+  OpenAICompatible: 0;
+  OpenAILegacyInstruct: 1;
+  Anthropic: 2;
+  AnthropicLegacy: 3;
+  Mistral: 4;
+  GoogleCloud: 5;
+  VertexAIGemini: 6;
+  NovelList: 7;
+  Cohere: 8;
+  NovelAI: 9;
+  WebLLM: 10;
+  OobaLegacy: 11;
+  Plugin: 12;
+  Ooba: 13;
+  Kobold: 14;
+  Ollama: 15;
+  Horde: 16;
+  AWSBedrockClaude: 17;
+  OpenAIResponseAPI: 18;
+  Echo: 19;
+  NanoGPT: 20;
+  NanoGPTResponses: 21;
+  NanoGPTMessages: 22;
+  NanoGPTLegacy: 23;
+}>;
+export type LLMFormatValue = (typeof LLM_FORMATS)[keyof typeof LLM_FORMATS];
