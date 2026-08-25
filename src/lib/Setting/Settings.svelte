@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, DatabaseIcon, HardDriveIcon, LanguagesIcon, MonitorIcon, Sailboat, UserIcon, CircleXIcon, KeyboardIcon, SparkleIcon, ArrowLeft, ChevronRight, XIcon, KeyIcon, SlidersHorizontal, MessageSquareIcon } from "@lucide/svelte";
+    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, DatabaseIcon, HardDriveIcon, LanguagesIcon, MonitorIcon, Sailboat, UserIcon, CircleXIcon, CircleArrowLeft, KeyboardIcon, SparkleIcon, ChevronRight, KeyIcon, SlidersHorizontal, MessageSquareIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import DisplaySettings from "./Pages/DisplaySettings.svelte";
     import UserSettings from "./Pages/UserSettings.svelte";
@@ -617,17 +617,17 @@
     <div class="fixed inset-0 z-40 bg-bgcolor flex flex-col w-full h-full text-textcolor overflow-hidden rs-setting-cont">
         <!-- Mobile Header (Safe Area Aware) -->
         <div class="w-full px-4 pt-[max(env(safe-area-inset-top),12px)] pb-3 border-b border-b-darkborderc bg-darkbg/95 backdrop-blur-md flex justify-between items-center shrink-0 z-20">
-            <div class="flex items-center gap-2.5 min-w-0">
+            <div class="flex items-center gap-2 min-w-0">
                 {#if $SettingsMenuIndex !== -1}
                     <button
-                        class="w-9 h-9 rounded-full bg-textcolor/10 hover:bg-textcolor/15 active:scale-95 flex items-center justify-center text-textcolor transition-all cursor-pointer shrink-0"
+                        class="hover:text-green-500 text-textcolor transition-colors cursor-pointer shrink-0 p-1 flex items-center justify-center"
                         onclick={() => {
                             $SettingsMenuIndex = -1;
                             mobileBotTarget = null;
                         }}
                         aria-label="Back"
                     >
-                        <ArrowLeft size={20} />
+                        <CircleArrowLeft size={settingsStore.state.settingsCloseButtonSize || 24} />
                     </button>
                 {/if}
                 <h1 class="font-bold text-lg text-textcolor truncate m-0">
