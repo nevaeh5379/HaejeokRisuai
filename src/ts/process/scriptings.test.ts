@@ -6,10 +6,13 @@ import { beforeAll, expect, test, vi } from "vitest";
 
 const commitMessages = vi.hoisted(() => vi.fn(async () => undefined));
 const moduleTriggers = vi.hoisted(() => vi.fn(() => []));
+const moduleLorebooks = vi.hoisted(() => vi.fn(() => []));
+const databaseState = vi.hoisted(() => ({ value: { characters: [] } as any }));
+const currentChatState = vi.hoisted(() => ({ value: { message: [] } as any }));
 
 vi.mock("../parser/parser.svelte", () => ({
   hasher: vi.fn(),
-  risuChatParser: vi.fn(),
+  risuChatParser: vi.fn((value: string) => value),
 }));
 
 vi.mock("../alert", () => ({
@@ -34,8 +37,8 @@ vi.mock("../util", () => ({
 
 vi.mock("../storage/database.svelte", () => ({
   getCurrentCharacter: vi.fn(() => ({})),
-  getCurrentChat: vi.fn(() => ({ message: [] })),
-  getDatabase: vi.fn(() => ({ characters: [] })),
+  getCurrentChat: vi.fn(() => currentChatState.value),
+  getDatabase: vi.fn(() => databaseState.value),
   setDatabase: vi.fn(),
 }));
 
@@ -56,7 +59,7 @@ vi.mock("../stores.svelte", () => ({
 }));
 
 vi.mock("./modules", () => ({
-  getModuleLorebooks: vi.fn(() => []),
+  getModuleLorebooks: moduleLorebooks,
   getModuleTriggers: moduleTriggers,
 }));
 
@@ -184,4 +187,63 @@ test("checks module button triggers when character triggers are missing", async 
   ).resolves.toBeUndefined();
 
   expect(moduleTriggers).toHaveBeenCalledOnce();
+});
+
+test("runs module button actions that read lorebooks before character details hydrate", async () => {
+  commitMessages.mockClear();
+  moduleTriggers.mockReset();
+  moduleLorebooks.mockReset();
+
+  databaseState.value = {
+    characters: [
+      {
+        type: undefined,
+        chatPage: 0,
+        chats: [{ localLore: [] }],
+        globalLore: undefined,
+      },
+    ],
+  } as any;
+  currentChatState.value = { id: "chat-1", message: [] } as any;
+  moduleLorebooks.mockReturnValue([
+    { comment: "ChoiceModule.actions", content: "module action" },
+  ] as never);
+  moduleTriggers.mockReturnValue([
+    {
+      effect: [
+        {
+          type: "triggerlua",
+          code: `
+            function onButtonClick(id, button)
+              local books = getLoreBooks(id, "ChoiceModule.actions")
+              if button == "module-button" and #books > 0 then
+                addChat(id, "user", "module button worked")
+              end
+            end
+          `,
+        },
+      ],
+      lowLevelAccess: false,
+    },
+  ] as never);
+
+  const result = await runLuaButtonTrigger(
+    {
+      type: "simple",
+      chaId: "char-1",
+      customscript: [],
+      triggerscript: undefined,
+    } as never,
+    "module-button",
+  );
+
+  expect(result.chat.message).toEqual([
+    { role: "user", data: "module button worked" },
+  ]);
+  expect(commitMessages).toHaveBeenCalledOnce();
+
+  moduleTriggers.mockReset();
+  moduleLorebooks.mockReset();
+  databaseState.value = { characters: [] } as any;
+  currentChatState.value = { message: [] } as any;
 });

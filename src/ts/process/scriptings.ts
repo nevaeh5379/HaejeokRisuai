@@ -863,14 +863,14 @@ export async function runScripted(
       declareAPI("getLoreBooksMain", (id: string, search: string) => {
         const db = getDatabase();
         const selectedChar = db.characters[get(selectedCharID)];
-        if (selectedChar.type !== "character") {
-          return;
+        if (!selectedChar || selectedChar.type === "group") {
+          return JSON.stringify([]);
         }
 
         const loreSources = [
-          selectedChar.chats[selectedChar.chatPage]?.localLore ?? [],
-          selectedChar.globalLore,
-          getModuleLorebooks(),
+          selectedChar.chats?.[selectedChar.chatPage]?.localLore ?? [],
+          selectedChar.globalLore ?? [],
+          getModuleLorebooks() ?? [],
         ];
 
         const found = [];
