@@ -1,5 +1,9 @@
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { resolveBuildVersion } from "./build-version.mjs";
+
+const require = createRequire(import.meta.url);
+const tauriCli = require.resolve("@tauri-apps/cli/tauri.js");
 
 const version = resolveBuildVersion();
 const args = process.argv.slice(2);
@@ -19,8 +23,7 @@ console.log(
   `[HaejeokRisuAI] ${version.buildTag} (${version.source}), Tauri ${version.tauriVersion}`,
 );
 
-const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const result = spawnSync(pnpm, ["exec", "tauri", ...args], {
+const result = spawnSync(process.execPath, [tauriCli, ...args], {
   stdio: "inherit",
   env: {
     ...process.env,
