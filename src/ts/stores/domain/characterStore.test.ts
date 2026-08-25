@@ -135,6 +135,38 @@ describe("CharacterStore", () => {
     });
   });
 
+  it("does not write storage-hydrated active chat metadata back to SQL", async () => {
+    const chars = [makeChar("active-hydration")];
+    const chat = chars[0].chats[0];
+    chat.id = "chat-active-hydration";
+    chat.messagesLoaded = false;
+    chat.detailsLoaded = false;
+    delete (chat as any).localLore;
+    vi.mocked(mockStorage.loadChat).mockResolvedValue({
+      ...chat,
+      note: "hydrated from storage",
+      localLore: [{ key: "loaded" }] as any,
+      message: [],
+      messageOffset: 0,
+      messageTotal: 0,
+      messagesFullyLoaded: true,
+      messagesLoaded: true,
+      detailsLoaded: true,
+    });
+    characterStore.init(chars, mockStorage);
+    characterStore.select(0);
+    await new Promise((r) => setTimeout(r, 30));
+
+    await characterStore.ensureChatMessages(chat.id);
+    await new Promise((r) => setTimeout(r, 40));
+    await characterStore.flush();
+
+    expect(characterStore.characters[0].chats[0].note).toBe(
+      "hydrated from storage",
+    );
+    expect(committed).toHaveLength(0);
+  });
+
   it("hydrates only messages when full generation history is requested from a paged chat", async () => {
     const chars = [makeChar("paged")];
     const chat = chars[0].chats[0];

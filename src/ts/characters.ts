@@ -62,7 +62,6 @@ import {
   getCharImagesBatch,
   preloadCharacterImage,
 } from "./characterImage";
-import { loadCharacterSelectionData } from "./characterSelectionLoader";
 
 export { createBlankChar } from "./characterDefaults";
 export { getCharImage, getCharImagesBatch } from "./characterImage";
@@ -773,8 +772,9 @@ export function characterFormatUpdate(
     }
     // Migrate legacy 'none' value to '' for UI dropdown compatibility.
     if (cha.ttsMode === "none") {
+      // Compatibility-only runtime normalization. Persisting this tiny legacy
+      // value during selection would rewrite the entire character tree.
       cha.ttsMode = "";
-      needsFullCharacterPersistence = true;
     }
     cha.ttsMode ??= "";
   } else {
@@ -805,6 +805,12 @@ export function characterFormatUpdate(
 
   for (let i = 0; i < cha.chats.length; i++) {
     const chat = cha.chats[i];
+    // SQL selection intentionally keeps inactive chats as shallow summaries.
+    // Never normalize or persist those placeholders: missing localLore/fmIndex
+    // means "not hydrated", not "empty". Treating them as edits rewrites every
+    // chat on character selection and can destroy unloaded extension metadata.
+    if (sqlHydrated && chat.detailsLoaded === false) continue;
+
     let chatChanged = false;
     if (chat.fmIndex === undefined || chat.fmIndex === null) {
       chat.fmIndex = cha.firstMsgIndex ?? -1;
@@ -1067,23 +1073,12 @@ export async function changeChar(
     }
   }
   try {
-    await loadCharacterSelectionData({
-      getCharacter: () => characterStore.characters?.[index],
-      ensureCharacterDetails: async (characterId) => {
-        try {
-          await characterStore.ensureCharacterDetails(characterId);
-        } catch (error) {
-          console.error(
-            `SQL loadCharacter failed for character ${characterId}:`,
-            error,
-          );
-        }
-      },
-      preLoadChat: async (chatIndex) => {
-        await preLoadChat(index, chatIndex);
-      },
-    });
+    const targetCharacter = characterStore.characters?.[index];
+    if (targetCharacter?.detailsLoaded === false && targetCharacter.chaId) {
+      await characterStore.ensureCharacterDetails(targetCharacter.chaId);
+    }
   } catch (error) {
+    console.error(`SQL loadCharacter failed for character ${index}:`, error);
     if (get(pendingCharID) === index) {
       pendingCharID.set(-1);
     }
@@ -1092,6 +1087,7 @@ export async function changeChar(
   if (get(pendingCharID) !== index) {
     return;
   }
+
   const currentChar = characterStore.characters?.[index];
   const currentChatPage = currentChar?.chatPage ?? 0;
   characterFormatUpdate(index, {
@@ -1101,6 +1097,10 @@ export async function changeChar(
   if (get(pendingCharID) !== index) {
     return;
   }
+
+  // Switch the UI as soon as character metadata is ready. The chat screen
+  // already knows how to render its loading state and hydrate an unloaded chat
+  // asynchronously, so navigation must not wait on Firefox/OPFS message I/O.
   selectedCharID.set(index);
   moduleUpdate(index, { reloadMessages: false });
   pendingCharID.set(-1);

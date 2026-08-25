@@ -93,6 +93,8 @@ function mergeLoadedMessages(
 class CharacterStore {
   private storage: ISqlStorage | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private touchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private touchIdleHandle: number | null = null;
 
   // Dirty sets — only IDs, no snapshots.  Serialised at flush time.
   private dirtyCharacters = new Set<string>();
@@ -127,6 +129,7 @@ class CharacterStore {
 
   init(characters: (character | groupChat)[], storage: ISqlStorage): void {
     this.storage = storage;
+    this.cancelScheduledTouchCommit();
     this.arrayDispose?.();
     this.arrayDispose = null;
     this.activeDispose?.();
@@ -295,7 +298,7 @@ class CharacterStore {
     if (!this.dirtyCharacters.has(char.chaId)) {
       this.dirtyCharacterTouches.set(char.chaId, timestamp);
     }
-    this.scheduleCommit();
+    this.scheduleTouchCommit();
   }
 
   markChatDirty(chatId: string): void {
@@ -316,7 +319,39 @@ class CharacterStore {
 
   // ── Commit pipeline ───────────────────────────────────────────────
 
+  private cancelScheduledTouchCommit(): void {
+    if (this.touchDebounceTimer) {
+      clearTimeout(this.touchDebounceTimer);
+      this.touchDebounceTimer = null;
+    }
+    if (this.touchIdleHandle !== null) {
+      if ("cancelIdleCallback" in globalThis) {
+        globalThis.cancelIdleCallback(this.touchIdleHandle);
+      }
+      this.touchIdleHandle = null;
+    }
+  }
+
+  private scheduleTouchCommit(): void {
+    this.cancelScheduledTouchCommit();
+    this.touchDebounceTimer = setTimeout(() => {
+      this.touchDebounceTimer = null;
+      const flushTouches = () => {
+        this.touchIdleHandle = null;
+        void this.flush();
+      };
+      if ("requestIdleCallback" in globalThis) {
+        this.touchIdleHandle = globalThis.requestIdleCallback(flushTouches, {
+          timeout: 3000,
+        });
+      } else {
+        this.touchDebounceTimer = setTimeout(flushTouches, 0);
+      }
+    }, 750);
+  }
+
   private scheduleCommit(): void {
+    this.cancelScheduledTouchCommit();
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
@@ -326,6 +361,7 @@ class CharacterStore {
   }
 
   async flush(): Promise<void> {
+    this.cancelScheduledTouchCommit();
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
@@ -640,6 +676,14 @@ class CharacterStore {
           chat.messageTotal ??= chat.message.length;
           chat.messagesFullyLoaded ??= chat.messageOffset === 0;
           chat.detailsLoaded = true;
+
+          // Storage hydration is not a user edit. If this chat became active
+          // before the async SQL read completed, refresh the persistence
+          // baseline immediately so loaded metadata is never written straight
+          // back to SQLite as a false-positive change.
+          if (char && this.characters[this.selectedId] === char) {
+            this.observeActive();
+          }
         }
       } catch (error) {
         console.error(`[CharacterStore] loadChat failed for ${chatId}:`, error);
@@ -683,6 +727,7 @@ class CharacterStore {
   }
 
   dispose(): void {
+    this.cancelScheduledTouchCommit();
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;

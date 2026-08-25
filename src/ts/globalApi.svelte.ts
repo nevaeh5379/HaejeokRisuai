@@ -332,7 +332,7 @@ const browserAssetUrls = new BoundedCache<string, string>({
 
 export async function getFileSrc(
   loc: string,
-  options?: { thumbnail?: boolean },
+  options?: { thumbnail?: boolean; transient?: boolean },
 ) {
   if (!loc || loc === "") {
     return "";
@@ -376,7 +376,7 @@ export async function getFileSrc(
   }
   try {
     const cacheKey = isThumb ? `thumb_${loc}` : loc;
-    if (usingSw) {
+    if (usingSw && !options?.transient) {
       const encoded = Buffer.from(cacheKey, "utf-8").toString("hex");
       if (registeredSwCaches.has(cacheKey)) {
         return "/sw/img/" + encoded;

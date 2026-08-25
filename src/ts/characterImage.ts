@@ -161,7 +161,13 @@ export async function getCharImage(
     return `background: url("${fileSource}");background-size: contain;background-repeat: no-repeat;background-position: center;`;
   }
 
-  const fileSource = await getFileSrc(loc, options);
+  const fileSource = await getFileSrc(loc, {
+    ...options,
+    // Character images already live in persistent asset storage. Do not copy
+    // multi-megabyte avatars into Service Worker CacheStorage again during
+    // navigation; keep the decoded/object URL in the bounded memory cache.
+    transient: true,
+  });
   if (!options?.thumbnail && fileSource) {
     fullImageBlobCache.set(loc, fileSource);
   }
@@ -311,7 +317,11 @@ export async function getCharImagesBatch(
   await Promise.all(
     uncachedLocs.map(async (loc) => {
       try {
-        const src = await getFileSrc(loc, options);
+        const src = await getFileSrc(loc, {
+          thumbnail:
+            options.thumbnail === true || options.size === "thumb",
+          transient: true,
+        });
         const cacheKey = `${sizeKey}_${loc}`;
         if (src) {
           fullImageBlobCache.set(cacheKey, src);

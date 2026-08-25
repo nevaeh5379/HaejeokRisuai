@@ -253,8 +253,11 @@ ReloadGUIPointer.subscribe(() => {
 $effect.root(() => {
   selectedCharID.subscribe((v) => {
     selIdState.selId = v;
-    characterStore.select(v);
 
+    // Apply selection-time runtime defaults before attaching the active
+    // persistence observer. Otherwise `alwaysToggleOn` changes supaMemory after
+    // the baseline is captured and turns a simple bot switch into a full
+    // character rewrite, including large asset/lore relational trees.
     if (characterStore.characters?.[selIdState.selId]) {
       if (
         settingsStore.state.hypaV3 &&
@@ -264,6 +267,8 @@ $effect.root(() => {
         characterStore.characters[selIdState.selId].supaMemory = true;
       }
     }
+
+    characterStore.select(v);
   });
   $effect(() => {
     const enabledModuleCount = settingsStore.state.enabledModules?.length ?? 0;

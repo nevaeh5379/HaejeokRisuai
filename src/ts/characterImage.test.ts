@@ -59,6 +59,7 @@ describe("getCharImagesBatch", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fullImageBlobCache.clear();
+    mocks.forageStorage.realStorage = mocks.storage;
     mocks.settingsState.lowSpecMode = false;
   });
 
@@ -104,6 +105,21 @@ describe("getCharImagesBatch", () => {
     );
     expect(result.get("assets/image.png")).toBe("blob:thumb");
     vi.unstubAllGlobals();
+  });
+
+  it("keeps web character thumbnails out of persistent Service Worker cache", async () => {
+    mocks.forageStorage.realStorage = {} as any;
+    mocks.getFileSrc.mockResolvedValueOnce("blob:web-thumb");
+
+    const result = await getCharImagesBatch(["assets/web-character.png"], {
+      size: "thumb",
+    });
+
+    expect(mocks.getFileSrc).toHaveBeenCalledWith("assets/web-character.png", {
+      thumbnail: true,
+      transient: true,
+    });
+    expect(result.get("assets/web-character.png")).toBe("blob:web-thumb");
   });
 
   it("bounds full-resolution character blobs while browsing many bots", () => {
@@ -165,10 +181,9 @@ describe("preloadCharacterImage", () => {
 
     expect(first).toBe(second);
     await first;
-    expect(mocks.getFileSrc).toHaveBeenCalledWith(
-      "assets/chat-avatar.png",
-      undefined,
-    );
+    expect(mocks.getFileSrc).toHaveBeenCalledWith("assets/chat-avatar.png", {
+      transient: true,
+    });
     expect(requestedSources).toEqual(["/api/read?avatar=1"]);
     expect(imageCount).toBe(1);
     vi.unstubAllGlobals();
@@ -193,7 +208,7 @@ describe("preloadCharacterImage", () => {
 
     expect(mocks.getFileSrc).toHaveBeenCalledWith(
       "assets/mobile-chat-avatar.png",
-      { thumbnail: true },
+      { thumbnail: true, transient: true },
     );
     vi.unstubAllGlobals();
   });
