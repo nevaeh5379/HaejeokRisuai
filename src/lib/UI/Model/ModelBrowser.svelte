@@ -69,7 +69,14 @@
         });
       }
     }
-    return models;
+
+    // Deduplicate models by id
+    const seen = new Set<string>();
+    return models.filter(m => {
+      if (seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
   });
 
   // Providers list

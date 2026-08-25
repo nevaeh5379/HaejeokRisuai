@@ -1138,7 +1138,7 @@ export function getModelList<T extends boolean>(
     groupedByProvider?: T;
   } = {},
 ): T extends true ? GetModelListGroup[] : LLMModel[] {
-  let models = LLMModels;
+  let models = [...LLMModels];
   if (arg.recommendedOnly) {
     models = models.filter((model) => model.recommended);
   }

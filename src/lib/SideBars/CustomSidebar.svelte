@@ -1,13 +1,13 @@
 <script lang="ts">
     import { Cog, PinIcon } from '@lucide/svelte'
-    import { loadoutModalStore, openPersonaList, openPresetList, selectedCharID } from 'src/ts/stores.svelte';
+    import { loadoutModalStore, openPersonaList, openPresetList, selectedCharID, settingsOpen, SettingsMenuIndex } from 'src/ts/stores.svelte';
     import { characterStore, settingsStore, personaStore, presetStore } from 'src/ts/stores/domain';
     import Button from '../UI/GUI/Button.svelte';
     import type { CustomSideBarItem } from 'src/ts/storage/database.svelte';
     import { language } from 'src/lang';
     import TextInput from '../UI/GUI/TextInput.svelte';
     import { getFullSettingsData } from 'src/ts/setting/utils';
-    import ModelList from '../UI/ModelList.svelte';
+    import { getModelInfo } from 'src/ts/model/modellist';
     import { get } from 'svelte/store';
     import SettingRenderer from '../Setting/SettingRenderer.svelte';
     import { checkPersonaBinded, getUserName } from 'src/ts/util';
@@ -34,7 +34,12 @@
 
     {#each settingsStore.state.customSidebarItems as item}
         {#if item.type === 'model'}
-            <ModelList bind:value={settingsStore.state.aiModel} noMargin />
+            <Button onclick={() => {
+                $SettingsMenuIndex = 1;
+                settingsOpen.set(true);
+            }}>{
+                getModelInfo(settingsStore.state.aiModel)?.fullName || settingsStore.state.aiModel || language.none
+            }</Button>
         {:else if item.type === 'preset'}
             <Button onclick={() => {
                 openPresetList.set(!get(openPresetList))
