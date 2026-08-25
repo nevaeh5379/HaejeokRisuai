@@ -1,3 +1,4 @@
+import { buildGoogleGenerateContentUrl } from "@risuai/chat-core/googleProvider.cjs";
 import { fetchNative, textifyReadableStream } from "src/ts/globalApi.svelte";
 import { LLMFlags, LLMFormat, type LLMModel } from "src/ts/model/modellist";
 import { getDatabase, setDatabase } from "src/ts/storage/database.svelte";
@@ -18,6 +19,7 @@ import type {
   requestDataResponse,
   StreamResponseChunk,
 } from "./request";
+import { tryExecuteNodeProviderTransport } from "./nodeProviderExecutor";
 import {
   applyAdditionalParameters,
   applyParameters,
@@ -646,7 +648,7 @@ export async function requestGoogleCloudVertex(
   ) {
     url = `https://generativelanguage.googleapis.com/v1beta/models/${arg.modelInfo.internalID}:streamGenerateContent?key=${apiKey}&alt=sse`;
   } else {
-    url = `https://generativelanguage.googleapis.com/v1beta/models/${arg.modelInfo.internalID}:generateContent?key=${apiKey}`;
+    url = buildGoogleGenerateContentUrl(arg.modelInfo.internalID, apiKey);
   }
   // will return error if functionDeclarations is empty
   if (body.tools?.functionDeclarations?.length === 0) {
@@ -785,25 +787,60 @@ async function requestGoogle(
     };
   }
 
-  const res = await fetchNative(url, {
-    headers: headers,
-    body: JSON.stringify(body),
-    method: "POST",
-    chatId: arg.chatId,
-    signal: arg.abortSignal,
-    interceptor: "gemini_base",
-  });
+  const googleApiKey = arg.key || db.google.accessToken;
+  const remoteTransport =
+    arg.modelInfo.format === LLMFormat.GoogleCloud && !arg.customURL
+      ? await tryExecuteNodeProviderTransport(
+          LLMFormat.GoogleCloud,
+          {
+            body,
+            headers,
+            modelId: arg.modelInfo.internalID,
+            apiKey: googleApiKey,
+          },
+          arg.abortSignal,
+        )
+      : null;
 
-  if (!res.ok) {
-    const data = await res.text();
-    const text = JSON.stringify(data);
-    if (text.includes("RESOURCE_EXHAUSTED")) {
-      return fallBackGemini(text);
+  let responseData: any;
+  if (remoteTransport) {
+    if (!remoteTransport.ok) {
+      const data =
+        typeof remoteTransport.data === "string"
+          ? remoteTransport.data
+          : JSON.stringify(remoteTransport.data);
+      const text = JSON.stringify(data);
+      if (text.includes("RESOURCE_EXHAUSTED")) {
+        return fallBackGemini(text);
+      }
+      return {
+        type: "fail",
+        result: `${text} (status: ${remoteTransport.status})`,
+      };
     }
-    return {
-      type: "fail",
-      result: `${text} (status: ${res.status})`,
-    };
+    responseData = remoteTransport.data;
+  } else {
+    const res = await fetchNative(url, {
+      headers: headers,
+      body: JSON.stringify(body),
+      method: "POST",
+      chatId: arg.chatId,
+      signal: arg.abortSignal,
+      interceptor: "gemini_base",
+    });
+
+    if (!res.ok) {
+      const data = await res.text();
+      const text = JSON.stringify(data);
+      if (text.includes("RESOURCE_EXHAUSTED")) {
+        return fallBackGemini(text);
+      }
+      return {
+        type: "fail",
+        result: `${text} (status: ${res.status})`,
+      };
+    }
+    responseData = await res.json();
   }
 
   let rDatas: { text: string; thought?: boolean }[] = [];
@@ -885,7 +922,7 @@ async function requestGoogle(
 
   // traverse responded data if it contains multipart contents
   let parts: GeminiPart[] = [];
-  const resData = await res.json();
+  const resData = responseData;
   if (Array.isArray(resData)) {
     for (const data of resData) {
       const p = await processDataItem(data);

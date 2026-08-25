@@ -16,6 +16,9 @@ const {
 const {
   DEFAULT_ANTHROPIC_MESSAGES_URL,
 } = require('../../packages/chat-core/anthropicProvider.cjs');
+const {
+  buildGoogleGenerateContentUrl,
+} = require('../../packages/chat-core/googleProvider.cjs');
 const { LLM_FORMATS } = require('../../packages/protocol/modelFormat.cjs');
 const {
   normalizeNodeProviderExecutionRequest,
@@ -80,6 +83,22 @@ function normalizeJsonTransportPayload(payload, providerName) {
   return { body, headers };
 }
 
+function normalizeGoogleTransportPayload(payload) {
+  const normalized = normalizeJsonTransportPayload(payload, 'google');
+  if (
+    typeof payload.modelId !== 'string' ||
+    payload.modelId.length === 0 ||
+    payload.modelId.length > 256 ||
+    !/^[A-Za-z0-9._-]+$/.test(payload.modelId)
+  ) {
+    throw new TypeError('google modelId must be a safe model identifier up to 256 characters');
+  }
+  if (typeof payload.apiKey !== 'string' || payload.apiKey.length > 16_384) {
+    throw new TypeError('google apiKey must be a string up to 16384 characters');
+  }
+  return { ...normalized, modelId: payload.modelId, apiKey: payload.apiKey };
+}
+
 function getTransportTarget(format) {
   if (format === LLM_FORMATS.OpenAICompatible) {
     return { name: 'openai', url: DEFAULT_OPENAI_CHAT_COMPLETIONS_URL };
@@ -129,6 +148,7 @@ function createNodeProviderExecutor({
     LLM_FORMATS.OpenAICompatible,
     LLM_FORMATS.OpenAIResponseAPI,
     LLM_FORMATS.Anthropic,
+    LLM_FORMATS.GoogleCloud,
   ]);
   const supportedTransportFormats = new Set(transportFormats);
 
@@ -164,9 +184,19 @@ function createNodeProviderExecutor({
     }
     const input = normalized.value;
     if (!supportsTransport(input.format)) return { handled: false };
-    const target = getTransportTarget(input.format);
-    if (!target) return { handled: false };
-    const payload = normalizeJsonTransportPayload(input.payload, target.name);
+    let target;
+    let payload;
+    if (input.format === LLM_FORMATS.GoogleCloud) {
+      payload = normalizeGoogleTransportPayload(input.payload);
+      target = {
+        name: 'google',
+        url: buildGoogleGenerateContentUrl(payload.modelId, payload.apiKey),
+      };
+    } else {
+      target = getTransportTarget(input.format);
+      if (!target) return { handled: false };
+      payload = normalizeJsonTransportPayload(input.payload, target.name);
+    }
     const response = await fetchImpl(target.url, {
       method: 'POST',
       headers: payload.headers,

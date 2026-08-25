@@ -21,11 +21,13 @@ test('advertises only implemented provider formats and routes', () => {
       LLM_FORMATS.OpenAICompatible,
       LLM_FORMATS.OpenAIResponseAPI,
       LLM_FORMATS.Anthropic,
+      LLM_FORMATS.GoogleCloud,
     ],
   );
   assert.equal(executor.supportsTransport(LLM_FORMATS.OpenAICompatible), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.OpenAIResponseAPI), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.Anthropic), true);
+  assert.equal(executor.supportsTransport(LLM_FORMATS.GoogleCloud), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.NanoGPT), false);
 });
 
@@ -224,6 +226,61 @@ test('executes official Anthropic non-streaming transport without interpreting t
   assert.equal(calls[0].options.headers['anthropic-dangerous-direct-browser-access'], undefined);
   assert.equal(calls[0].options.signal, controller.signal);
   assert.equal(calls[0].options.redirect, 'error');
+});
+
+test('executes official Google Gemini non-streaming transport with a pinned endpoint', async () => {
+  const calls = [];
+  const controller = new AbortController();
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          candidates: [{ content: { parts: [{ text: 'raw gemini response' }] } }],
+        }),
+      };
+    },
+  });
+  const result = await executor.executeTransport({
+    format: LLM_FORMATS.GoogleCloud,
+    payload: {
+      modelId: 'gemini-3.7-flash',
+      apiKey: 'google-key',
+      body: { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] },
+      headers: { 'Content-Type': 'application/json', Host: 'evil.example' },
+    },
+  }, { signal: controller.signal });
+  assert.equal(result.handled, true);
+  assert.equal(result.response.ok, true);
+  assert.equal(
+    calls[0].url,
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=google-key',
+  );
+  assert.equal(calls[0].options.headers.Host, undefined);
+  assert.equal(calls[0].options.signal, controller.signal);
+  assert.equal(calls[0].options.redirect, 'error');
+});
+
+test('rejects unsafe Google model identifiers before fetch', async () => {
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async () => {
+      throw new Error('fetch should not run');
+    },
+  });
+  await assert.rejects(
+    executor.executeTransport({
+      format: LLM_FORMATS.GoogleCloud,
+      payload: {
+        modelId: '../evil',
+        apiKey: 'google-key',
+        body: { contents: [] },
+        headers: { 'Content-Type': 'application/json' },
+      },
+    }),
+    /safe model identifier/,
+  );
 });
 
 test('returns raw OpenAI error payloads to the browser interpreter', async () => {
