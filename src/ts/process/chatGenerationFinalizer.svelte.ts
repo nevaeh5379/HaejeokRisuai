@@ -6,15 +6,18 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";
 import { tokenize } from "../tokenizer";
-import { isLastCharPunctuation } from "../util";
 import { parseChatML } from "../parser/chatML";
 import { requestChatData } from "./request/request";
 import type { ChatModelResponse, ChatStageTimings } from "@risuai/chat-core/types.cjs";
-import { decideAutoContinuation } from "@risuai/chat-core/finalization.cjs";
+import {
+  decideAutoContinuation,
+  endsWithCompletionPunctuation,
+} from "@risuai/chat-core/finalization.cjs";
 import { risuChatParser } from "./scripts";
 import { chatProcessStage, doingChat } from "./chatRuntimeState";
 import { peerSync } from "../sync/multiuser";
 import { processPostGenerationEffects } from "./chatPostGeneration.svelte";
+import { tryCreateNodeAutoContinuationDecision } from "./chatNodePlanner";
 
 
 function updateGenerationStageTimings(
@@ -32,12 +35,22 @@ async function shouldAutoContinue(
   result: string,
   usedContinueTokens: number,
 ) {
+  const minimumTokens = settingsStore.state.autoContinueMinTokens;
+  const continueIncomplete = settingsStore.state.autoContinueChat;
+  const remote = await tryCreateNodeAutoContinuationDecision(
+    result,
+    usedContinueTokens,
+    minimumTokens,
+    continueIncomplete,
+  );
+  if (remote) return remote;
+
   const resultTokens = (await tokenize(result)) + usedContinueTokens;
   return decideAutoContinuation({
     resultTokens,
-    minimumTokens: settingsStore.state.autoContinueMinTokens,
-    continueIncomplete: settingsStore.state.autoContinueChat,
-    endsWithPunctuation: isLastCharPunctuation(result),
+    minimumTokens,
+    continueIncomplete,
+    endsWithPunctuation: endsWithCompletionPunctuation(result),
   });
 }
 

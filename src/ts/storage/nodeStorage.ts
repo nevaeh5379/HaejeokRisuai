@@ -5,6 +5,8 @@ import { NodePostgresStorage } from "./nodePostgresStorage";
 import { NodeS3Storage } from "./nodeS3Storage";
 import type { AssetStorageTarget } from "../../../packages/protocol/storageConfig.cjs";
 import type {
+  NodeChatContinuationDecision,
+  NodeChatContinuationRequest,
   NodeChatGenerationPlan,
   NodeChatPlanRequest,
 } from "../../../packages/protocol/chatExecutor.cjs";
@@ -168,6 +170,29 @@ export class NodeStorage {
       localStorage.setItem("risuauth", auth);
     }
     return auth;
+  }
+
+  async planChatContinuation(
+    request: NodeChatContinuationRequest,
+  ): Promise<NodeChatContinuationDecision> {
+    const auth = await this.getCachedAuth();
+    const response = await fetch("/api/chat-executor/continuation", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "risu-auth": auth,
+      },
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`Server chat continuation planning failed (${response.status}): ${message}`);
+    }
+    const data = (await response.json()) as { decision?: NodeChatContinuationDecision };
+    if (!data.decision || typeof data.decision.shouldContinue !== "boolean") {
+      throw new Error("Server chat continuation planning returned an invalid response");
+    }
+    return data.decision;
   }
 
   async planChatGeneration(

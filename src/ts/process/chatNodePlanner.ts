@@ -2,6 +2,7 @@ import type {
   ChatGenerationPlan,
   ChatGenerationSettings,
 } from "@risuai/chat-core/generation.cjs";
+import type { AutoContinuationDecision } from "@risuai/chat-core/finalization.cjs";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 import { forageStorage } from "../globalApi.svelte";
 import { isNodeServer } from "../platform";
@@ -64,6 +65,35 @@ export async function tryCreateNodeChatGenerationPlan(
   } catch (error) {
     console.warn(
       "Server chat planning failed; falling back to local generation planning",
+      error,
+    );
+    return null;
+  }
+}
+
+
+export async function tryCreateNodeAutoContinuationDecision(
+  result: string,
+  usedContinueTokens: number,
+  minimumTokens: number,
+  continueIncomplete: boolean,
+): Promise<AutoContinuationDecision | null> {
+  if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
+    return null;
+  }
+  const encoding = getServerTiktokenEncoding();
+  if (!encoding) return null;
+  try {
+    return await forageStorage.realStorage.planChatContinuation({
+      result,
+      encoding,
+      usedContinueTokens,
+      minimumTokens,
+      continueIncomplete,
+    });
+  } catch (error) {
+    console.warn(
+      "Server chat continuation planning failed; falling back to local policy",
       error,
     );
     return null;

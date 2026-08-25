@@ -1,3 +1,4 @@
+import { endsWithCompletionPunctuation } from "@risuai/chat-core/finalization.cjs";
 import { get, writable, type Writable } from "svelte/store";
 import type { Database, Message } from "./storage/database.svelte";
 import { getDatabase } from "./storage/database.svelte";
@@ -691,68 +692,7 @@ export function uuidtoNumber(uuid: string) {
 }
 
 export function isLastCharPunctuation(s: string) {
-  const lastChar = s.trim().at(-1);
-  const punctuation = [
-    ".",
-    "!",
-    "?",
-    "。",
-    "！",
-    "？",
-    "…",
-    "@",
-    "#",
-    "$",
-    "%",
-    "^",
-    "&",
-    "*",
-    "(",
-    ")",
-    "-",
-    "_",
-    "+",
-    "=",
-    "{",
-    "}",
-    "[",
-    "]",
-    "|",
-    "\\",
-    ":",
-    ";",
-    "<",
-    ">",
-    ",",
-    ".",
-    "/",
-    "~",
-    "`",
-    " ",
-    "¡",
-    "¿",
-    "‽",
-    "⁉",
-    "'",
-    '"',
-  ];
-  if (
-    lastChar &&
-    !(
-      punctuation.indexOf(lastChar) !== -1 ||
-      //spacing modifier letters
-      (lastChar.charCodeAt(0) >= 0x02b0 && lastChar.charCodeAt(0) <= 0x02ff) ||
-      //combining diacritical marks
-      (lastChar.charCodeAt(0) >= 0x0300 && lastChar.charCodeAt(0) <= 0x036f) ||
-      //hebrew punctuation
-      (lastChar.charCodeAt(0) >= 0x0590 && lastChar.charCodeAt(0) <= 0x05cf) ||
-      //CJK symbols and punctuation
-      (lastChar.charCodeAt(0) >= 0x3000 && lastChar.charCodeAt(0) <= 0x303f)
-    )
-  ) {
-    return false;
-  }
-  return true;
+  return endsWithCompletionPunctuation(s);
 }
 
 export function trimUntilPunctuation(s: string) {

@@ -69,3 +69,32 @@ test('rejects malformed plan requests before tokenization', async () => {
     (error) => error instanceof TypeError && error.code === 'invalid_chat_plan',
   );
 });
+
+
+test('plans auto-continuation with shared punctuation and token policy', async () => {
+  const decision = await executor().planContinuation({
+    result: 'unfinished',
+    encoding: 'cl100k_base',
+    usedContinueTokens: 2,
+    minimumTokens: 0,
+    continueIncomplete: true,
+  });
+  assert.deepEqual(decision, {
+    shouldContinue: true,
+    resultTokens: 'unfinished'.length + 2,
+    reason: 'incomplete',
+  });
+});
+
+test('rejects malformed continuation requests', async () => {
+  await assert.rejects(
+    () => executor().planContinuation({
+      result: 'done.',
+      encoding: 'cl100k_base',
+      usedContinueTokens: -1,
+      minimumTokens: 0,
+      continueIncomplete: true,
+    }),
+    (error) => error instanceof TypeError && error.code === 'invalid_chat_continuation',
+  );
+});

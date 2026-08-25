@@ -66,4 +66,23 @@ function normalizeChatPlanRequest(input) {
   };
 }
 
-module.exports = { normalizeChatPlanRequest };
+function normalizeChatContinuationRequest(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return { error: 'Request body must be an object' };
+  if (typeof input.result !== 'string') return { error: 'result must be a string' };
+  if (!VALID_ENCODINGS.has(input.encoding)) return { error: 'encoding is not supported' };
+  const used = finiteInteger(input.usedContinueTokens, 'usedContinueTokens', { min: 0, max: 10_000_000 });
+  if (used.error) return used;
+  const minimum = finiteInteger(input.minimumTokens, 'minimumTokens', { min: 0, max: 10_000_000 });
+  if (minimum.error) return minimum;
+  return {
+    value: {
+      result: input.result,
+      encoding: input.encoding,
+      usedContinueTokens: used.value,
+      minimumTokens: minimum.value,
+      continueIncomplete: input.continueIncomplete === true,
+    },
+  };
+}
+
+module.exports = { normalizeChatPlanRequest, normalizeChatContinuationRequest };

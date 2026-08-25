@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { decideAutoContinuation } from "@risuai/chat-core/finalization.cjs";
+import {
+  decideAutoContinuation,
+  endsWithCompletionPunctuation,
+} from "@risuai/chat-core/finalization.cjs";
 
 describe("decideAutoContinuation", () => {
   it("continues when the generated token count is below the configured minimum", () => {
@@ -48,5 +51,16 @@ describe("decideAutoContinuation", () => {
         endsWithPunctuation: false,
       }).reason,
     ).toBe("minimum-tokens");
+  });
+});
+
+
+describe("completion punctuation", () => {
+  it("preserves the legacy completion character rules", () => {
+    expect(endsWithCompletionPunctuation("finished.")).toBe(true);
+    expect(endsWithCompletionPunctuation("끝났사와요！")).toBe(true);
+    expect(endsWithCompletionPunctuation("unfinished")).toBe(false);
+    expect(endsWithCompletionPunctuation("   ")).toBe(true);
+    expect(endsWithCompletionPunctuation("word、")).toBe(true);
   });
 });

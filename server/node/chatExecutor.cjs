@@ -2,8 +2,9 @@
 
 const crypto = require('node:crypto');
 const { createChatGenerationPlan } = require('../../packages/chat-core/generation.cjs');
+const { decideAutoContinuation, endsWithCompletionPunctuation } = require('../../packages/chat-core/finalization.cjs');
 const { countChatTokensDetailed } = require('../../packages/chat-core/tokenAccounting.cjs');
-const { normalizeChatPlanRequest } = require('../../packages/protocol/chatExecutor.cjs');
+const { normalizeChatPlanRequest, normalizeChatContinuationRequest } = require('../../packages/protocol/chatExecutor.cjs');
 const { countTokensBatch: defaultCountTokensBatch } = require('./tokenizeCount.cjs');
 
 function createNodeChatExecutor({
@@ -52,6 +53,24 @@ function createNodeChatExecutor({
     };
   }
 
+  async function planContinuation(rawInput) {
+    const normalized = normalizeChatContinuationRequest(rawInput);
+    if (normalized.error) {
+      const error = new TypeError(normalized.error);
+      error.code = 'invalid_chat_continuation';
+      throw error;
+    }
+    const input = normalized.value;
+    const [generatedTokens] = countTokensBatch([input.result], input.encoding);
+    const resultTokens = generatedTokens + input.usedContinueTokens;
+    return decideAutoContinuation({
+      resultTokens,
+      minimumTokens: input.minimumTokens,
+      continueIncomplete: input.continueIncomplete,
+      endsWithPunctuation: endsWithCompletionPunctuation(input.result),
+    });
+  }
+
   function registerRoutes(app, { auth, limiter } = {}) {
     const guards = limiter ? [limiter] : [];
     app.post('/api/chat-executor/plan', ...guards, async (req, res, next) => {
@@ -66,9 +85,22 @@ function createNodeChatExecutor({
         next(error);
       }
     });
+
+    app.post('/api/chat-executor/continuation', ...guards, async (req, res, next) => {
+      if (auth && !await auth(req, res)) return;
+      try {
+        res.send({ decision: await planContinuation(req.body) });
+      } catch (error) {
+        if (error?.code === 'invalid_chat_continuation' || error instanceof RangeError) {
+          res.status(400).send({ error: error.message });
+          return;
+        }
+        next(error);
+      }
+    });
   }
 
-  return { planGeneration, registerRoutes };
+  return { planGeneration, planContinuation, registerRoutes };
 }
 
 module.exports = { createNodeChatExecutor };

@@ -14,3 +14,5 @@ export interface AutoContinuationDecision {
 export function decideAutoContinuation(
   input: AutoContinuationPolicyInput,
 ): AutoContinuationDecision;
+
+export function endsWithCompletionPunctuation(text: string): boolean;
