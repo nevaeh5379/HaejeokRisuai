@@ -573,7 +573,7 @@
         <BotSettings
             targetSubmenu={searchNavigation?.menuIndex === 1 ? searchNavigation.subTab : (isMobile && mobileBotTarget ? mobileBotTarget.submenu : undefined)}
             targetModelTab={isMobile && mobileBotTarget?.modelTab ? mobileBotTarget.modelTab : undefined}
-            hideTabs={isMobile && !!mobileBotTarget}
+            hideTabs={isMobile}
             goPromptTemplate={() => {
                 $SettingsMenuIndex = 13
             }}

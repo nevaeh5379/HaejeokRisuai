@@ -184,25 +184,25 @@
     </div>
 
     <!-- Filter Buttons & Provider Select Dropdown (All on Top) -->
-    <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
-      <!-- Left Category & Tag Chips -->
-      <div class="flex items-center gap-1.5 flex-wrap">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+      <!-- Left Category & Tag Chips (Horizontal scroll on mobile, flex-wrap on desktop) -->
+      <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-nowrap sm:flex-wrap pb-1 sm:pb-0">
         <button 
-          class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium {activeCategory === 'all' && selectedProvider === 'all' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
+          class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium shrink-0 whitespace-nowrap {activeCategory === 'all' && selectedProvider === 'all' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
           onclick={() => { activeCategory = 'all'; selectedProvider = 'all'; }}
         >
           <BotIcon size={13} /> {language.filterAll || "All"}
         </button>
 
         <button 
-          class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium {activeCategory === 'recommended' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
+          class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium shrink-0 whitespace-nowrap {activeCategory === 'recommended' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
           onclick={() => { activeCategory = activeCategory === 'recommended' ? 'all' : 'recommended'; }}
         >
           <SparkleIcon size={13} /> {language.filterRecommended || "Recommended"}
         </button>
 
         <button 
-          class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium {activeCategory === 'favorites' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
+          class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium shrink-0 whitespace-nowrap {activeCategory === 'favorites' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
           onclick={() => { activeCategory = activeCategory === 'favorites' ? 'all' : 'favorites'; }}
         >
           <StarIcon size={13} class={modelFavoritesStore.favorites.length > 0 ? "fill-current" : ""} />
@@ -213,14 +213,14 @@
         </button>
 
         <button 
-          class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium {activeCategory === 'recent' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
+          class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium shrink-0 whitespace-nowrap {activeCategory === 'recent' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
           onclick={() => { activeCategory = activeCategory === 'recent' ? 'all' : 'recent'; }}
         >
           <RotateCcwIcon size={13} /> {language.filterRecent || "Recent"}
         </button>
 
         <!-- Provider Select Dropdown -->
-        <div class="relative inline-flex items-center ml-1">
+        <div class="relative inline-flex items-center shrink-0">
           <select 
             bind:value={selectedProvider}
             class="appearance-none pl-2.5 pr-6 py-1.5 rounded-lg border border-darkborderc bg-darkbutton/70 text-textcolor text-xs font-medium focus:outline-none cursor-pointer"
@@ -238,17 +238,17 @@
           </div>
         </div>
 
-        <div class="h-4 w-px bg-darkborderc/60 mx-1 hidden sm:block"></div>
+        <div class="h-4 w-px bg-darkborderc/60 mx-1 hidden sm:block shrink-0"></div>
 
         <!-- Capability Tags -->
         <button 
-          class="px-2 py-1 rounded-md transition-colors flex items-center gap-1 text-[11px] {activeTag === 'vision' ? 'bg-selected text-textcolor font-bold' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
+          class="px-2 py-1 rounded-md transition-colors flex items-center gap-1 text-[11px] shrink-0 whitespace-nowrap {activeTag === 'vision' ? 'bg-selected text-textcolor font-bold' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
           onclick={() => { activeTag = activeTag === 'vision' ? 'all' : 'vision'; }}
         >
           <EyeIcon size={11} /> Vision
         </button>
         <button 
-          class="px-2 py-1 rounded-md transition-colors flex items-center gap-1 text-[11px] {activeTag === 'thinking' ? 'bg-selected text-textcolor font-bold' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
+          class="px-2 py-1 rounded-md transition-colors flex items-center gap-1 text-[11px] shrink-0 whitespace-nowrap {activeTag === 'thinking' ? 'bg-selected text-textcolor font-bold' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
           onclick={() => { activeTag = activeTag === 'thinking' ? 'all' : 'thinking'; }}
         >
           <BrainIcon size={11} /> Thinking
