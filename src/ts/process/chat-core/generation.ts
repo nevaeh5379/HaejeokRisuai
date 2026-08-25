@@ -3,11 +3,17 @@ import type { OpenAIChat } from "./types";
 export interface ChatGenerationPlanInput {
   formated: OpenAIChat[];
   maxContextTokens: number;
+}
+
+export interface ChatGenerationSettings {
   maxResponseTokens: number;
+  imageResponse?: boolean;
+  rememberToolUsage?: boolean;
 }
 
 export interface ChatGenerationRuntime<TCharacter, TResponse extends { model?: string }> {
   tokenizeChatsDetailed(chats: OpenAIChat[]): Promise<number[]>;
+  getGenerationSettings(): ChatGenerationSettings;
   createGenerationId(): string;
   getGenerationModel(model?: string): string;
   requestModel(
@@ -84,8 +90,9 @@ export async function createChatGenerationPlan<
   }
 
   const compacted = formated.filter(hasRenderableContent);
+  const settings = runtime.getGenerationSettings();
   const outputTokens = Math.min(
-    input.maxResponseTokens,
+    settings.maxResponseTokens,
     Math.max(0, input.maxContextTokens - inputTokens),
   );
 
@@ -105,10 +112,8 @@ export interface ExecuteChatModelRequestInput<TCharacter> {
   currentChar: TCharacter;
   isGroupChat: boolean;
   continueGeneration?: boolean;
-  imageResponse?: boolean;
   previewBody?: boolean;
   escape?: boolean;
-  rememberToolUsage?: boolean;
   durableChatId?: string;
   speakerId?: string;
 }
@@ -122,6 +127,7 @@ export async function executeChatModelRequest<
   signal: AbortSignal,
 ): Promise<TResponse> {
   const { plan } = input;
+  const settings = runtime.getGenerationSettings();
   if (input.durableChatId) {
     runtime.registerGenerationContext?.({
       realChatId: input.durableChatId,
@@ -142,10 +148,10 @@ export async function executeChatModelRequest<
         bias: {},
         continue: input.continueGeneration,
         chatId: plan.generationId,
-        imageResponse: input.imageResponse,
+        imageResponse: settings.imageResponse,
         previewBody: input.previewBody,
         escape: input.escape,
-        rememberToolUsage: input.rememberToolUsage,
+        rememberToolUsage: settings.rememberToolUsage,
       },
       signal,
     );

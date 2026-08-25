@@ -2,6 +2,7 @@ import { v4 } from "uuid";
 import type { character } from "../storage/database.svelte";
 import type { ChatModelResponse } from "./chat-core/types";
 import type { ChatTokenizer } from "../tokenizer";
+import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import {
   registerDurableGenerationContext,
   unregisterDurableGenerationContext,
@@ -15,6 +16,11 @@ export function createLocalChatGenerationRuntime(
 ): ChatGenerationRuntime<character, ChatModelResponse> {
   return {
     tokenizeChatsDetailed: (chats) => tokenizer.tokenizeChatsDetailed(chats),
+    getGenerationSettings: () => ({
+      maxResponseTokens: settingsStore.state.maxResponse,
+      imageResponse: settingsStore.state.outputImageModal,
+      rememberToolUsage: settingsStore.state.rememberToolUsage,
+    }),
     createGenerationId: v4,
     getGenerationModel: getGenerationModelString,
     requestModel: (request, signal) => requestChatData(request, "model", signal),

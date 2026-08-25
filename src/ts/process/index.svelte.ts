@@ -2,7 +2,6 @@ import { writable } from "svelte/store";
 import { chatProcessStage, doingChat } from "./chatRuntimeState";
 export { chatProcessStage, doingChat } from "./chatRuntimeState";
 import type { MessageGenerationInfo } from "../storage/database.svelte";
-import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { language } from "../../lang";
 import {
   createChatGenerationPlan,
@@ -110,7 +109,6 @@ export async function sendChat(
   const plan = await createChatGenerationPlan(runtime, {
     formated: prompt.formated,
     maxContextTokens,
-    maxResponseTokens: settingsStore.state.maxResponse,
   });
   if (plan.ok === false) {
     throwError(
@@ -152,10 +150,8 @@ export async function sendChat(
       currentChar,
       isGroupChat: nowChatroom.type === "group",
       continueGeneration: arg.continue,
-      imageResponse: settingsStore.state.outputImageModal,
       previewBody: arg.previewPrompt,
       escape: nowChatroom.type === "character" && nowChatroom.escapeOutput,
-      rememberToolUsage: settingsStore.state.rememberToolUsage,
       durableChatId: currentChat.id,
       speakerId: currentChar.chaId,
     },

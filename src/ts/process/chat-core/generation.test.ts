@@ -14,6 +14,7 @@ function runtime(
 ): ChatGenerationRuntime<Character, Response> {
   return {
     tokenizeChatsDetailed: vi.fn(async () => counts),
+    getGenerationSettings: () => ({ maxResponseTokens: 8 }),
     createGenerationId: () => "generation-id",
     getGenerationModel: (model) => model ?? "default-model",
     requestModel: vi.fn(async () => ({ type: "success" as const, result: "ok" })),
@@ -34,7 +35,6 @@ describe("createChatGenerationPlan", () => {
     const plan = await createChatGenerationPlan(rt, {
       formated: [chat("fixed"), chat("drop", true), chat("keep", true)],
       maxContextTokens: 10,
-      maxResponseTokens: 8,
     });
 
     expect(plan).toMatchObject({
@@ -52,17 +52,16 @@ describe("createChatGenerationPlan", () => {
     const plan = await createChatGenerationPlan(rt, {
       formated: [chat("a"), chat("b")],
       maxContextTokens: 10,
-      maxResponseTokens: 5,
     });
     expect(plan).toEqual({ ok: false, requiredTokens: 13 });
   });
 
   it("caps output tokens to the remaining context", async () => {
     const rt = runtime([6]);
+    rt.getGenerationSettings = () => ({ maxResponseTokens: 20 });
     const plan = await createChatGenerationPlan(rt, {
       formated: [chat("a")],
       maxContextTokens: 10,
-      maxResponseTokens: 20,
     });
     expect(plan.ok && plan.outputTokens).toBe(4);
   });
@@ -74,7 +73,6 @@ describe("executeChatModelRequest", () => {
     const plan = await createChatGenerationPlan(rt, {
       formated: [chat("hello")],
       maxContextTokens: 10,
-      maxResponseTokens: 5,
     });
     if (!plan.ok) throw new Error("unexpected overflow");
 

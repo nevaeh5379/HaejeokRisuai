@@ -136,7 +136,7 @@ function buildModelEmotionPrompt(emotionList: string[], result: string): OpenAIC
 }
 
 function handleModelEmotionResponse(
-  response: Awaited<ReturnType<typeof requestChatData>>,
+  response: ChatModelResponse,
   currentChar: character,
   state: EmotionState,
   abortSignal: AbortSignal,
