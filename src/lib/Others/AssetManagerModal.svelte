@@ -139,17 +139,17 @@
         return counts;
     });
 
-    // Keep only near-viewport thumbnail URLs in component state. getFileSrc's
-    // thumbnail caches are bounded, so old Blob URLs are revoked automatically.
+    // Keep only near-viewport original image URLs in component state so the
+    // gallery does not retain every asset source while scrolling large libraries.
     let assetSrcMap = $state<Record<string, string>>({});
 
     type AssetPreviewTarget = { assetId: string; category: AssetCategory };
 
-    function resolveAssetSrc(assetId: string, thumbnail = false) {
+    function resolveAssetSrc(assetId: string) {
         if (/^(https?:|data:|blob:|\/)/i.test(assetId)) {
             return Promise.resolve(assetId);
         }
-        return getFileSrc(assetId, thumbnail ? { thumbnail: true } : undefined);
+        return getFileSrc(assetId);
     }
 
     type AssetPreviewRegistration = {
@@ -164,7 +164,7 @@
     let galleryEl = $state<HTMLDivElement | null>(null);
     let previewObserver: IntersectionObserver | null = null;
 
-    function removeThumbnailSource(assetId: string) {
+    function removePreviewSource(assetId: string) {
         if (!assetSrcMap[assetId]) return;
         const next = { ...assetSrcMap };
         delete next[assetId];
@@ -182,7 +182,7 @@
             activePreviewRefs.set(assetId, nextRefCount);
         } else {
             activePreviewRefs.delete(assetId);
-            removeThumbnailSource(assetId);
+            removePreviewSource(assetId);
         }
     }
 
@@ -200,7 +200,7 @@
 
         const version = ++registration.loadVersion;
         try {
-            const url = await resolveAssetSrc(assetId, true);
+            const url = await resolveAssetSrc(assetId);
             if (
                 version !== registration.loadVersion ||
                 !registration.isNearViewport ||
@@ -210,7 +210,7 @@
                 assetSrcMap = { ...assetSrcMap, [assetId]: url };
             }
         } catch (error) {
-            console.error("Failed to load asset thumbnail", error);
+            console.error("Failed to load original asset preview", error);
         }
     }
 

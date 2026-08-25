@@ -50,10 +50,38 @@ vi.mock(import("./media/mimeType"), () => ({
 
 import {
   fullImageBlobCache,
+  getAssetsBatch,
   getCharImagesBatch,
   preloadCharacterImage,
   releaseCharacterImageCache,
 } from "./characterImage";
+
+describe("getAssetsBatch", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fullImageBlobCache.clear();
+    mocks.forageStorage.realStorage = mocks.storage;
+    mocks.settingsState.hideAllImages = false;
+  });
+
+  it("resolves full-size asset previews without the bounded character blob cache", async () => {
+    const locations = Array.from(
+      { length: 24 },
+      (_, index) => `assets/gallery-${index}.png`,
+    );
+    const directSource = "https://example.com/direct.png";
+
+    const result = await getAssetsBatch([...locations, directSource], {
+      size: "full",
+    });
+
+    expect(mocks.storage.getItems).not.toHaveBeenCalled();
+    expect(mocks.getFileSrc).toHaveBeenCalledTimes(locations.length);
+    expect(fullImageBlobCache.size).toBe(0);
+    expect(result.get(locations[0])).toBe("/api/read");
+    expect(result.get(directSource)).toBe(directSource);
+  });
+});
 
 describe("getCharImagesBatch", () => {
   beforeEach(() => {

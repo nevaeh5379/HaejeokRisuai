@@ -192,7 +192,39 @@ export async function getAssetsBatch(
   locs: string[],
   options: CharImageOptions = { size: "full" },
 ): Promise<Map<string, string>> {
-  return getCharImagesBatch(locs, options);
+  const size = options.size ?? (options.thumbnail ? "thumb" : "full");
+  const wantsOriginal =
+    size === "full" &&
+    options.thumbnail !== true &&
+    options.width === undefined &&
+    options.height === undefined;
+
+  if (!wantsOriginal) {
+    return getCharImagesBatch(locs, options);
+  }
+
+  const result = new Map<string, string>();
+  await Promise.all(
+    locs.map(async (loc) => {
+      if (!loc) return;
+      if (settingsStore.state.hideAllImages) {
+        result.set(loc, "/none.webp");
+        return;
+      }
+      if (/^(https?:|data:|blob:|\/)/i.test(loc)) {
+        result.set(loc, loc);
+        return;
+      }
+      try {
+        const src = await getFileSrc(loc);
+        result.set(loc, src || "/none.webp");
+      } catch (error) {
+        console.error("Failed to load original asset", error);
+        result.set(loc, "/none.webp");
+      }
+    }),
+  );
+  return result;
 }
 
 export async function getCharImagesBatch(
