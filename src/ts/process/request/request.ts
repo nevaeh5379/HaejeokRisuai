@@ -21,7 +21,11 @@ import {
 } from "../../storage/database.svelte";
 import { tokenizeNum } from "../../tokenizer";
 import { sleep } from "../../util";
-import type { OpenAIChat } from "../chat-core/types";
+import type {
+  ChatModelResponse,
+  ChatStreamChunk,
+  OpenAIChat,
+} from "../chat-core/types";
 import { getTools } from "../mcp/mcp";
 import type { MCPTool } from "../mcp/mcplib";
 import { NovelAIBadWordIds, stringlizeNAIChat } from "../models/nai";
@@ -93,37 +97,8 @@ export interface RequestDataArgumentExtended extends requestDataArgument {
   saveSignatures?: boolean;
 }
 
-export type requestDataResponse =
-  | {
-      type: "success" | "fail";
-      result: string;
-      noRetry?: boolean;
-      special?: {
-        emotion?: string;
-      };
-      failByServerError?: boolean;
-      model?: string;
-    }
-  | {
-      type: "streaming";
-      result: ReadableStream<StreamResponseChunk>;
-      special?: {
-        emotion?: string;
-      };
-      model?: string;
-    }
-  | {
-      type: "multiline";
-      result: ["user" | "char", string][];
-      special?: {
-        emotion?: string;
-      };
-      model?: string;
-    };
-
-export interface StreamResponseChunk {
-  [key: string]: string;
-}
+export type requestDataResponse = ChatModelResponse;
+export type StreamResponseChunk = ChatStreamChunk;
 
 type OllamaThinkMode = boolean | "low" | "medium" | "high";
 

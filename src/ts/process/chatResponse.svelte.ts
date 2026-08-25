@@ -5,15 +5,12 @@ import type {
   MessageGenerationInfo,
   MessagePresetInfo,
 } from "../storage/database.svelte";
+import type { ChatModelResponse } from "./chat-core/types";
 import { processStreamingResponse } from "./chatStreamingResponse.svelte";
 import { processNonStreamingResponse } from "./chatNonStreamingResponse.svelte";
 
-type ChatRequestResult = Awaited<
-  ReturnType<typeof import("./request/request").requestChatData>
->;
-
 export interface ProcessChatResponseOptions {
-  req: ChatRequestResult;
+  req: ChatModelResponse;
   abortSignal: AbortSignal;
   selectedChar: number;
   selectedChat: number;

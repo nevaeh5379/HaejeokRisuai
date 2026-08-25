@@ -6,6 +6,7 @@ import type {
   MessagePresetInfo,
 } from "../storage/database.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
+import type { ChatModelResponse } from "./chat-core/types";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { processScriptFull } from "./scripts";
 import { addRerolls } from "./prereroll";
@@ -19,7 +20,7 @@ import {
 } from "./chatResponseShared.svelte";
 
 type NonStreamingRequest = Exclude<
-  Awaited<ReturnType<typeof import("./request/request").requestChatData>>,
+  ChatModelResponse,
   { type: "streaming" } | { type: "fail" }
 >;
 

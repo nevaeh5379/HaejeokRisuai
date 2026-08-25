@@ -7,6 +7,7 @@ import type {
   StreamingDisplayOptimizationMode,
 } from "../storage/database.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
+import type { ChatModelResponse } from "./chat-core/types";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { addRerolls } from "./prereroll";
 import { runInlayScreen } from "./inlayScreen";
@@ -18,10 +19,7 @@ import {
 } from "./chatResponseShared.svelte";
 import { consumeStreamingDisplay } from "./chatStreamingDisplay.svelte";
 
-type StreamingRequest = Extract<
-  Awaited<ReturnType<typeof import("./request/request").requestChatData>>,
-  { type: "streaming" }
->;
+type StreamingRequest = Extract<ChatModelResponse, { type: "streaming" }>;
 
 interface StreamingOptions {
   req: StreamingRequest;

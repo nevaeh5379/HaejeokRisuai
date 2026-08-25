@@ -9,23 +9,12 @@ import { tokenize } from "../tokenizer";
 import { isLastCharPunctuation } from "../util";
 import { parseChatML } from "../parser/chatML";
 import { requestChatData } from "./request/request";
+import type { ChatModelResponse, ChatStageTimings } from "./chat-core/types";
 import { risuChatParser } from "./scripts";
 import { chatProcessStage, doingChat } from "./chatRuntimeState";
 import { peerSync } from "../sync/multiuser";
 import { processPostGenerationEffects } from "./chatPostGeneration.svelte";
 
-export interface ChatStageTimings {
-  stage1Start: number;
-  stage2Start: number;
-  stage3Start: number;
-  stage4Start: number;
-  stage1Duration: number;
-  stage2Duration: number;
-  stage3Duration: number;
-  stage4Duration: number;
-}
-
-type ChatRequestResult = Awaited<ReturnType<typeof requestChatData>>;
 
 function updateGenerationStageTimings(
   generationInfo: MessageGenerationInfo,
@@ -107,7 +96,7 @@ function commitRecentMessages(selectedChar: number, selectedChat: number) {
 }
 
 export interface FinalizeChatGenerationOptions {
-  req: ChatRequestResult;
+  req: ChatModelResponse;
   result: string;
   emoChanged: boolean;
   resendChat: boolean;

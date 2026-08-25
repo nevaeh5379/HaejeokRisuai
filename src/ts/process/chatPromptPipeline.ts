@@ -15,7 +15,7 @@ import {
 } from "./chatPromptTemplate";
 import { buildChatHistory } from "./chatHistoryBuilder";
 import { applyChatMemory } from "./chatMemory";
-import type { ChatStageTimings } from "./chatGenerationFinalizer.svelte";
+import type { ChatStageTimings } from "./chat-core/types";
 import type { OpenAIChat } from "./chat-core/types";
 
 type LorePrompt = Awaited<

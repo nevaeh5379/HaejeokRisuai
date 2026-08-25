@@ -10,10 +10,8 @@ import {
 } from "./chat-core/generation";
 import { createLocalChatGenerationRuntime } from "./chatLocalRuntime";
 import { processChatResponse } from "./chatResponse.svelte";
-import {
-  finalizeChatGeneration,
-  type ChatStageTimings,
-} from "./chatGenerationFinalizer.svelte";
+import { finalizeChatGeneration } from "./chatGenerationFinalizer.svelte";
+import type { ChatStageTimings } from "./chat-core/types";
 import {
   createChatErrorHandler,
   type ChatErrorContext,
