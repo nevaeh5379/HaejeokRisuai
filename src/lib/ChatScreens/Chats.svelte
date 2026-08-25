@@ -27,6 +27,7 @@
         userIconPortrait,
         hasNewUnreadMessage = $bindable(false),
         hideButtons = false,
+        renderFromBeginning = false,
     }:{
         messages: Message[]
         currentCharacter: character|groupChat
@@ -38,6 +39,7 @@
         userIconPortrait?: boolean
         hasNewUnreadMessage?: boolean
         hideButtons?: boolean
+        renderFromBeginning?: boolean
     } = $props();
 
     let chatBody: HTMLDivElement;
@@ -108,6 +110,10 @@
         const simpleChar = createSimpleCharacter(currentCharacter);
         let loadStart = messages.length - 1
         let loadEnd = messages.length - (loadPages ?? messages.length)
+        if(renderFromBeginning){
+            loadStart = Math.min(messages.length - 1, Math.max(0, (loadPages ?? messages.length) - 1))
+            loadEnd = 0
+        }
         const currentChat = currentCharacter?.chats?.[currentCharacter.chatPage]
         const configuredPerformanceMode = settingsStore.state.streamingDisplayOptimizationMode ?? 'off';
         const performanceMode = currentChat?.isStreaming
@@ -117,7 +123,7 @@
             ? messages.length - 1
             : -1
 
-        if(!hideButtons && chatFoldedStateMessageIndex.index !== -1){
+        if(!renderFromBeginning && !hideButtons && chatFoldedStateMessageIndex.index !== -1){
             loadStart = chatFoldedStateMessageIndex.index
             loadEnd = Math.max(0, chatFoldedStateMessageIndex.index - (loadPages ?? messages.length))
         }
@@ -250,7 +256,9 @@
         if(!hideButtons && isSameChat && messages.length > previousLength){
             const lastMsg = messages[messages.length - 1];
             if(lastMsg && lastMsg.role === 'char' && settingsStore.state.autoScrollToNewMessage){
-                if(wasAtBottom || settingsStore.state.alwaysScrollToNewMessage){
+                if(renderFromBeginning){
+                    hasNewUnreadMessage = true;
+                } else if(wasAtBottom || settingsStore.state.alwaysScrollToNewMessage){
                     const element = chatBody.firstElementChild;
                     if(element){
                         setTimeout(() => {

@@ -2334,6 +2334,9 @@ export const languageEnglish = {
   alwaysScrollToNewMessage:
     "Always scroll to new message (ignore scroll position)",
   newMessage: "New Message",
+  goToBeginning: "Go to Beginning",
+  goToLatest: "Go to Latest Message",
+  chatHistoryLoadFailed: "Failed to load the complete chat history.",
   newMessageButtonStyle: "New Message Button Style",
   newMessageButtonBottomCenter: "Bottom Center (Default)",
   newMessageButtonBottomRight: "Bottom Right",

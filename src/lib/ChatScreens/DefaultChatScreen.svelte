@@ -1,7 +1,7 @@
 <script lang="ts">
 
     import Suggestion from './Suggestion.svelte';
-    import { CameraIcon, DatabaseIcon, DicesIcon, FileText, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, SparkleIcon } from "@lucide/svelte";
+    import { CameraIcon, DatabaseIcon, DicesIcon, FileText, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ArrowUp, SparkleIcon } from "@lucide/svelte";
     import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, easyPanelStore, chatPanelStore, startupPhase } from "../../ts/stores.svelte";
     import { tick } from 'svelte';
     import Chat from "./Chat.svelte";
@@ -58,8 +58,10 @@
     let fileInput:string[] = $state([])
     let showNewMessageButton = $state(false)
     let chatsInstance: any = $state()
+    let chatScrollContainer: HTMLDivElement | undefined = $state()
     let isScrollingToMessage = $state(false)
     let loadingOlderMessages = $state(false)
+    let readingFromBeginning = $state(false)
     let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props();
     let currentCharacter = $derived(characterStore.characters[$selectedCharID])
     let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
@@ -68,14 +70,77 @@
         const characterId = $selectedCharID
         const chatPage = characterStore.characters[characterId]?.chatPage ?? -1
         if(characterId !== loadPagesCharacterId || chatPage !== loadPagesChatPage){
+            if(readingFromBeginning && loadPagesCharacterId >= 0 && loadPagesChatPage >= 0){
+                const previousChat = characterStore.characters[loadPagesCharacterId]?.chats?.[loadPagesChatPage]
+                if(previousChat?.id) compactChatMessages(previousChat.id)
+            }
             loadPagesCharacterId = characterId
             loadPagesChatPage = chatPage
             loadPages = getInitialChatLoadPages(settingsStore.state)
+            readingFromBeginning = false
         }
     })
 
-    function scrollToBottom() {
+    async function scrollToBottom() {
+        const chat = currentCharacter?.chats?.[currentCharacter.chatPage]
+        const shouldCompactHistory = readingFromBeginning
+        readingFromBeginning = false
+        if(shouldCompactHistory && chat?.id){
+            compactChatMessages(chat.id)
+        }
+        await tick()
         chatsInstance?.scrollToLatestMessage();
+    }
+
+    async function scrollToBeginning() {
+        if(isScrollingToMessage) return
+        const chat = currentCharacter?.chats?.[currentCharacter.chatPage]
+        if(!chat) return
+
+        isScrollingToMessage = true
+        openMenu = false
+        readingFromBeginning = true
+        loadPages = getInitialChatLoadPages(settingsStore.state)
+        showNewMessageButton = false
+        try {
+            const needsFullHistory = chat.id && ((chat.messageOffset ?? 0) > 0 || chat.messagesFullyLoaded === false)
+            if(needsFullHistory){
+                await characterStore.ensureChatMessages(chat.id!, { full: true })
+                if((chat.messageOffset ?? 0) > 0 || chat.messagesFullyLoaded === false){
+                    readingFromBeginning = false
+                    await tick()
+                    alertError(language.chatHistoryLoadFailed)
+                    return
+                }
+            }
+
+            showNewMessageButton = false
+            await tick()
+
+            const chatContainer = chatScrollContainer
+            if(!chatContainer) return
+
+            const images = Array.from(chatContainer.querySelectorAll('img'))
+            if(images.some((img) => !img.complete)){
+                await Promise.race([
+                    Promise.all(images.map((img) => img.complete
+                        ? Promise.resolve()
+                        : new Promise<void>((resolve) => {
+                            img.addEventListener('load', () => resolve(), { once: true })
+                            img.addEventListener('error', () => resolve(), { once: true })
+                        }))),
+                    sleep(1500),
+                ])
+            }
+
+            await tick()
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+            chatContainer.scrollTop = Math.min(0, chatContainer.clientHeight - chatContainer.scrollHeight)
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+            chatContainer.scrollTop = Math.min(0, chatContainer.clientHeight - chatContainer.scrollHeight)
+        } finally {
+            isScrollingToMessage = false
+        }
     }
 
     async function loadOlderMessages() {
@@ -106,6 +171,10 @@
         // Forces the loading of past messages not rendered on the screen
         isScrollingToMessage = true
         try {
+            if(readingFromBeginning){
+                readingFromBeginning = false
+                await tick()
+            }
             const totalMessages = currentChat.length
             const neededLoadPages = totalMessages - index + 5
 
@@ -186,6 +255,11 @@
         let selectedChar = $selectedCharID
         if($doingChat){
             return
+        }
+        if(readingFromBeginning){
+            readingFromBeginning = false
+            await tick()
+            chatsInstance?.scrollToLatestMessage()
         }
         const currentChatPage = characterStore.characters[selectedChar]?.chatPage ?? 0
         await preLoadChat(selectedChar, currentChatPage, { full: true })
@@ -641,18 +715,34 @@
             {/await}
         {/if}
     {:else}
-        <div class="h-full w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen" onscroll={async (e) => {
-            //@ts-expect-error scrollHeight/clientHeight/scrollTop don't exist on EventTarget, but target is HTMLElement here
-            const scrolled = (e.target.scrollHeight - e.target.clientHeight + e.target.scrollTop)
-            if(scrolled < 100){
+        <div bind:this={chatScrollContainer} class="h-full w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen" onscroll={async (e) => {
+            const chatTarget = e.target as HTMLElement;
+            const scrolledFromTop = chatTarget.scrollHeight - chatTarget.clientHeight + chatTarget.scrollTop
+            const reachedPaginationEdge = readingFromBeginning
+                ? Math.abs(chatTarget.scrollTop) < 100
+                : scrolledFromTop < 100
+            if(reachedPaginationEdge){
                 const chat = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage]
                 if(chat.message.length > loadPages){
+                    const anchorIndex = readingFromBeginning
+                        ? Math.min(chat.message.length - 1, Math.max(0, loadPages - 1))
+                        : -1
+                    const anchorElement = anchorIndex >= 0
+                        ? chatTarget.querySelector(`[data-chat-index="${anchorIndex}"]`) as HTMLElement | null
+                        : null
+                    const anchorTop = anchorElement?.getBoundingClientRect().top
+
                     loadPages += getAdditionalChatLoadPages(settingsStore.state)
-                } else if ((chat.messageOffset ?? 0) > 0) {
+
+                    if(readingFromBeginning && anchorElement && anchorTop !== undefined){
+                        await tick()
+                        const newAnchorTop = anchorElement.getBoundingClientRect().top
+                        chatTarget.scrollTop += newAnchorTop - anchorTop
+                    }
+                } else if (!readingFromBeginning && (chat.messageOffset ?? 0) > 0) {
                     await loadOlderMessages()
                 }
             }
-            const chatTarget = e.target as HTMLElement;
             const chatsContainer = (settingsStore.state.fixedChatTextarea && chatTarget.children[1]) ? chatTarget.children[1] : chatTarget.children[0];
             const lastEl = chatsContainer?.firstElementChild;
             const isAtBottom = lastEl ? lastEl.getBoundingClientRect().top <= chatTarget.getBoundingClientRect().bottom + 100 : true;
@@ -916,6 +1006,7 @@
                 bind:this={chatsInstance}
                 messages={currentChat}
                 loadPages={loadPages}
+                renderFromBeginning={readingFromBeginning}
                 onReroll={reroll}
                 unReroll={unReroll}
                 currentCharacter={currentCharacter}
@@ -925,7 +1016,7 @@
                 bind:hasNewUnreadMessage={showNewMessageButton}
             />
 
-            {#if characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.length <= loadPages &&
+            {#if (readingFromBeginning || characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.length <= loadPages) &&
                 (characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].messageOffset ?? 0) === 0}
                 {#if characterStore.characters[$selectedCharID].type !== 'group' }
                     <Chat
@@ -993,6 +1084,22 @@
                 <div class="{settingsStore.state.fixedChatTextarea ? 'fixed' : 'absolute'} right-2 bottom-16 p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md" onclick={(e) => {
                     e.stopPropagation()
                 }}>
+                    <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => {
+                        openMenu = false
+                        void scrollToBeginning()
+                    }}>
+                        <ArrowUp />
+                        <span class="ml-2">{language.goToBeginning}</span>
+                    </div>
+
+                    <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => {
+                        openMenu = false
+                        void scrollToBottom()
+                    }}>
+                        <ArrowDown />
+                        <span class="ml-2">{language.goToLatest}</span>
+                    </div>
+
                     {#if characterStore.characters[$selectedCharID].type === 'group'}
                         <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={runAutoMode}>
                             <DicesIcon />
