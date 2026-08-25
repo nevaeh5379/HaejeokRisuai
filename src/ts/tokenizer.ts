@@ -8,6 +8,10 @@ import {
   getDatabase,
 } from "./storage/database.svelte";
 import type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
+import {
+  calculateMultimodalTokenCost,
+  countChatTokensDetailed,
+} from "@risuai/chat-core/tokenAccounting.cjs";
 import { supportsInlayImage } from "./process/files/inlays";
 import { risuChatParser } from "./parser/parser.svelte";
 import { tokenizeGGUFModel } from "./process/models/local";
@@ -572,61 +576,23 @@ export class ChatTokenizer {
   }
   async tokenizeChat(
     data: OpenAIChat,
-    args: {
-      countThoughts?: boolean;
-    } = {},
+    args: { countThoughts?: boolean } = {},
   ) {
-    let encoded =
-      (await encode(data.content)).length + this.chatAdditionalTokens;
-    if (data.name && this.useName === "name") {
-      encoded += (await encode(data.name)).length + 1;
-    }
-    if (data.multimodals && data.multimodals.length > 0) {
-      for (const multimodal of data.multimodals) {
-        encoded += await this.tokenizeMultiModal(multimodal);
-      }
-    }
-    if (data.thoughts && data.thoughts.length > 0 && args.countThoughts) {
-      for (const thought of data.thoughts) {
-        encoded += (await encode(thought)).length + 1;
-      }
-    }
-    return encoded;
+    return (await this.tokenizeChatsDetailed([data], args))[0];
   }
+
   async tokenizeChatsDetailed(
     data: OpenAIChat[],
     args: { countThoughts?: boolean } = {},
   ): Promise<number[]> {
-    const texts: string[] = [];
-    for (const chat of data) {
-      texts.push(chat.content);
-      if (chat.name && this.useName === "name") texts.push(chat.name);
-      if (args.countThoughts && chat.thoughts?.length) {
-        texts.push(...chat.thoughts);
-      }
-    }
-
-    const counts = await countTokenTexts(texts);
-    let countIndex = 0;
-    const detailed: number[] = [];
-    for (const chat of data) {
-      let encoded = counts[countIndex++] + this.chatAdditionalTokens;
-      if (chat.name && this.useName === "name") {
-        encoded += counts[countIndex++] + 1;
-      }
-      if (args.countThoughts && chat.thoughts?.length) {
-        for (let i = 0; i < chat.thoughts.length; i++) {
-          encoded += counts[countIndex++] + 1;
-        }
-      }
-      if (chat.multimodals?.length) {
-        for (const multimodal of chat.multimodals) {
-          encoded += await this.tokenizeMultiModal(multimodal);
-        }
-      }
-      detailed.push(encoded);
-    }
-    return detailed;
+    const db = getDatabase();
+    return countChatTokensDetailed(data, countTokenTexts, {
+      chatAdditionalTokens: this.chatAdditionalTokens,
+      useName: this.useName === "name",
+      countThoughts: args.countThoughts,
+      supportsInlayImage: supportsInlayImage(),
+      visionQuality: db.gptVisionQuality,
+    });
   }
 
   async tokenizeChats(
@@ -639,40 +605,14 @@ export class ChatTokenizer {
 
   tokenizeMultiModal(data: MultiModal) {
     const db = getDatabase();
-    if (!supportsInlayImage()) {
-      return this.chatAdditionalTokens;
-    }
-    if (db.gptVisionQuality === "low") {
-      return 87;
-    }
-
-    let encoded = this.chatAdditionalTokens;
-    let height = data.height ?? 0;
-    let width = data.width ?? 0;
-
-    if (height === width) {
-      if (height > 768) {
-        height = 768;
-        width = 768;
-      }
-    } else if (height > width) {
-      if (width > 768) {
-        width = 768;
-        height = height * (768 / width);
-      }
-    } else {
-      if (height > 768) {
-        height = 768;
-        width = width * (768 / height);
-      }
-    }
-
-    const chunkSize = Math.ceil(width / 512) * Math.ceil(height / 512);
-    encoded += chunkSize * 2;
-    encoded += 85;
-
-    return encoded;
+    return calculateMultimodalTokenCost(data, {
+      chatAdditionalTokens: this.chatAdditionalTokens,
+      useName: this.useName === "name",
+      supportsInlayImage: supportsInlayImage(),
+      visionQuality: db.gptVisionQuality,
+    });
   }
+
 }
 
 export async function tokenizeNum(data: string) {

@@ -6,4 +6,5 @@ module.exports = {
   ...require('./prompt.cjs'),
   ...require('./group.cjs'),
   ...require('./requestPolicy.cjs'),
+  ...require('./tokenAccounting.cjs'),
 };
