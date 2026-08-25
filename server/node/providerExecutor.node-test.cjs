@@ -27,6 +27,7 @@ test('advertises only implemented provider formats and routes', () => {
       LLM_FORMATS.NovelAI,
       LLM_FORMATS.NovelList,
       LLM_FORMATS.NanoGPT,
+      LLM_FORMATS.Ollama,
     ],
   );
   assert.equal(executor.supportsTransport(LLM_FORMATS.OpenAICompatible), true);
@@ -38,6 +39,7 @@ test('advertises only implemented provider formats and routes', () => {
   assert.equal(executor.supportsTransport(LLM_FORMATS.NovelAI), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.NovelList), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.NanoGPT), true);
+  assert.equal(executor.supportsTransport(LLM_FORMATS.Ollama), true);
 });
 
 
@@ -432,6 +434,45 @@ test('executes the default NovelList transport through its pinned endpoint', asy
   assert.equal(calls[0].url, 'https://api.tringpt.com//api');
   assert.equal(calls[0].options.headers.Authorization, 'Bearer novellist-key');
   assert.equal(calls[0].options.headers.Host, undefined);
+  assert.equal(calls[0].options.redirect, 'error');
+});
+
+test('executes Ollama Cloud native chat transport through its pinned endpoint', async () => {
+  const calls = [];
+  const controller = new AbortController();
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          message: { content: 'ollama cloud response', thinking: 'trace' },
+        }),
+      };
+    },
+  });
+  const result = await executor.executeTransport({
+    format: LLM_FORMATS.Ollama,
+    payload: {
+      body: { model: 'gpt-oss:120b', messages: [], stream: false },
+      headers: {
+        Authorization: 'Bearer ollama-key',
+        'Content-Type': 'application/json',
+        Host: 'evil.example',
+      },
+    },
+  }, { signal: controller.signal });
+  assert.equal(result.handled, true);
+  assert.equal(result.response.ok, true);
+  assert.deepEqual(result.response.data, {
+    message: { content: 'ollama cloud response', thinking: 'trace' },
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://ollama.com/api/chat');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer ollama-key');
+  assert.equal(calls[0].options.headers.Host, undefined);
+  assert.equal(calls[0].options.signal, controller.signal);
   assert.equal(calls[0].options.redirect, 'error');
 });
 

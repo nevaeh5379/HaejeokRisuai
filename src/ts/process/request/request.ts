@@ -26,6 +26,7 @@ import type { MCPTool } from "../mcp/mcplib";
 import { DEFAULT_COHERE_CHAT_URL } from "@risuai/chat-core/cohereProvider.cjs";
 import { resolveNovelAIGenerateUrl } from "@risuai/chat-core/novelAIProvider.cjs";
 import { DEFAULT_NOVELLIST_API_URL } from "@risuai/chat-core/novelListProvider.cjs";
+import { DEFAULT_OLLAMA_CLOUD_CHAT_URL } from "@risuai/chat-core/ollamaProvider.cjs";
 import { NovelAIBadWordIds, stringlizeNAIChat } from "../models/nai";
 import { OobaParams } from "../prompt";
 import {
@@ -39,6 +40,7 @@ import { runTransformers } from "../transformers";
 import { requestClaude } from "./anthropic";
 import { requestGoogleCloudVertex } from "./google";
 import { BrowserProviderExecutor } from "./browserProviderExecutor";
+import { shouldUseNodeOllamaCloudTransport } from "./ollamaTransport";
 import {
   tryExecuteNodeProvider,
   tryExecuteNodeProviderTransport,
@@ -1054,7 +1056,7 @@ async function requestOllama(
       type: "success",
       result: JSON.stringify({
         url: isCloud
-          ? "https://ollama.com/api/chat"
+          ? DEFAULT_OLLAMA_CLOUD_CHAT_URL
           : `${db.ollamaURL}/api/chat`,
         model: ollamaModel,
         source: db.ollamaModelSource,
@@ -1075,7 +1077,34 @@ async function requestOllama(
 
   if (!arg.useStreaming) {
     requestBody.stream = false;
-    const response: any = await ollama.chat(requestBody);
+    const remoteTransport = shouldUseNodeOllamaCloudTransport({
+      isCloud,
+      requestFormat,
+      useStreaming: arg.useStreaming,
+    })
+      ? await tryExecuteNodeProviderTransport(
+          LLMFormat.Ollama,
+          {
+            body: requestBody,
+            headers: {
+              "Content-Type": "application/json",
+              ...customHeaders,
+            },
+          },
+          arg.abortSignal,
+        )
+      : null;
+    if (remoteTransport && !remoteTransport.ok) {
+      return {
+        type: "fail",
+        result:
+          typeof remoteTransport.data === "string"
+            ? remoteTransport.data
+            : JSON.stringify(remoteTransport.data),
+        model: arg.aiModel,
+      };
+    }
+    const response: any = remoteTransport?.data ?? (await ollama.chat(requestBody));
 
     const result = formatThinkingOutput(
       response.message?.thinking ?? "",

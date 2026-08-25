@@ -32,6 +32,9 @@ const {
 const {
   resolveNanoGPTTransportUrl,
 } = require('../../packages/chat-core/nanoGPTProvider.cjs');
+const {
+  DEFAULT_OLLAMA_CLOUD_CHAT_URL,
+} = require('../../packages/chat-core/ollamaProvider.cjs');
 const { LLM_FORMATS } = require('../../packages/protocol/modelFormat.cjs');
 const {
   normalizeNodeProviderExecutionRequest,
@@ -150,6 +153,9 @@ function getTransportTarget(format) {
   if (format === LLM_FORMATS.NovelList) {
     return { name: 'novellist', url: DEFAULT_NOVELLIST_API_URL };
   }
+  if (format === LLM_FORMATS.Ollama) {
+    return { name: 'ollama cloud', url: DEFAULT_OLLAMA_CLOUD_CHAT_URL };
+  }
   return null;
 }
 
@@ -195,6 +201,7 @@ function createNodeProviderExecutor({
     LLM_FORMATS.NovelAI,
     LLM_FORMATS.NovelList,
     LLM_FORMATS.NanoGPT,
+    LLM_FORMATS.Ollama,
   ]);
   const supportedTransportFormats = new Set(transportFormats);
 
