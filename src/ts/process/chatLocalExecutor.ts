@@ -8,6 +8,7 @@ import {
 import type { ChatExecutor, ChatSendOptions } from "@risuai/chat-core/executor.cjs";
 import type { ChatStageTimings, OpenAIChat } from "@risuai/chat-core/types.cjs";
 import { createLocalChatGenerationRuntime } from "./chatLocalRuntime";
+import { tryCreateNodeChatGenerationPlan } from "./chatNodePlanner";
 import { processChatResponse } from "./chatResponse.svelte";
 import { finalizeChatGeneration } from "./chatGenerationFinalizer.svelte";
 import {
@@ -92,10 +93,17 @@ export class LocalChatExecutor implements ChatExecutor {
     currentChat = prompt.currentChat;
 
     const runtime = createLocalChatGenerationRuntime(tokenizer);
-    const plan = await createChatGenerationPlan(runtime, {
-      formated: prompt.formated,
-      maxContextTokens,
-    });
+    const plan =
+      (await tryCreateNodeChatGenerationPlan({
+        formated: prompt.formated,
+        maxContextTokens,
+        tokenizer,
+        runtime,
+      })) ??
+      (await createChatGenerationPlan(runtime, {
+        formated: prompt.formated,
+        maxContextTokens,
+      }));
     if (plan.ok === false) {
       throwError(
         language.errors.toomuchtoken +

@@ -23,7 +23,11 @@ async function createChatGenerationPlan(runtime, input) {
     }
   }
 
-  const compacted = formated.filter(hasRenderableContent);
+  const compactedEntries = formated
+    .map((chat, index) => ({ chat, index }))
+    .filter(({ chat }) => hasRenderableContent(chat));
+  const compacted = compactedEntries.map(({ chat }) => chat);
+  const keptIndexes = compactedEntries.map(({ index }) => index);
   const settings = runtime.getGenerationSettings();
   const outputTokens = Math.min(
     settings.maxResponseTokens,
@@ -33,6 +37,7 @@ async function createChatGenerationPlan(runtime, input) {
   return {
     ok: true,
     formated: compacted,
+    keptIndexes,
     inputTokens,
     outputTokens,
     generationId: runtime.createGenerationId(),

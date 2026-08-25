@@ -5,6 +5,10 @@ import { NodePostgresStorage } from "./nodePostgresStorage";
 import { NodeS3Storage } from "./nodeS3Storage";
 import type { AssetStorageTarget } from "../../../packages/protocol/storageConfig.cjs";
 import type {
+  NodeChatGenerationPlan,
+  NodeChatPlanRequest,
+} from "../../../packages/protocol/chatExecutor.cjs";
+import type {
   LoreMatchBatchRequest,
   LoreMatchBatchResponse,
   LoreResolveRequest,
@@ -164,6 +168,29 @@ export class NodeStorage {
       localStorage.setItem("risuauth", auth);
     }
     return auth;
+  }
+
+  async planChatGeneration(
+    request: NodeChatPlanRequest,
+  ): Promise<NodeChatGenerationPlan> {
+    const auth = await this.getCachedAuth();
+    const response = await fetch("/api/chat-executor/plan", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "risu-auth": auth,
+      },
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`Server chat planning failed (${response.status}): ${message}`);
+    }
+    const data = (await response.json()) as { plan?: NodeChatGenerationPlan };
+    if (!data.plan || typeof data.plan.ok !== "boolean") {
+      throw new Error("Server chat planning returned an invalid response");
+    }
+    return data.plan;
   }
 
   async tokenizeCountBatch(

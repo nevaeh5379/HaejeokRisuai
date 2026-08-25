@@ -11,6 +11,7 @@ import type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
 import {
   calculateMultimodalTokenCost,
   countChatTokensDetailed,
+  type ChatTokenAccountingOptions,
 } from "@risuai/chat-core/tokenAccounting.cjs";
 import { supportsInlayImage } from "./process/files/inlays";
 import { risuChatParser } from "./parser/parser.svelte";
@@ -119,6 +120,14 @@ function resolveServerTiktokenEncoding(
   if (modelInfo.tokenizer === LLMTokenizer.tiktokenCl100kBase) return "cl100k_base";
   if (modelInfo.tokenizer === LLMTokenizer.Unknown) return "cl100k_base";
   return null;
+}
+
+export function getServerTiktokenEncoding(): TokenizerEncoding | null {
+  const db = getDatabase();
+  const modelInfo = getModelInfo(db.aiModel);
+  const pluginTokenizer =
+    pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizer ?? "none";
+  return resolveServerTiktokenEncoding(modelInfo, pluginTokenizer);
 }
 
 export async function countTokenTexts(texts: string[]): Promise<number[]> {
@@ -574,6 +583,17 @@ export class ChatTokenizer {
     this.chatAdditionalTokens = chatAdditionalTokens;
     this.useName = useName;
   }
+
+  getTokenAccountingOptions(countThoughts = false): ChatTokenAccountingOptions {
+    const db = getDatabase();
+    return {
+      chatAdditionalTokens: this.chatAdditionalTokens,
+      useName: this.useName === "name",
+      countThoughts,
+      supportsInlayImage: supportsInlayImage(),
+      visionQuality: db.gptVisionQuality,
+    };
+  }
   async tokenizeChat(
     data: OpenAIChat,
     args: { countThoughts?: boolean } = {},
@@ -585,14 +605,11 @@ export class ChatTokenizer {
     data: OpenAIChat[],
     args: { countThoughts?: boolean } = {},
   ): Promise<number[]> {
-    const db = getDatabase();
-    return countChatTokensDetailed(data, countTokenTexts, {
-      chatAdditionalTokens: this.chatAdditionalTokens,
-      useName: this.useName === "name",
-      countThoughts: args.countThoughts,
-      supportsInlayImage: supportsInlayImage(),
-      visionQuality: db.gptVisionQuality,
-    });
+    return countChatTokensDetailed(
+      data,
+      countTokenTexts,
+      this.getTokenAccountingOptions(args.countThoughts),
+    );
   }
 
   async tokenizeChats(
@@ -604,13 +621,10 @@ export class ChatTokenizer {
   }
 
   tokenizeMultiModal(data: MultiModal) {
-    const db = getDatabase();
-    return calculateMultimodalTokenCost(data, {
-      chatAdditionalTokens: this.chatAdditionalTokens,
-      useName: this.useName === "name",
-      supportsInlayImage: supportsInlayImage(),
-      visionQuality: db.gptVisionQuality,
-    });
+    return calculateMultimodalTokenCost(
+      data,
+      this.getTokenAccountingOptions(false),
+    );
   }
 
 }

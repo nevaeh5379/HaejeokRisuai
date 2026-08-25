@@ -47,6 +47,7 @@ export type ChatGenerationPlan =
   | {
       ok: true;
       formated: OpenAIChat[];
+      keptIndexes: number[];
       inputTokens: number;
       outputTokens: number;
       generationId: string;
