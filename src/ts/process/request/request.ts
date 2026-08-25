@@ -34,6 +34,7 @@ import { applyChatTemplate } from "../templates/chatTemplate";
 import { runTransformers } from "../transformers";
 import { requestClaude } from "./anthropic";
 import { requestGoogleCloudVertex } from "./google";
+import { BrowserProviderExecutor } from "./browserProviderExecutor";
 import {
   requestOpenAI,
   requestOpenAILegacyInstruct,
@@ -307,6 +308,28 @@ export function reformater(
   return formated;
 }
 
+const browserProviderExecutor = new BrowserProviderExecutor<RequestDataArgumentExtended>(
+  {
+    openai: requestOpenAI,
+    "openai-responses": requestOpenAIResponseAPI,
+    "openai-legacy": requestOpenAILegacyInstruct,
+    anthropic: requestClaude,
+    google: requestGoogleCloudVertex,
+    novelai: requestNovelAI,
+    novellist: requestNovelList,
+    cohere: requestCohere,
+    "ooba-legacy": requestOobaLegacy,
+    ooba: requestOoba,
+    plugin: requestPlugin,
+    kobold: requestKobold,
+    ollama: requestOllama,
+    horde: requestHorde,
+    webllm: requestWebLLM,
+    echo: requestEcho,
+  },
+  () => language.errors.unknownModel,
+);
+
 export async function requestChatDataMain(
   arg: requestDataArgument,
   model: ModelModeExtended,
@@ -369,56 +392,7 @@ export async function requestChatDataMain(
 
   targ.formated = reformater(targ.formated, targ.modelInfo);
 
-  switch (format) {
-    case LLMFormat.OpenAICompatible:
-    case LLMFormat.Mistral:
-    case LLMFormat.NanoGPT:
-      return requestOpenAI(targ);
-    case LLMFormat.NanoGPTResponses:
-      return requestOpenAIResponseAPI(targ);
-    case LLMFormat.NanoGPTMessages:
-      return requestClaude(targ);
-    case LLMFormat.NanoGPTLegacy:
-      return requestOpenAILegacyInstruct(targ);
-    case LLMFormat.OpenAILegacyInstruct:
-      return requestOpenAILegacyInstruct(targ);
-    case LLMFormat.NovelAI:
-      return requestNovelAI(targ);
-    case LLMFormat.OobaLegacy:
-      return requestOobaLegacy(targ);
-    case LLMFormat.Plugin:
-      return requestPlugin(targ);
-    case LLMFormat.Ooba:
-      return requestOoba(targ);
-    case LLMFormat.VertexAIGemini:
-    case LLMFormat.GoogleCloud:
-      return requestGoogleCloudVertex(targ);
-    case LLMFormat.Kobold:
-      return requestKobold(targ);
-    case LLMFormat.NovelList:
-      return requestNovelList(targ);
-    case LLMFormat.Ollama:
-      return requestOllama(targ);
-    case LLMFormat.Cohere:
-      return requestCohere(targ);
-    case LLMFormat.Anthropic:
-    case LLMFormat.AnthropicLegacy:
-    case LLMFormat.AWSBedrockClaude:
-      return requestClaude(targ);
-    case LLMFormat.Horde:
-      return requestHorde(targ);
-    case LLMFormat.WebLLM:
-      return requestWebLLM(targ);
-    case LLMFormat.OpenAIResponseAPI:
-      return requestOpenAIResponseAPI(targ);
-    case LLMFormat.Echo:
-      return requestEcho(targ);
-  }
-
-  return {
-    type: "fail",
-    result: language.errors.unknownModel,
-  };
+  return browserProviderExecutor.execute(format, targ);
 }
 
 async function requestNovelAI(

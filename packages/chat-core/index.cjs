@@ -8,5 +8,6 @@ module.exports = {
   ...require('./requestPolicy.cjs'),
   ...require('./requestLoop.cjs'),
   ...require('./providerRouting.cjs'),
+  ...require('./providerExecutor.cjs'),
   ...require('./tokenAccounting.cjs'),
 };
