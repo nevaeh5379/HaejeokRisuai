@@ -466,6 +466,8 @@ export function createSqlDatabaseAdapter(
           case "modules": {
             const modules = await storage.loadModules();
             internalState.modules = modules;
+            const moduleFolders = (await storage.loadSettingKey("moduleFolders")) ?? [];
+            internalState.coreData.moduleFolders = moduleFolders;
             internalState.loadedDomains.add("modules");
             return modules;
           }

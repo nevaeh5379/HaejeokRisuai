@@ -1267,6 +1267,12 @@ export const languageVietnamese = {
   modules: "Mô-đun",
   noModules: "Không có mô-đun nào được cài đặt.",
   createModule: "Tạo mô-đun",
+  createFolder: "Tạo thư mục",
+  removeFolder: "Xóa thư mục",
+  removeFolderConfirm: "Bạn có thực sự muốn xóa thư mục này? Các mô-đun bên trong sẽ được chuyển về thư mục gốc.",
+  moveToFolder: "Chuyển vào thư mục",
+  noFolder: "Không có thư mục",
+  ungrouped: "Chưa phân nhóm",
   basicInfo: "Thông tin cơ bản",
   moduleContent: "Nội dung mô-đun",
   confirmRemoveModuleFeature:

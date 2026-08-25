@@ -1813,6 +1813,12 @@ export const languageEnglish = {
   modules: "Modules",
   noModules: "No modules has been installed.",
   createModule: "Create Module",
+  createFolder: "Create Folder",
+  removeFolder: "Remove Folder",
+  removeFolderConfirm: "Do you really want to remove this folder? Modules inside will be moved to the root.",
+  moveToFolder: "Move to Folder",
+  noFolder: "No Folder",
+  ungrouped: "Ungrouped",
   basicInfo: "Basic Info",
   moduleContent: "Module Content",
   confirmRemoveModuleFeature:

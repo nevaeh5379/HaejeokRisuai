@@ -66,6 +66,13 @@ export interface RisuModule {
   customModuleToggle?: string;
   mcp?: MCPModule;
   icon?: string;
+  folderId?: string;
+}
+
+export interface ModuleFolder {
+  id: string;
+  name: string;
+  color: string;
 }
 
 export async function exportModule(

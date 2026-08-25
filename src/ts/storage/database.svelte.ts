@@ -533,6 +533,7 @@ export function normalizeDatabaseDefaults(data: Database) {
   data.memoryLimitThickness ??= 1;
   data.modules ??= [];
   data.enabledModules ??= [];
+  data.moduleFolders ??= [];
   data.additionalParams ??= [];
   data.heightMode ??= "normal";
   data.antiClaudeOverload ??= false;
@@ -1175,6 +1176,7 @@ export interface Database {
   memoryLimitThickness?: number;
   modules: RisuModule[];
   enabledModules: string[];
+  moduleFolders: ModuleFolder[];
   sideMenuRerollButton?: boolean;
   requestInfoInsideChat?: boolean;
   additionalParams: [string, string][];
@@ -2513,7 +2515,7 @@ import {
 } from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
 import type { OnnxModelFiles } from "../process/transformers";
-import type { RisuModule } from "../process/modules";
+import type { RisuModule, ModuleFolder } from "../process/modules";
 import type { SerializableHypaV2Data } from "../process/memory/hypav2";
 import { decodeRPack, encodeRPack } from "../rpack/rpack_js";
 import { selectedCharID } from "../stores.svelte";

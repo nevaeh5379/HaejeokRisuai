@@ -1,16 +1,16 @@
 <script lang="ts">
     import { language } from "src/lang";
-    
+
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { characterStore } from 'src/ts/stores/domain/characterStore.svelte';
     import { moduleStore } from 'src/ts/stores/domain/moduleStore.svelte';
     import Button from "src/lib/UI/GUI/Button.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
-    import { exportModule, exportModuleLegacy, importModule, refreshModules, type RisuModule } from "src/ts/process/modules";
-    import { SquarePen, TrashIcon, Globe, Share2Icon, PlusIcon, HardDriveUpload, Waypoints, UserIcon } from "@lucide/svelte";
+    import { exportModule, exportModuleLegacy, importModule, refreshModules, type RisuModule, type ModuleFolder } from "src/ts/process/modules";
+    import { SquarePen, TrashIcon, Globe, Share2Icon, PlusIcon, HardDriveUpload, Waypoints, UserIcon, FolderPlus, FolderIcon, ChevronDown, ChevronRight, FolderInput } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
-    import { alertConfirm, alertNormal, alertSelect } from "src/ts/alert";
+    import { alertConfirm, alertNormal, alertSelect, alertInput } from "src/ts/alert";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import { onDestroy } from "svelte";
     import { importMCPModule } from "src/ts/process/mcp/mcp";
@@ -25,16 +25,57 @@
     let editModuleIndex = $state(-1)
     let moduleSearch = $state('')
     let charConversionMode = $state(false)
+    let openFolders = $state<Set<string>>(new Set())
 
     function sortModules(modules:RisuModule[], search:string){
         return modules.filter((v) => {
             if(search === '') return true
             return v.name.toLowerCase().includes(search.toLowerCase())
-        
+
         }).sort((a, b) => {
             let score = a.name.toLowerCase().localeCompare(b.name.toLowerCase())
             return score
         })
+    }
+
+    function toggleFolder(id: string) {
+        const next = new Set(openFolders)
+        if (next.has(id)) {
+            next.delete(id)
+        } else {
+            next.add(id)
+        }
+        openFolders = next
+    }
+
+    async function createFolder() {
+        const name = await alertInput(language.folderName)
+        if (!name) return
+        await moduleStore.addFolder(name)
+    }
+
+    async function removeFolder(folder: ModuleFolder) {
+        const d = await alertConfirm(language.removeFolderConfirm)
+        if (!d) return
+        await moduleStore.removeFolder(folder.id)
+    }
+
+    async function moveModuleToFolder(module: RisuModule) {
+        const folders = settingsStore.state.moduleFolders ?? []
+        const options = [
+            language.noFolder,
+            ...folders.map((f) => f.name),
+        ]
+        const sel = parseInt(await alertSelect(options))
+        if (Number.isNaN(sel)) return
+        if (sel === 0) {
+            await moduleStore.moveModuleToFolder(module.id, undefined)
+        } else {
+            const folder = folders[sel - 1]
+            if (folder) {
+                await moduleStore.moveModuleToFolder(module.id, folder.id)
+            }
+        }
     }
 
     onDestroy(() => {
@@ -50,102 +91,49 @@
         {#if settingsStore.state.modules.length === 0}
             <div class="text-textcolor2 p-3">{language.noModules}</div>
         {:else}
-            {#each sortModules(settingsStore.state.modules, moduleSearch) as rmodule, i}
-                {#if i !== 0}
+            {@const folders = settingsStore.state.moduleFolders ?? []}
+            {@const grouped = sortModules(settingsStore.state.modules.filter((m) => m.folderId && folders.some((f) => f.id === m.folderId)), moduleSearch)}
+            {@const ungrouped = sortModules(settingsStore.state.modules.filter((m) => !m.folderId || !folders.some((f) => f.id === m.folderId)), moduleSearch)}
+            {@render moduleRows(ungrouped, true)}
+            {#each folders as folder}
+                {@const folderModules = sortModules(settingsStore.state.modules.filter((m) => m.folderId === folder.id), moduleSearch)}
+                {#if folderModules.length > 0 || moduleSearch === ''}
                     <div class="border-t-1 border-selected"></div>
-                {/if}
-
-                <div class="pl-3 pt-3 text-left flex items-center">
-                    {#if rmodule.mcp}
-                        <Waypoints size={18} class="mr-2" />
-                    {/if}
-                    <span class="text-lg">{rmodule.name}</span>
-                    <div class="grow flex justify-end">
-                        {#if charConversionMode}
-                            <button class="cursor-pointer text-violet-500 mr-2" onclick={async (e) => {
-                                e.stopPropagation()
-                                const module = settingsStore.state.modules.find((v: RisuModule) => v.id === rmodule.id)
-                                const char = convertModuleToCharacter(module)
-                                characterStore.characters.push(char)
-                                alertNormal(language.successfullyConverted)
-                                checkCharOrder()
-                            }}>
-                                <UserIcon size={18}/>
-                                
-                            </button>
-                        {:else}
-                            <button class={(settingsStore.state.enabledModules.includes(rmodule.id)) ?
-                                    "mr-2 cursor-pointer text-blue-500" :
-                                    rmodule.namespace && 
-                                    settingsStore.state.moduleIntergration?.split(',').map((s: string) => s.trim()).includes(rmodule.namespace) ?
-                                    "text-amber-500 hover:text-green-500 mr-2 cursor-pointer" :
-                                    "text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
-                                } use:tooltip={language.enableGlobal} onclick={async (e) => {
-                                e.stopPropagation()
-                                await moduleStore.toggleModule(rmodule.id)
-                                charConversionMode = false
-                            }}>
-                                <Globe size={18}/>
-                            </button>
-                            {#if !rmodule.mcp}
-                                <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" use:tooltip={language.download} onclick={async (e) => {
-                                    e.stopPropagation()
-                                    const sel = parseInt(await alertSelect([`CharX (${language.recommended})`, `RisuM (Legacy)`]))
-                                    if(sel === 0){
-                                        exportModule(rmodule)
-                                    }
-                                    else{
-                                        exportModuleLegacy(rmodule)
-                                    }
-                                    charConversionMode = false
-                                }}>
-                                    <Share2Icon size={18}/>
-                                </button>
-                                <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" use:tooltip={language.edit} onclick={async (e) => {
-                                    e.stopPropagation()
-                                    const index = settingsStore.state.modules.findIndex((v: RisuModule) => v.id === rmodule.id)
-                                    tempModule = rmodule
-                                    editModuleIndex = index
-                                    mode = 2
-                                }}>
-                                    <SquarePen size={18}/>
-                                </button>
+                    <div class="w-full flex items-center pl-3 pr-3 py-2 text-left">
+                        <button
+                            class="grow flex items-center text-left hover:bg-textcolor/5 cursor-pointer -ml-3 pl-3 py-2"
+                            onclick={() => toggleFolder(folder.id)}
+                        >
+                            {#if openFolders.has(folder.id)}
+                                <ChevronDown size={18} class="mr-2 text-textcolor2" />
                             {:else}
-                                <button class="text-textcolor2 mr-2 cursor-not-allowed">
-                                    <Share2Icon size={18}/>
-                                </button>
-                                <button class="text-textcolor2 mr-2 cursor-not-allowed">
-                                    <SquarePen size={18}/>
-                                </button>
+                                <ChevronRight size={18} class="mr-2 text-textcolor2" />
                             {/if}
-                            <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" use:tooltip={language.remove} onclick={async (e) => {
+                            <FolderIcon size={18} class="mr-2 text-textcolor2" />
+                            <span class="text-lg font-semibold">{folder.name}</span>
+                            <span class="ml-2 text-sm text-textcolor2">({folderModules.length})</span>
+                        </button>
+                        <button
+                            class="text-textcolor2 hover:text-red-500 ml-2 cursor-pointer"
+                            use:tooltip={language.removeFolder}
+                            onclick={async (e) => {
                                 e.stopPropagation()
-                                const d = await alertConfirm(`${language.removeConfirm}` + rmodule.name)
-                                if(d){
-                                    if(settingsStore.state.enabledModules.includes(rmodule.id)){
-                                        settingsStore.state.enabledModules.splice(settingsStore.state.enabledModules.indexOf(rmodule.id), 1)
-                                        settingsStore.state.enabledModules = settingsStore.state.enabledModules
-                                    }
-                                    const index = settingsStore.state.modules.findIndex((v: RisuModule) => v.id === rmodule.id)
-                                    settingsStore.state.modules.splice(index, 1)
-                                    settingsStore.state.modules = settingsStore.state.modules
-                                }
-                            }}>
-                                <TrashIcon size={18}/>
-                            </button>
-                        {/if}
-
+                                await removeFolder(folder)
+                            }}
+                        >
+                            <TrashIcon size={16} />
+                        </button>
                     </div>
-                </div>
-                <div class="mt-1 mb-3 pl-3">
-                    <span class="text-sm text-textcolor2">{rmodule.description || 'No description provided'}</span>
-                </div>
+                    {#if openFolders.has(folder.id)}
+                        {@render moduleRows(folderModules, false)}
+                    {/if}
+                {/if}
             {/each}
         {/if}
     </div>
 
     <div class="flex mr-2 mt-4">
-        <button class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer" onclick={async () => {
+        <button class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer" use:tooltip={language.createModule} onclick={async () => {
             tempModule = {
                 name: '',
                 description: '',
@@ -156,17 +144,20 @@
         }}>
             <PlusIcon />
         </button>
+        <button class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer" use:tooltip={language.createFolder} onclick={createFolder}>
+            <FolderPlus />
+        </button>
         <button class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer" onclick={async () => {
             charConversionMode = !charConversionMode
         }}>
             <UserIcon />
         </button>
-        <button class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer" onclick={async () => {
+        <button class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer" use:tooltip={language.importModule} onclick={async () => {
             importMCPModule()
         }}>
             <Waypoints />
         </button>
-        <button class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer" onclick={async () => {
+        <button class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer" use:tooltip={language.importModule} onclick={async () => {
             importModule()
         }}>
             <HardDriveUpload  />
@@ -189,3 +180,103 @@
         }}>{language.editModule}</Button>
     {/if}
 {/if}
+
+{#snippet moduleRows(modules: RisuModule[], showHeader: boolean)}
+    {#each modules as rmodule, i}
+        {#if i !== 0 || showHeader}
+            <div class="border-t-1 border-selected"></div>
+        {/if}
+
+        <div class="pl-3 pt-3 text-left flex items-center">
+            {#if rmodule.mcp}
+                <Waypoints size={18} class="mr-2" />
+            {/if}
+            <span class="text-lg">{rmodule.name}</span>
+            <div class="grow flex justify-end">
+                {#if charConversionMode}
+                    <button class="cursor-pointer text-violet-500 mr-2" onclick={async (e) => {
+                        e.stopPropagation()
+                        const module = settingsStore.state.modules.find((v: RisuModule) => v.id === rmodule.id)
+                        const char = convertModuleToCharacter(module)
+                        characterStore.characters.push(char)
+                        alertNormal(language.successfullyConverted)
+                        checkCharOrder()
+                    }}>
+                        <UserIcon size={18}/>
+
+                    </button>
+                {:else}
+                    <button class={(settingsStore.state.enabledModules.includes(rmodule.id)) ?
+                            "mr-2 cursor-pointer text-blue-500" :
+                            rmodule.namespace &&
+                            settingsStore.state.moduleIntergration?.split(',').map((s: string) => s.trim()).includes(rmodule.namespace) ?
+                            "text-amber-500 hover:text-green-500 mr-2 cursor-pointer" :
+                            "text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
+                        } use:tooltip={language.enableGlobal} onclick={async (e) => {
+                        e.stopPropagation()
+                        await moduleStore.toggleModule(rmodule.id)
+                        charConversionMode = false
+                    }}>
+                        <Globe size={18}/>
+                    </button>
+                    {#if !rmodule.mcp}
+                        <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" use:tooltip={language.download} onclick={async (e) => {
+                            e.stopPropagation()
+                            const sel = parseInt(await alertSelect([`CharX (${language.recommended})`, `RisuM (Legacy)`]))
+                            if(sel === 0){
+                                exportModule(rmodule)
+                            }
+                            else{
+                                exportModuleLegacy(rmodule)
+                            }
+                            charConversionMode = false
+                        }}>
+                            <Share2Icon size={18}/>
+                        </button>
+                        <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" use:tooltip={language.edit} onclick={async (e) => {
+                            e.stopPropagation()
+                            const index = settingsStore.state.modules.findIndex((v: RisuModule) => v.id === rmodule.id)
+                            tempModule = rmodule
+                            editModuleIndex = index
+                            mode = 2
+                        }}>
+                            <SquarePen size={18}/>
+                        </button>
+                    {:else}
+                        <button class="text-textcolor2 mr-2 cursor-not-allowed">
+                            <Share2Icon size={18}/>
+                        </button>
+                        <button class="text-textcolor2 mr-2 cursor-not-allowed">
+                            <SquarePen size={18}/>
+                        </button>
+                    {/if}
+                    <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" use:tooltip={language.moveToFolder} onclick={async (e) => {
+                        e.stopPropagation()
+                        await moveModuleToFolder(rmodule)
+                    }}>
+                        <FolderInput size={18}/>
+                    </button>
+                    <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" use:tooltip={language.remove} onclick={async (e) => {
+                        e.stopPropagation()
+                        const d = await alertConfirm(`${language.removeConfirm}` + rmodule.name)
+                        if(d){
+                            if(settingsStore.state.enabledModules.includes(rmodule.id)){
+                                settingsStore.state.enabledModules.splice(settingsStore.state.enabledModules.indexOf(rmodule.id), 1)
+                                settingsStore.state.enabledModules = settingsStore.state.enabledModules
+                            }
+                            const index = settingsStore.state.modules.findIndex((v: RisuModule) => v.id === rmodule.id)
+                            settingsStore.state.modules.splice(index, 1)
+                            settingsStore.state.modules = settingsStore.state.modules
+                        }
+                    }}>
+                        <TrashIcon size={18}/>
+                    </button>
+                {/if}
+
+            </div>
+        </div>
+        <div class="mt-1 mb-3 pl-3">
+            <span class="text-sm text-textcolor2">{rmodule.description || 'No description provided'}</span>
+        </div>
+    {/each}
+{/snippet}

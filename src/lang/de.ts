@@ -1287,6 +1287,12 @@ export const languageGerman = {
   modules: "Module",
   noModules: "Es wurden keine Module installiert.",
   createModule: "Modul erstellen",
+  createFolder: "Ordner erstellen",
+  removeFolder: "Ordner entfernen",
+  removeFolderConfirm: "Möchten Sie diesen Ordner wirklich entfernen? Die darin enthaltenen Module werden in den Hauptordner verschoben.",
+  moveToFolder: "In Ordner verschieben",
+  noFolder: "Kein Ordner",
+  ungrouped: "Ungruppiert",
   basicInfo: "Basisinfo",
   moduleContent: "Modulinhalt",
   confirmRemoveModuleFeature:
