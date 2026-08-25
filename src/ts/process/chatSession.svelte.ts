@@ -15,7 +15,7 @@ import { language } from "../../lang";
 import { ChatTokenizer } from "../tokenizer";
 import { findCharacterbyId, parseToggleSyntax } from "../util";
 import { v4 } from "uuid";
-import { groupOrder } from "./group";
+import { selectGroupGenerationOrder } from "./chat-core/group";
 import { risuChatParser } from "./scripts";
 import { getModuleToggles } from "./modules";
 import { pluginV2 } from "../plugins/plugins.svelte";
@@ -113,21 +113,19 @@ function buildPromptInfo(): MessagePresetInfo {
   };
 }
 
-function getGroupOrder(room: groupChat) {
+function getGroupOrder(room: groupChat, findCharacter: (id: string) => character) {
   const lastMessage = room.chats[room.chatPage].message.at(-1);
-  let order = room.characters
-    .map((id, index) => ({
+  return selectGroupGenerationOrder({
+    candidates: room.characters.map((id, index) => ({
       id,
+      name: findCharacter(id)?.name ?? "",
       talkness: room.characterActive[index] ? room.characterTalks[index] : -1,
       index,
-    }))
-    .filter((entry) => entry.talkness > 0);
-  if (!room.orderByOrder) {
-    order = groupOrder(order, lastMessage?.data).filter(
-      (entry) => entry.id !== lastMessage?.saying,
-    );
-  }
-  return order;
+    })),
+    lastMessage: lastMessage?.data,
+    lastSpeakerId: lastMessage?.saying,
+    preserveOrder: room.orderByOrder,
+  });
 }
 
 async function initializeGeneration(options: PrepareChatSessionOptions) {
@@ -169,8 +167,9 @@ async function runGroupGeneration(
   options: PrepareChatSessionOptions,
   room: groupChat,
   calculatedChatTokens: number,
+  findCharacter: (id: string) => character,
 ) {
-  for (const entry of getGroupOrder(room)) {
+  for (const entry of getGroupOrder(room, findCharacter)) {
     const result = await options.sendGroupMember({
       chatProcessIndex: entry.index,
       chatAdditonalTokens: calculatedChatTokens,
@@ -193,7 +192,12 @@ async function resolveCurrentCharacter(
   if (options.chatProcessIndex === -1) {
     return {
       status: "done" as const,
-      result: await runGroupGeneration(options, room, calculatedChatTokens),
+      result: await runGroupGeneration(
+        options,
+        room,
+        calculatedChatTokens,
+        findCharacter,
+      ),
     };
   }
 

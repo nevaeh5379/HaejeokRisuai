@@ -1,4 +1,3 @@
-import shuffle from "lodash/shuffle";
 import { findCharacterbyId } from "../util";
 import { alertConfirm, alertError, alertSelectChar } from "../alert";
 import { language } from "src/lang";
@@ -6,6 +5,7 @@ import { get } from "svelte/store";
 import { getDatabase, setDatabase } from "../storage/database.svelte";
 import { selectedCharID } from "../stores.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
+import { orderGroupSpeakers } from "./chat-core/group";
 
 export async function addGroupChar() {
   let selectedId = get(selectedCharID);
@@ -49,53 +49,11 @@ export type GroupOrder = {
 };
 
 export function groupOrder(chars: GroupOrder[], input: string): GroupOrder[] {
-  let order: GroupOrder[] = [];
-  let ids: string[] = [];
-  if (input) {
-    const words = getWords(input);
-
-    for (const word of words) {
-      for (let char of chars) {
-        const charNameChunks = getWords(findCharacterbyId(char.id).name);
-
-        if (charNameChunks.includes(word)) {
-          order.push(char);
-          ids.push(char.id);
-          break;
-        }
-      }
-    }
-  }
-
-  const shuffled = shuffle(chars);
-  for (const char of shuffled) {
-    if (ids.includes(char.id)) {
-      continue;
-    }
-
-    const chance = char.talkness ?? 0.5;
-
-    if (chance >= Math.random()) {
-      order.push(char);
-      ids.push(char.id);
-    }
-  }
-
-  while (order.length === 0) {
-    order.push(chars[Math.floor(Math.random() * chars.length)]);
-  }
-
-  return order;
-}
-
-function getWords(data: string) {
-  const matches = data.split(/\n| /g);
-  let words: string[] = [];
-  if (!matches) {
-    return [data];
-  }
-  for (const match of matches) {
-    words.push(match.toLocaleLowerCase());
-  }
-  return words;
+  return orderGroupSpeakers(
+    chars.map((char) => ({
+      ...char,
+      name: findCharacterbyId(char.id).name,
+    })),
+    input,
+  ).map(({ name: _name, ...char }) => char);
 }
