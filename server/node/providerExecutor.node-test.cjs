@@ -22,12 +22,14 @@ test('advertises only implemented provider formats and routes', () => {
       LLM_FORMATS.OpenAIResponseAPI,
       LLM_FORMATS.Anthropic,
       LLM_FORMATS.GoogleCloud,
+      LLM_FORMATS.Cohere,
     ],
   );
   assert.equal(executor.supportsTransport(LLM_FORMATS.OpenAICompatible), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.OpenAIResponseAPI), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.Anthropic), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.GoogleCloud), true);
+  assert.equal(executor.supportsTransport(LLM_FORMATS.Cohere), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.NanoGPT), false);
 });
 
@@ -281,6 +283,34 @@ test('rejects unsafe Google model identifiers before fetch', async () => {
     }),
     /safe model identifier/,
   );
+});
+
+test('executes official Cohere non-streaming transport without interpreting the response', async () => {
+  const calls = [];
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ text: 'raw cohere response' }),
+      };
+    },
+  });
+  const result = await executor.executeTransport({
+    format: LLM_FORMATS.Cohere,
+    payload: {
+      body: { message: 'hello', chat_history: [] },
+      headers: { Authorization: 'Bearer cohere-key', 'Content-Type': 'application/json' },
+    },
+  });
+  assert.equal(result.handled, true);
+  assert.equal(result.response.ok, true);
+  assert.deepEqual(result.response.data, { text: 'raw cohere response' });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.cohere.com/v1/chat');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer cohere-key');
+  assert.equal(calls[0].options.redirect, 'error');
 });
 
 test('returns raw OpenAI error payloads to the browser interpreter', async () => {

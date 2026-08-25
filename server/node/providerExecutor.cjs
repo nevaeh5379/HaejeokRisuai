@@ -19,6 +19,9 @@ const {
 const {
   buildGoogleGenerateContentUrl,
 } = require('../../packages/chat-core/googleProvider.cjs');
+const {
+  DEFAULT_COHERE_CHAT_URL,
+} = require('../../packages/chat-core/cohereProvider.cjs');
 const { LLM_FORMATS } = require('../../packages/protocol/modelFormat.cjs');
 const {
   normalizeNodeProviderExecutionRequest,
@@ -109,6 +112,9 @@ function getTransportTarget(format) {
   if (format === LLM_FORMATS.Anthropic) {
     return { name: 'anthropic', url: DEFAULT_ANTHROPIC_MESSAGES_URL };
   }
+  if (format === LLM_FORMATS.Cohere) {
+    return { name: 'cohere', url: DEFAULT_COHERE_CHAT_URL };
+  }
   return null;
 }
 
@@ -149,6 +155,7 @@ function createNodeProviderExecutor({
     LLM_FORMATS.OpenAIResponseAPI,
     LLM_FORMATS.Anthropic,
     LLM_FORMATS.GoogleCloud,
+    LLM_FORMATS.Cohere,
   ]);
   const supportedTransportFormats = new Set(transportFormats);
 

@@ -23,6 +23,7 @@ import type {
   OpenAIChat,
 } from "@risuai/chat-core/types.cjs";
 import type { MCPTool } from "../mcp/mcplib";
+import { DEFAULT_COHERE_CHAT_URL } from "@risuai/chat-core/cohereProvider.cjs";
 import { NovelAIBadWordIds, stringlizeNAIChat } from "../models/nai";
 import { OobaParams } from "../prompt";
 import {
@@ -36,7 +37,10 @@ import { runTransformers } from "../transformers";
 import { requestClaude } from "./anthropic";
 import { requestGoogleCloudVertex } from "./google";
 import { BrowserProviderExecutor } from "./browserProviderExecutor";
-import { tryExecuteNodeProvider } from "./nodeProviderExecutor";
+import {
+  tryExecuteNodeProvider,
+  tryExecuteNodeProviderTransport,
+} from "./nodeProviderExecutor";
 import {
   requestOpenAI,
   requestOpenAILegacyInstruct,
@@ -1199,22 +1203,29 @@ async function requestCohere(
     return {
       type: "success",
       result: JSON.stringify({
-        url: arg.customURL ?? "https://api.cohere.com/v1/chat",
+        url: arg.customURL ?? DEFAULT_COHERE_CHAT_URL,
         body: body,
         headers: headers,
       }),
     };
   }
 
-  const res = await globalFetch(
-    arg.customURL ?? "https://api.cohere.com/v1/chat",
-    {
+  const remoteTransport =
+    !arg.customURL && arg.modelInfo.format === LLMFormat.Cohere
+      ? await tryExecuteNodeProviderTransport(
+          LLMFormat.Cohere,
+          { body, headers },
+          arg.abortSignal,
+        )
+      : null;
+  const res =
+    remoteTransport ??
+    (await globalFetch(arg.customURL ?? DEFAULT_COHERE_CHAT_URL, {
       method: "POST",
       headers: headers,
       body: body,
       abortSignal: arg.abortSignal,
-    },
-  );
+    }));
 
   if (!res.ok) {
     return {
