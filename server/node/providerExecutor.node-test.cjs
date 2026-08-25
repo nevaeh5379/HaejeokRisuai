@@ -23,6 +23,7 @@ test('advertises only implemented provider formats and routes', () => {
       LLM_FORMATS.Anthropic,
       LLM_FORMATS.GoogleCloud,
       LLM_FORMATS.Cohere,
+      LLM_FORMATS.NovelAI,
     ],
   );
   assert.equal(executor.supportsTransport(LLM_FORMATS.OpenAICompatible), true);
@@ -30,6 +31,7 @@ test('advertises only implemented provider formats and routes', () => {
   assert.equal(executor.supportsTransport(LLM_FORMATS.Anthropic), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.GoogleCloud), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.Cohere), true);
+  assert.equal(executor.supportsTransport(LLM_FORMATS.NovelAI), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.NanoGPT), false);
 });
 
@@ -311,6 +313,63 @@ test('executes official Cohere non-streaming transport without interpreting the 
   assert.equal(calls[0].url, 'https://api.cohere.com/v1/chat');
   assert.equal(calls[0].options.headers.Authorization, 'Bearer cohere-key');
   assert.equal(calls[0].options.redirect, 'error');
+});
+
+test('executes official NovelAI variants through pinned server endpoints', async () => {
+  const calls = [];
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ output: 'raw novelai response' }),
+      };
+    },
+  });
+
+  for (const [variant, expectedUrl] of [
+    ['kayra', 'https://text.novelai.net/ai/generate'],
+    ['clio', 'https://api.novelai.net/ai/generate'],
+  ]) {
+    const result = await executor.executeTransport({
+      format: LLM_FORMATS.NovelAI,
+      payload: {
+        variant,
+        body: { input: 'hello', model: `${variant}-v1`, parameters: {} },
+        headers: { Authorization: 'Bearer novelai-key', Host: 'evil.example' },
+      },
+    });
+    assert.equal(result.handled, true);
+    assert.equal(result.response.ok, true);
+    assert.deepEqual(result.response.data, { output: 'raw novelai response' });
+    assert.equal(calls.at(-1).url, expectedUrl);
+    assert.equal(calls.at(-1).options.headers.Authorization, 'Bearer novelai-key');
+    assert.equal(calls.at(-1).options.headers.Host, undefined);
+    assert.equal(calls.at(-1).options.redirect, 'error');
+  }
+});
+
+test('rejects unknown NovelAI transport variants before fetch', async () => {
+  let called = false;
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async () => {
+      called = true;
+      throw new Error('fetch should not run');
+    },
+  });
+  await assert.rejects(
+    executor.executeTransport({
+      format: LLM_FORMATS.NovelAI,
+      payload: {
+        variant: 'custom',
+        body: { input: 'hello' },
+        headers: { Authorization: 'Bearer novelai-key' },
+      },
+    }),
+    /variant must be kayra or clio/,
+  );
+  assert.equal(called, false);
 });
 
 test('returns raw OpenAI error payloads to the browser interpreter', async () => {

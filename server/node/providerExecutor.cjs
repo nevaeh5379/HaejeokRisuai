@@ -22,6 +22,9 @@ const {
 const {
   DEFAULT_COHERE_CHAT_URL,
 } = require('../../packages/chat-core/cohereProvider.cjs');
+const {
+  resolveNovelAIGenerateUrl,
+} = require('../../packages/chat-core/novelAIProvider.cjs');
 const { LLM_FORMATS } = require('../../packages/protocol/modelFormat.cjs');
 const {
   normalizeNodeProviderExecutionRequest,
@@ -102,6 +105,14 @@ function normalizeGoogleTransportPayload(payload) {
   return { ...normalized, modelId: payload.modelId, apiKey: payload.apiKey };
 }
 
+function normalizeNovelAITransportPayload(payload) {
+  const normalized = normalizeJsonTransportPayload(payload, 'novelai');
+  if (payload.variant !== 'kayra' && payload.variant !== 'clio') {
+    throw new TypeError('novelai variant must be kayra or clio');
+  }
+  return { ...normalized, variant: payload.variant };
+}
+
 function getTransportTarget(format) {
   if (format === LLM_FORMATS.OpenAICompatible) {
     return { name: 'openai', url: DEFAULT_OPENAI_CHAT_COMPLETIONS_URL };
@@ -156,6 +167,7 @@ function createNodeProviderExecutor({
     LLM_FORMATS.Anthropic,
     LLM_FORMATS.GoogleCloud,
     LLM_FORMATS.Cohere,
+    LLM_FORMATS.NovelAI,
   ]);
   const supportedTransportFormats = new Set(transportFormats);
 
@@ -199,11 +211,18 @@ function createNodeProviderExecutor({
         name: 'google',
         url: buildGoogleGenerateContentUrl(payload.modelId, payload.apiKey),
       };
+    } else if (input.format === LLM_FORMATS.NovelAI) {
+      payload = normalizeNovelAITransportPayload(input.payload);
+      target = {
+        name: 'novelai',
+        url: resolveNovelAIGenerateUrl(payload.variant),
+      };
     } else {
       target = getTransportTarget(input.format);
       if (!target) return { handled: false };
       payload = normalizeJsonTransportPayload(input.payload, target.name);
     }
+    if (!target?.url) return { handled: false };
     const response = await fetchImpl(target.url, {
       method: 'POST',
       headers: payload.headers,

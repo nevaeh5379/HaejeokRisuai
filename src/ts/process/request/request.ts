@@ -24,6 +24,7 @@ import type {
 } from "@risuai/chat-core/types.cjs";
 import type { MCPTool } from "../mcp/mcplib";
 import { DEFAULT_COHERE_CHAT_URL } from "@risuai/chat-core/cohereProvider.cjs";
+import { resolveNovelAIGenerateUrl } from "@risuai/chat-core/novelAIProvider.cjs";
 import { NovelAIBadWordIds, stringlizeNAIChat } from "../models/nai";
 import { OobaParams } from "../prompt";
 import {
@@ -395,9 +396,10 @@ async function requestNovelAI(
     cfg_uc: "",
   };
 
+  const variant = aiModel === "novelai_kayra" ? "kayra" : "clio";
   let body = {
     input: prompt,
-    model: aiModel === "novelai_kayra" ? "kayra-v1" : "clio-v1",
+    model: variant === "kayra" ? "kayra-v1" : "clio-v1",
     parameters: payload,
   };
 
@@ -411,17 +413,26 @@ async function requestNovelAI(
     getAdditionalParameters(aiModel),
   );
 
-  const da = await globalFetch(
-    aiModel === "novelai_kayra"
-      ? "https://text.novelai.net/ai/generate"
-      : "https://api.novelai.net/ai/generate",
-    {
+  const novelAIUrl = resolveNovelAIGenerateUrl(variant);
+  if (!novelAIUrl) {
+    return {
+      type: "fail",
+      result: "Unsupported NovelAI transport variant",
+    };
+  }
+  const remoteTransport = await tryExecuteNodeProviderTransport(
+    LLMFormat.NovelAI,
+    { body, headers, variant },
+    abortSignal,
+  );
+  const da =
+    remoteTransport ??
+    (await globalFetch(novelAIUrl, {
       body: body,
       headers: headers,
       abortSignal,
       chatId: arg.chatId,
-    },
-  );
+    }));
 
   if (!da.ok || !da.data.output) {
     return {
