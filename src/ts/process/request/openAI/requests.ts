@@ -42,6 +42,7 @@ import type { OpenAIChatExtra } from "./types";
 import { getLocalNetworkRequestOptions } from "./shared";
 export { requestOpenAIResponseAPI, __testResponsesAPI } from "./responses";
 export { requestHTTPOpenAI } from "./nonStreamingTransport";
+export { requestOpenAILegacyInstruct } from "./legacyInstruct";
 export async function requestOpenAI(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
@@ -297,96 +298,4 @@ export async function requestOpenAI(
     arg,
     localNetworkOptions,
   );
-}
-
-export async function requestOpenAILegacyInstruct(
-  arg: RequestDataArgumentExtended,
-): Promise<requestDataResponse> {
-  const formated = arg.formated;
-  const db = getDatabase();
-  const maxTokens = arg.maxTokens;
-  const temperature = arg.temperature;
-  const prompt =
-    formated
-      .filter((m) => m.content?.trim())
-      .map((m) => {
-        let author = "";
-
-        if (m.role == "system") {
-          m.content = m.content.trim();
-        }
-
-        console.log(m.role + ":" + m.content);
-        switch (m.role) {
-          case "user":
-            author = "User";
-            break;
-          case "assistant":
-            author = "Assistant";
-            break;
-          case "system":
-            author = "Instruction";
-            break;
-          default:
-            author = m.role;
-            break;
-        }
-
-        return `\n## ${author}\n${m.content.trim()}`;
-        //return `\n\n${author}: ${m.content.trim()}`;
-      })
-      .join("") + `\n## Response\n`;
-
-  if (arg.previewBody) {
-    return {
-      type: "success",
-      result: JSON.stringify({
-        error: "This model is not supported in preview mode",
-      }),
-    };
-  }
-
-  let body: any = {
-    model: "gpt-3.5-turbo-instruct",
-    prompt: prompt,
-    max_tokens: maxTokens,
-    temperature: temperature,
-    top_p: 1,
-    stop: ["User:", " User:", "user:", " user:"],
-    presence_penalty: arg.PresensePenalty || db.PresensePenalty / 100,
-    frequency_penalty: arg.frequencyPenalty || db.frequencyPenalty / 100,
-  };
-
-  let headers: any = {
-    "Content-Type": "application/json",
-    Authorization: "Bearer " + (arg.key ?? db.openAIKey),
-  };
-
-  body = applyAdditionalParameters(
-    body,
-    headers,
-    getAdditionalParameters(arg.aiModel),
-  );
-
-  const response = await globalFetch(
-    arg.customURL ?? "https://api.openai.com/v1/completions",
-    {
-      body: body,
-      headers: headers,
-      chatId: arg.chatId,
-      abortSignal: arg.abortSignal,
-    },
-  );
-
-  if (!response.ok) {
-    return {
-      type: "fail",
-      result: language.errors.httpError + `${JSON.stringify(response.data)}`,
-    };
-  }
-  const text: string = response.data.choices[0].text;
-  return {
-    type: "success",
-    result: text.replace(/##\n/g, ""),
-  };
 }
