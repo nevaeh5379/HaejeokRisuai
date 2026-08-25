@@ -7,6 +7,7 @@ import type {
   requestDataResponse,
 } from "../request";
 import { tryExecuteNodeProviderTransport } from "../nodeProviderExecutor";
+import { matchesNodeOllamaCloudEndpoint } from "../ollamaTransport";
 import { interpretOpenAINonStreamingResponse } from "./nonStreamingResponse";
 import type { LocalNetworkRequestOptions } from "./shared";
 
@@ -29,6 +30,18 @@ function resolveNodeOpenAINonStreamingTransport(
         };
       }
     }
+  }
+  if (
+    matchesNodeOllamaCloudEndpoint({
+      requestURL: replacerURL,
+      format,
+      api: "openai-chat",
+    })
+  ) {
+    return {
+      format: LLMFormat.Ollama,
+      payload: { api: "openai-chat" },
+    };
   }
   return null;
 }

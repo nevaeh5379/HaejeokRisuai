@@ -437,7 +437,7 @@ test('executes the default NovelList transport through its pinned endpoint', asy
   assert.equal(calls[0].options.redirect, 'error');
 });
 
-test('executes Ollama Cloud native chat transport through its pinned endpoint', async () => {
+test('executes Ollama Cloud transports through pinned endpoints', async () => {
   const calls = [];
   const controller = new AbortController();
   const executor = createNodeProviderExecutor({
@@ -446,34 +446,55 @@ test('executes Ollama Cloud native chat transport through its pinned endpoint', 
       return {
         ok: true,
         status: 200,
-        text: async () => JSON.stringify({
-          message: { content: 'ollama cloud response', thinking: 'trace' },
-        }),
+        text: async () => JSON.stringify({ message: { content: 'ollama' } }),
       };
     },
   });
-  const result = await executor.executeTransport({
-    format: LLM_FORMATS.Ollama,
-    payload: {
-      body: { model: 'gpt-oss:120b', messages: [], stream: false },
-      headers: {
-        Authorization: 'Bearer ollama-key',
-        'Content-Type': 'application/json',
-        Host: 'evil.example',
+  const cases = [
+    ['native', 'https://ollama.com/api/chat'],
+    ['openai-chat', 'https://ollama.com/v1/chat/completions'],
+    ['responses', 'https://ollama.com/v1/responses'],
+    ['anthropic', 'https://ollama.com/v1/messages'],
+  ];
+  for (const [api, expectedUrl] of cases) {
+    const result = await executor.executeTransport({
+      format: LLM_FORMATS.Ollama,
+      payload: {
+        api,
+        body: { model: 'gpt-oss:120b' },
+        headers: {
+          Authorization: 'Bearer ollama-key',
+          'Content-Type': 'application/json',
+          Host: 'evil.example',
+        },
       },
+    }, { signal: controller.signal });
+    assert.equal(result.handled, true);
+    assert.equal(result.response.ok, true);
+    assert.equal(calls.at(-1).url, expectedUrl);
+    assert.equal(calls.at(-1).options.headers.Authorization, 'Bearer ollama-key');
+    assert.equal(calls.at(-1).options.headers.Host, undefined);
+    assert.equal(calls.at(-1).options.signal, controller.signal);
+    assert.equal(calls.at(-1).options.redirect, 'error');
+  }
+});
+
+test('rejects unknown Ollama Cloud transport selectors before fetch', async () => {
+  let called = false;
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async () => {
+      called = true;
+      throw new Error('fetch should not run');
     },
-  }, { signal: controller.signal });
-  assert.equal(result.handled, true);
-  assert.equal(result.response.ok, true);
-  assert.deepEqual(result.response.data, {
-    message: { content: 'ollama cloud response', thinking: 'trace' },
   });
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, 'https://ollama.com/api/chat');
-  assert.equal(calls[0].options.headers.Authorization, 'Bearer ollama-key');
-  assert.equal(calls[0].options.headers.Host, undefined);
-  assert.equal(calls[0].options.signal, controller.signal);
-  assert.equal(calls[0].options.redirect, 'error');
+  await assert.rejects(
+    executor.executeTransport({
+      format: LLM_FORMATS.Ollama,
+      payload: { api: 'custom', body: {}, headers: {} },
+    }),
+    /api must be native, openai-chat, responses, or anthropic/,
+  );
+  assert.equal(called, false);
 });
 
 test('executes NanoGPT chat and Responses transports through pinned endpoints', async () => {

@@ -33,7 +33,7 @@ const {
   resolveNanoGPTTransportUrl,
 } = require('../../packages/chat-core/nanoGPTProvider.cjs');
 const {
-  DEFAULT_OLLAMA_CLOUD_CHAT_URL,
+  resolveOllamaCloudTransportUrl,
 } = require('../../packages/chat-core/ollamaProvider.cjs');
 const { LLM_FORMATS } = require('../../packages/protocol/modelFormat.cjs');
 const {
@@ -134,6 +134,16 @@ function normalizeNanoGPTTransportPayload(payload) {
   return { ...normalized, api: payload.api, subscription: payload.subscription };
 }
 
+function normalizeOllamaTransportPayload(payload) {
+  const normalized = normalizeJsonTransportPayload(payload, 'ollama cloud');
+  if (!['native', 'openai-chat', 'responses', 'anthropic'].includes(payload.api)) {
+    throw new TypeError(
+      'ollama cloud api must be native, openai-chat, responses, or anthropic',
+    );
+  }
+  return { ...normalized, api: payload.api };
+}
+
 function getTransportTarget(format) {
   if (format === LLM_FORMATS.OpenAICompatible) {
     return { name: 'openai', url: DEFAULT_OPENAI_CHAT_COMPLETIONS_URL };
@@ -152,9 +162,6 @@ function getTransportTarget(format) {
   }
   if (format === LLM_FORMATS.NovelList) {
     return { name: 'novellist', url: DEFAULT_NOVELLIST_API_URL };
-  }
-  if (format === LLM_FORMATS.Ollama) {
-    return { name: 'ollama cloud', url: DEFAULT_OLLAMA_CLOUD_CHAT_URL };
   }
   return null;
 }
@@ -256,6 +263,12 @@ function createNodeProviderExecutor({
       target = {
         name: 'nanogpt',
         url: resolveNanoGPTTransportUrl(payload.api, payload.subscription),
+      };
+    } else if (input.format === LLM_FORMATS.Ollama) {
+      payload = normalizeOllamaTransportPayload(input.payload);
+      target = {
+        name: 'ollama cloud',
+        url: resolveOllamaCloudTransportUrl(payload.api),
       };
     } else {
       target = getTransportTarget(input.format);

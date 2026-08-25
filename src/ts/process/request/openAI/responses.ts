@@ -20,6 +20,7 @@ import type {
   StreamResponseChunk,
 } from "../request";
 import { tryExecuteNodeProviderTransport } from "../nodeProviderExecutor";
+import { matchesNodeOllamaCloudEndpoint } from "../ollamaTransport";
 import {
   applyAdditionalParameters,
   applyParameters,
@@ -658,6 +659,17 @@ async function requestHTTPResponsesAPI(
         break;
       }
     }
+  } else if (
+    matchesNodeOllamaCloudEndpoint({
+      requestURL,
+      format: arg.modelInfo.format,
+      api: "responses",
+    })
+  ) {
+    nodeTransport = {
+      format: LLMFormat.Ollama,
+      payload: { api: "responses" },
+    };
   }
   const remoteTransport = nodeTransport
     ? await tryExecuteNodeProviderTransport(

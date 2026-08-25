@@ -22,6 +22,7 @@ import type {
   StreamResponseChunk,
 } from "./request";
 import { tryExecuteNodeProviderTransport } from "./nodeProviderExecutor";
+import { matchesNodeOllamaCloudEndpoint } from "./ollamaTransport";
 import {
   applyAdditionalParameters,
   applyParameters,
@@ -1124,15 +1125,33 @@ async function requestClaudeHTTP(
   }
 
   const db = getDatabase();
-  const remoteTransport =
+  let nodeTransport:
+    | { format: LLMFormat; payload: Record<string, unknown> }
+    | null = null;
+  if (
     replacerURL === DEFAULT_ANTHROPIC_MESSAGES_URL &&
     arg.modelInfo.format === LLMFormat.Anthropic
-      ? await tryExecuteNodeProviderTransport(
-          LLMFormat.Anthropic,
-          { body, headers },
-          arg.abortSignal,
-        )
-      : null;
+  ) {
+    nodeTransport = { format: LLMFormat.Anthropic, payload: {} };
+  } else if (
+    matchesNodeOllamaCloudEndpoint({
+      requestURL: replacerURL,
+      format: arg.modelInfo.format,
+      api: "anthropic",
+    })
+  ) {
+    nodeTransport = {
+      format: LLMFormat.Ollama,
+      payload: { api: "anthropic" },
+    };
+  }
+  const remoteTransport = nodeTransport
+    ? await tryExecuteNodeProviderTransport(
+        nodeTransport.format,
+        { body, headers, ...nodeTransport.payload },
+        arg.abortSignal,
+      )
+    : null;
   const res =
     remoteTransport ??
     (await globalFetch(replacerURL, {

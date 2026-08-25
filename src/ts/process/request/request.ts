@@ -26,7 +26,10 @@ import type { MCPTool } from "../mcp/mcplib";
 import { DEFAULT_COHERE_CHAT_URL } from "@risuai/chat-core/cohereProvider.cjs";
 import { resolveNovelAIGenerateUrl } from "@risuai/chat-core/novelAIProvider.cjs";
 import { DEFAULT_NOVELLIST_API_URL } from "@risuai/chat-core/novelListProvider.cjs";
-import { DEFAULT_OLLAMA_CLOUD_CHAT_URL } from "@risuai/chat-core/ollamaProvider.cjs";
+import {
+  DEFAULT_OLLAMA_CLOUD_CHAT_URL,
+  resolveOllamaCloudTransportUrl,
+} from "@risuai/chat-core/ollamaProvider.cjs";
 import { NovelAIBadWordIds, stringlizeNAIChat } from "../models/nai";
 import { OobaParams } from "../prompt";
 import {
@@ -999,21 +1002,21 @@ async function requestOllama(
   const ollamaThinkMode = getOllamaThinkMode(db.ollamaThinkingMode);
 
   if (isCloud && requestFormat === LLMFormat.OpenAICompatible) {
-    arg.customURL = "https://ollama.com/v1/chat/completions";
+    arg.customURL = resolveOllamaCloudTransportUrl("openai-chat")!;
     arg.key = db.ollamaApiKey;
     arg.modelInfo.internalID = ollamaModel;
     return requestOpenAI(arg);
   }
 
   if (isCloud && requestFormat === LLMFormat.OpenAIResponseAPI) {
-    arg.customURL = "https://ollama.com/v1/responses";
+    arg.customURL = resolveOllamaCloudTransportUrl("responses")!;
     arg.key = db.ollamaApiKey;
     arg.modelInfo.internalID = ollamaModel;
     return requestOpenAIResponseAPI(arg);
   }
 
   if (isCloud && requestFormat === LLMFormat.Anthropic) {
-    arg.customURL = "https://ollama.com/v1/messages";
+    arg.customURL = resolveOllamaCloudTransportUrl("anthropic")!;
     arg.key = db.ollamaApiKey;
     arg.modelInfo = {
       ...arg.modelInfo,
@@ -1085,6 +1088,7 @@ async function requestOllama(
       ? await tryExecuteNodeProviderTransport(
           LLMFormat.Ollama,
           {
+            api: "native",
             body: requestBody,
             headers: {
               "Content-Type": "application/json",
