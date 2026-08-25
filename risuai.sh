@@ -4,7 +4,7 @@ set -eu
 # RisuAI PostgreSQL + RustFS installer and lifecycle manager.
 # Keep this file POSIX-sh compatible: it is used on Linux, macOS, and WSL.
 
-program_version=2.0.0
+program_version=2.1.0
 config_version=2
 project_name=risuai-rustfs
 
@@ -91,6 +91,7 @@ Usage:
   ./risuai.sh [install] [options]
   ./risuai.sh start|stop|restart|rebuild|down|status|doctor|config
   ./risuai.sh logs [--follow|--no-follow] [--tail N] [SERVICE]
+  ./risuai.sh db status|password|sync-password|shell|backup|optimize
   ./risuai.sh help|version
 
 Deployment modes:
@@ -99,6 +100,14 @@ Deployment modes:
   domain   Caddy HTTPS with manual DNS or Cloudflare DDNS
   dynv6    Caddy HTTPS with dynv6 DDNS
   proxy    An existing reverse proxy on the host or a Docker network
+
+Database management:
+  db status                         Check PostgreSQL health, credentials, version, and size
+  db password [--generate]          Change the database password and update RisuAI safely
+  db sync-password                  Repair a saved-password/database-password mismatch
+  db shell                          Open an interactive PostgreSQL shell
+  db backup [FILE]                  Create a PostgreSQL custom-format backup
+  db optimize                       Run VACUUM (ANALYZE) on the RisuAI database
 
 Install options:
   --mode MODE                     local, lan, domain, dynv6, or proxy
@@ -158,7 +167,7 @@ EOF
 }
 
 short_usage() {
-    printf 'Usage: %s [install|start|stop|restart|rebuild|down|status|logs|doctor|config|help|version]\n' "${0##*/}" >&2
+    printf 'Usage: %s [install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|help|version]\n' "${0##*/}" >&2
 }
 
 # Capture user inputs, then remove deployment interpolation variables from the
@@ -196,7 +205,7 @@ unset CLOUDFLARE_TOKEN CLOUDFLARE_TOKEN_FILE CLOUDFLARE_ZONE_ID CLOUDFLARE_IPV6 
 
 action=install
 case "${1:-}" in
-    install|start|stop|restart|rebuild|down|status|logs|doctor|config|help|version)
+    install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|help|version)
         action=$1
         shift
         ;;
@@ -237,6 +246,25 @@ env_value_or() {
     value_result=$(read_env_value_from "$value_file" "$value_key")
     [ -n "$value_result" ] || value_result=$value_default
     printf '%s' "$value_result"
+}
+
+replace_env_value() {
+    replace_file=$1
+    replace_key=$2
+    replace_value=$3
+    replace_tmp=${replace_file}.tmp.$$
+    awk -v wanted="$replace_key" -v replacement="$replace_value" '
+        BEGIN { found = 0 }
+        index($0, wanted "=") == 1 {
+            print wanted "=" replacement
+            found = 1
+            next
+        }
+        { print }
+        END { if (!found) print wanted "=" replacement }
+    ' "$replace_file" >"$replace_tmp" || { rm -f "$replace_tmp"; return 1; }
+    chmod 600 "$replace_tmp" || { rm -f "$replace_tmp"; return 1; }
+    mv -f "$replace_tmp" "$replace_file"
 }
 
 stored_mode_from() {
@@ -1094,6 +1122,217 @@ upgrade_legacy_installation_identity() {
     ok "Migrated legacy state to configuration schema $config_version with a unique installation ID"
 }
 
+validate_new_database_password() {
+    database_password=$1
+    is_safe_credential "$database_password" || die "Database password may contain only letters, numbers, '.', '_', '~', and '-'"
+    [ "${#database_password}" -ge 12 ] || die "Database password must be at least 12 characters"
+    [ "${#database_password}" -le 256 ] || die "Database password must be at most 256 characters"
+}
+
+postgres_is_running() {
+    compose ps --status running --services 2>/dev/null | grep -Fx postgres >/dev/null 2>&1
+}
+
+ensure_postgres_running() {
+    if ! postgres_is_running; then
+        info "Starting PostgreSQL"
+        compose up -d postgres
+    fi
+    postgres_wait=0
+    while [ "$postgres_wait" -lt 30 ]; do
+        if compose exec -T postgres pg_isready -U risuai -d risuai >/dev/null 2>&1; then return 0; fi
+        postgres_wait=$((postgres_wait + 1))
+        sleep 1
+    done
+    die "PostgreSQL did not become ready within 30s"
+}
+
+postgres_saved_password_matches() {
+    saved_database_password=$(read_env_value_from "$env_file" POSTGRES_PASSWORD)
+    [ -n "$saved_database_password" ] || return 1
+    printf '%s\n' "$saved_database_password" | compose exec -T postgres sh -c '
+        IFS= read -r PGPASSWORD || exit 1
+        export PGPASSWORD
+        exec psql -h 127.0.0.1 -U risuai -d risuai -Atqc "SELECT 1"
+    ' >/dev/null 2>&1
+}
+
+postgres_admin_sql() {
+    compose exec -T postgres psql -U risuai -d risuai -v ON_ERROR_STOP=1 "$@"
+}
+
+set_postgres_role_password() {
+    new_database_password=$1
+    is_safe_credential "$new_database_password" || die "Refusing to apply an unsafe database password"
+    printf "ALTER ROLE risuai WITH PASSWORD '%s';\n" "$new_database_password" | \
+        postgres_admin_sql >/dev/null
+}
+
+recreate_risuai_for_database_password() {
+    if compose ps --status running --services 2>/dev/null | grep -Fx risuai >/dev/null 2>&1; then
+        info "Recreating RisuAI with the updated database credentials"
+        compose up -d --force-recreate risuai
+        wait_for_risuai "$wait_timeout" || die "RisuAI did not become ready after the database password change"
+    else
+        warn "RisuAI is not running; the new password will be used on the next start."
+    fi
+}
+
+manage_database() {
+    require_installation
+    require_docker_daemon
+    require_local_docker
+    installation_id=$(env_value_or "$env_file" RISUAI_INSTALLATION_ID legacy)
+    saved_present=true
+    adopt_existing=false
+    [ -n "$input_wait_timeout" ] || wait_timeout=$(env_value_or "$env_file" RISUAI_WAIT_TIMEOUT 300)
+    is_valid_integer_range "$wait_timeout" 10 3600 || die "Saved readiness timeout must be an integer from 10 to 3600"
+    db_action=${1:-help}
+    [ "$#" -eq 0 ] || shift
+
+    case "$db_action" in
+        help|-h|--help)
+            cat <<'EOF'
+Usage:
+  ./risuai.sh db status
+  ./risuai.sh db password [--generate | --password-file FILE]
+  ./risuai.sh db sync-password
+  ./risuai.sh db shell
+  ./risuai.sh db backup [FILE]
+  ./risuai.sh db optimize
+
+The password commands keep the PostgreSQL role and saved RisuAI configuration
+in sync. `sync-password` is the safe repair command when an existing database
+volume rejects the password currently stored in .risuai/rustfs.env.
+EOF
+            return
+            ;;
+        status)
+            [ "$#" -eq 0 ] || die "db status does not accept arguments"
+            info "Checking PostgreSQL"
+            if ! postgres_is_running; then
+                error "PostgreSQL is not running"
+                printf '  Repair: %s start\n' "${0##*/}" >&2
+                return 1
+            fi
+            ok "PostgreSQL container is running"
+            db_password_ok=false
+            if postgres_saved_password_matches; then
+                ok "Saved database password matches the PostgreSQL role"
+                db_password_ok=true
+            else
+                error "Saved database password does not authenticate to PostgreSQL"
+                printf '  Repair: %s db sync-password\n' "${0##*/}" >&2
+            fi
+            db_version=$(postgres_admin_sql -Atqc 'SHOW server_version;' 2>/dev/null || true)
+            db_size=$(postgres_admin_sql -Atqc "SELECT pg_size_pretty(pg_database_size('risuai'));" 2>/dev/null || true)
+            db_connections=$(postgres_admin_sql -Atqc "SELECT count(*) FROM pg_stat_activity WHERE datname='risuai';" 2>/dev/null || true)
+            [ -n "$db_version" ] && printf '  PostgreSQL version: %s\n' "$db_version"
+            [ -n "$db_size" ] && printf '  Database size:      %s\n' "$db_size"
+            [ -n "$db_connections" ] && printf '  Connections:        %s\n' "$db_connections"
+            if [ "$db_password_ok" = true ]; then return 0; fi
+            return 1
+            ;;
+        shell)
+            [ "$#" -eq 0 ] || die "db shell does not accept arguments"
+            has_controlling_tty || die "db shell requires an interactive terminal"
+            ensure_postgres_running
+            info "Opening PostgreSQL shell (database=risuai, user=risuai)"
+            compose exec postgres psql -U risuai -d risuai
+            return
+            ;;
+        backup)
+            [ "$#" -le 1 ] || die "db backup accepts at most one output file"
+            ensure_postgres_running
+            if [ "$#" -eq 1 ]; then
+                backup_file=$1
+            else
+                backup_file=$PWD/risuai-postgres-$(date '+%Y%m%d-%H%M%S').dump
+            fi
+            is_safe_scalar "$backup_file" || die "Invalid backup path"
+            [ ! -e "$backup_file" ] || die "Backup destination already exists: $backup_file"
+            case "$backup_file" in
+                */*) backup_dir=${backup_file%/*}; [ -d "$backup_dir" ] || die "Backup directory does not exist: $backup_dir" ;;
+            esac
+            info "Creating PostgreSQL backup"
+            umask 077
+            if compose exec -T postgres pg_dump -U risuai -d risuai -Fc >"$backup_file"; then
+                ok "Database backup created: $backup_file"
+                warn "This backup contains PostgreSQL data only; RustFS assets are not included."
+            else
+                rm -f "$backup_file"
+                die "PostgreSQL backup failed"
+            fi
+            return
+            ;;
+        optimize)
+            [ "$#" -eq 0 ] || die "db optimize does not accept arguments"
+            acquire_lock
+            check_container_ownership
+            ensure_postgres_running
+            info "Optimizing PostgreSQL statistics and reclaimable space"
+            postgres_admin_sql -c 'VACUUM (ANALYZE);'
+            ok "PostgreSQL optimization completed"
+            return
+            ;;
+        sync-password)
+            [ "$#" -eq 0 ] || die "db sync-password does not accept arguments"
+            acquire_lock
+            check_container_ownership
+            ensure_postgres_running
+            saved_database_password=$(read_env_value_from "$env_file" POSTGRES_PASSWORD)
+            is_safe_credential "$saved_database_password" || die "Saved POSTGRES_PASSWORD is missing or invalid"
+            info "Synchronizing the PostgreSQL role with the saved RisuAI password"
+            set_postgres_role_password "$saved_database_password"
+            recreate_risuai_for_database_password
+            ok "Database password is synchronized"
+            return
+            ;;
+        password)
+            password_mode=
+            password_file=
+            while [ "$#" -gt 0 ]; do
+                case "$1" in
+                    --generate) [ -z "$password_mode" ] || die "Choose only one password source"; password_mode=generate; shift ;;
+                    --password-file) [ "$#" -ge 2 ] || die "--password-file requires a file"; [ -z "$password_mode" ] || die "Choose only one password source"; password_mode=file; password_file=$2; shift 2 ;;
+                    -h|--help) printf 'Usage: %s db password [--generate | --password-file FILE]\n' "${0##*/}"; return ;;
+                    *) die "Unknown db password option: $1" ;;
+                esac
+            done
+            acquire_lock
+            check_container_ownership
+            ensure_postgres_running
+            case "$password_mode" in
+                generate) new_database_password=$(random_secret) ;;
+                file) new_database_password=$(read_secret_source "$password_file" "database password file") ;;
+                '')
+                    if [ -n "$input_postgres_password" ]; then
+                        new_database_password=$input_postgres_password
+                    else
+                        has_controlling_tty || die "Use --generate, --password-file, or POSTGRES_PASSWORD in non-interactive mode"
+                        new_database_password=$(prompt_secret "New PostgreSQL password")
+                        confirm_database_password=$(prompt_secret "Repeat PostgreSQL password")
+                        [ "$new_database_password" = "$confirm_database_password" ] || die "The two passwords do not match"
+                    fi
+                    ;;
+            esac
+            validate_new_database_password "$new_database_password"
+            old_database_password=$(read_env_value_from "$env_file" POSTGRES_PASSWORD)
+            info "Changing PostgreSQL password"
+            set_postgres_role_password "$new_database_password"
+            if ! replace_env_value "$env_file" POSTGRES_PASSWORD "$new_database_password"; then
+                warn "Could not update the saved configuration; restoring the previous PostgreSQL password."
+                set_postgres_role_password "$old_database_password" || true
+                die "Database password change was rolled back because the configuration could not be updated"
+            fi
+            recreate_risuai_for_database_password
+            ok "Database password changed and saved configuration updated"
+            return
+            ;;
+        *) die "Unknown db command: $db_action (use '${0##*/} db help')" ;;
+    esac
+}
+
 run_doctor() {
     [ "$#" -eq 0 ] || die "doctor does not accept arguments"
     doctor_failures=0
@@ -1147,6 +1386,17 @@ run_doctor() {
                     error "One or more configured services are stopped, restarting, or unhealthy"
                     doctor_failures=$((doctor_failures + 1))
                     compose ps --all || true
+                fi
+                if postgres_is_running; then
+                    if postgres_saved_password_matches; then
+                        ok "Saved PostgreSQL password authenticates successfully"
+                    else
+                        error "Saved PostgreSQL password does not match the database role"
+                        printf '  Repair: %s db sync-password\n' "${0##*/}" >&2
+                        doctor_failures=$((doctor_failures + 1))
+                    fi
+                else
+                    warn "PostgreSQL password authentication was not checked because the service is stopped."
                 fi
             fi
             show_deployment_from "$env_file"
@@ -1272,6 +1522,7 @@ case "$action" in
 esac
 
 if [ "$action" = doctor ]; then run_doctor "$@"; exit $?; fi
+if [ "$action" = db ]; then manage_database "$@"; exit $?; fi
 if [ "$action" != install ]; then manage_existing_installation "$@"; exit $?; fi
 
 # ------------------------------ install ------------------------------
@@ -1522,7 +1773,7 @@ if [ "$saved_configuration_valid" = true ]; then
     saved_postgres_password=$(read_env_value_from "$env_file" POSTGRES_PASSWORD)
     saved_rustfs_access_key=$(read_env_value_from "$env_file" RUSTFS_ACCESS_KEY)
     saved_rustfs_secret_key=$(read_env_value_from "$env_file" RUSTFS_SECRET_KEY)
-    if [ -n "$postgres_password" ] && [ "$postgres_password" != "$saved_postgres_password" ]; then die "POSTGRES_PASSWORD cannot be changed during reinstall; credential rotation requires a dedicated database procedure"; fi
+    if [ -n "$postgres_password" ] && [ "$postgres_password" != "$saved_postgres_password" ]; then die "POSTGRES_PASSWORD cannot be changed during reinstall; use '$script_path db password' (or 'db password --generate') so PostgreSQL and RisuAI stay synchronized"; fi
     if [ -n "$rustfs_access_key" ] && [ "$rustfs_access_key" != "$saved_rustfs_access_key" ]; then die "RUSTFS_ACCESS_KEY cannot be changed during reinstall"; fi
     if [ -n "$rustfs_secret_key" ] && [ "$rustfs_secret_key" != "$saved_rustfs_secret_key" ]; then die "RUSTFS_SECRET_KEY cannot be changed during reinstall"; fi
     postgres_password=$saved_postgres_password

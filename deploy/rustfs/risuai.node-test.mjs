@@ -380,7 +380,7 @@ test("help and version are side-effect free and do not require Docker", async (t
     for (const [arguments_, output] of [
         [["help"], /Deployment modes:/],
         [["--help"], /Usage:/],
-        [["version"], /^risuai\.sh 2\.0\.0 \(configuration schema 2\)$/m],
+        [["version"], /^risuai\.sh 2\.1\.0 \(configuration schema 2\)$/m],
     ]) {
         const result = await fixture.run(arguments_);
         assert.equal(result.code, 0, result.stderr);
@@ -388,6 +388,46 @@ test("help and version are side-effect free and do not require Docker", async (t
     }
     assert.deepEqual(await fixture.dockerCalls(), []);
     assert.equal(await exists(join(fixture.checkout, ".risuai")), false);
+});
+
+test("database management keeps PostgreSQL credentials and saved configuration synchronized", async (t) => {
+    await t.test("status validates the saved password", async (t) => {
+        const fixture = await createFixture(t);
+        const install = await installWithoutStarting(fixture, ["--mode", "local"]);
+        assert.equal(install.code, 0, install.stderr);
+        const result = await fixture.run(["db", "status"], { FAKE_RUNNING: "1" });
+        assert.equal(result.code, 0, result.stderr);
+        assert.match(result.stdout, /Saved database password matches the PostgreSQL role/);
+    });
+
+    await t.test("generated password updates protected state and recreated services use it", async (t) => {
+        const fixture = await createFixture(t);
+        const install = await installWithoutStarting(fixture, ["--mode", "local"]);
+        assert.equal(install.code, 0, install.stderr);
+        await fixture.clearDockerCalls();
+        const result = await fixture.run(["db", "password", "--generate"]);
+        assert.equal(result.code, 0, result.stderr);
+        const saved = parseEnv(await readFile(join(fixture.checkout, ".risuai/rustfs.env"), "utf8"));
+        assert.match(saved.POSTGRES_PASSWORD, /^[0-9a-f]{64}$/);
+        assert.notEqual(saved.POSTGRES_PASSWORD, fixedCredentials.POSTGRES_PASSWORD);
+        assert.equal(await permission(join(fixture.checkout, ".risuai/rustfs.env")), 0o600);
+        const calls = await fixture.dockerCalls();
+        assert.equal(calls.some((call) => call.command === "up" && call.env.POSTGRES_PASSWORD === saved.POSTGRES_PASSWORD), true);
+        await assertNoTransactionDebris(fixture);
+    });
+
+    await t.test("sync-password repairs the database role without changing the saved secret", async (t) => {
+        const fixture = await createFixture(t);
+        const install = await installWithoutStarting(fixture, ["--mode", "local"]);
+        assert.equal(install.code, 0, install.stderr);
+        const before = parseEnv(await readFile(join(fixture.checkout, ".risuai/rustfs.env"), "utf8"));
+        const result = await fixture.run(["db", "sync-password"]);
+        assert.equal(result.code, 0, result.stderr);
+        assert.match(result.stdout, /Database password is synchronized/);
+        const after = parseEnv(await readFile(join(fixture.checkout, ".risuai/rustfs.env"), "utf8"));
+        assert.equal(after.POSTGRES_PASSWORD, before.POSTGRES_PASSWORD);
+        await assertNoTransactionDebris(fixture);
+    });
 });
 
 test("non-interactive installs require both a mode and explicit confirmation", async (t) => {
