@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   appendOpenAIStreamingFragment,
+  buildOpenAIRequestHeaders,
   collectOpenAIToolCalls,
   formatOpenAIReasoningText,
   mergeOpenAIStreamingToolCallDeltas,
+  resolveOpenAIRequestEndpoint,
+  resolveOpenAIRequestModel,
 } from "@risuai/chat-core/openAIProvider.cjs";
 
 describe("OpenAI provider core", () => {
@@ -71,6 +74,59 @@ describe("OpenAI provider core", () => {
         type: "function",
         function: { name: "weather", arguments: '{"city":"Seoul"}' },
       },
+    });
+  });
+
+  it("resolves legacy model aliases and provider-specific model overrides", () => {
+    expect(resolveOpenAIRequestModel({ requestModel: "gpt4o1-mini" })).toBe("o1-mini");
+    expect(resolveOpenAIRequestModel({
+      aiModel: "openrouter",
+      requestModel: "ignored",
+      openRouterRequestModel: "anthropic/claude-test",
+    })).toBe("anthropic/claude-test");
+    expect(resolveOpenAIRequestModel({
+      requestModel: "custom",
+      internalID: "vendor/internal-model",
+    })).toBe("vendor/internal-model");
+  });
+
+  it("normalizes provider endpoints without losing reverse-proxy markers", () => {
+    expect(resolveOpenAIRequestEndpoint({ aiModel: "openrouter" })).toEqual({
+      url: "https://openrouter.ai/api/v1/chat/completions",
+      risuIdentify: false,
+    });
+    expect(resolveOpenAIRequestEndpoint({
+      aiModel: "reverse_proxy",
+      customURL: "risu::https://proxy.example/v1/",
+      autofillRequestUrl: true,
+    })).toEqual({
+      url: "https://proxy.example/v1/chat/completions",
+      risuIdentify: true,
+    });
+  });
+
+  it("builds provider headers with the existing API key precedence", () => {
+    expect(buildOpenAIRequestHeaders({
+      aiModel: "openrouter",
+      key: "explicit",
+      openRouterKey: "provider",
+    })).toMatchObject({
+      Authorization: "Bearer explicit",
+      "Content-Type": "application/json",
+      "X-Title": "RisuAI",
+      "HTTP-Referer": "https://risuai.xyz",
+    });
+    expect(buildOpenAIRequestHeaders({
+      aiModel: "nanogpt",
+      key: "explicit",
+      keyIdentifier: "saved",
+      keyByIdentifier: { saved: "selected" },
+      nanoGPTProvider: "provider-a",
+      risuIdentify: true,
+    })).toMatchObject({
+      Authorization: "Bearer selected",
+      "X-Provider": "provider-a",
+      "X-Proxy-Risu": "RisuAI",
     });
   });
 });

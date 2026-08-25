@@ -32,3 +32,34 @@ export function formatOpenAIReasoningText(
   data: unknown,
   options?: { deepSeekThinkingOutput?: boolean },
 ): string;
+
+export const OPENAI_MODEL_ALIASES: Readonly<Record<string, string>>;
+
+export function resolveOpenAIRequestModel(options?: {
+  aiModel?: string;
+  requestModel?: string;
+  openRouterRequestModel?: string;
+  nanoGPTRequestModel?: string;
+  internalID?: string;
+}): string | undefined;
+
+export function resolveOpenAIRequestEndpoint(options?: {
+  aiModel?: string;
+  customURL?: string;
+  modelEndpoint?: string;
+  nanoGPTUseSubscriptionEndpoint?: boolean;
+  autofillRequestUrl?: boolean;
+}): { url: string; risuIdentify: boolean };
+
+export function buildOpenAIRequestHeaders(options?: {
+  aiModel?: string;
+  key?: string;
+  openAIKey?: string;
+  nanoGPTKey?: string;
+  proxyKey?: string;
+  openRouterKey?: string;
+  keyIdentifier?: string;
+  keyByIdentifier?: Record<string, string>;
+  nanoGPTProvider?: string;
+  risuIdentify?: boolean;
+}): Record<string, string>;

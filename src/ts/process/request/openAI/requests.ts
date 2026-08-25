@@ -4,7 +4,12 @@ import {
   decodeMistralResponse,
   formatMistralMessages,
 } from "@risuai/chat-core/mistralProvider.cjs";
-import { DEFAULT_OPENAI_CHAT_COMPLETIONS_URL } from "@risuai/chat-core/openAIProvider.cjs";
+import {
+  DEFAULT_OPENAI_CHAT_COMPLETIONS_URL,
+  buildOpenAIRequestHeaders,
+  resolveOpenAIRequestEndpoint,
+  resolveOpenAIRequestModel,
+} from "@risuai/chat-core/openAIProvider.cjs";
 import { interpretOpenAINonStreamingResponse } from "./nonStreamingResponse";
 import { getTranStream, wrapToolStream } from "./streamingResponse";
 import { getDatabase } from "src/ts/storage/database.svelte";
@@ -354,81 +359,13 @@ export async function requestOpenAI(
   let body: {
     [key: string]: any;
   } = {
-    model:
-      aiModel === "nanogpt"
-        ? db.nanogptRequestModel
-        : aiModel === "openrouter"
-          ? openrouterRequestModel
-          : requestModel === "gpt35"
-            ? "gpt-3.5-turbo"
-            : requestModel === "gpt35_0613"
-              ? "gpt-3.5-turbo-0613"
-              : requestModel === "gpt35_16k"
-                ? "gpt-3.5-turbo-16k"
-                : requestModel === "gpt35_16k_0613"
-                  ? "gpt-3.5-turbo-16k-0613"
-                  : requestModel === "gpt4"
-                    ? "gpt-4"
-                    : requestModel === "gpt45"
-                      ? "gpt-4.5-preview"
-                      : requestModel === "gpt4_32k"
-                        ? "gpt-4-32k"
-                        : requestModel === "gpt4_0613"
-                          ? "gpt-4-0613"
-                          : requestModel === "gpt4_32k_0613"
-                            ? "gpt-4-32k-0613"
-                            : requestModel === "gpt4_1106"
-                              ? "gpt-4-1106-preview"
-                              : requestModel === "gpt4_0125"
-                                ? "gpt-4-0125-preview"
-                                : requestModel === "gptvi4_1106"
-                                  ? "gpt-4-vision-preview"
-                                  : requestModel === "gpt35_0125"
-                                    ? "gpt-3.5-turbo-0125"
-                                    : requestModel === "gpt35_1106"
-                                      ? "gpt-3.5-turbo-1106"
-                                      : requestModel === "gpt35_0301"
-                                        ? "gpt-3.5-turbo-0301"
-                                        : requestModel === "gpt4_0314"
-                                          ? "gpt-4-0314"
-                                          : requestModel ===
-                                              "gpt4_turbo_20240409"
-                                            ? "gpt-4-turbo-2024-04-09"
-                                            : requestModel === "gpt4_turbo"
-                                              ? "gpt-4-turbo"
-                                              : requestModel === "gpt4o"
-                                                ? "gpt-4o"
-                                                : requestModel ===
-                                                    "gpt4o-2024-05-13"
-                                                  ? "gpt-4o-2024-05-13"
-                                                  : requestModel === "gpt4om"
-                                                    ? "gpt-4o-mini"
-                                                    : requestModel ===
-                                                        "gpt4om-2024-07-18"
-                                                      ? "gpt-4o-mini-2024-07-18"
-                                                      : requestModel ===
-                                                          "gpt4o-2024-08-06"
-                                                        ? "gpt-4o-2024-08-06"
-                                                        : requestModel ===
-                                                            "gpt4o-2024-11-20"
-                                                          ? "gpt-4o-2024-11-20"
-                                                          : requestModel ===
-                                                              "gpt4o-chatgpt"
-                                                            ? "chatgpt-4o-latest"
-                                                            : requestModel ===
-                                                                "gpt4o1-preview"
-                                                              ? "o1-preview"
-                                                              : requestModel ===
-                                                                  "gpt4o1-mini"
-                                                                ? "o1-mini"
-                                                                : arg.modelInfo
-                                                                      .internalID
-                                                                  ? arg
-                                                                      .modelInfo
-                                                                      .internalID
-                                                                  : !requestModel
-                                                                    ? "gpt-3.5-turbo"
-                                                                    : requestModel,
+    model: resolveOpenAIRequestModel({
+      aiModel,
+      requestModel,
+      openRouterRequestModel: openrouterRequestModel,
+      nanoGPTRequestModel: db.nanogptRequestModel,
+      internalID: arg.modelInfo.internalID,
+    }),
     messages: formatedChat,
     max_tokens: arg.maxTokens,
     logit_bias: arg.bias,
@@ -555,41 +492,15 @@ export async function requestOpenAI(
     }
   }
 
-  let replacerURL =
-    aiModel === "nanogpt"
-      ? db.nanogptUseSubscriptionEndpoint
-        ? "https://nano-gpt.com/api/subscription/v1/chat/completions"
-        : "https://nano-gpt.com/api/v1/chat/completions"
-      : aiModel === "openrouter"
-        ? "https://openrouter.ai/api/v1/chat/completions"
-        : (arg.customURL ?? DEFAULT_OPENAI_CHAT_COMPLETIONS_URL);
-
-  if (arg.modelInfo?.endpoint) {
-    replacerURL = arg.modelInfo.endpoint;
-  }
-
-  let risuIdentify = false;
-  if (replacerURL.startsWith("risu::")) {
-    risuIdentify = true;
-    replacerURL = replacerURL.replace("risu::", "");
-  }
-
-  if (aiModel === "reverse_proxy" && db.autofillRequestUrl) {
-    if (replacerURL.endsWith("v1")) {
-      replacerURL += "/chat/completions";
-    } else if (replacerURL.endsWith("v1/")) {
-      replacerURL += "chat/completions";
-    } else if (!(
-      replacerURL.endsWith("completions") ||
-      replacerURL.endsWith("completions/")
-    )) {
-      if (replacerURL.endsWith("/")) {
-        replacerURL += "v1/chat/completions";
-      } else {
-        replacerURL += "/v1/chat/completions";
-      }
-    }
-  }
+  const endpoint = resolveOpenAIRequestEndpoint({
+    aiModel,
+    customURL: arg.customURL,
+    modelEndpoint: arg.modelInfo?.endpoint,
+    nanoGPTUseSubscriptionEndpoint: db.nanogptUseSubscriptionEndpoint,
+    autofillRequestUrl: db.autofillRequestUrl,
+  });
+  const replacerURL = endpoint.url;
+  const risuIdentify = endpoint.risuIdentify;
 
   if (
     db.openAIFlexProcessing &&
@@ -598,34 +509,18 @@ export async function requestOpenAI(
     body.service_tier = "flex";
   }
 
-  let headers = {
-    Authorization:
-      "Bearer " +
-      (arg.key ??
-        (aiModel === "nanogpt"
-          ? db.nanogptKey
-          : aiModel === "reverse_proxy"
-            ? db.proxyKey
-            : aiModel === "openrouter"
-              ? db.openrouterKey
-              : db.openAIKey)),
-    "Content-Type": "application/json",
-  };
-
-  if (arg.modelInfo?.keyIdentifier) {
-    headers["Authorization"] =
-      "Bearer " + db.OaiCompAPIKeys[arg.modelInfo.keyIdentifier];
-  }
-  if (aiModel === "openrouter") {
-    headers["X-Title"] = "RisuAI";
-    headers["HTTP-Referer"] = "https://risuai.xyz";
-  }
-  if (aiModel === "nanogpt" && db.nanogptProvider) {
-    headers["X-Provider"] = db.nanogptProvider;
-  }
-  if (risuIdentify) {
-    headers["X-Proxy-Risu"] = "RisuAI";
-  }
+  let headers = buildOpenAIRequestHeaders({
+    aiModel,
+    key: arg.key,
+    openAIKey: db.openAIKey,
+    nanoGPTKey: db.nanogptKey,
+    proxyKey: db.proxyKey,
+    openRouterKey: db.openrouterKey,
+    keyIdentifier: arg.modelInfo?.keyIdentifier,
+    keyByIdentifier: db.OaiCompAPIKeys,
+    nanoGPTProvider: db.nanogptProvider,
+    risuIdentify,
+  });
   if (arg.multiGen) {
     // Check if tools are enabled - multiGen with tools is not supported
     if (arg.tools && arg.tools.length > 0) {
