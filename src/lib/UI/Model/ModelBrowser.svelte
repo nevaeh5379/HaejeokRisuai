@@ -276,22 +276,22 @@
             <span class="text-xs">Fetching Horde models...</span>
           </div>
         {:then hordeModels}
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-2">
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 min-[2200px]:grid-cols-5 gap-2.5">
             <button 
               class="w-full p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between gap-1.5 {value === 'horde:::auto' ? 'border-selected bg-selected/20 ring-1 ring-selected/70 shadow-xs' : 'border-darkborderc/60 bg-darkbg/30 hover:bg-darkbutton hover:border-textcolor/30'}"
               onclick={() => { selectModel('horde:::auto'); }}
             >
               <div class="flex items-center justify-between gap-2">
-                <div class="flex items-center gap-1.5">
-                  <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-textcolor/10 text-textcolor">Horde</span>
-                  <span class="font-bold text-sm text-textcolor">Auto Model</span>
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-textcolor/10 text-textcolor shrink-0">Horde</span>
+                  <span class="font-bold text-sm text-textcolor truncate">Auto Model</span>
                 </div>
-                <span class="text-[10px] text-textcolor2">Auto Selection</span>
+                <span class="text-[10px] text-textcolor2 shrink-0">Auto Selection</span>
               </div>
-              <div class="flex items-center justify-between text-[11px] text-textcolor2/70 pt-1 border-t border-darkborderc/30">
-                <span>Automatic best worker</span>
+              <div class="flex items-center justify-between text-[11px] text-textcolor2/70 pt-1.5 border-t border-darkborderc/30 mt-auto">
+                <span class="truncate">Automatic best worker</span>
                 {#if value === 'horde:::auto'}
-                  <span class="text-textcolor font-bold flex items-center gap-1 text-[10px]">
+                  <span class="text-textcolor font-bold flex items-center gap-1 text-[10px] shrink-0">
                     <CheckIcon size={11} /> Selected
                   </span>
                 {/if}
@@ -305,14 +305,14 @@
               >
                 <div class="flex items-center justify-between gap-2">
                   <div class="flex items-center gap-1.5 min-w-0">
-                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-textcolor/10 text-textcolor shrink-0">Horde</span>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-textcolor/10 text-textcolor shrink-0">Horde</span>
                     <span class="font-bold text-sm text-textcolor truncate">{hm.name}</span>
                   </div>
                 </div>
-                <div class="flex items-center justify-between text-[10px] text-textcolor2/70 pt-1 border-t border-darkborderc/30">
-                  <span>Workers: {hm.count ?? 1} | Perf: {hm.performance?.toFixed(1) ?? '1.0'}</span>
+                <div class="flex items-center justify-between text-[10px] text-textcolor2/70 pt-1.5 border-t border-darkborderc/30 mt-auto">
+                  <span class="truncate">Workers: {hm.count ?? 1} | Perf: {hm.performance?.toFixed(1) ?? '1.0'}</span>
                   {#if value === 'horde:::' + hm.name}
-                    <span class="text-textcolor font-bold flex items-center gap-1 text-[10px]">
+                    <span class="text-textcolor font-bold flex items-center gap-1 text-[10px] shrink-0">
                       <CheckIcon size={11} /> Selected
                     </span>
                   {/if}
@@ -324,11 +324,11 @@
       </div>
 
     {:else}
-      <!-- Regular Models 2-Column Grid -->
+      <!-- Regular Models Responsive Multi-Column Grid -->
       {#if blankable}
-        <div class="mb-2">
+        <div class="mb-2.5">
           <button 
-            class="w-full p-2 rounded-xl border border-dashed border-darkborderc hover:border-selected hover:bg-selected/10 transition-all flex items-center justify-between text-left {value === '' ? 'border-selected bg-selected/20' : 'text-textcolor2'}"
+            class="w-full p-2.5 rounded-xl border border-dashed border-darkborderc hover:border-selected hover:bg-selected/10 transition-all flex items-center justify-between text-left {value === '' ? 'border-selected bg-selected/20' : 'text-textcolor2'}"
             onclick={() => { selectModel(''); }}
           >
             <div class="flex items-center gap-2">
@@ -361,25 +361,25 @@
           </div>
         </div>
       {:else}
-        <!-- 2-Column Balanced Compact Layout -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-2">
+        <!-- Responsive Multi-Column Layout (1 -> 2 -> 3 -> 4 -> 5 cols on ultra-wide) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 min-[2200px]:grid-cols-5 gap-2.5">
           {#each displayedModels as model}
             {@const isSelected = value === model.id}
             {@const isFav = modelFavoritesStore.isFavorite(model.id)}
             <div 
-              class="group w-full p-2.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-1.5 {isSelected ? 'border-selected bg-selected/20 ring-1 ring-selected/70 shadow-xs' : 'border-darkborderc/60 bg-darkbg/30 hover:bg-darkbutton hover:border-textcolor/30'}"
+              class="group w-full p-2.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-2 {isSelected ? 'border-selected bg-selected/20 ring-1 ring-selected/70 shadow-xs' : 'border-darkborderc/60 bg-darkbg/30 hover:bg-darkbutton hover:border-textcolor/30'}"
               role="button"
               tabindex="0"
               onclick={() => { selectModel(model.id); }}
               onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') selectModel(model.id); }}
             >
-              <!-- Top Line: Provider Badge + Model Full Name + Favorite -->
-              <div class="flex items-start justify-between gap-2">
+              <!-- Top Line: Provider Badge + Model Name + Recommended + Favorite -->
+              <div class="flex items-start justify-between gap-1.5">
                 <div class="flex items-center gap-1.5 min-w-0 flex-1 flex-wrap">
-                  <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-textcolor/10 text-textcolor shrink-0">
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-textcolor/10 text-textcolor shrink-0">
                     {getProviderDisplayName(model)}
                   </span>
-                  <span class="font-bold text-sm text-textcolor break-words leading-tight" title={model.fullName || model.name}>
+                  <span class="font-bold text-sm text-textcolor line-clamp-2 leading-snug break-words" title={model.fullName || model.name}>
                     {model.fullName || model.name}
                   </span>
                   {#if model.recommended}
@@ -390,7 +390,7 @@
                 </div>
 
                 <button 
-                  class="p-1 rounded text-textcolor2/40 hover:text-textcolor transition-colors shrink-0"
+                  class="p-1 rounded text-textcolor2/40 hover:text-textcolor transition-colors shrink-0 -mr-1 -mt-1"
                   onclick={(e) => {
                     e.stopPropagation();
                     modelFavoritesStore.toggleFavorite(model.id);
@@ -401,30 +401,30 @@
                 </button>
               </div>
 
-              <!-- Bottom Line: Model ID + Monotone Badges + Selected State -->
-              <div class="flex items-center justify-between gap-2 text-[10px] pt-1 border-t border-darkborderc/30">
-                <span class="text-[11px] text-textcolor2/60 font-mono truncate">
+              <!-- Bottom Line: Model ID + Badges + Selected State -->
+              <div class="flex items-center justify-between gap-1.5 text-[10px] pt-1.5 border-t border-darkborderc/30 mt-auto">
+                <span class="text-[11px] text-textcolor2/60 font-mono truncate min-w-0" title={model.id}>
                   {model.id}
                 </span>
 
-                <div class="flex items-center gap-1.5 shrink-0">
+                <div class="flex items-center gap-1 shrink-0 flex-wrap justify-end">
                   {#if hasVision(model)}
-                    <span class="px-1.5 py-0.2 rounded bg-textcolor/8 text-textcolor2 flex items-center gap-0.5">
+                    <span class="px-1.5 py-0.5 rounded bg-textcolor/8 text-textcolor2 flex items-center gap-0.5 text-[9px] leading-tight">
                       <EyeIcon size={10} /> Vision
                     </span>
                   {/if}
                   {#if hasThinking(model)}
-                    <span class="px-1.5 py-0.2 rounded bg-textcolor/8 text-textcolor2 flex items-center gap-0.5">
+                    <span class="px-1.5 py-0.5 rounded bg-textcolor/8 text-textcolor2 flex items-center gap-0.5 text-[9px] leading-tight">
                       <BrainIcon size={10} /> Thinking
                     </span>
                   {/if}
                   {#if hasStreaming(model)}
-                    <span class="px-1.5 py-0.2 rounded bg-textcolor/8 text-textcolor2 flex items-center gap-0.5">
+                    <span class="px-1.5 py-0.5 rounded bg-textcolor/8 text-textcolor2 flex items-center gap-0.5 text-[9px] leading-tight">
                       <ZapIcon size={10} /> Stream
                     </span>
                   {/if}
                   {#if isSelected}
-                    <span class="px-1.5 py-0.2 rounded bg-selected text-textcolor font-bold flex items-center gap-1 text-[10px]">
+                    <span class="px-1.5 py-0.5 rounded bg-selected text-textcolor font-bold flex items-center gap-1 text-[10px] leading-tight">
                       <CheckIcon size={11} /> Selected
                     </span>
                   {/if}

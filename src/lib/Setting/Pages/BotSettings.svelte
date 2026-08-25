@@ -43,6 +43,11 @@
     import { allBasicParameterItems } from "src/ts/setting/botSettingsParamsData";
     import SeparateParametersSection from "./SeparateParametersSection.svelte";
     import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
+    import ModelBrowser from "src/lib/UI/Model/ModelBrowser.svelte";
+
+    let modelTab = $state<'main' | 'sub' | 'provider'>('main');
+    let auxSubTab = $state<'memory' | 'translate' | 'emotion' | 'otherAx'>('memory');
+    let openProviders = $state<Record<string, boolean>>({});
     
     const openrouterPinnedItems: ModelGridPinnedItem[] = [
         { id: 'risu/free',       displayName: 'Free Auto',       providerName: 'Risu'       },
@@ -183,33 +188,48 @@
         usesOoba || usesCustomPlugin || usesEcho || usesOllamaLocal || usesOllamaCloud ||
         !!modelInfo?.keyIdentifier || !!subModelInfo?.keyIdentifier
     );
-    import ModelBrowser from "src/lib/UI/Model/ModelBrowser.svelte";
-    let modelTab = $state<'main' | 'sub' | 'provider'>('main');
-    let auxSubTab = $state<'memory' | 'translate' | 'emotion' | 'otherAx'>('memory');
-    let openProviders = $state<Record<string, boolean>>({});
+    let currentSectionTitle = $derived.by(() => {
+        if (submenu === 1) return language.parameters;
+        if (submenu === 2) return language.prompt;
+        if (submenu === 3) return language.others;
+        if (submenu === 0 || submenu === -1) {
+            if (modelTab === 'main') return language.mainModelCardTitle || language.model;
+            if (modelTab === 'sub') return language.subModelCardTitle || language.submodel;
+            if (modelTab === 'provider') return language.providerSettings || "API & Providers";
+        }
+        return '';
+    });
 </script>
-<h2 class="mb-2 text-2xl font-bold mt-2">{language.chatBot}</h2>
+
+<div class="mb-3 flex items-center justify-between">
+    <div class="flex items-baseline gap-2.5">
+        <h2 class="text-2xl font-bold">{language.chatBot}</h2>
+        {#if hideTabs && currentSectionTitle}
+            <span class="text-base font-medium text-textcolor2">/ {currentSectionTitle}</span>
+        {/if}
+    </div>
+</div>
 
 {#if !hideTabs && submenu !== -1}
-    <div class="flex w-full rounded-md border border-darkborderc mb-4">
+    <div class="flex w-full rounded-xl border border-darkborderc overflow-hidden bg-darkbg/40 p-1 gap-1 mb-4">
         <button onclick={() => {
             submenu = 0
-        }} class="p-2 flex-1 border-r border-darkborderc" class:bg-darkbutton={submenu === 0}>
+        }} class="py-2 px-3 flex-1 rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center {submenu === 0 ? 'bg-darkbutton text-textcolor shadow-sm' : 'text-textcolor2 hover:text-textcolor'}">
             <span>{language.model}</span>
         </button>
         <button onclick={() => {
             submenu = 1
-        }} class="p-2 flex-1 border-r border-darkborderc" class:bg-darkbutton={submenu === 1}>
+        }} class="py-2 px-3 flex-1 rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center {submenu === 1 ? 'bg-darkbutton text-textcolor shadow-sm' : 'text-textcolor2 hover:text-textcolor'}">
             <span>{language.parameters}</span>
         </button>
         <button onclick={() => {
             submenu = 2
-        }} class="p-2 flex-1 border-r border-darkborderc" class:bg-darkbutton={submenu === 2}>
+        }} class="py-2 px-3 flex-1 rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center {submenu === 2 ? 'bg-darkbutton text-textcolor shadow-sm' : 'text-textcolor2 hover:text-textcolor'}">
             <span>{language.prompt}</span>
         </button>
         <button onclick={() => {
             submenu = 3
-        }} class="p-2 flex-1" class:bg-darkbutton={submenu === 3}>
+        }} class="py-2 px-3 flex-1 rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center {submenu === 3 ? 'bg-darkbutton text-textcolor shadow-sm' : 'text-textcolor2 hover:text-textcolor'}">
             <span>{language.others}</span>
         </button>
     </div>
@@ -345,7 +365,7 @@
                     </div>
                 </div>
 
-                <div class="flex flex-col gap-2.5">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
                     <!-- Google AI Studio -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 

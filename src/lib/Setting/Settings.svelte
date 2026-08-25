@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, DatabaseIcon, HardDriveIcon, LanguagesIcon, MonitorIcon, Sailboat, UserIcon, CircleXIcon, CircleArrowLeft, KeyboardIcon, SparkleIcon, ChevronRight, KeyIcon, SlidersHorizontal, MessageSquareIcon } from "@lucide/svelte";
+    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, DatabaseIcon, HardDriveIcon, LanguagesIcon, MonitorIcon, Sailboat, UserIcon, CircleXIcon, CircleArrowLeft, KeyboardIcon, SparkleIcon, ChevronRight, KeyIcon, SlidersHorizontal, MessageSquareIcon, LayersIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import DisplaySettings from "./Pages/DisplaySettings.svelte";
     import UserSettings from "./Pages/UserSettings.svelte";
@@ -37,12 +37,16 @@
     let storageExplorerOpen = $state(false)
     let searchNavigation = $state<{ menuIndex: number; subTab?: number } | null>(null)
     let mobileBotTarget = $state<{ submenu: number; modelTab?: 'main' | 'sub' | 'provider'; title: string } | null>(null)
+    let desktopBotTarget = $state<{ submenu: number; modelTab?: 'main' | 'sub' | 'provider' }>({ submenu: 0, modelTab: 'main' })
     let innerWidth = $state(typeof window !== "undefined" ? window.innerWidth : 1200)
     let isMobile = $derived(innerWidth < 768 || $MobileGUI)
 
     $effect(() => {
         if (!isMobile && $SettingsMenuIndex === -1) {
             $SettingsMenuIndex = 1
+        }
+        if (searchNavigation && searchNavigation.menuIndex === 1 && searchNavigation.subTab !== undefined) {
+            desktopBotTarget = { submenu: searchNavigation.subTab, modelTab: 'main' }
         }
     })
 
@@ -116,6 +120,54 @@
             <BotIcon />
             <span>{language.chatBot}</span>
         </button>
+
+        {#if $SettingsMenuIndex === 1}
+            <div class="flex flex-col ml-3 pl-3 border-l border-darkborderc/60 gap-1 my-1">
+                <button
+                    class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left {desktopBotTarget.submenu === 0 && desktopBotTarget.modelTab === 'main' ? 'bg-darkbutton text-textcolor font-bold shadow-xs' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton/40'}"
+                    onclick={() => { desktopBotTarget = { submenu: 0, modelTab: 'main' }; }}
+                >
+                    <BotIcon size={13} />
+                    <span class="truncate">{language.mainModelCardTitle || language.model}</span>
+                </button>
+                <button
+                    class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left {desktopBotTarget.submenu === 0 && desktopBotTarget.modelTab === 'sub' ? 'bg-darkbutton text-textcolor font-bold shadow-xs' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton/40'}"
+                    onclick={() => { desktopBotTarget = { submenu: 0, modelTab: 'sub' }; }}
+                >
+                    <SparkleIcon size={13} />
+                    <span class="truncate">{language.subModelCardTitle || language.submodel}</span>
+                </button>
+                <button
+                    class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left {desktopBotTarget.submenu === 0 && desktopBotTarget.modelTab === 'provider' ? 'bg-darkbutton text-textcolor font-bold shadow-xs' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton/40'}"
+                    onclick={() => { desktopBotTarget = { submenu: 0, modelTab: 'provider' }; }}
+                >
+                    <KeyIcon size={13} />
+                    <span class="truncate">{language.providerSettings || "API & Providers"}</span>
+                </button>
+                <button
+                    class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left {desktopBotTarget.submenu === 1 ? 'bg-darkbutton text-textcolor font-bold shadow-xs' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton/40'}"
+                    onclick={() => { desktopBotTarget = { submenu: 1 }; }}
+                >
+                    <SlidersHorizontal size={13} />
+                    <span class="truncate">{language.parameters}</span>
+                </button>
+                <button
+                    class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left {desktopBotTarget.submenu === 2 ? 'bg-darkbutton text-textcolor font-bold shadow-xs' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton/40'}"
+                    onclick={() => { desktopBotTarget = { submenu: 2 }; }}
+                >
+                    <MessageSquareIcon size={13} />
+                    <span class="truncate">{language.prompt}</span>
+                </button>
+                <button
+                    class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left {desktopBotTarget.submenu === 3 ? 'bg-darkbutton text-textcolor font-bold shadow-xs' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton/40'}"
+                    onclick={() => { desktopBotTarget = { submenu: 3 }; }}
+                >
+                    <LayersIcon size={13} />
+                    <span class="truncate">{language.others}</span>
+                </button>
+            </div>
+        {/if}
+
         <button class="flex gap-2 items-center hover:text-textcolor"
             class:text-textcolor={$SettingsMenuIndex === 12}
             class:text-textcolor2={$SettingsMenuIndex !== 12}
@@ -571,9 +623,9 @@
         <UserSettings />
     {:else if $SettingsMenuIndex === 1}
         <BotSettings
-            targetSubmenu={searchNavigation?.menuIndex === 1 ? searchNavigation.subTab : (isMobile && mobileBotTarget ? mobileBotTarget.submenu : undefined)}
-            targetModelTab={isMobile && mobileBotTarget?.modelTab ? mobileBotTarget.modelTab : undefined}
-            hideTabs={isMobile}
+            targetSubmenu={searchNavigation?.menuIndex === 1 ? searchNavigation.subTab : (isMobile && mobileBotTarget ? mobileBotTarget.submenu : desktopBotTarget.submenu)}
+            targetModelTab={searchNavigation?.menuIndex === 1 ? undefined : (isMobile && mobileBotTarget?.modelTab ? mobileBotTarget.modelTab : desktopBotTarget.modelTab)}
+            hideTabs={true}
             goPromptTemplate={() => {
                 $SettingsMenuIndex = 13
             }}
