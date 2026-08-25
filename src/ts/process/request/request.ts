@@ -25,6 +25,7 @@ import type {
 import type { MCPTool } from "../mcp/mcplib";
 import { DEFAULT_COHERE_CHAT_URL } from "@risuai/chat-core/cohereProvider.cjs";
 import { resolveNovelAIGenerateUrl } from "@risuai/chat-core/novelAIProvider.cjs";
+import { DEFAULT_NOVELLIST_API_URL } from "@risuai/chat-core/novelListProvider.cjs";
 import { NovelAIBadWordIds, stringlizeNAIChat } from "../models/nai";
 import { OobaParams } from "../prompt";
 import {
@@ -897,7 +898,6 @@ async function requestNovelList(
   const currentChar = getCurrentCharacter();
   const aiModel = arg.aiModel;
   const auth_key = db.novellistAPI;
-  const api_server_url = "https://api.tringpt.com/";
   const logit_bias: string[] = [];
   const logit_bias_values: string[] = [];
   for (let i = 0; i < biasString.length; i++) {
@@ -940,19 +940,29 @@ async function requestNovelList(
     return {
       type: "success",
       result: JSON.stringify({
-        url: api_server_url + "/api",
+        url: arg.customURL ?? DEFAULT_NOVELLIST_API_URL,
         body: send_body,
         headers: headers,
       }),
     };
   }
-  const response = await globalFetch(arg.customURL ?? api_server_url + "/api", {
-    method: "POST",
-    headers: headers,
-    body: send_body,
-    chatId: arg.chatId,
-    abortSignal: arg.abortSignal,
-  });
+  const remoteTransport =
+    !arg.customURL && arg.modelInfo.format === LLMFormat.NovelList
+      ? await tryExecuteNodeProviderTransport(
+          LLMFormat.NovelList,
+          { body: send_body, headers },
+          arg.abortSignal,
+        )
+      : null;
+  const response =
+    remoteTransport ??
+    (await globalFetch(arg.customURL ?? DEFAULT_NOVELLIST_API_URL, {
+      method: "POST",
+      headers: headers,
+      body: send_body,
+      chatId: arg.chatId,
+      abortSignal: arg.abortSignal,
+    }));
 
   if (!response.ok) {
     return {

@@ -1,0 +1,1 @@
+export const DEFAULT_NOVELLIST_API_URL: "https://api.tringpt.com//api";

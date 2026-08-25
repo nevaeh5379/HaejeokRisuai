@@ -25,6 +25,9 @@ const {
 const {
   resolveNovelAIGenerateUrl,
 } = require('../../packages/chat-core/novelAIProvider.cjs');
+const {
+  DEFAULT_NOVELLIST_API_URL,
+} = require('../../packages/chat-core/novelListProvider.cjs');
 const { LLM_FORMATS } = require('../../packages/protocol/modelFormat.cjs');
 const {
   normalizeNodeProviderExecutionRequest,
@@ -126,6 +129,9 @@ function getTransportTarget(format) {
   if (format === LLM_FORMATS.Cohere) {
     return { name: 'cohere', url: DEFAULT_COHERE_CHAT_URL };
   }
+  if (format === LLM_FORMATS.NovelList) {
+    return { name: 'novellist', url: DEFAULT_NOVELLIST_API_URL };
+  }
   return null;
 }
 
@@ -168,6 +174,7 @@ function createNodeProviderExecutor({
     LLM_FORMATS.GoogleCloud,
     LLM_FORMATS.Cohere,
     LLM_FORMATS.NovelAI,
+    LLM_FORMATS.NovelList,
   ]);
   const supportedTransportFormats = new Set(transportFormats);
 

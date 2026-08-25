@@ -24,6 +24,7 @@ test('advertises only implemented provider formats and routes', () => {
       LLM_FORMATS.GoogleCloud,
       LLM_FORMATS.Cohere,
       LLM_FORMATS.NovelAI,
+      LLM_FORMATS.NovelList,
     ],
   );
   assert.equal(executor.supportsTransport(LLM_FORMATS.OpenAICompatible), true);
@@ -32,6 +33,7 @@ test('advertises only implemented provider formats and routes', () => {
   assert.equal(executor.supportsTransport(LLM_FORMATS.GoogleCloud), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.Cohere), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.NovelAI), true);
+  assert.equal(executor.supportsTransport(LLM_FORMATS.NovelList), true);
   assert.equal(executor.supportsTransport(LLM_FORMATS.NanoGPT), false);
 });
 
@@ -370,6 +372,35 @@ test('rejects unknown NovelAI transport variants before fetch', async () => {
     /variant must be kayra or clio/,
   );
   assert.equal(called, false);
+});
+
+test('executes the default NovelList transport through its pinned endpoint', async () => {
+  const calls = [];
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ data: ['raw novellist response'] }),
+      };
+    },
+  });
+  const result = await executor.executeTransport({
+    format: LLM_FORMATS.NovelList,
+    payload: {
+      body: { text: 'hello', model: 'supertrin' },
+      headers: { Authorization: 'Bearer novellist-key', Host: 'evil.example' },
+    },
+  });
+  assert.equal(result.handled, true);
+  assert.equal(result.response.ok, true);
+  assert.deepEqual(result.response.data, { data: ['raw novellist response'] });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.tringpt.com//api');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer novellist-key');
+  assert.equal(calls[0].options.headers.Host, undefined);
+  assert.equal(calls[0].options.redirect, 'error');
 });
 
 test('returns raw OpenAI error payloads to the browser interpreter', async () => {
