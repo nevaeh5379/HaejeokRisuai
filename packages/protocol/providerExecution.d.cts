@@ -13,6 +13,7 @@ export type NodeProviderExecutionResult =
   | { handled: true; response: NodeProviderSerializableResponse };
 
 export interface NodeProviderCapabilities {
+  formats: number[];
   routes: ProviderRoute[];
 }
 

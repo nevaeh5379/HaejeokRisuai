@@ -189,10 +189,15 @@ export class NodeStorage {
       throw new Error(`Server provider capabilities failed (${response.status}): ${message}`);
     }
     const data = (await response.json()) as Partial<NodeProviderCapabilities>;
-    if (!Array.isArray(data.routes) || data.routes.some((route) => typeof route !== "string")) {
+    if (
+      !Array.isArray(data.formats) ||
+      data.formats.some((format) => !Number.isInteger(format)) ||
+      !Array.isArray(data.routes) ||
+      data.routes.some((route) => typeof route !== "string")
+    ) {
       throw new Error("Server provider capabilities returned an invalid response");
     }
-    this.nodeProviderCapabilities = { routes: data.routes };
+    this.nodeProviderCapabilities = { formats: data.formats, routes: data.routes };
     return this.nodeProviderCapabilities;
   }
 

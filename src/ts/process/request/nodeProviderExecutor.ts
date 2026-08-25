@@ -18,7 +18,9 @@ export async function tryExecuteNodeProvider(
 
   try {
     const capabilities = await storage.getNodeProviderCapabilities();
-    if (!capabilities.routes.includes(route)) return null;
+    if (!capabilities.formats.includes(format) || !capabilities.routes.includes(route)) {
+      return null;
+    }
     const result = await storage.executeChatProvider({ format, payload });
     return result.handled ? result.response : null;
   } catch (error) {

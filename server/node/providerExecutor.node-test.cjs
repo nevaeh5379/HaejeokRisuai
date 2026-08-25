@@ -9,7 +9,22 @@ test('advertises only implemented provider routes', () => {
   const executor = createNodeProviderExecutor();
   assert.equal(executor.supports(LLM_FORMATS.Echo), true);
   assert.equal(executor.supports(LLM_FORMATS.OpenAICompatible), false);
+  assert.deepEqual([...executor.formats], [LLM_FORMATS.Echo]);
   assert.deepEqual([...executor.routes], ['echo']);
+});
+
+
+test('keeps capability support format-specific within a shared route', () => {
+  const executor = createNodeProviderExecutor({
+    extraHandlers: {
+      openai: async () => ({ type: 'success', result: 'ok' }),
+    },
+    extraFormats: [LLM_FORMATS.Mistral],
+  });
+  assert.equal(executor.supports(LLM_FORMATS.Mistral), true);
+  assert.equal(executor.supports(LLM_FORMATS.OpenAICompatible), false);
+  assert.deepEqual([...executor.formats], [LLM_FORMATS.Echo, LLM_FORMATS.Mistral]);
+  assert.deepEqual([...executor.routes], ['echo', 'openai']);
 });
 
 test('executes echo through the shared provider route', async () => {

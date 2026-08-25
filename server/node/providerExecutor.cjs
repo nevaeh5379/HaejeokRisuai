@@ -5,6 +5,7 @@ const {
   executeProviderRoute,
 } = require('../../packages/chat-core/providerExecutor.cjs');
 const { resolveProviderRoute } = require('../../packages/chat-core/providerRouting.cjs');
+const { LLM_FORMATS } = require('../../packages/protocol/modelFormat.cjs');
 const {
   normalizeNodeProviderExecutionRequest,
 } = require('../../packages/protocol/providerExecution.cjs');
@@ -23,6 +24,7 @@ function normalizeEchoPayload(payload) {
 function createNodeProviderExecutor({
   sleep = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
   extraHandlers = {},
+  extraFormats = [],
 } = {}) {
   const handlers = {
     echo: async (payload) => {
@@ -32,10 +34,12 @@ function createNodeProviderExecutor({
     },
     ...extraHandlers,
   };
-  const routes = Object.freeze(Object.keys(handlers));
+  const formats = Object.freeze([LLM_FORMATS.Echo, ...extraFormats]);
+  const supportedFormats = new Set(formats);
+  const routes = Object.freeze([...new Set(formats.map(resolveProviderRoute).filter(Boolean))]);
 
   function supports(format) {
-    return canExecuteProviderRoute(format, handlers);
+    return supportedFormats.has(format) && canExecuteProviderRoute(format, handlers);
   }
 
   async function execute(rawInput) {
@@ -57,7 +61,7 @@ function createNodeProviderExecutor({
     const guards = limiter ? [limiter] : [];
     app.get('/api/chat-executor/providers', ...guards, async (req, res) => {
       if (auth && !await auth(req, res)) return;
-      res.send({ routes });
+      res.send({ formats, routes });
     });
 
     app.post('/api/chat-executor/provider', ...guards, async (req, res, next) => {
@@ -79,6 +83,7 @@ function createNodeProviderExecutor({
   }
 
   return {
+    formats,
     routes,
     supports,
     execute,
