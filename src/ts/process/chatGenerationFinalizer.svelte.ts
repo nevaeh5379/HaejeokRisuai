@@ -7,7 +7,7 @@ import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";
 import { tokenize } from "../tokenizer";
 import { parseChatML } from "../parser/chatML";
-import { requestChatData } from "./request/request";
+import { requestChatData } from "./request/chatRequestOrchestrator";
 import type { ChatModelResponse, ChatStageTimings } from "@risuai/chat-core/types.cjs";
 import {
   decideAutoContinuation,

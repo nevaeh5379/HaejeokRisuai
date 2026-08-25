@@ -4,7 +4,7 @@
     import TextAreaInput from "../UI/GUI/TextAreaInput.svelte";
     import Button from "../UI/GUI/Button.svelte";
     import { jsonOutputTrimmer, selectSingleFile } from "src/ts/util";
-    import { requestChatData } from "src/ts/process/request/request";
+    import { requestChatData } from "src/ts/process/request/chatRequestOrchestrator";
     import { alertError } from "src/ts/alert";
     import SelectInput from "../UI/GUI/SelectInput.svelte";
     import NumberInput from "../UI/GUI/NumberInput.svelte";

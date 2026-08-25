@@ -24,7 +24,7 @@ import { parseKeyValue, sleep } from "../util";
 import { alertError, alertInput, alertNormal, alertSelect } from "../alert";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 import { HypaProcesser } from "./memory/hypamemory";
-import { requestChatData } from "./request/request";
+import { requestChatData } from "./request/chatRequestOrchestrator";
 import { generateAIImage } from "./stableDiff";
 import { writeInlayImage } from "./files/inlays";
 import { runScripted } from "./scriptings";

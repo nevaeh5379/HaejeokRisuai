@@ -7,15 +7,10 @@ import {
   LLMFormat,
   type LLMModel,
 } from "../../model/modellist";
-import {
-  risuChatParser,
-  risuEscape,
-  risuUnescape,
-} from "../../parser/parser.svelte";
+import { risuChatParser } from "../../parser/parser.svelte";
 import { pluginProcess, pluginV2 } from "../../plugins/plugins.svelte";
 import {
   getCurrentCharacter,
-  getCurrentChat,
   getDatabase,
   type character,
 } from "../../storage/database.svelte";
@@ -26,8 +21,6 @@ import type {
   ChatStreamChunk,
   OpenAIChat,
 } from "@risuai/chat-core/types.cjs";
-import { executeChatRequestFallbacks } from "@risuai/chat-core/requestLoop.cjs";
-import { getTools } from "../mcp/mcp";
 import type { MCPTool } from "../mcp/mcplib";
 import { NovelAIBadWordIds, stringlizeNAIChat } from "../models/nai";
 import { OobaParams } from "../prompt";
@@ -39,7 +32,6 @@ import {
 } from "../stringlize";
 import { applyChatTemplate } from "../templates/chatTemplate";
 import { runTransformers } from "../transformers";
-import { runTrigger } from "../triggers";
 import { requestClaude } from "./anthropic";
 import { requestGoogleCloudVertex } from "./google";
 import {
@@ -59,7 +51,7 @@ export type ToolCall = {
   arguments: string;
 };
 
-interface requestDataArgument {
+export interface requestDataArgument {
   formated: OpenAIChat[];
   bias: { [key: number]: number };
   biasString?: [string, number][];
@@ -224,101 +216,6 @@ function normalizeOllamaStreamResponse(response: Response): Response {
     status: response.status,
     statusText: response.statusText,
   });
-}
-
-export async function requestChatData(
-  arg: requestDataArgument,
-  model: ModelModeExtended,
-  abortSignal: AbortSignal = null,
-): Promise<requestDataResponse> {
-  const db = getDatabase();
-  const fallBackModels: string[] = safeStructuredClone(
-    db?.fallbackModels?.[model] ?? [],
-  );
-  const tools = arg.tools ?? (await getTools());
-  fallBackModels.push("");
-
-  if (arg.escape) {
-    arg.useStreaming = false;
-    console.warn("Escape is enabled, disabling streaming");
-  }
-
-  const originalFormated = safeStructuredClone(arg.formated).map((message) => {
-    message.content = risuUnescape(message.content);
-    return message;
-  });
-
-  return executeChatRequestFallbacks(
-    {
-      fallbackModels: fallBackModels,
-      requestRetries: db.requestRetrys,
-      antiServerOverloads: db.antiServerOverloads,
-      fallbackWhenBlankResponse: db.fallbackWhenBlankResponse,
-      bannedCharacterSets: db.banCharacterset,
-    },
-    {
-      beginFallback: () => {
-        arg.formated = safeStructuredClone(originalFormated);
-      },
-      isAborted: () => Boolean(abortSignal?.aborted),
-      sleep: async (delayMs) => {
-        await sleep(delayMs);
-      },
-      executeAttempt: async ({ fallbackModel }) => {
-        if (pluginV2.replacerbeforeRequest.size > 0) {
-          for (const replacer of pluginV2.replacerbeforeRequest) {
-            arg.formated = await replacer(arg.formated, model);
-          }
-        }
-
-        try {
-          const currentChar = getCurrentCharacter();
-          if (currentChar?.type !== "group") {
-            const perf = performance.now();
-            const triggerResult = await runTrigger(currentChar, "request", {
-              chat: getCurrentChat(),
-              displayMode: true,
-              displayData: JSON.stringify(arg.formated),
-            });
-
-            const formated = JSON.parse(triggerResult.displayData);
-            if (!formated || !Array.isArray(formated)) {
-              throw new Error("Invalid return");
-            }
-            arg.formated = formated;
-            console.log("Trigger time", performance.now() - perf);
-          }
-        } catch (error) {
-          console.error(error);
-        }
-
-        const response = await requestChatDataMain(
-          {
-            ...arg,
-            staticModel: fallbackModel,
-            tools,
-          },
-          model,
-          abortSignal,
-        );
-
-        if (response.type === "success" && arg.escape) {
-          response.result = risuEscape(response.result);
-        }
-
-        if (
-          response.type === "success" &&
-          pluginV2.replacerafterRequest.size > 0
-        ) {
-          for (const replacer of pluginV2.replacerafterRequest) {
-            response.result = await replacer(response.result, model);
-          }
-        }
-
-        return response;
-      },
-    },
-  );
 }
 
 export function reformater(

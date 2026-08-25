@@ -69,7 +69,7 @@ vi.mock("./files/inlays", () => ({
 }));
 vi.mock("./lorebook.svelte", () => ({ loadLoreBookV3Prompt: vi.fn() }));
 vi.mock("./memory/hypamemory", () => ({ HypaProcesser: vi.fn() }));
-vi.mock("./request/request", () => ({ requestChatData: vi.fn() }));
+vi.mock("./request/chatRequestOrchestrator", () => ({ requestChatData: vi.fn() }));
 vi.mock("./stableDiff", () => ({ generateAIImage: vi.fn() }));
 
 let runScripted: typeof import("./scriptings").runScripted;

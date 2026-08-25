@@ -15,7 +15,7 @@ import {
   getDatabase,
 } from "src/ts/storage/database.svelte";
 import { type OpenAIChat } from "@risuai/chat-core/types.cjs";
-import { requestChatData } from "../request/request";
+import { requestChatData } from "../request/chatRequestOrchestrator";
 import { chatCompletion, unloadEngine } from "../webllm";
 import { hypaV3ProgressStore } from "src/ts/stores.svelte";
 import { type ChatTokenizer } from "src/ts/tokenizer";

@@ -5,7 +5,7 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { CharEmotion } from "../stores.svelte";
 import { tokenizeNum } from "../tokenizer";
 import { language } from "../../lang";
-import { requestChatData } from "./request/request";
+import { requestChatData } from "./request/chatRequestOrchestrator";
 import { HypaProcesser } from "./memory/hypamemory";
 import { stableDiff } from "./stableDiff";
 import type { ChatModelResponse, OpenAIChat } from "@risuai/chat-core/types.cjs";

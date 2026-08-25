@@ -6,7 +6,7 @@
     import Button from "../UI/GUI/Button.svelte";
     import { settingsStore } from 'src/ts/stores/domain';
     import { getModelInfo, LLMFlags } from "src/ts/model/modellist";
-    import { requestChatData } from "src/ts/process/request/request";
+    import { requestChatData } from "src/ts/process/request/chatRequestOrchestrator";
     import { asBuffer, selectFileByDom, selectSingleFile, sleep } from "src/ts/util";
     import { alertError, alertSelect } from "src/ts/alert";
     import { risuChatParser } from "src/ts/parser/parser.svelte";

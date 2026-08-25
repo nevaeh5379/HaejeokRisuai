@@ -1,4 +1,4 @@
-import { requestChatData } from "../request/request";
+import { requestChatData } from "../request/chatRequestOrchestrator";
 import { MCPClientLike } from "./internalmcp";
 import type { MCPTool, RPCToolCallContent } from "./mcplib";
 

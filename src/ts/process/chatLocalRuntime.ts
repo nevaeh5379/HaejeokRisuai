@@ -8,7 +8,7 @@ import {
   unregisterDurableGenerationContext,
 } from "../network/durableModelJobs";
 import { getGenerationModelString } from "./models/modelString";
-import { requestChatData } from "./request/request";
+import { requestChatData } from "./request/chatRequestOrchestrator";
 import type { ChatGenerationRuntime } from "@risuai/chat-core/generation.cjs";
 
 export function createLocalChatGenerationRuntime(

@@ -6,7 +6,7 @@ import {
   type groupChat,
 } from "../../storage/database.svelte";
 import { tokenize, type ChatTokenizer } from "../../tokenizer";
-import { requestChatData } from "../request/request";
+import { requestChatData } from "../request/chatRequestOrchestrator";
 import { HypaProcesser } from "./hypamemory";
 import { stringlizeChat } from "../stringlize";
 import { globalFetch } from "src/ts/globalApi.svelte";

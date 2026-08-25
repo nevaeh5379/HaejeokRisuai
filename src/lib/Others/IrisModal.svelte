@@ -4,7 +4,7 @@
     import IrisImage from "../../etc/Airisu.webp";
     import { irisStore } from "src/ts/stores.svelte";
     import { settingsStore } from "src/ts/stores/domain";
-    import { requestChatData } from "src/ts/process/request/request";
+    import { requestChatData } from "src/ts/process/request/chatRequestOrchestrator";
     import { alertError } from "src/ts/alert";
     import { getIrisSystemPrompt } from "src/ts/iris";
     import { RisuAccessClient } from "src/ts/process/mcp/risuaccess";
