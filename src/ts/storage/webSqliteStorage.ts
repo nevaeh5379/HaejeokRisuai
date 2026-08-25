@@ -91,7 +91,11 @@ type ReqMsgWithoutId =
   | { type: "close" };
 
 interface WorkerRpc {
-  init(): Promise<{ enabled: boolean; revision: number }>;
+  init(): Promise<{
+    enabled: boolean;
+    revision: number;
+    vfs: "opfs-sahpool" | "opfs" | null;
+  }>;
   exec(sql: string, bind?: unknown[]): Promise<void>;
   execBatch(statements: SqliteBatchStatement[]): Promise<void>;
   selectBatch(statements: SqliteBatchStatement[]): Promise<SqliteBatchResult[]>;
@@ -159,7 +163,12 @@ function getWorkerRpc(): WorkerRpc {
   }
 
   rpcSingleton = {
-    init: () => call<{ enabled: boolean; revision: number }>({ type: "init" }),
+    init: () =>
+      call<{
+        enabled: boolean;
+        revision: number;
+        vfs: "opfs-sahpool" | "opfs" | null;
+      }>({ type: "init" }),
     exec: (sql, bind) =>
       call<void>({ type: "exec", sql, bind }).then(() => undefined),
     execBatch: (statements) =>
@@ -235,6 +244,7 @@ export class WebSqliteStorage implements ISqlStorage {
       const result = await rpc.init();
       this._enabled = result.enabled;
       this.revision = result.revision;
+      console.info(`[WebSqliteStorage] SQLite VFS: ${result.vfs ?? "unknown"}`);
       this.initialized = true;
       return result.enabled;
     } catch (error) {
@@ -242,6 +252,12 @@ export class WebSqliteStorage implements ISqlStorage {
       this.initialized = true;
       this._enabled = false;
       if (error instanceof SqlSchemaResetRequiredError) throw error;
+      if (
+        error instanceof Error &&
+        error.message.includes("Failed to acquire SQLite SAH pool")
+      ) {
+        throw error;
+      }
       return false;
     }
   }

@@ -48,19 +48,182 @@ interface SqliteDb {
   close: () => void;
 }
 
+interface SahPoolUtil {
+  OpfsSAHPoolDb: new (filename: string) => SqliteDb;
+  getFileNames: () => string[];
+  importDb: (filename: string, data: Uint8Array | ArrayBuffer) => Promise<number>;
+  reserveMinimumCapacity: (minimum: number) => Promise<number>;
+  unlink: (filename: string) => boolean;
+}
+
 interface Sqlite3Module {
   oo1: {
-    OpfsDb: new (filename: string) => SqliteDb;
+    OpfsDb: new (filename: string, flags?: string) => SqliteDb;
     DB: new (filename: string, mode: string) => SqliteDb;
   };
+  capi: {
+    sqlite3_js_db_export: (database: SqliteDb) => Uint8Array;
+  };
+  installOpfsSAHPoolVfs?: (options?: {
+    clearOnInit?: boolean;
+    initialCapacity?: number;
+    directory?: string;
+    name?: string;
+  }) => Promise<SahPoolUtil>;
   version: { libVersion: string };
 }
 
 const DB_FILE = "/risuai-local.sqlite3";
+const SAH_POOL_DIRECTORY = "/.risuai-sahpool-v1";
+const SAH_POOL_MARKER = ".risuai-sahpool-v1-migrated";
+const SAH_POOL_CAPACITY = 8;
 
 let db: SqliteDb | null = null;
 let revision = 0;
 let enabled = false;
+let activeVfs: "opfs-sahpool" | "opfs" | null = null;
+
+async function getOpfsRoot(): Promise<FileSystemDirectoryHandle> {
+  if (!navigator.storage?.getDirectory) {
+    throw new Error("OPFS not available");
+  }
+  return navigator.storage.getDirectory();
+}
+
+async function opfsRootFileExists(filename: string): Promise<boolean> {
+  try {
+    const root = await getOpfsRoot();
+    await root.getFileHandle(filename.replace(/^\/+/, ""), { create: false });
+    return true;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "NotFoundError") return false;
+    throw error;
+  }
+}
+
+async function writeSahMigrationMarker(): Promise<void> {
+  const root = await getOpfsRoot();
+  const handle = await root.getFileHandle(SAH_POOL_MARKER, { create: true });
+  const writable = await handle.createWritable();
+  try {
+    await writable.write(
+      JSON.stringify({
+        vfs: "opfs-sahpool",
+        database: DB_FILE,
+        migratedAt: new Date().toISOString(),
+      }),
+    );
+  } finally {
+    await writable.close();
+  }
+}
+
+function queryScalar(database: SqliteDb, sql: string): unknown {
+  const stmt = database.prepare(sql);
+  try {
+    if (!stmt.step()) return undefined;
+    return (stmt.get([]) as unknown[])[0];
+  } finally {
+    stmt.finalize();
+  }
+}
+
+function validateDatabaseFile(database: SqliteDb): void {
+  const quickCheck = String(queryScalar(database, "PRAGMA quick_check") ?? "");
+  if (quickCheck !== "ok") {
+    throw new Error(`SQLite quick_check failed after SAH migration: ${quickCheck}`);
+  }
+}
+
+async function openPersistentDatabase(sqlite3: Sqlite3Module): Promise<SqliteDb> {
+  if (typeof sqlite3.installOpfsSAHPoolVfs !== "function") {
+    if (typeof sqlite3.oo1?.OpfsDb !== "function") throw new Error("OPFS not available");
+    activeVfs = "opfs";
+    return new sqlite3.oo1.OpfsDb(DB_FILE);
+  }
+
+  let pool: SahPoolUtil;
+  try {
+    pool = await sqlite3.installOpfsSAHPoolVfs({
+      directory: SAH_POOL_DIRECTORY,
+      initialCapacity: SAH_POOL_CAPACITY,
+    });
+    await pool.reserveMinimumCapacity(SAH_POOL_CAPACITY);
+  } catch (error) {
+    // Never fall back to the legacy OPFS database here. Once migration has
+    // completed that copy is intentionally stale, so doing so in a second tab
+    // could silently fork user data. SAH-pool lock failures must remain errors.
+    throw new Error(
+      `Failed to acquire SQLite SAH pool. Close other RisuAI tabs and retry. ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  if (pool.getFileNames().includes(DB_FILE)) {
+    // Existing SAH databases are validated by the normal schema/version checks
+    // below. A full quick_check on every startup scales with database size and
+    // would turn normal launches into unnecessary OPFS reads.
+    const existing = new pool.OpfsSAHPoolDb(DB_FILE);
+    activeVfs = "opfs-sahpool";
+    return existing;
+  }
+
+  if (await opfsRootFileExists(DB_FILE)) {
+    let legacy: SqliteDb | null = new sqlite3.oo1.OpfsDb(DB_FILE);
+    let exported: Uint8Array;
+    try {
+      // Fold any legacy WAL pages into the logical image before serialization.
+      // sqlite3_js_db_export() serializes the live database through SQLite and
+      // avoids depending on the physical OPFS/WAL file layout.
+      try {
+        legacy.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+      } catch {
+        // Serialization below is still the authoritative migration path.
+      }
+      exported = sqlite3.capi.sqlite3_js_db_export(legacy);
+    } finally {
+      legacy.close();
+      legacy = null;
+    }
+
+    try {
+      await pool.importDb(DB_FILE, exported);
+      const migrated = new pool.OpfsSAHPoolDb(DB_FILE);
+      try {
+        validateDatabaseFile(migrated);
+      } catch (error) {
+        migrated.close();
+        pool.unlink(DB_FILE);
+        throw error;
+      }
+      activeVfs = "opfs-sahpool";
+      try {
+        await writeSahMigrationMarker();
+      } catch (error) {
+        console.warn("Failed to write SAH migration marker:", error);
+      }
+      return migrated;
+    } catch (error) {
+      pool.unlink(DB_FILE);
+      throw new Error(
+        `Failed to migrate browser SQLite database to SAH pool: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  const fresh = new pool.OpfsSAHPoolDb(DB_FILE);
+  validateDatabaseFile(fresh);
+  activeVfs = "opfs-sahpool";
+  try {
+    await writeSahMigrationMarker();
+  } catch (error) {
+    console.warn("Failed to write SAH migration marker:", error);
+  }
+  return fresh;
+}
 
 function selectRowsInternal(
   sql: string,
@@ -150,16 +313,15 @@ function runInternal(sql: string, bind: unknown[] = []): void {
   }
 }
 
-async function handleInit(): Promise<{ enabled: boolean; revision: number }> {
-  if (db && enabled) return { enabled, revision };
+async function handleInit(): Promise<{
+  enabled: boolean;
+  revision: number;
+  vfs: "opfs-sahpool" | "opfs" | null;
+}> {
+  if (db && enabled) return { enabled, revision, vfs: activeVfs };
   try {
     const sqlite3 = (await sqlite3InitModule()) as unknown as Sqlite3Module;
-    // After initialization, `sqlite3.opfs` (the internal utility namespace) is
-    // deleted in non-test contexts.  The real indicator that OPFS is available
-    // is whether `sqlite3.oo1.OpfsDb` was installed by `installOpfsVfs()`.
-    if (typeof sqlite3.oo1?.OpfsDb !== "function")
-      throw new Error("OPFS not available");
-    db = new sqlite3.oo1.OpfsDb(DB_FILE);
+    db = await openPersistentDatabase(sqlite3);
     // Check whether the schema has already been created (skip on first run).
     const existingMeta = selectRowsInternal(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'system_storage_meta'",
@@ -181,7 +343,14 @@ async function handleInit(): Promise<{ enabled: boolean; revision: number }> {
     // Apply schema — use multiple exec calls instead of one big exec to avoid
     // "Column index out of range" issues in SQLite WASM's exec() with complex
     // multi-statement SQL containing PRAGMAs.
-    db.exec("PRAGMA journal_mode = WAL;");
+    //
+    // Do not force WAL for the SAH-pool VFS. The legacy OPFS backend's 1000-page
+    // automatic WAL checkpoints can surface as multi-megabyte write bursts in
+    // Firefox. SAH-pool imports explicitly disable WAL, so keep the default
+    // rollback journal until a browser benchmark proves WAL is beneficial.
+    if (activeVfs === "opfs") db.exec("PRAGMA journal_mode = WAL;");
+    else db.exec("PRAGMA journal_mode = DELETE;");
+    db.exec("PRAGMA temp_store = MEMORY;");
     db.exec("PRAGMA foreign_keys = ON;");
     // Execute the rest of the schema (CREATE TABLE / INDEX statements)
     const schemaStatements = sqliteSchemaSql
@@ -196,7 +365,7 @@ async function handleInit(): Promise<{ enabled: boolean; revision: number }> {
     ).rows;
     if (rows.length > 0) revision = Number(rows[0].revision) || 0;
     enabled = true;
-    return { enabled, revision };
+    return { enabled, revision, vfs: activeVfs };
   } catch (error) {
     try {
       db?.close();
@@ -205,6 +374,7 @@ async function handleInit(): Promise<{ enabled: boolean; revision: number }> {
     }
     db = null;
     enabled = false;
+    activeVfs = null;
     if (error instanceof SqlSchemaResetRequiredError) throw error;
     throw error;
   }
@@ -289,6 +459,7 @@ self.onmessage = async (e: MessageEvent<ReqMsg>) => {
         }
         db = null;
         enabled = false;
+        activeVfs = null;
         (self as any).postMessage({ id: msg.id, ok: true });
         break;
       }
