@@ -40,6 +40,7 @@ const { createJsonStream } = require('./streamJson.cjs');
 const { streamZip } = require('./zipStream.cjs');
 const { createModelJobManager } = require('./modelJobs.cjs');
 const { createNodeChatExecutor } = require('./chatExecutor.cjs');
+const { createNodeProviderExecutor } = require('./providerExecutor.cjs');
 const {
     createEntryHeader: createLocalBackupEntryHeader,
     makeLegacyCompatibleDatabase: makeLegacyCompatibleBackupDatabase,
@@ -248,6 +249,7 @@ if(!existsSync(savePath)){
 
 const modelJobManager = createModelJobManager({ saveDir: savePath, logger: console });
 const nodeChatExecutor = createNodeChatExecutor();
+const nodeProviderExecutor = createNodeProviderExecutor();
 const postgresConfigPath = path.join(savePath, '__postgres_config.json');
 const postgresManagedByEnvironment = Boolean(process.env.DATABASE_URL);
 // 저장소가 환경 변수로 관리되는지 (세 vendor 공통)
@@ -3605,6 +3607,10 @@ app.delete('/api/db-backup', authenticatedRouteLimiter, async (req, res, next) =
 });
 
 nodeChatExecutor.registerRoutes(app, {
+    auth: checkAuth,
+    limiter: authenticatedRouteLimiter,
+});
+nodeProviderExecutor.registerRoutes(app, {
     auth: checkAuth,
     limiter: authenticatedRouteLimiter,
 });

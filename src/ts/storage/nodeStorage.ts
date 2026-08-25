@@ -11,6 +11,11 @@ import type {
   NodeChatPlanRequest,
 } from "../../../packages/protocol/chatExecutor.cjs";
 import type {
+  NodeProviderCapabilities,
+  NodeProviderExecutionRequest,
+  NodeProviderExecutionResult,
+} from "../../../packages/protocol/providerExecution.cjs";
+import type {
   LoreMatchBatchRequest,
   LoreMatchBatchResponse,
   LoreResolveRequest,
@@ -71,6 +76,7 @@ export type NodeStorageBulkWriteProgress = {
 
 export class NodeStorage {
   authChecked = false;
+  private nodeProviderCapabilities: NodeProviderCapabilities | null = null;
   readonly postgres = new NodePostgresStorage(async () => {
     await this.checkAuth();
     return await this.createAuth();
@@ -170,6 +176,50 @@ export class NodeStorage {
       localStorage.setItem("risuauth", auth);
     }
     return auth;
+  }
+
+  async getNodeProviderCapabilities(): Promise<NodeProviderCapabilities> {
+    if (this.nodeProviderCapabilities) return this.nodeProviderCapabilities;
+    const auth = await this.getCachedAuth();
+    const response = await fetch("/api/chat-executor/providers", {
+      headers: { "risu-auth": auth },
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`Server provider capabilities failed (${response.status}): ${message}`);
+    }
+    const data = (await response.json()) as Partial<NodeProviderCapabilities>;
+    if (!Array.isArray(data.routes) || data.routes.some((route) => typeof route !== "string")) {
+      throw new Error("Server provider capabilities returned an invalid response");
+    }
+    this.nodeProviderCapabilities = { routes: data.routes };
+    return this.nodeProviderCapabilities;
+  }
+
+  async executeChatProvider(
+    request: NodeProviderExecutionRequest,
+  ): Promise<NodeProviderExecutionResult> {
+    const auth = await this.getCachedAuth();
+    const response = await fetch("/api/chat-executor/provider", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "risu-auth": auth,
+      },
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`Server provider execution failed (${response.status}): ${message}`);
+    }
+    const data = (await response.json()) as NodeProviderExecutionResult;
+    if (!data || typeof data.handled !== "boolean") {
+      throw new Error("Server provider execution returned an invalid response");
+    }
+    if (data.handled && (!data.response || !["success", "fail"].includes(data.response.type))) {
+      throw new Error("Server provider execution returned an invalid provider response");
+    }
+    return data;
   }
 
   async planChatContinuation(

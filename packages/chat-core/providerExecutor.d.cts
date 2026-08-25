@@ -18,6 +18,11 @@ export interface ExecuteProviderRouteOptions {
   unsupportedRouteMessage?: (route: ProviderRoute) => string;
 }
 
+export function canExecuteProviderRoute<TRequest>(
+  format: number,
+  handlers: ProviderHandlers<TRequest>,
+): boolean;
+
 export function executeProviderRoute<TRequest>(
   format: number,
   request: TRequest,

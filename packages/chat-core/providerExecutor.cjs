@@ -2,6 +2,11 @@
 
 const { resolveProviderRoute } = require('./providerRouting.cjs');
 
+function canExecuteProviderRoute(format, handlers) {
+  const route = resolveProviderRoute(format);
+  return Boolean(route && typeof handlers?.[route] === 'function');
+}
+
 async function executeProviderRoute(format, request, handlers, options = {}) {
   const route = resolveProviderRoute(format);
   if (!route) {
@@ -24,4 +29,4 @@ async function executeProviderRoute(format, request, handlers, options = {}) {
   return handler(request);
 }
 
-module.exports = { executeProviderRoute };
+module.exports = { canExecuteProviderRoute, executeProviderRoute };

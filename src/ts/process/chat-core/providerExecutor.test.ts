@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { executeProviderRoute } from "@risuai/chat-core/providerExecutor.cjs";
+import { canExecuteProviderRoute, executeProviderRoute } from "@risuai/chat-core/providerExecutor.cjs";
 import { LLM_FORMATS } from "../../../../packages/protocol/modelFormat.cjs";
 
 describe("provider executor", () => {
+  it("reports whether a runtime implements the resolved route", () => {
+    const handlers = { openai: async () => ({ type: "success" as const, result: "ok" }) };
+    expect(canExecuteProviderRoute(LLM_FORMATS.Mistral, handlers)).toBe(true);
+    expect(canExecuteProviderRoute(LLM_FORMATS.Anthropic, handlers)).toBe(false);
+    expect(canExecuteProviderRoute(999, handlers)).toBe(false);
+  });
+
   it("dispatches a format through its runtime-neutral provider route", async () => {
     const openai = vi.fn(async () => ({ type: "success" as const, result: "ok" }));
     const result = await executeProviderRoute(
