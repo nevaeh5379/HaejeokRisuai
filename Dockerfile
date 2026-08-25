@@ -35,7 +35,11 @@ WORKDIR /app
 COPY package.json .
 COPY --from=deps /app/node_modules /app/node_modules
 COPY --from=builder /app/server ./server
+COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/dist ./dist
+
+# Server modules import shared runtime contracts from packages/ at runtime.
+RUN node -e "require.resolve('./packages/protocol/modelJobs.cjs'); require.resolve('./packages/chat-core/index.cjs')"
 
 ENV NODE_ENV=production
 EXPOSE 6001
