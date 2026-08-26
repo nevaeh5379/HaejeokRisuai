@@ -67,3 +67,26 @@ export function buildGoogleSafetySettings(options?: {
   includeCivicIntegrity?: boolean;
   blockOff?: boolean;
 }): GoogleSafetySetting[];
+
+export interface GoogleGenerationConfig extends Record<string, any> {
+  thinkingBudget?: number;
+  thinkingConfig?: {
+    thinkingBudget?: number;
+    thinkingLevel?: string;
+    includeThoughts?: boolean;
+  };
+  responseModalities?: string[];
+  mediaResolution?: string;
+}
+export function finalizeGoogleGenerationConfig(
+  generationConfig: GoogleGenerationConfig,
+  options?: {
+    thinking?: boolean;
+    thinkingNoMinimal?: boolean;
+    useStreaming?: boolean;
+    hasAudioOutput?: boolean;
+    hasImageOutput?: boolean;
+    imageResponse?: boolean;
+    highMediaResolution?: boolean;
+  },
+): { generationConfig: GoogleGenerationConfig; useStreaming: boolean };

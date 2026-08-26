@@ -81,6 +81,41 @@ system:${chat.content}`;
   };
 }
 
+function finalizeGoogleGenerationConfig(generationConfig, options = {}) {
+  if (options.thinking) {
+    if (generationConfig.thinkingBudget !== undefined) {
+      generationConfig.thinkingConfig = {
+        thinkingBudget: generationConfig.thinkingBudget,
+        includeThoughts: true,
+      };
+      delete generationConfig.thinkingBudget;
+    } else if (generationConfig.thinkingConfig) {
+      if (
+        generationConfig.thinkingConfig.thinkingLevel === 'minimal' &&
+        options.thinkingNoMinimal
+      ) {
+        generationConfig.thinkingConfig.thinkingLevel = 'low';
+      }
+      generationConfig.thinkingConfig.includeThoughts = true;
+    }
+  }
+
+  let useStreaming = Boolean(options.useStreaming);
+  if (options.hasAudioOutput) {
+    generationConfig.responseModalities = ['TEXT', 'AUDIO'];
+    useStreaming = false;
+  }
+  if (options.imageResponse || options.hasImageOutput) {
+    generationConfig.responseModalities = ['TEXT', 'IMAGE'];
+    useStreaming = false;
+  }
+  if (options.highMediaResolution) {
+    generationConfig.mediaResolution = 'MEDIA_RESOLUTION_MEDIUM';
+  }
+
+  return { generationConfig, useStreaming };
+}
+
 function buildGoogleSafetySettings(options = {}) {
   const threshold = options.blockOff ? 'OFF' : 'BLOCK_NONE';
   const categories = [
@@ -120,4 +155,5 @@ module.exports = {
   prepareGoogleConversation,
   mergeGoogleConsecutiveChats,
   buildGoogleSafetySettings,
+  finalizeGoogleGenerationConfig,
 };

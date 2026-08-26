@@ -1,6 +1,7 @@
 import {
   buildGoogleGenerateContentUrl,
   buildGoogleSafetySettings,
+  finalizeGoogleGenerationConfig,
   mergeGoogleConsecutiveChats,
   prepareGoogleConversation,
 } from "@risuai/chat-core/googleProvider.cjs";
@@ -265,52 +266,30 @@ export async function requestGoogleCloudVertex(
     },
   };
 
-  if (arg.modelInfo.flags.includes(LLMFlags.geminiThinking)) {
-    const generationConfig = body.generation_config;
-
-    // 2.5's flat thinkingBudget is wrapped into thinkingConfig here.
-    // 3.x's thinkingConfig.thinkingLevel was already set by the rename above.
-    if (generationConfig.thinkingBudget !== undefined) {
-      generationConfig.thinkingConfig = {
-        thinkingBudget: generationConfig.thinkingBudget,
-        includeThoughts: true,
-      };
-      delete generationConfig.thinkingBudget;
-    } else if (generationConfig.thinkingConfig) {
-      // Models without a `minimal` level (e.g. Gemini 3.1 Pro) — map it to `low`, as Google does.
-      if (
-        generationConfig.thinkingConfig.thinkingLevel === "minimal" &&
-        arg.modelInfo.flags.includes(LLMFlags.geminiThinkingNoMinimal)
-      ) {
-        generationConfig.thinkingConfig.thinkingLevel = "low";
-      }
-      generationConfig.thinkingConfig.includeThoughts = true;
-    }
-  }
-
   if (systemPrompt === "") {
     delete body.systemInstruction;
   }
 
-  if (arg.modelInfo.flags.includes(LLMFlags.hasAudioOutput)) {
-    body.generation_config.responseModalities = ["TEXT", "AUDIO"];
-    arg.useStreaming = false;
-  }
-  if (
-    arg.imageResponse ||
-    arg.modelInfo.flags.includes(LLMFlags.hasImageOutput)
-  ) {
-    body.generation_config.responseModalities = ["TEXT", "IMAGE"];
-    arg.useStreaming = false;
-  }
+  const finalizedGeneration = finalizeGoogleGenerationConfig(
+    body.generation_config,
+    {
+      thinking: arg.modelInfo.flags.includes(LLMFlags.geminiThinking),
+      thinkingNoMinimal: arg.modelInfo.flags.includes(
+        LLMFlags.geminiThinkingNoMinimal,
+      ),
+      useStreaming: arg.useStreaming,
+      hasAudioOutput: arg.modelInfo.flags.includes(LLMFlags.hasAudioOutput),
+      hasImageOutput: arg.modelInfo.flags.includes(LLMFlags.hasImageOutput),
+      imageResponse: arg.imageResponse,
+      highMediaResolution: db.gptVisionQuality === "high",
+    },
+  );
+  arg.useStreaming = finalizedGeneration.useStreaming;
 
   let headers: { [key: string]: string } = {
     "Content-Type": "application/json",
   };
 
-  if (db.gptVisionQuality === "high") {
-    body.generation_config.mediaResolution = "MEDIA_RESOLUTION_MEDIUM";
-  }
 
   const PROJECT_ID = db.google.projectId;
   const REGION = db.vertexRegion;

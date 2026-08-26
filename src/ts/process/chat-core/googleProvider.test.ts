@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildGoogleSafetySettings,
+  finalizeGoogleGenerationConfig,
   mergeGoogleConsecutiveChats,
   prepareGoogleConversation,
 } from "@risuai/chat-core/googleProvider.cjs";
@@ -158,6 +159,49 @@ describe("Google provider core", () => {
       { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" },
       { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
     ]);
+  });
+
+  it("normalizes Gemini thinking and output generation settings", () => {
+    const flat = { thinkingBudget: 2048 };
+    expect(
+      finalizeGoogleGenerationConfig(flat, {
+        thinking: true,
+        useStreaming: true,
+        hasAudioOutput: true,
+        highMediaResolution: true,
+      }),
+    ).toEqual({
+      generationConfig: {
+        thinkingConfig: { thinkingBudget: 2048, includeThoughts: true },
+        responseModalities: ["TEXT", "AUDIO"],
+        mediaResolution: "MEDIA_RESOLUTION_MEDIUM",
+      },
+      useStreaming: false,
+    });
+
+    const nested = { thinkingConfig: { thinkingLevel: "minimal" } };
+    expect(
+      finalizeGoogleGenerationConfig(nested, {
+        thinking: true,
+        thinkingNoMinimal: true,
+        useStreaming: true,
+        hasAudioOutput: true,
+        hasImageOutput: true,
+      }),
+    ).toEqual({
+      generationConfig: {
+        thinkingConfig: { thinkingLevel: "low", includeThoughts: true },
+        responseModalities: ["TEXT", "IMAGE"],
+      },
+      useStreaming: false,
+    });
+  });
+
+  it("leaves ordinary generation settings and streaming untouched", () => {
+    const generationConfig = { maxOutputTokens: 512 };
+    expect(
+      finalizeGoogleGenerationConfig(generationConfig, { useStreaming: true }),
+    ).toEqual({ generationConfig: { maxOutputTokens: 512 }, useStreaming: true });
   });
 
 });
