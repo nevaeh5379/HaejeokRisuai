@@ -1,8 +1,6 @@
-import { getModelInfo } from "../../model/modellist";
-import { getDatabase } from "../../storage/database.svelte";
 import { formatProviderMessages } from "@risuai/chat-core/providerPrompt.cjs";
-import { prepareProviderExecutionContext } from "@risuai/chat-core/providerContext.cjs";
 import { executeBrowserProvider } from "./browserProviderRegistry";
+import { prepareBrowserProviderContext } from "./providerContextAdapter";
 import type { ModelModeExtended } from "./shared";
 
 export type {
@@ -23,31 +21,11 @@ export async function requestChatDataMain(
   model: ModelModeExtended,
   abortSignal: AbortSignal = null,
 ): Promise<requestDataResponse> {
-  const db = getDatabase();
-  const targ: RequestDataArgumentExtended = arg;
-
-  const prepared = prepareProviderExecutionContext(
-    { ...arg, mode: model },
-    {
-      primaryModel: db.aiModel,
-      subModel: db.subModel,
-      separateModelsForAxModels: db.seperateModelsForAxModels,
-      separateModels: db.seperateModels,
-      maxResponseTokens: db.maxResponse,
-      temperaturePercent: db.temperature,
-      useStreaming: db.useStreaming,
-      genTime: db.genTime,
-      extractJson: db.extractJson,
-      reverseProxy: {
-        requestModel: db.customProxyRequestModel,
-        format: db.customAPIFormat,
-        url: db.forceReplaceUrl,
-        key: db.proxyKey,
-      },
-      customModels: db.customModels,
-    },
-    getModelInfo,
+  const { prepared, messageFormatting } = prepareBrowserProviderContext(
+    arg,
+    model,
   );
+  const targ: RequestDataArgumentExtended = arg;
 
   if (prepared.pluginBlocked) {
     return {
@@ -65,10 +43,11 @@ export async function requestChatDataMain(
 
   const format = targ.modelInfo.format;
 
-  targ.formated = formatProviderMessages(targ.formated, targ.modelInfo.flags, {
-    systemContentReplacement: db.systemContentReplacement,
-    systemRoleReplacement: db.systemRoleReplacement,
-  });
+  targ.formated = formatProviderMessages(
+    targ.formated,
+    targ.modelInfo.flags,
+    messageFormatting,
+  );
 
   return executeBrowserProvider(format, targ);
 }
