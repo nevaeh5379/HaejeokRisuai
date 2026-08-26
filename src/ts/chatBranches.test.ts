@@ -185,6 +185,40 @@ describe("chatBranches", () => {
     });
   });
 
+  it("creates a reroll below a manual branch that ends at a user message", () => {
+    const chat = makeChat([
+      makeMessage("user", "u1", "m1"),
+      makeMessage("char", "a1", "m2"),
+      makeMessage("user", "u2", "m3"),
+      makeMessage("char", "a2", "m4"),
+    ]);
+    const manualBranch = createChatTimelineBranch(chat, {
+      branchMessageIndex: 2,
+      reason: "manual",
+      createdAt: 10,
+    });
+
+    expect(data(chat)).toEqual(["u1", "a1", "u2"]);
+    expect(resolveRerollTarget(chat.message, 2)).toEqual({
+      branchMessageIndex: 2,
+      responseMessageIndex: null,
+    });
+
+    const alternatives = getRerollAlternatives(chat, 2)!;
+    const rerollBranch = createChatTimelineBranch(chat, {
+      parentBranchId: alternatives.parentBranchId,
+      branchMessageIndex: 2,
+      reason: "reroll",
+      createdAt: 20,
+    });
+    chat.message.push(makeMessage("char", "alternate a2", "r1"));
+    syncActiveChatBranch(chat);
+
+    expect(rerollBranch.parentBranchId).toBe(manualBranch.id);
+    expect(data(chat)).toEqual(["u1", "a1", "u2", "alternate a2"]);
+    expect(rerollBranch.messages.map((message) => message.data)).toEqual(["alternate a2"]);
+  });
+
   it("keeps the latest-turn behavior when no reroll position is supplied", () => {
     const messages = [
       makeMessage("user", "u1", "m1"),

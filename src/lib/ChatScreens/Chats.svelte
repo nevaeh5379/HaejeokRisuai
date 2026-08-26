@@ -64,6 +64,7 @@
         hideButtons: boolean
         isComment: boolean
         activeStreaming: boolean
+        rerollIcon: boolean
         generationInfo: Message['generationInfo']
     }
     type RenderEntry = {
@@ -89,6 +90,7 @@
         left.hideButtons === right.hideButtons &&
         left.isComment === right.isComment &&
         left.activeStreaming === right.activeStreaming &&
+        left.rerollIcon === right.rerollIcon &&
         left.generationInfo === right.generationInfo;
 
     const clearChatBody = () => {
@@ -142,6 +144,7 @@
             const messageLargePortrait = message.role === 'user' ? (userIconPortrait ?? false) : ((currentCharacter as character).largePortrait ?? false);
             const reloadPointer = reloadPointerMap[i] ?? 0;
             const activeStreamingMessage = i === activeStreamingIndex && message.role === 'char';
+            const rerollIcon = message.role === 'char' || (message.role === 'user' && i === messages.length - 1);
             const signature: RenderSignature = {
                 data: activeStreamingMessage ? '' : message.data,
                 idx: i,
@@ -155,6 +158,7 @@
                 hideButtons,
                 isComment: message.isComment ?? false,
                 activeStreaming: activeStreamingMessage,
+                rerollIcon,
                 generationInfo: message.generationInfo,
             };
             let entry = renderEntries.get(key);
@@ -185,7 +189,7 @@
                         img: message.role === 'user' ? userImage : charImage,
                         onReroll: onReroll,
                         unReroll: unReroll,
-                        rerollIcon: message.role === 'char',
+                        rerollIcon,
                         character: simpleChar,
                         largePortrait: messageLargePortrait,
                         messageGenerationInfo: message.generationInfo,
