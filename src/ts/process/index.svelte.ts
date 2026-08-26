@@ -7,8 +7,10 @@ import {
 } from "./chatRuntimeState";
 export { chatProcessStage, doingChat } from "./chatRuntimeState";
 import { characterStore } from "../stores/domain/characterStore.svelte";
+import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { selectedCharID } from "../stores.svelte";
 import { createLocalChatExecutor } from "./chatLocalExecutor";
+import { runWithPresetChainGenerationGate } from "./presetChainGenerationGate";
 import type { ChatSendOptions } from "@risuai/chat-core/executor.cjs";
 import {
   beginNativeChatRequest,
@@ -59,12 +61,20 @@ export async function sendChat(
   const previousCompactionGuard = targetChat?.preventMessageCompaction;
   if (keepAlive && targetChat) targetChat.preventMessageCompaction = true;
   if (keepAlive) await beginNativeChatRequest();
+  const serializeForPresetChain =
+    chatProcessIndex === -1 && Boolean(settingsStore.state.presetChain?.trim());
   try {
-    return await localChatExecutor.execute(chatProcessIndex, {
-      ...arg,
-      targetCharacterId,
-      targetChatId,
-    });
+    return await runWithPresetChainGenerationGate(
+      serializeForPresetChain,
+      async () => {
+        if (arg.signal?.aborted) return false;
+        return localChatExecutor.execute(chatProcessIndex, {
+          ...arg,
+          targetCharacterId,
+          targetChatId,
+        });
+      },
+    );
   } finally {
     if (keepAlive && targetChat) {
       targetChat.preventMessageCompaction = previousCompactionGuard;
