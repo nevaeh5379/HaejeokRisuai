@@ -248,6 +248,20 @@ class SettingsStore {
     this.observe();
   }
 
+  hydrateSettingKey(key: string, value: unknown, exists = true): void {
+    if (!key || key === "characters" || key === "isSql") return;
+    this.keyDisposers.get(key)?.();
+    this.keyDisposers.delete(key);
+    this.dirtyKeys.delete(key);
+    this.pendingDeletes.delete(key);
+    if (exists) {
+      this.state[key] = value;
+      this.observeKey(key);
+    } else {
+      delete this.state[key];
+    }
+  }
+
   delete(key: keyof Database): void {
     const keyStr = String(key);
     if (keyStr === "pluginCustomStorage") {

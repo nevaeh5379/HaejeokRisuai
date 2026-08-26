@@ -22,10 +22,18 @@ function describeSqlCommitChange(payload) {
     for (const row of payload?.characters ?? []) addCharacter(row?.id);
     for (const row of payload?.chatManifests ?? []) addCharacter(row?.characterId);
 
+    const rootUpsertKeys = (payload?.root?.upserts ?? [])
+        .map((entry) => entry?.key)
+        .filter((key) => typeof key === 'string' && key);
+    const rootDeleteKeys = (payload?.root?.deletes ?? [])
+        .filter((key) => typeof key === 'string' && key);
+
     return {
         chatIds: [...chatIds],
         characterIds: [...characterIds],
-        rootChanged: Boolean(payload?.replaceAll || payload?.root?.upserts?.length || payload?.root?.deletes?.length),
+        rootUpsertKeys: [...new Set(rootUpsertKeys)],
+        rootDeleteKeys: [...new Set(rootDeleteKeys)],
+        rootChanged: Boolean(payload?.replaceAll || rootUpsertKeys.length || rootDeleteKeys.length),
     };
 }
 

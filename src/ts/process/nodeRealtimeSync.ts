@@ -3,6 +3,7 @@ import { getSqlStorage } from "../storage/sqlStorageFactory";
 import { NodePostgresStorage } from "../storage/nodePostgresStorage";
 import { getNodeServerProxyAuth } from "../storage/nodeStorage";
 import { characterStore } from "../stores/domain/characterStore.svelte";
+import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { recoverDurableModelJobs } from "./modelJobRecovery";
 import { getNodeClientSessionId } from "../network/nodeClientSession";
 import {
@@ -16,6 +17,8 @@ type DatabaseChangeEvent = {
   sourceClientId?: string | null;
   chatIds?: string[];
   characterIds?: string[];
+  rootUpsertKeys?: string[];
+  rootDeleteKeys?: string[];
   rootChanged?: boolean;
 };
 
@@ -57,6 +60,20 @@ async function applyDatabaseChange(
   const chatIds = Array.isArray(change.chatIds)
     ? [...new Set(change.chatIds.filter(Boolean))]
     : [];
+  const rootUpsertKeys = Array.isArray(change.rootUpsertKeys)
+    ? [...new Set(change.rootUpsertKeys.filter(Boolean))]
+    : [];
+  const rootDeleteKeys = Array.isArray(change.rootDeleteKeys)
+    ? [...new Set(change.rootDeleteKeys.filter(Boolean))]
+    : [];
+
+  const rootValues = await Promise.all(
+    rootUpsertKeys.map(async (key) => [key, await storage.loadSettingKey(key)] as const),
+  );
+  for (const [key, value] of rootValues) {
+    settingsStore.hydrateSettingKey(key, value, value !== undefined);
+  }
+  for (const key of rootDeleteKeys) settingsStore.hydrateSettingKey(key, undefined, false);
 
   await Promise.all(
     characterIds.map((characterId) =>

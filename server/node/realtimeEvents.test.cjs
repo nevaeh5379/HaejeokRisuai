@@ -11,7 +11,13 @@ const {
 test('describeSqlCommitChange extracts affected chat and character ids', () => {
     const change = describeSqlCommitChange({
         action: 'message',
-        root: { upserts: [], deletes: [] },
+        root: {
+            upserts: [
+                { key: 'temperature', value: 80 },
+                { key: 'temperature', value: 90 },
+            ],
+            deletes: ['oldSetting', 'oldSetting'],
+        },
         characters: [{ id: 'char-a' }],
         chats: [{ id: 'chat-a', characterId: 'char-a' }],
         messages: [
@@ -23,7 +29,9 @@ test('describeSqlCommitChange extracts affected chat and character ids', () => {
 
     assert.deepEqual(change.chatIds.sort(), ['chat-a', 'chat-b']);
     assert.deepEqual(change.characterIds, ['char-a']);
-    assert.equal(change.rootChanged, false);
+    assert.deepEqual(change.rootUpsertKeys, ['temperature']);
+    assert.deepEqual(change.rootDeleteKeys, ['oldSetting']);
+    assert.equal(change.rootChanged, true);
 });
 
 class FakeResponse extends EventEmitter {
