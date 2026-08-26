@@ -1374,6 +1374,11 @@ export async function runTrigger(
     return state.toString();
   }
 
+  const parseTriggerText = (
+    text: string,
+    parserArg: Parameters<typeof risuChatParser>[1] = {},
+  ) => risuChatParser(text, { ...parserArg, chatTarget: target });
+
   function setVar(key: string, value: string): boolean {
     if (arg.displayMode) {
       if (tempVars[key] === value) {
@@ -1435,10 +1440,10 @@ export async function runTrigger(
           pass = false;
           break;
         } else {
-          const conditionValue = risuChatParser(condition.value, {
+          const conditionValue = parseTriggerText(condition.value, {
             chara: char,
           });
-          varValue = risuChatParser(varValue, { chara: char });
+          varValue = parseTriggerText(varValue, { chara: char });
           switch (condition.operator) {
             case "true": {
               if (varValue !== "true" && varValue !== "1") {
@@ -1484,8 +1489,8 @@ export async function runTrigger(
           }
         }
       } else if (condition.type === "exists") {
-        const conditionValue = risuChatParser(condition.value, { chara: char });
-        const val = risuChatParser(conditionValue, { chara: char });
+        const conditionValue = parseTriggerText(condition.value, { chara: char });
+        const val = parseTriggerText(conditionValue, { chara: char });
         let da = chat.message
           .slice(0 - condition.depth)
           .map((v) => v.data)
@@ -1528,8 +1533,8 @@ export async function runTrigger(
 
       switch (effect.type) {
         case "setvar": {
-          const effectValue = risuChatParser(effect.value, { chara: char });
-          const varKey = risuChatParser(effect.var, { chara: char });
+          const effectValue = parseTriggerText(effect.value, { chara: char });
+          const varKey = parseTriggerText(effect.var, { chara: char });
           let originalVar = Number(getVar(varKey));
           if (Number.isNaN(originalVar)) {
             originalVar = 0;
@@ -1561,12 +1566,12 @@ export async function runTrigger(
           break;
         }
         case "systemprompt": {
-          const effectValue = risuChatParser(effect.value, { chara: char });
+          const effectValue = parseTriggerText(effect.value, { chara: char });
           additonalSysPrompt[effect.location] += effectValue + "\n\n";
           break;
         }
         case "impersonate": {
-          const effectValue = risuChatParser(effect.value, { chara: char });
+          const effectValue = parseTriggerText(effect.value, { chara: char });
           if (effect.role === "user") {
             chat.message.push({ role: "user", data: effectValue });
           } else if (effect.role === "char") {
@@ -1575,7 +1580,7 @@ export async function runTrigger(
           break;
         }
         case "command": {
-          const effectValue = risuChatParser(effect.value, { chara: char });
+          const effectValue = parseTriggerText(effect.value, { chara: char });
           await processMultiCommand(effectValue);
           break;
         }
@@ -1604,14 +1609,14 @@ export async function runTrigger(
           break;
         }
         case "cutchat": {
-          const start = Number(risuChatParser(effect.start, { chara: char }));
-          const end = Number(risuChatParser(effect.end, { chara: char }));
+          const start = Number(parseTriggerText(effect.start, { chara: char }));
+          const end = Number(parseTriggerText(effect.end, { chara: char }));
           chat.message = chat.message.slice(start, end);
           break;
         }
         case "modifychat": {
-          const index = Number(risuChatParser(effect.index, { chara: char }));
-          const value = risuChatParser(effect.value, { chara: char });
+          const index = Number(parseTriggerText(effect.index, { chara: char }));
+          const value = parseTriggerText(effect.value, { chara: char });
           if (chat.message[index]) {
             chat.message[index].data = value;
           }
@@ -1628,8 +1633,8 @@ export async function runTrigger(
             return;
           }
 
-          const effectValue = risuChatParser(effect.value, { chara: char });
-          const inputVar = risuChatParser(effect.inputVar, { chara: char });
+          const effectValue = parseTriggerText(effect.value, { chara: char });
+          const inputVar = parseTriggerText(effect.inputVar, { chara: char });
 
           switch (effect.alertType) {
             case "normal": {
@@ -1665,7 +1670,7 @@ export async function runTrigger(
           if (!trigger.lowLevelAccess) {
             break;
           }
-          const effectValue = risuChatParser(effect.value, { chara: char });
+          const effectValue = parseTriggerText(effect.value, { chara: char });
           const varName = effect.inputVar;
           let promptbody: OpenAIChat[] = parseChatML(effectValue);
           if (!promptbody) {
@@ -1700,8 +1705,8 @@ export async function runTrigger(
           }
 
           const processer = new HypaProcesser();
-          const effectValue = risuChatParser(effect.value, { chara: char });
-          const source = risuChatParser(effect.source, { chara: char });
+          const effectValue = parseTriggerText(effect.value, { chara: char });
+          const source = parseTriggerText(effect.source, { chara: char });
           await processer.addText(effectValue.split("§"));
           const val = await processer.similaritySearch(source);
           setVar(effect.inputVar, val.join("§"));
@@ -1713,7 +1718,7 @@ export async function runTrigger(
             break;
           }
 
-          const effectValue = risuChatParser(effect.value, { chara: char });
+          const effectValue = parseTriggerText(effect.value, { chara: char });
           const regex = new RegExp(effect.regex, effect.flags);
           const regexResult = regex.exec(effectValue);
           const result = effect.result
@@ -1733,8 +1738,8 @@ export async function runTrigger(
             break;
           }
 
-          const effectValue = risuChatParser(effect.value, { chara: char });
-          const negValue = risuChatParser(effect.negValue, { chara: char });
+          const effectValue = parseTriggerText(effect.value, { chara: char });
+          const negValue = parseTriggerText(effect.negValue, { chara: char });
           const gen = await generateAIImage(
             effectValue,
             char,
@@ -1778,9 +1783,9 @@ export async function runTrigger(
         case "v2SetVar": {
           const effectValue =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
-          const varKey = risuChatParser(effect.var, { chara: char });
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
+          const varKey = parseTriggerText(effect.var, { chara: char });
           let originalVar = Number(getVar(varKey));
           if (Number.isNaN(originalVar)) {
             originalVar = 0;
@@ -1818,9 +1823,9 @@ export async function runTrigger(
         case "v2DeclareLocalVar": {
           const effectValue =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
-          const varKey = risuChatParser(effect.var, { chara: char });
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
+          const varKey = parseTriggerText(effect.var, { chara: char });
           const finalValue =
             effectValue === null || effectValue === undefined
               ? "null"
@@ -1832,12 +1837,12 @@ export async function runTrigger(
         case "v2IfAdvanced": {
           const sourceValue =
             effect.type === "v2If" || effect.sourceType === "var"
-              ? getVar(risuChatParser(effect.source, { chara: char }))
-              : risuChatParser(effect.source, { chara: char });
+              ? getVar(parseTriggerText(effect.source, { chara: char }))
+              : parseTriggerText(effect.source, { chara: char });
           const targetValue =
             effect.targetType === "value"
-              ? risuChatParser(effect.target, { chara: char })
-              : getVar(risuChatParser(effect.target, { chara: char }));
+              ? parseTriggerText(effect.target, { chara: char })
+              : getVar(parseTriggerText(effect.target, { chara: char }));
           let pass = false;
           switch (effect.condition) {
             case "=": {
@@ -1970,8 +1975,8 @@ export async function runTrigger(
                 if (ef.type === "v2LoopNTimes") {
                   let value =
                     ef.valueType === "value"
-                      ? risuChatParser(ef.value, { chara: char })
-                      : getVar(risuChatParser(ef.value, { chara: char }));
+                      ? parseTriggerText(ef.value, { chara: char })
+                      : getVar(parseTriggerText(ef.value, { chara: char }));
                   let valueNum = Number(value);
                   if (Number.isNaN(valueNum)) {
                     valueNum = 0;
@@ -2037,8 +2042,8 @@ export async function runTrigger(
         case "v2ConsoleLog": {
           const sourceValue =
             effect.sourceType === "value"
-              ? risuChatParser(effect.source, { chara: char })
-              : getVar(risuChatParser(effect.source, { chara: char }));
+              ? parseTriggerText(effect.source, { chara: char })
+              : getVar(parseTriggerText(effect.source, { chara: char }));
           console.log(sourceValue);
           break;
         }
@@ -2049,12 +2054,12 @@ export async function runTrigger(
         case "v2CutChat": {
           let start =
             effect.startType === "value"
-              ? Number(risuChatParser(effect.start, { chara: char }))
-              : Number(getVar(risuChatParser(effect.start, { chara: char })));
+              ? Number(parseTriggerText(effect.start, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.start, { chara: char })));
           let end =
             effect.endType === "value"
-              ? Number(risuChatParser(effect.end, { chara: char }))
-              : Number(getVar(risuChatParser(effect.end, { chara: char })));
+              ? Number(parseTriggerText(effect.end, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.end, { chara: char })));
           if (isNaN(start)) {
             start = 0;
           }
@@ -2068,12 +2073,12 @@ export async function runTrigger(
         case "v2ModifyChat": {
           let index =
             effect.indexType === "value"
-              ? Number(risuChatParser(effect.index, { chara: char }))
-              : Number(getVar(risuChatParser(effect.index, { chara: char })));
+              ? Number(parseTriggerText(effect.index, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.index, { chara: char })));
           let value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           if (chat.message[index]) {
             chat.message[index].data = value;
           }
@@ -2082,16 +2087,16 @@ export async function runTrigger(
         case "v2SystemPrompt": {
           let value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           additonalSysPrompt[effect.location] += value + "\n\n";
           break;
         }
         case "v2Impersonate": {
           let value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           if (effect.role === "user") {
             chat.message.push({ role: "user", data: value });
           } else if (effect.role === "char") {
@@ -2102,8 +2107,8 @@ export async function runTrigger(
         case "v2Command": {
           let value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           await processMultiCommand(value);
           break;
         }
@@ -2120,22 +2125,22 @@ export async function runTrigger(
           }
           let value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           let negValue =
             effect.negValueType === "value"
-              ? risuChatParser(effect.negValue, { chara: char })
-              : getVar(risuChatParser(effect.negValue, { chara: char }));
+              ? parseTriggerText(effect.negValue, { chara: char })
+              : getVar(parseTriggerText(effect.negValue, { chara: char }));
           let gen = await generateAIImage(value, char, negValue, "inlay");
           if (!gen) {
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "null");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "null");
             break;
           }
           let imgHTML = new Image();
           imgHTML.src = gen;
           let inlay = await writeInlayImage(imgHTML);
           let res = `{{inlay::${inlay}}}`;
-          setVar(risuChatParser(effect.outputVar, { chara: char }), res);
+          setVar(parseTriggerText(effect.outputVar, { chara: char }), res);
           break;
         }
         case "v2CheckSimilarity": {
@@ -2144,17 +2149,17 @@ export async function runTrigger(
           }
           let source =
             effect.sourceType === "value"
-              ? risuChatParser(effect.source, { chara: char })
-              : getVar(risuChatParser(effect.source, { chara: char }));
+              ? parseTriggerText(effect.source, { chara: char })
+              : getVar(parseTriggerText(effect.source, { chara: char }));
           let value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           let processer = new HypaProcesser();
           await processer.addText(value.split("§"));
           let val = await processer.similaritySearch(source);
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             val.join("§"),
           );
           break;
@@ -2165,8 +2170,8 @@ export async function runTrigger(
           }
           let value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           let promptbody = parseChatML(value);
           if (!promptbody) {
             promptbody = [{ role: "user", content: value }];
@@ -2182,13 +2187,13 @@ export async function runTrigger(
           );
 
           if (result.type === "fail" || result.type === "multiline") {
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "null");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "null");
           } else if (result.type === "streaming") {
             const text = await collectStreamingText(result.result);
-            setVar(risuChatParser(effect.outputVar, { chara: char }), text);
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), text);
           } else {
             setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
+              parseTriggerText(effect.outputVar, { chara: char }),
               result.result,
             );
           }
@@ -2200,30 +2205,30 @@ export async function runTrigger(
           }
           let value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           alertNormal(value);
           break;
         }
         case "v2ExtractRegex": {
           let value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           let regexValue =
             effect.regexType === "value"
-              ? risuChatParser(effect.regex, { chara: char })
-              : getVar(risuChatParser(effect.regex, { chara: char }));
+              ? parseTriggerText(effect.regex, { chara: char })
+              : getVar(parseTriggerText(effect.regex, { chara: char }));
           let flagsValue =
             effect.flagsType === "value"
-              ? risuChatParser(effect.flags, { chara: char })
-              : getVar(risuChatParser(effect.flags, { chara: char }));
+              ? parseTriggerText(effect.flags, { chara: char })
+              : getVar(parseTriggerText(effect.flags, { chara: char }));
           let regex = new RegExp(regexValue, flagsValue);
           let regexResult = regex.exec(value);
           let resultValue =
             effect.resultType === "value"
-              ? risuChatParser(effect.result, { chara: char })
-              : getVar(risuChatParser(effect.result, { chara: char }));
+              ? parseTriggerText(effect.result, { chara: char })
+              : getVar(parseTriggerText(effect.result, { chara: char }));
 
           let result = "";
           if (regexResult !== null) {
@@ -2241,12 +2246,12 @@ export async function runTrigger(
               .replace(/\$\$/g, "$");
           }
 
-          setVar(risuChatParser(effect.outputVar, { chara: char }), result);
+          setVar(parseTriggerText(effect.outputVar, { chara: char }), result);
           break;
         }
         case "v2GetLastMessage": {
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             chat.message[chat.message.length - 1]?.data ?? "null",
           );
           break;
@@ -2254,17 +2259,17 @@ export async function runTrigger(
         case "v2GetMessageAtIndex": {
           let index =
             effect.indexType === "value"
-              ? Number(risuChatParser(effect.index, { chara: char }))
-              : Number(getVar(risuChatParser(effect.index, { chara: char })));
+              ? Number(parseTriggerText(effect.index, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.index, { chara: char })));
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             chat.message[index]?.data ?? "null",
           );
           break;
         }
         case "v2GetMessageCount": {
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             chat.message.length.toString(),
           );
           break;
@@ -2273,12 +2278,12 @@ export async function runTrigger(
           char.globalLore = char.globalLore ?? [];
           const target =
             effect.targetType === "value"
-              ? risuChatParser(effect.target, { chara: char })
-              : getVar(risuChatParser(effect.target, { chara: char }));
+              ? parseTriggerText(effect.target, { chara: char })
+              : getVar(parseTriggerText(effect.target, { chara: char }));
           const value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
 
           const index = char.globalLore.findIndex((v) => v[0] === target);
           if (index !== -1) {
@@ -2292,11 +2297,11 @@ export async function runTrigger(
           char.globalLore = char.globalLore ?? [];
           const target =
             effect.targetType === "value"
-              ? risuChatParser(effect.target, { chara: char })
-              : getVar(risuChatParser(effect.target, { chara: char }));
+              ? parseTriggerText(effect.target, { chara: char })
+              : getVar(parseTriggerText(effect.target, { chara: char }));
           const index = char.globalLore.findIndex((v) => v[0] === target);
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             index === -1 ? "null" : char.globalLore[index][1],
           );
           break;
@@ -2304,7 +2309,7 @@ export async function runTrigger(
         case "v2GetLorebookCount": {
           char.globalLore = char.globalLore ?? [];
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             char.globalLore.length.toString(),
           );
           break;
@@ -2313,13 +2318,13 @@ export async function runTrigger(
           char.globalLore = char.globalLore ?? [];
           let index =
             effect.indexType === "value"
-              ? Number(risuChatParser(effect.index, { chara: char }))
-              : Number(getVar(risuChatParser(effect.index, { chara: char })));
+              ? Number(parseTriggerText(effect.index, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.index, { chara: char })));
           if (Number.isNaN(index)) {
             index = 0;
           }
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             char.globalLore[index]?.[1] ?? "null",
           );
           break;
@@ -2328,8 +2333,8 @@ export async function runTrigger(
           char.globalLore = char.globalLore ?? [];
           let index =
             effect.indexType === "value"
-              ? Number(risuChatParser(effect.index, { chara: char }))
-              : Number(getVar(risuChatParser(effect.index, { chara: char })));
+              ? Number(parseTriggerText(effect.index, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.index, { chara: char })));
           let value = effect.value;
           char.globalLore[index][2] = value;
 
@@ -2341,11 +2346,11 @@ export async function runTrigger(
           char.globalLore = char.globalLore ?? [];
           let name =
             effect.nameType === "value"
-              ? risuChatParser(effect.name, { chara: char })
-              : getVar(risuChatParser(effect.name, { chara: char }));
+              ? parseTriggerText(effect.name, { chara: char })
+              : getVar(parseTriggerText(effect.name, { chara: char }));
           let index = char.globalLore.findIndex((v) => v[0] === name);
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             index.toString(),
           );
           break;
@@ -2353,16 +2358,16 @@ export async function runTrigger(
         case "v2Random": {
           let min =
             effect.minType === "value"
-              ? Number(risuChatParser(effect.min, { chara: char }))
-              : Number(getVar(risuChatParser(effect.min, { chara: char })));
+              ? Number(parseTriggerText(effect.min, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.min, { chara: char })));
           let max =
             effect.maxType === "value"
-              ? Number(risuChatParser(effect.max, { chara: char }))
-              : Number(getVar(risuChatParser(effect.max, { chara: char })));
+              ? Number(parseTriggerText(effect.max, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.max, { chara: char })));
 
           let output = Math.floor(Math.random() * (max - min + 1) + min);
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             output.toString(),
           );
           break;
@@ -2370,14 +2375,14 @@ export async function runTrigger(
         case "v2GetCharAt": {
           let source =
             effect.sourceType === "value"
-              ? risuChatParser(effect.source, { chara: char })
-              : getVar(risuChatParser(effect.source, { chara: char }));
+              ? parseTriggerText(effect.source, { chara: char })
+              : getVar(parseTriggerText(effect.source, { chara: char }));
           let index =
             effect.indexType === "value"
-              ? Number(risuChatParser(effect.index, { chara: char }))
-              : Number(getVar(risuChatParser(effect.index, { chara: char })));
+              ? Number(parseTriggerText(effect.index, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.index, { chara: char })));
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             source[index] ?? "null",
           );
           break;
@@ -2385,10 +2390,10 @@ export async function runTrigger(
         case "v2GetCharCount": {
           let source =
             effect.sourceType === "value"
-              ? risuChatParser(effect.source, { chara: char })
-              : getVar(risuChatParser(effect.source, { chara: char }));
+              ? parseTriggerText(effect.source, { chara: char })
+              : getVar(parseTriggerText(effect.source, { chara: char }));
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             source.length.toString(),
           );
           break;
@@ -2396,10 +2401,10 @@ export async function runTrigger(
         case "v2ToLowerCase": {
           let source =
             effect.sourceType === "value"
-              ? risuChatParser(effect.source, { chara: char })
-              : getVar(risuChatParser(effect.source, { chara: char }));
+              ? parseTriggerText(effect.source, { chara: char })
+              : getVar(parseTriggerText(effect.source, { chara: char }));
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             source.toLowerCase(),
           );
           break;
@@ -2407,10 +2412,10 @@ export async function runTrigger(
         case "v2ToUpperCase": {
           let source =
             effect.sourceType === "value"
-              ? risuChatParser(effect.source, { chara: char })
-              : getVar(risuChatParser(effect.source, { chara: char }));
+              ? parseTriggerText(effect.source, { chara: char })
+              : getVar(parseTriggerText(effect.source, { chara: char }));
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             source.toUpperCase(),
           );
           break;
@@ -2418,20 +2423,20 @@ export async function runTrigger(
         case "v2SetCharAt": {
           let source =
             effect.sourceType === "value"
-              ? risuChatParser(effect.source, { chara: char })
-              : getVar(risuChatParser(effect.source, { chara: char }));
+              ? parseTriggerText(effect.source, { chara: char })
+              : getVar(parseTriggerText(effect.source, { chara: char }));
           let index =
             effect.indexType === "value"
-              ? Number(risuChatParser(effect.index, { chara: char }))
-              : Number(getVar(risuChatParser(effect.index, { chara: char })));
+              ? Number(parseTriggerText(effect.index, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.index, { chara: char })));
           let value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           const source2 = [...source];
           source2[index] = value;
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             source2.join(""),
           );
           break;
@@ -2439,18 +2444,18 @@ export async function runTrigger(
         case "v2SplitString": {
           let source =
             effect.sourceType === "value"
-              ? risuChatParser(effect.source, { chara: char })
-              : getVar(risuChatParser(effect.source, { chara: char }));
+              ? parseTriggerText(effect.source, { chara: char })
+              : getVar(parseTriggerText(effect.source, { chara: char }));
           let delimiter: string;
 
           if (effect.delimiterType === "value") {
-            delimiter = risuChatParser(effect.delimiter, { chara: char });
+            delimiter = parseTriggerText(effect.delimiter, { chara: char });
           } else if (effect.delimiterType === "var") {
             delimiter = getVar(
-              risuChatParser(effect.delimiter, { chara: char }),
+              parseTriggerText(effect.delimiter, { chara: char }),
             );
           } else {
-            delimiter = risuChatParser(effect.delimiter, { chara: char });
+            delimiter = parseTriggerText(effect.delimiter, { chara: char });
           }
 
           let result: string[];
@@ -2473,7 +2478,7 @@ export async function runTrigger(
           }
 
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             JSON.stringify(result),
           );
           break;
@@ -2482,31 +2487,31 @@ export async function runTrigger(
           try {
             let varValue =
               effect.varType === "value"
-                ? risuChatParser(effect.var, { chara: char })
-                : getVar(risuChatParser(effect.var, { chara: char }));
+                ? parseTriggerText(effect.var, { chara: char })
+                : getVar(parseTriggerText(effect.var, { chara: char }));
             let arr = JSON.parse(varValue);
             let delimiter =
               effect.delimiterType === "value"
-                ? risuChatParser(effect.delimiter, { chara: char })
-                : getVar(risuChatParser(effect.delimiter, { chara: char }));
+                ? parseTriggerText(effect.delimiter, { chara: char })
+                : getVar(parseTriggerText(effect.delimiter, { chara: char }));
             setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
+              parseTriggerText(effect.outputVar, { chara: char }),
               arr.join(delimiter),
             );
           } catch (error) {
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "");
           }
           break;
         }
         case "v2GetCharacterDesc": {
-          setVar(risuChatParser(effect.outputVar, { chara: char }), char.desc);
+          setVar(parseTriggerText(effect.outputVar, { chara: char }), char.desc);
           break;
         }
         case "v2SetCharacterDesc": {
           let value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           char.desc = value;
           persistCharacterDescription();
           break;
@@ -2517,7 +2522,7 @@ export async function runTrigger(
           const savedPersonaPrompt =
             db.personas[db.selectedPersona]?.personaPrompt ?? "";
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             currentPersonaPrompt || savedPersonaPrompt,
           );
           break;
@@ -2525,8 +2530,8 @@ export async function runTrigger(
         case "v2SetPersonaDesc": {
           const value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           const selPersona = settingsStore.state.selectedPersona ?? 0;
           if (settingsStore.state.personas?.[selPersona]) {
             settingsStore.state.personas[selPersona].personaPrompt = value;
@@ -2536,7 +2541,7 @@ export async function runTrigger(
         }
         case "v2GetReplaceGlobalNote": {
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             char.replaceGlobalNote ?? "",
           );
           break;
@@ -2544,14 +2549,14 @@ export async function runTrigger(
         case "v2SetReplaceGlobalNote": {
           const value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           char.replaceGlobalNote = value;
           persistReplaceGlobalNote();
           break;
         }
         case "v2MakeArrayVar": {
-          const varName = risuChatParser(effect.var, { chara: char });
+          const varName = parseTriggerText(effect.var, { chara: char });
           if (varName.startsWith("[") && varName.endsWith("]")) {
             return;
           }
@@ -2561,179 +2566,179 @@ export async function runTrigger(
         }
         case "v2GetArrayVarLength": {
           try {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             let varValue = getVar(varName);
             let arr = JSON.parse(varValue);
             setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
+              parseTriggerText(effect.outputVar, { chara: char }),
               arr.length.toString(),
             );
           } catch (error) {
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "0");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "0");
           }
           break;
         }
         case "v2GetArrayVar": {
           try {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             let varValue = getVar(varName);
             let arr = JSON.parse(varValue);
             let index =
               effect.indexType === "value"
-                ? Number(risuChatParser(effect.index, { chara: char }))
-                : Number(getVar(risuChatParser(effect.index, { chara: char })));
+                ? Number(parseTriggerText(effect.index, { chara: char }))
+                : Number(getVar(parseTriggerText(effect.index, { chara: char })));
             setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
+              parseTriggerText(effect.outputVar, { chara: char }),
               arr[index] ?? "null",
             );
           } catch (error) {
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "null");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "null");
           }
           break;
         }
         case "v2PushArrayVar": {
           try {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             let varValue = getVar(varName);
             let arr = JSON.parse(varValue);
             let value =
               effect.valueType === "value"
-                ? risuChatParser(effect.value, { chara: char })
-                : getVar(risuChatParser(effect.value, { chara: char }));
+                ? parseTriggerText(effect.value, { chara: char })
+                : getVar(parseTriggerText(effect.value, { chara: char }));
             arr.push(value);
             setVar(varName, JSON.stringify(arr));
           } catch (error) {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             setVar(varName, "[]");
           }
           break;
         }
         case "v2PopArrayVar": {
           try {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             let varValue = getVar(varName);
             let arr = JSON.parse(varValue);
             setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
+              parseTriggerText(effect.outputVar, { chara: char }),
               arr.pop() ?? "null",
             );
             setVar(varName, JSON.stringify(arr));
           } catch (error) {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             setVar(varName, "[]");
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "null");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "null");
           }
           break;
         }
         case "v2ShiftArrayVar": {
           try {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             let varValue = getVar(varName);
             let arr = JSON.parse(varValue);
             setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
+              parseTriggerText(effect.outputVar, { chara: char }),
               arr.shift() ?? "null",
             );
             setVar(varName, JSON.stringify(arr));
           } catch (error) {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             setVar(varName, "[]");
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "null");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "null");
           }
           break;
         }
         case "v2UnshiftArrayVar": {
           try {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             let varValue = getVar(varName);
             let arr = JSON.parse(varValue);
             let value =
               effect.valueType === "value"
-                ? risuChatParser(effect.value, { chara: char })
-                : getVar(risuChatParser(effect.value, { chara: char }));
+                ? parseTriggerText(effect.value, { chara: char })
+                : getVar(parseTriggerText(effect.value, { chara: char }));
             arr.unshift(value);
             setVar(varName, JSON.stringify(arr));
           } catch (error) {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             setVar(varName, "[]");
           }
           break;
         }
         case "v2SpliceArrayVar": {
           try {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             let varValue = getVar(varName);
             let arr = JSON.parse(varValue);
             let start =
               effect.startType === "value"
-                ? Number(risuChatParser(effect.start, { chara: char }))
-                : Number(getVar(risuChatParser(effect.start, { chara: char })));
+                ? Number(parseTriggerText(effect.start, { chara: char }))
+                : Number(getVar(parseTriggerText(effect.start, { chara: char })));
             let value =
               effect.itemType === "value"
-                ? risuChatParser(effect.item, { chara: char })
-                : getVar(risuChatParser(effect.item, { chara: char }));
+                ? parseTriggerText(effect.item, { chara: char })
+                : getVar(parseTriggerText(effect.item, { chara: char }));
             arr.splice(start, 0, value);
             setVar(varName, JSON.stringify(arr));
           } catch (error) {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             setVar(varName, "[]");
           }
           break;
         }
         case "v2SliceArrayVar": {
           try {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             let varValue = getVar(varName);
             let arr = JSON.parse(varValue);
             let start =
               effect.startType === "value"
-                ? Number(risuChatParser(effect.start, { chara: char }))
-                : Number(getVar(risuChatParser(effect.start, { chara: char })));
+                ? Number(parseTriggerText(effect.start, { chara: char }))
+                : Number(getVar(parseTriggerText(effect.start, { chara: char })));
             let end =
               effect.endType === "value"
-                ? Number(risuChatParser(effect.end, { chara: char }))
-                : Number(getVar(risuChatParser(effect.end, { chara: char })));
+                ? Number(parseTriggerText(effect.end, { chara: char }))
+                : Number(getVar(parseTriggerText(effect.end, { chara: char })));
 
             setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
+              parseTriggerText(effect.outputVar, { chara: char }),
               JSON.stringify(arr.slice(start, end)),
             );
           } catch (error) {
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "[]");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "[]");
           }
           break;
         }
         case "v2GetIndexOfValueInArrayVar": {
           try {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             let varValue = getVar(varName);
             let arr = JSON.parse(varValue);
             let value =
               effect.valueType === "value"
-                ? risuChatParser(effect.value, { chara: char })
-                : getVar(risuChatParser(effect.value, { chara: char }));
+                ? parseTriggerText(effect.value, { chara: char })
+                : getVar(parseTriggerText(effect.value, { chara: char }));
             setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
+              parseTriggerText(effect.outputVar, { chara: char }),
               arr.indexOf(value).toString(),
             );
           } catch (error) {
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "-1");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "-1");
           }
           break;
         }
         case "v2RemoveIndexFromArrayVar": {
           try {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             let varValue = getVar(varName);
             let arr = JSON.parse(varValue);
             let index =
               effect.indexType === "value"
-                ? Number(risuChatParser(effect.index, { chara: char }))
-                : Number(getVar(risuChatParser(effect.index, { chara: char })));
+                ? Number(parseTriggerText(effect.index, { chara: char }))
+                : Number(getVar(parseTriggerText(effect.index, { chara: char })));
             arr.splice(index, 1);
             setVar(varName, JSON.stringify(arr));
           } catch (error) {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             setVar(varName, "[]");
           }
           break;
@@ -2741,14 +2746,14 @@ export async function runTrigger(
         case "v2ConcatString": {
           let source1 =
             effect.source1Type === "value"
-              ? risuChatParser(effect.source1, { chara: char })
-              : getVar(risuChatParser(effect.source1, { chara: char }));
+              ? parseTriggerText(effect.source1, { chara: char })
+              : getVar(parseTriggerText(effect.source1, { chara: char }));
           let source2 =
             effect.source2Type === "value"
-              ? risuChatParser(effect.source2, { chara: char })
-              : getVar(risuChatParser(effect.source2, { chara: char }));
+              ? parseTriggerText(effect.source2, { chara: char })
+              : getVar(parseTriggerText(effect.source2, { chara: char }));
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             source1 + source2,
           );
           break;
@@ -2759,7 +2764,7 @@ export async function runTrigger(
             .reverse()
             .find((v) => v.role === "user");
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             lastUserMessage?.data ?? "null",
           );
           break;
@@ -2770,14 +2775,14 @@ export async function runTrigger(
             .reverse()
             .find((v) => v.role === "char");
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             lastCharMessage?.data ?? "null",
           );
           break;
         }
         case "v2GetFirstMessage": {
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             chat.fmIndex === -1
               ? char.firstMessage
               : char.alternateGreetings[chat.fmIndex],
@@ -2790,10 +2795,10 @@ export async function runTrigger(
           }
           let value = await alertInput(
             effect.displayType === "value"
-              ? risuChatParser(effect.display, { chara: char })
-              : getVar(risuChatParser(effect.display, { chara: char })),
+              ? parseTriggerText(effect.display, { chara: char })
+              : getVar(parseTriggerText(effect.display, { chara: char })),
           );
-          setVar(risuChatParser(effect.outputVar, { chara: char }), value);
+          setVar(parseTriggerText(effect.outputVar, { chara: char }), value);
           break;
         }
         case "v2GetAlertSelect": {
@@ -2802,31 +2807,31 @@ export async function runTrigger(
           }
           const display =
             effect.displayType === "value"
-              ? risuChatParser(effect.display, { chara: char })
-              : getVar(risuChatParser(effect.display, { chara: char }));
+              ? parseTriggerText(effect.display, { chara: char })
+              : getVar(parseTriggerText(effect.display, { chara: char }));
           const value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           const options = value.split("|");
           let result = await alertSelect(options, display);
-          setVar(risuChatParser(effect.outputVar, { chara: char }), result);
+          setVar(parseTriggerText(effect.outputVar, { chara: char }), result);
           break;
         }
         case "v2SetArrayVar": {
           const value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           const index =
             effect.indexType === "value"
-              ? Number(risuChatParser(effect.index, { chara: char }))
-              : Number(getVar(risuChatParser(effect.index, { chara: char })));
+              ? Number(parseTriggerText(effect.index, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.index, { chara: char })));
           if (Number.isNaN(index)) {
             break;
           }
           try {
-            const varName = risuChatParser(effect.var, { chara: char });
+            const varName = parseTriggerText(effect.var, { chara: char });
             let varValue = getVar(varName);
             let arr = JSON.parse(varValue);
             arr[index] = value;
@@ -2840,7 +2845,7 @@ export async function runTrigger(
           }
 
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             arg.displayData ?? "null",
           );
           break;
@@ -2851,8 +2856,8 @@ export async function runTrigger(
           }
           arg.displayData =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           break;
         }
         case "v2UpdateGUI": {
@@ -2869,8 +2874,8 @@ export async function runTrigger(
         case "v2Wait": {
           let value =
             effect.valueType === "value"
-              ? Number(risuChatParser(effect.value, { chara: char }))
-              : Number(getVar(risuChatParser(effect.value, { chara: char })));
+              ? Number(parseTriggerText(effect.value, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.value, { chara: char })));
           await sleep(value * 1000);
           break;
         }
@@ -2881,10 +2886,10 @@ export async function runTrigger(
           const json = JSON.parse(arg.displayData) as OpenAIChat[];
           const index =
             effect.indexType === "value"
-              ? Number(risuChatParser(effect.index, { chara: char }))
-              : Number(getVar(risuChatParser(effect.index, { chara: char })));
+              ? Number(parseTriggerText(effect.index, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.index, { chara: char })));
           const content = json?.[index]?.content ?? "null";
-          setVar(risuChatParser(effect.outputVar, { chara: char }), content);
+          setVar(parseTriggerText(effect.outputVar, { chara: char }), content);
           break;
         }
         case "v2SetRequestState": {
@@ -2894,12 +2899,12 @@ export async function runTrigger(
           const json = JSON.parse(arg.displayData) as OpenAIChat[];
           const index =
             effect.indexType === "value"
-              ? Number(risuChatParser(effect.index, { chara: char }))
-              : Number(getVar(risuChatParser(effect.index, { chara: char })));
+              ? Number(parseTriggerText(effect.index, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.index, { chara: char })));
           const value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           json[index].content = value;
           arg.displayData = JSON.stringify(json);
           break;
@@ -2911,10 +2916,10 @@ export async function runTrigger(
           const json = JSON.parse(arg.displayData) as OpenAIChat[];
           const index =
             effect.indexType === "value"
-              ? Number(risuChatParser(effect.index, { chara: char }))
-              : Number(getVar(risuChatParser(effect.index, { chara: char })));
+              ? Number(parseTriggerText(effect.index, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.index, { chara: char })));
           const content = json?.[index]?.role ?? "null";
-          setVar(risuChatParser(effect.outputVar, { chara: char }), content);
+          setVar(parseTriggerText(effect.outputVar, { chara: char }), content);
           break;
         }
         case "v2SetRequestStateRole": {
@@ -2924,12 +2929,12 @@ export async function runTrigger(
           const json = JSON.parse(arg.displayData) as OpenAIChat[];
           const index =
             effect.indexType === "value"
-              ? Number(risuChatParser(effect.index, { chara: char }))
-              : Number(getVar(risuChatParser(effect.index, { chara: char })));
+              ? Number(parseTriggerText(effect.index, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.index, { chara: char })));
           const value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           if (value === "user" || value === "assistant" || value === "system") {
             json[index].role = value;
           }
@@ -2943,7 +2948,7 @@ export async function runTrigger(
           }
           const json = JSON.parse(arg.displayData) as OpenAIChat[];
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             json.length.toString(),
           );
           break;
@@ -2951,16 +2956,16 @@ export async function runTrigger(
         case "v2QuickSearchChat": {
           const value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           const depth =
             effect.depthType === "value"
-              ? Number(risuChatParser(effect.depth, { chara: char }))
-              : Number(getVar(risuChatParser(effect.depth, { chara: char })));
+              ? Number(parseTriggerText(effect.depth, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.depth, { chara: char })));
           const condition = effect.condition;
 
           if (isNaN(depth)) {
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "0");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "0");
             break;
           }
           let pass = false;
@@ -2976,7 +2981,7 @@ export async function runTrigger(
             pass = new RegExp(value).test(da);
           }
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             pass ? "1" : "0",
           );
           break;
@@ -2984,10 +2989,10 @@ export async function runTrigger(
         case "v2Tokenize": {
           const value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             (await tokenize(value)).toString(),
           );
           break;
@@ -3001,7 +3006,7 @@ export async function runTrigger(
             }
           }
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             JSON.stringify(allPrompts),
           );
           break;
@@ -3010,8 +3015,8 @@ export async function runTrigger(
           char.globalLore = char.globalLore ?? [];
           const name =
             effect.nameType === "value"
-              ? risuChatParser(effect.name, { chara: char })
-              : getVar(risuChatParser(effect.name, { chara: char }));
+              ? parseTriggerText(effect.name, { chara: char })
+              : getVar(parseTriggerText(effect.name, { chara: char }));
           const regex = new RegExp(name, "i");
           const matchingIndices: number[] = [];
           for (let i = 0; i < char.globalLore.length; i++) {
@@ -3025,7 +3030,7 @@ export async function runTrigger(
             }
           }
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             JSON.stringify(matchingIndices),
           );
           break;
@@ -3034,23 +3039,23 @@ export async function runTrigger(
           char.globalLore = char.globalLore ?? [];
           let index =
             effect.indexType === "value"
-              ? Number(risuChatParser(effect.index, { chara: char }))
-              : Number(getVar(risuChatParser(effect.index, { chara: char })));
+              ? Number(parseTriggerText(effect.index, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.index, { chara: char })));
           if (
             Number.isNaN(index) ||
             index < 0 ||
             index >= char.globalLore.length
           ) {
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "null");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "null");
           } else {
             const loreEntry = char.globalLore[index];
             if (loreEntry && loreEntry.content !== undefined) {
               setVar(
-                risuChatParser(effect.outputVar, { chara: char }),
+                parseTriggerText(effect.outputVar, { chara: char }),
                 loreEntry.content,
               );
             } else {
-              setVar(risuChatParser(effect.outputVar, { chara: char }), "null");
+              setVar(parseTriggerText(effect.outputVar, { chara: char }), "null");
             }
           }
           break;
@@ -3059,21 +3064,21 @@ export async function runTrigger(
           char.globalLore = char.globalLore ?? [];
           const name =
             effect.nameType === "value"
-              ? risuChatParser(effect.name, { chara: char })
-              : getVar(risuChatParser(effect.name, { chara: char }));
+              ? parseTriggerText(effect.name, { chara: char })
+              : getVar(parseTriggerText(effect.name, { chara: char }));
           const key =
             effect.keyType === "value"
-              ? risuChatParser(effect.key, { chara: char })
-              : getVar(risuChatParser(effect.key, { chara: char }));
+              ? parseTriggerText(effect.key, { chara: char })
+              : getVar(parseTriggerText(effect.key, { chara: char }));
           const content =
             effect.contentType === "value"
-              ? risuChatParser(effect.content, { chara: char })
-              : getVar(risuChatParser(effect.content, { chara: char }));
+              ? parseTriggerText(effect.content, { chara: char })
+              : getVar(parseTriggerText(effect.content, { chara: char }));
           const insertOrder =
             effect.insertOrderType === "value"
-              ? Number(risuChatParser(effect.insertOrder, { chara: char }))
+              ? Number(parseTriggerText(effect.insertOrder, { chara: char }))
               : Number(
-                  getVar(risuChatParser(effect.insertOrder, { chara: char })),
+                  getVar(parseTriggerText(effect.insertOrder, { chara: char })),
                 );
 
           char.globalLore.push({
@@ -3094,8 +3099,8 @@ export async function runTrigger(
           char.globalLore = char.globalLore ?? [];
           let index =
             effect.indexType === "value"
-              ? Number(risuChatParser(effect.index, { chara: char }))
-              : Number(getVar(risuChatParser(effect.index, { chara: char })));
+              ? Number(parseTriggerText(effect.index, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.index, { chara: char })));
 
           if (
             Number.isNaN(index) ||
@@ -3110,29 +3115,29 @@ export async function runTrigger(
 
           let name =
             effect.nameType === "value"
-              ? risuChatParser(effect.name, { chara: char })
-              : getVar(risuChatParser(effect.name, { chara: char }));
+              ? parseTriggerText(effect.name, { chara: char })
+              : getVar(parseTriggerText(effect.name, { chara: char }));
           name = name.replace(/{{slot}}/g, currentLore.comment || "");
           char.globalLore[index].comment = name;
 
           let key =
             effect.keyType === "value"
-              ? risuChatParser(effect.key, { chara: char })
-              : getVar(risuChatParser(effect.key, { chara: char }));
+              ? parseTriggerText(effect.key, { chara: char })
+              : getVar(parseTriggerText(effect.key, { chara: char }));
           key = key.replace(/{{slot}}/g, currentLore.key || "");
           char.globalLore[index].key = key;
 
           let content =
             effect.contentType === "value"
-              ? risuChatParser(effect.content, { chara: char })
-              : getVar(risuChatParser(effect.content, { chara: char }));
+              ? parseTriggerText(effect.content, { chara: char })
+              : getVar(parseTriggerText(effect.content, { chara: char }));
           content = content.replace(/{{slot}}/g, currentLore.content || "");
           char.globalLore[index].content = content;
 
           let insertOrder =
             effect.insertOrderType === "value"
-              ? risuChatParser(effect.insertOrder, { chara: char })
-              : getVar(risuChatParser(effect.insertOrder, { chara: char }));
+              ? parseTriggerText(effect.insertOrder, { chara: char })
+              : getVar(parseTriggerText(effect.insertOrder, { chara: char }));
           insertOrder = insertOrder.replace(
             /{{slot}}/g,
             (currentLore.insertorder || 100).toString(),
@@ -3149,8 +3154,8 @@ export async function runTrigger(
           char.globalLore = char.globalLore ?? [];
           let index =
             effect.indexType === "value"
-              ? Number(risuChatParser(effect.index, { chara: char }))
-              : Number(getVar(risuChatParser(effect.index, { chara: char })));
+              ? Number(parseTriggerText(effect.index, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.index, { chara: char })));
 
           if (
             Number.isNaN(index) ||
@@ -3169,7 +3174,7 @@ export async function runTrigger(
         case "v2GetLorebookCountNew": {
           char.globalLore = char.globalLore ?? [];
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             char.globalLore.length.toString(),
           );
           break;
@@ -3178,8 +3183,8 @@ export async function runTrigger(
           char.globalLore = char.globalLore ?? [];
           let index =
             effect.indexType === "value"
-              ? Number(risuChatParser(effect.index, { chara: char }))
-              : Number(getVar(risuChatParser(effect.index, { chara: char })));
+              ? Number(parseTriggerText(effect.index, { chara: char }))
+              : Number(getVar(parseTriggerText(effect.index, { chara: char })));
 
           if (
             Number.isNaN(index) ||
@@ -3199,30 +3204,30 @@ export async function runTrigger(
           try {
             const value =
               effect.valueType === "value"
-                ? risuChatParser(effect.value, { chara: char })
-                : getVar(risuChatParser(effect.value, { chara: char }));
+                ? parseTriggerText(effect.value, { chara: char })
+                : getVar(parseTriggerText(effect.value, { chara: char }));
             const regexPattern =
               effect.regexType === "value"
-                ? risuChatParser(effect.regex, { chara: char })
-                : getVar(risuChatParser(effect.regex, { chara: char }));
+                ? parseTriggerText(effect.regex, { chara: char })
+                : getVar(parseTriggerText(effect.regex, { chara: char }));
             const flags =
               effect.flagsType === "value"
-                ? risuChatParser(effect.flags, { chara: char })
-                : getVar(risuChatParser(effect.flags, { chara: char }));
+                ? parseTriggerText(effect.flags, { chara: char })
+                : getVar(parseTriggerText(effect.flags, { chara: char }));
             const regex = new RegExp(regexPattern, flags);
             const result = regex.test(value);
             setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
+              parseTriggerText(effect.outputVar, { chara: char }),
               result ? "1" : "0",
             );
           } catch (error) {
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "0");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "0");
           }
           break;
         }
         case "v2GetAuthorNote": {
           setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
+            parseTriggerText(effect.outputVar, { chara: char }),
             chat.note ?? "",
           );
           break;
@@ -3230,8 +3235,8 @@ export async function runTrigger(
         case "v2SetAuthorNote": {
           const value =
             effect.valueType === "value"
-              ? risuChatParser(effect.value, { chara: char })
-              : getVar(risuChatParser(effect.value, { chara: char }));
+              ? parseTriggerText(effect.value, { chara: char })
+              : getVar(parseTriggerText(effect.value, { chara: char }));
           chat.note = value;
 
           if (!arg.displayMode) persistTargetAuthorNote(value);
@@ -3242,26 +3247,26 @@ export async function runTrigger(
             return;
           }
 
-          setVar(risuChatParser(effect.var, { chara: char }), "{}");
+          setVar(parseTriggerText(effect.var, { chara: char }), "{}");
           break;
         }
         case "v2GetDictVar": {
           try {
             let varValue =
               effect.varType === "value"
-                ? risuChatParser(effect.var, { chara: char })
-                : getVar(risuChatParser(effect.var, { chara: char }));
+                ? parseTriggerText(effect.var, { chara: char })
+                : getVar(parseTriggerText(effect.var, { chara: char }));
             let dict = JSON.parse(varValue);
             let key =
               effect.keyType === "value"
-                ? risuChatParser(effect.key, { chara: char })
-                : getVar(risuChatParser(effect.key, { chara: char }));
+                ? parseTriggerText(effect.key, { chara: char })
+                : getVar(parseTriggerText(effect.key, { chara: char }));
             setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
+              parseTriggerText(effect.outputVar, { chara: char }),
               dict[key] ?? "null",
             );
           } catch (error) {
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "null");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "null");
           }
           break;
         }
@@ -3269,38 +3274,38 @@ export async function runTrigger(
           try {
             const value =
               effect.valueType === "value"
-                ? risuChatParser(effect.value, { chara: char })
-                : getVar(risuChatParser(effect.value, { chara: char }));
+                ? parseTriggerText(effect.value, { chara: char })
+                : getVar(parseTriggerText(effect.value, { chara: char }));
             const key =
               effect.keyType === "value"
-                ? risuChatParser(effect.key, { chara: char })
-                : getVar(risuChatParser(effect.key, { chara: char }));
+                ? parseTriggerText(effect.key, { chara: char })
+                : getVar(parseTriggerText(effect.key, { chara: char }));
 
             if (effect.varType === "value") {
               break;
             }
 
-            let varValue = getVar(risuChatParser(effect.var, { chara: char }));
+            let varValue = getVar(parseTriggerText(effect.var, { chara: char }));
             let dict = JSON.parse(varValue);
             dict[key] = value;
             setVar(
-              risuChatParser(effect.var, { chara: char }),
+              parseTriggerText(effect.var, { chara: char }),
               JSON.stringify(dict),
             );
           } catch (error) {
             if (effect.varType === "var") {
               const value =
                 effect.valueType === "value"
-                  ? risuChatParser(effect.value, { chara: char })
-                  : getVar(risuChatParser(effect.value, { chara: char }));
+                  ? parseTriggerText(effect.value, { chara: char })
+                  : getVar(parseTriggerText(effect.value, { chara: char }));
               const key =
                 effect.keyType === "value"
-                  ? risuChatParser(effect.key, { chara: char })
-                  : getVar(risuChatParser(effect.key, { chara: char }));
+                  ? parseTriggerText(effect.key, { chara: char })
+                  : getVar(parseTriggerText(effect.key, { chara: char }));
               let dict = {};
               dict[key] = value;
               setVar(
-                risuChatParser(effect.var, { chara: char }),
+                parseTriggerText(effect.var, { chara: char }),
                 JSON.stringify(dict),
               );
             }
@@ -3313,20 +3318,20 @@ export async function runTrigger(
               break;
             }
 
-            let varValue = getVar(risuChatParser(effect.var, { chara: char }));
+            let varValue = getVar(parseTriggerText(effect.var, { chara: char }));
             let dict = JSON.parse(varValue);
             let key =
               effect.keyType === "value"
-                ? risuChatParser(effect.key, { chara: char })
-                : getVar(risuChatParser(effect.key, { chara: char }));
+                ? parseTriggerText(effect.key, { chara: char })
+                : getVar(parseTriggerText(effect.key, { chara: char }));
             delete dict[key];
             setVar(
-              risuChatParser(effect.var, { chara: char }),
+              parseTriggerText(effect.var, { chara: char }),
               JSON.stringify(dict),
             );
           } catch (error) {
             if (effect.varType === "var") {
-              setVar(risuChatParser(effect.var, { chara: char }), "{}");
+              setVar(parseTriggerText(effect.var, { chara: char }), "{}");
             }
           }
           break;
@@ -3335,19 +3340,19 @@ export async function runTrigger(
           try {
             let varValue =
               effect.varType === "value"
-                ? risuChatParser(effect.var, { chara: char })
-                : getVar(risuChatParser(effect.var, { chara: char }));
+                ? parseTriggerText(effect.var, { chara: char })
+                : getVar(parseTriggerText(effect.var, { chara: char }));
             let dict = JSON.parse(varValue);
             let key =
               effect.keyType === "value"
-                ? risuChatParser(effect.key, { chara: char })
-                : getVar(risuChatParser(effect.key, { chara: char }));
+                ? parseTriggerText(effect.key, { chara: char })
+                : getVar(parseTriggerText(effect.key, { chara: char }));
             setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
+              parseTriggerText(effect.outputVar, { chara: char }),
               Object.hasOwn(dict, key) ? "1" : "0",
             );
           } catch (error) {
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "0");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "0");
           }
           break;
         }
@@ -3355,22 +3360,22 @@ export async function runTrigger(
           if (effect.var.startsWith("{") && effect.var.endsWith("}")) {
             return;
           }
-          setVar(risuChatParser(effect.var, { chara: char }), "{}");
+          setVar(parseTriggerText(effect.var, { chara: char }), "{}");
           break;
         }
         case "v2GetDictSize": {
           try {
             let varValue =
               effect.varType === "value"
-                ? risuChatParser(effect.var, { chara: char })
-                : getVar(risuChatParser(effect.var, { chara: char }));
+                ? parseTriggerText(effect.var, { chara: char })
+                : getVar(parseTriggerText(effect.var, { chara: char }));
             let dict = JSON.parse(varValue);
             setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
+              parseTriggerText(effect.outputVar, { chara: char }),
               Object.keys(dict).length.toString(),
             );
           } catch (error) {
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "0");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "0");
           }
           break;
         }
@@ -3378,16 +3383,16 @@ export async function runTrigger(
           try {
             let varValue =
               effect.varType === "value"
-                ? risuChatParser(effect.var, { chara: char })
-                : getVar(risuChatParser(effect.var, { chara: char }));
+                ? parseTriggerText(effect.var, { chara: char })
+                : getVar(parseTriggerText(effect.var, { chara: char }));
             let dict = JSON.parse(varValue);
             let keys = Object.keys(dict);
             setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
+              parseTriggerText(effect.outputVar, { chara: char }),
               JSON.stringify(keys),
             );
           } catch (error) {
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "[]");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "[]");
           }
           break;
         }
@@ -3395,16 +3400,16 @@ export async function runTrigger(
           try {
             let varValue =
               effect.varType === "value"
-                ? risuChatParser(effect.var, { chara: char })
-                : getVar(risuChatParser(effect.var, { chara: char }));
+                ? parseTriggerText(effect.var, { chara: char })
+                : getVar(parseTriggerText(effect.var, { chara: char }));
             let dict = JSON.parse(varValue);
             let values = Object.values(dict);
             setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
+              parseTriggerText(effect.outputVar, { chara: char }),
               JSON.stringify(values),
             );
           } catch (error) {
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "[]");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "[]");
           }
           break;
         }
@@ -3412,8 +3417,8 @@ export async function runTrigger(
           try {
             let expression =
               effect.expressionType === "value"
-                ? risuChatParser(effect.expression, { chara: char })
-                : getVar(risuChatParser(effect.expression, { chara: char }));
+                ? parseTriggerText(effect.expression, { chara: char })
+                : getVar(parseTriggerText(effect.expression, { chara: char }));
             expression = expression.replace(
               /\$([a-zA-Z0-9_]+)/g,
               (_, varName) => {
@@ -3425,11 +3430,11 @@ export async function runTrigger(
 
             const result = calcString(expression);
             setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
+              parseTriggerText(effect.outputVar, { chara: char }),
               result.toString(),
             );
           } catch (error) {
-            setVar(risuChatParser(effect.outputVar, { chara: char }), "0");
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), "0");
           }
           break;
         }
@@ -3437,24 +3442,24 @@ export async function runTrigger(
           try {
             const source =
               effect.sourceType === "value"
-                ? risuChatParser(effect.source, { chara: char })
-                : getVar(risuChatParser(effect.source, { chara: char }));
+                ? parseTriggerText(effect.source, { chara: char })
+                : getVar(parseTriggerText(effect.source, { chara: char }));
             const regexPattern =
               effect.regexType === "value"
-                ? risuChatParser(effect.regex, { chara: char })
-                : getVar(risuChatParser(effect.regex, { chara: char }));
+                ? parseTriggerText(effect.regex, { chara: char })
+                : getVar(parseTriggerText(effect.regex, { chara: char }));
             const resultFormat =
               effect.resultType === "value"
-                ? risuChatParser(effect.result, { chara: char })
-                : getVar(risuChatParser(effect.result, { chara: char }));
+                ? parseTriggerText(effect.result, { chara: char })
+                : getVar(parseTriggerText(effect.result, { chara: char }));
             const replacement =
               effect.replacementType === "value"
-                ? risuChatParser(effect.replacement, { chara: char })
-                : getVar(risuChatParser(effect.replacement, { chara: char }));
+                ? parseTriggerText(effect.replacement, { chara: char })
+                : getVar(parseTriggerText(effect.replacement, { chara: char }));
             const flags =
               effect.flagsType === "value"
-                ? risuChatParser(effect.flags, { chara: char })
-                : getVar(risuChatParser(effect.flags, { chara: char }));
+                ? parseTriggerText(effect.flags, { chara: char })
+                : getVar(parseTriggerText(effect.flags, { chara: char }));
 
             const regex = new RegExp(regexPattern, flags);
             const result = source.replace(regex, (...args) => {
@@ -3482,13 +3487,13 @@ export async function runTrigger(
                 .replace(/\$&/g, match)
                 .replace(/\$\$/g, "$");
             });
-            setVar(risuChatParser(effect.outputVar, { chara: char }), result);
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), result);
           } catch (error) {
             const source =
               effect.sourceType === "value"
-                ? risuChatParser(effect.source, { chara: char })
-                : getVar(risuChatParser(effect.source, { chara: char }));
-            setVar(risuChatParser(effect.outputVar, { chara: char }), source);
+                ? parseTriggerText(effect.source, { chara: char })
+                : getVar(parseTriggerText(effect.source, { chara: char }));
+            setVar(parseTriggerText(effect.outputVar, { chara: char }), source);
           }
           break;
         }

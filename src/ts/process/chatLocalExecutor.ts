@@ -173,6 +173,7 @@ export class LocalChatExecutor implements ChatExecutor {
         {
           plan,
           biases: prompt.biases,
+          triggerTarget: { characterIndex: selectedChar, chatIndex: selectedChat },
           currentChar,
           isGroupChat: nowChatroom.type === "group",
           continueGeneration: arg.continue,

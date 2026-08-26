@@ -8,6 +8,7 @@ import {
   getDatabase,
 } from "../../storage/database.svelte";
 import { sleep } from "../../util";
+import { characterStore } from "../../stores/domain/characterStore.svelte";
 import { getTools } from "../mcp/mcp";
 import { runTrigger } from "../triggers";
 import { requestChatDataMain } from "./request";
@@ -63,16 +64,24 @@ export async function requestChatData(
         }
 
         try {
-          const currentChar = getCurrentCharacter();
-          if (currentChar?.type !== "group") {
+          const currentChar = arg.currentChar ?? getCurrentCharacter();
+          const triggerChat = arg.triggerTarget
+            ? characterStore.characters[arg.triggerTarget.characterIndex]?.chats?.[
+                arg.triggerTarget.chatIndex
+              ]
+            : getCurrentChat();
+          if (currentChar?.type !== "group" && triggerChat) {
             const perf = performance.now();
             const triggerResult = await runTrigger(currentChar, "request", {
-              chat: getCurrentChat(),
+              chat: triggerChat,
+              target: arg.triggerTarget,
               displayMode: true,
               displayData: JSON.stringify(arg.formated),
             });
 
-            const formated = JSON.parse(triggerResult.displayData);
+            const formated = JSON.parse(
+              triggerResult?.displayData ?? JSON.stringify(arg.formated),
+            );
             if (!formated || !Array.isArray(formated)) {
               throw new Error("Invalid return");
             }
