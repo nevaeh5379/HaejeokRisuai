@@ -6,6 +6,17 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   server: {
     androidScheme: 'https'
+  },
+  plugins: {
+    CapacitorHttp: {
+      enabled: true
+    },
+    CapacitorSQLite: {
+      androidIsEncryption: false,
+      androidBiometric: {
+        biometricAuth: false
+      }
+    }
   }
 };
 

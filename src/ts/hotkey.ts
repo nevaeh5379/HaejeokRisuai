@@ -415,7 +415,7 @@ export function initMobileGesture() {
           ele.tagName === "SELECT" ||
           ele.tagName === "TEXTAREA"
         ) {
-          return;
+          continue;
         }
         pressingPointers.set(touch.identifier, {
           x: touch.clientX,
@@ -432,9 +432,12 @@ export function initMobileGesture() {
     (ev) => {
       for (const touch of ev.changedTouches) {
         const d = pressingPointers.get(touch.identifier);
+        pressingPointers.delete(touch.identifier);
+        if (!d) {
+          continue;
+        }
         const moveX = touch.clientX - d.x;
         const moveY = touch.clientY - d.y;
-        pressingPointers.delete(touch.identifier);
 
         if (moveX > 50 && Math.abs(moveY) < Math.abs(moveX)) {
           if (get(selectedCharID) === -1) {
@@ -462,6 +465,15 @@ export function initMobileGesture() {
     {
       passive: true,
     },
+  );
+  document.addEventListener(
+    "touchcancel",
+    (ev) => {
+      for (const touch of ev.changedTouches) {
+        pressingPointers.delete(touch.identifier);
+      }
+    },
+    { passive: true },
   );
 }
 

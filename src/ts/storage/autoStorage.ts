@@ -1,5 +1,6 @@
 import localforage from "localforage";
-import { isNodeServer } from "src/ts/platform";
+import { isCapacitor, isNodeServer } from "src/ts/platform";
+import type { CapacitorStorage } from "./capacitorStorage";
 import { NodeStorage } from "./nodeStorage";
 import { OpfsStorage } from "./opfsStorage";
 
@@ -7,7 +8,7 @@ export class AutoStorage {
   /** @deprecated Haejeok RisuAI does not support Risu Account storage. */
   readonly isAccount = false;
 
-  realStorage: LocalForage | NodeStorage | OpfsStorage;
+  realStorage: LocalForage | NodeStorage | OpfsStorage | CapacitorStorage;
 
   async setItem(key: string, value: Uint8Array): Promise<string | null> {
     await this.Init();
@@ -45,6 +46,13 @@ export class AutoStorage {
     if (isNodeServer) {
       console.log("using node storage");
       this.realStorage = new NodeStorage();
+      return;
+    }
+
+    if (isCapacitor) {
+      console.log("using Capacitor native filesystem storage");
+      const { CapacitorStorage } = await import("./capacitorStorage");
+      this.realStorage = new CapacitorStorage();
       return;
     }
 

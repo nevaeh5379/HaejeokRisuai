@@ -1,6 +1,6 @@
 import type { ISqlStorage } from "./ISqlStorage";
 import type { SqlCommit, SqlCommitResult } from "./sqlCommit";
-import { isTauri, isNodeServer } from "../platform";
+import { isCapacitor, isTauri, isNodeServer } from "../platform";
 
 let storageSingleton: ISqlStorage | null = null;
 
@@ -64,6 +64,12 @@ export async function getSqlStorage(): Promise<ISqlStorage> {
     storageSingleton = wrapWithSerializedCommits(
       new NodePostgresStorage(async () => "") as unknown as ISqlStorage,
     );
+    return storageSingleton;
+  }
+
+  if (isCapacitor) {
+    const { CapacitorSqliteStorage } = await import("./capacitorSqliteStorage");
+    storageSingleton = wrapWithSerializedCommits(new CapacitorSqliteStorage());
     return storageSingleton;
   }
 

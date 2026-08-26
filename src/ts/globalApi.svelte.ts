@@ -67,7 +67,8 @@ import { startObserveDom } from "./observer.svelte";
 import { updateGuisize } from "./gui/guisize";
 import { initMobileGesture } from "./hotkey";
 import { fetch as TauriHTTPFetch } from "@tauri-apps/plugin-http";
-import { isTauri, isNodeServer } from "./platform";
+import { registerPlugin } from "@capacitor/core";
+import { isCapacitor, isTauri, isNodeServer } from "./platform";
 import { isLocalNetworkUrl } from "./network/localNetwork";
 import {
   decodeProxyJobWsChunk,
@@ -724,7 +725,7 @@ export async function globalFetch(
       !arg.plainFetchDeforce &&
       !useLocalNetworkRoute;
 
-    if (useLocalNetworkRoute && !isTauri && !isNodeServer) {
+    if (useLocalNetworkRoute && !isTauri && !isCapacitor && !isNodeServer) {
       return {
         ok: false,
         headers: {},
@@ -733,7 +734,12 @@ export async function globalFetch(
       };
     }
 
-    if (knownHostes.includes(urlHost) && !isTauri && !isNodeServer) {
+    if (
+      knownHostes.includes(urlHost) &&
+      !isTauri &&
+      !isCapacitor &&
+      !isNodeServer
+    ) {
       return {
         ok: false,
         headers: {},
@@ -809,6 +815,9 @@ export async function globalFetch(
       if (useLocalNetworkRoute) {
         if (isTauri) {
           return await fetchWithTauri(url, requestArg);
+        }
+        if (isCapacitor) {
+          return await fetchWithPlainFetch(url, requestArg);
         }
         return await fetchWithProxy(url, requestArg);
       }
@@ -1712,6 +1721,8 @@ interface StreamedFetchPlugin {
     url: string;
     body: string;
     headers: { [key: string]: string };
+    method: string;
+    timeoutMs?: number;
   }): Promise<{ error: string; success: boolean }>;
 
   /**
@@ -1722,7 +1733,7 @@ interface StreamedFetchPlugin {
   addListener(
     eventName: "streamed_fetch",
     listenerFunc: (data: StreamedFetchChunk) => void,
-  ): void;
+  ): Promise<{ remove: () => Promise<void> }>;
 }
 
 /**
@@ -1746,9 +1757,23 @@ if (isTauri) {
     } catch (error) {
       console.error(error);
     }
-  }).then((v) => {
+  }).then(() => {
     streamedFetchListening = true;
   });
+}
+
+if (isCapacitor) {
+  capStreamedFetch = registerPlugin<StreamedFetchPlugin>("StreamedFetch");
+  capStreamedFetch
+    .addListener("streamed_fetch", (event) => {
+      nativeFetchData[event.id]?.push(event);
+    })
+    .then(() => {
+      streamedFetchListening = true;
+    })
+    .catch((error) => {
+      console.error("Failed to initialize Capacitor streamed fetch:", error);
+    });
 }
 
 /**
@@ -2110,7 +2135,7 @@ export async function fetchNative(
 
   const useLocalNetworkRoute =
     arg.networkRoute === "local_network" && isLocalNetworkUrl(url);
-  if (useLocalNetworkRoute && !isTauri && !isNodeServer) {
+  if (useLocalNetworkRoute && !isTauri && !isCapacitor && !isNodeServer) {
     throw new Error(webLocalNetworkBlockedMessage);
   }
   const throughProxy = isNodeServer && useLocalNetworkRoute;
@@ -2218,6 +2243,8 @@ export async function fetchNative(
             url: url,
             headers: headers,
             body: realBody ? Buffer.from(realBody).toString("base64") : "",
+            method: arg.method,
+            timeoutMs: arg.requestTimeoutMs,
           })
           .then((res) => {
             if (!res.success) {

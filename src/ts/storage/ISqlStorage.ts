@@ -24,7 +24,11 @@ import type {
   NodePostgresBotChatStats,
 } from "./nodePostgresStorage";
 
-export type SqlBackendKind = "node" | "web-sqlite" | "tauri-sqlite";
+export type SqlBackendKind =
+  | "node"
+  | "web-sqlite"
+  | "tauri-sqlite"
+  | "capacitor-sqlite";
 
 export interface SqlLoadDatabaseOptions {
   shallow?: boolean;

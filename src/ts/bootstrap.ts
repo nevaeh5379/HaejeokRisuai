@@ -62,7 +62,7 @@ import {
   setUsingSw,
   checkCharOrder,
 } from "./globalApi.svelte";
-import { isNodeServer, isTauri } from "./platform";
+import { isCapacitor, isNodeServer, isTauri } from "./platform";
 import { registerModelDynamic } from "./model/modellist";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { appDataDir, join } from "@tauri-apps/api/path";
@@ -121,9 +121,15 @@ export async function loadData() {
           // (loadedStore stays false → app blocked until configured)
           return;
         }
-        if (isTauri) {
+        if (isTauri || isCapacitor) {
+          const nativeError =
+            typeof (storage as any).getLastInitError === "function"
+              ? (storage as any).getLastInitError()
+              : null;
           alertError(
-            "Failed to initialize native SQLite storage. Please check the application logs for details.",
+            nativeError
+              ? `Failed to initialize native SQLite storage: ${nativeError}`
+              : "Failed to initialize native SQLite storage. Please check the application logs for details.",
           );
         } else {
           alertError(
@@ -223,11 +229,12 @@ export async function loadData() {
 
       // ── Step 6: Service worker (web only) ─────────────────────────
       LoadingStatusState.text = "Checking Service Worker...";
-      const serviceWorkerReady = navigator.serviceWorker
-        ? registerSw()
-            .then(() => setUsingSw(true))
-            .catch(() => setUsingSw(false))
-        : Promise.resolve(setUsingSw(false));
+      const serviceWorkerReady =
+        !isCapacitor && navigator.serviceWorker
+          ? registerSw()
+              .then(() => setUsingSw(true))
+              .catch(() => setUsingSw(false))
+          : Promise.resolve(setUsingSw(false));
       if (getDatabase().didFirstSetup) {
         const urlParams = new URLSearchParams(location.search);
         if (urlParams.has("realm") || urlParams.has("charahub")) {
