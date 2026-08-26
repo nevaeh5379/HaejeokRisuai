@@ -1,7 +1,11 @@
 import { globalFetch } from "../../globalApi.svelte";
 import { LLMFormat } from "../../model/modellist";
 import { getDatabase } from "../../storage/database.svelte";
-import { DEFAULT_COHERE_CHAT_URL } from "@risuai/chat-core/cohereProvider.cjs";
+import {
+  DEFAULT_COHERE_CHAT_URL,
+  decodeCohereResponse,
+  prepareCohereConversation,
+} from "@risuai/chat-core/cohereProvider.cjs";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
@@ -20,68 +24,16 @@ export async function requestCohere(
   const db = getDatabase();
   const aiModel = arg.aiModel;
 
-  let lastChatPrompt = "";
-  let preamble = "";
-
-  let lastChat = formated[formated.length - 1];
-  if (lastChat.role === "user") {
-    lastChatPrompt = lastChat.content;
-    formated.pop();
-  } else {
-    while (lastChat.role !== "user") {
-      lastChat = formated.pop();
-      if (!lastChat) {
-        return {
-          type: "fail",
-          result: "Cohere requires a user message to generate a response",
-        };
-      }
-      lastChatPrompt =
-        (lastChat.role === "user" ? "" : `${lastChat.role}: `) +
-        "\n" +
-        lastChat.content +
-        lastChatPrompt;
-    }
+  const conversation = prepareCohereConversation(formated, aiModel);
+  if (conversation.ok === false) {
+    return {
+      type: "fail",
+      result: conversation.error,
+    };
   }
-
-  const firstChat = formated[0];
-  if (firstChat.role === "system") {
-    preamble = firstChat.content;
-    formated.shift();
-  }
-
-  //reformat chat
 
   let body = applyParameters(
-    {
-      message: lastChatPrompt,
-      chat_history: formated
-        .map((v) => {
-          if (v.role === "assistant") {
-            return {
-              role: "CHATBOT",
-              message: v.content,
-            };
-          }
-          if (v.role === "system") {
-            return {
-              role: "SYSTEM",
-              message: v.content,
-            };
-          }
-          if (v.role === "user") {
-            return {
-              role: "USER",
-              message: v.content,
-            };
-          }
-          return null;
-        })
-        .filter((v) => v !== null)
-        .filter((v) => {
-          return v.message;
-        }),
-    },
+    conversation.body,
     ["temperature", "top_k", "top_p", "presence_penalty", "frequency_penalty"],
     {
       top_k: "k",
@@ -93,20 +45,6 @@ export async function requestCohere(
     },
   );
 
-  if (
-    aiModel !== "cohere-command-r-03-2024" &&
-    aiModel !== "cohere-command-r-plus-04-2024"
-  ) {
-    body.safety_mode = "NONE";
-  }
-
-  if (preamble) {
-    if (body.chat_history.length > 0) {
-      body.preamble = preamble;
-    } else {
-      body.message = `system: ${preamble}`;
-    }
-  }
 
   let headers: Record<string, string> = {
     Authorization: "Bearer " + (arg.key ?? db.cohereAPIKey),
@@ -148,23 +86,5 @@ export async function requestCohere(
       abortSignal: arg.abortSignal,
     }));
 
-  if (!res.ok) {
-    return {
-      type: "fail",
-      result: JSON.stringify(res.data),
-    };
-  }
-
-  const result = res?.data?.text;
-  if (!result) {
-    return {
-      type: "fail",
-      result: JSON.stringify(res.data),
-    };
-  }
-
-  return {
-    type: "success",
-    result: result,
-  };
+  return decodeCohereResponse(res.ok, res.data);
 }
