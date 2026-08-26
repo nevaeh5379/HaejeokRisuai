@@ -472,12 +472,12 @@ function getModulesForCharacter(character: character | groupChat | undefined) {
   return getModuleByIds(ids);
 }
 
-export function getModules() {
-  return getModulesForCharacter(getCurrentCharacter());
+export function getModules(character?: character | groupChat) {
+  return getModulesForCharacter(character ?? getCurrentCharacter());
 }
 
-export function getModuleLorebooks() {
-  const modules = getModules();
+export function getModuleLorebooks(character?: character | groupChat) {
+  const modules = getModules(character);
   let lorebooks: loreBook[] = [];
   for (const module of modules) {
     if (!module) {
@@ -490,8 +490,8 @@ export function getModuleLorebooks() {
   return lorebooks;
 }
 
-export function getModuleAssets() {
-  const modules = getModules();
+export function getModuleAssets(character?: character | groupChat) {
+  const modules = getModules(character);
   let assets: [string, string, string][] = [];
   for (const module of modules) {
     if (!module) {
@@ -504,8 +504,8 @@ export function getModuleAssets() {
   return assets;
 }
 
-export function getModuleTriggers() {
-  const modules = getModules();
+export function getModuleTriggers(character?: character | groupChat) {
+  const modules = getModules(character);
   let triggers: triggerscript[] = [];
   for (const module of modules) {
     if (!module) {
@@ -523,8 +523,8 @@ export function getModuleTriggers() {
   return triggers;
 }
 
-export function getModuleRegexScripts() {
-  const modules = getModules();
+export function getModuleRegexScripts(character?: character | groupChat) {
+  const modules = getModules(character);
   let customscripts: customscript[] = [];
   for (const module of modules) {
     if (!module) {
@@ -537,8 +537,8 @@ export function getModuleRegexScripts() {
   return customscripts;
 }
 
-export function getModuleToggles() {
-  const modules = getModules();
+export function getModuleToggles(character?: character | groupChat) {
+  const modules = getModules(character);
   let costomModuleToggles: string = "";
   for (const module of modules) {
     if (!module) {
@@ -551,8 +551,8 @@ export function getModuleToggles() {
   return costomModuleToggles;
 }
 
-export function getModuleMcps() {
-  const modules = getModules();
+export function getModuleMcps(character?: character | groupChat) {
+  const modules = getModules(character);
 
   return modules.map((v) => v.mcp?.url).filter((v) => v);
 }

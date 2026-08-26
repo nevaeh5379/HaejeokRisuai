@@ -884,7 +884,7 @@ export async function runScripted(
         const loreSources = [
           ScriptingEngineState.chat?.localLore ?? [],
           selectedChar.globalLore ?? [],
-          getModuleLorebooks() ?? [],
+          getModuleLorebooks(selectedChar) ?? [],
         ];
 
         const found = [];
@@ -1603,10 +1603,12 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
 
   try {
     let data = content;
+    const moduleCharacter = char.type === "simple" ? undefined : char;
+    const moduleTriggers = getModuleTriggers(moduleCharacter);
 
     const triggers =
       char.type === "group"
-        ? getModuleTriggers()
+        ? moduleTriggers
         : (char.triggerscript || [])
             .map((v) => {
               if (typeof v === "string") {
@@ -1620,7 +1622,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
               return v;
             })
             .filter((v) => v && typeof v === "object")
-            .concat(getModuleTriggers());
+            .concat(moduleTriggers);
 
     const targetChat = chatTarget
       ? characterStore.characters[chatTarget.characterIndex]?.chats?.[
@@ -1655,9 +1657,11 @@ export async function runLuaButtonTrigger(
 ): Promise<any> {
   let runResult;
   try {
+    const moduleCharacter = char.type === "simple" ? undefined : char;
+    const moduleTriggers = getModuleTriggers(moduleCharacter);
     const triggers =
       char.type === "group"
-        ? getModuleTriggers()
+        ? moduleTriggers
         : (char.triggerscript || [])
             .map((v) => {
               if (typeof v === "string") {
@@ -1675,7 +1679,7 @@ export async function runLuaButtonTrigger(
               } as triggerscript;
             })
             .filter((v): v is triggerscript => !!v)
-            .concat(getModuleTriggers());
+            .concat(moduleTriggers);
 
     for (let trigger of triggers) {
       if (trigger?.effect?.[0]?.type === "triggerlua") {

@@ -119,9 +119,10 @@ async function resolveAssetPrompts(
   content: string,
   multimodals: MultiModal[],
   currentChar: character,
+  moduleRoom: character | groupChat,
 ) {
   const assetPromises: Promise<void>[] = [];
-  const moduleAssets = getModuleAssets();
+  const moduleAssets = getModuleAssets(moduleRoom);
   const assets = (currentChar.additionalAssets ?? []).concat(moduleAssets);
   content = content.replace(/\{\{asset_?prompt::(.+?)\}\}/gimsu, (_match, name) => {
     const asset = assets.find((entry) => entry[0] === name);
@@ -212,6 +213,7 @@ async function resolveHistoryMessagePayload(
     resolved.content,
     resolved.multimodals,
     currentChar,
+    nowChatroom,
   );
   return { content, multimodals: resolved.multimodals };
 }

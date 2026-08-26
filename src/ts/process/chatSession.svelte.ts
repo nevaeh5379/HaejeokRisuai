@@ -104,10 +104,10 @@ async function synchronizePeer(
   return true;
 }
 
-function buildPromptInfo(): MessagePresetInfo {
+function buildPromptInfo(room: character | groupChat): MessagePresetInfo {
   if (!settingsStore.state.promptInfoInsideChat) return {};
   const promptToggles = parseToggleSyntax(
-    settingsStore.state.customPromptTemplateToggle + getModuleToggles(),
+    settingsStore.state.customPromptTemplateToggle + getModuleToggles(room),
   ).flatMap((toggle) => {
     const raw =
       settingsStore.state.globalChatVariables[`toggle_${toggle.key}`];
@@ -252,7 +252,7 @@ function buildReadySession(
     ...selection,
     currentChar,
     currentChat,
-    promptInfo: buildPromptInfo(),
+    promptInfo: buildPromptInfo(selection.nowChatroom),
     tokenizer,
     maxContextTokens: settingsStore.state.maxContext,
     findCharacter,

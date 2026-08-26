@@ -83,7 +83,7 @@ export async function loadLoreBookV3Prompt(
   const chatVarTarget = { characterIndex: selectedID, chatIndex: page };
   const characterLore = char.globalLore ?? [];
   const chatLore = char.chats[page].localLore ?? [];
-  const moduleLorebook = getModuleLorebooks();
+  const moduleLorebook = getModuleLorebooks(char);
   const fullLore = safeStructuredClone(
     characterLore.concat(chatLore).concat(moduleLorebook),
   );

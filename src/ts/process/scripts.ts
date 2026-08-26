@@ -204,9 +204,14 @@ export async function processScriptFull(
   }
 
   data = risuChatParser(data, { chatID: chatID, cbsConditions, chatTarget });
+  const moduleRoom = chatTarget
+    ? db.characters[chatTarget.characterIndex]
+    : char.type === "simple"
+      ? undefined
+      : char;
   const scripts = (db.presetRegex ?? [])
     .concat(char.customscript ?? [])
-    .concat(getModuleRegexScripts())
+    .concat(getModuleRegexScripts(moduleRoom))
     .filter((script): script is customscript => !!script);
   const hash = generateScriptCacheKey(
     scripts,
@@ -483,7 +488,7 @@ export async function processScriptFull(
     }
     const assetNames = char.additionalAssets.map((v) => v[0]);
 
-    const moduleAssets = getModuleAssets();
+    const moduleAssets = getModuleAssets(moduleRoom);
     if (moduleAssets.length > 0) {
       for (const asset of moduleAssets) {
         assetNames.push(asset[0]);

@@ -1200,6 +1200,14 @@ export async function runTrigger(
     historyend: "",
     promptend: "",
   };
+  const db = getDatabase();
+  const selectedAtStart = get(selectedCharID);
+  const selectedCharacterAtStart = characterStore.characters[selectedAtStart];
+  const target: TriggerTarget = arg.target ?? {
+    characterIndex: selectedAtStart,
+    chatIndex: selectedCharacterAtStart?.chatPage ?? 0,
+  };
+  const moduleRoom = characterStore.characters[target.characterIndex] ?? char;
   const triggers = (char.triggerscript || [])
     .map((v) => {
       if (typeof v === "string") {
@@ -1213,14 +1221,7 @@ export async function runTrigger(
       return v;
     })
     .filter((v) => v && typeof v === "object")
-    .concat(getModuleTriggers());
-  const db = getDatabase();
-  const selectedAtStart = get(selectedCharID);
-  const selectedCharacterAtStart = characterStore.characters[selectedAtStart];
-  const target: TriggerTarget = arg.target ?? {
-    characterIndex: selectedAtStart,
-    chatIndex: selectedCharacterAtStart?.chatPage ?? 0,
-  };
+    .concat(getModuleTriggers(moduleRoom));
   const getTargetChat = () =>
     characterStore.characters[target.characterIndex]?.chats?.[target.chatIndex];
   const getStoredTriggerCharacter = () => {

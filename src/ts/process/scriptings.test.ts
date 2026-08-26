@@ -85,6 +85,7 @@ vi.mock("./request/chatRequestOrchestrator", () => ({ requestChatData: vi.fn() }
 vi.mock("./stableDiff", () => ({ generateAIImage: vi.fn() }));
 
 let runScripted: typeof import("./scriptings").runScripted;
+let runLuaEditTrigger: typeof import("./scriptings").runLuaEditTrigger;
 let runLuaButtonTrigger: typeof import("./scriptings").runLuaButtonTrigger;
 
 beforeAll(async () => {
@@ -98,6 +99,7 @@ beforeAll(async () => {
   );
   const scriptings = await import("./scriptings");
   runScripted = scriptings.runScripted;
+  runLuaEditTrigger = scriptings.runLuaEditTrigger;
   runLuaButtonTrigger = scriptings.runLuaButtonTrigger;
 });
 
@@ -261,6 +263,25 @@ test("checks module button triggers when character triggers are missing", async 
   ).resolves.toBeUndefined();
 
   expect(moduleTriggers).toHaveBeenCalledOnce();
+});
+
+test("resolves module edit triggers against the explicit character", async () => {
+  moduleTriggers.mockClear();
+  moduleTriggers.mockReturnValue([]);
+  const char = {
+    type: "character",
+    chaId: "char-a",
+    name: "Alpha",
+    triggerscript: [],
+  } as never;
+
+  await expect(
+    runLuaEditTrigger(char, "editoutput", "hello", undefined, {
+      characterIndex: 2,
+      chatIndex: 3,
+    }),
+  ).resolves.toBe("hello");
+  expect(moduleTriggers).toHaveBeenCalledWith(char);
 });
 
 test("runs module button actions that read lorebooks before character details hydrate", async () => {
