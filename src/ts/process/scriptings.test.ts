@@ -9,6 +9,15 @@ const moduleTriggers = vi.hoisted(() => vi.fn(() => []));
 const moduleLorebooks = vi.hoisted(() => vi.fn(() => []));
 const databaseState = vi.hoisted(() => ({ value: { characters: [] } as any }));
 const currentChatState = vi.hoisted(() => ({ value: { message: [] } as any }));
+const getChatVarMock = vi.hoisted(() => vi.fn(() => "target-value"));
+const getGlobalChatVarMock = vi.hoisted(() => vi.fn(() => "global-value"));
+const setChatVarMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../parser/chatVar.svelte", () => ({
+  getChatVar: getChatVarMock,
+  getGlobalChatVar: getGlobalChatVarMock,
+  setChatVar: setChatVarMock,
+}));
 
 vi.mock("../parser/parser.svelte", () => ({
   hasher: vi.fn(),
@@ -118,6 +127,51 @@ test("keeps explicit false as the generation stop signal", async () => {
 
   expect(result.res).toBe(false);
   expect(result.stopSending).toBe(true);
+});
+
+test("reuses a Lua engine with the current character and chat context", async () => {
+  commitMessages.mockClear();
+  const code = `
+    function onStart(id)
+      addChat(id, "user", getName(id))
+      if getName(id) == "Beta" then stopChat(id) end
+    end
+  `;
+  const firstChat = { id: "chat-a", message: [] as { role: string; data: string }[] };
+  const secondChat = { id: "chat-b", message: [] as { role: string; data: string }[] };
+
+  const first = await runScripted(code, {
+    char: { type: "character", chaId: "a", name: "Alpha" } as never,
+    chat: firstChat as never,
+    mode: "start",
+  });
+  const second = await runScripted(code, {
+    char: { type: "character", chaId: "b", name: "Beta" } as never,
+    chat: secondChat as never,
+    mode: "start",
+  });
+
+  expect(firstChat.message).toEqual([{ role: "user", data: "Alpha" }]);
+  expect(secondChat.message).toEqual([{ role: "user", data: "Beta" }]);
+  expect(first.stopSending).toBe(false);
+  expect(second.stopSending).toBe(true);
+});
+
+test("passes explicit chat targets to default Lua chat variables", async () => {
+  getChatVarMock.mockClear();
+  const target = { characterIndex: 4, chatIndex: 2 };
+  const result = await runScripted(
+    'function onStart(id) return getChatVar(id, "key") end',
+    {
+      char: { type: "character", chaId: "target", name: "Target" } as never,
+      chat: { message: [] } as never,
+      chatTarget: target,
+      mode: "start",
+    },
+  );
+
+  expect(result.res).toBe("target-value");
+  expect(getChatVarMock).toHaveBeenCalledWith("key", target);
 });
 
 test("persists a user message added by Lua", async () => {

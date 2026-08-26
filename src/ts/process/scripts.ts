@@ -167,7 +167,13 @@ export async function processScriptFull(
 ) {
   let db = getDatabase();
   let emoChanged = false;
-  data = await runLuaEditTrigger(char, mode, data, { index: chatID });
+  data = await runLuaEditTrigger(
+    char,
+    mode,
+    data,
+    { index: chatID },
+    chatTarget,
+  );
 
   if (mode === "editdisplay") {
     const currentChar = getCurrentCharacter();

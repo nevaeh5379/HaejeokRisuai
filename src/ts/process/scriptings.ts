@@ -3,6 +3,7 @@ import {
   getChatVar,
   getGlobalChatVar,
   setChatVar,
+  type ChatVarTarget,
 } from "../parser/chatVar.svelte";
 import {
   hasher,
@@ -21,11 +22,7 @@ import {
   type triggerscript,
 } from "../storage/database.svelte";
 import { get } from "svelte/store";
-import {
-  ReloadChatPointer,
-  ReloadGUIPointer,
-  selectedCharID,
-} from "../stores.svelte";
+import { ReloadChatPointer, ReloadGUIPointer } from "../stores.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import {
   alertSelect,
@@ -58,10 +55,13 @@ let lastRequestsCount = 0;
 interface BasicScriptingEngineState {
   code?: string;
   mutex: Mutex;
+  char?: character | groupChat | simpleCharacterArgument;
   chat?: Chat;
+  chatTarget?: ChatVarTarget;
   setVar?: (key: string, value: string) => boolean | void;
   getVar?: (key: string) => string;
   messagesMutated?: boolean;
+  stopSending?: boolean;
 }
 
 interface LuaScriptingEngineState extends BasicScriptingEngineState {
@@ -86,6 +86,7 @@ export async function runScripted(
   arg: {
     char?: character | groupChat | simpleCharacterArgument;
     chat?: Chat;
+    chatTarget?: ChatVarTarget;
     data?: string | OpenAIChat[];
     setVar?: (key: string, value: string) => boolean | void;
     getVar?: (key: string) => string;
@@ -98,13 +99,14 @@ export async function runScripted(
   const type: "lua" | "py" = arg.type ?? "lua";
   const char = arg.char ?? getCurrentCharacter();
   const data = arg.data ?? "";
-  const setVar = arg.setVar ?? setChatVar;
-  const getVar = arg.getVar ?? getChatVar;
+  const setVar =
+    arg.setVar ??
+    ((key: string, value: string) => setChatVar(key, value, arg.chatTarget));
+  const getVar = arg.getVar ?? ((key: string) => getChatVar(key, arg.chatTarget));
   const meta = arg.meta ?? {};
   const mode = arg.mode ?? "manual";
 
   let chat = arg.chat ?? getCurrentChat();
-  let stopSending = false;
   let lowLevelAccess = arg.lowLevelAccess ?? false;
 
   if (type === "lua") {
@@ -113,10 +115,40 @@ export async function runScripted(
   let ScriptingEngineState = await getOrCreateEngineState(mode, type);
 
   return await ScriptingEngineState.mutex.runExclusive(async () => {
+    ScriptingEngineState.char = char;
     ScriptingEngineState.chat = chat;
+    ScriptingEngineState.chatTarget = arg.chatTarget;
     ScriptingEngineState.setVar = setVar;
     ScriptingEngineState.getVar = getVar;
     ScriptingEngineState.messagesMutated = false;
+    ScriptingEngineState.stopSending = false;
+    const getScriptingCharacter = () => {
+      const scriptingChar = ScriptingEngineState.char;
+      if (scriptingChar && scriptingChar.type !== "simple") return scriptingChar;
+      const target = ScriptingEngineState.chatTarget;
+      if (target) return characterStore.characters[target.characterIndex];
+      return getCurrentCharacter();
+    };
+    const getStoredScriptingCharacter = () => {
+      const scriptingChar = getScriptingCharacter();
+      if (!scriptingChar?.chaId) return scriptingChar;
+      return (
+        characterStore.characters.find(
+          (candidate) => candidate?.chaId === scriptingChar.chaId,
+        ) ?? scriptingChar
+      );
+    };
+    const markStoredScriptingCharacterDirty = () => {
+      const scriptingChar = getStoredScriptingCharacter();
+      if (scriptingChar?.chaId) {
+        characterStore.markCharacterDirty(scriptingChar.chaId);
+      }
+      return scriptingChar;
+    };
+    const getScriptingRequestCharacter = () => {
+      const scriptingChar = getScriptingCharacter();
+      return scriptingChar?.type === "character" ? scriptingChar : undefined;
+    };
     if (code !== ScriptingEngineState.code) {
       let declareAPI: (name: string, func: Function) => void;
 
@@ -161,13 +193,13 @@ export async function runScripted(
         },
       );
       declareAPI("getGlobalVar", (id: string, key: string) => {
-        return getGlobalChatVar(key);
+        return getGlobalChatVar(key, ScriptingEngineState.chatTarget);
       });
       declareAPI("stopChat", (id: string) => {
         if (!ScriptingSafeIds.has(id)) {
           return;
         }
-        stopSending = true;
+        ScriptingEngineState.stopSending = true;
       });
       declareAPI("alertError", (id: string, value: string) => {
         if (!ScriptingSafeIds.has(id)) {
@@ -337,7 +369,15 @@ export async function runScripted(
       });
 
       declareAPI("cbs", (value) => {
-        return risuChatParser(value, { chara: getCurrentCharacter() });
+        const scriptingChar = ScriptingEngineState.char;
+        const parserChar =
+          scriptingChar && scriptingChar.type !== "simple"
+            ? scriptingChar
+            : getCurrentCharacter();
+        return risuChatParser(value, {
+          chara: parserChar,
+          chatTarget: ScriptingEngineState.chatTarget,
+        });
       });
 
       declareAPI("setFullChatMain", (id: string, value: string) => {
@@ -462,9 +502,13 @@ export async function runScripted(
           if (!ScriptingLowLevelIds.has(id)) {
             return;
           }
+          const scriptingChar = getScriptingCharacter();
+          if (!scriptingChar || scriptingChar.type === "group") {
+            return "Error: Image generation requires a character";
+          }
           const gen = await generateAIImage(
             value,
-            char as character,
+            scriptingChar,
             negValue,
             "inlay",
           );
@@ -480,15 +524,7 @@ export async function runScripted(
 
       declareAPI("getCharacterImageMain", async (id: string) => {
         try {
-          const db = getDatabase();
-          const selectedChar = get(selectedCharID);
-
-          if (selectedChar < 0 || selectedChar >= db.characters.length) {
-            return "";
-          }
-
-          const character = db.characters[selectedChar];
-
+          const character = getScriptingCharacter();
           if (!character || character.type === "group" || !character.image) {
             return "";
           }
@@ -673,6 +709,8 @@ export async function runScripted(
             {
               formated: promptbody,
               bias: {},
+              currentChar: getScriptingRequestCharacter(),
+              triggerTarget: ScriptingEngineState.chatTarget,
               useStreaming: options.streaming === true,
               forceStreaming: options.streaming === true,
               noMultiGen: true,
@@ -728,6 +766,8 @@ export async function runScripted(
               },
             ],
             bias: {},
+            currentChar: getScriptingRequestCharacter(),
+            triggerTarget: ScriptingEngineState.chatTarget,
             useStreaming: false,
             noMultiGen: true,
           },
@@ -755,69 +795,47 @@ export async function runScripted(
       });
 
       declareAPI("getName", (id: string) => {
-        const db = getDatabase();
-        const selectedChar = get(selectedCharID);
-        const char = db.characters[selectedChar];
-        return char.name;
+        return getScriptingCharacter()?.name ?? "";
       });
 
       declareAPI("setName", (id: string, name: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
-        const selectedChar = get(selectedCharID);
-        if (typeof name !== "string") {
-          throw "Invalid data type";
-        }
-        characterStore.characters[selectedChar].name = name;
+        if (!ScriptingSafeIds.has(id)) return;
+        if (typeof name !== "string") throw "Invalid data type";
+        const scriptingChar = markStoredScriptingCharacterDirty();
+        if (scriptingChar) scriptingChar.name = name;
       });
 
       declareAPI("getDescription", (id: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
-        const selectedChar = get(selectedCharID);
-        const char = characterStore.characters[selectedChar];
-        if (char.type === "group") {
+        if (!ScriptingSafeIds.has(id)) return;
+        const scriptingChar = getScriptingCharacter();
+        if (!scriptingChar || scriptingChar.type === "group") {
           throw "Character is a group";
         }
-        return char.desc;
+        return scriptingChar.desc;
       });
 
       declareAPI("setDescription", (id: string, desc: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
-        const selectedChar = get(selectedCharID);
-        const char = characterStore.characters[selectedChar];
-        if (typeof data !== "string") {
-          throw "Invalid data type";
-        }
-        if (char.type === "group") {
+        if (!ScriptingSafeIds.has(id)) return;
+        if (typeof desc !== "string") throw "Invalid data type";
+        const scriptingChar = getStoredScriptingCharacter();
+        if (!scriptingChar || scriptingChar.type === "group") {
           throw "Character is a group";
         }
-        char.desc = desc;
-        characterStore.characters[selectedChar] = char;
+        scriptingChar.desc = desc;
+        if (scriptingChar.chaId) characterStore.markCharacterDirty(scriptingChar.chaId);
       });
 
       declareAPI("getCharacterFirstMessage", (id: string) => {
-        const selectedChar = get(selectedCharID);
-        const char = characterStore.characters[selectedChar];
-        return char.firstMessage;
+        return getScriptingCharacter()?.firstMessage ?? "";
       });
 
       declareAPI("setCharacterFirstMessage", (id: string, data: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
-        const db = getDatabase();
-        const selectedChar = get(selectedCharID);
-        const char = db.characters[selectedChar];
-        if (typeof data !== "string") {
-          return false;
-        }
-        char.firstMessage = data;
-        characterStore.characters[selectedChar] = char;
+        if (!ScriptingSafeIds.has(id)) return;
+        if (typeof data !== "string") return false;
+        const scriptingChar = getStoredScriptingCharacter();
+        if (!scriptingChar) return false;
+        scriptingChar.firstMessage = data;
+        if (scriptingChar.chaId) characterStore.markCharacterDirty(scriptingChar.chaId);
         return true;
       });
 
@@ -826,11 +844,11 @@ export async function runScripted(
       });
 
       declareAPI("getPersonaDescription", (id: string) => {
-        const db = getDatabase();
-        const selectedChar = get(selectedCharID);
-        const char = db.characters[selectedChar];
-
-        return risuChatParser(getPersonaPrompt(), { chara: char });
+        const scriptingChar = getScriptingCharacter();
+        return risuChatParser(getPersonaPrompt(), {
+          chara: scriptingChar,
+          chatTarget: ScriptingEngineState.chatTarget,
+        });
       });
 
       declareAPI("getAuthorsNote", (id: string) => {
@@ -838,38 +856,29 @@ export async function runScripted(
       });
 
       declareAPI("getBackgroundEmbedding", (id: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
-        const db = getDatabase();
-        const selectedChar = get(selectedCharID);
-        const char = db.characters[selectedChar];
-        return char.backgroundHTML;
+        if (!ScriptingSafeIds.has(id)) return;
+        return getScriptingCharacter()?.backgroundHTML ?? "";
       });
 
       declareAPI("setBackgroundEmbedding", (id: string, data: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
-        const db = getDatabase();
-        const selectedChar = get(selectedCharID);
-        if (typeof data !== "string") {
-          return false;
-        }
-        characterStore.characters[selectedChar].backgroundHTML = data;
+        if (!ScriptingSafeIds.has(id)) return;
+        if (typeof data !== "string") return false;
+        const scriptingChar = getStoredScriptingCharacter();
+        if (!scriptingChar) return false;
+        scriptingChar.backgroundHTML = data;
+        if (scriptingChar.chaId) characterStore.markCharacterDirty(scriptingChar.chaId);
         return true;
       });
 
       // Lore books
       declareAPI("getLoreBooksMain", (id: string, search: string) => {
-        const db = getDatabase();
-        const selectedChar = db.characters[get(selectedCharID)];
+        const selectedChar = getScriptingCharacter();
         if (!selectedChar || selectedChar.type === "group") {
           return JSON.stringify([]);
         }
 
         const loreSources = [
-          selectedChar.chats?.[selectedChar.chatPage]?.localLore ?? [],
+          ScriptingEngineState.chat?.localLore ?? [],
           selectedChar.globalLore ?? [],
           getModuleLorebooks() ?? [],
         ];
@@ -880,7 +889,10 @@ export async function runScripted(
             if (b.comment === search) {
               found.push({
                 ...b,
-                content: risuChatParser(b.content, { chara: selectedChar }),
+                content: risuChatParser(b.content, {
+                  chara: selectedChar,
+                  chatTarget: ScriptingEngineState.chatTarget,
+                }),
               });
             }
           }
@@ -909,7 +921,9 @@ export async function runScripted(
             return;
           }
 
-          if (char.type !== "character") {
+          const scriptingChar = getScriptingCharacter();
+          const currentChat = ScriptingEngineState.chat;
+          if (!scriptingChar || scriptingChar.type !== "character" || !currentChat) {
             return;
           }
 
@@ -920,8 +934,6 @@ export async function runScripted(
             regex = false,
             secondKey = "",
           } = options;
-
-          const currentChat = char.chats[char.chatPage];
 
           const newLocalLoreBooks = currentChat.localLore.filter(
             (book) => book.comment !== name,
@@ -938,6 +950,7 @@ export async function runScripted(
             useRegex: regex,
           });
           currentChat.localLore = newLocalLoreBooks;
+          if (currentChat.id) characterStore.markChatDirty(currentChat.id);
         },
       );
 
@@ -947,14 +960,15 @@ export async function runScripted(
         }
 
         const db = getDatabase();
+        const selectedChar = getScriptingCharacter();
 
-        const selectedChar = db.characters[get(selectedCharID)];
-
-        if (selectedChar.type !== "character") {
+        if (!selectedChar || selectedChar.type !== "character") {
           return;
         }
 
-        const fullLoreBooks = (await loadLoreBookV3Prompt()).actives;
+        const fullLoreBooks = (
+          await loadLoreBookV3Prompt(ScriptingEngineState.chatTarget)
+        ).actives;
         const maxContext = db.maxContext - reserve;
         if (maxContext < 0) {
           return JSON.stringify([]);
@@ -966,6 +980,7 @@ export async function runScripted(
         for (const book of fullLoreBooks) {
           const parsed = risuChatParser(book.prompt, {
             chara: selectedChar,
+            chatTarget: ScriptingEngineState.chatTarget,
           }).trim();
           if (parsed.length === 0) {
             continue;
@@ -1067,6 +1082,8 @@ export async function runScripted(
             {
               formated: promptbody,
               bias: {},
+              currentChar: getScriptingRequestCharacter(),
+              triggerTarget: ScriptingEngineState.chatTarget,
               useStreaming: options.streaming === true,
               forceStreaming: options.streaming === true,
               noMultiGen: true,
@@ -1115,8 +1132,7 @@ export async function runScripted(
           return "";
         }
 
-        const db = getDatabase();
-        const selchar = db.characters[get(selectedCharID)];
+        const selchar = getScriptingCharacter();
 
         let pointer = chat.message.length - 1;
         while (pointer >= 0) {
@@ -1127,7 +1143,7 @@ export async function runScripted(
           pointer--;
         }
 
-        return selchar.firstMessage;
+        return selchar?.firstMessage ?? "";
       });
 
       declareAPI("getUserLastMessage", (id: string) => {
@@ -1154,8 +1170,7 @@ export async function runScripted(
           return "";
         }
 
-        const db = getDatabase();
-        const selchar = db.characters[get(selectedCharID)];
+        const selchar = getScriptingCharacter();
 
         let pointer = chat.message.length - 1;
         while (pointer >= 0) {
@@ -1166,7 +1181,7 @@ export async function runScripted(
           pointer--;
         }
 
-        return selchar.firstMessage;
+        return selchar?.firstMessage ?? "";
       });
 
       declareAPI("getUserLastMessage", (id: string) => {
@@ -1262,7 +1277,7 @@ export async function runScripted(
           }
         }
         if (res === false) {
-          stopSending = true;
+          ScriptingEngineState.stopSending = true;
         }
       } catch (error) {
         console.error(error);
@@ -1321,7 +1336,7 @@ export async function runScripted(
     }
 
     return {
-      stopSending,
+      stopSending: Boolean(ScriptingEngineState.stopSending),
       chat,
       res,
     };
@@ -1566,6 +1581,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
   mode: string,
   content: T,
   meta?: object,
+  chatTarget?: ChatVarTarget,
 ): Promise<T> {
   switch (mode) {
     case "editinput":
@@ -1602,10 +1618,18 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
             .filter((v) => v && typeof v === "object")
             .concat(getModuleTriggers());
 
+    const targetChat = chatTarget
+      ? characterStore.characters[chatTarget.characterIndex]?.chats?.[
+          chatTarget.chatIndex
+        ]
+      : undefined;
+
     for (let trigger of triggers) {
       if (trigger?.effect?.[0]?.type === "triggerlua") {
         const runResult = await runScripted(trigger.effect[0].code, {
           char: char,
+          chat: targetChat,
+          chatTarget,
           lowLevelAccess: false,
           mode: mode,
           data,

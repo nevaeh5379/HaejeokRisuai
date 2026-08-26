@@ -1766,6 +1766,7 @@ export async function runTrigger(
             getVar: getVar,
             char: char,
             chat: chat,
+            chatTarget: target,
           });
 
           if (triggerCodeResult.stopSending) {

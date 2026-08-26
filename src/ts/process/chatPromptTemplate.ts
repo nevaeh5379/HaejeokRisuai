@@ -452,12 +452,16 @@ async function runPromptEditTriggers(
     options.context.currentChar,
     "editRequest",
     formated,
+    undefined,
+    options.context.chatTarget,
   );
   if (capturePromptInfo) {
     options.promptInfo.promptText = await runLuaEditTrigger(
       options.context.currentChar,
       "editRequest",
       promptInfoBody,
+      undefined,
+      options.context.chatTarget,
     );
   }
   return edited;
