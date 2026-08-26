@@ -1,3 +1,8 @@
+const crypto = require('crypto');
+const fs = require('fs');
+const fsp = require('fs/promises');
+const os = require('os');
+const path = require('path');
 const { VECTOR_SEARCH_METRICS } = require('../../packages/protocol/compute.cjs');
 
 const MAX_INDEXES = 32;
@@ -11,6 +16,12 @@ function readMemoryLimitMb(name, fallbackMb) {
     return Math.min(Math.max(parsed, 8), 4096);
 }
 
+function readDiskLimitMb(name, fallbackMb) {
+    const parsed = Number.parseInt(process.env[name] || '', 10);
+    if (!Number.isSafeInteger(parsed) || parsed <= 0) return fallbackMb;
+    return Math.min(Math.max(parsed, 64), 65536);
+}
+
 const MAX_INDEX_MEMORY_MB = readMemoryLimitMb('RISU_VECTOR_INDEX_MAX_MB', 128);
 const MAX_TOTAL_MEMORY_MB = Math.max(
     MAX_INDEX_MEMORY_MB,
@@ -22,7 +33,16 @@ const MAX_FLOATS_PER_INDEX = Math.floor(
 const MAX_TOTAL_FLOATS = Math.floor(
     (MAX_TOTAL_MEMORY_MB * 1024 * 1024) / FLOAT_BYTES,
 );
+const MAX_PERSIST_DISK_BYTES = readDiskLimitMb('RISU_VECTOR_INDEX_DISK_MAX_MB', 2048) * 1024 * 1024;
 const indexes = new Map();
+const PERSIST_MAGIC = Buffer.from('RISUVEC1');
+const PERSIST_HEADER_BYTES = PERSIST_MAGIC.length + 4;
+const PERSIST_VERSION = 1;
+const PERSIST_DEBOUNCE_MS = 100;
+const persistTimers = new Map();
+const persistPromises = new Map();
+let prunePromise = Promise.resolve();
+let persistenceDir = null;
 
 function validateIndexId(indexId) {
     if (typeof indexId !== 'string' || indexId.length === 0 || indexId.length > 2048) {
@@ -36,9 +56,238 @@ function validateRevision(revision) {
     }
 }
 
+function persistenceFilePath(indexId, directory = persistenceDir) {
+    if (!directory) return null;
+    const digest = crypto.createHash('sha256').update(indexId).digest('hex');
+    return path.join(directory, `${digest}.rvec`);
+}
+
+function configureVectorIndexPersistence(directory) {
+    persistenceDir = directory ? path.resolve(directory) : null;
+    if (persistenceDir) {
+        fs.mkdirSync(persistenceDir, { recursive: true, mode: 0o700 });
+        try { fs.chmodSync(persistenceDir, 0o700); } catch {}
+    }
+}
+
+async function prunePersistenceDirectory(directory) {
+    const dirents = await fsp.readdir(directory, { withFileTypes: true });
+    const files = [];
+    let totalBytes = 0;
+    for (const dirent of dirents) {
+        if (!dirent.isFile() || !dirent.name.endsWith('.rvec')) continue;
+        const filePath = path.join(directory, dirent.name);
+        const stat = await fsp.stat(filePath).catch(() => null);
+        if (!stat) continue;
+        totalBytes += stat.size;
+        files.push({ filePath, size: stat.size, mtimeMs: stat.mtimeMs });
+    }
+    if (totalBytes <= MAX_PERSIST_DISK_BYTES) return;
+    files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+    for (const file of files) {
+        if (totalBytes <= MAX_PERSIST_DISK_BYTES) break;
+        await fsp.unlink(file.filePath).catch(() => {});
+        totalBytes -= file.size;
+    }
+}
+
+function schedulePersistencePrune(directory) {
+    prunePromise = prunePromise
+        .catch(() => {})
+        .then(() => prunePersistenceDirectory(directory))
+        .catch((error) => console.warn('[VectorIndex] Failed to prune persistent cache:', error));
+}
+
+function snapshotIndex(indexId, index) {
+    return {
+        indexId,
+        revision: index.revision,
+        dimension: index.dimension,
+        entries: Array.from(index.vectors.entries(), ([id, value]) => ({
+            id,
+            signature: value.signature,
+            embedding: value.embedding,
+        })),
+    };
+}
+
+async function writeIndexSnapshot(snapshot, directory) {
+    const filePath = persistenceFilePath(snapshot.indexId, directory);
+    if (!filePath) return;
+    const metadata = Buffer.from(JSON.stringify({
+        version: PERSIST_VERSION,
+        indexId: snapshot.indexId,
+        revision: snapshot.revision,
+        dimension: snapshot.dimension,
+        entries: snapshot.entries.map(({ id, signature }) => ({ id, signature })),
+    }), 'utf8');
+    if (metadata.length > 64 * 1024 * 1024) throw new RangeError('Vector index cache metadata is too large');
+    const header = Buffer.allocUnsafe(PERSIST_HEADER_BYTES);
+    PERSIST_MAGIC.copy(header, 0);
+    header.writeUInt32LE(metadata.length, PERSIST_MAGIC.length);
+    const tempPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    let handle;
+    try {
+        handle = await fsp.open(tempPath, 'w', 0o600);
+        await handle.write(header);
+        await handle.write(metadata);
+        for (const entry of snapshot.entries) {
+            const embedding = entry.embedding;
+            if (os.endianness() === 'LE') {
+                await handle.write(Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength));
+            } else {
+                const encoded = Buffer.allocUnsafe(embedding.byteLength);
+                for (let i = 0; i < embedding.length; i++) encoded.writeFloatLE(embedding[i], i * FLOAT_BYTES);
+                await handle.write(encoded);
+            }
+        }
+        await handle.sync();
+        await handle.close();
+        handle = null;
+        await fsp.rename(tempPath, filePath);
+        schedulePersistencePrune(directory);
+    } catch (error) {
+        if (handle) await handle.close().catch(() => {});
+        await fsp.unlink(tempPath).catch(() => {});
+        throw error;
+    }
+}
+
+function enqueuePersist(indexId, index, directory = persistenceDir) {
+    if (!directory || !index) return;
+    const previous = persistPromises.get(indexId) || Promise.resolve();
+    const next = previous
+        .catch(() => {})
+        .then(() => writeIndexSnapshot(snapshotIndex(indexId, index), directory))
+        .catch((error) => console.warn(`[VectorIndex] Failed to persist ${indexId}:`, error));
+    persistPromises.set(indexId, next);
+    void next.finally(() => {
+        if (persistPromises.get(indexId) === next) persistPromises.delete(indexId);
+    });
+}
+
+function schedulePersist(indexId, index) {
+    if (!persistenceDir || !index) return;
+    const existing = persistTimers.get(indexId);
+    if (existing) clearTimeout(existing.timer);
+    const directory = persistenceDir;
+    const timer = setTimeout(() => {
+        persistTimers.delete(indexId);
+        enqueuePersist(indexId, index, directory);
+    }, PERSIST_DEBOUNCE_MS);
+    timer.unref?.();
+    persistTimers.set(indexId, { timer, index, directory });
+}
+
+async function flushVectorIndexPersistence() {
+    for (const [indexId, pending] of persistTimers) {
+        clearTimeout(pending.timer);
+        enqueuePersist(indexId, pending.index, pending.directory);
+    }
+    persistTimers.clear();
+    await Promise.all(Array.from(persistPromises.values()));
+    await prunePromise;
+}
+
+function loadPersistedIndex(indexId) {
+    const filePath = persistenceFilePath(indexId);
+    if (!filePath || !fs.existsSync(filePath)) return null;
+    try {
+        const encoded = fs.readFileSync(filePath);
+        if (encoded.length < PERSIST_HEADER_BYTES || !encoded.subarray(0, PERSIST_MAGIC.length).equals(PERSIST_MAGIC)) {
+            throw new Error('Invalid vector index cache header');
+        }
+        const metadataLength = encoded.readUInt32LE(PERSIST_MAGIC.length);
+        if (metadataLength <= 0 || metadataLength > 64 * 1024 * 1024 || PERSIST_HEADER_BYTES + metadataLength > encoded.length) {
+            throw new Error('Invalid vector index cache metadata length');
+        }
+        const metadata = JSON.parse(encoded.subarray(PERSIST_HEADER_BYTES, PERSIST_HEADER_BYTES + metadataLength).toString('utf8'));
+        if (metadata?.version !== PERSIST_VERSION || metadata?.indexId !== indexId || !Array.isArray(metadata?.entries)) {
+            throw new Error('Vector index cache metadata does not match the requested index');
+        }
+        if (metadata.entries.length > MAX_VECTORS_PER_INDEX) throw new RangeError('Persisted vector index contains too many vectors');
+        const dimension = metadata.dimension === null ? null : Number(metadata.dimension);
+        if (metadata.entries.length > 0 && (!Number.isSafeInteger(dimension) || dimension <= 0 || dimension > MAX_DIMENSIONS)) {
+            throw new RangeError('Persisted vector index has invalid dimensions');
+        }
+        if (metadata.revision !== null && metadata.revision !== undefined) validateRevision(metadata.revision);
+        const floatCount = metadata.entries.length * (dimension || 0);
+        if (floatCount > MAX_FLOATS_PER_INDEX) throw new RangeError('Persisted vector index exceeds the memory limit');
+        const payloadOffset = PERSIST_HEADER_BYTES + metadataLength;
+        const payloadBytes = floatCount * FLOAT_BYTES;
+        if (encoded.length !== payloadOffset + payloadBytes) throw new Error('Persisted vector index payload length does not match metadata');
+        const storage = new ArrayBuffer(payloadBytes);
+        new Uint8Array(storage).set(encoded.subarray(payloadOffset));
+        const vectors = new Map();
+        for (let i = 0; i < metadata.entries.length; i++) {
+            const descriptor = metadata.entries[i];
+            const id = String(descriptor?.id ?? '');
+            const signature = String(descriptor?.signature ?? '');
+            if (!id) throw new Error('Persisted vector id is missing');
+            let embedding;
+            if (os.endianness() === 'LE') {
+                embedding = new Float32Array(storage, i * dimension * FLOAT_BYTES, dimension);
+            } else {
+                embedding = new Float32Array(dimension);
+                const view = new DataView(storage, i * dimension * FLOAT_BYTES, dimension * FLOAT_BYTES);
+                for (let j = 0; j < dimension; j++) embedding[j] = view.getFloat32(j * FLOAT_BYTES, true);
+            }
+            for (const value of embedding) if (!Number.isFinite(value)) throw new Error('Persisted embedding contains a non-finite value');
+            vectors.set(id, { signature, embedding });
+        }
+        return {
+            vectors,
+            floatCount,
+            dimension: metadata.entries.length > 0 ? dimension : null,
+            lastAccess: Date.now(),
+            revision: metadata.revision ?? null,
+            pendingRevision: null,
+            pendingSignatures: null,
+        };
+    } catch (error) {
+        console.warn(`[VectorIndex] Ignoring invalid persisted cache for ${indexId}:`, error.message || error);
+        try { fs.unlinkSync(filePath); } catch {}
+        return null;
+    }
+}
+
+function evictMemoryIndexes(excludeId = null) {
+    const oldestCandidates = () => Array.from(indexes.entries())
+        .filter(([key]) => key !== excludeId)
+        .sort((a, b) => a[1].lastAccess - b[1].lastAccess);
+    while (indexes.size > MAX_INDEXES) {
+        const candidate = oldestCandidates()[0];
+        if (!candidate) break;
+        indexes.delete(candidate[0]);
+    }
+    let totalFloats = Array.from(indexes.values()).reduce((sum, value) => sum + value.floatCount, 0);
+    const candidates = oldestCandidates();
+    while (totalFloats > MAX_TOTAL_FLOATS && candidates.length > 0) {
+        const [key, value] = candidates.shift();
+        totalFloats -= value.floatCount;
+        indexes.delete(key);
+    }
+}
+
+function touchPersistentAccess(indexId, index) {
+    if (!persistenceDir) return;
+    const now = Date.now();
+    if (now - (index.persistenceTouchedAt || 0) < 5 * 60 * 1000) return;
+    const filePath = persistenceFilePath(indexId);
+    try {
+        const time = new Date(now);
+        fs.utimesSync(filePath, time, time);
+    } catch {}
+    index.persistenceTouchedAt = now;
+}
+
 function touchIndex(indexId, create = false) {
     validateIndexId(indexId);
     let index = indexes.get(indexId);
+    if (!index) {
+        index = loadPersistedIndex(indexId);
+        if (index) indexes.set(indexId, index);
+    }
     if (!index && create) {
         index = {
             vectors: new Map(),
@@ -51,18 +300,10 @@ function touchIndex(indexId, create = false) {
         };
         indexes.set(indexId, index);
     }
-    if (index) index.lastAccess = Date.now();
-    while (indexes.size > MAX_INDEXES) {
-        let oldestKey = null;
-        let oldestTime = Infinity;
-        for (const [key, value] of indexes) {
-            if (value.lastAccess < oldestTime) {
-                oldestKey = key;
-                oldestTime = value.lastAccess;
-            }
-        }
-        if (oldestKey === null) break;
-        indexes.delete(oldestKey);
+    if (index) {
+        index.lastAccess = Date.now();
+        touchPersistentAccess(indexId, index);
+        evictMemoryIndexes(indexId);
     }
     return index;
 }
@@ -122,6 +363,7 @@ function syncVectorIndex(indexId, descriptors, revision = null) {
         index.pendingSignatures = null;
     }
 
+    schedulePersist(indexId, index);
     return {
         ready: revision !== null && missingIds.length === 0,
         missingIds,
@@ -167,15 +409,8 @@ function upsertVectorIndex(indexId, entries) {
         index.pendingSignatures = null;
     }
 
-    let totalFloats = Array.from(indexes.values()).reduce((sum, value) => sum + value.floatCount, 0);
-    const evictionCandidates = Array.from(indexes.entries())
-        .filter(([key]) => key !== indexId)
-        .sort((a, b) => a[1].lastAccess - b[1].lastAccess);
-    while (totalFloats > MAX_TOTAL_FLOATS && evictionCandidates.length > 0) {
-        const [key, value] = evictionCandidates.shift();
-        totalFloats -= value.floatCount;
-        indexes.delete(key);
-    }
+    evictMemoryIndexes(indexId);
+    schedulePersist(indexId, index);
     return { size: index.vectors.size };
 }
 
@@ -249,9 +484,13 @@ function searchVectorIndex(indexId, queries, metric = 'cosine', topK = null) {
 }
 
 function clearVectorIndexes() {
+    for (const pending of persistTimers.values()) clearTimeout(pending.timer);
+    persistTimers.clear();
     indexes.clear();
 }
 module.exports = {
+    configureVectorIndexPersistence,
+    flushVectorIndexPersistence,
     checkVectorIndexRevision,
     syncVectorIndex,
     upsertVectorIndex,

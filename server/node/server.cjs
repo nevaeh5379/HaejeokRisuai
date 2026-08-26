@@ -50,7 +50,13 @@ const {
 const { normalizePageInteger, paginateMessages } = require('./messagePagination.cjs');
 const { countTokensBatch } = require('./tokenizeCount.cjs');
 const { resolveLoreEntries } = require('./loreResolve.cjs');
-const { checkVectorIndexRevision, syncVectorIndex, upsertVectorIndex, searchVectorIndex } = require('./vectorIndex.cjs');
+const {
+    configureVectorIndexPersistence,
+    checkVectorIndexRevision,
+    syncVectorIndex,
+    upsertVectorIndex,
+    searchVectorIndex,
+} = require('./vectorIndex.cjs');
 const { matchLoreBatch } = require('./loreMatch.cjs');
 const {
     describeStorageTarget,
@@ -247,6 +253,7 @@ const savePath = process.env.RISU_SAVE_PATH
 if(!existsSync(savePath)){
     mkdirSync(savePath)
 }
+configureVectorIndexPersistence(path.join(savePath, '__vector_indexes'));
 
 const modelJobManager = createModelJobManager({ saveDir: savePath, logger: console });
 const nodeChatExecutor = createNodeChatExecutor();

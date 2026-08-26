@@ -1,6 +1,11 @@
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 
 const {
+  configureVectorIndexPersistence,
+  flushVectorIndexPersistence,
   checkVectorIndexRevision,
   syncVectorIndex,
   upsertVectorIndex,
@@ -9,7 +14,10 @@ const {
 } = require("./vectorIndex.cjs");
 
 describe("vectorIndex", () => {
-  beforeEach(() => clearVectorIndexes());
+  beforeEach(() => {
+    configureVectorIndexPersistence(null);
+    clearVectorIndexes();
+  });
 
   it("uses a compact revision handshake for warm indexes", () => {
     expect(checkVectorIndexRevision("chat-revision", "rev-a").ready).toBe(false);
@@ -113,5 +121,45 @@ describe("vectorIndex", () => {
     expect(
       syncVectorIndex("chat-3", [{ id: "x", signature: "new" }]).missingIds,
     ).toEqual(["x"]);
+  });
+
+  it("restores a completed index from the persistent binary cache", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "risu-vector-index-"));
+    try {
+      configureVectorIndexPersistence(directory);
+      syncVectorIndex(
+        "persistent-chat",
+        [
+          { id: "a", signature: "one" },
+          { id: "b", signature: "two" },
+        ],
+        "persistent-revision",
+      );
+      upsertVectorIndex("persistent-chat", [
+        { id: "a", signature: "one", embedding: [1, 0] },
+        { id: "b", signature: "two", embedding: [0, 1] },
+      ]);
+      await flushVectorIndexPersistence();
+      expect(await readdir(directory)).toHaveLength(1);
+
+      clearVectorIndexes();
+      expect(
+        checkVectorIndexRevision("persistent-chat", "persistent-revision"),
+      ).toMatchObject({ ready: true, size: 2 });
+      expect(
+        searchVectorIndex("persistent-chat", [[0.95, 0.05]])?.[0][0][0],
+      ).toBe("a");
+
+      expect(
+        syncVectorIndex("persistent-chat", [
+          { id: "a", signature: "one" },
+          { id: "b", signature: "changed" },
+        ]).missingIds,
+      ).toEqual(["b"]);
+    } finally {
+      configureVectorIndexPersistence(null);
+      clearVectorIndexes();
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });
