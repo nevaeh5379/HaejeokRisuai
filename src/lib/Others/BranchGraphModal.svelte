@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount, tick } from 'svelte'
-    import { GitBranch, Maximize, ZoomIn, ZoomOut, XIcon } from '@lucide/svelte'
+    import { Ellipsis, GitBranch, Maximize, ZoomIn, ZoomOut, XIcon } from '@lucide/svelte'
 
     import { language } from 'src/lang'
     import { getChatBranches } from 'src/ts/gui/branches'
@@ -12,20 +12,20 @@
 
     let { onselect, onclose }: Props = $props()
 
-    const cardWidth = 288
-    const cardHeight = 128
-    const gapX = 64
-    const gapY = 88
+    const cardWidth = 292
+    const cardHeight = 116
+    const gapX = 56
+    const gapY = 64
     const padding = 64
-    const minScale = 0.42
-    const maxScale = 1.5
+    const minScale = 0.25
+    const maxScale = 1.6
 
     const graph = getChatBranches()
-    const nodesById = new Map(graph.nodes.map((node) => [node.branchId, node]))
+    const nodesById = new Map(graph.nodes.map((node) => [node.id, node]))
     const graphWidth = padding * 2 + graph.columns * cardWidth + Math.max(0, graph.columns - 1) * gapX
     const graphHeight = padding * 2 + graph.rows * cardHeight + Math.max(0, graph.rows - 1) * gapY
-    const activeNode = graph.nodes.find((node) => node.active)
-    const activePath = getActivePath()
+    const activeNode = graph.nodes.find((node) => node.activeTerminal)
+        ?? [...graph.nodes].reverse().find((node) => node.activePath)
 
     let viewport: HTMLDivElement | undefined = $state()
     let panX = $state(0)
@@ -39,20 +39,6 @@
     const left = (x: number) => padding + x * (cardWidth + gapX)
     const top = (y: number) => padding + y * (cardHeight + gapY)
     const clampScale = (value: number) => Math.min(maxScale, Math.max(minScale, value))
-
-    function getActivePath(): Set<string> {
-        const path = new Set<string>()
-        let current = activeNode
-        while(current && !path.has(current.branchId)) {
-            path.add(current.branchId)
-            current = current.parentBranchId ? nodesById.get(current.parentBranchId) : undefined
-        }
-        return path
-    }
-
-    function isActiveEdge(from: string, to: string): boolean {
-        return activePath.has(from) && activePath.has(to) && nodesById.get(to)?.parentBranchId === from
-    }
 
     function reasonLabel(reason: 'root' | 'manual' | 'reroll'): string {
         if(reason === 'root') return language.branchGraphOriginal
@@ -86,6 +72,11 @@
         hasInteracted = true
     }
 
+    function selectMessageNode(node: typeof graph.nodes[number]) {
+        const terminal = node.terminals.find((item) => item.active) ?? node.terminals.at(-1)
+        if(terminal) void onselect(terminal.branchId)
+    }
+
     function zoomAt(clientX: number, clientY: number, nextScale: number) {
         if(!viewport) return
         const bounds = viewport.getBoundingClientRect()
@@ -114,7 +105,7 @@
     function startPan(event: PointerEvent) {
         if(event.pointerType === 'mouse' && event.button !== 0 && event.button !== 1) return
         const target = event.target as HTMLElement | null
-        if(event.button !== 1 && target?.closest('button')) return
+        if(event.button !== 1 && target?.closest('button:not(.branch-node), .branch-node--selectable')) return
         event.preventDefault()
         hasInteracted = true
         isPanning = true
@@ -170,7 +161,13 @@
         </div>
         <div class="ml-auto hidden items-center gap-1.5 rounded-full border border-darkborderc/70 bg-bgcolor/70 px-3 py-1.5 text-xs text-textcolor2 sm:flex">
             <span class="size-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgb(34_197_94/0.75)]"></span>
-            {language.branchGraphTimelineCount.replace('{}', graph.nodes.length.toString())}
+            {language.branchGraphMessageCount.replace('{}', graph.messageCount.toString())}
+            {#if graph.collapsedMessageCount > 0}
+                <span class="text-textcolor2/40">·</span>
+                {language.branchGraphCollapsedMessages.replace('{}', graph.collapsedMessageCount.toString())}
+            {/if}
+            <span class="text-textcolor2/40">·</span>
+            {language.branchGraphTimelineCount.replace('{}', graph.timelineCount.toString())}
         </div>
         <button class="rounded-xl border border-darkborderc bg-bgcolor p-2 text-textcolor2 transition-colors hover:border-selected hover:text-textcolor" onclick={onclose} title={language.branchGraphClose} aria-label={language.branchGraphClose}>
             <XIcon size={20} />
@@ -205,7 +202,6 @@
                 {#each graph.edges as edge}
                     {@const from = nodesById.get(edge.from)}
                     {@const to = nodesById.get(edge.to)}
-                    {@const active = isActiveEdge(edge.from, edge.to)}
                     {#if from && to}
                         {@const x1 = left(from.x) + cardWidth / 2}
                         {@const y1 = top(from.y) + cardHeight}
@@ -213,14 +209,14 @@
                         {@const y2 = top(to.y)}
                         {@const midY = (y1 + y2) / 2}
                         <path
-                            class:active-edge={active}
+                            class:active-edge={edge.active}
                             class="branch-edge"
                             d={`M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`}
                             fill="none"
-                            stroke-width={active ? 3 : 2}
-                            stroke-dasharray={active ? undefined : '5 7'}
+                            stroke-width={edge.active ? 3 : 2}
+                            stroke-dasharray={edge.active ? undefined : '5 7'}
                         />
-                        <circle class:active-junction={active} class="branch-junction" cx={x2} cy={y2} r={active ? 5 : 4} />
+                        <circle class:active-junction={edge.active} class="branch-junction" cx={x2} cy={y2} r={edge.active ? 5 : 4} />
                     {/if}
                 {/each}
             </svg>
@@ -228,37 +224,68 @@
             {#each graph.nodes as node}
                 <button
                     class="branch-node absolute z-10 flex flex-col overflow-hidden rounded-2xl border px-4 py-3 text-left"
-                    class:branch-node--active={node.active}
-                    class:branch-node--path={!node.active && activePath.has(node.branchId)}
+                    class:branch-node--active={node.activeTerminal}
+                    class:branch-node--path={!node.activeTerminal && node.activePath}
+                    class:branch-node--selectable={node.terminals.length > 0}
+                    class:branch-node--summary={node.kind === 'summary'}
                     style={`left:${left(node.x)}px;top:${top(node.y)}px;width:${cardWidth}px;height:${cardHeight}px;`}
-                    aria-current={node.active ? 'true' : undefined}
-                    onclick={() => onselect(node.branchId)}
+                    aria-current={node.activeTerminal ? 'true' : undefined}
+                    aria-disabled={node.terminals.length === 0 ? 'true' : undefined}
+                    tabindex={node.terminals.length > 0 ? 0 : -1}
+                    onclick={() => selectMessageNode(node)}
                 >
                     <span class="branch-node-glow pointer-events-none absolute -right-8 -top-12 size-28 rounded-full opacity-0 blur-2xl"></span>
-                    <div class="relative flex w-full min-w-0 items-center gap-2">
-                        <span class="flex size-7 shrink-0 items-center justify-center rounded-lg border border-selected/70 bg-selected/20 text-textcolor2">
-                            <GitBranch size={14} />
-                        </span>
-                        <span class="shrink-0 rounded-full border border-darkborderc/80 bg-bgcolor/80 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-textcolor2">
-                            {reasonLabel(node.reason)}
-                        </span>
-                        {#if node.branchMessageIndex !== undefined}
-                            <span class="text-[10px] tabular-nums text-textcolor2">#{node.branchMessageIndex + 1}</span>
-                        {/if}
-                        {#if node.active}
-                            <span class="ml-auto flex items-center gap-1 text-[10px] font-bold uppercase text-green-500">
-                                <span class="size-1.5 rounded-full bg-green-500 shadow-[0_0_7px_rgb(34_197_94/0.8)]"></span>
-                                {language.branchGraphActive}
+                    {#if node.kind === 'summary'}
+                        <div class="relative flex w-full items-center gap-2">
+                            <span class="flex size-7 shrink-0 items-center justify-center rounded-lg border border-dashed border-textcolor2/40 bg-textcolor/5 text-textcolor2">
+                                <Ellipsis size={17} />
                             </span>
-                        {/if}
-                    </div>
-                    <div class="relative mt-2 flex w-full min-w-0 items-center gap-2">
-                        <span class="truncate text-sm font-semibold text-textcolor" title={node.model || node.title}>{node.model || node.title}</span>
-                        {#if node.model}
-                            <span class="ml-auto max-w-28 truncate text-[10px] text-textcolor2" title={node.title}>{node.title}</span>
-                        {/if}
-                    </div>
-                    <div class="relative mt-1 line-clamp-2 w-full text-xs leading-4 text-textcolor2">{node.preview || language.branchGraphNoMessages}</div>
+                            <span class="text-xs font-bold text-textcolor">
+                                {language.branchGraphCollapsedMessages.replace('{}', node.collapsedCount.toString())}
+                            </span>
+                            <span class="ml-auto text-[10px] tabular-nums text-textcolor2">
+                                {language.branchGraphCollapsedRange
+                                    .replace('{}', (node.messageIndex + 1).toString())
+                                    .replace('{}', (node.endMessageIndex + 1).toString())}
+                            </span>
+                        </div>
+                        <div class="relative mt-2 flex min-h-0 flex-1 flex-col justify-center gap-1 text-[10px] leading-4 text-textcolor2">
+                            <div class="truncate" title={node.preview}>{node.preview || language.branchGraphNoMessages}</div>
+                            <div class="flex items-center gap-2 text-textcolor2/45"><span class="h-px flex-1 bg-textcolor2/20"></span>···<span class="h-px flex-1 bg-textcolor2/20"></span></div>
+                            <div class="truncate" title={node.endPreview}>{node.endPreview || language.branchGraphNoMessages}</div>
+                        </div>
+                    {:else}
+                        <div class="relative flex w-full min-w-0 items-center gap-2">
+                            <span class="message-role flex shrink-0 items-center gap-1 rounded-full border border-selected/70 bg-selected/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-textcolor2">
+                                <span class="size-1.5 rounded-full" class:bg-green-500={node.role === 'char'} class:bg-textcolor2={node.role === 'user'}></span>
+                                {node.isComment ? language.branchGraphComment : node.role === 'user' ? language.branchGraphUser : language.branchGraphAssistant}
+                            </span>
+                            <span class="text-[10px] tabular-nums text-textcolor2">#{node.messageIndex + 1}</span>
+                            {#if node.branchPoint}
+                                <span class="flex items-center gap-1 rounded-full border border-selected bg-selected/30 px-2 py-0.5 text-[10px] font-bold text-textcolor">
+                                    <GitBranch size={11} />
+                                    {language.branchGraphForkCount.replace('{}', node.continuationCount.toString())}
+                                </span>
+                            {/if}
+                            {#if node.activeTerminal}
+                                <span class="ml-auto flex items-center gap-1 text-[10px] font-bold uppercase text-green-500">
+                                    <span class="size-1.5 rounded-full bg-green-500 shadow-[0_0_7px_rgb(34_197_94/0.8)]"></span>
+                                    {language.branchGraphActive}
+                                </span>
+                            {/if}
+                        </div>
+                        <div class="relative mt-2 line-clamp-2 w-full text-xs leading-4 text-textcolor" title={node.preview}>
+                            {node.preview || language.branchGraphNoMessages}
+                        </div>
+                        <div class="relative mt-auto flex min-h-4 w-full items-end gap-2 text-[10px] text-textcolor2">
+                            {#if node.model}<span class="truncate" title={node.model}>{node.model}</span>{/if}
+                            {#if node.terminals.length > 0}
+                                <span class="ml-auto shrink-0 font-semibold" class:text-green-500={node.activeTerminal}>
+                                    {reasonLabel((node.terminals.find((item) => item.active) ?? node.terminals.at(-1))!.reason)}
+                                </span>
+                            {/if}
+                        </div>
+                    {/if}
                 </button>
             {/each}
         </div>
@@ -335,7 +362,7 @@
     }
 
     .branch-node {
-        cursor: pointer;
+        cursor: default;
         border-color: color-mix(in srgb, var(--risu-theme-darkborderc) 85%, transparent);
         background: linear-gradient(145deg,
             color-mix(in srgb, var(--risu-theme-darkbg) 94%, var(--risu-theme-textcolor) 6%),
@@ -345,10 +372,24 @@
     }
 
     .branch-node:hover {
+        border-color: color-mix(in srgb, var(--risu-theme-darkborderc) 85%, transparent);
+    }
+
+    .branch-node--selectable {
+        cursor: pointer;
+    }
+
+    .branch-node--selectable:hover {
         z-index: 20;
         transform: translateY(-3px);
         border-color: color-mix(in srgb, var(--risu-theme-textcolor2) 70%, var(--risu-theme-darkborderc));
         box-shadow: 0 20px 42px rgb(0 0 0 / 0.3), inset 0 1px 0 color-mix(in srgb, var(--risu-theme-textcolor) 12%, transparent);
+    }
+
+    .branch-node--summary {
+        border-style: dashed;
+        background: color-mix(in srgb, var(--risu-theme-darkbg) 76%, transparent);
+        box-shadow: 0 10px 26px rgb(0 0 0 / 0.14);
     }
 
     .branch-node--path {
