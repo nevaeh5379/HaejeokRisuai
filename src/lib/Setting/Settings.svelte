@@ -27,6 +27,7 @@
     import StorageExplorerSettings from "./Pages/StorageExplorerSettings.svelte";
     import BrowserDbExplorerSettings from "./Pages/BrowserDbExplorerSettings.svelte";
     import BrowserStorageExplorerSettings from "./Pages/BrowserStorageExplorerSettings.svelte";
+    import PluginStorageExplorerSettings from "./Pages/PluginStorageExplorerSettings.svelte";
     import { isNodeServer, isTauri } from "src/ts/platform";
     import SettingsSearch from "./SettingsSearch.svelte";
     import {
@@ -37,6 +38,7 @@
     let openLoreList = $state(false)
     let dbExplorerOpen = $state(false)
     let storageExplorerOpen = $state(false)
+    let pluginStorageExplorerOpen = $state(false)
     let searchNavigation = $state<{ menuIndex: number; subTab?: number } | null>(null)
     let mobileBotTarget = $state<{ submenu: number; modelTab?: 'main' | 'sub' | 'provider'; title: string } | null>(null)
     let desktopBotTarget = $state<{ submenu: number; modelTab?: 'main' | 'sub' | 'provider' }>({ submenu: 0, modelTab: 'main' })
@@ -89,16 +91,19 @@
         const target = result.target
         if (target.kind === "dbExplorer") {
             storageExplorerOpen = false
+            pluginStorageExplorerOpen = false
             dbExplorerOpen = true
             return
         }
         if (target.kind === "storageExplorer") {
             dbExplorerOpen = false
+            pluginStorageExplorerOpen = false
             storageExplorerOpen = true
             return
         }
         dbExplorerOpen = false
         storageExplorerOpen = false
+        pluginStorageExplorerOpen = false
         searchNavigation = { menuIndex: target.menuIndex, subTab: target.subTab }
         $SettingsMenuIndex = target.menuIndex
         if (target.itemId) {
@@ -270,6 +275,8 @@
                 class:text-textcolor={dbExplorerOpen}
                 class:text-textcolor2={!dbExplorerOpen}
                 onclick={() => {
+                    storageExplorerOpen = false
+                    pluginStorageExplorerOpen = false
                     dbExplorerOpen = true
             }}>
                 <DatabaseIcon />
@@ -279,12 +286,25 @@
                 class:text-textcolor={storageExplorerOpen}
                 class:text-textcolor2={!storageExplorerOpen}
                 onclick={() => {
+                    dbExplorerOpen = false
+                    pluginStorageExplorerOpen = false
                     storageExplorerOpen = true
             }}>
                 <HardDriveIcon />
                 <span>{language.storageExplorer}</span>
             </button>
         {/if}
+        <button class="flex gap-2 items-center hover:text-textcolor"
+            class:text-textcolor={pluginStorageExplorerOpen}
+            class:text-textcolor2={!pluginStorageExplorerOpen}
+            onclick={() => {
+                dbExplorerOpen = false
+                storageExplorerOpen = false
+                pluginStorageExplorerOpen = true
+        }}>
+            <CodeIcon />
+            <span>{language.pluginStorageExplorer}</span>
+        </button>
         <button class="flex gap-2 items-center hover:text-textcolor"
             class:text-textcolor={$SettingsMenuIndex === 77}
             class:text-textcolor2={$SettingsMenuIndex !== 77}
@@ -552,7 +572,7 @@
                     {#if isNodeServer || hasBrowserExplorers}
                         <button
                             class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
-                            onclick={() => { dbExplorerOpen = true; }}
+                            onclick={() => { storageExplorerOpen = false; pluginStorageExplorerOpen = false; dbExplorerOpen = true; }}
                         >
                             <div class="flex items-center gap-3.5 min-w-0">
                                 <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0">
@@ -564,7 +584,7 @@
                         </button>
                         <button
                             class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
-                            onclick={() => { storageExplorerOpen = true; }}
+                            onclick={() => { dbExplorerOpen = false; pluginStorageExplorerOpen = false; storageExplorerOpen = true; }}
                         >
                             <div class="flex items-center gap-3.5 min-w-0">
                                 <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0">
@@ -575,6 +595,18 @@
                             <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                         </button>
                     {/if}
+                    <button
+                        class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
+                        onclick={() => { dbExplorerOpen = false; storageExplorerOpen = false; pluginStorageExplorerOpen = true; }}
+                    >
+                        <div class="flex items-center gap-3.5 min-w-0">
+                            <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0">
+                                <CodeIcon size={18} />
+                            </div>
+                            <span class="text-base font-medium text-textcolor truncate">{language.pluginStorageExplorer}</span>
+                        </div>
+                        <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
+                    </button>
                     <button
                         class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
                         onclick={() => { $SettingsMenuIndex = 77; }}
@@ -769,6 +801,9 @@
     {:else if hasBrowserExplorers}
         <BrowserStorageExplorerSettings close={() => {storageExplorerOpen = false}} />
     {/if}
+{/if}
+{#if pluginStorageExplorerOpen}
+    <PluginStorageExplorerSettings close={() => {pluginStorageExplorerOpen = false}} />
 {/if}
 
 <style>

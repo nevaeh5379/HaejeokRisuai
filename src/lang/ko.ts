@@ -938,6 +938,31 @@ export const languageKorean = {
   postgresDbExplorerSearchRowsResult: "검색 결과",
   postgresDbExplorerClearSearch: "검색 지우기",
   postgresDbExplorerColumns: "컬럼",
+  pluginStorageExplorer: "플러그인 스토리지 탐색기",
+  pluginStorageExplorerDescription:
+    "플러그인 커스텀 스토리지의 키와 값을 확인하고 관리합니다. 값은 선택할 때만 불러옵니다.",
+  pluginStorageExplorerKeys: "개 키",
+  pluginStorageExplorerSearch: "키 검색...",
+  pluginStorageExplorerNewKey: "새 스토리지 키...",
+  pluginStorageExplorerEmpty: "플러그인 커스텀 스토리지가 비어 있습니다.",
+  pluginStorageExplorerNoMatches: "검색어와 일치하는 키가 없습니다.",
+  pluginStorageExplorerDuplicateKey: "같은 이름의 스토리지 키가 이미 있습니다.",
+  pluginStorageExplorerInvalidJson: "값은 올바른 JSON이어야 합니다.",
+  pluginStorageExplorerDeleteConfirm:
+    '"{key}" 플러그인 스토리지 키를 삭제할까요? 되돌릴 수 없습니다.',
+  pluginStorageExplorerClearConfirm:
+    "플러그인 커스텀 스토리지를 모두 비울까요? 되돌릴 수 없습니다.",
+  pluginStorageExplorerClearAll: "전체 스토리지 비우기",
+  pluginStorageExplorerRename: "이름 변경",
+  pluginStorageExplorerCopy: "복사",
+  pluginStorageExplorerFormat: "JSON 정리",
+  pluginStorageExplorerDelete: "삭제",
+  pluginStorageExplorerSave: "저장",
+  pluginStorageExplorerSaving: "저장 중...",
+  pluginStorageExplorerSelectKey: "값을 확인할 스토리지 키를 선택하세요.",
+  pluginStorageExplorerJsonHint:
+    "값은 JSON으로 직렬화할 수 있는 데이터로 저장됩니다.",
+  pluginStorageExplorerUnsaved: "저장하지 않은 변경 사항",
   sqlStorage: "SQL 데이터베이스 저장소",
   sqlStorageDescription:
     "애플리케이션 데이터베이스와 Cold Storage를 외부 SQL 데이터베이스(PostgreSQL, Oracle, Azure SQL)에 저장합니다.",

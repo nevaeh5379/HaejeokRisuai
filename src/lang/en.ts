@@ -1016,6 +1016,32 @@ export const languageEnglish = {
   postgresDbExplorerSearchRowsResult: "search results",
   postgresDbExplorerClearSearch: "Clear search",
   postgresDbExplorerColumns: "Columns",
+  pluginStorageExplorer: "Plugin Storage Explorer",
+  pluginStorageExplorerDescription:
+    "Inspect and manage plugin custom storage. Values are loaded only when selected.",
+  pluginStorageExplorerKeys: "keys",
+  pluginStorageExplorerSearch: "Search keys...",
+  pluginStorageExplorerNewKey: "New storage key...",
+  pluginStorageExplorerEmpty: "Plugin custom storage is empty.",
+  pluginStorageExplorerNoMatches: "No keys match your search.",
+  pluginStorageExplorerDuplicateKey:
+    "A storage key with that name already exists.",
+  pluginStorageExplorerInvalidJson: "The value must be valid JSON.",
+  pluginStorageExplorerDeleteConfirm:
+    'Delete plugin storage key "{key}"? This cannot be undone.',
+  pluginStorageExplorerClearConfirm:
+    "Clear all plugin custom storage? This cannot be undone.",
+  pluginStorageExplorerClearAll: "Clear all storage",
+  pluginStorageExplorerRename: "Rename",
+  pluginStorageExplorerCopy: "Copy",
+  pluginStorageExplorerFormat: "Format JSON",
+  pluginStorageExplorerDelete: "Delete",
+  pluginStorageExplorerSave: "Save",
+  pluginStorageExplorerSaving: "Saving...",
+  pluginStorageExplorerSelectKey: "Select a storage key to inspect its value.",
+  pluginStorageExplorerJsonHint:
+    "Values are stored as JSON-serializable data.",
+  pluginStorageExplorerUnsaved: "Unsaved changes",
   sqlStorage: "SQL Database Storage",
   sqlStorageDescription:
     "Store the application database and cold storage in an external SQL database (PostgreSQL, Oracle, or Azure SQL) on the Node server.",
