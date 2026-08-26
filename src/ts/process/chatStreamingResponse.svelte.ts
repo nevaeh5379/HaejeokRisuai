@@ -142,6 +142,7 @@ async function streamResponseBody(options: StreamingOptions) {
     prefix: target.prefix,
     reformatContent: options.reformatContent,
     performanceMode,
+    generationId: options.generationId,
   });
   return { target, streamed };
 }

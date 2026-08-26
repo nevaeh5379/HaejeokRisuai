@@ -50,7 +50,6 @@ import {
   waitAlert,
 } from "./alert";
 import { hasher } from "./hash";
-import { hubURL } from "./hub";
 import {
   defaultJailbreak,
   defaultMainPrompt,
@@ -579,14 +578,7 @@ const knownHostes = ["localhost", "127.0.0.1", "0.0.0.0"];
 const webLocalNetworkBlockedMessage =
   "웹에서는 사설망 직접 호출 불가. Tauri 또는 LAN Node self-host 사용";
 const defaultProxyJobHeartbeatSec = 15;
-
-function getProxy2Url() {
-  return !isTauri && !isNodeServer ? `${hubURL}/proxy2` : `/proxy2`;
-}
-
-function getProxyStreamJobBaseUrl() {
-  return isNodeServer ? "" : `${hubURL}`;
-}
+const nodeProxy2Url = "/proxy2";
 
 function buildTimeoutSignal(originalSignal?: AbortSignal, timeoutMs?: number) {
   if (!timeoutMs || timeoutMs <= 0) {
@@ -830,7 +822,10 @@ export async function globalFetch(
       if (isTauri) {
         return await fetchWithTauri(url, requestArg);
       }
-      return await fetchWithProxy(url, requestArg);
+      if (isNodeServer) {
+        return await fetchWithProxy(url, requestArg);
+      }
+      return await fetchWithPlainFetch(url, requestArg);
     } finally {
       timeoutSignal.cleanup();
     }
@@ -1001,7 +996,7 @@ async function fetchWithProxy(
   arg: GlobalFetchArgs,
 ): Promise<GlobalFetchResult> {
   try {
-    const furl = getProxy2Url();
+    const furl = nodeProxy2Url;
     arg.headers ??= {};
     arg.headers["Content-Type"] ??=
       arg.body instanceof URLSearchParams
@@ -1868,10 +1863,8 @@ async function fetchViaProxyJobWs(
   const auth = await getNodeServerProxyAuth();
 
   const requestSignal = arg.signal;
-  const baseUrl = getProxyStreamJobBaseUrl();
-
   let jobId = "";
-  const createRes = await fetch(`${baseUrl}/proxy-stream-jobs`, {
+  const createRes = await fetch("/proxy-stream-jobs", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -2026,7 +2019,7 @@ async function fetchViaProxyJobWs(
     if (streamController && !settled) {
       streamController.enqueue(encoder.encode("Aborted"));
     }
-    void fetch(`${baseUrl}/proxy-stream-jobs/${encodeURIComponent(jobId)}`, {
+    void fetch(`/proxy-stream-jobs/${encodeURIComponent(jobId)}`, {
       method: "DELETE",
       headers: {
         "risu-auth": auth,
@@ -2115,20 +2108,12 @@ export async function fetchNative(
     throw new Error("Invalid body type");
   }
 
-  const db = getDatabase();
   const useLocalNetworkRoute =
     arg.networkRoute === "local_network" && isLocalNetworkUrl(url);
   if (useLocalNetworkRoute && !isTauri && !isNodeServer) {
     throw new Error(webLocalNetworkBlockedMessage);
   }
-  let throughProxy = !isTauri && !isNodeServer && !db.usePlainFetch;
-  if (useLocalNetworkRoute) {
-    if (isNodeServer) {
-      throughProxy = true;
-    } else if (isTauri) {
-      throughProxy = false;
-    }
-  }
+  const throughProxy = isNodeServer && useLocalNetworkRoute;
   const shouldLogFetch = arg.logFetch ?? true;
   let fetchLogIndex: number | null = null;
   if (shouldLogFetch) {
@@ -2333,7 +2318,7 @@ export async function fetchNative(
         }
       }
 
-      const r = await fetch(getProxy2Url(), {
+      const r = await fetch(nodeProxy2Url, {
         body: realBody as any,
         headers: arg.useRisuTk
           ? {

@@ -7,6 +7,7 @@ import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { trimUntilPunctuation } from "../util";
 import { processScriptFull } from "./scripts";
+import { recordChatGenerationText } from "./chatGenerationStats";
 
 export interface StreamDisplayOptions {
   reader: ReadableStreamDefaultReader<{ [key: string]: string }>;
@@ -18,6 +19,7 @@ export interface StreamDisplayOptions {
   prefix: string;
   reformatContent: (data: string) => string;
   performanceMode: StreamingDisplayOptimizationMode;
+  generationId: string;
 }
 
 export async function processStreamingRerollValues(
@@ -190,6 +192,7 @@ async function applyStreamingChunk(
   state.receivedResult = true;
   state.lastResponseChunk = value;
   state.result = normalizeChunk(value);
+  recordChatGenerationText(options.generationId, state.result);
   if (coalesceDisplay) {
     state.pendingResult = state.result;
     scheduleFlush();

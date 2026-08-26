@@ -6,7 +6,11 @@ import {
   executeChatModelRequest,
 } from "@risuai/chat-core/generation.cjs";
 import type { ChatExecutor, ChatSendOptions } from "@risuai/chat-core/executor.cjs";
-import type { ChatStageTimings, OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type {
+  ChatModelResponse,
+  ChatStageTimings,
+  OpenAIChat,
+} from "@risuai/chat-core/types.cjs";
 import { createLocalChatGenerationRuntime } from "./chatLocalRuntime";
 import { tryCreateNodeChatGenerationPlan } from "./chatNodePlanner";
 import { processChatResponse } from "./chatResponse.svelte";
@@ -17,6 +21,13 @@ import {
 } from "./chatError.svelte";
 import { prepareChatSession } from "./chatSession.svelte";
 import { buildGenerationPrompt } from "./chatPromptPipeline";
+import {
+  cancelChatGenerationStats,
+  completeChatGenerationStats,
+  recordChatGenerationText,
+  startChatGenerationStats,
+  updateChatGenerationModel,
+} from "./chatGenerationStats";
 
 export interface LocalChatExecutorSink {
   setPreviewFormated(chats: OpenAIChat[]): void;
@@ -50,6 +61,7 @@ export class LocalChatExecutor implements ChatExecutor {
     };
     const throwError = createChatErrorHandler(errorContext);
     const stageTimings = createStageTimings();
+    const generationStartedAt = Date.now();
 
     const session = await prepareChatSession({
       chatProcessIndex,
@@ -136,25 +148,45 @@ export class LocalChatExecutor implements ChatExecutor {
       return true;
     }
 
-    const req = await executeChatModelRequest(
-      runtime,
-      {
-        plan,
-        biases: prompt.biases,
-        currentChar,
-        isGroupChat: nowChatroom.type === "group",
-        continueGeneration: arg.continue,
-        previewBody: arg.previewPrompt,
-        escape: nowChatroom.type === "character" && nowChatroom.escapeOutput,
-        durableChatId: currentChat.id,
-        speakerId: currentChar.chaId,
-      },
-      abortSignal,
-    );
+    const trackGeneration = !arg.previewPrompt;
+    if (trackGeneration) {
+      startChatGenerationStats({
+        generationId,
+        selectedChar,
+        selectedChat,
+        model: generationModel,
+        startedAt: generationStartedAt,
+      });
+    }
+
+    let req: ChatModelResponse;
+    try {
+      req = await executeChatModelRequest(
+        runtime,
+        {
+          plan,
+          biases: prompt.biases,
+          currentChar,
+          isGroupChat: nowChatroom.type === "group",
+          continueGeneration: arg.continue,
+          previewBody: arg.previewPrompt,
+          escape: nowChatroom.type === "character" && nowChatroom.escapeOutput,
+          durableChatId: currentChat.id,
+          speakerId: currentChar.chaId,
+        },
+        abortSignal,
+      );
+    } catch (error) {
+      if (trackGeneration) cancelChatGenerationStats(generationId);
+      throw error;
+    }
 
     console.log(req);
     if (req.model) {
       generationInfo.model = runtime.getGenerationModel(req.model);
+      if (trackGeneration) {
+        updateChatGenerationModel(generationId, generationInfo.model);
+      }
       console.log(generationInfo.model, req.model);
     }
 
@@ -163,22 +195,45 @@ export class LocalChatExecutor implements ChatExecutor {
       return true;
     }
 
-    const response = await processChatResponse({
-      req,
-      abortSignal,
-      selectedChar,
-      selectedChat,
-      currentChar,
-      nowChatroom,
-      currentChat,
-      continueGeneration: arg.continue,
-      generationInfo,
-      promptInfo,
-      generationId,
-      reformatContent: (data) => data.trim(),
-      throwError,
-    });
-    if (!response.ok) return false;
+    if (trackGeneration && req.type !== "streaming" && req.type !== "fail") {
+      const firstResponse = req.type === "success" ? req.result : req.result[0]?.[1] ?? "";
+      recordChatGenerationText(
+        generationId,
+        firstResponse,
+        Date.now(),
+        stageTimings.stage3Start,
+      );
+    }
+
+    let response: Awaited<ReturnType<typeof processChatResponse>>;
+    try {
+      response = await processChatResponse({
+        req,
+        abortSignal,
+        selectedChar,
+        selectedChat,
+        currentChar,
+        nowChatroom,
+        currentChat,
+        continueGeneration: arg.continue,
+        generationInfo,
+        promptInfo,
+        generationId,
+        reformatContent: (data) => data.trim(),
+        throwError,
+      });
+    } catch (error) {
+      if (trackGeneration) cancelChatGenerationStats(generationId);
+      throw error;
+    }
+    if (!response.ok) {
+      if (trackGeneration) cancelChatGenerationStats(generationId);
+      return false;
+    }
+
+    if (trackGeneration) {
+      completeChatGenerationStats(generationId, response.result);
+    }
 
     currentChat = response.currentChat;
     return finalizeChatGeneration({

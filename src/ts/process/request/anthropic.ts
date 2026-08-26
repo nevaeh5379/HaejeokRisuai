@@ -9,6 +9,7 @@ import {
 } from "src/ts/globalApi.svelte";
 import { LLMFlags, LLMFormat } from "src/ts/model/modellist";
 import { registerClaudeObserver } from "src/ts/observer.svelte";
+import { isNodeServer, isTauri } from "src/ts/platform";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { replaceAsync, simplifySchema, sleep } from "src/ts/util";
 import { v4 } from "uuid";
@@ -398,7 +399,7 @@ export async function requestClaude(
     delete headers["x-api-key"];
   }
 
-  if (db.usePlainFetch) {
+  if (db.usePlainFetch || (!isTauri && !isNodeServer)) {
     headers["anthropic-dangerous-direct-browser-access"] = "true";
   }
 

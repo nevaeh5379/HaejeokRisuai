@@ -31,6 +31,7 @@
     import { compactChatMessages } from 'src/ts/stores/domain/messageStore.svelte';
     import { openLogExporter } from 'src/ts/logexporter/index';
     import LogExporterModal from 'src/lib/LogExporter/LogExporterModal.svelte';
+    import GenerationStatsFloat from './GenerationStatsFloat.svelte';
 
     let lowSpecMode = $derived(settingsStore.state.lowSpecMode === true)
 
@@ -1233,6 +1234,9 @@
             {/if}
         </div>
 
+    {/if}
+    {#if $selectedCharID >= 0 && currentCharacter}
+        <GenerationStatsFloat selectedChar={$selectedCharID} selectedChat={currentCharacter.chatPage} />
     {/if}
 </div>
 
