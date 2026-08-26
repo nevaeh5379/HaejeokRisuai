@@ -3,6 +3,31 @@
 const GOOGLE_GENERATIVE_LANGUAGE_BASE_URL =
   'https://generativelanguage.googleapis.com/v1beta/models';
 
+const GOOGLE_GENERATION_PARAMETER_RENAMES = Object.freeze({
+  top_p: 'topP',
+  top_k: 'topK',
+  presence_penalty: 'presencePenalty',
+  frequency_penalty: 'frequencyPenalty',
+  thinking_tokens: 'thinkingBudget',
+  reasoning_effort: 'thinkingConfig.thinkingLevel',
+});
+
+function selectGoogleGenerationParameters(supportedParameters, options = {}) {
+  const candidates = [
+    'temperature',
+    'top_p',
+    'top_k',
+    'presence_penalty',
+    'frequency_penalty',
+  ];
+  if (options.thinking) {
+    candidates.push('thinking_tokens', 'reasoning_effort');
+  }
+  return candidates.filter((parameter) =>
+    supportedParameters.includes(parameter),
+  );
+}
+
 function buildGoogleGenerateContentUrl(modelId, apiKey) {
   return `${GOOGLE_GENERATIVE_LANGUAGE_BASE_URL}/${modelId}:generateContent?key=${apiKey}`;
 }
@@ -151,7 +176,9 @@ function mergeGoogleConsecutiveChats(chats) {
 
 module.exports = {
   GOOGLE_GENERATIVE_LANGUAGE_BASE_URL,
+  GOOGLE_GENERATION_PARAMETER_RENAMES,
   buildGoogleGenerateContentUrl,
+  selectGoogleGenerationParameters,
   prepareGoogleConversation,
   mergeGoogleConsecutiveChats,
   buildGoogleSafetySettings,

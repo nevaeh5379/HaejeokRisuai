@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  GOOGLE_GENERATION_PARAMETER_RENAMES,
   buildGoogleSafetySettings,
   finalizeGoogleGenerationConfig,
   mergeGoogleConsecutiveChats,
   prepareGoogleConversation,
+  selectGoogleGenerationParameters,
 } from "@risuai/chat-core/googleProvider.cjs";
 
 describe("Google provider core", () => {
@@ -159,6 +161,40 @@ describe("Google provider core", () => {
       { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" },
       { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
     ]);
+  });
+
+  it("selects supported Gemini generation parameters and provider field names", () => {
+    expect(
+      selectGoogleGenerationParameters(
+        [
+          "temperature",
+          "top_p",
+          "thinking_tokens",
+          "reasoning_effort",
+          "min_p",
+        ],
+        { thinking: true },
+      ),
+    ).toEqual([
+      "temperature",
+      "top_p",
+      "thinking_tokens",
+      "reasoning_effort",
+    ]);
+    expect(
+      selectGoogleGenerationParameters(
+        ["temperature", "thinking_tokens", "reasoning_effort"],
+        { thinking: false },
+      ),
+    ).toEqual(["temperature"]);
+    expect(GOOGLE_GENERATION_PARAMETER_RENAMES).toEqual({
+      top_p: "topP",
+      top_k: "topK",
+      presence_penalty: "presencePenalty",
+      frequency_penalty: "frequencyPenalty",
+      thinking_tokens: "thinkingBudget",
+      reasoning_effort: "thinkingConfig.thinkingLevel",
+    });
   });
 
   it("normalizes Gemini thinking and output generation settings", () => {

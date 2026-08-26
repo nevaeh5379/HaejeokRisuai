@@ -2,6 +2,24 @@ import type { MultiModal, OpenAIChat } from "./types.cjs";
 
 export const GOOGLE_GENERATIVE_LANGUAGE_BASE_URL: "https://generativelanguage.googleapis.com/v1beta/models";
 
+export type GoogleGenerationParameter =
+  | "temperature"
+  | "top_p"
+  | "top_k"
+  | "presence_penalty"
+  | "frequency_penalty"
+  | "thinking_tokens"
+  | "reasoning_effort";
+
+export const GOOGLE_GENERATION_PARAMETER_RENAMES: Readonly<
+  Partial<Record<GoogleGenerationParameter, string>>
+>;
+
+export function selectGoogleGenerationParameters(
+  supportedParameters: readonly string[],
+  options?: { thinking?: boolean },
+): GoogleGenerationParameter[];
+
 export interface GeminiFunctionCall {
   id?: string;
   name: string;

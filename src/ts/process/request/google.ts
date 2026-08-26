@@ -1,9 +1,11 @@
 import {
+  GOOGLE_GENERATION_PARAMETER_RENAMES,
   buildGoogleGenerateContentUrl,
   buildGoogleSafetySettings,
   finalizeGoogleGenerationConfig,
   mergeGoogleConsecutiveChats,
   prepareGoogleConversation,
+  selectGoogleGenerationParameters,
 } from "@risuai/chat-core/googleProvider.cjs";
 import type {
   GeminiChat,
@@ -35,7 +37,6 @@ import {
   applyAdditionalParameters,
   applyParameters,
   getAdditionalParameters,
-  type LLMParameter,
 } from "./shared";
 import { bodyIntercepterStore } from "src/ts/stores.svelte";
 
@@ -207,21 +208,8 @@ export async function requestGoogleCloudVertex(
     blockOff: arg.modelInfo.flags.includes(LLMFlags.geminiBlockOff),
   });
 
-  let para: LLMParameter[] = [
-    "temperature",
-    "top_p",
-    "top_k",
-    "presence_penalty",
-    "frequency_penalty",
-  ];
-
-  if (arg.modelInfo.flags.includes(LLMFlags.geminiThinking)) {
-    para.push("thinking_tokens");
-    para.push("reasoning_effort");
-  }
-
-  para = para.filter((v) => {
-    return arg.modelInfo.parameters.includes(v);
+  const para = selectGoogleGenerationParameters(arg.modelInfo.parameters, {
+    thinking: arg.modelInfo.flags.includes(LLMFlags.geminiThinking),
   });
 
   let body: any = {
@@ -231,14 +219,7 @@ export async function requestGoogleCloudVertex(
         maxOutputTokens: maxTokens,
       },
       para,
-      {
-        top_p: "topP",
-        top_k: "topK",
-        presence_penalty: "presencePenalty",
-        frequency_penalty: "frequencyPenalty",
-        thinking_tokens: "thinkingBudget",
-        reasoning_effort: "thinkingConfig.thinkingLevel",
-      },
+      GOOGLE_GENERATION_PARAMETER_RENAMES,
       arg.mode,
       {
         ignoreTopKIfZero: true,
