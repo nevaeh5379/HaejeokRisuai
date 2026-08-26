@@ -53,3 +53,7 @@ export function prepareGoogleConversation(
   messages: readonly OpenAIChat[],
   options?: GoogleConversationOptions,
 ): GoogleConversationPreparation;
+
+export function mergeGoogleConsecutiveChats(
+  chats: GeminiChat[],
+): GeminiChat[];

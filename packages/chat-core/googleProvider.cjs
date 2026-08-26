@@ -81,8 +81,28 @@ system:${chat.content}`;
   };
 }
 
+function mergeGoogleConsecutiveChats(chats) {
+  for (let index = chats.length - 1; index >= 1; index--) {
+    const current = chats[index];
+    const previous = chats[index - 1];
+    if (current.role !== previous.role) continue;
+
+    const previousLastPart = previous.parts[previous.parts.length - 1];
+    const currentFirstPart = current.parts[0];
+    if (previousLastPart?.text && currentFirstPart?.text) {
+      previousLastPart.text += `\n\n${currentFirstPart.text}`;
+      previous.parts.push(...current.parts.slice(1));
+    } else {
+      previous.parts.push(...current.parts);
+    }
+    chats.splice(index, 1);
+  }
+  return chats;
+}
+
 module.exports = {
   GOOGLE_GENERATIVE_LANGUAGE_BASE_URL,
   buildGoogleGenerateContentUrl,
   prepareGoogleConversation,
+  mergeGoogleConsecutiveChats,
 };

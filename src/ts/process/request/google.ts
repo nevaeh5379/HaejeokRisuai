@@ -1,5 +1,6 @@
 import {
   buildGoogleGenerateContentUrl,
+  mergeGoogleConsecutiveChats,
   prepareGoogleConversation,
 } from "@risuai/chat-core/googleProvider.cjs";
 import type {
@@ -197,31 +198,7 @@ export async function requestGoogleCloudVertex(
     }
   }
 
-  // After tool parsing, merge consecutive chats with the same role
-  for (let i = reformatedChat.length - 1; i >= 1; i--) {
-    const currentChat = reformatedChat[i];
-    const prevChat = reformatedChat[i - 1];
-
-    if (currentChat.role === prevChat.role) {
-      // If the same role is consecutive, merge the parts arrays and remove the current chat
-
-      // If the last part of the previous chat and the first part of the current chat are both text, join with \n\n
-      const prevLastPart = prevChat.parts[prevChat.parts.length - 1];
-      const currentFirstPart = currentChat.parts[0];
-
-      if (prevLastPart.text && currentFirstPart.text) {
-        prevLastPart.text += "\n\n" + currentFirstPart.text;
-        // Add the rest of the current chat's parts except the first
-        prevChat.parts.push(...currentChat.parts.slice(1));
-      } else {
-        // If not text, just merge the parts arrays
-        prevChat.parts.push(...currentChat.parts);
-      }
-
-      // Remove the current chat
-      reformatedChat.splice(i, 1);
-    }
-  }
+  mergeGoogleConsecutiveChats(reformatedChat);
 
   const uncensoredCatagory = [
     {

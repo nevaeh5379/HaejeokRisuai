@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { prepareGoogleConversation } from "@risuai/chat-core/googleProvider.cjs";
+import {
+  mergeGoogleConsecutiveChats,
+  prepareGoogleConversation,
+} from "@risuai/chat-core/googleProvider.cjs";
 
 describe("Google provider core", () => {
   it("extracts one leading system prompt and maps normal chat roles", () => {
@@ -102,4 +105,36 @@ describe("Google provider core", () => {
       { role: "user", parts: [{ text: "function:tool output" }] },
     ]);
   });
+  it("merges consecutive roles using Gemini part semantics", () => {
+    const chats = [
+      { role: "user" as const, parts: [{ text: "first" }] },
+      {
+        role: "user" as const,
+        parts: [{ text: "second" }, { inlineData: { mimeType: "image/png", data: "A" } }],
+      },
+      { role: "model" as const, parts: [{ text: "answer" }] },
+      {
+        role: "model" as const,
+        parts: [{ functionCall: { name: "tool", args: {} } }],
+      },
+    ];
+
+    expect(mergeGoogleConsecutiveChats(chats)).toEqual([
+      {
+        role: "user",
+        parts: [
+          { text: "first\n\nsecond" },
+          { inlineData: { mimeType: "image/png", data: "A" } },
+        ],
+      },
+      {
+        role: "model",
+        parts: [
+          { text: "answer" },
+          { functionCall: { name: "tool", args: {} } },
+        ],
+      },
+    ]);
+  });
+
 });
