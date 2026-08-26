@@ -38,6 +38,8 @@ export async function processStreamingRerollValues(
       options.reformatContent(options.prefix + result),
       "editoutput",
       options.msgIndex,
+      {},
+      { characterIndex: options.selectedChar, chatIndex: options.selectedChat },
     );
     processedValues.push(processed.data);
   }
@@ -74,6 +76,8 @@ async function writeDisplayResult(
       options.reformatContent(options.prefix + result),
       "editoutput",
       options.msgIndex,
+      {},
+      { characterIndex: options.selectedChar, chatIndex: options.selectedChat },
     );
     targetMessage(options).data = processed.data;
     state.emoChanged = processed.emoChanged;
@@ -234,6 +238,8 @@ async function applyFinalPostProcessing(
     options.reformatContent(options.prefix + state.result),
     "editoutput",
     options.msgIndex,
+    {},
+    { characterIndex: options.selectedChar, chatIndex: options.selectedChat },
   );
   targetMessage(options).data = processed.data;
   state.emoChanged = processed.emoChanged;

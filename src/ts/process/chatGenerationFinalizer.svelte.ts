@@ -61,15 +61,22 @@ async function shouldAutoContinue(
 async function appendIgpResult(
   selectedChar: number,
   selectedChat: number,
+  currentChar: character,
   abortSignal: AbortSignal,
 ) {
-  const igp = risuChatParser(settingsStore.state.igpPrompt ?? "");
+  const chatTarget = { characterIndex: selectedChar, chatIndex: selectedChat };
+  const igp = risuChatParser(settingsStore.state.igpPrompt ?? "", {
+    chara: currentChar,
+    chatTarget,
+  });
   if (!igp) return;
 
   const response = await requestChatData(
     {
       formated: parseChatML(igp),
       bias: {},
+      currentChar,
+      triggerTarget: chatTarget,
     },
     "emotion",
     abortSignal,
@@ -203,6 +210,7 @@ export async function finalizeChatGeneration(
   await appendIgpResult(
     options.selectedChar,
     options.selectedChat,
+    options.currentChar,
     options.abortSignal,
   );
   startPostGenerationStage(options);

@@ -56,11 +56,16 @@ function createCharacterLookup() {
   };
 }
 
-function runCurrentChatVariables(chat: Chat, currentChar: character) {
+function runCurrentChatVariables(
+  chat: Chat,
+  currentChar: character,
+  chatTarget: { characterIndex: number; chatIndex: number },
+) {
   for (const message of chat.message) {
     message.data = risuChatParser(message.data, {
       chara: currentChar,
       runVar: true,
+      chatTarget,
     });
   }
   return chat;
@@ -236,6 +241,10 @@ function buildReadySession(
   const currentChat = runCurrentChatVariables(
     selection.nowChatroom.chats[selection.selectedChat],
     currentChar,
+    {
+      characterIndex: selection.selectedChar,
+      chatIndex: selection.selectedChat,
+    },
   );
   selection.nowChatroom.chats[selection.selectedChat] = currentChat;
   return {
