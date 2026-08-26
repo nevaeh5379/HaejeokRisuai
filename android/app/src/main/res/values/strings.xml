@@ -1,6 +1,10 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
     <string name="app_name">Risuai</string>
+    <string name="chat_generation_channel">Chat generation</string>
+    <string name="chat_generation_active">Generating a reply…</string>
+    <string name="chat_result_channel">Chat replies</string>
+    <string name="chat_result_ready">Reply received</string>
     <string name="title_activity_main">Risuai</string>
     <string name="package_name">co.aiclient.risu</string>
     <string name="custom_url_scheme">co.aiclient.risu</string>

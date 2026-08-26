@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_generation_channel">채팅 생성</string>
+    <string name="chat_generation_active">답변을 생성하고 있습니다…</string>
+    <string name="chat_result_channel">채팅 답변</string>
+    <string name="chat_result_ready">답변이 도착했습니다</string>
+</resources>

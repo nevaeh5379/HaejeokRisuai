@@ -18,6 +18,10 @@ import { chatProcessStage, doingChat } from "./chatRuntimeState";
 import { peerSync } from "../sync/multiuser";
 import { processPostGenerationEffects } from "./chatPostGeneration.svelte";
 import { tryCreateNodeAutoContinuationDecision } from "./chatNodePlanner";
+import {
+  completeNativeChatRequest,
+  usesNativeChatLifecycle,
+} from "../androidChatLifecycle";
 
 
 function updateGenerationStageTimings(
@@ -75,8 +79,16 @@ async function appendIgpResult(
   messages[messages.length - 1].data += response;
 }
 
-async function showGenerationNotification(result: string) {
+async function showGenerationNotification(result: string, characterName: string) {
   if (!settingsStore.state.notification) return;
+  if (usesNativeChatLifecycle()) {
+    await completeNativeChatRequest({
+      title: characterName || "RisuAI",
+      body: result,
+      notify: true,
+    });
+    return;
+  }
   try {
     const permission = await Notification.requestPermission();
     if (permission !== "granted") return;
@@ -154,7 +166,7 @@ async function handleResend(options: FinalizeChatGenerationOptions) {
 }
 
 async function runFinalEffects(options: FinalizeChatGenerationOptions) {
-  await showGenerationNotification(options.result);
+  await showGenerationNotification(options.result, options.currentChar.name);
   void peerSync();
   return processPostGenerationEffects({
     req: options.req,
