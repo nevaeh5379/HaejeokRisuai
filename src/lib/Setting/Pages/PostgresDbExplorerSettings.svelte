@@ -311,6 +311,7 @@
                         {configEnabled}
                         onRefreshAll={refreshTables}
                         onGoToConfig={() => currentTab = 'config'}
+                        loadTableData={(table, options) => getNodeStorage().postgres.getDbTableData(table, options)}
                     />
                 {/if}
             </main>

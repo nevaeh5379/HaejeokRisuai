@@ -14,8 +14,6 @@
     import { language } from 'src/lang'
     import Button from 'src/lib/UI/GUI/Button.svelte'
     import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
-    import { forageStorage } from 'src/ts/globalApi.svelte'
-    import { NodeStorage } from 'src/ts/storage/nodeStorage'
     import type {
         NodePostgresColumnInfo,
         NodePostgresTableData,
@@ -39,13 +37,25 @@
         configEnabled: boolean | null
         onRefreshAll: () => Promise<void>
         onGoToConfig?: () => void
+        loadTableData: (
+            table: string,
+            options: {
+                offset?: number
+                limit?: number
+                sortColumn?: string
+                sortOrder?: 'asc' | 'desc'
+                search?: string
+                columns?: string[]
+            }
+        ) => Promise<NodePostgresTableData>
     }
 
     let {
         tables,
         configEnabled,
         onRefreshAll,
-        onGoToConfig
+        onGoToConfig,
+        loadTableData
     }: Props = $props()
 
     let tableFilter = $state('')
@@ -168,13 +178,6 @@
         }
     }
 
-    function getNodeStorage() {
-        if (!(forageStorage.realStorage instanceof NodeStorage)) {
-            throw new Error('Node storage is not available')
-        }
-        return forageStorage.realStorage
-    }
-
     function showToast(msg: string) {
         if (toastTimer) {
             clearTimeout(toastTimer)
@@ -208,7 +211,7 @@
         columnsOpen = false
         closeContextMenu()
         try {
-            tableData = await getNodeStorage().postgres.getDbTableData(
+            tableData = await loadTableData(
                 selectedTable,
                 {
                     offset: page * pageSize,

@@ -25,7 +25,9 @@
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import PostgresDbExplorerSettings from "./Pages/PostgresDbExplorerSettings.svelte";
     import StorageExplorerSettings from "./Pages/StorageExplorerSettings.svelte";
-    import { isNodeServer } from "src/ts/platform";
+    import BrowserDbExplorerSettings from "./Pages/BrowserDbExplorerSettings.svelte";
+    import BrowserStorageExplorerSettings from "./Pages/BrowserStorageExplorerSettings.svelte";
+    import { isNodeServer, isTauri } from "src/ts/platform";
     import SettingsSearch from "./SettingsSearch.svelte";
     import {
         scrollToSettingAnchor,
@@ -40,6 +42,7 @@
     let desktopBotTarget = $state<{ submenu: number; modelTab?: 'main' | 'sub' | 'provider' }>({ submenu: 0, modelTab: 'main' })
     let innerWidth = $state(typeof window !== "undefined" ? window.innerWidth : 1200)
     let isMobile = $derived(innerWidth < 768 || $MobileGUI)
+    const hasBrowserExplorers = !isNodeServer && !isTauri
 
     $effect(() => {
         if (!isMobile && $SettingsMenuIndex === -1) {
@@ -262,7 +265,7 @@
             <ActivityIcon />
             <span>{language.advancedSettings}</span>
         </button>
-        {#if isNodeServer}
+        {#if isNodeServer || hasBrowserExplorers}
             <button class="flex gap-2 items-center hover:text-textcolor"
                 class:text-textcolor={dbExplorerOpen}
                 class:text-textcolor2={!dbExplorerOpen}
@@ -546,7 +549,7 @@
                         </div>
                         <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                     </button>
-                    {#if isNodeServer}
+                    {#if isNodeServer || hasBrowserExplorers}
                         <button
                             class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
                             onclick={() => { dbExplorerOpen = true; }}
@@ -753,11 +756,19 @@
 {#if openLoreList}
     <Lorepreset close={() => {openLoreList = false}} />
 {/if}
-{#if dbExplorerOpen && isNodeServer}
-    <PostgresDbExplorerSettings close={() => {dbExplorerOpen = false}} />
+{#if dbExplorerOpen}
+    {#if isNodeServer}
+        <PostgresDbExplorerSettings close={() => {dbExplorerOpen = false}} />
+    {:else if hasBrowserExplorers}
+        <BrowserDbExplorerSettings close={() => {dbExplorerOpen = false}} />
+    {/if}
 {/if}
-{#if storageExplorerOpen && isNodeServer}
-    <StorageExplorerSettings close={() => {storageExplorerOpen = false}} />
+{#if storageExplorerOpen}
+    {#if isNodeServer}
+        <StorageExplorerSettings close={() => {storageExplorerOpen = false}} />
+    {:else if hasBrowserExplorers}
+        <BrowserStorageExplorerSettings close={() => {storageExplorerOpen = false}} />
+    {/if}
 {/if}
 
 <style>

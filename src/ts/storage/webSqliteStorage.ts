@@ -26,6 +26,9 @@ import type {
   NodePostgresTokenUsage,
   NodePostgresCharacterSearchResult,
   NodePostgresBotChatStats,
+  NodePostgresTableInfo,
+  NodePostgresColumnInfo,
+  NodePostgresTableData,
 } from "./nodePostgresStorage";
 import {
   createSqlDatabaseAdapter,
@@ -1221,6 +1224,105 @@ export class WebSqliteStorage implements ISqlStorage {
       };
     });
   }
+  private quoteExplorerIdentifier(identifier: string): string {
+    return `"${identifier.replace(/"/g, '""')}"`;
+  }
+
+  private async getDbExplorerColumns(
+    table: string,
+  ): Promise<NodePostgresColumnInfo[]> {
+    const exists = await this.selectOne(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? AND name NOT LIKE 'sqlite_%'",
+      [table],
+    );
+    if (!exists) throw new Error(`SQLite table not found: ${table}`);
+    const rows = await this.selectRows(
+      `PRAGMA table_info(${this.quoteExplorerIdentifier(table)})`,
+    );
+    return rows.map((row) => ({
+      name: String(row.name ?? ""),
+      dataType: String(row.type ?? "UNKNOWN") || "UNKNOWN",
+      nullable: Number(row.notnull ?? 0) === 0,
+      primaryKey: Number(row.pk ?? 0) > 0,
+    }));
+  }
+
+  async listDbTables(): Promise<NodePostgresTableInfo[]> {
+    if (!this._enabled && !(await this.init())) return [];
+    const rows = await this.selectRows(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    );
+    const results = await this.selectBatchResults(
+      rows.map((row) => ({
+        sql: `SELECT COUNT(*) AS total FROM ${this.quoteExplorerIdentifier(String(row.name))}`,
+      })),
+    );
+    return rows.map((row, index) => ({
+      name: String(row.name),
+      rowCount: Number(results[index]?.rows?.[0]?.total ?? 0),
+    }));
+  }
+
+  async getDbTableData(
+    table: string,
+    options: {
+      offset?: number;
+      limit?: number;
+      sortColumn?: string;
+      sortOrder?: "asc" | "desc";
+      search?: string;
+      columns?: string[];
+    } = {},
+  ): Promise<NodePostgresTableData> {
+    if (!this._enabled && !(await this.init())) {
+      throw new Error("Browser SQLite storage is not available");
+    }
+    const allColumns = await this.getDbExplorerColumns(table);
+    const columnNames = new Set(allColumns.map((column) => column.name));
+    const requestedColumns = options.columns?.filter((name) => columnNames.has(name));
+    const columns = requestedColumns?.length
+      ? allColumns.filter((column) => requestedColumns.includes(column.name))
+      : allColumns;
+    if (columns.length === 0) throw new Error(`SQLite table has no columns: ${table}`);
+
+    const offset = Math.max(0, Math.floor(options.offset ?? 0));
+    const limit = normalizeSqliteLimit(options.limit ?? 50);
+    const quotedTable = this.quoteExplorerIdentifier(table);
+    const search = options.search?.trim() ?? "";
+    const where = search
+      ? ` WHERE ${allColumns
+          .map((column) => `CAST(${this.quoteExplorerIdentifier(column.name)} AS TEXT) LIKE ? COLLATE NOCASE`)
+          .join(" OR ")}`
+      : "";
+    const searchBinds = search ? allColumns.map(() => `%${search}%`) : [];
+    const sortColumn = options.sortColumn && columnNames.has(options.sortColumn)
+      ? options.sortColumn
+      : "";
+    const orderBy = sortColumn
+      ? ` ORDER BY ${this.quoteExplorerIdentifier(sortColumn)} ${options.sortOrder === "desc" ? "DESC" : "ASC"}`
+      : "";
+    const selection = columns
+      .map((column) => this.quoteExplorerIdentifier(column.name))
+      .join(", ");
+
+    const [countResult, rowsResult] = await this.selectBatchResults([
+      { sql: `SELECT COUNT(*) AS total FROM ${quotedTable}${where}`, bind: searchBinds },
+      {
+        sql: `SELECT ${selection} FROM ${quotedTable}${where}${orderBy} LIMIT ? OFFSET ?`,
+        bind: [...searchBinds, limit, offset],
+      },
+    ]);
+    return {
+      table,
+      columns,
+      allColumns,
+      rows: rowsResult.rows ?? [],
+      offset,
+      limit,
+      total: Number(countResult.rows?.[0]?.total ?? 0),
+    };
+  }
+
   async searchCharactersByTag(
     tag: string,
     limit: number = 100,

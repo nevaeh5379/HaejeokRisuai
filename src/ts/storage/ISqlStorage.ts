@@ -202,6 +202,23 @@ export interface ISqlStorage {
     name: string,
     limit?: number,
   ): Promise<NodePostgresCharacterSearchResult[]>;
+
+  // ── Optional table explorer ──────────────────────────────────────────
+
+  listDbTables?(): Promise<
+    import("./nodePostgresStorage").NodePostgresTableInfo[]
+  >;
+  getDbTableData?(
+    table: string,
+    options?: {
+      offset?: number;
+      limit?: number;
+      sortColumn?: string;
+      sortOrder?: "asc" | "desc";
+      search?: string;
+      columns?: string[];
+    },
+  ): Promise<import("./nodePostgresStorage").NodePostgresTableData>;
 }
 
 /**

@@ -3,7 +3,7 @@ import { languageEnglish } from "src/lang/en";
 import { get } from "svelte/store";
 import { getModelInfo } from "../model/modellist";
 import { isLite } from "../lite";
-import { isNodeServer } from "../platform";
+import { isTauri } from "../platform";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { checkCondition, getLabel } from "./utils";
 import type { SettingItem, SettingContext } from "./types";
@@ -164,7 +164,7 @@ export function searchSettings(rawQuery: string): SettingSearchResult[] {
   }
 
   for (const entry of manualEntries) {
-    if (!isNodeServer && (entry.target.kind === "dbExplorer" || entry.target.kind === "storageExplorer")) continue;
+    if (isTauri && (entry.target.kind === "dbExplorer" || entry.target.kind === "storageExplorer")) continue;
     if (entry.target.kind === "menu" && !isMenuAvailable(entry.target.menuIndex)) continue;
     const label = entry.label();
     const rank = rankMatch(query, [label], entry.keywords, []);
