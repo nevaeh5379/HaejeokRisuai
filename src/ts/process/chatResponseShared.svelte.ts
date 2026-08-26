@@ -57,6 +57,7 @@ export async function applyOutputTrigger(
   let currentChat = characterStore.characters[selectedChar].chats[selectedChat];
   const triggerResult = await runTrigger(currentChar, "output", {
     chat: currentChat,
+    target: { characterIndex: selectedChar, chatIndex: selectedChat },
   });
   if (triggerResult?.chat) currentChat = triggerResult.chat;
   characterStore.characters[selectedChar].chats[selectedChat] = currentChat;

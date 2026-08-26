@@ -294,7 +294,10 @@
             const char = characterStore.characters[selectedChar]
             if(char.type === 'character'){
                 const { runTrigger } = await import('src/ts/process/triggers')
-                let triggerResult = await runTrigger(char,'input', {chat: char.chats[char.chatPage]})
+                let triggerResult = await runTrigger(char,'input', {
+                    chat: char.chats[currentChatPage],
+                    target: {characterIndex:selectedChar, chatIndex:currentChatPage}
+                })
                 if(triggerResult){
                     cha = triggerResult.chat.message
                 }

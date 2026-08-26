@@ -8,7 +8,7 @@ import { v4 } from "uuid";
 import { exampleMessage } from "./exampleMessages";
 import { processScript, processScriptFull, risuChatParser } from "./scripts";
 import { runTrigger } from "./triggers";
-import { setCurrentChat } from "../storage/database.svelte";
+import { characterStore } from "../stores/domain/characterStore.svelte";
 import { getInlayAsset } from "./files/inlays";
 import { runImageEmbedding } from "./transformers";
 import { getModuleAssets } from "./modules";
@@ -301,13 +301,19 @@ async function runStartTrigger(
   let active = getActiveMessages(currentChat);
   const triggerResult = await runTrigger(options.currentChar, "start", {
     chat: currentChat,
+    target: options.chatTarget,
   });
   if (!triggerResult) {
     return { stopSending: false as const, currentChat, currentTokens, active, triggerResult };
   }
 
   currentChat = triggerResult.chat;
-  setCurrentChat(currentChat);
+  const targetCharacter =
+    characterStore.characters[options.chatTarget.characterIndex];
+  if (targetCharacter?.chats?.[options.chatTarget.chatIndex]) {
+    targetCharacter.chats[options.chatTarget.chatIndex] = currentChat;
+    if (currentChat.id) characterStore.markChatDirty(currentChat.id);
+  }
   active = getActiveMessages(currentChat);
   currentTokens += triggerResult.tokens;
   return {
