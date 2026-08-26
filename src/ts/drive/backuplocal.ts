@@ -73,6 +73,101 @@ interface NativeBackupPlugin {
     length: number;
   }): Promise<{ data: string; bytesRead: number; eof: boolean }>;
   closeImport(options: { id: string }): Promise<void>;
+  addListener(
+    eventName: "importProgress",
+    listener: (event: NativeImportProgress) => void,
+  ): Promise<{ remove(): Promise<void> }>;
+}
+
+interface NativeImportProgress {
+  stage: "extracting" | "committing" | "fallback" | "complete";
+  bytesRead?: number;
+  totalBytes?: number;
+  assetsProcessed?: number;
+  totalAssets?: number;
+}
+
+interface LocalBackupSource {
+  readonly size: number;
+  stream(): ReadableStream<Uint8Array>;
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+const NATIVE_IMPORT_CHUNK_SIZE = 512 * 1024;
+
+/**
+ * Exposes the native import staging file as a pull-based stream. Keeping the
+ * data in Android's cache directory avoids retaining a second complete backup
+ * in the WebView as Base64 strings, ArrayBuffers, and Blob parts.
+ */
+export function createNativeImportSource(
+  plugin: Pick<NativeBackupPlugin, "readImportChunk">,
+  id: string,
+  size: number,
+): LocalBackupSource {
+  const normalizedSize = Math.max(0, Math.floor(size));
+
+  const readChunk = async (offset: number) => {
+    const requested = Math.min(
+      NATIVE_IMPORT_CHUNK_SIZE,
+      normalizedSize - offset,
+    );
+    const chunk = await plugin.readImportChunk({
+      id,
+      offset,
+      length: requested,
+    });
+    if (chunk.bytesRead < 0 || chunk.bytesRead > requested) {
+      throw new Error("Native backup importer returned an invalid chunk size");
+    }
+    if (chunk.bytesRead === 0 && !chunk.eof) {
+      throw new Error("Native backup importer stopped before reaching the end");
+    }
+    const decoded = chunk.data
+      ? new Uint8Array(Buffer.from(chunk.data, "base64"))
+      : new Uint8Array();
+    if (decoded.byteLength !== chunk.bytesRead) {
+      throw new Error("Native backup importer returned an incomplete chunk");
+    }
+    return { ...chunk, decoded };
+  };
+
+  return {
+    size: normalizedSize,
+    stream() {
+      let offset = 0;
+      return new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          if (offset >= normalizedSize) {
+            controller.close();
+            return;
+          }
+          try {
+            const chunk = await readChunk(offset);
+            offset += chunk.bytesRead;
+            if (chunk.decoded.byteLength > 0) controller.enqueue(chunk.decoded);
+            if (chunk.eof || offset >= normalizedSize) controller.close();
+          } catch (error) {
+            controller.error(error);
+          }
+        },
+      });
+    },
+    async arrayBuffer() {
+      const output = new Uint8Array(normalizedSize);
+      let offset = 0;
+      while (offset < normalizedSize) {
+        const chunk = await readChunk(offset);
+        output.set(chunk.decoded, offset);
+        offset += chunk.bytesRead;
+        if (chunk.eof) break;
+      }
+      if (offset !== normalizedSize) {
+        throw new Error("Native backup importer ended before the declared size");
+      }
+      return output.buffer;
+    },
+  };
 }
 
 const nativeBackup = isCapacitor
@@ -766,7 +861,10 @@ export async function SavePartialLocalBackup() {
   }
 }
 
-export async function restoreLocalBackupFile(file: File) {
+async function restoreLocalBackupSource(
+  file: LocalBackupSource,
+  parserProgress: { start: number; end: number } = { start: 0, end: 90 },
+) {
   const textDecoder = new TextDecoder();
   const encryptionMeta: {
     type: "none" | "account";
@@ -1032,7 +1130,13 @@ export async function restoreLocalBackupFile(file: File) {
       if (now - lastUiUpdate > 30) {
         lastUiUpdate = now;
         const readPercent =
-          file.size === 0 ? 90 : Math.floor((bytesRead / file.size) * 90);
+          file.size === 0
+            ? parserProgress.end
+            : Math.floor(
+                parserProgress.start +
+                  (bytesRead / file.size) *
+                    (parserProgress.end - parserProgress.start),
+              );
         let message = `Parsing backup... (${readPercent}%) (${entriesRestored} entries parsed`;
         const isBulkRestore = useNodeBulkRestore || useBrowserBulkRestore;
         if (isBulkRestore && entriesWritten > 0) {
@@ -1245,10 +1349,55 @@ export async function restoreLocalBackupFile(file: File) {
   alertNormal("Success");
 }
 
+export async function restoreLocalBackupFile(file: File) {
+  await restoreLocalBackupSource(file);
+}
+
 async function loadCapacitorLocalBackup() {
   if (!nativeBackup) throw new Error("Native backup importer is unavailable");
-  alertProgress("Opening local backup...", 0);
-  const selected = await nativeBackup.openImport();
+  alertProgress(
+    "Opening local backup...\nChoose a backup file in the Android file picker.",
+    0,
+  );
+  const progressListener = await nativeBackup.addListener(
+    "importProgress",
+    (event) => {
+      const bytesRead = Math.max(0, event.bytesRead ?? 0);
+      const totalBytes = Math.max(0, event.totalBytes ?? 0);
+      const readPercent =
+        totalBytes > 0 ? Math.min(45, Math.floor((bytesRead / totalBytes) * 45)) : 0;
+      const byteDetail =
+        totalBytes > 0
+          ? `${(bytesRead / 1024 / 1024).toFixed(1)} / ${(totalBytes / 1024 / 1024).toFixed(1)} MB`
+          : `${(bytesRead / 1024 / 1024).toFixed(1)} MB`;
+
+      if (event.stage === "committing") {
+        const processed = Math.max(0, event.assetsProcessed ?? 0);
+        const total = Math.max(0, event.totalAssets ?? 0);
+        const percent = total > 0 ? 45 + Math.floor((processed / total) * 4) : 47;
+        alertProgress(
+          `Installing restored assets... (${processed} / ${total})`,
+          percent,
+        );
+      } else if (event.stage === "fallback") {
+        alertProgress(`Reading legacy database backup...\n${byteDetail}`, readPercent);
+      } else if (event.stage === "complete") {
+        alertProgress("Native backup extraction complete.", 50);
+      } else {
+        const assets = Math.max(0, event.assetsProcessed ?? 0);
+        alertProgress(
+          `Reading and extracting backup...\n${byteDetail}\n${assets} assets found`,
+          readPercent,
+        );
+      }
+    },
+  );
+  let selected: Awaited<ReturnType<NativeBackupPlugin["openImport"]>>;
+  try {
+    selected = await nativeBackup.openImport();
+  } finally {
+    await progressListener.remove().catch(() => {});
+  }
   if (selected.cancelled) {
     alertClear();
     return;
@@ -1258,35 +1407,14 @@ async function loadCapacitorLocalBackup() {
   const id = selected.id;
   try {
     const size = Math.max(0, selected.size ?? 0);
-    const parts: BlobPart[] = [];
-    let offset = 0;
-    const chunkSize = 4 * 1024 * 1024;
     alertProgress(
-      `Native extraction complete (${selected.assetsWritten ?? 0} assets). Loading database data...`,
-      90,
+      `Native extraction complete (${selected.assetsWritten ?? 0} assets). Streaming database data...`,
+      50,
     );
-
-    while (offset < size) {
-      const chunk = await nativeBackup.readImportChunk({ id, offset, length: chunkSize });
-      if (chunk.bytesRead <= 0 && !chunk.eof) {
-        throw new Error("Native backup importer stopped before reaching the end");
-      }
-      if (chunk.data) {
-        const decoded = Buffer.from(chunk.data, "base64");
-        const arrayBuffer = new ArrayBuffer(decoded.byteLength);
-        new Uint8Array(arrayBuffer).set(decoded);
-        parts.push(arrayBuffer);
-      }
-      offset += chunk.bytesRead;
-      const progress = size === 0 ? 94 : 90 + Math.floor((offset / size) * 4);
-      alertProgress("Loading database and cold-storage data...", progress);
-      if (chunk.eof) break;
-    }
-
-    const specialFile = new File(parts, "native-backup-special.risubackup", {
-      type: "application/octet-stream",
-    });
-    await restoreLocalBackupFile(specialFile);
+    await restoreLocalBackupSource(
+      createNativeImportSource(nativeBackup, id, size),
+      { start: 50, end: 90 },
+    );
   } finally {
     await nativeBackup.closeImport({ id }).catch(() => {});
   }

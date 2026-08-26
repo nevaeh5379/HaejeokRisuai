@@ -32,6 +32,7 @@ import type {
 } from "./nodePostgresStorage";
 import {
   createSqlDatabaseAdapter,
+  DEFERRED_STARTUP_SETTING_KEYS,
   PROMPT_SETTING_KEYS,
 } from "./databaseAdapters.svelte";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
@@ -203,15 +204,6 @@ function getWorkerRpc(): WorkerRpc {
 // ── Storage implementation ────────────────────────────────────────────
 
 const DB_FILE = "/risuai-local.sqlite3";
-const DEFERRED_STARTUP_SETTING_KEYS = [
-  "personas",
-  "loreBook",
-  "modules",
-  "globalscript",
-  "pluginCustomStorage",
-  ...PROMPT_SETTING_KEYS,
-] as const;
-
 export class WebSqliteStorage implements ISqlStorage {
   readonly backendKind = "web-sqlite" as const;
 

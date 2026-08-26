@@ -46,6 +46,15 @@ export type PostgresDomainName = (typeof POSTGRES_DOMAINS)[number];
 
 export const PROMPT_SETTING_KEYS = protocolSettings.PROMPT_SETTING_KEYS;
 
+export const DEFERRED_STARTUP_SETTING_KEYS = [
+  "personas",
+  "loreBook",
+  "modules",
+  "globalscript",
+  "pluginCustomStorage",
+  ...PROMPT_SETTING_KEYS,
+] as const;
+
 const fallbackBotPreset: botPreset = {
   name: "Default",
   apiType: "gemini-3-flash-preview",

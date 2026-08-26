@@ -3,6 +3,7 @@ package co.aiclient.risu;
 import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.Intent;
+import android.content.res.AssetFileDescriptor;
 import android.net.Uri;
 import android.util.Base64;
 import androidx.activity.result.ActivityResult;
@@ -17,6 +18,7 @@ import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -35,6 +37,8 @@ public class NativeBackupPlugin extends Plugin {
     private static final int MAX_NAME_LENGTH = 1024 * 1024;
     private static final int COPY_BUFFER_SIZE = 256 * 1024;
     private static final int MAX_CHUNK_SIZE = 4 * 1024 * 1024;
+    private static final long PROGRESS_BYTE_INTERVAL = 512 * 1024;
+    private static final long PROGRESS_TIME_INTERVAL_MS = 150;
 
     private final ConcurrentHashMap<String, File> sessions = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -144,37 +148,50 @@ public class NativeBackupPlugin extends Plugin {
             throw new IOException("Failed to create backup staging directory");
         }
 
+        long totalBytes = contentLength(uri);
+        ImportProgressReporter progress = new ImportProgressReporter(totalBytes);
         int assetsWritten;
         try {
-            assetsWritten = parseContainer(uri, stagingDir, specialFile);
+            assetsWritten = parseContainer(uri, stagingDir, specialFile, progress);
         } catch (Exception containerError) {
             deleteTree(stagingDir);
             if (specialFile.exists() && !specialFile.delete()) {
                 throw new IOException("Failed to reset backup staging file", containerError);
             }
-            copyRawImport(uri, specialFile);
+            copyRawImport(uri, specialFile, progress);
             sessions.put(id, specialFile);
+            progress.report("complete", specialFile.length(), 0, 0, true);
             return new ImportResult(id, specialFile, 0, true);
         }
 
         try {
-            commitAssets(stagingDir);
+            commitAssets(stagingDir, progress, assetsWritten);
         } catch (IOException commitError) {
             deleteTree(sessionDir);
             throw commitError;
         }
         sessions.put(id, specialFile);
+        progress.report("complete", totalBytes, assetsWritten, assetsWritten, true);
         return new ImportResult(id, specialFile, assetsWritten, false);
     }
 
-    private int parseContainer(Uri uri, File stagingDir, File specialFile) throws IOException {
+    private int parseContainer(
+        Uri uri,
+        File stagingDir,
+        File specialFile,
+        ImportProgressReporter progress
+    ) throws IOException {
         ContentResolver resolver = getContext().getContentResolver();
         byte[] copyBuffer = new byte[COPY_BUFFER_SIZE];
         int assetsWritten = 0;
         boolean hasDatabase = false;
         try (
-            InputStream raw = resolver.openInputStream(uri);
-            BufferedInputStream input = new BufferedInputStream(requireInput(raw));
+            ProgressInputStream tracked = new ProgressInputStream(
+                requireInput(resolver.openInputStream(uri)),
+                progress,
+                "extracting"
+            );
+            BufferedInputStream input = new BufferedInputStream(tracked);
             BufferedOutputStream special = new BufferedOutputStream(new FileOutputStream(specialFile))
         ) {
             while (true) {
@@ -203,6 +220,7 @@ public class NativeBackupPlugin extends Plugin {
                         copyExact(input, output, dataLength, copyBuffer);
                     }
                     assetsWritten++;
+                    progress.report("extracting", tracked.getBytesRead(), assetsWritten, 0, false);
                 }
             }
         }
@@ -234,7 +252,11 @@ public class NativeBackupPlugin extends Plugin {
         }
         return path.toString();
     }
-    private void commitAssets(File stagingDir) throws IOException {
+    private void commitAssets(
+        File stagingDir,
+        ImportProgressReporter progress,
+        int totalAssets
+    ) throws IOException {
         File assetRoot = new File(getContext().getFilesDir(), "risuai-assets");
         if (!assetRoot.mkdirs() && !assetRoot.isDirectory()) {
             throw new IOException("Failed to create native asset directory");
@@ -242,6 +264,8 @@ public class NativeBackupPlugin extends Plugin {
         File[] files = stagingDir.listFiles();
         if (files == null) return;
         byte[] buffer = new byte[COPY_BUFFER_SIZE];
+        int committed = 0;
+        progress.report("committing", progress.totalBytes, 0, totalAssets, true);
         for (File source : files) {
             File destination = new File(assetRoot, source.getName());
             if (destination.exists() && !destination.delete()) {
@@ -258,17 +282,120 @@ public class NativeBackupPlugin extends Plugin {
                     throw new IOException("Failed to finalize restored asset");
                 }
             }
+            committed++;
+            progress.report("committing", progress.totalBytes, committed, totalAssets, false);
         }
         deleteTree(stagingDir);
     }
 
-    private void copyRawImport(Uri uri, File destination) throws IOException {
+    private void copyRawImport(
+        Uri uri,
+        File destination,
+        ImportProgressReporter progress
+    ) throws IOException {
         ContentResolver resolver = getContext().getContentResolver();
         try (
-            InputStream input = requireInput(resolver.openInputStream(uri));
+            InputStream input = new ProgressInputStream(
+                requireInput(resolver.openInputStream(uri)),
+                progress,
+                "fallback"
+            );
             OutputStream output = new BufferedOutputStream(new FileOutputStream(destination))
         ) {
             copyUntilEof(input, output, new byte[COPY_BUFFER_SIZE]);
+        }
+    }
+
+    private long contentLength(Uri uri) {
+        ContentResolver resolver = getContext().getContentResolver();
+        try (AssetFileDescriptor descriptor = resolver.openAssetFileDescriptor(uri, "r")) {
+            if (descriptor == null) return -1L;
+            long length = descriptor.getLength();
+            return length >= 0 ? length : descriptor.getParcelFileDescriptor().getStatSize();
+        } catch (Exception ignored) {
+            return -1L;
+        }
+    }
+
+    private final class ImportProgressReporter {
+        final long totalBytes;
+        private long lastBytes = -1L;
+        private long lastReportedAt = 0L;
+        private String lastStage = "";
+        private int lastAssetsProcessed = 0;
+
+        ImportProgressReporter(long totalBytes) {
+            this.totalBytes = Math.max(-1L, totalBytes);
+        }
+
+        synchronized void report(
+            String stage,
+            long bytesRead,
+            int assetsProcessed,
+            int totalAssets,
+            boolean force
+        ) {
+            long now = android.os.SystemClock.elapsedRealtime();
+            boolean stageChanged = !stage.equals(lastStage);
+            if (stageChanged) lastAssetsProcessed = 0;
+            lastAssetsProcessed = Math.max(lastAssetsProcessed, assetsProcessed);
+            if (
+                !force &&
+                !stageChanged &&
+                bytesRead - lastBytes < PROGRESS_BYTE_INTERVAL &&
+                now - lastReportedAt < PROGRESS_TIME_INTERVAL_MS
+            ) return;
+
+            lastStage = stage;
+            lastBytes = bytesRead;
+            lastReportedAt = now;
+            JSObject event = new JSObject();
+            event.put("stage", stage);
+            event.put("bytesRead", Math.max(0L, bytesRead));
+            event.put("totalBytes", Math.max(0L, totalBytes));
+            event.put("assetsProcessed", Math.max(0, lastAssetsProcessed));
+            event.put("totalAssets", Math.max(0, totalAssets));
+            notifyListeners("importProgress", event);
+        }
+    }
+
+    private final class ProgressInputStream extends FilterInputStream {
+        private final ImportProgressReporter progress;
+        private final String stage;
+        private long bytesRead = 0L;
+
+        ProgressInputStream(
+            InputStream input,
+            ImportProgressReporter progress,
+            String stage
+        ) {
+            super(input);
+            this.progress = progress;
+            this.stage = stage;
+            progress.report(stage, 0L, 0, 0, true);
+        }
+
+        long getBytesRead() {
+            return bytesRead;
+        }
+
+        @Override
+        public int read() throws IOException {
+            int value = super.read();
+            if (value >= 0) track(1);
+            return value;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            int count = super.read(buffer, offset, length);
+            if (count > 0) track(count);
+            return count;
+        }
+
+        private void track(int count) {
+            bytesRead += count;
+            progress.report(stage, bytesRead, 0, 0, false);
         }
     }
 

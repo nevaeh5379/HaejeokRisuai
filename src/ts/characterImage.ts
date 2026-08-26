@@ -2,6 +2,7 @@ import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import { forageStorage, getFileSrc } from "./globalApi.svelte";
 import { NodeStorage } from "./storage/nodeStorage";
 import { getMimeType } from "./media/mimeType";
+import { isCapacitor } from "./platform";
 
 // Character images can be multi-megabyte blobs. Keep Map compatibility for the
 // existing UI while bounding the number of decoded/object-URL resources retained
@@ -81,8 +82,16 @@ class CharacterImageCache extends Map<string, string> {
   }
 
   private trim(): void {
-    const maxEntries = settingsStore.state.lowSpecMode ? 32 : 128;
-    const maxFullResolution = settingsStore.state.lowSpecMode ? 4 : 12;
+    const maxEntries = settingsStore.state.lowSpecMode
+      ? 32
+      : isCapacitor
+        ? 64
+        : 128;
+    const maxFullResolution = settingsStore.state.lowSpecMode
+      ? 4
+      : isCapacitor
+        ? 6
+        : 12;
     // Pinned entries are the currently rendered working set. They must not consume
     // the disposable full-resolution LRU budget, otherwise any newly loaded preview
     // can be inserted and immediately revoked while the UI is still using its URL.
@@ -147,7 +156,7 @@ export function preloadCharacterImage(loc: string): Promise<void> {
     // become interactive and then monopolize image decoding on older
     // mobile CPUs. Low-spec mode uses the same bounded thumbnail as the
     // chat message avatar, so warm that resource instead.
-    const imageOptions = settingsStore.state.lowSpecMode
+    const imageOptions = settingsStore.state.lowSpecMode || isCapacitor
       ? { thumbnail: true }
       : undefined;
     const source = await getCharImage(loc, "plain", imageOptions);

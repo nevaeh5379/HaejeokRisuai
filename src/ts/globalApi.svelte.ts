@@ -326,8 +326,12 @@ export function invalidateThumbnailCache(loc?: string) {
 const registeredSwCaches = new Set<string>();
 const browserAssetWeights = new Map<string, number>();
 const browserAssetUrls = new BoundedCache<string, string>({
-  maxEntries: () => (settingsStore.state.lowSpecMode ? 16 : 64),
-  maxWeight: () => (settingsStore.state.lowSpecMode ? 8 : 24) * 1024 * 1024,
+  maxEntries: () =>
+    settingsStore.state.lowSpecMode ? 16 : isCapacitor ? 32 : 64,
+  maxWeight: () =>
+    (settingsStore.state.lowSpecMode ? 8 : isCapacitor ? 12 : 24) *
+    1024 *
+    1024,
   weigh: (_url, key) => browserAssetWeights.get(key) ?? 1,
   onEvict: (url, key) => {
     browserAssetWeights.delete(key);

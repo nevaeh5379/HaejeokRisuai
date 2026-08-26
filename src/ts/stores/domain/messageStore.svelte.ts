@@ -4,6 +4,7 @@ import { characterStore } from "./characterStore.svelte";
 import { settingsStore } from "./settingsStore.svelte";
 import { v4 as uuidv4 } from "uuid";
 import { sqlMessageData } from "../../storage/sqlCommit";
+import { isCapacitor } from "../../platform";
 
 /**
  * In-memory retention cap for a single active chat. Messages beyond the most
@@ -11,11 +12,12 @@ import { sqlMessageData } from "../../storage/sqlCommit";
  * as paged-out (`messagesFullyLoaded = false`); they are transparently reloaded
  * from SQL storage via `loadOlderChatMessages` when scrolled into view.
  *
- * Low-spec mode scales the cap down when the cost of keeping thousands of
- * parsed message objects is the primary memory pressure point.
+ * Low-spec mode scales the cap down most aggressively. Capacitor keeps a
+ * moderate mobile cap even in normal mode because Android WebView and native
+ * SQLite share the application's memory budget.
  */
 const getActiveChatMessageRetention = () =>
-  settingsStore.state.lowSpecMode ? 40 : 200;
+  settingsStore.state.lowSpecMode ? 40 : isCapacitor ? 100 : 200;
 
 function findChatAcrossCharacters(chatId: string): Chat | undefined {
   for (const char of characterStore.characters) {
@@ -377,7 +379,7 @@ function evictInactiveChatMessages(chats: Chat[], activeChatId?: string): void {
  */
 export function releaseInactiveChatMessages(activeChatId?: string): void {
   const generation = ++inactiveReleaseGeneration;
-  const batchSize = settingsStore.state.lowSpecMode ? 4 : 32;
+  const batchSize = settingsStore.state.lowSpecMode ? 4 : isCapacitor ? 8 : 32;
 
   const scheduleIdle = (callback: () => void) => {
     if ("requestIdleCallback" in globalThis) {

@@ -27,7 +27,10 @@ import type {
   NodePostgresCharacterSearchResult,
   NodePostgresBotChatStats,
 } from "./nodePostgresStorage";
-import { createSqlDatabaseAdapter } from "./databaseAdapters.svelte";
+import {
+  createSqlDatabaseAdapter,
+  DEFERRED_STARTUP_SETTING_KEYS,
+} from "./databaseAdapters.svelte";
 import { isCapacitor } from "../platform";
 import {
   CapacitorSQLite,
@@ -228,6 +231,57 @@ export class CapacitorSqliteStorage implements ISqlStorage {
     ]);
   }
 
+  /**
+   * Load every root setting with one native bridge query. Calling
+   * loadSettingValue() once per key is inexpensive in the Web worker but turns
+   * Android startup into dozens of serialized Capacitor round trips.
+   */
+  private async loadAllSettingValues(
+    deferredKeyList: readonly string[] = [],
+  ): Promise<{
+    values: Map<string, unknown>;
+    keyCount: number;
+  }> {
+    const rows = await this.selectRows<{
+      setting_key: string;
+      node_id: number | null;
+      parent_node_id: number | null;
+      node_order: number | null;
+      object_key: string | null;
+      object_key_encoded: string | null;
+      value_type: string | null;
+      text_value: string | null;
+      encoded_text_value: string | null;
+      number_value: number | null;
+      boolean_value: number | null;
+    }>(
+      `SELECT s.key AS setting_key, n.node_id, n.parent_node_id, n.node_order,
+              n.object_key, n.object_key_encoded, n.value_type, n.text_value,
+              n.encoded_text_value, n.number_value, n.boolean_value
+         FROM system_settings s
+         LEFT JOIN setting_extension_nodes n ON n.setting_key = s.key${
+           deferredKeyList.length
+             ? ` AND s.key NOT IN (${deferredKeyList.map(() => "?").join(",")})`
+             : ""
+         }
+         ORDER BY s.key, n.node_id`,
+      [...deferredKeyList],
+    );
+    const deferredKeys = new Set(deferredKeyList);
+    const grouped = new Map<string, Record<string, unknown>[]>();
+    for (const row of rows) {
+      const nodes = grouped.get(row.setting_key) ?? [];
+      if (row.node_id !== null) nodes.push(row);
+      grouped.set(row.setting_key, nodes);
+    }
+    const values = new Map<string, unknown>();
+    for (const [key, nodes] of grouped) {
+      if (deferredKeys.has(key)) continue;
+      values.set(key, nodes.length ? rebuildRelationalValue(nodes) : undefined);
+    }
+    return { values, keyCount: grouped.size };
+  }
+
   private async validatePresetCommit(commit: SqlCommit): Promise<void> {
     if (!commit.presets) return;
     const originalIds = (
@@ -282,18 +336,19 @@ export class CapacitorSqliteStorage implements ISqlStorage {
     const shallow = options?.shallow !== false;
     const db: DatabaseType = {} as any;
 
-    // Load all settings
-    const settingsRows = await this.selectRows<{ key: string }>(
-      "SELECT key FROM system_settings",
+    // Load all settings in one bridge call on Android.
+    const settings = await this.loadAllSettingValues(
+      shallow ? DEFERRED_STARTUP_SETTING_KEYS : [],
     );
-    for (const row of settingsRows) {
-      (db as any)[row.key] = await this.loadSettingValue(row.key);
+    for (const [key, value] of settings.values) {
+      (db as any)[key] = value;
     }
 
     // Also merge plugin_custom_storage table if present
     if (
-      !db.pluginCustomStorage ||
-      Object.keys(db.pluginCustomStorage).length === 0
+      !shallow &&
+      (!db.pluginCustomStorage ||
+        Object.keys(db.pluginCustomStorage).length === 0)
     ) {
       const pluginStorageRows = await this.selectRows<{
         key: string;
@@ -391,20 +446,14 @@ export class CapacitorSqliteStorage implements ISqlStorage {
     const isInitialized =
       metaRow?.initialized === 1 ||
       characters.length > 0 ||
-      settingsRows.length > 0;
+      settings.keyCount > 0;
 
     if (!isInitialized) {
       return { status: "empty", revision: this.revision, database: null };
     }
 
     if (shallow) {
-      const adapter = createSqlDatabaseAdapter(db, this, [
-        "personas",
-        "loreBook",
-        "modules",
-        "prompts",
-        "scripts",
-      ]);
+      const adapter = createSqlDatabaseAdapter(db, this);
       return { status: "ready", revision: this.revision, database: adapter };
     }
 
@@ -415,6 +464,17 @@ export class CapacitorSqliteStorage implements ISqlStorage {
     expectedRevision: number | null,
     statements: SqliteTransactionStatement[],
   ): Promise<void> {
+    await this.runNativeTransaction(expectedRevision, async (execute) => {
+      for (const statement of statements) {
+        await execute(statement.sql, statement.bind ?? []);
+      }
+    });
+  }
+
+  private async runNativeTransaction<T>(
+    expectedRevision: number | null,
+    task: (execute: (sql: string, bind?: unknown[]) => Promise<void>) => Promise<T>,
+  ): Promise<T> {
     if (!this.db || !this.dbName)
       throw new Error("SQLite storage is not enabled");
     await this.db.beginTransaction();
@@ -428,10 +488,12 @@ export class CapacitorSqliteStorage implements ISqlStorage {
           throw new SqlRevisionConflictError(currentRevision);
         }
       }
-      for (const statement of statements) {
-        await this.db.run(statement.sql, statement.bind ?? [], false);
-      }
+      const execute = async (sql: string, bind: unknown[] = []) => {
+        await this.db!.run(sql, bind, false);
+      };
+      const result = await task(execute);
       await this.db.commitTransaction();
+      return result;
     } catch (error) {
       try {
         await this.db.rollbackTransaction();
@@ -457,27 +519,24 @@ export class CapacitorSqliteStorage implements ISqlStorage {
       throw new SqlRevisionConflictError(currentRevision);
     await this.validatePresetCommit(commit);
 
-    const statements: SqliteTransactionStatement[] = [];
-    const append = async (sql: string, bind: unknown[] = []) => {
-      statements.push({ sql, bind });
-    };
-    if (commit.replaceAll) {
-      await append("DELETE FROM system_settings");
-      await append("DELETE FROM plugin_custom_storage");
-      await append("DELETE FROM characters");
-    }
-    await applySqliteCommit(commit, append);
     const revision = currentRevision + 1;
-    await append(
-      "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
-      [revision],
-    );
     const action = commit.action || (commit.replaceAll ? "replace-all" : "sync");
-    await append(
-      "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
-      [revision, action],
-    );
-    await this.executeNativeTransaction(currentRevision, statements);
+    await this.runNativeTransaction(currentRevision, async (execute) => {
+      if (commit.replaceAll) {
+        await execute("DELETE FROM system_settings");
+        await execute("DELETE FROM plugin_custom_storage");
+        await execute("DELETE FROM characters");
+      }
+      await applySqliteCommit(commit, execute);
+      await execute(
+        "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
+        [revision],
+      );
+      await execute(
+        "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
+        [revision, action],
+      );
+    });
     this.revision = revision;
     return { revision };
   }
@@ -803,15 +862,9 @@ export class CapacitorSqliteStorage implements ISqlStorage {
 
   async setColdStorageItem(key: string, value: unknown): Promise<boolean> {
     return this.writeQueue.run(async () => {
-      const statements: SqliteTransactionStatement[] = [];
-      await writeSqliteColdStorage(
-        async (sql, bind = []) => {
-          statements.push({ sql, bind });
-        },
-        key,
-        value,
+      await this.runNativeTransaction(null, (execute) =>
+        writeSqliteColdStorage(execute, key, value),
       );
-      await this.executeNativeTransaction(null, statements);
       return true;
     });
   }
