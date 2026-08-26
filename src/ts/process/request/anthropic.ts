@@ -12,8 +12,17 @@ import { registerClaudeObserver } from "src/ts/observer.svelte";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { replaceAsync, simplifySchema, sleep } from "src/ts/util";
 import { v4 } from "uuid";
-import { DEFAULT_ANTHROPIC_MESSAGES_URL } from "@risuai/chat-core/anthropicProvider.cjs";
-import type { MultiModal } from "@risuai/chat-core/types.cjs";
+import {
+  DEFAULT_ANTHROPIC_MESSAGES_URL,
+  prepareAnthropicConversation,
+} from "@risuai/chat-core/anthropicProvider.cjs";
+import type {
+  Claude3Chat,
+  Claude3ContentBlock,
+  Claude3ExtendedChat,
+  Claude3ToolResponseBlock,
+  Claude3ToolUseBlock,
+} from "@risuai/chat-core/anthropicProvider.cjs";
 import { extractJSON } from "../templates/jsonSchema";
 import { callTool, decodeToolCall, encodeToolCall } from "../mcp/mcp";
 import type {
@@ -28,65 +37,6 @@ import {
   applyParameters,
   getAdditionalParameters,
 } from "./shared";
-
-interface Claude3TextBlock {
-  type: "text";
-  text: string;
-  cache_control?: {
-    type: "ephemeral";
-    ttl?: "5m" | "1h";
-  };
-}
-
-interface Claude3ImageBlock {
-  type: "image";
-  source: {
-    type: "base64";
-    media_type: string;
-    data: string;
-  };
-  cache_control?: {
-    type: "ephemeral";
-    ttl?: "5m" | "1h";
-  };
-}
-
-interface Claude3ToolUseBlock {
-  type: "tool_use";
-  id: string;
-  name: string;
-  input: any;
-  cache_control?: {
-    type: "ephemeral";
-    ttl?: "5m" | "1h";
-  };
-}
-
-interface Claude3ToolResponseBlock {
-  type: "tool_result";
-  tool_use_id: string;
-  content: Claude3ContentBlock[];
-  cache_control?: {
-    type: "ephemeral";
-    ttl?: "5m" | "1h";
-  };
-}
-
-type Claude3ContentBlock =
-  | Claude3TextBlock
-  | Claude3ImageBlock
-  | Claude3ToolUseBlock
-  | Claude3ToolResponseBlock;
-
-interface Claude3Chat {
-  role: "user" | "assistant";
-  content: Claude3ContentBlock[];
-}
-
-interface Claude3ExtendedChat {
-  role: "user" | "assistant";
-  content: Claude3ContentBlock[] | string;
-}
 
 export async function requestClaude(
   arg: RequestDataArgumentExtended,
@@ -116,195 +66,17 @@ export async function requestClaude(
     }
   }
 
-  let claudeChat: Claude3Chat[] = [];
-  let systemPrompt: string = "";
-
-  const addClaudeChat = (
-    chat: {
-      role: "user" | "assistant";
-      content: string;
-      cache: boolean;
-    },
-    multimodals?: MultiModal[],
-  ) => {
-    if (
-      claudeChat.length > 0 &&
-      claudeChat[claudeChat.length - 1].role === chat.role
-    ) {
-      let content = claudeChat[claudeChat.length - 1].content;
-      if (multimodals && multimodals.length > 0 && !Array.isArray(content)) {
-        content = [
-          {
-            type: "text",
-            text: content,
-          },
-        ];
-      }
-
-      if (Array.isArray(content)) {
-        let lastContent = content[content.length - 1];
-        if (lastContent?.type === "text") {
-          lastContent.text += "\n\n" + chat.content;
-          content[content.length - 1] = lastContent;
-        } else {
-          content.push({
-            type: "text",
-            text: chat.content,
-          });
-        }
-
-        if (multimodals && multimodals.length > 0) {
-          for (const modal of multimodals) {
-            if (modal.type === "image") {
-              const dataurl = modal.base64;
-              const base64 = dataurl.split(",")[1];
-              const mediaType = dataurl.split(";")[0].split(":")[1];
-
-              content.unshift({
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: mediaType,
-                  data: base64,
-                },
-              });
-            }
-          }
-        }
-      }
-      if (chat.cache) {
-        if (db.claude1HourCaching) {
-          content[content.length - 1].cache_control = {
-            type: "ephemeral",
-            ttl: "1h",
-          };
-        } else {
-          content[content.length - 1].cache_control = {
-            type: "ephemeral",
-          };
-        }
-      }
-      claudeChat[claudeChat.length - 1].content = content;
-    } else {
-      let formatedChat: Claude3Chat = {
-        role: chat.role,
-        content: [
-          {
-            type: "text",
-            text: chat.content,
-          },
-        ],
-      };
-      if (multimodals && multimodals.length > 0) {
-        formatedChat.content = [
-          {
-            type: "text",
-            text: chat.content,
-          },
-        ];
-        for (const modal of multimodals) {
-          if (modal.type === "image") {
-            const dataurl = modal.base64;
-            const base64 = dataurl.split(",")[1];
-            const mediaType = dataurl.split(";")[0].split(":")[1];
-
-            formatedChat.content.unshift({
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: mediaType,
-                data: base64,
-              },
-            });
-          }
-        }
-      }
-      if (chat.cache) {
-        if (db.claude1HourCaching) {
-          formatedChat.content[0].cache_control = {
-            type: "ephemeral",
-            ttl: "1h",
-          };
-        } else {
-          formatedChat.content[0].cache_control = {
-            type: "ephemeral",
-          };
-        }
-      }
-      claudeChat.push(formatedChat);
-    }
-  };
-  for (const chat of formated) {
-    switch (chat.role) {
-      case "user": {
-        addClaudeChat(
-          {
-            role: "user",
-            content: chat.content,
-            cache: chat.cachePoint,
-          },
-          chat.multimodals,
-        );
-        break;
-      }
-      case "assistant": {
-        addClaudeChat(
-          {
-            role: "assistant",
-            content: chat.content,
-            cache: chat.cachePoint,
-          },
-          chat.multimodals,
-        );
-        break;
-      }
-      case "system": {
-        if (claudeChat.length === 0) {
-          systemPrompt += "\n\n" + chat.content;
-        } else {
-          addClaudeChat({
-            role: "user",
-            content: "System: " + chat.content,
-            cache: chat.cachePoint,
-          });
-        }
-        break;
-      }
-      case "function": {
-        //ignore function for now
-        break;
-      }
-    }
-  }
-  if (claudeChat.length === 0 && systemPrompt === "") {
+  const preparedConversation = prepareAnthropicConversation(formated, {
+    oneHourCaching: db.claude1HourCaching,
+  });
+  if (preparedConversation.ok === false) {
     return {
       type: "fail",
-      result: "No input",
+      result: preparedConversation.error,
     };
   }
-  if (claudeChat.length === 0 && systemPrompt !== "") {
-    claudeChat.push({
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text: "Start",
-        },
-      ],
-    });
-    systemPrompt = "";
-  }
-  if (claudeChat[0].role !== "user") {
-    claudeChat.unshift({
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text: "Start",
-        },
-      ],
-    });
-  }
+  let claudeChat: Claude3Chat[] = preparedConversation.messages;
+  let systemPrompt = preparedConversation.systemPrompt;
 
   //check for tool calls
   for (let j = 0; j < claudeChat.length; j++) {
