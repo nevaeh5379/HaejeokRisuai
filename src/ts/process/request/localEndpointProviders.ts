@@ -1,10 +1,11 @@
 import { language } from "../../../lang";
 import { globalFetch } from "../../globalApi.svelte";
 import { risuChatParser } from "../../parser/parser.svelte";
-import { getCurrentCharacter, getDatabase } from "../../storage/database.svelte";
+import { getDatabase } from "../../storage/database.svelte";
 import { OobaParams } from "../prompt";
 import { getStopStrings, unstringlizeChat } from "../stringlize";
 import { applyChatTemplate } from "../templates/chatTemplate";
+import { resolveRequestCharacter } from "./requestContext";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
@@ -22,7 +23,7 @@ export async function requestOobaLegacy(
   const db = getDatabase();
   const aiModel = arg.aiModel;
   const maxTokens = arg.maxTokens;
-  const currentChar = getCurrentCharacter();
+  const currentChar = resolveRequestCharacter(arg);
   const useStreaming = arg.useStreaming;
   const abortSignal = arg.abortSignal;
   let streamUrl = db.textgenWebUIStreamURL.replace(/\/api.*/, "/api/v1/stream");
