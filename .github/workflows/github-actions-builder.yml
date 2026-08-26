@@ -287,6 +287,11 @@ jobs:
           java-version: 21
           cache: gradle
 
+      - name: Setup Android SDK 36
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+
       - name: Install pnpm
         shell: bash
         run: |
@@ -306,10 +311,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-android-pnpm-store-
             ${{ runner.os }}-pnpm-store-
-
-      - name: Install Android SDK 36
-        shell: bash
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
