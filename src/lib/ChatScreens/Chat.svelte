@@ -518,7 +518,7 @@
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <span class="text chat-width chattext prose minw-0"
-            class:prose-invert={$ColorSchemeTypeStore}
+            class:prose-invert={$ColorSchemeTypeStore === 'dark'}
             bind:this={bodyRoot}
             onclick={() => {
             if(!hideButtons && settingsStore.state.clickToEdit && idx > -1 && !isOptimizedStreamingMessage){
@@ -1201,27 +1201,44 @@
      onclickcapture={handleButtonTriggerWithin}>
     <div class="text-textcolor mt-1 ml-4 mr-4 mb-1 p-2 bg-transparent grow border-t-gray-900 border-opacity/30 border-transparent flexium items-start" style:max-width={getMaxWidth()}>
         {#if settingsStore.state.theme === 'mobilechat' && !blankMessage}
-            <div class={role === 'user' ? "flex items-start w-full justify-end" : "flex items-start"}>
+            <div class={role === 'user' ? "flex items-start w-full justify-end" : "flex items-start w-full justify-start"}>
                 {#if role !== 'user'}
                     {@render senderIcon({rounded: true})}
                 {/if}
-                <div
-                    class="bg-gray-100 rounded-lg p-3 max-w-[70%] mx-2"
-                    class:rounded-tl-none={role !== 'user'}
-                    class:rounded-tr-none={role === 'user'}
-                >
-                    <p class="text-gray-800">{@render textBox()}</p>
-                    {#if characterStore.characters?.[selIdState.selId]?.chats?.[characterStore.characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.time}
-                        <span class="text-xs text-textcolor2 mt-1 block">
-                            {new Intl.DateTimeFormat(undefined, {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                second: '2-digit',
-                                month: '2-digit',
-                                day: '2-digit',
-                                hour12: false
-                            }).format(characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].time)}
-                        </span>
+                <div class="flex flex-col max-w-[85%] sm:max-w-[75%] mx-2" class:items-end={role === 'user'}>
+                    {#if role !== 'user' && name}
+                        <span class="text-xs text-textcolor2 font-medium mb-1 ml-1">{name}</span>
+                    {/if}
+                    <div
+                        class="rounded-2xl p-3 shadow-md border"
+                        class:bg-darkbg={role !== 'user'}
+                        class:border-darkborderc={role !== 'user'}
+                        class:bg-selected={role === 'user'}
+                        class:border-borderc={role === 'user'}
+                        class:rounded-tl-none={role !== 'user'}
+                        class:rounded-tr-none={role === 'user'}
+                    >
+                        <div class="text-textcolor">{@render textBox()}</div>
+                        {#if characterStore.characters?.[selIdState.selId]?.chats?.[characterStore.characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.time}
+                            <span class="text-xs text-textcolor2/80 mt-1 block" class:text-right={role === 'user'}>
+                                {new Intl.DateTimeFormat(undefined, {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit',
+                                    month: '2-digit',
+                                    day: '2-digit',
+                                    hour12: false
+                                }).format(characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].time)}
+                            </span>
+                        {/if}
+                    </div>
+                    {#if !hideButtons}
+                        <div class="flex items-center mt-1 w-full" class:justify-end={role === 'user'}>
+                            {#if role !== 'user'}
+                                {@render genInfo()}
+                            {/if}
+                            {@render iconButtons()}
+                        </div>
                     {/if}
                 </div>
                 {#if role === 'user'}
@@ -1230,29 +1247,42 @@
             </div>
         {:else if settingsStore.state.theme === 'cardboard' && !blankMessage}
             <div class="w-full flex flex-col px-0 sm:px-4 py-4 relative">
-                <div class="bg-linear-to-b from-gray-100 to-gray-200 rounded-lg shadow-lg border-gray-400 border p-4 flex flex-col">
+                <div
+                    class="rounded-xl shadow-xl border p-4 flex flex-col transition-colors relative {role === 'user' ? 'bg-selected/20 border-borderc/40' : 'bg-darkbg border-darkborderc'}"
+                >
                     <div class="flex gap-4 mt-2 flex-col sm:flex-row">
                         <div class="flex flex-col items-center">
-                            <div class="sm:h-96 sm:w-72 sm:min-w-72 w-48 h-64">
-                                {@render senderIcon({rounded: false, styleFix:'height:100%;width:100%;'})}
+                            <div class="sm:h-96 sm:w-72 sm:min-w-72 w-48 h-64 overflow-hidden rounded-lg">
+                                {@render senderIcon({rounded: false, styleFix:'height:100%;width:100%;object-fit:cover;'})}
                             </div>
-                            <h2 class="text-base font-bold text-gray-500 text-center mt-2 max-w-full text-ellipsis">{name}</h2>
-
+                            <h2 class="text-base font-bold text-textcolor text-center mt-2 max-w-full text-ellipsis">{name}</h2>
                         </div>
                         {#if editMode}
-                            <textarea class="grow h-138 sm:h-96 overflow-y-auto bg-transparent text-black p-2 mb-2 resize-none message-edit-area" bind:value={message}></textarea>
+                            <div class="grow flex flex-col">
+                                <textarea class="grow h-138 sm:h-96 overflow-y-auto bg-darkbg/50 text-textcolor border border-darkborderc rounded-lg p-3 mb-2 resize-none message-edit-area focus:outline-hidden focus:border-borderc" bind:value={message}></textarea>
+                                <div class="flex justify-end gap-2">
+                                    <button class="text-sm px-3 py-1.5 text-textcolor2 border border-darkborderc hover:bg-darkbutton rounded-md hover:text-textcolor transition-all flex items-center gap-1" onclick={() => {
+                                        editMode = false
+                                        edit()
+                                    }}>
+                                        <PencilIcon size={16} />
+                                        <span>{language.edit}</span>
+                                    </button>
+                                </div>
+                            </div>
                         {:else}
-                            <div class="grow h-138 sm:h-96 overflow-y-auto p-2 mb-2 sm:mb-0">
+                            <div class="grow h-138 sm:h-96 overflow-y-auto p-2 mb-2 sm:mb-0 pb-10 text-textcolor">
                                 {@render textBox()}
                             </div>
                         {/if}
                     </div>
+                    {#if !hideButtons}
+                    <div class="absolute bottom-2 right-2 bg-darkbutton/90 backdrop-blur-xs px-2 py-1 rounded-lg border border-darkborderc text-textcolor2 shadow-md flex items-center gap-1">
+                        {@render genInfo()}
+                        {@render iconButtons()}
+                    </div>
+                    {/if}
                 </div>
-                {#if !hideButtons}
-                <div class="absolute bottom-0 right-0 bg-linear-to-b from-gray-200 to-gray-300 p-2 rounded-md border border-gray-400 text-gray-400">
-                    {@render iconButtons({applyTextColors: false})}
-                </div>
-                {/if}
             </div>
         {:else if settingsStore.state.theme === 'customHTML' && !blankMessage}
             {@render renderGuiHtmlPart(RenderGUIHtml(settingsStore.state.guiHTML))}

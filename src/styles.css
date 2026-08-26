@@ -250,6 +250,15 @@ body {
   color: var(--FontColorStandard);
 }
 
+.chattext h1,
+.chattext h2,
+.chattext h3,
+.chattext h4,
+.chattext h5,
+.chattext h6 {
+  color: var(--FontColorStandard);
+}
+
 .chattext2 pre {
   background-color: var(--risu-theme-bgcolor);
   padding: 0.5rem;

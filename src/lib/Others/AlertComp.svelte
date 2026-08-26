@@ -212,7 +212,7 @@
                                 <SparkleIcon size={12} />
                                 <span>{language.showHelp || "Help"}</span>
                             </div>
-                            <span class="text-textcolor chattext prose chattext2 text-sm leading-relaxed" class:prose-invert={$ColorSchemeTypeStore}>
+                            <span class="text-textcolor chattext prose chattext2 text-sm leading-relaxed" class:prose-invert={$ColorSchemeTypeStore === 'dark'}>
                                 {#await ParseMarkdown($alertStore.msg) then msg}
                                     {@html msg}                        
                                 {/await}
@@ -221,7 +221,7 @@
                     </div>
                 {:else}
                     <div class="overflow-y-auto">
-                        <span class="text-gray-300 chattext prose chattext2" class:prose-invert={$ColorSchemeTypeStore}>
+                        <span class="text-gray-300 chattext prose chattext2" class:prose-invert={$ColorSchemeTypeStore === 'dark'}>
                             {#await ParseMarkdown($alertStore.msg) then msg}
                                 {@html msg}                        
                             {/await}

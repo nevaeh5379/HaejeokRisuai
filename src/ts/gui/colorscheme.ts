@@ -315,6 +315,7 @@ export function updateColorScheme() {
       colorScheme.darkbutton,
     );
     ColorSchemeTypeStore.set(colorScheme.type);
+    updateTextThemeAndCSS();
   } catch (error) {}
 }
 
@@ -382,11 +383,11 @@ export function updateTextThemeAndCSS() {
         root.style.setProperty("--FontColorQuote2", "#FFB86C");
       } else {
         root.style.setProperty("--FontColorStandard", "#0f172a");
-        root.style.setProperty("--FontColorItalic", "#8C8D93");
+        root.style.setProperty("--FontColorItalic", "#64748b");
         root.style.setProperty("--FontColorBold", "#0f172a");
-        root.style.setProperty("--FontColorItalicBold", "#8C8D93");
-        root.style.setProperty("--FontColorQuote1", "#8BE9FD");
-        root.style.setProperty("--FontColorQuote2", "#FFB86C");
+        root.style.setProperty("--FontColorItalicBold", "#64748b");
+        root.style.setProperty("--FontColorQuote1", "#1d4ed8");
+        root.style.setProperty("--FontColorQuote2", "#c2410c");
       }
       break;
     }
@@ -399,12 +400,12 @@ export function updateTextThemeAndCSS() {
         root.style.setProperty("--FontColorQuote1", "#8BE9FD");
         root.style.setProperty("--FontColorQuote2", "#FFB86C");
       } else {
-        root.style.setProperty("--FontColorStandard", "#0f172a");
-        root.style.setProperty("--FontColorItalic", "#F1FA8C");
-        root.style.setProperty("--FontColorBold", "#8BE9FD");
-        root.style.setProperty("--FontColorItalicBold", "#FFB86C");
-        root.style.setProperty("--FontColorQuote1", "#8BE9FD");
-        root.style.setProperty("--FontColorQuote2", "#FFB86C");
+        root.style.setProperty("--FontColorStandard", "#020617");
+        root.style.setProperty("--FontColorItalic", "#475569");
+        root.style.setProperty("--FontColorBold", "#020617");
+        root.style.setProperty("--FontColorItalicBold", "#475569");
+        root.style.setProperty("--FontColorQuote1", "#1e40af");
+        root.style.setProperty("--FontColorQuote2", "#9a3412");
       }
       break;
     }
