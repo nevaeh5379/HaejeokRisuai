@@ -2,7 +2,7 @@
     import { onDestroy, onMount } from 'svelte'
     import { language } from '../../lang'
     import { createDeferredTokenCalculator } from '../../ts/deferredTokenCalculator'
-    import { calculateChatGenerationMetrics, chatGenerationStats } from '../../ts/process/chatGenerationStats'
+    import { calculateChatGenerationMetrics, chatGenerationStats, getChatGenerationStats } from '../../ts/process/chatGenerationStats'
 
     interface Props {
         selectedChar: number
@@ -25,9 +25,13 @@
         debounceMs: 250,
     })
 
+    let visibleStats = $derived(
+        getChatGenerationStats($chatGenerationStats, selectedChar, selectedChat)
+    )
+
     onMount(() => {
         const timer = setInterval(() => {
-            if ($chatGenerationStats?.phase === 'generating') now = Date.now()
+            if (visibleStats?.phase === 'generating') now = Date.now()
         }, 100)
         return () => clearInterval(timer)
     })
@@ -37,20 +41,13 @@
     })
 
     $effect(() => {
-        const stats = $chatGenerationStats
+        const stats = visibleStats
         if (stats?.generationId !== activeId) {
             activeId = stats?.generationId ?? ''
             outputTokens = null
         }
         tokenCalculator.update({ output: stats?.outputText ?? null })
     })
-
-    let visibleStats = $derived(
-        $chatGenerationStats?.selectedChar === selectedChar &&
-        $chatGenerationStats?.selectedChat === selectedChat
-            ? $chatGenerationStats
-            : null
-    )
     let metrics = $derived(visibleStats
         ? calculateChatGenerationMetrics(visibleStats, outputTokens, now)
         : null)
