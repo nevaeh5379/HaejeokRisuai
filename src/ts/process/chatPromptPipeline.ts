@@ -6,7 +6,7 @@ import type {
 } from "../storage/database.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { ChatTokenizer } from "../tokenizer";
-import { chatProcessStage } from "./chatRuntimeState";
+import { setChatProcessStage } from "./chatRuntimeState";
 import { risuChatParser } from "./scripts";
 import { preparePromptSections } from "./chatPromptSections";
 import {
@@ -174,7 +174,7 @@ export interface BuildGenerationPromptOptions {
 export async function buildGenerationPrompt(
   options: BuildGenerationPromptOptions,
 ) {
-  chatProcessStage.set(1);
+  setChatProcessStage(options.currentChat.id, 1);
   options.stageTimings.stage1Start = Date.now();
   const sections = await preparePromptSections(
     options.currentChar,

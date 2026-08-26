@@ -14,7 +14,7 @@ import {
   endsWithCompletionPunctuation,
 } from "@risuai/chat-core/finalization.cjs";
 import { risuChatParser } from "./scripts";
-import { chatProcessStage } from "./chatRuntimeState";
+import { setChatProcessStage } from "./chatRuntimeState";
 import { peerSync } from "../sync/multiuser";
 import { processPostGenerationEffects } from "./chatPostGeneration.svelte";
 import { tryCreateNodeAutoContinuationDecision } from "./chatNodePlanner";
@@ -147,7 +147,9 @@ function startPostGenerationStage(options: FinalizeChatGenerationOptions) {
     options.generationInfo.stageTiming.stage3 =
       options.stageTimings.stage3Duration;
   }
-  chatProcessStage.set(4);
+  const chatId =
+    characterStore.characters[options.selectedChar]?.chats?.[options.selectedChat]?.id;
+  setChatProcessStage(chatId, 4);
   options.stageTimings.stage4Start = Date.now();
 }
 

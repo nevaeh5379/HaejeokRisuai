@@ -1,6 +1,6 @@
 import type { MessageGenerationInfo } from "../storage/database.svelte";
 import { language } from "../../lang";
-import { chatProcessStage } from "./chatRuntimeState";
+import { setChatProcessStage } from "./chatRuntimeState";
 import {
   createChatGenerationPlan,
   executeChatModelRequest,
@@ -148,7 +148,7 @@ export class LocalChatExecutor implements ChatExecutor {
     };
     errorContext.generationInfo = generationInfo;
 
-    chatProcessStage.set(3);
+    setChatProcessStage(currentChat.id, 3);
     stageTimings.stage3Start = Date.now();
     if (arg.preview) {
       this.sink.setPreviewFormated(plan.formated);

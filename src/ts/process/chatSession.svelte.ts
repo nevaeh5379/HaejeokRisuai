@@ -20,7 +20,7 @@ import { risuChatParser } from "./scripts";
 import { getModuleToggles } from "./modules";
 import { pluginV2 } from "../plugins/plugins.svelte";
 import { preLoadChat } from "./coldstorage.svelte";
-import { chatProcessStage } from "./chatRuntimeState";
+import { setChatProcessStage } from "./chatRuntimeState";
 import {
   connectionOpen,
   peerRevertChat,
@@ -82,9 +82,12 @@ async function applyPresetChain(chatProcessIndex: number) {
   }
 }
 
-async function synchronizePeer(throwError: (error: string) => void) {
+async function synchronizePeer(
+  throwError: (error: string) => void,
+  chatId?: string,
+) {
   if (!connectionOpen) return true;
-  chatProcessStage.set(4);
+  setChatProcessStage(chatId, 4);
   const safe = await peerSafeCheck();
   if (!safe) {
     peerRevertChat();
@@ -92,7 +95,7 @@ async function synchronizePeer(throwError: (error: string) => void) {
     return false;
   }
   await peerSync();
-  chatProcessStage.set(0);
+  setChatProcessStage(chatId, 0);
   return true;
 }
 
@@ -130,12 +133,12 @@ function getGroupOrder(room: groupChat, findCharacter: (id: string) => character
 }
 
 async function initializeGeneration(options: PrepareChatSessionOptions) {
-  chatProcessStage.set(0);
+  setChatProcessStage(options.targetChatId, 0);
   if ((characterStore as any)?.ensureLoaded) {
     await (characterStore as any).ensureLoaded();
   }
   await applyPresetChain(options.chatProcessIndex);
-  return synchronizePeer(options.throwError);
+  return synchronizePeer(options.throwError, options.targetChatId);
 }
 
 async function loadSelectedChat(options: PrepareChatSessionOptions) {

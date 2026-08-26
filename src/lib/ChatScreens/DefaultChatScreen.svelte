@@ -8,7 +8,7 @@
     import { type Chat as ChatSession, type Message } from "../../ts/storage/database.svelte";
     import { characterStore, settingsStore, personaStore, messageStore, presetStore } from 'src/ts/stores/domain';
     import { getCharImage } from "../../ts/characterImage";
-    import { activeGenerationChatIds, chatProcessStage } from "../../ts/process/chatRuntimeState";
+    import { activeGenerationChatIds, chatProcessStages, getChatProcessStage } from "../../ts/process/chatRuntimeState";
     import { sleep } from "../../ts/util";
     import { language } from "../../lang";
     import { alertError, alertNormal, alertWait, showHypaV2Alert } from "../../ts/alert";
@@ -65,6 +65,9 @@
     let currentChat = $derived(currentChatSession?.message ?? [])
     let currentChatGenerating = $derived(
         Boolean(currentChatSession?.id && $activeGenerationChatIds.has(currentChatSession.id))
+    )
+    let currentChatProcessStage = $derived(
+        getChatProcessStage($chatProcessStages, currentChatSession?.id)
     )
 
     $effect(() => {
@@ -829,7 +832,7 @@
                             class="peer-focus:border-textcolor  flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors" onclick={abortChat}
                             style:height={inputHeight}
                     >
-                        <div class="loadmove chat-process-stage-{$chatProcessStage}" class:autoload={autoMode}></div>
+                        <div class="loadmove chat-process-stage-{currentChatProcessStage}" class:autoload={autoMode}></div>
                     </button>
                 {:else if $startupPhase !== 'chat-ready'}
                     <button
