@@ -8,7 +8,7 @@
     import { ChevronRightIcon, DatabaseBackupIcon, User } from '@lucide/svelte';
     import { isCharacterHasAssets } from 'src/ts/characterCards';
     import TextInput from '../UI/GUI/TextInput.svelte';
-    import { aiLawApplies, openURL, getFetchLogs } from 'src/ts/globalApi.svelte';
+    import { aiLawApplies, changeChatTo, openURL, getFetchLogs } from 'src/ts/globalApi.svelte';
     import Button from '../UI/GUI/Button.svelte';
     import { XIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon, CheckIcon, SparkleIcon, InfoIcon } from "@lucide/svelte";
     import hljs from 'highlight.js/lib/core';
@@ -25,7 +25,7 @@
     import Help from "./Help.svelte";
     import AirisuMascot from "../UI/AirisuMascot.svelte";
     import { getChatBranches } from "src/ts/gui/branches";
-    import { appVer, getCurrentCharacter } from "src/ts/storage/database.svelte";
+    import { appVer } from "src/ts/storage/database.svelte";
     import { translateStackTrace } from "../../ts/sourcemap";
     import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from "src/ts/platform";
     import {
@@ -75,11 +75,11 @@
     let cardExportType2 = $state('')
     let cardLicense = $state('')
     let generationInfoMenuIndex = $state(0)
-    let branchHover:null|{
-        x:number,
-        y:number,
-        content:string,
-    } = $state(null)
+    const branchCardWidth = 272
+    const branchCardHeight = 118
+    const branchGapX = 48
+    const branchGapY = 76
+    const branchPadding = 48
     let expandedLogs: Set<number> = $state(new Set())
     let allExpanded = $state(false)
     let copiedKey: string | null = $state(null)
@@ -138,9 +138,6 @@
         if($alertStore.type !== 'input'){
             input = ''
         }
-        if($alertStore.type !== 'branches'){
-            branchHover = null
-        }
         if($alertStore.type !== 'cardexport'){
             cardExportType = 'realm'
             cardExportType2 = ''
@@ -182,6 +179,14 @@
         } catch (error) {
             return data
         }
+    }
+
+    const branchLeft = (x:number) => branchPadding + x * (branchCardWidth + branchGapX)
+    const branchTop = (y:number) => branchPadding + y * (branchCardHeight + branchGapY)
+    const branchReasonLabel = (reason:'root'|'manual'|'reroll') => {
+        if(reason === 'root') return language.branchGraphOriginal
+        if(reason === 'reroll') return language.branchGraphReroll
+        return language.branch
     }
 </script>
 
@@ -874,76 +879,75 @@
         </div>
     </div>
 {:else if $alertStore.type === 'branches'}
-    <div class="absolute w-full h-full z-50 bg-black/80 flex justify-center items-center overflow-x-auto overflow-y-auto">
-        {#if branchHover !== null}
-            <div class="z-30 whitespace-pre-wrap p-4 text-textcolor bg-darkbg border-darkborderc border rounded-md absolute" style="top: {branchHover.y * 80 + 24}px; left: {(branchHover.x + 1) * 80 + 24}px">
-                {branchHover.content}
+    {@const branchGraph = getChatBranches()}
+    {@const branchNodesById = new Map(branchGraph.nodes.map((node) => [node.chatId, node]))}
+    {@const graphWidth = branchPadding * 2 + branchGraph.columns * branchCardWidth + Math.max(0, branchGraph.columns - 1) * branchGapX}
+    {@const graphHeight = branchPadding * 2 + branchGraph.rows * branchCardHeight + Math.max(0, branchGraph.rows - 1) * branchGapY}
+    <div class="fixed inset-0 z-50 bg-black/80 flex flex-col overflow-hidden">
+        <div class="shrink-0 flex items-center gap-3 px-5 py-4 bg-darkbg border-b border-darkborderc shadow-lg z-30">
+            <div class="min-w-0">
+                <h2 class="text-lg font-bold text-textcolor m-0">{language.branchGraphTitle}</h2>
+                <div class="text-xs text-textcolor2 mt-0.5">{language.branchGraphDescription}</div>
             </div>
-        {/if}
-
-        <div class="x-50 right-2 top-2 absolute">
-            <button class="bg-darkbg border-darkborderc border p-2 rounded-md" onclick={() => {
-                alertStore.set({
-                    type: 'none',
-                    msg: ''
-                })
-            }}>
+            <div class="ml-auto text-xs text-textcolor2 whitespace-nowrap">{language.branchGraphTimelineCount.replace('{}', branchGraph.nodes.length.toString())}</div>
+            <button class="text-textcolor2 hover:text-textcolor bg-bgcolor border border-darkborderc p-2 rounded-lg" onclick={() => {
+                alertStore.set({ type: 'none', msg: '' })
+            }} aria-label="Close branch graph">
                 <XIcon />
             </button>
         </div>
 
-        {#each getChatBranches() as obj}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-            <div
-                role="table"
-                class="peer w-12 h-12 z-20 bg-bgcolor border border-darkborderc rounded-full flex justify-center items-center overflow-y-auto absolute"
-                style="top: {obj.y * 80 + 24}px; left: {obj.x * 80 + 24}px"
-                onmouseenter={() => {
-                    if(branchHover === null){
-                        const char = getCurrentCharacter()
-                        branchHover = {
-                            x: obj.x,
-                            y: obj.y,
-                            content: char.chats[obj.chatId].message[obj.y - 1].data
-                        }
-                    }
-                }}
-                onclick={() => {
-                    if(branchHover === null){
-                        const char = getCurrentCharacter()
-                        branchHover = {
-                            x: obj.x,
-                            y: obj.y,
-                            content: char.chats[obj.chatId].message[obj.y - 1].data
-                        }
-                    }
-                }}
-                onmouseleave={() => {
-                    branchHover = null
-                }}
-            >
-                
+        <div class="flex-1 overflow-auto">
+            <div class="relative" style={`width:${graphWidth}px;height:${graphHeight}px;min-width:100%;min-height:100%;`}>
+                <svg class="absolute inset-0 pointer-events-none text-textcolor2/55" width={graphWidth} height={graphHeight} aria-hidden="true">
+                    {#each branchGraph.edges as edge}
+                        {@const from = branchNodesById.get(edge.from)}
+                        {@const to = branchNodesById.get(edge.to)}
+                        {#if from && to}
+                            {@const x1 = branchLeft(from.x) + branchCardWidth / 2}
+                            {@const y1 = branchTop(from.y) + branchCardHeight}
+                            {@const x2 = branchLeft(to.x) + branchCardWidth / 2}
+                            {@const y2 = branchTop(to.y)}
+                            {@const midY = (y1 + y2) / 2}
+                            <path d={`M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`} fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="6 6" />
+                        {/if}
+                    {/each}
+                </svg>
+
+                {#each branchGraph.nodes as node}
+                    <button
+                        class="absolute z-10 flex flex-col text-left bg-darkbg border border-darkborderc rounded-2xl px-4 py-3 shadow-xl hover:border-green-500 hover:-translate-y-0.5 transition-all overflow-hidden"
+                        class:ring-2={node.active}
+                        class:ring-green-500={node.active}
+                        style={`left:${branchLeft(node.x)}px;top:${branchTop(node.y)}px;width:${branchCardWidth}px;height:${branchCardHeight}px;`}
+                        aria-current={node.active ? 'true' : undefined}
+                        onclick={() => {
+                            changeChatTo(node.chatId)
+                            alertStore.set({ type: 'none', msg: '' })
+                        }}
+                    >
+                        <div class="flex items-center gap-2 w-full min-w-0">
+                            <span class="shrink-0 text-[10px] uppercase tracking-wide font-bold px-2 py-0.5 rounded-full bg-bgcolor border border-darkborderc text-textcolor2">
+                                {branchReasonLabel(node.reason)}
+                            </span>
+                            {#if node.branchMessageIndex !== undefined}
+                                <span class="text-[10px] text-textcolor2">#{node.branchMessageIndex + 1}</span>
+                            {/if}
+                            {#if node.active}
+                                <span class="ml-auto text-[10px] font-bold text-green-500 uppercase">{language.branchGraphActive}</span>
+                            {/if}
+                        </div>
+                        <div class="mt-2 flex items-center gap-2 w-full min-w-0">
+                            <span class="font-semibold text-sm text-textcolor truncate" title={node.model || node.title}>{node.model || node.title}</span>
+                            {#if node.model}
+                                <span class="ml-auto max-w-28 text-[10px] text-textcolor2 truncate" title={node.title}>{node.title}</span>
+                            {/if}
+                        </div>
+                        <div class="mt-1 text-xs leading-4 text-textcolor2 overflow-hidden w-full">{node.preview || language.branchGraphNoMessages}</div>
+                    </button>
+                {/each}
             </div>
-            {#if obj.connectX === obj.x}
-                {#if obj.multiChild}
-                    <div class="w-0 h-20 border-x border-x-red-500 absolute" style="top: {(obj.y-1) * 80 + 24}px; left: {obj.x * 80 + 45}px">
-
-                    </div>
-                {:else}
-                    <div class="w-0 h-20 border-x border-x-blue-500 absolute" style="top: {(obj.y-1) * 80 + 24}px; left: {obj.x * 80 + 45}px">
-
-                    </div>
-                {/if}
-            {:else if obj.connectX !== -1}
-                <div class="w-0 h-10 border-x border-x-red-500 absolute" style="top: {(obj.y) * 80}px; left: {obj.x * 80 + 45}px">
-
-                </div>
-                <div class="h-0 border-y border-y-red-500 absolute" style="top: {(obj.y) * 80}px; left: {obj.connectX * 80 + 46}px" style:width={Math.abs((obj.x - obj.connectX) * 80) + 'px'}>
-
-                </div>
-            {/if}
-        {/each}
+        </div>
     </div>
 {:else if $alertStore.type === 'requestlogs'}
     {@const logs = getFetchLogs()}

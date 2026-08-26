@@ -2,7 +2,7 @@
     import { tick } from "svelte";
     import { v4 } from "uuid";
     import type Sortable from 'sortablejs/modular/sortable.core.esm.js';
-    import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon } from "@lucide/svelte";
+    import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon, GitBranch } from "@lucide/svelte";
 
     import type { Chat, ChatFolder, character, groupChat } from "src/ts/storage/database.svelte";
     import { ReloadGUIPointer } from 'src/ts/stores.svelte';
@@ -381,7 +381,13 @@
                         {#if editMode}
                             <TextInput bind:value={chat.name} className="grow min-w-0" padding={false}/>
                         {:else}
-                            <span>{chat.name}</span>
+                            <span class="flex items-center min-w-0 gap-1.5">
+                                {#if chat.branch}
+                                    <GitBranch size={14}/>
+                                    <span class="text-[10px] text-textcolor2 uppercase">{chat.branch.reason === 'reroll' ? language.branchGraphReroll : language.branch}</span>
+                                {/if}
+                                <span class="truncate">{chat.name}</span>
+                            </span>
                         {/if}
                         <div class="grow flex justify-end">
                             <div role="button" tabindex="0" onkeydown={(e) => {
@@ -398,6 +404,7 @@
                                         const newChat = $state.snapshot(chara.chats[chatIdx])
                                         newChat.name = createChatCopyName(newChat.name)
                                         newChat.id = v4()
+                                        newChat.branch = undefined
                                         for (const msg of newChat.message ?? []) {
                                             msg.chatId = v4()
                                         }
@@ -505,7 +512,13 @@
                 {#if editMode}
                     <TextInput bind:value={chara.chats[i].name} className="grow min-w-0" padding={false}/>
                 {:else}
-                    <span>{chat.name}</span>
+                    <span class="flex items-center min-w-0 gap-1.5">
+                        {#if chat.branch}
+                            <GitBranch size={14}/>
+                            <span class="text-[10px] text-textcolor2 uppercase">{chat.branch.reason === 'reroll' ? language.branchGraphReroll : language.branch}</span>
+                        {/if}
+                        <span class="truncate">{chat.name}</span>
+                    </span>
                 {/if}
                 <div class="grow flex justify-end">
                     <div role="button" tabindex="0" onkeydown={(e) => {
@@ -521,6 +534,7 @@
                                 const newChat = $state.snapshot(chara.chats[i])
                                 newChat.name = createChatCopyName(newChat.name)
                                 newChat.id = v4()
+                                newChat.branch = undefined
                                 for (const msg of newChat.message ?? []) {
                                     msg.chatId = v4()
                                 }
@@ -652,7 +666,9 @@
             }}>
                 <PencilIcon size={18}/>
             </button>
-            <button class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={() => {
+            <button class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" title={language.branchGraphTitle} onclick={() => {
+                const activeChat = chara.chats[chara.chatPage]
+                if(activeChat && !activeChat.id) activeChat.id = v4()
                 alertStore.set({
                   type: "branches",
                   msg: ""

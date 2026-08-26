@@ -1,6 +1,7 @@
 <script lang="ts">
     import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, DownloadIcon, FileText, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors } from "@lucide/svelte"
-    import { aiLawApplies, changeChatTo, foldChatToMessage, getFileSrc, createChatCopyName } from "src/ts/globalApi.svelte"
+    import { aiLawApplies, changeChatTo, createChatCopyName, foldChatToMessage, getFileSrc } from "src/ts/globalApi.svelte"
+    import { createChatBranch } from "src/ts/chatBranches"
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme"
     import { longpress } from "src/ts/gui/longtouch"
     import { getModelInfo } from "src/ts/model/modellist"
@@ -947,37 +948,34 @@
         await sleep(1)
         const targetIndex = await ensureFullMessageIndex()
         if (targetIndex < 0) return
-        const currentChat = characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage]
-        
+        const char = characterStore.characters[selIdState.selId]
+        const currentChat = char.chats[char.chatPage]
+
+        currentChat.id ??= v4()
         if(settingsStore.state.createFolderOnBranch && !currentChat.folderId){
             const folderId = v4()
-            characterStore.characters[selIdState.selId].chatFolders ??= []
-            characterStore.characters[selIdState.selId].chatFolders.unshift({
+            char.chatFolders ??= []
+            char.chatFolders.unshift({
                 id: folderId,
                 name: `Branches of ${currentChat.name}`,
                 folded: false,
             })
             currentChat.folderId = folderId
         }
-        
-        const currentMessage = currentChat.message[targetIndex]
-        const newChat = $state.snapshot(currentChat)
-        newChat.name = createChatCopyName(newChat.name, 'Branch')
-        newChat.id = v4()
-        newChat.message = newChat.message.slice(0, targetIndex + 1)
-        newChat.message.push({
-            role: 'char',
-            data: '{{specialcomment::branchedfrom::' + currentChat.id + '::' + currentChat.name + '::' + currentMessage.chatId + '::}}',
-            isComment: true,
-            disabled: true,
-            chatId: v4(),
-        })
 
-        characterStore.characters[selIdState.selId].chats.unshift(newChat)
-        if (newChat.id) {
-            await messageStore.persistNewChat(characterStore.characters[selIdState.selId].chaId, newChat.id, newChat.message ?? [])
-        }
-        changeChatTo(0)
+        const currentMessage = currentChat.message[targetIndex]
+        const newChat = createChatBranch($state.snapshot(currentChat), {
+            parentChatId: currentChat.id,
+            branchMessageId: currentMessage.chatId,
+            branchMessageIndex: targetIndex,
+            reason: 'manual',
+            keepThroughIndex: targetIndex,
+        })
+        newChat.name = createChatCopyName(currentChat.name, 'Branch')
+
+        char.chats.push(newChat)
+        await messageStore.persistNewChat(char.chaId, newChat.id!, newChat.message ?? [])
+        changeChatTo(newChat.id!)
     }}>
         <SplitIcon size={20}/>
         {#if showNames}
