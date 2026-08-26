@@ -1,18 +1,15 @@
 import { Ollama } from "ollama/dist/browser.mjs";
 import { language } from "../../../lang";
-import { fetchNative, globalFetch } from "../../globalApi.svelte";
+import { fetchNative } from "../../globalApi.svelte";
 import {
   getModelInfo,
   LLMFormat,
   type LLMModel,
 } from "../../model/modellist";
-import { risuChatParser } from "../../parser/parser.svelte";
 import {
-  getCurrentCharacter,
   getDatabase,
   type character,
 } from "../../storage/database.svelte";
-import { tokenizeNum } from "../../tokenizer";
 import { sleep } from "../../util";
 import { formatProviderMessages } from "@risuai/chat-core/providerPrompt.cjs";
 import { prepareProviderExecutionContext } from "@risuai/chat-core/providerContext.cjs";
@@ -22,24 +19,17 @@ import type {
   OpenAIChat,
 } from "@risuai/chat-core/types.cjs";
 import type { MCPTool } from "../mcp/mcplib";
-import { DEFAULT_COHERE_CHAT_URL } from "@risuai/chat-core/cohereProvider.cjs";
-import { resolveNovelAIGenerateUrl } from "@risuai/chat-core/novelAIProvider.cjs";
-import { DEFAULT_NOVELLIST_API_URL } from "@risuai/chat-core/novelListProvider.cjs";
 import {
   DEFAULT_OLLAMA_CLOUD_CHAT_URL,
   resolveOllamaCloudTransportUrl,
 } from "@risuai/chat-core/ollamaProvider.cjs";
-import { NovelAIBadWordIds, stringlizeNAIChat } from "../models/nai";
-import {
-  getStopStrings,
-  stringlizeAINChat,
-  unstringlizeAIN,
-  unstringlizeChat,
-} from "../stringlize";
-import { applyChatTemplate } from "../templates/chatTemplate";
+import { unstringlizeChat } from "../stringlize";
 import { requestClaude } from "./anthropic";
 import { requestGoogleCloudVertex } from "./google";
 import { requestHorde } from "./horde";
+import { requestNovelAI } from "./novelAI";
+import { requestNovelList } from "./novelList";
+import { requestCohere } from "./cohere";
 import { BrowserProviderExecutor } from "./browserProviderExecutor";
 import { requestPlugin, requestWebLLM } from "./browserRuntimeProviders";
 import {
@@ -59,7 +49,6 @@ import {
 } from "./openAI/requests";
 import {
   applyAdditionalParameters,
-  applyParameters,
   getAdditionalParameters,
   type ModelModeExtended,
 } from "./shared";
@@ -313,149 +302,6 @@ export async function requestChatDataMain(
   return browserProviderExecutor.execute(format, targ);
 }
 
-async function requestNovelAI(
-  arg: RequestDataArgumentExtended,
-): Promise<requestDataResponse> {
-  const formated = arg.formated;
-  const db = getDatabase();
-  const aiModel = arg.aiModel;
-  const temperature = arg.temperature;
-  const maxTokens = arg.maxTokens;
-  const biasString = arg.biasString;
-  const currentChar = getCurrentCharacter();
-  const prompt = stringlizeNAIChat(
-    formated,
-    currentChar?.name ?? "",
-    arg.continue,
-  );
-  const abortSignal = arg.abortSignal;
-  let logit_bias_exp: {
-    sequence: number[];
-    bias: number;
-    ensure_sequence_finish: false;
-    generate_once: true;
-  }[] = [];
-
-  if (arg.previewBody) {
-    return {
-      type: "success",
-      result: JSON.stringify({
-        error: "This model is not supported in preview mode",
-      }),
-    };
-  }
-
-  for (let i = 0; i < biasString.length; i++) {
-    const bia = biasString[i];
-    const tokens = await tokenizeNum(bia[0]);
-
-    const tokensInNumberArray: number[] = [];
-
-    for (const token of tokens) {
-      tokensInNumberArray.push(token);
-    }
-    logit_bias_exp.push({
-      sequence: tokensInNumberArray,
-      bias: bia[1],
-      ensure_sequence_finish: false,
-      generate_once: true,
-    });
-  }
-
-  let prefix = "vanilla";
-
-  if (db.NAIadventure) {
-    prefix = "theme_textadventure";
-  }
-
-  const gen = db.NAIsettings;
-  const payload = {
-    temperature: temperature,
-    max_length: maxTokens,
-    min_length: 1,
-    top_k: gen.topK,
-    top_p: gen.topP,
-    top_a: gen.topA,
-    tail_free_sampling: gen.tailFreeSampling,
-    repetition_penalty: gen.repetitionPenalty,
-    repetition_penalty_range: gen.repetitionPenaltyRange,
-    repetition_penalty_slope: gen.repetitionPenaltySlope,
-    repetition_penalty_frequency: gen.frequencyPenalty,
-    repetition_penalty_presence: gen.presencePenalty,
-    generate_until_sentence: true,
-    use_cache: false,
-    use_string: true,
-    return_full_text: false,
-    prefix: prefix,
-    order: [6, 2, 3, 0, 4, 1, 5, 8],
-    typical_p: gen.typicalp,
-    repetition_penalty_whitelist: [
-      49256, 49264, 49231, 49230, 49287, 85, 49255, 49399, 49262, 336, 333, 432,
-      363, 468, 492, 745, 401, 426, 623, 794, 1096, 2919, 2072, 7379, 1259,
-      2110, 620, 526, 487, 16562, 603, 805, 761, 2681, 942, 8917, 653, 3513,
-      506, 5301, 562, 5010, 614, 10942, 539, 2976, 462, 5189, 567, 2032, 123,
-      124, 125, 126, 127, 128, 129, 130, 131, 132, 588, 803, 1040, 49209, 4, 5,
-      6, 7, 8, 9, 10, 11, 12,
-    ],
-    stop_sequences: [[49287], [49405]],
-    bad_words_ids: NovelAIBadWordIds,
-    logit_bias_exp: logit_bias_exp,
-    mirostat_lr: gen.mirostat_lr ?? 1,
-    mirostat_tau: gen.mirostat_tau ?? 0,
-    cfg_scale: gen.cfg_scale ?? 1,
-    cfg_uc: "",
-  };
-
-  const variant = aiModel === "novelai_kayra" ? "kayra" : "clio";
-  let body = {
-    input: prompt,
-    model: variant === "kayra" ? "kayra-v1" : "clio-v1",
-    parameters: payload,
-  };
-
-  let headers = {
-    Authorization: "Bearer " + (arg.key ?? db.novelai.token),
-  };
-
-  body = applyAdditionalParameters(
-    body,
-    headers,
-    getAdditionalParameters(aiModel),
-  );
-
-  const novelAIUrl = resolveNovelAIGenerateUrl(variant);
-  if (!novelAIUrl) {
-    return {
-      type: "fail",
-      result: "Unsupported NovelAI transport variant",
-    };
-  }
-  const remoteTransport = await tryExecuteNodeProviderTransport(
-    LLMFormat.NovelAI,
-    { body, headers, variant },
-    abortSignal,
-  );
-  const da =
-    remoteTransport ??
-    (await globalFetch(novelAIUrl, {
-      body: body,
-      headers: headers,
-      abortSignal,
-      chatId: arg.chatId,
-    }));
-
-  if (!da.ok || !da.data.output) {
-    return {
-      type: "fail",
-      result: language.errors.httpError + `${JSON.stringify(da.data)}`,
-    };
-  }
-  return {
-    type: "success",
-    result: unstringlizeChat(da.data.output, formated, currentChar?.name ?? ""),
-  };
-}
-
 async function requestEcho(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
@@ -475,105 +321,6 @@ async function requestEcho(
   return {
     type: "success",
     result: message,
-  };
-}
-
-async function requestNovelList(
-  arg: RequestDataArgumentExtended,
-): Promise<requestDataResponse> {
-  const formated = arg.formated;
-  const db = getDatabase();
-  const maxTokens = arg.maxTokens;
-  const temperature = arg.temperature;
-  const biasString = arg.biasString;
-  const currentChar = getCurrentCharacter();
-  const aiModel = arg.aiModel;
-  const auth_key = db.novellistAPI;
-  const logit_bias: string[] = [];
-  const logit_bias_values: string[] = [];
-  for (let i = 0; i < biasString.length; i++) {
-    const bia = biasString[i];
-    logit_bias.push(bia[0]);
-    logit_bias_values.push(bia[1].toString());
-  }
-
-  let headers: Record<string, string> = {
-    Authorization: `Bearer ${auth_key}`,
-    "Content-Type": "application/json",
-  };
-
-  let send_body: Record<string, any> = {
-    text: stringlizeAINChat(formated, currentChar?.name ?? "", arg.continue),
-    length: maxTokens,
-    temperature: temperature,
-    top_p: db.ainconfig.top_p,
-    top_k: db.ainconfig.top_k,
-    rep_pen: db.ainconfig.rep_pen,
-    top_a: db.ainconfig.top_a,
-    rep_pen_slope: db.ainconfig.rep_pen_slope,
-    rep_pen_range: db.ainconfig.rep_pen_range,
-    typical_p: db.ainconfig.typical_p,
-    badwords: db.ainconfig.badwords,
-    model: aiModel === "novellist_damsel" ? "damsel" : "supertrin",
-    stoptokens: ["「"].join("<<|>>") + db.ainconfig.stoptokens,
-    logit_bias: logit_bias.length > 0 ? logit_bias.join("<<|>>") : undefined,
-    logit_bias_values:
-      logit_bias_values.length > 0 ? logit_bias_values.join("|") : undefined,
-  };
-
-  send_body = applyAdditionalParameters(
-    send_body,
-    headers,
-    getAdditionalParameters(arg.aiModel),
-  );
-
-  if (arg.previewBody) {
-    return {
-      type: "success",
-      result: JSON.stringify({
-        url: arg.customURL ?? DEFAULT_NOVELLIST_API_URL,
-        body: send_body,
-        headers: headers,
-      }),
-    };
-  }
-  const remoteTransport =
-    !arg.customURL && arg.modelInfo.format === LLMFormat.NovelList
-      ? await tryExecuteNodeProviderTransport(
-          LLMFormat.NovelList,
-          { body: send_body, headers },
-          arg.abortSignal,
-        )
-      : null;
-  const response =
-    remoteTransport ??
-    (await globalFetch(arg.customURL ?? DEFAULT_NOVELLIST_API_URL, {
-      method: "POST",
-      headers: headers,
-      body: send_body,
-      chatId: arg.chatId,
-      abortSignal: arg.abortSignal,
-    }));
-
-  if (!response.ok) {
-    return {
-      type: "fail",
-      result: response.data,
-    };
-  }
-
-  if (response.data.error) {
-    return {
-      type: "fail",
-      result: `${response.data.error.replace("token", "api key")}`,
-    };
-  }
-
-  const result = response.data.data[0];
-  const unstr = unstringlizeAIN(result, formated, currentChar?.name ?? "");
-  return {
-    type: "multiline",
-    result: unstr,
   };
 }
 
@@ -729,161 +476,5 @@ async function requestOllama(
     type: "streaming",
     result: readableStream,
     model: arg.aiModel,
-  };
-}
-
-async function requestCohere(
-  arg: RequestDataArgumentExtended,
-): Promise<requestDataResponse> {
-  const formated = arg.formated;
-  const db = getDatabase();
-  const aiModel = arg.aiModel;
-
-  let lastChatPrompt = "";
-  let preamble = "";
-
-  let lastChat = formated[formated.length - 1];
-  if (lastChat.role === "user") {
-    lastChatPrompt = lastChat.content;
-    formated.pop();
-  } else {
-    while (lastChat.role !== "user") {
-      lastChat = formated.pop();
-      if (!lastChat) {
-        return {
-          type: "fail",
-          result: "Cohere requires a user message to generate a response",
-        };
-      }
-      lastChatPrompt =
-        (lastChat.role === "user" ? "" : `${lastChat.role}: `) +
-        "\n" +
-        lastChat.content +
-        lastChatPrompt;
-    }
-  }
-
-  const firstChat = formated[0];
-  if (firstChat.role === "system") {
-    preamble = firstChat.content;
-    formated.shift();
-  }
-
-  //reformat chat
-
-  let body = applyParameters(
-    {
-      message: lastChatPrompt,
-      chat_history: formated
-        .map((v) => {
-          if (v.role === "assistant") {
-            return {
-              role: "CHATBOT",
-              message: v.content,
-            };
-          }
-          if (v.role === "system") {
-            return {
-              role: "SYSTEM",
-              message: v.content,
-            };
-          }
-          if (v.role === "user") {
-            return {
-              role: "USER",
-              message: v.content,
-            };
-          }
-          return null;
-        })
-        .filter((v) => v !== null)
-        .filter((v) => {
-          return v.message;
-        }),
-    },
-    ["temperature", "top_k", "top_p", "presence_penalty", "frequency_penalty"],
-    {
-      top_k: "k",
-      top_p: "p",
-    },
-    arg.mode,
-    {
-      modelId: arg.aiModel,
-    },
-  );
-
-  if (
-    aiModel !== "cohere-command-r-03-2024" &&
-    aiModel !== "cohere-command-r-plus-04-2024"
-  ) {
-    body.safety_mode = "NONE";
-  }
-
-  if (preamble) {
-    if (body.chat_history.length > 0) {
-      body.preamble = preamble;
-    } else {
-      body.message = `system: ${preamble}`;
-    }
-  }
-
-  let headers: Record<string, string> = {
-    Authorization: "Bearer " + (arg.key ?? db.cohereAPIKey),
-    "Content-Type": "application/json",
-  };
-
-  body = applyAdditionalParameters(
-    body,
-    headers,
-    getAdditionalParameters(arg.aiModel),
-  );
-  console.log(body);
-
-  if (arg.previewBody) {
-    return {
-      type: "success",
-      result: JSON.stringify({
-        url: arg.customURL ?? DEFAULT_COHERE_CHAT_URL,
-        body: body,
-        headers: headers,
-      }),
-    };
-  }
-
-  const remoteTransport =
-    !arg.customURL && arg.modelInfo.format === LLMFormat.Cohere
-      ? await tryExecuteNodeProviderTransport(
-          LLMFormat.Cohere,
-          { body, headers },
-          arg.abortSignal,
-        )
-      : null;
-  const res =
-    remoteTransport ??
-    (await globalFetch(arg.customURL ?? DEFAULT_COHERE_CHAT_URL, {
-      method: "POST",
-      headers: headers,
-      body: body,
-      abortSignal: arg.abortSignal,
-    }));
-
-  if (!res.ok) {
-    return {
-      type: "fail",
-      result: JSON.stringify(res.data),
-    };
-  }
-
-  const result = res?.data?.text;
-  if (!result) {
-    return {
-      type: "fail",
-      result: JSON.stringify(res.data),
-    };
-  }
-
-  return {
-    type: "success",
-    result: result,
   };
 }
