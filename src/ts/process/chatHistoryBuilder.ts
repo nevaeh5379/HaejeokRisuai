@@ -40,6 +40,7 @@ async function addFirstMessage(
   nowChatroom: character | groupChat,
   currentChat: Chat,
   usingPromptTemplate: boolean,
+  chatTarget: { characterIndex: number; chatIndex: number },
 ) {
   const active = getActiveMessages(currentChat);
   if (nowChatroom.type === "group" || active.reset) return null;
@@ -52,8 +53,10 @@ async function addFirstMessage(
     role: "assistant",
     content: await processScript(
       nowChatroom,
-      risuChatParser(firstMessage, { chara: currentChar }),
+      risuChatParser(firstMessage, { chara: currentChar, chatTarget }),
       "editprocess",
+      {},
+      chatTarget,
     ),
   };
   if (usingPromptTemplate && settingsStore.state.promptSettings.sendName) {
@@ -147,6 +150,7 @@ function resolveMessageRole(
   usingPromptTemplate: boolean,
   findCharacter: (id: string) => character,
   content: string,
+  chatTarget: { characterIndex: number; chatIndex: number },
 ) {
   let role: "user" | "assistant" | "system" =
     message.role === "user" ? "user" : "assistant";
@@ -163,6 +167,7 @@ function resolveMessageRole(
     `<{{char}}\'s Message>\n{{slot}}\n</{{char}}\'s Message>`;
   content = risuChatParser(format, {
     chara: findCharacter(message.saying).name,
+    chatTarget,
   }).replace("{{slot}}", content);
   role = ["user", "assistant", "system"].includes(
     settingsStore.state.groupOtherBotRole,
@@ -187,13 +192,19 @@ async function resolveHistoryMessagePayload(
   index: number,
   currentChar: character,
   nowChatroom: character | groupChat,
+  chatTarget: { characterIndex: number; chatIndex: number },
 ) {
   const processed = await processScriptFull(
     nowChatroom,
-    risuChatParser(message.data, { chara: currentChar, role: message.role }),
+    risuChatParser(message.data, {
+      chara: currentChar,
+      role: message.role,
+      chatTarget,
+    }),
     "editprocess",
     index,
     { chatRole: message.role },
+    chatTarget,
   );
   const extracted = extractInlayReferences(processed.data, message.role);
   const resolved = await resolveInlays(extracted.content, extracted.inlays);
@@ -213,6 +224,7 @@ async function formatHistoryMessage(
   nowChatroom: character | groupChat,
   usingPromptTemplate: boolean,
   findCharacter: (id: string) => character,
+  chatTarget: { characterIndex: number; chatIndex: number },
 ): Promise<OpenAIChat> {
   message.chatId ??= v4();
   const payload = await resolveHistoryMessagePayload(
@@ -220,6 +232,7 @@ async function formatHistoryMessage(
     index,
     currentChar,
     nowChatroom,
+    chatTarget,
   );
   const roleResult = resolveMessageRole(
     message,
@@ -228,6 +241,7 @@ async function formatHistoryMessage(
     usingPromptTemplate,
     findCharacter,
     payload.content,
+    chatTarget,
   );
   const thoughtResult = extractThoughts(roleResult.content, index, messageCount);
   const chat: OpenAIChat = {
@@ -252,6 +266,7 @@ export interface BuildChatHistoryOptions {
   lorePrompt: LorePrompt;
   resolvePosition: (text: string, maxDepth?: number) => string;
   findCharacter: (id: string) => character;
+  chatTarget: { characterIndex: number; chatIndex: number };
 }
 
 async function initializeHistory(options: BuildChatHistoryOptions) {
@@ -270,6 +285,7 @@ async function initializeHistory(options: BuildChatHistoryOptions) {
     options.nowChatroom,
     options.currentChat,
     options.usingPromptTemplate,
+    options.chatTarget,
   );
   if (firstMessage) {
     currentTokens += await options.tokenizer.tokenizeChat(firstMessage);
@@ -320,6 +336,7 @@ async function appendHistoryMessages(
         options.nowChatroom,
         options.usingPromptTemplate,
         options.findCharacter,
+        options.chatTarget,
       ),
     );
   }
@@ -341,6 +358,7 @@ async function collectDepthPrompts(
       role: depthPrompt.role,
       content: risuChatParser(options.resolvePosition(depthPrompt.prompt), {
         chara: options.currentChar,
+        chatTarget: options.chatTarget,
       }),
     });
   }

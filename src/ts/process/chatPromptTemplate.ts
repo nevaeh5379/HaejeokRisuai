@@ -26,6 +26,7 @@ interface RenderContext {
   usingPromptTemplate: boolean;
   positionParser: (text: string, location: string) => string;
   getDescriptionPrompts: (role?: PromptRole) => OpenAIChat[];
+  chatTarget: { characterIndex: number; chatIndex: number };
 }
 
 interface RenderedCard {
@@ -43,9 +44,16 @@ function appendPromptInfo(
   promptInfo: OpenAIChat[],
   role: OpenAIChat["role"],
   content: string,
+  context: RenderContext,
 ) {
   if (!content.trim()) return;
-  promptInfo.push({ role, content: risuChatParser(content) });
+  promptInfo.push({
+    role,
+    content: risuChatParser(content, {
+      chara: context.currentChar,
+      chatTarget: context.chatTarget,
+    }),
+  });
 }
 
 function formatTypedPrompts(
@@ -66,12 +74,12 @@ function formatTypedPrompts(
     const format = usePositionParser
       ? context.positionParser(innerFormat, location)
       : innerFormat;
-    prompt.content = risuChatParser(format, { chara: context.currentChar }).replace(
-      "{{slot}}",
-      prompt.content || defaultText,
-    );
+    prompt.content = risuChatParser(format, {
+      chara: context.currentChar,
+      chatTarget: context.chatTarget,
+    }).replace("{{slot}}", prompt.content || defaultText);
     if (capturePromptInfo) {
-      appendPromptInfo(promptInfo, prompt.role, innerFormat);
+      appendPromptInfo(promptInfo, prompt.role, innerFormat, context);
     }
   }
   return { prompts, promptInfo };
@@ -100,6 +108,7 @@ function renderPlainCard(
   content = risuChatParser(content, {
     chara: context.currentChar,
     role: card.role,
+    chatTarget: context.chatTarget,
   });
 
   const prompt: OpenAIChat = {
@@ -108,7 +117,7 @@ function renderPlainCard(
   };
   const promptInfo: OpenAIChat[] = [];
   if (capturePromptInfo && card.type2 !== "globalNote") {
-    appendPromptInfo(promptInfo, prompt.role, prompt.content);
+    appendPromptInfo(promptInfo, prompt.role, prompt.content, context);
   }
   return { prompts: [prompt], promptInfo };
 }
@@ -428,6 +437,7 @@ function insertCharacterDepthPrompt(options: FormatPromptOptions, formated: Open
     role: "system",
     content: risuChatParser(depthPrompt.prompt, {
       chara: options.context.currentChar,
+      chatTarget: options.context.chatTarget,
     }),
   });
 }

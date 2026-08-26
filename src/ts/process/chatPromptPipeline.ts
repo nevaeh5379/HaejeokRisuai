@@ -36,6 +36,7 @@ type ReadyChatHistory = Extract<
 function createRenderContext(
   currentChar: character,
   sections: PreparedPromptSections,
+  chatTarget: { characterIndex: number; chatIndex: number },
 ) {
   return {
     currentChar,
@@ -43,6 +44,7 @@ function createRenderContext(
     usingPromptTemplate: sections.usingPromptTemplate,
     positionParser: sections.positionParser,
     getDescriptionPrompts: sections.getDescriptionPrompts,
+    chatTarget,
   };
 }
 
@@ -50,7 +52,15 @@ async function buildHistoryStage(
   options: BuildGenerationPromptOptions,
   sections: PreparedPromptSections,
 ) {
-  const renderContext = createRenderContext(options.currentChar, sections);
+  const chatTarget = {
+    characterIndex: options.selectedChar,
+    chatIndex: options.selectedChat,
+  };
+  const renderContext = createRenderContext(
+    options.currentChar,
+    sections,
+    chatTarget,
+  );
   const estimate = await estimatePromptTemplateTokens({
     promptTemplate: sections.promptTemplate,
     context: renderContext,
@@ -66,6 +76,7 @@ async function buildHistoryStage(
     lorePrompt: sections.lorepmt,
     resolvePosition: sections.resolvePosition,
     findCharacter: options.findCharacter,
+    chatTarget,
   });
   if (history.stopSending) {
     return { ok: false as const };
@@ -117,7 +128,10 @@ function applyHistoryPromptDecorations(
     sections.unformated,
     historyStage.history.depthPrompts,
     (prompt) =>
-      risuChatParser(sections.resolvePosition(prompt), { chara: options.currentChar }),
+      risuChatParser(sections.resolvePosition(prompt), {
+        chara: options.currentChar,
+        chatTarget: historyStage.renderContext.chatTarget,
+      }),
   );
   applyTriggerPromptPolicy(
     sections.unformated,
@@ -193,7 +207,11 @@ export async function buildGenerationPrompt(
     formated,
     biases: buildPromptBiases(
       settingsStore.state.bias.concat(options.currentChar.bias),
-      (text) => risuChatParser(text, { chara: options.currentChar }),
+      (text) =>
+        risuChatParser(text, {
+          chara: options.currentChar,
+          chatTarget: historyStage.renderContext.chatTarget,
+        }),
     ),
     currentChat: memory.currentChat,
   };
