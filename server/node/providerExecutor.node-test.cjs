@@ -9,12 +9,13 @@ test('advertises only implemented provider formats and routes', () => {
   const executor = createNodeProviderExecutor();
   assert.equal(executor.supports(LLM_FORMATS.Echo), true);
   assert.equal(executor.supports(LLM_FORMATS.Mistral), true);
+  assert.equal(executor.supports(LLM_FORMATS.Horde), true);
   assert.equal(executor.supports(LLM_FORMATS.OpenAICompatible), false);
   assert.deepEqual(
     [...executor.formats],
-    [LLM_FORMATS.Echo, LLM_FORMATS.Mistral],
+    [LLM_FORMATS.Echo, LLM_FORMATS.Mistral, LLM_FORMATS.Horde],
   );
-  assert.deepEqual([...executor.routes], ['echo', 'openai']);
+  assert.deepEqual([...executor.routes], ['echo', 'openai', 'horde']);
   assert.deepEqual(
     [...executor.transportFormats],
     [
@@ -109,6 +110,162 @@ test('returns decoded Mistral HTTP failures without browser fallback', async () 
     payload: { body: { model: 'm' }, apiKey: '', httpErrorPrefix: 'HTTP: ' },
   });
   assert.deepEqual(result.response, { type: 'fail', result: 'HTTP: rate limited' });
+});
+
+test('executes Stable Horde submit and polling on the server', async () => {
+  const calls = [];
+  const delays = [];
+  let pollCount = 0;
+  const executor = createNodeProviderExecutor({
+    sleep: async (delayMs) => { delays.push(delayMs); },
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url, options });
+      if (url === 'https://stablehorde.net/api/v2/generate/text/async') {
+        return {
+          ok: true,
+          status: 202,
+          text: async () => JSON.stringify({ id: 'job-123', message: '' }),
+        };
+      }
+      pollCount += 1;
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify(
+          pollCount === 1
+            ? { is_possible: true, done: false, generations: [] }
+            : { is_possible: true, done: true, generations: [{ text: 'raw horde' }] },
+        ),
+      };
+    },
+  });
+  const result = await executor.execute({
+    format: LLM_FORMATS.Horde,
+    payload: {
+      body: { prompt: 'hello' },
+      headers: { apikey: 'horde-key', Host: 'evil.example' },
+    },
+  });
+  assert.deepEqual(result, {
+    handled: true,
+    response: { type: 'success', result: 'raw horde' },
+  });
+  assert.deepEqual(delays, [2000, 2000]);
+  assert.equal(calls[0].url, 'https://stablehorde.net/api/v2/generate/text/async');
+  assert.equal(calls[0].options.headers.apikey, 'horde-key');
+  assert.equal(calls[0].options.headers.Host, undefined);
+  assert.equal(calls[0].options.redirect, 'error');
+  assert.equal(calls[1].url, 'https://stablehorde.net/api/v2/generate/text/status/job-123');
+  assert.equal(calls[1].options.redirect, 'error');
+  assert.equal(calls[2].url, 'https://stablehorde.net/api/v2/generate/text/status/job-123');
+});
+
+test('cancels Stable Horde jobs that become impossible', async () => {
+  const calls = [];
+  const executor = createNodeProviderExecutor({
+    sleep: async () => {},
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url, options });
+      if (url.endsWith('/async')) {
+        return {
+          ok: true,
+          status: 202,
+          text: async () => JSON.stringify({ id: 'job-impossible', message: 'queue warning' }),
+        };
+      }
+      if (options.method === 'DELETE') {
+        return { ok: true, status: 200, text: async () => '' };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ is_possible: false, done: false }),
+      };
+    },
+  });
+  const result = await executor.execute({
+    format: LLM_FORMATS.Horde,
+    payload: { body: { prompt: 'hello' }, headers: { apikey: 'key' } },
+  });
+  assert.deepEqual(result.response, {
+    type: 'fail',
+    result: 'Response not possiblewith queue warning',
+    noRetry: true,
+  });
+  const deleteCall = calls.find((call) => call.options.method === 'DELETE');
+  assert.equal(deleteCall.url, 'https://stablehorde.net/api/v2/generate/text/status/job-impossible');
+  assert.equal(deleteCall.options.redirect, 'error');
+});
+
+test('returns Stable Horde submission failures without polling', async () => {
+  let calls = 0;
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async () => {
+      calls += 1;
+      return { ok: false, status: 429, text: async () => 'rate limited' };
+    },
+  });
+  const result = await executor.execute({
+    format: LLM_FORMATS.Horde,
+    payload: { body: { prompt: 'hello' }, headers: {} },
+  });
+  assert.deepEqual(result.response, { type: 'fail', result: 'rate limited' });
+  assert.equal(calls, 1);
+});
+
+test('rejects invalid Stable Horde generation ids before polling', async () => {
+  let calls = 0;
+  const executor = createNodeProviderExecutor({
+    fetchImpl: async () => {
+      calls += 1;
+      return {
+        ok: true,
+        status: 202,
+        text: async () => JSON.stringify({ id: '' }),
+      };
+    },
+  });
+  const result = await executor.execute({
+    format: LLM_FORMATS.Horde,
+    payload: { body: { prompt: 'hello' }, headers: {} },
+  });
+  assert.deepEqual(result.response, {
+    type: 'fail',
+    result: 'Invalid Horde generation id',
+    noRetry: true,
+  });
+  assert.equal(calls, 1);
+});
+
+test('cancels Stable Horde jobs when execution is aborted during polling', async () => {
+  const controller = new AbortController();
+  const calls = [];
+  const executor = createNodeProviderExecutor({
+    sleep: async () => { controller.abort(new Error('cancelled')); },
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url, options });
+      if (url.endsWith('/async')) {
+        return {
+          ok: true,
+          status: 202,
+          text: async () => JSON.stringify({ id: 'job-abort' }),
+        };
+      }
+      return { ok: true, status: 200, text: async () => '' };
+    },
+  });
+  await assert.rejects(
+    executor.execute(
+      {
+        format: LLM_FORMATS.Horde,
+        payload: { body: { prompt: 'hello' }, headers: {} },
+      },
+      { signal: controller.signal },
+    ),
+    /cancelled/,
+  );
+  const deleteCall = calls.find((call) => call.options.method === 'DELETE');
+  assert.equal(deleteCall.url, 'https://stablehorde.net/api/v2/generate/text/status/job-abort');
 });
 
 test('executes official OpenAI non-streaming transport without interpreting the response', async () => {

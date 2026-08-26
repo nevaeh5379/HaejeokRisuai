@@ -35,6 +35,10 @@ const {
 const {
   resolveOllamaCloudTransportUrl,
 } = require('../../packages/chat-core/ollamaProvider.cjs');
+const {
+  STABLE_HORDE_TEXT_ASYNC_URL,
+  buildStableHordeStatusUrl,
+} = require('../../packages/chat-core/hordeProvider.cjs');
 const { LLM_FORMATS } = require('../../packages/protocol/modelFormat.cjs');
 const {
   normalizeNodeProviderExecutionRequest,
@@ -193,9 +197,82 @@ function createNodeProviderExecutor({
       const data = await response.json();
       return decodeMistralResponse(response.ok, data, input.httpErrorPrefix);
     },
+    horde: async (payload, context) => {
+      const input = normalizeJsonTransportPayload(payload, 'stable horde');
+      const submission = await fetchImpl(STABLE_HORDE_TEXT_ASYNC_URL, {
+        method: 'POST',
+        headers: input.headers,
+        body: input.body,
+        signal: context?.signal,
+        redirect: 'error',
+      });
+      const submissionText = await submission.text();
+      if (submission.status !== 202) {
+        return { type: 'fail', result: submissionText };
+      }
+      let job;
+      try {
+        job = JSON.parse(submissionText);
+      } catch {
+        return { type: 'fail', result: submissionText || 'Invalid Horde response' };
+      }
+      const statusUrl = buildStableHordeStatusUrl(job?.id);
+      if (!statusUrl) {
+        return { type: 'fail', result: 'Invalid Horde generation id', noRetry: true };
+      }
+      const warning = job?.message ? `with ${job.message}` : '';
+      const cancel = async () => {
+        try {
+          await fetchImpl(statusUrl, { method: 'DELETE', redirect: 'error' });
+        } catch {}
+      };
+      try {
+        while (true) {
+          context?.signal?.throwIfAborted?.();
+          await sleep(2000);
+          context?.signal?.throwIfAborted?.();
+          const statusResponse = await fetchImpl(statusUrl, {
+            signal: context?.signal,
+            redirect: 'error',
+          });
+          const statusText = await statusResponse.text();
+          let data;
+          try {
+            data = JSON.parse(statusText);
+          } catch {
+            return { type: 'fail', result: statusText || 'Invalid Horde status response' };
+          }
+          if (!statusResponse.ok) {
+            return { type: 'fail', result: statusText };
+          }
+          if (!data.is_possible) {
+            await cancel();
+            return {
+              type: 'fail',
+              result: `Response not possible${warning}`,
+              noRetry: true,
+            };
+          }
+          if (data.done && Array.isArray(data.generations)) {
+            if (data.generations.length === 0) {
+              return { type: 'fail', result: 'No Generations when done', noRetry: true };
+            }
+            return { type: 'success', result: data.generations[0]?.text ?? '' };
+          }
+        }
+      } catch (error) {
+        if (context?.signal?.aborted) await cancel();
+        throw error;
+      }
+    },
     ...extraHandlers,
   };
-  const formats = Object.freeze([LLM_FORMATS.Echo, LLM_FORMATS.Mistral, ...extraFormats]);
+  const formats = Object.freeze([
+    LLM_FORMATS.Echo,
+    LLM_FORMATS.Mistral,
+    LLM_FORMATS.Horde,
+    ...extraFormats,
+  ]);
   const supportedFormats = new Set(formats);
   const routes = Object.freeze([...new Set(formats.map(resolveProviderRoute).filter(Boolean))]);
   const transportFormats = Object.freeze([

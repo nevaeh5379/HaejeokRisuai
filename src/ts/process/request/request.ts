@@ -30,6 +30,10 @@ import {
   DEFAULT_OLLAMA_CLOUD_CHAT_URL,
   resolveOllamaCloudTransportUrl,
 } from "@risuai/chat-core/ollamaProvider.cjs";
+import {
+  STABLE_HORDE_TEXT_ASYNC_URL,
+  buildStableHordeStatusUrl,
+} from "@risuai/chat-core/hordeProvider.cjs";
 import { NovelAIBadWordIds, stringlizeNAIChat } from "../models/nai";
 import { OobaParams } from "../prompt";
 import {
@@ -1362,7 +1366,27 @@ async function requestHorde(
     getAdditionalParameters(arg.aiModel),
   );
 
-  const da = await fetch("https://stablehorde.net/api/v2/generate/text/async", {
+  const remote = await tryExecuteNodeProvider(
+    LLMFormat.Horde,
+    {
+      body: finalBody,
+      headers,
+    },
+    abortSignal,
+  );
+  if (remote) {
+    if (remote.type !== "success") return remote;
+    return {
+      ...remote,
+      result: unstringlizeChat(
+        remote.result,
+        formated,
+        currentChar?.name ?? "",
+      ),
+    };
+  }
+
+  const da = await fetch(STABLE_HORDE_TEXT_ASYNC_URL, {
     body: JSON.stringify(finalBody),
     method: "POST",
     headers: headers,
@@ -1386,46 +1410,62 @@ async function requestHorde(
   if (json.message) {
     warnMessage = "with " + json.message;
   }
+  const statusUrl = buildStableHordeStatusUrl(json.id);
+  if (!statusUrl) {
+    return {
+      type: "fail",
+      result: "Invalid Horde generation id",
+      noRetry: true,
+    };
+  }
 
-  while (true) {
-    await sleep(2000);
-    const data = await (
-      await fetch(
-        "https://stablehorde.net/api/v2/generate/text/status/" + json.id,
-      )
-    ).json();
-    if (!data.is_possible) {
-      fetch("https://stablehorde.net/api/v2/generate/text/status/" + json.id, {
-        method: "DELETE",
-      });
-      return {
-        type: "fail",
-        result: "Response not possible" + warnMessage,
-        noRetry: true,
-      };
-    }
-    if (
-      data.done &&
-      Array.isArray(data.generations) &&
-      data.generations.length > 0
-    ) {
-      const generations: { text: string }[] = data.generations;
-      if (generations && generations.length > 0) {
+  try {
+    while (true) {
+      await sleep(2000);
+      abortSignal?.throwIfAborted?.();
+      const data = await (
+        await fetch(statusUrl, { signal: abortSignal })
+      ).json();
+      if (!data.is_possible) {
+        fetch(statusUrl, {
+          method: "DELETE",
+        });
         return {
-          type: "success",
-          result: unstringlizeChat(
-            generations[0].text ?? "",
-            formated,
-            currentChar?.name ?? "",
-          ),
+          type: "fail",
+          result: "Response not possible" + warnMessage,
+          noRetry: true,
         };
       }
-      return {
-        type: "fail",
-        result: "No Generations when done",
-        noRetry: true,
-      };
+      if (
+        data.done &&
+        Array.isArray(data.generations) &&
+        data.generations.length > 0
+      ) {
+        const generations: { text: string }[] = data.generations;
+        if (generations && generations.length > 0) {
+          return {
+            type: "success",
+            result: unstringlizeChat(
+              generations[0].text ?? "",
+              formated,
+              currentChar?.name ?? "",
+            ),
+          };
+        }
+        return {
+          type: "fail",
+          result: "No Generations when done",
+          noRetry: true,
+        };
+      }
     }
+  } catch (error) {
+    if (abortSignal?.aborted) {
+      try {
+        await fetch(statusUrl, { method: "DELETE" });
+      } catch {}
+    }
+    throw error;
   }
 }
 
