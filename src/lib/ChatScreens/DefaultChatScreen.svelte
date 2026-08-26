@@ -462,9 +462,16 @@
         }
     }
 
-    function abortChat(){
+    async function abortChat(){
         const chatId = currentChatSession?.id
-        if(chatId) abortControllers.get(chatId)?.abort()
+        if(!chatId) return
+        const controller = abortControllers.get(chatId)
+        if(controller){
+            controller.abort()
+            return
+        }
+        const { cancelNodeChatGeneration } = await import('../../ts/process/nodeRealtimeSync')
+        await cancelNodeChatGeneration(chatId)
     }
 
     async function runAutoMode() {

@@ -167,3 +167,36 @@ test('model jobs allow different chats concurrently and emit lifecycle events', 
         ['chat-a', 'chat-b'],
     );
 });
+
+
+test('active model jobs can be aborted from another client', async (t) => {
+    const saveDir = await makeTempDir();
+    t.after(() => fs.rm(saveDir, { recursive: true, force: true }));
+    const upstream = http.createServer((_req, res) => {
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.write('partial');
+        setTimeout(() => res.end('late'), 500);
+    });
+    const upstreamPort = await listen(upstream);
+    t.after(() => close(upstream));
+
+    const manager = createModelJobManager({ saveDir });
+    t.after(() => manager.close());
+    const created = manager.createJob({
+        targetUrl: `http://127.0.0.1:${upstreamPort}/v1/chat`,
+        method: 'POST',
+        body: '{}',
+        chatId: 'remote-cancel-chat',
+        generationId: 'remote-cancel-generation',
+        protocol: 'openai',
+        streaming: true,
+    });
+    assert.ok(created.jobId);
+    assert.equal(manager.listJobs('active').length, 1);
+
+    const deleted = await manager.deleteJob(created.jobId);
+    assert.deepEqual(deleted, { success: true, aborted: true });
+    await created.runPromise;
+    assert.equal(manager.getJob(created.jobId).status, 'aborted');
+    assert.equal(manager.listJobs('active').length, 0);
+});
