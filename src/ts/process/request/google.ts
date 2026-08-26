@@ -1,4 +1,12 @@
-import { buildGoogleGenerateContentUrl } from "@risuai/chat-core/googleProvider.cjs";
+import {
+  buildGoogleGenerateContentUrl,
+  prepareGoogleConversation,
+} from "@risuai/chat-core/googleProvider.cjs";
+import type {
+  GeminiChat,
+  GeminiFunctionCall,
+  GeminiPart,
+} from "@risuai/chat-core/googleProvider.cjs";
 import { fetchNative, textifyReadableStream } from "src/ts/globalApi.svelte";
 import { LLMFlags, LLMFormat, type LLMModel } from "src/ts/model/modellist";
 import { getDatabase, setDatabase } from "src/ts/storage/database.svelte";
@@ -28,35 +36,6 @@ import {
 } from "./shared";
 import { bodyIntercepterStore } from "src/ts/stores.svelte";
 
-type GeminiFunctionCall = {
-  id?: string;
-  name: string;
-  args: any;
-};
-
-type GeminiFunctionResponse = {
-  id?: string;
-  name: string;
-  response: any;
-};
-
-interface GeminiPart {
-  text?: string;
-  thought?: boolean;
-  thoughtSignature?: string;
-  inlineData?: {
-    mimeType: string;
-    data: string;
-  };
-  functionCall?: GeminiFunctionCall;
-  functionResponse?: GeminiFunctionResponse;
-}
-
-interface GeminiChat {
-  role: "user" | "model" | "function";
-  parts: GeminiPart[];
-}
-
 export async function requestGoogleCloudVertex(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
@@ -64,107 +43,32 @@ export async function requestGoogleCloudVertex(
   const db = getDatabase();
   const maxTokens = arg.maxTokens;
 
-  let reformatedChat: GeminiChat[] = [];
-  let systemPrompt = "";
-
-  if (formated[0].role === "system") {
-    systemPrompt = formated[0].content;
+  const preparedConversation = prepareGoogleConversation(formated, {
+    hasImageInput: arg.modelInfo.flags.includes(LLMFlags.hasImageInput),
+    hasAudioInput: arg.modelInfo.flags.includes(LLMFlags.hasAudioInput),
+    hasVideoInput: arg.modelInfo.flags.includes(LLMFlags.hasVideoInput),
+    resolveSignature: (modal) => {
+      if (modal.type !== "signature" || !db.saveSignatures) return null;
+      const sig: InlaySignature = JSON.parse(
+        Buffer.from(modal.base64, "base64").toString("utf-8"),
+      );
+      if (
+        sig.source !== arg.modelInfo.internalID &&
+        sig.source !== arg.modelInfo.id
+      ) {
+        return null;
+      }
+      return {
+        thought: true,
+        thoughtSignature: sig.signatures[0].content,
+      };
+    },
+  });
+  if (preparedConversation.consumedLeadingSystem) {
     formated.shift();
   }
-
-  for (let i = 0; i < formated.length; i++) {
-    const chat = formated[i];
-
-    const prevChat = reformatedChat[reformatedChat.length - 1];
-    const qRole =
-      chat.role === "user"
-        ? "user"
-        : chat.role === "assistant"
-          ? "model"
-          : chat.role;
-
-    if (chat.multimodals && chat.multimodals.length > 0) {
-      let geminiParts: GeminiPart[] = [];
-
-      geminiParts.push({
-        text: chat.content,
-      });
-
-      for (const modal of chat.multimodals) {
-        if (
-          (modal.type === "image" &&
-            arg.modelInfo.flags.includes(LLMFlags.hasImageInput)) ||
-          (modal.type === "audio" &&
-            arg.modelInfo.flags.includes(LLMFlags.hasAudioInput)) ||
-          (modal.type === "video" &&
-            arg.modelInfo.flags.includes(LLMFlags.hasVideoInput))
-        ) {
-          const dataurl = modal.base64;
-          const base64 = dataurl.split(",")[1];
-          const mediaType = dataurl.split(";")[0].split(":")[1];
-
-          geminiParts.push({
-            inlineData: {
-              mimeType: mediaType,
-              data: base64,
-            },
-          });
-        }
-
-        if (modal.type === "signature" && db.saveSignatures) {
-          const sig: InlaySignature = JSON.parse(
-            Buffer.from(modal.base64, "base64").toString("utf-8"),
-          );
-          if (
-            sig.source === arg.modelInfo.internalID ||
-            sig.source === arg.modelInfo.id
-          ) {
-            geminiParts.push({
-              thought: true,
-              thoughtSignature: sig.signatures[0].content,
-            });
-          }
-        }
-      }
-
-      reformatedChat.push({
-        role: chat.role === "user" ? "user" : "model",
-        parts: geminiParts,
-      });
-    } else if (chat.role === "system") {
-      if (prevChat?.role === "user") {
-        reformatedChat[reformatedChat.length - 1].parts[0].text +=
-          "\nsystem:" + chat.content;
-      } else {
-        reformatedChat.push({
-          role: "user",
-          parts: [
-            {
-              text: chat.role + ":" + chat.content,
-            },
-          ],
-        });
-      }
-    } else if (chat.role === "assistant" || chat.role === "user") {
-      reformatedChat.push({
-        role: chat.role === "user" ? "user" : "model",
-        parts: [
-          {
-            text: chat.content,
-          },
-        ],
-      });
-    } else {
-      reformatedChat.push({
-        role: "user",
-        parts: [
-          {
-            text: chat.role + ":" + chat.content,
-          },
-        ],
-      });
-    }
-  }
+  let reformatedChat: GeminiChat[] = preparedConversation.chats;
+  let systemPrompt = preparedConversation.systemPrompt;
 
   for (let i = 0; i < reformatedChat.length; i++) {
     let chat = reformatedChat[i];
