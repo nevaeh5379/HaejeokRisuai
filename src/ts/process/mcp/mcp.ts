@@ -7,6 +7,7 @@ import {
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
 import { getModuleMcps } from "../modules";
+import type { character, groupChat } from "src/ts/storage/database.svelte";
 import { alertError, alertInput, alertNormal } from "src/ts/alert";
 import { v4 } from "uuid";
 import type { MCPClientLike } from "./internalmcp";
@@ -14,6 +15,7 @@ import localforage from "localforage";
 import { isTauri } from "src/ts/platform";
 import { sleep } from "src/ts/util";
 import { registeredCustomPluginMCPs } from "./pluginmcp";
+import { Mutex } from "../../mutex";
 
 export type MCPToolWithURL = MCPTool & {
   mcpURL: string;
@@ -23,8 +25,13 @@ export const MCPs: Record<string, MCPClient | MCPClientLike> = {};
 export const callOnlyMCPs: Record<string, MCPClient | MCPClientLike> = {};
 const callOnlyMCPUrls = ["internal:risuai"];
 
-export async function initializeMCPs(additionalMCPs?: string[]) {
-  const mcpUrls = getModuleMcps();
+const mcpInitializationMutex = new Mutex();
+
+async function initializeMCPsUnlocked(
+  additionalMCPs?: string[],
+  character?: character | groupChat,
+) {
+  const mcpUrls = [...getModuleMcps(character)];
   if (additionalMCPs && additionalMCPs.length > 0) {
     for (const mcp of additionalMCPs) {
       if (!mcpUrls.includes(mcp)) {
@@ -32,6 +39,7 @@ export async function initializeMCPs(additionalMCPs?: string[]) {
       }
     }
   }
+  const visibleMCPUrls = [...mcpUrls];
   const callOnlyMCPUrlsThatIsNotInDefault: string[] = [];
   for (const mcp of callOnlyMCPUrls) {
     if (!mcpUrls.includes(mcp)) {
@@ -219,25 +227,31 @@ export async function initializeMCPs(additionalMCPs?: string[]) {
     }
   }
 
-  for (const key of Object.keys(MCPs)) {
-    if (!mcpUrls.includes(key)) {
-      MCPs[key].destroy();
-      delete MCPs[key];
-    }
-  }
-
   for (const mcp of callOnlyMCPUrlsThatIsNotInDefault) {
     if (MCPs[mcp]) {
       callOnlyMCPs[mcp] = MCPs[mcp];
-      delete MCPs[mcp];
     }
   }
+  return visibleMCPUrls;
 }
 
-export async function getMCPTools(additionalMCPs?: string[]) {
-  await initializeMCPs(additionalMCPs);
+export async function initializeMCPs(
+  additionalMCPs?: string[],
+  character?: character | groupChat,
+) {
+  return mcpInitializationMutex.runExclusive(() =>
+    initializeMCPsUnlocked(additionalMCPs, character),
+  );
+}
+
+export async function getMCPTools(
+  additionalMCPs?: string[],
+  character?: character | groupChat,
+) {
+  const mcpUrls = await initializeMCPs(additionalMCPs, character);
   const tools: MCPToolWithURL[] = [];
-  for (const key of Object.keys(MCPs)) {
+  for (const key of mcpUrls) {
+    if (!MCPs[key]) continue;
     const t = (await MCPs[key].getToolList()).map((tool) => {
       return {
         ...tool,
@@ -251,10 +265,10 @@ export async function getMCPTools(additionalMCPs?: string[]) {
 }
 
 export async function getMCPMeta(additionalMCPs?: string[]) {
-  await initializeMCPs(additionalMCPs);
+  const mcpUrls = await initializeMCPs(additionalMCPs);
   const meta: Record<string, typeof MCPClient.prototype.serverInfo> = {};
-  for (const key of Object.keys(MCPs)) {
-    meta[key] = MCPs[key].serverInfo;
+  for (const key of mcpUrls) {
+    if (MCPs[key]) meta[key] = MCPs[key].serverInfo;
   }
   return meta;
 }
@@ -262,14 +276,23 @@ export async function getMCPMeta(additionalMCPs?: string[]) {
 export async function callMCPTool(
   methodName: string,
   args: any,
+  mcpURL?: string,
 ): Promise<RPCToolCallContent[]> {
-  await initializeMCPs();
-  const combinedMCPs = { ...MCPs, ...callOnlyMCPs };
-  for (const key of Object.keys(combinedMCPs)) {
-    const tools = await combinedMCPs[key].getToolList();
+  if (mcpURL) {
+    await initializeMCPs([mcpURL]);
+    const client = MCPs[mcpURL] ?? callOnlyMCPs[mcpURL];
+    if (client) return await client.callTool(methodName, args);
+  }
+
+  const visibleMCPUrls = await initializeMCPs();
+  const candidateUrls = [...new Set([...visibleMCPUrls, ...callOnlyMCPUrls])];
+  for (const key of candidateUrls) {
+    const client = MCPs[key] ?? callOnlyMCPs[key];
+    if (!client) continue;
+    const tools = await client.getToolList();
     const tool = tools.find((t) => t.name === methodName);
     if (tool) {
-      return await combinedMCPs[key].callTool(methodName, args);
+      return await client.callTool(methodName, args);
     }
   }
   return [
@@ -281,13 +304,13 @@ export async function callMCPTool(
 }
 
 //Currently just a wrapper for getMCPTools, but can be extended later for more than MCPs
-export async function getTools() {
-  return await getMCPTools();
+export async function getTools(character?: character | groupChat) {
+  return await getMCPTools(undefined, character);
 }
 
 //Currently just a wrapper for callMCPTool, but can be extended later for more than MCPs
-export async function callTool(methodName: string, args: any) {
-  return await callMCPTool(methodName, args);
+export async function callTool(methodName: string, args: any, mcpURL?: string) {
+  return await callMCPTool(methodName, args, mcpURL);
 }
 
 export async function importMCPModule() {

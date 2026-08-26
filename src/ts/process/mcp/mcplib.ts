@@ -19,6 +19,7 @@ export type MCPTool = {
   description: string;
   inputSchema: any; // JSON schema for input validation
   annotations?: any; // Annotations for the tool, can be used for documentation or metadata
+  mcpURL?: string;
 };
 
 export type JsonRPC = {

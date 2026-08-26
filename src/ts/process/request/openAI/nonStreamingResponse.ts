@@ -106,7 +106,7 @@ export async function interpretOpenAINonStreamingResponse(
                 });
               } else {
                 const parsed = functionArgs;
-                const x = (await callTool(tool.name, parsed)).filter(
+                const x = (await callTool(tool.name, parsed, tool.mcpURL)).filter(
                   (m) => m.type === "text",
                 );
                 if (x.length > 0) {

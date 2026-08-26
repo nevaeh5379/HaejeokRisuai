@@ -991,7 +991,8 @@ async function requestClaudeHTTP(
       }
 
       if (content.type === "tool_use") {
-        const used = await callTool(content.name, content.input);
+        const tool = arg.tools?.find((candidate) => candidate.name === content.name);
+        const used = await callTool(content.name, content.input, tool?.mcpURL);
         const r: Claude3ToolResponseBlock = {
           type: "tool_result",
           tool_use_id: content.id,

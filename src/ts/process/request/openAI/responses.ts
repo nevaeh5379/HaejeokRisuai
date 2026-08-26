@@ -593,7 +593,7 @@ async function appendResponsesToolOutputs(
       if (!tool) {
         output = "No tool found with name: " + toolCall.name;
       } else {
-        const used = (await callTool(tool.name, parsed)).filter(
+        const used = (await callTool(tool.name, parsed, tool.mcpURL)).filter(
           (m) => m.type === "text",
         );
         if (used.length > 0) {

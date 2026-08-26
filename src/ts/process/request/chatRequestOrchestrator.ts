@@ -27,7 +27,8 @@ export async function requestChatData(
   const fallBackModels: string[] = safeStructuredClone(
     db?.fallbackModels?.[model] ?? [],
   );
-  const tools = arg.tools ?? (await getTools());
+  const requestCharacter = arg.currentChar ?? getCurrentCharacter();
+  const tools = arg.tools ?? (await getTools(requestCharacter));
   fallBackModels.push("");
 
   if (arg.escape) {
@@ -64,7 +65,7 @@ export async function requestChatData(
         }
 
         try {
-          const currentChar = arg.currentChar ?? getCurrentCharacter();
+          const currentChar = requestCharacter;
           const triggerChat = arg.triggerTarget
             ? characterStore.characters[arg.triggerTarget.characterIndex]?.chats?.[
                 arg.triggerTarget.chatIndex
