@@ -467,6 +467,60 @@ export class NodeStorage {
     return data.results as VectorIndexSearchResult;
   }
 
+  async startHypaMemorySession(request: unknown): Promise<any> {
+    const response = await fetch("/api/hypa-memory/start", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "risu-auth": await this.getCachedAuth(),
+      },
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      const error = new Error(`Server Hypa memory start failed (${response.status}): ${message}`);
+      (error as any).status = response.status;
+      throw error;
+    }
+    return await response.json();
+  }
+
+  async continueHypaMemorySession(
+    sessionId: string,
+    actionId: string,
+    value: unknown,
+  ): Promise<any> {
+    const response = await fetch(
+      `/api/hypa-memory/${encodeURIComponent(sessionId)}/continue`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "risu-auth": await this.getCachedAuth(),
+        },
+        body: JSON.stringify({ actionId, value }),
+      },
+    );
+    if (!response.ok) {
+      const message = await response.text();
+      const error = new Error(`Server Hypa memory continuation failed (${response.status}): ${message}`);
+      (error as any).status = response.status;
+      throw error;
+    }
+    return await response.json();
+  }
+
+  async cancelHypaMemorySession(sessionId: string): Promise<void> {
+    try {
+      await fetch(`/api/hypa-memory/${encodeURIComponent(sessionId)}`, {
+        method: "DELETE",
+        headers: { "risu-auth": await this.getCachedAuth() },
+      });
+    } catch {
+      // Best-effort cleanup only. Server sessions also expire automatically.
+    }
+  }
+
   async getKeyPair(): Promise<CryptoKeyPair> {
     const storedKey = await getKeypairStore("node");
 

@@ -11,6 +11,7 @@ import { requestChatData } from "../request/chatRequestOrchestrator";
 import { HypaProcesser } from "./hypamemory";
 import { globalFetch } from "src/ts/globalApi.svelte";
 import { runSummarizer } from "../transformers";
+import { tryRunNodeHypaMemory } from "./nodeHypaMemory";
 
 export interface HypaV2Data {
   lastMainChunkID: number; // can be removed, but exists to more readability of the code.
@@ -364,6 +365,39 @@ export async function hypaMemoryV2(
   memory?: SerializableHypaV2Data;
 }> {
   const db = getDatabase();
+  const nodeResult = await tryRunNodeHypaMemory<{
+    currentTokens: number;
+    chats: OpenAIChat[];
+    error?: string;
+    memory?: SerializableHypaV2Data;
+  }>(
+    {
+      mode: "v2",
+      chats,
+      currentTokens,
+      maxContextTokens,
+      room: { id: room.id, hypaV2Data: room.hypaV2Data },
+      character: { id: char.chaId, name: char.name, type: char.type },
+      config: {
+        maxResponse: db.maxResponse,
+        hypaAllocatedTokens: db.hypaAllocatedTokens,
+        hypaChunkSize: db.hypaChunkSize,
+        hypaModel: db.hypaModel,
+        supaModelType: db.supaModelType,
+        supaMemoryPrompt: db.supaMemoryPrompt,
+        supaMemoryKey: db.supaMemoryKey,
+        customEmbedding: {
+          url: db.hypaCustomSettings?.url ?? "",
+          key: db.hypaCustomSettings?.key ?? "",
+          model: db.hypaCustomSettings?.model ?? "",
+        },
+        voyageApiKey: db.voyageApiKey ?? "",
+      },
+    },
+    tokenizer,
+  );
+  if (nodeResult.handled) return nodeResult.result;
+
   let data: HypaV2Data = {
     lastMainChunkID: 0,
     chunks: [],

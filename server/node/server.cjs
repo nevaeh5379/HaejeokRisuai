@@ -41,6 +41,7 @@ const { streamZip } = require('./zipStream.cjs');
 const { createModelJobManager } = require('./modelJobs.cjs');
 const { createNodeChatExecutor } = require('./chatExecutor.cjs');
 const { createNodeProviderExecutor } = require('./providerExecutor.cjs');
+const { createHypaMemoryExecutor } = require('./hypaMemoryExecutor.cjs');
 const {
     createEntryHeader: createLocalBackupEntryHeader,
     makeLegacyCompatibleDatabase: makeLegacyCompatibleBackupDatabase,
@@ -250,6 +251,7 @@ if(!existsSync(savePath)){
 const modelJobManager = createModelJobManager({ saveDir: savePath, logger: console });
 const nodeChatExecutor = createNodeChatExecutor();
 const nodeProviderExecutor = createNodeProviderExecutor();
+const hypaMemoryExecutor = createHypaMemoryExecutor();
 const postgresConfigPath = path.join(savePath, '__postgres_config.json');
 const postgresManagedByEnvironment = Boolean(process.env.DATABASE_URL);
 // 저장소가 환경 변수로 관리되는지 (세 vendor 공통)
@@ -3613,6 +3615,11 @@ nodeChatExecutor.registerRoutes(app, {
 nodeProviderExecutor.registerRoutes(app, {
     auth: checkAuth,
     limiter: authenticatedRouteLimiter,
+});
+hypaMemoryExecutor.registerRoutes(app, {
+    auth: checkAuth,
+    limiter: authenticatedRouteLimiter,
+    getScope: getAuthenticatedIndexScope,
 });
 
 app.post('/api/tokenize-count', authenticatedRouteLimiter, async (req, res, next) => {

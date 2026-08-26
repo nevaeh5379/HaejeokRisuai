@@ -13,6 +13,7 @@ import { globalFetch } from "src/ts/globalApi.svelte";
 import { runSummarizer } from "../transformers";
 import { parseChatML } from "src/ts/parser/chatML";
 import { getUserName } from "src/ts/util";
+import { tryRunNodeHypaMemory } from "./nodeHypaMemory";
 
 export async function supaMemory(
   chats: OpenAIChat[],
@@ -30,6 +31,42 @@ export async function supaMemory(
   lastId?: string;
 }> {
   const db = getDatabase();
+
+  if (arg.asHyper) {
+    const nodeResult = await tryRunNodeHypaMemory<{
+      currentTokens: number;
+      chats: OpenAIChat[];
+      error?: string;
+      memory?: string;
+      lastId?: string;
+    }>(
+      {
+        mode: "legacy",
+        chats,
+        currentTokens,
+        maxContextTokens,
+        room: { id: room.id, supaMemoryData: room.supaMemoryData },
+        character: { id: char.chaId, name: char.name, type: char.type },
+        config: {
+          hypaModel: db.hypaModel,
+          supaModelType: db.supaModelType,
+          supaMemoryPrompt: db.supaMemoryPrompt,
+          supaMemoryKey: db.supaMemoryKey,
+          maxSupaChunkSize: db.maxSupaChunkSize,
+          removePunctuationHypa: db.removePunctuationHypa,
+          userName: getUserName(),
+          customEmbedding: {
+            url: db.hypaCustomSettings?.url ?? "",
+            key: db.hypaCustomSettings?.key ?? "",
+            model: db.hypaCustomSettings?.model ?? "",
+          },
+          voyageApiKey: db.voyageApiKey ?? "",
+        },
+      },
+      tokenizer,
+    );
+    if (nodeResult.handled) return nodeResult.result;
+  }
 
   currentTokens += 10;
 

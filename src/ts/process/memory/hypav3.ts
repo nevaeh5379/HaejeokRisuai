@@ -21,6 +21,7 @@ import { hypaV3ProgressStore } from "src/ts/stores.svelte";
 import { type ChatTokenizer } from "src/ts/tokenizer";
 import { inlayTokenRegex } from "src/ts/util/inlayTokens";
 import { type HypaV3Preset, type HypaV3Settings } from "./hypav3Preset";
+import { tryRunNodeHypaMemory } from "./nodeHypaMemory";
 
 export { createHypaV3Preset } from "./hypav3Preset";
 export type { HypaV3Preset, HypaV3Settings } from "./hypav3Preset";
@@ -101,6 +102,32 @@ export async function hypaMemoryV3(
   const settings = getCurrentHypaV3Preset().settings;
 
   try {
+    const db = getDatabase();
+    const nodeResult = await tryRunNodeHypaMemory<HypaV3Result>(
+      {
+        mode: "v3",
+        chats,
+        currentTokens,
+        maxContextTokens,
+        room: { id: room.id, hypaV3Data: room.hypaV3Data },
+        character: { id: char.chaId, name: char.name, type: char.type },
+        config: {
+          maxResponse: db.maxResponse,
+          hypaModel: db.hypaModel,
+          supaMemoryKey: db.supaMemoryKey,
+          customEmbedding: {
+            url: db.hypaCustomSettings?.url ?? "",
+            key: db.hypaCustomSettings?.key ?? "",
+            model: db.hypaCustomSettings?.model ?? "",
+          },
+          voyageApiKey: db.voyageApiKey ?? "",
+          v3Settings: settings,
+        },
+      },
+      tokenizer,
+    );
+    if (nodeResult.handled) return nodeResult.result;
+
     if (settings.useExperimentalImpl) {
       console.log(logPrefix, "Using experimental implementation.");
 
