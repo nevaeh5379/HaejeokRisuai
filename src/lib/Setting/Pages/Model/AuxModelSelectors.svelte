@@ -4,6 +4,11 @@
   import { language } from 'src/lang';
   import ModelList from 'src/lib/UI/ModelList.svelte';
   import { BrainIcon, GlobeIcon, SmileIcon, CpuIcon } from "@lucide/svelte";
+  import { saveCurrentPreset } from 'src/ts/storage/database.svelte';
+
+  function persistModelSelection() {
+    void saveCurrentPreset();
+  }
 </script>
 
 <div class="mt-4 flex flex-col gap-3">
@@ -39,7 +44,7 @@
               <span class="text-[11px] text-textcolor2">HypaMemory / Summaries</span>
             </div>
           </div>
-          <ModelList bind:value={settingsStore.state.seperateModels.memory} blankable noMargin />
+          <ModelList bind:value={settingsStore.state.seperateModels.memory} blankable noMargin onChange={persistModelSelection} />
         </div>
 
         <!-- Translation Model -->
@@ -53,7 +58,7 @@
               <span class="text-[11px] text-textcolor2">Input / Output Auto-translation</span>
             </div>
           </div>
-          <ModelList bind:value={settingsStore.state.seperateModels.translate} blankable noMargin />
+          <ModelList bind:value={settingsStore.state.seperateModels.translate} blankable noMargin onChange={persistModelSelection} />
         </div>
 
         <!-- Emotion Model -->
@@ -67,7 +72,7 @@
               <span class="text-[11px] text-textcolor2">Emotion Expressions & Sprites</span>
             </div>
           </div>
-          <ModelList bind:value={settingsStore.state.seperateModels.emotion} blankable noMargin />
+          <ModelList bind:value={settingsStore.state.seperateModels.emotion} blankable noMargin onChange={persistModelSelection} />
         </div>
 
         <!-- Other Auxiliary Model -->
@@ -81,7 +86,7 @@
               <span class="text-[11px] text-textcolor2">Secondary Tasks & Tools</span>
             </div>
           </div>
-          <ModelList bind:value={settingsStore.state.seperateModels.otherAx} blankable noMargin />
+          <ModelList bind:value={settingsStore.state.seperateModels.otherAx} blankable noMargin onChange={persistModelSelection} />
         </div>
       </div>
     {/if}

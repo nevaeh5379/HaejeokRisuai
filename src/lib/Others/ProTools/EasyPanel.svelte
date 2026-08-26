@@ -14,6 +14,7 @@
     import { XIcon } from "@lucide/svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import CustomModelsSettings from "src/lib/Setting/Pages/Advanced/CustomModelsSettings.svelte";
+    import { saveCurrentPreset } from "src/ts/storage/database.svelte";
 
     let selectedOption = $state('models');
     let selectedParameterOption = $state('memory')
@@ -29,6 +30,10 @@
 
     const onClose = () => {
         easyPanelStore.open = false
+    }
+
+    function persistModelSelection() {
+        void saveCurrentPreset();
     }
 
 </script>
@@ -79,28 +84,28 @@
              <div class="w-full grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 justify-center items-center">
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.mainModel}</span>
-                    <ModelList bind:value={settingsStore.state.aiModel} blankable excludesPrefix="plugin"/>
+                    <ModelList bind:value={settingsStore.state.aiModel} blankable excludesPrefix="plugin" onChange={persistModelSelection}/>
                 </div>
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.submodel}</span>
-                    <ModelList bind:value={settingsStore.state.subModel} blankable excludesPrefix="plugin"/>
+                    <ModelList bind:value={settingsStore.state.subModel} blankable excludesPrefix="plugin" onChange={persistModelSelection}/>
                 </div>
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.longTermMemory}</span>
-                    <ModelList bind:value={settingsStore.state.seperateModels.memory} blankable excludesPrefix="plugin"/>
+                    <ModelList bind:value={settingsStore.state.seperateModels.memory} blankable excludesPrefix="plugin" onChange={persistModelSelection}/>
                 </div>
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.translator}</span>
-                    <ModelList bind:value={settingsStore.state.seperateModels.translate} blankable excludesPrefix="plugin"/>
+                    <ModelList bind:value={settingsStore.state.seperateModels.translate} blankable excludesPrefix="plugin" onChange={persistModelSelection}/>
                 </div>
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.emotionImage}</span>
-                    <ModelList bind:value={settingsStore.state.seperateModels.emotion} blankable excludesPrefix="plugin"/>
+                    <ModelList bind:value={settingsStore.state.seperateModels.emotion} blankable excludesPrefix="plugin" onChange={persistModelSelection}/>
                 </div>
 
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.others}</span>
-                    <ModelList bind:value={settingsStore.state.seperateModels.otherAx} blankable excludesPrefix="plugin"/>
+                    <ModelList bind:value={settingsStore.state.seperateModels.otherAx} blankable excludesPrefix="plugin" onChange={persistModelSelection}/>
                 </div>
                 
             </div>

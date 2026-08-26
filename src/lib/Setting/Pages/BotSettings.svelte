@@ -38,6 +38,7 @@
     import { openPresetList } from "src/ts/stores.svelte";
     import { selectSingleFile } from "src/ts/util";
     import { getModelInfo, LLMFlags, LLMFormat, LLMProvider } from "src/ts/model/modellist";
+    import { saveCurrentPreset } from "src/ts/storage/database.svelte";
     import RegexList from "src/lib/SideBars/Scripts/RegexList.svelte";
     import SettingRenderer from "../SettingRenderer.svelte";
     import { allBasicParameterItems } from "src/ts/setting/botSettingsParamsData";
@@ -117,6 +118,10 @@
         settingsStore.state.vertexAccessToken = '';
         settingsStore.state.vertexAccessTokenExpires = 0;
         console.log('Vertex AI token cleared');
+    }
+
+    function persistModelSelection() {
+        void saveCurrentPreset();
     }
 
 
@@ -267,7 +272,7 @@
         {#if modelTab === 'main'}
             <!-- Main Model Inline Browser & Quick Options -->
             <div class="flex flex-col gap-3">
-                <ModelBrowser bind:value={settingsStore.state.aiModel} />
+                <ModelBrowser bind:value={settingsStore.state.aiModel} onChange={persistModelSelection} />
 
                 <!-- Main Model Options (Bottom) -->
                 <div class="flex flex-col gap-2.5 pt-3 border-t border-darkborderc/60">
@@ -298,7 +303,7 @@
                 </div>
 
                 {#if !settingsStore.state.seperateModelsForAxModels}
-                    <ModelBrowser bind:value={settingsStore.state.subModel} blankable />
+                    <ModelBrowser bind:value={settingsStore.state.subModel} blankable onChange={persistModelSelection} />
                 {:else}
                     <div class="flex items-center mb-1">
                         <Check bind:check={settingsStore.state.doNotChangeSeperateModels} name={language.doNotChangeSeperateModels} />
