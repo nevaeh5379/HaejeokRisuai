@@ -24,6 +24,7 @@ import {
 } from "src/ts/stores.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
+import { messageStore } from "src/ts/stores/domain/messageStore.svelte";
 import { v4 } from "uuid";
 import { sleep } from "src/ts/util";
 import { alertConfirm, alertError, alertNormal } from "src/ts/alert";
@@ -1468,16 +1469,26 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       if (!chat) {
         throw new Error("No active chat found");
       }
+      const chatWasNew = !chat.id;
+      chat.id ??= v4();
       if (isChatGenerationActive(chat.id)) {
         throw new Error("This chat already has a generation in progress");
       }
 
+      let appendedUserMessage: (typeof chat.message)[number] | undefined;
       if (message) {
-        chat.message.push({
+        appendedUserMessage = {
           role: "user",
           data: message,
           time: Date.now(),
-        });
+        };
+        chat.message.push(appendedUserMessage);
+      }
+
+      if (chatWasNew) {
+        await messageStore.persistNewChat(char.chaId, chat.id, chat.message);
+      } else if (appendedUserMessage) {
+        await messageStore.appendMessage(chat.id, appendedUserMessage);
       }
 
       const { sendChat: processSendChat } =
