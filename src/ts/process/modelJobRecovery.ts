@@ -6,6 +6,7 @@ import { messageStore } from "../stores/domain/messageStore.svelte";
 import { getNodeServerProxyAuth } from "../storage/nodeStorage";
 import type { Message } from "../storage/database.svelte";
 import type { DurableModelJobRecord } from "../../../packages/protocol/modelJobs.cjs";
+import { setRemoteChatGeneration } from "./chatRuntimeState";
 
 export type { DurableModelJobRecord } from "../../../packages/protocol/modelJobs.cjs";
 
@@ -191,13 +192,29 @@ async function claimJob(jobId: string): Promise<void> {
   }
 }
 
-async function readJournal(job: DurableModelJobRecord): Promise<string> {
+async function readJournal(
+  job: DurableModelJobRecord,
+  onProgress?: (raw: string) => void,
+): Promise<string> {
   const response = await fetch(
     `/api/model-jobs/${encodeURIComponent(job.id)}/stream`,
     { headers: await authHeaders() },
   );
   if (!response.ok) throw new Error(`Model job journal unavailable (${response.status})`);
-  return await response.text();
+  if (!onProgress || !response.body) return await response.text();
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let raw = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    raw += decoder.decode(value, { stream: true });
+    onProgress(raw);
+  }
+  raw += decoder.decode();
+  onProgress(raw);
+  return raw;
 }
 
 type LocatedChat = {
@@ -214,6 +231,54 @@ async function locateChat(chatId: string): Promise<LocatedChat | null> {
     return { characterIndex, chatIndex };
   }
   return null;
+}
+
+const remotePreviewGenerationIds = new Set<string>();
+
+function previewRecoveredText(job: DurableModelJobRecord, text: string): void {
+  if (!job.generationId || !text.trim()) return;
+  for (const character of characterStore.characters) {
+    const chat = character?.chats?.find((item) => item?.id === job.chatId);
+    if (!chat || chat.messagesLoaded === false) continue;
+    chat.message ??= [];
+    const existing = chat.message.find(
+      (message) =>
+        message?.chatId === job.generationId ||
+        message?.generationInfo?.generationId === job.generationId,
+    );
+    if (existing) {
+      if ((existing.data?.length ?? 0) <= text.length) existing.data = text;
+    } else {
+      const message: Message = {
+        role: "char",
+        data: text,
+        time: Date.now(),
+        chatId: job.generationId,
+        generationInfo: {
+          generationId: job.generationId,
+          model: job.model ?? undefined,
+        },
+      };
+      if (job.speakerId) message.saying = job.speakerId;
+      chat.message.push(message);
+      remotePreviewGenerationIds.add(job.generationId);
+    }
+    chat.isStreaming = true;
+    character.reloadKeys = (character.reloadKeys ?? 0) + 1;
+    return;
+  }
+}
+
+function clearRecoveredPreview(job: DurableModelJobRecord): void {
+  if (!job.generationId || !remotePreviewGenerationIds.delete(job.generationId)) return;
+  for (const character of characterStore.characters) {
+    const chat = character?.chats?.find((item) => item?.id === job.chatId);
+    if (!chat?.message) continue;
+    chat.message = chat.message.filter((message) => message?.chatId !== job.generationId);
+    chat.isStreaming = false;
+    character.reloadKeys = (character.reloadKeys ?? 0) + 1;
+    return;
+  }
 }
 
 async function slotRecoveredText(
@@ -237,11 +302,13 @@ async function slotRecoveredText(
 
   if (existingIndex >= 0) {
     const existing = chat.message[existingIndex];
-    if ((existing.data?.length ?? 0) < text.length) {
-      existing.data = text;
-      existing.generationInfo ??= {};
-      existing.generationInfo.generationId = job.generationId;
-      if (job.model) existing.generationInfo.model = job.model;
+    const wasPreview = remotePreviewGenerationIds.delete(job.generationId);
+    const changed = (existing.data?.length ?? 0) < text.length;
+    if (changed) existing.data = text;
+    existing.generationInfo ??= {};
+    existing.generationInfo.generationId = job.generationId;
+    if (job.model) existing.generationInfo.model = job.model;
+    if (wasPreview || changed) {
       await messageStore.updateMessage(job.chatId, existing);
     }
   } else {
@@ -266,6 +333,7 @@ async function slotRecoveredText(
 
 async function recoverTerminalJob(job: DurableModelJobRecord): Promise<void> {
   if (job.status === "failed") {
+    clearRecoveredPreview(job);
     console.warn("[ModelJobRecovery] generation failed", job.id, job.error);
     await claimJob(job.id);
     return;
@@ -297,12 +365,25 @@ let recoveryTriggersInstalled = false;
 async function recoverActiveJob(job: DurableModelJobRecord): Promise<void> {
   if (attachedJobs.has(job.id) || isDurableModelJobOwned(job.id)) return;
   attachedJobs.add(job.id);
+  let reachedTerminalState = false;
   try {
     // The stream endpoint replays the journal from byte zero and then tails it
     // until the server-side upstream request becomes terminal.
-    const raw = await readJournal(job);
+    let lastPreviewAt = 0;
+    const raw = await readJournal(job, (partialRaw) => {
+      const now = Date.now();
+      if (now - lastPreviewAt < 50) return;
+      lastPreviewAt = now;
+      const partialText = decodeDurableModelJob(
+        job.protocol,
+        partialRaw,
+        job.streaming === true,
+      );
+      previewRecoveredText(job, partialText);
+    });
     const terminal = await getJob(job.id);
     if (!terminal) return;
+    reachedTerminalState = terminal.status !== "running";
     if (terminal.status === "done") {
       const text = decodeDurableModelJob(
         terminal.protocol,
@@ -312,17 +393,21 @@ async function recoverActiveJob(job: DurableModelJobRecord): Promise<void> {
       if (text.trim()) await slotRecoveredText(terminal, text);
       else await claimJob(terminal.id);
     } else if (terminal.status === "failed") {
+      clearRecoveredPreview(terminal);
       console.warn(
         "[ModelJobRecovery] background generation failed",
         terminal.id,
         terminal.error,
       );
       await claimJob(terminal.id);
+    } else if (terminal.status === "aborted") {
+      clearRecoveredPreview(terminal);
     }
   } catch (error) {
     console.warn("[ModelJobRecovery] active job reattach failed", job.id, error);
   } finally {
     attachedJobs.delete(job.id);
+    if (reachedTerminalState) setRemoteChatGeneration(job.chatId, false);
   }
 }
 
@@ -334,6 +419,7 @@ async function runRecovery(): Promise<void> {
   ]);
   for (const job of unclaimed) {
     if (isDurableModelJobOwned(job.id)) continue;
+    setRemoteChatGeneration(job.chatId, false);
     try {
       await recoverTerminalJob(job);
     } catch (error) {
@@ -342,6 +428,7 @@ async function runRecovery(): Promise<void> {
   }
   for (const job of active) {
     if (isDurableModelJobOwned(job.id)) continue;
+    setRemoteChatGeneration(job.chatId, true);
     void recoverActiveJob(job);
   }
 }

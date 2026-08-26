@@ -8,7 +8,7 @@
     import { type Chat as ChatSession, type Message } from "../../ts/storage/database.svelte";
     import { characterStore, settingsStore, personaStore, messageStore, presetStore } from 'src/ts/stores/domain';
     import { getCharImage } from "../../ts/characterImage";
-    import { chatProcessStage, doingChat } from "../../ts/process/chatRuntimeState";
+    import { activeGenerationChatIds, chatProcessStage } from "../../ts/process/chatRuntimeState";
     import { sleep } from "../../ts/util";
     import { language } from "../../lang";
     import { alertError, alertNormal, alertWait, showHypaV2Alert } from "../../ts/alert";
@@ -61,7 +61,11 @@
     let readingFromBeginning = $state(false)
     let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props();
     let currentCharacter = $derived(characterStore.characters[$selectedCharID])
-    let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
+    let currentChatSession = $derived(currentCharacter?.chats[currentCharacter.chatPage])
+    let currentChat = $derived(currentChatSession?.message ?? [])
+    let currentChatGenerating = $derived(
+        Boolean(currentChatSession?.id && $activeGenerationChatIds.has(currentChatSession.id))
+    )
 
     $effect(() => {
         const characterId = $selectedCharID
@@ -241,7 +245,7 @@
 
     async function sendMain(continueResponse:boolean) {
         let selectedChar = $selectedCharID
-        if($doingChat){
+        if(currentChatGenerating){
             return
         }
         if(readingFromBeginning){
@@ -323,7 +327,7 @@
         }
         await sleep(10)
         updateInputSizeAll()
-        await sendChatMain(continueResponse)
+        await sendChatMain(continueResponse, selectedChar, currentChatPage)
 
     }
 
@@ -360,7 +364,7 @@
         const selectedChar = $selectedCharID
         const currentChatPage = characterStore.characters[selectedChar]?.chatPage ?? 0
         await preLoadChat(selectedChar, currentChatPage, { full: true })
-        if($doingChat) return
+        if(currentChatGenerating) return
 
         const activeChat = characterStore.characters[selectedChar]?.chats?.[currentChatPage]
         if(!activeChat || activeChat.message.length === 0) return
@@ -401,14 +405,14 @@
 
         openMenu = false
         await createRerollBranch(activeChat, branchMessageIndex, alternatives.parentBranchId)
-        await sendChatMain()
+        await sendChatMain(false, selectedChar, currentChatPage)
     }
 
     async function unReroll(targetMessageIndex?: number) {
         const selectedChar = $selectedCharID
         const currentChatPage = characterStore.characters[selectedChar]?.chatPage ?? 0
         await preLoadChat(selectedChar, currentChatPage, { full: true })
-        if($doingChat) return
+        if(currentChatGenerating) return
 
         const activeChat = characterStore.characters[selectedChar]?.chats?.[currentChatPage]
         if(!activeChat?.branchState) return
@@ -420,28 +424,38 @@
         await persistBranchSwitch(activeChat, alternatives.branchIds[alternatives.currentIndex - 1])
     }
 
-    let abortController:null|AbortController = null
+    const abortControllers = new Map<string, AbortController>()
 
-    async function sendChatMain(continued:boolean = false) {
-
-        const targetChat = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage]
+    async function sendChatMain(
+        continued:boolean = false,
+        targetCharacterIndex:number = $selectedCharID,
+        targetChatIndex:number = characterStore.characters[targetCharacterIndex]?.chatPage ?? 0,
+    ) {
+        const targetCharacter = characterStore.characters[targetCharacterIndex]
+        const targetChat = targetCharacter?.chats?.[targetChatIndex]
+        if(!targetCharacter?.chaId || !targetChat?.id) return
         targetChat.preventMessageCompaction = true
         messageInput = ''
-        abortController = new AbortController()
+        const controller = new AbortController()
+        abortControllers.set(targetChat.id, controller)
         try {
             const { sendChat } = await import('../../ts/process/index.svelte')
             await sendChat(-1, {
-                signal:abortController.signal,
-                continue:continued
+                signal:controller.signal,
+                continue:continued,
+                targetCharacterId:targetCharacter.chaId,
+                targetChatId:targetChat.id,
             })
         } catch (error) {
             console.error(error)
             alertError(error)
         } finally {
+            if(abortControllers.get(targetChat.id) === controller){
+                abortControllers.delete(targetChat.id)
+            }
             targetChat.preventMessageCompaction = false
         }
-        $doingChat = false
-        if (targetChat.id) compactChatMessages(targetChat.id)
+        compactChatMessages(targetChat.id)
         if(settingsStore.state.playMessage){
             const audio = new Audio(sendSound);
             audio.play().catch(() => {});
@@ -449,9 +463,8 @@
     }
 
     function abortChat(){
-        if(abortController){
-            abortController.abort()
-        }
+        const chatId = currentChatSession?.id
+        if(chatId) abortControllers.get(chatId)?.abort()
     }
 
     async function runAutoMode() {
@@ -800,7 +813,7 @@
                 ></textarea>
 
 
-                {#if $doingChat || doingChatInputTranslate}
+                {#if currentChatGenerating || doingChatInputTranslate}
                     <button
                             aria-labelledby="cancel"
                             class="peer-focus:border-textcolor  flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors" onclick={abortChat}

@@ -87,7 +87,7 @@ function requestUpstream(targetUrl, arg) {
     });
 }
 
-function createModelJobManager({ saveDir, logger = console } = {}) {
+function createModelJobManager({ saveDir, logger = console, onEvent = null } = {}) {
     const root = path.join(saveDir || path.join(process.cwd(), 'save'), 'model-jobs');
     const metadataPath = path.join(root, 'index.json');
     fs.mkdirSync(root, { recursive: true });
@@ -123,6 +123,16 @@ function createModelJobManager({ saveDir, logger = console } = {}) {
         if (!record) return null;
         return { ...record, bytes: activeJobs.get(record.id)?.bytesWritten ?? record.bytes ?? 0 };
     }
+
+    function emitEvent(type, record) {
+        if (typeof onEvent !== 'function' || !record) return;
+        try {
+            onEvent(type, publicRecord(record));
+        } catch (error) {
+            logger.warn?.('[model-jobs] event listener failed', error);
+        }
+    }
+
     function notify(job) {
         const waiters = job.waiters.splice(0);
         for (const wake of waiters) wake();
@@ -216,6 +226,7 @@ function createModelJobManager({ saveDir, logger = console } = {}) {
                 record.endedAt = Date.now();
                 record.bytes = job.bytesWritten;
                 await persist();
+                emitEvent('terminal', record);
             }
             activeJobs.delete(job.id);
             notify(job);
@@ -264,6 +275,7 @@ function createModelJobManager({ saveDir, logger = console } = {}) {
             bytesWritten: 0
         };
         activeJobs.set(id, job);
+        emitEvent('created', record);
         void persist();
         const runPromise = runJob(job, {
             targetUrl: request.targetUrl,

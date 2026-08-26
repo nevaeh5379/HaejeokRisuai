@@ -50,7 +50,6 @@
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
     import { get } from 'svelte/store';
     import { loadCharConfig, loadSideChatList, preloadChatSidebarPanel } from './sidebarPanelLoaders';
-    import { doingChat } from 'src/ts/process/chatRuntimeState';
   let sideBarMode = $state(0);
   let editMode = $state(false);
   let menuMode = $state(0);
@@ -61,10 +60,6 @@
   const quickSettingsLoader = () => import('../Others/QuickSettingsGUI.svelte')
 
   async function changeCharacter(index: number) {
-    if (get(doingChat)) {
-      return
-    }
-
     // Reflect the tap before loading the character module or persisted chat data,
     // without exposing partially loaded character data to the chat components.
     reseter()

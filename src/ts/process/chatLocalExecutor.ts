@@ -70,7 +70,14 @@ export class LocalChatExecutor implements ChatExecutor {
       errorContext,
       throwError,
       sendGroupMember: ({ chatProcessIndex, chatAdditonalTokens, signal }) =>
-        this.execute(chatProcessIndex, { chatAdditonalTokens, signal }),
+        this.execute(chatProcessIndex, {
+          chatAdditonalTokens,
+          signal,
+          targetCharacterId: arg.targetCharacterId,
+          targetChatId: arg.targetChatId,
+        }),
+      targetCharacterId: arg.targetCharacterId,
+      targetChatId: arg.targetChatId,
     });
     if (session.status === "done") return session.result;
 
@@ -257,9 +264,15 @@ export class LocalChatExecutor implements ChatExecutor {
           continue: true,
           signal: abortSignal,
           usedContinueTokens: resultTokens,
+          targetCharacterId: arg.targetCharacterId,
+          targetChatId: arg.targetChatId,
         }),
       resendGeneration: () =>
-        this.execute(chatProcessIndex, { signal: abortSignal }),
+        this.execute(chatProcessIndex, {
+          signal: abortSignal,
+          targetCharacterId: arg.targetCharacterId,
+          targetChatId: arg.targetChatId,
+        }),
     });
   }
 }

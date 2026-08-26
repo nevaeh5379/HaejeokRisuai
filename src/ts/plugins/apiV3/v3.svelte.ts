@@ -57,7 +57,7 @@ import {
   type LLMModel,
 } from "src/ts/model/types";
 import { customV3ProviderMetaStore } from "./providerStore";
-import { doingChat } from "src/ts/process/chatRuntimeState";
+import { isChatGenerationActive } from "src/ts/process/chatRuntimeState";
 import { getModelInfo } from "src/ts/model/modellist";
 import type { ModelModeExtended } from "src/ts/process/request/shared";
 import { requestChatDataMain } from "src/ts/process/request/request";
@@ -1447,10 +1447,6 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
         throw new Error("Message must be a string");
       }
 
-      if (get(doingChat)) {
-        throw new Error("A chat is already in progress");
-      }
-
       if (
         getModelInfo(settingsStore.state.aiModel).id.startsWith(
           "pluginmodel:::",
@@ -1472,6 +1468,9 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       if (!chat) {
         throw new Error("No active chat found");
       }
+      if (isChatGenerationActive(chat.id)) {
+        throw new Error("This chat already has a generation in progress");
+      }
 
       if (message) {
         chat.message.push({
@@ -1481,15 +1480,12 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
         });
       }
 
-      try {
-        const { sendChat: processSendChat } =
-          await import("src/ts/process/index.svelte");
-        await processSendChat(-1, {});
-      } finally {
-        // Plugin API path does not pass through the UI unlock logic,
-        // so release doingChat here on both success and failure.
-        doingChat.set(false);
-      }
+      const { sendChat: processSendChat } =
+        await import("src/ts/process/index.svelte");
+      await processSendChat(-1, {
+        targetCharacterId: char.chaId,
+        targetChatId: chat.id,
+      });
 
       return true;
     },

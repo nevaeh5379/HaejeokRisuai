@@ -14,7 +14,7 @@ import {
   endsWithCompletionPunctuation,
 } from "@risuai/chat-core/finalization.cjs";
 import { risuChatParser } from "./scripts";
-import { chatProcessStage, doingChat } from "./chatRuntimeState";
+import { chatProcessStage } from "./chatRuntimeState";
 import { peerSync } from "../sync/multiuser";
 import { processPostGenerationEffects } from "./chatPostGeneration.svelte";
 import { tryCreateNodeAutoContinuationDecision } from "./chatNodePlanner";
@@ -161,7 +161,6 @@ async function handleResend(options: FinalizeChatGenerationOptions) {
     options.selectedChat,
     options.generationInfo,
   );
-  doingChat.set(false);
   return options.resendGeneration();
 }
 
@@ -196,7 +195,6 @@ export async function finalizeChatGeneration(
     options.usedContinueTokens ?? 0,
   );
   if (continuation.shouldContinue) {
-    doingChat.set(false);
     return options.continueGeneration(continuation.resultTokens);
   }
 

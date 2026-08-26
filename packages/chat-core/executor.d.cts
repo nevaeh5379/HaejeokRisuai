@@ -5,6 +5,8 @@ export interface ChatSendOptions {
   usedContinueTokens?: number;
   preview?: boolean;
   previewPrompt?: boolean;
+  targetCharacterId?: string;
+  targetChatId?: string;
 }
 
 export interface ChatExecutor {

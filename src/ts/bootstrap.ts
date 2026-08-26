@@ -79,6 +79,7 @@ import { characterStore } from "./stores/domain/characterStore.svelte";
 import { presetStore } from "./stores/domain/presetStore.svelte";
 import { setSqlRuntime, getSqlRuntime } from "./storage/sqlRuntime";
 import { initDurableModelJobRecovery } from "./process/modelJobRecovery";
+import { initNodeRealtimeSync } from "./process/nodeRealtimeSync";
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null;
 
@@ -337,6 +338,7 @@ export async function loadData() {
       performance.mark("plugins-ready");
       cleanChunks();
       initDurableModelJobRecovery();
+      void initNodeRealtimeSync();
       revealShell();
       if (presetStore.activeStatus === "ready") {
         startupPhase.set("chat-ready");

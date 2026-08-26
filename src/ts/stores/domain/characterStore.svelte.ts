@@ -606,6 +606,32 @@ class CharacterStore {
     return promise;
   }
 
+  async refreshChat(chatId: string): Promise<boolean> {
+    const char = this.characters.find((item) =>
+      item.chats?.some((chat) => chat.id === chatId),
+    );
+    const chat = char?.chats?.find((item) => item.id === chatId);
+    if (!char || !chat) return false;
+
+    const storage = this.storage || (await getSqlStorage());
+    const fullyLoaded = chat.messagesFullyLoaded !== false;
+    const transient = {
+      preventMessageCompaction: chat.preventMessageCompaction,
+      isStreaming: chat.isStreaming,
+      activeStreamingDisplayOptimizationMode:
+        chat.activeStreamingDisplayOptimizationMode,
+    };
+    const refreshed = await storage.loadChat(
+      chatId,
+      fullyLoaded ? undefined : { messageLimit: getInitialChatLoadPages(settingsStore.state) },
+    );
+    if (!refreshed) return false;
+
+    Object.assign(chat, refreshed, transient);
+    if (this.characters[this.selectedId] === char) this.observeActive();
+    return true;
+  }
+
   async ensureChatMessages(
     chatId: string,
     options: { full?: boolean; generation?: boolean } = {},

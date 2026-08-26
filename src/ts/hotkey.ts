@@ -176,7 +176,6 @@ export function initHotkey() {
               "\\`\\`\\`",
             ) +
             "\n```\n";
-          process.doingChat.set(false);
           alertMd(md);
           return;
         }

@@ -6,7 +6,7 @@ import type {
 } from "../storage/database.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { ChatTokenizer } from "../tokenizer";
-import { chatProcessStage, doingChat } from "./chatRuntimeState";
+import { chatProcessStage } from "./chatRuntimeState";
 import { risuChatParser } from "./scripts";
 import { preparePromptSections } from "./chatPromptSections";
 import {
@@ -68,7 +68,6 @@ async function buildHistoryStage(
     findCharacter: options.findCharacter,
   });
   if (history.stopSending) {
-    doingChat.set(false);
     return { ok: false as const };
   }
   return {

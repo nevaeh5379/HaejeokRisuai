@@ -117,3 +117,53 @@ test('startup converts orphaned running jobs into recoverable failures', async (
     assert.match(job.error, /server restart/i);
     assert.equal(manager.listJobs('unclaimed').some((item) => item.id === 'restart-job'), true);
 });
+
+
+test('model jobs allow different chats concurrently and emit lifecycle events', async (t) => {
+    const saveDir = await makeTempDir();
+    t.after(() => fs.rm(saveDir, { recursive: true, force: true }));
+    const upstream = http.createServer((_req, res) => {
+        setTimeout(() => res.end('ok'), 80);
+    });
+    const upstreamPort = await listen(upstream);
+    t.after(() => close(upstream));
+
+    const events = [];
+    const manager = createModelJobManager({
+        saveDir,
+        onEvent: (phase, job) => events.push({ phase, chatId: job.chatId }),
+    });
+    t.after(() => manager.close());
+
+    const request = (chatId) => ({
+        targetUrl: `http://127.0.0.1:${upstreamPort}/v1/chat`,
+        method: 'POST',
+        body: '{}',
+        chatId,
+        generationId: `gen-${chatId}`,
+        protocol: 'openai',
+        streaming: false,
+    });
+    const first = manager.createJob(request('chat-a'));
+    const duplicate = manager.createJob(request('chat-a'));
+    const second = manager.createJob(request('chat-b'));
+
+    assert.ok(first.jobId);
+    assert.equal(duplicate.httpStatus, 409);
+    assert.equal(duplicate.jobId, first.jobId);
+    assert.ok(second.jobId);
+    assert.notEqual(second.jobId, first.jobId);
+    assert.equal(manager.listJobs('active').length, 2);
+
+    await Promise.all([first.runPromise, second.runPromise]);
+    assert.equal(manager.getJob(first.jobId).status, 'done');
+    assert.equal(manager.getJob(second.jobId).status, 'done');
+    assert.deepEqual(
+        events.filter((event) => event.phase === 'created').map((event) => event.chatId).sort(),
+        ['chat-a', 'chat-b'],
+    );
+    assert.deepEqual(
+        events.filter((event) => event.phase === 'terminal').map((event) => event.chatId).sort(),
+        ['chat-a', 'chat-b'],
+    );
+});

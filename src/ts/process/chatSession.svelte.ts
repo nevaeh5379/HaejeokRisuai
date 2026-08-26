@@ -20,7 +20,7 @@ import { risuChatParser } from "./scripts";
 import { getModuleToggles } from "./modules";
 import { pluginV2 } from "../plugins/plugins.svelte";
 import { preLoadChat } from "./coldstorage.svelte";
-import { chatProcessStage, doingChat } from "./chatRuntimeState";
+import { chatProcessStage } from "./chatRuntimeState";
 import {
   connectionOpen,
   peerRevertChat,
@@ -42,6 +42,8 @@ export interface PrepareChatSessionOptions {
   errorContext: ChatErrorContext;
   throwError: (error: string) => void;
   sendGroupMember: (request: GroupGenerationRequest) => Promise<boolean>;
+  targetCharacterId?: string;
+  targetChatId?: string;
 }
 
 function createCharacterLookup() {
@@ -86,7 +88,6 @@ async function synchronizePeer(throwError: (error: string) => void) {
   const safe = await peerSafeCheck();
   if (!safe) {
     peerRevertChat();
-    doingChat.set(false);
     throwError(language.otherUserRequesting);
     return false;
   }
@@ -133,25 +134,26 @@ async function initializeGeneration(options: PrepareChatSessionOptions) {
   if ((characterStore as any)?.ensureLoaded) {
     await (characterStore as any).ensureLoaded();
   }
-  if (get(doingChat) && options.chatProcessIndex === -1) return false;
-
-  doingChat.set(true);
   await applyPresetChain(options.chatProcessIndex);
   return synchronizePeer(options.throwError);
 }
 
 async function loadSelectedChat(options: PrepareChatSessionOptions) {
   settingsStore.state.statics.messages += 1;
-  const selectedChar = get(selectedCharID);
+  const selectedChar = options.targetCharacterId
+    ? characterStore.characters.findIndex(
+        (character) => character?.chaId === options.targetCharacterId,
+      )
+    : get(selectedCharID);
   options.errorContext.selectedChar = selectedChar;
   const nowChatroom = characterStore.characters[selectedChar];
-  if (!nowChatroom) {
-    doingChat.set(false);
-    return null;
-  }
+  if (!nowChatroom) return null;
 
   characterStore.touchCharacterInteraction(selectedChar);
-  const selectedChat = nowChatroom.chatPage;
+  const selectedChat = options.targetChatId
+    ? nowChatroom.chats.findIndex((chat) => chat?.id === options.targetChatId)
+    : nowChatroom.chatPage;
+  if (selectedChat < 0 || !nowChatroom.chats[selectedChat]) return null;
   options.errorContext.selectedChat = selectedChat;
   await preLoadChat(selectedChar, selectedChat, {
     full: true,
