@@ -47,6 +47,14 @@ vi.mock(import("../../../stores/domain/characterStore.svelte"), () => {
           ],
           defaultVariables: "",
         },
+        {
+          chatPage: 0,
+          chats: [
+            { scriptstate: { $scope: "selected" } },
+            { scriptstate: { $scope: "target", $enabled: "true" } },
+          ],
+          defaultVariables: "",
+        },
       ],
     },
   } as any;
@@ -88,6 +96,16 @@ const indentedBody = `
 
 afterEach(() => {
   vi.resetAllMocks();
+});
+
+test("CBS variable reads honor an explicit chat target", () => {
+  const chatTarget = { characterIndex: 1, chatIndex: 1 };
+  expect(risuChatParser("{{getvar::scope}}", { chatTarget })).toBe("target");
+  expect(
+    risuChatParser("{{#when::var::enabled}}yes{{:else}}no{{/when}}", {
+      chatTarget,
+    }),
+  ).toBe("yes");
 });
 
 describe("#if", () => {

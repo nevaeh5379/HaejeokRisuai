@@ -79,6 +79,7 @@ export type matcherArg = {
   lowLevelAccess?: boolean;
   cbsConditions: CbsConditions;
   triggerId?: string;
+  chatTarget?: { characterIndex: number; chatIndex: number };
   getNested?: () => string[];
   setNestedRoot?: (val: string) => void;
 };
@@ -118,9 +119,19 @@ export type CBSRegisterArg = {
   safeStructuredClone: <T>(obj: T) => T;
   parseArray: (str: string) => unknown[];
   parseDict: (str: string) => { [key: string]: unknown };
-  getChatVar: (key: string) => string;
-  setChatVar: (key: string, value: string) => void;
-  getGlobalChatVar: (key: string) => string;
+  getChatVar: (
+    key: string,
+    target?: { characterIndex: number; chatIndex: number },
+  ) => string;
+  setChatVar: (
+    key: string,
+    value: string,
+    target?: { characterIndex: number; chatIndex: number },
+  ) => void;
+  getGlobalChatVar: (
+    key: string,
+    target?: { characterIndex: number; chatIndex: number },
+  ) => string;
   calcString: (str: string) => number;
   dateTimeFormat: (format: string, timestamp?: number) => string;
   getModules: () => RisuModule[];
@@ -901,7 +912,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "getvar",
     callback: (str, matcherArg, args, vars) => {
-      return getChatVar(args[0]);
+      return getChatVar(args[0], matcherArg.chatTarget);
     },
     alias: [],
     description:
@@ -927,7 +938,8 @@ export function registerCBS(arg: CBSRegisterArg) {
       if (matcherArg.runVar) {
         setChatVar(
           args[0],
-          (Number(getChatVar(args[0])) + Number(args[1])).toString(),
+          (Number(getChatVar(args[0], matcherArg.chatTarget)) + Number(args[1])).toString(),
+          matcherArg.chatTarget,
         );
         return "";
       }
@@ -945,7 +957,7 @@ export function registerCBS(arg: CBSRegisterArg) {
         return "";
       }
       if (matcherArg.runVar) {
-        setChatVar(args[0], args[1]);
+        setChatVar(args[0], args[1], matcherArg.chatTarget);
         return "";
       }
       return null;
@@ -962,9 +974,9 @@ export function registerCBS(arg: CBSRegisterArg) {
         return "";
       }
       if (matcherArg.runVar) {
-        const currentValue = getChatVar(args[0]);
+        const currentValue = getChatVar(args[0], matcherArg.chatTarget);
         if (!currentValue || currentValue === "null") {
-          setChatVar(args[0], args[1]);
+          setChatVar(args[0], args[1], matcherArg.chatTarget);
         }
         return "";
       }
@@ -978,7 +990,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "getglobalvar",
     callback: (str, matcherArg, args, vars) => {
-      return getGlobalChatVar(args[0]);
+      return getGlobalChatVar(args[0], matcherArg.chatTarget);
     },
     alias: [],
     description:

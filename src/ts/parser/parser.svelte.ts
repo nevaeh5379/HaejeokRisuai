@@ -1522,7 +1522,7 @@ function blockStartMatcher(
             break;
           }
           case "var": {
-            const variable = getChatVar(condition);
+            const variable = getChatVar(condition, matcherArg.chatTarget);
             if (isTruthy(variable)) {
               statement.push("1");
             } else {
@@ -1531,7 +1531,10 @@ function blockStartMatcher(
             break;
           }
           case "toggle": {
-            const variable = getGlobalChatVar("toggle_" + condition);
+            const variable = getGlobalChatVar(
+              "toggle_" + condition,
+              matcherArg.chatTarget,
+            );
             if (isTruthy(variable)) {
               statement.push("1");
             } else {
@@ -1541,7 +1544,10 @@ function blockStartMatcher(
           }
           case "vis": {
             //vis = variable is
-            const variable = getChatVar(statement.pop());
+            const variable = getChatVar(
+              statement.pop(),
+              matcherArg.chatTarget,
+            );
             if (variable === condition) {
               statement.push("1");
             } else {
@@ -1551,7 +1557,10 @@ function blockStartMatcher(
           }
           case "visnot": {
             //visnot = variable is not
-            const variable = getChatVar(statement.pop());
+            const variable = getChatVar(
+              statement.pop(),
+              matcherArg.chatTarget,
+            );
             if (variable !== condition) {
               statement.push("1");
             } else {
@@ -1561,7 +1570,10 @@ function blockStartMatcher(
           }
           case "tis": {
             //tis = toggle is
-            const variable = getGlobalChatVar("toggle_" + statement.pop());
+            const variable = getGlobalChatVar(
+              "toggle_" + statement.pop(),
+              matcherArg.chatTarget,
+            );
             if (variable === condition) {
               statement.push("1");
             } else {
@@ -1571,7 +1583,10 @@ function blockStartMatcher(
           }
           case "tisnot": {
             //tisnot = toggle is not
-            const variable = getGlobalChatVar("toggle_" + statement.pop());
+            const variable = getGlobalChatVar(
+              "toggle_" + statement.pop(),
+              matcherArg.chatTarget,
+            );
             if (variable !== condition) {
               statement.push("1");
             } else {
@@ -1830,6 +1845,7 @@ export function risuChatParser(
     functions?: Map<string, { data: string; arg: string[] }>;
     callStack?: number;
     cbsConditions?: CbsConditions;
+    chatTarget?: { characterIndex: number; chatIndex: number };
   } = {},
 ): string {
   const chatID = arg.chatID ?? -1;
@@ -1906,6 +1922,7 @@ export function risuChatParser(
     runVar: arg.runVar ?? false,
     consistantChar: arg.consistantChar ?? false,
     cbsConditions: arg.cbsConditions ?? {},
+    chatTarget: arg.chatTarget,
     callStack: arg.callStack,
     getNested: () => {
       return nested;
