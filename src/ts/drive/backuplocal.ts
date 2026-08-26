@@ -17,7 +17,7 @@ import {
   alertClear,
 } from "../alert";
 import { LocalWriter, forageStorage } from "../globalApi.svelte";
-import { isNodeServer, isTauri } from "src/ts/platform";
+import { isCapacitor, isNodeServer, isTauri } from "src/ts/platform";
 import {
   decodeRisuSave,
   encodeRisuSaveLegacyAsync,
@@ -120,7 +120,7 @@ async function initializeLocalBackupWriter(
       ? "Saving compatible local backup..."
       : "Saving HaejeokRisuAI local backup...";
   const startedAt = Date.now();
-  const waitingDetail = isTauri
+  const waitingDetail = isTauri || isCapacitor
     ? "Waiting for the system Save dialog. Choose a file or cancel to continue."
     : "Preparing the browser download stream.";
   const update = () =>
@@ -508,6 +508,31 @@ async function writeLocalBackupAssets(
   );
   if (options.assetScope === "essential") {
     keys = keys.filter((key) => isEssentialBackupAsset(assetMap, key));
+  }
+
+  if (
+    isCapacitor &&
+    !forageStorage.isAccount &&
+    writer.supportsNativeAssetTransfer()
+  ) {
+    const batchSize = 128;
+    for (let offset = 0; offset < keys.length; offset += batchSize) {
+      const batch = keys.slice(offset, offset + batchSize);
+      const result = await writer.writeNativeAssets(batch);
+      missingAssets.push(...result.missing);
+      const current = Math.min(offset + batch.length, keys.length);
+      const key = batch[batch.length - 1] ?? "";
+      reportBackupAssetProgress(
+        label,
+        current,
+        keys.length,
+        key,
+        assetMap,
+        missingAssets.length,
+      );
+      await sleep(0);
+    }
+    return { missingAssets, assetMap };
   }
 
   for (let index = 0; index < keys.length; index++) {

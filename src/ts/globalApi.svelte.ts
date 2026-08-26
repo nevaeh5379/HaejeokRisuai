@@ -1442,11 +1442,51 @@ export class TauriWriter {
   }
 }
 
+interface StreamFileWriterPlugin {
+  open(options: {
+    fileName: string;
+    mimeType: string;
+  }): Promise<{ id?: string; cancelled?: boolean }>;
+  write(options: { id: string; data: string }): Promise<void>;
+  writeAssets(options: {
+    id: string;
+    keys: string[];
+  }): Promise<{ written: number; missing: string[] }>;
+  close(options: { id: string }): Promise<void>;
+}
+
+const capStreamFileWriter = isCapacitor
+  ? registerPlugin<StreamFileWriterPlugin>("StreamFileWriter")
+  : undefined;
+
+class CapacitorWriter {
+  constructor(private readonly id: string) {}
+
+  async write(data: Uint8Array): Promise<void> {
+    if (!capStreamFileWriter) throw new Error("Native file writer is unavailable");
+    await capStreamFileWriter.write({
+      id: this.id,
+      data: Buffer.from(data).toString("base64"),
+    });
+  }
+
+  async writeAssets(keys: string[]): Promise<{ written: number; missing: string[] }> {
+    if (!capStreamFileWriter) throw new Error("Native file writer is unavailable");
+    return await capStreamFileWriter.writeAssets({ id: this.id, keys });
+  }
+
+  async close(): Promise<void> {
+    if (!capStreamFileWriter) return;
+    await capStreamFileWriter.close({ id: this.id });
+  }
+}
+
 /**
  * Class representing a local writer.
  */
 export class LocalWriter {
   private tauriWriter: TauriWriter | null = null;
+  private capacitorWriter: CapacitorWriter | null = null;
   private port: MessagePort | null = null;
   private bufferSize = 0;
   private buffer: Uint8Array | null = null;
@@ -1479,6 +1519,8 @@ export class LocalWriter {
 
     if (this.tauriWriter) {
       await this.tauriWriter.write(data);
+    } else if (this.capacitorWriter) {
+      await this.capacitorWriter.write(data);
     } else if (this.port) {
       const buf = data.buffer.slice(
         data.byteOffset,
@@ -1514,6 +1556,21 @@ export class LocalWriter {
       return true;
     }
 
+    if (isCapacitor) {
+      if (!capStreamFileWriter) {
+        throw new Error("Native file writer is unavailable");
+      }
+      const opened = await capStreamFileWriter.open({
+        fileName,
+        mimeType: "application/octet-stream",
+      });
+      if (opened.cancelled) return false;
+      if (!opened.id) throw new Error("Native save destination is unavailable");
+      this.capacitorWriter = new CapacitorWriter(opened.id);
+      if (this.bufferSize === 0) this.setBufferSize(1024 * 1024);
+      return true;
+    }
+
     if (
       typeof navigator !== "undefined" &&
       navigator.serviceWorker?.controller
@@ -1541,6 +1598,20 @@ export class LocalWriter {
     }
 
     throw new Error("Service Worker is not active for stream download");
+  }
+
+  supportsNativeAssetTransfer(): boolean {
+    return this.capacitorWriter !== null;
+  }
+
+  async writeNativeAssets(
+    keys: string[],
+  ): Promise<{ written: number; missing: string[] }> {
+    if (!this.capacitorWriter) {
+      throw new Error("Native asset transfer is unavailable");
+    }
+    await this.flushBuffer();
+    return await this.capacitorWriter.writeAssets(keys);
   }
 
   /**
@@ -1580,6 +1651,8 @@ export class LocalWriter {
     if (this.bufferSize === 0) {
       if (this.tauriWriter) {
         await this.tauriWriter.write(data);
+      } else if (this.capacitorWriter) {
+        await this.capacitorWriter.write(data);
       } else if (this.port) {
         const buf = data.buffer.slice(
           data.byteOffset,
@@ -1621,6 +1694,10 @@ export class LocalWriter {
     if (this.tauriWriter) {
       await this.tauriWriter.close();
       this.tauriWriter = null;
+    }
+    if (this.capacitorWriter) {
+      await this.capacitorWriter.close();
+      this.capacitorWriter = null;
     }
     if (this.port) {
       this.port.postMessage({ done: true });
