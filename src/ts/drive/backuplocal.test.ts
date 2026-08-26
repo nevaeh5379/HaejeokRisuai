@@ -105,6 +105,102 @@ describe("hydrateLazyDatabaseFromSnapshot", () => {
     expect(db.pluginCustomStorage).toEqual({ plugin: { enabled: true } });
   });
 
+  it("replaces partially hydrated chats even when legacy loading flags are missing", () => {
+    const partialChat = {
+      id: "chat-partial",
+      name: "Partial",
+      message: [{ role: "char", data: "recent only" }],
+    };
+    const db = {
+      characters: [{ chaId: "char-1", chats: [partialChat] }],
+      pluginCustomStorage: {},
+    } as unknown as Database;
+    const snapshot = {
+      characters: [{
+        chaId: "char-1",
+        chats: [{
+          id: "chat-partial",
+          name: "Full",
+          message: [
+            { role: "user", data: "old 1" },
+            { role: "char", data: "old 2" },
+            { role: "char", data: "recent only" },
+          ],
+        }],
+      }],
+    } as unknown as Database;
+
+    hydrateLazyDatabaseFromSnapshot(db, snapshot);
+
+    expect(partialChat.message.map((message) => message.data)).toEqual([
+      "old 1",
+      "old 2",
+      "recent only",
+    ]);
+    expect(partialChat).toMatchObject({
+      messagesLoaded: true,
+      detailsLoaded: true,
+      messagesFullyLoaded: true,
+      messageOffset: 0,
+      messageTotal: 3,
+    });
+  });
+
+  it("restores chats and characters that only exist in the full SQL snapshot", () => {
+    const loadedChat = {
+      id: "chat-loaded",
+      name: "Local",
+      message: [{ role: "user", data: "local edit" }],
+      messagesLoaded: true,
+      detailsLoaded: true,
+      messagesFullyLoaded: true,
+    };
+    const db = {
+      characters: [{
+        chaId: "char-existing",
+        chats: [loadedChat],
+      }],
+      pluginCustomStorage: {},
+    } as unknown as Database;
+    const snapshot = {
+      characters: [
+        {
+          chaId: "char-existing",
+          chats: [
+            {
+              id: "chat-missing",
+              name: "Recovered chat",
+              message: [{ role: "char", data: "from SQL" }],
+            },
+            {
+              id: "chat-loaded",
+              name: "Stored",
+              message: [{ role: "char", data: "stale" }],
+            },
+          ],
+        },
+        {
+          chaId: "char-missing",
+          name: "Recovered character",
+          chats: [],
+        },
+      ],
+    } as unknown as Database;
+
+    hydrateLazyDatabaseFromSnapshot(db, snapshot);
+
+    expect(db.characters.map((character) => character.chaId)).toEqual([
+      "char-existing",
+      "char-missing",
+    ]);
+    expect(db.characters[0].chats.map((chat) => chat.id)).toEqual([
+      "chat-missing",
+      "chat-loaded",
+    ]);
+    expect(db.characters[0].chats[1]).toBe(loadedChat);
+    expect(loadedChat.message).toEqual([{ role: "user", data: "local edit" }]);
+  });
+
   it("hydrates unloaded modules and personas when not present in db", () => {
     const db = {
       characters: [],

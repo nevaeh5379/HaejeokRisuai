@@ -1706,6 +1706,12 @@ export const languageKorean = {
   translationResponseSize: "번역 응답 크기",
   webdeeplwarn: "이 옵션은 웹에서는 제대로 작동하지 않을 수 있습니다.",
   saveBackupLocal: "로컬 백업 저장",
+  saveBackupLocalNative: "해적리스 전용 백업 저장",
+  saveBackupLocalNativeDescription:
+    "리롤과 분기점을 하나의 채팅 내부 타임라인 구조로 그대로 보존합니다.",
+  saveBackupLocalCompatible: "호환용 백업 저장",
+  saveBackupLocalCompatibleDescription:
+    "모든 리롤과 분기점을 독립된 일반 채팅으로 펼쳐 구버전 및 다른 리스에서도 채팅 내용을 잃지 않게 저장합니다.",
   loadBackupLocal: "로컬 백업 불러오기",
   topP: "Top P",
   genTimes: "생성 횟수",

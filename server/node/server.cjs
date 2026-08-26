@@ -2700,27 +2700,40 @@ async function buildPortableServerDatabase() {
     return database;
 }
 
-async function encodePortableServerDatabase(database) {
-    return await encodeLocalBackupDatabase(
-        makeLegacyCompatibleBackupDatabase(database)
-    );
+async function encodePortableServerDatabase(database, mode = 'native', coldStorageValues = new Map()) {
+    const portable = mode === 'compatible'
+        ? makeLegacyCompatibleBackupDatabase(database, coldStorageValues)
+        : database;
+    return await encodeLocalBackupDatabase(portable);
 }
 
-async function streamServerLocalBackup(res) {
+async function streamServerLocalBackup(res, mode = 'native') {
     const database = await buildPortableServerDatabase();
-    const databaseData = await encodePortableServerDatabase(database);
+    const coldItems = typeof postgresStorage.listColdStorage === 'function'
+        ? await postgresStorage.listColdStorage()
+        : [];
+    const loadedColdItems = [];
+    const coldStorageValues = new Map();
+    for (const summary of coldItems) {
+        const loaded = await postgresStorage.loadColdStorage(summary.key);
+        if (!loaded) continue;
+        loadedColdItems.push({ key: summary.key, data: loaded.data });
+        coldStorageValues.set(summary.key, loaded.data);
+    }
+    const databaseData = await encodePortableServerDatabase(database, mode, coldStorageValues);
     const storage = assetStorageManager.getStorage();
     const resolved = storage.type === 's3'
         ? await resolveCatalogedAssetKeys(storage, 'assets/')
         : { keys: await storage.list('assets/') };
     const assetKeys = resolved.keys.filter((key) => typeof key === 'string' && key.startsWith('assets/'));
-    const coldItems = typeof postgresStorage.listColdStorage === 'function'
-        ? await postgresStorage.listColdStorage()
-        : [];
 
     res.status(200);
     res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="risu_backup_${new Date().toISOString().slice(0, 10)}.risubackup"`);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const backupName = mode === 'compatible'
+        ? `risu_compatible_backup_${dateStr}.risubackup`
+        : `haejeokrisu_backup_${dateStr}.risubackup`;
+    res.setHeader('Content-Disposition', `attachment; filename="${backupName}"`);
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Accel-Buffering', 'no');
     if (typeof res.flushHeaders === 'function') res.flushHeaders();
@@ -2735,11 +2748,9 @@ async function streamServerLocalBackup(res) {
         if (!source || !Number.isSafeInteger(size)) throw new Error(`Backup asset is not streamable: ${key}`);
         await writeLocalBackupEntry(res, key, source, size);
     }
-    for (const summary of coldItems) {
-        const loaded = await postgresStorage.loadColdStorage(summary.key);
-        if (!loaded) continue;
-        const data = Buffer.from(JSON.stringify(loaded.data), 'utf8');
-        await writeLocalBackupEntry(res, `coldstorage_${summary.key}.json`, data, data.length);
+    for (const item of loadedColdItems) {
+        const data = Buffer.from(JSON.stringify(item.data), 'utf8');
+        await writeLocalBackupEntry(res, `coldstorage_${item.key}.json`, data, data.length);
     }
     await writeLocalBackupEntry(res, 'database.risudat', databaseData, databaseData.length);
     await new Promise((resolve, reject) => {
@@ -2752,11 +2763,12 @@ async function streamServerLocalBackup(res) {
 app.post('/api/local-backup/export/jobs', authenticatedRouteLimiter, async(req, res) => {
     if (!await checkAuth(req, res)) return;
     pruneLocalBackupJobs();
+    const mode = req.query.mode === 'compatible' ? 'compatible' : 'native';
     const id = crypto.randomBytes(24).toString('base64url');
     let resolveCompletion;
     const completion = new Promise((resolve) => { resolveCompletion = resolve; });
     localBackupJobs.set(id, {
-        status: 'pending', error: null, completion, resolveCompletion,
+        status: 'pending', error: null, completion, resolveCompletion, mode,
         expiresAt: Date.now() + LOCAL_BACKUP_JOB_TTL_MS,
     });
     res.send({ id });
@@ -2781,7 +2793,7 @@ app.get('/api/local-backup/export/:jobId', authenticatedRouteLimiter, async(req,
     job.status = 'streaming';
     job.expiresAt = Number.POSITIVE_INFINITY;
     try {
-        await streamServerLocalBackup(res);
+        await streamServerLocalBackup(res, job.mode || 'native');
         settleLocalBackupJob(job, 'complete');
     } catch (error) {
         console.error('[Local backup] Streaming export failed:', error);

@@ -13,14 +13,29 @@
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.files}</h2>
 
-<Button
-    onclick={async () => {
-        if(await alertConfirm(language.backupConfirm)){
-            SaveLocalBackup()
-        }
-    }} className="mt-2">
-    {language.saveBackupLocal}
-</Button>
+<div class="mt-2">
+    <Button
+        onclick={async () => {
+            if(await alertConfirm(language.backupConfirm)){
+                SaveLocalBackup('native')
+            }
+        }}>
+        {language.saveBackupLocalNative}
+    </Button>
+    <p class="mt-1 text-xs text-textcolor2">{language.saveBackupLocalNativeDescription}</p>
+</div>
+
+<div class="mt-2">
+    <Button
+        onclick={async () => {
+            if(await alertConfirm(language.backupConfirm)){
+                SaveLocalBackup('compatible')
+            }
+        }}>
+        {language.saveBackupLocalCompatible}
+    </Button>
+    <p class="mt-1 text-xs text-textcolor2">{language.saveBackupLocalCompatibleDescription}</p>
+</div>
 
 <Button
     onclick={async () => {

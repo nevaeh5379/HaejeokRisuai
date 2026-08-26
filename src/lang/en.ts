@@ -1787,6 +1787,12 @@ export const languageEnglish = {
   webdeeplwarn:
     "This option is not recommended for use with web version, as it can cause CORS errors.",
   saveBackupLocal: "Save Backup Locally",
+  saveBackupLocalNative: "Save HaejeokRisuAI Backup",
+  saveBackupLocalNativeDescription:
+    "Preserves rerolls and branches as native in-chat timelines for full HaejeokRisuAI restoration.",
+  saveBackupLocalCompatible: "Save Compatible Backup",
+  saveBackupLocalCompatibleDescription:
+    "Exports every reroll and branch as a separate ordinary chat so older RisuAI versions keep all chat content.",
   loadBackupLocal: "Load Backup Locally",
   topP: "Top P",
   genTimes: "Generation Choices",

@@ -6,7 +6,11 @@ import {
   alertStore,
   alertProgress,
 } from "../alert";
-import { getDatabase, type Database } from "../storage/database.svelte";
+import {
+  getDatabase,
+  type Database,
+  type PortableDatabase,
+} from "../storage/database.svelte";
 import { forageStorage, getUncleanables, openURL } from "../globalApi.svelte";
 import { isNodeServer, isTauri } from "src/ts/platform";
 import {
@@ -22,7 +26,6 @@ import { sleep } from "../util";
 import { hubURL } from "../characterCards";
 import {
   decodeRisuSave,
-  encodeRisuSaveLegacy,
   encodeRisuSaveLegacyAsync,
 } from "../storage/risuSave";
 import {
@@ -34,7 +37,10 @@ import {
   setColdStorageItem,
 } from "../process/coldstorage.svelte";
 import { NodeStorage } from "../storage/nodeStorage";
-import { ensureDatabaseFullyLoaded } from "./backuplocal";
+import {
+  buildPortableLocalBackupDatabase,
+  ensureDatabaseFullyLoaded,
+} from "./backuplocal";
 import { getSqlStorage } from "../storage/sqlStorageFactory";
 
 export async function checkDriver(
@@ -231,11 +237,19 @@ async function backupDrive(ACCESS_TOKEN: string) {
     await createFileInFolder(ACCESS_TOKEN, payload.backupName, payload.encoded);
   }
 
-  const db = getDatabase();
+  const db = getDatabase() as PortableDatabase;
   await ensureDatabaseFullyLoaded(db);
   alertProgress(`Uploading Backup... (Compressing database)`, 92);
   await sleep(20);
-  const dbData = await encodeRisuSaveLegacyAsync(db, "compression");
+  const coldStorageValues = new Map(
+    coldStoragePayloads.payloads.map((payload) => [payload.key, payload.value] as const),
+  );
+  const portableDb = buildPortableLocalBackupDatabase(
+    db,
+    "compatible",
+    coldStorageValues,
+  );
+  const dbData = await encodeRisuSaveLegacyAsync(portableDb, "compression");
 
   alertProgress(`Uploading Backup... (Saving database)`, 96);
   await sleep(10);

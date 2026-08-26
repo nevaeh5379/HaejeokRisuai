@@ -20,7 +20,6 @@ import { LocalWriter, forageStorage } from "../globalApi.svelte";
 import { isNodeServer, isTauri } from "src/ts/platform";
 import {
   decodeRisuSave,
-  encodeRisuSaveLegacy,
   encodeRisuSaveLegacyAsync,
 } from "../storage/risuSave";
 import {
@@ -51,8 +50,13 @@ import {
 } from "../storage/databaseAdapters.svelte";
 import { getSqlStorage } from "../storage/sqlStorageFactory";
 import { presetStore } from "../stores/domain/presetStore.svelte";
+import { characterStore } from "../stores/domain/characterStore.svelte";
 import { decryptLegacyAccountBackup } from "./legacyBackupEncryption";
 import { stripAdditionalAssetFolderMetadata } from "../assetManagerUtils";
+import {
+  expandCharactersForCompatibility,
+  type ColdStorageValueMap,
+} from "../backupCompatibility";
 
 const alertProgress = (msg: string, progress: number | string) =>
   showProgressAlert(msg, progress, "backup");
@@ -77,13 +81,43 @@ export function normalizeLocalBackupAssetPath(name: string) {
   return `assets/${segments.join("/")}`;
 }
 
-function getLegacyCompatibleBackupValue(key: string, value: any) {
+function getLegacyCompatibleBackupValue(
+  key: string,
+  value: any,
+  coldStorageValues?: ColdStorageValueMap,
+) {
   if (key !== "characters" || !Array.isArray(value)) return value;
-  return value.map((character) =>
+  return expandCharactersForCompatibility(
+    value,
+    undefined,
+    coldStorageValues,
+  ).map((character) =>
     character && typeof character === "object"
       ? stripAdditionalAssetFolderMetadata(character)
       : character,
   );
+}
+
+export type LocalBackupMode = "native" | "compatible";
+
+export function buildPortableLocalBackupDatabase(
+  db: PortableDatabase,
+  mode: LocalBackupMode,
+  coldStorageValues?: ColdStorageValueMap,
+): Record<string, any> {
+  const cleanDb: Record<string, any> = {};
+  for (const [key, value] of Object.entries(db)) {
+    if (
+      key === "account" ||
+      typeof value === "function" ||
+      (mode === "compatible" && key === "moduleFolders")
+    ) continue;
+    cleanDb[key] = mode === "compatible"
+      ? getLegacyCompatibleBackupValue(key, value, coldStorageValues)
+      : value;
+  }
+  cleanDb.pluginCustomStorage ??= {};
+  return cleanDb;
 }
 
 const SQL_DOMAIN_ROOT_KEYS: Record<
@@ -110,10 +144,13 @@ function formatBackupElapsed(startedAt: number) {
 async function initializeLocalBackupWriter(
   writer: LocalWriter,
   partial = false,
+  mode: LocalBackupMode = "native",
 ) {
   const label = partial
     ? "Saving partial local backup..."
-    : "Saving local backup...";
+    : mode === "compatible"
+      ? "Saving compatible local backup..."
+      : "Saving HaejeokRisuAI local backup...";
   const startedAt = Date.now();
   const waitingDetail = isTauri
     ? "Waiting for the system Save dialog. Choose a file or cancel to continue."
@@ -128,8 +165,10 @@ async function initializeLocalBackupWriter(
   try {
     const dateStr = new Date().toISOString().slice(0, 10);
     const defaultName = partial
-      ? `risu_partial_backup_${dateStr}`
-      : `risu_backup_${dateStr}`;
+      ? `haejeokrisu_partial_backup_${dateStr}`
+      : mode === "compatible"
+        ? `risu_compatible_backup_${dateStr}`
+        : `haejeokrisu_backup_${dateStr}`;
     const initialized = await writer.init(defaultName, ["bin", "risubackup"]);
     if (initialized) {
       alertProgress(`${label} (Destination ready; preparing asset list)`, 2);
@@ -140,14 +179,19 @@ async function initializeLocalBackupWriter(
   }
 }
 
-async function saveNodeLocalBackupStream() {
+async function saveNodeLocalBackupStream(mode: LocalBackupMode) {
   await forageStorage.Init();
   if (!(forageStorage.realStorage instanceof NodeStorage)) {
     throw new Error("Node local backup requires NodeStorage");
   }
   const auth = await forageStorage.realStorage.getCachedAuth();
-  alertProgress("Saving local backup... (Starting server stream)", 1);
-  const response = await fetch("/api/local-backup/export/jobs", {
+  alertProgress(
+    mode === "compatible"
+      ? "Saving compatible local backup... (Starting server stream)"
+      : "Saving HaejeokRisuAI local backup... (Starting server stream)",
+    1,
+  );
+  const response = await fetch(`/api/local-backup/export/jobs?mode=${mode}`, {
     method: "POST",
     headers: { "risu-auth": auth },
   });
@@ -168,7 +212,10 @@ async function saveNodeLocalBackupStream() {
   );
   const anchor = document.createElement("a");
   anchor.href = `/api/local-backup/export/${encodeURIComponent(body.id)}?auth=${encodeURIComponent(auth)}`;
-  anchor.download = `risu_backup_${new Date().toISOString().slice(0, 10)}.risubackup`;
+  const dateStr = new Date().toISOString().slice(0, 10);
+  anchor.download = mode === "compatible"
+    ? `risu_compatible_backup_${dateStr}.risubackup`
+    : `haejeokrisu_backup_${dateStr}.risubackup`;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -194,6 +241,62 @@ async function saveNodeLocalBackupStream() {
  * Merge a transactionally consistent full SQL snapshot into the lazy adapter
  * without replacing values that are already loaded (and may still be dirty).
  */
+function isChatCompleteForBackup(chat: any, snapshotChat?: any): boolean {
+  if (!chat) return false;
+  if (chat.messagesLoaded === false || chat.detailsLoaded === false) return false;
+  if (chat.messagesFullyLoaded === false) return false;
+  if ((chat.messageOffset ?? 0) > 0) return false;
+
+  const messageLength = Array.isArray(chat.message) ? chat.message.length : 0;
+  if (typeof chat.messageTotal === "number" && messageLength < chat.messageTotal) {
+    return false;
+  }
+
+  // Older/lazy shells may not have hydration flags at all. In that case, use
+  // the full SQL snapshot as an independent completeness oracle.
+  if (chat.messagesFullyLoaded !== true && snapshotChat) {
+    const snapshotLength = Array.isArray(snapshotChat.message)
+      ? snapshotChat.message.length
+      : 0;
+    if (messageLength < snapshotLength) return false;
+  }
+
+  return true;
+}
+
+function mergeSnapshotChats(
+  currentChats: any[],
+  snapshotChats: any[],
+): any[] {
+  const currentById = new Map(
+    currentChats.filter((chat) => chat?.id).map((chat) => [chat.id, chat]),
+  );
+  const snapshotIds = new Set<string>();
+  const merged = snapshotChats.map((snapshotChat) => {
+    if (!snapshotChat?.id) return snapshotChat;
+    snapshotIds.add(snapshotChat.id);
+    const current = currentById.get(snapshotChat.id);
+    if (!current) return snapshotChat;
+
+    if (!isChatCompleteForBackup(current, snapshotChat)) {
+      Object.assign(current, snapshotChat, {
+        messagesLoaded: true,
+        detailsLoaded: true,
+        messagesFullyLoaded: true,
+        messageOffset: 0,
+        messageTotal: snapshotChat.message?.length ?? 0,
+      });
+    }
+    return current;
+  });
+
+  // Preserve chats created locally after the storage snapshot was taken.
+  for (const current of currentChats) {
+    if (!current?.id || !snapshotIds.has(current.id)) merged.push(current);
+  }
+  return merged;
+}
+
 export function hydrateLazyDatabaseFromSnapshot(
   db: Database,
   snapshot: Database,
@@ -240,44 +343,38 @@ export function hydrateLazyDatabaseFromSnapshot(
     return;
   }
 
+  const currentCharacterIds = new Set(
+    db.characters.filter((char) => char?.chaId).map((char) => char.chaId),
+  );
+
   for (let i = 0; i < db.characters.length; i++) {
     const char = db.characters[i];
     if (!char?.chaId) continue;
     const snapshotChar = snapshotCharacters.get(char.chaId);
     if (!snapshotChar) continue;
 
-    const existingChats =
-      char.chats && char.chats.length > 0
-        ? char.chats
-        : (snapshotChar.chats ?? []);
+    const existingChats = char.chats ?? [];
+    const mergedChats = mergeSnapshotChats(
+      existingChats,
+      snapshotChar.chats ?? [],
+    );
+
+    // Keep the existing array identity because Svelte and pending in-memory
+    // edits may still hold references to it, while still restoring chats that
+    // only exist in the complete SQL snapshot.
+    existingChats.splice(0, existingChats.length, ...mergedChats);
     Object.assign(char, snapshotChar, {
       chats: existingChats,
       detailsLoaded: true,
     });
+  }
 
-    const snapshotChats = new Map(
-      (snapshotChar.chats ?? [])
-        .filter((chat) => chat?.id)
-        .map((chat) => [chat.id, chat]),
-    );
-    for (const chat of existingChats) {
-      if (!chat || !chat.id) continue;
-      const snapshotChat = snapshotChats.get(chat.id);
-      if (!snapshotChat) continue;
-      if (
-        !chat.message ||
-        chat.message.length === 0 ||
-        chat.messagesLoaded === false ||
-        chat.messagesFullyLoaded === false
-      ) {
-        Object.assign(chat, snapshotChat, {
-          messagesLoaded: true,
-          detailsLoaded: true,
-          messagesFullyLoaded: true,
-          messageOffset: 0,
-          messageTotal: snapshotChat.message?.length ?? 0,
-        });
-      }
+  // A shallow adapter should normally contain every character shell, but a
+  // backup must not depend on that invariant. Restore any rows that only exist
+  // in the transactionally consistent full snapshot.
+  for (const snapshotChar of snapshot.characters ?? []) {
+    if (snapshotChar?.chaId && !currentCharacterIds.has(snapshotChar.chaId)) {
+      db.characters.push(snapshotChar);
     }
   }
 }
@@ -341,13 +438,15 @@ export async function ensureAllPostgresChatMessagesLoaded(
       if (onProgress) {
         onProgress(`Loading chat messages (${i + 1} / ${totalChars})`);
       }
-      if (char.detailsLoaded === false && char.chaId) {
+      if (char.detailsLoaded !== true && char.chaId) {
         const fullChar = await storage.loadCharacter(char.chaId);
         if (fullChar) {
-          const existingChats =
-            char.chats && char.chats.length > 0
-              ? char.chats
-              : (fullChar.chats ?? []);
+          const existingChats = char.chats ?? [];
+          const mergedChats = mergeSnapshotChats(
+            existingChats,
+            fullChar.chats ?? [],
+          );
+          existingChats.splice(0, existingChats.length, ...mergedChats);
           db.characters[i] = Object.assign(char, fullChar, {
             chats: existingChats,
             detailsLoaded: true,
@@ -358,11 +457,13 @@ export async function ensureAllPostgresChatMessagesLoaded(
       for (let j = 0; j < (char.chats ?? []).length; j++) {
         const chat = char.chats[j];
         if (
-          chat &&
-          (chat.messagesLoaded === false ||
-            chat.detailsLoaded === false ||
-            chat.messagesFullyLoaded === false) &&
-          chat.id
+          chat?.id &&
+          (chat.messagesLoaded !== true ||
+            chat.detailsLoaded !== true ||
+            chat.messagesFullyLoaded !== true ||
+            (chat.messageOffset ?? 0) > 0 ||
+            (typeof chat.messageTotal === "number" &&
+              (chat.message?.length ?? 0) < chat.messageTotal))
         ) {
           const fullChat = await storage.loadChat(chat.id);
           if (fullChat) {
@@ -390,9 +491,10 @@ export async function ensureDatabaseFullyLoaded(
     if (onProgress) onProgress("Loading database from storage...");
     await (db as any).ensureLoaded();
   }
-  if (!bulkLoaded) {
-    await ensureAllPostgresChatMessagesLoaded(db, onProgress);
-  }
+  // Even a successful bulk snapshot must be followed by an explicit chat
+  // completeness pass. The live adapter can contain partially hydrated shells
+  // whose legacy flags are missing or stale.
+  await ensureAllPostgresChatMessagesLoaded(db, onProgress);
 
   try {
     const { getSqlStorage } = await import("../storage/sqlStorageFactory");
@@ -435,10 +537,15 @@ export async function ensureDatabaseFullyLoaded(
   }
 }
 
-export async function SaveLocalBackup() {
+export async function SaveLocalBackup(mode: LocalBackupMode = "native") {
   try {
+    // Snapshot-based exports must see all debounced metadata changes first.
+    // Message writes are immediate, while character/chat metadata and settings
+    // are intentionally batched, so flush those queues before reading SQL.
+    await Promise.all([characterStore.flush(), settingsStore.flush()]);
+
     if (isNodeServer && !forageStorage.isAccount) {
-      await saveNodeLocalBackupStream();
+      await saveNodeLocalBackupStream(mode);
       return;
     }
     alertProgress("Saving local backup... (Preparing database)", 0);
@@ -479,7 +586,7 @@ export async function SaveLocalBackup() {
     }
 
     const writer = new LocalWriter();
-    const r = await initializeLocalBackupWriter(writer);
+    const r = await initializeLocalBackupWriter(writer, false, mode);
     if (!r) {
       alertClear();
       return;
@@ -744,16 +851,14 @@ export async function SaveLocalBackup() {
     alertProgress(`Saving local backup... (Compressing database)`, 92);
     await sleep(30);
 
-    const cleanDb: Record<string, any> = {};
-    for (const [key, value] of Object.entries(db)) {
-      if (
-        key === "account" ||
-        key === "moduleFolders" ||
-        typeof value === "function"
-      ) continue;
-      cleanDb[key] = getLegacyCompatibleBackupValue(key, value);
-    }
-    cleanDb.pluginCustomStorage ??= {};
+    const coldStorageValues = new Map(
+      coldStoragePayloads.payloads.map((payload) => [payload.key, payload.value] as const),
+    );
+    const cleanDb = buildPortableLocalBackupDatabase(
+      db,
+      mode,
+      coldStorageValues,
+    );
     let dbData = await encodeRisuSaveLegacyAsync(cleanDb, "compression");
 
     if (forageStorage.isAccount && location.origin.endsWith("risuai.xyz")) {
@@ -1065,16 +1170,7 @@ export async function SavePartialLocalBackup() {
     alertProgress(`Saving partial local backup... (Compressing database)`, 92);
     await sleep(30);
 
-    const cleanDb: Record<string, any> = {};
-    for (const [key, value] of Object.entries(db)) {
-      if (
-        key === "account" ||
-        key === "moduleFolders" ||
-        typeof value === "function"
-      ) continue;
-      cleanDb[key] = getLegacyCompatibleBackupValue(key, value);
-    }
-    cleanDb.pluginCustomStorage ??= {};
+    const cleanDb = buildPortableLocalBackupDatabase(db, "native");
     const dbData = await encodeRisuSaveLegacyAsync(cleanDb, "compression");
 
     alertProgress(`Saving partial local backup... (Writing database)`, 98);
