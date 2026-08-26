@@ -44,19 +44,15 @@ import {
 } from "../process/coldstorage.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { NodeStorage } from "../storage/nodeStorage";
-import {
-  PROMPT_SETTING_KEYS,
-  POSTGRES_DOMAINS,
-} from "../storage/databaseAdapters.svelte";
 import { getSqlStorage } from "../storage/sqlStorageFactory";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { decryptLegacyAccountBackup } from "./legacyBackupEncryption";
-import { stripAdditionalAssetFolderMetadata } from "../assetManagerUtils";
 import {
-  expandCharactersForCompatibility,
+  makeLegacyCompatibleDatabase,
   type ColdStorageValueMap,
 } from "../backupCompatibility";
+import { safeStructuredClone } from "../polyfill";
 
 const alertProgress = (msg: string, progress: number | string) =>
   showProgressAlert(msg, progress, "backup");
@@ -81,23 +77,6 @@ export function normalizeLocalBackupAssetPath(name: string) {
   return `assets/${segments.join("/")}`;
 }
 
-function getLegacyCompatibleBackupValue(
-  key: string,
-  value: any,
-  coldStorageValues?: ColdStorageValueMap,
-) {
-  if (key !== "characters" || !Array.isArray(value)) return value;
-  return expandCharactersForCompatibility(
-    value,
-    undefined,
-    coldStorageValues,
-  ).map((character) =>
-    character && typeof character === "object"
-      ? stripAdditionalAssetFolderMetadata(character)
-      : character,
-  );
-}
-
 export type LocalBackupMode = "native" | "compatible";
 
 export function buildPortableLocalBackupDatabase(
@@ -112,24 +91,13 @@ export function buildPortableLocalBackupDatabase(
       typeof value === "function" ||
       (mode === "compatible" && key === "moduleFolders")
     ) continue;
-    cleanDb[key] = mode === "compatible"
-      ? getLegacyCompatibleBackupValue(key, value, coldStorageValues)
-      : value;
+    cleanDb[key] = value;
   }
   cleanDb.pluginCustomStorage ??= {};
-  return cleanDb;
+  return mode === "compatible"
+    ? makeLegacyCompatibleDatabase(cleanDb, coldStorageValues)
+    : cleanDb;
 }
-
-const SQL_DOMAIN_ROOT_KEYS: Record<
-  (typeof POSTGRES_DOMAINS)[number],
-  string[]
-> = {
-  personas: ["personas"],
-  loreBook: ["loreBook"],
-  modules: ["modules"],
-  prompts: [...PROMPT_SETTING_KEYS],
-  scripts: ["globalscript"],
-};
 
 function formatBackupElapsed(startedAt: number) {
   const elapsedSeconds = Math.max(
@@ -237,156 +205,12 @@ async function saveNodeLocalBackupStream(mode: LocalBackupMode) {
   alertNormal("Success");
 }
 
-/**
- * Merge a transactionally consistent full SQL snapshot into the lazy adapter
- * without replacing values that are already loaded (and may still be dirty).
- */
-function isChatCompleteForBackup(chat: any, snapshotChat?: any): boolean {
-  if (!chat) return false;
-  if (chat.messagesLoaded === false || chat.detailsLoaded === false) return false;
-  if (chat.messagesFullyLoaded === false) return false;
-  if ((chat.messageOffset ?? 0) > 0) return false;
-
-  const messageLength = Array.isArray(chat.message) ? chat.message.length : 0;
-  if (typeof chat.messageTotal === "number" && messageLength < chat.messageTotal) {
-    return false;
-  }
-
-  // Older/lazy shells may not have hydration flags at all. In that case, use
-  // the full SQL snapshot as an independent completeness oracle.
-  if (chat.messagesFullyLoaded !== true && snapshotChat) {
-    const snapshotLength = Array.isArray(snapshotChat.message)
-      ? snapshotChat.message.length
-      : 0;
-    if (messageLength < snapshotLength) return false;
-  }
-
-  return true;
-}
-
-function mergeSnapshotChats(
-  currentChats: any[],
-  snapshotChats: any[],
-): any[] {
-  const currentById = new Map(
-    currentChats.filter((chat) => chat?.id).map((chat) => [chat.id, chat]),
-  );
-  const snapshotIds = new Set<string>();
-  const merged = snapshotChats.map((snapshotChat) => {
-    if (!snapshotChat?.id) return snapshotChat;
-    snapshotIds.add(snapshotChat.id);
-    const current = currentById.get(snapshotChat.id);
-    if (!current) return snapshotChat;
-
-    if (!isChatCompleteForBackup(current, snapshotChat)) {
-      Object.assign(current, snapshotChat, {
-        messagesLoaded: true,
-        detailsLoaded: true,
-        messagesFullyLoaded: true,
-        messageOffset: 0,
-        messageTotal: snapshotChat.message?.length ?? 0,
-      });
-    }
-    return current;
-  });
-
-  // Preserve chats created locally after the storage snapshot was taken.
-  for (const current of currentChats) {
-    if (!current?.id || !snapshotIds.has(current.id)) merged.push(current);
-  }
-  return merged;
-}
-
-export function hydrateLazyDatabaseFromSnapshot(
-  db: Database,
-  snapshot: Database,
-) {
-  const adapter = db as Database & {
-    isDomainLoaded?: (domain: string) => boolean;
-  };
-
-  for (const domain of POSTGRES_DOMAINS) {
-    if (adapter.isDomainLoaded?.(domain)) continue;
-    for (const key of SQL_DOMAIN_ROOT_KEYS[domain]) {
-      if (Object.prototype.hasOwnProperty.call(snapshot, key)) {
-        (db as any)[key] = (snapshot as any)[key];
-      }
-    }
-  }
-
-  // Plugin custom storage is not one of the adapter's deferred domains.
-  // A shallow Node load initializes it to an empty object, so fill it from
-  // the full snapshot unless the in-memory value already contains data.
-  if (
-    snapshot.pluginCustomStorage &&
-    Object.keys(db.pluginCustomStorage ?? {}).length === 0
-  ) {
-    db.pluginCustomStorage = snapshot.pluginCustomStorage;
-  }
-
-  // Merge root settings from snapshot if missing in db
-  for (const [key, value] of Object.entries(snapshot)) {
-    if (key === "characters" || key === "account") continue;
-    if ((db as any)[key] === undefined || (db as any)[key] === null) {
-      (db as any)[key] = value;
-    }
-  }
-
-  const snapshotCharacters = new Map(
-    (snapshot.characters ?? [])
-      .filter((char) => char?.chaId)
-      .map((char) => [char.chaId, char]),
-  );
-
-  if (!db.characters || db.characters.length === 0) {
-    db.characters = snapshot.characters ?? [];
-    return;
-  }
-
-  const currentCharacterIds = new Set(
-    db.characters.filter((char) => char?.chaId).map((char) => char.chaId),
-  );
-
-  for (let i = 0; i < db.characters.length; i++) {
-    const char = db.characters[i];
-    if (!char?.chaId) continue;
-    const snapshotChar = snapshotCharacters.get(char.chaId);
-    if (!snapshotChar) continue;
-
-    const existingChats = char.chats ?? [];
-    const mergedChats = mergeSnapshotChats(
-      existingChats,
-      snapshotChar.chats ?? [],
-    );
-
-    // Keep the existing array identity because Svelte and pending in-memory
-    // edits may still hold references to it, while still restoring chats that
-    // only exist in the complete SQL snapshot.
-    existingChats.splice(0, existingChats.length, ...mergedChats);
-    Object.assign(char, snapshotChar, {
-      chats: existingChats,
-      detailsLoaded: true,
-    });
-  }
-
-  // A shallow adapter should normally contain every character shell, but a
-  // backup must not depend on that invariant. Restore any rows that only exist
-  // in the transactionally consistent full snapshot.
-  for (const snapshotChar of snapshot.characters ?? []) {
-    if (snapshotChar?.chaId && !currentCharacterIds.has(snapshotChar.chaId)) {
-      db.characters.push(snapshotChar);
-    }
-  }
-}
-
-async function hydrateDatabaseFromSqlStorage(
-  db: Database,
+async function loadFullSqlBackupSnapshot(
   onProgress?: (msg: string) => void,
-) {
+): Promise<PortableDatabase | null> {
   try {
-    const { getSqlStorage } = await import("../storage/sqlStorageFactory");
     const storage = await getSqlStorage();
-    if (!(await storage.init())) return false;
+    if (!(await storage.init())) return null;
 
     const startedAt = Date.now();
     const update = () =>
@@ -395,137 +219,71 @@ async function hydrateDatabaseFromSqlStorage(
       );
     update();
     const timer = setInterval(update, 1000);
-    let loaded;
     try {
-      loaded = await storage.loadDatabase({ shallow: false });
+      const loaded = await storage.loadDatabase({ shallow: false });
+      if (loaded?.status !== "ready" || !loaded.database) return null;
+      return loaded.database as PortableDatabase;
     } finally {
       clearInterval(timer);
     }
-    if (loaded?.status !== "ready" || !loaded.database) return false;
-    onProgress?.("Merging database snapshot into backup data...");
-    hydrateLazyDatabaseFromSnapshot(db, loaded.database);
-    return true;
   } catch (error) {
     console.warn(
-      "Bulk SQL backup load failed; falling back to per-entity loaders:",
+      "Full SQL backup snapshot failed; falling back to entity loading:",
       error,
     );
-    return false;
+    return null;
   }
 }
 
-function getBasename(data: string) {
-  const baseNameRegex = /\\/g;
-  const splited = data.replace(baseNameRegex, "/").split("/");
-  const lasts = splited[splited.length - 1];
-  return lasts;
-}
-
-export async function ensureAllPostgresChatMessagesLoaded(
-  db: Database,
+async function loadFallbackBackupSnapshot(
   onProgress?: (msg: string) => void,
-) {
+): Promise<PortableDatabase> {
+  const live = getDatabase() as PortableDatabase & {
+    ensureLoaded?: () => Promise<void>;
+  };
+  if (typeof live.ensureLoaded === "function") {
+    onProgress?.("Loading database from storage...");
+    await live.ensureLoaded();
+  }
+  const snapshot = safeStructuredClone(live) as PortableDatabase;
+
   try {
-    const { getSqlStorage } = await import("../storage/sqlStorageFactory");
     const storage = await getSqlStorage();
-    if (!storage.isEnabled()) {
-      return;
-    }
-    const totalChars = (db.characters ?? []).length;
-    for (let i = 0; i < totalChars; i++) {
-      let char = db.characters[i];
-      if (!char) continue;
-      if (onProgress) {
-        onProgress(`Loading chat messages (${i + 1} / ${totalChars})`);
-      }
-      if (char.detailsLoaded !== true && char.chaId) {
-        const fullChar = await storage.loadCharacter(char.chaId);
-        if (fullChar) {
-          const existingChats = char.chats ?? [];
-          const mergedChats = mergeSnapshotChats(
-            existingChats,
-            fullChar.chats ?? [],
-          );
-          existingChats.splice(0, existingChats.length, ...mergedChats);
-          db.characters[i] = Object.assign(char, fullChar, {
-            chats: existingChats,
-            detailsLoaded: true,
-          });
-          char = db.characters[i];
-        }
-      }
-      for (let j = 0; j < (char.chats ?? []).length; j++) {
-        const chat = char.chats[j];
-        if (
-          chat?.id &&
-          (chat.messagesLoaded !== true ||
-            chat.detailsLoaded !== true ||
-            chat.messagesFullyLoaded !== true ||
-            (chat.messageOffset ?? 0) > 0 ||
-            (typeof chat.messageTotal === "number" &&
-              (chat.message?.length ?? 0) < chat.messageTotal))
-        ) {
-          const fullChat = await storage.loadChat(chat.id);
-          if (fullChat) {
-            Object.assign(chat, fullChat);
-            chat.messagesLoaded = true;
-            chat.detailsLoaded = true;
-            chat.messagesFullyLoaded = true;
-            chat.messageOffset = 0;
-            chat.messageTotal = fullChat.message?.length ?? 0;
-          }
-        }
+    if (!storage.isEnabled()) return snapshot;
+    const total = snapshot.characters?.length ?? 0;
+    for (let index = 0; index < total; index++) {
+      const shell = snapshot.characters[index];
+      if (!shell?.chaId) continue;
+      onProgress?.(`Loading character chats (${index + 1} / ${total})`);
+      const fullCharacter = await storage.loadCharacter(shell.chaId);
+      if (fullCharacter) snapshot.characters[index] = fullCharacter;
+      const character = snapshot.characters[index];
+      for (let chatIndex = 0; chatIndex < (character.chats?.length ?? 0); chatIndex++) {
+        const chat = character.chats[chatIndex];
+        if (!chat?.id) continue;
+        const fullChat = await storage.loadChat(chat.id);
+        if (fullChat) character.chats[chatIndex] = fullChat;
       }
     }
   } catch (error) {
-    console.error("ensureAllPostgresChatMessagesLoaded failed:", error);
+    console.warn("Backup entity fallback could not fully hydrate SQL data:", error);
   }
+  return snapshot;
 }
 
-export async function ensureDatabaseFullyLoaded(
-  db: Database,
-  onProgress?: (msg: string) => void,
-) {
-  const bulkLoaded = await hydrateDatabaseFromSqlStorage(db, onProgress);
-  if (!bulkLoaded && typeof (db as any).ensureLoaded === "function") {
-    if (onProgress) onProgress("Loading database from storage...");
-    await (db as any).ensureLoaded();
-  }
-  // Even a successful bulk snapshot must be followed by an explicit chat
-  // completeness pass. The live adapter can contain partially hydrated shells
-  // whose legacy flags are missing or stale.
-  await ensureAllPostgresChatMessagesLoaded(db, onProgress);
-
-  try {
-    const { getSqlStorage } = await import("../storage/sqlStorageFactory");
-    const storage = await getSqlStorage();
-    if (
-      storage.isEnabled() &&
-      (!db.pluginCustomStorage ||
-        Object.keys(db.pluginCustomStorage).length === 0)
-    ) {
-      const pluginStorage = await storage.loadPluginCustomStorage();
-      if (pluginStorage && Object.keys(pluginStorage).length > 0) {
-        db.pluginCustomStorage = pluginStorage;
-      }
-    }
-  } catch {}
-
+function normalizeBackupSnapshot(db: PortableDatabase): void {
+  db.pluginCustomStorage ??= {};
   if (!db.personas || db.personas.length === 0) {
-    db.personas = [
-      {
-        name: db.username || "User",
-        icon: db.userIcon || "",
-        personaPrompt: "",
-        note: db.userNote || "",
-        largePortrait: false,
-      },
-    ];
+    db.personas = [{
+      name: db.username || "User",
+      icon: db.userIcon || "",
+      personaPrompt: "",
+      note: db.userNote || "",
+      largePortrait: false,
+    }];
   } else {
-    for (const p of db.personas) {
-      if (p) {
-        p.largePortrait ??= false;
-      }
+    for (const persona of db.personas) {
+      if (persona) persona.largePortrait ??= false;
     }
   }
   if (
@@ -537,667 +295,424 @@ export async function ensureDatabaseFullyLoaded(
   }
 }
 
+export async function createBackupDatabaseSnapshot(
+  onProgress?: (msg: string) => void,
+): Promise<PortableDatabase> {
+  await Promise.all([characterStore.flush(), settingsStore.flush()]);
+
+  const db =
+    (await loadFullSqlBackupSnapshot(onProgress)) ??
+    (await loadFallbackBackupSnapshot(onProgress));
+
+  db.botPresets = (await presetStore.loadAll()).map(
+    ({ id: _id, ...preset }) => preset,
+  );
+  db.botPresetsId = presetStore.activeIndex;
+
+  try {
+    const storage = await getSqlStorage();
+    if (
+      storage.isEnabled() &&
+      (!db.pluginCustomStorage || Object.keys(db.pluginCustomStorage).length === 0)
+    ) {
+      const pluginStorage = await storage.loadPluginCustomStorage();
+      if (pluginStorage && Object.keys(pluginStorage).length > 0) {
+        db.pluginCustomStorage = pluginStorage;
+      }
+    }
+  } catch {}
+
+  normalizeBackupSnapshot(db);
+  return db;
+}
+
+type BackupAssetScope = "all" | "essential";
+type BackupAssetInfo = { charName: string; assetName: string };
+
+interface LocalBackupExportOptions {
+  mode: LocalBackupMode;
+  partial: boolean;
+  assetScope: BackupAssetScope;
+  accountReadDelayMs: number;
+  encryptAccountBackup: boolean;
+}
+
+function backupLabel(partial: boolean) {
+  return partial ? "Saving partial local backup..." : "Saving local backup...";
+}
+
+function addBackupAsset(
+  map: Map<string, BackupAssetInfo>,
+  key: string | undefined,
+  charName: string,
+  assetName: string,
+) {
+  if (key) map.set(key, { charName, assetName });
+}
+
+function buildBackupAssetMap(
+  db: PortableDatabase,
+  scope: BackupAssetScope,
+): Map<string, BackupAssetInfo> {
+  const assets = new Map<string, BackupAssetInfo>();
+  for (const char of db.characters ?? []) {
+    if (!char) continue;
+    const charName = char.name ?? "Unknown Character";
+    addBackupAsset(
+      assets,
+      char.image,
+      charName,
+      scope === "essential" ? "Profile Image" : "Main Image",
+    );
+    if (scope === "essential") continue;
+
+    for (const emotion of char.emotionImages ?? []) {
+      if (emotion?.[1]) addBackupAsset(assets, emotion[1], charName, emotion[0]);
+    }
+    if (char.type === "group") continue;
+    for (const asset of char.additionalAssets ?? []) {
+      if (asset?.[1]) addBackupAsset(assets, asset[1], charName, asset[0]);
+    }
+    for (const [name, key] of Object.entries(char.vits?.files ?? {})) {
+      if (key) addBackupAsset(assets, key, charName, name);
+    }
+    for (const asset of char.ccAssets ?? []) {
+      if (asset?.uri) addBackupAsset(assets, asset.uri, charName, asset.name);
+    }
+  }
+
+  addBackupAsset(assets, db.userIcon, "User Settings", "User Icon");
+  addBackupAsset(
+    assets,
+    db.customBackground,
+    "User Settings",
+    "Custom Background",
+  );
+  for (const persona of db.personas ?? []) {
+    if (persona?.icon) {
+      addBackupAsset(assets, persona.icon, "Persona", `${persona.name} Icon`);
+    }
+  }
+
+  if (scope === "essential") {
+    for (const item of db.characterOrder ?? []) {
+      if (typeof item === "string") continue;
+      addBackupAsset(assets, item.img, "Folder", `${item.name} Folder Image`);
+      addBackupAsset(
+        assets,
+        item.imgFile,
+        "Folder",
+        `${item.name} Folder Image File`,
+      );
+    }
+    for (const preset of db.botPresets ?? []) {
+      if (preset?.image) {
+        addBackupAsset(
+          assets,
+          preset.image,
+          "Preset",
+          `${preset.name} Preset Image`,
+        );
+      }
+    }
+  }
+  return assets;
+}
+
+function findBackupAssetInfo(
+  assetMap: Map<string, BackupAssetInfo>,
+  key: string,
+) {
+  return (
+    assetMap.get(key) ??
+    assetMap.get(key.replace(/^assets\//, "")) ??
+    assetMap.get(`assets/${key}`)
+  );
+}
+
+function isEssentialBackupAsset(
+  assetMap: Map<string, BackupAssetInfo>,
+  key: string,
+) {
+  if (!key.endsWith(".png")) return false;
+  return Boolean(findBackupAssetInfo(assetMap, key));
+}
+
+function reportBackupAssetProgress(
+  label: string,
+  current: number,
+  total: number,
+  key: string,
+  assetMap: Map<string, BackupAssetInfo>,
+  missingCount: number,
+) {
+  const percent = total > 0 ? (current / total) * 80 : 80;
+  const info = findBackupAssetInfo(assetMap, key);
+  let message = `${label} (${current} / ${total})`;
+  message += info ? `\n${info.charName} - ${info.assetName}` : `\n${key}`;
+  if (missingCount > 0) {
+    message += `\n(Skipped ${missingCount} missing assets)`;
+  }
+  alertProgress(message, percent);
+}
+
+async function writeLocalBackupAssets(
+  writer: LocalWriter,
+  db: PortableDatabase,
+  options: LocalBackupExportOptions,
+): Promise<{ missingAssets: string[]; assetMap: Map<string, BackupAssetInfo> }> {
+  const label = backupLabel(options.partial);
+  const assetMap = buildBackupAssetMap(db, options.assetScope);
+  const missingAssets: string[] = [];
+  let lastUiUpdate = 0;
+
+  if (isTauri) {
+    alertProgress(`${label} (Scanning assets)`, 0);
+    await sleep(10);
+    let assets = (await readDir("assets", { baseDir: BaseDirectory.AppData })).filter(
+      (asset) => asset.isFile && Boolean(asset.name),
+    );
+    if (options.assetScope === "essential") {
+      assets = assets.filter((asset) =>
+        isEssentialBackupAsset(assetMap, asset.name ?? ""),
+      );
+    }
+
+    for (let index = 0; index < assets.length; index++) {
+      const key = assets[index].name;
+      if (!key) continue;
+      const now = Date.now();
+      if (now - lastUiUpdate > 30 || index === 0 || index === assets.length - 1) {
+        lastUiUpdate = now;
+        reportBackupAssetProgress(
+          label,
+          index + 1,
+          assets.length,
+          key,
+          assetMap,
+          missingAssets.length,
+        );
+        await sleep(0);
+      }
+      const data = await readFile(`assets/${key}`, {
+        baseDir: BaseDirectory.AppData,
+      });
+      if (data) await writer.writeBackup(key, data);
+      else missingAssets.push(key);
+    }
+    return { missingAssets, assetMap };
+  }
+
+  let keys = (await forageStorage.keys()).filter((key) =>
+    key?.startsWith("assets/"),
+  );
+  if (options.assetScope === "essential") {
+    keys = keys.filter((key) => isEssentialBackupAsset(assetMap, key));
+  }
+
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index];
+    const now = Date.now();
+    if (now - lastUiUpdate > 30 || index === 0 || index === keys.length - 1) {
+      lastUiUpdate = now;
+      reportBackupAssetProgress(
+        label,
+        index + 1,
+        keys.length,
+        key,
+        assetMap,
+        missingAssets.length,
+      );
+      await sleep(0);
+    }
+
+    let data: Uint8Array | undefined;
+    let isCached = false;
+    if (forageStorage.isAccount) {
+      if (settingsStore.state.skipSavingAssetsOnWebSync) continue;
+      const cached = (await localforage.getItem(key)) as ArrayBuffer;
+      if (cached) {
+        isCached = true;
+        data = new Uint8Array(cached);
+      }
+    }
+    if (!data) {
+      data = (await forageStorage.getItem(key)) as unknown as Uint8Array;
+    }
+    if (data) await writer.writeBackup(key, data);
+    else missingAssets.push(key);
+    if (forageStorage.isAccount && !isCached) {
+      await sleep(options.accountReadDelayMs);
+    }
+  }
+  return { missingAssets, assetMap };
+}
+
+async function collectBackupColdStorage(
+  db: PortableDatabase,
+  label: string,
+) {
+  alertProgress(`${label} (Checking cold storage)`, 0);
+  await sleep(10);
+  const coldStoragePayloads = await collectColdStorageBackupPayloads(
+    db,
+    (current, total, key) => {
+      const item = key ? `\nCurrent item: ${key}` : "";
+      alertProgress(
+        `${label} (Checking cold storage ${current} / ${total})${item}`,
+        0,
+      );
+    },
+  );
+  const unavailableKeys = [
+    ...coldStoragePayloads.missingKeys,
+    ...coldStoragePayloads.invalidKeys,
+  ];
+  const confirmed = await confirmIncompleteColdStorageOperation(
+    db,
+    unavailableKeys,
+    "backup",
+  );
+  return confirmed ? coldStoragePayloads : null;
+}
+
+async function writeBackupColdStorage(
+  writer: LocalWriter,
+  coldStoragePayloads: Awaited<
+    ReturnType<typeof collectColdStorageBackupPayloads>
+  >,
+  label: string,
+) {
+  const total = coldStoragePayloads.payloads.length;
+  for (let index = 0; index < total; index++) {
+    const payload = coldStoragePayloads.payloads[index];
+    const percent = total > 0 ? 80 + ((index + 1) / total) * 10 : 80;
+    let message = `${label} cold data... (${index + 1} / ${total})`;
+    if (payload.backupName) message += `\n${payload.backupName}`;
+    alertProgress(message, percent);
+    await sleep(0);
+    await writer.writeBackup(payload.backupName, payload.encoded);
+  }
+}
+
+function showMissingBackupAssets(
+  missingAssets: string[],
+  assetMap: Map<string, BackupAssetInfo>,
+  partial: boolean,
+) {
+  if (missingAssets.length === 0) {
+    alertNormal("Success");
+    return;
+  }
+  let message = partial
+    ? "Partial backup successful, but the following profile images were missing and skipped:\n\n"
+    : "Backup Successful, but the following assets were missing and skipped:\n\n";
+  for (const key of missingAssets) {
+    const info = findBackupAssetInfo(assetMap, key);
+    message += info
+      ? `* **${info.assetName}** (from *${info.charName}*)  \n  *File: ${key}*\n`
+      : `* **Unknown Asset**  \n  *File: ${key}*\n`;
+  }
+  alertMd(message);
+}
+
+async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
+  const label = backupLabel(options.partial);
+  alertProgress(`${label} (Preparing database)`, 0);
+  await sleep(10);
+  const db = await createBackupDatabaseSnapshot((msg) => {
+    alertProgress(`${label} (${msg})`, 0);
+  });
+  const coldStoragePayloads = await collectBackupColdStorage(db, label);
+  if (!coldStoragePayloads) {
+    alertClear();
+    return;
+  }
+
+  const writer = new LocalWriter();
+  if (!(await initializeLocalBackupWriter(writer, options.partial, options.mode))) {
+    alertClear();
+    return;
+  }
+
+  const { missingAssets, assetMap } = await writeLocalBackupAssets(
+    writer,
+    db,
+    options,
+  );
+  await writeBackupColdStorage(writer, coldStoragePayloads, label);
+
+  alertProgress(`${label} (Compressing database)`, 92);
+  await sleep(30);
+  const coldStorageValues = new Map(
+    coldStoragePayloads.payloads.map((payload) => [payload.key, payload.value] as const),
+  );
+  const cleanDb = buildPortableLocalBackupDatabase(
+    db,
+    options.mode,
+    coldStorageValues,
+  );
+  let dbData = await encodeRisuSaveLegacyAsync(cleanDb, "compression");
+
+  if (
+    options.encryptAccountBackup &&
+    forageStorage.isAccount &&
+    location.origin.endsWith("risuai.xyz")
+  ) {
+    alertProgress(`${label} (Encrypting database)`, 96);
+    await sleep(20);
+    const time = Date.now();
+    const key = (
+      await (await fetch(`https://sv.risuai.xyz/cryptokey?key=${time}`)).json()
+    ).key;
+    dbData = new Uint8Array(await encryptBuffer(dbData, key));
+    await writer.writeBackup(
+      "encryption.risudat",
+      new TextEncoder().encode(JSON.stringify({ time, type: "account" })),
+    );
+  }
+
+  alertProgress(`${label} (Writing database)`, 98);
+  await sleep(10);
+  await writer.writeBackup("database.risudat", dbData);
+  alertProgress(`${label} (Finalizing)`, 100);
+  await sleep(10);
+  await writer.close();
+  showMissingBackupAssets(missingAssets, assetMap, options.partial);
+}
+
 export async function SaveLocalBackup(mode: LocalBackupMode = "native") {
   try {
-    // Snapshot-based exports must see all debounced metadata changes first.
-    // Message writes are immediate, while character/chat metadata and settings
-    // are intentionally batched, so flush those queues before reading SQL.
-    await Promise.all([characterStore.flush(), settingsStore.flush()]);
-
     if (isNodeServer && !forageStorage.isAccount) {
+      await Promise.all([characterStore.flush(), settingsStore.flush()]);
       await saveNodeLocalBackupStream(mode);
       return;
     }
-    alertProgress("Saving local backup... (Preparing database)", 0);
-    await sleep(10);
-    const db = getDatabase() as PortableDatabase;
-    db.botPresets = (await presetStore.loadAll()).map(
-      ({ id: _id, ...preset }) => preset,
-    );
-    db.botPresetsId = presetStore.activeIndex;
-    await ensureDatabaseFullyLoaded(db, (msg) => {
-      alertProgress(`Saving local backup... (${msg})`, 0);
-    });
-    alertProgress("Saving local backup... (Checking cold storage)", 0);
-    await sleep(10);
-    const coldStoragePayloads = await collectColdStorageBackupPayloads(
-      db,
-      (current, total, key) => {
-        const item = key ? `\nCurrent item: ${key}` : "";
-        alertProgress(
-          `Saving local backup... (Checking cold storage ${current} / ${total})${item}`,
-          0,
-        );
-      },
-    );
-    const unavailableColdStorageKeys = [
-      ...coldStoragePayloads.missingKeys,
-      ...coldStoragePayloads.invalidKeys,
-    ];
-    if (
-      !(await confirmIncompleteColdStorageOperation(
-        db,
-        unavailableColdStorageKeys,
-        "backup",
-      ))
-    ) {
-      alertClear();
-      return;
-    }
-
-    const writer = new LocalWriter();
-    const r = await initializeLocalBackupWriter(writer, false, mode);
-    if (!r) {
-      alertClear();
-      return;
-    }
-
-    const assetMap = new Map<string, { charName: string; assetName: string }>();
-    if (db.characters) {
-      for (const char of db.characters) {
-        if (!char) continue;
-        const charName = char.name ?? "Unknown Character";
-
-        if (char.image)
-          assetMap.set(char.image, {
-            charName: charName,
-            assetName: "Main Image",
-          });
-
-        if (char.emotionImages) {
-          for (const em of char.emotionImages) {
-            if (em && em[1])
-              assetMap.set(em[1], { charName: charName, assetName: em[0] });
-          }
-        }
-        if (char.type !== "group") {
-          if (char.additionalAssets) {
-            for (const em of char.additionalAssets) {
-              if (em && em[1])
-                assetMap.set(em[1], { charName: charName, assetName: em[0] });
-            }
-          }
-          if (char.vits) {
-            const keys = Object.keys(char.vits.files);
-            for (const key of keys) {
-              const vit = char.vits.files[key];
-              if (vit)
-                assetMap.set(vit, { charName: charName, assetName: key });
-            }
-          }
-          if (char.ccAssets) {
-            for (const asset of char.ccAssets) {
-              if (asset && asset.uri)
-                assetMap.set(asset.uri, {
-                  charName: charName,
-                  assetName: asset.name,
-                });
-            }
-          }
-        }
-      }
-    }
-    if (db.userIcon) {
-      assetMap.set(db.userIcon, {
-        charName: "User Settings",
-        assetName: "User Icon",
-      });
-    }
-    if (db.customBackground) {
-      assetMap.set(db.customBackground, {
-        charName: "User Settings",
-        assetName: "Custom Background",
-      });
-    }
-    if (db.personas) {
-      for (const persona of db.personas) {
-        if (persona && persona.icon) {
-          assetMap.set(persona.icon, {
-            charName: "Persona",
-            assetName: `${persona.name} Icon`,
-          });
-        }
-      }
-    }
-    const missingAssets: string[] = [];
-
-    if (isTauri) {
-      alertProgress("Saving local backup... (Scanning assets)", 0);
-      await sleep(10);
-      const assets = (
-        await readDir("assets", { baseDir: BaseDirectory.AppData })
-      ).filter((asset) => asset.isFile);
-      const totalAssets = assets.length;
-      let lastUiUpdate = 0;
-
-      for (let i = 0; i < assets.length; i++) {
-        const asset = assets[i];
-        const key = asset.name;
-        if (!key) {
-          continue;
-        }
-
-        const percent = totalAssets > 0 ? ((i + 1) / totalAssets) * 80 : 80;
-        const now = Date.now();
-        if (now - lastUiUpdate > 30 || i === 0 || i === totalAssets - 1) {
-          lastUiUpdate = now;
-          const assetInfo = assetMap.get(key) || assetMap.get("assets/" + key);
-          let message = `Saving local backup... (${i + 1} / ${totalAssets})`;
-          if (assetInfo) {
-            message += `\n${assetInfo.charName} - ${assetInfo.assetName}`;
-          } else {
-            message += `\n${key}`;
-          }
-          if (missingAssets.length > 0) {
-            message += `\n(Skipped ${missingAssets.length} missing assets)`;
-          }
-          alertProgress(message, percent);
-          await sleep(0);
-        }
-
-        const data = await readFile("assets/" + asset.name, {
-          baseDir: BaseDirectory.AppData,
-        });
-        if (data) {
-          await writer.writeBackup(key, data);
-        } else {
-          missingAssets.push(key);
-        }
-      }
-    } else {
-      if (isNodeServer && !forageStorage.isAccount) {
-        const startedAt = Date.now();
-        const update = () =>
-          alertProgress(
-            `Saving local backup... (S3/storage server is listing assets)\n` +
-              `The download will start as soon as the listing is ready. Elapsed: ${formatBackupElapsed(startedAt)}`,
-            2,
-          );
-        update();
-        const timer = setInterval(update, 1000);
-        let streamStarted = false;
-        try {
-          writer.setBufferSize(64 * 1024 * 1024);
-          let lastProgress = -1;
-          await (forageStorage.realStorage as NodeStorage).streamItems(
-            [],
-            {
-              onFileStart: async (key, size) => {
-                await writer.startBackup(key, size);
-              },
-              onFileChunk: async (_key, chunk) => {
-                await writer.write(chunk);
-              },
-            },
-            (progress) => {
-              if (!streamStarted) {
-                streamStarted = true;
-                clearInterval(timer);
-              }
-              if (progress.completedFiles === 0 && !progress.currentFile) {
-                const sourceLabel =
-                  progress.assetListSource === "catalog"
-                    ? "Loaded asset list from SQL catalog"
-                    : progress.assetListSource === "storage-sync"
-                      ? "Initialized SQL asset catalog from storage"
-                      : "Loaded asset list from storage";
-                alertProgress(
-                  `Saving local backup... (${sourceLabel}: ${progress.totalFiles.toLocaleString()} assets)`,
-                  2,
-                );
-                return;
-              }
-              const currentRatio = progress.currentFile
-                ? progress.totalBytes === 0n
-                  ? 1
-                  : Number(
-                      (BigInt(progress.receivedBytes) * 1000n) /
-                        progress.totalBytes,
-                    ) / 1000
-                : 0;
-              const percent =
-                progress.totalFiles === 0
-                  ? 80
-                  : Math.floor(
-                      ((progress.completedFiles + currentRatio) /
-                        progress.totalFiles) *
-                        80,
-                    );
-
-              if (percent === lastProgress) {
-                return;
-              }
-              lastProgress = percent;
-              alertProgress(
-                `Saving local backup... (Streaming assets ${percent}%, ${progress.completedFiles} / ${progress.totalFiles})`,
-                percent,
-              );
-            },
-            { prefix: "assets/" },
-          );
-        } finally {
-          clearInterval(timer);
-        }
-      } else {
-        const keys = await forageStorage.keys();
-        const assetKeys = keys.filter((key) => key?.startsWith("assets/"));
-        const totalAssets = assetKeys.length;
-        let lastUiUpdate = 0;
-
-        for (let i = 0; i < assetKeys.length; i++) {
-          const key = assetKeys[i];
-          const percent = totalAssets > 0 ? ((i + 1) / totalAssets) * 80 : 80;
-          const now = Date.now();
-          if (now - lastUiUpdate > 30 || i === 0 || i === totalAssets - 1) {
-            lastUiUpdate = now;
-            const assetInfo =
-              assetMap.get(key) || assetMap.get(key.replace(/^assets\//, ""));
-            let message = `Saving local backup... (${i + 1} / ${totalAssets})`;
-            if (assetInfo) {
-              message += `\n${assetInfo.charName} - ${assetInfo.assetName}`;
-            } else {
-              message += `\n${key}`;
-            }
-            if (missingAssets.length > 0) {
-              message += `\n(Skipped ${missingAssets.length} missing assets)`;
-            }
-            alertProgress(message, percent);
-            await sleep(0);
-          }
-
-          let data: Uint8Array | undefined;
-          let isCached = false;
-          if (forageStorage.isAccount && key.startsWith("assets/")) {
-            if (settingsStore.state.skipSavingAssetsOnWebSync) {
-              continue;
-            }
-
-            const cached = (await localforage.getItem(key)) as ArrayBuffer;
-            if (cached) {
-              isCached = true;
-              data = new Uint8Array(cached);
-            }
-          }
-
-          if (!data) {
-            data = (await forageStorage.getItem(key)) as unknown as Uint8Array;
-          }
-
-          if (data) {
-            await writer.writeBackup(key, data);
-          } else {
-            missingAssets.push(key);
-          }
-          if (forageStorage.isAccount && !isCached) {
-            await sleep(1000);
-          }
-        }
-      }
-    }
-
-    const totalCold = coldStoragePayloads.payloads.length;
-    for (let i = 0; i < totalCold; i++) {
-      const payload = coldStoragePayloads.payloads[i];
-      const percent = totalCold > 0 ? 80 + ((i + 1) / totalCold) * 10 : 80;
-      let message = `Saving local backup cold data... (${i + 1} / ${totalCold})`;
-      if (payload.backupName) {
-        message += `\n${payload.backupName}`;
-      }
-      alertProgress(message, percent);
-      await sleep(0);
-      await writer.writeBackup(payload.backupName, payload.encoded);
-    }
-
-    alertProgress(`Saving local backup... (Compressing database)`, 92);
-    await sleep(30);
-
-    const coldStorageValues = new Map(
-      coldStoragePayloads.payloads.map((payload) => [payload.key, payload.value] as const),
-    );
-    const cleanDb = buildPortableLocalBackupDatabase(
-      db,
+    await saveLocalBackupWithOptions({
       mode,
-      coldStorageValues,
-    );
-    let dbData = await encodeRisuSaveLegacyAsync(cleanDb, "compression");
-
-    if (forageStorage.isAccount && location.origin.endsWith("risuai.xyz")) {
-      alertProgress(`Saving local backup... (Encrypting database)`, 96);
-      await sleep(20);
-      const time = Date.now();
-      const key = (
-        await (
-          await fetch(`https://sv.risuai.xyz/cryptokey?key=${time}`)
-        ).json()
-      ).key;
-      const encrypted = await encryptBuffer(dbData, key);
-      await writer.writeBackup(
-        "encryption.risudat",
-        new TextEncoder().encode(JSON.stringify({ time, type: "account" })),
-      );
-      dbData = new Uint8Array(encrypted);
-    }
-
-    alertProgress(`Saving local backup... (Writing database)`, 98);
-    await sleep(10);
-
-    await writer.writeBackup("database.risudat", dbData);
-
-    alertProgress(`Saving local backup... (Finalizing)`, 100);
-    await sleep(10);
-
-    await writer.close();
-
-    if (missingAssets.length > 0) {
-      let message =
-        "Backup Successful, but the following assets were missing and skipped:\n\n";
-      for (const key of missingAssets) {
-        const assetInfo = assetMap.get(key) || assetMap.get("assets/" + key);
-        if (assetInfo) {
-          message += `* **${assetInfo.assetName}** (from *${assetInfo.charName}*)  \n  *File: ${key}*\n`;
-        } else {
-          message += `* **Unknown Asset**  \n  *File: ${key}*\n`;
-        }
-      }
-      alertMd(message);
-    } else {
-      alertNormal("Success");
-    }
+      partial: false,
+      assetScope: "all",
+      accountReadDelayMs: 1000,
+      encryptAccountBackup: true,
+    });
   } catch (error) {
     console.error("SaveLocalBackup failed:", error);
     alertError(error);
   }
 }
 
-/**
- * Saves a partial local backup with only critical assets.
- *
- * Differences from SaveLocalBackup:
- * - Only includes profile images for characters/groups (excludes emotion images, additional assets, VITS files, CC assets)
- * - Additionally includes: persona icons, folder images, bot preset images
- * - Processes only assets in assetMap (selective) instead of all .png files in assets folder
- * - Faster and more efficient for quick backups
- * - Ideal for backing up core visual identity without bulk data
- */
+/** Save a native backup containing only the essential visual assets. */
 export async function SavePartialLocalBackup() {
   try {
-    const firstConfirm = await alertConfirm(language.partialBackupFirstConfirm);
-    if (!firstConfirm) return;
-
-    const secondConfirm = await alertConfirm(
-      language.partialBackupSecondConfirm,
-    );
-    if (!secondConfirm) return;
-
-    alertProgress("Saving partial local backup... (Preparing database)", 0);
-    await sleep(10);
-    const db = getDatabase() as PortableDatabase;
-    db.botPresets = (await presetStore.loadAll()).map(
-      ({ id: _id, ...preset }) => preset,
-    );
-    db.botPresetsId = presetStore.activeIndex;
-    await ensureDatabaseFullyLoaded(db, (msg) => {
-      alertProgress(`Saving partial local backup... (${msg})`, 0);
+    if (!(await alertConfirm(language.partialBackupFirstConfirm))) return;
+    if (!(await alertConfirm(language.partialBackupSecondConfirm))) return;
+    await saveLocalBackupWithOptions({
+      mode: "native",
+      partial: true,
+      assetScope: "essential",
+      accountReadDelayMs: 100,
+      encryptAccountBackup: false,
     });
-    alertProgress("Saving partial local backup... (Checking cold storage)", 0);
-    await sleep(10);
-    const coldStoragePayloads = await collectColdStorageBackupPayloads(
-      db,
-      (current, total, key) => {
-        const item = key ? `\nCurrent item: ${key}` : "";
-        alertProgress(
-          `Saving partial local backup... (Checking cold storage ${current} / ${total})${item}`,
-          0,
-        );
-      },
-    );
-    const unavailableColdStorageKeys = [
-      ...coldStoragePayloads.missingKeys,
-      ...coldStoragePayloads.invalidKeys,
-    ];
-    if (
-      !(await confirmIncompleteColdStorageOperation(
-        db,
-        unavailableColdStorageKeys,
-        "backup",
-      ))
-    ) {
-      alertClear();
-      return;
-    }
-
-    const writer = new LocalWriter();
-    const r = await initializeLocalBackupWriter(writer, true);
-    if (!r) {
-      alertClear();
-      return;
-    }
-
-    const assetMap = new Map<string, { charName: string; assetName: string }>();
-
-    if (db.characters) {
-      for (const char of db.characters) {
-        if (!char) continue;
-        const charName = char.name ?? "Unknown Character";
-        if (char.image) {
-          assetMap.set(char.image, {
-            charName: charName,
-            assetName: "Profile Image",
-          });
-        }
-      }
-    }
-
-    if (db.userIcon) {
-      assetMap.set(db.userIcon, {
-        charName: "User Settings",
-        assetName: "User Icon",
-      });
-    }
-
-    if (db.personas) {
-      for (const persona of db.personas) {
-        if (persona && persona.icon) {
-          assetMap.set(persona.icon, {
-            charName: "Persona",
-            assetName: `${persona.name} Icon`,
-          });
-        }
-      }
-    }
-
-    if (db.customBackground) {
-      assetMap.set(db.customBackground, {
-        charName: "User Settings",
-        assetName: "Custom Background",
-      });
-    }
-
-    if (db.characterOrder) {
-      for (const item of db.characterOrder) {
-        if (typeof item !== "string" && item.img) {
-          assetMap.set(item.img, {
-            charName: "Folder",
-            assetName: `${item.name} Folder Image`,
-          });
-        }
-        if (typeof item !== "string" && item.imgFile) {
-          assetMap.set(item.imgFile, {
-            charName: "Folder",
-            assetName: `${item.name} Folder Image File`,
-          });
-        }
-      }
-    }
-
-    if (db.botPresets) {
-      for (const preset of db.botPresets) {
-        if (preset && preset.image) {
-          assetMap.set(preset.image, {
-            charName: "Preset",
-            assetName: `${preset.name} Preset Image`,
-          });
-        }
-      }
-    }
-
-    const missingAssets: string[] = [];
-
-    if (isTauri) {
-      alertProgress("Saving partial local backup... (Scanning assets)", 0);
-      await sleep(10);
-      const assets = await readDir("assets", {
-        baseDir: BaseDirectory.AppData,
-      });
-      const matchingAssets = assets.filter((asset) => {
-        if (!asset.name || !asset.isFile) return false;
-        const keyWithPrefix = asset.name.startsWith("assets/")
-          ? asset.name
-          : `assets/${asset.name}`;
-        if (!keyWithPrefix.endsWith(".png")) return false;
-        return assetMap.has(keyWithPrefix) || assetMap.has(asset.name);
-      });
-      const totalAssets = matchingAssets.length;
-      let lastUiUpdate = 0;
-
-      for (let i = 0; i < matchingAssets.length; i++) {
-        const asset = matchingAssets[i];
-        const keyWithPrefix = asset.name.startsWith("assets/")
-          ? asset.name
-          : `assets/${asset.name}`;
-        const percent = totalAssets > 0 ? ((i + 1) / totalAssets) * 80 : 80;
-        const now = Date.now();
-        if (now - lastUiUpdate > 30 || i === 0 || i === totalAssets - 1) {
-          lastUiUpdate = now;
-          const assetInfo =
-            assetMap.get(keyWithPrefix) || assetMap.get(asset.name);
-          let message = `Saving partial local backup... (${i + 1} / ${totalAssets})`;
-          if (assetInfo) {
-            message += `\n${assetInfo.charName} - ${assetInfo.assetName}`;
-          } else {
-            message += `\n${asset.name}`;
-          }
-          if (missingAssets.length > 0) {
-            message += `\n(Skipped ${missingAssets.length} missing assets)`;
-          }
-          alertProgress(message, percent);
-          await sleep(0);
-        }
-
-        const data = await readFile("assets/" + asset.name, {
-          baseDir: BaseDirectory.AppData,
-        });
-        if (data) {
-          await writer.writeBackup(asset.name, data);
-        } else {
-          missingAssets.push(asset.name);
-        }
-      }
-    } else {
-      const keys = await forageStorage.keys();
-      const matchingKeys = keys.filter((key) => {
-        if (!key || !key.startsWith("assets/")) return false;
-        if (!key.endsWith(".png")) return false;
-        const keyWithoutPrefix = key.replace(/^assets\//, "");
-        return assetMap.has(key) || assetMap.has(keyWithoutPrefix);
-      });
-      const totalAssets = matchingKeys.length;
-      let lastUiUpdate = 0;
-
-      for (let i = 0; i < matchingKeys.length; i++) {
-        const key = matchingKeys[i];
-        const percent = totalAssets > 0 ? ((i + 1) / totalAssets) * 80 : 80;
-        const now = Date.now();
-        if (now - lastUiUpdate > 30 || i === 0 || i === totalAssets - 1) {
-          lastUiUpdate = now;
-          const assetInfo =
-            assetMap.get(key) || assetMap.get(key.replace(/^assets\//, ""));
-          let message = `Saving partial local backup... (${i + 1} / ${totalAssets})`;
-          if (assetInfo) {
-            message += `\n${assetInfo.charName} - ${assetInfo.assetName}`;
-          } else {
-            message += `\n${key}`;
-          }
-          if (missingAssets.length > 0) {
-            message += `\n(Skipped ${missingAssets.length} missing assets)`;
-          }
-          alertProgress(message, percent);
-          await sleep(0);
-        }
-
-        let data: Uint8Array | undefined;
-        let isCached = false;
-        if (forageStorage.isAccount && key.startsWith("assets/")) {
-          if (settingsStore.state.skipSavingAssetsOnWebSync) {
-            continue;
-          }
-
-          const cached = (await localforage.getItem(key)) as ArrayBuffer;
-          if (cached) {
-            isCached = true;
-            data = new Uint8Array(cached);
-          }
-        }
-
-        if (!data) {
-          data = (await forageStorage.getItem(key)) as unknown as Uint8Array;
-        }
-
-        if (data) {
-          await writer.writeBackup(key, data);
-        } else {
-          missingAssets.push(key);
-        }
-        if (forageStorage.isAccount && !isCached) {
-          await sleep(100);
-        }
-      }
-    }
-
-    const totalCold = coldStoragePayloads.payloads.length;
-    for (let i = 0; i < totalCold; i++) {
-      const payload = coldStoragePayloads.payloads[i];
-      const percent = totalCold > 0 ? 80 + ((i + 1) / totalCold) * 10 : 80;
-      let message = `Saving partial local backup cold data... (${i + 1} / ${totalCold})`;
-      if (payload.backupName) {
-        message += `\n${payload.backupName}`;
-      }
-      alertProgress(message, percent);
-      await sleep(0);
-      await writer.writeBackup(payload.backupName, payload.encoded);
-    }
-
-    alertProgress(`Saving partial local backup... (Compressing database)`, 92);
-    await sleep(30);
-
-    const cleanDb = buildPortableLocalBackupDatabase(db, "native");
-    const dbData = await encodeRisuSaveLegacyAsync(cleanDb, "compression");
-
-    alertProgress(`Saving partial local backup... (Writing database)`, 98);
-    await sleep(10);
-
-    await writer.writeBackup("database.risudat", dbData);
-
-    alertProgress(`Saving partial local backup... (Finalizing)`, 100);
-    await sleep(10);
-
-    await writer.close();
-
-    if (missingAssets.length > 0) {
-      let message =
-        "Partial backup successful, but the following profile images were missing and skipped:\n\n";
-      for (const key of missingAssets) {
-        const assetInfo = assetMap.get(key) || assetMap.get("assets/" + key);
-        if (assetInfo) {
-          message += `* **${assetInfo.assetName}** (from *${assetInfo.charName}*)  \n  *File: ${key}*\n`;
-        } else {
-          message += `* **Unknown Asset**  \n  *File: ${key}*\n`;
-        }
-      }
-      alertMd(message);
-    } else {
-      alertNormal("Success");
-    }
   } catch (error) {
     console.error("SavePartialLocalBackup failed:", error);
     alertError(error);

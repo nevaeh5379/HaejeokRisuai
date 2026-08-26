@@ -1,0 +1,19 @@
+{
+  "name": "@risuai/backup-core",
+  "private": true,
+  "type": "commonjs",
+  "main": "./compatibility.cjs",
+  "types": "./compatibility.d.cts",
+  "exports": {
+    ".": {
+      "types": "./compatibility.d.cts",
+      "require": "./compatibility.cjs",
+      "default": "./compatibility.cjs"
+    },
+    "./*": {
+      "types": "./*.d.cts",
+      "require": "./*.cjs",
+      "default": "./*.cjs"
+    }
+  }
+}

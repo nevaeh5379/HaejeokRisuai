@@ -7,7 +7,7 @@ import strip from '@rollup/plugin-strip';
 import tailwindcss from '@tailwindcss/vite'
 import { resolveBuildVersion } from './tooling/build-version.mjs'
 
-const localCommonJsPackages = ['chat-core', 'protocol'] as const
+const localCommonJsPackages = ['chat-core', 'protocol', 'backup-core'] as const
 const localCommonJsDependencies = localCommonJsPackages.flatMap((packageName) =>
   readdirSync(resolve(process.cwd(), `packages/${packageName}`))
     .filter((file) => file.endsWith('.cjs'))
@@ -255,6 +255,7 @@ export default defineConfig(({command, mode}) => {
         'src':'/src',
         '@risuai/chat-core':resolve(process.cwd(), 'packages/chat-core'),
         '@risuai/protocol':resolve(process.cwd(), 'packages/protocol'),
+        '@risuai/backup-core':resolve(process.cwd(), 'packages/backup-core'),
       }
     },
     worker: {

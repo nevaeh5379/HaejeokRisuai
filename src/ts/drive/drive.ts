@@ -9,7 +9,6 @@ import {
 import {
   getDatabase,
   type Database,
-  type PortableDatabase,
 } from "../storage/database.svelte";
 import { forageStorage, getUncleanables, openURL } from "../globalApi.svelte";
 import { isNodeServer, isTauri } from "src/ts/platform";
@@ -39,7 +38,7 @@ import {
 import { NodeStorage } from "../storage/nodeStorage";
 import {
   buildPortableLocalBackupDatabase,
-  ensureDatabaseFullyLoaded,
+  createBackupDatabaseSnapshot,
 } from "./backuplocal";
 import { getSqlStorage } from "../storage/sqlStorageFactory";
 
@@ -237,8 +236,7 @@ async function backupDrive(ACCESS_TOKEN: string) {
     await createFileInFolder(ACCESS_TOKEN, payload.backupName, payload.encoded);
   }
 
-  const db = getDatabase() as PortableDatabase;
-  await ensureDatabaseFullyLoaded(db);
+  const db = await createBackupDatabaseSnapshot();
   alertProgress(`Uploading Backup... (Compressing database)`, 92);
   await sleep(20);
   const coldStorageValues = new Map(

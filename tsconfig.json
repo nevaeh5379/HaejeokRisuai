@@ -15,7 +15,8 @@
     "baseUrl": ".",
     "paths": {
       "@risuai/chat-core/*": ["packages/chat-core/*"],
-      "@risuai/protocol/*": ["packages/protocol/*"]
+      "@risuai/protocol/*": ["packages/protocol/*"],
+      "@risuai/backup-core/*": ["packages/backup-core/*"]
     },
     "resolveJsonModule": true,
     "esModuleInterop": true,

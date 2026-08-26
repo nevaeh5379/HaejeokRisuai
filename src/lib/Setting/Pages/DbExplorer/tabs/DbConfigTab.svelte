@@ -19,7 +19,6 @@
         type SqlVendorFormValues,
     } from 'src/ts/storage/nodePostgresStorage'
     import { encodeRisuSaveLegacy } from 'src/ts/storage/risuSave'
-    import { ensureDatabaseFullyLoaded } from 'src/ts/drive/backuplocal'
 
     interface Props {
         onConfigChanged?: () => void

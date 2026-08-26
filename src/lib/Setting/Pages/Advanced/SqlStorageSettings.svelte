@@ -22,7 +22,6 @@
         type SqlVendorFormValues,
     } from 'src/ts/storage/nodePostgresStorage'
     import { encodeRisuSaveLegacy } from 'src/ts/storage/risuSave'
-    import { ensureDatabaseFullyLoaded } from 'src/ts/drive/backuplocal'
 
     let config = $state<NodePostgresServerConfig|null>(null)
     let dbConfig = $state<{
