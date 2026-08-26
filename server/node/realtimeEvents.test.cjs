@@ -25,6 +25,14 @@ test('describeSqlCommitChange extracts affected chat and character ids', () => {
             { id: 'msg-b', chatId: 'chat-b' },
         ],
         messageManifests: [{ chatId: 'chat-b', ids: ['msg-b'] }],
+        pluginStorage: {
+            upserts: [
+                { key: 'plugin-a', value: { n: 1 } },
+                { key: 'plugin-a', value: { n: 2 } },
+            ],
+            deletes: ['plugin-b', 'plugin-b'],
+            clear: true,
+        },
     });
 
     assert.deepEqual(change.chatIds.sort(), ['chat-a', 'chat-b']);
@@ -32,6 +40,9 @@ test('describeSqlCommitChange extracts affected chat and character ids', () => {
     assert.deepEqual(change.rootUpsertKeys, ['temperature']);
     assert.deepEqual(change.rootDeleteKeys, ['oldSetting']);
     assert.equal(change.rootChanged, true);
+    assert.deepEqual(change.pluginStorageUpsertKeys, ['plugin-a']);
+    assert.deepEqual(change.pluginStorageDeleteKeys, ['plugin-b']);
+    assert.equal(change.pluginStorageCleared, true);
 });
 
 class FakeResponse extends EventEmitter {

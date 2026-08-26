@@ -336,4 +336,35 @@ describe("SettingsStore Reactivity and Persistence", () => {
     ]);
     expect(committed[0].root.deletes).toEqual([]);
   });
+
+  it("hydrates remote plugin storage without overwriting local pending writes", async () => {
+    settingsStore.init(
+      {
+        pluginCustomStorage: {
+          stale: { value: 1 },
+          remote: { value: 1 },
+          local: { value: 1 },
+        },
+      } as any,
+      mockStorage,
+    );
+    settingsStore.setPluginCustomStorageKey("local", { value: 2 });
+    settingsStore.hydrateRemotePluginCustomStorageKey("remote", { value: 9 });
+    settingsStore.hydrateRemotePluginCustomStorageKey("local", { value: 99 });
+    settingsStore.hydrateRemotePluginCustomStorageDelete("stale");
+    settingsStore.hydrateRemotePluginCustomStorageClear();
+    settingsStore.hydrateRemotePluginCustomStorageKey("after-clear", { value: 3 });
+
+    await settingsStore.flush();
+
+    expect(settingsStore.state.pluginCustomStorage).toEqual({
+      local: { value: 2 },
+      "after-clear": { value: 3 },
+    });
+    expect(committed).toHaveLength(1);
+    expect(committed[0].pluginStorage?.upserts).toEqual([
+      { key: "local", value: { value: 2 } },
+    ]);
+    expect(committed[0].pluginStorage?.clear).toBeUndefined();
+  });
 });

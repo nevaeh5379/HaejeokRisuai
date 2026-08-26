@@ -27,6 +27,11 @@ function describeSqlCommitChange(payload) {
         .filter((key) => typeof key === 'string' && key);
     const rootDeleteKeys = (payload?.root?.deletes ?? [])
         .filter((key) => typeof key === 'string' && key);
+    const pluginStorageUpsertKeys = (payload?.pluginStorage?.upserts ?? [])
+        .map((entry) => entry?.key)
+        .filter((key) => typeof key === 'string' && key);
+    const pluginStorageDeleteKeys = (payload?.pluginStorage?.deletes ?? [])
+        .filter((key) => typeof key === 'string' && key);
 
     return {
         chatIds: [...chatIds],
@@ -34,6 +39,9 @@ function describeSqlCommitChange(payload) {
         rootUpsertKeys: [...new Set(rootUpsertKeys)],
         rootDeleteKeys: [...new Set(rootDeleteKeys)],
         rootChanged: Boolean(payload?.replaceAll || rootUpsertKeys.length || rootDeleteKeys.length),
+        pluginStorageUpsertKeys: [...new Set(pluginStorageUpsertKeys)],
+        pluginStorageDeleteKeys: [...new Set(pluginStorageDeleteKeys)],
+        pluginStorageCleared: payload?.pluginStorage?.clear === true,
     };
 }
 

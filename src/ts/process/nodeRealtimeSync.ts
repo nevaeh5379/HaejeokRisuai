@@ -20,6 +20,9 @@ type DatabaseChangeEvent = {
   rootUpsertKeys?: string[];
   rootDeleteKeys?: string[];
   rootChanged?: boolean;
+  pluginStorageUpsertKeys?: string[];
+  pluginStorageDeleteKeys?: string[];
+  pluginStorageCleared?: boolean;
 };
 
 type ModelJobEvent = {
@@ -66,6 +69,12 @@ async function applyDatabaseChange(
   const rootDeleteKeys = Array.isArray(change.rootDeleteKeys)
     ? [...new Set(change.rootDeleteKeys.filter(Boolean))]
     : [];
+  const pluginStorageUpsertKeys = Array.isArray(change.pluginStorageUpsertKeys)
+    ? [...new Set(change.pluginStorageUpsertKeys.filter(Boolean))]
+    : [];
+  const pluginStorageDeleteKeys = Array.isArray(change.pluginStorageDeleteKeys)
+    ? [...new Set(change.pluginStorageDeleteKeys.filter(Boolean))]
+    : [];
 
   const rootValues = await Promise.all(
     rootUpsertKeys.map(async (key) => [key, await storage.loadSettingKey(key)] as const),
@@ -74,6 +83,20 @@ async function applyDatabaseChange(
     settingsStore.hydrateSettingKey(key, value, value !== undefined);
   }
   for (const key of rootDeleteKeys) settingsStore.hydrateSettingKey(key, undefined, false);
+
+  if (change.pluginStorageCleared) {
+    settingsStore.hydrateRemotePluginCustomStorageClear();
+  }
+  for (const key of pluginStorageDeleteKeys) {
+    settingsStore.hydrateRemotePluginCustomStorageDelete(key);
+  }
+  const pluginStorageValues = await Promise.all(
+    pluginStorageUpsertKeys.map(async (key) => [key, await storage.loadPluginCustomStorageKey(key)] as const),
+  );
+  for (const [key, value] of pluginStorageValues) {
+    if (value === undefined) settingsStore.hydrateRemotePluginCustomStorageDelete(key);
+    else settingsStore.hydrateRemotePluginCustomStorageKey(key, value);
+  }
 
   await Promise.all(
     characterIds.map((characterId) =>
