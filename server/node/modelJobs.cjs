@@ -121,7 +121,12 @@ function createModelJobManager({ saveDir, logger = console, onEvent = null } = {
 
     function publicRecord(record) {
         if (!record) return null;
-        return { ...record, bytes: activeJobs.get(record.id)?.bytesWritten ?? record.bytes ?? 0 };
+        const active = activeJobs.get(record.id);
+        return {
+            ...record,
+            bytes: active?.bytesWritten ?? record.bytes ?? 0,
+            ...(active?.sourceClientId ? { sourceClientId: active.sourceClientId } : {}),
+        };
     }
 
     function emitEvent(type, record, context = {}) {

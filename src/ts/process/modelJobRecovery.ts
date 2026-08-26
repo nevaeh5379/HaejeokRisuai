@@ -7,6 +7,7 @@ import { getNodeServerProxyAuth } from "../storage/nodeStorage";
 import type { Message } from "../storage/database.svelte";
 import type { DurableModelJobRecord } from "../../../packages/protocol/modelJobs.cjs";
 import { setRemoteChatGeneration } from "./chatRuntimeState";
+import { getNodeClientSessionId } from "../network/nodeClientSession";
 
 export type { DurableModelJobRecord } from "../../../packages/protocol/modelJobs.cjs";
 
@@ -427,7 +428,12 @@ async function runRecovery(): Promise<void> {
     }
   }
   for (const job of active) {
-    if (isDurableModelJobOwned(job.id)) continue;
+    if (
+      isDurableModelJobOwned(job.id) ||
+      job.sourceClientId === getNodeClientSessionId()
+    ) {
+      continue;
+    }
     setRemoteChatGeneration(job.chatId, true);
     void recoverActiveJob(job);
   }

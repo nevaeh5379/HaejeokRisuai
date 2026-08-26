@@ -74,6 +74,10 @@ test('model job survives stream client disconnect and replays the full journal',
     });
     assert.equal(createResponse.status, 200);
     const { jobId } = await createResponse.json();
+    assert.equal(
+        manager.listJobs('active').find((item) => item.id === jobId)?.sourceClientId,
+        'client-session-1',
+    );
 
     const firstStream = await fetch(`http://127.0.0.1:${apiPort}/api/model-jobs/${jobId}/stream`);
     const firstReader = firstStream.body.getReader();

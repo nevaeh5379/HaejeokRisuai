@@ -58,6 +58,7 @@ export interface DurableModelJobRecord {
   endedAt?: number | null;
   bytes?: number;
   claimed?: boolean;
+  sourceClientId?: string | null;
 }
 
 export interface CreateModelJobResponse {
