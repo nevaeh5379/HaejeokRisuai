@@ -33,16 +33,51 @@
     let listEle: HTMLDivElement = $state()
     let parentContainerEl: HTMLDivElement = $state()
     let bottomContainerEl: HTMLDivElement = $state()
+    let separatorEl: HTMLDivElement | undefined = $state()
     let sorted = $state(0)
     let sortableLoadId = 0
     let isResizing = $state(false)
 
+    const MIN_CHAT_LIST_HEIGHT = 80
+    const MIN_BOTTOM_HEIGHT = 80
+
     const STORAGE_KEY = 'risu_sidechat_bottom_height'
     let bottomHeight = $state(
         typeof localStorage !== 'undefined'
-            ? Math.max(80, parseInt(localStorage.getItem(STORAGE_KEY) || '220', 10) || 220)
+            ? Math.max(MIN_BOTTOM_HEIGHT, parseInt(localStorage.getItem(STORAGE_KEY) || '220', 10) || 220)
             : 220
     )
+
+    function getTopReservedHeight(): number {
+        if (!parentContainerEl) return 150
+        const btn = parentContainerEl.firstElementChild as HTMLElement | null
+        const btnHeight = btn ? btn.offsetHeight : 42
+        let sepHeight = 20
+        const sep = separatorEl ?? (parentContainerEl.querySelector('[role="separator"]') as HTMLElement | null)
+        if (sep) {
+            const style = window.getComputedStyle(sep)
+            sepHeight = sep.offsetHeight + (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0)
+        }
+        const listMarginTop = 8
+        return btnHeight + listMarginTop + MIN_CHAT_LIST_HEIGHT + sepHeight
+    }
+
+    $effect(() => {
+        if (!parentContainerEl) return
+        const clampHeight = () => {
+            const containerHeight = parentContainerEl.clientHeight
+            if (containerHeight <= 0) return
+            const reservedTop = getTopReservedHeight()
+            const maxHeight = Math.max(MIN_BOTTOM_HEIGHT, containerHeight - reservedTop)
+            if (bottomHeight > maxHeight) {
+                bottomHeight = maxHeight
+            }
+        }
+        clampHeight()
+        const ro = new ResizeObserver(clampHeight)
+        ro.observe(parentContainerEl)
+        return () => ro.disconnect()
+    })
 
     function startResize(event: PointerEvent) {
         if (event.pointerType === 'mouse' && event.button !== 0) return
@@ -51,16 +86,18 @@
 
         const startY = event.clientY
         const startHeight = bottomHeight
-        const containerHeight = parentContainerEl ? parentContainerEl.clientHeight : window.innerHeight
 
         const target = event.currentTarget as HTMLElement
-        target.setPointerCapture(event.pointerId)
+        try {
+            target.setPointerCapture(event.pointerId)
+        } catch {}
 
         function onPointerMove(e: PointerEvent) {
             const deltaY = startY - e.clientY
-            const minHeight = 80
-            const maxHeight = Math.max(minHeight, containerHeight - 120)
-            const newHeight = Math.min(Math.max(startHeight + deltaY, minHeight), maxHeight)
+            const containerHeight = parentContainerEl ? parentContainerEl.clientHeight : window.innerHeight
+            const reservedTop = getTopReservedHeight()
+            const maxHeight = Math.max(MIN_BOTTOM_HEIGHT, containerHeight - reservedTop)
+            const newHeight = Math.min(Math.max(startHeight + deltaY, MIN_BOTTOM_HEIGHT), maxHeight)
             bottomHeight = newHeight
         }
 
@@ -222,7 +259,7 @@
         }
     })
 </script>
-<div bind:this={parentContainerEl} class="flex flex-col w-full h-[calc(100%-2rem)] max-h-[calc(100%-2rem)]">
+<div bind:this={parentContainerEl} class="flex flex-col w-full h-[calc(100%-2rem)] max-h-[calc(100%-2rem)] min-h-0 overflow-hidden">
     <Button className="relative bottom-2 shrink-0" onclick={async () => {
         const cha = chara
         const len = chara.chats.length
@@ -579,6 +616,7 @@
 
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
+        bind:this={separatorEl}
         role="separator"
         aria-orientation="horizontal"
         class="group relative flex items-center justify-center h-3 shrink-0 cursor-row-resize touch-none select-none my-1"
