@@ -2364,7 +2364,7 @@ export const languageEnglish = {
   branchedText: "This chat has been branched from {}.",
   branchGraphTitle: "Branch Graph",
   branchGraphDescription:
-    "Each card is a persistent chat timeline. Select one to continue from it.",
+    "Each card is a timeline inside this chat. Select one to continue from that branch.",
   branchGraphTimelineCount: "{} timelines",
   branchGraphOriginal: "Original",
   branchGraphReroll: "Reroll",

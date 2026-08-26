@@ -1,14 +1,15 @@
 <script lang="ts">
     import { alertGenerationInfoStore } from "../../ts/alert";
     
-    import { characterStore, settingsStore, presetStore } from 'src/ts/stores/domain';
+    import { characterStore, settingsStore, presetStore, messageStore } from 'src/ts/stores/domain';
     import { getCharImage } from '../../ts/characters';
     import { ParseMarkdown } from '../../ts/parser/parser.svelte';
     import BarIcon from '../SideBars/BarIcon.svelte';
     import { ChevronRightIcon, DatabaseBackupIcon, User } from '@lucide/svelte';
     import { isCharacterHasAssets } from 'src/ts/characterCards';
     import TextInput from '../UI/GUI/TextInput.svelte';
-    import { aiLawApplies, changeChatTo, openURL, getFetchLogs } from 'src/ts/globalApi.svelte';
+    import { aiLawApplies, openURL, getFetchLogs } from 'src/ts/globalApi.svelte';
+    import { activateChatBranch } from 'src/ts/chatBranches';
     import Button from '../UI/GUI/Button.svelte';
     import { XIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon, CheckIcon, SparkleIcon, InfoIcon } from "@lucide/svelte";
     import hljs from 'highlight.js/lib/core';
@@ -187,6 +188,22 @@
         if(reason === 'root') return language.branchGraphOriginal
         if(reason === 'reroll') return language.branchGraphReroll
         return language.branch
+    }
+
+    async function switchBranchFromGraph(branchId:string){
+        if(branchId === '__current__'){
+            alertStore.set({ type: 'none', msg: '' })
+            return
+        }
+        const char = characterStore.characters[$selectedCharID]
+        const chat = char?.chats?.[char.chatPage]
+        if(!chat?.id) return
+        const switched = activateChatBranch(chat, branchId)
+        if(!switched) return
+        await messageStore.replaceMessages(chat.id, switched.nextMessages, switched.previousMessages)
+        characterStore.markChatDirty(chat.id)
+        await characterStore.flush()
+        alertStore.set({ type: 'none', msg: '' })
     }
 </script>
 
@@ -880,7 +897,7 @@
     </div>
 {:else if $alertStore.type === 'branches'}
     {@const branchGraph = getChatBranches()}
-    {@const branchNodesById = new Map(branchGraph.nodes.map((node) => [node.chatId, node]))}
+    {@const branchNodesById = new Map(branchGraph.nodes.map((node) => [node.branchId, node]))}
     {@const graphWidth = branchPadding * 2 + branchGraph.columns * branchCardWidth + Math.max(0, branchGraph.columns - 1) * branchGapX}
     {@const graphHeight = branchPadding * 2 + branchGraph.rows * branchCardHeight + Math.max(0, branchGraph.rows - 1) * branchGapY}
     <div class="fixed inset-0 z-50 bg-black/80 flex flex-col overflow-hidden">
@@ -921,10 +938,7 @@
                         class:ring-green-500={node.active}
                         style={`left:${branchLeft(node.x)}px;top:${branchTop(node.y)}px;width:${branchCardWidth}px;height:${branchCardHeight}px;`}
                         aria-current={node.active ? 'true' : undefined}
-                        onclick={() => {
-                            changeChatTo(node.chatId)
-                            alertStore.set({ type: 'none', msg: '' })
-                        }}
+                        onclick={() => switchBranchFromGraph(node.branchId)}
                     >
                         <div class="flex items-center gap-2 w-full min-w-0">
                             <span class="shrink-0 text-[10px] uppercase tracking-wide font-bold px-2 py-0.5 rounded-full bg-bgcolor border border-darkborderc text-textcolor2">

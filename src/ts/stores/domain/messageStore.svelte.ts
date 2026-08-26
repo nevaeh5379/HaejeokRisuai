@@ -176,6 +176,52 @@ class MessageStore {
     }
   }
 
+  async replaceMessages(
+    chatId: string,
+    nextMessages: Message[],
+    previousMessages?: Message[],
+  ): Promise<void> {
+    const chat = findChatAcrossCharacters(chatId);
+    const previous = previousMessages ?? chat?.message ?? [];
+    for (const message of nextMessages) message.chatId ||= uuidv4();
+
+    if (chat) {
+      chat.message = nextMessages;
+      chat.messagesLoaded = true;
+      chat.messageOffset = 0;
+      chat.messageTotal = nextMessages.length;
+      chat.messagesFullyLoaded = true;
+    }
+
+    const nextIds = new Set(nextMessages.map((message) => message.chatId!));
+    const removedIds = previous
+      .map((message) => message.chatId)
+      .filter((id): id is string => !!id && !nextIds.has(id));
+    const messageUpserts = nextMessages.map((message, position) => ({
+      id: message.chatId!,
+      chatId,
+      position,
+      data: sqlMessageData(message),
+    }));
+
+    try {
+      const storage = await getSqlStorage();
+      await storage.commit({
+        baseRevision: storage.getRevision(),
+        action: "message-branch-switch",
+        root: { upserts: [], deletes: [] },
+        characters: [],
+        chats: [],
+        chatManifests: [],
+        messages: messageUpserts,
+        messageManifests: [{ chatId, ids: nextMessages.map((message) => message.chatId!) }],
+        messageDeletes: removedIds.length > 0 ? [{ chatId, ids: removedIds }] : [],
+      });
+    } catch (error) {
+      console.error("[MessageStore] Failed to replace messages:", error);
+    }
+  }
+
   async updateMessage(chatId: string, message: Message): Promise<void> {
     const chat = findChatAcrossCharacters(chatId);
     let position = 0;

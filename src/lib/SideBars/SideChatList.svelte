@@ -382,9 +382,8 @@
                             <TextInput bind:value={chat.name} className="grow min-w-0" padding={false}/>
                         {:else}
                             <span class="flex items-center min-w-0 gap-1.5">
-                                {#if chat.branch}
+                                {#if (chat.branchState?.branches?.length ?? 0) > 1}
                                     <GitBranch size={14}/>
-                                    <span class="text-[10px] text-textcolor2 uppercase">{chat.branch.reason === 'reroll' ? language.branchGraphReroll : language.branch}</span>
                                 {/if}
                                 <span class="truncate">{chat.name}</span>
                             </span>
@@ -405,6 +404,7 @@
                                         newChat.name = createChatCopyName(newChat.name)
                                         newChat.id = v4()
                                         newChat.branch = undefined
+                                        newChat.branchState = undefined
                                         for (const msg of newChat.message ?? []) {
                                             msg.chatId = v4()
                                         }
@@ -513,9 +513,8 @@
                     <TextInput bind:value={chara.chats[i].name} className="grow min-w-0" padding={false}/>
                 {:else}
                     <span class="flex items-center min-w-0 gap-1.5">
-                        {#if chat.branch}
+                        {#if (chat.branchState?.branches?.length ?? 0) > 1}
                             <GitBranch size={14}/>
-                            <span class="text-[10px] text-textcolor2 uppercase">{chat.branch.reason === 'reroll' ? language.branchGraphReroll : language.branch}</span>
                         {/if}
                         <span class="truncate">{chat.name}</span>
                     </span>
@@ -535,6 +534,7 @@
                                 newChat.name = createChatCopyName(newChat.name)
                                 newChat.id = v4()
                                 newChat.branch = undefined
+                                newChat.branchState = undefined
                                 for (const msg of newChat.message ?? []) {
                                     msg.chatId = v4()
                                 }
@@ -666,9 +666,12 @@
             }}>
                 <PencilIcon size={18}/>
             </button>
-            <button class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" title={language.branchGraphTitle} onclick={() => {
+            <button class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" title={language.branchGraphTitle} onclick={async () => {
                 const activeChat = chara.chats[chara.chatPage]
-                if(activeChat && !activeChat.id) activeChat.id = v4()
+                if(!activeChat) return
+                activeChat.id ??= v4()
+                const { preLoadChat } = await import('src/ts/process/coldstorage.svelte')
+                await preLoadChat($selectedCharID, chara.chatPage, { full: true })
                 alertStore.set({
                   type: "branches",
                   msg: ""

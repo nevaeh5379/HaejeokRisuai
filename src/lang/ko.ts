@@ -2287,7 +2287,7 @@ export const languageKorean = {
   branchedText: "이 채팅은 {}에서 분기되었습니다.",
   branchGraphTitle: "분기 그래프",
   branchGraphDescription:
-    "각 카드는 저장된 채팅 타임라인입니다. 선택하면 해당 지점에서 대화를 이어갈 수 있습니다.",
+    "각 카드는 이 채팅 안의 타임라인입니다. 선택하면 해당 분기에서 대화를 이어갈 수 있습니다.",
   branchGraphTimelineCount: "타임라인 {}개",
   branchGraphOriginal: "원본",
   branchGraphReroll: "리롤",

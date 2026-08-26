@@ -230,6 +230,26 @@ describe("messageStore", () => {
     });
   });
 
+  it("replaces the active branch path and deletes messages from the previous path", async () => {
+    const chat = characterStore.characters[0].chats[0];
+    const previous = chat.message.map((message) => ({ ...message }));
+    const next = [
+      previous[0],
+      { chatId: "branch-msg", role: "char" as const, data: "branch answer" },
+    ];
+
+    await messageStore.replaceMessages("chat-1", next, previous);
+
+    expect(chat.message.map((message) => message.chatId)).toEqual(["msg-1", "branch-msg"]);
+    expect(chat.messageTotal).toBe(2);
+    expect(mockStorage.commits).toHaveLength(1);
+    const commit = mockStorage.commits[0];
+    expect(commit.action).toBe("message-branch-switch");
+    expect(commit.messageManifests).toEqual([{ chatId: "chat-1", ids: ["msg-1", "branch-msg"] }]);
+    expect(commit.messageDeletes).toEqual([{ chatId: "chat-1", ids: ["msg-2", "msg-3"] }]);
+    expect(commit.messages.map((message) => message.position)).toEqual([0, 1]);
+  });
+
   it("omits messageManifests in commitMessages when messages are partially loaded", async () => {
     const chat = characterStore.characters[0].chats[0];
     chat.messagesFullyLoaded = false;

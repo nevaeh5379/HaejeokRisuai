@@ -2025,12 +2025,30 @@ export type FormatingOrderItem =
 
 export type ChatBranchReason = "manual" | "reroll";
 
+/** @deprecated Legacy session-level branch metadata kept for compatibility. */
 export interface ChatBranchInfo {
   parentChatId: string;
   branchMessageId?: string;
   branchMessageIndex: number;
   reason: ChatBranchReason;
   createdAt: number;
+}
+
+export interface ChatBranchTimeline {
+  id: string;
+  parentBranchId?: string;
+  branchMessageId?: string;
+  branchMessageIndex: number;
+  reason: "root" | ChatBranchReason;
+  createdAt: number;
+  /** Messages after ChatBranchState.baseMessageIndex for this timeline. */
+  messages: Message[];
+}
+
+export interface ChatBranchState {
+  baseMessageIndex: number;
+  activeBranchId: string;
+  branches: ChatBranchTimeline[];
 }
 
 export interface Chat {
@@ -2052,7 +2070,9 @@ export interface Chat {
   fmIndex?: number;
   hypaV3Data?: SerializableHypaV3Data;
   folderId?: string;
+  /** @deprecated Session-level branching from the first implementation. */
   branch?: ChatBranchInfo;
+  branchState?: ChatBranchState;
   lastDate?: number;
   bookmarks?: string[];
   bookmarkNames?: { [chatId: string]: string };

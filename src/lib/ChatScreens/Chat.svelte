@@ -1,7 +1,7 @@
 <script lang="ts">
     import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, DownloadIcon, FileText, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors } from "@lucide/svelte"
-    import { aiLawApplies, changeChatTo, createChatCopyName, foldChatToMessage, getFileSrc } from "src/ts/globalApi.svelte"
-    import { createChatBranch } from "src/ts/chatBranches"
+    import { aiLawApplies, changeChatTo, foldChatToMessage, getFileSrc } from "src/ts/globalApi.svelte"
+    import { createChatTimelineBranch } from "src/ts/chatBranches"
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme"
     import { longpress } from "src/ts/gui/longtouch"
     import { getModelInfo } from "src/ts/model/modellist"
@@ -952,30 +952,16 @@
         const currentChat = char.chats[char.chatPage]
 
         currentChat.id ??= v4()
-        if(settingsStore.state.createFolderOnBranch && !currentChat.folderId){
-            const folderId = v4()
-            char.chatFolders ??= []
-            char.chatFolders.unshift({
-                id: folderId,
-                name: `Branches of ${currentChat.name}`,
-                folded: false,
-            })
-            currentChat.folderId = folderId
-        }
-
+        const previousMessages = $state.snapshot(currentChat.message)
         const currentMessage = currentChat.message[targetIndex]
-        const newChat = createChatBranch($state.snapshot(currentChat), {
-            parentChatId: currentChat.id,
+        createChatTimelineBranch(currentChat, {
             branchMessageId: currentMessage.chatId,
             branchMessageIndex: targetIndex,
             reason: 'manual',
-            keepThroughIndex: targetIndex,
         })
-        newChat.name = createChatCopyName(currentChat.name, 'Branch')
-
-        char.chats.push(newChat)
-        await messageStore.persistNewChat(char.chaId, newChat.id!, newChat.message ?? [])
-        changeChatTo(newChat.id!)
+        await messageStore.replaceMessages(currentChat.id, currentChat.message, previousMessages)
+        characterStore.markChatDirty(currentChat.id)
+        await characterStore.flush()
     }}>
         <SplitIcon size={20}/>
         {#if showNames}

@@ -190,13 +190,6 @@ export const accessibilitySettingsItems: SettingItem[] = [
     },
   },
   {
-    id: "acc.createFolderOnBranch",
-    type: "check",
-    labelKey: "createFolderOnBranch",
-    bindKey: "createFolderOnBranch",
-    keywords: ["create", "folder", "branch"],
-  },
-  {
     id: "acc.hamburgerButtonBottom",
     type: "check",
     labelKey: "hamburgerButtonBottom",

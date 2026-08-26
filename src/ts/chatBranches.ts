@@ -2,150 +2,207 @@ import { v4 as uuidv4 } from "uuid";
 import { safeStructuredClone } from "./polyfill";
 import type {
   Chat,
-  ChatBranchInfo,
   ChatBranchReason,
+  ChatBranchState,
+  ChatBranchTimeline,
   Message,
 } from "./storage/database.svelte";
 
-export interface CreateChatBranchOptions {
-  parentChatId: string;
+export interface CreateChatTimelineBranchOptions {
   branchMessageIndex: number;
   branchMessageId?: string;
+  parentBranchId?: string;
   reason: ChatBranchReason;
-  keepThroughIndex: number;
   createdAt?: number;
 }
 
+export interface ChatBranchSwitchResult {
+  previousMessages: Message[];
+  nextMessages: Message[];
+  branchId: string;
+}
+
 export interface RerollAlternatives {
-  parentChatId: string;
-  chats: Chat[];
+  parentBranchId: string;
+  branchIds: string[];
   currentIndex: number;
 }
-function cloneMessagesWithFreshIds(messages: Message[]) {
-  const messageIdMap = new Map<string, string>();
-  const cloned = messages.map((message) => {
-    const next = safeStructuredClone(message);
-    const nextId = uuidv4();
-    if (message.chatId) messageIdMap.set(message.chatId, nextId);
-    next.chatId = nextId;
-    return next;
-  });
-  return { messages: cloned, messageIdMap };
+function cloneMessages(messages: Message[]): Message[] {
+  return safeStructuredClone(messages);
 }
 
-function remapBookmarks(chat: Chat, messageIdMap: Map<string, string>) {
-  chat.bookmarks = chat.bookmarks
-    ?.map((id) => messageIdMap.get(id))
-    .filter((id): id is string => Boolean(id));
-  if (!chat.bookmarkNames) return;
-  chat.bookmarkNames = Object.fromEntries(
-    Object.entries(chat.bookmarkNames)
-      .map(([id, name]) => [messageIdMap.get(id), name] as const)
-      .filter((entry): entry is [string, string] => Boolean(entry[0])),
-  );
-}
-export function createChatBranch(
-  source: Chat,
-  options: CreateChatBranchOptions,
-): Chat {
-  const chat = safeStructuredClone(source);
-  chat.id = uuidv4();
-  chat.branch = {
-    parentChatId: options.parentChatId,
-    branchMessageId: options.branchMessageId,
-    branchMessageIndex: options.branchMessageIndex,
-    reason: options.reason,
-    createdAt: options.createdAt ?? Date.now(),
-  } satisfies ChatBranchInfo;
-
-  const keptMessages = chat.message.slice(0, options.keepThroughIndex + 1);
-  const cloned = cloneMessagesWithFreshIds(keptMessages);
-  chat.message = cloned.messages;
-  remapBookmarks(chat, cloned.messageIdMap);
-
-  chat.suggestMessages = [];
-  chat.supaMemoryData = undefined;
-  chat.hypaV2Data = undefined;
-  chat.hypaV3Data = undefined;
-  chat.lastMemory = undefined;
-  chat.isStreaming = false;
-  chat.activeStreamingDisplayOptimizationMode = undefined;
-  chat.preventMessageCompaction = false;
+function updateChatMessageRuntime(chat: Chat): void {
   chat.messagesLoaded = true;
   chat.messageOffset = 0;
   chat.messageTotal = chat.message.length;
   chat.messagesFullyLoaded = true;
   chat.detailsLoaded = true;
-  chat.lastDate = Date.now();
-  return chat;
 }
-export function getRerollAlternatives(
-  chats: Chat[],
-  activeChat: Chat,
-  branchMessageIndex: number,
-): RerollAlternatives {
-  const activeId = activeChat.id ?? "";
-  const sameFork =
-    activeChat.branch?.reason === "reroll" &&
-    activeChat.branch.branchMessageIndex === branchMessageIndex;
-  const parentChatId = sameFork
-    ? activeChat.branch!.parentChatId
-    : activeId;
-  const branchMessageId = sameFork
-    ? activeChat.branch?.branchMessageId
-    : activeChat.message[branchMessageIndex]?.chatId;
 
-  const parent = chats.find((chat) => chat.id === parentChatId) ?? activeChat;
-  const rerolls = chats
-    .filter(
-      (chat) =>
-        chat.branch?.reason === "reroll" &&
-        chat.branch.parentChatId === parentChatId &&
-        chat.branch.branchMessageIndex === branchMessageIndex &&
-        (!branchMessageId ||
-          !chat.branch.branchMessageId ||
-          chat.branch.branchMessageId === branchMessageId),
-    )
-    .sort(
-      (a, b) => (a.branch?.createdAt ?? 0) - (b.branch?.createdAt ?? 0),
-    );
-  const alternatives = [parent, ...rerolls.filter((chat) => chat.id !== parent.id)];
+function activeTimeline(chat: Chat): ChatBranchTimeline | undefined {
+  const state = chat.branchState;
+  if (!state) return undefined;
+  return state.branches.find((branch) => branch.id === state.activeBranchId);
+}
+
+export function syncActiveChatBranch(chat: Chat): void {
+  const state = chat.branchState;
+  const active = activeTimeline(chat);
+  if (!state || !active) return;
+  active.messages = cloneMessages(chat.message.slice(state.baseMessageIndex + 1));
+}
+
+function createRootState(chat: Chat, forkIndex: number): ChatBranchState {
+  const rootId = uuidv4();
   return {
-    parentChatId: parent.id ?? parentChatId,
-    chats: alternatives,
-    currentIndex: Math.max(
-      0,
-      alternatives.findIndex((chat) => chat.id === activeChat.id),
-    ),
+    baseMessageIndex: forkIndex,
+    activeBranchId: rootId,
+    branches: [
+      {
+        id: rootId,
+        branchMessageId: chat.message[forkIndex]?.chatId,
+        branchMessageIndex: forkIndex,
+        reason: "root",
+        createdAt: Date.now(),
+        messages: cloneMessages(chat.message.slice(forkIndex + 1)),
+      },
+    ],
   };
 }
 
-function indexChatsById(chats: Chat[]): Map<string, Chat> {
-  return new Map(
-    chats.filter((chat) => chat.id).map((chat) => [chat.id!, chat]),
-  );
-}
-
-function getBranchRootIdFromMap(byId: Map<string, Chat>, chatId: string): string {
-  let currentId = chatId;
-  const visited = new Set<string>();
-  while (!visited.has(currentId)) {
-    visited.add(currentId);
-    const parentId = byId.get(currentId)?.branch?.parentChatId;
-    if (!parentId || !byId.has(parentId)) return currentId;
-    currentId = parentId;
+export function ensureChatBranchState(
+  chat: Chat,
+  forkIndex: number,
+): ChatBranchState {
+  if (!chat.branchState || !activeTimeline(chat)) {
+    chat.branchState = createRootState(chat, forkIndex);
+    return chat.branchState;
   }
-  return chatId;
+
+  syncActiveChatBranch(chat);
+  const state = chat.branchState;
+  if (forkIndex < state.baseMessageIndex) {
+    const sharedExtension = cloneMessages(
+      chat.message.slice(forkIndex + 1, state.baseMessageIndex + 1),
+    );
+    for (const branch of state.branches) {
+      branch.messages = [...cloneMessages(sharedExtension), ...branch.messages];
+    }
+    state.baseMessageIndex = forkIndex;
+  }
+  return state;
 }
 
-export function getBranchRootId(chats: Chat[], chatId: string): string {
-  return getBranchRootIdFromMap(indexChatsById(chats), chatId);
+export function getChatBranchMessages(chat: Chat, branchId: string): Message[] {
+  const state = chat.branchState;
+  if (!state) return cloneMessages(chat.message);
+  if (branchId === state.activeBranchId) return cloneMessages(chat.message);
+  const branch = state.branches.find((item) => item.id === branchId);
+  if (!branch) return cloneMessages(chat.message);
+  const prefix = chat.message.slice(0, state.baseMessageIndex + 1);
+  return [...cloneMessages(prefix), ...cloneMessages(branch.messages)];
 }
 
-export function getBranchFamily(chats: Chat[], currentChatId: string): Chat[] {
-  const byId = indexChatsById(chats);
-  const rootId = getBranchRootIdFromMap(byId, currentChatId);
-  return chats.filter(
-    (chat) => !!chat.id && getBranchRootIdFromMap(byId, chat.id) === rootId,
-  );
+export function activateChatBranch(
+  chat: Chat,
+  branchId: string,
+): ChatBranchSwitchResult | null {
+  const state = chat.branchState;
+  if (!state || !state.branches.some((branch) => branch.id === branchId)) return null;
+
+  const previousMessages = cloneMessages(chat.message);
+  syncActiveChatBranch(chat);
+  const target = state.branches.find((branch) => branch.id === branchId)!;
+  const prefix = chat.message.slice(0, state.baseMessageIndex + 1);
+  chat.message = [...cloneMessages(prefix), ...cloneMessages(target.messages)];
+  state.activeBranchId = branchId;
+  updateChatMessageRuntime(chat);
+  return {
+    previousMessages,
+    nextMessages: cloneMessages(chat.message),
+    branchId,
+  };
+}
+
+export function createChatTimelineBranch(
+  chat: Chat,
+  options: CreateChatTimelineBranchOptions,
+): ChatBranchTimeline {
+  const state = ensureChatBranchState(chat, options.branchMessageIndex);
+  const parentBranchId = options.parentBranchId ?? state.activeBranchId;
+  const branch: ChatBranchTimeline = {
+    id: uuidv4(),
+    parentBranchId,
+    branchMessageId:
+      options.branchMessageId ?? chat.message[options.branchMessageIndex]?.chatId,
+    branchMessageIndex: options.branchMessageIndex,
+    reason: options.reason,
+    createdAt: options.createdAt ?? Date.now(),
+    messages: cloneMessages(
+      chat.message.slice(state.baseMessageIndex + 1, options.branchMessageIndex + 1),
+    ),
+  };
+
+  state.branches.push(branch);
+  state.activeBranchId = branch.id;
+  chat.message = cloneMessages(chat.message.slice(0, options.branchMessageIndex + 1));
+  updateChatMessageRuntime(chat);
+  return branch;
+}
+
+export function getRerollAlternatives(
+  chat: Chat,
+  branchMessageIndex: number,
+): RerollAlternatives | null {
+  const state = chat.branchState;
+  if (!state) return null;
+  const active = activeTimeline(chat);
+  if (!active) return null;
+
+  const currentMessageId = chat.message[branchMessageIndex]?.chatId;
+  const sameFork =
+    active.reason === "reroll" &&
+    active.branchMessageIndex === branchMessageIndex &&
+    (!active.branchMessageId ||
+      !currentMessageId ||
+      active.branchMessageId === currentMessageId);
+  const parentBranchId = sameFork
+    ? (active.parentBranchId ?? active.id)
+    : active.id;
+
+  const siblings = state.branches
+    .filter(
+      (branch) =>
+        branch.reason === "reroll" &&
+        branch.parentBranchId === parentBranchId &&
+        branch.branchMessageIndex === branchMessageIndex,
+    )
+    .filter(
+      (branch) =>
+        !currentMessageId ||
+        !branch.branchMessageId ||
+        branch.branchMessageId === currentMessageId,
+    )
+    .sort((a, b) => a.createdAt - b.createdAt);
+
+  const branchIds = [
+    parentBranchId,
+    ...siblings.map((branch) => branch.id).filter((id) => id !== parentBranchId),
+  ];
+  return {
+    parentBranchId,
+    branchIds,
+    currentIndex: Math.max(0, branchIds.indexOf(state.activeBranchId)),
+  };
+}
+
+export function getChatBranchTimeline(
+  chat: Chat,
+  branchId: string,
+): ChatBranchTimeline | undefined {
+  return chat.branchState?.branches.find((branch) => branch.id === branchId);
+}
+
+export function getActiveChatBranchId(chat: Chat): string | undefined {
+  return chat.branchState?.activeBranchId;
 }

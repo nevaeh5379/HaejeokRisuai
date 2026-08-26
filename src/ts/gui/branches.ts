@@ -1,13 +1,14 @@
-import { getBranchFamily, getBranchRootId } from "../chatBranches";
+import { getChatBranchMessages } from "../chatBranches";
 import {
   getCurrentCharacter,
-  type Chat,
   type ChatBranchReason,
+  type ChatBranchTimeline,
+  type Message,
 } from "../storage/database.svelte";
 
 export interface RenderedChatBranch {
-  chatId: string;
-  parentChatId?: string;
+  branchId: string;
+  parentBranchId?: string;
   x: number;
   y: number;
   title: string;
@@ -29,8 +30,9 @@ export interface ChatBranchGraph {
   columns: number;
   rows: number;
 }
-function chatPreview(chat: Chat): string {
-  const message = [...(chat.message ?? [])]
+
+function messagePreview(messages: Message[]): string {
+  const message = [...messages]
     .reverse()
     .find((item) => !item.isComment && item.data?.trim());
   if (!message) return "";
@@ -38,94 +40,108 @@ function chatPreview(chat: Chat): string {
   return plain.length > 140 ? `${plain.slice(0, 137)}...` : plain;
 }
 
-function chatModel(chat: Chat): string {
+function messageModel(messages: Message[]): string {
   return (
-    [...(chat.message ?? [])]
+    [...messages]
       .reverse()
       .find((item) => item.generationInfo?.model)?.generationInfo?.model ?? ""
   );
 }
 
-function branchSort(a: Chat, b: Chat): number {
-  const aCreated = a.branch?.createdAt ?? 0;
-  const bCreated = b.branch?.createdAt ?? 0;
-  if (aCreated !== bCreated) return aCreated - bCreated;
-  return (a.name ?? "").localeCompare(b.name ?? "");
+function branchSort(a: ChatBranchTimeline, b: ChatBranchTimeline): number {
+  if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+  return a.id.localeCompare(b.id);
 }
 
 export function getChatBranches(): ChatBranchGraph {
-  const character = getCurrentCharacter();
   const empty: ChatBranchGraph = { nodes: [], edges: [], columns: 0, rows: 0 };
+  const character = getCurrentCharacter();
   if (!character?.chats?.length) return empty;
+  const chat = character.chats[character.chatPage ?? 0];
+  if (!chat) return empty;
 
-  const activeChat = character.chats[character.chatPage ?? 0];
-  if (!activeChat?.id) return empty;
-  const family = getBranchFamily(character.chats, activeChat.id);
-  const byId = new Map(
-    family.filter((chat) => chat.id).map((chat) => [chat.id!, chat]),
-  );
-  const rootId = getBranchRootId(character.chats, activeChat.id);
-  const root = byId.get(rootId) ?? activeChat;
-  if (!root.id) return empty;
+  const state = chat.branchState;
+  if (!state || state.branches.length === 0) {
+    return {
+      nodes: [{
+        branchId: "__current__",
+        x: 0,
+        y: 0,
+        title: chat.name || "Chat",
+        preview: messagePreview(chat.message ?? []),
+        model: messageModel(chat.message ?? []),
+        reason: "root",
+        active: true,
+      }],
+      edges: [],
+      columns: 1,
+      rows: 1,
+    };
+  }
 
-  const children = new Map<string, Chat[]>();
-  for (const chat of family) {
-    const parentId = chat.branch?.parentChatId;
-    if (!chat.id || !parentId || !byId.has(parentId)) continue;
-    const list = children.get(parentId) ?? [];
-    list.push(chat);
-    children.set(parentId, list);
+  const byId = new Map(state.branches.map((branch) => [branch.id, branch]));
+  const children = new Map<string, ChatBranchTimeline[]>();
+  for (const branch of state.branches) {
+    if (!branch.parentBranchId || !byId.has(branch.parentBranchId)) continue;
+    const list = children.get(branch.parentBranchId) ?? [];
+    list.push(branch);
+    children.set(branch.parentBranchId, list);
   }
   for (const list of children.values()) list.sort(branchSort);
 
+  const root = state.branches.find((branch) => !branch.parentBranchId) ?? state.branches[0];
   const positions = new Map<string, { x: number; y: number }>();
   let nextLeaf = 0;
   const visiting = new Set<string>();
-  const place = (chatId: string, depth: number): number => {
-    if (visiting.has(chatId)) return nextLeaf++;
-    visiting.add(chatId);
-    const childChats = children.get(chatId) ?? [];
-    let x: number;
-    if (childChats.length === 0) {
-      x = nextLeaf++;
-    } else {
-      const childXs = childChats.map((child) => place(child.id!, depth + 1));
-      x = (childXs[0] + childXs[childXs.length - 1]) / 2;
-    }
-    positions.set(chatId, { x, y: depth });
-    visiting.delete(chatId);
+
+  const place = (branchId: string, depth: number): number => {
+    if (visiting.has(branchId)) return nextLeaf++;
+    visiting.add(branchId);
+    const childBranches = children.get(branchId) ?? [];
+    const childXs = childBranches.map((child) => place(child.id, depth + 1));
+    const x = childXs.length === 0
+      ? nextLeaf++
+      : (childXs[0] + childXs[childXs.length - 1]) / 2;
+    positions.set(branchId, { x, y: depth });
+    visiting.delete(branchId);
     return x;
   };
+
   place(root.id, 0);
-  for (const chat of family) {
-    if (!chat.id || positions.has(chat.id)) continue;
-    positions.set(chat.id, { x: nextLeaf++, y: 0 });
+  for (const branch of state.branches) {
+    if (!positions.has(branch.id)) positions.set(branch.id, { x: nextLeaf++, y: 0 });
   }
 
-  const nodes = family
-    .filter((chat): chat is Chat & { id: string } => Boolean(chat.id))
-    .map((chat) => {
-      const position = positions.get(chat.id) ?? { x: 0, y: 0 };
+  const nodes = state.branches
+    .map((branch) => {
+      const messages = getChatBranchMessages(chat, branch.id);
+      const position = positions.get(branch.id) ?? { x: 0, y: 0 };
       return {
-        chatId: chat.id,
-        parentChatId: chat.branch?.parentChatId,
+        branchId: branch.id,
+        parentBranchId: branch.parentBranchId,
         x: position.x,
         y: position.y,
         title: chat.name || "Chat",
-        preview: chatPreview(chat),
-        model: chatModel(chat),
-        reason: chat.id === root.id ? "root" : (chat.branch?.reason ?? "manual"),
-        active: chat.id === activeChat.id,
-        branchMessageIndex: chat.branch?.branchMessageIndex,
+        preview: messagePreview(messages),
+        model: messageModel(messages),
+        reason: branch.reason,
+        active: branch.id === state.activeBranchId,
+        branchMessageIndex: branch.branchMessageIndex,
       } satisfies RenderedChatBranch;
     })
     .sort((a, b) => a.y - b.y || a.x - b.x);
 
   const edges = nodes
-    .filter((node) => node.parentChatId && byId.has(node.parentChatId))
-    .map((node) => ({ from: node.parentChatId!, to: node.chatId }));
-  const columns = Math.max(1, Math.ceil(Math.max(...nodes.map((node) => node.x), 0)) + 1);
-  const rows = Math.max(1, Math.max(...nodes.map((node) => node.y), 0) + 1);
+    .filter((node) => node.parentBranchId && byId.has(node.parentBranchId))
+    .map((node) => ({ from: node.parentBranchId!, to: node.branchId }));
+  const columns = Math.max(
+    1,
+    Math.ceil(Math.max(...nodes.map((node) => node.x), 0)) + 1,
+  );
+  const rows = Math.max(
+    1,
+    Math.max(...nodes.map((node) => node.y), 0) + 1,
+  );
 
   return { nodes, edges, columns, rows };
 }
