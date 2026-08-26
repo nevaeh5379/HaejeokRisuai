@@ -40,6 +40,37 @@ function selectGoogleVertexRegion(modelId, configuredRegion) {
   return configuredRegion;
 }
 
+function formatGoogleTextResponse(textParts, options = {}) {
+  const thoughts = [];
+  const content = [];
+  for (const part of textParts) {
+    const text = options.transformText
+      ? options.transformText(part.text)
+      : part.text;
+    if (part.thought) {
+      thoughts.push(text);
+    } else {
+      content.push(text);
+    }
+  }
+
+  const thoughtText = thoughts.join('\n\n');
+  const contentText = content.join('\n\n');
+  return (
+    (thoughtText
+      ? `<Thoughts>\n\n${thoughtText}\n\n</Thoughts>\n\n`
+      : '') + contentText
+  );
+}
+
+function collectGoogleFunctionCalls(parts) {
+  const calls = [];
+  for (const part of parts) {
+    if (part?.functionCall) calls.push(part.functionCall);
+  }
+  return calls;
+}
+
 function buildGoogleGenerateContentUrl(modelId, apiKey) {
   return `${GOOGLE_GENERATIVE_LANGUAGE_BASE_URL}/${modelId}:generateContent?key=${apiKey}`;
 }
@@ -192,6 +223,8 @@ module.exports = {
   buildGoogleGenerateContentUrl,
   selectGoogleGenerationParameters,
   selectGoogleVertexRegion,
+  formatGoogleTextResponse,
+  collectGoogleFunctionCalls,
   prepareGoogleConversation,
   mergeGoogleConsecutiveChats,
   buildGoogleSafetySettings,

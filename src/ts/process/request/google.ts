@@ -2,7 +2,9 @@ import {
   GOOGLE_GENERATION_PARAMETER_RENAMES,
   buildGoogleGenerateContentUrl,
   buildGoogleSafetySettings,
+  collectGoogleFunctionCalls,
   finalizeGoogleGenerationConfig,
+  formatGoogleTextResponse,
   mergeGoogleConsecutiveChats,
   prepareGoogleConversation,
   selectGoogleGenerationParameters,
@@ -523,26 +525,13 @@ async function requestGoogle(
   const processTextResponse = (
     rDatas: { text: string; thought?: boolean }[],
   ) => {
-    if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
-      for (let i = 0; i < rDatas.length; i++) {
-        const extracted = extractJSON(rDatas[i].text, arg.extractJson);
-        rDatas[i].text = extracted;
-      }
-    }
-    const thoughtsArr: string[] = [];
-    const contentArr: string[] = [];
-    for (const d of rDatas) {
-      if (d.thought) {
-        thoughtsArr.push(d.text);
-      } else {
-        contentArr.push(d.text);
-      }
-    }
-    const thoughts = thoughtsArr.join("\n\n");
-    const content = contentArr.join("\n\n");
-    return (
-      (thoughts ? `<Thoughts>\n\n${thoughts}\n\n</Thoughts>\n\n` : "") + content
-    );
+    const shouldExtractJson =
+      arg.extractJson && (db.jsonSchemaEnabled || arg.schema);
+    return formatGoogleTextResponse(rDatas, {
+      transformText: shouldExtractJson
+        ? (text) => extractJSON(text, arg.extractJson)
+        : undefined,
+    });
   };
 
   if (
@@ -741,12 +730,7 @@ async function requestGoogle(
   }
   parts = parts.filter((p) => p);
 
-  const calls: GeminiFunctionCall[] = [];
-  for (const p of parts) {
-    if (p?.functionCall) {
-      calls.push(p.functionCall as GeminiFunctionCall);
-    }
-  }
+  const calls = collectGoogleFunctionCalls(parts);
 
   // If there are function calls, handle calls and send next request
   if (calls.length > 0) {

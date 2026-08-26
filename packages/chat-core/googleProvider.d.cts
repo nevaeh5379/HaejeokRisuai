@@ -25,6 +25,16 @@ export function selectGoogleVertexRegion(
   configuredRegion: string,
 ): string;
 
+export interface GoogleResponseTextPart {
+  text: string;
+  thought?: boolean;
+}
+
+export function formatGoogleTextResponse(
+  textParts: readonly GoogleResponseTextPart[],
+  options?: { transformText?: (text: string) => string },
+): string;
+
 export interface GeminiFunctionCall {
   id?: string;
   name: string;
@@ -48,6 +58,10 @@ export interface GeminiPart {
   functionCall?: GeminiFunctionCall;
   functionResponse?: GeminiFunctionResponse;
 }
+
+export function collectGoogleFunctionCalls(
+  parts: readonly GeminiPart[],
+): GeminiFunctionCall[];
 
 export interface GeminiChat {
   role: "user" | "model" | "function";

@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   GOOGLE_GENERATION_PARAMETER_RENAMES,
   buildGoogleSafetySettings,
+  collectGoogleFunctionCalls,
   finalizeGoogleGenerationConfig,
+  formatGoogleTextResponse,
   mergeGoogleConsecutiveChats,
   prepareGoogleConversation,
   selectGoogleGenerationParameters,
@@ -211,6 +213,38 @@ describe("Google provider core", () => {
     expect(selectGoogleVertexRegion("gemini-3.4-flash", "us-west1")).toBe(
       "us-west1",
     );
+  });
+
+  it("formats Gemini text and thoughts through an optional pure transform", () => {
+    const transformText = vi.fn((text: string) => text.toUpperCase());
+    expect(
+      formatGoogleTextResponse(
+        [
+          { text: "reason one", thought: true },
+          { text: "answer one" },
+          { text: "reason two", thought: true },
+          { text: "answer two", thought: false },
+        ],
+        { transformText },
+      ),
+    ).toBe(
+      "<Thoughts>\n\nREASON ONE\n\nREASON TWO\n\n</Thoughts>\n\nANSWER ONE\n\nANSWER TWO",
+    );
+    expect(transformText).toHaveBeenCalledTimes(4);
+    expect(formatGoogleTextResponse([{ text: "answer" }])).toBe("answer");
+  });
+
+  it("collects Gemini function calls in candidate part order", () => {
+    const first = { name: "weather", args: { city: "Seoul" } };
+    const second = { id: "call-2", name: "clock", args: {} };
+    expect(
+      collectGoogleFunctionCalls([
+        { text: "before" },
+        { functionCall: first },
+        { thought: true, text: "reasoning" },
+        { functionCall: second },
+      ]),
+    ).toEqual([first, second]);
   });
 
   it("normalizes Gemini thinking and output generation settings", () => {
