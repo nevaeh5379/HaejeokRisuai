@@ -2023,6 +2023,16 @@ export type FormatingOrderItem =
   | "postEverything"
   | "personaPrompt";
 
+export type ChatBranchReason = "manual" | "reroll";
+
+export interface ChatBranchInfo {
+  parentChatId: string;
+  branchMessageId?: string;
+  branchMessageIndex: number;
+  reason: ChatBranchReason;
+  createdAt: number;
+}
+
 export interface Chat {
   message: Message[];
   note: string;
@@ -2042,6 +2052,7 @@ export interface Chat {
   fmIndex?: number;
   hypaV3Data?: SerializableHypaV3Data;
   folderId?: string;
+  branch?: ChatBranchInfo;
   lastDate?: number;
   bookmarks?: string[];
   bookmarkNames?: { [chatId: string]: string };

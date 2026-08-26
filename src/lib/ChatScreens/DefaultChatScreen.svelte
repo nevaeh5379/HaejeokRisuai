@@ -5,7 +5,7 @@
     import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, easyPanelStore, chatPanelStore, startupPhase } from "../../ts/stores.svelte";
     import { tick } from 'svelte';
     import Chat from "./Chat.svelte";
-    import { type Message } from "../../ts/storage/database.svelte";
+    import { type Chat as ChatSession, type Message } from "../../ts/storage/database.svelte";
     import { characterStore, settingsStore, personaStore, messageStore, presetStore } from 'src/ts/stores/domain';
     import { getCharImage } from "../../ts/characterImage";
     import { chatProcessStage, doingChat } from "../../ts/process/chatRuntimeState";
@@ -17,7 +17,8 @@
     import CreatorQuote from "./CreatorQuote.svelte";
     import MainMenu from '../UI/MainMenu.svelte';
     import AssetInput from './AssetInput.svelte';
-    import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile } from 'src/ts/globalApi.svelte';
+    import { aiLawApplies, changeChatTo, chatFoldedState, chatFoldedStateMessageIndex, downloadFile } from 'src/ts/globalApi.svelte';
+    import { createChatBranch, getRerollAlternatives } from 'src/ts/chatBranches';
     import { v4 } from 'uuid';
     import { getInlayAsset } from 'src/ts/process/files/inlays';
     import { ConnectionOpenStore } from 'src/ts/sync/multiuserState';
@@ -32,7 +33,6 @@
     import LogExporterModal from 'src/lib/LogExporter/LogExporterModal.svelte';
 
     let lowSpecMode = $derived(settingsStore.state.lowSpecMode === true)
-    let rerollHistoryLimit = $derived(lowSpecMode ? 3 : 50)
 
     const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then(m => m.default);
     
@@ -49,10 +49,6 @@
     let loadPagesCharacterId = -1
     let loadPagesChatPage = -1
     let autoMode = $state(false)
-    let rerolls:Message[][] = []
-    let rerollid = -1
-    let lastCharId = -1
-    let lastChatPage = -1
     let doingChatInputTranslate = false
     let toggleStickers:boolean = $state(false)
     let fileInput:string[] = $state([])
@@ -263,11 +259,6 @@
         }
         const currentChatPage = characterStore.characters[selectedChar]?.chatPage ?? 0
         await preLoadChat(selectedChar, currentChatPage, { full: true })
-        if(lastCharId !== selectedChar || lastChatPage !== currentChatPage){
-            rerolls = []
-            rerollid = -1
-        }
-
         const activeChat = characterStore.characters[selectedChar].chats[currentChatPage]
         let cha = activeChat.message
         let appendedUserMessage: Message | undefined
@@ -338,61 +329,84 @@
             // provider errors can return before the normal completion commit.
             await messageStore.appendMessage(activeChat.id, appendedUserMessage)
         }
-        rerolls = []
         await sleep(10)
         updateInputSizeAll()
         await sendChatMain(continueResponse)
 
     }
 
+    async function createRerollBranch(
+        selectedChar: number,
+        activeChat: ChatSession,
+        lastUserIdx: number,
+        parentChatId: string,
+        keepThroughIndex: number,
+    ) {
+        const char = characterStore.characters[selectedChar]
+        activeChat.id ??= v4()
+        const sameFork = activeChat.branch?.reason === 'reroll'
+            && activeChat.branch.branchMessageIndex === lastUserIdx
+        const branchMessageId = sameFork
+            ? activeChat.branch?.branchMessageId
+            : activeChat.message[lastUserIdx]?.chatId
+        const newChat = createChatBranch($state.snapshot(activeChat), {
+            parentChatId,
+            branchMessageId,
+            branchMessageIndex: lastUserIdx,
+            reason: 'reroll',
+            keepThroughIndex,
+        })
+        char.chats.push(newChat)
+        await messageStore.persistNewChat(char.chaId, newChat.id!, newChat.message)
+        changeChatTo(newChat.id!)
+        return newChat
+    }
+
     async function reroll() {
         const selectedChar = $selectedCharID
         const currentChatPage = characterStore.characters[selectedChar]?.chatPage ?? 0
         await preLoadChat(selectedChar, currentChatPage, { full: true })
-        if($doingChat){
-            return
-        }
-        if(lastCharId !== selectedChar || lastChatPage !== currentChatPage){
-            rerolls = []
-            rerollid = -1
-        }
-        const activeChat = characterStore.characters[selectedChar]?.chats?.[currentChatPage]
-        if(!activeChat){
-            return
-        }
+        if($doingChat) return
+
+        const char = characterStore.characters[selectedChar]
+        const activeChat = char?.chats?.[currentChatPage]
+        if(!activeChat || activeChat.message.length === 0) return
+        activeChat.id ??= v4()
+
         const msgs = activeChat.message
+        const lastUserIdx = getCurrentTurnUserIndex(msgs)
+        if(lastUserIdx < 0) return
+
+        const alternatives = getRerollAlternatives(char.chats, activeChat, lastUserIdx)
+        if(alternatives.currentIndex < alternatives.chats.length - 1){
+            const nextChat = alternatives.chats[alternatives.currentIndex + 1]
+            if(nextChat.id) changeChatTo(nextChat.id)
+            return
+        }
+
         const genId = msgs.at(-1)?.generationInfo?.generationId
         if(genId){
             const { Prereroll } = await import('src/ts/process/prereroll')
-            const r = Prereroll(genId)
-            if(r){
-                msgs[msgs.length - 1].data = r
+            const preroll = Prereroll(genId)
+            if(preroll){
+                const branch = await createRerollBranch(
+                    selectedChar, activeChat, lastUserIdx,
+                    alternatives.parentChatId, msgs.length - 1,
+                )
+                const lastMessage = branch.message.at(-1)
+                if(lastMessage){
+                    lastMessage.data = preroll
+                    await messageStore.updateMessage(branch.id!, lastMessage)
+                }
                 return
             }
         }
-        const lastUserIdx = getCurrentTurnUserIndex(msgs)
-        if(rerollid < rerolls.length - 1){
-            if(Array.isArray(rerolls[rerollid + 1])){
-                rerollid += 1
-                const rerollData = safeStructuredClone(rerolls[rerollid])
-                activeChat.message = [...msgs.slice(0, lastUserIdx + 1), ...rerollData]
-            }
-            return
-        }
-        if(rerolls.length === 0){
-            rerolls.push(safeStructuredClone(msgs.slice(lastUserIdx + 1)))
-            rerollid = rerolls.length - 1
-        }
-        while (rerolls.length > rerollHistoryLimit) {
-            const removed = rerolls.shift()!
-            if (rerollid >= 0) rerollid = Math.max(0, rerollid - 1)
-            removed.length = 0
-        }
-        if(msgs.length === 0){
-            return
-        }
+
         openMenu = false
-        activeChat.message = msgs.slice(0, lastUserIdx + 1)
+        await createRerollBranch(
+            selectedChar, activeChat, lastUserIdx,
+            alternatives.parentChatId, lastUserIdx,
+        )
         await sendChatMain()
     }
 
@@ -400,36 +414,18 @@
         const selectedChar = $selectedCharID
         const currentChatPage = characterStore.characters[selectedChar]?.chatPage ?? 0
         await preLoadChat(selectedChar, currentChatPage, { full: true })
-        if($doingChat){
-            return
-        }
-        if(lastCharId !== selectedChar || lastChatPage !== currentChatPage){
-            rerolls = []
-            rerollid = -1
-        }
-        const activeChat = characterStore.characters[selectedChar]?.chats?.[currentChatPage]
-        if(!activeChat){
-            return
-        }
-        const msgs = activeChat.message
-        const genId = msgs.at(-1)?.generationInfo?.generationId
-        if(genId){
-            const { PreUnreroll } = await import('src/ts/process/prereroll')
-            const r = PreUnreroll(genId)
-            if(r){
-                msgs[msgs.length - 1].data = r
-                return
-            }
-        }
-        if(rerollid <= 0){
-            return
-        }
-        if(Array.isArray(rerolls[rerollid - 1])){
-            rerollid -= 1
-            const rerollData = safeStructuredClone(rerolls[rerollid])
-            const lastUserIdx = getCurrentTurnUserIndex(msgs)
-            activeChat.message = [...msgs.slice(0, lastUserIdx + 1), ...rerollData]
-        }
+        if($doingChat) return
+
+        const char = characterStore.characters[selectedChar]
+        const activeChat = char?.chats?.[currentChatPage]
+        if(!activeChat) return
+        const lastUserIdx = getCurrentTurnUserIndex(activeChat.message)
+        if(lastUserIdx < 0) return
+
+        const alternatives = getRerollAlternatives(char.chats, activeChat, lastUserIdx)
+        if(alternatives.currentIndex <= 0) return
+        const previousChat = alternatives.chats[alternatives.currentIndex - 1]
+        if(previousChat.id) changeChatTo(previousChat.id)
     }
 
     let abortController:null|AbortController = null
@@ -438,7 +434,6 @@
 
         const targetChat = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage]
         targetChat.preventMessageCompaction = true
-        let previousLength = targetChat.message.length
         messageInput = ''
         abortController = new AbortController()
         try {
@@ -447,23 +442,12 @@
                 signal:abortController.signal,
                 continue:continued
             })
-            if(previousLength < characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.length){
-                rerolls.push(safeStructuredClone(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message.slice(previousLength)))
-                rerollid = rerolls.length - 1
-                while (rerolls.length > rerollHistoryLimit) {
-                    const removed = rerolls.shift()!
-                    if (rerollid >= 0) rerollid = Math.max(0, rerollid - 1)
-                    removed.length = 0
-                }
-            }
         } catch (error) {
             console.error(error)
             alertError(error)
         } finally {
             targetChat.preventMessageCompaction = false
         }
-        lastCharId = $selectedCharID
-        lastChatPage = characterStore.characters[$selectedCharID]?.chatPage ?? 0
         $doingChat = false
         if (targetChat.id) compactChatMessages(targetChat.id)
         if(settingsStore.state.playMessage){

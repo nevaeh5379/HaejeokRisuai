@@ -1,112 +1,131 @@
-import { getCurrentCharacter } from "../storage/database.svelte";
+import { getBranchFamily, getBranchRootId } from "../chatBranches";
+import {
+  getCurrentCharacter,
+  type Chat,
+  type ChatBranchReason,
+} from "../storage/database.svelte";
 
-type ChatBranch = {
-  children: Map<string, ChatBranch>;
-  maxChildren: number;
-  chatId: number;
-};
-
-function search(left: string[], branch: ChatBranch, chatId: number) {
-  if (left.length === 0) {
-    return;
-  }
-
-  const current = left[0];
-  if (!branch.children.has(current)) {
-    branch.children.set(current, {
-      children: new Map(),
-      maxChildren: 0,
-      chatId: chatId,
-    });
-  }
-
-  search(left.slice(1), branch.children.get(current)!, chatId);
-}
-
-function getMaxChildren(branch: ChatBranch) {
-  let max = 0;
-  if (branch.children.size === 0) {
-    return 1;
-  }
-
-  for (const child of branch.children.values()) {
-    max += getMaxChildren(child);
-  }
-  branch.maxChildren = max;
-  return max;
-}
-
-type RenderedBranch = {
+export interface RenderedChatBranch {
+  chatId: string;
+  parentChatId?: string;
   x: number;
   y: number;
-  connectX: number;
-  connectY: number;
-  content: string;
-  multiChild: boolean;
-  chatId: number;
-};
-
-function renderBranch(
-  branch: ChatBranch,
-  x: number,
-  y: number,
-  connectX = -1,
-  connectY = -1,
-): RenderedBranch[] {
-  const rendered: RenderedBranch[] = [];
-  for (const [key, child] of branch.children) {
-    rendered.push({
-      x,
-      y,
-      content: key,
-      connectX,
-      connectY,
-      multiChild: branch.children.size > 1,
-      chatId: child.chatId,
-    });
-    const childRendered = renderBranch(child, x, y + 1, x, y);
-    rendered.push(...childRendered);
-    x += child.maxChildren;
-  }
-  return rendered;
+  title: string;
+  preview: string;
+  model: string;
+  reason: "root" | ChatBranchReason;
+  active: boolean;
+  branchMessageIndex?: number;
 }
 
-export function getChatBranches() {
+export interface ChatBranchEdge {
+  from: string;
+  to: string;
+}
+
+export interface ChatBranchGraph {
+  nodes: RenderedChatBranch[];
+  edges: ChatBranchEdge[];
+  columns: number;
+  rows: number;
+}
+function chatPreview(chat: Chat): string {
+  const message = [...(chat.message ?? [])]
+    .reverse()
+    .find((item) => !item.isComment && item.data?.trim());
+  if (!message) return "";
+  const plain = message.data.replace(/\s+/g, " ").trim();
+  return plain.length > 140 ? `${plain.slice(0, 137)}...` : plain;
+}
+
+function chatModel(chat: Chat): string {
+  return (
+    [...(chat.message ?? [])]
+      .reverse()
+      .find((item) => item.generationInfo?.model)?.generationInfo?.model ?? ""
+  );
+}
+
+function branchSort(a: Chat, b: Chat): number {
+  const aCreated = a.branch?.createdAt ?? 0;
+  const bCreated = b.branch?.createdAt ?? 0;
+  if (aCreated !== bCreated) return aCreated - bCreated;
+  return (a.name ?? "").localeCompare(b.name ?? "");
+}
+
+export function getChatBranches(): ChatBranchGraph {
   const character = getCurrentCharacter();
+  const empty: ChatBranchGraph = { nodes: [], edges: [], columns: 0, rows: 0 };
+  if (!character?.chats?.length) return empty;
 
-  const mainBranch: ChatBranch = {
-    children: new Map(),
-    maxChildren: 0,
-    chatId: -1,
-  };
+  const activeChat = character.chats[character.chatPage ?? 0];
+  if (!activeChat?.id) return empty;
+  const family = getBranchFamily(character.chats, activeChat.id);
+  const byId = new Map(
+    family.filter((chat) => chat.id).map((chat) => [chat.id!, chat]),
+  );
+  const rootId = getBranchRootId(character.chats, activeChat.id);
+  const root = byId.get(rootId) ?? activeChat;
+  if (!root.id) return empty;
 
-  let i = 0;
-  for (const chat of character.chats) {
-    const fm =
-      chat.fmIndex === -1
-        ? character.firstMessage
-        : character.alternateGreetings?.[chat.fmIndex ?? 0];
-    // const chatList = [fm].concat(chat.message.map((v) => v.data))
-    const chatList: string[] = [simpleHasher(fm)];
-    for (const message of chat.message) {
-      chatList.push(simpleHasher(message.data));
+  const children = new Map<string, Chat[]>();
+  for (const chat of family) {
+    const parentId = chat.branch?.parentChatId;
+    if (!chat.id || !parentId || !byId.has(parentId)) continue;
+    const list = children.get(parentId) ?? [];
+    list.push(chat);
+    children.set(parentId, list);
+  }
+  for (const list of children.values()) list.sort(branchSort);
+
+  const positions = new Map<string, { x: number; y: number }>();
+  let nextLeaf = 0;
+  const visiting = new Set<string>();
+  const place = (chatId: string, depth: number): number => {
+    if (visiting.has(chatId)) return nextLeaf++;
+    visiting.add(chatId);
+    const childChats = children.get(chatId) ?? [];
+    let x: number;
+    if (childChats.length === 0) {
+      x = nextLeaf++;
+    } else {
+      const childXs = childChats.map((child) => place(child.id!, depth + 1));
+      x = (childXs[0] + childXs[childXs.length - 1]) / 2;
     }
-
-    search(chatList, mainBranch, i++);
+    positions.set(chatId, { x, y: depth });
+    visiting.delete(chatId);
+    return x;
+  };
+  place(root.id, 0);
+  for (const chat of family) {
+    if (!chat.id || positions.has(chat.id)) continue;
+    positions.set(chat.id, { x: nextLeaf++, y: 0 });
   }
 
-  getMaxChildren(mainBranch);
+  const nodes = family
+    .filter((chat): chat is Chat & { id: string } => Boolean(chat.id))
+    .map((chat) => {
+      const position = positions.get(chat.id) ?? { x: 0, y: 0 };
+      return {
+        chatId: chat.id,
+        parentChatId: chat.branch?.parentChatId,
+        x: position.x,
+        y: position.y,
+        title: chat.name || "Chat",
+        preview: chatPreview(chat),
+        model: chatModel(chat),
+        reason: chat.id === root.id ? "root" : (chat.branch?.reason ?? "manual"),
+        active: chat.id === activeChat.id,
+        branchMessageIndex: chat.branch?.branchMessageIndex,
+      } satisfies RenderedChatBranch;
+    })
+    .sort((a, b) => a.y - b.y || a.x - b.x);
 
-  return renderBranch(mainBranch, 0, 0);
-}
+  const edges = nodes
+    .filter((node) => node.parentChatId && byId.has(node.parentChatId))
+    .map((node) => ({ from: node.parentChatId!, to: node.chatId }));
+  const columns = Math.max(1, Math.ceil(Math.max(...nodes.map((node) => node.x), 0)) + 1);
+  const rows = Math.max(1, Math.max(...nodes.map((node) => node.y), 0) + 1);
 
-function simpleHasher(str: string) {
-  let hash = 0;
-  if (str.length == 0) return "";
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  return hash.toString(36);
+  return { nodes, edges, columns, rows };
 }
