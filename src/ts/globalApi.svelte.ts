@@ -67,7 +67,7 @@ import { startObserveDom } from "./observer.svelte";
 import { updateGuisize } from "./gui/guisize";
 import { initMobileGesture } from "./hotkey";
 import { fetch as TauriHTTPFetch } from "@tauri-apps/plugin-http";
-import { registerPlugin } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { isCapacitor, isTauri, isNodeServer } from "./platform";
 import { isLocalNetworkUrl } from "./network/localNetwork";
 import {
@@ -87,6 +87,18 @@ import { BoundedCache } from "./memory/boundedCache";
 import { releaseInactiveChatMessages } from "./stores/domain/messageStore.svelte";
 
 export const forageStorage = new AutoStorage();
+
+interface NativeImagePlugin {
+  readThumbnail(options: {
+    key: string;
+    maxWidth: number;
+    maxHeight: number;
+  }): Promise<{ path: string; bytes: number; mimeType: string }>;
+}
+
+const nativeImage = isCapacitor
+  ? registerPlugin<NativeImagePlugin>("NativeImage")
+  : undefined;
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null;
 
@@ -341,12 +353,13 @@ const browserAssetUrls = new BoundedCache<string, string>({
 
 export async function getFileSrc(
   loc: string,
-  options?: { thumbnail?: boolean; transient?: boolean },
+  options?: { thumbnail?: boolean; display?: boolean; transient?: boolean },
 ) {
   if (!loc || loc === "") {
     return "";
   }
   const isThumb = options?.thumbnail ?? false;
+  const isDisplay = options?.display ?? false;
   if (isTauri) {
     if (loc.startsWith("assets")) {
       if (appDataDirPath === "") {
@@ -429,10 +442,33 @@ export async function getFileSrc(
         return "/sw/img/" + encoded;
       }
     } else {
+      const cacheKey = isThumb ? `thumb_${loc}` : isDisplay ? `display_${loc}` : loc;
       const cachedUrl = options?.transient
         ? undefined
         : browserAssetUrls.get(cacheKey);
       if (cachedUrl) return cachedUrl;
+      if (
+        isCapacitor &&
+        nativeImage &&
+        (isThumb || isDisplay) &&
+        /\.(?:png|jpe?g|webp|avif|heic|heif|bmp)$/i.test(loc)
+      ) {
+        try {
+          const nativeResult = await nativeImage.readThumbnail({
+            key: loc,
+            maxWidth: isThumb ? 128 : 1024,
+            maxHeight: isThumb ? 128 : 1536,
+          });
+          const url = Capacitor.convertFileSrc(nativeResult.path);
+          if (!options?.transient) {
+            browserAssetWeights.set(cacheKey, nativeResult.bytes);
+            browserAssetUrls.set(cacheKey, url);
+          }
+          return url;
+        } catch (error) {
+          console.warn("Native image downsampling failed; using WebView fallback", error);
+        }
+      }
       const raw = (await forageStorage.getItem(loc)) as unknown as Uint8Array;
       if (!raw) return "";
       const data = isThumb ? await generateClientThumbnail(raw, 128) : raw;

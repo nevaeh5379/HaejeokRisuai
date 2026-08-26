@@ -119,6 +119,7 @@ class CharacterImageCache extends Map<string, string> {
 
 export const fullImageBlobCache = new CharacterImageCache();
 const characterImagePreloads = new Map<string, Promise<void>>();
+const characterImageLoads = new Map<string, Promise<string>>();
 
 export function pinCharacterImageCache(key: string): void {
   fullImageBlobCache.pin(key);
@@ -191,8 +192,9 @@ export async function getCharImage(
     return type === "plain" ? "/none.webp" : "";
   if (!loc) return type === "css" ? "" : null;
 
-  if (!options?.thumbnail && fullImageBlobCache.has(loc)) {
-    const fileSource = fullImageBlobCache.get(loc)!;
+  const imageCacheKey = options?.thumbnail ? `thumb_${loc}` : loc;
+  if (fullImageBlobCache.has(imageCacheKey)) {
+    const fileSource = fullImageBlobCache.get(imageCacheKey)!;
     if (type === "plain") return fileSource;
     if (type === "css")
       return `background: url("${fileSource}");background-size: cover;`;
@@ -201,16 +203,25 @@ export async function getCharImage(
     return `background: url("${fileSource}");background-size: contain;background-repeat: no-repeat;background-position: center;`;
   }
 
-  const fileSource = await getFileSrc(loc, {
-    ...options,
-    // Character images already live in persistent asset storage. Do not copy
-    // multi-megabyte avatars into Service Worker CacheStorage again during
-    // navigation; keep the decoded/object URL in the bounded memory cache.
-    transient: true,
-  });
-  if (!options?.thumbnail && fileSource) {
-    fullImageBlobCache.set(loc, fileSource);
+  let imageLoad = characterImageLoads.get(imageCacheKey);
+  if (!imageLoad) {
+    imageLoad = getFileSrc(loc, {
+      ...options,
+      ...(isCapacitor && !options?.thumbnail ? { display: true } : {}),
+      // Character images already live in persistent asset storage. Do not copy
+      // multi-megabyte avatars into Service Worker CacheStorage again during
+      // navigation; keep the decoded/object URL in the bounded memory cache.
+      transient: true,
+    });
+    characterImageLoads.set(imageCacheKey, imageLoad);
+    void imageLoad.finally(() => {
+      if (characterImageLoads.get(imageCacheKey) === imageLoad) {
+        characterImageLoads.delete(imageCacheKey);
+      }
+    });
   }
+  const fileSource = await imageLoad;
+  if (fileSource) fullImageBlobCache.set(imageCacheKey, fileSource);
   if (type === "plain") return fileSource;
   if (type === "css")
     return `background: url("${fileSource}");background-size: cover;`;
@@ -385,22 +396,31 @@ export async function getCharImagesBatch(
     }
   }
 
-  // Fallback for Tauri, Web, OPFS, etc.: load in parallel
+  // Keep Android decode/bridge work bounded. A long character grid otherwise
+  // starts one full image read and Canvas decode per visible item at once.
+  let fallbackCursor = 0;
+  const fallbackWorkerCount = isCapacitor
+    ? Math.min(3, uncachedLocs.length)
+    : uncachedLocs.length;
   await Promise.all(
-    uncachedLocs.map(async (loc) => {
-      try {
-        const src = await getFileSrc(loc, {
-          thumbnail:
-            options.thumbnail === true || options.size === "thumb",
-          transient: true,
-        });
-        const cacheKey = `${sizeKey}_${loc}`;
-        if (src) {
-          fullImageBlobCache.set(cacheKey, src);
-          result.set(loc, src);
+    Array.from({ length: fallbackWorkerCount }, async () => {
+      while (fallbackCursor < uncachedLocs.length) {
+        const loc = uncachedLocs[fallbackCursor++];
+        try {
+          const src = await getFileSrc(loc, {
+            thumbnail:
+              options.thumbnail === true || options.size === "thumb",
+            ...(options.size === "display" ? { display: true } : {}),
+            transient: true,
+          });
+          const cacheKey = `${sizeKey}_${loc}`;
+          if (src) {
+            fullImageBlobCache.set(cacheKey, src);
+            result.set(loc, src);
+          }
+        } catch (err) {
+          console.error(err);
         }
-      } catch (err) {
-        console.error(err);
       }
     }),
   );
