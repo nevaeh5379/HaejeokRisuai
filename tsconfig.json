@@ -14,7 +14,8 @@
     /* Module Resolution */
     "baseUrl": ".",
     "paths": {
-      "@risuai/chat-core/*": ["packages/chat-core/*"]
+      "@risuai/chat-core/*": ["packages/chat-core/*"],
+      "@risuai/protocol/*": ["packages/protocol/*"]
     },
     "resolveJsonModule": true,
     "esModuleInterop": true,

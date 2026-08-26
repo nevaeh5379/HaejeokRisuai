@@ -10,6 +10,7 @@ export default defineConfig({
     alias: {
       src: '/src',
       '@risuai/chat-core': resolve(process.cwd(), 'packages/chat-core'),
+      '@risuai/protocol': resolve(process.cwd(), 'packages/protocol'),
     },
     conditions: ['browser'],
   },

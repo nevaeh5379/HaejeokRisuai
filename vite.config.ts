@@ -1,3 +1,4 @@
+import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
@@ -5,6 +6,14 @@ import wasm from "vite-plugin-wasm";
 import strip from '@rollup/plugin-strip';
 import tailwindcss from '@tailwindcss/vite'
 import { resolveBuildVersion } from './tooling/build-version.mjs'
+
+const localCommonJsPackages = ['chat-core', 'protocol'] as const
+const localCommonJsDependencies = localCommonJsPackages.flatMap((packageName) =>
+  readdirSync(resolve(process.cwd(), `packages/${packageName}`))
+    .filter((file) => file.endsWith('.cjs'))
+    .map((file) => `@risuai/${packageName}/${file}`)
+)
+
 // https://vitejs.dev/config/
 export default defineConfig(({command, mode}) => {
   const buildVersion = resolveBuildVersion()
@@ -231,6 +240,7 @@ export default defineConfig(({command, mode}) => {
     },
     
     optimizeDeps:{
+      include: localCommonJsDependencies,
       exclude: [
         "@browsermt/bergamot-translator",
         "@sqlite.org/sqlite-wasm"
@@ -244,6 +254,7 @@ export default defineConfig(({command, mode}) => {
       alias:{
         'src':'/src',
         '@risuai/chat-core':resolve(process.cwd(), 'packages/chat-core'),
+        '@risuai/protocol':resolve(process.cwd(), 'packages/protocol'),
       }
     },
     worker: {
