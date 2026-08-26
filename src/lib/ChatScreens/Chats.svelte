@@ -32,8 +32,8 @@
     }:{
         messages: Message[]
         currentCharacter: character|groupChat
-        onReroll?: () => void
-        unReroll?: () => void
+        onReroll?: (messageIndex?: number) => void | Promise<void>
+        unReroll?: (messageIndex?: number) => void | Promise<void>
         currentUsername: string
         userIcon: string
         loadPages?: number
@@ -185,7 +185,7 @@
                         img: message.role === 'user' ? userImage : charImage,
                         onReroll: onReroll,
                         unReroll: unReroll,
-                        rerollIcon: 'dynamic',
+                        rerollIcon: message.role === 'char',
                         character: simpleChar,
                         largePortrait: messageLargePortrait,
                         messageGenerationInfo: message.generationInfo,

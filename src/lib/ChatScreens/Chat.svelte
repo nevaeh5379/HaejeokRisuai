@@ -45,8 +45,8 @@
         rerollIcon?: boolean|'dynamic';
         role?: string;
         totalLength?: number;
-        onReroll?: () => void;
-        unReroll?: () => void;
+        onReroll?: (messageIndex?: number) => void | Promise<void>;
+        unReroll?: (messageIndex?: number) => void | Promise<void>;
         character?: simpleCharacterArgument|string|null;
         firstMessage?: boolean;
         altGreeting?: boolean;
@@ -118,6 +118,15 @@
         await preLoadChat(characterIndex, chatIndex, { full: true })
         if (!messageId) return idx
         return chat.message.findIndex((item) => item.chatId === messageId)
+    }
+
+    async function rerollAtCurrentMessage(direction: 'previous'|'next') {
+        const targetIndex = firstMessage ? idx : await ensureFullMessageIndex()
+        if (direction === 'previous') {
+            await unReroll(targetIndex)
+        } else {
+            await onReroll(targetIndex)
+        }
     }
 
     async function rm(e:MouseEvent, rec?:boolean){
@@ -913,17 +922,17 @@
 {#snippet rerolls()}
     {#if rerollIcon || altGreeting}
         {#if settingsStore.state.swipe || altGreeting}
-            <button class="flex items-center hover:text-blue-500 transition-colors button-icon-unreroll" class:dyna-icon={rerollIcon === 'dynamic'} onclick={unReroll}>
+            <button class="flex items-center hover:text-blue-500 transition-colors button-icon-unreroll" class:dyna-icon={rerollIcon === 'dynamic'} onclick={() => rerollAtCurrentMessage('previous')}>
                 <ArrowLeft size={22}/>
             </button>
             {#if firstMessage && settingsStore.state.swipe && settingsStore.state.showFirstMessagePages}
                 <span class="flex items-center text-xs text-textcolor2">{currentPage}/{totalPages}</span>
             {/if}
-            <button class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic'} onclick={onReroll}>
+            <button class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic'} onclick={() => rerollAtCurrentMessage('next')}>
                 <ArrowRight size={22}/>
             </button>
         {:else}
-            <button class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic'} onclick={onReroll}>
+            <button class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic'} onclick={() => rerollAtCurrentMessage('next')}>
                 <RefreshCcwIcon size={20}/>
             </button>
         {/if}

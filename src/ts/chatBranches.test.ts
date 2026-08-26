@@ -4,6 +4,7 @@ import {
   createChatTimelineBranch,
   getChatBranchMessages,
   getRerollAlternatives,
+  resolveRerollTarget,
   syncActiveChatBranch,
 } from "./chatBranches";
 import type { Chat, Message } from "./storage/database.svelte";
@@ -152,5 +153,49 @@ describe("chatBranches", () => {
     expect(chat.branchState?.baseMessageIndex).toBe(0);
     expect(branch.messages.map((message) => message.data)).toEqual(["alt", "u2"]);
     expect(branch.messages.some((message) => message.chatId === "m1")).toBe(false);
+  });
+
+  it("resolves an arbitrary assistant message to the user turn it answers", () => {
+    const messages = [
+      makeMessage("user", "u1", "m1"),
+      makeMessage("char", "a1", "m2"),
+      makeMessage("user", "u2", "m3"),
+      makeMessage("char", "a2", "m4"),
+      makeMessage("user", "u3", "m5"),
+      makeMessage("char", "a3", "m6"),
+    ];
+
+    expect(resolveRerollTarget(messages, 3)).toEqual({
+      branchMessageIndex: 2,
+      responseMessageIndex: 3,
+    });
+  });
+
+  it("allows rerolling directly from a user message position", () => {
+    const messages = [
+      makeMessage("user", "u1", "m1"),
+      makeMessage("char", "a1", "m2"),
+      makeMessage("user", "u2", "m3"),
+      makeMessage("char", "a2", "m4"),
+    ];
+
+    expect(resolveRerollTarget(messages, 2)).toEqual({
+      branchMessageIndex: 2,
+      responseMessageIndex: 3,
+    });
+  });
+
+  it("keeps the latest-turn behavior when no reroll position is supplied", () => {
+    const messages = [
+      makeMessage("user", "u1", "m1"),
+      makeMessage("char", "a1", "m2"),
+      makeMessage("user", "u2", "m3"),
+      makeMessage("char", "a2", "m4"),
+    ];
+
+    expect(resolveRerollTarget(messages)).toEqual({
+      branchMessageIndex: 2,
+      responseMessageIndex: 3,
+    });
   });
 });

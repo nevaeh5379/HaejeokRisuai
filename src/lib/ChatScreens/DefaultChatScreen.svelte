@@ -18,7 +18,7 @@
     import MainMenu from '../UI/MainMenu.svelte';
     import AssetInput from './AssetInput.svelte';
     import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile } from 'src/ts/globalApi.svelte';
-    import { activateChatBranch, createChatTimelineBranch, ensureChatBranchState, getRerollAlternatives } from 'src/ts/chatBranches';
+    import { activateChatBranch, createChatTimelineBranch, ensureChatBranchState, getRerollAlternatives, resolveRerollTarget } from 'src/ts/chatBranches';
     import { v4 } from 'uuid';
     import { getInlayAsset } from 'src/ts/process/files/inlays';
     import { ConnectionOpenStore } from 'src/ts/sync/multiuserState';
@@ -231,15 +231,6 @@
         }
     }
 
-    function getCurrentTurnUserIndex(messages: Message[]): number {
-        for (let i = messages.length - 1; i >= 0; i--) {
-            if (messages[i]?.role === 'user') {
-                return i
-            }
-        }
-        return -1
-    }
-
     async function send(){
         return sendMain(false)
     }
@@ -347,15 +338,15 @@
 
     async function createRerollBranch(
         activeChat: ChatSession,
-        lastUserIdx: number,
+        branchMessageIndex: number,
         parentBranchId: string,
     ) {
         activeChat.id ??= v4()
         const previousMessages = $state.snapshot(activeChat.message)
         const branch = createChatTimelineBranch(activeChat, {
             parentBranchId,
-            branchMessageId: activeChat.message[lastUserIdx]?.chatId,
-            branchMessageIndex: lastUserIdx,
+            branchMessageId: activeChat.message[branchMessageIndex]?.chatId,
+            branchMessageIndex,
             reason: 'reroll',
         })
         await messageStore.replaceMessages(activeChat.id, activeChat.message, previousMessages)
@@ -364,7 +355,7 @@
         return branch
     }
 
-    async function reroll() {
+    async function reroll(targetMessageIndex?: number) {
         const selectedChar = $selectedCharID
         const currentChatPage = characterStore.characters[selectedChar]?.chatPage ?? 0
         await preLoadChat(selectedChar, currentChatPage, { full: true })
@@ -375,24 +366,27 @@
         activeChat.id ??= v4()
 
         const msgs = activeChat.message
-        const lastUserIdx = getCurrentTurnUserIndex(msgs)
-        if(lastUserIdx < 0) return
+        const target = resolveRerollTarget(msgs, targetMessageIndex)
+        if(!target) return
+        const { branchMessageIndex, responseMessageIndex } = target
 
-        ensureChatBranchState(activeChat, lastUserIdx)
-        const alternatives = getRerollAlternatives(activeChat, lastUserIdx)
+        ensureChatBranchState(activeChat, branchMessageIndex)
+        const alternatives = getRerollAlternatives(activeChat, branchMessageIndex)
         if(!alternatives) return
         if(alternatives.currentIndex < alternatives.branchIds.length - 1){
             await persistBranchSwitch(activeChat, alternatives.branchIds[alternatives.currentIndex + 1])
             return
         }
 
-        const sourceResponse = msgs.at(-1) ? $state.snapshot(msgs.at(-1)!) : undefined
-        const genId = msgs.at(-1)?.generationInfo?.generationId
+        const sourceResponse = responseMessageIndex === null
+            ? undefined
+            : $state.snapshot(msgs[responseMessageIndex])
+        const genId = sourceResponse?.generationInfo?.generationId
         if(genId){
             const { Prereroll } = await import('src/ts/process/prereroll')
             const preroll = Prereroll(genId)
             if(preroll && sourceResponse){
-                await createRerollBranch(activeChat, lastUserIdx, alternatives.parentBranchId)
+                await createRerollBranch(activeChat, branchMessageIndex, alternatives.parentBranchId)
                 const rerolledMessage = {
                     ...sourceResponse,
                     data: preroll,
@@ -405,11 +399,11 @@
         }
 
         openMenu = false
-        await createRerollBranch(activeChat, lastUserIdx, alternatives.parentBranchId)
+        await createRerollBranch(activeChat, branchMessageIndex, alternatives.parentBranchId)
         await sendChatMain()
     }
 
-    async function unReroll() {
+    async function unReroll(targetMessageIndex?: number) {
         const selectedChar = $selectedCharID
         const currentChatPage = characterStore.characters[selectedChar]?.chatPage ?? 0
         await preLoadChat(selectedChar, currentChatPage, { full: true })
@@ -417,10 +411,10 @@
 
         const activeChat = characterStore.characters[selectedChar]?.chats?.[currentChatPage]
         if(!activeChat?.branchState) return
-        const lastUserIdx = getCurrentTurnUserIndex(activeChat.message)
-        if(lastUserIdx < 0) return
+        const target = resolveRerollTarget(activeChat.message, targetMessageIndex)
+        if(!target) return
 
-        const alternatives = getRerollAlternatives(activeChat, lastUserIdx)
+        const alternatives = getRerollAlternatives(activeChat, target.branchMessageIndex)
         if(!alternatives || alternatives.currentIndex <= 0) return
         await persistBranchSwitch(activeChat, alternatives.branchIds[alternatives.currentIndex - 1])
     }
@@ -1229,7 +1223,7 @@
                     </div>
 
                     {#if settingsStore.state.sideMenuRerollButton}
-                        <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={reroll}>
+                        <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => reroll()}>
                             <RefreshCcwIcon />
                             <span class="ml-2">{language.reroll}</span>
                         </div>
