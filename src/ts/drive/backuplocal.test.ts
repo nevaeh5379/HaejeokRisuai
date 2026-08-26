@@ -1,6 +1,35 @@
 import { describe, expect, it } from "vitest";
 import type { Database } from "../storage/database.svelte";
-import { hydrateLazyDatabaseFromSnapshot } from "./backuplocal";
+import {
+  hydrateLazyDatabaseFromSnapshot,
+  normalizeLocalBackupAssetPath,
+} from "./backuplocal";
+
+describe("normalizeLocalBackupAssetPath", () => {
+  it("places Tauri backup file names under the assets directory", () => {
+    expect(normalizeLocalBackupAssetPath("image.png")).toBe(
+      "assets/image.png",
+    );
+  });
+
+  it("normalizes browser backup keys and Windows separators", () => {
+    expect(normalizeLocalBackupAssetPath("assets/image.png")).toBe(
+      "assets/image.png",
+    );
+    expect(normalizeLocalBackupAssetPath("assets\\nested\\image.png")).toBe(
+      "assets/nested/image.png",
+    );
+  });
+
+  it.each(["", "../image.png", "assets/../image.png", "/image.png"])(
+    "rejects unsafe backup asset path %j",
+    (name) => {
+      expect(() => normalizeLocalBackupAssetPath(name)).toThrow(
+        "Invalid backup asset path",
+      );
+    },
+  );
+});
 
 describe("hydrateLazyDatabaseFromSnapshot", () => {
   it("hydrates unloaded backup data without replacing loaded chat changes", () => {

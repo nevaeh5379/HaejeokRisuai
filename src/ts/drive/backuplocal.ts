@@ -1,5 +1,6 @@
 import {
   BaseDirectory,
+  mkdir,
   readFile,
   readDir,
   writeFile,
@@ -55,6 +56,26 @@ import { stripAdditionalAssetFolderMetadata } from "../assetManagerUtils";
 
 const alertProgress = (msg: string, progress: number | string) =>
   showProgressAlert(msg, progress, "backup");
+
+export function normalizeLocalBackupAssetPath(name: string) {
+  const normalizedName = name.replace(/\\/g, "/");
+  const segments = normalizedName.split("/");
+
+  while (segments[0] === "assets") {
+    segments.shift();
+  }
+
+  if (
+    segments.length === 0 ||
+    segments.some(
+      (segment) => segment === "" || segment === "." || segment === "..",
+    )
+  ) {
+    throw new Error(`Invalid backup asset path: ${name}`);
+  }
+
+  return `assets/${segments.join("/")}`;
+}
 
 function getLegacyCompatibleBackupValue(key: string, value: any) {
   if (key !== "characters" || !Array.isArray(value)) return value;
@@ -1108,6 +1129,19 @@ export async function restoreLocalBackupFile(file: File) {
   let entriesWritten = 0;
   let currentEntryName = "";
   let bytesRead = 0;
+  const tauriAssetDirectories = new Set<string>();
+
+  const ensureTauriAssetDirectory = async (assetPath: string) => {
+    const directory = assetPath.slice(0, assetPath.lastIndexOf("/"));
+    if (tauriAssetDirectories.has(directory)) {
+      return;
+    }
+    await mkdir(directory, {
+      baseDir: BaseDirectory.AppData,
+      recursive: true,
+    });
+    tauriAssetDirectories.add(directory);
+  };
 
   const flushNodeAssets = async (): Promise<number> => {
     if (pendingNodeAssets.size === 0) {
@@ -1265,12 +1299,14 @@ export async function restoreLocalBackupFile(file: File) {
       }
 
       if (!handledAsColdStorage) {
+        const assetPath = normalizeLocalBackupAssetPath(name);
         if (isTauri) {
-          await writeFile(`assets/` + name, data, {
+          await ensureTauriAssetDirectory(assetPath);
+          await writeFile(assetPath, data, {
             baseDir: BaseDirectory.AppData,
           });
         } else if (useNodeBulkRestore) {
-          const key = "assets/" + name;
+          const key = assetPath;
           const previous = pendingNodeAssets.get(key);
           if (previous) {
             pendingNodeAssetBytes -= previous.byteLength;
@@ -1288,7 +1324,7 @@ export async function restoreLocalBackupFile(file: File) {
             }
           }
         } else {
-          const key = "assets/" + name;
+          const key = assetPath;
           const previous = pendingBrowserAssets.get(key);
           if (previous) {
             pendingBrowserAssetBytes -= previous.byteLength;
