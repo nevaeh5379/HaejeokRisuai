@@ -1,7 +1,6 @@
 export const RELATIONAL_SCHEMA_LAYOUT = "relational-schema-v3";
 export const SQLITE_SCHEMA_VERSION = 3;
 export const MAX_RELATIONAL_NODE_DEPTH = 128;
-export const MAX_RELATIONAL_NODE_ROWS = 250_000;
 
 export class SqlSchemaResetRequiredError extends Error {
   constructor(foundVersion: unknown, foundLayout: unknown) {
@@ -118,7 +117,7 @@ export function flattenRelationalValue(
   options: RelationalNodeCodecOptions = {},
 ): RelationalNodeRow[] {
   const maxDepth = options.maxDepth ?? MAX_RELATIONAL_NODE_DEPTH;
-  const maxRows = options.maxRows ?? MAX_RELATIONAL_NODE_ROWS;
+  const maxRows = options.maxRows ?? Infinity;
   const rows: RelationalNodeRow[] = [];
   const ancestors = new Set<object>();
 
