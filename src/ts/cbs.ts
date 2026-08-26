@@ -217,7 +217,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "trigger_id",
     callback: (str, matcherArg, args, vars) => {
-      const currentTriggerId = get(CurrentTriggerIdStore);
+      const currentTriggerId = matcherArg.triggerId ?? get(CurrentTriggerIdStore);
       return currentTriggerId ?? "null";
     },
     alias: ["triggerid"],

@@ -1846,6 +1846,7 @@ export function risuChatParser(
     callStack?: number;
     cbsConditions?: CbsConditions;
     chatTarget?: { characterIndex: number; chatIndex: number };
+    triggerId?: string;
   } = {},
 ): string {
   const chatID = arg.chatID ?? -1;
@@ -1923,6 +1924,7 @@ export function risuChatParser(
     consistantChar: arg.consistantChar ?? false,
     cbsConditions: arg.cbsConditions ?? {},
     chatTarget: arg.chatTarget,
+    triggerId: arg.triggerId,
     callStack: arg.callStack,
     getNested: () => {
       return nested;

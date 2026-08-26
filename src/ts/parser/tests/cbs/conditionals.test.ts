@@ -436,3 +436,13 @@ SBC{{slot::n}}
     });
   });
 });
+
+
+test("uses the explicit trigger id from parser context", () => {
+  expect(
+    risuChatParser("{{trigger_id}}", {
+      triggerId: "trigger-a",
+      chatTarget: { characterIndex: 1, chatIndex: 1 },
+    }),
+  ).toBe("trigger-a");
+});

@@ -58,6 +58,7 @@ interface BasicScriptingEngineState {
   char?: character | groupChat | simpleCharacterArgument;
   chat?: Chat;
   chatTarget?: ChatVarTarget;
+  triggerId?: string;
   setVar?: (key: string, value: string) => boolean | void;
   getVar?: (key: string) => string;
   messagesMutated?: boolean;
@@ -87,6 +88,7 @@ export async function runScripted(
     char?: character | groupChat | simpleCharacterArgument;
     chat?: Chat;
     chatTarget?: ChatVarTarget;
+    triggerId?: string;
     data?: string | OpenAIChat[];
     setVar?: (key: string, value: string) => boolean | void;
     getVar?: (key: string) => string;
@@ -118,6 +120,7 @@ export async function runScripted(
     ScriptingEngineState.char = char;
     ScriptingEngineState.chat = chat;
     ScriptingEngineState.chatTarget = arg.chatTarget;
+    ScriptingEngineState.triggerId = arg.triggerId;
     ScriptingEngineState.setVar = setVar;
     ScriptingEngineState.getVar = getVar;
     ScriptingEngineState.messagesMutated = false;
@@ -377,6 +380,7 @@ export async function runScripted(
         return risuChatParser(value, {
           chara: parserChar,
           chatTarget: ScriptingEngineState.chatTarget,
+          triggerId: ScriptingEngineState.triggerId,
         });
       });
 

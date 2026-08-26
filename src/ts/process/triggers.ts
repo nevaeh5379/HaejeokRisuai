@@ -13,7 +13,6 @@ import {
   ReloadChatPointer,
   ReloadGUIPointer,
   selectedCharID,
-  CurrentTriggerIdStore,
 } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
@@ -1261,16 +1260,7 @@ export async function runTrigger(
     ? arg.chat
     : safeStructuredClone(arg.chat ?? char.chats[char.chatPage]);
 
-  const previousTriggerId = get(CurrentTriggerIdStore);
-  const shouldSetTriggerId = !arg.displayMode && mode !== "display";
-  if (shouldSetTriggerId) {
-    CurrentTriggerIdStore.set(arg.triggerId || null);
-  }
-
   if (!triggers || triggers.length === 0) {
-    if (shouldSetTriggerId) {
-      CurrentTriggerIdStore.set(previousTriggerId);
-    }
     return null;
   }
 
@@ -1377,7 +1367,12 @@ export async function runTrigger(
   const parseTriggerText = (
     text: string,
     parserArg: Parameters<typeof risuChatParser>[1] = {},
-  ) => risuChatParser(text, { ...parserArg, chatTarget: target });
+  ) =>
+    risuChatParser(text, {
+      ...parserArg,
+      chatTarget: target,
+      triggerId: arg.triggerId,
+    });
 
   function setVar(key: string, value: string): boolean {
     if (arg.displayMode) {
@@ -1599,6 +1594,7 @@ export async function runTrigger(
               additonalSysPrompt,
               stopSending,
               manualName: effect.value,
+              triggerId: arg.triggerId,
             });
             if (r) {
               additonalSysPrompt = r.additonalSysPrompt;
@@ -1767,6 +1763,7 @@ export async function runTrigger(
             char: char,
             chat: chat,
             chatTarget: target,
+            triggerId: arg.triggerId,
           });
 
           if (triggerCodeResult.stopSending) {
@@ -3522,10 +3519,6 @@ export async function runTrigger(
       if (targetChat.id) characterStore.markChatDirty(targetChat.id);
     }
     ReloadGUIPointer.set(get(ReloadGUIPointer) + 1);
-  }
-
-  if (shouldSetTriggerId && mode !== "manual") {
-    CurrentTriggerIdStore.set(previousTriggerId);
   }
 
   return {

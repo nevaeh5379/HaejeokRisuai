@@ -21,7 +21,10 @@ vi.mock("../parser/chatVar.svelte", () => ({
 
 vi.mock("../parser/parser.svelte", () => ({
   hasher: vi.fn(),
-  risuChatParser: vi.fn((value: string) => value),
+  risuChatParser: vi.fn(
+    (value: string, options?: { triggerId?: string }) =>
+      value.replaceAll("{{trigger_id}}", options?.triggerId ?? "null"),
+  ),
 }));
 
 vi.mock("../alert", () => ({
@@ -172,6 +175,23 @@ test("passes explicit chat targets to default Lua chat variables", async () => {
 
   expect(result.res).toBe("target-value");
   expect(getChatVarMock).toHaveBeenCalledWith("key", target);
+});
+
+test("reuses Lua CBS with the trigger id from each invocation", async () => {
+  const code = 'function onStart(id) return cbs("{{trigger_id}}") end';
+  const first = await runScripted(code, {
+    chat: { message: [] } as never,
+    triggerId: "trigger-a",
+    mode: "start",
+  });
+  const second = await runScripted(code, {
+    chat: { message: [] } as never,
+    triggerId: "trigger-b",
+    mode: "start",
+  });
+
+  expect(first.res).toBe("trigger-a");
+  expect(second.res).toBe("trigger-b");
 });
 
 test("persists a user message added by Lua", async () => {
