@@ -642,6 +642,8 @@ export function normalizeDatabaseDefaults(data: Database) {
   data.hideApiKey ??= true;
   data.unformatQuotes ??= false;
   data.ttsAutoSpeech ??= false;
+  data.autoColorAdapt ??= false;
+  data.colorAdaptEngine ??= "oklch";
   data.translatorInputLanguage ??= "auto";
   data.falModel ??= "fal-ai/flux/dev";
   data.falLoraScale ??= 1;
@@ -1034,6 +1036,8 @@ export interface Database {
     FontColorQuote1: string;
     FontColorQuote2: string;
   };
+  autoColorAdapt?: boolean;
+  colorAdaptEngine?: "oklch" | "colord" | "leonardo" | "darkreader";
   requestRetrys: number;
   localNetworkMode: boolean;
   localNetworkTimeoutSec: number;

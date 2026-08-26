@@ -137,6 +137,34 @@ export const displayThemeSettingsItems: SettingItem[] = [
     onChange: () => updateTextThemeAndCSS(),
     keywords: ["font", "custom"],
   },
+  {
+    id: "display.autoColorAdapt",
+    type: "check",
+    labelKey: "autoColorAdapt",
+    helpKey: "autoColorAdaptHelp",
+    fallbackLabel: "Auto-adapt Bot Style Colors",
+    bindKey: "autoColorAdapt",
+    classes: "mt-4",
+    keywords: ["color", "adapt", "theme", "light", "dark"],
+  },
+  {
+    id: "display.colorAdaptEngine",
+    type: "select",
+    labelKey: "colorAdaptEngine",
+    fallbackLabel: "Color Adaptation Engine",
+    bindKey: "colorAdaptEngine",
+    condition: (ctx) => !!ctx.db.autoColorAdapt,
+    classes: "mt-2",
+    options: {
+      selectOptions: [
+        { value: "oklch", label: "OKLCH (Perceptual Lightness Inversion)" },
+        { value: "colord", label: "Colord (Adaptive Contrast)" },
+        { value: "leonardo", label: "Adobe Leonardo (Target Contrast Ratio)" },
+        { value: "darkreader", label: "DarkReader Style (Matrix Inversion)" },
+      ],
+    },
+    keywords: ["color", "engine", "adapt"],
+  },
 ];
 
 export const displaySizeSettingsItems: SettingItem[] = [

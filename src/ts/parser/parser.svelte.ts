@@ -20,6 +20,13 @@ import { processScriptFull } from "../process/scripts";
 import { get } from "svelte/store";
 import css, { type CssAtRuleAST } from "@adobe/css-tools";
 import { selectedCharID } from "../stores.svelte";
+import {
+  adaptInlineStyle,
+  adaptSingleColor,
+  adaptCssValue,
+  adaptFullCssText,
+} from "../gui/colorAdapt";
+import { ColorSchemeTypeStore } from "../gui/colorscheme";
 import { calcString } from "../process/infunctions";
 import {
   findCharacterbyId,
@@ -118,6 +125,29 @@ DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
           /background:\s*[^;]*url\([^)]*\)[^;]*;?/gi,
           "",
         );
+      }
+
+      // Automatically adapt inline style colors to the current theme
+      if (settingsStore.state?.autoColorAdapt && data.attrValue) {
+        const isDark = get(ColorSchemeTypeStore) === "dark";
+        const engine = settingsStore.state.colorAdaptEngine ?? "oklch";
+        data.attrValue = adaptInlineStyle(data.attrValue, !isDark, engine);
+      }
+      break;
+    }
+    case "bgcolor": {
+      if (settingsStore.state?.autoColorAdapt && data.attrValue) {
+        const isDark = get(ColorSchemeTypeStore) === "dark";
+        const engine = settingsStore.state.colorAdaptEngine ?? "oklch";
+        data.attrValue = adaptSingleColor(data.attrValue, 'bg', !isDark, engine);
+      }
+      break;
+    }
+    case "color": {
+      if (settingsStore.state?.autoColorAdapt && data.attrValue) {
+        const isDark = get(ColorSchemeTypeStore) === "dark";
+        const engine = settingsStore.state.colorAdaptEngine ?? "oklch";
+        data.attrValue = adaptSingleColor(data.attrValue, 'fg', !isDark, engine);
       }
       break;
     }
@@ -1114,6 +1144,23 @@ function decodeStyleRule(rule: CssAtRuleAST) {
         }
       }
     }
+    if (rule.declarations && settingsStore.state?.autoColorAdapt) {
+      const isDark = get(ColorSchemeTypeStore) === "dark";
+      const engine = settingsStore.state.colorAdaptEngine ?? "oklch";
+      for (let j = 0; j < rule.declarations.length; j++) {
+        const decl = rule.declarations[j];
+        if (decl.type === "declaration" && decl.property && decl.value) {
+          const prop = decl.property.toLowerCase();
+          if (prop === "background" || prop === "background-color" || prop === "background-image") {
+            decl.value = adaptCssValue(decl.value, "bg", !isDark, engine);
+          } else if (prop === "color") {
+            decl.value = adaptCssValue(decl.value, "fg", !isDark, engine);
+          } else if (prop.includes("border") || prop.includes("outline") || prop === "box-shadow" || prop === "text-shadow") {
+            decl.value = adaptCssValue(decl.value, "border", !isDark, engine);
+          }
+        }
+      }
+    }
   }
   if (
     rule.type === "media" ||
@@ -1145,6 +1192,11 @@ function decodeStyleContent(hexText: string): {
   try {
     let text = Buffer.from(hexText, "hex").toString("utf-8");
     text = risuChatParser(text);
+    if (settingsStore.state?.autoColorAdapt) {
+      const isDark = get(ColorSchemeTypeStore) === "dark";
+      const engine = settingsStore.state.colorAdaptEngine ?? "oklch";
+      text = adaptFullCssText(text, !isDark, engine);
+    }
     const ast = css.parse(text);
     const rules = ast?.stylesheet?.rules;
     if (rules) {
