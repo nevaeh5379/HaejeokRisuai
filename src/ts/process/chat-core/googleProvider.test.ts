@@ -6,6 +6,7 @@ import {
   mergeGoogleConsecutiveChats,
   prepareGoogleConversation,
   selectGoogleGenerationParameters,
+  selectGoogleVertexRegion,
 } from "@risuai/chat-core/googleProvider.cjs";
 
 describe("Google provider core", () => {
@@ -195,6 +196,21 @@ describe("Google provider core", () => {
       thinking_tokens: "thinkingBudget",
       reasoning_effort: "thinkingConfig.thinkingLevel",
     });
+  });
+
+  it("routes Vertex global-only Gemini models without coupling to auth", () => {
+    expect(selectGoogleVertexRegion("gemini-3-pro-preview", "us-central1")).toBe(
+      "global",
+    );
+    expect(
+      selectGoogleVertexRegion("gemini-3.6-flash-preview", "us-west1"),
+    ).toBe("global");
+    expect(selectGoogleVertexRegion("gemini-2.5-pro", "us-central1")).toBe(
+      "us-central1",
+    );
+    expect(selectGoogleVertexRegion("gemini-3.4-flash", "us-west1")).toBe(
+      "us-west1",
+    );
   });
 
   it("normalizes Gemini thinking and output generation settings", () => {

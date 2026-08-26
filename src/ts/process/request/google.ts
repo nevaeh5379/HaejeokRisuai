@@ -6,6 +6,7 @@ import {
   mergeGoogleConsecutiveChats,
   prepareGoogleConversation,
   selectGoogleGenerationParameters,
+  selectGoogleVertexRegion,
 } from "@risuai/chat-core/googleProvider.cjs";
 import type {
   GeminiChat,
@@ -276,15 +277,6 @@ export async function requestGoogleCloudVertex(
   const REGION = db.vertexRegion;
   console.log(arg.modelInfo);
 
-  const isVertexGlobalOnlyModel = (modelId: string) => {
-    // Gemini 3 preview models and the 3.5/3.6/3.7 Flash family are not served from the regions
-    // selectable in settings (us-central1, us-west1); route them through the global endpoint.
-    return (
-      /^gemini-3-.*-preview$/.test(modelId) ||
-      /^gemini-3\.[567]-flash/.test(modelId)
-    );
-  };
-
   async function generateToken(email: string, key: string) {
     if (!window.crypto || !window.crypto.subtle) {
       throw new Error(
@@ -448,9 +440,10 @@ export async function requestGoogleCloudVertex(
       : "generateContent";
 
     // Some models (e.g. Gemini 3 preview) are only available via the global endpoint.
-    const effectiveRegion = isVertexGlobalOnlyModel(arg.modelInfo.internalID)
-      ? "global"
-      : REGION;
+    const effectiveRegion = selectGoogleVertexRegion(
+      arg.modelInfo.internalID,
+      REGION,
+    );
 
     url =
       effectiveRegion === "global"

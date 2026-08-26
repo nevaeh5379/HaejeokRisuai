@@ -20,6 +20,11 @@ export function selectGoogleGenerationParameters(
   options?: { thinking?: boolean },
 ): GoogleGenerationParameter[];
 
+export function selectGoogleVertexRegion(
+  modelId: string,
+  configuredRegion: string,
+): string;
+
 export interface GeminiFunctionCall {
   id?: string;
   name: string;

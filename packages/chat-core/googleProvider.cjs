@@ -28,6 +28,18 @@ function selectGoogleGenerationParameters(supportedParameters, options = {}) {
   );
 }
 
+function selectGoogleVertexRegion(modelId, configuredRegion) {
+  // Gemini 3 preview models and the 3.5/3.6/3.7 Flash family are not served
+  // from the regions exposed by the browser settings.
+  if (
+    /^gemini-3-.*-preview$/.test(modelId) ||
+    /^gemini-3\.[567]-flash/.test(modelId)
+  ) {
+    return 'global';
+  }
+  return configuredRegion;
+}
+
 function buildGoogleGenerateContentUrl(modelId, apiKey) {
   return `${GOOGLE_GENERATIVE_LANGUAGE_BASE_URL}/${modelId}:generateContent?key=${apiKey}`;
 }
@@ -179,6 +191,7 @@ module.exports = {
   GOOGLE_GENERATION_PARAMETER_RENAMES,
   buildGoogleGenerateContentUrl,
   selectGoogleGenerationParameters,
+  selectGoogleVertexRegion,
   prepareGoogleConversation,
   mergeGoogleConsecutiveChats,
   buildGoogleSafetySettings,
