@@ -299,73 +299,109 @@
     {#if isOpened}
         <!-- Responsive 2-column layout: desktop = side-by-side, mobile = stacked -->
         <div class="flex flex-col md:flex-row md:gap-4 mt-3">
-            <!-- LEFT: Main content area (textarea) - takes priority space -->
-            <div class="flex flex-col flex-1 min-w-0 order-2 md:order-1">
+            <!-- LEFT: Main content area (textarea / detail settings) - takes priority space -->
+            <div class="flex flex-col flex-1 min-w-0 order-2 md:order-1 self-stretch">
                 {#if promptItem.type === 'plain' || promptItem.type === 'jailbreak' || promptItem.type === 'cot'}
-                    <TextAreaInput highlight bind:value={promptItem.text} />
+                    <span class="text-xs text-textcolor2 mb-1">{language.prompt}</span>
+                    <TextAreaInput highlight bind:value={promptItem.text} fullwidth height="full" className="flex-1 min-h-52" />
                 {/if}
                 {#if promptItem.type === 'chatML'}
-                    <TextAreaInput highlight bind:value={promptItem.text} />
+                    <span class="text-xs text-textcolor2 mb-1">{language.prompt}</span>
+                    <TextAreaInput highlight bind:value={promptItem.text} fullwidth height="full" className="flex-1 min-h-52" />
                 {/if}
-                {#if promptItem.type === 'persona' || promptItem.type === 'description' || promptItem.type === 'authornote' || promptItem.type === 'memory'}
+                {#if promptItem.type === 'authornote'}
+                    <div class="flex flex-col gap-3 flex-1 self-stretch">
+                        <div class="flex flex-col flex-1">
+                            <span class="text-xs text-textcolor2 mb-1">{language.defaultPrompt}</span>
+                            <TextAreaInput highlight bind:value={promptItem.defaultText} fullwidth height="full" className="flex-1 min-h-36" />
+                        </div>
+                        {#if promptItem.innerFormat}
+                            <div class="flex flex-col flex-1">
+                                <span class="text-xs text-textcolor2 mb-1">{language.innerFormat}</span>
+                                <TextAreaInput highlight bind:value={promptItem.innerFormat} fullwidth height="full" className="flex-1 min-h-28" />
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
+                {#if promptItem.type === 'persona' || promptItem.type === 'description' || promptItem.type === 'memory'}
                     {#if !promptItem.innerFormat}
-                        <div class="flex items-center justify-center h-24 text-textcolor2/50 text-sm border border-dashed border-darkborderc rounded-md">
-                            <CheckInput name={language.customInnerFormat} check={false} onChange={() => {
-                                if(promptItem.type === 'persona' || promptItem.type === 'description' || promptItem.type === 'authornote' || promptItem.type === 'memory'){
-                                    promptItem.innerFormat = "{{slot}}"
-                                }
-                            }} />
+                        <div class="flex flex-col items-center justify-center p-6 border border-dashed border-darkborderc/80 rounded-lg bg-darkbg/40 text-center gap-1.5 min-h-36 flex-1">
+                            <span class="text-sm text-textcolor font-medium">{getName(promptItem)}</span>
+                            <span class="text-xs text-textcolor2">기본 포맷 <code>{`{{slot}}`}</code>이(가) 사용됩니다.</span>
+                            <button
+                                class="mt-2 text-xs px-3 py-1.5 rounded-md bg-darkbutton hover:bg-selected text-textcolor transition-colors cursor-pointer border border-darkborderc"
+                                onclick={() => {
+                                    if(promptItem.type === 'persona' || promptItem.type === 'description' || promptItem.type === 'memory'){
+                                        promptItem.innerFormat = "{{slot}}"
+                                    }
+                                }}
+                            >
+                                + {language.customInnerFormat}
+                            </button>
                         </div>
                     {:else}
                         <span class="text-xs text-textcolor2 mb-1">{language.innerFormat}</span>
-                        <TextAreaInput highlight bind:value={promptItem.innerFormat} />
-                        <CheckInput name={language.customInnerFormat} check={true} className="mt-1" onChange={() => {
-                            if(promptItem.type === 'persona' || promptItem.type === 'description' || promptItem.type === 'authornote' || promptItem.type === 'memory'){
-                                promptItem.innerFormat = null
-                            }
-                        }} />
+                        <TextAreaInput highlight bind:value={promptItem.innerFormat} fullwidth height="full" className="flex-1 min-h-52" />
                     {/if}
                 {/if}
+                {#if promptItem.type === 'lorebook' || promptItem.type === 'postEverything'}
+                    <div class="flex flex-col items-center justify-center p-6 border border-dashed border-darkborderc/80 rounded-lg bg-darkbg/40 text-center gap-1 min-h-36">
+                        <span class="text-sm text-textcolor font-medium">{getName(promptItem)}</span>
+                        <span class="text-xs text-textcolor2">
+                            {#if promptItem.type === 'lorebook'}
+                                {language.formating.lorebook}
+                            {:else}
+                                {language.formating.postEverything}
+                            {/if}
+                        </span>
+                    </div>
+                {/if}
                 {#if promptItem.type === 'chat'}
-                    <div class="flex flex-col gap-2 p-3 border border-darkborderc rounded-md">
+                    <div class="flex flex-col gap-2 p-3.5 border border-darkborderc rounded-md bg-darkbg/30">
                         {#if promptItem.rangeStart !== -1000}
-                            <div class="flex gap-2 items-center">
-                                <span class="text-xs text-textcolor2 shrink-0">{language.rangeStart}</span>
-                                <NumberInput bind:value={promptItem.rangeStart} />
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div class="flex flex-col gap-1">
+                                    <span class="text-xs text-textcolor2">{language.rangeStart}</span>
+                                    <NumberInput bind:value={promptItem.rangeStart} />
+                                </div>
+                                <div class="flex flex-col gap-1">
+                                    <span class="text-xs text-textcolor2">{language.rangeEnd}</span>
+                                    {#if promptItem.rangeEnd === 'end'}
+                                        <NumberInput value={0} marginBottom disabled/>
+                                    {:else}
+                                        <NumberInput bind:value={promptItem.rangeEnd} marginBottom />
+                                    {/if}
+                                </div>
                             </div>
-                            <div class="flex gap-2 items-center">
-                                <span class="text-xs text-textcolor2 shrink-0">{language.rangeEnd}</span>
-                                {#if promptItem.rangeEnd === 'end'}
-                                    <NumberInput value={0} marginBottom disabled/>
-                                {:else}
-                                    <NumberInput bind:value={promptItem.rangeEnd} marginBottom />
+                            <div class="flex flex-col gap-2 mt-1">
+                                <CheckInput name={language.untilChatEnd} check={promptItem.rangeEnd === 'end'} onChange={() => {
+                                    if(promptItem.type === 'chat'){
+                                        promptItem.rangeEnd = promptItem.rangeEnd === 'end' ? 0 : 'end'
+                                    }
+                                }} />
+                                {#if settingsStore.state.promptSettings.sendChatAsSystem}
+                                    <CheckInput name={language.chatAsOriginalOnSystem} bind:check={promptItem.chatAsOriginalOnSystem}/>
                                 {/if}
                             </div>
-                            <CheckInput name={language.untilChatEnd} check={promptItem.rangeEnd === 'end'} onChange={() => {
-                                if(promptItem.type === 'chat'){
-                                    promptItem.rangeEnd = promptItem.rangeEnd === 'end' ? 0 : 'end'
-                                }
-                            }} />
-                            {#if settingsStore.state.promptSettings.sendChatAsSystem}
-                                <CheckInput name={language.chatAsOriginalOnSystem} bind:check={promptItem.chatAsOriginalOnSystem}/>
-                            {/if}
+                        {:else}
+                            <span class="text-xs text-textcolor2">전체 채팅 내역이 삽입됩니다. (-1000 ~ 끝)</span>
                         {/if}
-                        <CheckInput name={language.advanced} check={promptItem.rangeStart !== -1000} onChange={chatPromptChange} />
+                        <div class="pt-1 border-t border-darkborderc/40 mt-1">
+                            <CheckInput name={language.advanced} check={promptItem.rangeStart !== -1000} onChange={chatPromptChange} />
+                        </div>
                     </div>
                 {/if}
                 {#if promptItem.type === 'cache'}
-                    <div class="flex flex-col gap-2 p-3 border border-darkborderc rounded-md">
-                        <div class="flex gap-2 items-center">
-                            <span class="text-xs text-textcolor2 shrink-0">{language.depth}</span>
-                            <NumberInput bind:value={promptItem.depth} />
-                        </div>
+                    <div class="flex flex-col gap-2 p-3.5 border border-darkborderc rounded-md bg-darkbg/30">
+                        <span class="text-xs text-textcolor2">{language.depth}</span>
+                        <NumberInput bind:value={promptItem.depth} />
                     </div>
                 {/if}
             </div>
 
             <!-- RIGHT: Metadata sidebar - compact controls -->
             <!-- Mobile: 2-col grid to save vertical space / Desktop: single-col sidebar -->
-            <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 order-1 md:order-2 md:flex md:flex-col md:gap-2 md:w-56 md:shrink-0 mb-2 md:mb-0">
+            <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 order-1 md:order-2 md:flex md:flex-col md:gap-2.5 md:w-60 md:shrink-0 mb-3 md:mb-0">
                 <!-- Name -->
                 <div class="flex flex-col gap-0.5">
                     <span class="text-xs text-textcolor2">{language.name}</span>
@@ -441,6 +477,20 @@
                         </SelectInput>
                     </div>
                 {/if}
+                <!-- Custom inner format toggle for block types & authornote -->
+                {#if promptItem.type === 'persona' || promptItem.type === 'description' || promptItem.type === 'authornote' || promptItem.type === 'memory'}
+                    <div class="col-span-2 md:col-span-1 pt-1">
+                        <CheckInput
+                            name={language.customInnerFormat}
+                            check={!!promptItem.innerFormat}
+                            onChange={() => {
+                                if(promptItem.type === 'persona' || promptItem.type === 'description' || promptItem.type === 'authornote' || promptItem.type === 'memory'){
+                                    promptItem.innerFormat = promptItem.innerFormat ? null : "{{slot}}"
+                                }
+                            }}
+                        />
+                    </div>
+                {/if}
                 <!-- Cache role -->
                 {#if promptItem.type === 'cache'}
                     <div class="flex flex-col gap-0.5">
@@ -451,13 +501,6 @@
                             <OptionInput value="assistant">{language.character}</OptionInput>
                             <OptionInput value="system">{language.systemPrompt}</OptionInput>
                         </SelectInput>
-                    </div>
-                {/if}
-                <!-- Author note default text -->
-                {#if promptItem.type === 'authornote'}
-                    <div class="flex flex-col gap-0.5">
-                        <span class="text-xs text-textcolor2">{language.defaultPrompt}</span>
-                        <TextInput bind:value={promptItem.defaultText} />
                     </div>
                 {/if}
             </div>
