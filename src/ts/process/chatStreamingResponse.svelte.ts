@@ -158,7 +158,7 @@ export async function processStreamingResponse(options: StreamingOptions) {
     };
   }
 
-  addRerolls(options.generationId, Object.values(streamed.lastResponseChunk));
+  addRerolls(options.generationId, streamed.rerolls);
   const finalized = await finalizeStreamingOutput(
     options,
     streamed.result,

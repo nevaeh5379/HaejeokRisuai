@@ -20,6 +20,28 @@ export interface StreamDisplayOptions {
   performanceMode: StreamingDisplayOptimizationMode;
 }
 
+export async function processStreamingRerollValues(
+  options: StreamDisplayOptions,
+  values: string[],
+  currentProcessedValue: string,
+) {
+  const processedValues = [currentProcessedValue];
+  for (const value of values.slice(1)) {
+    let result = value;
+    if (settingsStore.state.removeIncompleteResponse) {
+      result = trimUntilPunctuation(result);
+    }
+    const processed = await processScriptFull(
+      options.nowChatroom,
+      options.reformatContent(options.prefix + result),
+      "editoutput",
+      options.msgIndex,
+    );
+    processedValues.push(processed.data);
+  }
+  return processedValues;
+}
+
 interface StreamDisplayState {
   result: string;
   emoChanged: boolean;
@@ -293,10 +315,20 @@ export async function consumeStreamingDisplay(options: StreamDisplayOptions) {
     }
   }
 
+  const aborted = state.streamAborted || options.abortSignal.aborted;
+  const rerolls = aborted
+    ? []
+    : await processStreamingRerollValues(
+        options,
+        Object.values(state.lastResponseChunk),
+        targetMessage(options)?.data ?? "",
+      );
+
   return {
     result: state.result,
     emoChanged: state.emoChanged,
     lastResponseChunk: state.lastResponseChunk,
-    aborted: state.streamAborted || options.abortSignal.aborted,
+    rerolls,
+    aborted,
   };
 }
