@@ -424,7 +424,24 @@
                         <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                     </button>
 
-                    <!-- 5. Persona -->
+                    <!-- 5. Others -->
+                    <button
+                        class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
+                        onclick={() => {
+                            mobileBotTarget = { submenu: 3, title: language.others };
+                            $SettingsMenuIndex = 1;
+                        }}
+                    >
+                        <div class="flex items-center gap-3.5 min-w-0">
+                            <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center shrink-0">
+                                <LayersIcon size={18} />
+                            </div>
+                            <span class="text-base font-medium text-textcolor truncate">{language.others}</span>
+                        </div>
+                        <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
+                    </button>
+
+                    <!-- 6. Persona -->
                     <button
                         class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
                         onclick={() => { $SettingsMenuIndex = 12; }}
@@ -438,7 +455,7 @@
                         <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                     </button>
 
-                    <!-- 6. Modules -->
+                    <!-- 7. Modules -->
                     <button
                         class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
                         onclick={() => { $SettingsMenuIndex = 14; }}
@@ -452,7 +469,7 @@
                         <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                     </button>
 
-                    <!-- 7. Other Bots -->
+                    <!-- 8. Other Bots -->
                     <button
                         class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
                         onclick={() => { $SettingsMenuIndex = 2; }}

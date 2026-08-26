@@ -1,6 +1,6 @@
-import { readdirSync } from "node:fs";
+import { existsSync, realpathSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { defineConfig } from "vite";
+import { defineConfig, searchForWorkspaceRoot } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import wasm from "vite-plugin-wasm";
 import strip from '@rollup/plugin-strip';
@@ -78,6 +78,14 @@ export default defineConfig(({command, mode}) => {
       host: '0.0.0.0', // listen on all addresses
       port: 5174,
       strictPort: true,
+      fs: {
+        allow: [
+          searchForWorkspaceRoot(process.cwd()),
+          ...(existsSync(resolve(process.cwd(), 'node_modules'))
+            ? [searchForWorkspaceRoot(realpathSync(resolve(process.cwd(), 'node_modules')))]
+            : []),
+        ],
+      },
       // hmr: false,
       proxy: {
         '/api': {
