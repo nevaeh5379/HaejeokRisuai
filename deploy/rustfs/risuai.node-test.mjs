@@ -21,6 +21,8 @@ const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
 const checkoutFiles = [
     "risuai.sh",
     "Dockerfile",
+    "Dockerfile.static",
+    "docker-compose.static.yml",
     "docker-compose.rustfs.yml",
     "docker-compose.rustfs.local.yml",
     "docker-compose.rustfs.lan.yml",
@@ -29,6 +31,7 @@ const checkoutFiles = [
     "docker-compose.rustfs.dynv6.yml",
     "docker-compose.rustfs.proxy-docker.yml",
     "deploy/rustfs/Caddyfile",
+    "deploy/rustfs/Caddyfile.static",
     "deploy/rustfs/update-cloudflare.mjs",
     "deploy/rustfs/update-dynv6.sh",
 ];
@@ -45,6 +48,7 @@ const capturedDockerEnvironment = [
     "COMPOSE_PROFILES",
     "COMPOSE_ENV_FILES",
     "RISUAI_MODE",
+    "RISUAI_RUNTIME",
     "RISUAI_DNS_PROVIDER",
     "RISUAI_PROXY_TYPE",
     "RISUAI_PROXY_NETWORK",
@@ -94,7 +98,7 @@ function exit(code, output = "") {
 }
 
 function services() {
-    const result = ["rustfs", "postgres", "risuai"];
+    const result = process.env.RISUAI_RUNTIME === "static" ? ["risuai"] : ["rustfs", "postgres", "risuai"];
     if (process.env.RISUAI_MODE === "domain" || process.env.RISUAI_MODE === "dynv6") result.push("caddy");
     if (process.env.RISUAI_MODE === "dynv6") result.push("dynv6");
     if (process.env.RISUAI_MODE === "domain" && process.env.RISUAI_DNS_PROVIDER === "cloudflare") {
@@ -380,7 +384,7 @@ test("help and version are side-effect free and do not require Docker", async (t
     for (const [arguments_, output] of [
         [["help"], /Deployment modes:/],
         [["--help"], /Usage:/],
-        [["version"], /^risuai\.sh 2\.1\.0 \(configuration schema 2\)$/m],
+        [["version"], /^risuai\.sh 2\.2\.0 \(configuration schema 3\)$/m],
     ]) {
         const result = await fixture.run(arguments_);
         assert.equal(result.code, 0, result.stderr);
@@ -569,7 +573,8 @@ test("all deployment variants save isolated, protected no-start configurations",
             const envPath = join(fixture.checkout, ".risuai/rustfs.env");
             const envText = await readFile(envPath, "utf8");
             const saved = parseEnv(envText);
-            assert.equal(saved.RISUAI_CONFIG_VERSION, "2");
+            assert.equal(saved.RISUAI_CONFIG_VERSION, "3");
+            assert.equal(saved.RISUAI_RUNTIME, "node");
             assert.equal(saved.COMPOSE_PROJECT_NAME, "risuai-rustfs");
             assert.match(saved.RISUAI_INSTALLATION_ID, /^[0-9a-f]{32}$/);
             assert.equal(saved.POSTGRES_PASSWORD, fixedCredentials.POSTGRES_PASSWORD);
@@ -610,6 +615,143 @@ test("all deployment variants save isolated, protected no-start configurations",
             await assertNoTransactionDebris(fixture);
         });
     }
+});
+
+test("static runtime serves only the browser build across exposure modes", async (t) => {
+    const variants = [
+        {
+            name: "local static Caddy",
+            arguments: ["--runtime", "static", "--mode", "local"],
+            overlays: ["docker-compose.static.yml", "docker-compose.rustfs.local.yml"],
+        },
+        {
+            name: "LAN static Caddy",
+            arguments: ["--runtime", "static", "--mode", "lan", "--app-port", "7000"],
+            overlays: ["docker-compose.static.yml", "docker-compose.rustfs.lan.yml"],
+        },
+        {
+            name: "HTTPS static Caddy",
+            arguments: [
+                "--runtime",
+                "static",
+                "--mode",
+                "domain",
+                "--domain",
+                "static.example.com",
+                "--dns-provider",
+                "manual",
+            ],
+            overlays: ["docker-compose.static.yml", "docker-compose.rustfs.caddy.yml"],
+        },
+        {
+            name: "Docker proxy static Caddy",
+            arguments: [
+                "--runtime",
+                "static",
+                "--mode",
+                "proxy",
+                "--proxy-type",
+                "docker",
+                "--proxy-network",
+                "reverse_proxy",
+            ],
+            overlays: ["docker-compose.static.yml", "docker-compose.rustfs.proxy-docker.yml"],
+        },
+    ];
+
+    for (const variant of variants) {
+        await t.test(variant.name, async (t) => {
+            const fixture = await createFixture(t);
+            const result = await installWithoutStarting(fixture, variant.arguments, fixedCredentials);
+            assert.equal(result.code, 0, result.stderr);
+            const saved = await readSavedEnvironment(fixture);
+            assert.equal(saved.RISUAI_CONFIG_VERSION, "3");
+            assert.equal(saved.RISUAI_RUNTIME, "static");
+            assert.equal(saved.POSTGRES_PASSWORD, "");
+            assert.equal(saved.RUSTFS_ACCESS_KEY, "");
+            assert.equal(saved.RUSTFS_SECRET_KEY, "");
+
+            const configCall = (await fixture.dockerCalls()).find(
+                (call) => call.command === "config" && call.args.includes("--quiet"),
+            );
+            assert.ok(configCall);
+            assert.deepEqual(composeFiles(configCall), variant.overlays);
+            assert.equal(configCall.env.RISUAI_RUNTIME, "static");
+        });
+    }
+});
+
+test("static lifecycle uses the Caddy image and rejects database management", async (t) => {
+    const fixture = await createFixture(t);
+    const install = await installWithoutStarting(
+        fixture,
+        ["--runtime", "static", "--mode", "local", "--app-port", "65432"],
+        {},
+    );
+    assert.equal(install.code, 0, install.stderr);
+
+    await fixture.clearDockerCalls();
+    const start = await fixture.run(["start"]);
+    assert.equal(start.code, 0, start.stderr);
+    const calls = await fixture.dockerCalls();
+    assert.equal(
+        calls.some(
+            (call) =>
+                call.args[0] === "image" &&
+                call.args[1] === "inspect" &&
+                call.args[2] === "risuai-static:local",
+        ),
+        true,
+    );
+    assert.equal(calls.some((call) => call.command === "exec" && call.args.includes("wget")), true);
+    assert.equal(calls.every((call) => call.env.RISUAI_RUNTIME !== "node"), true);
+
+    const database = await fixture.run(["db", "status"]);
+    assert.notEqual(database.code, 0);
+    assert.match(database.stderr, /Database commands are unavailable for the static runtime/);
+});
+
+test("runtime switches preserve Node credentials and can initialize storage after static", async (t) => {
+    await t.test("Node to static preserves dormant storage credentials", async (t) => {
+        const fixture = await createFixture(t);
+        const nodeInstall = await installWithoutStarting(fixture, ["--mode", "local"]);
+        assert.equal(nodeInstall.code, 0, nodeInstall.stderr);
+        const before = await readSavedEnvironment(fixture);
+
+        const staticInstall = await installWithoutStarting(
+            fixture,
+            ["--runtime", "static", "--mode", "local"],
+            {},
+        );
+        assert.equal(staticInstall.code, 0, staticInstall.stderr);
+        const after = await readSavedEnvironment(fixture);
+        assert.equal(after.RISUAI_RUNTIME, "static");
+        assert.equal(after.POSTGRES_PASSWORD, before.POSTGRES_PASSWORD);
+        assert.equal(after.RUSTFS_ACCESS_KEY, before.RUSTFS_ACCESS_KEY);
+        assert.equal(after.RUSTFS_SECRET_KEY, before.RUSTFS_SECRET_KEY);
+    });
+
+    await t.test("static to Node accepts initial storage credentials", async (t) => {
+        const fixture = await createFixture(t);
+        const staticInstall = await installWithoutStarting(
+            fixture,
+            ["--runtime", "static", "--mode", "local"],
+            {},
+        );
+        assert.equal(staticInstall.code, 0, staticInstall.stderr);
+
+        const nodeInstall = await installWithoutStarting(
+            fixture,
+            ["--runtime", "node", "--mode", "local"],
+            fixedCredentials,
+        );
+        assert.equal(nodeInstall.code, 0, nodeInstall.stderr);
+        const saved = await readSavedEnvironment(fixture);
+        assert.equal(saved.RISUAI_RUNTIME, "node");
+        assert.equal(saved.POSTGRES_PASSWORD, fixedCredentials.POSTGRES_PASSWORD);
+        assert.equal(saved.RUSTFS_ACCESS_KEY, fixedCredentials.RUSTFS_ACCESS_KEY);
+        assert.equal(saved.RUSTFS_SECRET_KEY, fixedCredentials.RUSTFS_SECRET_KEY);
+    });
 });
 
 test("saved deployment values override hostile ambient Compose and deployment variables", async (t) => {

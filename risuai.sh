@@ -1,11 +1,11 @@
 #!/bin/sh
 set -eu
 
-# RisuAI PostgreSQL + RustFS installer and lifecycle manager.
+# RisuAI Node/storage or static-web installer and lifecycle manager.
 # Keep this file POSIX-sh compatible: it is used on Linux, macOS, and WSL.
 
-program_version=2.1.0
-config_version=2
+program_version=2.2.0
+config_version=3
 project_name=risuai-rustfs
 
 resolve_script_path() {
@@ -56,6 +56,7 @@ cloudflare_token_file=$state_dir/cloudflare-token
 lock_dir=$state_dir/operation.lock
 
 compose_base=$script_dir/docker-compose.rustfs.yml
+compose_static=$script_dir/docker-compose.static.yml
 compose_local=$script_dir/docker-compose.rustfs.local.yml
 compose_lan=$script_dir/docker-compose.rustfs.lan.yml
 compose_caddy=$script_dir/docker-compose.rustfs.caddy.yml
@@ -85,7 +86,7 @@ die() { error "$*"; exit 1; }
 
 usage() {
     cat <<'EOF'
-RisuAI PostgreSQL + RustFS installer and manager
+RisuAI Node/storage or static-web installer and manager
 
 Usage:
   ./risuai.sh [install] [options]
@@ -101,6 +102,10 @@ Deployment modes:
   dynv6    Caddy HTTPS with dynv6 DDNS
   proxy    An existing reverse proxy on the host or a Docker network
 
+Application runtimes:
+  node     Node server with PostgreSQL and RustFS (default)
+  static   Browser-only web build served by Caddy; no Node server or storage services
+
 Database management:
   db status                         Check PostgreSQL health, credentials, version, and size
   db password [--generate]          Change the database password and update RisuAI safely
@@ -110,6 +115,7 @@ Database management:
   db optimize                       Run VACUUM (ANALYZE) on the RisuAI database
 
 Install options:
+  --runtime RUNTIME               node or static (default: node)
   --mode MODE                     local, lan, domain, dynv6, or proxy
   --domain HOSTNAME               HTTPS hostname (a trailing dot is accepted)
   --dns-provider PROVIDER         manual or cloudflare (domain mode)
@@ -140,7 +146,7 @@ Install options:
   -h, --help                      Show this help
 
 Environment inputs:
-  RISUAI_MODE, RISUAI_DOMAIN, RISUAI_DNS_PROVIDER, RISUAI_PROXY_TYPE,
+  RISUAI_RUNTIME, RISUAI_MODE, RISUAI_DOMAIN, RISUAI_DNS_PROVIDER, RISUAI_PROXY_TYPE,
   RISUAI_PROXY_NETWORK, RISUAI_PORT, RUSTFS_API_PORT,
   RUSTFS_CONSOLE_PORT, RISUAI_HTTP_PORT, RISUAI_HTTPS_PORT,
   RISUAI_WAIT_TIMEOUT, DYNV6_TOKEN, CLOUDFLARE_TOKEN,
@@ -153,6 +159,9 @@ safer than command-line token values.
 
 Examples:
   ./risuai.sh install --mode local -y
+  ./risuai.sh install --runtime static --mode local -y
+  ./risuai.sh install --runtime static --mode domain --domain chat.example.com \
+    --dns-provider manual -y
   ./risuai.sh install --mode lan --app-port 7000 -y
   ./risuai.sh install --mode domain --domain chat.example.com \
     --dns-provider manual -y
@@ -174,6 +183,7 @@ short_usage() {
 # inherited environment. compose_with_env supplies a complete validated
 # snapshot, so environment precedence cannot alter a saved deployment.
 input_mode=${RISUAI_MODE:-}
+input_runtime=${RISUAI_RUNTIME:-}
 input_domain=${RISUAI_DOMAIN:-${DYNV6_ZONE:-}}
 input_dns_provider=${RISUAI_DNS_PROVIDER:-}
 input_proxy_type=${RISUAI_PROXY_TYPE:-}
@@ -196,7 +206,7 @@ input_rustfs_access_key=${RUSTFS_ACCESS_KEY:-}
 input_rustfs_secret_key=${RUSTFS_SECRET_KEY:-}
 
 unset COMPOSE_FILE COMPOSE_PROJECT_NAME COMPOSE_PROFILES COMPOSE_ENV_FILES
-unset RISUAI_MODE RISUAI_DOMAIN RISUAI_DNS_PROVIDER RISUAI_PROXY_TYPE RISUAI_PROXY_NETWORK
+unset RISUAI_RUNTIME RISUAI_MODE RISUAI_DOMAIN RISUAI_DNS_PROVIDER RISUAI_PROXY_TYPE RISUAI_PROXY_NETWORK
 unset RISUAI_PORT RISUAI_HTTP_PORT RISUAI_HTTPS_PORT RISUAI_INSTALLATION_ID RISUAI_MIGRATE_CONCURRENCY
 unset RUSTFS_BIND_ADDRESS RUSTFS_API_PORT RUSTFS_CONSOLE_PORT
 unset POSTGRES_PASSWORD RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY
@@ -281,6 +291,29 @@ stored_mode_from() {
     if [ -n "$legacy_zone" ] && [ -n "$legacy_token_path" ] && [ -s "$dynv6_token_file" ]; then
         printf 'dynv6'
     fi
+}
+
+stored_runtime_from() {
+    runtime_file=$1
+    runtime_value=$(read_env_value_from "$runtime_file" RISUAI_RUNTIME)
+    [ -n "$runtime_value" ] || runtime_value=node
+    printf '%s' "$runtime_value"
+}
+
+compose_base_for_runtime() {
+    case "$1" in
+        node) printf '%s' "$compose_base" ;;
+        static) printf '%s' "$compose_static" ;;
+        *) return 1 ;;
+    esac
+}
+
+image_for_runtime() {
+    case "$1" in
+        node) printf 'risuai-full:local' ;;
+        static) printf 'risuai-static:local' ;;
+        *) return 1 ;;
+    esac
 }
 
 is_valid_port() {
@@ -489,8 +522,16 @@ require_files_for_configuration() {
     required_mode=$1
     required_dns=$2
     required_proxy=$3
-    required_file "$compose_base" "base Compose file"
-    required_file "$script_dir/Dockerfile" "Dockerfile"
+    required_runtime=${4:-node}
+    required_base=$(compose_base_for_runtime "$required_runtime") || die "Invalid application runtime: $required_runtime"
+    required_file "$required_base" "$required_runtime Compose file"
+    case "$required_runtime" in
+        node) required_file "$script_dir/Dockerfile" "Node Dockerfile" ;;
+        static)
+            required_file "$script_dir/Dockerfile.static" "static-web Dockerfile"
+            required_file "$script_dir/deploy/rustfs/Caddyfile.static" "static-web Caddy configuration"
+            ;;
+    esac
     case "$required_mode:$required_dns:$required_proxy" in
         local:*:*|proxy:*:host) required_file "$compose_local" "local Compose overlay" ;;
         lan:*:*) required_file "$compose_lan" "LAN Compose overlay" ;;
@@ -540,11 +581,14 @@ validate_saved_configuration() {
     validate_file=$1
     [ -f "$validate_file" ] || return 1
     saved_version=$(read_env_value_from "$validate_file" RISUAI_CONFIG_VERSION)
-    case "$saved_version" in ''|1|2) ;; *) error "Unsupported or invalid RISUAI_CONFIG_VERSION in $validate_file"; return 1 ;; esac
+    case "$saved_version" in ''|1|2|3) ;; *) error "Unsupported or invalid RISUAI_CONFIG_VERSION in $validate_file"; return 1 ;; esac
     saved_project=$(read_env_value_from "$validate_file" COMPOSE_PROJECT_NAME)
     case "$saved_project" in ''|risuai-rustfs) ;; *) error "Unexpected COMPOSE_PROJECT_NAME in $validate_file"; return 1 ;; esac
     saved_mode=$(stored_mode_from "$validate_file")
     case "$saved_mode" in local|lan|domain|dynv6|proxy) ;; *) error "Missing or invalid RISUAI_MODE in $validate_file"; return 1 ;; esac
+    saved_runtime=$(stored_runtime_from "$validate_file")
+    case "$saved_runtime" in node|static) ;; *) error "Missing or invalid RISUAI_RUNTIME in $validate_file"; return 1 ;; esac
+    if [ "$saved_version" = 3 ] && [ -z "$(read_env_value_from "$validate_file" RISUAI_RUNTIME)" ]; then error "Schema 3 configuration is missing RISUAI_RUNTIME"; return 1; fi
     saved_dns=$(env_value_or "$validate_file" RISUAI_DNS_PROVIDER none)
     saved_proxy=$(env_value_or "$validate_file" RISUAI_PROXY_TYPE none)
     case "$saved_mode:$saved_dns:$saved_proxy" in
@@ -562,14 +606,18 @@ validate_saved_configuration() {
         saved_port=$(env_value_or "$validate_file" "$saved_port_key" "$saved_port_default")
         is_valid_port "$saved_port" || { error "Invalid $saved_port_key in $validate_file"; return 1; }
     done
-    saved_postgres=$(read_env_value_from "$validate_file" POSTGRES_PASSWORD)
-    saved_access=$(read_env_value_from "$validate_file" RUSTFS_ACCESS_KEY)
-    saved_secret=$(read_env_value_from "$validate_file" RUSTFS_SECRET_KEY)
-    is_safe_credential "$saved_postgres" || { error "Missing or unsafe POSTGRES_PASSWORD in $validate_file"; return 1; }
-    is_safe_credential "$saved_access" || { error "Missing or unsafe RUSTFS_ACCESS_KEY in $validate_file"; return 1; }
-    is_safe_credential "$saved_secret" || { error "Missing or unsafe RUSTFS_SECRET_KEY in $validate_file"; return 1; }
+    if [ "$saved_runtime" = node ]; then
+        saved_postgres=$(read_env_value_from "$validate_file" POSTGRES_PASSWORD)
+        saved_access=$(read_env_value_from "$validate_file" RUSTFS_ACCESS_KEY)
+        saved_secret=$(read_env_value_from "$validate_file" RUSTFS_SECRET_KEY)
+        is_safe_credential "$saved_postgres" || { error "Missing or unsafe POSTGRES_PASSWORD in $validate_file"; return 1; }
+        is_safe_credential "$saved_access" || { error "Missing or unsafe RUSTFS_ACCESS_KEY in $validate_file"; return 1; }
+        is_safe_credential "$saved_secret" || { error "Missing or unsafe RUSTFS_SECRET_KEY in $validate_file"; return 1; }
+    fi
     saved_id=$(read_env_value_from "$validate_file" RISUAI_INSTALLATION_ID)
-    if [ "$saved_version" = 2 ] && [ -z "$saved_id" ]; then error "Schema 2 configuration is missing RISUAI_INSTALLATION_ID"; return 1; fi
+    case "$saved_version" in
+        2|3) [ -n "$saved_id" ] || { error "Schema $saved_version configuration is missing RISUAI_INSTALLATION_ID"; return 1; } ;;
+    esac
     if [ -n "$saved_id" ]; then
         if ! is_safe_scalar "$saved_id" || ! printf '%s\n' "$saved_id" | grep -Eq '^[0-9a-f]{32}$'; then error "Invalid RISUAI_INSTALLATION_ID in $validate_file"; return 1; fi
     fi
@@ -606,6 +654,8 @@ compose_with_env() (
     selected_dynv6_path=$2
     selected_cloudflare_path=$3
     shift 3
+    selected_runtime=$(stored_runtime_from "$selected_env")
+    selected_base=$(compose_base_for_runtime "$selected_runtime") || return 64
     selected_mode=$(stored_mode_from "$selected_env")
     selected_dns=$(env_value_or "$selected_env" RISUAI_DNS_PROVIDER none)
     selected_proxy=$(env_value_or "$selected_env" RISUAI_PROXY_TYPE none)
@@ -626,6 +676,7 @@ compose_with_env() (
 
     unset COMPOSE_FILE COMPOSE_PROFILES COMPOSE_ENV_FILES
     COMPOSE_PROJECT_NAME=$project_name
+    RISUAI_RUNTIME=$selected_runtime
     RISUAI_MODE=$selected_mode
     RISUAI_DNS_PROVIDER=$selected_dns
     RISUAI_PROXY_TYPE=$selected_proxy
@@ -650,7 +701,7 @@ compose_with_env() (
     CLOUDFLARE_TOKEN_FILE=$selected_cloudflare_path
     CLOUDFLARE_UPDATE_INTERVAL=$selected_interval
     RISUAI_MIGRATE_CONCURRENCY=4
-    export COMPOSE_PROJECT_NAME RISUAI_MODE RISUAI_DNS_PROVIDER RISUAI_PROXY_TYPE RISUAI_PROXY_NETWORK
+    export COMPOSE_PROJECT_NAME RISUAI_RUNTIME RISUAI_MODE RISUAI_DNS_PROVIDER RISUAI_PROXY_TYPE RISUAI_PROXY_NETWORK
     export RISUAI_INSTALLATION_ID RISUAI_PORT RISUAI_HTTP_PORT RISUAI_HTTPS_PORT RISUAI_MIGRATE_CONCURRENCY
     export POSTGRES_PASSWORD RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY RUSTFS_BIND_ADDRESS RUSTFS_API_PORT RUSTFS_CONSOLE_PORT
     export RISUAI_DOMAIN DYNV6_ZONE DYNV6_IPV6 DYNV6_TOKEN_FILE DYNV6_UPDATE_INTERVAL
@@ -658,17 +709,17 @@ compose_with_env() (
 
     case "$selected_mode:$selected_dns:$selected_proxy" in
         local:*:*|proxy:*:host)
-            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$compose_base" -f "$compose_local" "$@" ;;
+            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_local" "$@" ;;
         lan:*:*)
-            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$compose_base" -f "$compose_lan" "$@" ;;
+            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_lan" "$@" ;;
         domain:cloudflare:*)
-            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$compose_base" -f "$compose_caddy" -f "$compose_cloudflare" "$@" ;;
+            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_caddy" -f "$compose_cloudflare" "$@" ;;
         domain:manual:*)
-            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$compose_base" -f "$compose_caddy" "$@" ;;
+            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_caddy" "$@" ;;
         dynv6:*:*)
-            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$compose_base" -f "$compose_caddy" -f "$compose_dynv6" "$@" ;;
+            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_caddy" -f "$compose_dynv6" "$@" ;;
         proxy:*:docker)
-            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$compose_base" -f "$compose_proxy_docker" "$@" ;;
+            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_proxy_docker" "$@" ;;
         *) return 64 ;;
     esac
 )
@@ -726,17 +777,21 @@ check_container_ownership() {
 }
 
 validate_port_layout() {
-    [ "$rustfs_api_port" != "$rustfs_console_port" ] || die "RustFS API and console ports must be different"
-    if [ "$mode:$proxy_type" != proxy:docker ]; then
-        [ "$app_port" != "$rustfs_api_port" ] || die "RisuAI and RustFS API cannot publish the same host port"
-        [ "$app_port" != "$rustfs_console_port" ] || die "RisuAI and RustFS console cannot publish the same host port"
+    if [ "$runtime" = node ]; then
+        [ "$rustfs_api_port" != "$rustfs_console_port" ] || die "RustFS API and console ports must be different"
+        if [ "$mode:$proxy_type" != proxy:docker ]; then
+            [ "$app_port" != "$rustfs_api_port" ] || die "RisuAI and RustFS API cannot publish the same host port"
+            [ "$app_port" != "$rustfs_console_port" ] || die "RisuAI and RustFS console cannot publish the same host port"
+        fi
     fi
     case "$mode" in
         domain|dynv6)
             [ "$http_port" != "$https_port" ] || die "Caddy HTTP and HTTPS ports must be different"
             for public_tcp_port in "$http_port" "$https_port"; do
-                [ "$public_tcp_port" != "$rustfs_api_port" ] || die "A Caddy port conflicts with the RustFS API port"
-                [ "$public_tcp_port" != "$rustfs_console_port" ] || die "A Caddy port conflicts with the RustFS console port"
+                if [ "$runtime" = node ]; then
+                    [ "$public_tcp_port" != "$rustfs_api_port" ] || die "A Caddy port conflicts with the RustFS API port"
+                    [ "$public_tcp_port" != "$rustfs_console_port" ] || die "A Caddy port conflicts with the RustFS console port"
+                fi
                 [ "$public_tcp_port" != "$app_port" ] || die "A Caddy port conflicts with the RisuAI maintenance port"
             done
             ;;
@@ -821,8 +876,10 @@ check_port() {
 check_required_ports() {
     [ "$skip_port_check" = false ] || { warn "Skipping host port preflight checks by request."; return; }
     info "Checking every requested host port"
-    check_port tcp "$rustfs_api_port" loopback
-    check_port tcp "$rustfs_console_port" loopback
+    if [ "$runtime" = node ]; then
+        check_port tcp "$rustfs_api_port" loopback
+        check_port tcp "$rustfs_console_port" loopback
+    fi
     case "$mode:$proxy_type" in
         local:*|proxy:host) check_port tcp "$app_port" loopback ;;
         lan:*) check_port tcp "$app_port" all ;;
@@ -836,6 +893,7 @@ check_required_ports() {
 }
 
 load_saved_port_settings() {
+    runtime=$(stored_runtime_from "$env_file")
     mode=$(stored_mode_from "$env_file")
     dns_provider=$(env_value_or "$env_file" RISUAI_DNS_PROVIDER none)
     proxy_type=$(env_value_or "$env_file" RISUAI_PROXY_TYPE none)
@@ -890,6 +948,7 @@ deployment_url_from() {
 show_deployment_from() {
     show_env=$1
     current_mode=$(stored_mode_from "$show_env")
+    current_runtime=$(stored_runtime_from "$show_env")
     current_dns=$(env_value_or "$show_env" RISUAI_DNS_PROVIDER none)
     current_proxy=$(env_value_or "$show_env" RISUAI_PROXY_TYPE none)
     current_app_port=$(env_value_or "$show_env" RISUAI_PORT 6001)
@@ -899,7 +958,8 @@ show_deployment_from() {
     current_https_port=$(env_value_or "$show_env" RISUAI_HTTPS_PORT 443)
     current_ipv6=$(env_value_or "$show_env" DYNV6_IPV6 false)
     current_id=$(env_value_or "$show_env" RISUAI_INSTALLATION_ID legacy)
-    printf '\n  Mode:              %s\n' "$current_mode"
+    printf '\n  Runtime:           %s\n' "$current_runtime"
+    printf '  Mode:              %s\n' "$current_mode"
     [ "$current_dns" = none ] || printf '  DNS provider:      %s\n' "$current_dns"
     [ "$current_proxy" = none ] || printf '  Proxy type:        %s\n' "$current_proxy"
     printf '  Configured target: %s\n' "$(deployment_url_from "$show_env")"
@@ -914,8 +974,12 @@ show_deployment_from() {
             if [ "$current_proxy" = docker ]; then printf '  Proxy network:     %s\n' "$(read_env_value_from "$show_env" RISUAI_PROXY_NETWORK)"; else printf '  Published app:     127.0.0.1:%s/tcp\n' "$current_app_port"; fi
             ;;
     esac
-    printf '  RustFS API:        127.0.0.1:%s/tcp\n' "$current_api_port"
-    printf '  RustFS console:    http://127.0.0.1:%s\n' "$current_console_port"
+    if [ "$current_runtime" = node ]; then
+        printf '  RustFS API:        127.0.0.1:%s/tcp\n' "$current_api_port"
+        printf '  RustFS console:    http://127.0.0.1:%s\n' "$current_console_port"
+    else
+        printf '  Web server:        Caddy static file server\n'
+    fi
     printf '  IPv6 DDNS:         %s\n' "$current_ipv6"
     printf '  Installation ID:   %s\n' "$current_id"
     printf '  Config file:       %s\n' "$env_file"
@@ -966,7 +1030,15 @@ wait_for_risuai() {
     wait_elapsed=0
     next_diagnostic=10
     while :; do
-        if compose exec -T risuai node -e "fetch('http://127.0.0.1:6001').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))" >/dev/null 2>&1; then
+        wait_runtime=$(stored_runtime_from "$env_file")
+        if [ "$wait_runtime" = static ]; then
+            readiness_ok=false
+            compose exec -T risuai wget -q --spider http://127.0.0.1:6001/ >/dev/null 2>&1 && readiness_ok=true
+        else
+            readiness_ok=false
+            compose exec -T risuai node -e "fetch('http://127.0.0.1:6001').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))" >/dev/null 2>&1 && readiness_ok=true
+        fi
+        if [ "$readiness_ok" = true ]; then
             if services_are_running false; then ok "RisuAI and all services are running"; return 0; fi
         fi
         if [ "$wait_started" -gt 0 ] 2>/dev/null; then
@@ -1094,9 +1166,10 @@ require_installation() {
     validate_state_permissions || die "Refusing saved state with unsafe permissions; fix it or rerun install to repair owned files"
     validate_saved_configuration "$env_file" || die "Saved configuration is invalid. Run: $script_path doctor"
     saved_mode=$(stored_mode_from "$env_file")
+    saved_runtime=$(stored_runtime_from "$env_file")
     saved_dns=$(env_value_or "$env_file" RISUAI_DNS_PROVIDER none)
     saved_proxy=$(env_value_or "$env_file" RISUAI_PROXY_TYPE none)
-    require_files_for_configuration "$saved_mode" "$saved_dns" "$saved_proxy"
+    require_files_for_configuration "$saved_mode" "$saved_dns" "$saved_proxy" "$saved_runtime"
 }
 
 upgrade_legacy_installation_identity() {
@@ -1107,12 +1180,14 @@ upgrade_legacy_installation_identity() {
     awk '
         index($0, "RISUAI_CONFIG_VERSION=") != 1 &&
         index($0, "RISUAI_INSTALLATION_ID=") != 1 &&
+        index($0, "RISUAI_RUNTIME=") != 1 &&
         index($0, "DYNV6_TOKEN_FILE=") != 1 &&
         index($0, "CLOUDFLARE_TOKEN_FILE=") != 1 { print }
     ' "$env_file" >"$tmp_upgrade" || die "Cannot read legacy configuration"
     {
         printf 'RISUAI_CONFIG_VERSION=%s\n' "$config_version"
         printf 'RISUAI_INSTALLATION_ID=%s\n' "$installation_id"
+        printf 'RISUAI_RUNTIME=node\n'
         printf 'DYNV6_TOKEN_FILE=./.risuai/dynv6-token\n'
         printf 'CLOUDFLARE_TOKEN_FILE=./.risuai/cloudflare-token\n'
     } >>"$tmp_upgrade" || die "Cannot write upgraded configuration"
@@ -1180,6 +1255,7 @@ recreate_risuai_for_database_password() {
 
 manage_database() {
     require_installation
+    [ "$saved_runtime" = node ] || die "Database commands are unavailable for the static runtime because it has no PostgreSQL service"
     require_docker_daemon
     require_local_docker
     installation_id=$(env_value_or "$env_file" RISUAI_INSTALLATION_ID legacy)
@@ -1337,7 +1413,7 @@ run_doctor() {
     [ "$#" -eq 0 ] || die "doctor does not accept arguments"
     doctor_failures=0
     info "Checking checkout files"
-    for doctor_file in "$compose_base" "$compose_local" "$compose_lan" "$compose_caddy" "$compose_dynv6" "$compose_cloudflare" "$compose_proxy_docker" "$script_dir/Dockerfile" "$script_dir/deploy/rustfs/Caddyfile" "$script_dir/deploy/rustfs/update-dynv6.sh" "$script_dir/deploy/rustfs/update-cloudflare.mjs"; do
+    for doctor_file in "$compose_base" "$compose_static" "$compose_local" "$compose_lan" "$compose_caddy" "$compose_dynv6" "$compose_cloudflare" "$compose_proxy_docker" "$script_dir/Dockerfile" "$script_dir/Dockerfile.static" "$script_dir/deploy/rustfs/Caddyfile" "$script_dir/deploy/rustfs/Caddyfile.static" "$script_dir/deploy/rustfs/update-dynv6.sh" "$script_dir/deploy/rustfs/update-cloudflare.mjs"; do
         if [ -f "$doctor_file" ]; then ok "Found ${doctor_file#"$script_dir"/}"; else error "Missing $doctor_file"; doctor_failures=$((doctor_failures + 1)); fi
     done
     info "Checking Docker"
@@ -1371,9 +1447,10 @@ run_doctor() {
         if validate_saved_configuration "$env_file"; then
             ok "Saved configuration schema and required secrets are valid"
             doctor_mode=$(stored_mode_from "$env_file")
+            doctor_runtime=$(stored_runtime_from "$env_file")
             doctor_dns=$(env_value_or "$env_file" RISUAI_DNS_PROVIDER none)
             doctor_proxy=$(env_value_or "$env_file" RISUAI_PROXY_TYPE none)
-            if ( require_files_for_configuration "$doctor_mode" "$doctor_dns" "$doctor_proxy" ) 2>/dev/null; then ok "Mode-specific support files are present"; else error "Mode-specific support files are incomplete"; doctor_failures=$((doctor_failures + 1)); fi
+            if ( require_files_for_configuration "$doctor_mode" "$doctor_dns" "$doctor_proxy" "$doctor_runtime" ) 2>/dev/null; then ok "Runtime and mode-specific support files are present"; else error "Runtime or mode-specific support files are incomplete"; doctor_failures=$((doctor_failures + 1)); fi
             if docker info >/dev/null 2>&1; then
                 if compose config --quiet; then ok "Docker Compose model is valid and isolated from ambient deployment variables"; else error "Docker Compose model is invalid"; doctor_failures=$((doctor_failures + 1)); fi
                 if [ "$doctor_mode:$doctor_proxy" = proxy:docker ]; then
@@ -1387,7 +1464,9 @@ run_doctor() {
                     doctor_failures=$((doctor_failures + 1))
                     compose ps --all || true
                 fi
-                if postgres_is_running; then
+                if [ "$doctor_runtime" = static ]; then
+                    ok "Static runtime correctly has no PostgreSQL authentication check"
+                elif postgres_is_running; then
                     if postgres_saved_password_matches; then
                         ok "Saved PostgreSQL password authenticates successfully"
                     else
@@ -1470,7 +1549,8 @@ manage_existing_installation() {
             if [ "$mode:$proxy_type" = proxy:docker ] && ! docker network inspect "$proxy_network" >/dev/null 2>&1; then die "Saved Docker proxy network is missing: $proxy_network"; fi
             check_required_ports
             info "Starting the saved RisuAI deployment"
-            if docker image inspect risuai-full:local >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
+            runtime_image=$(image_for_runtime "$runtime")
+            if docker image inspect "$runtime_image" >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local $runtime RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
             wait_for_risuai "$wait_timeout" || die "RisuAI did not become ready within ${wait_timeout}s"
             compose ps --all
             show_deployment_from "$env_file"
@@ -1492,7 +1572,8 @@ manage_existing_installation() {
             if [ "$mode:$proxy_type" = proxy:docker ] && ! docker network inspect "$proxy_network" >/dev/null 2>&1; then die "Saved Docker proxy network is missing: $proxy_network"; fi
             check_required_ports
             info "Reconciling and restarting all RisuAI containers"
-            if docker image inspect risuai-full:local >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
+            runtime_image=$(image_for_runtime "$runtime")
+            if docker image inspect "$runtime_image" >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local $runtime RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
             compose restart
             wait_for_risuai "$wait_timeout" || die "RisuAI did not become ready within ${wait_timeout}s"
             compose ps --all
@@ -1527,6 +1608,7 @@ if [ "$action" != install ]; then manage_existing_installation "$@"; exit $?; fi
 
 # ------------------------------ install ------------------------------
 
+runtime=$input_runtime
 mode=$input_mode
 domain=$input_domain
 dns_provider=$input_dns_provider
@@ -1565,11 +1647,16 @@ cloudflare_cli_source=none
 [ -n "$cloudflare_token" ] && cloudflare_token_source=environment
 http_port_explicit=false
 https_port_explicit=false
+rustfs_api_port_explicit=false
+rustfs_console_port_explicit=false
 [ -n "$http_port" ] && http_port_explicit=true
 [ -n "$https_port" ] && https_port_explicit=true
+[ -n "$rustfs_api_port" ] && rustfs_api_port_explicit=true
+[ -n "$rustfs_console_port" ] && rustfs_console_port_explicit=true
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --runtime) [ "$#" -ge 2 ] || die "--runtime requires a value"; runtime=$2; shift 2 ;;
         --mode) [ "$#" -ge 2 ] || die "--mode requires a value"; mode=$2; shift 2 ;;
         --domain) [ "$#" -ge 2 ] || die "--domain requires a value"; domain=$2; shift 2 ;;
         --dns-provider) [ "$#" -ge 2 ] || die "--dns-provider requires a value"; dns_provider=$2; shift 2 ;;
@@ -1597,8 +1684,8 @@ while [ "$#" -gt 0 ]; do
         --proxy-type) [ "$#" -ge 2 ] || die "--proxy-type requires a value"; proxy_type=$2; shift 2 ;;
         --proxy-network) [ "$#" -ge 2 ] || die "--proxy-network requires a value"; proxy_network=$2; shift 2 ;;
         --app-port) [ "$#" -ge 2 ] || die "--app-port requires a value"; app_port=$2; shift 2 ;;
-        --rustfs-api-port) [ "$#" -ge 2 ] || die "--rustfs-api-port requires a value"; rustfs_api_port=$2; shift 2 ;;
-        --rustfs-console-port) [ "$#" -ge 2 ] || die "--rustfs-console-port requires a value"; rustfs_console_port=$2; shift 2 ;;
+        --rustfs-api-port) [ "$#" -ge 2 ] || die "--rustfs-api-port requires a value"; rustfs_api_port=$2; rustfs_api_port_explicit=true; shift 2 ;;
+        --rustfs-console-port) [ "$#" -ge 2 ] || die "--rustfs-console-port requires a value"; rustfs_console_port=$2; rustfs_console_port_explicit=true; shift 2 ;;
         --http-port) [ "$#" -ge 2 ] || die "--http-port requires a value"; http_port=$2; http_port_explicit=true; shift 2 ;;
         --https-port) [ "$#" -ge 2 ] || die "--https-port requires a value"; https_port=$2; https_port_explicit=true; shift 2 ;;
         --ddns-interval) [ "$#" -ge 2 ] || die "--ddns-interval requires a value"; ddns_interval=$2; shift 2 ;;
@@ -1628,15 +1715,31 @@ acquire_lock
 saved_present=false
 saved_configuration_valid=false
 saved_mode=
+saved_runtime=
 if [ -f "$env_file" ]; then
     saved_present=true
     if validate_saved_configuration "$env_file"; then
         saved_configuration_valid=true
         saved_mode=$(stored_mode_from "$env_file")
+        saved_runtime=$(stored_runtime_from "$env_file")
     else
         [ -n "$mode" ] || die "The existing configuration is damaged; specify a complete replacement with --mode after reviewing $env_file"
         warn "The existing configuration is invalid. It will be backed up and replaced only after validation."
     fi
+fi
+
+if [ -z "$runtime" ] && [ "$saved_configuration_valid" = true ]; then runtime=$saved_runtime; fi
+if [ -z "$runtime" ] && [ "$interactive" = true ]; then runtime=$(prompt_line "Application runtime (node or static)" node); fi
+[ -n "$runtime" ] || runtime=node
+case "$runtime" in node|static) ;; *) die "Invalid --runtime: $runtime (expected node or static)" ;; esac
+if [ "$runtime" = static ]; then
+    if [ "$rustfs_api_port_explicit" = true ] || [ "$rustfs_console_port_explicit" = true ]; then die "--rustfs-api-port/--rustfs-console-port are only valid with --runtime node"; fi
+    # Storage credentials from the shell are irrelevant to a static deployment
+    # and must not leak into its saved configuration. Credentials already saved
+    # by a previous Node deployment are preserved later for a reversible switch.
+    postgres_password=
+    rustfs_access_key=
+    rustfs_secret_key=
 fi
 
 if [ -z "$mode" ] && [ -n "$domain" ] && [ -n "$dynv6_token" ]; then mode=dynv6; fi
@@ -1747,7 +1850,7 @@ fi
 case "$dynv6_token_source $cloudflare_token_source" in *argv*) warn "A provider token was supplied in process argv; prefer the corresponding --*-token-file option." ;; esac
 
 validate_port_layout
-require_files_for_configuration "$mode" "$dns_provider" "$proxy_type"
+require_files_for_configuration "$mode" "$dns_provider" "$proxy_type" "$runtime"
 require_docker_daemon
 require_local_docker
 if [ "$mode:$proxy_type" = proxy:docker ] && ! docker network inspect "$proxy_network" >/dev/null 2>&1; then die "Docker network '$proxy_network' does not exist. Create it first or select --proxy-type host."; fi
@@ -1762,7 +1865,7 @@ fi
 
 postgres_volume=${project_name}_risuai-postgres
 rustfs_volume=${project_name}_rustfs-data
-if [ "$saved_present" = false ]; then
+if [ "$runtime" = node ] && [ "$saved_present" = false ]; then
     existing_data=false
     docker volume inspect "$postgres_volume" >/dev/null 2>&1 && existing_data=true
     docker volume inspect "$rustfs_volume" >/dev/null 2>&1 && existing_data=true
@@ -1773,33 +1876,36 @@ if [ "$saved_configuration_valid" = true ]; then
     saved_postgres_password=$(read_env_value_from "$env_file" POSTGRES_PASSWORD)
     saved_rustfs_access_key=$(read_env_value_from "$env_file" RUSTFS_ACCESS_KEY)
     saved_rustfs_secret_key=$(read_env_value_from "$env_file" RUSTFS_SECRET_KEY)
-    if [ -n "$postgres_password" ] && [ "$postgres_password" != "$saved_postgres_password" ]; then die "POSTGRES_PASSWORD cannot be changed during reinstall; use '$script_path db password' (or 'db password --generate') so PostgreSQL and RisuAI stay synchronized"; fi
-    if [ -n "$rustfs_access_key" ] && [ "$rustfs_access_key" != "$saved_rustfs_access_key" ]; then die "RUSTFS_ACCESS_KEY cannot be changed during reinstall"; fi
-    if [ -n "$rustfs_secret_key" ] && [ "$rustfs_secret_key" != "$saved_rustfs_secret_key" ]; then die "RUSTFS_SECRET_KEY cannot be changed during reinstall"; fi
-    postgres_password=$saved_postgres_password
-    rustfs_access_key=$saved_rustfs_access_key
-    rustfs_secret_key=$saved_rustfs_secret_key
+    if [ -n "$postgres_password" ] && [ -n "$saved_postgres_password" ] && [ "$postgres_password" != "$saved_postgres_password" ]; then die "POSTGRES_PASSWORD cannot be changed during reinstall; use '$script_path db password' (or 'db password --generate') so PostgreSQL and RisuAI stay synchronized"; fi
+    if [ -n "$rustfs_access_key" ] && [ -n "$saved_rustfs_access_key" ] && [ "$rustfs_access_key" != "$saved_rustfs_access_key" ]; then die "RUSTFS_ACCESS_KEY cannot be changed during reinstall"; fi
+    if [ -n "$rustfs_secret_key" ] && [ -n "$saved_rustfs_secret_key" ] && [ "$rustfs_secret_key" != "$saved_rustfs_secret_key" ]; then die "RUSTFS_SECRET_KEY cannot be changed during reinstall"; fi
+    [ -z "$saved_postgres_password" ] || postgres_password=$saved_postgres_password
+    [ -z "$saved_rustfs_access_key" ] || rustfs_access_key=$saved_rustfs_access_key
+    [ -z "$saved_rustfs_secret_key" ] || rustfs_secret_key=$saved_rustfs_secret_key
 fi
-if [ -z "$postgres_password" ] && [ "$adopt_existing" = true ]; then postgres_password=$(recover_container_env risuai-postgres POSTGRES_PASSWORD); fi
-if [ -z "$rustfs_access_key" ] && [ "$adopt_existing" = true ]; then rustfs_access_key=$(recover_container_env risuai-rustfs RUSTFS_ACCESS_KEY); fi
-if [ -z "$rustfs_secret_key" ] && [ "$adopt_existing" = true ]; then rustfs_secret_key=$(recover_container_env risuai-rustfs RUSTFS_SECRET_KEY); fi
-if docker volume inspect "$postgres_volume" >/dev/null 2>&1 && [ -z "$postgres_password" ]; then die "Existing PostgreSQL data requires its original POSTGRES_PASSWORD"; fi
-if docker volume inspect "$rustfs_volume" >/dev/null 2>&1 && { [ -z "$rustfs_access_key" ] || [ -z "$rustfs_secret_key" ]; }; then die "Existing RustFS data requires its original RUSTFS_ACCESS_KEY and RUSTFS_SECRET_KEY"; fi
-[ -n "$postgres_password" ] || postgres_password=$(random_secret)
-[ -n "$rustfs_access_key" ] || rustfs_access_key=risuai-$(random_secret | cut -c1-24)
-[ -n "$rustfs_secret_key" ] || rustfs_secret_key=$(random_secret)
-is_safe_credential "$postgres_password" || die "POSTGRES_PASSWORD must contain only URL-safe A-Z/a-z/0-9/._~- characters"
-is_safe_credential "$rustfs_access_key" || die "RUSTFS_ACCESS_KEY contains unsupported characters"
-is_safe_credential "$rustfs_secret_key" || die "RUSTFS_SECRET_KEY contains unsupported characters"
+if [ "$runtime" = node ]; then
+    if [ -z "$postgres_password" ] && [ "$adopt_existing" = true ]; then postgres_password=$(recover_container_env risuai-postgres POSTGRES_PASSWORD); fi
+    if [ -z "$rustfs_access_key" ] && [ "$adopt_existing" = true ]; then rustfs_access_key=$(recover_container_env risuai-rustfs RUSTFS_ACCESS_KEY); fi
+    if [ -z "$rustfs_secret_key" ] && [ "$adopt_existing" = true ]; then rustfs_secret_key=$(recover_container_env risuai-rustfs RUSTFS_SECRET_KEY); fi
+    if docker volume inspect "$postgres_volume" >/dev/null 2>&1 && [ -z "$postgres_password" ]; then die "Existing PostgreSQL data requires its original POSTGRES_PASSWORD"; fi
+    if docker volume inspect "$rustfs_volume" >/dev/null 2>&1 && { [ -z "$rustfs_access_key" ] || [ -z "$rustfs_secret_key" ]; }; then die "Existing RustFS data requires its original RUSTFS_ACCESS_KEY and RUSTFS_SECRET_KEY"; fi
+    [ -n "$postgres_password" ] || postgres_password=$(random_secret)
+    [ -n "$rustfs_access_key" ] || rustfs_access_key=risuai-$(random_secret | cut -c1-24)
+    [ -n "$rustfs_secret_key" ] || rustfs_secret_key=$(random_secret)
+    is_safe_credential "$postgres_password" || die "POSTGRES_PASSWORD must contain only URL-safe A-Z/a-z/0-9/._~- characters"
+    is_safe_credential "$rustfs_access_key" || die "RUSTFS_ACCESS_KEY contains unsupported characters"
+    is_safe_credential "$rustfs_secret_key" || die "RUSTFS_SECRET_KEY contains unsupported characters"
+fi
 
 check_required_ports
 
 if [ "$assume_yes" != true ] && [ "$dry_run" != true ]; then
     [ "$interactive" = true ] || die "No controlling terminal is available for confirmation; rerun with --yes after reviewing --dry-run output"
     printf '\nInstallation plan:\n'
+    printf '  Runtime:           %s\n' "$runtime"
     printf '  Mode:              %s\n' "$mode"
     printf '  Configured target: %s\n' "$(case "$mode:$proxy_type" in local:*) printf 'http://localhost:%s' "$app_port" ;; lan:*) printf 'http://SERVER-IP:%s' "$app_port" ;; domain:*|dynv6:*) if [ "$https_port" = 443 ]; then printf 'https://%s' "$domain"; else printf 'https://%s:%s' "$domain" "$https_port"; fi ;; proxy:host) printf 'http://127.0.0.1:%s' "$app_port" ;; proxy:docker) printf 'http://risuai:6001 on %s' "$proxy_network" ;; esac)"
-    printf '  RustFS:            loopback ports %s/%s only\n' "$rustfs_api_port" "$rustfs_console_port"
+    if [ "$runtime" = node ]; then printf '  RustFS:            loopback ports %s/%s only\n' "$rustfs_api_port" "$rustfs_console_port"; else printf '  Web server:        Caddy serving the browser-only static build\n'; fi
     [ "$saved_present" = false ] || printf '  Existing data:     credentials and volumes will be preserved\n'
     case "$mode" in lan) warn "LAN mode listens on every IPv4 interface without TLS." ;; domain|dynv6) warn "Public/NAT TCP mappings must ultimately expose HTTP on 80 and HTTPS on 443 for automatic certificates." ;; esac
     prompt_confirmation "Apply this plan?" no || { info "Installation cancelled"; exit 0; }
@@ -1823,6 +1929,7 @@ write_env() {
 RISUAI_CONFIG_VERSION=$config_version
 COMPOSE_PROJECT_NAME=$project_name
 RISUAI_INSTALLATION_ID=$installation_id
+RISUAI_RUNTIME=$runtime
 RISUAI_MODE=$mode
 RISUAI_DNS_PROVIDER=$dns_provider
 RISUAI_PROXY_TYPE=$proxy_type
@@ -1894,8 +2001,10 @@ tmp_env=
 chmod 600 "$env_file"
 
 if [ "$no_start" = false ]; then
-    mkdir -p "$script_dir/save" || die "Cannot create the persistent save directory"
-    [ -w "$script_dir/save" ] || die "Persistent save directory is not writable: $script_dir/save"
+    if [ "$runtime" = node ]; then
+        mkdir -p "$script_dir/save" || die "Cannot create the persistent save directory"
+        [ -w "$script_dir/save" ] || die "Persistent save directory is not writable: $script_dir/save"
+    fi
     info "Starting the validated deployment"
     compose up -d --remove-orphans
     wait_for_risuai "$wait_timeout" || die "RisuAI did not become ready within ${wait_timeout}s"

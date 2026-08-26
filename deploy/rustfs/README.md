@@ -1,17 +1,39 @@
-# RisuAI PostgreSQL + RustFS deployment
+# RisuAI Node/storage and static-web deployment
 
-`risuai.sh` is the guided installer and lifecycle manager for the RisuAI,
-PostgreSQL, and RustFS Compose stack. It selects only the networking and DDNS
-services required by the saved deployment mode. Run it from a source checkout
-with a local Docker Engine or Docker Desktop daemon and Docker Compose v2:
+`risuai.sh` is the guided installer and lifecycle manager for either the full
+RisuAI Node/PostgreSQL/RustFS stack or a browser-only static build served by
+Caddy. It selects only the runtime, networking, and DDNS services required by
+the saved configuration. Run it from a source checkout with a local Docker
+Engine or Docker Desktop daemon and Docker Compose v2:
 
 ```sh
 ./risuai.sh install
 ```
 
 The script rejects remote Docker contexts because the stack uses paths and port
-checks on the local host. The interactive default is `local`; a reinstall with
-a valid saved configuration keeps the saved mode and credentials by default.
+checks on the local host. The interactive defaults are `node` and `local`; a
+reinstall with a valid saved configuration keeps the saved runtime, mode, and
+credentials by default.
+
+## Application runtimes
+
+| Runtime | Application service | Storage services | Intended use |
+| --- | --- | --- | --- |
+| `node` | Node server built from `Dockerfile` | PostgreSQL and RustFS | Server-side/multi-device deployment |
+| `static` | Caddy serving the `pnpm buildsite` output | None | Browser-only web application |
+
+`node` remains the default for compatibility. Select the static runtime with
+`--runtime static`. Static mode does not start a Node server, PostgreSQL, or
+RustFS, and `risuai.sh db ...` commands are unavailable. Application data and
+capabilities follow the browser build rather than the Node server; do not
+expect server-side persistence or Node-only APIs. Switching a saved Node
+installation to static leaves its named data volumes intact, but those volumes
+are not used by the static application.
+
+The static application itself is served by an internal Caddy container on port
+6001. In `domain` and `dynv6` modes, the existing edge Caddy service terminates
+public TLS and proxies to that internal static server. This keeps all exposure
+modes and external-proxy targets consistent.
 
 ## Deployment modes
 
@@ -39,6 +61,7 @@ install options are:
 
 | Purpose | Options |
 | --- | --- |
+| Application | `--runtime node|static` |
 | Mode | `--mode`, `--domain`, `--dns-provider`, `--proxy-type`, `--proxy-network` |
 | DDNS credentials | `--dynv6-token-file`, `--cloudflare-token-file`, `--cloudflare-zone-id` |
 | DDNS behavior | `--ddns-interval`, `--ipv6`, `--no-ipv6`, `--skip-ddns-check` |
@@ -51,6 +74,8 @@ are saved for later management commands. The defaults are app 6001, RustFS API
 `--http-port` and `--https-port` are valid only for `domain` or `dynv6`.
 Docker-proxy mode has no app host mapping and always uses the internal upstream
 `risuai:6001`, so `--app-port` must remain 6001 in that mode.
+RustFS port options are valid only with `--runtime node`. PostgreSQL/RustFS
+credential environment variables are ignored for a new static configuration.
 
 `--ddns-interval` accepts 60 through 86400 seconds. `--ipv6` adds an AAAA
 update; it does not make the deployment IPv6-only, because both bundled DDNS
@@ -75,6 +100,13 @@ reuses the protected saved token unless a replacement is explicitly supplied.
 ```sh
 # Local-only installation
 ./risuai.sh install --mode local -y
+
+# Browser-only web build served locally by Caddy
+./risuai.sh install --runtime static --mode local -y
+
+# Browser-only web build with automatic HTTPS
+./risuai.sh install --runtime static --mode domain \
+  --domain static.example.com --dns-provider manual -y
 
 # LAN HTTP on a custom application port
 ./risuai.sh install --mode lan --app-port 7000 -y
@@ -164,7 +196,7 @@ ran. UFW changes occur only after the configuration transaction commits and
 are not rolled back or later removed by the script. Take a real backup before
 upgrades, migrations, or risky mode changes.
 
-Existing PostgreSQL and RustFS credentials cannot be rotated by reinstalling;
+Existing PostgreSQL and RustFS credentials in Node configurations cannot be rotated by reinstalling;
 the script refuses changed values because both services require dedicated
 rotation procedures.
 
@@ -259,7 +291,7 @@ and never deletes it.
 ./risuai.sh version
 ```
 
-- `start` loads the saved mode, checks ports and ownership, creates/reconciles
+- `start` loads the saved runtime and mode, checks ports and ownership, creates/reconciles
   containers, and builds RisuAI only when its local image is missing.
 - `stop` stops containers without deleting them. Services use
   `restart: unless-stopped`, so a manual stop remains stopped across daemon
@@ -284,8 +316,9 @@ and never deletes it.
 
 ## Health-check scope
 
-PostgreSQL has a `pg_isready` healthcheck and RisuAI has an internal HTTP
-healthcheck. Caddy waits for RisuAI to be healthy. RustFS currently has no
+In the Node runtime, PostgreSQL has a `pg_isready` healthcheck and RisuAI has an
+internal HTTP healthcheck. The static runtime checks its Caddy-served root
+document. The edge Caddy waits for RisuAI to be healthy. RustFS currently has no
 Compose healthcheck and RisuAI depends only on its container having started;
 the DDNS sidecars also have no Docker health status. Installer readiness and
 `doctor` confirm the RisuAI HTTP response plus that all selected containers are
@@ -347,3 +380,13 @@ needs `RISUAI_DOMAIN`; the Docker-proxy overlay needs
 `RISUAI_HTTPS_PORT`. The base Compose file requires
 `RISUAI_INSTALLATION_ID`, `POSTGRES_PASSWORD`, `RUSTFS_ACCESS_KEY`, and
 `RUSTFS_SECRET_KEY` and will fail interpolation when any is absent.
+
+For a direct local static deployment, no storage credentials are required:
+
+```sh
+export RISUAI_INSTALLATION_ID="$(openssl rand -hex 16)"
+docker compose \
+  -f docker-compose.static.yml \
+  -f docker-compose.rustfs.local.yml \
+  up -d --build
+```

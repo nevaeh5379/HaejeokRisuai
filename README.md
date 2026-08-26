@@ -110,12 +110,15 @@ See the [quick deployment guide](deploy/quick/README.md) for backup details and 
 
 #### Advanced/source installation
 
-The full `risuai.sh` installer remains available for source builds and `lan`, `domain`, `dynv6`, and external reverse-proxy modes:
+The full `risuai.sh` installer remains available for Node/server or browser-only static source builds and `lan`, `domain`, `dynv6`, and external reverse-proxy modes:
 
 ```sh
 git clone https://github.com/nevaeh5379/HaejeokRisuAI.git
 cd HaejeokRisuAI
 ./risuai.sh install --mode local -y
+
+# Static web build served by Caddy, without Node/PostgreSQL/RustFS
+./risuai.sh install --runtime static --mode local -y
 ```
 
 See the [advanced deployment guide](deploy/rustfs/README.md) for those modes and their security notes.

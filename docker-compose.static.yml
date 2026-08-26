@@ -1,0 +1,19 @@
+name: risuai-rustfs
+
+services:
+  risuai:
+    container_name: risuai
+    build:
+      context: .
+      dockerfile: Dockerfile.static
+    image: risuai-static:local
+    restart: unless-stopped
+    labels:
+      io.risuai.installation-id: ${RISUAI_INSTALLATION_ID:?Set RISUAI_INSTALLATION_ID}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:6001/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
