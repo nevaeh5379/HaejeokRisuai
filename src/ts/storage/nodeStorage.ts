@@ -76,6 +76,44 @@ export type NodeStorageBulkWriteProgress = {
   percent: number;
 };
 
+export type NodeVectorCacheStats = {
+  vector: {
+    memory: { indexes: number; vectors: number; bytes: number };
+    disk: {
+      enabled: boolean;
+      indexes: number;
+      vectors: number;
+      bytes: number;
+      pendingWrites: number;
+    };
+    limits: {
+      memoryBytes: number;
+      perIndexMemoryBytes: number;
+      diskBytes: number;
+      memoryIndexes: number;
+      vectorsPerIndex: number;
+    };
+  };
+  query: {
+    entries: number;
+    bytes: number;
+    hits: number;
+    misses: number;
+    coalesced: number;
+    limits: { entries: number; bytes: number };
+  };
+};
+
+export type NodeVectorCacheClearResult = {
+  vector: {
+    memoryIndexes: number;
+    memoryVectors: number;
+    diskIndexes: number;
+    diskBytes: number;
+  };
+  query: { entries: number; bytes: number };
+};
+
 export class NodeStorage {
   authChecked = false;
   private nodeProviderCapabilities: NodeProviderCapabilities | null = null;
@@ -465,6 +503,43 @@ export class NodeStorage {
     const data = (await response.json()) as Partial<VectorIndexSearchResponse>;
     if (!Array.isArray(data.results)) throw new Error("Vector index search returned an invalid response");
     return data.results as VectorIndexSearchResult;
+  }
+
+  async vectorCacheStats(): Promise<NodeVectorCacheStats> {
+    const response = await fetch("/api/vector-index/cache", {
+      headers: { "risu-auth": await this.getCachedAuth() },
+    });
+    if (!response.ok) {
+      throw new Error(`Vector cache stats failed (${response.status}): ${await response.text()}`);
+    }
+    const data = (await response.json()) as Partial<NodeVectorCacheStats>;
+    if (
+      typeof data.vector?.memory?.indexes !== "number" ||
+      typeof data.vector?.disk?.bytes !== "number" ||
+      typeof data.query?.entries !== "number"
+    ) {
+      throw new Error("Vector cache stats returned an invalid response");
+    }
+    return data as NodeVectorCacheStats;
+  }
+
+  async clearVectorCache(): Promise<NodeVectorCacheClearResult> {
+    const response = await fetch("/api/vector-index/cache", {
+      method: "DELETE",
+      headers: { "risu-auth": await this.getCachedAuth() },
+    });
+    if (!response.ok) {
+      throw new Error(`Vector cache clear failed (${response.status}): ${await response.text()}`);
+    }
+    const data = (await response.json()) as Partial<NodeVectorCacheClearResult>;
+    if (
+      typeof data.vector?.memoryIndexes !== "number" ||
+      typeof data.vector?.diskIndexes !== "number" ||
+      typeof data.query?.entries !== "number"
+    ) {
+      throw new Error("Vector cache clear returned an invalid response");
+    }
+    return data as NodeVectorCacheClearResult;
   }
 
   async startHypaMemorySession(request: unknown): Promise<any> {

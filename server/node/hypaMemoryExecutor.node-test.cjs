@@ -179,6 +179,24 @@ test('Hypa V3 embeddings and similarity ranking execute on the Node backend', as
     assert.ok(embeddingCalls >= 2, 'document and query embeddings should be fetched by Node');
     assert.match(result.chats[0].content, /An old event happened\./);
     assert.deepEqual(result.memory.metrics.lastSimilarSummaries, [0]);
+
+    const callsAfterWarmup = embeddingCalls;
+    await drive(
+      executor,
+      await executor.start(structuredClone(request), { scope: 'embedding-scope' }),
+      'embedding-scope',
+    );
+    assert.equal(embeddingCalls, callsAfterWarmup, 'warm document and query embeddings should both be reused');
+    assert.ok(executor.getQueryCacheStats('embedding-scope').hits >= 1);
+
+    const cleared = executor.clearQueryCache('embedding-scope');
+    assert.ok(cleared.entries >= 1);
+    await drive(
+      executor,
+      await executor.start(structuredClone(request), { scope: 'embedding-scope' }),
+      'embedding-scope',
+    );
+    assert.equal(embeddingCalls, callsAfterWarmup + 1, 'clearing query cache should refetch only the query embedding');
   } finally {
     global.fetch = originalFetch;
   }

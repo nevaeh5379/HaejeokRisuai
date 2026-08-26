@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 const {
   configureVectorIndexPersistence,
   flushVectorIndexPersistence,
+  getVectorIndexCacheStats,
+  clearVectorIndexCache,
   checkVectorIndexRevision,
   syncVectorIndex,
   upsertVectorIndex,
@@ -156,6 +158,39 @@ describe("vectorIndex", () => {
           { id: "b", signature: "changed" },
         ]).missingIds,
       ).toEqual(["b"]);
+    } finally {
+      configureVectorIndexPersistence(null);
+      clearVectorIndexes();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("reports and clears persistent caches by authenticated scope prefix", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "risu-vector-scope-"));
+    try {
+      configureVectorIndexPersistence(directory);
+      for (const indexId of ["scope-a:first", "scope-a:second", "scope-b:first"]) {
+        syncVectorIndex(indexId, [{ id: "x", signature: "same" }], "rev");
+        upsertVectorIndex(indexId, [
+          { id: "x", signature: "same", embedding: [1, 0, 0] },
+        ]);
+      }
+      await flushVectorIndexPersistence();
+
+      const before = await getVectorIndexCacheStats("scope-a:");
+      expect(before.memory).toMatchObject({ indexes: 2, vectors: 2 });
+      expect(before.disk).toMatchObject({ indexes: 2, vectors: 2 });
+      expect(before.disk.bytes).toBeGreaterThan(0);
+
+      const cleared = await clearVectorIndexCache("scope-a:");
+      expect(cleared).toMatchObject({
+        memoryIndexes: 2,
+        memoryVectors: 2,
+        diskIndexes: 2,
+      });
+      expect((await getVectorIndexCacheStats("scope-a:")).disk.indexes).toBe(0);
+      expect((await getVectorIndexCacheStats("scope-b:")).disk.indexes).toBe(1);
+      expect(checkVectorIndexRevision("scope-b:first", "rev").ready).toBe(true);
     } finally {
       configureVectorIndexPersistence(null);
       clearVectorIndexes();

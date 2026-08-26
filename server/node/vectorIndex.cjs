@@ -189,6 +189,29 @@ async function flushVectorIndexPersistence() {
     await prunePromise;
 }
 
+async function readPersistedMetadata(filePath) {
+    let handle;
+    try {
+        handle = await fsp.open(filePath, 'r');
+        const header = Buffer.alloc(PERSIST_HEADER_BYTES);
+        const headerRead = await handle.read(header, 0, header.length, 0);
+        if (headerRead.bytesRead !== header.length || !header.subarray(0, PERSIST_MAGIC.length).equals(PERSIST_MAGIC)) return null;
+        const metadataLength = header.readUInt32LE(PERSIST_MAGIC.length);
+        if (metadataLength <= 0 || metadataLength > 64 * 1024 * 1024) return null;
+        const metadataBuffer = Buffer.alloc(metadataLength);
+        const metadataRead = await handle.read(metadataBuffer, 0, metadataLength, PERSIST_HEADER_BYTES);
+        if (metadataRead.bytesRead !== metadataLength) return null;
+        const metadata = JSON.parse(metadataBuffer.toString('utf8'));
+        if (metadata?.version !== PERSIST_VERSION || typeof metadata?.indexId !== 'string' || !Array.isArray(metadata?.entries)) return null;
+        const stat = await handle.stat();
+        return { metadata, size: stat.size };
+    } catch {
+        return null;
+    } finally {
+        if (handle) await handle.close().catch(() => {});
+    }
+}
+
 function loadPersistedIndex(indexId) {
     const filePath = persistenceFilePath(indexId);
     if (!filePath || !fs.existsSync(filePath)) return null;
@@ -483,6 +506,90 @@ function searchVectorIndex(indexId, queries, metric = 'cosine', topK = null) {
     });
 }
 
+async function getVectorIndexCacheStats(scopePrefix = '') {
+    if (typeof scopePrefix !== 'string') throw new TypeError('scopePrefix must be a string');
+    let memoryIndexes = 0;
+    let memoryVectors = 0;
+    let memoryFloats = 0;
+    for (const [indexId, index] of indexes) {
+        if (scopePrefix && !indexId.startsWith(scopePrefix)) continue;
+        memoryIndexes += 1;
+        memoryVectors += index.vectors.size;
+        memoryFloats += index.floatCount;
+    }
+
+    let diskIndexes = 0;
+    let diskVectors = 0;
+    let diskBytes = 0;
+    if (persistenceDir) {
+        const dirents = await fsp.readdir(persistenceDir, { withFileTypes: true }).catch(() => []);
+        for (const dirent of dirents) {
+            if (!dirent.isFile() || !dirent.name.endsWith('.rvec')) continue;
+            const inspected = await readPersistedMetadata(path.join(persistenceDir, dirent.name));
+            if (!inspected || (scopePrefix && !inspected.metadata.indexId.startsWith(scopePrefix))) continue;
+            diskIndexes += 1;
+            diskVectors += inspected.metadata.entries.length;
+            diskBytes += inspected.size;
+        }
+    }
+
+    const pendingWrites = Array.from(new Set([
+        ...Array.from(persistTimers.keys()),
+        ...Array.from(persistPromises.keys()),
+    ])).filter((indexId) => !scopePrefix || indexId.startsWith(scopePrefix)).length;
+
+    return {
+        memory: { indexes: memoryIndexes, vectors: memoryVectors, bytes: memoryFloats * FLOAT_BYTES },
+        disk: { enabled: Boolean(persistenceDir), indexes: diskIndexes, vectors: diskVectors, bytes: diskBytes, pendingWrites },
+        limits: {
+            memoryBytes: MAX_TOTAL_FLOATS * FLOAT_BYTES,
+            perIndexMemoryBytes: MAX_FLOATS_PER_INDEX * FLOAT_BYTES,
+            diskBytes: MAX_PERSIST_DISK_BYTES,
+            memoryIndexes: MAX_INDEXES,
+            vectorsPerIndex: MAX_VECTORS_PER_INDEX,
+        },
+    };
+}
+
+async function clearVectorIndexCache(scopePrefix = '') {
+    if (typeof scopePrefix !== 'string') throw new TypeError('scopePrefix must be a string');
+    for (const [indexId, pending] of Array.from(persistTimers.entries())) {
+        if (scopePrefix && !indexId.startsWith(scopePrefix)) continue;
+        clearTimeout(pending.timer);
+        persistTimers.delete(indexId);
+    }
+    const inFlight = Array.from(persistPromises.entries())
+        .filter(([indexId]) => !scopePrefix || indexId.startsWith(scopePrefix))
+        .map(([, promise]) => promise);
+    await Promise.all(inFlight);
+
+    let memoryIndexes = 0;
+    let memoryVectors = 0;
+    for (const [indexId, index] of Array.from(indexes.entries())) {
+        if (scopePrefix && !indexId.startsWith(scopePrefix)) continue;
+        memoryIndexes += 1;
+        memoryVectors += index.vectors.size;
+        indexes.delete(indexId);
+    }
+
+    let diskIndexes = 0;
+    let diskBytes = 0;
+    if (persistenceDir) {
+        const dirents = await fsp.readdir(persistenceDir, { withFileTypes: true }).catch(() => []);
+        for (const dirent of dirents) {
+            if (!dirent.isFile() || !dirent.name.endsWith('.rvec')) continue;
+            const filePath = path.join(persistenceDir, dirent.name);
+            const inspected = await readPersistedMetadata(filePath);
+            if (!inspected || (scopePrefix && !inspected.metadata.indexId.startsWith(scopePrefix))) continue;
+            await fsp.unlink(filePath).catch(() => {});
+            diskIndexes += 1;
+            diskBytes += inspected.size;
+        }
+    }
+
+    return { memoryIndexes, memoryVectors, diskIndexes, diskBytes };
+}
+
 function clearVectorIndexes() {
     for (const pending of persistTimers.values()) clearTimeout(pending.timer);
     persistTimers.clear();
@@ -491,6 +598,8 @@ function clearVectorIndexes() {
 module.exports = {
     configureVectorIndexPersistence,
     flushVectorIndexPersistence,
+    getVectorIndexCacheStats,
+    clearVectorIndexCache,
     checkVectorIndexRevision,
     syncVectorIndex,
     upsertVectorIndex,

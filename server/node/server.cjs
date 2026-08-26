@@ -52,6 +52,8 @@ const { countTokensBatch } = require('./tokenizeCount.cjs');
 const { resolveLoreEntries } = require('./loreResolve.cjs');
 const {
     configureVectorIndexPersistence,
+    getVectorIndexCacheStats,
+    clearVectorIndexCache,
     checkVectorIndexRevision,
     syncVectorIndex,
     upsertVectorIndex,
@@ -3735,6 +3737,32 @@ app.post('/api/vector-index/search', authenticatedRouteLimiter, async (req, res,
         res.send({ results });
     } catch (error) {
         if (error instanceof TypeError || error instanceof RangeError) return res.status(400).send({ error: error.message });
+        next(error);
+    }
+});
+
+app.get('/api/vector-index/cache', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        const scope = await getAuthenticatedIndexScope(req);
+        res.send({
+            vector: await getVectorIndexCacheStats(`${scope}:`),
+            query: hypaMemoryExecutor.getQueryCacheStats(scope),
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.delete('/api/vector-index/cache', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        const scope = await getAuthenticatedIndexScope(req);
+        res.send({
+            vector: await clearVectorIndexCache(`${scope}:`),
+            query: hypaMemoryExecutor.clearQueryCache(scope),
+        });
+    } catch (error) {
         next(error);
     }
 });

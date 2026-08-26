@@ -14,9 +14,91 @@ const sessions = new Map();
 const HYPA_MODELS = new Set(['custom', 'ada', 'openai3small', 'openai3large', 'voyageContext3']);
 const DEFAULT_HYPA_MODEL = 'openai3small';
 const INLAY_RE = /{{(inlay|inlayed|inlayeddata)::(.+?)}}/g;
+const QUERY_CACHE_MAX_ENTRIES = Math.min(Math.max(Number.parseInt(process.env.RISU_HYPA_QUERY_CACHE_ENTRIES || '1024', 10) || 1024, 32), 8192);
+const QUERY_CACHE_MAX_BYTES = Math.min(Math.max(Number.parseInt(process.env.RISU_HYPA_QUERY_CACHE_MB || '16', 10) || 16, 1), 256) * 1024 * 1024;
+const queryEmbeddingCache = new Map();
+const queryCacheMetrics = new Map();
+let queryCacheBytes = 0;
 
 function hash(value) {
   return crypto.createHash('sha256').update(String(value)).digest('base64url').slice(0, 32);
+}
+
+function queryMetric(scope) {
+  let metric = queryCacheMetrics.get(scope);
+  if (!metric) {
+    metric = { hits: 0, misses: 0, coalesced: 0 };
+    queryCacheMetrics.set(scope, metric);
+  }
+  return metric;
+}
+
+function queryProviderFingerprint(config) {
+  const model = normalizeHypaModel(config.hypaModel);
+  if (model === 'custom') {
+    return `custom:${appendEmbeddingsPath(config.customEmbedding?.url || '')}:${config.customEmbedding?.model || ''}:${hash(config.customEmbedding?.key || '')}`;
+  }
+  if (model === 'voyageContext3') return `voyageContext3:${hash(config.voyageApiKey || '')}`;
+  return `${model}:${hash(config.supaMemoryKey || '')}`;
+}
+
+function touchQueryCache(key, entry) {
+  queryEmbeddingCache.delete(key);
+  queryEmbeddingCache.set(key, entry);
+}
+
+function putQueryCache(key, scope, embedding) {
+  const vector = Float32Array.from(embedding, (value) => Number(value));
+  if (vector.length === 0) return;
+  for (const value of vector) if (!Number.isFinite(value)) return;
+  const bytes = vector.byteLength;
+  if (bytes > QUERY_CACHE_MAX_BYTES) return;
+  const existing = queryEmbeddingCache.get(key);
+  if (existing) {
+    queryCacheBytes -= existing.embedding.byteLength;
+    queryEmbeddingCache.delete(key);
+  }
+  queryEmbeddingCache.set(key, { scope, embedding: vector });
+  queryCacheBytes += bytes;
+  while (queryEmbeddingCache.size > QUERY_CACHE_MAX_ENTRIES || queryCacheBytes > QUERY_CACHE_MAX_BYTES) {
+    const oldest = queryEmbeddingCache.entries().next().value;
+    if (!oldest) break;
+    queryEmbeddingCache.delete(oldest[0]);
+    queryCacheBytes -= oldest[1].embedding.byteLength;
+  }
+}
+
+function getQueryEmbeddingCacheStats(scope) {
+  let entries = 0;
+  let bytes = 0;
+  for (const entry of queryEmbeddingCache.values()) {
+    if (entry.scope !== scope) continue;
+    entries += 1;
+    bytes += entry.embedding.byteLength;
+  }
+  const metric = queryCacheMetrics.get(scope) || { hits: 0, misses: 0, coalesced: 0 };
+  return {
+    entries,
+    bytes,
+    hits: metric.hits,
+    misses: metric.misses,
+    coalesced: metric.coalesced,
+    limits: { entries: QUERY_CACHE_MAX_ENTRIES, bytes: QUERY_CACHE_MAX_BYTES },
+  };
+}
+
+function clearQueryEmbeddingCache(scope) {
+  let entries = 0;
+  let bytes = 0;
+  for (const [key, entry] of Array.from(queryEmbeddingCache.entries())) {
+    if (entry.scope !== scope) continue;
+    queryEmbeddingCache.delete(key);
+    queryCacheBytes -= entry.embedding.byteLength;
+    entries += 1;
+    bytes += entry.embedding.byteLength;
+  }
+  queryCacheMetrics.delete(scope);
+  return { entries, bytes };
 }
 
 function cleanSessions() {
@@ -105,10 +187,50 @@ async function embedRegular(texts, config) {
   return output;
 }
 
-async function embedQueries(texts, config) {
-  if (normalizeHypaModel(config.hypaModel) !== 'voyageContext3') return embedRegular(texts, config);
-  const groups = await embedVoyageGroups(texts.map((text) => [text]), config, 'query');
-  return groups.map((group) => group[0]);
+async function embedQueries(scope, texts, config) {
+  if (texts.length === 0) return [];
+  const metric = queryMetric(scope);
+  const fingerprint = queryProviderFingerprint(config);
+  const output = new Array(texts.length);
+  const misses = new Map();
+
+  texts.forEach((text, index) => {
+    const key = hash(`${scope}\0${fingerprint}\0query\0${text}`);
+    const cached = queryEmbeddingCache.get(key);
+    if (cached) {
+      metric.hits += 1;
+      touchQueryCache(key, cached);
+      output[index] = Array.from(cached.embedding);
+      return;
+    }
+    let pending = misses.get(key);
+    if (!pending) {
+      pending = { key, text, indexes: [] };
+      misses.set(key, pending);
+      metric.misses += 1;
+    } else {
+      metric.coalesced += 1;
+    }
+    pending.indexes.push(index);
+  });
+
+  if (misses.size > 0) {
+    const pending = Array.from(misses.values());
+    let vectors;
+    if (normalizeHypaModel(config.hypaModel) === 'voyageContext3') {
+      const groups = await embedVoyageGroups(pending.map((item) => [item.text]), config, 'query');
+      vectors = groups.map((group) => group[0]);
+    } else {
+      vectors = await embedRegular(pending.map((item) => item.text), config);
+    }
+    if (vectors.length !== pending.length) throw new Error('Query embedding response length does not match request');
+    pending.forEach((item, position) => {
+      putQueryCache(item.key, scope, vectors[position]);
+      for (const index of item.indexes) output[index] = Array.from(queryEmbeddingCache.get(item.key)?.embedding || vectors[position]);
+    });
+  }
+
+  return output;
 }
 
 async function embedVoyageGroups(groups, config, inputType = 'document') {
@@ -185,7 +307,7 @@ async function prepareIndex(scope, indexId, documents, config, contextualGroups 
 async function rankDocuments(scope, indexId, documents, queries, config, { metric = 'dot', topK = null, contextualGroups = null } = {}) {
   if (documents.length === 0 || queries.length === 0) return queries.map(() => []);
   const scopedId = await prepareIndex(scope, indexId, documents, config, contextualGroups);
-  const queryVectors = await embedQueries(queries, config);
+  const queryVectors = await embedQueries(scope, queries, config);
   const results = searchVectorIndex(scopedId, queryVectors, metric, topK);
   if (!results) return queries.map(() => []);
   return results.map((rows) => rows.map(([id, score]) => [Number(id), score]));
@@ -968,7 +1090,14 @@ function createHypaMemoryExecutor() {
     });
   }
 
-  return { start, resume, cancel, registerRoutes };
+  return {
+    start,
+    resume,
+    cancel,
+    registerRoutes,
+    getQueryCacheStats: getQueryEmbeddingCacheStats,
+    clearQueryCache: clearQueryEmbeddingCache,
+  };
 }
 
 module.exports = { createHypaMemoryExecutor };

@@ -28,6 +28,7 @@
     import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
     import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
     import { alertConfirm, alertError, alertNormal } from 'src/ts/alert'
+    import type { NodeVectorCacheStats } from 'src/ts/storage/nodeStorage'
     import { formatBytes, getNodeStorage } from '../utils'
     import {
         buildSqlVendorParams,
@@ -103,7 +104,12 @@
         onBackupUpdated
     }: Props = $props()
 
-    let activeSection = $state<'assets' | 'backup'>('assets')
+    let activeSection = $state<'assets' | 'backup' | 'cache'>('assets')
+
+    let vectorCache = $state<NodeVectorCacheStats | null>(null)
+    let vectorCacheLoading = $state(false)
+    let vectorCacheClearing = $state(false)
+    let vectorCacheError = $state('')
 
     // ── Backup DB Local States ──
     let localBackup = $state<NodeBackupConfig | null>(null)
@@ -346,8 +352,42 @@
         return new Date(value).toLocaleString()
     }
 
+    function queryCacheHitRate() {
+        if (!vectorCache) return 0
+        const total = vectorCache.query.hits + vectorCache.query.misses
+        return total > 0 ? Math.round((vectorCache.query.hits / total) * 100) : 0
+    }
+
+    async function refreshVectorCache() {
+        if (vectorCacheLoading) return
+        vectorCacheLoading = true
+        vectorCacheError = ''
+        try {
+            vectorCache = await getNodeStorage().vectorCacheStats()
+        } catch (error) {
+            vectorCacheError = `${error}`
+        } finally {
+            vectorCacheLoading = false
+        }
+    }
+
+    async function clearVectorCacheNow() {
+        if (vectorCacheClearing || !await alertConfirm('현재 사용자의 서버 벡터/임베딩 캐시를 모두 비우시겠습니까? 필요할 때 자동으로 다시 생성됩니다.')) return
+        vectorCacheClearing = true
+        try {
+            const cleared = await getNodeStorage().clearVectorCache()
+            alertNormal(`벡터 캐시를 정리했습니다. 디스크 ${cleared.vector.diskIndexes}개, 메모리 ${cleared.vector.memoryIndexes}개, 쿼리 ${cleared.query.entries}개를 제거했습니다.`)
+            await refreshVectorCache()
+        } catch (error) {
+            alertError(error)
+        } finally {
+            vectorCacheClearing = false
+        }
+    }
+
     onMount(() => {
         refreshBackupStatus()
+        refreshVectorCache()
     })
 </script>
 
@@ -382,6 +422,23 @@
                             <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
                         {/if}
                         {localBackup.enabled ? language.storageActive : language.storageInactive}
+                    </span>
+                {/if}
+            </button>
+
+            <button
+                type="button"
+                class="flex items-center gap-2 rounded-lg px-3.5 py-1.5 transition-all cursor-pointer {activeSection === 'cache' ? 'bg-selected text-textcolor font-semibold shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
+                onclick={() => {
+                    activeSection = 'cache'
+                    refreshVectorCache()
+                }}
+            >
+                <ZapIcon class="h-4 w-4 shrink-0" />
+                <span>Vector Cache</span>
+                {#if vectorCache}
+                    <span class="rounded-full bg-darkbutton px-1.5 py-0.2 text-[10px] font-mono text-textcolor2 border border-darkborderc/40">
+                        {vectorCache.vector.disk.indexes}
                     </span>
                 {/if}
             </button>
@@ -840,7 +897,100 @@
     {/if}
 
     <!-- ══════════════════════════════════════════════════════════════ -->
-    <!-- SECTION 2: BACKUP DATABASE                                   -->
+    <!-- SECTION 2: VECTOR / EMBEDDING CACHE                          -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    {#if activeSection === 'cache'}
+        <div class="rounded-2xl border border-darkborderc bg-darkbg p-4 sm:p-5 shadow-xs space-y-5">
+            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-darkborderc/60 pb-4">
+                <div class="flex items-center gap-3">
+                    <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-darkbutton border border-darkborderc text-amber-300">
+                        <ZapIcon class="h-5 w-5" />
+                    </div>
+                    <div>
+                        <h3 class="text-sm sm:text-base font-bold text-textcolor">서버 벡터 캐시</h3>
+                        <p class="mt-0.5 text-xs text-textcolor2">Hypa 검색용 문서 벡터와 반복 쿼리 임베딩의 현재 사용량을 확인합니다.</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button
+                        type="button"
+                        class="flex items-center gap-1.5 rounded-lg border border-darkborderc bg-darkbutton px-3 py-2 text-xs text-textcolor2 hover:text-textcolor disabled:opacity-50 cursor-pointer"
+                        onclick={refreshVectorCache}
+                        disabled={vectorCacheLoading || vectorCacheClearing}
+                    >
+                        <RefreshCwIcon class="h-3.5 w-3.5 {vectorCacheLoading ? 'animate-spin' : ''}" />
+                        새로고침
+                    </button>
+                    <button
+                        type="button"
+                        class="flex items-center gap-1.5 rounded-lg border border-draculared/40 bg-draculared/10 px-3 py-2 text-xs text-draculared hover:bg-draculared/15 disabled:opacity-50 cursor-pointer"
+                        onclick={clearVectorCacheNow}
+                        disabled={vectorCacheLoading || vectorCacheClearing}
+                    >
+                        <Trash2Icon class="h-3.5 w-3.5" />
+                        {vectorCacheClearing ? '정리 중...' : '캐시 비우기'}
+                    </button>
+                </div>
+            </div>
+
+            {#if vectorCacheError}
+                <div class="rounded-xl border border-draculared/40 bg-draculared/10 p-3 text-xs text-draculared">{vectorCacheError}</div>
+            {:else if vectorCache}
+                <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                    <div class="rounded-xl border border-darkborderc bg-bgcolor/40 p-4 space-y-3">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-xs font-semibold text-textcolor">RAM Vector Index</span>
+                            <span class="rounded-full bg-darkbutton px-2 py-0.5 text-[10px] font-mono text-textcolor2">{vectorCache.vector.memory.indexes} indexes</span>
+                        </div>
+                        <div class="text-2xl font-bold text-textcolor">{formatBytes(vectorCache.vector.memory.bytes)}</div>
+                        <div class="grid grid-cols-2 gap-2 text-[11px] text-textcolor2">
+                            <span>Vectors</span><span class="text-right font-mono text-textcolor">{vectorCache.vector.memory.vectors}</span>
+                            <span>Global limit</span><span class="text-right font-mono text-textcolor">{formatBytes(vectorCache.vector.limits.memoryBytes)}</span>
+                        </div>
+                    </div>
+
+                    <div class="rounded-xl border border-darkborderc bg-bgcolor/40 p-4 space-y-3">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-xs font-semibold text-textcolor">Persistent Vector Cache</span>
+                            <span class="rounded-full bg-darkbutton px-2 py-0.5 text-[10px] font-mono text-textcolor2">{vectorCache.vector.disk.indexes} indexes</span>
+                        </div>
+                        <div class="text-2xl font-bold text-textcolor">{formatBytes(vectorCache.vector.disk.bytes)}</div>
+                        <div class="grid grid-cols-2 gap-2 text-[11px] text-textcolor2">
+                            <span>Vectors</span><span class="text-right font-mono text-textcolor">{vectorCache.vector.disk.vectors}</span>
+                            <span>Disk limit</span><span class="text-right font-mono text-textcolor">{formatBytes(vectorCache.vector.limits.diskBytes)}</span>
+                            <span>Pending writes</span><span class="text-right font-mono text-textcolor">{vectorCache.vector.disk.pendingWrites}</span>
+                        </div>
+                    </div>
+
+                    <div class="rounded-xl border border-darkborderc bg-bgcolor/40 p-4 space-y-3">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-xs font-semibold text-textcolor">Query Embedding LRU</span>
+                            <span class="rounded-full bg-darkbutton px-2 py-0.5 text-[10px] font-mono text-textcolor2">{queryCacheHitRate()}% hit</span>
+                        </div>
+                        <div class="text-2xl font-bold text-textcolor">{formatBytes(vectorCache.query.bytes)}</div>
+                        <div class="grid grid-cols-2 gap-2 text-[11px] text-textcolor2">
+                            <span>Entries</span><span class="text-right font-mono text-textcolor">{vectorCache.query.entries}</span>
+                            <span>Hits / Misses</span><span class="text-right font-mono text-textcolor">{vectorCache.query.hits} / {vectorCache.query.misses}</span>
+                            <span>Coalesced</span><span class="text-right font-mono text-textcolor">{vectorCache.query.coalesced}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-start gap-2.5 rounded-xl border border-darkborderc bg-bgcolor/40 p-3.5 text-xs text-textcolor2">
+                    <InfoIcon class="h-4 w-4 shrink-0 mt-0.5" />
+                    <span class="leading-relaxed">캐시를 비워도 채팅이나 Hypa 메모리 데이터는 삭제되지 않습니다. 다음 검색에서 필요한 임베딩만 자동으로 다시 생성됩니다.</span>
+                </div>
+            {:else if vectorCacheLoading}
+                <div class="flex min-h-36 items-center justify-center gap-2 text-sm text-textcolor2">
+                    <RefreshCwIcon class="h-4 w-4 animate-spin" />
+                    캐시 상태를 불러오는 중...
+                </div>
+            {/if}
+        </div>
+    {/if}
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- SECTION 3: BACKUP DATABASE                                   -->
     <!-- ══════════════════════════════════════════════════════════════ -->
     {#if activeSection === 'backup'}
         <!-- Backup Vendor Selector Cards (Full Width) -->
