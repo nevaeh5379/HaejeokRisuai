@@ -163,6 +163,17 @@
     if (model.id.startsWith('horde:::')) return 'Horde';
     return ProviderNames.get(model.provider) || 'AI';
   }
+
+  let displayedModelGroups = $derived.by(() => {
+    const groups = new Map<string, LLMModel[]>();
+    for (const model of displayedModels) {
+      const provider = getProviderDisplayName(model);
+      const models = groups.get(provider);
+      if (models) models.push(model);
+      else groups.set(provider, [model]);
+    }
+    return [...groups].map(([provider, models]) => ({ provider, models }));
+  });
 </script>
 
 <div class="w-full flex flex-col gap-3">
@@ -368,19 +379,93 @@
           </div>
         </div>
       {:else}
-        <!-- Responsive Multi-Column Layout (1 -> 2 -> 3 -> 4 -> 5 cols on ultra-wide) -->
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 min-[2200px]:grid-cols-5 gap-2.5">
+        <!-- Desktop: group by provider and keep each model row intentionally compact. -->
+        <div class="hidden md:flex flex-col gap-4">
+          {#each displayedModelGroups as group}
+            <section class="min-w-0">
+              <div class="mb-1.5 flex items-center gap-2 px-0.5">
+                <span class="text-xs font-bold text-textcolor2">{group.provider}</span>
+                <span class="rounded-full bg-textcolor/8 px-1.5 py-0.5 text-[9px] font-bold text-textcolor2/80">{group.models.length}</span>
+                <div class="h-px min-w-4 flex-1 bg-darkborderc/40"></div>
+              </div>
+
+              <div class="grid grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-1.5">
+                {#each group.models as model}
+                  {@const isSelected = value === model.id}
+                  {@const isFav = modelFavoritesStore.isFavorite(model.id)}
+                  <div
+                    class="group w-full min-h-11 rounded-lg border px-2.5 py-2 transition-all cursor-pointer flex items-center justify-between gap-2 {isSelected ? 'border-selected bg-selected/20 ring-1 ring-selected/60' : 'border-darkborderc/50 bg-darkbg/20 hover:bg-darkbutton/80 hover:border-textcolor/25'}"
+                    role="button"
+                    tabindex="0"
+                    title={model.id}
+                    onclick={() => { selectModel(model.id); }}
+                    onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') selectModel(model.id); }}
+                  >
+                    <div class="min-w-0 flex-1">
+                      <div class="flex min-w-0 items-center gap-1.5">
+                        <span class="truncate text-[13px] font-semibold leading-tight text-textcolor" title={model.fullName || model.name}>
+                          {model.name}
+                        </span>
+                        {#if model.recommended}
+                          <span title="Recommended" class="inline-flex shrink-0 items-center text-textcolor2/70">
+                            <SparkleIcon size={11} />
+                          </span>
+                        {/if}
+                      </div>
+                    </div>
+
+                    <div class="flex shrink-0 items-center gap-0.5 text-textcolor2/60">
+                      {#if hasVision(model)}
+                        <span class="inline-flex rounded p-1" title="Vision" aria-label="Vision">
+                          <EyeIcon size={11} />
+                        </span>
+                      {/if}
+                      {#if hasThinking(model)}
+                        <span class="inline-flex rounded p-1" title="Thinking" aria-label="Thinking">
+                          <BrainIcon size={11} />
+                        </span>
+                      {/if}
+                      {#if hasStreaming(model)}
+                        <span class="inline-flex rounded p-1" title="Streaming" aria-label="Streaming">
+                          <ZapIcon size={11} />
+                        </span>
+                      {/if}
+                      <button
+                        class="rounded p-1 text-textcolor2/35 transition-colors hover:text-textcolor"
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          modelFavoritesStore.toggleFavorite(model.id);
+                        }}
+                        title="Toggle Favorite"
+                        aria-label="Toggle Favorite"
+                      >
+                        <StarIcon size={14} class={isFav ? "fill-textcolor text-textcolor" : ""} />
+                      </button>
+                      {#if isSelected}
+                        <span class="ml-0.5 inline-flex rounded bg-selected p-1 text-textcolor" title="Selected" aria-label="Selected">
+                          <CheckIcon size={11} />
+                        </span>
+                      {/if}
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            </section>
+          {/each}
+        </div>
+
+        <!-- Mobile: keep the richer cards where provider labels are still useful context. -->
+        <div class="grid grid-cols-1 gap-2 md:hidden">
           {#each displayedModels as model}
             {@const isSelected = value === model.id}
             {@const isFav = modelFavoritesStore.isFavorite(model.id)}
-            <div 
+            <div
               class="group w-full p-2.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-2 {isSelected ? 'border-selected bg-selected/20 ring-1 ring-selected/70 shadow-xs' : 'border-darkborderc/60 bg-darkbg/30 hover:bg-darkbutton hover:border-textcolor/30'}"
               role="button"
               tabindex="0"
               onclick={() => { selectModel(model.id); }}
               onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') selectModel(model.id); }}
             >
-              <!-- Top Line: Provider Badge + Model Name + Recommended + Favorite -->
               <div class="flex items-start justify-between gap-1.5">
                 <div class="flex items-center gap-1.5 min-w-0 flex-1 flex-wrap">
                   <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-textcolor/10 text-textcolor shrink-0">
@@ -396,7 +481,7 @@
                   {/if}
                 </div>
 
-                <button 
+                <button
                   class="p-1 rounded text-textcolor2/40 hover:text-textcolor transition-colors shrink-0 -mr-1 -mt-1"
                   onclick={(e) => {
                     e.stopPropagation();
@@ -408,32 +493,20 @@
                 </button>
               </div>
 
-              <!-- Bottom Line: Model ID + Badges + Selected State -->
               <div class="flex items-center justify-between gap-1.5 text-[10px] pt-1.5 border-t border-darkborderc/30 mt-auto">
-                <span class="text-[11px] text-textcolor2/60 font-mono truncate min-w-0" title={model.id}>
-                  {model.id}
-                </span>
-
+                <span class="text-[11px] text-textcolor2/60 font-mono truncate min-w-0" title={model.id}>{model.id}</span>
                 <div class="flex items-center gap-1 shrink-0 flex-wrap justify-end">
                   {#if hasVision(model)}
-                    <span class="px-1.5 py-0.5 rounded bg-textcolor/8 text-textcolor2 flex items-center gap-0.5 text-[9px] leading-tight">
-                      <EyeIcon size={10} /> Vision
-                    </span>
+                    <span class="px-1.5 py-0.5 rounded bg-textcolor/8 text-textcolor2 flex items-center gap-0.5 text-[9px] leading-tight"><EyeIcon size={10} /> Vision</span>
                   {/if}
                   {#if hasThinking(model)}
-                    <span class="px-1.5 py-0.5 rounded bg-textcolor/8 text-textcolor2 flex items-center gap-0.5 text-[9px] leading-tight">
-                      <BrainIcon size={10} /> Thinking
-                    </span>
+                    <span class="px-1.5 py-0.5 rounded bg-textcolor/8 text-textcolor2 flex items-center gap-0.5 text-[9px] leading-tight"><BrainIcon size={10} /> Thinking</span>
                   {/if}
                   {#if hasStreaming(model)}
-                    <span class="px-1.5 py-0.5 rounded bg-textcolor/8 text-textcolor2 flex items-center gap-0.5 text-[9px] leading-tight">
-                      <ZapIcon size={10} /> Stream
-                    </span>
+                    <span class="px-1.5 py-0.5 rounded bg-textcolor/8 text-textcolor2 flex items-center gap-0.5 text-[9px] leading-tight"><ZapIcon size={10} /> Stream</span>
                   {/if}
                   {#if isSelected}
-                    <span class="px-1.5 py-0.5 rounded bg-selected text-textcolor font-bold flex items-center gap-1 text-[10px] leading-tight">
-                      <CheckIcon size={11} /> Selected
-                    </span>
+                    <span class="px-1.5 py-0.5 rounded bg-selected text-textcolor font-bold flex items-center gap-1 text-[10px] leading-tight"><CheckIcon size={11} /> Selected</span>
                   {/if}
                 </div>
               </div>
