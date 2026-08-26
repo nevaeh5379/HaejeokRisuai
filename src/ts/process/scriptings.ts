@@ -39,7 +39,7 @@ import { generateAIImage } from "./stableDiff";
 import { writeInlayImage, getInlayAsset } from "./files/inlays";
 import type { OpenAIChat, MultiModal } from "@risuai/chat-core/types.cjs";
 import { requestChatData } from "./request/chatRequestOrchestrator";
-import type { StreamResponseChunk } from "./request/request";
+import type { StreamResponseChunk } from "./request/requestContracts";
 import { v4 } from "uuid";
 import { getModuleLorebooks, getModuleTriggers } from "./modules";
 import { Mutex } from "../mutex";

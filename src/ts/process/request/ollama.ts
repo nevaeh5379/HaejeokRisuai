@@ -11,8 +11,8 @@ import { requestClaude } from "./anthropic";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
-} from "./request";
-import type { StreamResponseChunk } from "./request";
+} from "./requestContracts";
+import type { StreamResponseChunk } from "./requestContracts";
 import { shouldUseNodeOllamaCloudTransport } from "./ollamaTransport";
 import { tryExecuteNodeProviderTransport } from "./nodeProviderExecutor";
 import { requestOpenAI, requestOpenAIResponseAPI } from "./openAI/requests";

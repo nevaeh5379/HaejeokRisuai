@@ -8,7 +8,7 @@ import { LLMFlags } from "src/ts/model/modellist";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { callTool, encodeToolCall } from "../../mcp/mcp";
 import { extractJSON } from "../../templates/jsonSchema";
-import type { RequestDataArgumentExtended, StreamResponseChunk } from "../request";
+import type { RequestDataArgumentExtended, StreamResponseChunk } from "../requestContracts";
 import type { OpenAIChatExtra, ToolCall } from "./types";
 import type { LocalNetworkRequestOptions } from "./shared";
 

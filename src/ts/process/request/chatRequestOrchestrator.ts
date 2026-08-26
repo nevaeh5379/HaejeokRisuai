@@ -10,11 +10,11 @@ import {
 import { sleep } from "../../util";
 import { getTools } from "../mcp/mcp";
 import { runTrigger } from "../triggers";
-import {
-  requestChatDataMain,
-  type requestDataArgument,
-  type requestDataResponse,
-} from "./request";
+import { requestChatDataMain } from "./request";
+import type {
+  requestDataArgument,
+  requestDataResponse,
+} from "./requestContracts";
 import type { ModelModeExtended } from "./shared";
 
 export async function requestChatData(

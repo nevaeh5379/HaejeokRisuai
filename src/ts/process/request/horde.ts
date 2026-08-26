@@ -10,7 +10,7 @@ import { applyChatTemplate } from "../templates/chatTemplate";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
-} from "./request";
+} from "./requestContracts";
 import { tryExecuteNodeProvider } from "./nodeProviderExecutor";
 import { applyAdditionalParameters, getAdditionalParameters } from "./shared";
 

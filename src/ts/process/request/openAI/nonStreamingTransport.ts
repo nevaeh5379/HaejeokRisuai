@@ -5,7 +5,7 @@ import { LLMFormat } from "src/ts/model/modellist";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
-} from "../request";
+} from "../requestContracts";
 import { tryExecuteNodeProviderTransport } from "../nodeProviderExecutor";
 import { matchesNodeOllamaCloudEndpoint } from "../ollamaTransport";
 import { interpretOpenAINonStreamingResponse } from "./nonStreamingResponse";

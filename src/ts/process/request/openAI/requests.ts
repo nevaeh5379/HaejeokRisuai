@@ -10,7 +10,7 @@ import { LLMFlags, LLMFormat } from "src/ts/model/modellist";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
-} from "../request";
+} from "../requestContracts";
 import type { OpenAIChatExtra } from "./types";
 export { requestOpenAIResponseAPI, __testResponsesAPI } from "./responses";
 export { requestHTTPOpenAI } from "./nonStreamingTransport";

@@ -8,7 +8,7 @@ import type {
   RequestDataArgumentExtended,
   requestDataResponse,
   StreamResponseChunk,
-} from "./request";
+} from "./requestContracts";
 import {
   applyAdditionalParameters,
   applyParameters,

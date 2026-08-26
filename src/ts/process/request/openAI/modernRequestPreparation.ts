@@ -13,7 +13,7 @@ import { simplifySchema } from "src/ts/util";
 import { supportsInlayImage } from "../../files/inlays";
 import { applyChatTemplate } from "../../templates/chatTemplate";
 import { getOpenAIJSONSchema } from "../../templates/jsonSchema";
-import type { RequestDataArgumentExtended } from "../request";
+import type { RequestDataArgumentExtended } from "../requestContracts";
 import {
   applyAdditionalParameters,
   applyParameters,

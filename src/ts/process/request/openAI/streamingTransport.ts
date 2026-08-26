@@ -7,7 +7,7 @@ import { isNodeServer, isTauri } from "src/ts/platform";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
-} from "../request";
+} from "../requestContracts";
 import { getTranStream, wrapToolStream } from "./streamingResponse";
 import type { LocalNetworkRequestOptions } from "./shared";
 

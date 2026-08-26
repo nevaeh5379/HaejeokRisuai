@@ -11,7 +11,7 @@ import { extractJSON } from "../../templates/jsonSchema";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
-} from "../request";
+} from "../requestContracts";
 import type { OpenAIChatExtra, ToolCall } from "./types";
 
 export interface InterpretOpenAINonStreamingOptions {

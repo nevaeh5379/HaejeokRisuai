@@ -18,7 +18,7 @@ import type {
   RequestDataArgumentExtended,
   requestDataResponse,
   StreamResponseChunk,
-} from "../request";
+} from "../requestContracts";
 import { tryExecuteNodeProviderTransport } from "../nodeProviderExecutor";
 import { matchesNodeOllamaCloudEndpoint } from "../ollamaTransport";
 import {

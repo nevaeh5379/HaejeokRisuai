@@ -4,7 +4,7 @@ import { sleep } from "../../util";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
-} from "./request";
+} from "./requestContracts";
 import { tryExecuteNodeProvider } from "./nodeProviderExecutor";
 
 export async function requestEcho(

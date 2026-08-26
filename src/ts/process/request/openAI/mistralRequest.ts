@@ -10,7 +10,7 @@ import { LLMFormat } from "src/ts/model/modellist";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
-} from "../request";
+} from "../requestContracts";
 import { tryExecuteNodeProvider } from "../nodeProviderExecutor";
 import { applyParameters } from "../shared";
 import type { OpenAIChatExtra } from "./types";

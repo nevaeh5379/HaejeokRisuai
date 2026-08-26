@@ -9,7 +9,7 @@ import { unstringlizeChat } from "../stringlize";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
-} from "./request";
+} from "./requestContracts";
 import { tryExecuteNodeProviderTransport } from "./nodeProviderExecutor";
 import { applyAdditionalParameters, getAdditionalParameters } from "./shared";
 

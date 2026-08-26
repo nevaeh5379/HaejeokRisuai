@@ -5,7 +5,7 @@ import { DEFAULT_COHERE_CHAT_URL } from "@risuai/chat-core/cohereProvider.cjs";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
-} from "./request";
+} from "./requestContracts";
 import { tryExecuteNodeProviderTransport } from "./nodeProviderExecutor";
 import {
   applyAdditionalParameters,
