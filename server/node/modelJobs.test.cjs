@@ -38,7 +38,15 @@ test('model job survives stream client disconnect and replays the full journal',
     const upstreamPort = await listen(upstream);
     t.after(() => close(upstream));
 
-    const manager = createModelJobManager({ saveDir });
+    const lifecycleEvents = [];
+    const manager = createModelJobManager({
+        saveDir,
+        onEvent: (phase, job, context) => lifecycleEvents.push({
+            phase,
+            jobId: job.id,
+            sourceClientId: context?.sourceClientId,
+        }),
+    });
     t.after(() => manager.close());
     const app = express();
     app.use(express.json({ limit: '10mb' }));
@@ -49,7 +57,10 @@ test('model job survives stream client disconnect and replays the full journal',
 
     const createResponse = await fetch(`http://127.0.0.1:${apiPort}/api/model-jobs`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+            'content-type': 'application/json',
+            'x-risu-client-id': 'client-session-1',
+        },
         body: JSON.stringify({
             targetUrl: `http://127.0.0.1:${upstreamPort}/v1/chat?key=super-secret`,
             method: 'POST',
@@ -77,11 +88,18 @@ test('model job survives stream client disconnect and replays the full journal',
     const replay = await fetch(`http://127.0.0.1:${apiPort}/api/model-jobs/${jobId}/stream`);
     assert.equal(await replay.text(), 'alphabetagamma');
     assert.equal(manager.listJobs('unclaimed').some((item) => item.id === jobId), true);
+    const jobEvents = lifecycleEvents.filter((event) => event.jobId === jobId);
+    assert.deepEqual(jobEvents.map((event) => event.phase), ['created', 'terminal']);
+    assert.equal(
+        jobEvents.every((event) => event.sourceClientId === 'client-session-1'),
+        true,
+    );
 
     const metadata = await fs.readFile(path.join(saveDir, 'model-jobs', 'index.json'), 'utf8');
     assert.equal(metadata.includes('super-secret'), false);
     assert.equal(metadata.includes('another-secret'), false);
     assert.equal(metadata.includes('private-prompt'), false);
+    assert.equal(metadata.includes('client-session-1'), false);
 });
 
 test('startup converts orphaned running jobs into recoverable failures', async (t) => {

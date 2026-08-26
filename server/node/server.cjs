@@ -267,7 +267,11 @@ const realtimeEventHub = createRealtimeEventHub();
 const modelJobManager = createModelJobManager({
     saveDir: savePath,
     logger: console,
-    onEvent: (phase, job) => realtimeEventHub.broadcast('model-job', { phase, job }),
+    onEvent: (phase, job, context) => realtimeEventHub.broadcast('model-job', {
+        phase,
+        job,
+        sourceClientId: normalizeClientId(context?.sourceClientId),
+    }),
 });
 const nodeChatExecutor = createNodeChatExecutor();
 const nodeProviderExecutor = createNodeProviderExecutor();

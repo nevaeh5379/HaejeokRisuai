@@ -4,6 +4,7 @@ import { NodePostgresStorage } from "../storage/nodePostgresStorage";
 import { getNodeServerProxyAuth } from "../storage/nodeStorage";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { recoverDurableModelJobs } from "./modelJobRecovery";
+import { getNodeClientSessionId } from "../network/nodeClientSession";
 import {
   isLocalChatGenerationActive,
   setRemoteChatGeneration,
@@ -20,6 +21,7 @@ type DatabaseChangeEvent = {
 
 type ModelJobEvent = {
   phase?: "created" | "terminal";
+  sourceClientId?: string | null;
   job?: {
     id?: string;
     chatId?: string;
@@ -71,6 +73,7 @@ async function applyModelJob(event: ModelJobEvent): Promise<void> {
   ) {
     activeModelJobsByChat.delete(job.chatId);
   }
+  if (event.sourceClientId === getNodeClientSessionId()) return;
   setRemoteChatGeneration(job.chatId, event.phase === "created");
   void recoverDurableModelJobs();
 }

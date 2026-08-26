@@ -1,5 +1,5 @@
 import localforage from "localforage";
-import { v4 as uuidv4 } from "uuid";
+import { getNodeClientSessionId } from "../network/nodeClientSession";
 import type {
   Database,
   Message,
@@ -191,7 +191,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
   readonly backendKind = "node" as const;
   private status: "unknown" | "enabled" | "disabled" | "degraded" = "unknown";
   private revision = 0;
-  private readonly clientId = uuidv4();
+  private readonly clientId = getNodeClientSessionId();
   private pluginsCacheForage = localforage.createInstance({
     name: "risuaiPostgresPlugins",
   });
