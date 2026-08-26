@@ -32,7 +32,15 @@ type ModelJobEvent = {
 let started = false;
 let streamController: AbortController | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let lastEventId: number | null = null;
+let resyncReloadScheduled = false;
 const activeModelJobsByChat = new Map<string, string>();
+
+function scheduleFullResync(): void {
+  if (resyncReloadScheduled) return;
+  resyncReloadScheduled = true;
+  queueMicrotask(() => window.location.reload());
+}
 
 async function applyDatabaseChange(
   storage: NodePostgresStorage,
@@ -141,6 +149,8 @@ async function dispatchEvent(
     await applyDatabaseChange(storage, data as DatabaseChangeEvent);
   } else if (eventName === "model-job") {
     await applyModelJob(data as ModelJobEvent);
+  } else if (eventName === "resync-required") {
+    scheduleFullResync();
   }
 }
 
@@ -162,13 +172,18 @@ async function consumeEventStream(
       const frame = buffer.slice(0, boundary);
       buffer = buffer.slice(boundary + 2);
       let eventName = "message";
+      let frameEventId: number | null = null;
       const dataLines: string[] = [];
       for (const line of frame.split("\n")) {
-        if (line.startsWith("event:")) eventName = line.slice(6).trim();
+        if (line.startsWith("id:")) {
+          const parsed = Number(line.slice(3).trim());
+          if (Number.isSafeInteger(parsed) && parsed >= 0) frameEventId = parsed;
+        } else if (line.startsWith("event:")) eventName = line.slice(6).trim();
         else if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
       }
       if (dataLines.length > 0) {
         await dispatchEvent(storage, eventName, dataLines.join("\n"));
+        if (frameEventId != null) lastEventId = frameEventId;
       }
       boundary = buffer.indexOf("\n\n");
     }
@@ -190,11 +205,13 @@ async function connect(storage: NodePostgresStorage): Promise<void> {
   streamController = controller;
   try {
     const auth = await getNodeServerProxyAuth();
+    const headers: Record<string, string> = {
+      "risu-auth": auth,
+      "x-risu-client-id": storage.getClientId(),
+    };
+    if (lastEventId != null) headers["last-event-id"] = String(lastEventId);
     const response = await fetch("/api/realtime/events", {
-      headers: {
-        "risu-auth": auth,
-        "x-risu-client-id": storage.getClientId(),
-      },
+      headers,
       cache: "no-store",
       signal: controller.signal,
     });

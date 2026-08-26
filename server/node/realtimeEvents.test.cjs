@@ -59,3 +59,57 @@ test('realtime hub streams ready and broadcast events to connected clients', () 
     req.emit('close');
     assert.equal(hub.clientCount(), 0);
 });
+
+
+test('broadcasts share one event id across clients and reconnects replay missed events', () => {
+    const hub = createRealtimeEventHub({ heartbeatMs: 60_000, historyLimit: 4 });
+    const reqA = new EventEmitter();
+    reqA.headers = { 'x-risu-client-id': 'device-a' };
+    const reqB = new EventEmitter();
+    reqB.headers = { 'x-risu-client-id': 'device-b' };
+    const resA = new FakeResponse();
+    const resB = new FakeResponse();
+
+    hub.connect(reqA, resA);
+    hub.connect(reqB, resB);
+    hub.broadcast('database-change', { revision: 1 });
+    assert.match(resA.chunks.join(''), /id: 1\nevent: database-change/);
+    assert.match(resB.chunks.join(''), /id: 1\nevent: database-change/);
+    assert.equal(hub.latestEventId(), 1);
+
+    reqB.emit('close');
+    hub.broadcast('database-change', { revision: 2 });
+    hub.broadcast('model-job', { phase: 'created' });
+    const replayReq = new EventEmitter();
+    replayReq.headers = {
+        'x-risu-client-id': 'device-b',
+        'last-event-id': '1',
+    };
+    const replayRes = new FakeResponse();
+    hub.connect(replayReq, replayRes);
+    const replayOutput = replayRes.chunks.join('');
+    assert.match(replayOutput, /id: 2\nevent: database-change/);
+    assert.match(replayOutput, /id: 3\nevent: model-job/);
+    assert.doesNotMatch(replayOutput, /resync-required/);
+    replayReq.emit('close');
+    reqA.emit('close');
+});
+
+test('realtime hub requests resync when the replay window was lost', () => {
+    const hub = createRealtimeEventHub({ heartbeatMs: 60_000, historyLimit: 2 });
+    hub.broadcast('database-change', { revision: 1 });
+    hub.broadcast('database-change', { revision: 2 });
+    hub.broadcast('database-change', { revision: 3 });
+    const req = new EventEmitter();
+    req.headers = {
+        'x-risu-client-id': 'device-late',
+        'last-event-id': '0',
+    };
+    const res = new FakeResponse();
+    hub.connect(req, res);
+    const output = res.chunks.join('');
+    assert.match(output, /event: resync-required/);
+    assert.match(output, /"latestEventId":3/);
+    assert.match(output, /"oldestRetainedId":2/);
+    req.emit('close');
+});

@@ -29,25 +29,33 @@ function describeSqlCommitChange(payload) {
     };
 }
 
-function createRealtimeEventHub({ heartbeatMs = 15_000 } = {}) {
+function createRealtimeEventHub({ heartbeatMs = 15_000, historyLimit = 512 } = {}) {
     const clients = new Set();
+    const history = [];
     let sequence = 0;
 
-    function writeEvent(res, event, data) {
+    function writeEvent(res, record) {
+        if (record.id != null) res.write(`id: ${record.id}\n`);
+        res.write(`event: ${record.event}\n`);
+        res.write(`data: ${JSON.stringify(record.data)}\n\n`);
+    }
+
+    function makeBroadcastEvent(event, data) {
         const id = ++sequence;
-        res.write(`id: ${id}\n`);
-        res.write(`event: ${event}\n`);
-        res.write(`data: ${JSON.stringify({ ...data, eventId: id })}\n\n`);
+        return { id, event, data: { ...data, eventId: id } };
     }
 
     function broadcast(event, data) {
+        const record = makeBroadcastEvent(event, data);
+        history.push(record);
+        if (history.length > historyLimit) history.splice(0, history.length - historyLimit);
         for (const client of [...clients]) {
             if (client.res.destroyed || client.res.writableEnded) {
                 clients.delete(client);
                 continue;
             }
             try {
-                writeEvent(client.res, event, data);
+                writeEvent(client.res, record);
             } catch {
                 clients.delete(client);
             }
@@ -65,8 +73,31 @@ function createRealtimeEventHub({ heartbeatMs = 15_000 } = {}) {
             res,
             clientId: normalizeClientId(req.headers['x-risu-client-id']),
         };
+        const rawLastEventId = req.headers['last-event-id'];
+        const lastEventId = Number(Array.isArray(rawLastEventId) ? rawLastEventId[0] : rawLastEventId);
+        const hasLastEventId = Number.isSafeInteger(lastEventId) && lastEventId >= 0;
+        const oldestRetainedId = history[0]?.id ?? sequence + 1;
+        const replayGap = hasLastEventId && (
+            lastEventId > sequence ||
+            (lastEventId < sequence && lastEventId < oldestRetainedId - 1)
+        );
+
+        if (replayGap) {
+            writeEvent(res, {
+                event: 'resync-required',
+                data: { latestEventId: sequence, oldestRetainedId },
+            });
+        } else if (hasLastEventId) {
+            for (const record of history) {
+                if (record.id > lastEventId) writeEvent(res, record);
+            }
+        }
+
         clients.add(client);
-        writeEvent(res, 'ready', { clientId: client.clientId, connectedAt: Date.now() });
+        writeEvent(res, {
+            event: 'ready',
+            data: { clientId: client.clientId, connectedAt: Date.now(), latestEventId: sequence },
+        });
 
         const heartbeat = setInterval(() => {
             if (res.destroyed || res.writableEnded) return;
@@ -86,6 +117,7 @@ function createRealtimeEventHub({ heartbeatMs = 15_000 } = {}) {
         connect,
         broadcast,
         clientCount: () => clients.size,
+        latestEventId: () => sequence,
     };
 }
 
