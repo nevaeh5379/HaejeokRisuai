@@ -53,9 +53,31 @@ import {
   type ColdStorageValueMap,
 } from "../backupCompatibility";
 import { safeStructuredClone } from "../polyfill";
+import { registerPlugin } from "@capacitor/core";
+import { Buffer } from "buffer";
 
 const alertProgress = (msg: string, progress: number | string) =>
   showProgressAlert(msg, progress, "backup");
+
+interface NativeBackupPlugin {
+  openImport(): Promise<{
+    cancelled?: boolean;
+    id?: string;
+    size?: number;
+    assetsWritten?: number;
+    raw?: boolean;
+  }>;
+  readImportChunk(options: {
+    id: string;
+    offset: number;
+    length: number;
+  }): Promise<{ data: string; bytesRead: number; eof: boolean }>;
+  closeImport(options: { id: string }): Promise<void>;
+}
+
+const nativeBackup = isCapacitor
+  ? registerPlugin<NativeBackupPlugin>("NativeBackup")
+  : undefined;
 
 export function normalizeLocalBackupAssetPath(name: string) {
   const normalizedName = name.replace(/\\/g, "/");
@@ -1223,8 +1245,59 @@ export async function restoreLocalBackupFile(file: File) {
   alertNormal("Success");
 }
 
-export function LoadLocalBackup() {
+async function loadCapacitorLocalBackup() {
+  if (!nativeBackup) throw new Error("Native backup importer is unavailable");
+  alertProgress("Opening local backup...", 0);
+  const selected = await nativeBackup.openImport();
+  if (selected.cancelled) {
+    alertClear();
+    return;
+  }
+  if (!selected.id) throw new Error("Native backup import session was not created");
+
+  const id = selected.id;
   try {
+    const size = Math.max(0, selected.size ?? 0);
+    const parts: BlobPart[] = [];
+    let offset = 0;
+    const chunkSize = 4 * 1024 * 1024;
+    alertProgress(
+      `Native extraction complete (${selected.assetsWritten ?? 0} assets). Loading database data...`,
+      90,
+    );
+
+    while (offset < size) {
+      const chunk = await nativeBackup.readImportChunk({ id, offset, length: chunkSize });
+      if (chunk.bytesRead <= 0 && !chunk.eof) {
+        throw new Error("Native backup importer stopped before reaching the end");
+      }
+      if (chunk.data) {
+        const decoded = Buffer.from(chunk.data, "base64");
+        const arrayBuffer = new ArrayBuffer(decoded.byteLength);
+        new Uint8Array(arrayBuffer).set(decoded);
+        parts.push(arrayBuffer);
+      }
+      offset += chunk.bytesRead;
+      const progress = size === 0 ? 94 : 90 + Math.floor((offset / size) * 4);
+      alertProgress("Loading database and cold-storage data...", progress);
+      if (chunk.eof) break;
+    }
+
+    const specialFile = new File(parts, "native-backup-special.risubackup", {
+      type: "application/octet-stream",
+    });
+    await restoreLocalBackupFile(specialFile);
+  } finally {
+    await nativeBackup.closeImport({ id }).catch(() => {});
+  }
+}
+
+export async function LoadLocalBackup() {
+  try {
+    if (isCapacitor) {
+      await loadCapacitorLocalBackup();
+      return;
+    }
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".bin,.risubackup";
@@ -1248,6 +1321,9 @@ export function LoadLocalBackup() {
     input.click();
   } catch (error) {
     console.error(error);
-    alertError("Failed, Is file corrupted?");
+    const detail = error instanceof Error ? error.message : `${error}`;
+    alertError(
+      `Failed to load local backup: ${detail}\nCheck the server console or logs for details.`,
+    );
   }
 }

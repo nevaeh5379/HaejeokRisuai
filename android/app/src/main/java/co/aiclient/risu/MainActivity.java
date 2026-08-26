@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(StreamedFetchPlugin.class);
         registerPlugin(StreamFileWriterPlugin.class);
+        registerPlugin(NativeBackupPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
