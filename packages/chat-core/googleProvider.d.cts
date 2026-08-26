@@ -57,3 +57,13 @@ export function prepareGoogleConversation(
 export function mergeGoogleConsecutiveChats(
   chats: GeminiChat[],
 ): GeminiChat[];
+
+export type GoogleSafetyThreshold = "BLOCK_NONE" | "OFF";
+export interface GoogleSafetySetting {
+  category: string;
+  threshold: GoogleSafetyThreshold;
+}
+export function buildGoogleSafetySettings(options?: {
+  includeCivicIntegrity?: boolean;
+  blockOff?: boolean;
+}): GoogleSafetySetting[];

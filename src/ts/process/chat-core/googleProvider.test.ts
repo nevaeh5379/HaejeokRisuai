@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildGoogleSafetySettings,
   mergeGoogleConsecutiveChats,
   prepareGoogleConversation,
 } from "@risuai/chat-core/googleProvider.cjs";
@@ -134,6 +135,28 @@ describe("Google provider core", () => {
           { functionCall: { name: "tool", args: {} } },
         ],
       },
+    ]);
+  });
+
+  it("builds Gemini safety settings from runtime capabilities", () => {
+    expect(buildGoogleSafetySettings()).toEqual([
+      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "BLOCK_NONE" },
+    ]);
+
+    expect(
+      buildGoogleSafetySettings({
+        includeCivicIntegrity: false,
+        blockOff: true,
+      }),
+    ).toEqual([
+      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "OFF" },
+      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" },
+      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
     ]);
   });
 

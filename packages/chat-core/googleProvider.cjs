@@ -81,6 +81,20 @@ system:${chat.content}`;
   };
 }
 
+function buildGoogleSafetySettings(options = {}) {
+  const threshold = options.blockOff ? 'OFF' : 'BLOCK_NONE';
+  const categories = [
+    'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+    'HARM_CATEGORY_HATE_SPEECH',
+    'HARM_CATEGORY_HARASSMENT',
+    'HARM_CATEGORY_DANGEROUS_CONTENT',
+  ];
+  if (options.includeCivicIntegrity !== false) {
+    categories.push('HARM_CATEGORY_CIVIC_INTEGRITY');
+  }
+  return categories.map((category) => ({ category, threshold }));
+}
+
 function mergeGoogleConsecutiveChats(chats) {
   for (let index = chats.length - 1; index >= 1; index--) {
     const current = chats[index];
@@ -105,4 +119,5 @@ module.exports = {
   buildGoogleGenerateContentUrl,
   prepareGoogleConversation,
   mergeGoogleConsecutiveChats,
+  buildGoogleSafetySettings,
 };

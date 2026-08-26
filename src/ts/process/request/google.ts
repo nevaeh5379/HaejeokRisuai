@@ -1,5 +1,6 @@
 import {
   buildGoogleGenerateContentUrl,
+  buildGoogleSafetySettings,
   mergeGoogleConsecutiveChats,
   prepareGoogleConversation,
 } from "@risuai/chat-core/googleProvider.cjs";
@@ -200,38 +201,10 @@ export async function requestGoogleCloudVertex(
 
   mergeGoogleConsecutiveChats(reformatedChat);
 
-  const uncensoredCatagory = [
-    {
-      category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-      threshold: "BLOCK_NONE",
-    },
-    {
-      category: "HARM_CATEGORY_HATE_SPEECH",
-      threshold: "BLOCK_NONE",
-    },
-    {
-      category: "HARM_CATEGORY_HARASSMENT",
-      threshold: "BLOCK_NONE",
-    },
-    {
-      category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-      threshold: "BLOCK_NONE",
-    },
-    {
-      category: "HARM_CATEGORY_CIVIC_INTEGRITY",
-      threshold: "BLOCK_NONE",
-    },
-  ];
-
-  if (arg.modelInfo.flags.includes(LLMFlags.noCivilIntegrity)) {
-    uncensoredCatagory.splice(4, 1);
-  }
-
-  if (arg.modelInfo.flags.includes(LLMFlags.geminiBlockOff)) {
-    for (let i = 0; i < uncensoredCatagory.length; i++) {
-      uncensoredCatagory[i].threshold = "OFF";
-    }
-  }
+  const uncensoredCatagory = buildGoogleSafetySettings({
+    includeCivicIntegrity: !arg.modelInfo.flags.includes(LLMFlags.noCivilIntegrity),
+    blockOff: arg.modelInfo.flags.includes(LLMFlags.geminiBlockOff),
+  });
 
   let para: LLMParameter[] = [
     "temperature",
