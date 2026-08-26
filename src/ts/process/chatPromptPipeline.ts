@@ -166,6 +166,10 @@ export async function buildGenerationPrompt(
     options.currentChar,
     options.currentChat,
     options.nowChatroom,
+    {
+      characterIndex: options.selectedChar,
+      chatIndex: options.selectedChat,
+    },
   );
   const historyStage = await buildHistoryStage(options, sections);
   if (!historyStage.ok) return { ok: false as const };

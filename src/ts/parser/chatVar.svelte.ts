@@ -4,13 +4,18 @@ import { parseKeyValue } from "../util";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 
-export function getChatVar(key: string): string {
-  const selectedChar = get(selectedCharID);
+export type ChatVarTarget = {
+  characterIndex: number;
+  chatIndex: number;
+};
+
+export function getChatVar(key: string, target?: ChatVarTarget): string {
+  const selectedChar = target?.characterIndex ?? get(selectedCharID);
   const char = characterStore.characters[selectedChar];
   if (!char) {
     return "null";
   }
-  const chat = char.chats[char.chatPage];
+  const chat = char.chats[target?.chatIndex ?? char.chatPage];
   if (!chat) {
     return "null";
   }
@@ -31,13 +36,17 @@ export function getChatVar(key: string): string {
   return state.toString();
 }
 
-export function setChatVar(key: string, value: string): boolean {
-  const selectedChar = get(selectedCharID);
+export function setChatVar(
+  key: string,
+  value: string,
+  target?: ChatVarTarget,
+): boolean {
+  const selectedChar = target?.characterIndex ?? get(selectedCharID);
   const char = characterStore.characters[selectedChar];
   if (!char || !char.chats) {
     return false;
   }
-  const chat = char.chats[char.chatPage];
+  const chat = char.chats[target?.chatIndex ?? char.chatPage];
   if (!chat) {
     return false;
   }

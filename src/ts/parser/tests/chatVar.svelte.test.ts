@@ -81,6 +81,7 @@ const anyValidDefaultVarValue = fc
 beforeEach(() => {
   vi.resetAllMocks();
   resetChatVariables();
+  characterStore.characters.splice(1);
   const chat = characterStore.characters[0].chats[0];
   chat.scriptstate = {};
   chat.GLGlobalVariables = {};
@@ -128,6 +129,23 @@ test("can set and get a chat variable", () => {
       },
     ),
   );
+});
+
+test("can target chat variables without following the selected character", () => {
+  characterStore.characters.push({
+    chatPage: 0,
+    chats: [
+      { scriptstate: { $scope: "other" } },
+      { scriptstate: { $scope: "target" } },
+    ],
+    defaultVariables: "",
+  } as any);
+
+  const target = { characterIndex: 1, chatIndex: 1 };
+  expect(getChatVar("scope", target)).toBe("target");
+  expect(setChatVar("scope", "updated", target)).toBe(true);
+  expect(getChatVar("scope", target)).toBe("updated");
+  expect(getChatVar("scope")).toBe("null");
 });
 
 test("can set a chat variable over its default value", () => {

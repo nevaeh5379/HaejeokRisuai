@@ -363,6 +363,7 @@ export async function preparePromptSections(
   currentChar: character,
   currentChat: Chat,
   nowChatroom: character | groupChat,
+  target?: { characterIndex: number; chatIndex: number },
 ) {
   const sections = createPromptSections();
   const { promptTemplate, usingPromptTemplate } = resolvePromptTemplate(currentChar);
@@ -375,7 +376,7 @@ export async function preparePromptSections(
     currentChat,
     nowChatroom,
   );
-  const lorePrompt = await loadLoreBookV3Prompt();
+  const lorePrompt = await loadLoreBookV3Prompt(target);
   const resolvePosition = createPositionResolver(lorePrompt);
   buildLorebookSections(sections, currentChar, lorePrompt, resolvePosition);
   addPersonaAndInlayPrompts(sections, currentChar);

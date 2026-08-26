@@ -74,10 +74,13 @@ export function addLorebookFolder(type: number) {
   }
 }
 
-export async function loadLoreBookV3Prompt() {
-  const selectedID = get(selectedCharID);
+export async function loadLoreBookV3Prompt(
+  target?: { characterIndex: number; chatIndex: number },
+) {
+  const selectedID = target?.characterIndex ?? get(selectedCharID);
   const char = characterStore.characters[selectedID];
-  const page = char.chatPage;
+  const page = target?.chatIndex ?? char.chatPage;
+  const chatVarTarget = { characterIndex: selectedID, chatIndex: page };
   const characterLore = char.globalLore ?? [];
   const chatLore = char.chats[page].localLore ?? [];
   const moduleLorebook = getModuleLorebooks();
@@ -545,6 +548,7 @@ export async function loadLoreBookV3Prompt() {
                 "__internal_ka_" +
                   (fullLore[i].id ??
                     pickHashRand(5555, fullLore[i].content).toString()),
+                chatVarTarget,
               );
               if (vara === "true") {
                 forceState = "activate";
@@ -558,6 +562,7 @@ export async function loadLoreBookV3Prompt() {
                 "__internal_da_" +
                   (fullLore[i].id ??
                     pickHashRand(5555, fullLore[i].content).toString()),
+                chatVarTarget,
               );
               if (vara === "true") {
                 forceState = "deactivate";
@@ -818,6 +823,7 @@ export async function loadLoreBookV3Prompt() {
               (fullLore[i].id ??
                 pickHashRand(5555, fullLore[i].content).toString()),
             "true",
+            chatVarTarget,
           );
         }
         if (dontActivateAfterMatch) {
@@ -826,6 +832,7 @@ export async function loadLoreBookV3Prompt() {
               (fullLore[i].id ??
                 pickHashRand(5555, fullLore[i].content).toString()),
             "true",
+            chatVarTarget,
           );
         }
 
