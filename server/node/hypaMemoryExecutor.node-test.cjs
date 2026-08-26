@@ -203,6 +203,133 @@ test('Hypa V3 embeddings and similarity ranking execute on the Node backend', as
 });
 
 
+test('concurrent Hypa query embeddings coalesce into one backend request', async () => {
+  const originalFetch = global.fetch;
+  let hold = false;
+  let heldCalls = 0;
+  let releaseHeld;
+  let heldStarted;
+  const heldStartedPromise = new Promise((resolve) => { heldStarted = resolve; });
+  const releasePromise = new Promise((resolve) => { releaseHeld = resolve; });
+  global.fetch = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    const inputs = Array.isArray(body.input) ? body.input : [body.input];
+    if (hold) {
+      heldCalls += 1;
+      heldStarted();
+      await releasePromise;
+    }
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({ data: inputs.map(() => ({ embedding: [1, 0, 0] })) });
+      },
+    };
+  };
+
+  try {
+    const executor = createHypaMemoryExecutor();
+    const request = v3Request();
+    request.currentTokens = 10;
+    request.maxContextTokens = 100;
+    request.chats = [
+      { role: 'user', content: 'old event', memo: 'm1' },
+      { role: 'user', content: 'same query', memo: 'm2' },
+    ];
+    request.room.hypaV3Data = {
+      summaries: [{ text: 'An old event happened.', chatMemos: ['m1'], isImportant: false, tags: [] }],
+    };
+    request.config.hypaModel = 'custom';
+    request.config.customEmbedding = { url: 'http://embedding.test', key: 'test-key', model: 'test-model' };
+    request.config.v3Settings.memoryTokensRatio = 0.5;
+    request.config.v3Settings.recentMemoryRatio = 0;
+    request.config.v3Settings.similarMemoryRatio = 1;
+    request.config.v3Settings.queryChatCount = 1;
+
+    await drive(executor, await executor.start(structuredClone(request), { scope: 'coalesce-scope' }), 'coalesce-scope');
+    executor.clearQueryCache('coalesce-scope');
+    hold = true;
+
+    const first = drive(executor, await executor.start(structuredClone(request), { scope: 'coalesce-scope' }), 'coalesce-scope');
+    await heldStartedPromise;
+    const second = drive(executor, await executor.start(structuredClone(request), { scope: 'coalesce-scope' }), 'coalesce-scope');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(heldCalls, 1, 'the second session should join the first query embedding request');
+    releaseHeld();
+    await Promise.all([first, second]);
+
+    const stats = executor.getQueryCacheStats('coalesce-scope');
+    assert.equal(stats.misses, 1);
+    assert.ok(stats.coalesced >= 1);
+  } finally {
+    releaseHeld?.();
+    global.fetch = originalFetch;
+  }
+});
+
+test('clearing query cache prevents new sessions from joining stale in-flight work', async () => {
+  const originalFetch = global.fetch;
+  let hold = false;
+  let heldCalls = 0;
+  const releases = [];
+  global.fetch = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    const inputs = Array.isArray(body.input) ? body.input : [body.input];
+    if (hold) {
+      heldCalls += 1;
+      let release;
+      const releasePromise = new Promise((resolve) => { release = resolve; });
+      releases.push(release);
+      await releasePromise;
+    }
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({ data: inputs.map(() => ({ embedding: [1, 0, 0] })) });
+      },
+    };
+  };
+
+  try {
+    const executor = createHypaMemoryExecutor();
+    const request = v3Request();
+    request.currentTokens = 10;
+    request.maxContextTokens = 100;
+    request.chats = [
+      { role: 'user', content: 'old event', memo: 'm1' },
+      { role: 'user', content: 'stale query', memo: 'm2' },
+    ];
+    request.room.hypaV3Data = {
+      summaries: [{ text: 'An old event happened.', chatMemos: ['m1'], isImportant: false, tags: [] }],
+    };
+    request.config.hypaModel = 'custom';
+    request.config.customEmbedding = { url: 'http://embedding.test', key: 'test-key', model: 'test-model' };
+    request.config.v3Settings.memoryTokensRatio = 0.5;
+    request.config.v3Settings.recentMemoryRatio = 0;
+    request.config.v3Settings.similarMemoryRatio = 1;
+    request.config.v3Settings.queryChatCount = 1;
+
+    await drive(executor, await executor.start(structuredClone(request), { scope: 'clear-race-scope' }), 'clear-race-scope');
+    executor.clearQueryCache('clear-race-scope');
+    hold = true;
+
+    const first = drive(executor, await executor.start(structuredClone(request), { scope: 'clear-race-scope' }), 'clear-race-scope');
+    while (heldCalls < 1) await new Promise((resolve) => setImmediate(resolve));
+    executor.clearQueryCache('clear-race-scope');
+    const second = drive(executor, await executor.start(structuredClone(request), { scope: 'clear-race-scope' }), 'clear-race-scope');
+    while (heldCalls < 2) await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(heldCalls, 2, 'a post-clear session should start a fresh query embedding request');
+    for (const release of releases) release();
+    await Promise.all([first, second]);
+    assert.equal(executor.getQueryCacheStats('clear-race-scope').entries, 1);
+  } finally {
+    for (const release of releases) release();
+    global.fetch = originalFetch;
+  }
+});
+
 test('legacy HypaMemory retrieval also uses the Node vector backend', async () => {
   const originalFetch = global.fetch;
   let embeddingCalls = 0;

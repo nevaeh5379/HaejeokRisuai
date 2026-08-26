@@ -17,7 +17,9 @@ const INLAY_RE = /{{(inlay|inlayed|inlayeddata)::(.+?)}}/g;
 const QUERY_CACHE_MAX_ENTRIES = Math.min(Math.max(Number.parseInt(process.env.RISU_HYPA_QUERY_CACHE_ENTRIES || '1024', 10) || 1024, 32), 8192);
 const QUERY_CACHE_MAX_BYTES = Math.min(Math.max(Number.parseInt(process.env.RISU_HYPA_QUERY_CACHE_MB || '16', 10) || 16, 1), 256) * 1024 * 1024;
 const queryEmbeddingCache = new Map();
+const queryEmbeddingInflight = new Map();
 const queryCacheMetrics = new Map();
+const queryCacheEpochs = new Map();
 let queryCacheBytes = 0;
 
 function hash(value) {
@@ -31,6 +33,10 @@ function queryMetric(scope) {
     queryCacheMetrics.set(scope, metric);
   }
   return metric;
+}
+
+function queryCacheEpoch(scope) {
+  return queryCacheEpochs.get(scope) || 0;
 }
 
 function queryProviderFingerprint(config) {
@@ -98,6 +104,7 @@ function clearQueryEmbeddingCache(scope) {
     bytes += entry.embedding.byteLength;
   }
   queryCacheMetrics.delete(scope);
+  queryCacheEpochs.set(scope, queryCacheEpoch(scope) + 1);
   return { entries, bytes };
 }
 
@@ -193,6 +200,7 @@ async function embedQueries(scope, texts, config) {
   const fingerprint = queryProviderFingerprint(config);
   const output = new Array(texts.length);
   const misses = new Map();
+  const waiters = [];
 
   texts.forEach((text, index) => {
     const key = hash(`${scope}\0${fingerprint}\0query\0${text}`);
@@ -201,6 +209,12 @@ async function embedQueries(scope, texts, config) {
       metric.hits += 1;
       touchQueryCache(key, cached);
       output[index] = Array.from(cached.embedding);
+      return;
+    }
+    const inflight = queryEmbeddingInflight.get(key);
+    if (inflight && inflight.scope === scope && inflight.epoch === queryCacheEpoch(scope)) {
+      metric.coalesced += 1;
+      waiters.push({ index, key, promise: inflight.promise });
       return;
     }
     let pending = misses.get(key);
@@ -216,18 +230,48 @@ async function embedQueries(scope, texts, config) {
 
   if (misses.size > 0) {
     const pending = Array.from(misses.values());
-    let vectors;
-    if (normalizeHypaModel(config.hypaModel) === 'voyageContext3') {
-      const groups = await embedVoyageGroups(pending.map((item) => [item.text]), config, 'query');
-      vectors = groups.map((group) => group[0]);
-    } else {
-      vectors = await embedRegular(pending.map((item) => item.text), config);
+    const epoch = queryCacheEpoch(scope);
+    const batchPromise = (async () => {
+      let vectors;
+      if (normalizeHypaModel(config.hypaModel) === 'voyageContext3') {
+        const groups = await embedVoyageGroups(pending.map((item) => [item.text]), config, 'query');
+        vectors = groups.map((group) => group[0]);
+      } else {
+        vectors = await embedRegular(pending.map((item) => item.text), config);
+      }
+      if (vectors.length !== pending.length) throw new Error('Query embedding response length does not match request');
+      const byKey = new Map();
+      pending.forEach((item, position) => {
+        const vector = vectors[position];
+        if (queryCacheEpoch(scope) === epoch) putQueryCache(item.key, scope, vector);
+        byKey.set(item.key, vector);
+      });
+      return byKey;
+    })();
+
+    const inflightEntry = { scope, epoch, promise: batchPromise };
+    for (const item of pending) queryEmbeddingInflight.set(item.key, inflightEntry);
+    try {
+      const vectorsByKey = await batchPromise;
+      for (const item of pending) {
+        const vector = vectorsByKey.get(item.key);
+        for (const index of item.indexes) output[index] = Array.from(vector);
+      }
+    } finally {
+      for (const item of pending) {
+        if (queryEmbeddingInflight.get(item.key) === inflightEntry) queryEmbeddingInflight.delete(item.key);
+      }
     }
-    if (vectors.length !== pending.length) throw new Error('Query embedding response length does not match request');
-    pending.forEach((item, position) => {
-      putQueryCache(item.key, scope, vectors[position]);
-      for (const index of item.indexes) output[index] = Array.from(queryEmbeddingCache.get(item.key)?.embedding || vectors[position]);
-    });
+  }
+
+  if (waiters.length > 0) {
+    const settled = await Promise.all(waiters.map(async (waiter) => ({
+      waiter,
+      vectorsByKey: await waiter.promise,
+    })));
+    for (const { waiter, vectorsByKey } of settled) {
+      output[waiter.index] = Array.from(vectorsByKey.get(waiter.key));
+    }
   }
 
   return output;

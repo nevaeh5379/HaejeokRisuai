@@ -52,6 +52,7 @@ const { countTokensBatch } = require('./tokenizeCount.cjs');
 const { resolveLoreEntries } = require('./loreResolve.cjs');
 const {
     configureVectorIndexPersistence,
+    flushVectorIndexPersistence,
     getVectorIndexCacheStats,
     clearVectorIndexCache,
     checkVectorIndexRevision,
@@ -5745,6 +5746,7 @@ async function shutdownServer(signal) {
         if (activeHttpServer?.listening) {
             await new Promise((resolve) => activeHttpServer.close(resolve));
         }
+        await flushVectorIndexPersistence();
         if (backupStorage && typeof backupStorage.close === 'function') {
             await backupStorage.close();
         }
