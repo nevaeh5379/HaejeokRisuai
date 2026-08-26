@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import { fade, fly, scale } from 'svelte/transition';
   import {
-    Sparkles,
     Database,
     ArrowRight,
     ArrowLeft,
@@ -36,7 +35,12 @@
     type LegacyDatabaseInfo
   } from 'src/ts/storage/migration';
   import { LoadLocalBackup, restoreLocalBackupFile } from 'src/ts/drive/backuplocal';
+  import { MobileGUI } from 'src/ts/stores.svelte';
   import AirisuMascot from '../UI/AirisuMascot.svelte';
+  import WelcomeRisuMobile from './WelcomeRisuMobile.svelte';
+
+  let innerWidth = $state(typeof window !== 'undefined' ? window.innerWidth : 1200);
+  let isMobile = $derived(innerWidth < 768 || $MobileGUI);
 
   type Stage = 'gateway' | 'migration' | 'quick-setup' | 'done';
 
@@ -207,13 +211,13 @@
     if (currentStage === 'quick-setup') {
       if (quickStep === 1) return l.setup?.irisStep1 || '대화할 때 불릴 멋진 닉네임을 알려주세요!';
       if (quickStep === 2) return l.setup?.irisStep2 || '사용하실 AI 모델 또는 커스텀 설정을 골라주세요!';
-      if (quickStep === 3) return l.setup?.irisStep3 || 'API 키와 컨텍스트 용량을 직접 설정해주세요!';
-      if (quickStep === 4) return l.setup?.irisStep4 || '모든 준비 완료! 이제 Haejeok RisuAI와 함께 시작해볼까요~? 🚀';
+      if (quickStep === 3) return l.setup?.irisStep3 || 'API 키와 컨텍스트 용량을 직접 설정해주세요.';
+      if (quickStep === 4) return l.setup?.irisStep4 || '모든 준비가 완료되었습니다. 이제 Haejeok RisuAI를 시작합니다.';
     }
     if (detectedLocalDb) {
-      return l.setup?.irisGatewayDetected || `우와! 이전 데이터(database.bin)를 발견했어요! 바로 복원해드릴까요? ✨`;
+      return l.setup?.irisGatewayDetected || '이전 데이터(database.bin)를 발견했습니다. 바로 복원하시겠습니까?';
     }
-    return l.setup?.irisGatewayDefault || '만나서 반가워요! 원하는 방식을 선택해 주세요. 처음이시라면 빠른 설정을 추천해 드려요! ✨';
+    return l.setup?.irisGatewayDefault || '원하시는 시작 방식을 선택해 주세요.';
   });
 
   async function handleLanguageSelect(langCode: string) {
@@ -378,6 +382,11 @@
   }
 </script>
 
+<svelte:window bind:innerWidth />
+
+{#if isMobile}
+  <WelcomeRisuMobile />
+{:else}
 <div class="relative w-full h-full min-h-screen bg-bgcolor text-textcolor flex flex-col items-center justify-center p-3 md:p-6 overflow-y-auto selection:bg-blue-600 selection:text-white">
   <!-- Header: Brand & Language Bar -->
   <header class="w-full max-w-4xl flex items-center justify-between py-2 px-1 mb-3 z-10">
@@ -387,7 +396,7 @@
     </div>
 
     <!-- Language Selector Pills -->
-    <div class="flex items-center gap-1 bg-darkbg border border-borderc px-2 py-1 rounded-full text-xs shadow-sm overflow-x-auto max-w-[70vw]">
+    <div class="flex items-center gap-1 bg-darkbg border border-borderc/40 px-2 py-1 rounded-full text-xs shadow-sm overflow-x-auto max-w-[70vw]">
       <Globe class="w-3.5 h-3.5 text-textcolor2 shrink-0 mr-0.5" />
       {#each languages as item}
         <button
@@ -402,28 +411,26 @@
   </header>
 
   <!-- Main Container -->
-  <main class="w-full max-w-4xl bg-darkbg border border-borderc rounded-2xl p-5 md:p-7 shadow-xl flex flex-col md:flex-row gap-6 relative z-10">
+  <main class="w-full max-w-4xl bg-darkbg border border-borderc/40 rounded-2xl p-5 md:p-7 shadow-xl flex flex-col md:flex-row gap-6 relative z-10">
 
     <!-- Left Column: Iris Mascot & Dialogue Companion -->
     <aside class="flex flex-col items-center md:items-start md:w-64 shrink-0 gap-3.5">
       <!-- Iris Sprite Avatar -->
-      <div class="relative w-36 h-36 md:w-48 md:h-48 rounded-2xl overflow-hidden border border-borderc bg-textcolor/5 shadow flex items-end justify-center p-1">
+      <div class="relative w-36 h-36 md:w-48 md:h-48 rounded-2xl overflow-hidden border border-borderc/30 bg-textcolor/5 shadow flex items-end justify-center p-1">
         <AirisuMascot
           variant="welcome"
           alt="Airisu welcoming you to Haejeok RisuAI"
           className="w-full h-full"
           eager
         />
-        <span class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/70 text-[10px] text-blue-300 font-semibold border border-blue-400/30 flex items-center gap-1">
-          <Sparkles class="w-2.5 h-2.5 text-blue-400" />
+        <span class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/70 text-[10px] text-textcolor font-semibold border border-borderc/30 flex items-center gap-1">
           Airisu
         </span>
       </div>
 
       <!-- Mascot Speech Bubble -->
-      <div class="w-full bg-bgcolor border border-borderc rounded-xl p-3.5 shadow-sm text-xs leading-relaxed text-textcolor">
-        <div class="flex items-center gap-1 font-bold text-blue-400 mb-1">
-          <Sparkles class="w-3 h-3" />
+      <div class="w-full bg-bgcolor border border-borderc/30 rounded-xl p-3.5 shadow-sm text-xs leading-relaxed text-textcolor">
+        <div class="flex items-center gap-1 font-bold text-textcolor mb-1">
           <span>{l.setup?.irisName || '아이리스 (Iris)'}</span>
         </div>
         <p class="text-textcolor/90">
@@ -440,7 +447,7 @@
         <div class="flex flex-col gap-4" in:fade={{ duration: 150 }}>
           <div>
             <h1 class="text-xl md:text-2xl font-bold tracking-tight text-textcolor flex items-center gap-2">
-              <span>{l.setup?.welcomeTitle || 'Haejeok RisuAI에 오신 것을 환영해요! ✨'}</span>
+              <span>{l.setup?.welcomeTitle || 'Haejeok RisuAI에 오신 것을 환영합니다.'}</span>
             </h1>
             <p class="text-textcolor2 text-xs md:text-sm mt-0.5">
               {l.setup?.welcomeSubGreeting || '원하시는 시작 방법을 선택해주세요.'}
@@ -471,10 +478,10 @@
                 onclick={() => {
                   if (detectedLocalDb) void performMigration(detectedLocalDb);
                 }}
-                class="w-full sm:w-auto px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 shrink-0"
+                class="w-full sm:w-auto px-3.5 py-1.5 rounded-lg bg-darkbutton hover:bg-selected active:bg-selected border border-borderc/40 text-textcolor font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 shrink-0"
               >
                 <span>{l.setup?.migrateDetectedBtn || '바로 마이그레이션'}</span>
-                <Zap class="w-3 h-3 fill-current" />
+                <Zap class="w-3 h-3 text-textcolor2" />
               </button>
             </div>
           {/if}
@@ -486,21 +493,21 @@
               onclick={() => {
                 currentStage = 'migration';
               }}
-              class="text-left p-4 rounded-xl border border-borderc bg-darkbutton/40 hover:bg-darkbutton hover:border-blue-500/50 transition-all flex flex-col justify-between"
+              class="text-left p-4 rounded-xl border border-borderc/40 bg-darkbutton/30 hover:bg-darkbutton/70 hover:border-borderc transition-all flex flex-col justify-between"
             >
               <div class="flex items-start justify-between w-full mb-2.5">
                 <div class="p-2 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
                   <Database class="w-4 h-4" />
                 </div>
-                <span class="text-[11px] px-2 py-0.5 rounded bg-darkbg text-textcolor2 border border-borderc font-medium">
+                <span class="text-[11px] px-2 py-0.5 rounded bg-darkbg text-textcolor2 border border-borderc/30 font-medium">
                   {detectedLocalDb ? (l.setup?.badgeDetected || '발견됨') : (l.setup?.badgeBackupFile || '백업 파일')}
                 </span>
               </div>
               <div>
-                <h2 class="font-bold text-sm md:text-base text-textcolor">
-                  {l.setup?.gatewayMigrationTitle || '기존 데이터 가져오기'}
+                <h2 class="font-bold text-sm md:text-base text-textcolor break-keep">
+                  {l.setup?.gatewayMigrationTitle || '데이터 가져오기'}
                 </h2>
-                <p class="text-xs text-textcolor2 mt-1 leading-normal">
+                <p class="text-xs text-textcolor2 mt-1 leading-normal break-keep">
                   {l.setup?.gatewayMigrationDesc || 'database.bin 또는 .risum 백업 파일에서 캐릭터와 대화를 복원합니다.'}
                 </p>
               </div>
@@ -516,22 +523,22 @@
                 currentStage = 'quick-setup';
                 quickStep = 1;
               }}
-              class="text-left p-4 rounded-xl border border-borderc bg-darkbutton/40 hover:bg-darkbutton hover:border-blue-500/50 transition-all flex flex-col justify-between"
+              class="text-left p-4 rounded-xl border border-borderc/40 bg-darkbutton/30 hover:bg-darkbutton/70 hover:border-borderc transition-all flex flex-col justify-between"
             >
               <div class="flex items-start justify-between w-full mb-2.5">
                 <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                   <Bot class="w-4 h-4" />
                 </div>
-                <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-medium">
+                <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-medium whitespace-nowrap shrink-0">
                   {l.setup?.badgeNewRecommended || '추천'}
                 </span>
               </div>
               <div>
-                <h2 class="font-bold text-sm md:text-base text-textcolor">
-                  {l.setup?.gatewayQuickSetupTitle || 'AI 빠른 추천 설정'}
+                <h2 class="font-bold text-sm md:text-base text-textcolor break-keep">
+                  {l.setup?.gatewayQuickSetupTitle || 'AI 빠른 설정'}
                 </h2>
-                <p class="text-xs text-textcolor2 mt-1 leading-normal">
-                  {l.setup?.gatewayQuickSetupDesc || '닉네임과 Claude, OpenAI, Gemini 등 AI 모델을 빠르게 설정합니다.'}
+                <p class="text-xs text-textcolor2 mt-1 leading-normal break-keep">
+                  {l.setup?.gatewayQuickSetupDesc || '닉네임과 AI 모델을 빠르게 설정합니다.'}
                 </p>
               </div>
               <div class="flex items-center text-xs text-emerald-400 font-semibold mt-3 gap-1">
@@ -613,9 +620,9 @@
                       onclick={() => {
                         if (detectedLocalDb) void performMigration(detectedLocalDb);
                       }}
-                      class="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors shrink-0"
+                      class="px-3 py-1 rounded-lg bg-darkbutton hover:bg-selected active:bg-selected border border-borderc/40 text-textcolor font-medium text-xs transition-colors shrink-0"
                     >
-                      {l.setup?.startMigrationBtn || '바로 복원하기 🚀'}
+                      {l.setup?.startMigrationBtn || '바로 복원하기'}
                     </button>
                   {/if}
                 </div>
@@ -667,7 +674,7 @@
               </div>
               <div>
                 <h3 class="text-lg font-bold text-textcolor">
-                  {l.setup?.migrationSuccessTitle || '마이그레이션 완료! 🎉'}
+                  {l.setup?.migrationSuccessTitle || '마이그레이션 완료'}
                 </h3>
                 <p class="text-xs text-textcolor2 mt-0.5 max-w-sm">
                   {l.setup?.migrationSuccessDesc || '모든 캐릭터와 대화 기록이 새로운 고성능 SQL 저장소로 이전되었습니다.'}
@@ -678,7 +685,7 @@
                 onclick={finishAndEnterApp}
                 class="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs md:text-sm transition-colors flex items-center gap-2 mt-1"
               >
-                <span>{l.setup?.finishSetup || 'Haejeok RisuAI 시작하기 🚀'}</span>
+                <span>{l.setup?.finishSetup || 'Haejeok RisuAI 시작하기'}</span>
                 <ArrowRight class="w-4 h-4" />
               </button>
             </div>
@@ -688,9 +695,9 @@
 
       <!-- ================= STAGE 3: QUICK AI SETUP ================= -->
       {#if currentStage === 'quick-setup'}
-        <div class="flex flex-col gap-3.5" in:fade={{ duration: 150 }}>
+        <div class="flex-1 flex flex-col justify-between gap-3.5" in:fade={{ duration: 150 }}>
           <!-- Step Nav Indicator -->
-          <div class="flex items-center justify-between border-b border-borderc pb-2.5">
+          <div class="flex items-center justify-between border-b border-borderc/40 pb-2.5 shrink-0">
             <button
               onclick={() => {
                 if (quickStep > 1) {
@@ -708,44 +715,45 @@
             <!-- Step Dots -->
             <div class="flex items-center gap-1.5">
               {#each [1, 2, 3, 4] as s}
-                <div class="h-1.5 rounded-full transition-all {quickStep === s ? 'w-5 bg-blue-500' : 'w-2 bg-borderc'}"></div>
+                <div class="h-1.5 rounded-full transition-all {quickStep === s ? 'w-5 bg-selected border border-borderc/40' : 'w-2 bg-borderc/30'}"></div>
               {/each}
             </div>
 
             <span class="text-xs font-semibold text-textcolor2">{l.setup?.stepIndicator || 'Step'} {quickStep}/4</span>
           </div>
 
-          <!-- Sub-Step 1: Nickname Input -->
+          <!-- Sub-Step 1: Nickname Input (Full Height & Bottom Anchor Button) -->
           {#if quickStep === 1}
-            <div class="flex flex-col gap-4 py-3" in:fly={{ x: 8, duration: 150 }}>
-              <div>
-                <h3 class="text-base md:text-lg font-bold text-textcolor flex items-center gap-2">
-                  <User class="w-4 h-4 text-blue-400" />
-                  <span>{l.setup?.nicknameTitle || '닉네임 설정'}</span>
-                </h3>
-                <p class="text-xs text-textcolor2 mt-0.5">
-                  {l.setup?.nicknameDesc || '대화에서 사용할 본인의 이름을 정해주세요.'}
-                </p>
+            <div class="flex-1 flex flex-col justify-between py-2" in:fly={{ x: 8, duration: 150 }}>
+              <div class="flex flex-col gap-3 pt-1">
+                <div>
+                  <h3 class="text-base md:text-lg font-bold text-textcolor flex items-center gap-2">
+                    <User class="w-4 h-4 text-textcolor2" />
+                    <span>{l.setup?.nicknameTitle || '닉네임 설정'}</span>
+                  </h3>
+                </div>
+
+                <div class="max-w-md">
+                  <input
+                    type="text"
+                    bind:value={username}
+                    placeholder={l.setup?.nicknameInputPlaceholder || '사용하실 닉네임을 입력해주세요'}
+                    class="w-full px-4 py-3 rounded-xl bg-darkbutton/40 border border-borderc/40 text-textcolor text-sm focus:border-borderc focus:ring-1 focus:ring-selected outline-none transition-colors"
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter' && username.trim()) quickStep = 2;
+                    }}
+                  />
+                </div>
               </div>
 
-              <div class="max-w-md">
-                <input
-                  type="text"
-                  bind:value={username}
-                  placeholder={l.setup?.nicknameInputPlaceholder || '사용하실 닉네임을 입력해주세요'}
-                  class="w-full px-3.5 py-2.5 rounded-xl bg-darkbutton/50 border border-borderc text-textcolor text-sm focus:border-blue-500 outline-none transition-colors"
-                  onkeydown={(e) => {
-                    if (e.key === 'Enter' && username.trim()) quickStep = 2;
-                  }}
-                />
-              </div>
-
-              <div class="flex items-center justify-start mt-2">
+              <!-- Bottom Action Button -->
+              <div class="flex items-center justify-end mt-auto pt-4 border-t border-borderc/30 shrink-0">
                 <button
                   onclick={() => {
                     if (username.trim()) quickStep = 2;
                   }}
-                  class="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs md:text-sm transition-colors flex items-center gap-1.5"
+                  disabled={!username.trim()}
+                  class="px-6 py-2.5 rounded-xl bg-darkbutton hover:bg-selected active:bg-selected border border-borderc/40 text-textcolor font-bold text-xs md:text-sm transition-all active:scale-[0.98] flex items-center gap-1.5 disabled:opacity-40 disabled:pointer-events-none shadow-sm"
                 >
                   <span>{l.setup?.nextStep || '다음'}</span>
                   <ArrowRight class="w-3.5 h-3.5" />
@@ -793,7 +801,7 @@
 
                 <button
                   onclick={() => (quickStep = 3)}
-                  class="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs md:text-sm transition-colors flex items-center gap-1.5"
+                  class="px-5 py-2 rounded-xl bg-darkbutton hover:bg-selected active:bg-selected border border-borderc/40 text-textcolor font-bold text-xs md:text-sm transition-all active:scale-[0.98] flex items-center gap-1.5 shadow-sm"
                 >
                   <span>{l.setup?.nextStep || '다음 단계로'}</span>
                   <ArrowRight class="w-3.5 h-3.5" />
@@ -977,7 +985,7 @@
 
                 <button
                   onclick={() => (quickStep = 4)}
-                  class="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs md:text-sm transition-colors flex items-center gap-1.5"
+                  class="px-5 py-2 rounded-xl bg-darkbutton hover:bg-selected active:bg-selected border border-borderc/40 text-textcolor font-bold text-xs md:text-sm transition-all active:scale-[0.98] flex items-center gap-1.5 shadow-sm"
                 >
                   <span>{l.setup?.completeSetupBtn || '설정 완료하기'}</span>
                   <ArrowRight class="w-3.5 h-3.5" />
@@ -988,23 +996,23 @@
           <!-- Sub-Step 4: All Ready Celebration -->
           {:else if quickStep === 4}
             <div class="flex flex-col items-center justify-center text-center p-5 gap-3.5 my-auto" in:scale={{ duration: 200 }}>
-              <div class="p-3 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                <Sparkles class="w-8 h-8" />
+              <div class="p-3 rounded-full bg-selected/30 text-textcolor border border-borderc/40">
+                <CheckCircle2 class="w-8 h-8" />
               </div>
               <div>
                 <h3 class="text-lg md:text-xl font-bold text-textcolor">
                   {l.setup?.allDone || '모든 설정이 끝났어요!'}
                 </h3>
                 <p class="text-xs text-textcolor2 mt-1 max-w-sm">
-                  {l.setup?.allSetMessage || '아이리스와 함께 Haejeok RisuAI를 시작해볼까요~? ✨'}
+                  {l.setup?.allSetMessage || 'Haejeok RisuAI를 시작합니다.'}
                 </p>
               </div>
 
               <button
                 onclick={finishAndEnterApp}
-                class="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs md:text-sm shadow-md transition-colors flex items-center gap-2 mt-1"
+                class="px-6 py-2.5 rounded-xl bg-darkbutton hover:bg-selected active:bg-selected border border-borderc/40 text-textcolor font-bold text-xs md:text-sm shadow-sm transition-all active:scale-[0.98] flex items-center gap-2 mt-1"
               >
-                <span>{l.setup?.finishSetup || 'Haejeok RisuAI 시작하기 🚀'}</span>
+                <span>{l.setup?.finishSetup || 'Haejeok RisuAI 시작하기'}</span>
                 <ArrowRight class="w-4 h-4" />
               </button>
             </div>
@@ -1015,3 +1023,4 @@
     </section>
   </main>
 </div>
+{/if}
