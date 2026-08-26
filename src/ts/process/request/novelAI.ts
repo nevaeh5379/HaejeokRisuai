@@ -3,8 +3,11 @@ import { globalFetch } from "../../globalApi.svelte";
 import { LLMFormat } from "../../model/modellist";
 import { getCurrentCharacter, getDatabase } from "../../storage/database.svelte";
 import { tokenizeNum } from "../../tokenizer";
-import { resolveNovelAIGenerateUrl } from "@risuai/chat-core/novelAIProvider.cjs";
-import { NovelAIBadWordIds, stringlizeNAIChat } from "../models/nai";
+import {
+  buildNovelAIRequest,
+  resolveNovelAIGenerateUrl,
+} from "@risuai/chat-core/novelAIProvider.cjs";
+import { stringlizeNAIChat } from "../models/nai";
 import { unstringlizeChat } from "../stringlize";
 import type {
   RequestDataArgumentExtended,
@@ -62,56 +65,16 @@ export async function requestNovelAI(
     });
   }
 
-  let prefix = "vanilla";
-
-  if (db.NAIadventure) {
-    prefix = "theme_textadventure";
-  }
-
-  const gen = db.NAIsettings;
-  const payload = {
-    temperature: temperature,
-    max_length: maxTokens,
-    min_length: 1,
-    top_k: gen.topK,
-    top_p: gen.topP,
-    top_a: gen.topA,
-    tail_free_sampling: gen.tailFreeSampling,
-    repetition_penalty: gen.repetitionPenalty,
-    repetition_penalty_range: gen.repetitionPenaltyRange,
-    repetition_penalty_slope: gen.repetitionPenaltySlope,
-    repetition_penalty_frequency: gen.frequencyPenalty,
-    repetition_penalty_presence: gen.presencePenalty,
-    generate_until_sentence: true,
-    use_cache: false,
-    use_string: true,
-    return_full_text: false,
-    prefix: prefix,
-    order: [6, 2, 3, 0, 4, 1, 5, 8],
-    typical_p: gen.typicalp,
-    repetition_penalty_whitelist: [
-      49256, 49264, 49231, 49230, 49287, 85, 49255, 49399, 49262, 336, 333, 432,
-      363, 468, 492, 745, 401, 426, 623, 794, 1096, 2919, 2072, 7379, 1259,
-      2110, 620, 526, 487, 16562, 603, 805, 761, 2681, 942, 8917, 653, 3513,
-      506, 5301, 562, 5010, 614, 10942, 539, 2976, 462, 5189, 567, 2032, 123,
-      124, 125, 126, 127, 128, 129, 130, 131, 132, 588, 803, 1040, 49209, 4, 5,
-      6, 7, 8, 9, 10, 11, 12,
-    ],
-    stop_sequences: [[49287], [49405]],
-    bad_words_ids: NovelAIBadWordIds,
-    logit_bias_exp: logit_bias_exp,
-    mirostat_lr: gen.mirostat_lr ?? 1,
-    mirostat_tau: gen.mirostat_tau ?? 0,
-    cfg_scale: gen.cfg_scale ?? 1,
-    cfg_uc: "",
-  };
-
-  const variant = aiModel === "novelai_kayra" ? "kayra" : "clio";
-  let body = {
-    input: prompt,
-    model: variant === "kayra" ? "kayra-v1" : "clio-v1",
-    parameters: payload,
-  };
+  const { variant, body: requestBody } = buildNovelAIRequest({
+    prompt,
+    modelId: aiModel ?? "",
+    adventureMode: db.NAIadventure,
+    temperature,
+    maxTokens,
+    settings: db.NAIsettings,
+    logitBiasExp: logit_bias_exp,
+  });
+  let body = requestBody;
 
   let headers = {
     Authorization: "Bearer " + (arg.key ?? db.novelai.token),
