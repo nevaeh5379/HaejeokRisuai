@@ -265,8 +265,133 @@ jobs:
           fi
           gh release upload "$BUILD_TAG" "$ARCH_PACKAGE" --clobber
 
+  publish-android:
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Install pnpm
+        shell: bash
+        run: |
+          npm install --global pnpm@10.34.1
+          pnpm --version
+
+      - name: Get pnpm store directory
+        id: android-pnpm-cache
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.android-pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-android-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-android-pnpm-store-
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore Android release keystore
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for SECRET_NAME in \
+            ANDROID_KEYSTORE_BASE64 \
+            ANDROID_KEYSTORE_PASSWORD \
+            ANDROID_KEY_ALIAS \
+            ANDROID_KEY_PASSWORD; do
+            if [ -z "${!SECRET_NAME}" ]; then
+              echo "::error::Required GitHub Actions secret ${SECRET_NAME} is missing"
+              exit 1
+            fi
+          done
+
+          KEYSTORE_PATH="$RUNNER_TEMP/risuai-release.p12"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+          echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+          keytool -list \
+            -keystore "$KEYSTORE_PATH" \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD \
+            -alias "$ANDROID_KEY_ALIAS" >/dev/null
+
+      - name: Build signed Android release APK
+        env:
+          HAEJEOK_BUILD_NUMBER: ${{ needs.prepare-release.outputs.build_number }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          pnpm android:sync
+          ./android/gradlew -p android assembleRelease
+
+      - name: Verify and prepare signed Android release artifact
+        shell: bash
+        env:
+          BUILD_TAG: ${{ needs.prepare-release.outputs.build_tag }}
+        run: |
+          APK_PATH="android/app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK_PATH" ]; then
+            echo "Android APK was not generated at $APK_PATH" >&2
+            exit 1
+          fi
+
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print \
+            | sort -V \
+            | tail -n 1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "Unable to locate apksigner under $ANDROID_HOME/build-tools" >&2
+            exit 1
+          fi
+          "$APKSIGNER" verify --verbose --print-certs "$APK_PATH"
+
+          mkdir -p dist-android
+          OUTPUT="dist-android/RisuAI-Android-${BUILD_TAG}.apk"
+          cp "$APK_PATH" "$OUTPUT"
+          sha256sum "$OUTPUT" > "${OUTPUT}.sha256"
+
+      - name: Upload Android APK to draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_TAG: ${{ needs.prepare-release.outputs.build_tag }}
+        run: gh release upload "$BUILD_TAG" dist-android/* --clobber
+
+      - name: Remove restored Android keystore
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/risuai-release.p12"
+
   publish-release:
-    needs: [prepare-release, publish-tauri]
+    needs: [prepare-release, publish-tauri, publish-android]
     runs-on: ubuntu-latest
     permissions:
       contents: write

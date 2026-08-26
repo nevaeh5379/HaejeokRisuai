@@ -1,5 +1,25 @@
 apply plugin: 'com.android.application'
 
+def releaseBuildNumberText = System.getenv('HAEJEOK_BUILD_NUMBER')
+def releaseBuildNumber = releaseBuildNumberText?.isInteger()
+    ? releaseBuildNumberText.toInteger()
+    : 1
+def releaseKeystorePath = System.getenv('ANDROID_KEYSTORE_PATH')
+def releaseKeystorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
+def releaseKeyAlias = System.getenv('ANDROID_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('ANDROID_KEY_PASSWORD')
+def releaseSigningValues = [
+    releaseKeystorePath,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+]
+def configuredReleaseSigningValues = releaseSigningValues.count { it != null && !it.isEmpty() }
+if (configuredReleaseSigningValues > 0 && configuredReleaseSigningValues < releaseSigningValues.size()) {
+    throw new GradleException('Android release signing requires ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, and ANDROID_KEY_PASSWORD')
+}
+def hasReleaseSigning = configuredReleaseSigningValues == releaseSigningValues.size()
+
 android {
     namespace = "co.aiclient.risu"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +27,8 @@ android {
         applicationId "co.aiclient.risu"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode releaseBuildNumber
+        versionName "0.0.${releaseBuildNumber}"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +36,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseKeystorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
