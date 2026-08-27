@@ -27,12 +27,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.regex.Pattern;
 @CapacitorPlugin(name = "NativeBackup")
 public class NativeBackupPlugin extends Plugin {
-    private static final Pattern COLD_STORAGE = Pattern.compile(
-        "^(?:coldstorage[/_])?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.json$"
-    );
     private static final int COPY_BUFFER_SIZE = 256 * 1024;
     private static final int MAX_CHUNK_SIZE = 4 * 1024 * 1024;
     private static final long MAX_RAW_DATABASE_SIZE = 512L * 1024L * 1024L;
@@ -73,6 +69,7 @@ public class NativeBackupPlugin extends Plugin {
                 ret.put("id", imported.id);
                 ret.put("size", imported.specialFile.length());
                 ret.put("assetsWritten", imported.assetsWritten);
+                ret.put("ignoredEntries", imported.ignoredEntries);
                 ret.put("raw", imported.raw);
                 call.resolve(ret);
             } catch (Exception error) {
@@ -165,20 +162,32 @@ public class NativeBackupPlugin extends Plugin {
                 copyRawImport(uri, specialFile, progress);
                 sessions.put(id, specialFile);
                 progress.report("complete", specialFile.length(), 0, 0, true);
-                return new ImportResult(id, specialFile, 0, true);
+                return new ImportResult(id, specialFile, 0, 0, true);
             }
 
-            int assetsWritten = parseContainer(
+            ContainerExtractionState extracted = parseContainer(
                 uri,
                 stagingDir,
                 specialFile,
                 progress,
                 totalBytes
             );
-            commitAssets(stagingDir, progress, assetsWritten);
+            commitAssets(stagingDir, progress, extracted.assetsWritten);
             sessions.put(id, specialFile);
-            progress.report("complete", totalBytes, assetsWritten, assetsWritten, true);
-            return new ImportResult(id, specialFile, assetsWritten, false);
+            progress.report(
+                "complete",
+                totalBytes,
+                extracted.assetsWritten,
+                extracted.assetsWritten,
+                true
+            );
+            return new ImportResult(
+                id,
+                specialFile,
+                extracted.assetsWritten,
+                extracted.ignoredEntries,
+                false
+            );
         } catch (Exception error) {
             deleteTree(sessionDir);
             if (error instanceof IOException) throw (IOException) error;
@@ -201,7 +210,7 @@ public class NativeBackupPlugin extends Plugin {
         }
     }
 
-    private int parseContainer(
+    private ContainerExtractionState parseContainer(
         Uri uri,
         File stagingDir,
         File specialFile,
@@ -220,8 +229,21 @@ public class NativeBackupPlugin extends Plugin {
             BufferedOutputStream special = new BufferedOutputStream(new FileOutputStream(specialFile))
         ) {
             BackupContainerCodec.parse(tracked, totalBytes, (name, dataLength, data) -> {
-                if (isSpecialEntry(name)) {
-                    if ("database.risudat".equals(name)) state.hasDatabase = true;
+                BackupEntryPolicy.Kind kind = BackupEntryPolicy.classify(name);
+                if (kind == BackupEntryPolicy.Kind.INVALID) {
+                    throw new IOException("Invalid backup entry path: " + name);
+                }
+                if (kind == BackupEntryPolicy.Kind.EXTENSION) {
+                    drainUntilEof(data, copyBuffer);
+                    state.ignoredEntries++;
+                    return;
+                }
+                if (
+                    kind == BackupEntryPolicy.Kind.DATABASE ||
+                    kind == BackupEntryPolicy.Kind.ENCRYPTION ||
+                    kind == BackupEntryPolicy.Kind.COLD_STORAGE
+                ) {
+                    if (kind == BackupEntryPolicy.Kind.DATABASE) state.hasDatabase = true;
                     BackupContainerCodec.writeEntry(
                         special,
                         data,
@@ -248,13 +270,7 @@ public class NativeBackupPlugin extends Plugin {
         if (!state.hasDatabase) {
             throw new IOException("Backup does not contain a database entry");
         }
-        return state.assetsWritten;
-    }
-
-    private boolean isSpecialEntry(String name) {
-        return "database.risudat".equals(name)
-            || "encryption.risudat".equals(name)
-            || COLD_STORAGE.matcher(name).matches();
+        return state;
     }
 
     private String normalizeAssetKey(String name) throws IOException {
@@ -447,6 +463,12 @@ public class NativeBackupPlugin extends Plugin {
         }
     }
 
+    private static void drainUntilEof(InputStream input, byte[] buffer) throws IOException {
+        while (input.read(buffer) != -1) {
+            // Unsupported fork extension: consume without allocating or persisting it.
+        }
+    }
+
     private static void deleteTree(File file) {
         if (file == null || !file.exists()) return;
         File[] children = file.listFiles();
@@ -467,6 +489,7 @@ public class NativeBackupPlugin extends Plugin {
 
     private static final class ContainerExtractionState {
         int assetsWritten;
+        int ignoredEntries;
         boolean hasDatabase;
     }
 
@@ -474,12 +497,20 @@ public class NativeBackupPlugin extends Plugin {
         final String id;
         final File specialFile;
         final int assetsWritten;
+        final int ignoredEntries;
         final boolean raw;
 
-        ImportResult(String id, File specialFile, int assetsWritten, boolean raw) {
+        ImportResult(
+            String id,
+            File specialFile,
+            int assetsWritten,
+            int ignoredEntries,
+            boolean raw
+        ) {
             this.id = id;
             this.specialFile = specialFile;
             this.assetsWritten = assetsWritten;
+            this.ignoredEntries = ignoredEntries;
             this.raw = raw;
         }
     }

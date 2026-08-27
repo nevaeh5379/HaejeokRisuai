@@ -161,7 +161,7 @@ final class BackupContainerCodec {
         output.write((int) ((value >>> 24) & 0xff));
     }
 
-    private static void copyExact(
+    static void copyExact(
         InputStream input,
         OutputStream output,
         long length,

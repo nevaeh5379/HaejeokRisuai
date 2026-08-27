@@ -54,6 +54,7 @@ import {
 import { safeStructuredClone } from "../polyfill";
 import { registerPlugin } from "@capacitor/core";
 import { Buffer } from "buffer";
+import { classifyBackupEntry } from "@risuai/backup-core/entryPolicy.cjs";
 
 const alertProgress = (msg: string, progress: number | string) =>
   showProgressAlert(msg, progress, "backup");
@@ -64,6 +65,7 @@ interface NativeBackupPlugin {
     id?: string;
     size?: number;
     assetsWritten?: number;
+    ignoredEntries?: number;
     raw?: boolean;
   }>;
   readImportChunk(options: {
@@ -1227,6 +1229,7 @@ async function restoreLocalBackupSource(
     currentEntryName = "";
   };
 
+  let ignoredExtensionEntries = 0;
   try {
     const reader = file.stream().getReader();
     let lastUiUpdate = 0;
@@ -1239,7 +1242,7 @@ async function restoreLocalBackupSource(
     let entryName = "";
     let entryDataLength = 0;
     let entryDataReceived = 0;
-    let entryDataBuffer = new Uint8Array();
+    let entryDataBuffer: Uint8Array | null = new Uint8Array();
 
     while (true) {
       const { done, value } = await reader.read();
@@ -1305,11 +1308,23 @@ async function restoreLocalBackupSource(
             }
             entryDataLength = length;
             entryDataReceived = 0;
-            entryDataBuffer = new Uint8Array(length);
+            const classification = classifyBackupEntry(entryName);
+            if (classification.kind === "invalid") {
+              throw new Error(`Invalid backup entry path: ${entryName}`);
+            }
+            if (classification.kind === "extension") {
+              entryDataBuffer = null;
+              ignoredExtensionEntries++;
+              console.info(`Skipping unsupported backup extension entry: ${entryName}`);
+            } else {
+              entryDataBuffer = new Uint8Array(length);
+            }
             parserPhase = "data";
 
             if (entryDataLength === 0) {
-              await restoreBackupEntry(entryName, new Uint8Array());
+              if (entryDataBuffer !== null) {
+                await restoreBackupEntry(entryName, new Uint8Array());
+              }
               entryName = "";
               parserPhase = "nameLength";
             }
@@ -1340,15 +1355,19 @@ async function restoreLocalBackupSource(
           entryDataLength - entryDataReceived,
           value.length - chunkOffset,
         );
-        entryDataBuffer.set(
-          value.subarray(chunkOffset, chunkOffset + copyLength),
-          entryDataReceived,
-        );
+        if (entryDataBuffer !== null) {
+          entryDataBuffer.set(
+            value.subarray(chunkOffset, chunkOffset + copyLength),
+            entryDataReceived,
+          );
+        }
         entryDataReceived += copyLength;
         chunkOffset += copyLength;
 
         if (entryDataReceived === entryDataLength) {
-          await restoreBackupEntry(entryName, entryDataBuffer);
+          if (entryDataBuffer !== null) {
+            await restoreBackupEntry(entryName, entryDataBuffer);
+          }
           entryName = "";
           entryDataBuffer = new Uint8Array();
           parserPhase = "nameLength";
@@ -1427,7 +1446,12 @@ async function restoreLocalBackupSource(
       );
     }
   }
-  alertProgress("Decoding database...", 91);
+  alertProgress(
+    ignoredExtensionEntries > 0
+      ? `Decoding database...\nSkipped ${ignoredExtensionEntries} unsupported fork extension entries.`
+      : "Decoding database...",
+    91,
+  );
   const dbData = decodedDatabase ?? ((await decodeRisuSave(db)) as Database);
   normalizeDatabaseDefaults(dbData);
   dbData.pluginCustomStorage ??= {};
@@ -1546,8 +1570,13 @@ async function loadCapacitorLocalBackup() {
   const id = selected.id;
   try {
     const size = Math.max(0, selected.size ?? 0);
+    const ignoredEntries = Math.max(0, selected.ignoredEntries ?? 0);
     alertProgress(
-      `Native extraction complete (${selected.assetsWritten ?? 0} assets). Streaming database data...`,
+      `Native extraction complete (${selected.assetsWritten ?? 0} assets).${
+        ignoredEntries > 0
+          ? ` Skipped ${ignoredEntries} unsupported fork extension entries.`
+          : ""
+      } Streaming database data...`,
       50,
     );
     await restoreLocalBackupSource(
