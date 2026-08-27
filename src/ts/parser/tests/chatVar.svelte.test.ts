@@ -23,11 +23,14 @@ vi.mock(import("../../globalApi.svelte"), () => ({
 vi.mock(import("../../stores/domain/characterStore.svelte"), () => {
   return {
     characterStore: {
+      selectedId: 0,
       characters: [
         {
+          chaId: "char-selected",
           chatPage: 0,
           chats: [
             {
+              id: "chat-selected",
               scriptstate: {},
             },
           ],
@@ -123,15 +126,16 @@ test("can set and get a chat variable", () => {
 
 test("can target chat variables without following the selected character", () => {
   characterStore.characters.push({
+    chaId: "char-target",
     chatPage: 0,
     chats: [
-      { scriptstate: { $scope: "other" } },
-      { scriptstate: { $scope: "target" } },
+      { id: "chat-other", scriptstate: { $scope: "other" } },
+      { id: "chat-target", scriptstate: { $scope: "target" } },
     ],
     defaultVariables: "",
   } as any);
 
-  const target = { characterIndex: 1, chatIndex: 1 };
+  const target = { characterId: "char-target", chatId: "chat-target" };
   expect(getChatVar("scope", target)).toBe("target");
   expect(setChatVar("scope", "updated", target)).toBe(true);
   expect(getChatVar("scope", target)).toBe("updated");

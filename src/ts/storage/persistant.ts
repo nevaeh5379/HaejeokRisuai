@@ -1,4 +1,4 @@
-import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 
 import { alertNormal } from "../alert";
 import { language } from "src/lang";
@@ -36,7 +36,6 @@ async function requestPersistantStorageMain() {
 }
 
 export async function persistantStorageRecommended() {
-  const db = settingsStore.state;
   if (
     navigator.storage &&
     navigator.storage.persist &&
@@ -46,7 +45,7 @@ export async function persistantStorageRecommended() {
     if (await navigator.storage.persisted()) {
       return false;
     }
-    if (db.characters.length > 5) {
+    if (characterStore.characters.length > 5) {
       return true;
     }
   }

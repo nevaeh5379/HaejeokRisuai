@@ -1,4 +1,5 @@
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { get } from "svelte/store";
 import { parseChatML } from "../parser/chatML";
 import type { character, customscript, groupChat } from "../storage/schema";
@@ -306,9 +307,8 @@ export async function translateHTML(
   let alwaysExistChar: character | groupChat | simpleCharacterArgument;
   if (charArg !== "") {
     if (typeof charArg === "string") {
-      const db = settingsStore.state;
       const charId = get(selectedCharID);
-      alwaysExistChar = db.characters[charId];
+      alwaysExistChar = characterStore.characters[charId];
     } else {
       alwaysExistChar = charArg;
     }
@@ -610,7 +610,7 @@ async function translateLLM(
 
   const db = settingsStore.state;
   const charIndex = get(selectedCharID);
-  const currentChar = db.characters[charIndex];
+  const currentChar = characterStore.characters[charIndex];
   let translatorNote = "";
   console.log(arg.translatorNote);
   if (arg.translatorNote) {

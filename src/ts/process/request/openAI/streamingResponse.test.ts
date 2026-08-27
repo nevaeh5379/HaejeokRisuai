@@ -27,8 +27,8 @@ vi.mock("src/ts/model/modellist", () => ({
     deepSeekThinkingToggle: 24,
   },
 }));
-vi.mock("src/ts/storage/database.svelte", () => ({
-  getDatabase: () => mocks.db,
+vi.mock("src/ts/stores/domain/settingsStore.svelte", () => ({
+  settingsStore: { state: mocks.db },
 }));
 vi.mock("../../mcp/mcp", () => ({
   callTool: mocks.callTool,

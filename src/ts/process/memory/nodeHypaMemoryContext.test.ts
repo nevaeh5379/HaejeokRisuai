@@ -47,7 +47,7 @@ const tokenizer = {
 } as never;
 
 const currentChar = { name: "Target", chaId: "char-a" } as never;
-const chatTarget = { characterIndex: 3, chatIndex: 4 };
+const chatTarget = { characterId: "char-a", chatId: "chat-a" };
 test("keeps generation context through Node Hypa browser actions", async () => {
   const result = await tryRunNodeHypaMemory(
     { mode: "v3" },

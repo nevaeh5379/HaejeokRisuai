@@ -23,6 +23,7 @@ import {
   peerSync,
 } from "../sync/multiuser";
 import type { ChatErrorContext } from "./chatError.svelte";
+import { requireChatTargetFromIndexes, type ChatExecutionTarget } from "../chatTarget";
 
 export interface GroupGenerationRequest {
   chatProcessIndex: number;
@@ -54,7 +55,7 @@ function createCharacterLookup() {
 function runCurrentChatVariables(
   chat: Chat,
   currentChar: character,
-  chatTarget: { characterIndex: number; chatIndex: number },
+  chatTarget: ChatExecutionTarget,
 ) {
   for (const message of chat.message) {
     message.data = risuChatParser(message.data, {
@@ -230,13 +231,14 @@ function buildReadySession(
   const tokenizer = createTokenizer(
     options.chatAdditonalTokens ?? calculatedChatTokens,
   );
+  const chatTarget = requireChatTargetFromIndexes(
+    selection.selectedChar,
+    selection.selectedChat,
+  );
   const currentChat = runCurrentChatVariables(
     selection.nowChatroom.chats[selection.selectedChat],
     currentChar,
-    {
-      characterIndex: selection.selectedChar,
-      chatIndex: selection.selectedChat,
-    },
+    chatTarget,
   );
   selection.nowChatroom.chats[selection.selectedChat] = currentChat;
   return {

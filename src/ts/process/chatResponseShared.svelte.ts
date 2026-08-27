@@ -3,6 +3,7 @@ import { characterStore } from "../stores/domain/characterStore.svelte";
 import { pluginV2 } from "../plugins/plugins.svelte";
 import { risuChatParser } from "./scripts";
 import { runTrigger } from "./triggers";
+import { requireChatTargetFromIndexes, type ChatExecutionTarget } from "../chatTarget";
 
 export function findMessageIndexByChatId(chat: Chat, chatId?: string) {
   if (!chatId) return -1;
@@ -37,7 +38,7 @@ export async function runChatOutputListeners(
 function runCurrentChatVariables(
   chat: Chat,
   currentChar: character,
-  chatTarget: { characterIndex: number; chatIndex: number },
+  chatTarget: ChatExecutionTarget,
 ) {
   for (const message of chat.message) {
     message.data = risuChatParser(message.data, {
@@ -54,16 +55,17 @@ export async function applyOutputTrigger(
   selectedChar: number,
   selectedChat: number,
 ) {
+  const chatTarget = requireChatTargetFromIndexes(selectedChar, selectedChat);
   characterStore.characters[selectedChar].chats[selectedChat] =
     runCurrentChatVariables(
       characterStore.characters[selectedChar].chats[selectedChat],
       currentChar,
-      { characterIndex: selectedChar, chatIndex: selectedChat },
+      chatTarget,
     );
   let currentChat = characterStore.characters[selectedChar].chats[selectedChat];
   const triggerResult = await runTrigger(currentChar, "output", {
     chat: currentChat,
-    target: { characterIndex: selectedChar, chatIndex: selectedChat },
+    target: chatTarget,
   });
   if (triggerResult?.chat) currentChat = triggerResult.chat;
   characterStore.characters[selectedChar].chats[selectedChat] = currentChat;

@@ -84,6 +84,6 @@ test("routes duplicate tool names to the MCP selected by the request", async () 
     { type: "text", text: "B" },
   ]);
 
-  expect(clientA.callTool).toHaveBeenCalledWith("shared_tool", {});
-  expect(clientB.callTool).toHaveBeenCalledWith("shared_tool", {});
+  expect(clientA.callTool).toHaveBeenCalledWith("shared_tool", {}, undefined);
+  expect(clientB.callTool).toHaveBeenCalledWith("shared_tool", {}, undefined);
 });

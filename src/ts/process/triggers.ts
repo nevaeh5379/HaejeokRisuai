@@ -1221,7 +1221,7 @@ export async function runTrigger(
     .filter((v) => v && typeof v === "object")
     .concat(getModuleTriggers(moduleRoom));
   const getTargetChat = () =>
-    characterStore.characters[target.characterIndex]?.chats?.[target.chatIndex];
+    target ? resolveChatTarget(target)?.chat : undefined;
   const getStoredTriggerCharacter = () => {
     const stored = characterStore.characters.find(
       (candidate) => candidate?.chaId === char.chaId,

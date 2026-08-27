@@ -11,7 +11,7 @@ import { AIAccessClient } from "./aiaccess";
 test("forwards tool generation context into nested LLM requests", async () => {
   const client = new AIAccessClient();
   const currentChar = { name: "Target", chaId: "char-a" } as never;
-  const chatTarget = { characterIndex: 2, chatIndex: 3 };
+  const chatTarget = { characterId: "char-a", chatId: "chat-a" };
 
   await client.callTool(
     "runLLM",

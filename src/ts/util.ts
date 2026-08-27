@@ -266,8 +266,7 @@ export async function getCustomBackground(
 }
 
 export function findCharacterbyId(id: string) {
-  const db = settingsStore.state;
-  for (const char of db.characters) {
+  for (const char of characterStore.characters) {
     if (char.type !== "group") {
       if (char.chaId === id) {
         return char;
@@ -280,9 +279,8 @@ export function findCharacterbyId(id: string) {
 }
 
 export function findCharacterIndexbyId(id: string) {
-  const db = settingsStore.state;
   let i = 0;
-  for (const char of db.characters) {
+  for (const char of characterStore.characters) {
     if (char.chaId === id) {
       return i;
     }
@@ -292,10 +290,9 @@ export function findCharacterIndexbyId(id: string) {
 }
 
 export function getCharacterIndexObject() {
-  const db = settingsStore.state;
   let i = 0;
   let result: { [key: string]: number } = {};
-  for (const char of db.characters) {
+  for (const char of characterStore.characters) {
     result[char.chaId] = i;
     i += 1;
   }

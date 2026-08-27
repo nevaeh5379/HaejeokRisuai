@@ -1,18 +1,21 @@
 import { expect, test, vi } from "vitest";
 
-const targetChar = {
+const targetChar = vi.hoisted(() => ({
   chaId: "char-a",
   name: "Target",
   type: "character",
   chatPage: 1,
   chats: [
-    { message: [{ role: "char", data: "target-history" }] },
-    { message: [{ role: "char", data: "current-ui-history" }] },
+    { id: "chat-target", message: [{ role: "char", data: "target-history" }] },
+    { id: "chat-ui", message: [{ role: "char", data: "current-ui-history" }] },
   ],
-};
+}));
 
 vi.mock("./utils", () => ({
   getCharacter: vi.fn(() => targetChar),
+}));
+vi.mock("../../../stores/domain/characterStore.svelte", () => ({
+  characterStore: { characters: [targetChar], selectedId: 0, select: vi.fn() },
 }));
 
 import { ChatHandler } from "./chats";
@@ -25,7 +28,7 @@ test("reads chat history from the tool generation target", async () => {
     0,
     {
       currentChar: targetChar as never,
-      chatTarget: { characterIndex: 2, chatIndex: 0 },
+      chatTarget: { characterId: "char-a", chatId: "chat-target" },
     },
   );
 

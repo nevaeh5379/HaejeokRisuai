@@ -106,8 +106,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
         : new Uint8Array(await f.data.arrayBuffer());
     const da = JSON.parse(Buffer.from(data).toString("utf-8"));
     if (await importCharacterCardSpec(da)) {
-      let db = settingsStore.state;
-      return (db.characters.length - 1) as any;
+      return (characterStore.characters.length - 1) as any;
     }
     if (
       (da.char_name || da.name) &&
@@ -172,8 +171,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
     if (f.returnCharacter) {
       return v as any;
     }
-    let db = settingsStore.state;
-    return db.characters.length - 1;
+    return characterStore.characters.length - 1;
   }
 
   if (!f.name.endsWith("png")) {
@@ -327,8 +325,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
             if (
               await importCharacterCardSpec(charaData, img, "normal", assets)
             ) {
-              let db = settingsStore.state;
-              return db.characters.length - 1;
+              return characterStore.characters.length - 1;
             } else {
               throw new Error("Error while importing");
             }
@@ -344,8 +341,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
             Buffer.from(decrypted).toString("utf-8"),
           );
           if (await importCharacterCardSpec(charaData, img, "normal", assets)) {
-            let db = settingsStore.state;
-            return db.characters.length - 1;
+            return characterStore.characters.length - 1;
           }
         } catch (error) {
           alertError(language.errors.noData);
@@ -2131,10 +2127,10 @@ export async function downloadRisuHub(
       checkCharOrder();
       db = settingsStore.state;
       if (
-        db.characters[db.characters.length - 1] &&
+        characterStore.characters[characterStore.characters.length - 1] &&
         (db.goCharacterOnImport || arg.forceRedirect)
       ) {
-        const index = db.characters.length - 1;
+        const index = characterStore.characters.length - 1;
         changeChar(index);
       }
       return;
@@ -2148,12 +2144,12 @@ export async function downloadRisuHub(
 
     await importCharacterCardSpec(data, await getHubResources(img), "hub");
     checkCharOrder();
-    let db = settingsStore.state;
+    const db = settingsStore.state;
     if (
-      db.characters[db.characters.length - 1] &&
+      characterStore.characters[characterStore.characters.length - 1] &&
       (db.goCharacterOnImport || arg.forceRedirect)
     ) {
-      const index = db.characters.length - 1;
+      const index = characterStore.characters.length - 1;
       changeChar(index);
       alertStore.set({
         type: "none",

@@ -33,7 +33,7 @@ vi.mock(import("src/ts/stores.svelte"), () => {
     selIdState: {
       selId: 0,
     },
-  } as typeof import("src/ts/stores.svelte");
+  } as unknown as typeof import("src/ts/stores.svelte");
 });
 
 //#endregion

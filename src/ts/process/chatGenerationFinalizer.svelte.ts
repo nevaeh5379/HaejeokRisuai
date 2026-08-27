@@ -16,6 +16,7 @@ import { peerSync } from "../sync/multiuser";
 import { processPostGenerationEffects } from "./chatPostGeneration.svelte";
 import { tryCreateNodeAutoContinuationDecision } from "./chatNodePlanner";
 import { notifyChatResponse } from "../chatNotifications";
+import { requireChatTargetFromIndexes } from "../chatTarget";
 
 
 function updateGenerationStageTimings(
@@ -58,7 +59,7 @@ async function appendIgpResult(
   currentChar: character,
   abortSignal: AbortSignal,
 ) {
-  const chatTarget = { characterIndex: selectedChar, chatIndex: selectedChat };
+  const chatTarget = requireChatTargetFromIndexes(selectedChar, selectedChat);
   const igp = risuChatParser(settingsStore.state.igpPrompt ?? "", {
     chara: currentChar,
     chatTarget,

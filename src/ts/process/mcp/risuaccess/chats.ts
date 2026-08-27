@@ -6,6 +6,7 @@ import {
 import { getCharacter } from "./utils";
 import type { MCPToolCallContext } from "../mcp";
 import type { character, groupChat } from "../../../storage/schema";
+import { resolveChatTarget } from "../../../chatTarget";
 
 export class ChatHandler extends MCPToolHandler {
   getTools(): MCPTool[] {
@@ -79,12 +80,18 @@ export class ChatHandler extends MCPToolHandler {
     if (count < 1) count = 1;
     if (offset < 0) offset = 0;
 
-    const contextChatIndex =
-      context?.currentChar?.chaId === char.chaId
-        ? context.chatTarget?.chatIndex
-        : undefined;
-    const chatIndex = contextChatIndex ?? char.chatPage;
-    const targetChat = char.chats[chatIndex];
+    const contextTarget =
+      context?.currentChar?.chaId === char.chaId && context.chatTarget
+        ? resolveChatTarget(context.chatTarget)
+        : null;
+    const chatIndex =
+      contextTarget?.character.chaId === char.chaId
+        ? contextTarget.chatIndex
+        : char.chatPage;
+    const targetChat =
+      contextTarget?.character.chaId === char.chaId
+        ? contextTarget.chat
+        : char.chats[chatIndex];
     if (!targetChat) {
       return [
         {

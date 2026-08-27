@@ -42,8 +42,8 @@ const mocks = vi.hoisted(() => ({
   globalFetch: vi.fn(),
 }));
 
-vi.mock("src/ts/storage/database.svelte", () => ({
-  getDatabase: () => mocks.db,
+vi.mock("src/ts/stores/domain/settingsStore.svelte", () => ({
+  settingsStore: { state: mocks.db },
 }));
 
 vi.mock("src/ts/globalApi.svelte", () => ({

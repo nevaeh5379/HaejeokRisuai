@@ -2,7 +2,7 @@ import { expect, test, vi } from "vitest";
 
 const parser = vi.hoisted(() =>
   vi.fn((text: string, arg?: any) =>
-    `${text}:${arg?.chatTarget?.characterIndex ?? "missing"}`,
+    `${text}:${arg?.chatTarget?.characterId ?? "missing"}`,
   ),
 );
 
@@ -16,11 +16,11 @@ test("parses example messages with the generation chat target", () => {
     name: "Target",
     exampleMessage: "{{char}}: hello",
   } as any;
-  const target = { characterIndex: 4, chatIndex: 2 };
+  const target = { characterId: "char-target", chatId: "chat-target" };
 
   const result = exampleMessage(char, "User", target);
 
-  expect(result[0].content).toBe("hello:4");
+  expect(result[0].content).toBe("hello:char-target");
   expect(parser).toHaveBeenCalledWith("hello", {
     chara: char,
     chatTarget: target,

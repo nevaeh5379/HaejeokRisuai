@@ -14,6 +14,7 @@ import type {
   requestDataResponse,
 } from "./requestContracts";
 import type { ModelModeExtended } from "./shared";
+import { resolveChatTarget } from "../../chatTarget";
 
 export async function requestChatData(
   arg: requestDataArgument,
@@ -64,9 +65,7 @@ export async function requestChatData(
         try {
           const currentChar = requestCharacter;
           const triggerChat = arg.triggerTarget
-            ? characterStore.characters[arg.triggerTarget.characterIndex]?.chats?.[
-                arg.triggerTarget.chatIndex
-              ]
+            ? resolveChatTarget(arg.triggerTarget)?.chat
             : characterStore.currentChat;
           if (currentChar?.type !== "group" && triggerChat) {
             const perf = performance.now();

@@ -1,26 +1,28 @@
 import { expect, test, vi } from "vitest";
 
 const getUserName = vi.hoisted(() =>
-  vi.fn((target?: { characterIndex: number; chatIndex: number }) =>
-    target?.characterIndex === 2 ? "Target User" : "Selected User",
+  vi.fn((target?: { characterId: string; chatId: string }) =>
+    target?.characterId === "char-target" ? "Target User" : "Selected User",
   ),
 );
 
 vi.mock("../util", () => ({ getUserName }));
-vi.mock("../storage/database.svelte", () => ({
-  getDatabase: () => ({
-    ooba: {
-      formating: {
-        systemPrefix: "",
-        userPrefix: "",
-        assistantPrefix: "",
-        seperator: "\n",
-        useName: true,
+vi.mock("../stores/domain/settingsStore.svelte", () => ({
+  settingsStore: {
+    state: {
+      ooba: {
+        formating: {
+          systemPrefix: "",
+          userPrefix: "",
+          assistantPrefix: "",
+          seperator: "\n",
+          useName: true,
+        },
       },
+      autoSuggestPrefix: "",
+      username: "Selected User",
     },
-    autoSuggestPrefix: "",
-    username: "Selected User",
-  }),
+  },
 }));
 
 import {
@@ -29,7 +31,7 @@ import {
   stringlizeChatOba,
 } from "./stringlize";
 
-const target = { characterIndex: 2, chatIndex: 1 };
+const target = { characterId: "char-target", chatId: "chat-target" };
 
 test("builds response trimming chunks with the target persona name", () => {
   const { chunks } = getUnstringlizerChunks([], "Bot", "normal", target);

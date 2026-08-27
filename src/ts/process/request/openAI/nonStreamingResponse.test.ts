@@ -19,8 +19,8 @@ vi.mock("src/ts/alert", () => ({ alertError: mocks.alertError }));
 vi.mock("src/ts/model/modellist", () => ({
   LLMFlags: { deepSeekThinkingOutput: 77 },
 }));
-vi.mock("src/ts/storage/database.svelte", () => ({
-  getDatabase: () => mocks.mockDb,
+vi.mock("src/ts/stores/domain/settingsStore.svelte", () => ({
+  settingsStore: { state: mocks.mockDb },
 }));
 vi.mock("../../mcp/mcp", () => ({
   callTool: mocks.callTool,
@@ -131,7 +131,12 @@ describe("OpenAI non-streaming response interpreter", () => {
       retry,
     });
 
-    expect(mocks.callTool).toHaveBeenCalledWith("weather", { city: "Seoul" });
+    expect(mocks.callTool).toHaveBeenCalledWith(
+      "weather",
+      { city: "Seoul" },
+      undefined,
+      { currentChar: undefined, chatTarget: undefined },
+    );
     expect(retry).toHaveBeenCalledTimes(2);
     expect(body.messages.at(-1)).toMatchObject({
       role: "tool",

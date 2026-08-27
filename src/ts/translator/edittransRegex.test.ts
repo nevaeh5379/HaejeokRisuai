@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { character, customscript } from "../storage/schema";
 
-const database: { presetRegex: customscript[] } = { presetRegex: [] };
+const database = vi.hoisted(() => ({ presetRegex: [] as customscript[] }));
 
-vi.mock("../storage/database.svelte", () => ({
-  getDatabase: () => database,
+vi.mock("../stores/domain/settingsStore.svelte", () => ({
+  settingsStore: { state: database },
 }));
 
 vi.mock("../process/modules", () => ({
@@ -12,7 +12,7 @@ vi.mock("../process/modules", () => ({
   moduleUpdate: () => {},
 }));
 
-const parserCalls: { data: string; chatID: number }[] = [];
+const parserCalls = vi.hoisted(() => [] as { data: string; chatID: number }[]);
 
 vi.mock("../parser/parser.svelte", () => ({
   applyMarkdownToNode: () => {},

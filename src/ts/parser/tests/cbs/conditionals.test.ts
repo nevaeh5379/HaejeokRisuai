@@ -27,21 +27,25 @@ const varStorage = vi.hoisted(
 vi.mock(import("../../../stores/domain/characterStore.svelte"), () => {
   return {
     characterStore: {
+      selectedId: 0,
       characters: [
         {
+          chaId: "char-selected",
           chatPage: 0,
           chats: [
             {
+              id: "chat-selected",
               scriptstate: varStorage,
             },
           ],
           defaultVariables: "",
         },
         {
+          chaId: "char-target",
           chatPage: 0,
           chats: [
-            { scriptstate: { $scope: "selected" } },
-            { scriptstate: { $scope: "target", $enabled: "true" } },
+            { id: "chat-other", scriptstate: { $scope: "selected" } },
+            { id: "chat-target", scriptstate: { $scope: "target", $enabled: "true" } },
           ],
           defaultVariables: "",
         },
@@ -89,7 +93,7 @@ afterEach(() => {
 });
 
 test("CBS variable reads honor an explicit chat target", () => {
-  const chatTarget = { characterIndex: 1, chatIndex: 1 };
+  const chatTarget = { characterId: "char-target", chatId: "chat-target" };
   expect(risuChatParser("{{getvar::scope}}", { chatTarget })).toBe("target");
   expect(
     risuChatParser("{{#when::var::enabled}}yes{{:else}}no{{/when}}", {
@@ -432,7 +436,7 @@ test("uses the explicit trigger id from parser context", () => {
   expect(
     risuChatParser("{{trigger_id}}", {
       triggerId: "trigger-a",
-      chatTarget: { characterIndex: 1, chatIndex: 1 },
+      chatTarget: { characterId: "char-target", chatId: "chat-target" },
     }),
   ).toBe("trigger-a");
 });

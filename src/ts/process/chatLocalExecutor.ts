@@ -12,6 +12,7 @@ import type {
   OpenAIChat,
 } from "@risuai/chat-core/types.cjs";
 import { createLocalChatGenerationRuntime } from "./chatLocalRuntime";
+import { requireChatTargetFromIndexes } from "../chatTarget";
 import { tryCreateNodeChatGenerationPlan } from "./chatNodePlanner";
 import { processChatResponse } from "./chatResponse.svelte";
 import { finalizeChatGeneration } from "./chatGenerationFinalizer.svelte";
@@ -174,7 +175,7 @@ export class LocalChatExecutor implements ChatExecutor {
         {
           plan,
           biases: prompt.biases,
-          triggerTarget: { characterIndex: selectedChar, chatIndex: selectedChat },
+          triggerTarget: requireChatTargetFromIndexes(selectedChar, selectedChat),
           currentChar,
           isGroupChat: nowChatroom.type === "group",
           continueGeneration: arg.continue,

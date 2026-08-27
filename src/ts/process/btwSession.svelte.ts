@@ -439,7 +439,7 @@ export async function sendBtwMessage(
       {
         plan,
         biases: prompt.biases,
-        triggerTarget: { characterIndex, chatIndex },
+        triggerTarget: requireChatTargetFromIndexes(characterIndex, chatIndex),
         currentChar,
         isGroupChat: room.type === "group",
         escape: room.type === "character" && room.escapeOutput,

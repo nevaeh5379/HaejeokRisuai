@@ -65,7 +65,7 @@ beforeEach(() => {
 test("keeps generation context through browser-side Node Hypa actions", async () => {
   const context = {
     currentChar: { name: "Target", chaId: "char-1" } as any,
-    chatTarget: { characterIndex: 3, chatIndex: 4 },
+    chatTarget: { characterId: "char-1", chatId: "chat-1" },
   };
 
   const result = await tryRunNodeHypaMemory(

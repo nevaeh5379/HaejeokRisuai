@@ -2,6 +2,7 @@
     import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, DownloadIcon, FileText, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors } from "@lucide/svelte"
     import { aiLawApplies, changeChatTo, foldChatToMessage, getFileSrc } from "src/ts/globalApi.svelte"
     import { createChatTimelineBranch } from "src/ts/chatBranches"
+    import { requireChatTargetFromIndexes } from "src/ts/chatTarget"
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme"
     import { longpress } from "src/ts/gui/longtouch"
     import { getModelInfo } from "src/ts/model/modellist"
@@ -323,7 +324,7 @@
             ? await import('src/ts/process/triggers').then(({ runTrigger }) =>
                 runTrigger(currentChar, 'manual', {
                     chat: currentChat,
-                    target: { characterIndex, chatIndex: targetChatIndex },
+                    target: requireChatTargetFromIndexes(characterIndex, targetChatIndex),
                     manualName: triggerName,
                     triggerId: triggerId || undefined,
                 }))

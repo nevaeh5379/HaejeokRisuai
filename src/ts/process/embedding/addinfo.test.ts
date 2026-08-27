@@ -7,9 +7,6 @@ const similaritySearch = vi.hoisted(() =>
 );
 
 vi.mock("src/ts/util", () => ({ getUserName }));
-vi.mock("src/ts/storage/database.svelte", () => ({
-  getDatabase: () => ({}),
-}));
 vi.mock("../memory/hypamemory", () => ({
   HypaProcesser: class {
     addText = addText;
@@ -22,7 +19,7 @@ import { additionalInformations } from "./addinfo";
 beforeEach(() => {
   vi.clearAllMocks();
 });test("uses the explicit chat target for user names", async () => {
-  const target = { characterIndex: 3, chatIndex: 4 };
+  const target = { characterId: "char-target", chatId: "chat-target" };
   const result = await additionalInformations(
     { name: "Bot", additionalText: "reference" } as never,
     {

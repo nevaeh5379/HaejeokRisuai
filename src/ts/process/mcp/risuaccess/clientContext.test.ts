@@ -26,7 +26,7 @@ import { RisuAccessClient } from "./client";
 test("resolves blank character IDs from the tool generation context", async () => {
   const client = new RisuAccessClient();
   const currentChar = { chaId: "char-a", name: "Target" } as never;
-  const chatTarget = { characterIndex: 2, chatIndex: 4 };
+  const chatTarget = { characterId: "char-a", chatId: "chat-a" };
 
   await client.callTool(
     "risu-get-character-info",

@@ -7,7 +7,18 @@ import { beforeAll, expect, test, vi } from "vitest";
 const commitMessages = vi.hoisted(() => vi.fn(async () => undefined));
 const moduleTriggers = vi.hoisted(() => vi.fn(() => []));
 const moduleLorebooks = vi.hoisted(() => vi.fn(() => []));
-const databaseState = vi.hoisted(() => ({ value: { characters: [] } as any }));
+const databaseState = vi.hoisted(() => ({
+  value: {
+    characters: [
+      {
+        type: "character",
+        chaId: "target-room",
+        name: "Target Room",
+        chats: [{ id: "target-chat", message: [] }],
+      },
+    ],
+  } as any,
+}));
 const currentChatState = vi.hoisted(() => ({ value: { message: [] } as any }));
 const getChatVarMock = vi.hoisted(() => vi.fn(() => "target-value"));
 const getGlobalChatVarMock = vi.hoisted(() => vi.fn(() => "global-value"));
@@ -49,27 +60,23 @@ vi.mock("../util", () => ({
   getUserName: vi.fn(),
 }));
 
-vi.mock("../storage/database.svelte", () => ({
-  getCurrentCharacter: vi.fn(() => ({
-    type: "character",
-    name: "Wrong Current",
-  })),
-  getCurrentChat: vi.fn(() => currentChatState.value),
-  getDatabase: vi.fn(() => databaseState.value),
-  setDatabase: vi.fn(),
-}));
-
 vi.mock("../stores/domain/characterStore.svelte", () => ({
   characterStore: {
-    characters: [
-      {
-        type: "character",
-        chaId: "target-room",
-        name: "Target Room",
-        chats: [{ message: [] }],
-      },
-    ],
+    get characters() {
+      return databaseState.value.characters;
+    },
+    get currentCharacter() {
+      return databaseState.value.characters[0];
+    },
+    get currentChat() {
+      return currentChatState.value;
+    },
+    markCharacterDirty: vi.fn(),
+    markChatDirty: vi.fn(),
   },
+}));
+vi.mock("../stores/domain/settingsStore.svelte", () => ({
+  settingsStore: { state: { maxContext: 4096 } },
 }));
 
 vi.mock("../stores/domain/messageStore.svelte", () => ({
@@ -178,7 +185,7 @@ test("reuses a Lua engine with the current character and chat context", async ()
 
 test("passes explicit chat targets to default Lua chat variables", async () => {
   getChatVarMock.mockClear();
-  const target = { characterIndex: 4, chatIndex: 2 };
+  const target = { characterId: "target-room", chatId: "target-chat" };
   const result = await runScripted(
     'function onStart(id) return getChatVar(id, "key") end',
     {
@@ -216,7 +223,7 @@ test("keeps Lua CBS on the generation target for simple snapshots", async () => 
     {
       char: { type: "simple", name: "Snapshot" } as never,
       chat: { message: [] } as never,
-      chatTarget: { characterIndex: 0, chatIndex: 0 },
+      chatTarget: { characterId: "target-room", chatId: "target-chat" },
       mode: "start",
     },
   );
@@ -305,8 +312,8 @@ test("resolves module edit triggers against the explicit character", async () =>
 
   await expect(
     runLuaEditTrigger(char, "editoutput", "hello", undefined, {
-      characterIndex: 2,
-      chatIndex: 3,
+      characterId: "target-room",
+      chatId: "target-chat",
     }),
   ).resolves.toBe("hello");
   expect(moduleTriggers).toHaveBeenCalledWith(char);

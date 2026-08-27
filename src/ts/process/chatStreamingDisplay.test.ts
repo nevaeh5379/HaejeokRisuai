@@ -10,7 +10,7 @@ vi.mock("../stores/domain/settingsStore.svelte", () => ({
   settingsStore: { state: settingsState },
 }));
 vi.mock("../stores/domain/characterStore.svelte", () => ({
-  characterStore: { characters: [] },
+  characterStore: { characters: [{ chaId: "char-0", chats: [{ id: "chat-0" }] }] },
 }));
 vi.mock("../util", () => ({
   trimUntilPunctuation: (value: string) => value,
@@ -30,8 +30,8 @@ test("applies editoutput scripts to cached streaming rerolls", async () => {
   const room = { type: "character" };
   const options = {
     nowChatroom: room,
-    selectedChar: 2,
-    selectedChat: 5,
+    selectedChar: 0,
+    selectedChat: 0,
     prefix: "continued: ",
     msgIndex: 7,
     reformatContent: (value: string) => `formatted(${value})`,
@@ -55,6 +55,6 @@ test("applies editoutput scripts to cached streaming rerolls", async () => {
     "editoutput",
     7,
     {},
-    { characterIndex: 2, chatIndex: 5 },
+    { characterId: "char-0", chatId: "chat-0" },
   );
 });

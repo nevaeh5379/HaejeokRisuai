@@ -14,11 +14,14 @@ vi.mock(import("../../../globalApi.svelte"), () => ({
 vi.mock(import("../../../stores/domain/characterStore.svelte"), () => {
   return {
     characterStore: {
+      selectedId: 0,
       characters: [
         {
+          chaId: "char-selected",
           chatPage: 0,
           chats: [
             {
+              id: "chat-selected",
               scriptstate: {},
             },
           ],

@@ -7,8 +7,8 @@ const parser = vi.hoisted(() =>
 );
 
 vi.mock("src/ts/parser/parser.svelte", () => ({ risuChatParser: parser }));
-vi.mock("src/ts/storage/database.svelte", () => ({
-  getDatabase: () => ({ strictJsonSchema: true, jsonSchema: "" }),
+vi.mock("src/ts/stores/domain/settingsStore.svelte", () => ({
+  settingsStore: { state: { strictJsonSchema: true, jsonSchema: "" } },
 }));
 vi.mock("src/ts/util", () => ({ jsonOutputTrimmer: (value: string) => value }));
 
@@ -21,7 +21,7 @@ import {
 
 const context = {
   chara: { name: "Target Character" } as never,
-  chatTarget: { characterIndex: 2, chatIndex: 5 },
+  chatTarget: { characterId: "char-target", chatId: "chat-target" },
 };
 
 test("passes generation context into interface schema parsing", () => {

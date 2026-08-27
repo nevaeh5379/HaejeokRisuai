@@ -18,9 +18,11 @@ const db = vi.hoisted(() => ({
 vi.mock("../../../lang", () => ({ language: { errors: { httpError: "HTTP" } } }));
 vi.mock("../../globalApi.svelte", () => ({ globalFetch: vi.fn() }));
 vi.mock("../../parser/parser.svelte", () => ({ risuChatParser: parser }));
-vi.mock("../../storage/database.svelte", () => ({
-  getDatabase: () => db,
-  getCurrentCharacter: () => currentUiCharacter,
+vi.mock("../../stores/domain/settingsStore.svelte", () => ({
+  settingsStore: { state: db },
+}));
+vi.mock("../../stores/domain/characterStore.svelte", () => ({
+  characterStore: { currentCharacter: currentUiCharacter },
 }));
 vi.mock("../prompt", () => ({ OobaParams: [] }));
 vi.mock("../stringlize", () => ({
@@ -39,7 +41,7 @@ import { requestOoba, requestOobaLegacy } from "./localEndpointProviders";
 beforeEach(() => parser.mockClear());
 
 const targetCharacter = { type: "character", name: "Target" } as any;
-const target = { characterIndex: 5, chatIndex: 7 };
+const target = { characterId: "char-target", chatId: "chat-target" };
 const requestArg = {
   formated: [],
   aiModel: "textgen_webui",

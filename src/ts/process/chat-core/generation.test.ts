@@ -81,7 +81,7 @@ describe("executeChatModelRequest", () => {
       {
         plan,
         biases: [],
-        triggerTarget: { characterIndex: 2, chatIndex: 3 },
+        triggerTarget: { characterId: "char-2", chatId: "chat-3" },
         currentChar: { id: "char" },
         isGroupChat: false,
         durableChatId: "chat",
@@ -98,7 +98,7 @@ describe("executeChatModelRequest", () => {
     });
     expect(rt.requestModel).toHaveBeenCalledWith(
       expect.objectContaining({
-        triggerTarget: { characterIndex: 2, chatIndex: 3 },
+        triggerTarget: { characterId: "char-2", chatId: "chat-3" },
       }),
       expect.any(AbortSignal),
     );

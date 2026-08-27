@@ -3,7 +3,13 @@ import { expect, test, vi } from "vitest";
 const fallbackCharacter = vi.hoisted(() => ({ name: "UI Character" }));
 const getCurrentCharacter = vi.hoisted(() => vi.fn(() => fallbackCharacter));
 
-vi.mock("../../storage/database.svelte", () => ({ getCurrentCharacter }));
+vi.mock("../../stores/domain/characterStore.svelte", () => ({
+  characterStore: {
+    get currentCharacter() {
+      return getCurrentCharacter();
+    },
+  },
+}));
 
 import { resolveRequestCharacter } from "./requestContext";
 

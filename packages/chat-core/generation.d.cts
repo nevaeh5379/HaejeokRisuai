@@ -20,7 +20,7 @@ export interface ChatGenerationContext {
 
 export interface ChatModelRequest<TCharacter> {
   formated: OpenAIChat[];
-  triggerTarget?: { characterIndex: number; chatIndex: number };
+  triggerTarget?: { characterId: string; chatId: string };
   biasString?: [string, number][];
   currentChar?: TCharacter;
   useStreaming?: boolean;
@@ -62,7 +62,7 @@ export type ChatGenerationPlan =
 export interface ExecuteChatModelRequestInput<TCharacter> {
   plan: Extract<ChatGenerationPlan, { ok: true }>;
   biases: [string, number][];
-  triggerTarget?: { characterIndex: number; chatIndex: number };
+  triggerTarget?: { characterId: string; chatId: string };
   currentChar: TCharacter;
   isGroupChat: boolean;
   continueGeneration?: boolean;

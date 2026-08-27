@@ -510,11 +510,10 @@ export async function importChat() {
         const folders = json.folders || [];
         const chats = Array.isArray(json.data) ? json.data : [json.data];
         const selectedID = get(selectedCharID);
-        let db = settingsStore.state;
         let folderIdMap = {};
         folders.forEach((folder) => {
           if (
-            db.characters[selectedID].chatFolders?.some(
+            characterStore.characters[selectedID].chatFolders?.some(
               (f) => f.id === folder.id,
             )
           ) {
@@ -525,10 +524,10 @@ export async function importChat() {
             folderIdMap[folder.id] = folder.id;
           }
         });
-        if (db.characters[selectedID].chatFolders === undefined) {
-          db.characters[selectedID].chatFolders = [];
+        if (characterStore.characters[selectedID].chatFolders === undefined) {
+          characterStore.characters[selectedID].chatFolders = [];
         }
-        db.characters[selectedID].chatFolders.push(...folders);
+        characterStore.characters[selectedID].chatFolders.push(...folders);
         chats.forEach((chat) => {
           if (chat.folderId && folderIdMap[chat.folderId]) {
             chat.folderId = folderIdMap[chat.folderId];
@@ -622,8 +621,7 @@ export async function importChat() {
 export async function exportAllChats() {
   try {
     const selectedID = get(selectedCharID);
-    const db = settingsStore.state;
-    const char = db.characters[selectedID];
+    const char = characterStore.characters[selectedID];
     if (char && Array.isArray(char.chats)) {
       for (let i = 0; i < char.chats.length; i++) {
         await preLoadChat(selectedID, i, { full: true });
@@ -652,7 +650,6 @@ export async function exportAllChats() {
 }
 
 function formatTavernChat(chat: string, charName: string) {
-  const db = settingsStore.state;
   return chat
     .replace(/<([Uu]ser)>|\{\{([Uu]ser)\}\}/g, getUserName())
     .replace(/((\{\{)|<)([Cc]har)(=.+)?((\}\})|>)/g, charName);
@@ -884,9 +881,8 @@ export async function makeGroupImage() {
       type: "wait",
       msg: `Loading..`,
     });
-    const db = settingsStore.state;
     const charID = get(selectedCharID);
-    const group = db.characters[charID];
+    const group = characterStore.characters[charID];
     if (group.type !== "group") {
       return;
     }
@@ -946,7 +942,7 @@ export async function makeGroupImage() {
 
     const uri = canvas.toDataURL();
     canvas.remove();
-    db.characters[charID].image = await saveImage(dataURLtoBuffer(uri));
+    characterStore.characters[charID].image = await saveImage(dataURLtoBuffer(uri));
     alertStore.set({
       type: "none",
       msg: "",
@@ -970,7 +966,6 @@ export async function removeChar(
   name: string,
   type: "normal" | "permanent" | "permanentForce" = "normal",
 ) {
-  const db = settingsStore.state;
   if (type !== "permanentForce") {
     const conf = await alertConfirm(language.removeConfirm + name);
     if (!conf) {
@@ -981,7 +976,7 @@ export async function removeChar(
       return;
     }
   }
-  let chars = db.characters;
+  let chars = characterStore.characters;
   // Resolve identifier to actual index at the time of deletion to avoid
   // race conditions when concurrent deletions shift the array.
   const index =
@@ -1032,9 +1027,8 @@ export async function addCharacter(
       MobileGUIStack.set(1);
       return;
   }
-  let db = settingsStore.state;
-  if (db.characters[db.characters.length - 1]) {
-    changeChar(db.characters.length - 1);
+  if (characterStore.characters[characterStore.characters.length - 1]) {
+    changeChar(characterStore.characters.length - 1);
   }
   MobileGUIStack.set(1);
 }

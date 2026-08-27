@@ -310,9 +310,10 @@ export async function processScriptFull(
               pscript.actions.includes("inject")) &&
             chatID !== -1
           ) {
-            const selectedIndex = chatTarget?.characterIndex ?? get(selectedCharID);
-            const selchar = db.characters[selectedIndex];
-            const targetChatIndex = chatTarget?.chatIndex ?? selchar.chatPage;
+            const resolvedTarget = chatTarget ? resolveChatTarget(chatTarget) : null;
+            const selectedIndex = resolvedTarget?.characterIndex ?? get(selectedCharID);
+            const selchar = characterStore.characters[selectedIndex];
+            const targetChatIndex = resolvedTarget?.chatIndex ?? selchar.chatPage;
             selchar.chats[targetChatIndex].message[chatID].data = data;
             data = data.replace(reg, "");
           } else if (
@@ -371,9 +372,10 @@ export async function processScriptFull(
             chatID !== -1
           ) {
             const v = outScript.split(" ", 2)[1];
-            const selectedIndex = chatTarget?.characterIndex ?? get(selectedCharID);
-            const selchar = db.characters[selectedIndex];
-            const chat = selchar.chats[chatTarget?.chatIndex ?? selchar.chatPage];
+            const resolvedTarget = chatTarget ? resolveChatTarget(chatTarget) : null;
+            const selectedIndex = resolvedTarget?.characterIndex ?? get(selectedCharID);
+            const selchar = characterStore.characters[selectedIndex];
+            const chat = selchar.chats[resolvedTarget?.chatIndex ?? selchar.chatPage];
             let lastChat =
               chat.fmIndex === -1
                 ? selchar.firstMessage

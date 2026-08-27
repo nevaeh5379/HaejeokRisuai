@@ -20,6 +20,7 @@
     import AssetInput from './AssetInput.svelte';
     import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile } from 'src/ts/globalApi.svelte';
     import { activateChatBranch, createChatTimelineBranch, ensureChatBranchState, getRerollAlternatives, resolveRerollTarget } from 'src/ts/chatBranches';
+    import { requireChatTargetFromIndexes } from 'src/ts/chatTarget';
     import { v4 } from 'uuid';
     import { getInlayAsset } from 'src/ts/process/files/inlays';
     import { ConnectionOpenStore } from 'src/ts/sync/multiuserState';
@@ -359,7 +360,7 @@
                 const { runTrigger } = await import('src/ts/process/triggers')
                 let triggerResult = await runTrigger(char,'input', {
                     chat: char.chats[currentChatPage],
-                    target: {characterIndex:selectedChar, chatIndex:currentChatPage}
+                    target: requireChatTargetFromIndexes(selectedChar, currentChatPage)
                 })
                 if(triggerResult){
                     cha = triggerResult.chat.message

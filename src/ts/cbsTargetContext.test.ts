@@ -99,7 +99,7 @@ function run(name: string, overrides: Partial<matcherArg> = {}) {
     chara: speaker,
     rmVar: false,
     cbsConditions: {},
-    chatTarget: { characterIndex: 1, chatIndex: 1 },
+    chatTarget: { characterId: "target-room", chatId: "target-chat" },
     ...overrides,
   } as matcherArg;
   return callback(name, arg, [], null);

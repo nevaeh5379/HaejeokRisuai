@@ -1,4 +1,4 @@
-import type { ChatExecutionTarget } from "src/ts/chatTarget";
+import { resolveChatTarget, type ChatExecutionTarget } from "src/ts/chatTarget";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { asBuffer } from "src/ts/util";
 import {
@@ -122,7 +122,7 @@ export async function runScripted(
       const scriptingChar = ScriptingEngineState.char;
       if (scriptingChar && scriptingChar.type !== "simple") return scriptingChar;
       const target = ScriptingEngineState.chatTarget;
-      if (target) return characterStore.characters[target.characterIndex];
+      if (target) return resolveChatTarget(target)?.character;
       return characterStore.currentCharacter;
     };
     const getStoredScriptingCharacter = () => {
@@ -1616,9 +1616,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
             .concat(moduleTriggers);
 
     const targetChat = chatTarget
-      ? characterStore.characters[chatTarget.characterIndex]?.chats?.[
-          chatTarget.chatIndex
-        ]
+      ? resolveChatTarget(chatTarget)?.chat
       : undefined;
 
     for (let trigger of triggers) {
