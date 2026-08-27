@@ -77,7 +77,10 @@ export async function prepareModernOpenAIRequest(
     responseJsonSchema:
       (db.jsonSchemaEnabled || arg.schema) &&
       !arg.modelInfo.flags.includes(LLMFlags.noStructuredOutput)
-        ? getOpenAIJSONSchema(arg.schema)
+        ? getOpenAIJSONSchema(arg.schema, {
+            chara: resolveRequestCharacter(arg),
+            chatTarget: arg.triggerTarget,
+          })
         : undefined,
     prediction: db.OAIPrediction,
     aiModel,

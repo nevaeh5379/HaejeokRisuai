@@ -35,6 +35,7 @@ import type {
   requestDataResponse,
   StreamResponseChunk,
 } from "./requestContracts";
+import { resolveRequestCharacter } from "./requestContext";
 import { tryExecuteNodeProviderTransport } from "./nodeProviderExecutor";
 import {
   applyAdditionalParameters,
@@ -409,10 +410,14 @@ export async function requestGoogleCloudVertex(
 
   if (db.jsonSchemaEnabled || arg.schema) {
     body.generation_config.response_mime_type = "application/json";
-    body.generation_config.response_schema = getGeneralJSONSchema(arg.schema, [
-      "$schema",
-      "additionalProperties",
-    ]);
+    body.generation_config.response_schema = getGeneralJSONSchema(
+      arg.schema,
+      ["$schema", "additionalProperties"],
+      {
+        chara: resolveRequestCharacter(arg),
+        chatTarget: arg.triggerTarget,
+      },
+    );
     console.log(body.generation_config.response_schema);
   }
 

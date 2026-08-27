@@ -1,13 +1,29 @@
 import { risuChatParser } from "src/ts/parser/parser.svelte";
-import { getDatabase } from "src/ts/storage/database.svelte";
+import type { ChatVarTarget } from "src/ts/parser/chatVar.svelte";
+import {
+  getDatabase,
+  type character,
+  type groupChat,
+} from "src/ts/storage/database.svelte";
 import { jsonOutputTrimmer } from "src/ts/util";
 
-export function convertInterfaceToSchema(int: string) {
+export type JSONSchemaParserContext = {
+  chara?: character | groupChat;
+  chatTarget?: ChatVarTarget;
+};
+
+export function convertInterfaceToSchema(
+  int: string,
+  context: JSONSchemaParserContext = {},
+) {
   if (!int.startsWith("interface ") && !int.startsWith("export interface ")) {
     return JSON.parse(int);
   }
 
-  int = risuChatParser(int);
+  int = risuChatParser(int, {
+    chara: context.chara,
+    chatTarget: context.chatTarget,
+  });
 
   type SchemaProp = {
     type: "array" | "string" | "number" | "boolean";
@@ -122,16 +138,23 @@ export function convertInterfaceToSchema(int: string) {
   return schema;
 }
 
-export function getOpenAIJSONSchema(schema?: string) {
+export function getOpenAIJSONSchema(
+  schema?: string,
+  context: JSONSchemaParserContext = {},
+) {
   const db = getDatabase();
   return {
     name: "format",
     strict: db.strictJsonSchema,
-    schema: convertInterfaceToSchema(schema ?? db.jsonSchema),
+    schema: convertInterfaceToSchema(schema ?? db.jsonSchema, context),
   };
 }
 
-export function getGeneralJSONSchema(schema?: string, excludes: string[] = []) {
+export function getGeneralJSONSchema(
+  schema?: string,
+  excludes: string[] = [],
+  context: JSONSchemaParserContext = {},
+) {
   const db = getDatabase();
 
   function process(data: any) {
@@ -147,7 +170,7 @@ export function getGeneralJSONSchema(schema?: string, excludes: string[] = []) {
     return data;
   }
 
-  const d = convertInterfaceToSchema(schema ?? db.jsonSchema);
+  const d = convertInterfaceToSchema(schema ?? db.jsonSchema, context);
   return process(d);
 }
 

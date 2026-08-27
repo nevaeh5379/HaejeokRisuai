@@ -20,6 +20,7 @@ import type {
   StreamResponseChunk,
 } from "../requestContracts";
 import { tryExecuteNodeProviderTransport } from "../nodeProviderExecutor";
+import { resolveRequestCharacter } from "../requestContext";
 import { matchesNodeOllamaCloudEndpoint } from "../ollamaTransport";
 import {
   applyAdditionalParameters,
@@ -447,7 +448,10 @@ async function buildResponsesBody(
     body.text ??= {};
     body.text.format = {
       type: "json_schema",
-      ...getOpenAIJSONSchema(arg.schema),
+      ...getOpenAIJSONSchema(arg.schema, {
+        chara: resolveRequestCharacter(arg),
+        chatTarget: arg.triggerTarget,
+      }),
     };
   }
 
