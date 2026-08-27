@@ -7,7 +7,12 @@ import {
   type SQLiteDBConnection,
 } from "@capacitor-community/sqlite";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
-import { SqlRevisionConflictError } from "./sqlCommit";
+import {
+  SqlRevisionConflictError,
+  type SqlCommit,
+  type SqlCommitResult,
+} from "./sqlCommit";
+import { applySqliteCommit } from "./sqliteCommit";
 import type { SqliteTransactionStatement } from "./sqliteStorageUtils";
 
 // @capacitor-community/sqlite routes PRAGMA statements that return rows through
@@ -131,5 +136,49 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
       }
       throw error;
     }
+  }
+
+  /**
+   * Capacitor crosses the WebView/native bridge for every SQLite statement.
+   * Execute statements as applySqliteCommit produces them so a large restore
+   * does not retain the complete flattened SQL statement list (and all bind
+   * values) in WebView memory until the transaction begins.
+   */
+  protected override async commitInternal(
+    commit: SqlCommit,
+  ): Promise<SqlCommitResult> {
+    if (!this._enabled || !this.isStorageReady()) {
+      throw new Error("SQLite storage is not enabled");
+    }
+    const meta = await this.selectOne<{ revision: number }>(
+      "SELECT revision FROM system_storage_meta WHERE singleton = 1",
+    );
+    const currentRevision = Number(meta?.revision) || 0;
+    if (commit.baseRevision !== currentRevision) {
+      throw new SqlRevisionConflictError(currentRevision);
+    }
+    await this.validatePresetCommit(commit);
+
+    const revision = currentRevision + 1;
+    const action = commit.action ||
+      (commit.replaceAll ? "replace-all" : "sync");
+    await this.runNativeTransaction(currentRevision, async (execute) => {
+      if (commit.replaceAll) {
+        await execute("DELETE FROM system_settings");
+        await execute("DELETE FROM plugin_custom_storage");
+        await execute("DELETE FROM characters");
+      }
+      await applySqliteCommit(commit, execute);
+      await execute(
+        "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
+        [revision],
+      );
+      await execute(
+        "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
+        [revision, action],
+      );
+    });
+    this.revision = revision;
+    return { revision };
   }
 }

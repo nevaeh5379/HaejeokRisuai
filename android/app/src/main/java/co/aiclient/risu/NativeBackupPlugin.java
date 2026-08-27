@@ -37,6 +37,7 @@ public class NativeBackupPlugin extends Plugin {
     private static final int MAX_NAME_LENGTH = 1024 * 1024;
     private static final int COPY_BUFFER_SIZE = 256 * 1024;
     private static final int MAX_CHUNK_SIZE = 4 * 1024 * 1024;
+    private static final long MAX_RAW_DATABASE_SIZE = 512L * 1024L * 1024L;
     private static final long PROGRESS_BYTE_INTERVAL = 512 * 1024;
     private static final long PROGRESS_TIME_INTERVAL_MS = 150;
 
@@ -150,36 +151,71 @@ public class NativeBackupPlugin extends Plugin {
 
         long totalBytes = contentLength(uri);
         ImportProgressReporter progress = new ImportProgressReporter(totalBytes);
-        int assetsWritten;
+        boolean container = looksLikeContainer(uri, totalBytes);
         try {
-            assetsWritten = parseContainer(uri, stagingDir, specialFile, progress);
-        } catch (Exception containerError) {
-            deleteTree(stagingDir);
-            if (specialFile.exists() && !specialFile.delete()) {
-                throw new IOException("Failed to reset backup staging file", containerError);
+            if (!container) {
+                if (totalBytes > MAX_RAW_DATABASE_SIZE) {
+                    throw new IOException(
+                        "This is a raw database backup larger than Android can safely decode. " +
+                        "Import it on desktop and create a current local backup before restoring it on Android."
+                    );
+                }
+                copyRawImport(uri, specialFile, progress);
+                sessions.put(id, specialFile);
+                progress.report("complete", specialFile.length(), 0, 0, true);
+                return new ImportResult(id, specialFile, 0, true);
             }
-            copyRawImport(uri, specialFile, progress);
-            sessions.put(id, specialFile);
-            progress.report("complete", specialFile.length(), 0, 0, true);
-            return new ImportResult(id, specialFile, 0, true);
-        }
 
-        try {
+            int assetsWritten = parseContainer(
+                uri,
+                stagingDir,
+                specialFile,
+                progress,
+                totalBytes
+            );
             commitAssets(stagingDir, progress, assetsWritten);
-        } catch (IOException commitError) {
+            sessions.put(id, specialFile);
+            progress.report("complete", totalBytes, assetsWritten, assetsWritten, true);
+            return new ImportResult(id, specialFile, assetsWritten, false);
+        } catch (Exception error) {
             deleteTree(sessionDir);
-            throw commitError;
+            if (error instanceof IOException) throw (IOException) error;
+            throw new IOException("Failed to extract local backup", error);
         }
-        sessions.put(id, specialFile);
-        progress.report("complete", totalBytes, assetsWritten, assetsWritten, true);
-        return new ImportResult(id, specialFile, assetsWritten, false);
+    }
+
+    /**
+     * Distinguish a container from a raw database before extraction starts.
+     * Previously every container I/O error (including full storage or a
+     * truncated multi-gigabyte backup) retried by copying the whole file as a
+     * raw database and then handed it to the WebView, where it could exhaust
+     * memory. Once the first entry is structurally valid, later errors must be
+     * reported as container errors instead of changing formats.
+     */
+    private boolean looksLikeContainer(Uri uri, long totalBytes) throws IOException {
+        ContentResolver resolver = getContext().getContentResolver();
+        try (BufferedInputStream input = new BufferedInputStream(
+            requireInput(resolver.openInputStream(uri))
+        )) {
+            Long nameLength = readUint32LEOrEof(input);
+            if (nameLength == null || nameLength <= 0 || nameLength > MAX_NAME_LENGTH) {
+                return false;
+            }
+            byte[] nameBytes = readExact(input, nameLength.intValue());
+            String name = new String(nameBytes, StandardCharsets.UTF_8);
+            if (name.indexOf('\u0000') >= 0 || name.trim().isEmpty()) return false;
+            long dataLength = requireUint32LE(input, "backup entry data length");
+            long headerLength = 8L + nameLength;
+            return totalBytes < 0L || dataLength <= totalBytes - headerLength;
+        }
     }
 
     private int parseContainer(
         Uri uri,
         File stagingDir,
         File specialFile,
-        ImportProgressReporter progress
+        ImportProgressReporter progress,
+        long totalBytes
     ) throws IOException {
         ContentResolver resolver = getContext().getContentResolver();
         byte[] copyBuffer = new byte[COPY_BUFFER_SIZE];
@@ -203,6 +239,9 @@ public class NativeBackupPlugin extends Plugin {
                 byte[] nameBytes = readExact(input, nameLength.intValue());
                 String name = new String(nameBytes, StandardCharsets.UTF_8);
                 long dataLength = requireUint32LE(input, "backup entry data length");
+                if (totalBytes >= 0L && dataLength > totalBytes - tracked.getBytesRead()) {
+                    throw new IOException("Backup entry exceeds the remaining file size");
+                }
                 if (isSpecialEntry(name)) {
                     if ("database.risudat".equals(name)) hasDatabase = true;
                     writeUint32LE(special, nameBytes.length);
@@ -302,7 +341,18 @@ public class NativeBackupPlugin extends Plugin {
             );
             OutputStream output = new BufferedOutputStream(new FileOutputStream(destination))
         ) {
-            copyUntilEof(input, output, new byte[COPY_BUFFER_SIZE]);
+            byte[] buffer = new byte[COPY_BUFFER_SIZE];
+            long copied = 0L;
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                copied += read;
+                if (copied > MAX_RAW_DATABASE_SIZE) {
+                    throw new IOException(
+                        "This raw database backup is larger than Android can safely decode"
+                    );
+                }
+                output.write(buffer, 0, read);
+            }
         }
     }
 
