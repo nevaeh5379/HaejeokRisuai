@@ -1,27 +1,35 @@
 # Dependencies
-node_modules/
+node_modules
+**/node_modules
 
 # Git & IDE
-.git/
-.github/
-.vscode/
-.idea/
-.codegraph/
+.git
+.github
+.vscode
+.idea
+.codegraph
+
+# Mobile / Android
+android
 
 # Desktop / Rust builds (Tauri)
-src-tauri/
+src-tauri
 
 # Build artifacts & caches
-dist/
-dist-*/
-build/
-.wrangler/
-.tauri/
-__pycache__/
+dist
+dist-*
+build
+.wrangler
+.tauri
+__pycache__
 
 # Local data & environment
-save/
-.risuai/
+save
+save/*
+save/**
+**/save
+**/save/**
+.risuai
 .env*
 !*.env.example
 
@@ -30,6 +38,6 @@ save/
 *.har
 *.gz
 *profile.json*
-/server/node/ssl/certificate
+server/node/ssl/certificate
 
-.worktree/
+.worktree

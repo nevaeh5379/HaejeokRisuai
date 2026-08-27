@@ -65,8 +65,8 @@ function persistenceFilePath(indexId, directory = persistenceDir) {
 function configureVectorIndexPersistence(directory) {
     persistenceDir = directory ? path.resolve(directory) : null;
     if (persistenceDir) {
-        fs.mkdirSync(persistenceDir, { recursive: true, mode: 0o700 });
-        try { fs.chmodSync(persistenceDir, 0o700); } catch {}
+        fs.mkdirSync(persistenceDir, { recursive: true, mode: 0o755 });
+        try { fs.chmodSync(persistenceDir, 0o755); } catch {}
     }
 }
 
@@ -128,7 +128,7 @@ async function writeIndexSnapshot(snapshot, directory) {
     const tempPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
     let handle;
     try {
-        handle = await fsp.open(tempPath, 'w', 0o600);
+        handle = await fsp.open(tempPath, 'w', 0o644);
         await handle.write(header);
         await handle.write(metadata);
         for (const entry of snapshot.entries) {
