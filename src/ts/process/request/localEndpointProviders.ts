@@ -5,7 +5,10 @@ import { getDatabase } from "../../storage/database.svelte";
 import { OobaParams } from "../prompt";
 import { getStopStrings, unstringlizeChat } from "../stringlize";
 import { applyChatTemplate } from "../templates/chatTemplate";
-import { resolveRequestCharacter } from "./requestContext";
+import {
+  resolveRequestCharacter,
+  resolveRequestParserContext,
+} from "./requestContext";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
@@ -39,7 +42,10 @@ export async function requestOobaLegacy(
   let stopStrings = getStopStrings(false);
   if (db.localStopStrings) {
     stopStrings = db.localStopStrings.map((v) => {
-      return risuChatParser(v.replace(/\\n/g, "\n"));
+      return risuChatParser(
+        v.replace(/\\n/g, "\n"),
+        resolveRequestParserContext(arg),
+      );
     });
   }
 
@@ -192,7 +198,10 @@ export async function requestOoba(
   let stopStrings = getStopStrings(false);
   if (db.localStopStrings) {
     stopStrings = db.localStopStrings.map((v) => {
-      return risuChatParser(v.replace(/\\n/g, "\n"));
+      return risuChatParser(
+        v.replace(/\\n/g, "\n"),
+        resolveRequestParserContext(arg),
+      );
     });
   }
   let bodyTemplate: Record<string, any> = {

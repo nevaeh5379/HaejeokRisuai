@@ -275,6 +275,7 @@ async function initializeHistory(options: BuildChatHistoryOptions) {
   const chats = exampleMessage(
     options.currentChar,
     getUserName(options.chatTarget),
+    options.chatTarget,
   );
   let currentTokens =
     options.currentTokens + (await options.tokenizer.tokenizeChats(chats));
