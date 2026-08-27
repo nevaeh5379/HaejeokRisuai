@@ -19,8 +19,26 @@ async function sendPofile(arg: sendFileArg) {
   let note = "";
   let speaker = "";
   let parseMode = 0;
-  let currentChar = characterStore.characters[get(selectedCharID)];
-  let currentChat = currentChar.chats[currentChar.chatPage];
+  const initialCharacterIndex = get(selectedCharID);
+  const initialCharacter = characterStore.characters[initialCharacterIndex];
+  const initialChatIndex = initialCharacter.chatPage;
+  const initialChat = initialCharacter.chats[initialChatIndex];
+  const targetCharacterId = initialCharacter.chaId;
+  const targetChatId = initialChat.id;
+  const resolveTarget = () => {
+    const characterIndex = targetCharacterId
+      ? characterStore.characters.findIndex((character) => character?.chaId === targetCharacterId)
+      : initialCharacterIndex;
+    const currentChar = characterStore.characters[characterIndex];
+    const chatIndex = targetChatId
+      ? currentChar?.chats?.findIndex((chat) => chat?.id === targetChatId)
+      : initialChatIndex;
+    const currentChat = currentChar?.chats?.[chatIndex];
+    if (!currentChar || !currentChat || characterIndex < 0 || chatIndex < 0) {
+      throw new Error("The multi-send target chat is no longer available");
+    }
+    return { characterIndex, chatIndex, currentChar, currentChat };
+  };
   const lines = arg.file.split("\n");
   for (let i = 0; i < lines.length; i++) {
     console.log(i);
@@ -37,17 +55,17 @@ async function sendPofile(arg: sendFileArg) {
       if (note !== "") {
         text = `Note: ${note}\n${text}`;
       }
-      currentChat.message.push({
+      let target = resolveTarget();
+      target.currentChat.message.push({
         role: "user",
         data: text,
       });
-      currentChar.chats[currentChar.chatPage] = currentChat;
-      characterStore.characters[get(selectedCharID)] = currentChar;
+      target.currentChar.chats[target.chatIndex] = target.currentChat;
+      characterStore.characters[target.characterIndex] = target.currentChar;
       const { sendChat } = await import("../index.svelte");
-      await sendChat(-1);
-      currentChar = characterStore.characters[get(selectedCharID)];
-      currentChat = currentChar.chats[currentChar.chatPage];
-      const res = currentChat.message[currentChat.message.length - 1];
+      await sendChat(-1, { targetCharacterId, targetChatId });
+      target = resolveTarget();
+      const res = target.currentChat.message[target.currentChat.message.length - 1];
       const msgStr = res.data
         .split("\n")
         .filter((a) => {
