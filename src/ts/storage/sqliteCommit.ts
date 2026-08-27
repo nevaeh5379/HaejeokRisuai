@@ -175,8 +175,12 @@ function countRelationalValueNodes(value: unknown): number {
   return count;
 }
 
-function countReplaceNodeStatements(value: unknown): number {
-  return 1 + Math.ceil(countRelationalValueNodes(value) / RELATIONAL_NODE_BATCH_SIZE);
+function countReplaceNodeStatements(
+  value: unknown,
+  skipDelete = false,
+): number {
+  return (skipDelete ? 0 : 1) +
+    Math.ceil(countRelationalValueNodes(value) / RELATIONAL_NODE_BATCH_SIZE);
 }
 
 function countCharacterTagStatements(value: unknown): number {
@@ -230,19 +234,21 @@ async function replaceNodes(
   ownerColumns: string[],
   ownerValues: unknown[],
   value: unknown,
+  skipDelete = false,
 ): Promise<void> {
   const rows = flattenRelationalValue(value);
   const ownerWhere = ownerColumns
     .map((column) => `${column} = ?`)
     .join(" AND ");
 
-  // Node IDs are dense preorder indices. Preserve the existing prefix and only
-  // remove rows which no longer exist after the value shrinks. This avoids
-  // turning a one-leaf edit into a full DELETE + INSERT rewrite of the tree.
-  await execute(`DELETE FROM ${table} WHERE ${ownerWhere} AND node_id >= ?`, [
-    ...ownerValues,
-    rows.length,
-  ]);
+  // Explicit replace-entities restore batches run after the parent rows were
+  // CASCADE-deleted, so there is no old node tail to trim in that path.
+  if (!skipDelete) {
+    await execute(`DELETE FROM ${table} WHERE ${ownerWhere} AND node_id >= ?`, [
+      ...ownerValues,
+      rows.length,
+    ]);
+  }
 
   const columns = [...ownerColumns, ...RELATIONAL_NODE_COLUMNS];
   const conflictColumns = [...ownerColumns, "node_id"];
@@ -349,6 +355,7 @@ export async function writeSqliteColdStorage(
 
 export function countSqliteCommitStatements(commit: SqlCommit): number {
   let total = commit.replaceAll ? 2 : 0;
+  const replacingEntities = commit.action === "replace-entities";
 
   for (const upsert of commit.root.upserts) {
     if (upsert.key === "botPresets" || upsert.key === "botPresetsId") {
@@ -381,7 +388,7 @@ export function countSqliteCommitStatements(commit: SqlCommit): number {
 
   for (const entry of commit.characters) {
     const data = entry.data as Record<string, unknown>;
-    total += 1 + countReplaceNodeStatements(data);
+    total += 1 + countReplaceNodeStatements(data, replacingEntities);
     total += countCharacterTagStatements(data.tags);
   }
   total += commit.characterTouches?.length ?? 0;
