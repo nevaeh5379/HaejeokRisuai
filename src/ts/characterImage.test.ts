@@ -51,6 +51,7 @@ vi.mock(import("./media/mimeType"), () => ({
 import {
   fullImageBlobCache,
   getAssetsBatch,
+  getCharImageBatchCacheKey,
   getCharImagesBatch,
   pinCharacterImageCache,
   preloadCharacterImage,
@@ -82,6 +83,25 @@ describe("getAssetsBatch", () => {
     expect(fullImageBlobCache.size).toBe(0);
     expect(result.get(locations[0])).toBe("/api/read");
     expect(result.get(directSource)).toBe(directSource);
+  });
+});
+
+describe("getCharImageBatchCacheKey", () => {
+  it("keeps native display sizes in separate cache entries", () => {
+    expect(
+      getCharImageBatchCacheKey("assets/card.png", {
+        size: "display",
+        width: 512,
+        height: 768,
+      }),
+    ).toBe("display_512x768_assets/card.png");
+    expect(
+      getCharImageBatchCacheKey("assets/card.png", {
+        size: "display",
+        width: 1024,
+        height: 1536,
+      }),
+    ).not.toBe("display_512x768_assets/card.png");
   });
 });
 

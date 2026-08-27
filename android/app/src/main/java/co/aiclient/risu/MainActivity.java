@@ -15,6 +15,9 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NativeChatPlugin.class);
         registerPlugin(NativeAppControlPlugin.class);
         super.onCreate(savedInstanceState);
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().setWebViewClient(new RisuWebViewClient(getBridge(), getApplicationContext()));
+        }
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {

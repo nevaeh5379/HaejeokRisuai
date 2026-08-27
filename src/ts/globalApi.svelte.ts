@@ -456,12 +456,27 @@ export async function getFileSrc(
         ? undefined
         : browserAssetUrls.get(cacheKey);
       if (cachedUrl) return cachedUrl;
-      if (
+      const isNativeImageAsset =
         isCapacitor &&
         nativeImage &&
-        (isThumb || isDisplay) &&
-        /\.(?:png|jpe?g|webp|avif|heic|heif|bmp)$/i.test(loc)
-      ) {
+        /\.(?:png|jpe?g|webp|avif|heic|heif|bmp)$/i.test(loc);
+      if (isNativeImageAsset && !isThumb && !isDisplay) {
+        // Character assets are content-addressed. Serve originals from an app-owned
+        // WebView route so we avoid one Capacitor bridge call per image and avoid
+        // WebViewLocalServer's .bin MIME sniffing + Cache-Control: no-cache path.
+        const encoded = Buffer.from(loc, "utf8")
+          .toString("base64")
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=+$/g, "");
+        const url = `/_risu_asset_/${encoded}`;
+        if (!options?.transient) {
+          browserAssetWeights.set(cacheKey, 1);
+          browserAssetUrls.set(cacheKey, url);
+        }
+        return url;
+      }
+      if (isNativeImageAsset && (isThumb || isDisplay)) {
         try {
           const nativeResult = await nativeImage.readThumbnail({
             key: loc,

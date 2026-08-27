@@ -19,9 +19,9 @@
     import { isCapacitor } from "src/ts/platform";
 
     const realmLoader = () => import('./Realm/RealmMain.svelte')
-    const cardImageOptions = isCapacitor
-        ? { size: 'display' as const, width: 512, height: 768 }
-        : { size: 'full' as const }
+    // Keep original-quality character art. Android uses a direct app-owned
+    // WebView asset route instead of runtime downsampling or JS blob copies.
+    const cardImageOptions = { size: 'full' as const }
 
     type SortMode = 'default' | 'name' | 'recent' | 'favorite'
 
@@ -67,7 +67,6 @@
     // Gate image requests to cards that are in/near the viewport.
     let nearViewportIds = $state(new Set<string>())
     let cardImageObserver: IntersectionObserver | null = null
-
     function updateNearViewport(chaId: string, isNear: boolean) {
         const next = new Set(nearViewportIds)
         const changed = isNear ? !next.has(chaId) : next.has(chaId)
@@ -89,7 +88,7 @@
                     const id = (entry.target as HTMLElement).dataset.lazyCharacterId
                     if (id) updateNearViewport(id, entry.isIntersecting)
                 }
-            }, { rootMargin: '320px 0px' })
+            }, { rootMargin: '256px 0px' })
         }
         cardImageObserver.observe(node)
         return {
@@ -200,7 +199,7 @@
         return () => observer?.disconnect()
     })
 
-    // Load card-sized images for rendered items on native mobile; desktop keeps originals.
+    // Android keeps original-quality assets but only resolves/decodes near-viewport cards.
     // Pin their cache entries so LRU cleanup cannot revoke a blob URL still used by the DOM.
     $effect(() => {
         const renderedItems = visibleCharacters
@@ -244,7 +243,8 @@
             const { char } = item
             if (!char.image || imageUrlCache.has(char.chaId)) continue
 
-            const cached = fullImageBlobCache.get(getCharImageBatchCacheKey(char.image, cardImageOptions))
+            const cacheKey = getCharImageBatchCacheKey(char.image, cardImageOptions)
+            const cached = fullImageBlobCache.get(cacheKey)
             if (cached) {
                 imageUrlCache.set(char.chaId, cached)
                 cacheUpdated = true
@@ -259,29 +259,9 @@
 
         for (const { char } of toLoad) inFlightIds.add(char.chaId)
 
-        // Native image generation resolves per card so the first completed thumbnail
-        // paints immediately instead of waiting for the whole visible batch. The
-        // NativeImage plugin's two-thread executor still provides the concurrency cap.
-        if (isCapacitor) {
-            for (const { char } of toLoad) {
-                void getCharImagesBatch([char.image], cardImageOptions).then((batchMap) => {
-                    inFlightIds.delete(char.chaId)
-                    const cacheKey = getCharImageBatchCacheKey(char.image, cardImageOptions)
-                    if (!pinnedImageKeys.has(cacheKey)) return
-                    imageUrlCache.set(char.chaId, batchMap.get(char.image) ?? null)
-                    if (isMounted) imageUrlCache = new Map(imageUrlCache)
-                }).catch((err) => {
-                    console.error('Failed to load character image', err)
-                    inFlightIds.delete(char.chaId)
-                    if (pinnedImageKeys.has(getCharImageBatchCacheKey(char.image, cardImageOptions))) {
-                        imageUrlCache.set(char.chaId, null)
-                        if (isMounted) imageUrlCache = new Map(imageUrlCache)
-                    }
-                })
-            }
-            return
-        }
-
+        // URL resolution is cheap on Android now: original assets use the app-owned
+        // WebView route and do not cross the Capacitor bridge. Resolve the near-viewport
+        // working set as one batch and let WebView schedule fetch/decode concurrently.
         const locs = toLoad.map(({ char }) => char.image)
         getCharImagesBatch(locs, cardImageOptions).then((batchMap) => {
             for (const { char } of toLoad) {
@@ -457,8 +437,9 @@
                           src={url}
                           alt={char.name}
                           class="w-full aspect-[3/4] object-cover object-top block transition-all duration-300 group-hover:scale-105 {isHidden(char) && settingsStore.state.blurHiddenCharacters ? 'blur-xl' : ''}"
-                          loading="lazy"
+                          loading={isCapacitor ? "eager" : "lazy"}
                           decoding="async"
+                          fetchpriority="auto"
                           draggable="false"
                         />
                       {:else}

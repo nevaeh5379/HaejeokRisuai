@@ -157,7 +157,7 @@ export function preloadCharacterImage(loc: string): Promise<void> {
     // become interactive and then monopolize image decoding on older
     // mobile CPUs. Low-spec mode uses the same bounded thumbnail as the
     // chat message avatar, so warm that resource instead.
-    const imageOptions = settingsStore.state.lowSpecMode || isCapacitor
+    const imageOptions = settingsStore.state.lowSpecMode
       ? { thumbnail: true }
       : undefined;
     const source = await getCharImage(loc, "plain", imageOptions);
@@ -207,7 +207,6 @@ export async function getCharImage(
   if (!imageLoad) {
     imageLoad = getFileSrc(loc, {
       ...options,
-      ...(isCapacitor && !options?.thumbnail ? { display: true } : {}),
       // Character images already live in persistent asset storage. Do not copy
       // multi-megabyte avatars into Service Worker CacheStorage again during
       // navigation; keep the decoded/object URL in the bounded memory cache.
@@ -407,10 +406,14 @@ export async function getCharImagesBatch(
     }
   }
 
-  // Keep Android decode/bridge work bounded. A long character grid otherwise
-  // starts one full image read and Canvas decode per visible item at once.
+  // Full-resolution Android assets now resolve to an app-owned WebView URL without
+  // native decode work or a per-image Capacitor bridge call. Only transformed
+  // thumbnail/display requests need bounded native workers.
   let fallbackCursor = 0;
-  const fallbackWorkerCount = isCapacitor
+  const usesNativeTransform =
+    isCapacitor &&
+    (options.thumbnail === true || options.size === "thumb" || options.size === "display");
+  const fallbackWorkerCount = usesNativeTransform
     ? Math.min(3, uncachedLocs.length)
     : uncachedLocs.length;
   await Promise.all(
