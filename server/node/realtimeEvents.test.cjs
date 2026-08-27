@@ -132,3 +132,32 @@ test('realtime hub requests resync when the replay window was lost', () => {
     assert.match(output, /"oldestRetainedId":2/);
     req.emit('close');
 });
+
+
+test('realtime hub snapshots active generation lifecycle state', () => {
+    const hub = createRealtimeEventHub({ heartbeatMs: 60_000 });
+    const started = hub.updateGenerationState({
+        chatId: 'chat-a',
+        lifecycleId: 'life-a',
+        state: 'started',
+    }, 'device-a');
+    assert.equal(started.chatId, 'chat-a');
+    assert.equal(hub.listActiveGenerations().length, 1);
+
+    const req = new EventEmitter();
+    req.headers = { 'x-risu-client-id': 'device-b' };
+    const res = new FakeResponse();
+    hub.connect(req, res);
+    const output = res.chunks.join('');
+    assert.match(output, /event: ready/);
+    assert.match(output, /"activeGenerations":\[/);
+    assert.match(output, /"lifecycleId":"life-a"/);
+
+    hub.updateGenerationState({
+        chatId: 'chat-a',
+        lifecycleId: 'life-a',
+        state: 'finished',
+    }, 'device-a');
+    assert.deepEqual(hub.listActiveGenerations(), []);
+    req.emit('close');
+});

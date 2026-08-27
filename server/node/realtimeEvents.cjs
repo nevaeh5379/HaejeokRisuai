@@ -45,9 +45,10 @@ function describeSqlCommitChange(payload) {
     };
 }
 
-function createRealtimeEventHub({ heartbeatMs = 15_000, historyLimit = 512 } = {}) {
+function createRealtimeEventHub({ heartbeatMs = 15_000, historyLimit = 512, generationMaxAgeMs = 60 * 60 * 1000 } = {}) {
     const clients = new Set();
     const history = [];
+    const activeGenerations = new Map();
     let sequence = 0;
 
     function writeEvent(res, record) {
@@ -76,6 +77,42 @@ function createRealtimeEventHub({ heartbeatMs = 15_000, historyLimit = 512 } = {
                 clients.delete(client);
             }
         }
+    }
+
+    function pruneGenerationStates() {
+        const cutoff = Date.now() - generationMaxAgeMs;
+        for (const [chatId, state] of activeGenerations) {
+            if ((state.updatedAt ?? 0) < cutoff) activeGenerations.delete(chatId);
+        }
+    }
+
+    function updateGenerationState(input, sourceClientId) {
+        const chatId = typeof input?.chatId === 'string' ? input.chatId.trim() : '';
+        const lifecycleId = typeof input?.lifecycleId === 'string' ? input.lifecycleId.trim() : '';
+        const state = input?.state;
+        if (!chatId || chatId.length > 256 || !lifecycleId || lifecycleId.length > 128 ||
+            !['started', 'finished', 'failed', 'aborted'].includes(state)) return null;
+        pruneGenerationStates();
+        const record = {
+            chatId,
+            lifecycleId,
+            state,
+            sourceClientId: normalizeClientId(sourceClientId),
+            error: state === 'failed' && typeof input?.error === 'string' ? input.error.slice(0, 8000) : undefined,
+            updatedAt: Date.now(),
+        };
+        if (state === 'started') {
+            activeGenerations.set(chatId, record);
+        } else if (activeGenerations.get(chatId)?.lifecycleId === lifecycleId) {
+            activeGenerations.delete(chatId);
+        }
+        broadcast('generation-state', record);
+        return record;
+    }
+
+    function listActiveGenerations() {
+        pruneGenerationStates();
+        return [...activeGenerations.values()];
     }
 
     function connect(req, res) {
@@ -112,7 +149,12 @@ function createRealtimeEventHub({ heartbeatMs = 15_000, historyLimit = 512 } = {
         clients.add(client);
         writeEvent(res, {
             event: 'ready',
-            data: { clientId: client.clientId, connectedAt: Date.now(), latestEventId: sequence },
+            data: {
+                clientId: client.clientId,
+                connectedAt: Date.now(),
+                latestEventId: sequence,
+                activeGenerations: listActiveGenerations(),
+            },
         });
 
         const heartbeat = setInterval(() => {
@@ -132,6 +174,8 @@ function createRealtimeEventHub({ heartbeatMs = 15_000, historyLimit = 512 } = {
     return {
         connect,
         broadcast,
+        updateGenerationState,
+        listActiveGenerations,
         clientCount: () => clients.size,
         latestEventId: () => sequence,
     };

@@ -1805,6 +1805,18 @@ app.get('/api/realtime/events', authenticatedRouteLimiter, requireNodeAuth, (req
     realtimeEventHub.connect(req, res);
 });
 
+app.post('/api/realtime/generation-state', authenticatedRouteLimiter, requireNodeAuth, (req, res) => {
+    const state = realtimeEventHub.updateGenerationState(
+        req.body,
+        req.headers['x-risu-client-id'],
+    );
+    if (!state) {
+        res.status(400).send({ error: 'Invalid generation state payload' });
+        return;
+    }
+    res.send({ success: true });
+});
+
 const reverseProxyFunc = async (req, res, next) => {
     if(!await checkProxyAuth(req, res)){
         return;

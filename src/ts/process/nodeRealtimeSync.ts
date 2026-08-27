@@ -1,3 +1,4 @@
+import { alertError } from "../alert";
 import { isNodeServer } from "../platform";
 import { getSqlStorage } from "../storage/sqlStorageFactory";
 import { NodePostgresStorage } from "../storage/nodePostgresStorage";
@@ -33,6 +34,18 @@ type ModelJobEvent = {
     chatId?: string;
     recoverable?: boolean;
   };
+};
+
+type GenerationStateEvent = {
+  chatId?: string;
+  lifecycleId?: string;
+  state?: "started" | "finished" | "failed" | "aborted";
+  sourceClientId?: string | null;
+  error?: string;
+};
+
+type ReadyEvent = {
+  activeGenerations?: GenerationStateEvent[];
 };
 
 let started = false;
@@ -122,8 +135,33 @@ async function applyModelJob(event: ModelJobEvent): Promise<void> {
     activeModelJobsByChat.delete(job.chatId);
   }
   if (event.sourceClientId === getNodeClientSessionId()) return;
-  setRemoteChatGeneration(job.chatId, event.phase === "created");
+  const source = `model-job:${job.id ?? job.chatId}`;
+  setRemoteChatGeneration(job.chatId, event.phase === "created", source);
   void recoverDurableModelJobs();
+}
+
+function applyGenerationState(event: GenerationStateEvent): void {
+  if (!event.chatId || !event.lifecycleId || !event.state) return;
+  if (event.sourceClientId === getNodeClientSessionId()) return;
+  setRemoteChatGeneration(
+    event.chatId,
+    event.state === "started",
+    `lifecycle:${event.lifecycleId}`,
+  );
+  if (
+    event.state === "failed" &&
+    event.error &&
+    !settingsStore.state.inlayErrorResponse &&
+    characterStore.currentChat?.id === event.chatId
+  ) {
+    alertError(event.error);
+  }
+}
+
+function applyReadyEvent(event: ReadyEvent): void {
+  for (const generation of event.activeGenerations ?? []) {
+    applyGenerationState({ ...generation, state: "started" });
+  }
 }
 
 async function findActiveModelJobId(chatId: string): Promise<string | null> {
@@ -163,7 +201,8 @@ export async function cancelNodeChatGeneration(chatId: string): Promise<boolean>
       if (activeModelJobsByChat.get(chatId) === jobId) {
         activeModelJobsByChat.delete(chatId);
       }
-      setRemoteChatGeneration(chatId, false);
+      const remoteSource = "model-job:" + jobId;
+      setRemoteChatGeneration(chatId, false, remoteSource);
       return true;
     }
     if (response.status !== 404 || attempt > 0) return false;
@@ -189,6 +228,10 @@ async function dispatchEvent(
     await applyDatabaseChange(storage, data as DatabaseChangeEvent);
   } else if (eventName === "model-job") {
     await applyModelJob(data as ModelJobEvent);
+  } else if (eventName === "generation-state") {
+    applyGenerationState(data as GenerationStateEvent);
+  } else if (eventName === "ready") {
+    applyReadyEvent(data as ReadyEvent);
   } else if (eventName === "resync-required") {
     scheduleFullResync();
   }

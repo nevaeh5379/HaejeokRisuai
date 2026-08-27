@@ -16,6 +16,11 @@ import {
   beginNativeChatRequest,
   endNativeChatRequest,
 } from "../androidChatLifecycle";
+import {
+  beginNodeGenerationLifecycle,
+  endNodeGenerationLifecycle,
+  reportNodeGenerationFailure,
+} from "./nodeGenerationLifecycle";
 
 export type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
@@ -60,6 +65,8 @@ export async function sendChat(
 
   const previousCompactionGuard = targetChat?.preventMessageCompaction;
   if (keepAlive && targetChat) targetChat.preventMessageCompaction = true;
+  const lifecycleId =
+    locked && targetChatId ? await beginNodeGenerationLifecycle(targetChatId) : null;
   if (keepAlive) await beginNativeChatRequest();
   const serializeForPresetChain =
     chatProcessIndex === -1 && Boolean(settingsStore.state.presetChain?.trim());
@@ -75,11 +82,21 @@ export async function sendChat(
         });
       },
     );
+  } catch (error) {
+    reportNodeGenerationFailure(targetChatId, error);
+    throw error;
   } finally {
     if (keepAlive && targetChat) {
       targetChat.preventMessageCompaction = previousCompactionGuard;
     }
     if (locked && targetChatId) endChatGeneration(targetChatId);
+    if (targetChatId) {
+      await endNodeGenerationLifecycle(
+        targetChatId,
+        lifecycleId,
+        arg.signal?.aborted === true,
+      );
+    }
     if (keepAlive) await endNativeChatRequest();
   }
 }

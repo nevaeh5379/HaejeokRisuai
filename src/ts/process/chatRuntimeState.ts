@@ -1,7 +1,7 @@
 import { writable } from "svelte/store";
 
 const localGenerationChats = new Set<string>();
-const remoteGenerationChats = new Set<string>();
+const remoteGenerationSources = new Map<string, Set<string>>();
 const processStages = new Map<string, number>();
 
 export const doingChat = writable(false);
@@ -11,7 +11,10 @@ export const chatProcessStages = writable<ReadonlyMap<string, number>>(new Map()
 export const activeGenerationChatIds = writable<ReadonlySet<string>>(new Set());
 
 function publishGenerationState() {
-  const active = new Set([...localGenerationChats, ...remoteGenerationChats]);
+  const active = new Set([
+    ...localGenerationChats,
+    ...remoteGenerationSources.keys(),
+  ]);
   activeGenerationChatIds.set(active);
   doingChat.set(active.size > 0);
 }
@@ -52,7 +55,7 @@ export function isLocalChatGenerationActive(
 export function isChatGenerationActive(chatId: string | undefined): boolean {
   return Boolean(
     chatId &&
-      (localGenerationChats.has(chatId) || remoteGenerationChats.has(chatId)),
+      (localGenerationChats.has(chatId) || remoteGenerationSources.has(chatId)),
   );
 }
 
@@ -69,9 +72,21 @@ export function endChatGeneration(chatId: string): void {
   publishGenerationState();
 }
 
-export function setRemoteChatGeneration(chatId: string, active: boolean): void {
-  if (!chatId) return;
-  if (active) remoteGenerationChats.add(chatId);
-  else remoteGenerationChats.delete(chatId);
+export function setRemoteChatGeneration(
+  chatId: string,
+  active: boolean,
+  source = "legacy",
+): void {
+  if (!chatId || !source) return;
+  if (active) {
+    const sources = remoteGenerationSources.get(chatId) ?? new Set<string>();
+    sources.add(source);
+    remoteGenerationSources.set(chatId, sources);
+  } else {
+    const sources = remoteGenerationSources.get(chatId);
+    if (!sources) return;
+    sources.delete(source);
+    if (sources.size === 0) remoteGenerationSources.delete(chatId);
+  }
   publishGenerationState();
 }

@@ -408,7 +408,9 @@ async function recoverActiveJob(job: DurableModelJobRecord): Promise<void> {
     console.warn("[ModelJobRecovery] active job reattach failed", job.id, error);
   } finally {
     attachedJobs.delete(job.id);
-    if (reachedTerminalState) setRemoteChatGeneration(job.chatId, false);
+    if (reachedTerminalState) {
+      setRemoteChatGeneration(job.chatId, false, "model-job:" + job.id);
+    }
   }
 }
 
@@ -420,7 +422,7 @@ async function runRecovery(): Promise<void> {
   ]);
   for (const job of unclaimed) {
     if (isDurableModelJobOwned(job.id)) continue;
-    setRemoteChatGeneration(job.chatId, false);
+    setRemoteChatGeneration(job.chatId, false, "model-job:" + job.id);
     try {
       await recoverTerminalJob(job);
     } catch (error) {
@@ -434,7 +436,7 @@ async function runRecovery(): Promise<void> {
     ) {
       continue;
     }
-    setRemoteChatGeneration(job.chatId, true);
+    setRemoteChatGeneration(job.chatId, true, "model-job:" + job.id);
     void recoverActiveJob(job);
   }
 }
