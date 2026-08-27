@@ -238,3 +238,99 @@ export function buildSqlReplaceCommit(
   }
   return commit;
 }
+
+/**
+ * Build only the root/settings portion of a replace-all commit. Capacitor uses
+ * this together with entity batches so a large legacy database is never
+ * duplicated into one giant SqlCommit object before native streaming starts.
+ */
+export function buildSqlReplaceRootCommit(
+  database: Database,
+  baseRevision: number,
+): SqlCommit {
+  return buildSqlReplaceCommit(
+    { ...database, characters: [] } as Database,
+    baseRevision,
+  );
+}
+
+export function* iterateSqlReplaceEntityCommits(
+  database: Database,
+  baseRevision: number,
+  messageBatchSize = 128,
+): Generator<SqlCommit> {
+  if (!Number.isSafeInteger(messageBatchSize) || messageBatchSize < 1) {
+    throw new Error("SQL restore message batch size must be a positive integer");
+  }
+  const characterIds: string[] = [];
+  for (let characterPosition = 0; characterPosition < (database.characters ?? []).length; characterPosition++) {
+    const currentCharacter = database.characters[characterPosition];
+    if (currentCharacter.detailsLoaded === false) {
+      throw new Error(
+        `Cannot replace SQL database from partially loaded character: ${currentCharacter.chaId || "unknown"}`,
+      );
+    }
+    currentCharacter.chaId ||= uuidv4();
+    characterIds.push(currentCharacter.chaId);
+
+    const chats = currentCharacter.chats ?? [];
+    for (const chat of chats) {
+      if (chat.messagesLoaded === false || chat.messagesFullyLoaded === false) {
+        throw new Error(
+          `Cannot replace SQL database from partially loaded chat: ${chat.id || "unknown"}`,
+        );
+      }
+      chat.id ||= uuidv4();
+    }
+
+    const characterCommit = createEmptySqlCommit(baseRevision, "replace-entities");
+    characterCommit.characters.push({
+      id: currentCharacter.chaId,
+      position: characterPosition,
+      data: sqlCharacterData(currentCharacter),
+    });
+    characterCommit.chatManifests.push({
+      characterId: currentCharacter.chaId,
+      ids: chats.map((chat) => chat.id!),
+    });
+    yield characterCommit;
+
+    for (let chatPosition = 0; chatPosition < chats.length; chatPosition++) {
+      const chat = chats[chatPosition];
+      const messages = chat.message ?? [];
+      for (const message of messages) message.chatId ||= uuidv4();
+
+      const chatCommit = createEmptySqlCommit(baseRevision, "replace-entities");
+      chatCommit.chats.push({
+        id: chat.id!,
+        characterId: currentCharacter.chaId,
+        position: chatPosition,
+        data: sqlChatData(chat),
+      });
+      chatCommit.messageManifests.push({
+        chatId: chat.id!,
+        ids: messages.map((message) => message.chatId!),
+      });
+      yield chatCommit;
+
+      for (let offset = 0; offset < messages.length; offset += messageBatchSize) {
+        const messageCommit = createEmptySqlCommit(baseRevision, "replace-entities");
+        const end = Math.min(messages.length, offset + messageBatchSize);
+        for (let messagePosition = offset; messagePosition < end; messagePosition++) {
+          const message = messages[messagePosition];
+          messageCommit.messages.push({
+            id: message.chatId!,
+            chatId: chat.id!,
+            position: messagePosition,
+            data: sqlMessageData(message),
+          });
+        }
+        yield messageCommit;
+      }
+    }
+  }
+
+  const orderCommit = createEmptySqlCommit(baseRevision, "replace-entities");
+  orderCommit.characterIds = characterIds;
+  yield orderCommit;
+}

@@ -1430,7 +1430,9 @@ async function restoreLocalBackupSource(
     throw new Error("Backup does not contain a database entry");
   }
 
-  let db = pendingDatabase;
+  const databaseByteLength = pendingDatabase.byteLength;
+  let db: Uint8Array | null = pendingDatabase;
+  pendingDatabase = null;
   if (encryptionMeta.type === "account" && encryptionMeta.time) {
     try {
       db = await decryptLegacyAccountBackup(
@@ -1453,6 +1455,17 @@ async function restoreLocalBackupSource(
     91,
   );
   const dbData = decodedDatabase ?? ((await decodeRisuSave(db)) as Database);
+  db = null;
+  console.info("[LocalBackupRestore] Decoded database summary", {
+    databaseBytes: databaseByteLength,
+    characters: Array.isArray(dbData.characters) ? dbData.characters.length : null,
+    personas: Array.isArray(dbData.personas) ? dbData.personas.length : null,
+    modules: Array.isArray(dbData.modules) ? dbData.modules.length : null,
+    botPresets: Array.isArray((dbData as Database & Partial<PortableDatabase>).botPresets)
+      ? (dbData as Database & Partial<PortableDatabase>).botPresets!.length
+      : null,
+    promptTemplate: Array.isArray(dbData.promptTemplate) ? dbData.promptTemplate.length : null,
+  });
   normalizeDatabaseDefaults(dbData);
   dbData.pluginCustomStorage ??= {};
   const missingColdStorageKeys: string[] = [];

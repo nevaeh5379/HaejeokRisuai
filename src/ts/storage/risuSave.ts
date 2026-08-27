@@ -360,14 +360,14 @@ export async function decodeRisuSave(data: Uint8Array) {
     const header = checkHeader(data);
     switch (header) {
       case "compressed":
-        data = data.slice(magicCompressedHeader.length);
+        data = data.subarray(magicCompressedHeader.length);
         return decode(fflate.decompressSync(data));
       case "raw":
-        data = data.slice(magicHeader.length);
+        data = data.subarray(magicHeader.length);
         return unpackr.decode(data);
       case "stream": {
         await checkCompressionStreams();
-        data = data.slice(magicStreamCompressedHeader.length);
+        data = data.subarray(magicStreamCompressedHeader.length);
         const cs = new DecompressionStream("gzip");
         const writer = cs.writable.getWriter();
         writer.write(data as any);

@@ -1,0 +1,60 @@
+import { describe, expect, it } from "vitest";
+import type { Database } from "./schema";
+import {
+  buildSqlReplaceRootCommit,
+  iterateSqlReplaceEntityCommits,
+} from "./sqlCommit";
+
+describe("batched SQL database replacement", () => {
+  it("keeps large message lists out of the root commit", () => {
+    const messages = Array.from({ length: 300 }, (_, index) => ({
+      chatId: `message-${index}`,
+      role: index % 2 === 0 ? "user" : "char",
+      data: `message body ${index}`,
+    }));
+    const database = {
+      characters: [{
+        chaId: "character-1",
+        name: "Bot",
+        image: "assets/bot.png",
+        chats: [{
+          id: "chat-1",
+          name: "Chat",
+          note: "",
+          localLore: [],
+          message: messages,
+        }],
+      }],
+      personas: [
+        { name: "Persona A", icon: "assets/persona.png", personaPrompt: "Hi" },
+        { name: "Persona B", icon: "", personaPrompt: "Yo" },
+      ],
+      modules: [{ id: "module-1", name: "Module" }],
+      enabledModules: ["module-1"],
+      botPresets: [{ name: "Preset", mainPrompt: "Main" }],
+      botPresetsId: 0,
+      pluginCustomStorage: {},
+    } as unknown as Database;
+
+    const root = buildSqlReplaceRootCommit(database, 7);
+    const batches = [...iterateSqlReplaceEntityCommits(database, 7, 128)];
+
+    expect(root.replaceAll).toBe(true);
+    expect(root.characters).toHaveLength(0);
+    expect(root.root.upserts.some((entry) => entry.key === "personas")).toBe(true);
+    expect(root.root.upserts.some((entry) => entry.key === "modules")).toBe(true);
+    expect(root.presets?.upserts).toHaveLength(1);
+
+    expect(batches.flatMap((batch) => batch.characters)).toHaveLength(1);
+    expect(batches.flatMap((batch) => batch.chats)).toHaveLength(1);
+    const messageBatches = batches.filter((batch) => batch.messages.length > 0);
+    expect(messageBatches.map((batch) => batch.messages.length)).toEqual([128, 128, 44]);
+    expect(messageBatches.flatMap((batch) => batch.messages)).toHaveLength(300);
+
+    const manifest = batches.flatMap((batch) => batch.messageManifests)[0];
+    expect(manifest.ids).toHaveLength(300);
+    expect(manifest.ids[0]).toBe("message-0");
+    expect(manifest.ids[299]).toBe("message-299");
+    expect(batches.at(-1)?.characterIds).toEqual(["character-1"]);
+  });
+});

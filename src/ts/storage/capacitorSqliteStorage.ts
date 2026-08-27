@@ -8,7 +8,8 @@ import {
 } from "@capacitor-community/sqlite";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
 import {
-  buildSqlReplaceCommit,
+  buildSqlReplaceRootCommit,
+  iterateSqlReplaceEntityCommits,
   SqlRevisionConflictError,
   type SqlCommit,
   type SqlCommitResult,
@@ -162,7 +163,7 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
   ): Promise<boolean> {
     onProgress?.("Building SQL restore plan...", 0.01);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    const commit = buildSqlReplaceCommit(database, this.revision);
+    const rootCommit = buildSqlReplaceRootCommit(database, this.revision);
     await this.writeQueue.run(async () => {
       if (!this._enabled || !this.isStorageReady()) {
         throw new Error("SQLite storage is not enabled");
@@ -171,22 +172,26 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
         "SELECT revision FROM system_storage_meta WHERE singleton = 1",
       );
       const currentRevision = Number(meta?.revision) || 0;
-      if (commit.baseRevision !== currentRevision) {
+      if (rootCommit.baseRevision !== currentRevision) {
         throw new SqlRevisionConflictError(currentRevision);
       }
-      await this.validatePresetCommit(commit);
+      await this.validatePresetCommit(rootCommit);
       onProgress?.("Counting SQL operations...", 0.025);
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      const totalStatements =
-        countSqliteCommitStatements(commit) +
-        (commit.replaceAll ? 3 : 0) +
+      let totalStatements =
+        countSqliteCommitStatements(rootCommit) +
+        (rootCommit.replaceAll ? 3 : 0) +
         2;
+      for (const batch of iterateSqlReplaceEntityCommits(database, currentRevision)) {
+        totalStatements += countSqliteCommitStatements(batch);
+      }
       onProgress?.(
         `SQL restore plan ready (${totalStatements} statements)`,
         0.05,
       );
       await this.replaceDatabaseWithRestoreStream(
-        commit,
+        database,
+        rootCommit,
         currentRevision,
         totalStatements,
         onProgress,
@@ -197,14 +202,15 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
   }
 
   private async replaceDatabaseWithRestoreStream(
-    commit: SqlCommit,
+    database: DatabaseType,
+    rootCommit: SqlCommit,
     currentRevision: number,
     totalStatements: number,
     onProgress?: (status: string, progress?: number) => void,
   ) {
     const stream = this.createRestoreStream();
     const revision = currentRevision + 1;
-    const action = commit.action || "replace-all";
+    const action = rootCommit.action || "replace-all";
     const total = Math.max(1, totalStatements);
     let written = 0;
     let writingFraction = 0;
@@ -252,12 +258,15 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
       report("applying", completed >= total);
     });
     try {
-      if (commit.replaceAll) {
+      if (rootCommit.replaceAll) {
         await write("DELETE FROM system_settings");
         await write("DELETE FROM plugin_custom_storage");
         await write("DELETE FROM characters");
       }
-      await applySqliteCommit(commit, write);
+      await applySqliteCommit(rootCommit, write);
+      for (const batch of iterateSqlReplaceEntityCommits(database, currentRevision)) {
+        await applySqliteCommit(batch, write);
+      }
       await write(
         "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
         [revision],
