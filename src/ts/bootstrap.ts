@@ -394,7 +394,7 @@ async function registerSw() {
 function updateErrorHandling() {
   const errorHandler = (event: ErrorEvent) => {
     console.error(event.error);
-    if (!(event.error.target instanceof Worker)) {
+    if (event.error && !(event.error.target instanceof Worker)) {
       alertError(event.error);
     }
   };
