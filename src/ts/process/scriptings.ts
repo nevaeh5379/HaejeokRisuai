@@ -372,13 +372,8 @@ export async function runScripted(
       });
 
       declareAPI("cbs", (value) => {
-        const scriptingChar = ScriptingEngineState.char;
-        const parserChar =
-          scriptingChar && scriptingChar.type !== "simple"
-            ? scriptingChar
-            : getCurrentCharacter();
         return risuChatParser(value, {
-          chara: parserChar,
+          chara: getScriptingCharacter(),
           chatTarget: ScriptingEngineState.chatTarget,
           triggerId: ScriptingEngineState.triggerId,
         });

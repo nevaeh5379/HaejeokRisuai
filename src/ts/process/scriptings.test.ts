@@ -22,8 +22,10 @@ vi.mock("../parser/chatVar.svelte", () => ({
 vi.mock("../parser/parser.svelte", () => ({
   hasher: vi.fn(),
   risuChatParser: vi.fn(
-    (value: string, options?: { triggerId?: string }) =>
-      value.replaceAll("{{trigger_id}}", options?.triggerId ?? "null"),
+    (value: string, options?: { triggerId?: string; chara?: { name?: string } }) =>
+      value
+        .replaceAll("{{trigger_id}}", options?.triggerId ?? "null")
+        .replaceAll("{{char}}", options?.chara?.name ?? "fallback"),
   ),
 }));
 
@@ -48,14 +50,26 @@ vi.mock("../util", () => ({
 }));
 
 vi.mock("../storage/database.svelte", () => ({
-  getCurrentCharacter: vi.fn(() => ({})),
+  getCurrentCharacter: vi.fn(() => ({
+    type: "character",
+    name: "Wrong Current",
+  })),
   getCurrentChat: vi.fn(() => currentChatState.value),
   getDatabase: vi.fn(() => databaseState.value),
   setDatabase: vi.fn(),
 }));
 
 vi.mock("../stores/domain/characterStore.svelte", () => ({
-  characterStore: { characters: [{ name: "", chats: [{ message: [] }] }] },
+  characterStore: {
+    characters: [
+      {
+        type: "character",
+        chaId: "target-room",
+        name: "Target Room",
+        chats: [{ message: [] }],
+      },
+    ],
+  },
 }));
 
 vi.mock("../stores/domain/messageStore.svelte", () => ({
@@ -194,6 +208,20 @@ test("reuses Lua CBS with the trigger id from each invocation", async () => {
 
   expect(first.res).toBe("trigger-a");
   expect(second.res).toBe("trigger-b");
+});
+
+test("keeps Lua CBS on the generation target for simple snapshots", async () => {
+  const result = await runScripted(
+    'function onStart(id) return cbs("{{char}}") end',
+    {
+      char: { type: "simple", name: "Snapshot" } as never,
+      chat: { message: [] } as never,
+      chatTarget: { characterIndex: 0, chatIndex: 0 },
+      mode: "start",
+    },
+  );
+
+  expect(result.res).toBe("Target Room");
 });
 
 test("persists a user message added by Lua", async () => {
