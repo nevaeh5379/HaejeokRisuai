@@ -55,6 +55,7 @@ describe("messageStore", () => {
   let mockStorage: MockSqlStorage;
 
   beforeEach(() => {
+    messageStore.resetPersistenceForTesting();
     mockStorage = new MockSqlStorage();
     setSqlStorageForTesting(mockStorage as unknown as ISqlStorage);
 
@@ -363,5 +364,29 @@ describe("messageStore", () => {
     expect(mockStorage.commits[1].messageManifests).toEqual([
       { chatId: "chat-copy", ids: ["copy-msg-1", "copy-msg-2"] },
     ]);
+  });
+
+  it("retains a message commit after a transient storage failure", async () => {
+    const originalCommit = mockStorage.commit.bind(mockStorage);
+    vi.spyOn(mockStorage, "commit")
+      .mockRejectedValueOnce(new Error("database locked"))
+      .mockImplementation(originalCommit);
+    const message = {
+      chatId: "msg-retry",
+      role: "char" as const,
+      data: "must survive",
+    };
+
+    await messageStore.appendMessage("chat-1", message);
+    expect(mockStorage.commits).toHaveLength(0);
+    expect(messageStore.hasPendingWrites()).toBe(true);
+    await messageStore.flush();
+
+    expect(mockStorage.commits).toHaveLength(1);
+    expect(mockStorage.commits[0].messages[0]).toMatchObject({
+      id: "msg-retry",
+      data: { role: "char", data: "must survive" },
+    });
+    expect(messageStore.hasPendingWrites()).toBe(false);
   });
 });

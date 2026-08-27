@@ -227,4 +227,48 @@ describe("SQL row commits", () => {
       "moduleIntergration",
     );
   });
+
+  it.each([
+    ["character details", { detailsLoaded: false, chats: [] }],
+    [
+      "chat messages",
+      {
+        chats: [
+          {
+            id: "chat-partial",
+            message: [],
+            messagesLoaded: false,
+          },
+        ],
+      },
+    ],
+    [
+      "paged chat history",
+      {
+        chats: [
+          {
+            id: "chat-paged",
+            message: [{ chatId: "newest", role: "char", data: "tail" }],
+            messagesLoaded: true,
+            messagesFullyLoaded: false,
+          },
+        ],
+      },
+    ],
+  ])("rejects replace-all from partially loaded %s", (_label, partial) => {
+    const database = {
+      characters: [
+        {
+          chaId: "character-partial",
+          type: "character",
+          name: "Partial",
+          ...partial,
+        },
+      ],
+    } as unknown as Database;
+
+    expect(() => buildSqlReplaceCommit(database, 0)).toThrow(
+      /partially loaded/,
+    );
+  });
 });

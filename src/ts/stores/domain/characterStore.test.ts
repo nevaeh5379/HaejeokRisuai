@@ -53,6 +53,31 @@ describe("CharacterStore", () => {
     } as unknown as ISqlStorage;
   });
 
+  it("requeues the newest character state after a failed commit", async () => {
+    vi.mocked(mockStorage.commit)
+      .mockRejectedValueOnce(new Error("database locked"))
+      .mockImplementation(async (commit: SqlCommit) => {
+        committed.push(structuredClone(commit));
+        return { revision: committed.length };
+      });
+    const char = makeChar("retry");
+    characterStore.init([char], mockStorage);
+    characterStore.characters[0].name = "first edit";
+    characterStore.markCharacterDirty(char.chaId!);
+    await characterStore.flush();
+    expect(characterStore.hasPendingWrites()).toBe(true);
+
+    characterStore.characters[0].name = "newest edit";
+    characterStore.markCharacterDirty(char.chaId!);
+    await characterStore.flush();
+
+    expect(committed).toHaveLength(1);
+    expect(committed[0].characters[0].data).toMatchObject({
+      name: "newest edit",
+    });
+    expect(characterStore.hasPendingWrites()).toBe(false);
+  });
+
   it("prefers the interactive character loader when the backend provides one", async () => {
     const shallow = makeChar("selection-loader", 0);
     shallow.detailsLoaded = false;

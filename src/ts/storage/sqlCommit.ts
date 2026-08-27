@@ -114,6 +114,25 @@ export function buildSqlReplaceCommit(
   database: Database,
   baseRevision: number,
 ): SqlCommit {
+  const partialCharacter = (database.characters ?? []).find(
+    (value) => value.detailsLoaded === false,
+  );
+  if (partialCharacter) {
+    throw new Error(
+      `Cannot replace SQL database from partially loaded character: ${partialCharacter.chaId || "unknown"}`,
+    );
+  }
+  for (const currentCharacter of database.characters ?? []) {
+    const partialChat = (currentCharacter.chats ?? []).find(
+      (value) =>
+        value.messagesLoaded === false || value.messagesFullyLoaded === false,
+    );
+    if (partialChat) {
+      throw new Error(
+        `Cannot replace SQL database from partially loaded chat: ${partialChat.id || "unknown"}`,
+      );
+    }
+  }
   const commit = createEmptySqlCommit(baseRevision, "replace-all");
   commit.replaceAll = true;
   commit.characterIds = [];
@@ -204,7 +223,6 @@ export function buildSqlReplaceCommit(
         position: chatPosition,
         data: sqlChatData(chat),
       });
-      if (chat.messagesLoaded === false) continue;
       const messages = chat.message ?? [];
       for (const message of messages) message.chatId ||= uuidv4();
       commit.messageManifests.push({

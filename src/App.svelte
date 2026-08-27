@@ -1,6 +1,6 @@
 <script lang="ts">
     import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, saving, AccountWarning, selectedCharID, PlaygroundStore } from './ts/stores.svelte';
-    import { settingsStore, moduleStore } from './ts/stores/domain';
+    import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
     import { isCapacitor, isNodeServer } from './ts/platform';
     import { registerPlugin } from '@capacitor/core';
@@ -65,10 +65,20 @@
                     import('./lang'),
                 ])
                 if (await alertConfirm(language.exitAppConfirm)) {
-                    await Promise.allSettled([
+                    const flushResults = await Promise.allSettled([
                         settingsStore.flush(),
-                        import('./ts/stores/domain/characterStore.svelte').then(({ characterStore }) => characterStore.flush()),
+                        characterStore.flush(),
+                        messageStore.flush(),
                     ])
+                    if (
+                        flushResults.some((result) => result.status === 'rejected') ||
+                        settingsStore.hasPendingWrites() ||
+                        characterStore.hasPendingWrites() ||
+                        messageStore.hasPendingWrites()
+                    ) {
+                        console.error('[App] Exit cancelled because data is still waiting to be saved')
+                        return
+                    }
                     await nativeAppControl.exitApp()
                 }
             } finally {
