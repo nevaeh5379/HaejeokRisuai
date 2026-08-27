@@ -14,19 +14,31 @@ import { reportNodeGenerationFailure } from "./nodeGenerationLifecycle";
 export interface ChatErrorContext {
   selectedChar: number;
   selectedChat: number;
+  targetChatId?: string;
   currentChar?: character;
   generationInfo?: MessageGenerationInfo;
 }
 
-function resolveErrorMessages(context: ChatErrorContext) {
+function resolveErrorChat(context: ChatErrorContext) {
+  if (context.targetChatId) {
+    for (const character of characterStore.characters ?? []) {
+      const target = character?.chats?.find(
+        (chat) => chat?.id === context.targetChatId,
+      );
+      if (target) return target;
+    }
+  }
   const selectedChar =
     context.selectedChar >= 0 ? context.selectedChar : get(selectedCharID);
   const charRoom = characterStore.characters?.[selectedChar];
   if (!charRoom) return null;
-
   const selectedChat =
     context.selectedChat >= 0 ? context.selectedChat : charRoom.chatPage;
-  const chatRoom = charRoom.chats?.[selectedChat];
+  return charRoom.chats?.[selectedChat] ?? null;
+}
+
+function resolveErrorMessages(context: ChatErrorContext) {
+  const chatRoom = resolveErrorChat(context);
   if (!chatRoom || !Array.isArray(chatRoom.message)) return null;
   return chatRoom.message;
 }
@@ -62,13 +74,7 @@ function handleChatError(context: ChatErrorContext, error: string) {
       alertError(error);
       return;
     }
-    const selectedChar =
-      context.selectedChar >= 0 ? context.selectedChar : get(selectedCharID);
-    const charRoom = characterStore.characters?.[selectedChar];
-    const selectedChat =
-      context.selectedChat >= 0 ? context.selectedChat : charRoom?.chatPage;
-    const chatId =
-      selectedChat != null ? charRoom?.chats?.[selectedChat]?.id : undefined;
+    const chatId = resolveErrorChat(context)?.id;
     const message = appendInlayError(messages, error, context);
     if (chatId) void messageStore.appendMessage(chatId, message);
   } catch (caught) {
@@ -79,14 +85,7 @@ function handleChatError(context: ChatErrorContext, error: string) {
 
 export function createChatErrorHandler(context: ChatErrorContext) {
   return (error: string) => {
-    const selectedChar =
-      context.selectedChar >= 0 ? context.selectedChar : get(selectedCharID);
-    const charRoom = characterStore.characters?.[selectedChar];
-    const selectedChat =
-      context.selectedChat >= 0 ? context.selectedChat : charRoom?.chatPage;
-    const chatId =
-      selectedChat != null ? charRoom?.chats?.[selectedChat]?.id : undefined;
-    reportNodeGenerationFailure(chatId, error);
+    reportNodeGenerationFailure(resolveErrorChat(context)?.id, error);
     handleChatError(context, error);
   };
 }

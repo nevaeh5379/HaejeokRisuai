@@ -58,6 +58,7 @@ export class LocalChatExecutor implements ChatExecutor {
     const errorContext: ChatErrorContext = {
       selectedChar: -1,
       selectedChat: -1,
+      targetChatId: arg.targetChatId,
     };
     const throwError = createChatErrorHandler(errorContext);
     const stageTimings = createStageTimings();
