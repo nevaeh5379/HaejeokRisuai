@@ -529,7 +529,7 @@ export class WebSqliteStorage implements ISqlStorage {
     if (!isInit)
       return { status: "empty", revision: this.revision, database: null };
     if (shallow) {
-      (db as DatabaseType & { isSql?: boolean }).isSql = true;
+      (db as Database & { isSql?: boolean }).isSql = true;
     }
     return { status: "ready", revision: this.revision, database: db };
   }

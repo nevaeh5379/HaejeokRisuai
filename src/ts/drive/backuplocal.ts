@@ -176,6 +176,15 @@ const nativeBackup = isCapacitor
   ? registerPlugin<NativeBackupPlugin>("NativeBackup")
   : undefined;
 
+export async function ensureTauriBackupAssetsDirectory(
+  mkdirFn: typeof mkdir = mkdir,
+) {
+  await mkdirFn("assets", {
+    baseDir: BaseDirectory.AppData,
+    recursive: true,
+  });
+}
+
 export function normalizeLocalBackupAssetPath(name: string) {
   const normalizedName = name.replace(/\\/g, "/");
   const segments = normalizedName.split("/");
@@ -599,9 +608,10 @@ async function writeLocalBackupAssets(
   if (isTauri) {
     alertProgress(`${label} (Scanning assets)`, 0);
     await sleep(10);
-    let assets = (await readDir("assets", { baseDir: BaseDirectory.AppData })).filter(
-      (asset) => asset.isFile && Boolean(asset.name),
-    );
+    await ensureTauriBackupAssetsDirectory();
+    let assets = (
+      await readDir("assets", { baseDir: BaseDirectory.AppData })
+    ).filter((asset) => asset.isFile && Boolean(asset.name));
     if (options.assetScope === "essential") {
       assets = assets.filter((asset) =>
         isEssentialBackupAsset(assetMap, asset.name ?? ""),

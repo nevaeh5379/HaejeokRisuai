@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { BaseDirectory, mkdir } from "@tauri-apps/plugin-fs";
+import { describe, expect, it, vi } from "vitest";
 import type { Database } from "../storage/database.svelte";
 import {
   createNativeImportSource,
+  ensureTauriBackupAssetsDirectory,
   normalizeLocalBackupAssetPath,
 } from "./backuplocal";
 
@@ -85,6 +87,19 @@ describe("normalizeLocalBackupAssetPath", () => {
       );
     },
   );
+});
+
+describe("ensureTauriBackupAssetsDirectory", () => {
+  it("creates an empty AppData assets directory before backup scanning", async () => {
+    const mkdirFn = vi.fn(async () => {});
+
+    await ensureTauriBackupAssetsDirectory(mkdirFn as typeof mkdir);
+
+    expect(mkdirFn).toHaveBeenCalledWith("assets", {
+      baseDir: BaseDirectory.AppData,
+      recursive: true,
+    });
+  });
 });
 
 describe("backup database defaults", () => {
