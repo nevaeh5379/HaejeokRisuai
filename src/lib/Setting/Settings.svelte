@@ -136,10 +136,7 @@
                 onclick={() => { $SettingsMenuIndex = 1; desktopBotTarget = { submenu: 0, modelTab: 'main' }; }}
             >
                 <BotIcon size={13} />
-                <span class="flex min-w-0 flex-col">
-                    <span class="truncate">{language.mainModelCardTitle || language.model}</span>
-                    <span class="truncate text-[10px] font-normal opacity-70">{language.mainModelCardDesc}</span>
-                </span>
+                <span class="truncate">{language.mainModelCardTitle || language.model}</span>
             </button>
             <button
                 class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left {$SettingsMenuIndex === 1 && desktopBotTarget.submenu === 0 && desktopBotTarget.modelTab === 'sub' ? 'bg-darkbutton text-textcolor font-bold shadow-xs' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton/40'}"
@@ -154,10 +151,7 @@
                 onclick={() => { $SettingsMenuIndex = 1; desktopBotTarget = { submenu: 0, modelTab: 'provider' }; }}
             >
                 <KeyIcon size={13} />
-                <span class="flex min-w-0 flex-col">
-                    <span class="truncate">{language.providerSettings || "API & Providers"}</span>
-                    <span class="truncate text-[10px] font-normal opacity-70">{language.providerCredentialsDesc}</span>
-                </span>
+                <span class="truncate">{language.providerSettings || "API & Providers"}</span>
             </button>
             <button
                 class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left {$SettingsMenuIndex === 1 && desktopBotTarget.submenu === 1 ? 'bg-darkbutton text-textcolor font-bold shadow-xs' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton/40'}"
