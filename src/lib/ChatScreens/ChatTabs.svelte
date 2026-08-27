@@ -1,5 +1,6 @@
 <script lang="ts">
     import { PlusIcon, XIcon } from '@lucide/svelte';
+    import { onDestroy } from 'svelte';
     import { MobileGUI, selectedCharID } from 'src/ts/stores.svelte';
     import { characterStore } from 'src/ts/stores/domain/characterStore.svelte';
     import { activeGenerationChatIds } from 'src/ts/process/chatRuntimeState';
@@ -22,6 +23,27 @@
         selectedCharacter?.chats?.[selectedCharacter.chatPage ?? 0],
     );
     let contextMenu = $state<{ tabId: string; x: number; y: number } | null>(null);
+    let drag: {
+        tabId: string;
+        sourceGroupId: string;
+        pointerId: number;
+        pointerType: string;
+        startX: number;
+        startY: number;
+        x: number;
+        y: number;
+        source: HTMLElement;
+        active: boolean;
+        targetGroupId?: string;
+        targetIndex?: number;
+        ghost?: HTMLElement;
+        marker?: HTMLElement;
+        holdTimer?: ReturnType<typeof setTimeout>;
+        previousUserSelect?: string;
+    } | null = null;
+    let suppressClickTabId: string | null = null;
+
+    onDestroy(clearTabDrag);
 
     $effect(() => {
         if (chatTabsStore.focusedGroupId !== groupId) return;
@@ -55,8 +77,8 @@
     }
 
     function openContextMenu(event: MouseEvent, tab: ChatTab) {
-        if ($MobileGUI) return;
         event.preventDefault();
+        if ($MobileGUI) return;
         event.stopPropagation();
         contextMenu = {
             tabId: tab.id,
@@ -78,6 +100,126 @@
         if (tab) await navigateToChatTab(tab.id);
     }
 
+    function selectTab(event: MouseEvent, tabId: string) {
+        if (suppressClickTabId === tabId) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+        void navigateToChatTab(tabId);
+    }
+
+    function startTabDrag(event: PointerEvent, tab: ChatTab) {
+        if (event.button !== 0 || (event.target as HTMLElement).closest('[data-tab-close]')) return;
+        clearTabDrag();
+        drag = {
+            tabId: tab.id,
+            sourceGroupId: tab.groupId,
+            pointerId: event.pointerId,
+            pointerType: event.pointerType,
+            startX: event.clientX,
+            startY: event.clientY,
+            x: event.clientX,
+            y: event.clientY,
+            source: event.currentTarget as HTMLElement,
+            active: false,
+        };
+        if (event.pointerType !== 'mouse') {
+            drag.holdTimer = setTimeout(() => activateTabDrag(), 180);
+        }
+    }
+
+    function activateTabDrag() {
+        if (!drag || drag.active) return;
+        drag.active = true;
+        contextMenu = null;
+        drag.source.classList.add('chat-tab-chosen');
+        try {
+            drag.source.setPointerCapture?.(drag.pointerId);
+        } catch {
+            // The pointer may have been cancelled between the hold timer and activation.
+        }
+        const rect = drag.source.getBoundingClientRect();
+        const ghost = drag.source.cloneNode(true) as HTMLElement;
+        ghost.removeAttribute('id');
+        ghost.classList.add('chat-tab-dragging');
+        ghost.style.position = 'fixed';
+        ghost.style.left = '0';
+        ghost.style.top = '0';
+        ghost.style.width = `${rect.width}px`;
+        ghost.style.height = `${rect.height}px`;
+        ghost.style.pointerEvents = 'none';
+        ghost.style.zIndex = '200';
+        ghost.style.opacity = '0.9';
+        document.body.appendChild(ghost);
+        drag.previousUserSelect = document.body.style.userSelect;
+        document.body.style.userSelect = 'none';
+        drag.ghost = ghost;
+        updateTabDropTarget();
+    }
+
+    function moveTabDrag(event: PointerEvent) {
+        if (!drag || event.pointerId !== drag.pointerId) return;
+        drag.x = event.clientX;
+        drag.y = event.clientY;
+        const distance = Math.hypot(drag.x - drag.startX, drag.y - drag.startY);
+        if (!drag.active) {
+            if (drag.pointerType !== 'mouse') {
+                if (distance > 8) clearTabDrag();
+                return;
+            }
+            if (distance < 5) return;
+            activateTabDrag();
+        }
+        event.preventDefault();
+        updateTabDropTarget();
+    }
+
+    function updateTabDropTarget() {
+        if (!drag?.active) return;
+        drag.ghost?.style.setProperty('transform', `translate(${drag.x + 12}px, ${drag.y + 12}px)`);
+        drag.marker?.classList.remove('chat-tab-drop-before');
+        drag.marker = undefined;
+        drag.targetGroupId = undefined;
+        drag.targetIndex = undefined;
+
+        const pointed = document.elementFromPoint(drag.x, drag.y) as HTMLElement | null;
+        const list = pointed?.closest<HTMLElement>('[data-chat-tab-list]');
+        const targetGroupId = list?.dataset.groupId;
+        if (!list || !targetGroupId) return;
+        const tabs = Array.from(list.querySelectorAll<HTMLElement>('[data-chat-tab-id]'))
+            .filter((item) => item.dataset.chatTabId !== drag!.tabId);
+        let targetIndex = tabs.findIndex((item) => drag!.x < item.getBoundingClientRect().left + item.offsetWidth / 2);
+        if (targetIndex < 0) targetIndex = tabs.length;
+        const marker = tabs[targetIndex] ?? list.querySelector<HTMLElement>('[data-tab-add]');
+        marker?.classList.add('chat-tab-drop-before');
+        drag.marker = marker ?? undefined;
+        drag.targetGroupId = targetGroupId;
+        drag.targetIndex = targetIndex;
+    }
+
+    async function stopTabDrag(event: PointerEvent) {
+        if (!drag || event.pointerId !== drag.pointerId) return;
+        const completed = drag.active;
+        const { tabId, sourceGroupId, targetGroupId, targetIndex } = drag;
+        if (completed) suppressClickTabId = tabId;
+        clearTabDrag();
+        if (completed) setTimeout(() => { suppressClickTabId = null; }, 0);
+        if (!completed || !targetGroupId || targetIndex === undefined) return;
+        const moved = chatTabsStore.moveTab(tabId, targetGroupId, targetIndex);
+        if (moved && sourceGroupId !== targetGroupId) await navigateToChatTab(moved.id);
+    }
+
+    function clearTabDrag() {
+        if (!drag) return;
+        if (drag.holdTimer) clearTimeout(drag.holdTimer);
+        drag.marker?.classList.remove('chat-tab-drop-before');
+        drag.source.classList.remove('chat-tab-chosen');
+        drag.ghost?.remove();
+        document.body.style.userSelect = drag.previousUserSelect ?? '';
+        drag = null;
+    }
+
     function closeOthers(tabId: string) {
         chatTabsStore.closeOthers(tabId);
         contextMenu = null;
@@ -89,9 +231,16 @@
     }
 </script>
 
-<svelte:window onclick={() => { contextMenu = null }} />
+<svelte:window
+    onclick={() => { contextMenu = null }}
+    onpointermove={moveTabDrag}
+    onpointerup={stopTabDrag}
+    onpointercancel={clearTabDrag}
+/>
 
 <div
+    data-chat-tab-list
+    data-group-id={groupId}
     class="shrink-0 h-10 flex items-end gap-1 pr-2 pt-1 overflow-x-auto bg-darkbg/70 border-b border-darkborderc backdrop-blur-sm"
     class:pl-14={!$MobileGUI && reserveSidebarSpace}
     class:pl-2={$MobileGUI || !reserveSidebarSpace}
@@ -103,13 +252,15 @@
         {@const active = chatTabsStore.getGroup(groupId)?.activeTabId === tab.id}
         {@const generating = $activeGenerationChatIds.has(tab.chatId)}
         <button
-            class="group h-9 min-w-32 max-w-56 px-2 rounded-t-md flex items-center gap-2 border border-b-0 border-darkborderc transition-colors"
+            data-chat-tab-id={tab.id}
+            class="group h-9 min-w-32 max-w-56 px-2 rounded-t-md flex items-center gap-2 border border-b-0 border-darkborderc transition-colors cursor-grab active:cursor-grabbing select-none"
             class:bg-selected={active}
             class:bg-bgcolor={!active}
             class:text-textcolor={active}
             class:text-textcolor2={!active}
             title={`${label.characterName} · ${label.chatName}`}
-            onclick={() => void navigateToChatTab(tab.id)}
+            onclick={(event) => selectTab(event, tab.id)}
+            onpointerdown={(event) => startTabDrag(event, tab)}
             oncontextmenu={(event) => openContextMenu(event, tab)}
         >
             {#if generating}
@@ -123,6 +274,7 @@
             </span>
             {#if chatTabsStore.tabs.length > 1}
                 <span
+                    data-tab-close
                     role="button"
                     tabindex="0"
                     class="shrink-0 rounded p-0.5 opacity-60 hover:opacity-100 hover:bg-black/20"
@@ -141,6 +293,7 @@
         </button>
     {/each}
     <button
+        data-tab-add
         class="h-8 w-8 mb-0.5 shrink-0 flex items-center justify-center rounded-md text-textcolor2 hover:text-textcolor hover:bg-selected transition-colors"
         title="New chat tab"
         aria-label="New chat tab"
@@ -182,3 +335,18 @@
         </div>
     {/if}
 {/if}
+
+<style>
+    :global(.chat-tab-chosen) {
+        opacity: 0.45;
+    }
+
+    :global(.chat-tab-dragging) {
+        cursor: grabbing;
+        box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+    }
+
+    :global(.chat-tab-drop-before) {
+        box-shadow: -3px 0 0 var(--risu-theme-textcolor2);
+    }
+</style>

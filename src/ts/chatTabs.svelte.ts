@@ -52,7 +52,7 @@ export function findChatTarget(chatId: string): ChatTarget | null {
   return null;
 }
 
-class ChatTabsStore {
+export class ChatTabsStore {
   tabs = $state<ChatTab[]>([]);
   groups = $state<ChatTabGroup[]>([{ id: createGroupId(), activeTabId: null }]);
   focusedGroupId = $state(this.groups[0].id);
@@ -249,21 +249,46 @@ class ChatTabsStore {
   moveToAdjacentGroup(tabId: string, direction: -1 | 1): ChatTab | null {
     const tab = this.tabs.find((item) => item.id === tabId);
     if (!tab) return null;
-    const sourceGroup = this.getGroup(tab.groupId);
     const sourceIndex = this.groups.findIndex((group) => group.id === tab.groupId);
     const targetGroup = this.groups[sourceIndex + direction];
-    if (!sourceGroup || !targetGroup) return null;
-    const sourceTabs = this.tabsForGroup(sourceGroup.id);
-    tab.groupId = targetGroup.id;
-    targetGroup.activeTabId = tab.id;
-    tab.unread = false;
-    this.focusedGroupId = targetGroup.id;
+    if (!targetGroup) return null;
+    return this.moveTab(tabId, targetGroup.id, this.tabsForGroup(targetGroup.id).length);
+  }
 
-    if (sourceTabs.length === 1) {
-      this.groups.splice(sourceIndex, 1);
-    } else if (sourceGroup.activeTabId === tab.id) {
-      sourceGroup.activeTabId = sourceTabs.find((item) => item.id !== tab.id)?.id ?? null;
+  moveTab(tabId: string, targetGroupId: string, targetIndex: number): ChatTab | null {
+    const tab = this.tabs.find((item) => item.id === tabId);
+    const sourceGroup = tab ? this.getGroup(tab.groupId) : undefined;
+    const targetGroup = this.getGroup(targetGroupId);
+    if (!tab || !sourceGroup || !targetGroup) return null;
+
+    const sourceGroupId = sourceGroup.id;
+    const sourceTabs = this.tabsForGroup(sourceGroupId);
+    const targetTabs = this.tabsForGroup(targetGroupId).filter((item) => item.id !== tabId);
+    const insertAt = Math.max(0, Math.min(targetIndex, targetTabs.length));
+    targetTabs.splice(insertAt, 0, tab);
+
+    if (sourceGroupId !== targetGroupId) {
+      tab.groupId = targetGroupId;
+      tab.unread = false;
+      targetGroup.activeTabId = tab.id;
+      this.focusedGroupId = targetGroupId;
+
+      if (sourceTabs.length === 1) {
+        this.groups.splice(this.groups.indexOf(sourceGroup), 1);
+      } else if (sourceGroup.activeTabId === tab.id) {
+        sourceGroup.activeTabId = sourceTabs.find((item) => item.id !== tab.id)?.id ?? null;
+      }
     }
+
+    const tabsByGroup = new Map(
+      this.groups.map((group) => [
+        group.id,
+        group.id === targetGroupId
+          ? targetTabs
+          : this.tabsForGroup(group.id).filter((item) => item.id !== tabId),
+      ]),
+    );
+    this.tabs = this.groups.flatMap((group) => tabsByGroup.get(group.id) ?? []);
     return tab;
   }
 
