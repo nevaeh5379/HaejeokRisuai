@@ -1,4 +1,5 @@
 import { alertError } from "../alert";
+import { notifyChatResponse } from "../chatNotifications";
 import { isNodeServer } from "../platform";
 import { getSqlStorage } from "../storage/sqlStorageFactory";
 import { NodePostgresStorage } from "../storage/nodePostgresStorage";
@@ -148,6 +149,12 @@ function applyGenerationState(event: GenerationStateEvent): void {
     event.state === "started",
     `lifecycle:${event.lifecycleId}`,
   );
+  if (event.state === "finished") {
+    void notifyChatResponse({
+      chatId: event.chatId,
+      dedupeKey: `remote:${event.lifecycleId}`,
+    });
+  }
   if (
     event.state === "failed" &&
     event.error &&

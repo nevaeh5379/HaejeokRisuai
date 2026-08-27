@@ -18,10 +18,7 @@ import { setChatProcessStage } from "./chatRuntimeState";
 import { peerSync } from "../sync/multiuser";
 import { processPostGenerationEffects } from "./chatPostGeneration.svelte";
 import { tryCreateNodeAutoContinuationDecision } from "./chatNodePlanner";
-import {
-  completeNativeChatRequest,
-  usesNativeChatLifecycle,
-} from "../androidChatLifecycle";
+import { notifyChatResponse } from "../chatNotifications";
 
 
 function updateGenerationStageTimings(
@@ -84,24 +81,6 @@ async function appendIgpResult(
   const messages =
     characterStore.characters[selectedChar].chats[selectedChat].message;
   messages[messages.length - 1].data += response;
-}
-
-async function showGenerationNotification(result: string, characterName: string) {
-  if (!settingsStore.state.notification) return;
-  if (usesNativeChatLifecycle()) {
-    await completeNativeChatRequest({
-      title: characterName || "RisuAI",
-      body: result,
-      notify: true,
-    });
-    return;
-  }
-  try {
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted") return;
-    const notification = new Notification("Risuai", { body: result });
-    notification.onclick = () => window.focus();
-  } catch (_error) {}
 }
 
 function attachGenerationInfoToLastMessage(
@@ -174,7 +153,18 @@ async function handleResend(options: FinalizeChatGenerationOptions) {
 }
 
 async function runFinalEffects(options: FinalizeChatGenerationOptions) {
-  await showGenerationNotification(options.result, options.currentChar.name);
+  const notificationChat = options.currentChar.chats?.[options.selectedChat];
+  await notifyChatResponse({
+    chatId: notificationChat?.id,
+    characterId: options.currentChar.chaId,
+    characterName: options.currentChar.name,
+    chatName: notificationChat?.name,
+    result: options.result,
+    dedupeKey: options.generationInfo.generationId
+      ? `local:${options.generationInfo.generationId}`
+      : undefined,
+    completeNativeLifecycle: true,
+  });
   void peerSync();
   return processPostGenerationEffects({
     req: options.req,

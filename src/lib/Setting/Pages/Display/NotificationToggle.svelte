@@ -25,15 +25,14 @@
                 }
                 return;
             }
-            let hasPermission = { state: 'denied' };
-            try {
-                hasPermission = await navigator.permissions.query({ name: 'notifications' });
-            } catch (error) {
-                // Some browsers do not support the Permissions API.
+            if (typeof Notification === 'undefined') {
+                alertError(language.permissionDenied);
+                settingsStore.state.notification = false;
+                return;
             }
-            if (hasPermission.state === 'denied') {
+            if (Notification.permission !== 'granted') {
                 const permission = await Notification.requestPermission();
-                if (permission === 'denied') {
+                if (permission !== 'granted') {
                     alertError(language.permissionDenied);
                     settingsStore.state.notification = false;
                 }

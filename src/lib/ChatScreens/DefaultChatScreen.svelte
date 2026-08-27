@@ -3,7 +3,7 @@
     import Suggestion from './Suggestion.svelte';
     import { CameraIcon, DatabaseIcon, DicesIcon, FileText, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ArrowUp, SparkleIcon } from "@lucide/svelte";
     import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, easyPanelStore, chatPanelStore, startupPhase } from "../../ts/stores.svelte";
-    import { tick } from 'svelte';
+    import { tick, untrack } from 'svelte';
     import Chat from "./Chat.svelte";
     import { type Chat as ChatSession, type Message } from "../../ts/storage/database.svelte";
     import { characterStore, settingsStore, personaStore, messageStore, presetStore } from 'src/ts/stores/domain';
@@ -24,6 +24,8 @@
     import { ConnectionOpenStore } from 'src/ts/sync/multiuserState';
     import { coldStorageHeader, preLoadChat } from 'src/ts/process/coldstorage.svelte';
     import Chats from './Chats.svelte';
+    import ChatTabs from './ChatTabs.svelte';
+    import { chatTabsStore } from 'src/ts/chatTabs.svelte';
     import Button from '../UI/GUI/Button.svelte';
     import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte';
     import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages';
@@ -59,6 +61,7 @@
     let isScrollingToMessage = $state(false)
     let loadingOlderMessages = $state(false)
     let readingFromBeginning = $state(false)
+    let draftTabId: string | null = null
     let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props();
     let currentCharacter = $derived(characterStore.characters[$selectedCharID])
     let currentChatSession = $derived(currentCharacter?.chats[currentCharacter.chatPage])
@@ -69,6 +72,32 @@
     let currentChatProcessStage = $derived(
         getChatProcessStage($chatProcessStages, currentChatSession?.id)
     )
+
+    $effect(() => {
+        const activeTabId = chatTabsStore.activeTabId
+        if (!activeTabId || activeTabId === draftTabId) return
+
+        if (draftTabId) {
+            const previousDraft = untrack(() => ({
+                messageInput,
+                messageInputTranslate,
+                fileInput: [...fileInput],
+            }))
+            chatTabsStore.saveDraft(
+                draftTabId,
+                previousDraft.messageInput,
+                previousDraft.messageInputTranslate,
+                previousDraft.fileInput,
+            )
+        }
+
+        const nextTab = untrack(() => chatTabsStore.tabs.find((tab) => tab.id === activeTabId))
+        messageInput = nextTab?.draft ?? ''
+        messageInputTranslate = nextTab?.translatedDraft ?? ''
+        fileInput = [...(nextTab?.fileInput ?? [])]
+        draftTabId = activeTabId
+        void tick().then(() => updateInputSizeAll())
+    })
 
     $effect(() => {
         const characterId = $selectedCharID
@@ -717,7 +746,9 @@
             {/await}
         {/if}
     {:else}
-        <div bind:this={chatScrollContainer} class="h-full w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen" onscroll={async (e) => {
+        <div class="h-full w-full min-h-0 flex flex-col">
+            <ChatTabs />
+            <div bind:this={chatScrollContainer} class="grow min-h-0 w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen" onscroll={async (e) => {
             const chatTarget = e.target as HTMLElement;
             const scrolledFromTop = chatTarget.scrollHeight - chatTarget.clientHeight + chatTarget.scrollTop
             const reachedPaginationEdge = readingFromBeginning
@@ -1258,6 +1289,7 @@
                 </div>
 
             {/if}
+            </div>
         </div>
 
     {/if}

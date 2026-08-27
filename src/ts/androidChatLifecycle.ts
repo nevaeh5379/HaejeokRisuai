@@ -8,6 +8,10 @@ interface NativeChatPlugin {
     body?: string;
     notify: boolean;
   }): Promise<void>;
+  showNotification(options: {
+    title?: string;
+    body?: string;
+  }): Promise<void>;
   requestNotificationPermission(): Promise<{ granted: boolean }>;
 }
 
@@ -50,6 +54,18 @@ export async function completeNativeChatRequest(options: {
     await nativeChat.complete(options);
   } catch (error) {
     console.warn("[NativeChat] Failed to show completion notification:", error);
+  }
+}
+
+export async function showNativeChatNotification(options: {
+  title?: string;
+  body?: string;
+}): Promise<void> {
+  if (!nativeChat) return;
+  try {
+    await nativeChat.showNotification(options);
+  } catch (error) {
+    console.warn("[NativeChat] Failed to show notification:", error);
   }
 }
 

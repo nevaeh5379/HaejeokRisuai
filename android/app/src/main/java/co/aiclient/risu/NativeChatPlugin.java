@@ -63,6 +63,17 @@ public class NativeChatPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void showNotification(PluginCall call) {
+        if (canNotify()) {
+            showResultNotification(
+                call.getString("title", getContext().getString(R.string.app_name)),
+                call.getString("body", getContext().getString(R.string.chat_result_ready))
+            );
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
     public void requestNotificationPermission(PluginCall call) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || canNotify()) {
             resolvePermission(call, true);
