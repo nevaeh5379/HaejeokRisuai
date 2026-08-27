@@ -196,7 +196,10 @@ export function selectFileByDom(
         fileInput.accept = allowedExtensions.map((ext) => `.${ext}`).join(",");
       }
     } else {
-      fileInput.accept = "*";
+      // An empty accept filter means "all files". The literal "*" is not a
+      // valid HTML accept token and Android WebView may pass it through as an
+      // unusable MIME filter to the system document picker.
+      fileInput.removeAttribute("accept");
     }
 
     fileInput.addEventListener("change", (event) => {

@@ -341,9 +341,30 @@ export class CharXImporter {
       return data;
     }
 
-    // File has built-in stream() method
+    // Read File inputs through slices instead of File.stream(). Android WebView
+    // can hand us content-provider-backed Files whose Blob stream is unreliable,
+    // while slice().arrayBuffer() remains stable and keeps memory bounded.
     if (data instanceof File) {
-      return data.stream();
+      let offset = 0;
+      return new ReadableStream({
+        async pull(controller) {
+          if (offset >= data.size) {
+            controller.close();
+            return;
+          }
+
+          const end = Math.min(offset + CHUNK_SIZE_BYTES, data.size);
+          const chunk = new Uint8Array(
+            await data.slice(offset, end).arrayBuffer(),
+          );
+          if (chunk.byteLength === 0 && end > offset) {
+            controller.error(new Error("Failed to read character card file"));
+            return;
+          }
+          controller.enqueue(chunk);
+          offset = end;
+        },
+      });
     }
 
     // Convert Uint8Array to stream, chunked to prevent blocking

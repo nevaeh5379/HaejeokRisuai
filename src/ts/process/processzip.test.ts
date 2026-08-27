@@ -169,6 +169,47 @@ describe("CharXImporter", () => {
     );
   }, 2_000);
 
+  it("imports Android-style File inputs without relying on File.stream()", async () => {
+    const archive = zipSync({
+      "card.json": new TextEncoder().encode(
+        '{"spec":"chara_card_v3","data":{"name":"Amber"}}',
+      ),
+      "assets/icon/image/2.png": new Uint8Array([1, 2, 3]),
+    });
+    // Amber.charx is a JPEG+ZIP polyglot whose first ZIP local header starts
+    // after 214,055 bytes of image data. Mirror that layout without checking in
+    // the real character card fixture.
+    const jpegPrefix = new Uint8Array(214_055);
+    jpegPrefix.set([
+      0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46,
+    ]);
+    const polyglot = new Uint8Array(jpegPrefix.length + archive.length);
+    polyglot.set(jpegPrefix);
+    polyglot.set(archive, jpegPrefix.length);
+
+    class AndroidContentFile extends File {
+      stream(): ReturnType<File["stream"]> {
+        throw new Error("File.stream() is unavailable for this content URI");
+      }
+    }
+
+    const file = new AndroidContentFile([polyglot], "Amber.charx", {
+      type: "image/jpeg",
+    });
+    const importer = new CharXImporter();
+
+    await importer.parse(file);
+    await importer.done();
+
+    expect(JSON.parse(importer.cardData ?? "{}")).toMatchObject({
+      spec: "chara_card_v3",
+      data: { name: "Amber" },
+    });
+    expect(importer.assets["assets/icon/image/2.png"]).toBe(
+      "saved/assets/icon/image/2.png",
+    );
+  });
+
   it("streams Node server assets in bounded bulk-write batches", async () => {
     const assetNames = Array.from(
       { length: 130 },
