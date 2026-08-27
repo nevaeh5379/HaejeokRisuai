@@ -18,6 +18,7 @@
     import { language } from "src/lang";
     import Toggles from "./Toggles.svelte";
     import { releaseInactiveChatMessages } from "src/ts/stores/domain/messageStore.svelte";
+    import { chatTabsStore } from "src/ts/chatTabs.svelte";
 
     interface Props {
         chara: character|groupChat;
@@ -667,14 +668,28 @@
                 <PencilIcon size={18}/>
             </button>
             <button class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" title={language.branchGraphTitle} onclick={async () => {
-                const activeChat = chara.chats[chara.chatPage]
+                const focusedTab = chatTabsStore.activeTab
+                let characterIndex = $selectedCharID
+                let chatIndex = chara.chatPage
+                if(focusedTab){
+                    const focusedCharacterIndex = characterStore.characters.findIndex((character) => character.chaId === focusedTab.characterId)
+                    const focusedChatIndex = characterStore.characters[focusedCharacterIndex]?.chats?.findIndex((chat) => chat.id === focusedTab.chatId) ?? -1
+                    if(focusedCharacterIndex >= 0 && focusedChatIndex >= 0){
+                        characterIndex = focusedCharacterIndex
+                        chatIndex = focusedChatIndex
+                    }
+                }
+                const activeChat = characterStore.characters[characterIndex]?.chats?.[chatIndex]
                 if(!activeChat) return
                 activeChat.id ??= v4()
+                const targetChatId = activeChat.id
                 const { preLoadChat } = await import('src/ts/process/coldstorage.svelte')
-                await preLoadChat($selectedCharID, chara.chatPage, { full: true })
+                await preLoadChat(characterIndex, chatIndex, { full: true })
+                const loadedChat = characterStore.characters[characterIndex]?.chats?.[chatIndex]
+                if(loadedChat?.id !== targetChatId) return
                 alertStore.set({
                   type: "branches",
-                  msg: ""
+                  msg: targetChatId
                 })
             }}>
                 <SplitIcon size={18}/>

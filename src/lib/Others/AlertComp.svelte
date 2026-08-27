@@ -182,8 +182,7 @@
             alertStore.set({ type: 'none', msg: '' })
             return
         }
-        const char = characterStore.characters[$selectedCharID]
-        const chat = char?.chats?.[char.chatPage]
+        const chat = getBranchGraphChat($alertStore.msg)
         if(!chat?.id) return
         const switched = activateChatBranch(chat, branchId)
         if(!switched) return
@@ -191,6 +190,18 @@
         characterStore.markChatDirty(chat.id)
         await characterStore.flush()
         alertStore.set({ type: 'none', msg: '' })
+    }
+
+    function getBranchGraphChat(chatId:string){
+        if(chatId){
+            for(const character of characterStore.characters){
+                const chat = character.chats?.find((item) => item.id === chatId)
+                if(chat) return chat
+            }
+            return null
+        }
+        const character = characterStore.characters[$selectedCharID]
+        return character?.chats?.[character.chatPage]
     }
 </script>
 
@@ -883,7 +894,9 @@
         </div>
     </div>
 {:else if $alertStore.type === 'branches'}
+    {@const branchGraphChat = getBranchGraphChat($alertStore.msg)}
     <BranchGraphModal
+        chat={branchGraphChat}
         onselect={switchBranchFromGraph}
         onclose={() => alertStore.set({ type: 'none', msg: '' })}
     />

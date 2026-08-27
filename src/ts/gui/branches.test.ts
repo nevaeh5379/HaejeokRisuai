@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { buildChatMessageGraph, type ChatGraphTimeline } from "./branches";
-import type { Message } from "../storage/database.svelte";
+import {
+  buildChatMessageGraph,
+  getChatBranches,
+  type ChatGraphTimeline,
+} from "./branches";
+import type { Chat, Message } from "../storage/database.svelte";
 
 function message(
   chatId: string,
@@ -151,5 +155,25 @@ describe("buildChatMessageGraph", () => {
     expect(fork.branchPoint).toBe(true);
     expect(originalNode.y).toBe(alternativeNode.y);
     expect(originalNode.x).not.toBe(alternativeNode.x);
+  });
+});
+
+describe("getChatBranches", () => {
+  it("builds from the explicitly pinned chat instead of global selection", () => {
+    const chat = {
+      message: [
+        message("u1", "user", "focused tab message"),
+        message("a1", "char", "focused tab response"),
+      ],
+    } as Chat;
+
+    const graph = getChatBranches(chat);
+
+    expect(graph.messageCount).toBe(2);
+    expect(graph.timelineCount).toBe(1);
+    expect(graph.nodes.map((node) => node.preview)).toEqual([
+      "focused tab message",
+      "focused tab response",
+    ]);
   });
 });

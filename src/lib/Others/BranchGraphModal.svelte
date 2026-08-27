@@ -1,16 +1,18 @@
 <script lang="ts">
-    import { onMount, tick } from 'svelte'
+    import { onMount, tick, untrack } from 'svelte'
     import { Ellipsis, GitBranch, Maximize, ZoomIn, ZoomOut, XIcon } from '@lucide/svelte'
 
     import { language } from 'src/lang'
     import { getChatBranches } from 'src/ts/gui/branches'
+    import type { Chat } from 'src/ts/storage/database.svelte'
 
     interface Props {
+        chat?: Chat | null
         onselect: (branchId: string) => void | Promise<void>
         onclose: () => void
     }
 
-    let { onselect, onclose }: Props = $props()
+    let { chat, onselect, onclose }: Props = $props()
 
     const cardWidth = 292
     const cardHeight = 116
@@ -20,13 +22,12 @@
     const minScale = 0.25
     const maxScale = 1.6
 
-    const graph = getChatBranches()
+    const graph = untrack(() => getChatBranches(chat))
     const nodesById = new Map(graph.nodes.map((node) => [node.id, node]))
     const graphWidth = padding * 2 + graph.columns * cardWidth + Math.max(0, graph.columns - 1) * gapX
     const graphHeight = padding * 2 + graph.rows * cardHeight + Math.max(0, graph.rows - 1) * gapY
     const activeNode = graph.nodes.find((node) => node.activeTerminal)
         ?? [...graph.nodes].reverse().find((node) => node.activePath)
-
     let viewport: HTMLDivElement | undefined = $state()
     let panX = $state(0)
     let panY = $state(0)
