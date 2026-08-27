@@ -32,7 +32,10 @@ export async function requestOobaLegacy(
     "/api/v1/generate",
   );
   let bodyTemplate: { [key: string]: any } = {};
-  const prompt = applyChatTemplate(formated);
+  const prompt = applyChatTemplate(formated, {
+    currentChar,
+    chatTarget: arg.triggerTarget,
+  });
   let stopStrings = getStopStrings(false);
   if (db.localStopStrings) {
     stopStrings = db.localStopStrings.map((v) => {
@@ -176,7 +179,11 @@ export async function requestOoba(
   const aiModel = arg.aiModel;
   const maxTokens = arg.maxTokens;
   const temperature = arg.temperature;
-  const prompt = applyChatTemplate(formated);
+  const currentChar = resolveRequestCharacter(arg);
+  const prompt = applyChatTemplate(formated, {
+    currentChar,
+    chatTarget: arg.triggerTarget,
+  });
   let stopStrings = getStopStrings(false);
   if (db.localStopStrings) {
     stopStrings = db.localStopStrings.map((v) => {
@@ -257,8 +264,12 @@ export async function requestKobold(
   const db = getDatabase();
   const maxTokens = arg.maxTokens;
   const abortSignal = arg.abortSignal;
+  const currentChar = resolveRequestCharacter(arg);
 
-  const prompt = applyChatTemplate(formated);
+  const prompt = applyChatTemplate(formated, {
+    currentChar,
+    chatTarget: arg.triggerTarget,
+  });
   const url = new URL(db.koboldURL);
   if (url.pathname.length < 3) {
     url.pathname = "api/v1/generate";

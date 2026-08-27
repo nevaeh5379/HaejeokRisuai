@@ -332,7 +332,7 @@ function addPersonaAndInlayPrompts(
   if (settingsStore.state.personaPrompt) {
     sections.personaPrompt.push({
       role: "system",
-      content: risuChatParser(getPersonaPrompt(), {
+      content: risuChatParser(getPersonaPrompt(target), {
         chara: currentChar,
         chatTarget: target,
       }),

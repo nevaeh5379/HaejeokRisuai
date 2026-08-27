@@ -135,7 +135,10 @@ export async function requestWebLLM(
   const maxTokens = arg.maxTokens;
   const temperature = arg.temperature;
   const realModel = aiModel.split(":::")[1];
-  const prompt = applyChatTemplate(formated);
+  const prompt = applyChatTemplate(formated, {
+    currentChar,
+    chatTarget: arg.triggerTarget,
+  });
 
   if (arg.previewBody) {
     return {

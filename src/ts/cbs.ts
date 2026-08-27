@@ -117,8 +117,8 @@ export type CBSRegisterArg = {
     internalOnly?: boolean;
   }) => void | Promise<void>;
   getDatabase: () => Database;
-  getUserName: () => string;
-  getPersonaPrompt: () => string;
+  getUserName: (target?: { characterIndex: number; chatIndex: number }) => string;
+  getPersonaPrompt: (target?: { characterIndex: number; chatIndex: number }) => string;
   risuChatParser: (text: string, arg: matcherArg) => string;
   makeArray: (arr: unknown[]) => string;
   safeStructuredClone: <T>(obj: T) => T;
@@ -219,7 +219,7 @@ export function registerCBS(arg: CBSRegisterArg) {
       if (matcherArg.consistantChar) {
         return "username";
       }
-      return getUserName();
+      return getUserName(matcherArg.chatTarget);
     },
     alias: [],
     description:
@@ -346,7 +346,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "persona",
     callback: (str, matcherArg, args, vars) => {
-      return risuChatParser(getPersonaPrompt(), matcherArg);
+      return risuChatParser(getPersonaPrompt(matcherArg.chatTarget), matcherArg);
     },
     alias: ["userpersona"],
     description:

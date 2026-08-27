@@ -33,7 +33,10 @@ export async function requestHorde(
     };
   }
 
-  const prompt = applyChatTemplate(formated);
+  const prompt = applyChatTemplate(formated, {
+    currentChar,
+    chatTarget: arg.triggerTarget,
+  });
 
   const realModel = aiModel.split(":::")[1];
 

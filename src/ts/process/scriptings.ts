@@ -560,7 +560,7 @@ export async function runScripted(
 
       declareAPI("getPersonaImageMain", async (id: string) => {
         try {
-          const icon = getUserIcon();
+          const icon = getUserIcon(ScriptingEngineState.chatTarget);
 
           if (!icon) {
             return "";
@@ -844,15 +844,18 @@ export async function runScripted(
       });
 
       declareAPI("getPersonaName", (id: string) => {
-        return getUserName();
+        return getUserName(ScriptingEngineState.chatTarget);
       });
 
       declareAPI("getPersonaDescription", (id: string) => {
         const scriptingChar = getScriptingCharacter();
-        return risuChatParser(getPersonaPrompt(), {
-          chara: scriptingChar,
-          chatTarget: ScriptingEngineState.chatTarget,
-        });
+        return risuChatParser(
+          getPersonaPrompt(ScriptingEngineState.chatTarget),
+          {
+            chara: scriptingChar,
+            chatTarget: ScriptingEngineState.chatTarget,
+          },
+        );
       });
 
       declareAPI("getAuthorsNote", (id: string) => {

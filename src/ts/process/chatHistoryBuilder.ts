@@ -272,7 +272,10 @@ export interface BuildChatHistoryOptions {
 }
 
 async function initializeHistory(options: BuildChatHistoryOptions) {
-  const chats = exampleMessage(options.currentChar, getUserName());
+  const chats = exampleMessage(
+    options.currentChar,
+    getUserName(options.chatTarget),
+  );
   let currentTokens =
     options.currentTokens + (await options.tokenizer.tokenizeChats(chats));
   if (

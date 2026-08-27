@@ -3,7 +3,10 @@ import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 import {
   getCurrentCharacter,
   getDatabase,
+  type character,
+  type groupChat,
 } from "src/ts/storage/database.svelte";
+import type { ChatVarTarget } from "src/ts/parser/chatVar.svelte";
 import { getUserName } from "src/ts/util";
 
 export const chatTemplates = {
@@ -32,10 +35,12 @@ export const applyChatTemplate = (
   arg: {
     type?: string;
     custom?: string;
+    currentChar?: character | groupChat;
+    chatTarget?: ChatVarTarget;
   } = {},
 ) => {
   const db = getDatabase();
-  const currentChar = getCurrentCharacter();
+  const currentChar = arg.currentChar ?? getCurrentCharacter();
   const type = arg.type ?? db.instructChatTemplate;
   if (!type) {
     throw new Error("Template type is not set");
@@ -111,7 +116,7 @@ export const applyChatTemplate = (
     messages: formatedMessages,
     add_generation_prompt: true,
     risu_char: currentChar.name,
-    risu_user: getUserName(),
+    risu_user: getUserName(arg.chatTarget),
     eos_token: "",
     bos_token: "",
   });
