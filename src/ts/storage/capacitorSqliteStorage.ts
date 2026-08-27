@@ -13,7 +13,10 @@ import {
   type SqlCommit,
   type SqlCommitResult,
 } from "./sqlCommit";
-import { applySqliteCommit } from "./sqliteCommit";
+import {
+  applySqliteCommit,
+  countSqliteCommitStatements,
+} from "./sqliteCommit";
 import type { SqliteTransactionStatement } from "./sqliteStorageUtils";
 import type { Database as DatabaseType } from "./database.svelte";
 import { CapacitorSqliteRestoreStream } from "./capacitorSqliteRestoreStream";
@@ -157,7 +160,8 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
     database: DatabaseType,
     onProgress?: (status: string, progress?: number) => void,
   ): Promise<boolean> {
-    onProgress?.("Preparing local database...", 0);
+    onProgress?.("Building SQL restore plan...", 0.01);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     const commit = buildSqlReplaceCommit(database, this.revision);
     await this.writeQueue.run(async () => {
       if (!this._enabled || !this.isStorageReady()) {
@@ -171,7 +175,22 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
         throw new SqlRevisionConflictError(currentRevision);
       }
       await this.validatePresetCommit(commit);
-      await this.replaceDatabaseWithRestoreStream(commit, currentRevision, onProgress);
+      onProgress?.("Counting SQL operations...", 0.025);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      const totalStatements =
+        countSqliteCommitStatements(commit) +
+        (commit.replaceAll ? 3 : 0) +
+        2;
+      onProgress?.(
+        `SQL restore plan ready (${totalStatements} statements)`,
+        0.05,
+      );
+      await this.replaceDatabaseWithRestoreStream(
+        commit,
+        currentRevision,
+        totalStatements,
+        onProgress,
+      );
     });
     onProgress?.("Database sync complete", 1);
     return true;
@@ -180,22 +199,57 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
   private async replaceDatabaseWithRestoreStream(
     commit: SqlCommit,
     currentRevision: number,
+    totalStatements: number,
     onProgress?: (status: string, progress?: number) => void,
   ) {
     const stream = this.createRestoreStream();
     const revision = currentRevision + 1;
     const action = commit.action || "replace-all";
+    const total = Math.max(1, totalStatements);
     let written = 0;
-    const write = async (sql: string, bind: unknown[] = []) => {
-      await stream.writeStatement(sql, bind);
-      written++;
-      if (written === 1 || written % 100 === 0) {
-        onProgress?.(`Streaming SQL restore... (${written} statements)`);
+    let writingFraction = 0;
+    let applied = 0;
+    let lastReportAt = 0;
+    let lastProgress = 0.05;
+
+    const report = (phase: "streaming" | "applying", force = false) => {
+      const writeRatio = Math.min(1, (written + writingFraction) / total);
+      const applyRatio = Math.min(1, applied / total);
+      const progress = Math.max(
+        lastProgress,
+        Math.min(0.995, 0.05 + writeRatio * 0.45 + applyRatio * 0.5),
+      );
+      const now = Date.now();
+      if (!force && now - lastReportAt < 50 && progress - lastProgress < 0.0025) {
+        return;
       }
+      lastReportAt = now;
+      lastProgress = progress;
+      const label = phase === "streaming" ? "Streaming SQL" : "Applying SQL";
+      const currentStatement =
+        writingFraction > 0 && writingFraction < 1
+          ? `, current statement ${Math.round(writingFraction * 100)}%`
+          : "";
+      onProgress?.(
+        `${label} (${written}/${total} streamed, ${applied}/${total} applied${currentStatement})`,
+        progress,
+      );
+    };
+
+    const write = async (sql: string, bind: unknown[] = []) => {
+      writingFraction = 0;
+      await stream.writeStatement(sql, bind, (fraction) => {
+        writingFraction = fraction;
+        report("streaming");
+      });
+      written++;
+      writingFraction = 0;
+      report("streaming", written === total);
     };
 
     await stream.open(currentRevision, (completed) => {
-      onProgress?.(`Applying SQL restore... (${completed} statements)`);
+      applied = Math.max(applied, completed);
+      report("applying", completed >= total);
     });
     try {
       if (commit.replaceAll) {
@@ -212,9 +266,13 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
         "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
         [revision, action],
       );
-      const applied = await stream.finish();
-      if (applied !== written) {
-        throw new Error(`Native SQLite restore applied ${applied}/${written} statements`);
+      const appliedResult = await stream.finish();
+      applied = Math.max(applied, appliedResult);
+      report("applying", true);
+      if (appliedResult !== written) {
+        throw new Error(
+          `Native SQLite restore applied ${appliedResult}/${written} statements`,
+        );
       }
       this.revision = revision;
     } catch (error) {

@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @CapacitorPlugin(name = "NativeSqliteRestore")
 public class NativeSqliteRestorePlugin extends Plugin {
     private static final int PIPE_BUFFER_SIZE = 512 * 1024;
+    private static final int PROGRESS_STATEMENT_INTERVAL = 25;
     private final ConcurrentHashMap<String, RestoreSession> sessions = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
@@ -178,7 +179,10 @@ public class NativeSqliteRestorePlugin extends Plugin {
         else db.execSQL(sql, bind.toArray(new Object[0]));
     }
     private void reportProgress(String id, int completed) {
-        if (completed != 1 && completed % 100 != 0) return;
+        if (
+            completed != 1 &&
+            completed % PROGRESS_STATEMENT_INTERVAL != 0
+        ) return;
         JSObject event = new JSObject();
         event.put("id", id);
         event.put("completed", completed);

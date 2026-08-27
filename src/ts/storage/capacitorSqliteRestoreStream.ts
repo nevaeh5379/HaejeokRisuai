@@ -1,7 +1,7 @@
 import { registerPlugin } from "@capacitor/core";
 import { Buffer } from "buffer";
 
-const TRANSPORT_TEXT_CHUNK = 48 * 1024;
+const TRANSPORT_TEXT_CHUNK = 256 * 1024;
 const JSON_STRING_SLICE = 16 * 1024;
 
 interface NativeSqliteRestorePlugin {
@@ -63,32 +63,45 @@ class ChunkSink {
   }
 }
 
-async function writeJsonString(sink: ChunkSink, value: string) {
+async function writeJsonString(
+  sink: ChunkSink,
+  value: string,
+  onSourceCharacters?: (count: number) => void,
+) {
   await sink.write('"');
   for (let offset = 0; offset < value.length;) {
     const end = safeSliceEnd(value, offset, offset + JSON_STRING_SLICE);
     const encoded = JSON.stringify(value.slice(offset, end)).slice(1, -1);
     await sink.write(encoded);
+    onSourceCharacters?.(end - offset);
     offset = end;
   }
+  if (value.length === 0) onSourceCharacters?.(1);
   await sink.write('"');
 }
 
-async function writeBindValue(sink: ChunkSink, value: unknown) {
+async function writeBindValue(
+  sink: ChunkSink,
+  value: unknown,
+  onSourceCharacters?: (count: number) => void,
+) {
   if (value === null || value === undefined) {
     await sink.write("null");
+    onSourceCharacters?.(1);
     return;
   }
   if (typeof value === "string") {
-    await writeJsonString(sink, value);
+    await writeJsonString(sink, value, onSourceCharacters);
     return;
   }
   if (typeof value === "boolean") {
     await sink.write(value ? "true" : "false");
+    onSourceCharacters?.(1);
     return;
   }
   if (typeof value === "number") {
     await sink.write(Number.isFinite(value) ? String(value) : "null");
+    onSourceCharacters?.(1);
     return;
   }
   throw new TypeError(`Unsupported native SQLite restore bind: ${typeof value}`);
@@ -123,18 +136,40 @@ export class CapacitorSqliteRestoreStream {
     await this.sink.write("[");
   }
 
-  async writeStatement(sql: string, bind: unknown[] = []) {
+  async writeStatement(
+    sql: string,
+    bind: unknown[] = [],
+    onProgress?: (fraction: number) => void,
+  ) {
     if (!this.sink || !this.id) throw new Error("Native SQLite restore stream is not open");
+    const totalSourceCharacters = Math.max(
+      1,
+      Math.max(1, sql.length) +
+        bind.reduce<number>(
+          (total, value) =>
+            total + (typeof value === "string" ? Math.max(1, value.length) : 1),
+          0,
+        ),
+    );
+    let processedSourceCharacters = 0;
+    const advance = (count: number) => {
+      processedSourceCharacters += count;
+      onProgress?.(
+        Math.min(1, processedSourceCharacters / totalSourceCharacters),
+      );
+    };
+
     if (!this.firstStatement) await this.sink.write(",");
     this.firstStatement = false;
     await this.sink.write('{"sql":');
-    await writeJsonString(this.sink, sql);
+    await writeJsonString(this.sink, sql, advance);
     await this.sink.write(',"bind":[');
     for (let index = 0; index < bind.length; index++) {
       if (index > 0) await this.sink.write(",");
-      await writeBindValue(this.sink, bind[index]);
+      await writeBindValue(this.sink, bind[index], advance);
     }
     await this.sink.write("]}");
+    onProgress?.(1);
   }
 
   async finish(): Promise<number> {

@@ -1,6 +1,7 @@
 import type { SqlCommit } from "./sqlCommit";
 import {
   flattenRelationalValue,
+  MAX_RELATIONAL_NODE_DEPTH,
   RELATIONAL_NODE_COLUMNS,
   type RelationalNodeRow,
 } from "./relationalNodeCodec";
@@ -133,6 +134,63 @@ function nodeBind(ownerValues: unknown[], row: RelationalNodeRow): unknown[] {
 }
 
 const RELATIONAL_NODE_BATCH_SIZE = 128;
+const CHARACTER_TAG_BATCH_SIZE = 256;
+
+function countRelationalValueNodes(value: unknown): number {
+  let count = 0;
+  const ancestors = new Set<object>();
+
+  const visit = (current: unknown, depth: number): void => {
+    if (depth > MAX_RELATIONAL_NODE_DEPTH) {
+      throw new Error(
+        `Relational value exceeds maximum depth ${MAX_RELATIONAL_NODE_DEPTH}`,
+      );
+    }
+    count++;
+    if (
+      current === null ||
+      current === undefined ||
+      typeof current === "boolean" ||
+      typeof current === "number" ||
+      typeof current === "string"
+    ) return;
+    if (typeof current !== "object") {
+      throw new TypeError(`Unsupported relational value type: ${typeof current}`);
+    }
+    if (ancestors.has(current)) {
+      throw new TypeError("Relational values cannot contain cycles");
+    }
+    ancestors.add(current);
+    if (Array.isArray(current)) {
+      current.forEach((item) => visit(item, depth + 1));
+    } else {
+      for (const key of Object.keys(current)) {
+        visit((current as Record<string, unknown>)[key], depth + 1);
+      }
+    }
+    ancestors.delete(current);
+  };
+
+  visit(value, 0);
+  return count;
+}
+
+function countReplaceNodeStatements(value: unknown): number {
+  return 1 + Math.ceil(countRelationalValueNodes(value) / RELATIONAL_NODE_BATCH_SIZE);
+}
+
+function countCharacterTagStatements(value: unknown): number {
+  const tags = Array.isArray(value) ? value : [];
+  let strings = 0;
+  let removed = 0;
+  for (const tag of tags) {
+    if (typeof tag === "string") strings++;
+    else removed++;
+  }
+  return 1 +
+    Math.ceil(strings / CHARACTER_TAG_BATCH_SIZE) +
+    Math.ceil(removed / CHARACTER_TAG_BATCH_SIZE);
+}
 
 async function replaceNodes(
   execute: SqliteExecute,
@@ -198,8 +256,12 @@ async function replaceCharacterTags(
     else removedPositions.push(position);
   }
 
-  for (let offset = 0; offset < removedPositions.length; offset += 256) {
-    const batch = removedPositions.slice(offset, offset + 256);
+  for (
+    let offset = 0;
+    offset < removedPositions.length;
+    offset += CHARACTER_TAG_BATCH_SIZE
+  ) {
+    const batch = removedPositions.slice(offset, offset + CHARACTER_TAG_BATCH_SIZE);
     await execute(
       `DELETE FROM character_tags WHERE character_id = ? AND position IN (${batch
         .map(() => "?")
@@ -208,8 +270,12 @@ async function replaceCharacterTags(
     );
   }
 
-  for (let offset = 0; offset < stringTags.length; offset += 256) {
-    const batch = stringTags.slice(offset, offset + 256);
+  for (
+    let offset = 0;
+    offset < stringTags.length;
+    offset += CHARACTER_TAG_BATCH_SIZE
+  ) {
+    const batch = stringTags.slice(offset, offset + CHARACTER_TAG_BATCH_SIZE);
     await execute(
       `INSERT INTO character_tags (character_id, position, tag) VALUES ${batch
         .map(() => "(?, ?, ?)")
@@ -247,6 +313,62 @@ export async function writeSqliteColdStorage(
     [key],
     value,
   );
+}
+
+export function countSqliteCommitStatements(commit: SqlCommit): number {
+  let total = commit.replaceAll ? 2 : 0;
+
+  for (const upsert of commit.root.upserts) {
+    if (upsert.key === "botPresets" || upsert.key === "botPresetsId") {
+      throw new Error(`${upsert.key} must be written through presets`);
+    }
+    if (upsert.key === "pluginCustomStorage") continue;
+    total += 1 + countReplaceNodeStatements(upsert.value);
+  }
+  for (const key of commit.root.deletes) {
+    if (key === "botPresets" || key === "botPresetsId") {
+      throw new Error(`${key} is not a root setting`);
+    }
+    total++;
+  }
+
+  if (commit.pluginStorage) {
+    if (commit.pluginStorage.clear) total++;
+    total += commit.pluginStorage.deletes.length;
+    total += commit.pluginStorage.upserts.length;
+  }
+
+  if (commit.presets) {
+    total += commit.presets.deletes.length;
+    total += commit.presets.upserts.length;
+    if (commit.presets.order) total += 1 + commit.presets.order.length;
+    if (commit.presets.activeId !== undefined) {
+      total += 1 + countReplaceNodeStatements(commit.presets.activeId);
+    }
+  }
+
+  for (const entry of commit.characters) {
+    const data = entry.data as Record<string, unknown>;
+    total += 1 + countReplaceNodeStatements(data);
+    total += countCharacterTagStatements(data.tags);
+  }
+  total += commit.characterTouches?.length ?? 0;
+  if (commit.characterIds !== undefined) total++;
+
+  for (const entry of commit.chats) {
+    total += 1 + countReplaceNodeStatements(entry.data);
+  }
+  total += commit.chatManifests.length;
+
+  for (const entry of commit.messages) {
+    total += 1 + countReplaceNodeStatements(entry.data);
+  }
+  total += commit.messageManifests.length;
+  total += (commit.messageDeletes ?? []).filter(
+    (deletion) => deletion.ids.length > 0,
+  ).length;
+
+  return total;
 }
 
 export async function applySqliteCommit(

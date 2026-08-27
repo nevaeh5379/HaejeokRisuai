@@ -1430,7 +1430,7 @@ async function restoreLocalBackupSource(
       );
     }
   }
-  alertProgress("Decoding database...", 95);
+  alertProgress("Decoding database...", 91);
   const dbData = decodedDatabase ?? ((await decodeRisuSave(db)) as Database);
   normalizeDatabaseDefaults(dbData);
   dbData.pluginCustomStorage ??= {};
@@ -1460,12 +1460,17 @@ async function restoreLocalBackupSource(
     totalChats += c.chats?.length ?? 0;
   }
   const baseMsg = `Syncing SQL (${totalChars} characters, ${totalChats} chats)`;
-  alertProgress(`${baseMsg}...`, 96);
+  alertProgress(`${baseMsg}...`, 92);
   const storage = await getSqlStorage();
   await storage.replaceDatabase(dbData, (step, syncProgress) => {
-    const progress =
-      syncProgress === undefined ? 96 : 96 + Math.max(0, Math.min(1, syncProgress)) * 4;
-    alertProgress(`${baseMsg} - ${step}`, progress);
+    const ratio =
+      syncProgress === undefined ? 0 : Math.max(0, Math.min(1, syncProgress));
+    const progress = 92 + ratio * 8;
+    const sqlPercent = Math.round(ratio * 100);
+    alertProgress(
+      `${baseMsg}\n${step}\nSQL restore: ${sqlPercent}%`,
+      progress,
+    );
   });
 
   if (isTauri) {

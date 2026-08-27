@@ -29,6 +29,48 @@ describe("CapacitorSqliteStorage", () => {
     database.close();
   });
 
+  it("reports monotonic SQL restore progress with an exact statement total", async () => {
+    const database = new DatabaseSync(":memory:");
+    database.exec(sqliteSchemaSql);
+    const storage = makeCapacitorStorage(database);
+    const progress: number[] = [];
+    const statuses: string[] = [];
+
+    const source = buildFullDatabase() as any;
+    source.characters[0].tags = Array.from({ length: 520 }, (_, index) =>
+      index % 3 === 0 ? null : `tag-${index}`
+    );
+    source.customModels = Array.from({ length: 300 }, (_, index) => ({
+      id: `model-${index}`,
+      name: `Model ${index}`,
+    }));
+    source.progressSparseProbe = new Array(300);
+    source.progressSparseProbe[0] = "first";
+    source.progressSparseProbe[299] = "last";
+
+    await storage.replaceDatabase(source, (status, value) => {
+      statuses.push(status);
+      if (value !== undefined) progress.push(value);
+    });
+
+    expect(progress[0]).toBeGreaterThan(0);
+    expect(progress.at(-1)).toBe(1);
+    for (let index = 1; index < progress.length; index++) {
+      expect(progress[index]).toBeGreaterThanOrEqual(progress[index - 1]);
+    }
+    const plan = statuses.find((status) =>
+      status.startsWith("SQL restore plan ready"),
+    );
+    expect(plan).toMatch(/\(\d+ statements\)$/);
+    const finalApplying = statuses
+      .filter((status) => status.startsWith("Applying SQL"))
+      .at(-1);
+    expect(finalApplying).toMatch(
+      /\((\d+)\/(\d+) streamed, \1\/\2 applied\)$/,
+    );
+    database.close();
+  });
+
   it("streams restore statements instead of collecting a complete transaction payload", async () => {
     const database = new DatabaseSync(":memory:");
     database.exec(sqliteSchemaSql);
