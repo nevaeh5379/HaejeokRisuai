@@ -161,26 +161,9 @@ public class StreamFileWriterPlugin extends Plugin {
         byte[] copyBuffer
     ) throws IOException {
         long length = source.length();
-        if (length < 0 || length > 0xffffffffL) {
-            throw new IOException("Backup asset is too large: " + name);
-        }
-        byte[] encodedName = name.getBytes(StandardCharsets.UTF_8);
-        writeUint32LE(stream, encodedName.length);
-        stream.write(encodedName);
-        writeUint32LE(stream, length);
         try (FileInputStream input = new FileInputStream(source)) {
-            int read;
-            while ((read = input.read(copyBuffer)) != -1) {
-                stream.write(copyBuffer, 0, read);
-            }
+            BackupContainerCodec.writeEntry(stream, input, length, name, copyBuffer);
         }
-    }
-
-    private static void writeUint32LE(OutputStream stream, long value) throws IOException {
-        stream.write((int) (value & 0xff));
-        stream.write((int) ((value >>> 8) & 0xff));
-        stream.write((int) ((value >>> 16) & 0xff));
-        stream.write((int) ((value >>> 24) & 0xff));
     }
 
     @PluginMethod

@@ -13,7 +13,6 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -34,7 +33,6 @@ public class NativeBackupPlugin extends Plugin {
     private static final Pattern COLD_STORAGE = Pattern.compile(
         "^(?:coldstorage[/_])?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.json$"
     );
-    private static final int MAX_NAME_LENGTH = 1024 * 1024;
     private static final int COPY_BUFFER_SIZE = 256 * 1024;
     private static final int MAX_CHUNK_SIZE = 4 * 1024 * 1024;
     private static final long MAX_RAW_DATABASE_SIZE = 512L * 1024L * 1024L;
@@ -198,19 +196,8 @@ public class NativeBackupPlugin extends Plugin {
      */
     private boolean looksLikeContainer(Uri uri, long totalBytes) throws IOException {
         ContentResolver resolver = getContext().getContentResolver();
-        try (BufferedInputStream input = new BufferedInputStream(
-            requireInput(resolver.openInputStream(uri))
-        )) {
-            Long nameLength = readUint32LEOrEof(input);
-            if (nameLength == null || nameLength <= 0 || nameLength > MAX_NAME_LENGTH) {
-                return false;
-            }
-            byte[] nameBytes = readExact(input, nameLength.intValue());
-            String name = new String(nameBytes, StandardCharsets.UTF_8);
-            if (name.indexOf('\u0000') >= 0 || name.trim().isEmpty()) return false;
-            long dataLength = requireUint32LE(input, "backup entry data length");
-            long headerLength = 8L + nameLength;
-            return totalBytes < 0L || dataLength <= totalBytes - headerLength;
+        try (InputStream input = requireInput(resolver.openInputStream(uri))) {
+            return BackupContainerCodec.looksLikeContainer(input, totalBytes);
         }
     }
 
@@ -223,61 +210,45 @@ public class NativeBackupPlugin extends Plugin {
     ) throws IOException {
         ContentResolver resolver = getContext().getContentResolver();
         byte[] copyBuffer = new byte[COPY_BUFFER_SIZE];
-        int assetsWritten = 0;
-        boolean hasDatabase = false;
-        long logicalBytesRead = 0L;
+        ContainerExtractionState state = new ContainerExtractionState();
         try (
             ProgressInputStream tracked = new ProgressInputStream(
                 requireInput(resolver.openInputStream(uri)),
                 progress,
                 "extracting"
             );
-            BufferedInputStream input = new BufferedInputStream(tracked);
             BufferedOutputStream special = new BufferedOutputStream(new FileOutputStream(specialFile))
         ) {
-            while (true) {
-                Long nameLength = readUint32LEOrEof(input);
-                if (nameLength == null) break;
-                logicalBytesRead += 4L;
-                if (nameLength <= 0 || nameLength > MAX_NAME_LENGTH) {
-                    throw new IOException("Invalid backup entry name length");
-                }
-                byte[] nameBytes = readExact(input, nameLength.intValue());
-                logicalBytesRead += nameLength;
-                String name = new String(nameBytes, StandardCharsets.UTF_8);
-                long dataLength = requireUint32LE(input, "backup entry data length");
-                logicalBytesRead += 4L;
-                // BufferedInputStream may read ahead by several KiB. Validate against
-                // parser-consumed bytes, not the underlying stream's prefetch count.
-                if (totalBytes > 0L && dataLength > totalBytes - logicalBytesRead) {
-                    throw new IOException("Backup entry exceeds the remaining file size");
-                }
+            BackupContainerCodec.parse(tracked, totalBytes, (name, dataLength, data) -> {
                 if (isSpecialEntry(name)) {
-                    if ("database.risudat".equals(name)) hasDatabase = true;
-                    writeUint32LE(special, nameBytes.length);
-                    special.write(nameBytes);
-                    writeUint32LE(special, dataLength);
-                    copyExact(input, special, dataLength, copyBuffer);
-                } else {
-                    String key = normalizeAssetKey(name);
-                    String encodedKey = Base64.encodeToString(
-                        key.getBytes(StandardCharsets.UTF_8),
-                        Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING
+                    if ("database.risudat".equals(name)) state.hasDatabase = true;
+                    BackupContainerCodec.writeEntry(
+                        special,
+                        data,
+                        dataLength,
+                        name,
+                        copyBuffer
                     );
-                    File staged = new File(stagingDir, encodedKey + ".bin");
-                    try (BufferedOutputStream output = new BufferedOutputStream(new FileOutputStream(staged))) {
-                        copyExact(input, output, dataLength, copyBuffer);
-                    }
-                    assetsWritten++;
-                    progress.report("extracting", tracked.getBytesRead(), assetsWritten, 0, false);
+                    return;
                 }
-                logicalBytesRead += dataLength;
-            }
+
+                String key = normalizeAssetKey(name);
+                String encodedKey = Base64.encodeToString(
+                    key.getBytes(StandardCharsets.UTF_8),
+                    Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING
+                );
+                File staged = new File(stagingDir, encodedKey + ".bin");
+                try (BufferedOutputStream output = new BufferedOutputStream(new FileOutputStream(staged))) {
+                    copyUntilEof(data, output, copyBuffer);
+                }
+                state.assetsWritten++;
+                progress.report("extracting", tracked.getBytesRead(), state.assetsWritten, 0, false);
+            });
         }
-        if (!hasDatabase) {
+        if (!state.hasDatabase) {
             throw new IOException("Backup does not contain a database entry");
         }
-        return assetsWritten;
+        return state.assetsWritten;
     }
 
     private boolean isSpecialEntry(String name) {
@@ -465,56 +436,6 @@ public class NativeBackupPlugin extends Plugin {
         return input;
     }
 
-    private static byte[] readExact(InputStream input, int length) throws IOException {
-        byte[] data = new byte[length];
-        int offset = 0;
-        while (offset < length) {
-            int read = input.read(data, offset, length - offset);
-            if (read < 0) throw new IOException("Backup file ended unexpectedly");
-            offset += read;
-        }
-        return data;
-    }
-    private static Long readUint32LEOrEof(InputStream input) throws IOException {
-        int b0 = input.read();
-        if (b0 < 0) return null;
-        int b1 = input.read();
-        int b2 = input.read();
-        int b3 = input.read();
-        if ((b1 | b2 | b3) < 0) throw new IOException("Backup file ended unexpectedly");
-        return ((long) b0)
-            | ((long) b1 << 8)
-            | ((long) b2 << 16)
-            | ((long) b3 << 24);
-    }
-
-    private static long requireUint32LE(InputStream input, String field) throws IOException {
-        Long value = readUint32LEOrEof(input);
-        if (value == null) throw new IOException("Missing " + field);
-        return value;
-    }
-
-    private static void writeUint32LE(OutputStream output, long value) throws IOException {
-        output.write((int) (value & 0xff));
-        output.write((int) ((value >>> 8) & 0xff));
-        output.write((int) ((value >>> 16) & 0xff));
-        output.write((int) ((value >>> 24) & 0xff));
-    }
-
-    private static void copyExact(
-        InputStream input,
-        OutputStream output,
-        long length,
-        byte[] buffer
-    ) throws IOException {
-        long remaining = length;
-        while (remaining > 0) {
-            int read = input.read(buffer, 0, (int) Math.min(buffer.length, remaining));
-            if (read < 0) throw new IOException("Backup file ended unexpectedly");
-            output.write(buffer, 0, read);
-            remaining -= read;
-        }
-    }
     private static void copyUntilEof(
         InputStream input,
         OutputStream output,
@@ -542,6 +463,11 @@ public class NativeBackupPlugin extends Plugin {
         }
         sessions.clear();
         executor.shutdownNow();
+    }
+
+    private static final class ContainerExtractionState {
+        int assetsWritten;
+        boolean hasDatabase;
     }
 
     private static final class ImportResult {
