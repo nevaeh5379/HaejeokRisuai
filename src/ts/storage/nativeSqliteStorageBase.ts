@@ -73,6 +73,7 @@ export abstract class NativeSqliteStorageBase {
   protected abstract executeNativeTransaction(
     expectedRevision: number | null,
     statements: SqliteTransactionStatement[],
+    onProgress?: (completed: number, total: number) => void,
   ): Promise<void>;
 
   getLastInitError(): string | null {
@@ -330,7 +331,10 @@ export abstract class NativeSqliteStorageBase {
     return { status: "ready", revision: this.revision, database: db };
   }
 
-  protected async commitInternal(commit: SqlCommit): Promise<SqlCommitResult> {
+  protected async commitInternal(
+    commit: SqlCommit,
+    onProgress?: (completed: number, total: number) => void,
+  ): Promise<SqlCommitResult> {
     if (!this._enabled || !this.isStorageReady()) {
       throw new Error("SQLite storage is not enabled");
     }
@@ -369,7 +373,7 @@ export abstract class NativeSqliteStorageBase {
       "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
       [revision, action],
     );
-    await this.executeNativeTransaction(currentRevision, statements);
+    await this.executeNativeTransaction(currentRevision, statements, onProgress);
     this.revision = revision;
     return { revision };
   }
@@ -475,10 +479,21 @@ export abstract class NativeSqliteStorageBase {
 
   async replaceDatabase(
     database: DatabaseType,
-    onProgress?: (status: string) => void,
+    onProgress?: (status: string, progress?: number) => void,
   ): Promise<boolean> {
-    onProgress?.("Replacing local database...");
-    await this.commit(buildSqlReplaceCommit(database, this.revision));
+    onProgress?.("Preparing local database...", 0);
+    const commit = buildSqlReplaceCommit(database, this.revision);
+    onProgress?.("Preparing SQL transaction...", 0.05);
+    await this.writeQueue.run(() =>
+      this.commitInternal(commit, (completed, total) => {
+        const ratio = total > 0 ? completed / total : 1;
+        onProgress?.(
+          `Syncing database... (${completed}/${total})`,
+          0.05 + ratio * 0.94,
+        );
+      }),
+    );
+    onProgress?.("Database sync complete", 1);
     return true;
   }
 

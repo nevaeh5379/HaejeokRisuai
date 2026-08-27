@@ -1,11 +1,20 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{Connection, SqliteConnection};
 use std::path::Path;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 const REVISION_CONFLICT_PREFIX: &str = "RISU_SQL_REVISION_CONFLICT:";
+const TRANSACTION_PROGRESS_EVENT: &str = "risu-sqlite-transaction-progress";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SqliteTransactionProgress {
+    transaction_id: String,
+    completed: usize,
+    total: usize,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,20 +63,55 @@ pub async fn sqlite_execute_transaction(
     app: tauri::AppHandle,
     expected_revision: Option<i64>,
     statements: Vec<SqliteTransactionStatement>,
+    transaction_id: Option<String>,
 ) -> Result<(), String> {
     let db_path = app
         .path()
         .app_data_dir()
         .map_err(|error| error.to_string())?
         .join("risuai-local.sqlite3");
-    execute_transaction_at_path(&db_path, expected_revision, statements).await
+    let progress_app = app.clone();
+    let progress_id = transaction_id.unwrap_or_default();
+    execute_transaction_at_path_with_progress(
+        &db_path,
+        expected_revision,
+        statements,
+        move |completed, total| {
+            if progress_id.is_empty() {
+                return;
+            }
+            let _ = progress_app.emit(
+                TRANSACTION_PROGRESS_EVENT,
+                SqliteTransactionProgress {
+                    transaction_id: progress_id.clone(),
+                    completed,
+                    total,
+                },
+            );
+        },
+    )
+    .await
 }
 
+#[cfg(test)]
 async fn execute_transaction_at_path(
     db_path: &Path,
     expected_revision: Option<i64>,
     statements: Vec<SqliteTransactionStatement>,
 ) -> Result<(), String> {
+    execute_transaction_at_path_with_progress(db_path, expected_revision, statements, |_, _| {})
+        .await
+}
+
+async fn execute_transaction_at_path_with_progress<F>(
+    db_path: &Path,
+    expected_revision: Option<i64>,
+    statements: Vec<SqliteTransactionStatement>,
+    mut on_progress: F,
+) -> Result<(), String>
+where
+    F: FnMut(usize, usize),
+{
     let options = connect_options(db_path);
     let mut connection = SqliteConnection::connect_with(&options)
         .await
@@ -95,10 +139,18 @@ async fn execute_transaction_at_path(
             return Err(format!("{REVISION_CONFLICT_PREFIX}{current_revision}"));
         }
     }
-    for statement in &statements {
+
+    let total = statements.len();
+    let progress_interval = (total / 100).max(1);
+    on_progress(0, total);
+    for (index, statement) in statements.iter().enumerate() {
         if let Err(error) = execute_statement(&mut connection, statement).await {
             rollback(&mut connection).await;
             return Err(error);
+        }
+        let completed = index + 1;
+        if completed == total || completed % progress_interval == 0 {
+            on_progress(completed, total);
         }
     }
 
@@ -204,6 +256,33 @@ mod tests {
             .unwrap();
         assert_eq!(count, 0);
         drop(connection);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn reports_statement_progress() {
+        let path = test_path();
+        let connection = setup(&path).await;
+        drop(connection);
+        let mut progress = Vec::new();
+        execute_transaction_at_path_with_progress(
+            &path,
+            Some(0),
+            vec![
+                statement(
+                    "INSERT INTO data VALUES (?, ?)",
+                    vec![1.into(), "one".into()],
+                ),
+                statement(
+                    "INSERT INTO data VALUES (?, ?)",
+                    vec![2.into(), "two".into()],
+                ),
+            ],
+            |completed, total| progress.push((completed, total)),
+        )
+        .await
+        .unwrap();
+        assert_eq!(progress, vec![(0, 2), (1, 2), (2, 2)]);
         let _ = std::fs::remove_file(path);
     }
 

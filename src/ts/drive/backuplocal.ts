@@ -1,6 +1,7 @@
 import {
   BaseDirectory,
   mkdir,
+  open as openFile,
   readFile,
   readDir,
   writeFile,
@@ -10,7 +11,6 @@ import {
   alertError,
   alertNormal,
   alertStore,
-  alertWait,
   alertMd,
   alertConfirm,
   alertProgress as showProgressAlert,
@@ -30,7 +30,7 @@ import {
   type PortableDatabase,
 } from "../storage/database.svelte";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { decryptBuffer, encryptBuffer, sleep } from "../util";
 import { hubURL } from "../characterCards";
 import { language } from "src/lang";
@@ -167,6 +167,74 @@ export function createNativeImportSource(
       if (offset !== normalizedSize) {
         throw new Error("Native backup importer ended before the declared size");
       }
+      return output.buffer;
+    },
+  };
+}
+
+const TAURI_IMPORT_CHUNK_SIZE = 4 * 1024 * 1024;
+
+async function createTauriImportSource(path: string): Promise<LocalBackupSource> {
+  const metadataHandle = await openFile(path, { read: true });
+  let size = 0;
+  try {
+    size = Math.max(0, Number((await metadataHandle.stat()).size) || 0);
+  } finally {
+    await metadataHandle.close();
+  }
+
+  return {
+    size,
+    stream() {
+      const handlePromise = openFile(path, { read: true });
+      let closed = false;
+      const close = async () => {
+        if (closed) return;
+        closed = true;
+        try {
+          await (await handlePromise).close();
+        } catch {}
+      };
+      return new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          try {
+            const handle = await handlePromise;
+            const buffer = new Uint8Array(TAURI_IMPORT_CHUNK_SIZE);
+            const bytesRead = await handle.read(buffer);
+            if (bytesRead === null) {
+              await close();
+              controller.close();
+              return;
+            }
+            if (bytesRead <= 0) throw new Error("Tauri backup importer stopped before EOF");
+            controller.enqueue(buffer.subarray(0, bytesRead));
+          } catch (error) {
+            await close();
+            controller.error(error);
+          }
+        },
+        async cancel() {
+          await close();
+        },
+      });
+    },
+    async arrayBuffer() {
+      const output = new Uint8Array(size);
+      const handle = await openFile(path, { read: true });
+      let offset = 0;
+      try {
+        while (offset < size) {
+          const bytesRead = await handle.read(
+            output.subarray(offset, Math.min(size, offset + TAURI_IMPORT_CHUNK_SIZE)),
+          );
+          if (bytesRead === null) break;
+          if (bytesRead <= 0) throw new Error("Tauri backup importer stopped before EOF");
+          offset += bytesRead;
+        }
+      } finally {
+        await handle.close();
+      }
+      if (offset !== size) throw new Error("Tauri backup importer ended before the declared size");
       return output.buffer;
     },
   };
@@ -908,18 +976,44 @@ async function restoreLocalBackupSource(
   let entriesWritten = 0;
   let currentEntryName = "";
   let bytesRead = 0;
+  const useTauriBulkRestore = isTauri;
+  let pendingTauriAssets = new Map<string, Uint8Array>();
   const tauriAssetDirectories = new Set<string>();
+  const tauriBulkMaxFiles = 128;
+  const tauriBulkMaxBytes = 64 * 1024 * 1024;
+  const tauriBulkWriteConcurrency = 8;
+  let pendingTauriAssetBytes = 0;
 
-  const ensureTauriAssetDirectory = async (assetPath: string) => {
-    const directory = assetPath.slice(0, assetPath.lastIndexOf("/"));
-    if (tauriAssetDirectories.has(directory)) {
-      return;
-    }
-    await mkdir(directory, {
-      baseDir: BaseDirectory.AppData,
-      recursive: true,
-    });
-    tauriAssetDirectories.add(directory);
+  const flushTauriAssets = async (): Promise<number> => {
+    if (pendingTauriAssets.size === 0) return 0;
+    const entries = Array.from(pendingTauriAssets);
+    pendingTauriAssets = new Map();
+    pendingTauriAssetBytes = 0;
+
+    const directories = new Set(
+      entries.map(([assetPath]) => assetPath.slice(0, assetPath.lastIndexOf("/"))),
+    );
+    await Promise.all(
+      Array.from(directories)
+        .filter((directory) => !tauriAssetDirectories.has(directory))
+        .map(async (directory) => {
+          await mkdir(directory, { baseDir: BaseDirectory.AppData, recursive: true });
+          tauriAssetDirectories.add(directory);
+        }),
+    );
+
+    let cursor = 0;
+    const workers = Array.from(
+      { length: Math.min(tauriBulkWriteConcurrency, entries.length) },
+      async () => {
+        while (cursor < entries.length) {
+          const [assetPath, data] = entries[cursor++];
+          await writeFile(assetPath, data, { baseDir: BaseDirectory.AppData });
+        }
+      },
+    );
+    await Promise.all(workers);
+    return entries.length;
   };
 
   const flushNodeAssets = async (): Promise<number> => {
@@ -1079,11 +1173,19 @@ async function restoreLocalBackupSource(
 
       if (!handledAsColdStorage) {
         const assetPath = normalizeLocalBackupAssetPath(name);
-        if (isTauri) {
-          await ensureTauriAssetDirectory(assetPath);
-          await writeFile(assetPath, data, {
-            baseDir: BaseDirectory.AppData,
-          });
+        if (useTauriBulkRestore) {
+          const previous = pendingTauriAssets.get(assetPath);
+          if (previous) pendingTauriAssetBytes -= previous.byteLength;
+          pendingTauriAssets.set(assetPath, data);
+          pendingTauriAssetBytes += data.byteLength;
+
+          if (
+            pendingTauriAssets.size >= tauriBulkMaxFiles ||
+            pendingTauriAssetBytes >= tauriBulkMaxBytes
+          ) {
+            const flushed = await flushTauriAssets();
+            if (flushed) entriesWritten += flushed;
+          }
         } else if (useNodeBulkRestore) {
           const key = assetPath;
           const previous = pendingNodeAssets.get(key);
@@ -1161,7 +1263,8 @@ async function restoreLocalBackupSource(
                     (parserProgress.end - parserProgress.start),
               );
         let message = `Parsing backup... (${readPercent}%) (${entriesRestored} entries parsed`;
-        const isBulkRestore = useNodeBulkRestore || useBrowserBulkRestore;
+        const isBulkRestore =
+          useTauriBulkRestore || useNodeBulkRestore || useBrowserBulkRestore;
         if (isBulkRestore && entriesWritten > 0) {
           message += `, ${entriesWritten} written`;
         }
@@ -1276,6 +1379,15 @@ async function restoreLocalBackupSource(
     }
   }
 
+  if (useTauriBulkRestore && pendingTauriAssets.size > 0) {
+    alertProgress(
+      `Flushing remaining assets... (${pendingTauriAssets.size} files)`,
+      90,
+    );
+    const flushed = await flushTauriAssets();
+    if (flushed) entriesWritten += flushed;
+  }
+
   if (useNodeBulkRestore && pendingNodeAssets.size > 0) {
     alertProgress(
       `Flushing remaining assets... (${pendingNodeAssets.size} files)`,
@@ -1348,10 +1460,12 @@ async function restoreLocalBackupSource(
     totalChats += c.chats?.length ?? 0;
   }
   const baseMsg = `Syncing SQL (${totalChars} characters, ${totalChats} chats)`;
-  alertProgress(`${baseMsg}...`, 98);
+  alertProgress(`${baseMsg}...`, 96);
   const storage = await getSqlStorage();
-  await storage.replaceDatabase(dbData, (step) => {
-    alertWait(`${baseMsg} - ${step}`);
+  await storage.replaceDatabase(dbData, (step, syncProgress) => {
+    const progress =
+      syncProgress === undefined ? 96 : 96 + Math.max(0, Math.min(1, syncProgress)) * 4;
+    alertProgress(`${baseMsg} - ${step}`, progress);
   });
 
   if (isTauri) {
@@ -1444,7 +1558,7 @@ async function loadCapacitorLocalBackup() {
 }
 
 async function loadTauriLocalBackup() {
-  const selected = await open({
+  const selected = await openDialog({
     multiple: false,
     filters: [
       {
@@ -1455,10 +1569,11 @@ async function loadTauriLocalBackup() {
   });
   if (selected === null) return;
 
-  const data = await readFile(selected);
-  const fileName =
-    selected.replace(/\\/g, "/").split("/").pop() ?? "backup.bin";
-  await restoreLocalBackupFile(new File([data], fileName));
+  const path = Array.isArray(selected) ? selected[0] : selected;
+  if (!path) return;
+  alertProgress("Opening local backup...", 0);
+  const source = await createTauriImportSource(path);
+  await restoreLocalBackupSource(source);
 }
 
 export async function LoadLocalBackup() {

@@ -122,7 +122,7 @@ export interface ISqlStorage {
 
   replaceDatabase(
     database: Database,
-    onProgress?: (status: string) => void,
+    onProgress?: (status: string, progress?: number) => void,
   ): Promise<boolean>;
 
   // ── Per-entity lazy loaders ──────────────────────────────────────────

@@ -94,10 +94,18 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
   protected async executeNativeTransaction(
     expectedRevision: number | null,
     statements: SqliteTransactionStatement[],
+    onProgress?: (completed: number, total: number) => void,
   ): Promise<void> {
+    const total = statements.length;
+    const progressInterval = Math.max(1, Math.floor(total / 100));
+    onProgress?.(0, total);
     await this.runNativeTransaction(expectedRevision, async (execute) => {
-      for (const statement of statements) {
+      for (const [index, statement] of statements.entries()) {
         await execute(statement.sql, statement.bind ?? []);
+        const completed = index + 1;
+        if (completed === total || completed % progressInterval === 0) {
+          onProgress?.(completed, total);
+        }
       }
     });
   }

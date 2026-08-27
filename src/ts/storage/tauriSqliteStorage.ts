@@ -2,12 +2,19 @@ import { NativeSqliteStorageBase } from "./nativeSqliteStorageBase";
 import type { ISqlStorage } from "./ISqlStorage";
 import { isTauri } from "../platform";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
 import { SqlRevisionConflictError } from "./sqlCommit";
 import type { SqliteTransactionStatement } from "./sqliteStorageUtils";
 
 type SqlDatabase = import("@tauri-apps/plugin-sql").default;
+
+type SqliteTransactionProgressEvent = {
+  transactionId: string;
+  completed: number;
+  total: number;
+};
 
 // Lazily imported to avoid loading the plugin in non-Tauri environments
 let SQL: typeof import("@tauri-apps/plugin-sql") | null = null;
@@ -76,12 +83,27 @@ export class TauriSqliteStorage extends NativeSqliteStorageBase
   protected async executeNativeTransaction(
     expectedRevision: number | null,
     statements: SqliteTransactionStatement[],
+    onProgress?: (completed: number, total: number) => void,
   ): Promise<void> {
     if (!this.dbPath) throw new Error("SQLite storage is not enabled");
+    const transactionId = onProgress
+      ? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      : undefined;
+    const unlisten = transactionId
+      ? await listen<SqliteTransactionProgressEvent>(
+          "risu-sqlite-transaction-progress",
+          ({ payload }) => {
+            if (payload.transactionId === transactionId) {
+              onProgress?.(payload.completed, payload.total);
+            }
+          },
+        )
+      : null;
     try {
       await invoke("sqlite_execute_transaction", {
         expectedRevision,
         statements,
+        transactionId,
       });
     } catch (error) {
       const message = String(error);
@@ -96,6 +118,8 @@ export class TauriSqliteStorage extends NativeSqliteStorageBase
         }
       }
       throw error;
+    } finally {
+      unlisten?.();
     }
   }
 }
