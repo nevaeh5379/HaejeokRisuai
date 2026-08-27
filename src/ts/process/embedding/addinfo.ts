@@ -1,3 +1,4 @@
+import type { ChatVarTarget } from "src/ts/parser/chatVar.svelte";
 import {
   getDatabase,
   type Chat,
@@ -6,7 +7,11 @@ import {
 import { HypaProcesser } from "../memory/hypamemory";
 import { getUserName } from "src/ts/util";
 
-export async function additionalInformations(char: character, chats: Chat) {
+export async function additionalInformations(
+  char: character,
+  chats: Chat,
+  chatTarget?: ChatVarTarget,
+) {
   const processer = new HypaProcesser();
   const db = getDatabase();
 
@@ -22,7 +27,7 @@ export async function additionalInformations(char: character, chats: Chat) {
 
         if (!name) {
           if (chat.role === "user") {
-            name = getUserName();
+            name = getUserName(chatTarget);
           } else {
             name = char.name;
           }

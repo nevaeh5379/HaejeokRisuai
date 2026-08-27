@@ -181,7 +181,14 @@ async function applySupaMemory(
     state.currentChat,
     options.nowChatroom,
     options.tokenizer,
-    { asHyper: settingsStore.state.hypaMemory },
+    {
+      asHyper: settingsStore.state.hypaMemory,
+      chatTarget: {
+        characterIndex: options.selectedChar,
+        chatIndex: options.selectedChat,
+      },
+      currentChar: options.currentChar,
+    },
   );
   if (result.error) {
     options.throwError(result.error);

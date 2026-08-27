@@ -5,6 +5,7 @@ import {
   type character,
   type groupChat,
 } from "../../storage/database.svelte";
+import type { ChatVarTarget } from "../../parser/chatVar.svelte";
 import { tokenize, type ChatTokenizer } from "../../tokenizer";
 import { requestChatData } from "../request/chatRequestOrchestrator";
 import { HypaProcesser } from "./hypamemory";
@@ -22,7 +23,11 @@ export async function supaMemory(
   room: Chat,
   char: character | groupChat,
   tokenizer: ChatTokenizer,
-  arg: { asHyper?: boolean } = {},
+  arg: {
+    asHyper?: boolean;
+    chatTarget?: ChatVarTarget;
+    currentChar?: character;
+  } = {},
 ): Promise<{
   currentTokens: number;
   chats: OpenAIChat[];
@@ -54,7 +59,7 @@ export async function supaMemory(
           supaMemoryKey: db.supaMemoryKey,
           maxSupaChunkSize: db.maxSupaChunkSize,
           removePunctuationHypa: db.removePunctuationHypa,
-          userName: getUserName(),
+          userName: getUserName(arg.chatTarget),
           customEmbedding: {
             url: db.hypaCustomSettings?.url ?? "",
             key: db.hypaCustomSettings?.key ?? "",
@@ -323,6 +328,8 @@ export async function supaMemory(
             bias: {},
             useStreaming: false,
             noMultiGen: true,
+            currentChar: arg.currentChar,
+            triggerTarget: arg.chatTarget,
           },
           "memory",
         );
@@ -389,7 +396,7 @@ export async function supaMemory(
         if (chunkSize + tokens > maxChunkSize) {
           if (stringlizedChat === "") {
             if (cont.role !== "function" && cont.role !== "system") {
-              stringlizedChat += `${cont.role === "assistant" ? (char.type === "group" ? "" : char.name) : getUserName()}: ${cont.content}\n\n`;
+              stringlizedChat += `${cont.role === "assistant" ? (char.type === "group" ? "" : char.name) : getUserName(arg.chatTarget)}: ${cont.content}\n\n`;
               spiceLen += 1;
               currentTokens -= tokens;
               chunkSize += tokens;
@@ -398,7 +405,7 @@ export async function supaMemory(
           lastId = cont.memo;
           break;
         }
-        stringlizedChat += `${cont.role === "assistant" ? (char.type === "group" ? "" : char.name) : getUserName()}: ${cont.content}\n\n`;
+        stringlizedChat += `${cont.role === "assistant" ? (char.type === "group" ? "" : char.name) : getUserName(arg.chatTarget)}: ${cont.content}\n\n`;
         spiceLen += 1;
         currentTokens -= tokens;
         chunkSize += tokens;

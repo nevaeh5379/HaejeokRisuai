@@ -188,7 +188,11 @@ async function buildDescriptionText(
       : "") + currentChar.desc,
     { chara: currentChar, chatTarget: target },
   );
-  const additionalInfo = await additionalInformations(currentChar, currentChat);
+  const additionalInfo = await additionalInformations(
+    currentChar,
+    currentChat,
+    target,
+  );
   if (additionalInfo) {
     description += `\n\n${risuChatParser(additionalInfo, {
       chara: currentChar,
