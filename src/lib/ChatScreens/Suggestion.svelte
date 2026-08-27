@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { requestChatData } from "src/ts/process/request/chatRequestOrchestrator";
     import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
-    import { doingChat } from "../../ts/process/chatRuntimeState";
+    import { activeGenerationChatIds } from "../../ts/process/chatRuntimeState";
     import { type character, type Message, type groupChat } from "../../ts/storage/database.svelte";
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import { selectedCharID } from "../../ts/stores.svelte";
@@ -37,8 +37,14 @@
         abortController = undefined
     }
 
+    const isCurrentChatGenerating = () => {
+        const currentChar = characterStore.characters[$selectedCharID]
+        const currentChat = currentChar?.chats?.[currentChar.chatPage]
+        return Boolean(currentChat?.id && $activeGenerationChatIds.has(currentChat.id))
+    }
+
     const updateSuggestions = () => {
-        if($selectedCharID > -1 && !$doingChat) {
+        if($selectedCharID > -1 && !isCurrentChatGenerating()) {
             if(progressChatPage > 0 && progressChatPage != chatPage){
                 cancelSuggestionRequest()
             }
@@ -48,7 +54,7 @@
     }
 
     const requestSuggestions = () => {
-        if($doingChat || $selectedCharID <= -1 || (suggestMessages && suggestMessages.length > 0) || progress){
+        if(isCurrentChatGenerating() || $selectedCharID <= -1 || (suggestMessages && suggestMessages.length > 0) || progress){
             return
         }
 
@@ -124,8 +130,10 @@
         })
     }
 
-    const unsub = doingChat.subscribe(async (v) => {
-        if(v) {
+    const unsub = activeGenerationChatIds.subscribe(async (activeChatIds) => {
+        const currentChar = characterStore.characters[$selectedCharID]
+        const currentChat = currentChar?.chats?.[currentChar.chatPage]
+        if(currentChat?.id && activeChatIds.has(currentChat.id)) {
             cancelSuggestionRequest()
             suggestMessages = []
             return
@@ -164,7 +172,7 @@
             <div class="loadmove mx-2"></div>
             <div>{language.creatingSuggestions}</div>
         </div>        
-    {:else if !$doingChat}
+    {:else if !isCurrentChatGenerating()}
         {#if settingsStore.state.translator !== ''}
             <div class="flex mr-2 mb-2">
                 <button class={"bg-textcolor2 hover:bg-darkbutton font-bold py-2 px-4 rounded-sm " + (toggleTranslate ? 'text-green-500' : 'text-textcolor')}
