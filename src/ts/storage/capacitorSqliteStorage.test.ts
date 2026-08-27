@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { makeCapacitorStorage } from "./sqliteTestHarness";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
 import { buildFullDatabase } from "./sqliteTestFixtures";
+import { presetTemplate } from "./database.svelte";
 
 describe("CapacitorSqliteStorage", () => {
   it("runs commits through the native transaction bridge with real SQL", async () => {
@@ -27,4 +28,136 @@ describe("CapacitorSqliteStorage", () => {
     ).toBe(true);
     database.close();
   });
+
+  it("streams restore statements instead of collecting a complete transaction payload", async () => {
+    const database = new DatabaseSync(":memory:");
+    database.exec(sqliteSchemaSql);
+    const storage = makeCapacitorStorage(database);
+
+    // The shared Tauri path buffers a statement array for one native invoke.
+    // Android must bypass that method and execute each statement inside the
+    // already-open Capacitor transaction to keep restore memory bounded.
+    (storage as any).executeNativeTransaction = async () => {
+      throw new Error("buffered transaction path must not be used");
+    };
+
+    const source = buildFullDatabase() as any;
+    source.personas = [
+      { name: "One", icon: "assets/one.png", personaPrompt: "one", note: "" },
+      { name: "Two", icon: "assets/two.png", personaPrompt: "two", note: "" },
+      { name: "Three", icon: "", personaPrompt: "three", note: "" },
+    ];
+    source.modules = [
+      { id: "module-1", name: "First module", lorebook: [] },
+      { id: "module-2", name: "Second module", lorebook: [] },
+    ];
+    source.botPresets = [
+      { ...structuredClone(presetTemplate), name: "First preset" },
+      { ...structuredClone(presetTemplate), name: "Second preset" },
+    ];
+    source.botPresetsId = 1;
+    source.mainPrompt = "restored prompt";
+
+    await expect(storage.replaceDatabase(source)).resolves.toBe(true);
+    expect(
+      database.prepare("SELECT COUNT(*) AS count FROM characters").get(),
+    ).toEqual({ count: 2 });
+    expect((await storage.loadPersonas()).map((persona) => persona.name)).toEqual([
+      "One",
+      "Two",
+      "Three",
+    ]);
+    expect((await storage.loadModules()).map((module) => module.name)).toEqual([
+      "First module",
+      "Second module",
+    ]);
+    const presets = await storage.listBotPresets();
+    expect(presets.map((preset) => preset.name)).toEqual([
+      "First preset",
+      "Second preset",
+    ]);
+    expect((await storage.loadPrompts()).mainPrompt).toBe("restored prompt");
+    database.close();
+  });
+
+  it("restores thousands of Android entities without using the buffered transaction path", async () => {
+    const characterCount = 1_200;
+    const personaCount = 3_000;
+    const moduleCount = 3_000;
+    const presetCount = 3_000;
+    const database = new DatabaseSync(":memory:");
+    database.exec(sqliteSchemaSql);
+    const storage = makeCapacitorStorage(database);
+
+    (storage as any).executeNativeTransaction = async () => {
+      throw new Error("buffered transaction path must not be used");
+    };
+
+    const source = buildFullDatabase() as any;
+    source.characters = Array.from({ length: characterCount }, (_, index) => ({
+      chaId: `stress-character-${index}`,
+      type: "character",
+      name: `Stress character ${index}`,
+      image: `assets/stress-character-${index}.png`,
+      firstMessage: `First message ${index}`,
+      chats: [],
+    }));
+    source.personas = Array.from({ length: personaCount }, (_, index) => ({
+      name: `Stress persona ${index}`,
+      icon: `assets/stress-persona-${index}.png`,
+      personaPrompt: `Persona prompt ${index}`,
+      note: `Persona note ${index}`,
+      largePortrait: index % 2 === 0,
+    }));
+    source.modules = Array.from({ length: moduleCount }, (_, index) => ({
+      id: `stress-module-${index}`,
+      name: `Stress module ${index}`,
+      description: `Module description ${index}`,
+      lorebook: [],
+    }));
+    source.botPresets = Array.from({ length: presetCount }, (_, index) => ({
+      name: `Stress preset ${index}`,
+      image: `assets/stress-preset-${index}.png`,
+      apiType: "openai",
+      aiModel: `stress-model-${index % 8}`,
+      mainPrompt: `Preset prompt ${index}`,
+    }));
+    source.botPresetsId = presetCount - 1;
+    source.mainPrompt = "stress restored prompt";
+
+    await expect(storage.replaceDatabase(source)).resolves.toBe(true);
+
+    expect(
+      database.prepare("SELECT COUNT(*) AS count FROM characters").get(),
+    ).toEqual({ count: characterCount });
+    const personas = await storage.loadPersonas();
+    expect(personas).toHaveLength(personaCount);
+    expect([
+      personas[0].name,
+      personas[Math.floor(personaCount / 2)].name,
+      personas[personaCount - 1].name,
+    ]).toEqual([
+      "Stress persona 0",
+      `Stress persona ${Math.floor(personaCount / 2)}`,
+      `Stress persona ${personaCount - 1}`,
+    ]);
+    const modules = await storage.loadModules();
+    expect(modules).toHaveLength(moduleCount);
+    expect(modules[moduleCount - 1].name).toBe(
+      `Stress module ${moduleCount - 1}`,
+    );
+    const presets = await storage.listBotPresets();
+    expect(presets).toHaveLength(presetCount);
+    expect(presets[0].name).toBe("Stress preset 0");
+    expect(presets[Math.floor(presetCount / 2)].name).toBe(
+      `Stress preset ${Math.floor(presetCount / 2)}`,
+    );
+    expect(presets[presetCount - 1].name).toBe(
+      `Stress preset ${presetCount - 1}`,
+    );
+    expect((await storage.loadPrompts()).mainPrompt).toBe(
+      "stress restored prompt",
+    );
+    database.close();
+  }, 120_000);
 });
