@@ -18,10 +18,7 @@ import {
 } from "../alert";
 import { LocalWriter, forageStorage } from "../globalApi.svelte";
 import { isCapacitor, isNodeServer, isTauri } from "src/ts/platform";
-import {
-  decodeRisuSave,
-  encodeRisuSaveLegacyAsync,
-} from "../storage/risuSave";
+import { decodeRisuSave, encodeRisuSaveLegacyAsync } from "../storage/risuSave";
 import { normalizeDatabaseDefaults } from "../storage/databaseDefaults";
 import type { Database, PortableDatabase } from "../storage/schema";
 
@@ -51,7 +48,7 @@ import {
   makeLegacyCompatibleDatabase,
   type ColdStorageValueMap,
 } from "../backupCompatibility";
-import { safeStructuredClone } from "../polyfill";
+
 import { registerPlugin } from "@capacitor/core";
 import { Buffer } from "buffer";
 import { classifyBackupEntry } from "@risuai/backup-core/entryPolicy.cjs";
@@ -164,7 +161,9 @@ export function createNativeImportSource(
         if (chunk.eof) break;
       }
       if (offset !== normalizedSize) {
-        throw new Error("Native backup importer ended before the declared size");
+        throw new Error(
+          "Native backup importer ended before the declared size",
+        );
       }
       return output.buffer;
     },
@@ -173,7 +172,9 @@ export function createNativeImportSource(
 
 const TAURI_IMPORT_CHUNK_SIZE = 4 * 1024 * 1024;
 
-async function createTauriImportSource(path: string): Promise<LocalBackupSource> {
+async function createTauriImportSource(
+  path: string,
+): Promise<LocalBackupSource> {
   const metadataHandle = await openFile(path, { read: true });
   let size = 0;
   try {
@@ -205,7 +206,8 @@ async function createTauriImportSource(path: string): Promise<LocalBackupSource>
               controller.close();
               return;
             }
-            if (bytesRead <= 0) throw new Error("Tauri backup importer stopped before EOF");
+            if (bytesRead <= 0)
+              throw new Error("Tauri backup importer stopped before EOF");
             controller.enqueue(buffer.subarray(0, bytesRead));
           } catch (error) {
             await close();
@@ -224,16 +226,21 @@ async function createTauriImportSource(path: string): Promise<LocalBackupSource>
       try {
         while (offset < size) {
           const bytesRead = await handle.read(
-            output.subarray(offset, Math.min(size, offset + TAURI_IMPORT_CHUNK_SIZE)),
+            output.subarray(
+              offset,
+              Math.min(size, offset + TAURI_IMPORT_CHUNK_SIZE),
+            ),
           );
           if (bytesRead === null) break;
-          if (bytesRead <= 0) throw new Error("Tauri backup importer stopped before EOF");
+          if (bytesRead <= 0)
+            throw new Error("Tauri backup importer stopped before EOF");
           offset += bytesRead;
         }
       } finally {
         await handle.close();
       }
-      if (offset !== size) throw new Error("Tauri backup importer ended before the declared size");
+      if (offset !== size)
+        throw new Error("Tauri backup importer ended before the declared size");
       return output.buffer;
     },
   };
@@ -285,7 +292,8 @@ export function buildPortableLocalBackupDatabase(
       key === "account" ||
       typeof value === "function" ||
       (mode === "compatible" && key === "moduleFolders")
-    ) continue;
+    )
+      continue;
     cleanDb[key] = value;
   }
   cleanDb.pluginCustomStorage ??= {};
@@ -315,9 +323,10 @@ async function initializeLocalBackupWriter(
       ? "Saving compatible local backup..."
       : "Saving HaejeokRisuAI local backup...";
   const startedAt = Date.now();
-  const waitingDetail = isTauri || isCapacitor
-    ? "Waiting for the system Save dialog. Choose a file or cancel to continue."
-    : "Preparing the browser download stream.";
+  const waitingDetail =
+    isTauri || isCapacitor
+      ? "Waiting for the system Save dialog. Choose a file or cancel to continue."
+      : "Preparing the browser download stream.";
   const update = () =>
     alertProgress(
       `${label} (Selecting destination)\n${waitingDetail}\nElapsed: ${formatBackupElapsed(startedAt)}`,
@@ -376,9 +385,10 @@ async function saveNodeLocalBackupStream(mode: LocalBackupMode) {
   const anchor = document.createElement("a");
   anchor.href = `/api/local-backup/export/${encodeURIComponent(body.id)}?auth=${encodeURIComponent(auth)}`;
   const dateStr = new Date().toISOString().slice(0, 10);
-  anchor.download = mode === "compatible"
-    ? `risu_compatible_backup_${dateStr}.risubackup`
-    : `haejeokrisu_backup_${dateStr}.risubackup`;
+  anchor.download =
+    mode === "compatible"
+      ? `risu_compatible_backup_${dateStr}.risubackup`
+      : `haejeokrisu_backup_${dateStr}.risubackup`;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -435,8 +445,10 @@ async function loadFallbackBackupSnapshot(
 ): Promise<PortableDatabase> {
   onProgress?.("Loading database from storage...");
   await settingsStore.ensureDeferredLoaded();
-  const live = createDatabaseSnapshot() as PortableDatabase;
-  const snapshot = safeStructuredClone(live) as PortableDatabase;
+  // $state.snapshot already returns a detached deep copy of the reactive
+  // tree, so a second structuredClone here doubled the peak memory of the
+  // backup path (the dominant cost on 4GB Android devices) for no benefit.
+  const snapshot = createDatabaseSnapshot() as PortableDatabase;
 
   try {
     const storage = await getSqlStorage();
@@ -449,7 +461,11 @@ async function loadFallbackBackupSnapshot(
       const fullCharacter = await storage.loadCharacter(shell.chaId);
       if (fullCharacter) snapshot.characters[index] = fullCharacter;
       const character = snapshot.characters[index];
-      for (let chatIndex = 0; chatIndex < (character.chats?.length ?? 0); chatIndex++) {
+      for (
+        let chatIndex = 0;
+        chatIndex < (character.chats?.length ?? 0);
+        chatIndex++
+      ) {
         const chat = character.chats[chatIndex];
         if (!chat?.id) continue;
         const fullChat = await storage.loadChat(chat.id);
@@ -457,7 +473,10 @@ async function loadFallbackBackupSnapshot(
       }
     }
   } catch (error) {
-    console.warn("Backup entity fallback could not fully hydrate SQL data:", error);
+    console.warn(
+      "Backup entity fallback could not fully hydrate SQL data:",
+      error,
+    );
   }
   return snapshot;
 }
@@ -465,13 +484,15 @@ async function loadFallbackBackupSnapshot(
 function normalizeBackupSnapshot(db: PortableDatabase): void {
   db.pluginCustomStorage ??= {};
   if (!db.personas || db.personas.length === 0) {
-    db.personas = [{
-      name: db.username || "User",
-      icon: db.userIcon || "",
-      personaPrompt: "",
-      note: db.userNote || "",
-      largePortrait: false,
-    }];
+    db.personas = [
+      {
+        name: db.username || "User",
+        icon: db.userIcon || "",
+        personaPrompt: "",
+        note: db.userNote || "",
+        largePortrait: false,
+      },
+    ];
   } else {
     for (const persona of db.personas) {
       if (persona) persona.largePortrait ??= false;
@@ -519,7 +540,8 @@ export async function createBackupDatabaseSnapshot(
     const storage = await getSqlStorage();
     if (
       storage.isEnabled() &&
-      (!db.pluginCustomStorage || Object.keys(db.pluginCustomStorage).length === 0)
+      (!db.pluginCustomStorage ||
+        Object.keys(db.pluginCustomStorage).length === 0)
     ) {
       const pluginStorage = await storage.loadPluginCustomStorage();
       if (pluginStorage && Object.keys(pluginStorage).length > 0) {
@@ -573,7 +595,8 @@ function buildBackupAssetMap(
     if (scope === "essential") continue;
 
     for (const emotion of char.emotionImages ?? []) {
-      if (emotion?.[1]) addBackupAsset(assets, emotion[1], charName, emotion[0]);
+      if (emotion?.[1])
+        addBackupAsset(assets, emotion[1], charName, emotion[0]);
     }
     if (char.type === "group") continue;
     for (const asset of char.additionalAssets ?? []) {
@@ -666,7 +689,10 @@ async function writeLocalBackupAssets(
   writer: LocalWriter,
   db: PortableDatabase,
   options: LocalBackupExportOptions,
-): Promise<{ missingAssets: string[]; assetMap: Map<string, BackupAssetInfo> }> {
+): Promise<{
+  missingAssets: string[];
+  assetMap: Map<string, BackupAssetInfo>;
+}> {
   const label = backupLabel(options.partial);
   const assetMap = buildBackupAssetMap(db, options.assetScope);
   const missingAssets: string[] = [];
@@ -689,7 +715,11 @@ async function writeLocalBackupAssets(
       const key = assets[index].name;
       if (!key) continue;
       const now = Date.now();
-      if (now - lastUiUpdate > 30 || index === 0 || index === assets.length - 1) {
+      if (
+        now - lastUiUpdate > 30 ||
+        index === 0 ||
+        index === assets.length - 1
+      ) {
         lastUiUpdate = now;
         reportBackupAssetProgress(
           label,
@@ -780,10 +810,7 @@ async function writeLocalBackupAssets(
   return { missingAssets, assetMap };
 }
 
-async function collectBackupColdStorage(
-  db: PortableDatabase,
-  label: string,
-) {
+async function collectBackupColdStorage(db: PortableDatabase, label: string) {
   alertProgress(`${label} (Checking cold storage)`, 0);
   await sleep(10);
   const coldStoragePayloads = await collectColdStorageBackupPayloads(
@@ -862,7 +889,9 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
   }
 
   const writer = new LocalWriter();
-  if (!(await initializeLocalBackupWriter(writer, options.partial, options.mode))) {
+  if (
+    !(await initializeLocalBackupWriter(writer, options.partial, options.mode))
+  ) {
     alertClear();
     return;
   }
@@ -877,7 +906,9 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
   alertProgress(`${label} (Compressing database)`, 92);
   await sleep(30);
   const coldStorageValues = new Map(
-    coldStoragePayloads.payloads.map((payload) => [payload.key, payload.value] as const),
+    coldStoragePayloads.payloads.map(
+      (payload) => [payload.key, payload.value] as const,
+    ),
   );
   const cleanDb = buildPortableLocalBackupDatabase(
     db,
@@ -990,13 +1021,18 @@ async function restoreLocalBackupSource(
     pendingTauriAssetBytes = 0;
 
     const directories = new Set(
-      entries.map(([assetPath]) => assetPath.slice(0, assetPath.lastIndexOf("/"))),
+      entries.map(([assetPath]) =>
+        assetPath.slice(0, assetPath.lastIndexOf("/")),
+      ),
     );
     await Promise.all(
       Array.from(directories)
         .filter((directory) => !tauriAssetDirectories.has(directory))
         .map(async (directory) => {
-          await mkdir(directory, { baseDir: BaseDirectory.AppData, recursive: true });
+          await mkdir(directory, {
+            baseDir: BaseDirectory.AppData,
+            recursive: true,
+          });
           tauriAssetDirectories.add(directory);
         }),
     );
@@ -1158,9 +1194,7 @@ async function restoreLocalBackupSource(
               );
             }
           } else {
-            console.warn(
-              `Skipping invalid cold storage backup item ${name}`,
-            );
+            console.warn(`Skipping invalid cold storage backup item ${name}`);
           }
         } catch (e) {
           console.error(
@@ -1315,7 +1349,9 @@ async function restoreLocalBackupSource(
             if (classification.kind === "extension") {
               entryDataBuffer = null;
               ignoredExtensionEntries++;
-              console.info(`Skipping unsupported backup extension entry: ${entryName}`);
+              console.info(
+                `Skipping unsupported backup extension entry: ${entryName}`,
+              );
             } else {
               entryDataBuffer = new Uint8Array(length);
             }
@@ -1380,7 +1416,10 @@ async function restoreLocalBackupSource(
     }
   } catch (streamErr) {
     // If chunked container failed, try fallback for raw database.bin
-    console.warn("Stream backup container parsing failed, trying raw database.bin fallback:", streamErr);
+    console.warn(
+      "Stream backup container parsing failed, trying raw database.bin fallback:",
+      streamErr,
+    );
     try {
       const buffer = await file.arrayBuffer();
       const rawBytes = new Uint8Array(buffer);
@@ -1458,13 +1497,19 @@ async function restoreLocalBackupSource(
   db = null;
   console.info("[LocalBackupRestore] Decoded database summary", {
     databaseBytes: databaseByteLength,
-    characters: Array.isArray(dbData.characters) ? dbData.characters.length : null,
+    characters: Array.isArray(dbData.characters)
+      ? dbData.characters.length
+      : null,
     personas: Array.isArray(dbData.personas) ? dbData.personas.length : null,
     modules: Array.isArray(dbData.modules) ? dbData.modules.length : null,
-    botPresets: Array.isArray((dbData as Database & Partial<PortableDatabase>).botPresets)
+    botPresets: Array.isArray(
+      (dbData as Database & Partial<PortableDatabase>).botPresets,
+    )
       ? (dbData as Database & Partial<PortableDatabase>).botPresets!.length
       : null,
-    promptTemplate: Array.isArray(dbData.promptTemplate) ? dbData.promptTemplate.length : null,
+    promptTemplate: Array.isArray(dbData.promptTemplate)
+      ? dbData.promptTemplate.length
+      : null,
   });
   normalizeDatabaseDefaults(dbData);
   dbData.pluginCustomStorage ??= {};
@@ -1501,10 +1546,7 @@ async function restoreLocalBackupSource(
       syncProgress === undefined ? 0 : Math.max(0, Math.min(1, syncProgress));
     const progress = 92 + ratio * 8;
     const sqlPercent = Math.round(ratio * 100);
-    alertProgress(
-      `${baseMsg}\n${step}\nSQL restore: ${sqlPercent}%`,
-      progress,
-    );
+    alertProgress(`${baseMsg}\n${step}\nSQL restore: ${sqlPercent}%`, progress);
   });
 
   if (isTauri) {
@@ -1541,7 +1583,9 @@ async function loadCapacitorLocalBackup() {
       const bytesRead = Math.max(0, event.bytesRead ?? 0);
       const totalBytes = Math.max(0, event.totalBytes ?? 0);
       const readPercent =
-        totalBytes > 0 ? Math.min(45, Math.floor((bytesRead / totalBytes) * 45)) : 0;
+        totalBytes > 0
+          ? Math.min(45, Math.floor((bytesRead / totalBytes) * 45))
+          : 0;
       const byteDetail =
         totalBytes > 0
           ? `${(bytesRead / 1024 / 1024).toFixed(1)} / ${(totalBytes / 1024 / 1024).toFixed(1)} MB`
@@ -1550,13 +1594,17 @@ async function loadCapacitorLocalBackup() {
       if (event.stage === "committing") {
         const processed = Math.max(0, event.assetsProcessed ?? 0);
         const total = Math.max(0, event.totalAssets ?? 0);
-        const percent = total > 0 ? 45 + Math.floor((processed / total) * 4) : 47;
+        const percent =
+          total > 0 ? 45 + Math.floor((processed / total) * 4) : 47;
         alertProgress(
           `Installing restored assets... (${processed} / ${total})`,
           percent,
         );
       } else if (event.stage === "fallback") {
-        alertProgress(`Reading legacy database backup...\n${byteDetail}`, readPercent);
+        alertProgress(
+          `Reading legacy database backup...\n${byteDetail}`,
+          readPercent,
+        );
       } else if (event.stage === "complete") {
         alertProgress("Native backup extraction complete.", 50);
       } else {
@@ -1578,7 +1626,8 @@ async function loadCapacitorLocalBackup() {
     alertClear();
     return;
   }
-  if (!selected.id) throw new Error("Native backup import session was not created");
+  if (!selected.id)
+    throw new Error("Native backup import session was not created");
 
   const id = selected.id;
   try {

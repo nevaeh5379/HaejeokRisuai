@@ -355,7 +355,12 @@ export function getPreparedNativeThumbnailSrc(
   width = 128,
   height = 128,
 ): string | undefined {
-  if (!isCapacitor || !preparedNativeThumbnailKeys.has(nativeThumbnailCacheKey(loc, width, height))) {
+  if (
+    !isCapacitor ||
+    !preparedNativeThumbnailKeys.has(
+      nativeThumbnailCacheKey(loc, width, height),
+    )
+  ) {
     return undefined;
   }
   return `/_risu_thumb_/${width}x${height}/${encodeNativeAssetKey(loc)}`;
@@ -367,11 +372,24 @@ export async function prepareNativeThumbnails(
   maxHeight = 128,
 ) {
   if (!isCapacitor || !nativeImage || keys.length === 0) {
-    return { total: 0, created: 0, cached: 0, missing: 0, failed: 0, ready: [] as string[] };
+    return {
+      total: 0,
+      created: 0,
+      cached: 0,
+      missing: 0,
+      failed: 0,
+      ready: [] as string[],
+    };
   }
-  const result = await nativeImage.prepareThumbnails({ keys, maxWidth, maxHeight });
+  const result = await nativeImage.prepareThumbnails({
+    keys,
+    maxWidth,
+    maxHeight,
+  });
   for (const loc of result.ready) {
-    preparedNativeThumbnailKeys.add(nativeThumbnailCacheKey(loc, maxWidth, maxHeight));
+    preparedNativeThumbnailKeys.add(
+      nativeThumbnailCacheKey(loc, maxWidth, maxHeight),
+    );
   }
   return result;
 }
@@ -386,9 +404,7 @@ const browserAssetUrls = new BoundedCache<string, string>({
   maxEntries: () =>
     settingsStore.state.lowSpecMode ? 16 : isCapacitor ? 32 : 64,
   maxWeight: () =>
-    (settingsStore.state.lowSpecMode ? 8 : isCapacitor ? 12 : 24) *
-    1024 *
-    1024,
+    (settingsStore.state.lowSpecMode ? 8 : isCapacitor ? 12 : 24) * 1024 * 1024,
   weigh: (_url, key) => browserAssetWeights.get(key) ?? 1,
   onEvict: (url, key) => {
     browserAssetWeights.delete(key);
@@ -550,7 +566,10 @@ export async function getFileSrc(
           }
           return url;
         } catch (error) {
-          console.warn("Native image downsampling failed; using WebView fallback", error);
+          console.warn(
+            "Native image downsampling failed; using WebView fallback",
+            error,
+          );
         }
       }
       const raw = (await forageStorage.getItem(loc)) as unknown as Uint8Array;
@@ -906,23 +925,47 @@ export async function globalFetch(
         const ok = response.ok;
         if (arg.rawResponse) {
           const data = new Uint8Array(await response.arrayBuffer());
-          addFetchLogInGlobalFetch("Uint8Array Response", ok, url, arg, response.status);
-          return { ok, data, headers: Object.fromEntries(response.headers), status: response.status };
+          addFetchLogInGlobalFetch(
+            "Uint8Array Response",
+            ok,
+            url,
+            arg,
+            response.status,
+          );
+          return {
+            ok,
+            data,
+            headers: Object.fromEntries(response.headers),
+            status: response.status,
+          };
         }
         const text = await response.text();
         try {
           const data = JSON.parse(text);
           addFetchLogInGlobalFetch(data, ok, url, arg, response.status);
-          return { ok, data, headers: Object.fromEntries(response.headers), status: response.status };
+          return {
+            ok,
+            data,
+            headers: Object.fromEntries(response.headers),
+            status: response.status,
+          };
         } catch {
           addFetchLogInGlobalFetch(text, ok, url, arg, response.status);
-          return { ok, data: text, headers: Object.fromEntries(response.headers), status: response.status };
+          return {
+            ok,
+            data: text,
+            headers: Object.fromEntries(response.headers),
+            status: response.status,
+          };
         }
       } catch (error) {
         if (!(error instanceof DurableModelJobUnavailableError)) {
           return { ok: false, data: `${error}`, headers: {}, status: 409 };
         }
-        console.warn("[ModelJob] durable transport unavailable; using the existing request path", error);
+        console.warn(
+          "[ModelJob] durable transport unavailable; using the existing request path",
+          error,
+        );
       }
     }
 
@@ -1589,15 +1632,19 @@ class CapacitorWriter {
   constructor(private readonly id: string) {}
 
   async write(data: Uint8Array): Promise<void> {
-    if (!capStreamFileWriter) throw new Error("Native file writer is unavailable");
+    if (!capStreamFileWriter)
+      throw new Error("Native file writer is unavailable");
     await capStreamFileWriter.write({
       id: this.id,
       data: Buffer.from(data).toString("base64"),
     });
   }
 
-  async writeAssets(keys: string[]): Promise<{ written: number; missing: string[] }> {
-    if (!capStreamFileWriter) throw new Error("Native file writer is unavailable");
+  async writeAssets(
+    keys: string[],
+  ): Promise<{ written: number; missing: string[] }> {
+    if (!capStreamFileWriter)
+      throw new Error("Native file writer is unavailable");
     return await capStreamFileWriter.writeAssets({ id: this.id, keys });
   }
 
@@ -1867,6 +1914,7 @@ let fetchIndex = 0;
  * @type {{ [key: string]: StreamedFetchChunk[] }}
  */
 let nativeFetchData: { [key: string]: StreamedFetchChunk[] } = {};
+let nativeFetchNotify: { [key: string]: () => void } = {};
 
 /**
  * Interface representing a streamed fetch chunk data.
@@ -1957,6 +2005,7 @@ if (isTauri) {
       const parsed = JSON.parse(event.payload as string);
       const id = parsed.id;
       nativeFetchData[id]?.push(parsed);
+      nativeFetchNotify[id]?.();
     } catch (error) {
       console.error(error);
     }
@@ -1970,6 +2019,7 @@ if (isCapacitor) {
   capStreamedFetch
     .addListener("streamed_fetch", (event) => {
       nativeFetchData[event.id]?.push(event);
+      nativeFetchNotify[event.id]?.();
     })
     .then(() => {
       streamedFetchListening = true;
@@ -2381,7 +2431,10 @@ export async function fetchNative(
       return durableResponse;
     } catch (error) {
       if (!(error instanceof DurableModelJobUnavailableError)) throw error;
-      console.warn("[ModelJob] durable transport unavailable; using the existing request path", error);
+      console.warn(
+        "[ModelJob] durable transport unavailable; using the existing request path",
+        error,
+      );
     }
   }
 
@@ -2407,6 +2460,16 @@ export async function fetchNative(
       nativeFetchData[fetchId] = [];
       let nativeFetchHead = 0;
       let resolved = false;
+      // Chunk arrival notification: the stream consumer used to poll with a
+      // 10ms sleep on every loop iteration, adding up to 10ms of added
+      // latency per SSE token. Waiters are now woken directly by the
+      // plugin event listener (and a slow 100ms safety tick).
+      let notifyWaiters: (() => void) | null = null;
+      const notify = () => {
+        notifyWaiters?.();
+        notifyWaiters = null;
+      };
+      nativeFetchNotify[fetchId] = notify;
 
       let error = "";
       while (!streamedFetchListening) {
@@ -2485,18 +2548,28 @@ export async function fetchNative(
                 // Array.shift() moves every remaining chunk on each read. Keep
                 // a cursor instead and compact only occasionally so long native
                 // streams remain amortized O(n) without retaining old chunks.
-                if (nativeFetchHead >= 256 && nativeFetchHead * 2 >= queue.length) {
+                if (
+                  nativeFetchHead >= 256 &&
+                  nativeFetchHead * 2 >= queue.length
+                ) {
                   queue.splice(0, nativeFetchHead);
                   nativeFetchHead = 0;
                 }
+                continue;
               }
-              await sleep(10);
+              if (resolved) break;
+              await new Promise<void>((resolve) => {
+                notifyWaiters = resolve;
+                // Safety tick in case a notification is missed.
+                setTimeout(resolve, 100);
+              });
             }
             controller.close();
           } finally {
             // Completed request queues previously stayed in this process-wide
             // object forever, leaking one array per native fetch.
             delete nativeFetchData[fetchId];
+            delete nativeFetchNotify[fetchId];
           }
         },
       });
@@ -2507,7 +2580,16 @@ export async function fetchNative(
       }
 
       while (resHeaders === null && !resolved) {
-        await sleep(10);
+        if (nativeFetchHead < (nativeFetchData[fetchId]?.length ?? 0)) {
+          // The stream consumer processes queued data; yield to it instead
+          // of spinning synchronously.
+          await sleep(1);
+          continue;
+        }
+        await new Promise<void>((resolve) => {
+          notifyWaiters = resolve;
+          setTimeout(resolve, 100);
+        });
       }
 
       if (resHeaders === null) {
@@ -3081,7 +3163,8 @@ export function changeChatTo(IdOrIndex: string | number) {
     return;
   }
 
-  const nextChat = characterStore.characters[characterStore.selectedId]?.chats?.[index];
+  const nextChat =
+    characterStore.characters[characterStore.selectedId]?.chats?.[index];
   if (characterStore.characters[characterStore.selectedId]) {
     characterStore.characters[characterStore.selectedId].chatPage = index;
   }

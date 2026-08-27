@@ -24,10 +24,7 @@ import {
 import { rebuildMessageRows } from "./sqliteStorageUtils";
 
 // Re-export so migrated suites keep working with a single import.
-export {
-  flattenRelationalValue,
-  rebuildRelationalValue,
-};
+export { flattenRelationalValue, rebuildRelationalValue };
 export type { RelationalNodeRow };
 
 // ── Query log ────────────────────────────────────────────────────────
@@ -101,7 +98,10 @@ class StatementAdapter {
 export class NodeSqliteDatabase {
   private readonly statements = new Map<string, StatementAdapter>();
 
-  constructor(readonly database: DatabaseSync, private readonly log: QueryLog) {}
+  constructor(
+    readonly database: DatabaseSync,
+    private readonly log: QueryLog,
+  ) {}
 
   exec(sql: string) {
     this.log.record("run", sql);
@@ -175,9 +175,7 @@ export function makeWebStorage(database: DatabaseSync): WebSqliteStorage {
     exec: async (sql: string, bind: unknown[] = []) => {
       db.run(sql, bind);
     },
-    execBatch: async (
-      statements: Array<{ sql: string; bind?: unknown[] }>,
-    ) => {
+    execBatch: async (statements: Array<{ sql: string; bind?: unknown[] }>) => {
       for (const statement of statements) {
         db.run(statement.sql, statement.bind ?? []);
       }
@@ -268,9 +266,7 @@ export function makeTauriStorage(database: DatabaseSync): TauriSqliteStorage {
           );
           const current = Number(meta[0]?.revision) || 0;
           if (current !== payload.expectedRevision) {
-            throw new Error(
-              `RISU_SQL_REVISION_CONFLICT:${current}`,
-            );
+            throw new Error(`RISU_SQL_REVISION_CONFLICT:${current}`);
           }
         }
         for (const statement of payload.statements) {
@@ -338,6 +334,14 @@ export function makeCapacitorStorage(
     },
     execute: async (sql: string) => {
       db.run(sql);
+      return { changes: { changes: 0 } };
+    },
+    // Mirrors the real plugin's executeSet: one bridge call per statement
+    // list, each entry { statement, values }.
+    executeSet: async (set: { statement: string; values?: unknown[] }[]) => {
+      for (const entry of set) {
+        db.run(entry.statement, entry.values ?? []);
+      }
       return { changes: { changes: 0 } };
     },
     beginTransaction: async () => {

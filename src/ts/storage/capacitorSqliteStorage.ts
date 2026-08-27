@@ -14,10 +14,7 @@ import {
   type SqlCommit,
   type SqlCommitResult,
 } from "./sqlCommit";
-import {
-  applySqliteCommit,
-  countSqliteCommitStatements,
-} from "./sqliteCommit";
+import { applySqliteCommit, countSqliteCommitStatements } from "./sqliteCommit";
 import type { SqliteTransactionStatement } from "./sqliteStorageUtils";
 import type { Database as DatabaseType } from "./schema";
 import { CapacitorSqliteRestoreStream } from "./capacitorSqliteRestoreStream";
@@ -38,8 +35,10 @@ const capacitorSchemaSql = sqliteSchemaSql.replace(
  * Uses @capacitor-community/sqlite so the database is an app-private native
  * SQLite file rather than browser IndexedDB/OPFS storage.
  */
-export class CapacitorSqliteStorage extends NativeSqliteStorageBase
-  implements ISqlStorage {
+export class CapacitorSqliteStorage
+  extends NativeSqliteStorageBase
+  implements ISqlStorage
+{
   readonly backendKind = "capacitor-sqlite" as const;
 
   private sqlite: SQLiteConnection | null = null;
@@ -59,12 +58,12 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
     this.db = existing.result
       ? await this.sqlite.retrieveConnection(this.dbName, false)
       : await this.sqlite.createConnection(
-        this.dbName,
-        false,
-        "no-encryption",
-        1,
-        false,
-      );
+          this.dbName,
+          false,
+          "no-encryption",
+          1,
+          false,
+        );
     await this.db.open();
   }
 
@@ -106,16 +105,28 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
     const total = statements.length;
     const progressInterval = Math.max(1, Math.floor(total / 100));
     onProgress?.(0, total);
+    let completed = 0;
     await this.runNativeTransaction(expectedRevision, async (execute) => {
-      for (const [index, statement] of statements.entries()) {
+      for (const statement of statements) {
         await execute(statement.sql, statement.bind ?? []);
-        const completed = index + 1;
+        completed++;
         if (completed === total || completed % progressInterval === 0) {
           onProgress?.(completed, total);
         }
       }
     });
   }
+
+  /**
+   * Each db.run() call is a full JS↔native bridge round trip, so large
+   * commits (e.g. a 100-message save) previously cost 100+ sequential
+   * round trips. Buffers statements and flushes them in chunks through
+   * executeSet(), which executes the whole chunk inside one bridge call.
+   * All statements still run inside the caller's single SQLite
+   * transaction, so atomicity and ordering are unchanged.
+   */
+  private static readonly BATCH_MAX_STATEMENTS = 48;
+  private static readonly BATCH_MAX_PAYLOAD_CHARS = 256 * 1024;
 
   private async runNativeTransaction<T>(
     expectedRevision: number | null,
@@ -127,6 +138,22 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
       throw new Error("SQLite storage is not enabled");
     }
     await this.db.beginTransaction();
+    let pendingBatch: SqliteTransactionStatement[] = [];
+    let batchPayloadChars = 0;
+    const flushBatch = async () => {
+      if (pendingBatch.length === 0) return;
+      const chunk = pendingBatch;
+      pendingBatch = [];
+      batchPayloadChars = 0;
+      await this.db!.executeSet(
+        chunk.map((statement) => ({
+          statement: statement.sql,
+          values: statement.bind ?? [],
+        })),
+        false,
+        "no",
+      );
+    };
     try {
       if (expectedRevision !== null) {
         const meta = await this.selectOne<{ revision: number }>(
@@ -138,12 +165,26 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
         }
       }
       const execute = async (sql: string, bind: unknown[] = []) => {
-        await this.db!.run(sql, bind, false);
+        let bindChars = 0;
+        for (const value of bind) {
+          if (typeof value === "string") bindChars += value.length;
+        }
+        pendingBatch.push({ sql, bind });
+        batchPayloadChars += sql.length + bindChars;
+        if (
+          pendingBatch.length >= CapacitorSqliteStorage.BATCH_MAX_STATEMENTS ||
+          batchPayloadChars >= CapacitorSqliteStorage.BATCH_MAX_PAYLOAD_CHARS
+        ) {
+          await flushBatch();
+        }
       };
       const result = await task(execute);
+      await flushBatch();
       await this.db.commitTransaction();
       return result;
     } catch (error) {
+      pendingBatch = [];
+      batchPayloadChars = 0;
       try {
         await this.db.rollbackTransaction();
       } catch {
@@ -182,7 +223,10 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
         countSqliteCommitStatements(rootCommit) +
         (rootCommit.replaceAll ? 3 : 0) +
         2;
-      for (const batch of iterateSqlReplaceEntityCommits(database, currentRevision)) {
+      for (const batch of iterateSqlReplaceEntityCommits(
+        database,
+        currentRevision,
+      )) {
         totalStatements += countSqliteCommitStatements(batch);
       }
       onProgress?.(
@@ -227,14 +271,19 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
         Math.min(0.995, 0.05 + writeRatio * 0.45 + applyRatio * 0.5),
       );
       const now = Date.now();
-      if (!force && now - lastReportAt < 50 && progress - lastProgress < 0.0025) {
+      if (
+        !force &&
+        now - lastReportAt < 50 &&
+        progress - lastProgress < 0.0025
+      ) {
         return;
       }
       lastReportAt = now;
       lastProgress = progress;
-      const label = phase === "streaming"
-        ? "Streaming SQL"
-        : `Applying SQL${appliedStage ? ` · ${appliedStage}` : ""}`;
+      const label =
+        phase === "streaming"
+          ? "Streaming SQL"
+          : `Applying SQL${appliedStage ? ` · ${appliedStage}` : ""}`;
       const currentStatement =
         writingFraction > 0 && writingFraction < 1
           ? `, current statement ${Math.round(writingFraction * 100)}%`
@@ -268,7 +317,10 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
         await write("DELETE FROM characters");
       }
       await applySqliteCommit(rootCommit, write);
-      for (const batch of iterateSqlReplaceEntityCommits(database, currentRevision)) {
+      for (const batch of iterateSqlReplaceEntityCommits(
+        database,
+        currentRevision,
+      )) {
         await applySqliteCommit(batch, write);
       }
       await write(
@@ -315,8 +367,8 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
     await this.validatePresetCommit(commit);
 
     const revision = currentRevision + 1;
-    const action = commit.action ||
-      (commit.replaceAll ? "replace-all" : "sync");
+    const action =
+      commit.action || (commit.replaceAll ? "replace-all" : "sync");
     await this.runNativeTransaction(currentRevision, async (execute) => {
       if (commit.replaceAll) {
         await execute("DELETE FROM system_settings");

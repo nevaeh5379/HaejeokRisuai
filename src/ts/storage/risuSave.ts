@@ -144,7 +144,6 @@ export class RisuSaveDecoder {
     content: string;
   }[] = [];
   async decode(data: Uint8Array): Promise<PortableDatabase> {
-    console.log("Decoding RisuSave data");
     let offset = magicRisuSaveHeader.length;
     let db: PortableDatabase = {} as PortableDatabase;
     const loadedBlocks = new Set<string>();
@@ -192,27 +191,34 @@ export class RisuSaveDecoder {
         continue;
       }
     }
-    console.log("blocks", this.blocks);
+    // Peak memory: each parsed block used to keep its full source string in
+    // this.blocks for the whole decode. Blocks are consumed in order below,
+    // so release each block's string as soon as it has been applied. This
+    // halves the decode-time footprint for large backups on low-RAM devices.
+    const releaseBlock = (index: number) => {
+      if (this.blocks[index]) {
+        this.blocks[index] = undefined as any;
+      }
+    };
     let directory: string[] = [];
     for (let i = 0; i < this.blocks.length; i++) {
       const key = i;
+      const block = this.blocks[key];
+      if (!block) continue;
       try {
-        switch (this.blocks[key].type) {
+        switch (block.type) {
           case RisuSaveType.ROOT: {
-            const rootData = JSON.parse(this.blocks[key].content);
+            const rootData = JSON.parse(block.content);
+            releaseBlock(key);
             for (const rootKey in rootData) {
               if (!db[rootKey] && !rootKey.startsWith("__")) {
                 db[rootKey] = rootData[rootKey];
               }
               if (rootKey === "__directory") {
                 directory = rootData[rootKey];
-                console.log("RisuSave directory:", directory);
                 for (const dirKey of directory) {
                   if (!loadedBlocks.has(dirKey)) {
                     try {
-                      console.log(
-                        `Loading directory block ${dirKey} from cache`,
-                      );
                       const dirData: {
                         type: RisuSaveType;
                         data: string;
@@ -245,32 +251,38 @@ export class RisuSaveDecoder {
           case RisuSaveType.CHARACTER_WITH_CHAT:
           case RisuSaveType.CHARACTER_WITHOUT_CHAT: {
             db.characters ??= [];
-            const character = JSON.parse(this.blocks[key].content);
-            db.characters.push(character);
+            db.characters.push(JSON.parse(block.content));
+            releaseBlock(key);
             break;
           }
           case RisuSaveType.BOTPRESET: {
-            db.botPresets = JSON.parse(this.blocks[key].content);
+            db.botPresets = JSON.parse(block.content);
+            releaseBlock(key);
             break;
           }
           case RisuSaveType.MODULES: {
-            db.modules = JSON.parse(this.blocks[key].content);
+            db.modules = JSON.parse(block.content);
+            releaseBlock(key);
             break;
           }
           case RisuSaveType.CONFIG: {
             //ignore for now
+            releaseBlock(key);
             break;
           }
           case RisuSaveType.PLUGINS: {
-            db.plugins = JSON.parse(this.blocks[key].content);
+            db.plugins = JSON.parse(block.content);
+            releaseBlock(key);
             break;
           }
           case RisuSaveType.LOADOUTS: {
-            db.loadouts = JSON.parse(this.blocks[key].content);
+            db.loadouts = JSON.parse(block.content);
+            releaseBlock(key);
             break;
           }
           case RisuSaveType.PLUGIN_STORAGE: {
-            db.pluginCustomStorage = JSON.parse(this.blocks[key].content);
+            db.pluginCustomStorage = JSON.parse(block.content);
+            releaseBlock(key);
             break;
           }
           case RisuSaveType.REMOTE: {
@@ -278,7 +290,7 @@ export class RisuSaveDecoder {
               v: number;
               type: RisuSaveType;
               name: string;
-            } = JSON.parse(this.blocks[key].content);
+            } = JSON.parse(block.content);
             const fileName = `remotes/${remoteInfo.name}.local.bin`;
             let remoteData: Uint8Array | null = null;
             if (isTauri) {
@@ -316,29 +328,29 @@ export class RisuSaveDecoder {
               compression: false,
               content: decoded,
             });
+            releaseBlock(key);
             break;
           }
           case RisuSaveType.ROOT_COMPONENT: {
             const componentData: {
               data: any;
               key: string;
-            } = JSON.parse(this.blocks[key].content);
+            } = JSON.parse(block.content);
             db[componentData.key] = componentData.data;
+            releaseBlock(key);
             break;
           }
           default: {
             console.warn(
-              `Not Implemented RisuSaveType: ${this.blocks[key].type} for ${this.blocks[key].name}`,
+              `Not Implemented RisuSaveType: ${block.type} for ${block.name}`,
             );
+            releaseBlock(key);
           }
         }
       } catch (error) {
-        console.error(
-          `Error processing block ${this.blocks[key].name}:`,
-          error,
-        );
+        console.error(`Error processing block ${block?.name ?? i}:`, error);
 
-        if (this.blocks[key].type === RisuSaveType.ROOT) {
+        if (block?.type === RisuSaveType.ROOT) {
           throw new Error(
             "Failed to decode root block, cannot proceed with decoding RisuSave data",
           );
@@ -350,7 +362,7 @@ export class RisuSaveDecoder {
       db.botPresets = [presetTemplate];
       db.botPresetsId = 0;
     }
-    console.log("Decoded RisuSave data", db);
+    this.blocks = [];
     return db;
   }
 }

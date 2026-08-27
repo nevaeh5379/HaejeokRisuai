@@ -12,7 +12,7 @@ import { v4 as uuidv4 } from "uuid";
 import { get } from "svelte/store";
 import { defaultSdDataFunc } from "./storage/presetDefaults";
 import { setPreset } from "./storage/presetService";
-import type { Database } from "./storage/schema";
+import type { Database, RisuPersona } from "./storage/schema";
 import { installDatabase } from "./storage/databaseLifecycle";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
@@ -97,17 +97,21 @@ async function prepareAndroidCharacterThumbnails() {
   };
 
   const imageByCharacterId = new Map(
-    (characterStore.characters ?? []).map((character) => [character?.chaId, character?.image] as const),
+    (characterStore.characters ?? []).map(
+      (character) => [character?.chaId, character?.image] as const,
+    ),
   );
   for (const item of settingsStore.state.characterOrder ?? []) {
     if (typeof item === "string") {
       addImage(imageByCharacterId.get(item));
     } else if (item && typeof item === "object") {
       addImage((item as any).imgFile);
-      for (const id of (item as any).data ?? []) addImage(imageByCharacterId.get(id));
+      for (const id of (item as any).data ?? [])
+        addImage(imageByCharacterId.get(id));
     }
   }
-  for (const character of characterStore.characters ?? []) addImage(character?.image);
+  for (const character of characterStore.characters ?? [])
+    addImage(character?.image);
 
   const images = [...keys];
   if (images.length === 0) return;
@@ -376,46 +380,50 @@ export async function loadData() {
           performance.mark("active-preset-ready");
         })
         .catch(() => undefined);
+      // One batched multi-key read collapses what used to be four separate
+      // bridge round trips (plugins, modules, customModels, personas +
+      // personaPrompt) into a single native query on Android/Tauri.
+      const settingKeyBatch = storage.loadSettingKeys
+        ? storage.loadSettingKeys([
+            "plugins",
+            "modules",
+            "customModels",
+            "personas",
+            "personaPrompt",
+          ])
+        : null;
       const pluginsReady = Promise.all([
-        storage.loadPlugins(),
+        settingKeyBatch,
         storage.listPluginCustomStorageKeys(),
-        storage.loadModules(),
-        storage.loadSettingKey("customModels"),
-        storage.loadPersonas(),
-        storage.loadSettingKey("personaPrompt"),
       ])
-        .then(
-          async ([
-            plugins,
-            pluginCustomStorageKeys,
-            modules,
-            customModels,
-            personas,
-            personaPrompt,
-          ]) => {
-            settingsStore.hydrate((state) => {
-              state.plugins = plugins ?? [];
-              if (customModels !== undefined) state.customModels = customModels;
-            });
-            settingsStore.hydrateSettingKey("personas", personas);
-            settingsStore.hydrateSettingKey(
-              "personaPrompt",
-              personaPrompt ??
-                personas[settingsStore.state.selectedPersona]?.personaPrompt ??
-                "",
-            );
-            settingsStore.hydrateSettingKey("modules", modules ?? []);
-            settingsStore.hydratePluginCustomStorageKeys(
-              pluginCustomStorageKeys,
-            );
-            moduleStore.init(
-              modules ?? [],
-              activeDb.enabledModules ?? [],
-              activeDb.moduleFolders ?? [],
-            );
-            await loadPlugins();
-          },
-        )
+        .then(async ([settingKeys, pluginCustomStorageKeys]) => {
+          const readKey = <T>(key: string, fallback: T): T =>
+            (settingKeys?.get(key) as T | undefined) ?? fallback;
+          const plugins = readKey<any[] | null>("plugins", null);
+          const modules = readKey<any[]>("modules", []);
+          const customModels = settingKeys?.get("customModels");
+          const personas = readKey<RisuPersona[]>("personas", []);
+          const personaPrompt = settingKeys?.get("personaPrompt");
+          settingsStore.hydrate((state) => {
+            state.plugins = plugins ?? [];
+            if (customModels !== undefined) state.customModels = customModels;
+          });
+          settingsStore.hydrateSettingKey("personas", personas);
+          settingsStore.hydrateSettingKey(
+            "personaPrompt",
+            personaPrompt ??
+              personas[settingsStore.state.selectedPersona]?.personaPrompt ??
+              "",
+          );
+          settingsStore.hydrateSettingKey("modules", modules ?? []);
+          settingsStore.hydratePluginCustomStorageKeys(pluginCustomStorageKeys);
+          moduleStore.init(
+            modules ?? [],
+            activeDb.enabledModules ?? [],
+            activeDb.moduleFolders ?? [],
+          );
+          await loadPlugins();
+        })
         .catch(() => undefined);
       await Promise.all([presetReady, pluginsReady, serviceWorkerReady]);
       try {

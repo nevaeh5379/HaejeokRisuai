@@ -1,4 +1,14 @@
-import type { botPreset, character, Chat, customscript, Database as DatabaseType, groupChat, loreBook, Message, RisuPersona } from "./schema";
+import type {
+  botPreset,
+  character,
+  Chat,
+  customscript,
+  Database as DatabaseType,
+  groupChat,
+  loreBook,
+  Message,
+  RisuPersona,
+} from "./schema";
 import type { RisuModule } from "../process/modules";
 import type {
   BotPresetSummary,
@@ -100,9 +110,8 @@ export abstract class NativeSqliteStorageBase {
       this.initialized = true;
       return true;
     } catch (error) {
-      this.lastInitError = error instanceof Error
-        ? error.message || error.name
-        : String(error);
+      this.lastInitError =
+        error instanceof Error ? error.message || error.name : String(error);
       console.error(`${this.backendName} init failed:`, error);
       try {
         await this.cleanupBackend();
@@ -173,10 +182,10 @@ export abstract class NativeSqliteStorageBase {
               n.encoded_text_value, n.number_value, n.boolean_value
          FROM system_settings s
          LEFT JOIN setting_extension_nodes n ON n.setting_key = s.key${
-        deferredKeyList.length
-          ? ` AND s.key NOT IN (${deferredKeyList.map(() => "?").join(",")})`
-          : ""
-      }
+           deferredKeyList.length
+             ? ` AND s.key NOT IN (${deferredKeyList.map(() => "?").join(",")})`
+             : ""
+         }
          ORDER BY s.key, n.node_id`,
       [...deferredKeyList],
     );
@@ -287,13 +296,22 @@ export abstract class NativeSqliteStorageBase {
           "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
           [row.id],
         );
-        const chats: Chat[] = [];
-        for (const chatRow of chatRows) {
-          const chatData = ((await this.loadNodeValue(
-            "chat_extension_nodes",
-            "chat_id = ?",
-            [chatRow.id],
-          )) ?? {}) as any;
+        const chatValues = chatRows.length
+          ? await this.rebuildGroupedNodeValues(
+              await this.selectRows(
+                `SELECT chat_id, node_id, parent_node_id, node_order, object_key,
+                        object_key_encoded, value_type, text_value, encoded_text_value,
+                        number_value, boolean_value
+                 FROM chat_extension_nodes
+                 WHERE chat_id IN (SELECT id FROM chats WHERE character_id = ?)
+                 ORDER BY chat_id, node_id`,
+                [row.id],
+              ),
+              "chat_id",
+            )
+          : new Map<string, unknown>();
+        const chats: Chat[] = chatRows.map((chatRow) => {
+          const chatData = (chatValues.get(chatRow.id) ?? {}) as any;
           chatData.id = chatRow.id;
           chatData.name = chatRow.name ?? "";
           chatData.note = chatRow.note ?? "";
@@ -302,8 +320,8 @@ export abstract class NativeSqliteStorageBase {
           chatData.message = [];
           chatData.messagesLoaded = false;
           chatData.detailsLoaded = true;
-          chats.push(chatData);
-        }
+          return chatData;
+        });
         fullChar.chats = chats;
         characters.push(fullChar);
       }
@@ -313,7 +331,8 @@ export abstract class NativeSqliteStorageBase {
     const metaRow = await this.selectOne<{ initialized: number }>(
       "SELECT initialized FROM system_storage_meta WHERE singleton = 1",
     );
-    const isInitialized = metaRow?.initialized === 1 ||
+    const isInitialized =
+      metaRow?.initialized === 1 ||
       characters.length > 0 ||
       settings.keyCount > 0;
 
@@ -363,13 +382,17 @@ export abstract class NativeSqliteStorageBase {
       "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
       [revision],
     );
-    const action = commit.action ||
-      (commit.replaceAll ? "replace-all" : "sync");
+    const action =
+      commit.action || (commit.replaceAll ? "replace-all" : "sync");
     await append(
       "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
       [revision, action],
     );
-    await this.executeNativeTransaction(currentRevision, statements, onProgress);
+    await this.executeNativeTransaction(
+      currentRevision,
+      statements,
+      onProgress,
+    );
     this.revision = revision;
     return { revision };
   }
@@ -425,6 +448,31 @@ export abstract class NativeSqliteStorageBase {
     ]);
   }
 
+  /**
+   * Rebuilds one relational value per owner from a single grouped query.
+   * Mirrors WebSqliteStorage's batching so native backends avoid one bridge
+   * round trip per chat (N+1) when hydrating a character's chat metadata.
+   */
+  protected rebuildGroupedNodeValues(
+    rows: Record<string, unknown>[],
+    ownerKey: string,
+  ): Map<string, unknown> {
+    const grouped = new Map<string, Record<string, unknown>[]>();
+    for (const row of rows) {
+      const owner = String(row[ownerKey] ?? "");
+      if (!owner) continue;
+      const list = grouped.get(owner) ?? [];
+      list.push(row);
+      grouped.set(owner, list);
+    }
+    return new Map(
+      Array.from(grouped, ([owner, nodes]) => [
+        owner,
+        rebuildRelationalValue(nodes),
+      ]),
+    );
+  }
+
   protected async validatePresetCommit(commit: SqlCommit): Promise<void> {
     if (!commit.presets) return;
     const originalIds = (
@@ -453,13 +501,11 @@ export abstract class NativeSqliteStorageBase {
     }
     if (commit.presets.activeId === undefined) {
       const current = (await this.loadSettingValue("activeBotPresetId")) as
-        | string
-        | undefined;
+        string | undefined;
       if (!current || !ids.has(current)) {
         const index = originalIds.indexOf(current ?? "");
-        commit.presets.activeId = originalIds.slice(index + 1).find((id) =>
-          ids.has(id)
-        ) ||
+        commit.presets.activeId =
+          originalIds.slice(index + 1).find((id) => ids.has(id)) ||
           originalIds
             .slice(0, Math.max(0, index))
             .reverse()
@@ -519,13 +565,24 @@ export abstract class NativeSqliteStorageBase {
       "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
       [characterId],
     );
-    const chats: Chat[] = [];
-    for (const chatRow of chatRows) {
-      const chatData = ((await this.loadNodeValue(
-        "chat_extension_nodes",
-        "chat_id = ?",
-        [chatRow.id],
-      )) ?? {}) as any;
+    // One grouped query for every chat's extension nodes instead of one
+    // bridge round trip per chat.
+    const chatValues = chatRows.length
+      ? await this.rebuildGroupedNodeValues(
+          await this.selectRows(
+            `SELECT chat_id, node_id, parent_node_id, node_order, object_key,
+                    object_key_encoded, value_type, text_value, encoded_text_value,
+                    number_value, boolean_value
+             FROM chat_extension_nodes
+             WHERE chat_id IN (SELECT id FROM chats WHERE character_id = ?)
+             ORDER BY chat_id, node_id`,
+            [characterId],
+          ),
+          "chat_id",
+        )
+      : new Map<string, unknown>();
+    const chats: Chat[] = chatRows.map((chatRow) => {
+      const chatData = (chatValues.get(chatRow.id) ?? {}) as any;
       chatData.id = chatRow.id;
       chatData.name = chatRow.name ?? "";
       chatData.note = chatRow.note ?? "";
@@ -534,8 +591,8 @@ export abstract class NativeSqliteStorageBase {
       chatData.message = [];
       chatData.messagesLoaded = false;
       chatData.detailsLoaded = true;
-      chats.push(chatData);
-    }
+      return chatData;
+    });
     fullChar.chats = chats;
     return fullChar;
   }
@@ -631,9 +688,10 @@ export abstract class NativeSqliteStorageBase {
     );
     const total = Number(totalRow?.total ?? 0);
     const requestedLimit = options?.messageLimit;
-    const limit = requestedLimit === undefined
-      ? undefined
-      : normalizeSqliteLimit(requestedLimit);
+    const limit =
+      requestedLimit === undefined
+        ? undefined
+        : normalizeSqliteLimit(requestedLimit);
     const offset = limit === undefined ? 0 : Math.max(0, total - limit);
     chatData.message = await this.loadMessageRowsBatch(
       chatId,
@@ -704,9 +762,34 @@ export abstract class NativeSqliteStorageBase {
   async loadPersonas(): Promise<RisuPersona[]> {
     return (
       ((await this.loadSettingValue("personas")) as
-        | RisuPersona[]
-        | undefined) ?? []
+        RisuPersona[] | undefined) ?? []
     );
+  }
+
+  /**
+   * Reads several setting keys in one grouped query. Startup previously
+   * issued one bridge round trip per key (personas, personaPrompt,
+   * customModels, modules, plugins); this collapses them into a single
+   * native query on Android/Tauri.
+   */
+  async loadSettingKeys(keys: string[]): Promise<Map<string, unknown>> {
+    if (keys.length === 0) return new Map();
+    const rows = await this.selectRows(
+      `SELECT s.key AS setting_key, n.node_id, n.parent_node_id, n.node_order,
+              n.object_key, n.object_key_encoded, n.value_type, n.text_value,
+              n.encoded_text_value, n.number_value, n.boolean_value
+         FROM system_settings s
+         LEFT JOIN setting_extension_nodes n ON n.setting_key = s.key
+        WHERE s.key IN (${keys.map(() => "?").join(",")})
+        ORDER BY s.key, n.node_id`,
+      [...keys],
+    );
+    const grouped = this.rebuildGroupedNodeValues(rows, "setting_key");
+    const result = new Map<string, unknown>();
+    for (const key of keys) {
+      result.set(key, grouped.has(key) ? grouped.get(key) : undefined);
+    }
+    return result;
   }
 
   async listBotPresets(): Promise<BotPresetSummary[]> {
@@ -743,27 +826,39 @@ export abstract class NativeSqliteStorageBase {
 
   async loadLorebooks(): Promise<{ name: string; data: loreBook[] }[]> {
     return (
-      ((await this.loadSettingValue("loreBook")) as {
-        name: string;
-        data: loreBook[];
-      }[] | undefined) ?? []
+      ((await this.loadSettingValue("loreBook")) as
+        | {
+            name: string;
+            data: loreBook[];
+          }[]
+        | undefined) ?? []
     );
   }
 
   async loadModules(): Promise<RisuModule[]> {
     return (
       ((await this.loadSettingValue("modules")) as RisuModule[] | undefined) ??
-        []
+      []
     );
   }
 
   async loadPrompts(): Promise<Record<string, any>> {
-    const rows = await this.selectRows<{ key: string }>(
-      "SELECT key FROM system_settings WHERE domain = 'prompt'",
+    // Single grouped query instead of one bridge round trip per prompt key.
+    const rows = await this.selectRows(
+      `SELECT s.key AS setting_key, n.node_id, n.parent_node_id, n.node_order,
+              n.object_key, n.object_key_encoded, n.value_type, n.text_value,
+              n.encoded_text_value, n.number_value, n.boolean_value
+         FROM system_settings s
+         LEFT JOIN setting_extension_nodes n ON n.setting_key = s.key
+        WHERE s.domain = 'prompt'
+        ORDER BY s.key, n.node_id`,
     );
     const prompts: Record<string, any> = {};
-    for (const row of rows) {
-      prompts[row.key] = await this.loadSettingValue(row.key);
+    for (const [key, value] of this.rebuildGroupedNodeValues(
+      rows,
+      "setting_key",
+    )) {
+      prompts[key] = value;
     }
     return prompts;
   }
@@ -771,8 +866,7 @@ export abstract class NativeSqliteStorageBase {
   async loadScripts(): Promise<customscript[]> {
     return (
       ((await this.loadSettingValue("globalscript")) as
-        | customscript[]
-        | undefined) ?? []
+        customscript[] | undefined) ?? []
     );
   }
 
@@ -845,8 +939,7 @@ export abstract class NativeSqliteStorageBase {
       const placeholders = keys.map(() => "?").join(",");
       await this.executeNativeTransaction(null, [
         {
-          sql:
-            `DELETE FROM cold_archives WHERE archive_id IN (${placeholders})`,
+          sql: `DELETE FROM cold_archives WHERE archive_id IN (${placeholders})`,
           bind: keys,
         },
       ]);
@@ -866,8 +959,7 @@ export abstract class NativeSqliteStorageBase {
       const placeholders = toDelete.map(() => "?").join(",");
       await this.executeNativeTransaction(null, [
         {
-          sql:
-            `DELETE FROM cold_archives WHERE archive_id IN (${placeholders})`,
+          sql: `DELETE FROM cold_archives WHERE archive_id IN (${placeholders})`,
           bind: toDelete,
         },
       ]);
@@ -894,17 +986,16 @@ export abstract class NativeSqliteStorageBase {
     }>(sql, normalizedLimit !== undefined ? [normalizedLimit] : []);
     return rows.map((r) => ({
       id: Number(r.id),
-      storage_revision: r.storage_revision != null
-        ? Number(r.storage_revision)
-        : null,
-      database_initialized: r.database_initialized != null
-        ? Boolean(r.database_initialized)
-        : null,
+      storage_revision:
+        r.storage_revision != null ? Number(r.storage_revision) : null,
+      database_initialized:
+        r.database_initialized != null ? Boolean(r.database_initialized) : null,
       scope: r.scope as "database" | "cold-storage" | "restore",
       action: r.action,
-      restored_from_revision: r.restored_from_revision != null
-        ? Number(r.restored_from_revision)
-        : null,
+      restored_from_revision:
+        r.restored_from_revision != null
+          ? Number(r.restored_from_revision)
+          : null,
       created_at: r.created_at,
       change_count: 0,
     }));
@@ -929,17 +1020,16 @@ export abstract class NativeSqliteStorageBase {
     const r = rows[0];
     return {
       id: Number(r.id),
-      storage_revision: r.storage_revision != null
-        ? Number(r.storage_revision)
-        : null,
-      database_initialized: r.database_initialized != null
-        ? Boolean(r.database_initialized)
-        : null,
+      storage_revision:
+        r.storage_revision != null ? Number(r.storage_revision) : null,
+      database_initialized:
+        r.database_initialized != null ? Boolean(r.database_initialized) : null,
       scope: r.scope as "database" | "cold-storage" | "restore",
       action: r.action,
-      restored_from_revision: r.restored_from_revision != null
-        ? Number(r.restored_from_revision)
-        : null,
+      restored_from_revision:
+        r.restored_from_revision != null
+          ? Number(r.restored_from_revision)
+          : null,
       created_at: r.created_at,
       change_count: 0,
       tableSummaries: [],
@@ -1070,9 +1160,8 @@ export abstract class NativeSqliteStorageBase {
       }
       list.push({
         id: ch.id,
-        lastMessageTime: ch.last_message_time != null
-          ? Number(ch.last_message_time)
-          : null,
+        lastMessageTime:
+          ch.last_message_time != null ? Number(ch.last_message_time) : null,
       });
     }
 
@@ -1099,9 +1188,10 @@ export abstract class NativeSqliteStorageBase {
       let userMessages = 0;
       let botMessages = 0;
       let longestSessionMessages = 0;
-      let lastActiveDate: number | null = c.last_interaction_time != null
-        ? Number(c.last_interaction_time)
-        : null;
+      let lastActiveDate: number | null =
+        c.last_interaction_time != null
+          ? Number(c.last_interaction_time)
+          : null;
       let totalBotLen = 0;
       let totalUserLen = 0;
 
@@ -1148,15 +1238,14 @@ export abstract class NativeSqliteStorageBase {
         botMessages,
         longestSessionMessages,
         lastActiveDate,
-        avgBotMessageLen: botMessages > 0
-          ? Math.round(totalBotLen / botMessages)
-          : 0,
-        avgUserMessageLen: userMessages > 0
-          ? Math.round(totalUserLen / userMessages)
-          : 0,
-        avgMessagesPerSession: totalSessions > 0
-          ? Number((totalMessages / totalSessions).toFixed(1))
-          : 0,
+        avgBotMessageLen:
+          botMessages > 0 ? Math.round(totalBotLen / botMessages) : 0,
+        avgUserMessageLen:
+          userMessages > 0 ? Math.round(totalUserLen / userMessages) : 0,
+        avgMessagesPerSession:
+          totalSessions > 0
+            ? Number((totalMessages / totalSessions).toFixed(1))
+            : 0,
       };
     });
   }

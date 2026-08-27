@@ -23,10 +23,7 @@ import { language } from "../../lang";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { sleep } from "../util";
 import { hubURL } from "../characterCards";
-import {
-  decodeRisuSave,
-  encodeRisuSaveLegacyAsync,
-} from "../storage/risuSave";
+import { decodeRisuSave, encodeRisuSaveLegacyAsync } from "../storage/risuSave";
 import {
   collectColdStorageBackupPayloads,
   confirmIncompleteColdStorageOperation,
@@ -138,12 +135,6 @@ let lastSaved: number = parseInt(
     ? localStorage.getItem("risu_lastsaved")
     : null) ?? "-1",
 );
-let BackupDb: Database = null;
-
-export function syncDrive() {
-  BackupDb = createDatabaseSnapshot();
-  return;
-}
 
 async function backupDrive(ACCESS_TOKEN: string) {
   alertProgress("Preparing Google Drive Backup...", 0);
@@ -241,7 +232,9 @@ async function backupDrive(ACCESS_TOKEN: string) {
   alertProgress(`Uploading Backup... (Compressing database)`, 92);
   await sleep(20);
   const coldStorageValues = new Map(
-    coldStoragePayloads.payloads.map((payload) => [payload.key, payload.value] as const),
+    coldStoragePayloads.payloads.map(
+      (payload) => [payload.key, payload.value] as const,
+    ),
   );
   const portableDb = buildPortableLocalBackupDatabase(
     db,

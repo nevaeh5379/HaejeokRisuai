@@ -1,4 +1,14 @@
-import type { Database, character, groupChat, Chat, Message, RisuPersona, botPreset, loreBook, customscript } from "./schema";
+import type {
+  Database,
+  character,
+  groupChat,
+  Chat,
+  Message,
+  RisuPersona,
+  botPreset,
+  loreBook,
+  customscript,
+} from "./schema";
 import type { RisuModule } from "../process/modules";
 import type { SqlCommit, SqlCommitResult } from "./sqlCommit";
 import type {
@@ -15,10 +25,7 @@ import type {
 } from "./nodePostgresStorage";
 
 export type SqlBackendKind =
-  | "node"
-  | "web-sqlite"
-  | "tauri-sqlite"
-  | "capacitor-sqlite";
+  "node" | "web-sqlite" | "tauri-sqlite" | "capacitor-sqlite";
 
 export interface SqlLoadDatabaseOptions {
   shallow?: boolean;
@@ -161,6 +168,8 @@ export interface ISqlStorage {
   // ── Settings ─────────────────────────────────────────────────────────
 
   loadSettingKey(key: string): Promise<any>;
+  /** Batched multi-key read; backends may collapse it into one query. */
+  loadSettingKeys?(keys: string[]): Promise<Map<string, unknown>>;
 
   // ── Cold storage ─────────────────────────────────────────────────────
 

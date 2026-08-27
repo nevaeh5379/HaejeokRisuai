@@ -8,17 +8,32 @@ import type {
 } from "../../storage/ISqlStorage";
 import { safeStructuredClone } from "../../polyfill";
 import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
+import { BoundedCache } from "../../memory/boundedCache";
 
 export type PresetLoadStatus = "idle" | "loading" | "ready" | "error";
+
+/**
+ * Fully hydrated presets are large documents. The cache is bounded so
+ * browsing or backing up many presets cannot accumulate them all in memory;
+ * the active preset and its neighbours are the ones worth keeping warm.
+ */
+const PRESET_CACHE_MAX_ENTRIES = 6;
 
 class PresetStore {
   private storage: ISqlStorage | null = null;
   summaries = $state<BotPresetSummary[]>([]);
   activeId = $state("");
-  cache = $state(new Map<string, StoredBotPreset>());
+  private presetCache = new BoundedCache<string, StoredBotPreset>({
+    maxEntries: PRESET_CACHE_MAX_ENTRIES,
+  });
   listStatus = $state<PresetLoadStatus>("idle");
   activeStatus = $state<PresetLoadStatus>("idle");
   error = $state<string | null>(null);
+
+  /** Map-compatible read view so external consumers keep working. */
+  get cache(): Map<string, StoredBotPreset> {
+    return this.presetCache as unknown as Map<string, StoredBotPreset>;
+  }
 
   get list(): botPreset[] {
     return this.summaries.map(
