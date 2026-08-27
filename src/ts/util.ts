@@ -106,13 +106,14 @@ export async function selectMultipleFile(ext: string[]) {
   }
 }
 
-export const replacePlaceholders = (msg: string, name: string) => {
-  let db = getDatabase();
-  let selectedChar = get(selectedCharID);
-  let currentChar = db.characters[selectedChar];
+export const replacePlaceholders = (
+  msg: string,
+  name: string,
+  target?: ChatVarTarget,
+) => {
   return msg
-    .replace(/({{char}})|({{Char}})|(<Char>)|(<char>)/gi, currentChar.name)
-    .replace(/({{user}})|({{User}})|(<User>)|(<user>)/gi, getUserName())
+    .replace(/({{char}})|({{Char}})|(<Char>)|(<char>)/gi, name)
+    .replace(/({{user}})|({{User}})|(<User>)|(<user>)/gi, getUserName(target))
     .replace(/(\{\{((set)|(get))var::.+?\}\})/gu, "");
 };
 

@@ -68,6 +68,10 @@
         if(!currentChat){
             return
         }
+        const requestTarget = {
+            characterIndex: requestCharId,
+            chatIndex: requestChatPage,
+        }
         let messages:Message[] = []
         
         messages = [...messages, ...currentChat.message];
@@ -78,11 +82,11 @@
         let promptbody:OpenAIChat[] = [
             {
                 role:'system',
-                content: replacePlaceholders(prompt, currentChar.name)
+                content: replacePlaceholders(prompt, currentChar.name, requestTarget)
             },
             {
                 role: 'user', 
-                content: lastMessages.map(b=>(b.role==='char'? currentChar.name : getUserName())+":"+b.data).reduce((a,b)=>a+','+b)
+                content: lastMessages.map(b=>(b.role==='char'? currentChar.name : getUserName(requestTarget))+":"+b.data).reduce((a,b)=>a+','+b)
             }
         ]
 
@@ -90,7 +94,7 @@
             promptbody = [
                 {
                     role: 'system',
-                    content: replacePlaceholders(settingsStore.state.autoSuggestPrompt, currentChar.name)
+                    content: replacePlaceholders(settingsStore.state.autoSuggestPrompt, currentChar.name, requestTarget)
                 },
                 ...lastMessages.map(({ role, data }) => ({
                     role: role === "user" ? "user" as const : "assistant" as const,
@@ -109,7 +113,8 @@
         requestChatData({
             formated: promptbody,
             bias: {},
-            currentChar : currentChar as character
+            currentChar : currentChar as character,
+            triggerTarget: requestTarget,
         }, 'submodel', requestController?.signal ?? null).then(rq2=>{
             const stillCurrentRequest = suggestionRequestId === requestId && $selectedCharID === requestCharId && characterStore.characters[requestCharId]?.chatPage === requestChatPage
             const currentTargetChat = characterStore.characters[requestCharId]?.chats[requestChatPage]
