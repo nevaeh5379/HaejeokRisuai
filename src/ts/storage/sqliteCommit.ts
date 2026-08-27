@@ -392,12 +392,12 @@ export function countSqliteCommitStatements(commit: SqlCommit): number {
     total += countCharacterTagStatements(data.tags);
   }
   total += commit.characterTouches?.length ?? 0;
-  if (commit.characterIds !== undefined) total++;
+  if (commit.characterIds !== undefined && !replacingEntities) total++;
 
   for (const entry of commit.chats) {
-    total += 1 + countReplaceNodeStatements(entry.data);
+    total += 1 + countReplaceNodeStatements(entry.data, replacingEntities);
   }
-  total += commit.chatManifests.length;
+  if (!replacingEntities) total += commit.chatManifests.length;
 
   for (const entry of commit.messages) {
     const data = entry.data as Record<string, any>;
@@ -407,11 +407,11 @@ export function countSqliteCommitStatements(commit: SqlCommit): number {
     const extension = messageExtensionData(data, content);
     total += 1 + (
       Object.keys(extension).length === 0
-        ? 1
-        : countReplaceNodeStatements(extension)
+        ? (replacingEntities ? 0 : 1)
+        : countReplaceNodeStatements(extension, replacingEntities)
     );
   }
-  total += commit.messageManifests.length;
+  if (!replacingEntities) total += commit.messageManifests.length;
   total += (commit.messageDeletes ?? []).filter(
     (deletion) => deletion.ids.length > 0,
   ).length;
@@ -423,6 +423,7 @@ export async function applySqliteCommit(
   commit: SqlCommit,
   execute: SqliteExecute,
 ): Promise<void> {
+  const replacingEntities = commit.action === "replace-entities";
   if (commit.replaceAll) {
     await execute("DELETE FROM plugin_custom_storage");
     await execute("DELETE FROM bot_presets");
@@ -572,6 +573,7 @@ export async function applySqliteCommit(
       ["character_id"],
       [entry.id],
       data,
+      replacingEntities,
     );
     await replaceCharacterTags(execute, entry.id, data.tags);
   }
@@ -582,7 +584,7 @@ export async function applySqliteCommit(
     );
   }
 
-  if (commit.characterIds !== undefined) {
+  if (commit.characterIds !== undefined && !replacingEntities) {
     if (!commit.characterIds.length) await execute("DELETE FROM characters");
     else
       await execute(
@@ -616,18 +618,21 @@ export async function applySqliteCommit(
       ["chat_id"],
       [entry.id],
       data,
+      replacingEntities,
     );
   }
-  for (const manifest of commit.chatManifests) {
-    if (!manifest.ids.length)
-      await execute("DELETE FROM chats WHERE character_id = ?", [
-        manifest.characterId,
-      ]);
-    else
-      await execute(
-        `DELETE FROM chats WHERE character_id = ? AND id NOT IN (${manifest.ids.map(() => "?").join(",")})`,
-        [manifest.characterId, ...manifest.ids],
-      );
+  if (!replacingEntities) {
+    for (const manifest of commit.chatManifests) {
+      if (!manifest.ids.length)
+        await execute("DELETE FROM chats WHERE character_id = ?", [
+          manifest.characterId,
+        ]);
+      else
+        await execute(
+          `DELETE FROM chats WHERE character_id = ? AND id NOT IN (${manifest.ids.map(() => "?").join(",")})`,
+          [manifest.characterId, ...manifest.ids],
+        );
+    }
   }
 
   for (const entry of commit.messages) {
@@ -659,10 +664,12 @@ export async function applySqliteCommit(
     );
     const extension = messageExtensionData(data, content);
     if (Object.keys(extension).length === 0) {
-      await execute(
-        "DELETE FROM message_extension_nodes WHERE chat_id = ? AND message_id = ?",
-        [entry.chatId, entry.id],
-      );
+      if (!replacingEntities) {
+        await execute(
+          "DELETE FROM message_extension_nodes WHERE chat_id = ? AND message_id = ?",
+          [entry.chatId, entry.id],
+        );
+      }
     } else {
       await replaceNodes(
         execute,
@@ -670,19 +677,22 @@ export async function applySqliteCommit(
         ["chat_id", "message_id"],
         [entry.chatId, entry.id],
         extension,
+        replacingEntities,
       );
     }
   }
-  for (const manifest of commit.messageManifests) {
-    if (!manifest.ids.length)
-      await execute("DELETE FROM messages WHERE chat_id = ?", [
-        manifest.chatId,
-      ]);
-    else
-      await execute(
-        `DELETE FROM messages WHERE chat_id = ? AND id NOT IN (${manifest.ids.map(() => "?").join(",")})`,
-        [manifest.chatId, ...manifest.ids],
-      );
+  if (!replacingEntities) {
+    for (const manifest of commit.messageManifests) {
+      if (!manifest.ids.length)
+        await execute("DELETE FROM messages WHERE chat_id = ?", [
+          manifest.chatId,
+        ]);
+      else
+        await execute(
+          `DELETE FROM messages WHERE chat_id = ? AND id NOT IN (${manifest.ids.map(() => "?").join(",")})`,
+          [manifest.chatId, ...manifest.ids],
+        );
+    }
   }
   for (const deletion of commit.messageDeletes ?? [])
     if (deletion.ids.length) {

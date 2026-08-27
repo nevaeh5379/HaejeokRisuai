@@ -71,4 +71,20 @@ describe("message SQL core/extension split", () => {
       },
     });
   });
+
+  it("skips empty message metadata entirely during replace restore", async () => {
+    const commit = createEmptySqlCommit(0, "replace-entities");
+    commit.messages.push({
+      id: "message-plain",
+      chatId: "chat-1",
+      position: 0,
+      data: { role: "user", data: "plain body" },
+    });
+    const statements: { sql: string; bind: unknown[] }[] = [];
+    await applySqliteCommit(commit, async (sql, bind = []) => {
+      statements.push({ sql, bind });
+    });
+    expect(statements).toHaveLength(1);
+    expect(statements[0].sql).toContain("INSERT INTO messages");
+  });
 });
