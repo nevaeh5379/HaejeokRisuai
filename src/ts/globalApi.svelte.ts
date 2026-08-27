@@ -345,13 +345,30 @@ const browserAssetUrls = new BoundedCache<string, string>({
 
 export async function getFileSrc(
   loc: string,
-  options?: { thumbnail?: boolean; display?: boolean; transient?: boolean },
+  options?: {
+    thumbnail?: boolean;
+    display?: boolean;
+    transient?: boolean;
+    width?: number;
+    height?: number;
+  },
 ) {
   if (!loc || loc === "") {
     return "";
   }
   const isThumb = options?.thumbnail ?? false;
   const isDisplay = options?.display ?? false;
+  const resizeKey =
+    isCapacitor &&
+    (isThumb || isDisplay) &&
+    (options?.width !== undefined || options?.height !== undefined)
+      ? `_${options?.width ?? 0}x${options?.height ?? 0}`
+      : "";
+  const cacheVariantKey = isThumb
+    ? `thumb${resizeKey}_${loc}`
+    : isDisplay
+      ? `display${resizeKey}_${loc}`
+      : loc;
   if (isTauri) {
     if (loc.startsWith("assets")) {
       if (appDataDirPath === "") {
@@ -389,7 +406,7 @@ export async function getFileSrc(
     return await nodeStorage.getDirectUrl(loc, options);
   }
   try {
-    const cacheKey = isThumb ? `thumb_${loc}` : loc;
+    const cacheKey = cacheVariantKey;
     if (usingSw && !options?.transient) {
       const encoded = Buffer.from(cacheKey, "utf-8").toString("hex");
       if (registeredSwCaches.has(cacheKey)) {
@@ -434,7 +451,7 @@ export async function getFileSrc(
         return "/sw/img/" + encoded;
       }
     } else {
-      const cacheKey = isThumb ? `thumb_${loc}` : isDisplay ? `display_${loc}` : loc;
+      const cacheKey = cacheVariantKey;
       const cachedUrl = options?.transient
         ? undefined
         : browserAssetUrls.get(cacheKey);
@@ -448,8 +465,8 @@ export async function getFileSrc(
         try {
           const nativeResult = await nativeImage.readThumbnail({
             key: loc,
-            maxWidth: isThumb ? 128 : 1024,
-            maxHeight: isThumb ? 128 : 1536,
+            maxWidth: options?.width ?? (isThumb ? 128 : 1024),
+            maxHeight: options?.height ?? (isThumb ? 128 : 1536),
           });
           const url = Capacitor.convertFileSrc(nativeResult.path);
           if (!options?.transient) {

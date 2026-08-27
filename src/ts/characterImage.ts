@@ -239,6 +239,18 @@ export interface CharImageOptions {
 
 const NODE_IMAGE_BATCH_SIZE = 48;
 
+export function getCharImageBatchCacheKey(
+  loc: string,
+  options: CharImageOptions = { size: "display" },
+): string {
+  const sizeKey = options.size ?? (options.thumbnail ? "thumb" : "full");
+  const dimensionKey =
+    options.width !== undefined || options.height !== undefined
+      ? `${sizeKey}_${options.width ?? 0}x${options.height ?? 0}`
+      : sizeKey;
+  return `${dimensionKey}_${loc}`;
+}
+
 export async function getAssetsBatch(
   locs: string[],
   options: CharImageOptions = { size: "full" },
@@ -291,11 +303,10 @@ export async function getCharImagesBatch(
     return result;
   }
 
-  const sizeKey = options.size ?? (options.thumbnail ? "thumb" : "full");
   const uncachedLocs: string[] = [];
   for (const loc of locs) {
     if (!loc) continue;
-    const cacheKey = `${sizeKey}_${loc}`;
+    const cacheKey = getCharImageBatchCacheKey(loc, options);
     if (fullImageBlobCache.has(cacheKey)) {
       result.set(loc, fullImageBlobCache.get(cacheKey)!);
     } else {
@@ -307,7 +318,7 @@ export async function getCharImagesBatch(
     return result;
   }
   const setMissing = (loc: string) => {
-    const cacheKey = `${sizeKey}_${loc}`;
+    const cacheKey = getCharImageBatchCacheKey(loc, options);
     fullImageBlobCache.set(cacheKey, "/none.webp");
     result.set(loc, "/none.webp");
   };
@@ -355,7 +366,7 @@ export async function getCharImagesBatch(
             );
             for (const loc of batch) {
               const buf = itemsMap.get(loc);
-              const cacheKey = `${sizeKey}_${loc}`;
+              const cacheKey = getCharImageBatchCacheKey(loc, options);
               if (buf && buf.length > 0) {
                 const mime =
                   options.size === "display" ||
@@ -382,7 +393,7 @@ export async function getCharImagesBatch(
 
       for (const loc of directLocs) {
         const src = loc;
-        const cacheKey = `${sizeKey}_${loc}`;
+        const cacheKey = getCharImageBatchCacheKey(loc, options);
         fullImageBlobCache.set(cacheKey, src);
         result.set(loc, src);
       }
@@ -411,9 +422,11 @@ export async function getCharImagesBatch(
             thumbnail:
               options.thumbnail === true || options.size === "thumb",
             ...(options.size === "display" ? { display: true } : {}),
+            ...(options.width !== undefined ? { width: options.width } : {}),
+            ...(options.height !== undefined ? { height: options.height } : {}),
             transient: true,
           });
-          const cacheKey = `${sizeKey}_${loc}`;
+          const cacheKey = getCharImageBatchCacheKey(loc, options);
           if (src) {
             fullImageBlobCache.set(cacheKey, src);
             result.set(loc, src);

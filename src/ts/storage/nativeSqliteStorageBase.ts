@@ -89,9 +89,13 @@ export abstract class NativeSqliteStorageBase {
     try {
       this.lastInitError = null;
       await this.openBackend();
-      await this.validateExistingSchema();
-      await this.applySchema();
-      await this.loadRevisionFromMeta();
+      const existingSchema = await this.validateExistingSchema();
+      if (existingSchema) {
+        this.revision = existingSchema.revision;
+      } else {
+        await this.applySchema();
+        await this.loadRevisionFromMeta();
+      }
       this._enabled = true;
       this.initialized = true;
       return true;
@@ -112,17 +116,18 @@ export abstract class NativeSqliteStorageBase {
     }
   }
 
-  private async validateExistingSchema(): Promise<void> {
+  private async validateExistingSchema(): Promise<{ revision: number } | null> {
     const existingMeta = await this.selectRows<{ name: string }>(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'system_storage_meta'",
     );
-    if (existingMeta.length === 0) return;
+    if (existingMeta.length === 0) return null;
 
     const rows = await this.selectRows<{
       schema_version: number;
       schema_layout: string;
+      revision: number;
     }>(
-      "SELECT schema_version, schema_layout FROM system_storage_meta WHERE singleton = 1",
+      "SELECT schema_version, schema_layout, revision FROM system_storage_meta WHERE singleton = 1",
     );
     const meta = rows[0];
     if (
@@ -134,6 +139,7 @@ export abstract class NativeSqliteStorageBase {
         meta?.schema_layout,
       );
     }
+    return { revision: Number(meta.revision) || 0 };
   }
 
   private async loadRevisionFromMeta(): Promise<void> {

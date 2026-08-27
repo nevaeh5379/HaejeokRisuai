@@ -6,6 +6,7 @@
     import { language } from "src/lang";
     import {
         getCharImagesBatch,
+        getCharImageBatchCacheKey,
         fullImageBlobCache,
         pinCharacterImageCache,
         unpinCharacterImageCache
@@ -15,8 +16,12 @@
     import Title from "./Title.svelte";
     import LazyComponent from '../Others/LazyComponent.svelte'
     import { onDestroy } from "svelte";
+    import { isCapacitor } from "src/ts/platform";
 
     const realmLoader = () => import('./Realm/RealmMain.svelte')
+    const cardImageOptions = isCapacitor
+        ? { size: 'display' as const, width: 512, height: 768 }
+        : { size: 'full' as const }
 
     type SortMode = 'default' | 'name' | 'recent' | 'favorite'
 
@@ -24,6 +29,8 @@
     let pinnedImageKeys = new Set<string>()
     onDestroy(() => {
         isMounted = false
+        cardImageObserver?.disconnect()
+        cardImageObserver = null
         for (const key of pinnedImageKeys) {
             unpinCharacterImageCache(key)
         }
@@ -56,6 +63,42 @@
     let imageUrlCache = $state(new Map<string, string | null>())
     // Non-reactive set to track which chaIds currently have a fetch in-flight
     let inFlightIds = new Set<string>()
+    // Capacitor only: rendering a card must not itself start native decode work.
+    // Gate image requests to cards that are in/near the viewport.
+    let nearViewportIds = $state(new Set<string>())
+    let cardImageObserver: IntersectionObserver | null = null
+
+    function updateNearViewport(chaId: string, isNear: boolean) {
+        const next = new Set(nearViewportIds)
+        const changed = isNear ? !next.has(chaId) : next.has(chaId)
+        if (!changed) return
+        if (isNear) next.add(chaId)
+        else next.delete(chaId)
+        nearViewportIds = next
+    }
+
+    function observeCardImage(node: HTMLElement, chaId: string) {
+        if (!isCapacitor || typeof IntersectionObserver === 'undefined') {
+            updateNearViewport(chaId, true)
+            return { destroy: () => updateNearViewport(chaId, false) }
+        }
+        node.dataset.lazyCharacterId = chaId
+        if (!cardImageObserver) {
+            cardImageObserver = new IntersectionObserver((entries) => {
+                for (const entry of entries) {
+                    const id = (entry.target as HTMLElement).dataset.lazyCharacterId
+                    if (id) updateNearViewport(id, entry.isIntersecting)
+                }
+            }, { rootMargin: '320px 0px' })
+        }
+        cardImageObserver.observe(node)
+        return {
+            destroy() {
+                cardImageObserver?.unobserve(node)
+                updateNearViewport(chaId, false)
+            }
+        }
+    }
 
     let columnCount = $derived.by(() => {
         if (innerWidth >= 1280) return 6
@@ -152,15 +195,18 @@
                     visibleCount = Math.min(visibleCount + pageSize, sortedCharacters.length)
                 }
             }
-        }, { rootMargin: '600px' })
+        }, { rootMargin: isCapacitor ? '320px' : '600px' })
         observer.observe(sentinelEl)
         return () => observer?.disconnect()
     })
 
-    // Load original-resolution images for cards that are currently rendered.
+    // Load card-sized images for rendered items on native mobile; desktop keeps originals.
     // Pin their cache entries so LRU cleanup cannot revoke a blob URL still used by the DOM.
     $effect(() => {
-        const items = visibleCharacters
+        const renderedItems = visibleCharacters
+        const items = isCapacitor
+            ? renderedItems.filter(({ char }) => nearViewportIds.has(char.chaId))
+            : renderedItems
         const hideImages = settingsStore.state.hideAllImages
         const nextPinnedImageKeys = new Set<string>()
         const visibleCharacterIds = new Set<string>()
@@ -169,7 +215,7 @@
         if (!hideImages) {
             for (const { char } of items) {
                 visibleCharacterIds.add(char.chaId)
-                if (char.image) nextPinnedImageKeys.add(`full_${char.image}`)
+                if (char.image) nextPinnedImageKeys.add(getCharImageBatchCacheKey(char.image, cardImageOptions))
             }
         }
 
@@ -198,7 +244,7 @@
             const { char } = item
             if (!char.image || imageUrlCache.has(char.chaId)) continue
 
-            const cached = fullImageBlobCache.get(`full_${char.image}`)
+            const cached = fullImageBlobCache.get(getCharImageBatchCacheKey(char.image, cardImageOptions))
             if (cached) {
                 imageUrlCache.set(char.chaId, cached)
                 cacheUpdated = true
@@ -213,11 +259,34 @@
 
         for (const { char } of toLoad) inFlightIds.add(char.chaId)
 
+        // Native image generation resolves per card so the first completed thumbnail
+        // paints immediately instead of waiting for the whole visible batch. The
+        // NativeImage plugin's two-thread executor still provides the concurrency cap.
+        if (isCapacitor) {
+            for (const { char } of toLoad) {
+                void getCharImagesBatch([char.image], cardImageOptions).then((batchMap) => {
+                    inFlightIds.delete(char.chaId)
+                    const cacheKey = getCharImageBatchCacheKey(char.image, cardImageOptions)
+                    if (!pinnedImageKeys.has(cacheKey)) return
+                    imageUrlCache.set(char.chaId, batchMap.get(char.image) ?? null)
+                    if (isMounted) imageUrlCache = new Map(imageUrlCache)
+                }).catch((err) => {
+                    console.error('Failed to load character image', err)
+                    inFlightIds.delete(char.chaId)
+                    if (pinnedImageKeys.has(getCharImageBatchCacheKey(char.image, cardImageOptions))) {
+                        imageUrlCache.set(char.chaId, null)
+                        if (isMounted) imageUrlCache = new Map(imageUrlCache)
+                    }
+                })
+            }
+            return
+        }
+
         const locs = toLoad.map(({ char }) => char.image)
-        getCharImagesBatch(locs, { size: 'full' }).then((batchMap) => {
+        getCharImagesBatch(locs, cardImageOptions).then((batchMap) => {
             for (const { char } of toLoad) {
                 inFlightIds.delete(char.chaId)
-                const cacheKey = `full_${char.image}`
+                const cacheKey = getCharImageBatchCacheKey(char.image, cardImageOptions)
                 if (!pinnedImageKeys.has(cacheKey)) continue
                 imageUrlCache.set(char.chaId, batchMap.get(char.image) ?? null)
             }
@@ -226,7 +295,7 @@
             console.error('Failed to batch load character images', err)
             for (const { char } of toLoad) {
                 inFlightIds.delete(char.chaId)
-                if (pinnedImageKeys.has(`full_${char.image}`)) {
+                if (pinnedImageKeys.has(getCharImageBatchCacheKey(char.image, cardImageOptions))) {
                     imageUrlCache.set(char.chaId, null)
                 }
             }
@@ -240,7 +309,7 @@
             : characterStore.characters?.find((c: any) => c.chaId === charOrId)
         if (!char?.image || settingsStore.state.hideAllImages) return null
         if (imageUrlCache.has(char.chaId)) return imageUrlCache.get(char.chaId)
-        return fullImageBlobCache.get(`full_${char.image}`) ?? undefined
+        return fullImageBlobCache.get(getCharImageBatchCacheKey(char.image, cardImageOptions)) ?? undefined
     }
 
     function toggleFavorite(index: number) {
@@ -350,7 +419,8 @@
             <div class="flex-1 flex flex-col gap-3 min-w-0">
               {#each col as { char, index } (char.chaId)}
                 <button
-                  class="group relative w-full break-inside-avoid overflow-hidden rounded-xl bg-darkbg block transition-all duration-300 hover:-translate-y-1 hover:ring-2 hover:ring-selected/50 hover:shadow-xl hover:shadow-darkbg/50"
+                  class="group relative w-full break-inside-avoid overflow-hidden rounded-xl bg-darkbg block transition-all duration-300 hover:-translate-y-1 hover:ring-2 hover:ring-selected/50 hover:shadow-xl hover:shadow-darkbg/50 [content-visibility:auto] [contain-intrinsic-size:240px_320px]"
+                  use:observeCardImage={char.chaId}
                   onclick={() => changeChar(index)}
                   oncontextmenu={(e) => openContextMenu(index, e)}
                   ontouchstart={(e) => {

@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @CapacitorPlugin(name = "NativeImage")
 public class NativeImagePlugin extends Plugin {
@@ -25,10 +26,13 @@ public class NativeImagePlugin extends Plugin {
     private static final int WEBP_QUALITY = 82;
     private static final int CACHE_FILE_LIMIT = 256;
     private static final int CACHE_FILE_TARGET = 192;
+    private static final int CACHE_PRUNE_INTERVAL = 16;
+    private static final long CACHE_TOUCH_INTERVAL_MS = 5 * 60 * 1000L;
 
     // Two decodes are enough to keep modern devices busy without allowing a
     // scrolling image grid to exhaust the shared Android/WebView memory budget.
     private final ExecutorService executor = Executors.newFixedThreadPool(2);
+    private final AtomicInteger thumbnailsSincePrune = new AtomicInteger();
 
     @PluginMethod
     public void readThumbnail(PluginCall call) {
@@ -50,9 +54,15 @@ public class NativeImagePlugin extends Plugin {
                 File cached = cachedFile(key, maxWidth, maxHeight, source);
                 if (!cached.isFile()) {
                     createThumbnail(source, cached, maxWidth, maxHeight);
-                    pruneCache(cached.getParentFile());
+                    if (thumbnailsSincePrune.incrementAndGet() >= CACHE_PRUNE_INTERVAL) {
+                        thumbnailsSincePrune.set(0);
+                        pruneCache(cached.getParentFile());
+                    }
                 }
-                cached.setLastModified(System.currentTimeMillis());
+                long now = System.currentTimeMillis();
+                if (now - cached.lastModified() >= CACHE_TOUCH_INTERVAL_MS) {
+                    cached.setLastModified(now);
+                }
                 JSObject result = new JSObject();
                 // Return a local path instead of Base64. Capacitor.convertFileSrc
                 // maps this to its WebViewLocalServer, which streams the WebP
