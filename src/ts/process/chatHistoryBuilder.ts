@@ -1,4 +1,5 @@
 import type { character, Chat, groupChat, Message } from "../storage/database.svelte";
+import type { ChatVarTarget } from "../parser/chatVar.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { ChatTokenizer } from "../tokenizer";
 import { getUserName } from "../util";
@@ -13,6 +14,7 @@ import { getInlayAsset } from "./files/inlays";
 import { runImageEmbedding } from "./transformers";
 import { getModuleAssets } from "./modules";
 import type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
+import { generationOverride, type ChatGenerationOverrides } from "./chatGenerationContext";
 
 type LorePrompt = Awaited<
   ReturnType<typeof import("./lorebook.svelte").loadLoreBookV3Prompt>
@@ -40,7 +42,8 @@ async function addFirstMessage(
   nowChatroom: character | groupChat,
   currentChat: Chat,
   usingPromptTemplate: boolean,
-  chatTarget: { characterIndex: number; chatIndex: number },
+  chatTarget: ChatVarTarget,
+  generation?: ChatGenerationOverrides,
 ) {
   const active = getActiveMessages(currentChat);
   if (nowChatroom.type === "group" || active.reset) return null;
@@ -49,17 +52,28 @@ async function addFirstMessage(
     currentChat.fmIndex === -1
       ? nowChatroom.firstMessage
       : nowChatroom.alternateGreetings[currentChat.fmIndex];
+  const parsedFirstMessage = risuChatParser(firstMessage, {
+    chara: currentChar,
+    chatTarget,
+  });
   const chat: OpenAIChat = {
     role: "assistant",
-    content: await processScript(
-      nowChatroom,
-      risuChatParser(firstMessage, { chara: currentChar, chatTarget }),
-      "editprocess",
-      {},
-      chatTarget,
-    ),
+    content: generation?.suppressTriggers
+      ? parsedFirstMessage
+      : await processScript(
+          nowChatroom,
+          parsedFirstMessage,
+          "editprocess",
+          {},
+          chatTarget,
+        ),
   };
-  if (usingPromptTemplate && settingsStore.state.promptSettings.sendName) {
+  const promptSettings = generationOverride(
+    generation,
+    "promptSettings",
+    settingsStore.state.promptSettings,
+  );
+  if (usingPromptTemplate && promptSettings.sendName) {
     chat.content = `${currentChar.name}: ${chat.content}`;
     chat.attr = ["nameAdded"];
   }
@@ -120,9 +134,10 @@ async function resolveAssetPrompts(
   multimodals: MultiModal[],
   currentChar: character,
   moduleRoom: character | groupChat,
+  moduleIds?: string[],
 ) {
   const assetPromises: Promise<void>[] = [];
-  const moduleAssets = getModuleAssets(moduleRoom);
+  const moduleAssets = getModuleAssets(moduleRoom, moduleIds);
   const assets = (currentChar.additionalAssets ?? []).concat(moduleAssets);
   content = content.replace(/\{\{asset_?prompt::(.+?)\}\}/gimsu, (_match, name) => {
     const asset = assets.find((entry) => entry[0] === name);
@@ -151,15 +166,21 @@ function resolveMessageRole(
   usingPromptTemplate: boolean,
   findCharacter: (id: string) => character,
   content: string,
-  chatTarget: { characterIndex: number; chatIndex: number },
+  chatTarget: ChatVarTarget,
+  generation?: ChatGenerationOverrides,
 ) {
   let role: "user" | "assistant" | "system" =
     message.role === "user" ? "user" : "assistant";
+  const promptSettings = generationOverride(
+    generation,
+    "promptSettings",
+    settingsStore.state.promptSettings,
+  );
   const shouldWrapName =
     (nowChatroom.type === "group" &&
       findCharacter(message.saying).chaId !== currentChar.chaId) ||
     (nowChatroom.type === "group" && settingsStore.state.groupOtherBotRole === "assistant") ||
-    (usingPromptTemplate && settingsStore.state.promptSettings.sendName);
+    (usingPromptTemplate && promptSettings.sendName);
 
   if (!shouldWrapName) return { role, content };
 
@@ -178,9 +199,18 @@ function resolveMessageRole(
   return { role, content };
 }
 
-function extractThoughts(content: string, index: number, messageCount: number) {
+function extractThoughts(
+  content: string,
+  index: number,
+  messageCount: number,
+  generation?: ChatGenerationOverrides,
+) {
   const thoughts: string[] = [];
-  const maxDepth = settingsStore.state.promptSettings?.maxThoughtTagDepth ?? -1;
+  const maxDepth = generationOverride(
+    generation,
+    "promptSettings",
+    settingsStore.state.promptSettings,
+  )?.maxThoughtTagDepth ?? -1;
   content = content.replace(/<Thoughts>(.+)<\/Thoughts>/gms, (_match, thought) => {
     if (maxDepth === -1 || maxDepth - messageCount <= index) thoughts.push(thought);
     return "";
@@ -193,20 +223,24 @@ async function resolveHistoryMessagePayload(
   index: number,
   currentChar: character,
   nowChatroom: character | groupChat,
-  chatTarget: { characterIndex: number; chatIndex: number },
+  chatTarget: ChatVarTarget,
+  generation?: ChatGenerationOverrides,
 ) {
-  const processed = await processScriptFull(
-    nowChatroom,
-    risuChatParser(message.data, {
-      chara: currentChar,
-      role: message.role,
-      chatTarget,
-    }),
-    "editprocess",
-    index,
-    { chatRole: message.role },
+  const parsed = risuChatParser(message.data, {
+    chara: currentChar,
+    role: message.role,
     chatTarget,
-  );
+  });
+  const processed = generation?.suppressTriggers
+    ? { data: parsed, emoChanged: false }
+    : await processScriptFull(
+        nowChatroom,
+        parsed,
+        "editprocess",
+        index,
+        { chatRole: message.role },
+        chatTarget,
+      );
   const extracted = extractInlayReferences(processed.data, message.role);
   const resolved = await resolveInlays(extracted.content, extracted.inlays);
   const content = await resolveAssetPrompts(
@@ -214,6 +248,7 @@ async function resolveHistoryMessagePayload(
     resolved.multimodals,
     currentChar,
     nowChatroom,
+    generation?.moduleIds,
   );
   return { content, multimodals: resolved.multimodals };
 }
@@ -226,7 +261,8 @@ async function formatHistoryMessage(
   nowChatroom: character | groupChat,
   usingPromptTemplate: boolean,
   findCharacter: (id: string) => character,
-  chatTarget: { characterIndex: number; chatIndex: number },
+  chatTarget: ChatVarTarget,
+  generation?: ChatGenerationOverrides,
 ): Promise<OpenAIChat> {
   message.chatId ??= v4();
   const payload = await resolveHistoryMessagePayload(
@@ -235,6 +271,7 @@ async function formatHistoryMessage(
     currentChar,
     nowChatroom,
     chatTarget,
+    generation,
   );
   const roleResult = resolveMessageRole(
     message,
@@ -244,8 +281,14 @@ async function formatHistoryMessage(
     findCharacter,
     payload.content,
     chatTarget,
+    generation,
   );
-  const thoughtResult = extractThoughts(roleResult.content, index, messageCount);
+  const thoughtResult = extractThoughts(
+    roleResult.content,
+    index,
+    messageCount,
+    generation,
+  );
   const chat: OpenAIChat = {
     role: roleResult.role,
     content: thoughtResult.content,
@@ -268,7 +311,8 @@ export interface BuildChatHistoryOptions {
   lorePrompt: LorePrompt;
   resolvePosition: (text: string, maxDepth?: number) => string;
   findCharacter: (id: string) => character;
-  chatTarget: { characterIndex: number; chatIndex: number };
+  chatTarget: ChatVarTarget;
+  generation?: ChatGenerationOverrides;
 }
 
 async function initializeHistory(options: BuildChatHistoryOptions) {
@@ -279,9 +323,14 @@ async function initializeHistory(options: BuildChatHistoryOptions) {
   );
   let currentTokens =
     options.currentTokens + (await options.tokenizer.tokenizeChats(chats));
+  const promptSettings = generationOverride(
+    options.generation,
+    "promptSettings",
+    settingsStore.state.promptSettings,
+  );
   if (
     !settingsStore.state.aiModel.startsWith("novelai") &&
-    !settingsStore.state.promptSettings?.trimStartNewChat
+    !promptSettings?.trimStartNewChat
   ) {
     chats.push({ role: "system", content: "[Start a new chat]", memo: "NewChat" });
   }
@@ -292,6 +341,7 @@ async function initializeHistory(options: BuildChatHistoryOptions) {
     options.currentChat,
     options.usingPromptTemplate,
     options.chatTarget,
+    options.generation,
   );
   if (firstMessage) {
     currentTokens += await options.tokenizer.tokenizeChat(firstMessage);
@@ -305,6 +355,15 @@ async function runStartTrigger(
   currentTokens: number,
 ) {
   let active = getActiveMessages(currentChat);
+  if (options.generation?.suppressTriggers) {
+    return {
+      stopSending: false as const,
+      currentChat,
+      currentTokens,
+      active,
+      triggerResult: undefined,
+    };
+  }
   const triggerResult = await runTrigger(options.currentChar, "start", {
     chat: currentChat,
     target: options.chatTarget,
@@ -349,6 +408,7 @@ async function appendHistoryMessages(
         options.usingPromptTemplate,
         options.findCharacter,
         options.chatTarget,
+        options.generation,
       ),
     );
   }

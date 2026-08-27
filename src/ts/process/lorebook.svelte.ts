@@ -1,7 +1,7 @@
 import { get } from "svelte/store";
 import { getChatVar, setChatVar } from "../parser/chatVar.svelte";
 import { selectedCharID } from "../stores.svelte";
-import { type Message, type loreBook } from "../storage/database.svelte";
+import { type Chat, type Message, type loreBook } from "../storage/database.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { countTokenTexts } from "../tokenizer";
@@ -76,18 +76,28 @@ export function addLorebookFolder(type: number) {
 
 export async function loadLoreBookV3Prompt(
   target?: { characterIndex: number; chatIndex: number },
+  generation?: {
+    chat?: Chat;
+    moduleIds?: string[];
+    chatVariables?: Record<string, string>;
+  },
 ) {
   const selectedID = target?.characterIndex ?? get(selectedCharID);
   const char = characterStore.characters[selectedID];
   const page = target?.chatIndex ?? char.chatPage;
-  const chatVarTarget = { characterIndex: selectedID, chatIndex: page };
+  const sourceChat = generation?.chat ?? char.chats[page];
+  const chatVarTarget = {
+    characterIndex: selectedID,
+    chatIndex: page,
+    globalVariables: generation?.chatVariables,
+  };
   const characterLore = char.globalLore ?? [];
-  const chatLore = char.chats[page].localLore ?? [];
-  const moduleLorebook = getModuleLorebooks(char);
+  const chatLore = sourceChat.localLore ?? [];
+  const moduleLorebook = getModuleLorebooks(char, generation?.moduleIds);
   const fullLore = safeStructuredClone(
     characterLore.concat(chatLore).concat(moduleLorebook),
   );
-  const currentChat = char.chats[page].message;
+  const currentChat = sourceChat.message;
   const loreDepth =
     char.loreSettings?.scanDepth ?? settingsStore.state.loreBookDepth;
   const loreToken =
@@ -371,7 +381,7 @@ export async function loadLoreBookV3Prompt(
       fullWordMatching: fullWordMatchingSetting,
       recursiveScanning,
       chatLength,
-      greetingIndex: (char.chats[page].fmIndex ?? -1) + 1,
+      greetingIndex: (sourceChat.fmIndex ?? -1) + 1,
     });
     if (!prepared) return null;
 

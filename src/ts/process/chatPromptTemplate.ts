@@ -1,4 +1,5 @@
 import type { character, MessagePresetInfo } from "../storage/database.svelte";
+import type { ChatVarTarget } from "../parser/chatVar.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { safeStructuredClone } from "../polyfill";
 import { prebuiltAssetCommand } from "../util";
@@ -13,6 +14,7 @@ import type {
 } from "./prompt";
 import { risuChatParser } from "./scripts";
 import { runLuaEditTrigger } from "./scriptings";
+import { generationOverride, type ChatGenerationOverrides } from "./chatGenerationContext";
 import {
   applyPromptBlockRole,
   PROMPT_ROLE_TO_OPENAI,
@@ -26,7 +28,8 @@ interface RenderContext {
   usingPromptTemplate: boolean;
   positionParser: (text: string, location: string) => string;
   getDescriptionPrompts: (role?: PromptRole) => OpenAIChat[];
-  chatTarget: { characterIndex: number; chatIndex: number };
+  chatTarget: ChatVarTarget;
+  generation?: ChatGenerationOverrides;
 }
 
 interface RenderedCard {
@@ -34,8 +37,15 @@ interface RenderedCard {
   promptInfo: OpenAIChat[];
 }
 
-function isCardEnabled(card: PromptItem) {
-  if (card.type === "jailbreak" && !settingsStore.state.jailbreakToggle) return false;
+function isCardEnabled(card: PromptItem, context: RenderContext) {
+  if (
+    card.type === "jailbreak" &&
+    !generationOverride(
+      context.generation,
+      "jailbreakToggle",
+      settingsStore.state.jailbreakToggle,
+    )
+  ) return false;
   if (card.type === "cot" && !settingsStore.state.chainOfThought) return false;
   return true;
 }
@@ -153,7 +163,11 @@ function renderChatCard(card: PromptItemChat, context: RenderContext): RenderedC
   let prompts = context.unformated.chats.slice(start, end);
   if (
     context.usingPromptTemplate &&
-    settingsStore.state.promptSettings.sendChatAsSystem &&
+    generationOverride(
+      context.generation,
+      "promptSettings",
+      settingsStore.state.promptSettings,
+    ).sendChatAsSystem &&
     !card.chatAsOriginalOnSystem
   ) {
     prompts = systemizeChat(prompts);
@@ -245,13 +259,15 @@ function renderTypedCard(
 
 function renderPostEverythingCard(context: RenderContext): RenderedCard {
   const prompts = [...context.unformated.postEverything];
-  if (
-    context.usingPromptTemplate &&
-    settingsStore.state.promptSettings.postEndInnerFormat
-  ) {
+  const promptSettings = generationOverride(
+    context.generation,
+    "promptSettings",
+    settingsStore.state.promptSettings,
+  );
+  if (context.usingPromptTemplate && promptSettings.postEndInnerFormat) {
     prompts.push({
       role: "system",
-      content: settingsStore.state.promptSettings.postEndInnerFormat,
+      content: promptSettings.postEndInnerFormat,
     });
   }
   return { prompts, promptInfo: [] };
@@ -263,7 +279,7 @@ function renderCard(
   memories: OpenAIChat[] = [],
   capturePromptInfo = false,
 ): RenderedCard {
-  if (!isCardEnabled(card)) return { prompts: [], promptInfo: [] };
+  if (!isCardEnabled(card, context)) return { prompts: [], promptInfo: [] };
   if (
     card.type === "persona" ||
     card.type === "description" ||
@@ -419,7 +435,13 @@ function renderTemplateCards(
 }
 
 function renderLegacyPromptOrder(options: FormatPromptOptions, formated: OpenAIChat[]) {
-  const formatOrder = safeStructuredClone(settingsStore.state.formatingOrder) ?? [];
+  const formatOrder = safeStructuredClone(
+    generationOverride(
+      options.context.generation,
+      "formatingOrder",
+      settingsStore.state.formatingOrder,
+    ),
+  ) ?? [];
   formatOrder.push("postEverything");
   for (const key of formatOrder) {
     mergePrompts(formated, options.context.unformated[key]);
@@ -448,6 +470,7 @@ async function runPromptEditTriggers(
   promptInfoBody: OpenAIChat[],
   capturePromptInfo: boolean,
 ) {
+  if (options.context.generation?.suppressTriggers) return formated;
   const edited = await runLuaEditTrigger(
     options.context.currentChar,
     "editRequest",

@@ -1,4 +1,5 @@
 import type { character, Chat, groupChat } from "../storage/database.svelte";
+import type { ChatVarTarget } from "../parser/chatVar.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { safeStructuredClone } from "../polyfill";
 import {
@@ -9,6 +10,7 @@ import { risuChatParser } from "./scripts";
 import { additionalInformations } from "./embedding/addinfo";
 import { loadLoreBookV3Prompt } from "./lorebook.svelte";
 import type { PromptItem, PromptRole } from "./prompt";
+import { generationOverride, type ChatGenerationOverrides } from "./chatGenerationContext";
 import type { OpenAIChat, PromptSections } from "@risuai/chat-core/types.cjs";
 export type { PromptSections } from "@risuai/chat-core/types.cjs";
 
@@ -58,14 +60,19 @@ function getUtilityBotTemplate(): PromptItem[] {
   ];
 }
 
-function resolvePromptTemplate(currentChar: character) {
-  let promptTemplate = safeStructuredClone(settingsStore.state.promptTemplate);
+function resolvePromptTemplate(currentChar: character, generation?: ChatGenerationOverrides) {
+  let promptTemplate = safeStructuredClone(
+    generationOverride(generation, "promptTemplate", settingsStore.state.promptTemplate),
+  );
   const usingPromptTemplate = !!promptTemplate;
   if (promptTemplate) ensurePostEverythingCard(promptTemplate);
 
   if (
     currentChar.utilityBot &&
-    !(usingPromptTemplate && settingsStore.state.promptSettings.utilOverride)
+    !(
+      usingPromptTemplate &&
+      generationOverride(generation, "promptSettings", settingsStore.state.promptSettings).utilOverride
+    )
   ) {
     promptTemplate = getUtilityBotTemplate();
   }
@@ -85,18 +92,29 @@ function parseLegacyPrompt(data: string): OpenAIChat[] {
   return chats;
 }
 
-type ChatTarget = { characterIndex: number; chatIndex: number };
+type ChatTarget = ChatVarTarget;
 
 function buildLegacyMainPrompts(
   sections: PromptSections,
   currentChar: character,
   target?: ChatTarget,
+  generation?: ChatGenerationOverrides,
 ) {
+  const baseMainPrompt = generationOverride(
+    generation,
+    "mainPrompt",
+    settingsStore.state.mainPrompt,
+  );
   const mainPrompt =
-    currentChar.systemPrompt?.replaceAll("{{original}}", settingsStore.state.mainPrompt) ||
-    settingsStore.state.mainPrompt;
+    currentChar.systemPrompt?.replaceAll("{{original}}", baseMainPrompt) ||
+    baseMainPrompt;
+  const promptPreprocess = generationOverride(
+    generation,
+    "promptPreprocess",
+    settingsStore.state.promptPreprocess,
+  );
   const additionalPrompt =
-    settingsStore.state.additionalPrompt && settingsStore.state.promptPreprocess
+    settingsStore.state.additionalPrompt && promptPreprocess
       ? `\n${settingsStore.state.additionalPrompt}`
       : "";
   sections.main.push(
@@ -107,13 +125,20 @@ function buildLegacyMainPrompts(
       }),
     ),
   );
-  if (settingsStore.state.jailbreakToggle) {
+  if (generationOverride(
+    generation,
+    "jailbreakToggle",
+    settingsStore.state.jailbreakToggle,
+  )) {
     sections.jailbreak.push(
       ...parseLegacyPrompt(
-        risuChatParser(settingsStore.state.jailbreak, {
-          chara: currentChar,
-          chatTarget: target,
-        }),
+        risuChatParser(
+          generationOverride(generation, "jailbreak", settingsStore.state.jailbreak),
+          {
+            chara: currentChar,
+            chatTarget: target,
+          },
+        ),
       ),
     );
   }
@@ -123,12 +148,18 @@ function buildLegacyGlobalNote(
   sections: PromptSections,
   currentChar: character,
   target?: ChatTarget,
+  generation?: ChatGenerationOverrides,
 ) {
+  const baseGlobalNote = generationOverride(
+    generation,
+    "globalNote",
+    settingsStore.state.globalNote,
+  );
   const globalNote =
     currentChar.replaceGlobalNote?.replaceAll(
       "{{original}}",
-      settingsStore.state.globalNote,
-    ) || settingsStore.state.globalNote;
+      baseGlobalNote,
+    ) || baseGlobalNote;
   sections.globalNote.push(
     ...parseLegacyPrompt(
       risuChatParser(globalNote, { chara: currentChar, chatTarget: target }),
@@ -141,10 +172,11 @@ function buildLegacyPromptSections(
   currentChar: character,
   promptTemplate: PromptItem[] | null | undefined,
   target?: ChatTarget,
+  generation?: ChatGenerationOverrides,
 ) {
   if (currentChar.utilityBot || promptTemplate) return;
-  buildLegacyMainPrompts(sections, currentChar, target);
-  buildLegacyGlobalNote(sections, currentChar, target);
+  buildLegacyMainPrompts(sections, currentChar, target, generation);
+  buildLegacyGlobalNote(sections, currentChar, target, generation);
 }
 
 function buildAuthorAndControlPrompts(
@@ -153,6 +185,7 @@ function buildAuthorAndControlPrompts(
   currentChat: Chat,
   usingPromptTemplate: boolean,
   target?: ChatTarget,
+  generation?: ChatGenerationOverrides,
 ) {
   const authorNote = currentChat.note || getAuthorNoteDefaultText();
   if (authorNote) {
@@ -165,9 +198,14 @@ function buildAuthorAndControlPrompts(
     });
   }
 
+  const promptSettings = generationOverride(
+    generation,
+    "promptSettings",
+    settingsStore.state.promptSettings,
+  );
   if (
     settingsStore.state.chainOfThought &&
-    !(usingPromptTemplate && settingsStore.state.promptSettings.customChainOfThought)
+    !(usingPromptTemplate && promptSettings.customChainOfThought)
   ) {
     sections.postEverything.push({
       role: "system",
@@ -181,11 +219,15 @@ async function buildDescriptionText(
   currentChar: character,
   currentChat: Chat,
   target?: ChatTarget,
+  generation?: ChatGenerationOverrides,
 ) {
+  const promptPreprocess = generationOverride(
+    generation,
+    "promptPreprocess",
+    settingsStore.state.promptPreprocess,
+  );
   let description = risuChatParser(
-    (settingsStore.state.promptPreprocess
-      ? settingsStore.state.descriptionPrefix
-      : "") + currentChar.desc,
+    (promptPreprocess ? settingsStore.state.descriptionPrefix : "") + currentChar.desc,
     { chara: currentChar, chatTarget: target },
   );
   const additionalInfo = await additionalInformations(
@@ -232,10 +274,11 @@ async function buildDescriptionPrompt(
   currentChat: Chat,
   nowChatroom: character | groupChat,
   target?: ChatTarget,
+  generation?: ChatGenerationOverrides,
 ) {
   const prompt: OpenAIChat = {
     role: "system",
-    content: await buildDescriptionText(currentChar, currentChat, target),
+    content: await buildDescriptionText(currentChar, currentChat, target, generation),
   };
   sections.description.push(prompt);
   appendGroupSpeakerInstruction(sections, currentChar, nowChatroom);
@@ -409,17 +452,31 @@ export async function preparePromptSections(
   currentChar: character,
   currentChat: Chat,
   nowChatroom: character | groupChat,
-  target?: { characterIndex: number; chatIndex: number },
+  target?: ChatTarget,
+  generation?: ChatGenerationOverrides,
 ) {
   const sections = createPromptSections();
-  const { promptTemplate, usingPromptTemplate } = resolvePromptTemplate(currentChar);
-  buildLegacyPromptSections(sections, currentChar, promptTemplate, target);
+  const scopedTarget: ChatTarget | undefined = target
+    ? { ...target, globalVariables: generation?.chatVariables }
+    : target;
+  const { promptTemplate, usingPromptTemplate } = resolvePromptTemplate(
+    currentChar,
+    generation,
+  );
+  buildLegacyPromptSections(
+    sections,
+    currentChar,
+    promptTemplate,
+    scopedTarget,
+    generation,
+  );
   buildAuthorAndControlPrompts(
     sections,
     currentChar,
     currentChat,
     usingPromptTemplate,
-    target,
+    scopedTarget,
+    generation,
   );
 
   await buildDescriptionPrompt(
@@ -427,18 +484,23 @@ export async function preparePromptSections(
     currentChar,
     currentChat,
     nowChatroom,
-    target,
+    scopedTarget,
+    generation,
   );
-  const lorePrompt = await loadLoreBookV3Prompt(target);
+  const lorePrompt = await loadLoreBookV3Prompt(scopedTarget, {
+    chat: currentChat,
+    moduleIds: generation?.moduleIds,
+    chatVariables: generation?.chatVariables,
+  });
   const resolvePosition = createPositionResolver(lorePrompt);
-  buildLorebookSections(sections, currentChar, lorePrompt, resolvePosition, target);
-  addPersonaAndInlayPrompts(sections, currentChar, target);
+  buildLorebookSections(sections, currentChar, lorePrompt, resolvePosition, scopedTarget);
+  addPersonaAndInlayPrompts(sections, currentChar, scopedTarget);
   appendDepthZeroLorebookPrompts(
     sections,
     currentChar,
     lorePrompt,
     resolvePosition,
-    target,
+    scopedTarget,
   );
 
   return {

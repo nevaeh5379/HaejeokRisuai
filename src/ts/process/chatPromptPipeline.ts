@@ -16,6 +16,8 @@ import {
 import { buildChatHistory } from "./chatHistoryBuilder";
 import { applyChatMemory } from "./chatMemory";
 import type { ChatStageTimings, OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { ChatVarTarget } from "../parser/chatVar.svelte";
+import { generationOverride, type ChatGenerationOverrides } from "./chatGenerationContext";
 import {
   applyMemoryPromptPolicy,
   applyTriggerPromptPolicy,
@@ -36,7 +38,8 @@ type ReadyChatHistory = Extract<
 function createRenderContext(
   currentChar: character,
   sections: PreparedPromptSections,
-  chatTarget: { characterIndex: number; chatIndex: number },
+  chatTarget: ChatVarTarget,
+  generation?: ChatGenerationOverrides,
 ) {
   return {
     currentChar,
@@ -45,6 +48,7 @@ function createRenderContext(
     positionParser: sections.positionParser,
     getDescriptionPrompts: sections.getDescriptionPrompts,
     chatTarget,
+    generation,
   };
 }
 
@@ -52,14 +56,16 @@ async function buildHistoryStage(
   options: BuildGenerationPromptOptions,
   sections: PreparedPromptSections,
 ) {
-  const chatTarget = {
+  const chatTarget: ChatVarTarget = {
     characterIndex: options.selectedChar,
     chatIndex: options.selectedChat,
+    globalVariables: options.generation?.chatVariables,
   };
   const renderContext = createRenderContext(
     options.currentChar,
     sections,
     chatTarget,
+    options.generation,
   );
   const estimate = await estimatePromptTemplateTokens({
     promptTemplate: sections.promptTemplate,
@@ -77,6 +83,7 @@ async function buildHistoryStage(
     resolvePosition: sections.resolvePosition,
     findCharacter: options.findCharacter,
     chatTarget,
+    generation: options.generation,
   });
   if (history.stopSending) {
     return { ok: false as const };
@@ -105,6 +112,7 @@ async function applyMemoryStage(
     selectedChat: options.selectedChat,
     stage1Start: options.stageTimings.stage1Start,
     throwError: options.throwError,
+    skipMemory: options.generation?.skipMemory,
   });
   if (!memory.ok) return memory;
   options.stageTimings.stage1Duration = memory.stage1Duration;
@@ -169,6 +177,7 @@ export interface BuildGenerationPromptOptions {
   continued?: boolean;
   findCharacter: (id: string) => character;
   throwError: (error: string) => void;
+  generation?: ChatGenerationOverrides;
 }
 
 export async function buildGenerationPrompt(
@@ -184,6 +193,7 @@ export async function buildGenerationPrompt(
       characterIndex: options.selectedChar,
       chatIndex: options.selectedChat,
     },
+    options.generation,
   );
   const historyStage = await buildHistoryStage(options, sections);
   if (!historyStage.ok) return { ok: false as const };

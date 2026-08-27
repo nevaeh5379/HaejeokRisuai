@@ -2057,6 +2057,29 @@ export interface ChatBranchState {
   branches: ChatBranchTimeline[];
 }
 
+export interface BtwSessionConfig {
+  /** Prompt preset used only as a prompt source. Model/provider parameters stay on the main session. */
+  promptPresetId?: string;
+  /** Exact module set for this side session. */
+  moduleIds: string[];
+  /** Session-local values for prompt/module toggle variables (toggle_* keys). */
+  toggleValues: Record<string, string>;
+  jailbreakToggle: boolean;
+  /** Whether non-essential plugin chat hooks may observe the BTW response. */
+  pluginsEnabled: boolean;
+}
+
+export interface BtwSession {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  /** Number of main-chat messages visible when this BTW thread was created. */
+  baseMessageCount: number;
+  messages: Message[];
+  config: BtwSessionConfig;
+}
+
 export interface Chat {
   message: Message[];
   note: string;
@@ -2092,6 +2115,9 @@ export interface Chat {
   /** Transient guard while generation needs the complete message array. */
   preventMessageCompaction?: boolean;
   detailsLoaded?: boolean;
+  /** Persistent side conversations opened through /btw. */
+  btwSessions?: BtwSession[];
+  activeBtwSessionId?: string;
 }
 
 export interface ChatFolder {

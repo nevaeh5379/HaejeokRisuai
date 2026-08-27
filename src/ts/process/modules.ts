@@ -472,12 +472,19 @@ function getModulesForCharacter(character: character | groupChat | undefined) {
   return getModuleByIds(ids);
 }
 
-export function getModules(character?: character | groupChat) {
+export function getModules(
+  character?: character | groupChat,
+  overrideIds?: string[],
+) {
+  if (overrideIds !== undefined) return getModuleByIds(overrideIds);
   return getModulesForCharacter(character ?? getCurrentCharacter());
 }
 
-export function getModuleLorebooks(character?: character | groupChat) {
-  const modules = getModules(character);
+export function getModuleLorebooks(
+  character?: character | groupChat,
+  overrideIds?: string[],
+) {
+  const modules = getModules(character, overrideIds);
   let lorebooks: loreBook[] = [];
   for (const module of modules) {
     if (!module) {
@@ -490,8 +497,11 @@ export function getModuleLorebooks(character?: character | groupChat) {
   return lorebooks;
 }
 
-export function getModuleAssets(character?: character | groupChat) {
-  const modules = getModules(character);
+export function getModuleAssets(
+  character?: character | groupChat,
+  overrideIds?: string[],
+) {
+  const modules = getModules(character, overrideIds);
   let assets: [string, string, string][] = [];
   for (const module of modules) {
     if (!module) {
@@ -504,8 +514,11 @@ export function getModuleAssets(character?: character | groupChat) {
   return assets;
 }
 
-export function getModuleTriggers(character?: character | groupChat) {
-  const modules = getModules(character);
+export function getModuleTriggers(
+  character?: character | groupChat,
+  overrideIds?: string[],
+) {
+  const modules = getModules(character, overrideIds);
   let triggers: triggerscript[] = [];
   for (const module of modules) {
     if (!module) {
@@ -523,8 +536,11 @@ export function getModuleTriggers(character?: character | groupChat) {
   return triggers;
 }
 
-export function getModuleRegexScripts(character?: character | groupChat) {
-  const modules = getModules(character);
+export function getModuleRegexScripts(
+  character?: character | groupChat,
+  overrideIds?: string[],
+) {
+  const modules = getModules(character, overrideIds);
   let customscripts: customscript[] = [];
   for (const module of modules) {
     if (!module) {
@@ -537,8 +553,11 @@ export function getModuleRegexScripts(character?: character | groupChat) {
   return customscripts;
 }
 
-export function getModuleToggles(character?: character | groupChat) {
-  const modules = getModules(character);
+export function getModuleToggles(
+  character?: character | groupChat,
+  overrideIds?: string[],
+) {
+  const modules = getModules(character, overrideIds);
   let costomModuleToggles: string = "";
   for (const module of modules) {
     if (!module) {
@@ -551,8 +570,11 @@ export function getModuleToggles(character?: character | groupChat) {
   return costomModuleToggles;
 }
 
-export function getModuleMcps(character?: character | groupChat) {
-  const modules = getModules(character);
+export function getModuleMcps(
+  character?: character | groupChat,
+  overrideIds?: string[],
+) {
+  const modules = getModules(character, overrideIds);
 
   return modules.map((v) => v.mcp?.url).filter((v) => v);
 }

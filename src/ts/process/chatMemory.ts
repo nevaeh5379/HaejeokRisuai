@@ -60,6 +60,8 @@ export interface ApplyChatMemoryOptions {
   selectedChat: number;
   stage1Start: number;
   throwError: (error: string) => void;
+  /** Bypass configured memory engines while still applying normal context trimming. */
+  skipMemory?: boolean;
 }
 
 function storedChat(options: ApplyChatMemoryOptions) {
@@ -237,7 +239,7 @@ export async function applyChatMemory(options: ApplyChatMemoryOptions) {
     currentChat: options.currentChat,
   };
 
-  if (!memoryEnabled(options.nowChatroom)) {
+  if (options.skipMemory || !memoryEnabled(options.nowChatroom)) {
     const result = await applyWithoutMemory(options, initialState);
     if (!result.ok) return { ok: false as const };
     return {

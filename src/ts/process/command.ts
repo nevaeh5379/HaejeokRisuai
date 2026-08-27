@@ -67,6 +67,11 @@ async function processCommand(
   }
 
   switch (commandName) {
+    case "btw": {
+      const { openBtwPanel } = await import("./btwSession.svelte");
+      await openBtwPanel(get(selectedCharID), currentChar.chatPage, arg);
+      return pipe;
+    }
     //STScript compatibility commands
     case "input": {
       pipe = await alertInput(arg);

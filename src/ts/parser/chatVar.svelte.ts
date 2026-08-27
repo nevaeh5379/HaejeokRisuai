@@ -7,6 +7,8 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
 export type ChatVarTarget = {
   characterIndex: number;
   chatIndex: number;
+  /** Request-local variable overlay used by isolated generations such as /btw. */
+  globalVariables?: Record<string, string>;
 };
 
 export function getChatVar(key: string, target?: ChatVarTarget): string {
@@ -88,6 +90,8 @@ export function setGLChatVar(key: string, value: string): boolean {
 }
 
 export function getGlobalChatVar(key: string, target?: ChatVarTarget): string {
+  const requestValue = target?.globalVariables?.[key];
+  if (requestValue !== undefined) return requestValue;
   const localValue = getGLChatVar(key, target);
   if (localValue !== undefined) {
     return localValue;
