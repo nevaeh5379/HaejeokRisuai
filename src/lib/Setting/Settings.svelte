@@ -132,11 +132,15 @@
         {#if $SettingsMenuIndex === 1}
             <div class="flex flex-col ml-3 pl-3 border-l border-darkborderc/60 gap-1 my-1">
                 <button
+                    title={language.mainModelCardDesc}
                     class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left {desktopBotTarget.submenu === 0 && desktopBotTarget.modelTab === 'main' ? 'bg-darkbutton text-textcolor font-bold shadow-xs' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton/40'}"
                     onclick={() => { desktopBotTarget = { submenu: 0, modelTab: 'main' }; }}
                 >
                     <BotIcon size={13} />
-                    <span class="truncate">{language.mainModelCardTitle || language.model}</span>
+                    <span class="flex min-w-0 flex-col">
+                        <span class="truncate">{language.mainModelCardTitle || language.model}</span>
+                        <span class="truncate text-[10px] font-normal opacity-70">{language.mainModelCardDesc}</span>
+                    </span>
                 </button>
                 <button
                     class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left {desktopBotTarget.submenu === 0 && desktopBotTarget.modelTab === 'sub' ? 'bg-darkbutton text-textcolor font-bold shadow-xs' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton/40'}"
@@ -146,11 +150,15 @@
                     <span class="truncate">{language.subModelCardTitle || language.submodel}</span>
                 </button>
                 <button
+                    title={language.providerCredentialsDesc}
                     class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left {desktopBotTarget.submenu === 0 && desktopBotTarget.modelTab === 'provider' ? 'bg-darkbutton text-textcolor font-bold shadow-xs' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton/40'}"
                     onclick={() => { desktopBotTarget = { submenu: 0, modelTab: 'provider' }; }}
                 >
                     <KeyIcon size={13} />
-                    <span class="truncate">{language.providerSettings || "API & Providers"}</span>
+                    <span class="flex min-w-0 flex-col">
+                        <span class="truncate">{language.providerSettings || "API & Providers"}</span>
+                        <span class="truncate text-[10px] font-normal opacity-70">{language.providerCredentialsDesc}</span>
+                    </span>
                 </button>
                 <button
                     class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left {desktopBotTarget.submenu === 1 ? 'bg-darkbutton text-textcolor font-bold shadow-xs' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton/40'}"
@@ -360,7 +368,7 @@
                     <button
                         class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
                         onclick={() => {
-                            mobileBotTarget = { submenu: 0, modelTab: 'main', title: language.model || "AI Model" };
+                            mobileBotTarget = { submenu: 0, modelTab: 'main', title: language.mainModelCardTitle || language.model };
                             $SettingsMenuIndex = 1;
                         }}
                     >
@@ -368,7 +376,10 @@
                             <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center shrink-0">
                                 <BotIcon size={18} />
                             </div>
-                            <span class="text-base font-medium text-textcolor truncate">{language.model || "AI Model"}</span>
+                            <span class="flex min-w-0 flex-col">
+                                <span class="text-base font-medium text-textcolor truncate">{language.mainModelCardTitle || language.model}</span>
+                                <span class="text-xs text-textcolor2 line-clamp-2">{language.mainModelCardDesc}</span>
+                            </span>
                         </div>
                         <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                     </button>
@@ -385,7 +396,10 @@
                             <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center shrink-0">
                                 <KeyIcon size={18} />
                             </div>
-                            <span class="text-base font-medium text-textcolor truncate">{language.providerSettings || "API & Providers"}</span>
+                            <span class="flex min-w-0 flex-col">
+                                <span class="text-base font-medium text-textcolor truncate">{language.providerSettings || "API & Providers"}</span>
+                                <span class="text-xs text-textcolor2 line-clamp-2">{language.providerCredentialsDesc}</span>
+                            </span>
                         </div>
                         <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                     </button>

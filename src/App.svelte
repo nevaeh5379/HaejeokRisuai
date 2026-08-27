@@ -1,8 +1,10 @@
 <script lang="ts">
-    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, saving, AccountWarning, selectedCharID, PlaygroundStore } from './ts/stores.svelte';
+    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, saving, AccountWarning, selectedCharID, PlaygroundStore } from './ts/stores.svelte';
     import { settingsStore, moduleStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
-    import { isNodeServer } from './ts/platform';
+    import { isCapacitor, isNodeServer } from './ts/platform';
+    import { registerPlugin } from '@capacitor/core';
+    import { onMount } from 'svelte';
     import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
     import { hypaV3ModalOpen, hypaV3ProgressStore } from "./ts/stores.svelte";
     import sendSound from './etc/send.mp3'
@@ -19,6 +21,64 @@
     let aprilFoolsPage = $state(0)
     let keepingSessionAlive = $state(false)
     let RealmPopUp = $state<typeof RealmPopUpType | null>(null)
+    let exitConfirmationOpen = false
+
+    const nativeAppControl = registerPlugin<{ exitApp(): Promise<void> }>('NativeAppControl')
+
+    onMount(() => {
+        if (!isCapacitor) return
+
+        const handleAndroidBack = async () => {
+            if ($alertStore.type !== 'none') {
+                alertStore.set({ type: 'none', msg: '' })
+                return
+            }
+            if (assetManagerModalStore.open) { assetManagerModalStore.open = false; return }
+            if (customSideBarConfigDialogStore.open) { customSideBarConfigDialogStore.open = false; return }
+            if (irisStore.open) { irisStore.open = false; return }
+            if (loadoutModalStore.open) { loadoutModalStore.open = false; return }
+            if (popUpEditorStore.open) { popUpEditorStore.open = false; return }
+            if (easyPanelStore.open) { easyPanelStore.open = false; return }
+            if (popupStore.children) { popupStore.children = null; return }
+            if ($messageSearchOpen) { $messageSearchOpen = false; return }
+            if ($bookmarkListOpen) { $bookmarkListOpen = false; return }
+            if ($openPersonaList) { $openPersonaList = false; return }
+            if ($openPresetList) { $openPresetList = false; return }
+            if ($ShowRealmFrameStore) { $ShowRealmFrameStore = ''; return }
+            if (gridOpen) { gridOpen = false; return }
+            if ($settingsOpen) {
+                if ($SettingsMenuIndex > -1) $SettingsMenuIndex = -1
+                else $settingsOpen = false
+                return
+            }
+            if ($CustomGUISettingMenuStore) { $CustomGUISettingMenuStore = false; return }
+            if ($MobileSideBar > 0) { $MobileSideBar = 0; return }
+            if ($selectedCharID >= 0) { $selectedCharID = -1; return }
+            if ($MobileGUIStack === 2 && $SettingsMenuIndex > -1) { $SettingsMenuIndex = -1; return }
+            if ($MobileGUIStack !== 0) { $MobileGUIStack = 0; return }
+            if (exitConfirmationOpen) return
+
+            exitConfirmationOpen = true
+            try {
+                const [{ alertConfirm }, { language }] = await Promise.all([
+                    import('./ts/alert'),
+                    import('./lang'),
+                ])
+                if (await alertConfirm(language.exitAppConfirm)) {
+                    await Promise.allSettled([
+                        settingsStore.flush(),
+                        import('./ts/stores/domain/characterStore.svelte').then(({ characterStore }) => characterStore.flush()),
+                    ])
+                    await nativeAppControl.exitApp()
+                }
+            } finally {
+                exitConfirmationOpen = false
+            }
+        }
+
+        window.addEventListener('risu:android-back', handleAndroidBack)
+        return () => window.removeEventListener('risu:android-back', handleAndroidBack)
+    })
 
     const legalLoader = () => import('./lib/Others/Legal.svelte')
     const sqlQuickSetupLoader = () => import('./lib/Others/SqlQuickSetup.svelte')

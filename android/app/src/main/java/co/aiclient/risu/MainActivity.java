@@ -1,6 +1,7 @@
 package co.aiclient.risu;
 
 import android.os.Bundle;
+import androidx.activity.OnBackPressedCallback;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -11,6 +12,20 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NativeBackupPlugin.class);
         registerPlugin(NativeImagePlugin.class);
         registerPlugin(NativeChatPlugin.class);
+        registerPlugin(NativeAppControlPlugin.class);
         super.onCreate(savedInstanceState);
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                if (getBridge() == null || getBridge().getWebView() == null) {
+                    finish();
+                    return;
+                }
+                getBridge().getWebView().evaluateJavascript(
+                    "window.dispatchEvent(new Event('risu:android-back'))",
+                    null
+                );
+            }
+        });
     }
 }

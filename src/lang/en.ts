@@ -2721,6 +2721,7 @@ export const languageEnglish = {
   changeModel: "Change Model",
   activeProviderSettings: "Active Provider Settings",
   providerSettings: "API & Providers",
+  exitAppConfirm: "Exit RisuAI?",
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;
