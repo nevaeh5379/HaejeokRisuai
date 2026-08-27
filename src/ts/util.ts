@@ -16,6 +16,7 @@ import { basename } from "@tauri-apps/api/path";
 import { createBlankChar } from "./characterDefaults";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { isIOS, isTauri } from "src/ts/platform";
+import { hasKnownMimeType } from "./media/mimeType";
 import type { Attachment } from "svelte/attachments";
 import { mount, unmount, type Snippet } from "svelte";
 import PopupList from "src/lib/UI/PopupList.svelte";
@@ -58,6 +59,9 @@ export async function selectSingleFile(ext: string[]) {
   if (domSelect) {
     const v = await selectFileByDom(ext, "single");
     const file = v[0];
+    if (!file) {
+      return null;
+    }
     return { name: file.name, data: await readFileAsUint8Array(file) };
   }
 
@@ -193,7 +197,22 @@ export function selectFileByDom(
       allowedExtensions[0] === "*";
     if (!acceptAll) {
       if (allowedExtensions && allowedExtensions.length) {
-        fileInput.accept = allowedExtensions.map((ext) => `.${ext}`).join(",");
+        // Custom formats (e.g. .risum, .charx, .risupreset) have no system
+        // MIME mapping. Android file pickers drop unknown extensions from
+        // the accept filter, so a list like "json, lorebook, risum, charx"
+        // degrades to "application/json" and hides every custom file. When
+        // any extension is unknown, drop the filter entirely to show all
+        // files; the change handler below still filters by extension.
+        const allKnown =
+          allowedExtensions.length > 0 &&
+          allowedExtensions.every((ext) => hasKnownMimeType(ext));
+        if (!allKnown) {
+          fileInput.removeAttribute("accept");
+        } else {
+          fileInput.accept = allowedExtensions
+            .map((ext) => `.${ext}`)
+            .join(",");
+        }
       }
     } else {
       // An empty accept filter means "all files". The literal "*" is not a

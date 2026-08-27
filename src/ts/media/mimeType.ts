@@ -72,3 +72,18 @@ export function getFileExtension(pathOrUrl: string): string {
   const parts = clean.split(".");
   return parts.length > 1 ? (parts.pop()?.toLowerCase() ?? "") : "";
 }
+
+/**
+ * Returns true when the extension of the given filename/path is registered
+ * in the MIME map. Custom app formats (e.g. .risum, .charx, .risupreset)
+ * have no system MIME mapping, and Android file pickers drop unknown
+ * extensions from accept filters entirely. Accepts both ".json" and "json"
+ * styles so callers can pass extension lists directly.
+ */
+export function hasKnownMimeType(pathOrExt: string): boolean {
+  if (!pathOrExt) return false;
+  const clean = pathOrExt.split("?")[0].split("#")[0];
+  const ext = clean.split(".").pop()?.toLowerCase() ?? "";
+  if (!ext) return false;
+  return MIME_MAP[ext] !== undefined;
+}
