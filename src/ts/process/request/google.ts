@@ -35,7 +35,7 @@ import type {
   requestDataResponse,
   StreamResponseChunk,
 } from "./requestContracts";
-import { resolveRequestCharacter } from "./requestContext";
+import { resolveRequestParserContext } from "./requestContext";
 import { tryExecuteNodeProviderTransport } from "./nodeProviderExecutor";
 import {
   applyAdditionalParameters,
@@ -413,10 +413,7 @@ export async function requestGoogleCloudVertex(
     body.generation_config.response_schema = getGeneralJSONSchema(
       arg.schema,
       ["$schema", "additionalProperties"],
-      {
-        chara: resolveRequestCharacter(arg),
-        chatTarget: arg.triggerTarget,
-      },
+      resolveRequestParserContext(arg),
     );
     console.log(body.generation_config.response_schema);
   }
@@ -534,7 +531,7 @@ async function requestGoogle(
       arg.extractJson && (db.jsonSchemaEnabled || arg.schema);
     return formatGoogleTextResponse(rDatas, {
       transformText: shouldExtractJson
-        ? (text) => extractJSON(text, arg.extractJson)
+        ? (text) => extractJSON(text, arg.extractJson, resolveRequestParserContext(arg))
         : undefined,
     });
   };
@@ -1031,7 +1028,7 @@ function wrapToolStream(
         value = initStreamState(value);
 
         if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
-          value["0"] = extractJSON(value["0"], arg.extractJson);
+          value["0"] = extractJSON(value["0"], arg.extractJson, resolveRequestParserContext(arg));
         }
 
         let content = value["0"];

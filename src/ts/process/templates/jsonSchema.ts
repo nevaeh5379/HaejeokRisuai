@@ -174,38 +174,32 @@ export function getGeneralJSONSchema(
   return process(d);
 }
 
-export function extractJSON(data: string, format: string) {
-  const extract = (data: any, format: string) => {
-    try {
-      if (data === undefined || data === null) {
-        return "";
-      }
-
-      const fp = format.split(".");
-      const current = data[fp[0]];
-
-      if (current === undefined) {
-        return "";
-      } else if (fp.length === 1) {
-        return `${current ?? ""}`;
-      } else if (typeof current === "object") {
-        return extractJSON(current, fp.slice(1).join("."));
-      } else if (Array.isArray(current)) {
-        const index = parseInt(fp[1]);
-        return extractJSON(current[index], fp.slice(1).join("."));
-      } else {
-        return `${current ?? ""}`;
-      }
-    } catch (error) {
-      return "";
-    }
+export function extractJSON(
+  data: unknown,
+  format: string,
+  context: JSONSchemaParserContext = {},
+): string {
+  const extract = (value: any, path: string): string => {
+    if (value === undefined || value === null) return "";
+    const [head, ...tail] = path.split(".");
+    const current = value[head];
+    if (current === undefined) return "";
+    if (tail.length === 0) return `${current ?? ""}`;
+    return extract(current, tail.join("."));
   };
+
   try {
-    format = risuChatParser(format);
-    data = data.trim();
-    if (data.startsWith("{")) {
-      return extract(JSON.parse(jsonOutputTrimmer(data)), format);
+    format = risuChatParser(format, {
+      chara: context.chara,
+      chatTarget: context.chatTarget,
+    });
+    if (typeof data === "string") {
+      const trimmed = data.trim();
+      if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return data;
+      data = JSON.parse(jsonOutputTrimmer(trimmed));
     }
-  } catch (error) {}
-  return data;
+    return extract(data, format);
+  } catch (error) {
+    return typeof data === "string" ? data : "";
+  }
 }

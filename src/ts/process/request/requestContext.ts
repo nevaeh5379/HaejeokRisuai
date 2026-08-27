@@ -4,3 +4,10 @@ import type { RequestDataArgumentExtended } from "./requestContracts";
 export function resolveRequestCharacter(arg: RequestDataArgumentExtended) {
   return arg.currentChar ?? getCurrentCharacter();
 }
+
+export function resolveRequestParserContext(arg: RequestDataArgumentExtended) {
+  return {
+    chara: resolveRequestCharacter(arg),
+    chatTarget: arg.triggerTarget,
+  };
+}

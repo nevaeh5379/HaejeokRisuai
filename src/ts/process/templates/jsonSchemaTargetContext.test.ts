@@ -14,6 +14,7 @@ vi.mock("src/ts/util", () => ({ jsonOutputTrimmer: (value: string) => value }));
 
 import {
   convertInterfaceToSchema,
+  extractJSON,
   getGeneralJSONSchema,
   getOpenAIJSONSchema,
 } from "./jsonSchema";
@@ -21,7 +22,9 @@ import {
 const context = {
   chara: { name: "Target Character" } as never,
   chatTarget: { characterIndex: 2, chatIndex: 5 },
-};test("passes generation context into interface schema parsing", () => {
+};
+
+test("passes generation context into interface schema parsing", () => {
   const schema = convertInterfaceToSchema(
     'interface Result {\n  speaker: "{{char}}"\n}',
     context,
@@ -39,4 +42,21 @@ test("preserves context through provider schema helpers", () => {
   expect(
     getGeneralJSONSchema(source, ["$schema"], context).properties.speaker.const,
   ).toBe("Target Character");
+});
+
+test("uses generation context when extracting structured output", () => {
+  const value = extractJSON(
+    JSON.stringify({ "Target Character": "scoped-value" }),
+    "{{char}}",
+    context,
+  );
+
+  expect(value).toBe("scoped-value");
+  expect(parser).toHaveBeenLastCalledWith("{{char}}", context);
+});
+
+test("extracts nested fields from already parsed objects", () => {
+  expect(extractJSON({ result: { name: "ok" } }, "result.name", context)).toBe(
+    "ok",
+  );
 });

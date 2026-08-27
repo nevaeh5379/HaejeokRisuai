@@ -20,7 +20,7 @@ import type {
   StreamResponseChunk,
 } from "../requestContracts";
 import { tryExecuteNodeProviderTransport } from "../nodeProviderExecutor";
-import { resolveRequestCharacter } from "../requestContext";
+import { resolveRequestParserContext } from "../requestContext";
 import { matchesNodeOllamaCloudEndpoint } from "../ollamaTransport";
 import {
   applyAdditionalParameters,
@@ -448,10 +448,7 @@ async function buildResponsesBody(
     body.text ??= {};
     body.text.format = {
       type: "json_schema",
-      ...getOpenAIJSONSchema(arg.schema, {
-        chara: resolveRequestCharacter(arg),
-        chatTarget: arg.triggerTarget,
-      }),
+      ...getOpenAIJSONSchema(arg.schema, resolveRequestParserContext(arg)),
     };
   }
 
@@ -549,7 +546,7 @@ function extractResponsesText(
     result = `<Thoughts>\n\n${thoughts.join("\n\n")}\n\n</Thoughts>\n${result}`;
   }
   if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
-    return extractJSON(result, arg.extractJson);
+    return extractJSON(result, arg.extractJson, resolveRequestParserContext(arg));
   }
 
   return result;
@@ -793,7 +790,7 @@ function getResponsesTranStream(
       result = `<Thoughts>\n\n${reasoning}\n\n</Thoughts>\n${result}`;
     }
     if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
-      result = extractJSON(result, arg.extractJson);
+      result = extractJSON(result, arg.extractJson, resolveRequestParserContext(arg));
     }
     const chunk: Record<string, string> = { "0": error || result };
     if (Object.keys(calls).length > 0) {
