@@ -1679,6 +1679,8 @@ export async function runTrigger(
               bias: {},
               useStreaming: false,
               noMultiGen: true,
+              currentChar: char,
+              triggerTarget: target,
             },
             "model",
           );
@@ -2181,6 +2183,8 @@ export async function runTrigger(
               bias: {},
               useStreaming: effect.streaming ?? false,
               noMultiGen: true,
+              currentChar: char,
+              triggerTarget: target,
             },
             effect.model,
           );
