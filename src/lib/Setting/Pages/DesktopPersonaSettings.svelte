@@ -263,7 +263,7 @@
         </div>
 
         <!-- Right Pane: Active Persona Editor -->
-        <div class="lg:col-span-7 xl:col-span-7 flex flex-col gap-2.5 p-3.5 rounded-xl border border-darkborderc bg-darkbg/25 shadow-xs h-full min-h-0">
+        <div class="lg:col-span-7 xl:col-span-7 flex flex-col gap-2.5 h-full min-h-0">
             <!-- Top Section: Avatar (Left) + Name & Note (Right) Integrated -->
             <div class="flex flex-col sm:flex-row items-start gap-3 pb-2.5 border-b border-darkborderc/40 shrink-0">
                 <!-- Avatar with Action Buttons (Supports Large Portrait Aspect Ratio) -->
