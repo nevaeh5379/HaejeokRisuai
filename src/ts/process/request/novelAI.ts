@@ -116,7 +116,12 @@ export async function requestNovelAI(
   }
   return {
     type: "success",
-    result: unstringlizeChat(da.data.output, formated, currentChar?.name ?? ""),
+    result: unstringlizeChat(
+      da.data.output,
+      formated,
+      currentChar?.name ?? "",
+      arg.triggerTarget,
+    ),
   };
 }
 

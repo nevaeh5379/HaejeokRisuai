@@ -94,6 +94,7 @@ export async function requestHorde(
         remote.result,
         formated,
         currentChar?.name ?? "",
+        arg.triggerTarget,
       ),
     };
   }
@@ -161,6 +162,7 @@ export async function requestHorde(
               generations[0].text ?? "",
               formated,
               currentChar?.name ?? "",
+              arg.triggerTarget,
             ),
           };
         }

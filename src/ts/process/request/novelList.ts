@@ -31,7 +31,12 @@ export async function requestNovelList(
   };
 
   let send_body: Record<string, any> = buildNovelListRequestBody({
-    text: stringlizeAINChat(formated, currentChar?.name ?? "", arg.continue),
+    text: stringlizeAINChat(
+      formated,
+      currentChar?.name ?? "",
+      arg.continue,
+      arg.triggerTarget,
+    ),
     maxTokens,
     temperature,
     sampler: db.ainconfig,
@@ -88,7 +93,12 @@ export async function requestNovelList(
   }
 
   const result = response.data.data[0];
-  const unstr = unstringlizeAIN(result, formated, currentChar?.name ?? "");
+  const unstr = unstringlizeAIN(
+    result,
+    formated,
+    currentChar?.name ?? "",
+    arg.triggerTarget,
+  );
   return {
     type: "multiline",
     result: unstr,

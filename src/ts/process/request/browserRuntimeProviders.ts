@@ -170,6 +170,7 @@ export async function requestWebLLM(
       (v.generated_text as string) ?? "",
       formated,
       currentChar?.name ?? "",
+      arg.triggerTarget,
     ),
   };
 }

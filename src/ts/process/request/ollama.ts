@@ -268,7 +268,12 @@ export async function requestOllama(
     );
     return {
       type: "success",
-      result: unstringlizeChat(result, formated, arg.currentChar?.name ?? ""),
+      result: unstringlizeChat(
+        result,
+        formated,
+        arg.currentChar?.name ?? "",
+        arg.triggerTarget,
+      ),
       model: arg.aiModel,
     };
   }

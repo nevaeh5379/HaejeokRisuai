@@ -155,7 +155,12 @@ export async function requestOobaLegacy(
 
       return {
         type: "success",
-        result: unstringlizeChat(result, formated, currentChar?.name ?? ""),
+        result: unstringlizeChat(
+          result,
+          formated,
+          currentChar?.name ?? "",
+          arg.triggerTarget,
+        ),
       };
     } catch (error) {
       return {
