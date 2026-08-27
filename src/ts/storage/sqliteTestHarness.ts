@@ -367,6 +367,31 @@ export function makeCapacitorStorage(
   (storage as any).initialized = true;
   (storage as any).revision = 0;
   (storage as any).__log = log;
+  (storage as any).createRestoreStream = () => {
+    let statementCount = 0;
+    let opened = false;
+    return {
+      open: async () => {
+        if (opened) throw new Error("Restore stream already open");
+        opened = true;
+        await bridge.beginTransaction();
+      },
+      writeStatement: async (sql: string, bind: unknown[] = []) => {
+        if (!opened) throw new Error("Restore stream is not open");
+        db.run(sql, bind);
+        statementCount++;
+      },
+      finish: async () => {
+        await bridge.commitTransaction();
+        opened = false;
+        return statementCount;
+      },
+      abort: async () => {
+        if (opened) await bridge.rollbackTransaction();
+        opened = false;
+      },
+    };
+  };
   return storage;
 }
 

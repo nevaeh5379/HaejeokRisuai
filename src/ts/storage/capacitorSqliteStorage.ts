@@ -8,12 +8,15 @@ import {
 } from "@capacitor-community/sqlite";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
 import {
+  buildSqlReplaceCommit,
   SqlRevisionConflictError,
   type SqlCommit,
   type SqlCommitResult,
 } from "./sqlCommit";
 import { applySqliteCommit } from "./sqliteCommit";
 import type { SqliteTransactionStatement } from "./sqliteStorageUtils";
+import type { Database as DatabaseType } from "./database.svelte";
+import { CapacitorSqliteRestoreStream } from "./capacitorSqliteRestoreStream";
 
 // @capacitor-community/sqlite routes PRAGMA statements that return rows through
 // query()/rawQuery(). Passing them inside execute() makes Android reject the
@@ -146,11 +149,84 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
     }
   }
 
+  protected createRestoreStream() {
+    return new CapacitorSqliteRestoreStream();
+  }
+
+  override async replaceDatabase(
+    database: DatabaseType,
+    onProgress?: (status: string, progress?: number) => void,
+  ): Promise<boolean> {
+    onProgress?.("Preparing local database...", 0);
+    const commit = buildSqlReplaceCommit(database, this.revision);
+    await this.writeQueue.run(async () => {
+      if (!this._enabled || !this.isStorageReady()) {
+        throw new Error("SQLite storage is not enabled");
+      }
+      const meta = await this.selectOne<{ revision: number }>(
+        "SELECT revision FROM system_storage_meta WHERE singleton = 1",
+      );
+      const currentRevision = Number(meta?.revision) || 0;
+      if (commit.baseRevision !== currentRevision) {
+        throw new SqlRevisionConflictError(currentRevision);
+      }
+      await this.validatePresetCommit(commit);
+      await this.replaceDatabaseWithRestoreStream(commit, currentRevision, onProgress);
+    });
+    onProgress?.("Database sync complete", 1);
+    return true;
+  }
+
+  private async replaceDatabaseWithRestoreStream(
+    commit: SqlCommit,
+    currentRevision: number,
+    onProgress?: (status: string, progress?: number) => void,
+  ) {
+    const stream = this.createRestoreStream();
+    const revision = currentRevision + 1;
+    const action = commit.action || "replace-all";
+    let written = 0;
+    const write = async (sql: string, bind: unknown[] = []) => {
+      await stream.writeStatement(sql, bind);
+      written++;
+      if (written === 1 || written % 100 === 0) {
+        onProgress?.(`Streaming SQL restore... (${written} statements)`);
+      }
+    };
+
+    await stream.open(currentRevision, (completed) => {
+      onProgress?.(`Applying SQL restore... (${completed} statements)`);
+    });
+    try {
+      if (commit.replaceAll) {
+        await write("DELETE FROM system_settings");
+        await write("DELETE FROM plugin_custom_storage");
+        await write("DELETE FROM characters");
+      }
+      await applySqliteCommit(commit, write);
+      await write(
+        "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
+        [revision],
+      );
+      await write(
+        "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
+        [revision, action],
+      );
+      const applied = await stream.finish();
+      if (applied !== written) {
+        throw new Error(`Native SQLite restore applied ${applied}/${written} statements`);
+      }
+      this.revision = revision;
+    } catch (error) {
+      await stream.abort().catch(() => {});
+      throw error;
+    }
+  }
+
   /**
-   * Capacitor crosses the WebView/native bridge for every SQLite statement.
-   * Execute statements as applySqliteCommit produces them so a large restore
-   * does not retain the complete flattened SQL statement list (and all bind
-   * values) in WebView memory until the transaction begins.
+   * Normal Capacitor commits stay on the community SQLite bridge. Explicit
+   * whole-database restores use the streaming JsonReader path above so giant
+   * bind payloads never become one org.json JSONStringer allocation.
    */
   protected override async commitInternal(
     commit: SqlCommit,

@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(StreamedFetchPlugin.class);
         registerPlugin(StreamFileWriterPlugin.class);
         registerPlugin(NativeBackupPlugin.class);
+        registerPlugin(NativeSqliteRestorePlugin.class);
         registerPlugin(NativeImagePlugin.class);
         registerPlugin(NativeChatPlugin.class);
         registerPlugin(NativeAppControlPlugin.class);

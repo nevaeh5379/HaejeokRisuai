@@ -68,6 +68,7 @@ dependencies {
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation "com.google.code.gson:gson:2.8.9"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
@@ -84,4 +85,27 @@ try {
     }
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
+
+
+afterEvaluate {
+    def debugUnitTest = tasks.named('testDebugUnitTest', org.gradle.api.tasks.testing.Test)
+    debugUnitTest.configure {
+        filter {
+            excludeTestsMatching 'co.aiclient.risu.BackupContainerLowMemoryTest'
+            excludeTestsMatching 'co.aiclient.risu.SqliteRestoreStreamParserLowMemoryTest'
+        }
+    }
+    tasks.register('testLowMemoryBackup', org.gradle.api.tasks.testing.Test) {
+        group = 'verification'
+        description = 'Runs backup and SQL restore streaming tests with a 32 MiB JVM heap.'
+        testClassesDirs = debugUnitTest.get().testClassesDirs
+        classpath = debugUnitTest.get().classpath
+        minHeapSize = '16m'
+        maxHeapSize = '32m'
+        filter {
+            includeTestsMatching 'co.aiclient.risu.BackupContainerLowMemoryTest'
+            includeTestsMatching 'co.aiclient.risu.SqliteRestoreStreamParserLowMemoryTest'
+        }
+    }
 }
