@@ -192,6 +192,38 @@ function countCharacterTagStatements(value: unknown): number {
     Math.ceil(removed / CHARACTER_TAG_BATCH_SIZE);
 }
 
+function messageExtensionData(
+  data: Record<string, any>,
+  content: RelationalNodeRow,
+): Record<string, unknown> {
+  const extension: Record<string, any> = { ...data };
+  delete extension.role;
+  delete extension.name;
+  delete extension.time;
+
+  // Normal message text already lives in messages.content_text. Keep the
+  // relational copy only for strings SQLite cannot represent safely.
+  if (content.encoded_text_value == null) delete extension.data;
+
+  const generationInfo = extension.generationInfo;
+  if (
+    generationInfo &&
+    typeof generationInfo === "object" &&
+    !Array.isArray(generationInfo)
+  ) {
+    const extraGenerationInfo = { ...generationInfo };
+    delete extraGenerationInfo.model;
+    delete extraGenerationInfo.inputTokens;
+    delete extraGenerationInfo.outputTokens;
+    if (Object.keys(extraGenerationInfo).length > 0) {
+      extension.generationInfo = extraGenerationInfo;
+    } else {
+      delete extension.generationInfo;
+    }
+  }
+  return extension;
+}
+
 async function replaceNodes(
   execute: SqliteExecute,
   table: string,
@@ -361,7 +393,16 @@ export function countSqliteCommitStatements(commit: SqlCommit): number {
   total += commit.chatManifests.length;
 
   for (const entry of commit.messages) {
-    total += 1 + countReplaceNodeStatements(entry.data);
+    const data = entry.data as Record<string, any>;
+    const content = flattenRelationalValue(
+      typeof data.data === "string" ? data.data : String(data.data ?? ""),
+    )[0];
+    const extension = messageExtensionData(data, content);
+    total += 1 + (
+      Object.keys(extension).length === 0
+        ? 1
+        : countReplaceNodeStatements(extension)
+    );
   }
   total += commit.messageManifests.length;
   total += (commit.messageDeletes ?? []).filter(
@@ -609,13 +650,21 @@ export async function applySqliteCommit(
         data.generationInfo?.outputTokens ?? null,
       ],
     );
-    await replaceNodes(
-      execute,
-      "message_extension_nodes",
-      ["chat_id", "message_id"],
-      [entry.chatId, entry.id],
-      data,
-    );
+    const extension = messageExtensionData(data, content);
+    if (Object.keys(extension).length === 0) {
+      await execute(
+        "DELETE FROM message_extension_nodes WHERE chat_id = ? AND message_id = ?",
+        [entry.chatId, entry.id],
+      );
+    } else {
+      await replaceNodes(
+        execute,
+        "message_extension_nodes",
+        ["chat_id", "message_id"],
+        [entry.chatId, entry.id],
+        extension,
+      );
+    }
   }
   for (const manifest of commit.messageManifests) {
     if (!manifest.ids.length)

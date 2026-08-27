@@ -126,7 +126,10 @@ CREATE TABLE IF NOT EXISTS messages (
     PRIMARY KEY (chat_id, id), CHECK (content_text IS NULL OR content_encoded IS NULL)
 );
 CREATE INDEX IF NOT EXISTS messages_chat_position_idx ON messages (chat_id, position);
-CREATE INDEX IF NOT EXISTS messages_content_idx ON messages (content_text);
+-- Message search uses LIKE '%query%', so a normal B-tree on the full message
+-- body cannot serve it. Keeping that index makes large restores write every
+-- chat body twice and can dominate Android SQLite restore time.
+DROP INDEX IF EXISTS messages_content_idx;
 CREATE INDEX IF NOT EXISTS messages_model_idx ON messages (generation_model);
 
 CREATE TABLE IF NOT EXISTS message_extension_nodes (

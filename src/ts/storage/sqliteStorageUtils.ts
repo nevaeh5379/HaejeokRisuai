@@ -115,29 +115,40 @@ export function rebuildMessageRows(
   return orderedIds.map((id) => {
     const core = coreRows.get(id)!;
     const nodes = nodeGroups.get(id);
-    const rebuilt = nodes?.length
-      ? rebuildRelationalValue(nodes)
-      : {
-          role: String(core.message_role ?? "char"),
-          data: String(core.message_content_text ?? ""),
-          ...(core.message_sender_name != null
-            ? { name: String(core.message_sender_name) }
-            : {}),
-          ...(core.message_sent_time != null
-            ? { time: Number(core.message_sent_time) }
-            : {}),
-        };
+    const rebuilt = nodes?.length ? rebuildRelationalValue(nodes) : {};
     const message =
       rebuilt && typeof rebuilt === "object"
         ? (rebuilt as Message)
-        : ({ role: "char", data: String(rebuilt ?? "") } as Message);
+        : ({} as Message);
+
+    // Core columns are authoritative. Newer writes omit these duplicated
+    // fields from message_extension_nodes; older databases that still contain
+    // them remain readable because the core values simply replace the copies.
+    message.role = String(core.message_role ?? "char") as Message["role"];
+    if (!Object.prototype.hasOwnProperty.call(message, "data")) {
+      message.data = String(core.message_content_text ?? "");
+    }
+    if (core.message_sender_name != null) {
+      message.name = String(core.message_sender_name);
+    } else {
+      delete message.name;
+    }
+    if (core.message_sent_time != null) {
+      message.time = Number(core.message_sent_time);
+    } else {
+      delete message.time;
+    }
     message.chatId = id;
-    // In generation mode the generationInfo subtree is stripped, but the
-    // core messages row still carries the model/token columns — restore
-    // them so token accounting keeps working without the full metadata.
-    if (core.message_generation_model != null) {
+
+    if (
+      core.message_generation_model != null ||
+      core.message_input_tokens != null ||
+      core.message_output_tokens != null
+    ) {
       message.generationInfo ??= {};
-      message.generationInfo.model = String(core.message_generation_model);
+      if (core.message_generation_model != null) {
+        message.generationInfo.model = String(core.message_generation_model);
+      }
       if (core.message_input_tokens != null) {
         message.generationInfo.inputTokens = Number(core.message_input_tokens);
       }

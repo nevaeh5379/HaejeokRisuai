@@ -215,6 +215,7 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
     let written = 0;
     let writingFraction = 0;
     let applied = 0;
+    let appliedStage = "";
     let lastReportAt = 0;
     let lastProgress = 0.05;
 
@@ -231,7 +232,9 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
       }
       lastReportAt = now;
       lastProgress = progress;
-      const label = phase === "streaming" ? "Streaming SQL" : "Applying SQL";
+      const label = phase === "streaming"
+        ? "Streaming SQL"
+        : `Applying SQL${appliedStage ? ` · ${appliedStage}` : ""}`;
       const currentStatement =
         writingFraction > 0 && writingFraction < 1
           ? `, current statement ${Math.round(writingFraction * 100)}%`
@@ -253,9 +256,10 @@ export class CapacitorSqliteStorage extends NativeSqliteStorageBase
       report("streaming", written === total);
     };
 
-    await stream.open(currentRevision, (completed) => {
+    await stream.open(currentRevision, (completed, stage) => {
       applied = Math.max(applied, completed);
-      report("applying", completed >= total);
+      if (stage) appliedStage = stage;
+      report("applying", completed >= total || stage === "committing");
     });
     try {
       if (rootCommit.replaceAll) {

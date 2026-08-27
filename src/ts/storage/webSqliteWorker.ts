@@ -277,23 +277,44 @@ function rebuildMessagesFromRows(
   return orderedIds.map((id) => {
     const core = coreRows.get(id)!;
     const nodes = nodeGroups.get(id);
-    const rebuilt = nodes?.length
-      ? rebuildRelationalValue(nodes)
-      : {
-          role: String(core.message_role ?? "char"),
-          data: String(core.message_content_text ?? ""),
-          ...(core.message_sender_name != null
-            ? { name: String(core.message_sender_name) }
-            : {}),
-          ...(core.message_sent_time != null
-            ? { time: Number(core.message_sent_time) }
-            : {}),
-        };
+    const rebuilt = nodes?.length ? rebuildRelationalValue(nodes) : {};
     const message =
       rebuilt && typeof rebuilt === "object"
-        ? (rebuilt as Record<string, unknown>)
-        : { role: "char", data: String(rebuilt ?? "") };
+        ? (rebuilt as Record<string, any>)
+        : ({} as Record<string, any>);
+
+    message.role = String(core.message_role ?? "char");
+    if (!Object.prototype.hasOwnProperty.call(message, "data")) {
+      message.data = String(core.message_content_text ?? "");
+    }
+    if (core.message_sender_name != null) {
+      message.name = String(core.message_sender_name);
+    } else {
+      delete message.name;
+    }
+    if (core.message_sent_time != null) {
+      message.time = Number(core.message_sent_time);
+    } else {
+      delete message.time;
+    }
     message.chatId = id;
+
+    if (
+      core.message_generation_model != null ||
+      core.message_input_tokens != null ||
+      core.message_output_tokens != null
+    ) {
+      message.generationInfo ??= {};
+      if (core.message_generation_model != null) {
+        message.generationInfo.model = String(core.message_generation_model);
+      }
+      if (core.message_input_tokens != null) {
+        message.generationInfo.inputTokens = Number(core.message_input_tokens);
+      }
+      if (core.message_output_tokens != null) {
+        message.generationInfo.outputTokens = Number(core.message_output_tokens);
+      }
+    }
     return message;
   });
 }

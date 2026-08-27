@@ -3,6 +3,7 @@ package co.aiclient.risu;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.util.Base64;
+import android.util.Log;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -129,23 +130,51 @@ public class NativeSqliteRestorePlugin extends Plugin {
                 SQLiteDatabase.OPEN_READWRITE
             );
             db.execSQL("PRAGMA foreign_keys = ON");
+            int statements;
             db.beginTransaction();
-            verifyRevision(db, expectedRevision);
-            SQLiteDatabase activeDb = db;
-            int statements = SqliteRestoreStreamParser.parse(
-                new InputStreamReader(session.input, StandardCharsets.UTF_8),
-                (sql, bind) -> executeStatement(activeDb, sql, bind),
-                completed -> reportProgress(session.id, completed)
-            );            if (session.cancelled.get()) throw new IOException("Restore session was cancelled");
-            db.setTransactionSuccessful();
+            try {
+                verifyRevision(db, expectedRevision);
+                SQLiteDatabase activeDb = db;
+                int[] executing = new int[] { 0 };
+                statements = SqliteRestoreStreamParser.parse(
+                    new InputStreamReader(session.input, StandardCharsets.UTF_8),
+                    (sql, bind) -> {
+                        String stage = classifyStatement(sql);
+                        session.currentStage = stage;
+                        long started = android.os.SystemClock.elapsedRealtime();
+                        executeStatement(activeDb, sql, bind);
+                        executing[0]++;
+                        long elapsed = android.os.SystemClock.elapsedRealtime() - started;
+                        if (elapsed >= 1000L) {
+                            Log.w(
+                                "RisuSqlRestore",
+                                "Slow restore statement: stage=" + stage +
+                                " elapsedMs=" + elapsed +
+                                " binds=" + bind.size() +
+                                " sqlChars=" + sql.length()
+                            );
+                        }
+                    },
+                    completed -> reportProgress(
+                        session.id,
+                        completed,
+                        session.currentStage,
+                        false
+                    )
+                );
+                if (session.cancelled.get()) {
+                    throw new IOException("Restore session was cancelled");
+                }
+                db.setTransactionSuccessful();
+                reportProgress(session.id, statements, "committing", true);
+            } finally {
+                if (db.inTransaction()) db.endTransaction();
+            }
             session.result.complete(statements);
         } catch (Exception error) {
             session.result.completeExceptionally(error);
         } finally {
             if (db != null) {
-                try {
-                    if (db.inTransaction()) db.endTransaction();
-                } catch (Exception ignored) {}
                 try {
                     db.close();
                 } catch (Exception ignored) {}
@@ -178,14 +207,29 @@ public class NativeSqliteRestorePlugin extends Plugin {
         if (bind.isEmpty()) db.execSQL(sql);
         else db.execSQL(sql, bind.toArray(new Object[0]));
     }
-    private void reportProgress(String id, int completed) {
+    private static String classifyStatement(String sql) {
+        if (sql.contains("message_extension_nodes")) return "message metadata";
+        if (sql.contains("INSERT INTO messages") || sql.contains("UPDATE messages")) return "messages";
+        if (sql.contains("chat_extension_nodes")) return "chat metadata";
+        if (sql.contains("INSERT INTO chats") || sql.contains("DELETE FROM chats")) return "chats";
+        if (sql.contains("character_extension_nodes")) return "character metadata";
+        if (sql.contains("INSERT INTO characters") || sql.contains("DELETE FROM characters")) return "characters";
+        if (sql.contains("bot_presets")) return "presets";
+        if (sql.contains("plugin_custom_storage")) return "plugin storage";
+        if (sql.contains("system_settings") || sql.contains("setting_extension_nodes")) return "settings";
+        return "finalizing";
+    }
+
+    private void reportProgress(String id, int completed, String stage, boolean force) {
         if (
+            !force &&
             completed != 1 &&
             completed % PROGRESS_STATEMENT_INTERVAL != 0
         ) return;
         JSObject event = new JSObject();
         event.put("id", id);
         event.put("completed", completed);
+        event.put("stage", stage);
         notifyListeners("restoreProgress", event);
     }
 
@@ -230,6 +274,7 @@ public class NativeSqliteRestorePlugin extends Plugin {
         final PipedOutputStream output;
         final CompletableFuture<Integer> result = new CompletableFuture<>();
         final AtomicBoolean cancelled = new AtomicBoolean(false);
+        volatile String currentStage = "preparing";
 
         RestoreSession(String id) throws IOException {
             this.id = id;

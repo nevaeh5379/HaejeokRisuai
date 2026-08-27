@@ -14,7 +14,7 @@ interface NativeSqliteRestorePlugin {
   abort(options: { id: string }): Promise<void>;
   addListener(
     eventName: "restoreProgress",
-    listener: (event: { id: string; completed: number }) => void,
+    listener: (event: { id: string; completed: number; stage?: string }) => void,
   ): Promise<{ remove(): Promise<void> }>;
 }
 
@@ -119,7 +119,7 @@ export class CapacitorSqliteRestoreStream {
 
   async open(
     expectedRevision: number,
-    onProgress?: (completed: number) => void,
+    onProgress?: (completed: number, stage?: string) => void,
   ) {
     const opened = await this.plugin.open({
       database: "risuai-local",
@@ -130,7 +130,7 @@ export class CapacitorSqliteRestoreStream {
     this.progressListener = await this.plugin.addListener(
       "restoreProgress",
       (event) => {
-        if (event.id === opened.id) onProgress?.(event.completed);
+        if (event.id === opened.id) onProgress?.(event.completed, event.stage);
       },
     );
     await this.sink.write("[");
