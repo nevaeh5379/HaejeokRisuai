@@ -193,6 +193,43 @@
         usesOoba || usesCustomPlugin || usesEcho || usesOllamaLocal || usesOllamaCloud ||
         !!modelInfo?.keyIdentifier || !!subModelInfo?.keyIdentifier
     );
+
+    function isProviderOpen(key: string, inUse: boolean): boolean {
+        return openProviders[key] ?? inUse;
+    }
+
+    function toggleProvider(key: string, inUse: boolean) {
+        const current = isProviderOpen(key, inUse);
+        openProviders[key] = !current;
+    }
+
+    function toggleAllProviders() {
+        const providers: Array<{ key: string; inUse: boolean }> = [
+            { key: 'google', inUse: usesGoogle },
+            { key: 'vertex', inUse: usesVertex },
+            { key: 'openai', inUse: usesOpenAI },
+            { key: 'anthropic', inUse: usesAnthropicOrAWS },
+            { key: 'openrouter', inUse: usesOpenRouter },
+            { key: 'nanogpt', inUse: usesNanoGPT },
+            { key: 'ollama', inUse: usesOllamaLocal || usesOllamaCloud },
+            { key: 'proxy', inUse: usesReverseProxy },
+            { key: 'mistral', inUse: usesMistral },
+            { key: 'cohere', inUse: usesCohere },
+            { key: 'novelai', inUse: usesNovelAI },
+            { key: 'novellist', inUse: usesNovelList },
+            { key: 'mancer', inUse: usesMancer },
+            { key: 'horde', inUse: usesHorde },
+            { key: 'kobold', inUse: usesKobold },
+            { key: 'textgen', inUse: usesTextGen },
+            { key: 'ooba', inUse: usesOoba },
+            { key: 'plugin', inUse: usesCustomPlugin },
+            { key: 'echo', inUse: usesEcho },
+        ];
+        const allOpen = providers.every(p => isProviderOpen(p.key, p.inUse));
+        for (const p of providers) {
+            openProviders[p.key] = !allOpen;
+        }
+    }
     let currentSectionTitle = $derived.by(() => {
         if (submenu === 1) return language.parameters;
         if (submenu === 2) return language.prompt;
@@ -358,12 +395,8 @@
                     <span class="text-textcolor2 font-medium">Click any provider to configure its API Key & options</span>
                     <div class="flex items-center gap-2">
                         <button 
-                            class="px-2 py-1 rounded bg-darkbutton hover:bg-darkbutton/80 text-textcolor text-xs font-medium"
-                            onclick={() => {
-                                const allKeys = ['google', 'vertex', 'openai', 'anthropic', 'openrouter', 'nanogpt', 'ollama', 'proxy', 'mistral', 'cohere', 'novelai', 'novellist', 'mancer', 'horde', 'kobold', 'textgen', 'ooba', 'plugin', 'echo'];
-                                const allOpen = allKeys.every(k => openProviders[k]);
-                                for (const k of allKeys) openProviders[k] = !allOpen;
-                            }}
+                            class="px-2 py-1 rounded bg-darkbutton hover:bg-darkbutton/80 text-textcolor text-xs font-medium cursor-pointer"
+                            onclick={toggleAllProviders}
                         >
                             Toggle All
                         </button>
@@ -374,8 +407,8 @@
                     <!-- Google AI Studio -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['google'] = !openProviders['google']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('google', usesGoogle)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">Google AI Studio</span>
@@ -384,10 +417,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['google']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('google', usesGoogle)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['google'] || (openProviders['google'] === undefined && usesGoogle)}
+                        {#if isProviderOpen('google', usesGoogle)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">API Key</span>
                                 <TextInput marginBottom={false} size={"sm"} placeholder="AIza..." hideText={settingsStore.state.hideApiKey} bind:value={settingsStore.state.google.accessToken} />
@@ -398,8 +431,8 @@
                     <!-- Google Cloud Vertex AI -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['vertex'] = !openProviders['vertex']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('vertex', usesVertex)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">Google Cloud Vertex AI</span>
@@ -408,10 +441,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['vertex']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('vertex', usesVertex)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['vertex'] || (openProviders['vertex'] === undefined && usesVertex)}
+                        {#if isProviderOpen('vertex', usesVertex)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">Project ID</span>
                                 <TextInput marginBottom={false} size={"sm"} placeholder="..." bind:value={settingsStore.state.google.projectId} oninput={clearVertexToken} />
@@ -438,8 +471,8 @@
                     <!-- OpenAI -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['openai'] = !openProviders['openai']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('openai', usesOpenAI)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">OpenAI</span>
@@ -448,10 +481,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['openai']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('openai', usesOpenAI)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['openai'] || (openProviders['openai'] === undefined && usesOpenAI)}
+                        {#if isProviderOpen('openai', usesOpenAI)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">OpenAI {language.apiKey} <Help key="oaiapikey"/></span>
                                 <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.openAIKey} placeholder="sk-..." />
@@ -462,8 +495,8 @@
                     <!-- Anthropic Claude / AWS Bedrock -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['anthropic'] = !openProviders['anthropic']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('anthropic', usesAnthropicOrAWS)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">Anthropic Claude</span>
@@ -472,10 +505,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['anthropic']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('anthropic', usesAnthropicOrAWS)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['anthropic'] || (openProviders['anthropic'] === undefined && usesAnthropicOrAWS)}
+                        {#if isProviderOpen('anthropic', usesAnthropicOrAWS)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">Claude {language.apiKey}</span>
                                 <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} placeholder="sk-ant-..." bind:value={settingsStore.state.claudeAPIKey} />
@@ -486,8 +519,8 @@
                     <!-- OpenRouter -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['openrouter'] = !openProviders['openrouter']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('openrouter', usesOpenRouter)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">OpenRouter</span>
@@ -496,10 +529,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['openrouter']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('openrouter', usesOpenRouter)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['openrouter'] || (openProviders['openrouter'] === undefined && usesOpenRouter)}
+                        {#if isProviderOpen('openrouter', usesOpenRouter)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">OpenRouter {language.apiKey}</span>
                                 <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.openrouterKey} />
@@ -524,8 +557,8 @@
                     <!-- NanoGPT -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['nanogpt'] = !openProviders['nanogpt']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('nanogpt', usesNanoGPT)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">NanoGPT</span>
@@ -534,10 +567,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['nanogpt']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('nanogpt', usesNanoGPT)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['nanogpt'] || (openProviders['nanogpt'] === undefined && usesNanoGPT)}
+                        {#if isProviderOpen('nanogpt', usesNanoGPT)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">NanoGPT {language.apiKey}</span>
                                 <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.nanogptKey} />
@@ -589,8 +622,8 @@
                     <!-- Ollama -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['ollama'] = !openProviders['ollama']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('ollama', usesOllamaLocal || usesOllamaCloud)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">Ollama</span>
@@ -599,10 +632,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['ollama']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('ollama', usesOllamaLocal || usesOllamaCloud)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['ollama'] || (openProviders['ollama'] === undefined && (usesOllamaLocal || usesOllamaCloud))}
+                        {#if isProviderOpen('ollama', usesOllamaLocal || usesOllamaCloud)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">Ollama URL</span>
                                 <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaURL} />
@@ -667,8 +700,8 @@
                     <!-- Reverse Proxy -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['proxy'] = !openProviders['proxy']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('proxy', usesReverseProxy)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">Reverse Proxy</span>
@@ -677,10 +710,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['proxy']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('proxy', usesReverseProxy)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['proxy'] || (openProviders['proxy'] === undefined && usesReverseProxy)}
+                        {#if isProviderOpen('proxy', usesReverseProxy)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">URL <Help key="forceUrl"/></span>
                                 <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.forceReplaceUrl} placeholder="https://..." />
@@ -716,8 +749,8 @@
                     <!-- Mistral AI -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['mistral'] = !openProviders['mistral']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('mistral', usesMistral)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">Mistral AI</span>
@@ -726,10 +759,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['mistral']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('mistral', usesMistral)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['mistral'] || (openProviders['mistral'] === undefined && usesMistral)}
+                        {#if isProviderOpen('mistral', usesMistral)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">Mistral {language.apiKey}</span>
                                 <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} placeholder="..." bind:value={settingsStore.state.mistralKey} />
@@ -740,8 +773,8 @@
                     <!-- Cohere -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['cohere'] = !openProviders['cohere']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('cohere', usesCohere)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">Cohere</span>
@@ -750,10 +783,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['cohere']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('cohere', usesCohere)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['cohere'] || (openProviders['cohere'] === undefined && usesCohere)}
+                        {#if isProviderOpen('cohere', usesCohere)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">Cohere {language.apiKey}</span>
                                 <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.cohereAPIKey} />
@@ -764,8 +797,8 @@
                     <!-- NovelAI -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['novelai'] = !openProviders['novelai']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('novelai', usesNovelAI)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">NovelAI</span>
@@ -774,10 +807,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['novelai']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('novelai', usesNovelAI)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['novelai'] || (openProviders['novelai'] === undefined && usesNovelAI)}
+                        {#if isProviderOpen('novelai', usesNovelAI)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">NovelAI Bearer Token</span>
                                 <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.novelai.token} />
@@ -788,8 +821,8 @@
                     <!-- NovelList -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['novellist'] = !openProviders['novellist']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('novellist', usesNovelList)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">NovelList</span>
@@ -798,10 +831,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['novellist']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('novellist', usesNovelList)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['novellist'] || (openProviders['novellist'] === undefined && usesNovelList)}
+                        {#if isProviderOpen('novellist', usesNovelList)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">NovelList {language.apiKey}</span>
                                 <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} placeholder="..." bind:value={settingsStore.state.novellistAPI} />
@@ -812,8 +845,8 @@
                     <!-- Mancer -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['mancer'] = !openProviders['mancer']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('mancer', usesMancer)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">Mancer</span>
@@ -822,10 +855,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['mancer']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('mancer', usesMancer)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['mancer'] || (openProviders['mancer'] === undefined && usesMancer)}
+                        {#if isProviderOpen('mancer', usesMancer)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">Mancer {language.apiKey}</span>
                                 <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} placeholder="..." bind:value={settingsStore.state.mancerHeader} />
@@ -836,8 +869,8 @@
                     <!-- AI Horde -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['horde'] = !openProviders['horde']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('horde', usesHorde)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">AI Horde</span>
@@ -846,10 +879,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['horde']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('horde', usesHorde)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['horde'] || (openProviders['horde'] === undefined && usesHorde)}
+                        {#if isProviderOpen('horde', usesHorde)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">Horde {language.apiKey}</span>
                                 <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.hordeConfig.apiKey} />
@@ -861,8 +894,8 @@
                     <!-- Kobold -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['kobold'] = !openProviders['kobold']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('kobold', usesKobold)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">Kobold</span>
@@ -871,10 +904,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['kobold']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('kobold', usesKobold)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['kobold'] || (openProviders['kobold'] === undefined && usesKobold)}
+                        {#if isProviderOpen('kobold', usesKobold)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">Kobold URL</span>
                                 <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.koboldURL} />
@@ -886,8 +919,8 @@
                     <!-- TextGen WebUI -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['textgen'] = !openProviders['textgen']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('textgen', usesTextGen)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">TextGen WebUI</span>
@@ -896,10 +929,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['textgen']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('textgen', usesTextGen)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['textgen'] || (openProviders['textgen'] === undefined && usesTextGen)}
+                        {#if isProviderOpen('textgen', usesTextGen)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">Blocking {language.providerURL}</span>
                                 <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.textgenWebUIBlockingURL} placeholder="https://..." />
@@ -918,8 +951,8 @@
                     <!-- Ooba -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['ooba'] = !openProviders['ooba']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('ooba', usesOoba)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">Ooba</span>
@@ -928,10 +961,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['ooba']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('ooba', usesOoba)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['ooba'] || (openProviders['ooba'] === undefined && usesOoba)}
+                        {#if isProviderOpen('ooba', usesOoba)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">Ooba {language.providerURL}</span>
                                 <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.textgenWebUIBlockingURL} placeholder="https://..." />
@@ -942,8 +975,8 @@
                     <!-- Custom Plugin Provider -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['plugin'] = !openProviders['plugin']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('plugin', usesCustomPlugin)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">{language.plugin}</span>
@@ -952,10 +985,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['plugin']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('plugin', usesCustomPlugin)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['plugin'] || (openProviders['plugin'] === undefined && usesCustomPlugin)}
+                        {#if isProviderOpen('plugin', usesCustomPlugin)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <SelectInput bind:value={settingsStore.state.currentPluginProvider}>
                                     <OptionInput value="">None</OptionInput>
@@ -970,8 +1003,8 @@
                     <!-- Echo Model -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
                         <button 
-                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left"
-                            onclick={() => { openProviders['echo'] = !openProviders['echo']; }}
+                            class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                            onclick={() => toggleProvider('echo', usesEcho)}
                         >
                             <div class="flex items-center gap-2">
                                 <span class="font-bold text-sm text-textcolor">Echo Model</span>
@@ -980,10 +1013,10 @@
                                 {/if}
                             </div>
                             <span class="text-textcolor2">
-                                {#if openProviders['echo']}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                {#if isProviderOpen('echo', usesEcho)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
                             </span>
                         </button>
-                        {#if openProviders['echo'] || (openProviders['echo'] === undefined && usesEcho)}
+                        {#if isProviderOpen('echo', usesEcho)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">Echo Message</span>
                                 <TextAreaInput bind:value={settingsStore.state.echoMessage} placeholder={"The message you want to receive as the bot's response\n(e.g., Lumi tilts her head, her white hair sliding down as her pretty green and aqua eyes sparkle…)"} />
