@@ -45,12 +45,18 @@ import {
   SQLITE_SCHEMA_VERSION,
   SqlSchemaResetRequiredError,
 } from "./relationalNodeCodec";
+import { buildCharacterAssetFieldsQuery } from "./sqliteStorageUtils";
 import {
   AsyncSerialQueue,
   normalizeSqliteLimit,
   normalizeSqlitePageEnd,
+  buildDeferredSettingsQuery,
+  groupSettingNodeRows,
+  buildMessageRowsQuery,
+  rebuildMessageRows,
   type SqliteTransactionStatement,
 } from "./sqliteStorageUtils";
+import { DEFERRED_STARTUP_SETTING_KEYS } from "./databaseAdapters.svelte";
 
 type SqlDatabase = import("@tauri-apps/plugin-sql").default;
 
@@ -255,18 +261,36 @@ export class TauriSqliteStorage implements ISqlStorage {
     const shallow = options?.shallow !== false;
     const db: DatabaseType = {} as any;
 
-    // Load all settings
+    // Deferred startup keys (personas, loreBook, modules, prompts, ...) are
+    // excluded from the initial bridge read and hydrated on demand by the
+    // database adapter, mirroring the web backend. This keeps startup at one
+    // settings query instead of one per key.
     const settingsRows = await this.selectRows<{ key: string }>(
       "SELECT key FROM system_settings",
     );
+    const deferredKeyList = shallow ? [...DEFERRED_STARTUP_SETTING_KEYS] : [];
+    const deferredKeys = new Set<string>(deferredKeyList);
+    const settingNodeQuery = buildDeferredSettingsQuery(deferredKeyList);
+    const settingNodeRows = await this.selectRows(
+      settingNodeQuery.sql,
+      settingNodeQuery.bind,
+    );
+    const settingValues = groupSettingNodeRows(settingNodeRows as any);
     for (const row of settingsRows) {
-      (db as any)[row.key] = await this.loadSettingValue(row.key);
+      const key = row.key as string;
+      if (deferredKeys.has(key)) continue;
+      // The batched node read above already covers every non-deferred key;
+      // a key without node rows simply stores `undefined`.
+      (db as any)[key] = settingValues.get(key);
     }
 
-    // Also merge plugin_custom_storage table if present
+    // A shallow startup only needs plugin-storage keys, which are loaded via
+    // the dedicated API later. Pulling every plugin value here defeats lazy
+    // loading (same rationale as the web backend).
     if (
-      !db.pluginCustomStorage ||
-      Object.keys(db.pluginCustomStorage).length === 0
+      !shallow &&
+      (!db.pluginCustomStorage ||
+        Object.keys(db.pluginCustomStorage).length === 0)
     ) {
       const pluginStorageRows = await this.selectRows<{
         key: string;
@@ -371,13 +395,7 @@ export class TauriSqliteStorage implements ISqlStorage {
     }
 
     if (shallow) {
-      const adapter = createSqlDatabaseAdapter(db, this, [
-        "personas",
-        "loreBook",
-        "modules",
-        "prompts",
-        "scripts",
-      ]);
+      const adapter = createSqlDatabaseAdapter(db, this);
       return { status: "ready", revision: this.revision, database: adapter };
     }
 
@@ -415,6 +433,11 @@ export class TauriSqliteStorage implements ISqlStorage {
   private async commitInternal(commit: SqlCommit): Promise<SqlCommitResult> {
     if (!this._enabled || !this.db || !this.dbPath)
       throw new Error("SQLite storage is not enabled");
+    // Read 1 of 2: fail fast on a stale base revision before building the
+    // statement list. The authoritative check happens inside the native
+    // transaction (see executeNativeTransaction), which re-reads the revision
+    // under BEGIN IMMEDIATE — this optimistic pre-check just avoids
+    // serializing large commits that are doomed to conflict.
     const meta = await this.selectOne<{ revision: number }>(
       "SELECT revision FROM system_storage_meta WHERE singleton = 1",
     );
@@ -506,6 +529,64 @@ export class TauriSqliteStorage implements ISqlStorage {
     return fullChar;
   }
 
+  async loadCharacterAssetFields(
+    characterId: string,
+  ): Promise<Partial<character> | null> {
+    const row = await this.selectOne<{ id: string }>(
+      "SELECT id FROM characters WHERE id = ?",
+      [characterId],
+    );
+    if (!row) return null;
+    const query = buildCharacterAssetFieldsQuery(characterId);
+    const rows = await this.selectRows(query.sql, query.bind);
+    const assets = rows.length
+      ? (rebuildRelationalValue(rows as any) as Record<string, unknown>)
+      : {};
+    return assets as Partial<character>;
+  }
+
+  async loadCharacterForSelection(
+    characterId: string,
+  ): Promise<character | groupChat | null> {
+    // Interactive selection only needs the character tree plus chat summary
+    // rows. Hydrating every chat's extension nodes here would defeat lazy
+    // loading on character switches.
+    const row = await this.selectOne<{ id: string }>(
+      "SELECT id FROM characters WHERE id = ?",
+      [characterId],
+    );
+    if (!row) return null;
+    const fullChar = ((await this.loadNodeValue(
+      "character_extension_nodes",
+      "character_id = ?",
+      [characterId],
+    )) ?? {}) as any;
+    fullChar.chaId = characterId;
+    fullChar.detailsLoaded = true;
+    const chatRows = await this.selectRows<{
+      id: string;
+      name: string;
+      note: string;
+      folder_id: string | null;
+      last_message_time: number | null;
+    }>(
+      "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
+      [characterId],
+    );
+    fullChar.chats = chatRows.map((chatRow) => ({
+      id: chatRow.id,
+      name: chatRow.name ?? "",
+      note: chatRow.note ?? "",
+      folderId: chatRow.folder_id ?? undefined,
+      lastDate: chatRow.last_message_time ?? undefined,
+      message: [],
+      messagesLoaded: false,
+      messagesFullyLoaded: false,
+      detailsLoaded: false,
+    })) as Chat[];
+    return fullChar;
+  }
+
   async loadChat(
     chatId: string,
     options?: { messageLimit?: number },
@@ -544,26 +625,11 @@ export class TauriSqliteStorage implements ISqlStorage {
         ? undefined
         : normalizeSqliteLimit(requestedLimit);
     const offset = limit === undefined ? 0 : Math.max(0, total - limit);
-    const msgRows =
-      limit === undefined
-        ? await this.selectRows<{ id: string }>(
-            "SELECT id FROM messages WHERE chat_id = ? ORDER BY position",
-            [chatId],
-          )
-        : await this.selectRows<{ id: string }>(
-            "SELECT id FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?",
-            [chatId, limit, offset],
-          );
-    chatData.message = await Promise.all(
-      msgRows.map(async (r) => {
-        const message = (await this.loadNodeValue(
-          "message_extension_nodes",
-          "chat_id = ? AND message_id = ?",
-          [chatId, r.id],
-        )) as Message;
-        if (message && typeof message === "object") message.chatId = r.id;
-        return message;
-      }),
+    chatData.message = await this.loadMessageRowsBatch(
+      chatId,
+      limit,
+      offset,
+      false,
     );
     chatData.messageOffset = offset;
     chatData.messageTotal = total;
@@ -573,21 +639,28 @@ export class TauriSqliteStorage implements ISqlStorage {
     return chatData;
   }
 
-  async loadChatMessages(chatId: string): Promise<Message[]> {
-    const msgRows = await this.selectRows<{ id: string }>(
-      "SELECT id FROM messages WHERE chat_id = ? ORDER BY position",
-      [chatId],
-    );
-    return Promise.all(
-      msgRows.map(async (r) => {
-        const message = (await this.loadNodeValue(
-          "message_extension_nodes",
-          "chat_id = ? AND message_id = ?",
-          [chatId, r.id],
-        )) as Message;
-        if (message && typeof message === "object") message.chatId = r.id;
-        return message;
-      }),
+  private async loadMessageRowsBatch(
+    chatId: string,
+    limit: number | undefined,
+    offset: number,
+    newest: boolean,
+    mode: "full" | "generation" = "full",
+  ): Promise<Message[]> {
+    const query = buildMessageRowsQuery(chatId, limit, offset, newest, mode);
+    const rows = await this.selectRows(query.sql, query.bind);
+    return rebuildMessageRows(rows);
+  }
+
+  async loadChatMessages(
+    chatId: string,
+    options?: { mode?: "full" | "generation" },
+  ): Promise<Message[]> {
+    return this.loadMessageRowsBatch(
+      chatId,
+      undefined,
+      0,
+      false,
+      options?.mode === "generation" ? "generation" : "full",
     );
   }
 
@@ -604,22 +677,14 @@ export class TauriSqliteStorage implements ISqlStorage {
     const end = normalizeSqlitePageEnd(before, total);
     const normalizedLimit = normalizeSqliteLimit(limit);
     const offset = Math.max(0, end - normalizedLimit);
-    const msgRows = await this.selectRows<{ id: string }>(
-      "SELECT id FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?",
-      [chatId, end - offset, offset],
+    const messages = await this.loadMessageRowsBatch(
+      chatId,
+      end - offset,
+      offset,
+      false,
     );
     return {
-      messages: await Promise.all(
-        msgRows.map(async (row) => {
-          const message = (await this.loadNodeValue(
-            "message_extension_nodes",
-            "chat_id = ? AND message_id = ?",
-            [chatId, row.id],
-          )) as Message;
-          if (message && typeof message === "object") message.chatId = row.id;
-          return message;
-        }),
-      ),
+      messages,
       offset,
       total,
       hasMore: offset > 0,

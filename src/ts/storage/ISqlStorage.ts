@@ -132,6 +132,14 @@ export interface ISqlStorage {
   loadCharacterForSelection?(
     characterId: string,
   ): Promise<character | groupChat | null>;
+  /**
+   * Loads only the asset-bearing character fields (image, emotionImages,
+   * additionalAssets, ccAssets, customBackground, gptSoVitsConfig, vits)
+   * without hydrating chats or other metadata. Used by storage analyzers.
+   */
+  loadCharacterAssetFields?(
+    characterId: string,
+  ): Promise<Partial<character> | null>;
   loadChat(chatId: string, options?: SqlChatLoadOptions): Promise<Chat | null>;
   loadChatMessages(
     chatId: string,

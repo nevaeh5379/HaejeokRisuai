@@ -126,14 +126,30 @@ export async function runStorageAnalysis(
 ): Promise<AnalysisResult> {
   const characters = characterStore.characters || [];
 
-  // SQL storage lazy-loads characters with only core fields
-  const adapter = settingsStore.state as any;
-  if (adapter?.ensureCharacterDetails) {
+  // SQL storage lazy-loads characters with only core fields. The analyzer
+  // only needs asset-bearing fields, so use the targeted asset-field loader
+  // instead of hydrating every character's full tree (chats included).
+  const sqlStorage = (characterStore as any).storage;
+  if (sqlStorage?.loadCharacterAssetFields) {
     await Promise.allSettled(
       characters
         .filter((c: any) => c && c.detailsLoaded === false && c.chaId)
-        .map((c: any) => adapter.ensureCharacterDetails(c.chaId)),
+        .map(async (c: any) => {
+          const assets = await sqlStorage.loadCharacterAssetFields(c.chaId);
+          if (assets && typeof assets === "object") {
+            Object.assign(c, assets);
+          }
+        }),
     );
+  } else {
+    const adapter = settingsStore.state as any;
+    if (adapter?.ensureCharacterDetails) {
+      await Promise.allSettled(
+        characters
+          .filter((c: any) => c && c.detailsLoaded === false && c.chaId)
+          .map((c: any) => adapter.ensureCharacterDetails(c.chaId)),
+      );
+    }
   }
 
   const referencedKeys = new Set<string>();

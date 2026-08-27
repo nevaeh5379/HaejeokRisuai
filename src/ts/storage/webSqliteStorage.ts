@@ -53,6 +53,11 @@ import {
   AsyncSerialQueue,
   normalizeSqliteLimit,
   normalizeSqlitePageEnd,
+  buildDeferredSettingsQuery,
+  groupSettingNodeRows,
+  buildMessageRowsQuery,
+  buildCharacterAssetFieldsQuery,
+  type MessageLoadMode,
 } from "./sqliteStorageUtils";
 
 // ── Worker RPC plumbing ──────────────────────────────────────────────
@@ -331,47 +336,23 @@ export class WebSqliteStorage implements ISqlStorage {
       ]),
     );
   }
-
   private messageRowsStatement(
     chatId: string,
     limit?: number,
     offset = 0,
     newest = false,
+    mode: MessageLoadMode = "full",
   ): SqliteBatchStatement {
-    let selectedSql =
-      "SELECT chat_id, id, position, role, content_text, sender_name, sent_time FROM messages WHERE chat_id = ?";
-    const bind: unknown[] = [chatId];
-    if (limit === undefined) {
-      selectedSql += " ORDER BY position";
-    } else if (newest) {
-      selectedSql = `SELECT * FROM (${selectedSql} ORDER BY position DESC LIMIT ?) ORDER BY position`;
-      bind.push(limit);
-    } else {
-      selectedSql += " ORDER BY position LIMIT ? OFFSET ?";
-      bind.push(limit, offset);
-    }
-    return {
-      sql: `WITH selected AS (${selectedSql})
-       SELECT selected.id AS message_id, selected.position AS message_position,
-              selected.role AS message_role, selected.content_text AS message_content_text,
-              selected.sender_name AS message_sender_name, selected.sent_time AS message_sent_time,
-              n.node_id, n.parent_node_id, n.node_order, n.object_key,
-              n.object_key_encoded, n.value_type, n.text_value, n.encoded_text_value,
-              n.number_value, n.boolean_value
-       FROM selected
-       LEFT JOIN message_extension_nodes n
-         ON n.chat_id = selected.chat_id AND n.message_id = selected.id
-       ORDER BY selected.position, n.node_id`,
-      bind,
-    };
+    return buildMessageRowsQuery(chatId, limit, offset, newest, mode);
   }
 
   private async loadMessagesBatch(
     chatId: string,
     limit?: number,
     offset = 0,
+    mode: MessageLoadMode = "full",
   ): Promise<Message[]> {
-    const statement = this.messageRowsStatement(chatId, limit, offset);
+    const statement = this.messageRowsStatement(chatId, limit, offset, false, mode);
     const [result] = await this.selectBatchResults([
       { ...statement, transform: "messages" },
     ]);
@@ -466,27 +447,18 @@ export class WebSqliteStorage implements ISqlStorage {
     const settingsRows = await this.selectRows("SELECT key FROM system_settings");
     const deferredKeyList = shallow ? [...DEFERRED_STARTUP_SETTING_KEYS] : [];
     const deferredKeys = new Set<string>(deferredKeyList);
-    const deferredWhere = deferredKeyList.length
-      ? ` WHERE setting_key NOT IN (${deferredKeyList.map(() => "?").join(",")})`
-      : "";
+    const settingNodeQuery = buildDeferredSettingsQuery(deferredKeyList);
     const settingNodeRows = await this.selectRows(
-      `SELECT setting_key, node_id, parent_node_id, node_order, object_key,
-              object_key_encoded, value_type, text_value, encoded_text_value,
-              number_value, boolean_value
-       FROM setting_extension_nodes${deferredWhere}
-       ORDER BY setting_key, node_id`,
-      deferredKeyList,
+      settingNodeQuery.sql,
+      settingNodeQuery.bind,
     );
-    const settingValues = this.rebuildGroupedNodeValues(
-      settingNodeRows,
-      "setting_key",
-    );
+    const settingValues = groupSettingNodeRows(settingNodeRows as any);
     for (const row of settingsRows) {
       const key = row.key as string;
       if (deferredKeys.has(key)) continue;
-      (db as any)[key] = settingValues.has(key)
-        ? settingValues.get(key)
-        : await this.loadSettingValue(key);
+      // The batched node read above already covers every non-deferred key;
+      // a key without node rows simply stores `undefined`.
+      (db as any)[key] = settingValues.get(key);
     }
 
     // A shallow startup only needs plugin-storage keys, which are loaded via
@@ -693,6 +665,20 @@ export class WebSqliteStorage implements ISqlStorage {
     return characterData;
   }
 
+  async loadCharacterAssetFields(
+    characterId: string,
+  ): Promise<Partial<character> | null> {
+    const row = await this.selectOne("SELECT id FROM characters WHERE id = ?", [
+      characterId,
+    ]);
+    if (!row) return null;
+    const query = buildCharacterAssetFieldsQuery(characterId);
+    const [nodeResult] = await this.selectBatchResults([
+      { sql: query.sql, bind: query.bind, transform: "relational" },
+    ]);
+    return (nodeResult.value ?? {}) as Partial<character>;
+  }
+
   async loadChat(
     chatId: string,
     options?: { messageLimit?: number },
@@ -744,8 +730,16 @@ export class WebSqliteStorage implements ISqlStorage {
     return cd;
   }
 
-  async loadChatMessages(chatId: string): Promise<Message[]> {
-    return this.loadMessagesBatch(chatId);
+  async loadChatMessages(
+    chatId: string,
+    options?: { mode?: MessageLoadMode },
+  ): Promise<Message[]> {
+    return this.loadMessagesBatch(
+      chatId,
+      undefined,
+      0,
+      options?.mode === "generation" ? "generation" : "full",
+    );
   }
 
   async loadChatMessagePage(

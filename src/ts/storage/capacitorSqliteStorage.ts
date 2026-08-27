@@ -65,6 +65,9 @@ import {
   AsyncSerialQueue,
   normalizeSqliteLimit,
   normalizeSqlitePageEnd,
+  buildMessageRowsQuery,
+  buildCharacterAssetFieldsQuery,
+  rebuildMessageRows,
   type SqliteTransactionStatement,
 } from "./sqliteStorageUtils";
 
@@ -599,6 +602,64 @@ export class CapacitorSqliteStorage implements ISqlStorage {
     return fullChar;
   }
 
+  async loadCharacterAssetFields(
+    characterId: string,
+  ): Promise<Partial<character> | null> {
+    const row = await this.selectOne<{ id: string }>(
+      "SELECT id FROM characters WHERE id = ?",
+      [characterId],
+    );
+    if (!row) return null;
+    const query = buildCharacterAssetFieldsQuery(characterId);
+    const rows = await this.selectRows(query.sql, query.bind);
+    const assets = rows.length
+      ? (rebuildRelationalValue(rows as any) as Record<string, unknown>)
+      : {};
+    return assets as Partial<character>;
+  }
+
+  async loadCharacterForSelection(
+    characterId: string,
+  ): Promise<character | groupChat | null> {
+    // Interactive selection only needs the character tree plus chat summary
+    // rows. Hydrating every chat's extension nodes here would defeat lazy
+    // loading on character switches.
+    const row = await this.selectOne<{ id: string }>(
+      "SELECT id FROM characters WHERE id = ?",
+      [characterId],
+    );
+    if (!row) return null;
+    const fullChar = ((await this.loadNodeValue(
+      "character_extension_nodes",
+      "character_id = ?",
+      [characterId],
+    )) ?? {}) as any;
+    fullChar.chaId = characterId;
+    fullChar.detailsLoaded = true;
+    const chatRows = await this.selectRows<{
+      id: string;
+      name: string;
+      note: string;
+      folder_id: string | null;
+      last_message_time: number | null;
+    }>(
+      "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
+      [characterId],
+    );
+    fullChar.chats = chatRows.map((chatRow) => ({
+      id: chatRow.id,
+      name: chatRow.name ?? "",
+      note: chatRow.note ?? "",
+      folderId: chatRow.folder_id ?? undefined,
+      lastDate: chatRow.last_message_time ?? undefined,
+      message: [],
+      messagesLoaded: false,
+      messagesFullyLoaded: false,
+      detailsLoaded: false,
+    })) as Chat[];
+    return fullChar;
+  }
+
   async loadChat(
     chatId: string,
     options?: { messageLimit?: number },
@@ -637,26 +698,11 @@ export class CapacitorSqliteStorage implements ISqlStorage {
         ? undefined
         : normalizeSqliteLimit(requestedLimit);
     const offset = limit === undefined ? 0 : Math.max(0, total - limit);
-    const msgRows =
-      limit === undefined
-        ? await this.selectRows<{ id: string }>(
-            "SELECT id FROM messages WHERE chat_id = ? ORDER BY position",
-            [chatId],
-          )
-        : await this.selectRows<{ id: string }>(
-            "SELECT id FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?",
-            [chatId, limit, offset],
-          );
-    chatData.message = await Promise.all(
-      msgRows.map(async (r) => {
-        const message = (await this.loadNodeValue(
-          "message_extension_nodes",
-          "chat_id = ? AND message_id = ?",
-          [chatId, r.id],
-        )) as Message;
-        if (message && typeof message === "object") message.chatId = r.id;
-        return message;
-      }),
+    chatData.message = await this.loadMessageRowsBatch(
+      chatId,
+      limit,
+      offset,
+      false,
     );
     chatData.messageOffset = offset;
     chatData.messageTotal = total;
@@ -666,21 +712,28 @@ export class CapacitorSqliteStorage implements ISqlStorage {
     return chatData;
   }
 
-  async loadChatMessages(chatId: string): Promise<Message[]> {
-    const msgRows = await this.selectRows<{ id: string }>(
-      "SELECT id FROM messages WHERE chat_id = ? ORDER BY position",
-      [chatId],
-    );
-    return Promise.all(
-      msgRows.map(async (r) => {
-        const message = (await this.loadNodeValue(
-          "message_extension_nodes",
-          "chat_id = ? AND message_id = ?",
-          [chatId, r.id],
-        )) as Message;
-        if (message && typeof message === "object") message.chatId = r.id;
-        return message;
-      }),
+  private async loadMessageRowsBatch(
+    chatId: string,
+    limit: number | undefined,
+    offset: number,
+    newest: boolean,
+    mode: "full" | "generation" = "full",
+  ): Promise<Message[]> {
+    const query = buildMessageRowsQuery(chatId, limit, offset, newest, mode);
+    const rows = await this.selectRows(query.sql, query.bind);
+    return rebuildMessageRows(rows);
+  }
+
+  async loadChatMessages(
+    chatId: string,
+    options?: { mode?: "full" | "generation" },
+  ): Promise<Message[]> {
+    return this.loadMessageRowsBatch(
+      chatId,
+      undefined,
+      0,
+      false,
+      options?.mode === "generation" ? "generation" : "full",
     );
   }
 
@@ -697,22 +750,14 @@ export class CapacitorSqliteStorage implements ISqlStorage {
     const end = normalizeSqlitePageEnd(before, total);
     const normalizedLimit = normalizeSqliteLimit(limit);
     const offset = Math.max(0, end - normalizedLimit);
-    const msgRows = await this.selectRows<{ id: string }>(
-      "SELECT id FROM messages WHERE chat_id = ? ORDER BY position LIMIT ? OFFSET ?",
-      [chatId, end - offset, offset],
+    const messages = await this.loadMessageRowsBatch(
+      chatId,
+      end - offset,
+      offset,
+      false,
     );
     return {
-      messages: await Promise.all(
-        msgRows.map(async (row) => {
-          const message = (await this.loadNodeValue(
-            "message_extension_nodes",
-            "chat_id = ? AND message_id = ?",
-            [chatId, row.id],
-          )) as Message;
-          if (message && typeof message === "object") message.chatId = row.id;
-          return message;
-        }),
-      ),
+      messages,
       offset,
       total,
       hasMore: offset > 0,
