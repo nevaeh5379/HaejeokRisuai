@@ -47,6 +47,7 @@ import { NodeStorage } from "../storage/nodeStorage";
 import { getSqlStorage } from "../storage/sqlStorageFactory";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
+import { messageStore } from "../stores/domain/messageStore.svelte";
 import { decryptLegacyAccountBackup } from "./legacyBackupEncryption";
 import {
   makeLegacyCompatibleDatabase,
@@ -412,10 +413,25 @@ function normalizeBackupSnapshot(db: PortableDatabase): void {
   }
 }
 
+async function flushDurableStores(): Promise<void> {
+  await Promise.all([
+    characterStore.flush(),
+    settingsStore.flush(),
+    messageStore.flush(),
+  ]);
+  if (
+    characterStore.hasPendingWrites() ||
+    settingsStore.hasPendingWrites() ||
+    messageStore.hasPendingWrites()
+  ) {
+    throw new Error("Cannot create a backup while database writes are pending");
+  }
+}
+
 export async function createBackupDatabaseSnapshot(
   onProgress?: (msg: string) => void,
 ): Promise<PortableDatabase> {
-  await Promise.all([characterStore.flush(), settingsStore.flush()]);
+  await flushDurableStores();
 
   const db =
     (await loadFullSqlBackupSnapshot(onProgress)) ??
@@ -826,7 +842,7 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
 export async function SaveLocalBackup(mode: LocalBackupMode = "native") {
   try {
     if (isNodeServer && !forageStorage.isAccount) {
-      await Promise.all([characterStore.flush(), settingsStore.flush()]);
+      await flushDurableStores();
       await saveNodeLocalBackupStream(mode);
       return;
     }

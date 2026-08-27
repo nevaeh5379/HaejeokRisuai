@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { ArrowLeft, PlusIcon, TrashIcon } from "@lucide/svelte";
+    import { ArrowLeft, PlusIcon, TrashIcon, ChevronsUpDown, ChevronDown } from "@lucide/svelte";
     import { language } from "src/lang";
     import PromptDataItem from "src/lib/UI/PromptDataItem.svelte";
     import { tokenizePreset, type PromptItem } from "src/ts/process/prompt";
@@ -125,6 +125,30 @@
   onDestroy(() => {
     document.removeEventListener('keydown', handleKeyDown)
   })
+
+  let addNewPromptOpen = $state(false)
+
+  const promptTypeOptions: { type: string; label: string; defaults: Partial<PromptItem> }[] = [
+    { type: 'plain', label: language.formating.plain, defaults: { type: 'plain', text: '', role: 'system', type2: 'normal' } as any },
+    { type: 'jailbreak', label: language.formating.jailbreak, defaults: { type: 'jailbreak', text: '', role: 'system', type2: 'normal' } as any },
+    { type: 'chat', label: language.Chat, defaults: { type: 'chat', rangeStart: -1000, rangeEnd: 'end' } as any },
+    { type: 'persona', label: language.formating.personaPrompt, defaults: { type: 'persona' } as any },
+    { type: 'description', label: language.formating.description, defaults: { type: 'description' } as any },
+    { type: 'authornote', label: language.formating.authorNote, defaults: { type: 'authornote' } as any },
+    { type: 'lorebook', label: language.formating.lorebook, defaults: { type: 'lorebook' } as any },
+    { type: 'memory', label: language.formating.memory, defaults: { type: 'memory' } as any },
+    { type: 'postEverything', label: language.formating.postEverything, defaults: { type: 'postEverything' } as any },
+    { type: 'chatML', label: 'ChatML', defaults: { type: 'chatML', text: '' } as any },
+    { type: 'cache', label: language.cachePoint ?? 'Cache', defaults: { type: 'cache', name: '', depth: 1, role: 'all' } as any },
+  ]
+
+  function addPromptWithType(defaults: Partial<PromptItem>) {
+    let value = settingsStore.state.promptTemplate ?? []
+    value.push(defaults as PromptItem)
+    settingsStore.state.promptTemplate = value
+    addNewPromptOpen = false
+  }
+
 </script>
 {#if mode === 'independent'}
     <h2 class="mb-2 text-2xl font-bold mt-2 items-center flex">
@@ -158,7 +182,24 @@
 {/if}
 
 {#if subMenu === 0}
-    <div class="contain w-full max-w-full mt-4 flex flex-col p-3 rounded-md">
+    <!-- Toolbar -->
+    <div class="flex items-center justify-between mt-4 mb-1 px-1">
+        <span class="text-xs text-textcolor2">{settingsStore.state.promptTemplate.length} items</span>
+        <button
+            class="text-xs px-2 py-1 rounded border border-darkborderc text-textcolor2 hover:text-textcolor hover:bg-selected transition-colors flex items-center gap-1 cursor-pointer"
+            onclick={() => {
+                if (openedItemIndices.size === settingsStore.state.promptTemplate.length) {
+                    openedItemIndices = new Set<number>()
+                } else {
+                    openedItemIndices = new Set(settingsStore.state.promptTemplate.map((_: any, i: number) => i))
+                }
+            }}
+        >
+            <ChevronsUpDown size={13} />
+            {openedItemIndices.size === settingsStore.state.promptTemplate.length ? 'Collapse All' : 'Expand All'}
+        </button>
+    </div>
+    <div class="contain w-full max-w-full flex flex-col p-3 rounded-md">
         {#if settingsStore.state.promptTemplate.length === 0}
                 <div class="text-textcolor2">No Format</div>
         {/if}
@@ -242,16 +283,30 @@
         {/key}
     </div>
 
-    <button class="font-medium cursor-pointer hover:text-green-500" onclick={() => {
-        let value = settingsStore.state.promptTemplate ?? []
-        value.push({
-            type: "plain",
-            text: "",
-            role: "system",
-            type2: 'normal'
-        })
-        settingsStore.state.promptTemplate = value
-    }}><PlusIcon /></button>
+    <!-- Add prompt dropdown -->
+    <div class="relative mt-2">
+        <button class="font-medium cursor-pointer hover:text-green-500 flex items-center gap-1 text-sm" onclick={() => {
+            addNewPromptOpen = !addNewPromptOpen
+        }}>
+            <PlusIcon size={18} />
+            <ChevronDown size={14} />
+        </button>
+        {#if addNewPromptOpen}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="fixed inset-0 z-40" onclick={() => { addNewPromptOpen = false }}></div>
+            <div class="absolute left-0 bottom-full mb-1 z-50 bg-darkbg border border-darkborderc rounded-lg shadow-lg py-1 min-w-48 max-h-64 overflow-y-auto">
+                {#each promptTypeOptions as opt}
+                    <button
+                        class="w-full text-left px-3 py-1.5 text-sm text-textcolor hover:bg-selected transition-colors cursor-pointer"
+                        onclick={() => addPromptWithType(opt.defaults)}
+                    >
+                        {opt.label}
+                    </button>
+                {/each}
+            </div>
+        {/if}
+    </div>
 
     <span class="text-textcolor2 text-sm mt-2">{tokens} {language.fixedTokens}</span>
     <span class="text-textcolor2 mb-6 text-sm mt-2">{extokens} {language.exactTokens}</span>

@@ -6,6 +6,7 @@ import { sqlCharacterData, sqlChatData } from "../../storage/sqlCommit";
 import { settingsStore } from "./settingsStore.svelte";
 import { getInitialChatLoadPages } from "../../chatLoadPages";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
+import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
 
 // Keep persisted history ordering, overlay newer in-memory fields, and retain
 // stable-ID messages that have not reached storage yet.
@@ -446,6 +447,11 @@ class CharacterStore {
       action = "order";
     }
 
+    const committedCharacterIds = new Set(this.dirtyCharacters);
+    const committedTouches = new Map(this.dirtyCharacterTouches);
+    const committedChatIds = new Set(this.dirtyChats);
+    const committedManifestIds = new Set(this.dirtyChatManifests);
+    const committedCharacterOrder = this.dirtyCharacterIds;
     this.dirtyCharacters.clear();
     this.dirtyCharacterTouches.clear();
     this.dirtyChats.clear();
@@ -453,7 +459,7 @@ class CharacterStore {
     this.dirtyCharacterIds = false;
 
     try {
-      await storage.commit({
+      await commitSqlChanges(storage, {
         baseRevision: storage.getRevision(),
         action,
         root: { upserts: [], deletes: [] },
@@ -466,11 +472,35 @@ class CharacterStore {
         messageManifests: [],
       });
     } catch (error) {
+      for (const id of committedCharacterIds) {
+        this.dirtyCharacterTouches.delete(id);
+        this.dirtyCharacters.add(id);
+      }
+      for (const [id, timestamp] of committedTouches) {
+        if (!this.dirtyCharacters.has(id)) {
+          const current = this.dirtyCharacterTouches.get(id);
+          this.dirtyCharacterTouches.set(id, Math.max(current ?? 0, timestamp));
+        }
+      }
+      for (const id of committedChatIds) this.dirtyChats.add(id);
+      for (const id of committedManifestIds)
+        this.dirtyChatManifests.add(id);
+      this.dirtyCharacterIds ||= committedCharacterOrder;
       console.error(
         "[CharacterStore] Failed to commit character changes to SQL storage:",
         error,
       );
     }
+  }
+
+  hasPendingWrites(): boolean {
+    return (
+      this.dirtyCharacters.size > 0 ||
+      this.dirtyCharacterTouches.size > 0 ||
+      this.dirtyChats.size > 0 ||
+      this.dirtyChatManifests.size > 0 ||
+      this.dirtyCharacterIds
+    );
   }
 
   // ── Public accessors ──────────────────────────────────────────────

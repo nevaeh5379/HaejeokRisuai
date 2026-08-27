@@ -18,6 +18,9 @@ export function preLoadCheck() {
       void import("./ts/stores/domain/characterStore.svelte").then(
         ({ characterStore }) => characterStore.flush(),
       );
+      void import("./ts/stores/domain/messageStore.svelte").then(
+        ({ messageStore }) => messageStore.flush(),
+      );
     };
     window.addEventListener("pagehide", flushStores);
     document.addEventListener("visibilitychange", () => {

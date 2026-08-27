@@ -156,7 +156,10 @@ export async function migrateLegacyDatabase(
     onProgress?.("Migrating data to SQL storage...");
     normalizeDatabaseDefaults(legacyDb);
     legacyDb.pluginCustomStorage ??= {};
-    await storage.replaceDatabase(legacyDb, onProgress);
+    const replaced = await storage.replaceDatabase(legacyDb, onProgress);
+    if (!replaced) {
+      throw new Error("SQL storage rejected the migrated database");
+    }
     onProgress?.("Migration complete");
 
     if (markMigrated) {

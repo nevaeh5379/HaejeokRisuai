@@ -102,6 +102,37 @@ describe("SQL database defaults", () => {
       vi.useRealTimers();
     }
   });
+
+  it("retries a failed legacy-adapter write without losing a newer value", async () => {
+    vi.useFakeTimers();
+    try {
+      const commits: any[] = [];
+      const storage = {
+        getRevision: vi.fn(() => commits.length),
+        commit: vi
+          .fn()
+          .mockRejectedValueOnce(new Error("database locked"))
+          .mockImplementation(async (commit) => {
+            commits.push(structuredClone(commit));
+            return { revision: commits.length };
+          }),
+      } as any;
+      const adapter = createSqlDatabaseAdapter({ theme: "dark" } as any, storage);
+
+      adapter.theme = "light" as any;
+      await vi.advanceTimersByTimeAsync(301);
+      adapter.theme = "cherry" as any;
+      await vi.advanceTimersByTimeAsync(301);
+
+      expect(commits).toHaveLength(1);
+      expect(commits[0].root.upserts).toContainEqual({
+        key: "theme",
+        value: "cherry",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("SQL chat message paging", () => {

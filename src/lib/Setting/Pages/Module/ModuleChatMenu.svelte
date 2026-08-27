@@ -10,6 +10,7 @@
     import { SettingsMenuIndex, settingsOpen } from "src/ts/stores.svelte";
     import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
     import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
+    import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
 
     interface Props {
         close?: any;
@@ -18,6 +19,10 @@
 
     let { close = (i:string) => {}, alertMode = false }: Props = $props();
     let moduleSearch = $state('')
+    let modules = $derived(moduleStore.list)
+    let enabledModules = $derived(settingsStore.state.enabledModules ?? moduleStore.enabledModules ?? [])
+    let currentCharacter = $derived(characterStore.characters?.[$selectedCharID])
+    let currentChat = $derived(currentCharacter?.chats?.[currentCharacter.chatPage])
 
     function sortModules(modules:RisuModule[], search:string){
         return modules.filter((v) => {
@@ -51,10 +56,10 @@
         <TextInput className="mt-4" placeholder={language.search} bind:value={moduleSearch} />
 
         <div class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md">
-            {#if settingsStore.state.modules.length === 0}
+            {#if modules.length === 0}
                 <div class="text-textcolor2 p-3">{language.noModules}</div>
             {:else}
-                {#each sortModules(settingsStore.state.modules, moduleSearch) as rmodule, i}
+                {#each sortModules(modules, moduleSearch) as rmodule, i}
                     {#if i !== 0}
                         <div class="border-t-1 border-selected"></div>
                     {/if}
@@ -62,7 +67,7 @@
                         {#if rmodule.mcp}
                             <Waypoints size={18} class="mr-2" />
                         {/if}
-                        {#if !alertMode && settingsStore.state.enabledModules.includes(rmodule.id)}
+                        {#if !alertMode && enabledModules.includes(rmodule.id)}
                             <span class="text-textcolor2">{rmodule.name}</span>
                         {:else}
                             <span class="">{rmodule.name}</span>
@@ -77,18 +82,18 @@
                                 }}>
                                     <CircleCheckIcon size={18}/>
                                 </button>
-                            {:else if settingsStore.state.enabledModules.includes(rmodule.id)}
+                            {:else if enabledModules.includes(rmodule.id)}
                                 <button class="mr-2 text-textcolor2 cursor-not-allowed"aria-labelledby="disabled">
                                 </button>
                             {:else}
-                                <button class={(characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].modules?.includes(rmodule.id)) ?
+                                <button class={(currentChat?.modules?.includes(rmodule.id)) ?
                                         "mr-2 cursor-pointer text-blue-500" :
-                                        (characterStore.characters[$selectedCharID]?.modules?.includes(rmodule.id)) ?
+                                        (currentCharacter?.modules?.includes(rmodule.id)) ?
                                         "mr-2 cursor-pointer text-violet-500" :
                                         "text-textcolor2 hover:text-blue-400 mr-2 cursor-pointer"
                                 } onclick={async (e) => {
                                     e.stopPropagation()
-                                    const currentChat = characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage]
+                                    if (!currentChat) return
                                     currentChat.modules ??= []
                                     if(currentChat.modules.includes(rmodule.id)){
                                         currentChat.modules.splice(currentChat.modules.indexOf(rmodule.id), 1)
@@ -103,14 +108,15 @@
                                 oncontextmenu={(e) => {
                                     e.preventDefault()
                                     e.stopPropagation()
-                                    if(!characterStore.characters[$selectedCharID].modules){
-                                        characterStore.characters[$selectedCharID].modules = []
+                                    if (!currentCharacter) return
+                                    if(!currentCharacter.modules){
+                                        currentCharacter.modules = []
                                     }
-                                    if(characterStore.characters[$selectedCharID].modules.includes(rmodule.id)){
-                                        characterStore.characters[$selectedCharID].modules.splice(characterStore.characters[$selectedCharID].modules.indexOf(rmodule.id), 1)
+                                    if(currentCharacter.modules.includes(rmodule.id)){
+                                        currentCharacter.modules.splice(currentCharacter.modules.indexOf(rmodule.id), 1)
                                     }
                                     else{
-                                        characterStore.characters[$selectedCharID].modules.push(rmodule.id)
+                                        currentCharacter.modules.push(rmodule.id)
                                     }
                                     $ReloadGUIPointer += 1
                                 }}>

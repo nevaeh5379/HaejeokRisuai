@@ -203,4 +203,72 @@ describe("SQL row commits", () => {
     expect(pluginStorageUpsert).toBeDefined();
     expect(pluginStorageUpsert?.value).toEqual({});
   });
+
+  it("migrates the live module integration value into the active preset", () => {
+    const database = {
+      characters: [],
+      moduleIntergration: "live-module, second-module",
+      botPresetsId: 1,
+      botPresets: [
+        { name: "Other", moduleIntergration: "other-module" },
+        { name: "Active" },
+      ],
+    } as unknown as Database;
+
+    const commit = buildSqlReplaceCommit(database, 0);
+
+    expect(commit.presets?.upserts[0].data.moduleIntergration).toBe(
+      "other-module",
+    );
+    expect(commit.presets?.upserts[1].data.moduleIntergration).toBe(
+      "live-module, second-module",
+    );
+    expect((database as any).botPresets[1]).not.toHaveProperty(
+      "moduleIntergration",
+    );
+  });
+
+  it.each([
+    ["character details", { detailsLoaded: false, chats: [] }],
+    [
+      "chat messages",
+      {
+        chats: [
+          {
+            id: "chat-partial",
+            message: [],
+            messagesLoaded: false,
+          },
+        ],
+      },
+    ],
+    [
+      "paged chat history",
+      {
+        chats: [
+          {
+            id: "chat-paged",
+            message: [{ chatId: "newest", role: "char", data: "tail" }],
+            messagesLoaded: true,
+            messagesFullyLoaded: false,
+          },
+        ],
+      },
+    ],
+  ])("rejects replace-all from partially loaded %s", (_label, partial) => {
+    const database = {
+      characters: [
+        {
+          chaId: "character-partial",
+          type: "character",
+          name: "Partial",
+          ...partial,
+        },
+      ],
+    } as unknown as Database;
+
+    expect(() => buildSqlReplaceCommit(database, 0)).toThrow(
+      /partially loaded/,
+    );
+  });
 });

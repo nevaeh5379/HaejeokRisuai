@@ -1,6 +1,7 @@
 import type { Database } from "../../storage/database.svelte";
 import type { ISqlStorage } from "../../storage/ISqlStorage";
 import { getSqlStorage } from "../../storage/sqlStorageFactory";
+import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 
 class SettingsStore {
@@ -163,7 +164,7 @@ class SettingsStore {
     }
 
     try {
-      await storage.commit({
+      await commitSqlChanges(storage, {
         baseRevision: storage.getRevision(),
         action: "settings",
         root: {
@@ -178,11 +179,64 @@ class SettingsStore {
         messageManifests: [],
       });
     } catch (error) {
+      for (const { key } of upserts) {
+        if (Object.prototype.hasOwnProperty.call(this.state, key)) {
+          this.pendingDeletes.delete(key);
+          this.dirtyKeys.add(key);
+        } else {
+          this.dirtyKeys.delete(key);
+          this.pendingDeletes.add(key);
+        }
+      }
+      for (const key of deletes) {
+        if (Object.prototype.hasOwnProperty.call(this.state, key)) {
+          this.pendingDeletes.delete(key);
+          this.dirtyKeys.add(key);
+        } else {
+          this.pendingDeletes.add(key);
+        }
+      }
+      if (pluginStoragePayload) {
+        const impactedKeys = new Set([
+          ...pluginStoragePayload.upserts.map(({ key }) => key),
+          ...pluginStoragePayload.deletes,
+        ]);
+        if (pluginStoragePayload.clear) {
+          this.pendingPluginStorageClear = true;
+          for (const key of Object.keys(this.state.pluginCustomStorage ?? {}))
+            impactedKeys.add(key);
+        }
+        for (const key of impactedKeys) {
+          if (Object.prototype.hasOwnProperty.call(
+            this.state.pluginCustomStorage ?? {},
+            key,
+          )) {
+            this.pendingPluginStorageDeletes.delete(key);
+            this.pendingPluginStorageUpserts.set(
+              key,
+              $state.snapshot(this.state.pluginCustomStorage[key]),
+            );
+          } else {
+            this.pendingPluginStorageUpserts.delete(key);
+            this.pendingPluginStorageDeletes.add(key);
+          }
+        }
+      }
       console.error(
         "[SettingsStore] Failed to commit setting changes to SQL storage:",
         error,
       );
     }
+  }
+
+  hasPendingWrites(): boolean {
+    return (
+      this.dirtyKeys.size > 0 ||
+      this.pendingDeletes.size > 0 ||
+      this.pendingPluginStorageUpserts.size > 0 ||
+      this.pendingPluginStorageDeletes.size > 0 ||
+      this.pendingPluginStorageClear
+    );
   }
 
   get<K extends keyof Database>(key: K): Database[K] | undefined {
@@ -225,14 +279,22 @@ class SettingsStore {
 
   /** Apply storage-derived runtime values without turning hydration into a write. */
   hydrate(updater: (state: Record<string, any>) => void): void {
+    const dirtyValues = new Map<string, any>();
+    for (const key of this.dirtyKeys) {
+      if (Object.prototype.hasOwnProperty.call(this.state, key)) {
+        dirtyValues.set(key, $state.snapshot(this.state[key]));
+      }
+    }
+    const pendingDeletes = new Set(this.pendingDeletes);
     // Tear down key effects so hydration mutations are not observed as changes,
     // then re-observe with a fresh initial pass that skips dirty marking.
     for (const dispose of this.keyDisposers.values()) dispose();
     this.keyDisposers.clear();
     this.keySetDispose?.();
     this.keySetDispose = null;
-    this.dirtyKeys.clear();
     updater(this.state);
+    for (const [key, value] of dirtyValues) this.state[key] = value;
+    for (const key of pendingDeletes) delete this.state[key];
     for (const key of Object.keys(this.state)) {
       if (
         key === "characters" ||
@@ -243,9 +305,12 @@ class SettingsStore {
       )
         continue;
       this.observeKey(key);
-      this.pendingDeletes.delete(key);
+      if (!pendingDeletes.has(key)) this.pendingDeletes.delete(key);
     }
     this.observe();
+    // Svelte may replay invalidations from the hydration mutation while the
+    // new root effect is installed. Explicit local deletions win last.
+    for (const key of pendingDeletes) delete this.state[key];
   }
 
   hydrateSettingKey(key: string, value: unknown, exists = true): void {

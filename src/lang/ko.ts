@@ -2572,4 +2572,5 @@ export const languageKorean = {
   changeModel: "모델 변경",
   activeProviderSettings: "활성 프로바이더 설정",
   providerSettings: "API 및 프로바이더",
+  exitAppConfirm: "RisuAI를 종료할까요?",
 } satisfies DeepPartial<typeof import("./en").languageEnglish>;

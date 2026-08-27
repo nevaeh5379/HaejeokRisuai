@@ -3,7 +3,8 @@ import { getSqlStorage } from "../../storage/sqlStorageFactory";
 import { characterStore } from "./characterStore.svelte";
 import { settingsStore } from "./settingsStore.svelte";
 import { v4 as uuidv4 } from "uuid";
-import { sqlMessageData } from "../../storage/sqlCommit";
+import { sqlMessageData, type SqlCommit } from "../../storage/sqlCommit";
+import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
 import { isCapacitor } from "../../platform";
 
 /**
@@ -30,6 +31,41 @@ function findChatAcrossCharacters(chatId: string): Chat | undefined {
 }
 
 class MessageStore {
+  private pendingCommits: SqlCommit[] = [];
+  private writeChain: Promise<void> = Promise.resolve();
+
+  private drainPendingCommits(): Promise<void> {
+    const operation = this.writeChain.then(async () => {
+      const storage = await getSqlStorage();
+      while (this.pendingCommits.length > 0) {
+        await commitSqlChanges(storage, this.pendingCommits[0]);
+        this.pendingCommits.shift();
+      }
+    });
+    this.writeChain = operation.catch(() => undefined);
+    return operation;
+  }
+
+  private persist(commit: SqlCommit): Promise<void> {
+    this.pendingCommits.push(commit);
+    return this.drainPendingCommits();
+  }
+
+  /** Retry any writes retained after an earlier transient storage failure. */
+  async flush(): Promise<void> {
+    await this.writeChain;
+    if (this.pendingCommits.length > 0) await this.drainPendingCommits();
+  }
+
+  hasPendingWrites(): boolean {
+    return this.pendingCommits.length > 0;
+  }
+
+  resetPersistenceForTesting(): void {
+    this.pendingCommits = [];
+    this.writeChain = Promise.resolve();
+  }
+
   get currentMessages(): Message[] {
     return characterStore.currentChat?.message ?? [];
   }
@@ -60,7 +96,6 @@ class MessageStore {
     const nonEmptyChats = chats.filter(({ messages }) => messages.length > 0);
     if (nonEmptyChats.length === 0) return;
 
-    const storage = await getSqlStorage();
     const messageUpserts = nonEmptyChats.flatMap(({ chatId, messages }) =>
       messages.map((message, position) => {
         message.chatId ||= uuidv4();
@@ -73,8 +108,8 @@ class MessageStore {
       }),
     );
 
-    await storage.commit({
-      baseRevision: storage.getRevision(),
+    await this.persist({
+      baseRevision: 0,
       action: "chat-create-messages",
       root: { upserts: [], deletes: [] },
       characters: [],
@@ -103,14 +138,13 @@ class MessageStore {
       }
     }
     try {
-      const storage = await getSqlStorage();
       const messages = chat?.message ?? [message];
       const msgIndex = messages.findIndex((m) => m.chatId === message.chatId);
       const position =
         (chat?.messagesFullyLoaded === false ? (chat?.messageOffset ?? 0) : 0) +
         (msgIndex >= 0 ? msgIndex : messages.length - 1);
-      await storage.commit({
-        baseRevision: storage.getRevision(),
+      await this.persist({
+        baseRevision: 0,
         action: "message",
         root: { upserts: [], deletes: [] },
         characters: [],
@@ -155,9 +189,8 @@ class MessageStore {
       msgs.every((message, index) => message.chatId === allMessages[index]?.chatId);
 
     try {
-      const storage = await getSqlStorage();
-      await storage.commit({
-        baseRevision: storage.getRevision(),
+      await this.persist({
+        baseRevision: 0,
         action: "message",
         root: { upserts: [], deletes: [] },
         characters: [],
@@ -207,9 +240,8 @@ class MessageStore {
     }));
 
     try {
-      const storage = await getSqlStorage();
-      await storage.commit({
-        baseRevision: storage.getRevision(),
+      await this.persist({
+        baseRevision: 0,
         action: "message-branch-switch",
         root: { upserts: [], deletes: [] },
         characters: [],
@@ -237,9 +269,8 @@ class MessageStore {
       }
     }
     try {
-      const storage = await getSqlStorage();
-      await storage.commit({
-        baseRevision: storage.getRevision(),
+      await this.persist({
+        baseRevision: 0,
         action: "message",
         root: { upserts: [], deletes: [] },
         characters: [],
@@ -271,9 +302,8 @@ class MessageStore {
       }
     }
     try {
-      const storage = await getSqlStorage();
-      await storage.commit({
-        baseRevision: storage.getRevision(),
+      await this.persist({
+        baseRevision: 0,
         action: "message-delete",
         root: { upserts: [], deletes: [] },
         characters: [],
@@ -308,9 +338,8 @@ class MessageStore {
       }
     }
     try {
-      const storage = await getSqlStorage();
-      await storage.commit({
-        baseRevision: storage.getRevision(),
+      await this.persist({
+        baseRevision: 0,
         action: "message-delete",
         root: { upserts: [], deletes: [] },
         characters: [],

@@ -7,6 +7,7 @@ import type {
   StoredBotPreset,
 } from "../../storage/ISqlStorage";
 import { safeStructuredClone } from "../../polyfill";
+import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
 
 export type PresetLoadStatus = "idle" | "loading" | "ready" | "error";
 
@@ -53,7 +54,7 @@ class PresetStore {
         const id = uuidv4();
         const data = safeStructuredClone(presetTemplate);
         data.name = "Default";
-        await storage.commit({
+        await commitSqlChanges(storage, {
           baseRevision: storage.getRevision(),
           action: "preset:create-default",
           root: { upserts: [], deletes: [] },
@@ -117,7 +118,7 @@ class PresetStore {
       position ?? this.summaries.findIndex((summary) => summary.id === id);
     const data = safeStructuredClone(preset) as StoredBotPreset;
     delete (data as any).id;
-    await this.storage.commit({
+    await commitSqlChanges(this.storage, {
       baseRevision: this.storage.getRevision(),
       action: "preset:save",
       root: { upserts: [], deletes: [] },
@@ -150,7 +151,7 @@ class PresetStore {
     try {
       await this.load(id);
       if (persist)
-        await this.storage.commit({
+        await commitSqlChanges(this.storage, {
           baseRevision: this.storage.getRevision(),
           action: "preset:activate",
           root: { upserts: [], deletes: [] },
@@ -175,7 +176,7 @@ class PresetStore {
   }
   async reorder(ids: string[]): Promise<void> {
     if (!this.storage) throw new Error("Preset store is not initialized");
-    await this.storage.commit({
+    await commitSqlChanges(this.storage, {
       baseRevision: this.storage.getRevision(),
       action: "preset:reorder",
       root: { upserts: [], deletes: [] },
@@ -201,7 +202,7 @@ class PresetStore {
     const order = this.summaries
       .filter((preset) => preset.id !== id)
       .map((preset) => preset.id);
-    await this.storage.commit({
+    await commitSqlChanges(this.storage, {
       baseRevision: this.storage.getRevision(),
       action: "preset:delete",
       root: { upserts: [], deletes: [] },
@@ -223,7 +224,7 @@ class PresetStore {
       throw new Error("At least one bot preset is required");
     const ids = presets.map(() => uuidv4());
     const selected = ids[Math.max(0, Math.min(activeIndex, ids.length - 1))];
-    await this.storage.commit({
+    await commitSqlChanges(this.storage, {
       baseRevision: this.storage.getRevision(),
       action: "preset:replace",
       root: { upserts: [], deletes: [] },

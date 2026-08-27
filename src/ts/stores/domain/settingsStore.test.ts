@@ -367,4 +367,65 @@ describe("SettingsStore Reactivity and Persistence", () => {
     ]);
     expect(committed[0].pluginStorage?.clear).toBeUndefined();
   });
+
+  it("retains the newest setting and plugin values after a failed commit", async () => {
+    vi.mocked(mockStorage.commit)
+      .mockRejectedValueOnce(new Error("disk full"))
+      .mockImplementation(async (commit: SqlCommit) => {
+        committed.push(structuredClone(commit));
+        return { revision: committed.length };
+      });
+    settingsStore.init(
+      { theme: "dark", pluginCustomStorage: {} } as any,
+      mockStorage,
+    );
+    settingsStore.set("theme", "light" as any);
+    settingsStore.setPluginCustomStorageKey("plugin", { version: 1 });
+
+    await settingsStore.flush();
+    expect(settingsStore.hasPendingWrites()).toBe(true);
+    settingsStore.set("theme", "cherry" as any);
+    settingsStore.setPluginCustomStorageKey("plugin", { version: 2 });
+    await settingsStore.flush();
+
+    expect(committed).toHaveLength(1);
+    expect(committed[0].root.upserts).toContainEqual({
+      key: "theme",
+      value: "cherry",
+    });
+    expect(committed[0].pluginStorage?.upserts).toContainEqual({
+      key: "plugin",
+      value: { version: 2 },
+    });
+  });
+
+  it("does not let late lazy hydration overwrite local edits or revive deletes", async () => {
+    settingsStore.init(
+      {
+        moduleIntergration: "stored-old",
+        apiType: "openai",
+      } as any,
+      mockStorage,
+    );
+    settingsStore.set("moduleIntergration", "local-new" as any);
+    settingsStore.delete("apiType");
+    expect((settingsStore as any).pendingDeletes.has("apiType")).toBe(true);
+    expect(Object.keys(settingsStore.state)).not.toContain("apiType");
+
+    settingsStore.hydrate((state) => {
+      state.moduleIntergration = "hydrated-stale";
+      state.apiType = "gemini";
+      state.modules = [{ id: "loaded-module" }];
+    });
+
+    expect(settingsStore.state.moduleIntergration).toBe("local-new");
+    expect(Object.keys(settingsStore.state)).not.toContain("apiType");
+    expect(settingsStore.state.modules).toEqual([{ id: "loaded-module" }]);
+    await settingsStore.flush();
+    expect(committed[0].root.upserts).toContainEqual({
+      key: "moduleIntergration",
+      value: "local-new",
+    });
+    expect(committed[0].root.deletes).toContain("apiType");
+  });
 });

@@ -15,6 +15,7 @@ import {
   defaultMainPrompt,
 } from "./defaultPrompts";
 import type { ISqlStorage } from "./ISqlStorage";
+import { commitSqlChanges } from "./sqlCommitCoordinator";
 import { cancelChatMessageCompaction } from "../stores/domain/messageStore.svelte";
 import { getInitialChatLoadPages } from "../chatLoadPages";
 import protocolSettings from "../../../packages/protocol/settings.json";
@@ -548,10 +549,11 @@ export function createSqlDatabaseAdapter(
   };
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let retryDelay = 300;
   const pendingUpserts = new Map<string, unknown>();
   const pendingDeletes = new Set<string>();
 
-  function scheduleCommit() {
+  function scheduleCommit(delay = 300) {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(async () => {
       if (pendingUpserts.size === 0 && pendingDeletes.size === 0) return;
@@ -562,7 +564,7 @@ export function createSqlDatabaseAdapter(
       pendingUpserts.clear();
       pendingDeletes.clear();
       try {
-        await storage.commit({
+        await commitSqlChanges(storage, {
           baseRevision: storage.getRevision(),
           action: "settings",
           root: { upserts, deletes },
@@ -572,13 +574,26 @@ export function createSqlDatabaseAdapter(
           messages: [],
           messageManifests: [],
         });
+        retryDelay = 300;
       } catch (error) {
+        for (const { key, value } of upserts) {
+          if (!pendingUpserts.has(key) && !pendingDeletes.has(key)) {
+            pendingUpserts.set(key, value);
+          }
+        }
+        for (const key of deletes) {
+          if (!pendingUpserts.has(key) && !pendingDeletes.has(key)) {
+            pendingDeletes.add(key);
+          }
+        }
+        retryDelay = Math.min(retryDelay * 2, 5000);
+        scheduleCommit(retryDelay);
         console.error(
           "[createSqlDatabaseAdapter] Failed to commit root changes:",
           error,
         );
       }
-    }, 300);
+    }, delay);
   }
 
   const proxy = new Proxy(adapterTarget, {

@@ -114,6 +114,25 @@ export function buildSqlReplaceCommit(
   database: Database,
   baseRevision: number,
 ): SqlCommit {
+  const partialCharacter = (database.characters ?? []).find(
+    (value) => value.detailsLoaded === false,
+  );
+  if (partialCharacter) {
+    throw new Error(
+      `Cannot replace SQL database from partially loaded character: ${partialCharacter.chaId || "unknown"}`,
+    );
+  }
+  for (const currentCharacter of database.characters ?? []) {
+    const partialChat = (currentCharacter.chats ?? []).find(
+      (value) =>
+        value.messagesLoaded === false || value.messagesFullyLoaded === false,
+    );
+    if (partialChat) {
+      throw new Error(
+        `Cannot replace SQL database from partially loaded chat: ${partialChat.id || "unknown"}`,
+      );
+    }
+  }
   const commit = createEmptySqlCommit(baseRevision, "replace-all");
   commit.replaceAll = true;
   commit.characterIds = [];
@@ -130,24 +149,39 @@ export function buildSqlReplaceCommit(
   const portablePresets = Array.isArray(portableDatabase.botPresets)
     ? portableDatabase.botPresets
     : [];
+  // In the legacy database the root object is the live, editable view of the
+  // active preset.  The matching botPresets entry is only synchronized at
+  // explicit preset save/switch boundaries, so it can be stale during a SQL
+  // migration.  Preserve the live module integration value instead of
+  // allowing startup to replace it with an absent/old preset value.
+  const activePresetIndex =
+    portablePresets.length > 0
+      ? Math.max(
+          0,
+          Math.min(
+            Number(portableDatabase.botPresetsId) || 0,
+            portablePresets.length - 1,
+          ),
+        )
+      : -1;
   const presetIds = portablePresets.map(() => uuidv4());
   if (portablePresets.length > 0) {
-    const activeIndex = Math.max(
-      0,
-      Math.min(
-        Number(portableDatabase.botPresetsId) || 0,
-        portablePresets.length - 1,
-      ),
-    );
     commit.presets = {
-      upserts: portablePresets.map((data, position) => ({
-        id: presetIds[position],
-        position,
-        data,
-      })),
+      upserts: portablePresets.map((data, position) => {
+        const migratedData =
+          position === activePresetIndex &&
+          typeof database.moduleIntergration === "string"
+            ? { ...data, moduleIntergration: database.moduleIntergration }
+            : data;
+        return {
+          id: presetIds[position],
+          position,
+          data: migratedData,
+        };
+      }),
       deletes: [],
       order: presetIds,
-      activeId: presetIds[activeIndex],
+      activeId: presetIds[activePresetIndex],
     };
   }
   for (const [key, value] of Object.entries(database)) {
@@ -189,7 +223,6 @@ export function buildSqlReplaceCommit(
         position: chatPosition,
         data: sqlChatData(chat),
       });
-      if (chat.messagesLoaded === false) continue;
       const messages = chat.message ?? [];
       for (const message of messages) message.chatId ||= uuidv4();
       commit.messageManifests.push({

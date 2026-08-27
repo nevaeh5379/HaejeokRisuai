@@ -473,6 +473,100 @@ describe("WebSqliteStorage", () => {
     }
     database.close();
   });
+
+  it("rolls back every row and the revision when a batch fails midway", async () => {
+    const database = new DatabaseSync(":memory:");
+    database.exec(sqliteSchemaSql);
+    const storage = makeWebStorage(database);
+    const seed = createEmptySqlCommit(0, "seed");
+    seed.root.upserts.push({ key: "durable", value: { version: 1 } });
+    await storage.commit(seed);
+
+    const rpc = (storage as any).rpc;
+    vi.spyOn(rpc, "execBatch").mockImplementationOnce(
+      async (statements: Array<{ sql: string; bind?: unknown[] }>) => {
+        const first = statements.find(({ sql }) =>
+          sql.includes("system_settings"),
+        )!;
+        database.prepare(first.sql).run(...((first.bind ?? []) as any[]));
+        throw new Error("simulated disk failure");
+      },
+    );
+    const failed = createEmptySqlCommit(1, "failed-update");
+    failed.root.upserts.push(
+      { key: "durable", value: { version: 2 } },
+      { key: "new-key", value: "must-not-appear" },
+    );
+
+    await expect(storage.commit(failed)).rejects.toThrow(
+      "simulated disk failure",
+    );
+    expect(storage.getRevision()).toBe(1);
+    expect(await (storage as any).loadSettingValue("durable")).toEqual({
+      version: 1,
+    });
+    expect(await (storage as any).loadSettingValue("new-key")).toBeUndefined();
+    database.close();
+  });
+
+  it("round-trips migration data across lazy domains and message hydration", async () => {
+    const database = new DatabaseSync(":memory:");
+    database.exec(sqliteSchemaSql);
+    const storage = makeWebStorage(database);
+    const source = {
+      username: "Migration User",
+      moduleIntergration: "module-a",
+      pluginCustomStorage: { plugin: { nested: [1, null, "three"] } },
+      personas: [{ id: "persona-a", name: "Persona A", prompt: "remember" }],
+      modules: [{ id: "module-a", name: "Module A", lorebook: [] }],
+      loreBook: [{ name: "World", data: [{ key: "fact", content: "value" }] }],
+      botPresetsId: 0,
+      botPresets: [{ name: "Preset A", apiType: "openai", aiModel: "gpt" }],
+      characters: [
+        {
+          chaId: "char-roundtrip",
+          type: "character",
+          name: "Roundtrip",
+          chats: [
+            {
+              id: "chat-roundtrip",
+              name: "History",
+              message: [
+                { chatId: "msg-1", role: "user", data: "one" },
+                {
+                  chatId: "msg-2",
+                  role: "char",
+                  data: "two",
+                  custom: { empty: {}, list: [false, 0, ""] },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    } as any;
+
+    await expect(storage.replaceDatabase(source)).resolves.toBe(true);
+    const loaded = await storage.loadDatabase({ shallow: true });
+    expect(loaded?.database?.username).toBe("Migration User");
+    expect(await storage.loadPluginCustomStorageKey("plugin")).toEqual({
+      nested: [1, null, "three"],
+    });
+    expect(await storage.loadPersonas()).toEqual(source.personas);
+    expect(await storage.loadModules()).toEqual(source.modules);
+    expect(await storage.loadLorebooks()).toEqual(source.loreBook);
+    const character = await storage.loadCharacter("char-roundtrip");
+    expect(character?.name).toBe("Roundtrip");
+    expect(character?.chats[0].messagesLoaded).toBe(false);
+    const chat = await storage.loadChat("chat-roundtrip");
+    expect(chat?.message).toEqual(source.characters[0].chats[0].message);
+    const summaries = await storage.listBotPresets();
+    expect(summaries).toHaveLength(1);
+    expect((await storage.loadBotPreset(summaries[0].id))?.moduleIntergration).toBe(
+      "module-a",
+    );
+    database.close();
+  });
 });
 
 describe("TauriSqliteStorage", () => {
