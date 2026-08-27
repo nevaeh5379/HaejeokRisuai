@@ -42,7 +42,7 @@
     import BaseRoundedButton from "../UI/BaseRoundedButton.svelte";
     import { getCharacterIndexObject, selectSingleFile } from "src/ts/util";
     import { v4 } from "uuid";
-    import { checkCharOrder, getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
+    import { checkCharOrder, getFileSrc, getPreparedNativeThumbnailSrc, saveAsset } from "src/ts/globalApi.svelte";
     import { alertInput, alertSelect } from "src/ts/alert";
     import { ConnectionIsHost, ConnectionOpenStore, RoomIdStore } from 'src/ts/sync/multiuserState';
   import { sideBarSize } from "src/ts/gui/guisize";
@@ -59,6 +59,10 @@
   const recentSessionsLoader = () => import('./RecentSessionsList.svelte')
   const devToolLoader = () => import('./DevTool.svelte')
   const quickSettingsLoader = () => import('../Others/QuickSettingsGUI.svelte')
+
+  function sidebarThumbnail(loc: string) {
+    return getPreparedNativeThumbnailSrc(loc) ?? getCharImage(loc, "plain", { thumbnail: true })
+  }
 
   async function changeCharacter(index: number) {
     // Reflect the tap before loading the character module or persisted chat data,
@@ -623,7 +627,7 @@
           >
           {#if char.type === 'normal'}
             <SidebarAvatar 
-              src={char.img ? () => getCharImage(char.img, "plain", { thumbnail: true }) : "/none.webp"}
+              src={char.img ? () => sidebarThumbnail(char.img) : "/none.webp"}
               size="56" 
               rounded={IconRounded} 
               name={char.name}
@@ -632,7 +636,7 @@
           {:else if char.type === "folder"}
             {#key char.color}
             {#key char.name}
-              <SidebarAvatar src="slot" size="56" rounded={IconRounded} bordered name={char.name} color={char.color} backgroundimg={char.img ? () => getCharImage(char.img, "plain", { thumbnail: true }) : ""}
+              <SidebarAvatar src="slot" size="56" rounded={IconRounded} bordered name={char.name} color={char.color} backgroundimg={char.img ? () => sidebarThumbnail(char.img) : ""}
               oncontextmenu={async (e) => {
                 e.preventDefault()
                 const sel = parseInt(await alertSelect([language.renameFolder,language.changeFolderColor,language.changeFolderImage,language.cancel]))
@@ -787,7 +791,7 @@
                   }}
                 >
                 <SidebarAvatar 
-                  src={char2.img ? () => getCharImage(char2.img, "plain", { thumbnail: true }) : "/none.webp"}
+                  src={char2.img ? () => sidebarThumbnail(char2.img) : "/none.webp"}
                   size="56" 
                   rounded={IconRounded} 
                   name={char2.name}

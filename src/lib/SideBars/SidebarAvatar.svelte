@@ -45,8 +45,13 @@
       return;
     }
     const observer = new IntersectionObserver((entries) => {
-      sourceVisible = entries.some(entry => entry.isIntersecting);
-    }, { rootMargin: '256px' });
+      if (entries.some(entry => entry.isIntersecting)) {
+        // Lazy-load only once. Hiding the sidebar must not tear down already
+        // decoded avatars and force every icon to be recreated on the next open.
+        sourceVisible = true;
+        observer.disconnect();
+      }
+    }, { rootMargin: '320px' });
     observer.observe(avatarElement);
     return () => observer.disconnect();
   });
@@ -121,8 +126,9 @@
         {:then img}
           <img
             src={img}
-            loading="lazy"
+            loading="eager"
             decoding="async"
+            fetchpriority="auto"
             class="bg-skin-border sidebar-avatar rounded-md object-cover object-top"
             style:width={size + "px"}
             style:height={size + "px"}

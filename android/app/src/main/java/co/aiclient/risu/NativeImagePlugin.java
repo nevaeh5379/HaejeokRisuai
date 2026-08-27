@@ -4,6 +4,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Build;
 import android.util.Base64;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -13,8 +14,11 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -24,8 +28,8 @@ public class NativeImagePlugin extends Plugin {
     private static final int DEFAULT_THUMB_SIZE = 128;
     private static final int MAX_DIMENSION = 2048;
     private static final int WEBP_QUALITY = 82;
-    private static final int CACHE_FILE_LIMIT = 256;
-    private static final int CACHE_FILE_TARGET = 192;
+    private static final long CACHE_BYTE_LIMIT = 128L * 1024 * 1024;
+    private static final long CACHE_BYTE_TARGET = 96L * 1024 * 1024;
     private static final int CACHE_PRUNE_INTERVAL = 16;
     private static final long CACHE_TOUCH_INTERVAL_MS = 5 * 60 * 1000L;
 
@@ -75,6 +79,84 @@ public class NativeImagePlugin extends Plugin {
                 call.reject("Failed to create native image thumbnail", error);
             }
         });
+    }
+
+    @PluginMethod
+    public void prepareThumbnails(PluginCall call) {
+        JSArray keys = call.getArray("keys");
+        int maxWidth = clampDimension(call.getInt("maxWidth", DEFAULT_THUMB_SIZE));
+        int maxHeight = clampDimension(call.getInt("maxHeight", DEFAULT_THUMB_SIZE));
+        if (keys == null) {
+            call.reject("Missing native image keys");
+            return;
+        }
+
+        ArrayList<String> uniqueKeys = new ArrayList<>();
+        HashSet<String> seen = new HashSet<>();
+        for (int index = 0; index < keys.length(); index++) {
+            String key = keys.optString(index, null);
+            if (key != null && !key.isEmpty() && seen.add(key)) uniqueKeys.add(key);
+        }
+
+        int total = uniqueKeys.size();
+        if (total == 0) {
+            JSObject result = new JSObject();
+            result.put("total", 0);
+            result.put("created", 0);
+            result.put("cached", 0);
+            result.put("missing", 0);
+            result.put("failed", 0);
+            result.put("ready", new JSArray());
+            call.resolve(result);
+            return;
+        }
+
+        AtomicInteger remaining = new AtomicInteger(total);
+        AtomicInteger created = new AtomicInteger();
+        AtomicInteger cached = new AtomicInteger();
+        AtomicInteger missing = new AtomicInteger();
+        AtomicInteger failed = new AtomicInteger();
+        ConcurrentLinkedQueue<String> readyKeys = new ConcurrentLinkedQueue<>();
+
+        for (String key : uniqueKeys) {
+            executor.execute(() -> {
+                try {
+                    File source = assetFile(key);
+                    if (!source.isFile()) {
+                        missing.incrementAndGet();
+                    } else {
+                        File target = cachedFile(key, maxWidth, maxHeight, source);
+                        if (target.isFile()) {
+                            cached.incrementAndGet();
+                            readyKeys.add(key);
+                        } else {
+                            createThumbnail(source, target, maxWidth, maxHeight);
+                            created.incrementAndGet();
+                            readyKeys.add(key);
+                            if (thumbnailsSincePrune.incrementAndGet() >= CACHE_PRUNE_INTERVAL) {
+                                thumbnailsSincePrune.set(0);
+                                pruneCache(target.getParentFile());
+                            }
+                        }
+                    }
+                } catch (Exception error) {
+                    failed.incrementAndGet();
+                } finally {
+                    if (remaining.decrementAndGet() == 0) {
+                        JSObject result = new JSObject();
+                        result.put("total", total);
+                        result.put("created", created.get());
+                        result.put("cached", cached.get());
+                        result.put("missing", missing.get());
+                        result.put("failed", failed.get());
+                        JSArray ready = new JSArray();
+                        for (String readyKey : readyKeys) ready.put(readyKey);
+                        result.put("ready", ready);
+                        call.resolve(result);
+                    }
+                }
+            });
+        }
     }
 
     private int clampDimension(Integer value) {
@@ -181,10 +263,17 @@ public class NativeImagePlugin extends Plugin {
 
     private void pruneCache(File root) {
         File[] files = root == null ? null : root.listFiles((dir, name) -> name.endsWith(".webp"));
-        if (files == null || files.length <= CACHE_FILE_LIMIT) return;
+        if (files == null || files.length == 0) return;
+        long totalBytes = 0;
+        for (File file : files) totalBytes += file.length();
+        if (totalBytes <= CACHE_BYTE_LIMIT) return;
+
         Arrays.sort(files, Comparator.comparingLong(File::lastModified));
-        int removeCount = files.length - CACHE_FILE_TARGET;
-        for (int index = 0; index < removeCount; index++) files[index].delete();
+        for (File file : files) {
+            long length = file.length();
+            if (file.delete()) totalBytes -= length;
+            if (totalBytes <= CACHE_BYTE_TARGET) break;
+        }
     }
 
     @Override

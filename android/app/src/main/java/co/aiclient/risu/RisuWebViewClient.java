@@ -19,17 +19,66 @@ import java.util.Map;
 /** Serves immutable hashed RisuAI assets directly to WebView. */
 public final class RisuWebViewClient extends BridgeWebViewClient {
     public static final String ASSET_PREFIX = "/_risu_asset_/";
+    public static final String THUMB_PREFIX = "/_risu_thumb_/";
     private final File assetRoot;
+    private final File thumbnailRoot;
 
     public RisuWebViewClient(Bridge bridge, Context context) {
         super(bridge);
         assetRoot = new File(context.getFilesDir(), "risuai-assets");
+        thumbnailRoot = new File(context.getCacheDir(), "risu-image-thumbnails");
     }
 
     @Override
     public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+        WebResourceResponse thumbnail = openRisuThumbnail(request);
+        if (thumbnail != null) return thumbnail;
         WebResourceResponse asset = openRisuAsset(request);
         return asset != null ? asset : super.shouldInterceptRequest(view, request);
+    }
+
+    private WebResourceResponse openRisuThumbnail(WebResourceRequest request) {
+        String path = request.getUrl().getPath();
+        if (path == null || !path.startsWith(THUMB_PREFIX)) return null;
+
+        String remainder = path.substring(THUMB_PREFIX.length());
+        int slash = remainder.indexOf('/');
+        if (slash <= 0 || slash == remainder.length() - 1) {
+            return response(400, "Bad Request", "text/plain", null, 0);
+        }
+        String[] dimensions = remainder.substring(0, slash).split("x", 2);
+        String encoded = remainder.substring(slash + 1);
+        if (dimensions.length != 2 || !encoded.matches("[A-Za-z0-9_-]+")) {
+            return response(400, "Bad Request", "text/plain", null, 0);
+        }
+
+        try {
+            int width = Integer.parseInt(dimensions[0]);
+            int height = Integer.parseInt(dimensions[1]);
+            if (width < 32 || width > 2048 || height < 32 || height > 2048) {
+                return response(400, "Bad Request", "text/plain", null, 0);
+            }
+            String key = new String(
+                Base64.decode(encoded, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING),
+                StandardCharsets.UTF_8
+            );
+            File source = new File(assetRoot, encoded + ".bin");
+            if (!source.isFile()) return response(404, "Not Found", "text/plain", null, 0);
+
+            String cacheKey = key + "\n" + width + "x" + height +
+                "\n" + source.lastModified() + ":" + source.length();
+            String cacheName = Base64.encodeToString(
+                cacheKey.getBytes(StandardCharsets.UTF_8),
+                Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING
+            );
+            File thumbnail = new File(thumbnailRoot, cacheName + ".webp");
+            if (!thumbnail.isFile()) return response(404, "Not Found", "text/plain", null, 0);
+
+            BufferedInputStream stream = new BufferedInputStream(new FileInputStream(thumbnail), 32 * 1024);
+            return response(200, "OK", "image/webp", stream, thumbnail.length());
+        } catch (Exception error) {
+            return response(500, "Internal Server Error", "text/plain", null, 0);
+        }
     }
 
     private WebResourceResponse openRisuAsset(WebResourceRequest request) {

@@ -86,6 +86,18 @@ interface NativeImagePlugin {
     maxWidth: number;
     maxHeight: number;
   }): Promise<{ path: string; bytes: number; mimeType: string }>;
+  prepareThumbnails(options: {
+    keys: string[];
+    maxWidth: number;
+    maxHeight: number;
+  }): Promise<{
+    total: number;
+    created: number;
+    cached: number;
+    missing: number;
+    failed: number;
+    ready: string[];
+  }>;
 }
 
 const nativeImage = isCapacitor
@@ -323,6 +335,47 @@ export const thumbnailBatchLoader = new ThumbnailBatchLoader();
 export function preloadThumbnails(keys: string[]) {
   thumbnailBatchLoader.preload(keys);
 }
+
+const preparedNativeThumbnailKeys = new Set<string>();
+
+function nativeThumbnailCacheKey(loc: string, width: number, height: number) {
+  return `${width}x${height}:${loc}`;
+}
+
+function encodeNativeAssetKey(loc: string) {
+  return Buffer.from(loc, "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+export function getPreparedNativeThumbnailSrc(
+  loc: string,
+  width = 128,
+  height = 128,
+): string | undefined {
+  if (!isCapacitor || !preparedNativeThumbnailKeys.has(nativeThumbnailCacheKey(loc, width, height))) {
+    return undefined;
+  }
+  return `/_risu_thumb_/${width}x${height}/${encodeNativeAssetKey(loc)}`;
+}
+
+export async function prepareNativeThumbnails(
+  keys: string[],
+  maxWidth = 128,
+  maxHeight = 128,
+) {
+  if (!isCapacitor || !nativeImage || keys.length === 0) {
+    return { total: 0, created: 0, cached: 0, missing: 0, failed: 0, ready: [] as string[] };
+  }
+  const result = await nativeImage.prepareThumbnails({ keys, maxWidth, maxHeight });
+  for (const loc of result.ready) {
+    preparedNativeThumbnailKeys.add(nativeThumbnailCacheKey(loc, maxWidth, maxHeight));
+  }
+  return result;
+}
+
 export function invalidateThumbnailCache(loc?: string) {
   thumbnailBatchLoader.invalidate(loc);
 }
@@ -464,17 +517,24 @@ export async function getFileSrc(
         // Character assets are content-addressed. Serve originals from an app-owned
         // WebView route so we avoid one Capacitor bridge call per image and avoid
         // WebViewLocalServer's .bin MIME sniffing + Cache-Control: no-cache path.
-        const encoded = Buffer.from(loc, "utf8")
-          .toString("base64")
-          .replace(/\+/g, "-")
-          .replace(/\//g, "_")
-          .replace(/=+$/g, "");
-        const url = `/_risu_asset_/${encoded}`;
+        const url = `/_risu_asset_/${encodeNativeAssetKey(loc)}`;
         if (!options?.transient) {
           browserAssetWeights.set(cacheKey, 1);
           browserAssetUrls.set(cacheKey, url);
         }
         return url;
+      }
+      if (isNativeImageAsset && isThumb) {
+        const width = options?.width ?? 128;
+        const height = options?.height ?? 128;
+        const preparedUrl = getPreparedNativeThumbnailSrc(loc, width, height);
+        if (preparedUrl) {
+          if (!options?.transient) {
+            browserAssetWeights.set(cacheKey, 1);
+            browserAssetUrls.set(cacheKey, preparedUrl);
+          }
+          return preparedUrl;
+        }
       }
       if (isNativeImageAsset && (isThumb || isDisplay)) {
         try {

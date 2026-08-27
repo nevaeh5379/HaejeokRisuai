@@ -2,6 +2,7 @@
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import { language } from 'src/lang';
     import { getCharImage } from 'src/ts/characterImage';
+    import { getPreparedNativeThumbnailSrc } from 'src/ts/globalApi.svelte';
     import SidebarAvatar from './SidebarAvatar.svelte';
     import {
         MessageSquareIcon,
@@ -18,6 +19,10 @@
     }
 
     let { reseter = () => {} }: Props = $props();
+
+    function recentThumbnail(loc: string) {
+        return getPreparedNativeThumbnailSrc(loc) ?? getCharImage(loc, 'plain', { thumbnail: true });
+    }
 
     let searchInput = $state('');
 
@@ -252,10 +257,7 @@
                     <div class="relative shrink-0">
                         <SidebarAvatar
                             src={session.characterImage
-                                ? () =>
-                                      getCharImage(session.characterImage!, 'plain', {
-                                          thumbnail: true,
-                                      })
+                                ? () => recentThumbnail(session.characterImage!)
                                 : '/none.webp'}
                             size="40"
                             rounded={settingsStore.state.roundIcons}
