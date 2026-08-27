@@ -35,7 +35,10 @@ import type {
   requestDataResponse,
   StreamResponseChunk,
 } from "./requestContracts";
-import { resolveRequestParserContext } from "./requestContext";
+import {
+  resolveRequestParserContext,
+  resolveRequestToolContext,
+} from "./requestContext";
 import { tryExecuteNodeProviderTransport } from "./nodeProviderExecutor";
 import {
   applyAdditionalParameters,
@@ -778,7 +781,7 @@ async function requestGoogle(
 
       const tool = tools.find((t) => t.name === functionName);
       if (tool) {
-        const result = (await callTool(tool.name, functionArgs, tool.mcpURL)).filter((r) => {
+        const result = (await callTool(tool.name, functionArgs, tool.mcpURL, resolveRequestToolContext(arg))).filter((r) => {
           return r.type === "text";
         });
         if (result.length === 0) {
@@ -1109,7 +1112,7 @@ function wrapToolStream(
               const functionArgs = call.args;
               const tool = tools.find((t) => t.name === functionName);
               if (tool) {
-                const result = (await callTool(tool.name, functionArgs, tool.mcpURL)).filter(
+                const result = (await callTool(tool.name, functionArgs, tool.mcpURL, resolveRequestToolContext(arg))).filter(
                   (r) => {
                     return r.type === "text";
                   },

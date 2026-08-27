@@ -20,7 +20,10 @@ import type {
   StreamResponseChunk,
 } from "../requestContracts";
 import { tryExecuteNodeProviderTransport } from "../nodeProviderExecutor";
-import { resolveRequestParserContext } from "../requestContext";
+import {
+  resolveRequestParserContext,
+  resolveRequestToolContext,
+} from "../requestContext";
 import { matchesNodeOllamaCloudEndpoint } from "../ollamaTransport";
 import {
   applyAdditionalParameters,
@@ -594,7 +597,7 @@ async function appendResponsesToolOutputs(
       if (!tool) {
         output = "No tool found with name: " + toolCall.name;
       } else {
-        const used = (await callTool(tool.name, parsed, tool.mcpURL)).filter(
+        const used = (await callTool(tool.name, parsed, tool.mcpURL, resolveRequestToolContext(arg))).filter(
           (m) => m.type === "text",
         );
         if (used.length > 0) {

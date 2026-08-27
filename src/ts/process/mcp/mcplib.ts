@@ -871,7 +871,11 @@ export class MCPClient {
     return tools;
   }
 
-  async callTool(toolName: string, args: any): Promise<RPCToolCallContent[]> {
+  async callTool(
+    toolName: string,
+    args: any,
+    _context?: unknown,
+  ): Promise<RPCToolCallContent[]> {
     await this.checkHandshake();
     if (!this.serverInfo.capabilities?.tools) {
       throw new Error("MCP Server does not support tools");

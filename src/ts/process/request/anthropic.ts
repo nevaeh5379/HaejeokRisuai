@@ -32,7 +32,10 @@ import type {
   StreamResponseChunk,
 } from "./requestContracts";
 import { tryExecuteNodeProviderTransport } from "./nodeProviderExecutor";
-import { resolveRequestParserContext } from "./requestContext";
+import {
+  resolveRequestParserContext,
+  resolveRequestToolContext,
+} from "./requestContext";
 import { matchesNodeOllamaCloudEndpoint } from "./ollamaTransport";
 import {
   applyAdditionalParameters,
@@ -993,7 +996,7 @@ async function requestClaudeHTTP(
 
       if (content.type === "tool_use") {
         const tool = arg.tools?.find((candidate) => candidate.name === content.name);
-        const used = await callTool(content.name, content.input, tool?.mcpURL);
+        const used = await callTool(content.name, content.input, tool?.mcpURL, resolveRequestToolContext(arg));
         const r: Claude3ToolResponseBlock = {
           type: "tool_result",
           tool_use_id: content.id,

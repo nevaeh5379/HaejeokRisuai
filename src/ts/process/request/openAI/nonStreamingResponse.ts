@@ -12,7 +12,10 @@ import type {
   RequestDataArgumentExtended,
   requestDataResponse,
 } from "../requestContracts";
-import { resolveRequestParserContext } from "../requestContext";
+import {
+  resolveRequestParserContext,
+  resolveRequestToolContext,
+} from "../requestContext";
 import type { OpenAIChatExtra, ToolCall } from "./types";
 
 export interface InterpretOpenAINonStreamingOptions {
@@ -107,7 +110,7 @@ export async function interpretOpenAINonStreamingResponse(
                 });
               } else {
                 const parsed = functionArgs;
-                const x = (await callTool(tool.name, parsed, tool.mcpURL)).filter(
+                const x = (await callTool(tool.name, parsed, tool.mcpURL, resolveRequestToolContext(arg))).filter(
                   (m) => m.type === "text",
                 );
                 if (x.length > 0) {

@@ -9,7 +9,10 @@ import { getDatabase } from "src/ts/storage/database.svelte";
 import { callTool, encodeToolCall } from "../../mcp/mcp";
 import { extractJSON } from "../../templates/jsonSchema";
 import type { RequestDataArgumentExtended, StreamResponseChunk } from "../requestContracts";
-import { resolveRequestParserContext } from "../requestContext";
+import {
+  resolveRequestParserContext,
+  resolveRequestToolContext,
+} from "../requestContext";
 import type { OpenAIChatExtra, ToolCall } from "./types";
 import type { LocalNetworkRequestOptions } from "./shared";
 
@@ -256,7 +259,7 @@ export function wrapToolStream(
                     });
                   } else {
                     const parsed = functionArgs;
-                    const x = (await callTool(tool.name, parsed, tool.mcpURL)).filter(
+                    const x = (await callTool(tool.name, parsed, tool.mcpURL, resolveRequestToolContext(arg))).filter(
                       (m) => m.type === "text",
                     );
                     if (x.length > 0) {

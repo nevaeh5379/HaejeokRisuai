@@ -11,3 +11,10 @@ export function resolveRequestParserContext(arg: RequestDataArgumentExtended) {
     chatTarget: arg.triggerTarget,
   };
 }
+
+export function resolveRequestToolContext(arg: RequestDataArgumentExtended) {
+  return {
+    currentChar: arg.currentChar,
+    chatTarget: arg.triggerTarget,
+  };
+}

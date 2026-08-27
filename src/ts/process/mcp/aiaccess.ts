@@ -1,5 +1,6 @@
 import { requestChatData } from "../request/chatRequestOrchestrator";
 import { MCPClientLike } from "./internalmcp";
+import type { MCPToolCallContext } from "./mcp";
 import type { MCPTool, RPCToolCallContent } from "./mcplib";
 
 export class AIAccessClient extends MCPClientLike {
@@ -53,7 +54,11 @@ export class AIAccessClient extends MCPClientLike {
     ];
   }
 
-  async callTool(methodName: string, args: any): Promise<RPCToolCallContent[]> {
+  async callTool(
+    methodName: string,
+    args: any,
+    context?: MCPToolCallContext,
+  ): Promise<RPCToolCallContent[]> {
     if (methodName === "runLLM") {
       const { model, messages } = args;
       if (!model || !messages || !Array.isArray(messages)) {
@@ -71,6 +76,8 @@ export class AIAccessClient extends MCPClientLike {
             content: msg.content,
           })),
           bias: {},
+          currentChar: context?.currentChar,
+          triggerTarget: context?.chatTarget,
         },
         model === "lite" ? "otherAx" : "model",
       );

@@ -41,7 +41,11 @@ export class MCPClientLike {
     return [];
   }
 
-  async callTool(toolName: string, args: any): Promise<RPCToolCallContent[]> {
+  async callTool(
+    toolName: string,
+    args: any,
+    _context?: unknown,
+  ): Promise<RPCToolCallContent[]> {
     return [
       {
         type: "text",

@@ -21,6 +21,11 @@ export type MCPToolWithURL = MCPTool & {
   mcpURL: string;
 };
 
+export type MCPToolCallContext = {
+  currentChar?: character;
+  chatTarget?: { characterIndex: number; chatIndex: number };
+};
+
 export const MCPs: Record<string, MCPClient | MCPClientLike> = {};
 export const callOnlyMCPs: Record<string, MCPClient | MCPClientLike> = {};
 const callOnlyMCPUrls = ["internal:risuai"];
@@ -277,11 +282,12 @@ export async function callMCPTool(
   methodName: string,
   args: any,
   mcpURL?: string,
+  context?: MCPToolCallContext,
 ): Promise<RPCToolCallContent[]> {
   if (mcpURL) {
     await initializeMCPs([mcpURL]);
     const client = MCPs[mcpURL] ?? callOnlyMCPs[mcpURL];
-    if (client) return await client.callTool(methodName, args);
+    if (client) return await client.callTool(methodName, args, context);
   }
 
   const visibleMCPUrls = await initializeMCPs();
@@ -292,7 +298,7 @@ export async function callMCPTool(
     const tools = await client.getToolList();
     const tool = tools.find((t) => t.name === methodName);
     if (tool) {
-      return await client.callTool(methodName, args);
+      return await client.callTool(methodName, args, context);
     }
   }
   return [
@@ -309,8 +315,13 @@ export async function getTools(character?: character | groupChat) {
 }
 
 //Currently just a wrapper for callMCPTool, but can be extended later for more than MCPs
-export async function callTool(methodName: string, args: any, mcpURL?: string) {
-  return await callMCPTool(methodName, args, mcpURL);
+export async function callTool(
+  methodName: string,
+  args: any,
+  mcpURL?: string,
+  context?: MCPToolCallContext,
+) {
+  return await callMCPTool(methodName, args, mcpURL, context);
 }
 
 export async function importMCPModule() {
