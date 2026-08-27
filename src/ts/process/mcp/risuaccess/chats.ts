@@ -4,6 +4,7 @@ import {
   type RPCToolCallContent,
 } from "../mcplib";
 import { getCharacter } from "./utils";
+import type { MCPToolCallContext } from "../mcp";
 import { type character, type groupChat } from "src/ts/storage/database.svelte";
 
 export class ChatHandler extends MCPToolHandler {
@@ -42,9 +43,10 @@ export class ChatHandler extends MCPToolHandler {
   async handle(
     toolName: string,
     args: any,
+    context?: MCPToolCallContext,
   ): Promise<RPCToolCallContent[] | null> {
     if (toolName === "risu-get-chat-history") {
-      return await this.getChatHistory(args.id, args.count, args.offset);
+      return await this.getChatHistory(args.id, args.count, args.offset, context);
     }
     return null;
   }
@@ -53,6 +55,7 @@ export class ChatHandler extends MCPToolHandler {
     id: string,
     count: number = 20,
     offset: number = 0,
+    context?: MCPToolCallContext,
   ): Promise<RPCToolCallContent[]> {
     const char: character | groupChat = getCharacter(id);
     if (!char) {
@@ -76,8 +79,23 @@ export class ChatHandler extends MCPToolHandler {
     if (count < 1) count = 1;
     if (offset < 0) offset = 0;
 
+    const contextChatIndex =
+      context?.currentChar?.chaId === char.chaId
+        ? context.chatTarget?.chatIndex
+        : undefined;
+    const chatIndex = contextChatIndex ?? char.chatPage;
+    const targetChat = char.chats[chatIndex];
+    if (!targetChat) {
+      return [
+        {
+          type: "text",
+          text: `Error: Chat ${chatIndex} not found for character ${char.name}.`,
+        },
+      ];
+    }
+
     // To get "newest first", we must reverse the array.
-    const reversedMessages = [...char.chats[char.chatPage].message].reverse();
+    const reversedMessages = [...targetChat.message].reverse();
 
     // Now that the array is sorted from newest to oldest, we can slice it
     const history = reversedMessages.slice(offset, offset + count);

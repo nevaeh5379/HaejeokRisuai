@@ -82,6 +82,7 @@ export abstract class MCPToolHandler {
   abstract handle(
     toolName: string,
     args: any,
+    context?: unknown,
   ): Promise<RPCToolCallContent[] | null>;
 }
 
