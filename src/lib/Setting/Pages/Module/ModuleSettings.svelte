@@ -22,10 +22,12 @@
         id: v4(),
     })
     let mode = $state(0)
-    let editModuleIndex = $state(-1)
     let moduleSearch = $state('')
     let charConversionMode = $state(false)
     let openFolders = $state<Set<string>>(new Set())
+    let modules = $derived(moduleStore.list)
+    let enabledModules = $derived(settingsStore.state.enabledModules ?? moduleStore.enabledModules ?? [])
+    let moduleFolders = $derived(moduleStore.folders)
 
     function sortModules(modules:RisuModule[], search:string){
         return modules.filter((v) => {
@@ -61,7 +63,7 @@
     }
 
     async function moveModuleToFolder(module: RisuModule) {
-        const folders = settingsStore.state.moduleFolders ?? []
+        const folders = moduleFolders
         const options = [
             language.noFolder,
             ...folders.map((f) => f.name),
@@ -88,15 +90,14 @@
     <TextInput className="mt-4" placeholder={language.search} bind:value={moduleSearch} />
 
     <div class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md flex-1 overflow-y-auto">
-        {#if settingsStore.state.modules.length === 0}
+        {#if modules.length === 0}
             <div class="text-textcolor2 p-3">{language.noModules}</div>
         {:else}
-            {@const folders = settingsStore.state.moduleFolders ?? []}
-            {@const grouped = sortModules(settingsStore.state.modules.filter((m) => m.folderId && folders.some((f) => f.id === m.folderId)), moduleSearch)}
-            {@const ungrouped = sortModules(settingsStore.state.modules.filter((m) => !m.folderId || !folders.some((f) => f.id === m.folderId)), moduleSearch)}
+            {@const folders = moduleFolders}
+            {@const ungrouped = sortModules(modules.filter((m) => !m.folderId || !folders.some((f) => f.id === m.folderId)), moduleSearch)}
             {@render moduleRows(ungrouped, true)}
             {#each folders as folder}
-                {@const folderModules = sortModules(settingsStore.state.modules.filter((m) => m.folderId === folder.id), moduleSearch)}
+                {@const folderModules = sortModules(modules.filter((m) => m.folderId === folder.id), moduleSearch)}
                 {#if folderModules.length > 0 || moduleSearch === ''}
                     <div class="border-t-1 border-selected"></div>
                     <div class="w-full flex items-center pl-3 pr-3 py-2 text-left">
@@ -139,7 +140,6 @@
                 description: '',
                 id: v4(),
             }
-            settingsStore.state.modules.push(tempModule)
             mode = 1
         }}>
             <PlusIcon />
@@ -166,16 +166,16 @@
 {:else if mode === 1}
     <h2 class="mb-2 text-2xl font-bold mt-2">{language.createModule}</h2>
     <ModuleMenu bind:currentModule={tempModule}/>
-    <Button className="mt-6" onclick={() => {
-        settingsStore.state.modules.push(tempModule)
+    <Button className="mt-6" onclick={async () => {
+        await moduleStore.installModule(tempModule)
         mode = 0
     }}>{language.createModule}</Button>
 {:else if mode === 2}
     <h2 class="mb-2 text-2xl font-bold mt-2">{language.editModule}</h2>
     <ModuleMenu bind:currentModule={tempModule}/>
     {#if tempModule.name !== ''}
-        <Button className="mt-6" onclick={() => {
-            settingsStore.state.modules[editModuleIndex] = tempModule
+        <Button className="mt-6" onclick={async () => {
+            await moduleStore.updateModule(tempModule.id, tempModule)
             mode = 0
         }}>{language.editModule}</Button>
     {/if}
@@ -196,7 +196,8 @@
                 {#if charConversionMode}
                     <button class="cursor-pointer text-violet-500 mr-2" onclick={async (e) => {
                         e.stopPropagation()
-                        const module = settingsStore.state.modules.find((v: RisuModule) => v.id === rmodule.id)
+                        const module = moduleStore.getById(rmodule.id)
+                        if (!module) return
                         const char = convertModuleToCharacter(module)
                         characterStore.characters.push(char)
                         alertNormal(language.successfullyConverted)
@@ -206,7 +207,7 @@
 
                     </button>
                 {:else}
-                    <button class={(settingsStore.state.enabledModules.includes(rmodule.id)) ?
+                    <button class={(enabledModules.includes(rmodule.id)) ?
                             "mr-2 cursor-pointer text-blue-500" :
                             rmodule.namespace &&
                             settingsStore.state.moduleIntergration?.split(',').map((s: string) => s.trim()).includes(rmodule.namespace) ?
@@ -235,9 +236,7 @@
                         </button>
                         <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" use:tooltip={language.edit} onclick={async (e) => {
                             e.stopPropagation()
-                            const index = settingsStore.state.modules.findIndex((v: RisuModule) => v.id === rmodule.id)
                             tempModule = rmodule
-                            editModuleIndex = index
                             mode = 2
                         }}>
                             <SquarePen size={18}/>
@@ -260,13 +259,7 @@
                         e.stopPropagation()
                         const d = await alertConfirm(`${language.removeConfirm}` + rmodule.name)
                         if(d){
-                            if(settingsStore.state.enabledModules.includes(rmodule.id)){
-                                settingsStore.state.enabledModules.splice(settingsStore.state.enabledModules.indexOf(rmodule.id), 1)
-                                settingsStore.state.enabledModules = settingsStore.state.enabledModules
-                            }
-                            const index = settingsStore.state.modules.findIndex((v: RisuModule) => v.id === rmodule.id)
-                            settingsStore.state.modules.splice(index, 1)
-                            settingsStore.state.modules = settingsStore.state.modules
+                            await moduleStore.removeModule(rmodule.id)
                         }
                     }}>
                         <TrashIcon size={18}/>

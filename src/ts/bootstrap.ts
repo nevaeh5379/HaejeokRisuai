@@ -247,10 +247,28 @@ export async function loadData() {
       LoadingStatusState.text = "Loading chat runtime...";
       const presetReady = presetStore
         .init(storage, activeDb.activeBotPresetId)
-        .then(() => {
-          if (presetStore.activePreset)
+        .then(async () => {
+          let activePreset = presetStore.activePreset;
+          // Older SQL migrations copied the stale botPresets entry without
+          // folding in the live root value for the active preset. Repair that
+          // representation before setPreset can blank the visible setting.
+          const liveModuleIntegration =
+            settingsStore.state.moduleIntergration;
+          if (
+            activePreset &&
+            activePreset.moduleIntergration === undefined &&
+            typeof liveModuleIntegration === "string" &&
+            liveModuleIntegration.length > 0
+          ) {
+            await presetStore.savePreset({
+              ...activePreset,
+              moduleIntergration: liveModuleIntegration,
+            });
+            activePreset = presetStore.activePreset;
+          }
+          if (activePreset)
             settingsStore.hydrate((state) =>
-              setPreset(state as Database, presetStore.activePreset!),
+              setPreset(state as Database, activePreset),
             );
           performance.mark("active-preset-ready");
         })
