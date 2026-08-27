@@ -1,4 +1,5 @@
 import localforage from "localforage";
+import { getNodeClientSessionId } from "../network/nodeClientSession";
 import type {
   Database,
   Message,
@@ -190,6 +191,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
   readonly backendKind = "node" as const;
   private status: "unknown" | "enabled" | "disabled" | "degraded" = "unknown";
   private revision = 0;
+  private readonly clientId = getNodeClientSessionId();
   private pluginsCacheForage = localforage.createInstance({
     name: "risuaiPostgresPlugins",
   });
@@ -271,9 +273,20 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     return this.status === "enabled";
   }
 
+  getClientId(): string {
+    return this.clientId;
+  }
+
+  applyRemoteRevision(revision: number): void {
+    if (Number.isSafeInteger(revision) && revision > this.revision) {
+      this.revision = revision;
+    }
+  }
+
   private async authHeaders() {
     return {
       "risu-auth": await this.getAuth(),
+      "x-risu-client-id": this.clientId,
     };
   }
 
@@ -1355,32 +1368,46 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       throw new Error("SQL storage is not enabled");
     }
-    const encodedBody = await encodeJsonBody(commit);
-    const response = await fetch("/api/database-v2/commit", {
-      method: "POST",
-      body: encodedBody.body,
-      headers: {
-        "content-type": "application/json",
-        ...(encodedBody.contentEncoding
-          ? { "content-encoding": encodedBody.contentEncoding }
-          : {}),
-        ...(await this.authHeaders()),
-      },
-    });
-    if (response.status === 409) {
-      const conflict = await response.json().catch(() => null);
-      throw new NodePostgresRevisionConflictError(conflict?.revision);
+
+    let pending: SqlCommit = {
+      ...commit,
+      baseRevision: Math.max(commit.baseRevision, this.revision),
+    };
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const encodedBody = await encodeJsonBody(pending);
+      const response = await fetch("/api/database-v2/commit", {
+        method: "POST",
+        body: encodedBody.body,
+        headers: {
+          "content-type": "application/json",
+          ...(encodedBody.contentEncoding
+            ? { "content-encoding": encodedBody.contentEncoding }
+            : {}),
+          ...(await this.authHeaders()),
+        },
+      });
+      if (response.status === 409) {
+        const conflict = await response.json().catch(() => null);
+        const currentRevision = Number(conflict?.revision);
+        if (Number.isSafeInteger(currentRevision) && attempt < 2) {
+          this.applyRemoteRevision(currentRevision);
+          pending = { ...pending, baseRevision: currentRevision };
+          continue;
+        }
+        throw new NodePostgresRevisionConflictError(conflict?.revision);
+      }
+      if (response.status === 413) {
+        const body = await response.json().catch(() => null);
+        throw new NodePostgresPayloadTooLargeError(body?.error);
+      }
+      if (response.status < 200 || response.status >= 300) {
+        throw await responseError(response, "SQL commit failed");
+      }
+      const result = (await response.json()) as SqlCommitResult;
+      this.revision = result.revision;
+      return result;
     }
-    if (response.status === 413) {
-      const body = await response.json().catch(() => null);
-      throw new NodePostgresPayloadTooLargeError(body?.error);
-    }
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "SQL commit failed");
-    }
-    const result = (await response.json()) as SqlCommitResult;
-    this.revision = result.revision;
-    return result;
+    throw new NodePostgresRevisionConflictError(this.revision);
   }
 
   async replaceDatabase(

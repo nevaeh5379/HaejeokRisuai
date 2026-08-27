@@ -1,7 +1,7 @@
 import { language } from "../../../lang";
 import { globalFetch } from "../../globalApi.svelte";
 import { LLMFormat } from "../../model/modellist";
-import { getCurrentCharacter, getDatabase } from "../../storage/database.svelte";
+import { getDatabase } from "../../storage/database.svelte";
 import { tokenizeNum } from "../../tokenizer";
 import {
   buildNovelAIRequest,
@@ -9,6 +9,7 @@ import {
 } from "@risuai/chat-core/novelAIProvider.cjs";
 import { stringlizeNAIChat } from "../models/nai";
 import { unstringlizeChat } from "../stringlize";
+import { resolveRequestCharacter } from "./requestContext";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
@@ -25,7 +26,7 @@ export async function requestNovelAI(
   const temperature = arg.temperature;
   const maxTokens = arg.maxTokens;
   const biasString = arg.biasString;
-  const currentChar = getCurrentCharacter();
+  const currentChar = resolveRequestCharacter(arg);
   const prompt = stringlizeNAIChat(
     formated,
     currentChar?.name ?? "",
@@ -115,7 +116,12 @@ export async function requestNovelAI(
   }
   return {
     type: "success",
-    result: unstringlizeChat(da.data.output, formated, currentChar?.name ?? ""),
+    result: unstringlizeChat(
+      da.data.output,
+      formated,
+      currentChar?.name ?? "",
+      arg.triggerTarget,
+    ),
   };
 }
 

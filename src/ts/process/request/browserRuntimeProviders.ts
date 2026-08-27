@@ -1,9 +1,10 @@
 import { language } from "../../../lang";
 import { pluginProcess, pluginV2 } from "../../plugins/plugins.svelte";
-import { getCurrentCharacter, getDatabase } from "../../storage/database.svelte";
+import { getDatabase } from "../../storage/database.svelte";
 import { unstringlizeChat } from "../stringlize";
 import { applyChatTemplate } from "../templates/chatTemplate";
 import { runTransformers } from "../transformers";
+import { resolveRequestCharacter } from "./requestContext";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
@@ -130,11 +131,14 @@ export async function requestWebLLM(
   const formated = arg.formated;
   const db = getDatabase();
   const aiModel = arg.aiModel;
-  const currentChar = getCurrentCharacter();
+  const currentChar = resolveRequestCharacter(arg);
   const maxTokens = arg.maxTokens;
   const temperature = arg.temperature;
   const realModel = aiModel.split(":::")[1];
-  const prompt = applyChatTemplate(formated);
+  const prompt = applyChatTemplate(formated, {
+    currentChar,
+    chatTarget: arg.triggerTarget,
+  });
 
   if (arg.previewBody) {
     return {
@@ -166,6 +170,7 @@ export async function requestWebLLM(
       (v.generated_text as string) ?? "",
       formated,
       currentChar?.name ?? "",
+      arg.triggerTarget,
     ),
   };
 }

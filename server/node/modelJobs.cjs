@@ -87,7 +87,7 @@ function requestUpstream(targetUrl, arg) {
     });
 }
 
-function createModelJobManager({ saveDir, logger = console } = {}) {
+function createModelJobManager({ saveDir, logger = console, onEvent = null } = {}) {
     const root = path.join(saveDir || path.join(process.cwd(), 'save'), 'model-jobs');
     const metadataPath = path.join(root, 'index.json');
     fs.mkdirSync(root, { recursive: true });
@@ -121,8 +121,23 @@ function createModelJobManager({ saveDir, logger = console } = {}) {
 
     function publicRecord(record) {
         if (!record) return null;
-        return { ...record, bytes: activeJobs.get(record.id)?.bytesWritten ?? record.bytes ?? 0 };
+        const active = activeJobs.get(record.id);
+        return {
+            ...record,
+            bytes: active?.bytesWritten ?? record.bytes ?? 0,
+            ...(active?.sourceClientId ? { sourceClientId: active.sourceClientId } : {}),
+        };
     }
+
+    function emitEvent(type, record, context = {}) {
+        if (typeof onEvent !== 'function' || !record) return;
+        try {
+            onEvent(type, publicRecord(record), context);
+        } catch (error) {
+            logger.warn?.('[model-jobs] event listener failed', error);
+        }
+    }
+
     function notify(job) {
         const waiters = job.waiters.splice(0);
         for (const wake of waiters) wake();
@@ -216,12 +231,13 @@ function createModelJobManager({ saveDir, logger = console } = {}) {
                 record.endedAt = Date.now();
                 record.bytes = job.bytesWritten;
                 await persist();
+                emitEvent('terminal', record, { sourceClientId: job.sourceClientId });
             }
             activeJobs.delete(job.id);
             notify(job);
         }
     }
-    function createJob(arg) {
+    function createJob(arg, eventContext = {}) {
         const normalized = normalizeModelJobCreateRequest(arg);
         if (normalized.error) return normalized;
         const request = normalized.value;
@@ -261,9 +277,11 @@ function createModelJobManager({ saveDir, logger = console } = {}) {
             id,
             controller: new AbortController(),
             waiters: [],
-            bytesWritten: 0
+            bytesWritten: 0,
+            sourceClientId: eventContext.sourceClientId
         };
         activeJobs.set(id, job);
+        emitEvent('created', record, { sourceClientId: job.sourceClientId });
         void persist();
         const runPromise = runJob(job, {
             targetUrl: request.targetUrl,
@@ -387,7 +405,9 @@ function createModelJobManager({ saveDir, logger = console } = {}) {
 
         app.post('/api/model-jobs', ...guards, async (req, res) => {
             if (!await ensureAuth(req, res)) return;
-            const result = createJob(req.body);
+            const result = createJob(req.body, {
+                sourceClientId: req.headers['x-risu-client-id']
+            });
             if (result.error) {
                 res.status(result.httpStatus || 400).send({ error: result.error, jobId: result.jobId });
                 return;

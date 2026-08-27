@@ -19,21 +19,31 @@ export interface ChatGenerationMetrics {
   tokensPerSecond: number | null;
 }
 
+export type ChatGenerationStatsMap = ReadonlyMap<string, ChatGenerationStats>;
+
 const COMPLETED_VISIBLE_MS = 8_000;
+const statsByGeneration = new Map<string, ChatGenerationStats>();
+const hideTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-export const chatGenerationStats = writable<ChatGenerationStats | null>(null);
-
-let currentStats: ChatGenerationStats | null = null;
-let hideTimer: ReturnType<typeof setTimeout> | undefined;
-
-function publish(stats: ChatGenerationStats | null) {
-  currentStats = stats;
-  chatGenerationStats.set(stats);
+export const chatGenerationStats = writable<ChatGenerationStatsMap>(new Map());
+function publish() {
+  chatGenerationStats.set(new Map(statsByGeneration));
 }
 
-function clearHideTimer() {
-  if (hideTimer !== undefined) clearTimeout(hideTimer);
-  hideTimer = undefined;
+function clearHideTimer(generationId: string) {
+  const timer = hideTimers.get(generationId);
+  if (timer !== undefined) clearTimeout(timer);
+  hideTimers.delete(generationId);
+}
+
+function replaceStats(
+  generationId: string,
+  update: (stats: ChatGenerationStats) => ChatGenerationStats,
+) {
+  const current = statsByGeneration.get(generationId);
+  if (!current) return;
+  statsByGeneration.set(generationId, update(current));
+  publish();
 }
 
 export function startChatGenerationStats(options: {
@@ -43,21 +53,18 @@ export function startChatGenerationStats(options: {
   model: string;
   startedAt?: number;
 }) {
-  clearHideTimer();
-  publish({
+  clearHideTimer(options.generationId);
+  statsByGeneration.set(options.generationId, {
     ...options,
     phase: "generating",
     startedAt: options.startedAt ?? Date.now(),
     outputText: "",
   });
+  publish();
 }
 
-export function updateChatGenerationModel(
-  generationId: string,
-  model: string,
-) {
-  if (!currentStats || currentStats.generationId !== generationId) return;
-  publish({ ...currentStats, model });
+export function updateChatGenerationModel(generationId: string, model: string) {
+  replaceStats(generationId, (stats) => ({ ...stats, model }));
 }
 
 export function recordChatGenerationText(
@@ -66,46 +73,64 @@ export function recordChatGenerationText(
   observedAt = Date.now(),
   firstTokenAt?: number,
 ) {
-  if (!currentStats || currentStats.generationId !== generationId) return;
-  const hasOutput = outputText.length > 0;
-  publish({
-    ...currentStats,
-    outputText,
-    firstTokenAt:
-      currentStats.firstTokenAt ??
-      (hasOutput ? (firstTokenAt ?? observedAt) : undefined),
-    lastTokenAt: hasOutput ? observedAt : currentStats.lastTokenAt,
+  replaceStats(generationId, (stats) => {
+    const hasOutput = outputText.length > 0;
+    return {
+      ...stats,
+      outputText,
+      firstTokenAt:
+        stats.firstTokenAt ?? (hasOutput ? (firstTokenAt ?? observedAt) : undefined),
+      lastTokenAt: hasOutput ? observedAt : stats.lastTokenAt,
+    };
   });
 }
-
 export function completeChatGenerationStats(
   generationId: string,
   outputText: string,
   completedAt = Date.now(),
 ) {
-  if (!currentStats || currentStats.generationId !== generationId) return;
-  clearHideTimer();
+  clearHideTimer(generationId);
+  const current = statsByGeneration.get(generationId);
+  if (!current) return;
   const hasOutput = outputText.length > 0;
-  const completed: ChatGenerationStats = {
-    ...currentStats,
+  statsByGeneration.set(generationId, {
+    ...current,
     phase: "complete",
     outputText,
     firstTokenAt:
-      currentStats.firstTokenAt ?? (hasOutput ? currentStats.startedAt : undefined),
-    lastTokenAt: currentStats.lastTokenAt ?? (hasOutput ? completedAt : undefined),
+      current.firstTokenAt ?? (hasOutput ? current.startedAt : undefined),
+    lastTokenAt: current.lastTokenAt ?? (hasOutput ? completedAt : undefined),
     completedAt,
-  };
-  publish(completed);
-  hideTimer = setTimeout(() => {
-    if (currentStats?.generationId === generationId) publish(null);
-    hideTimer = undefined;
-  }, COMPLETED_VISIBLE_MS);
+  });
+  publish();
+  hideTimers.set(
+    generationId,
+    setTimeout(() => {
+      statsByGeneration.delete(generationId);
+      hideTimers.delete(generationId);
+      publish();
+    }, COMPLETED_VISIBLE_MS),
+  );
+}
+export function cancelChatGenerationStats(generationId: string) {
+  clearHideTimer(generationId);
+  if (!statsByGeneration.delete(generationId)) return;
+  publish();
 }
 
-export function cancelChatGenerationStats(generationId: string) {
-  if (!currentStats || currentStats.generationId !== generationId) return;
-  clearHideTimer();
-  publish(null);
+export function getChatGenerationStats(
+  stats: ChatGenerationStatsMap,
+  selectedChar: number,
+  selectedChat: number,
+) {
+  let match: ChatGenerationStats | null = null;
+  for (const current of stats.values()) {
+    if (current.selectedChar !== selectedChar || current.selectedChat !== selectedChat) {
+      continue;
+    }
+    if (!match || current.startedAt > match.startedAt) match = current;
+  }
+  return match;
 }
 
 export function calculateChatGenerationMetrics(

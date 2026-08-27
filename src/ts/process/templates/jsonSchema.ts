@@ -1,13 +1,29 @@
 import { risuChatParser } from "src/ts/parser/parser.svelte";
-import { getDatabase } from "src/ts/storage/database.svelte";
+import type { ChatVarTarget } from "src/ts/parser/chatVar.svelte";
+import {
+  getDatabase,
+  type character,
+  type groupChat,
+} from "src/ts/storage/database.svelte";
 import { jsonOutputTrimmer } from "src/ts/util";
 
-export function convertInterfaceToSchema(int: string) {
+export type JSONSchemaParserContext = {
+  chara?: character | groupChat;
+  chatTarget?: ChatVarTarget;
+};
+
+export function convertInterfaceToSchema(
+  int: string,
+  context: JSONSchemaParserContext = {},
+) {
   if (!int.startsWith("interface ") && !int.startsWith("export interface ")) {
     return JSON.parse(int);
   }
 
-  int = risuChatParser(int);
+  int = risuChatParser(int, {
+    chara: context.chara,
+    chatTarget: context.chatTarget,
+  });
 
   type SchemaProp = {
     type: "array" | "string" | "number" | "boolean";
@@ -122,16 +138,23 @@ export function convertInterfaceToSchema(int: string) {
   return schema;
 }
 
-export function getOpenAIJSONSchema(schema?: string) {
+export function getOpenAIJSONSchema(
+  schema?: string,
+  context: JSONSchemaParserContext = {},
+) {
   const db = getDatabase();
   return {
     name: "format",
     strict: db.strictJsonSchema,
-    schema: convertInterfaceToSchema(schema ?? db.jsonSchema),
+    schema: convertInterfaceToSchema(schema ?? db.jsonSchema, context),
   };
 }
 
-export function getGeneralJSONSchema(schema?: string, excludes: string[] = []) {
+export function getGeneralJSONSchema(
+  schema?: string,
+  excludes: string[] = [],
+  context: JSONSchemaParserContext = {},
+) {
   const db = getDatabase();
 
   function process(data: any) {
@@ -147,42 +170,36 @@ export function getGeneralJSONSchema(schema?: string, excludes: string[] = []) {
     return data;
   }
 
-  const d = convertInterfaceToSchema(schema ?? db.jsonSchema);
+  const d = convertInterfaceToSchema(schema ?? db.jsonSchema, context);
   return process(d);
 }
 
-export function extractJSON(data: string, format: string) {
-  const extract = (data: any, format: string) => {
-    try {
-      if (data === undefined || data === null) {
-        return "";
-      }
-
-      const fp = format.split(".");
-      const current = data[fp[0]];
-
-      if (current === undefined) {
-        return "";
-      } else if (fp.length === 1) {
-        return `${current ?? ""}`;
-      } else if (typeof current === "object") {
-        return extractJSON(current, fp.slice(1).join("."));
-      } else if (Array.isArray(current)) {
-        const index = parseInt(fp[1]);
-        return extractJSON(current[index], fp.slice(1).join("."));
-      } else {
-        return `${current ?? ""}`;
-      }
-    } catch (error) {
-      return "";
-    }
+export function extractJSON(
+  data: unknown,
+  format: string,
+  context: JSONSchemaParserContext = {},
+): string {
+  const extract = (value: any, path: string): string => {
+    if (value === undefined || value === null) return "";
+    const [head, ...tail] = path.split(".");
+    const current = value[head];
+    if (current === undefined) return "";
+    if (tail.length === 0) return `${current ?? ""}`;
+    return extract(current, tail.join("."));
   };
+
   try {
-    format = risuChatParser(format);
-    data = data.trim();
-    if (data.startsWith("{")) {
-      return extract(JSON.parse(jsonOutputTrimmer(data)), format);
+    format = risuChatParser(format, {
+      chara: context.chara,
+      chatTarget: context.chatTarget,
+    });
+    if (typeof data === "string") {
+      const trimmed = data.trim();
+      if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return data;
+      data = JSON.parse(jsonOutputTrimmer(trimmed));
     }
-  } catch (error) {}
-  return data;
+    return extract(data, format);
+  } catch (error) {
+    return typeof data === "string" ? data : "";
+  }
 }

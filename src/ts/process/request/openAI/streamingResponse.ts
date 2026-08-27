@@ -9,6 +9,10 @@ import { getDatabase } from "src/ts/storage/database.svelte";
 import { callTool, encodeToolCall } from "../../mcp/mcp";
 import { extractJSON } from "../../templates/jsonSchema";
 import type { RequestDataArgumentExtended, StreamResponseChunk } from "../requestContracts";
+import {
+  resolveRequestParserContext,
+  resolveRequestToolContext,
+} from "../requestContext";
 import type { OpenAIChatExtra, ToolCall } from "./types";
 import type { LocalNetworkRequestOptions } from "./shared";
 
@@ -59,7 +63,7 @@ export function getTranStream(
                 }
                 if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
                   for (const key in readed) {
-                    const extracted = extractJSON(readed[key], arg.extractJson);
+                    const extracted = extractJSON(readed[key], arg.extractJson, resolveRequestParserContext(arg));
                     JSONreaded[key] = extracted;
                   }
                   console.log(JSONreaded);
@@ -135,7 +139,7 @@ export function getTranStream(
         }
         if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
           for (const key in readed) {
-            const extracted = extractJSON(readed[key], arg.extractJson);
+            const extracted = extractJSON(readed[key], arg.extractJson, resolveRequestParserContext(arg));
             JSONreaded[key] = extracted;
           }
           console.log(JSONreaded);
@@ -255,7 +259,7 @@ export function wrapToolStream(
                     });
                   } else {
                     const parsed = functionArgs;
-                    const x = (await callTool(tool.name, parsed)).filter(
+                    const x = (await callTool(tool.name, parsed, tool.mcpURL, resolveRequestToolContext(arg))).filter(
                       (m) => m.type === "text",
                     );
                     if (x.length > 0) {

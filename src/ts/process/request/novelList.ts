@@ -1,11 +1,12 @@
 import { globalFetch } from "../../globalApi.svelte";
 import { LLMFormat } from "../../model/modellist";
-import { getCurrentCharacter, getDatabase } from "../../storage/database.svelte";
+import { getDatabase } from "../../storage/database.svelte";
 import {
   DEFAULT_NOVELLIST_API_URL,
   buildNovelListRequestBody,
 } from "@risuai/chat-core/novelListProvider.cjs";
 import { stringlizeAINChat, unstringlizeAIN } from "../stringlize";
+import { resolveRequestCharacter } from "./requestContext";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
@@ -21,7 +22,7 @@ export async function requestNovelList(
   const maxTokens = arg.maxTokens;
   const temperature = arg.temperature;
   const biasString = arg.biasString;
-  const currentChar = getCurrentCharacter();
+  const currentChar = resolveRequestCharacter(arg);
   const aiModel = arg.aiModel;
   const auth_key = db.novellistAPI;
   let headers: Record<string, string> = {
@@ -30,7 +31,12 @@ export async function requestNovelList(
   };
 
   let send_body: Record<string, any> = buildNovelListRequestBody({
-    text: stringlizeAINChat(formated, currentChar?.name ?? "", arg.continue),
+    text: stringlizeAINChat(
+      formated,
+      currentChar?.name ?? "",
+      arg.continue,
+      arg.triggerTarget,
+    ),
     maxTokens,
     temperature,
     sampler: db.ainconfig,
@@ -87,7 +93,12 @@ export async function requestNovelList(
   }
 
   const result = response.data.data[0];
-  const unstr = unstringlizeAIN(result, formated, currentChar?.name ?? "");
+  const unstr = unstringlizeAIN(
+    result,
+    formated,
+    currentChar?.name ?? "",
+    arg.triggerTarget,
+  );
   return {
     type: "multiline",
     result: unstr,

@@ -81,6 +81,7 @@ describe("executeChatModelRequest", () => {
       {
         plan,
         biases: [],
+        triggerTarget: { characterIndex: 2, chatIndex: 3 },
         currentChar: { id: "char" },
         isGroupChat: false,
         durableChatId: "chat",
@@ -95,6 +96,12 @@ describe("executeChatModelRequest", () => {
       model: "default-model",
       speakerId: "speaker",
     });
+    expect(rt.requestModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerTarget: { characterIndex: 2, chatIndex: 3 },
+      }),
+      expect.any(AbortSignal),
+    );
     expect(rt.unregisterGenerationContext).toHaveBeenCalledWith("generation-id");
   });
 });

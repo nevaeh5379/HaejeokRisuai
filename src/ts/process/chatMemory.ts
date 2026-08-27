@@ -3,7 +3,7 @@ import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { language } from "../../lang";
 import { ChatTokenizer } from "../tokenizer";
-import { chatProcessStage } from "./chatRuntimeState";
+import { setChatProcessStage } from "./chatRuntimeState";
 import { hanuraiMemory } from "./memory/hanuraiMemory";
 import { hypaMemoryV2 } from "./memory/hypav2";
 import { hypaMemoryV3 } from "./memory/hypav3";
@@ -119,6 +119,13 @@ async function applyHypaV2Memory(
     state.currentChat,
     options.nowChatroom,
     options.tokenizer,
+    {
+      currentChar: options.currentChar,
+      chatTarget: {
+        characterIndex: options.selectedChar,
+        chatIndex: options.selectedChat,
+      },
+    },
   );
   if (result.error) {
     options.throwError(result.error);
@@ -148,6 +155,13 @@ async function applyHypaV3Memory(
     state.currentChat,
     options.nowChatroom,
     options.tokenizer,
+    {
+      currentChar: options.currentChar,
+      chatTarget: {
+        characterIndex: options.selectedChar,
+        chatIndex: options.selectedChat,
+      },
+    },
   );
   if (result.error) {
     if (result.memory) {
@@ -181,7 +195,14 @@ async function applySupaMemory(
     state.currentChat,
     options.nowChatroom,
     options.tokenizer,
-    { asHyper: settingsStore.state.hypaMemory },
+    {
+      asHyper: settingsStore.state.hypaMemory,
+      chatTarget: {
+        characterIndex: options.selectedChar,
+        chatIndex: options.selectedChat,
+      },
+      currentChar: options.currentChar,
+    },
   );
   if (result.error) {
     options.throwError(result.error);
@@ -227,11 +248,11 @@ export async function applyChatMemory(options: ApplyChatMemoryOptions) {
     };
   }
 
-  chatProcessStage.set(2);
+  setChatProcessStage(options.currentChat.id, 2);
   const stage2Start = Date.now();
   const result = await runConfiguredMemory(options, initialState);
   if (!result.ok) return { ok: false as const };
-  chatProcessStage.set(1);
+  setChatProcessStage(options.currentChat.id, 1);
   return {
     ok: true as const,
     ...result.state,

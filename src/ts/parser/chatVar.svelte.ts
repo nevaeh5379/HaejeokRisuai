@@ -4,13 +4,18 @@ import { parseKeyValue } from "../util";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 
-export function getChatVar(key: string): string {
-  const selectedChar = get(selectedCharID);
+export type ChatVarTarget = {
+  characterIndex: number;
+  chatIndex: number;
+};
+
+export function getChatVar(key: string, target?: ChatVarTarget): string {
+  const selectedChar = target?.characterIndex ?? get(selectedCharID);
   const char = characterStore.characters[selectedChar];
   if (!char) {
     return "null";
   }
-  const chat = char.chats[char.chatPage];
+  const chat = char.chats[target?.chatIndex ?? char.chatPage];
   if (!chat) {
     return "null";
   }
@@ -31,13 +36,17 @@ export function getChatVar(key: string): string {
   return state.toString();
 }
 
-export function setChatVar(key: string, value: string): boolean {
-  const selectedChar = get(selectedCharID);
+export function setChatVar(
+  key: string,
+  value: string,
+  target?: ChatVarTarget,
+): boolean {
+  const selectedChar = target?.characterIndex ?? get(selectedCharID);
   const char = characterStore.characters[selectedChar];
   if (!char || !char.chats) {
     return false;
   }
-  const chat = char.chats[char.chatPage];
+  const chat = char.chats[target?.chatIndex ?? char.chatPage];
   if (!chat) {
     return false;
   }
@@ -52,14 +61,17 @@ export function setChatVar(key: string, value: string): boolean {
   return true;
 }
 
-function getCurrentChatForVars() {
-  const selectedChar = get(selectedCharID);
+function getCurrentChatForVars(target?: ChatVarTarget) {
+  const selectedChar = target?.characterIndex ?? get(selectedCharID);
   const char = characterStore.characters[selectedChar];
-  return char?.chats?.[char.chatPage];
+  return char?.chats?.[target?.chatIndex ?? char.chatPage];
 }
 
-export function getGLChatVar(key: string): string | undefined {
-  return getCurrentChatForVars()?.GLGlobalVariables?.[key];
+export function getGLChatVar(
+  key: string,
+  target?: ChatVarTarget,
+): string | undefined {
+  return getCurrentChatForVars(target)?.GLGlobalVariables?.[key];
 }
 
 export function setGLChatVar(key: string, value: string): boolean {
@@ -75,8 +87,8 @@ export function setGLChatVar(key: string, value: string): boolean {
   return true;
 }
 
-export function getGlobalChatVar(key: string): string {
-  const localValue = getGLChatVar(key);
+export function getGlobalChatVar(key: string, target?: ChatVarTarget): string {
+  const localValue = getGLChatVar(key, target);
   if (localValue !== undefined) {
     return localValue;
   }

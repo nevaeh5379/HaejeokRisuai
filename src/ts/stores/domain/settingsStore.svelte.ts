@@ -313,6 +313,20 @@ class SettingsStore {
     for (const key of pendingDeletes) delete this.state[key];
   }
 
+  hydrateSettingKey(key: string, value: unknown, exists = true): void {
+    if (!key || key === "characters" || key === "isSql") return;
+    this.keyDisposers.get(key)?.();
+    this.keyDisposers.delete(key);
+    this.dirtyKeys.delete(key);
+    this.pendingDeletes.delete(key);
+    if (exists) {
+      this.state[key] = value;
+      this.observeKey(key);
+    } else {
+      delete this.state[key];
+    }
+  }
+
   delete(key: keyof Database): void {
     const keyStr = String(key);
     if (keyStr === "pluginCustomStorage") {
@@ -358,6 +372,33 @@ class SettingsStore {
     this.state.pluginCustomStorage ??= {};
     this.state.pluginCustomStorage[key] = value;
     this.pluginStorageKeys.add(key);
+  }
+
+  hydrateRemotePluginCustomStorageKey(key: string, value: any): void {
+    if (
+      this.pendingPluginStorageClear ||
+      this.pendingPluginStorageDeletes.has(key) ||
+      this.pendingPluginStorageUpserts.has(key)
+    )
+      return;
+    this.hydratePluginCustomStorageKey(key, value);
+  }
+
+  hydrateRemotePluginCustomStorageDelete(key: string): void {
+    if (
+      this.pendingPluginStorageClear ||
+      this.pendingPluginStorageDeletes.has(key) ||
+      this.pendingPluginStorageUpserts.has(key)
+    )
+      return;
+    if (this.state.pluginCustomStorage) delete this.state.pluginCustomStorage[key];
+    this.pluginStorageKeys.delete(key);
+  }
+
+  hydrateRemotePluginCustomStorageClear(): void {
+    const preserved = Object.fromEntries(this.pendingPluginStorageUpserts.entries());
+    this.state.pluginCustomStorage = preserved;
+    this.pluginStorageKeys = new Set(Object.keys(preserved));
   }
 
   async loadPluginCustomStorageKey(key: string): Promise<any> {

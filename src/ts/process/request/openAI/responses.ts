@@ -20,6 +20,10 @@ import type {
   StreamResponseChunk,
 } from "../requestContracts";
 import { tryExecuteNodeProviderTransport } from "../nodeProviderExecutor";
+import {
+  resolveRequestParserContext,
+  resolveRequestToolContext,
+} from "../requestContext";
 import { matchesNodeOllamaCloudEndpoint } from "../ollamaTransport";
 import {
   applyAdditionalParameters,
@@ -447,7 +451,7 @@ async function buildResponsesBody(
     body.text ??= {};
     body.text.format = {
       type: "json_schema",
-      ...getOpenAIJSONSchema(arg.schema),
+      ...getOpenAIJSONSchema(arg.schema, resolveRequestParserContext(arg)),
     };
   }
 
@@ -545,7 +549,7 @@ function extractResponsesText(
     result = `<Thoughts>\n\n${thoughts.join("\n\n")}\n\n</Thoughts>\n${result}`;
   }
   if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
-    return extractJSON(result, arg.extractJson);
+    return extractJSON(result, arg.extractJson, resolveRequestParserContext(arg));
   }
 
   return result;
@@ -593,7 +597,7 @@ async function appendResponsesToolOutputs(
       if (!tool) {
         output = "No tool found with name: " + toolCall.name;
       } else {
-        const used = (await callTool(tool.name, parsed)).filter(
+        const used = (await callTool(tool.name, parsed, tool.mcpURL, resolveRequestToolContext(arg))).filter(
           (m) => m.type === "text",
         );
         if (used.length > 0) {
@@ -789,7 +793,7 @@ function getResponsesTranStream(
       result = `<Thoughts>\n\n${reasoning}\n\n</Thoughts>\n${result}`;
     }
     if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
-      result = extractJSON(result, arg.extractJson);
+      result = extractJSON(result, arg.extractJson, resolveRequestParserContext(arg));
     }
     const chunk: Record<string, string> = { "0": error || result };
     if (Object.keys(calls).length > 0) {

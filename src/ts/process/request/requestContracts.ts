@@ -15,6 +15,7 @@ export type ToolCall = {
 
 export interface requestDataArgument {
   formated: OpenAIChat[];
+  triggerTarget?: { characterIndex: number; chatIndex: number };
   bias: { [key: number]: number };
   biasString?: [string, number][];
   currentChar?: character;

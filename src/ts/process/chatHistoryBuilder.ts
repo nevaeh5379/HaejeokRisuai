@@ -8,7 +8,7 @@ import { v4 } from "uuid";
 import { exampleMessage } from "./exampleMessages";
 import { processScript, processScriptFull, risuChatParser } from "./scripts";
 import { runTrigger } from "./triggers";
-import { setCurrentChat } from "../storage/database.svelte";
+import { characterStore } from "../stores/domain/characterStore.svelte";
 import { getInlayAsset } from "./files/inlays";
 import { runImageEmbedding } from "./transformers";
 import { getModuleAssets } from "./modules";
@@ -40,6 +40,7 @@ async function addFirstMessage(
   nowChatroom: character | groupChat,
   currentChat: Chat,
   usingPromptTemplate: boolean,
+  chatTarget: { characterIndex: number; chatIndex: number },
 ) {
   const active = getActiveMessages(currentChat);
   if (nowChatroom.type === "group" || active.reset) return null;
@@ -52,8 +53,10 @@ async function addFirstMessage(
     role: "assistant",
     content: await processScript(
       nowChatroom,
-      risuChatParser(firstMessage, { chara: currentChar }),
+      risuChatParser(firstMessage, { chara: currentChar, chatTarget }),
       "editprocess",
+      {},
+      chatTarget,
     ),
   };
   if (usingPromptTemplate && settingsStore.state.promptSettings.sendName) {
@@ -116,9 +119,10 @@ async function resolveAssetPrompts(
   content: string,
   multimodals: MultiModal[],
   currentChar: character,
+  moduleRoom: character | groupChat,
 ) {
   const assetPromises: Promise<void>[] = [];
-  const moduleAssets = getModuleAssets();
+  const moduleAssets = getModuleAssets(moduleRoom);
   const assets = (currentChar.additionalAssets ?? []).concat(moduleAssets);
   content = content.replace(/\{\{asset_?prompt::(.+?)\}\}/gimsu, (_match, name) => {
     const asset = assets.find((entry) => entry[0] === name);
@@ -147,6 +151,7 @@ function resolveMessageRole(
   usingPromptTemplate: boolean,
   findCharacter: (id: string) => character,
   content: string,
+  chatTarget: { characterIndex: number; chatIndex: number },
 ) {
   let role: "user" | "assistant" | "system" =
     message.role === "user" ? "user" : "assistant";
@@ -163,6 +168,7 @@ function resolveMessageRole(
     `<{{char}}\'s Message>\n{{slot}}\n</{{char}}\'s Message>`;
   content = risuChatParser(format, {
     chara: findCharacter(message.saying).name,
+    chatTarget,
   }).replace("{{slot}}", content);
   role = ["user", "assistant", "system"].includes(
     settingsStore.state.groupOtherBotRole,
@@ -187,13 +193,19 @@ async function resolveHistoryMessagePayload(
   index: number,
   currentChar: character,
   nowChatroom: character | groupChat,
+  chatTarget: { characterIndex: number; chatIndex: number },
 ) {
   const processed = await processScriptFull(
     nowChatroom,
-    risuChatParser(message.data, { chara: currentChar, role: message.role }),
+    risuChatParser(message.data, {
+      chara: currentChar,
+      role: message.role,
+      chatTarget,
+    }),
     "editprocess",
     index,
     { chatRole: message.role },
+    chatTarget,
   );
   const extracted = extractInlayReferences(processed.data, message.role);
   const resolved = await resolveInlays(extracted.content, extracted.inlays);
@@ -201,6 +213,7 @@ async function resolveHistoryMessagePayload(
     resolved.content,
     resolved.multimodals,
     currentChar,
+    nowChatroom,
   );
   return { content, multimodals: resolved.multimodals };
 }
@@ -213,6 +226,7 @@ async function formatHistoryMessage(
   nowChatroom: character | groupChat,
   usingPromptTemplate: boolean,
   findCharacter: (id: string) => character,
+  chatTarget: { characterIndex: number; chatIndex: number },
 ): Promise<OpenAIChat> {
   message.chatId ??= v4();
   const payload = await resolveHistoryMessagePayload(
@@ -220,6 +234,7 @@ async function formatHistoryMessage(
     index,
     currentChar,
     nowChatroom,
+    chatTarget,
   );
   const roleResult = resolveMessageRole(
     message,
@@ -228,6 +243,7 @@ async function formatHistoryMessage(
     usingPromptTemplate,
     findCharacter,
     payload.content,
+    chatTarget,
   );
   const thoughtResult = extractThoughts(roleResult.content, index, messageCount);
   const chat: OpenAIChat = {
@@ -252,10 +268,15 @@ export interface BuildChatHistoryOptions {
   lorePrompt: LorePrompt;
   resolvePosition: (text: string, maxDepth?: number) => string;
   findCharacter: (id: string) => character;
+  chatTarget: { characterIndex: number; chatIndex: number };
 }
 
 async function initializeHistory(options: BuildChatHistoryOptions) {
-  const chats = exampleMessage(options.currentChar, getUserName());
+  const chats = exampleMessage(
+    options.currentChar,
+    getUserName(options.chatTarget),
+    options.chatTarget,
+  );
   let currentTokens =
     options.currentTokens + (await options.tokenizer.tokenizeChats(chats));
   if (
@@ -270,6 +291,7 @@ async function initializeHistory(options: BuildChatHistoryOptions) {
     options.nowChatroom,
     options.currentChat,
     options.usingPromptTemplate,
+    options.chatTarget,
   );
   if (firstMessage) {
     currentTokens += await options.tokenizer.tokenizeChat(firstMessage);
@@ -285,13 +307,19 @@ async function runStartTrigger(
   let active = getActiveMessages(currentChat);
   const triggerResult = await runTrigger(options.currentChar, "start", {
     chat: currentChat,
+    target: options.chatTarget,
   });
   if (!triggerResult) {
     return { stopSending: false as const, currentChat, currentTokens, active, triggerResult };
   }
 
   currentChat = triggerResult.chat;
-  setCurrentChat(currentChat);
+  const targetCharacter =
+    characterStore.characters[options.chatTarget.characterIndex];
+  if (targetCharacter?.chats?.[options.chatTarget.chatIndex]) {
+    targetCharacter.chats[options.chatTarget.chatIndex] = currentChat;
+    if (currentChat.id) characterStore.markChatDirty(currentChat.id);
+  }
   active = getActiveMessages(currentChat);
   currentTokens += triggerResult.tokens;
   return {
@@ -320,6 +348,7 @@ async function appendHistoryMessages(
         options.nowChatroom,
         options.usingPromptTemplate,
         options.findCharacter,
+        options.chatTarget,
       ),
     );
   }
@@ -341,6 +370,7 @@ async function collectDepthPrompts(
       role: depthPrompt.role,
       content: risuChatParser(options.resolvePosition(depthPrompt.prompt), {
         chara: options.currentChar,
+        chatTarget: options.chatTarget,
       }),
     });
   }

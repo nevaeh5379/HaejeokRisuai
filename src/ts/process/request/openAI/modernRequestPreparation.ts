@@ -13,6 +13,10 @@ import { simplifySchema } from "src/ts/util";
 import { supportsInlayImage } from "../../files/inlays";
 import { applyChatTemplate } from "../../templates/chatTemplate";
 import { getOpenAIJSONSchema } from "../../templates/jsonSchema";
+import {
+  resolveRequestCharacter,
+  resolveRequestParserContext,
+} from "../requestContext";
 import type { RequestDataArgumentExtended } from "../requestContracts";
 import {
   applyAdditionalParameters,
@@ -76,7 +80,7 @@ export async function prepareModernOpenAIRequest(
     responseJsonSchema:
       (db.jsonSchemaEnabled || arg.schema) &&
       !arg.modelInfo.flags.includes(LLMFlags.noStructuredOutput)
-        ? getOpenAIJSONSchema(arg.schema)
+        ? getOpenAIJSONSchema(arg.schema, resolveRequestParserContext(arg))
         : undefined,
     prediction: db.OAIPrediction,
     aiModel,
@@ -85,7 +89,10 @@ export async function prepareModernOpenAIRequest(
     openRouterProvider: db.openrouterProvider,
     instructPrompt:
       aiModel === "openrouter" && db.useInstructPrompt
-        ? applyChatTemplate(arg.formated)
+        ? applyChatTemplate(arg.formated, {
+            currentChar: resolveRequestCharacter(arg),
+            chatTarget: arg.triggerTarget,
+          })
         : undefined,
   });
 

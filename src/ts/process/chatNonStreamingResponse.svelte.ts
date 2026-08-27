@@ -63,6 +63,8 @@ async function processResponseContent(
     options.reformatContent(previousContent + content),
     "editoutput",
     msgIndex,
+    {},
+    { characterIndex: options.selectedChar, chatIndex: options.selectedChat },
   );
   if (settingsStore.state.removeIncompleteResponse) {
     processed.data = trimUntilPunctuation(processed.data);

@@ -62,6 +62,7 @@ async function executeChatModelRequest(runtime, input, signal) {
       {
         formated: plan.formated,
         biasString: input.biases,
+        triggerTarget: input.triggerTarget,
         currentChar: input.currentChar,
         useStreaming: true,
         isGroupChat: input.isGroupChat,

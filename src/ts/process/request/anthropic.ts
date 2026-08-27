@@ -32,6 +32,10 @@ import type {
   StreamResponseChunk,
 } from "./requestContracts";
 import { tryExecuteNodeProviderTransport } from "./nodeProviderExecutor";
+import {
+  resolveRequestParserContext,
+  resolveRequestToolContext,
+} from "./requestContext";
 import { matchesNodeOllamaCloudEndpoint } from "./ollamaTransport";
 import {
   applyAdditionalParameters,
@@ -376,7 +380,7 @@ export async function requestClaude(
     if (arg.extractJson && db.jsonSchemaEnabled) {
       return {
         type: "success",
-        result: extractJSON(resText, db.jsonSchema),
+        result: extractJSON(resText, db.jsonSchema, resolveRequestParserContext(arg)),
       };
     }
     return {
@@ -991,7 +995,8 @@ async function requestClaudeHTTP(
       }
 
       if (content.type === "tool_use") {
-        const used = await callTool(content.name, content.input);
+        const tool = arg.tools?.find((candidate) => candidate.name === content.name);
+        const used = await callTool(content.name, content.input, tool?.mcpURL, resolveRequestToolContext(arg));
         const r: Claude3ToolResponseBlock = {
           type: "tool_result",
           tool_use_id: content.id,
@@ -1080,7 +1085,7 @@ async function requestClaudeHTTP(
   if (arg.extractJson && db.jsonSchemaEnabled) {
     return {
       type: "success",
-      result: arg.additionalOutput + extractJSON(resText, db.jsonSchema),
+      result: arg.additionalOutput + extractJSON(resText, db.jsonSchema, resolveRequestParserContext(arg)),
     };
   }
   return {

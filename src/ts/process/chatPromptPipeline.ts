@@ -6,7 +6,7 @@ import type {
 } from "../storage/database.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { ChatTokenizer } from "../tokenizer";
-import { chatProcessStage, doingChat } from "./chatRuntimeState";
+import { setChatProcessStage } from "./chatRuntimeState";
 import { risuChatParser } from "./scripts";
 import { preparePromptSections } from "./chatPromptSections";
 import {
@@ -36,6 +36,7 @@ type ReadyChatHistory = Extract<
 function createRenderContext(
   currentChar: character,
   sections: PreparedPromptSections,
+  chatTarget: { characterIndex: number; chatIndex: number },
 ) {
   return {
     currentChar,
@@ -43,6 +44,7 @@ function createRenderContext(
     usingPromptTemplate: sections.usingPromptTemplate,
     positionParser: sections.positionParser,
     getDescriptionPrompts: sections.getDescriptionPrompts,
+    chatTarget,
   };
 }
 
@@ -50,7 +52,15 @@ async function buildHistoryStage(
   options: BuildGenerationPromptOptions,
   sections: PreparedPromptSections,
 ) {
-  const renderContext = createRenderContext(options.currentChar, sections);
+  const chatTarget = {
+    characterIndex: options.selectedChar,
+    chatIndex: options.selectedChat,
+  };
+  const renderContext = createRenderContext(
+    options.currentChar,
+    sections,
+    chatTarget,
+  );
   const estimate = await estimatePromptTemplateTokens({
     promptTemplate: sections.promptTemplate,
     context: renderContext,
@@ -66,9 +76,9 @@ async function buildHistoryStage(
     lorePrompt: sections.lorepmt,
     resolvePosition: sections.resolvePosition,
     findCharacter: options.findCharacter,
+    chatTarget,
   });
   if (history.stopSending) {
-    doingChat.set(false);
     return { ok: false as const };
   }
   return {
@@ -118,7 +128,10 @@ function applyHistoryPromptDecorations(
     sections.unformated,
     historyStage.history.depthPrompts,
     (prompt) =>
-      risuChatParser(sections.resolvePosition(prompt), { chara: options.currentChar }),
+      risuChatParser(sections.resolvePosition(prompt), {
+        chara: options.currentChar,
+        chatTarget: historyStage.renderContext.chatTarget,
+      }),
   );
   applyTriggerPromptPolicy(
     sections.unformated,
@@ -161,12 +174,16 @@ export interface BuildGenerationPromptOptions {
 export async function buildGenerationPrompt(
   options: BuildGenerationPromptOptions,
 ) {
-  chatProcessStage.set(1);
+  setChatProcessStage(options.currentChat.id, 1);
   options.stageTimings.stage1Start = Date.now();
   const sections = await preparePromptSections(
     options.currentChar,
     options.currentChat,
     options.nowChatroom,
+    {
+      characterIndex: options.selectedChar,
+      chatIndex: options.selectedChat,
+    },
   );
   const historyStage = await buildHistoryStage(options, sections);
   if (!historyStage.ok) return { ok: false as const };
@@ -190,7 +207,11 @@ export async function buildGenerationPrompt(
     formated,
     biases: buildPromptBiases(
       settingsStore.state.bias.concat(options.currentChar.bias),
-      (text) => risuChatParser(text, { chara: options.currentChar }),
+      (text) =>
+        risuChatParser(text, {
+          chara: options.currentChar,
+          chatTarget: historyStage.renderContext.chatTarget,
+        }),
     ),
     currentChat: memory.currentChat,
   };

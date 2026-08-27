@@ -19,6 +19,7 @@ export type MCPTool = {
   description: string;
   inputSchema: any; // JSON schema for input validation
   annotations?: any; // Annotations for the tool, can be used for documentation or metadata
+  mcpURL?: string;
 };
 
 export type JsonRPC = {
@@ -81,6 +82,7 @@ export abstract class MCPToolHandler {
   abstract handle(
     toolName: string,
     args: any,
+    context?: unknown,
   ): Promise<RPCToolCallContent[] | null>;
 }
 
@@ -870,7 +872,11 @@ export class MCPClient {
     return tools;
   }
 
-  async callTool(toolName: string, args: any): Promise<RPCToolCallContent[]> {
+  async callTool(
+    toolName: string,
+    args: any,
+    _context?: unknown,
+  ): Promise<RPCToolCallContent[]> {
     await this.checkHandshake();
     if (!this.serverInfo.capabilities?.tools) {
       throw new Error("MCP Server does not support tools");

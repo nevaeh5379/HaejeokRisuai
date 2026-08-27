@@ -34,11 +34,16 @@ export async function runChatOutputListeners(
   }
 }
 
-function runCurrentChatVariables(chat: Chat, currentChar: character) {
+function runCurrentChatVariables(
+  chat: Chat,
+  currentChar: character,
+  chatTarget: { characterIndex: number; chatIndex: number },
+) {
   for (const message of chat.message) {
     message.data = risuChatParser(message.data, {
       chara: currentChar,
       runVar: true,
+      chatTarget,
     });
   }
   return chat;
@@ -53,10 +58,12 @@ export async function applyOutputTrigger(
     runCurrentChatVariables(
       characterStore.characters[selectedChar].chats[selectedChat],
       currentChar,
+      { characterIndex: selectedChar, chatIndex: selectedChat },
     );
   let currentChat = characterStore.characters[selectedChar].chats[selectedChat];
   const triggerResult = await runTrigger(currentChar, "output", {
     chat: currentChat,
+    target: { characterIndex: selectedChar, chatIndex: selectedChat },
   });
   if (triggerResult?.chat) currentChat = triggerResult.chat;
   characterStore.characters[selectedChar].chats[selectedChat] = currentChat;

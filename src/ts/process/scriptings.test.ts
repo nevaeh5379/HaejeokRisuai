@@ -9,10 +9,24 @@ const moduleTriggers = vi.hoisted(() => vi.fn(() => []));
 const moduleLorebooks = vi.hoisted(() => vi.fn(() => []));
 const databaseState = vi.hoisted(() => ({ value: { characters: [] } as any }));
 const currentChatState = vi.hoisted(() => ({ value: { message: [] } as any }));
+const getChatVarMock = vi.hoisted(() => vi.fn(() => "target-value"));
+const getGlobalChatVarMock = vi.hoisted(() => vi.fn(() => "global-value"));
+const setChatVarMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../parser/chatVar.svelte", () => ({
+  getChatVar: getChatVarMock,
+  getGlobalChatVar: getGlobalChatVarMock,
+  setChatVar: setChatVarMock,
+}));
 
 vi.mock("../parser/parser.svelte", () => ({
   hasher: vi.fn(),
-  risuChatParser: vi.fn((value: string) => value),
+  risuChatParser: vi.fn(
+    (value: string, options?: { triggerId?: string; chara?: { name?: string } }) =>
+      value
+        .replaceAll("{{trigger_id}}", options?.triggerId ?? "null")
+        .replaceAll("{{char}}", options?.chara?.name ?? "fallback"),
+  ),
 }));
 
 vi.mock("../alert", () => ({
@@ -36,14 +50,26 @@ vi.mock("../util", () => ({
 }));
 
 vi.mock("../storage/database.svelte", () => ({
-  getCurrentCharacter: vi.fn(() => ({})),
+  getCurrentCharacter: vi.fn(() => ({
+    type: "character",
+    name: "Wrong Current",
+  })),
   getCurrentChat: vi.fn(() => currentChatState.value),
   getDatabase: vi.fn(() => databaseState.value),
   setDatabase: vi.fn(),
 }));
 
 vi.mock("../stores/domain/characterStore.svelte", () => ({
-  characterStore: { characters: [{ name: "", chats: [{ message: [] }] }] },
+  characterStore: {
+    characters: [
+      {
+        type: "character",
+        chaId: "target-room",
+        name: "Target Room",
+        chats: [{ message: [] }],
+      },
+    ],
+  },
 }));
 
 vi.mock("../stores/domain/messageStore.svelte", () => ({
@@ -73,6 +99,7 @@ vi.mock("./request/chatRequestOrchestrator", () => ({ requestChatData: vi.fn() }
 vi.mock("./stableDiff", () => ({ generateAIImage: vi.fn() }));
 
 let runScripted: typeof import("./scriptings").runScripted;
+let runLuaEditTrigger: typeof import("./scriptings").runLuaEditTrigger;
 let runLuaButtonTrigger: typeof import("./scriptings").runLuaButtonTrigger;
 
 beforeAll(async () => {
@@ -86,6 +113,7 @@ beforeAll(async () => {
   );
   const scriptings = await import("./scriptings");
   runScripted = scriptings.runScripted;
+  runLuaEditTrigger = scriptings.runLuaEditTrigger;
   runLuaButtonTrigger = scriptings.runLuaButtonTrigger;
 });
 
@@ -118,6 +146,82 @@ test("keeps explicit false as the generation stop signal", async () => {
 
   expect(result.res).toBe(false);
   expect(result.stopSending).toBe(true);
+});
+
+test("reuses a Lua engine with the current character and chat context", async () => {
+  commitMessages.mockClear();
+  const code = `
+    function onStart(id)
+      addChat(id, "user", getName(id))
+      if getName(id) == "Beta" then stopChat(id) end
+    end
+  `;
+  const firstChat = { id: "chat-a", message: [] as { role: string; data: string }[] };
+  const secondChat = { id: "chat-b", message: [] as { role: string; data: string }[] };
+
+  const first = await runScripted(code, {
+    char: { type: "character", chaId: "a", name: "Alpha" } as never,
+    chat: firstChat as never,
+    mode: "start",
+  });
+  const second = await runScripted(code, {
+    char: { type: "character", chaId: "b", name: "Beta" } as never,
+    chat: secondChat as never,
+    mode: "start",
+  });
+
+  expect(firstChat.message).toEqual([{ role: "user", data: "Alpha" }]);
+  expect(secondChat.message).toEqual([{ role: "user", data: "Beta" }]);
+  expect(first.stopSending).toBe(false);
+  expect(second.stopSending).toBe(true);
+});
+
+test("passes explicit chat targets to default Lua chat variables", async () => {
+  getChatVarMock.mockClear();
+  const target = { characterIndex: 4, chatIndex: 2 };
+  const result = await runScripted(
+    'function onStart(id) return getChatVar(id, "key") end',
+    {
+      char: { type: "character", chaId: "target", name: "Target" } as never,
+      chat: { message: [] } as never,
+      chatTarget: target,
+      mode: "start",
+    },
+  );
+
+  expect(result.res).toBe("target-value");
+  expect(getChatVarMock).toHaveBeenCalledWith("key", target);
+});
+
+test("reuses Lua CBS with the trigger id from each invocation", async () => {
+  const code = 'function onStart(id) return cbs("{{trigger_id}}") end';
+  const first = await runScripted(code, {
+    chat: { message: [] } as never,
+    triggerId: "trigger-a",
+    mode: "start",
+  });
+  const second = await runScripted(code, {
+    chat: { message: [] } as never,
+    triggerId: "trigger-b",
+    mode: "start",
+  });
+
+  expect(first.res).toBe("trigger-a");
+  expect(second.res).toBe("trigger-b");
+});
+
+test("keeps Lua CBS on the generation target for simple snapshots", async () => {
+  const result = await runScripted(
+    'function onStart(id) return cbs("{{char}}") end',
+    {
+      char: { type: "simple", name: "Snapshot" } as never,
+      chat: { message: [] } as never,
+      chatTarget: { characterIndex: 0, chatIndex: 0 },
+      mode: "start",
+    },
+  );
+
+  expect(result.res).toBe("Target Room");
 });
 
 test("persists a user message added by Lua", async () => {
@@ -187,6 +291,25 @@ test("checks module button triggers when character triggers are missing", async 
   ).resolves.toBeUndefined();
 
   expect(moduleTriggers).toHaveBeenCalledOnce();
+});
+
+test("resolves module edit triggers against the explicit character", async () => {
+  moduleTriggers.mockClear();
+  moduleTriggers.mockReturnValue([]);
+  const char = {
+    type: "character",
+    chaId: "char-a",
+    name: "Alpha",
+    triggerscript: [],
+  } as never;
+
+  await expect(
+    runLuaEditTrigger(char, "editoutput", "hello", undefined, {
+      characterIndex: 2,
+      chatIndex: 3,
+    }),
+  ).resolves.toBe("hello");
+  expect(moduleTriggers).toHaveBeenCalledWith(char);
 });
 
 test("runs module button actions that read lorebooks before character details hydrate", async () => {

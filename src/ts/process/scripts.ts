@@ -46,8 +46,11 @@ export async function processScript(
   data: string,
   mode: ScriptMode,
   cbsConditions: CbsConditions = {},
+  chatTarget?: { characterIndex: number; chatIndex: number },
 ) {
-  return (await processScriptFull(char, data, mode, -1, cbsConditions)).data;
+  return (
+    await processScriptFull(char, data, mode, -1, cbsConditions, chatTarget)
+  ).data;
 }
 
 export function exportRegex(s?: customscript[]) {
@@ -102,13 +105,25 @@ function generateScriptCacheKey(
   mode: ScriptMode,
   chatID = -1,
   cbsConditions: CbsConditions = {},
+  chatTarget?: { characterIndex: number; chatIndex: number },
 ) {
-  let hash = data + "|||" + mode + "|||" + scriptCacheRevision + "|||";
+  const targetKey = chatTarget
+    ? `${chatTarget.characterIndex}:${chatTarget.chatIndex}`
+    : "selected";
+  let hash =
+    data +
+    "|||" +
+    mode +
+    "|||" +
+    scriptCacheRevision +
+    "|||" +
+    targetKey +
+    "|||";
   for (const script of scripts) {
     if (script.type !== mode) {
       continue;
     }
-    hash += `${script.flag?.includes("<cbs>") ? risuChatParser(script.in, { chatID: chatID, cbsConditions }) : script.in}|||${script.out}${chatID}|||${script.flag ?? ""}|||${script.ableFlag ? 1 : 0}`;
+    hash += `${script.flag?.includes("<cbs>") ? risuChatParser(script.in, { chatID: chatID, cbsConditions, chatTarget }) : script.in}|||${script.out}${chatID}|||${script.flag ?? ""}|||${script.ableFlag ? 1 : 0}`;
   }
   return hash;
 }
@@ -148,10 +163,17 @@ export async function processScriptFull(
   mode: ScriptMode,
   chatID = -1,
   cbsConditions: CbsConditions = {},
+  chatTarget?: { characterIndex: number; chatIndex: number },
 ) {
   let db = getDatabase();
   let emoChanged = false;
-  data = await runLuaEditTrigger(char, mode, data, { index: chatID });
+  data = await runLuaEditTrigger(
+    char,
+    mode,
+    data,
+    { index: chatID },
+    chatTarget,
+  );
 
   if (mode === "editdisplay") {
     const currentChar = getCurrentCharacter();
@@ -181,10 +203,15 @@ export async function processScriptFull(
     }
   }
 
-  data = risuChatParser(data, { chatID: chatID, cbsConditions });
+  data = risuChatParser(data, { chatID: chatID, cbsConditions, chatTarget });
+  const moduleRoom = chatTarget
+    ? db.characters[chatTarget.characterIndex]
+    : char.type === "simple"
+      ? undefined
+      : char;
   const scripts = (db.presetRegex ?? [])
     .concat(char.customscript ?? [])
-    .concat(getModuleRegexScripts())
+    .concat(getModuleRegexScripts(moduleRoom))
     .filter((script): script is customscript => !!script);
   const hash = generateScriptCacheKey(
     scripts,
@@ -192,6 +219,7 @@ export async function processScriptFull(
     mode,
     chatID,
     cbsConditions,
+    chatTarget,
   );
   const cached = getScriptCache(hash);
   if (cached) {
@@ -242,7 +270,11 @@ export async function processScriptFull(
 
       let input = script.in;
       if (pscript.actions.includes("cbs")) {
-        input = risuChatParser(input, { chatID: chatID, cbsConditions });
+        input = risuChatParser(input, {
+          chatID: chatID,
+          cbsConditions,
+          chatTarget,
+        });
       }
 
       const reg = compiledRegexCache.get(input, flag);
@@ -281,8 +313,10 @@ export async function processScriptFull(
               pscript.actions.includes("inject")) &&
             chatID !== -1
           ) {
-            const selchar = db.characters[get(selectedCharID)];
-            selchar.chats[selchar.chatPage].message[chatID].data = data;
+            const selectedIndex = chatTarget?.characterIndex ?? get(selectedCharID);
+            const selchar = db.characters[selectedIndex];
+            const targetChatIndex = chatTarget?.chatIndex ?? selchar.chatPage;
+            selchar.chats[targetChatIndex].message[chatID].data = data;
             data = data.replace(reg, "");
           } else if (
             outScript.startsWith("@@move_top") ||
@@ -330,6 +364,7 @@ export async function processScriptFull(
             data = risuChatParser(data.replace(reg, outScript), {
               chatID: chatID,
               cbsConditions,
+              chatTarget,
             });
           }
         } else {
@@ -339,8 +374,9 @@ export async function processScriptFull(
             chatID !== -1
           ) {
             const v = outScript.split(" ", 2)[1];
-            const selchar = db.characters[get(selectedCharID)];
-            const chat = selchar.chats[selchar.chatPage];
+            const selectedIndex = chatTarget?.characterIndex ?? get(selectedCharID);
+            const selchar = db.characters[selectedIndex];
+            const chat = selchar.chats[chatTarget?.chatIndex ?? selchar.chatPage];
             let lastChat =
               chat.fmIndex === -1
                 ? selchar.firstMessage
@@ -381,6 +417,7 @@ export async function processScriptFull(
         data = risuChatParser(data.replace(reg, outScript), {
           chatID: chatID,
           cbsConditions,
+          chatTarget,
         });
       }
     }
@@ -451,7 +488,7 @@ export async function processScriptFull(
     }
     const assetNames = char.additionalAssets.map((v) => v[0]);
 
-    const moduleAssets = getModuleAssets();
+    const moduleAssets = getModuleAssets(moduleRoom);
     if (moduleAssets.length > 0) {
       for (const asset of moduleAssets) {
         assetNames.push(asset[0]);

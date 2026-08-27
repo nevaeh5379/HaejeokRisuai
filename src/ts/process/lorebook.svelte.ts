@@ -74,13 +74,16 @@ export function addLorebookFolder(type: number) {
   }
 }
 
-export async function loadLoreBookV3Prompt() {
-  const selectedID = get(selectedCharID);
+export async function loadLoreBookV3Prompt(
+  target?: { characterIndex: number; chatIndex: number },
+) {
+  const selectedID = target?.characterIndex ?? get(selectedCharID);
   const char = characterStore.characters[selectedID];
-  const page = char.chatPage;
+  const page = target?.chatIndex ?? char.chatPage;
+  const chatVarTarget = { characterIndex: selectedID, chatIndex: page };
   const characterLore = char.globalLore ?? [];
   const chatLore = char.chats[page].localLore ?? [];
-  const moduleLorebook = getModuleLorebooks();
+  const moduleLorebook = getModuleLorebooks(char);
   const fullLore = safeStructuredClone(
     characterLore.concat(chatLore).concat(moduleLorebook),
   );
@@ -449,7 +452,9 @@ export async function loadLoreBookV3Prompt() {
     for (const index of serverRecursiveLore.activatedIndexes) {
       const entry = serverRecursiveLore.entries.get(index);
       if (!entry) continue;
-      activeTokenTexts.push(risuChatParser(entry.content, { chara: char }));
+      activeTokenTexts.push(
+        risuChatParser(entry.content, { chara: char, chatTarget: chatVarTarget }),
+      );
       actives.push({
         depth: entry.depth,
         pos: entry.pos,
@@ -545,6 +550,7 @@ export async function loadLoreBookV3Prompt() {
                 "__internal_ka_" +
                   (fullLore[i].id ??
                     pickHashRand(5555, fullLore[i].content).toString()),
+                chatVarTarget,
               );
               if (vara === "true") {
                 forceState = "activate";
@@ -558,6 +564,7 @@ export async function loadLoreBookV3Prompt() {
                 "__internal_da_" +
                   (fullLore[i].id ??
                     pickHashRand(5555, fullLore[i].content).toString()),
+                chatVarTarget,
               );
               if (vara === "true") {
                 forceState = "deactivate";
@@ -798,7 +805,9 @@ export async function loadLoreBookV3Prompt() {
       if (activated) {
         // Evaluate CBS now to preserve the original chat-variable timing, then batch only
         // the expensive tokenizer work after activation is complete.
-        activeTokenTexts.push(risuChatParser(content, { chara: char }));
+        activeTokenTexts.push(
+          risuChatParser(content, { chara: char, chatTarget: chatVarTarget }),
+        );
         actives.push({
           depth: depth,
           pos: pos,
@@ -818,6 +827,7 @@ export async function loadLoreBookV3Prompt() {
               (fullLore[i].id ??
                 pickHashRand(5555, fullLore[i].content).toString()),
             "true",
+            chatVarTarget,
           );
         }
         if (dontActivateAfterMatch) {
@@ -826,6 +836,7 @@ export async function loadLoreBookV3Prompt() {
               (fullLore[i].id ??
                 pickHashRand(5555, fullLore[i].content).toString()),
             "true",
+            chatVarTarget,
           );
         }
 

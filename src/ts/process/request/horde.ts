@@ -3,10 +3,11 @@ import {
   buildStableHordeStatusUrl,
 } from "@risuai/chat-core/hordeProvider.cjs";
 import { LLMFormat } from "../../model/modellist";
-import { getCurrentCharacter, getDatabase } from "../../storage/database.svelte";
+import { getDatabase } from "../../storage/database.svelte";
 import { sleep } from "../../util";
 import { unstringlizeChat } from "../stringlize";
 import { applyChatTemplate } from "../templates/chatTemplate";
+import { resolveRequestCharacter } from "./requestContext";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
@@ -20,7 +21,7 @@ export async function requestHorde(
   const formated = arg.formated;
   const db = getDatabase();
   const aiModel = arg.aiModel;
-  const currentChar = getCurrentCharacter();
+  const currentChar = resolveRequestCharacter(arg);
   const abortSignal = arg.abortSignal;
 
   if (arg.previewBody) {
@@ -32,7 +33,10 @@ export async function requestHorde(
     };
   }
 
-  const prompt = applyChatTemplate(formated);
+  const prompt = applyChatTemplate(formated, {
+    currentChar,
+    chatTarget: arg.triggerTarget,
+  });
 
   const realModel = aiModel.split(":::")[1];
 
@@ -90,6 +94,7 @@ export async function requestHorde(
         remote.result,
         formated,
         currentChar?.name ?? "",
+        arg.triggerTarget,
       ),
     };
   }
@@ -157,6 +162,7 @@ export async function requestHorde(
               generations[0].text ?? "",
               formated,
               currentChar?.name ?? "",
+              arg.triggerTarget,
             ),
           };
         }

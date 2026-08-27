@@ -1,4 +1,5 @@
 import { MCPClientLike } from "../internalmcp";
+import type { MCPToolCallContext } from "../mcp";
 import type { MCPTool, MCPToolHandler, RPCToolCallContent } from "../mcplib";
 import { CharacterHandler } from "./characters";
 import { ChatHandler } from "./chats";
@@ -85,10 +86,18 @@ backgroundEmbedding is an HTML string mainly for custom styling. It can, and mos
     return tools;
   }
 
-  async callTool(toolName: string, args: any): Promise<RPCToolCallContent[]> {
+  async callTool(
+    toolName: string,
+    args: any,
+    context?: MCPToolCallContext,
+  ): Promise<RPCToolCallContent[]> {
     try {
+      const effectiveArgs =
+        (!args?.id && context?.currentChar?.chaId)
+          ? { ...args, id: context.currentChar.chaId }
+          : args;
       for (const handler of this.handlers) {
-        const result = await handler.handle(toolName, args);
+        const result = await handler.handle(toolName, effectiveArgs, context);
         if (result) {
           return result;
         }

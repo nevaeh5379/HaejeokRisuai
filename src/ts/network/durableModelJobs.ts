@@ -1,4 +1,5 @@
 import { getNodeServerProxyAuth } from "../storage/nodeStorage";
+import { getNodeClientSessionId } from "./nodeClientSession";
 import type {
   CreateModelJobRequest,
   CreateModelJobResponse,
@@ -80,7 +81,10 @@ function isRecoverableRequest(body: string): boolean {
 }
 
 async function authHeaders(): Promise<Record<string, string>> {
-  return { "risu-auth": await getNodeServerProxyAuth() };
+  return {
+    "risu-auth": await getNodeServerProxyAuth(),
+    "x-risu-client-id": getNodeClientSessionId(),
+  };
 }
 
 const MAX_REATTACH_ATTEMPTS = 5;

@@ -827,3 +827,64 @@ describe("NodePostgresStorage browser client", () => {
     });
   });
 });
+
+
+describe("NodePostgresStorage concurrent commit handling", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("tags requests with a client id and retries a revision conflict", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            enabled: true,
+            configured: true,
+            managedByEnvironment: false,
+            connectionDisplay: "postgresql://localhost/risuai",
+            poolMax: 10,
+            revision: 4,
+            initialized: true,
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ revision: 5 }), { status: 409 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ revision: 6 }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const storage = new NodePostgresStorage(async () => "test-auth");
+    await storage.getServerConfig();
+
+    const result = await storage.commit({
+      baseRevision: 4,
+      action: "message",
+      root: { upserts: [], deletes: [] },
+      characters: [],
+      chats: [],
+      chatManifests: [],
+      messages: [],
+      messageManifests: [],
+    });
+
+    expect(result).toEqual({ revision: 6 });
+    expect(storage.getRevision()).toBe(6);
+    const firstCommit = fetchMock.mock.calls[1][1];
+    const retryCommit = fetchMock.mock.calls[2][1];
+    expect(JSON.parse(firstCommit.body as string).baseRevision).toBe(4);
+    expect(JSON.parse(retryCommit.body as string).baseRevision).toBe(5);
+
+    const firstHeaders = firstCommit.headers as Record<string, string>;
+    const retryHeaders = retryCommit.headers as Record<string, string>;
+    expect(firstHeaders["risu-auth"]).toBe("test-auth");
+    expect(firstHeaders["x-risu-client-id"]).toBeTruthy();
+    expect(retryHeaders["x-risu-client-id"]).toBe(
+      firstHeaders["x-risu-client-id"],
+    );
+  });
+});

@@ -1,4 +1,5 @@
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { ChatVarTarget } from "../parser/chatVar.svelte";
 import { getDatabase } from "../storage/database.svelte";
 import { getUserName } from "../util";
 
@@ -44,6 +45,7 @@ export function stringlizeChatOba(
   characterName: string,
   suggesting: boolean,
   continued: boolean,
+  chatTarget?: ChatVarTarget,
 ) {
   const db = getDatabase();
   let resultString: string[] = [];
@@ -66,7 +68,7 @@ export function stringlizeChatOba(
         suggesting ? assistantPrefix : userPrefix,
         seperator,
       );
-      name ??= `${getUserName()}`;
+      name ??= `${getUserName(chatTarget)}`;
       name += ": ";
     } else if (form.role === "assistant") {
       prefix = appendWhitespace(
@@ -91,7 +93,7 @@ export function stringlizeChatOba(
       if (suggesting) {
         resultString.push(
           appendWhitespace(assistantPrefix, seperator) +
-            `${getUserName()}:\n` +
+            `${getUserName(chatTarget)}:\n` +
             db.autoSuggestPrefix,
         );
       } else {
@@ -153,10 +155,11 @@ export function unstringlizeChat(
   text: string,
   formated: OpenAIChat[],
   char: string = "",
+  chatTarget?: ChatVarTarget,
 ) {
   let minIndex = -1;
 
-  const chunks = getUnstringlizerChunks(formated, char).chunks;
+  const chunks = getUnstringlizerChunks(formated, char, "normal", chatTarget).chunks;
 
   for (const chunk of chunks) {
     const ind = text.indexOf(chunk);
@@ -179,6 +182,7 @@ export function getUnstringlizerChunks(
   formated: OpenAIChat[],
   char: string,
   mode: "ain" | "normal" = "normal",
+  chatTarget?: ChatVarTarget,
 ) {
   let chunks: string[] = [
     "system note:",
@@ -200,16 +204,17 @@ export function getUnstringlizerChunks(
       chunks.push(`${char}： `);
     }
   }
-  if (getUserName()) {
-    charNames.push(getUserName());
+  const userName = getUserName(chatTarget);
+  if (userName) {
+    charNames.push(userName);
     if (mode === "ain") {
-      chunks.push(`${getUserName()} `);
-      chunks.push(`${getUserName()}　`);
+      chunks.push(`${userName} `);
+      chunks.push(`${userName}　`);
     } else {
-      chunks.push(`${getUserName()}:`);
-      chunks.push(`${getUserName()}：`);
-      chunks.push(`${getUserName()}: `);
-      chunks.push(`${getUserName()}： `);
+      chunks.push(`${userName}:`);
+      chunks.push(`${userName}：`);
+      chunks.push(`${userName}: `);
+      chunks.push(`${userName}： `);
     }
   }
 
@@ -238,6 +243,7 @@ export function stringlizeAINChat(
   formated: OpenAIChat[],
   char: string,
   continued: boolean,
+  chatTarget?: ChatVarTarget,
 ) {
   let resultString: string[] = [];
   const db = getDatabase();
@@ -254,7 +260,7 @@ export function stringlizeAINChat(
     if (form.role === "system") {
       resultString.push(form.content);
     } else if (form.role === "user") {
-      resultString.push(...formatToAIN(getUserName(), form.content));
+      resultString.push(...formatToAIN(getUserName(chatTarget), form.content));
     } else if (form.name || form.role === "assistant") {
       resultString.push(...formatToAIN(form.name ?? char, form.content));
     } else {
@@ -334,9 +340,10 @@ export function unstringlizeAIN(
   data: string,
   formated: OpenAIChat[],
   char: string = "",
+  chatTarget?: ChatVarTarget,
 ) {
   const db = getDatabase();
-  const chunksResult = getUnstringlizerChunks(formated, char, "ain");
+  const chunksResult = getUnstringlizerChunks(formated, char, "ain", chatTarget);
   const chunks = chunksResult.chunks;
   let result: ["char" | "user", string][] = [];
   data = `${char} 「` + data;
@@ -357,7 +364,8 @@ export function unstringlizeAIN(
         result[result.length - 1][1] += "\n" + cont.content;
       }
     } else {
-      const role = cont.character.trim() === getUserName() ? "user" : "char";
+      const role =
+        cont.character.trim() === getUserName(chatTarget) ? "user" : "char";
       result.push([role, `「${cont.content}」`]);
     }
   }

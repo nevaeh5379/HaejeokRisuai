@@ -1,10 +1,14 @@
 import { language } from "../../../lang";
 import { globalFetch } from "../../globalApi.svelte";
 import { risuChatParser } from "../../parser/parser.svelte";
-import { getCurrentCharacter, getDatabase } from "../../storage/database.svelte";
+import { getDatabase } from "../../storage/database.svelte";
 import { OobaParams } from "../prompt";
 import { getStopStrings, unstringlizeChat } from "../stringlize";
 import { applyChatTemplate } from "../templates/chatTemplate";
+import {
+  resolveRequestCharacter,
+  resolveRequestParserContext,
+} from "./requestContext";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
@@ -22,7 +26,7 @@ export async function requestOobaLegacy(
   const db = getDatabase();
   const aiModel = arg.aiModel;
   const maxTokens = arg.maxTokens;
-  const currentChar = getCurrentCharacter();
+  const currentChar = resolveRequestCharacter(arg);
   const useStreaming = arg.useStreaming;
   const abortSignal = arg.abortSignal;
   let streamUrl = db.textgenWebUIStreamURL.replace(/\/api.*/, "/api/v1/stream");
@@ -31,11 +35,17 @@ export async function requestOobaLegacy(
     "/api/v1/generate",
   );
   let bodyTemplate: { [key: string]: any } = {};
-  const prompt = applyChatTemplate(formated);
+  const prompt = applyChatTemplate(formated, {
+    currentChar,
+    chatTarget: arg.triggerTarget,
+  });
   let stopStrings = getStopStrings(false);
   if (db.localStopStrings) {
     stopStrings = db.localStopStrings.map((v) => {
-      return risuChatParser(v.replace(/\\n/g, "\n"));
+      return risuChatParser(
+        v.replace(/\\n/g, "\n"),
+        resolveRequestParserContext(arg),
+      );
     });
   }
 
@@ -151,7 +161,12 @@ export async function requestOobaLegacy(
 
       return {
         type: "success",
-        result: unstringlizeChat(result, formated, currentChar?.name ?? ""),
+        result: unstringlizeChat(
+          result,
+          formated,
+          currentChar?.name ?? "",
+          arg.triggerTarget,
+        ),
       };
     } catch (error) {
       return {
@@ -175,11 +190,18 @@ export async function requestOoba(
   const aiModel = arg.aiModel;
   const maxTokens = arg.maxTokens;
   const temperature = arg.temperature;
-  const prompt = applyChatTemplate(formated);
+  const currentChar = resolveRequestCharacter(arg);
+  const prompt = applyChatTemplate(formated, {
+    currentChar,
+    chatTarget: arg.triggerTarget,
+  });
   let stopStrings = getStopStrings(false);
   if (db.localStopStrings) {
     stopStrings = db.localStopStrings.map((v) => {
-      return risuChatParser(v.replace(/\\n/g, "\n"));
+      return risuChatParser(
+        v.replace(/\\n/g, "\n"),
+        resolveRequestParserContext(arg),
+      );
     });
   }
   let bodyTemplate: Record<string, any> = {
@@ -256,8 +278,12 @@ export async function requestKobold(
   const db = getDatabase();
   const maxTokens = arg.maxTokens;
   const abortSignal = arg.abortSignal;
+  const currentChar = resolveRequestCharacter(arg);
 
-  const prompt = applyChatTemplate(formated);
+  const prompt = applyChatTemplate(formated, {
+    currentChar,
+    chatTarget: arg.triggerTarget,
+  });
   const url = new URL(db.koboldURL);
   if (url.pathname.length < 3) {
     url.pathname = "api/v1/generate";

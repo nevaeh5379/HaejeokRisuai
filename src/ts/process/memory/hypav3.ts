@@ -21,7 +21,10 @@ import { hypaV3ProgressStore } from "src/ts/stores.svelte";
 import { type ChatTokenizer } from "src/ts/tokenizer";
 import { inlayTokenRegex } from "src/ts/util/inlayTokens";
 import { type HypaV3Preset, type HypaV3Settings } from "./hypav3Preset";
-import { tryRunNodeHypaMemory } from "./nodeHypaMemory";
+import {
+  tryRunNodeHypaMemory,
+  type HypaGenerationContext,
+} from "./nodeHypaMemory";
 
 export { createHypaV3Preset } from "./hypav3Preset";
 export type { HypaV3Preset, HypaV3Settings } from "./hypav3Preset";
@@ -98,6 +101,7 @@ export async function hypaMemoryV3(
   room: Chat,
   char: character | groupChat,
   tokenizer: ChatTokenizer,
+  context: HypaGenerationContext = {},
 ): Promise<HypaV3Result> {
   const settings = getCurrentHypaV3Preset().settings;
 
@@ -125,6 +129,7 @@ export async function hypaMemoryV3(
         },
       },
       tokenizer,
+      context,
     );
     if (nodeResult.handled) return nodeResult.result;
 
@@ -138,6 +143,7 @@ export async function hypaMemoryV3(
         room,
         char,
         tokenizer,
+        context,
       );
     }
 
@@ -148,6 +154,7 @@ export async function hypaMemoryV3(
       room,
       char,
       tokenizer,
+      context,
     );
   } catch (error) {
     if (error instanceof Error) {
@@ -182,6 +189,7 @@ async function hypaMemoryV3MainExp(
   room: Chat,
   char: character | groupChat,
   tokenizer: ChatTokenizer,
+  context: HypaGenerationContext,
 ): Promise<HypaV3Result> {
   const db = getDatabase();
   const settings = getCurrentHypaV3Preset().settings;
@@ -407,7 +415,7 @@ async function hypaMemoryV3MainExp(
     };
 
     const summarizationTasks = toSummarizeArray.map(
-      (item) => () => summarize(item),
+      (item) => () => summarize(item, false, context),
     );
 
     // Start of performance measurement: summarize
@@ -969,6 +977,7 @@ async function hypaMemoryV3Main(
   room: Chat,
   char: character | groupChat,
   tokenizer: ChatTokenizer,
+  context: HypaGenerationContext,
 ): Promise<HypaV3Result> {
   const db = getDatabase();
   const settings = getCurrentHypaV3Preset().settings;
@@ -1161,7 +1170,7 @@ async function hypaMemoryV3Main(
       );
 
       try {
-        const summarizeResult = await summarize(toSummarize);
+        const summarizeResult = await summarize(toSummarize, false, context);
 
         data.summaries.push({
           text: summarizeResult,
@@ -1407,7 +1416,7 @@ async function hypaMemoryV3Main(
         );
 
         try {
-          const summarizeResult = await summarize(recentChats);
+          const summarizeResult = await summarize(recentChats, false, context);
 
           queries.push(summarizeResult);
         } catch (error) {
@@ -1701,6 +1710,7 @@ function sanitizeSummaryContent(content: string): string {
 export async function summarize(
   oaiMessages: OpenAIChat[],
   isResummarize: boolean = false,
+  context: HypaGenerationContext = {},
 ): Promise<string> {
   const db = getDatabase();
   const settings = getCurrentHypaV3Preset().settings;
@@ -1740,6 +1750,8 @@ export async function summarize(
         bias: {},
         useStreaming: false,
         noMultiGen: true,
+        currentChar: context.currentChar,
+        triggerTarget: context.chatTarget,
       },
       "memory",
     );

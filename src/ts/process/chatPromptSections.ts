@@ -85,7 +85,13 @@ function parseLegacyPrompt(data: string): OpenAIChat[] {
   return chats;
 }
 
-function buildLegacyMainPrompts(sections: PromptSections, currentChar: character) {
+type ChatTarget = { characterIndex: number; chatIndex: number };
+
+function buildLegacyMainPrompts(
+  sections: PromptSections,
+  currentChar: character,
+  target?: ChatTarget,
+) {
   const mainPrompt =
     currentChar.systemPrompt?.replaceAll("{{original}}", settingsStore.state.mainPrompt) ||
     settingsStore.state.mainPrompt;
@@ -95,26 +101,38 @@ function buildLegacyMainPrompts(sections: PromptSections, currentChar: character
       : "";
   sections.main.push(
     ...parseLegacyPrompt(
-      risuChatParser(mainPrompt + additionalPrompt, { chara: currentChar }),
+      risuChatParser(mainPrompt + additionalPrompt, {
+        chara: currentChar,
+        chatTarget: target,
+      }),
     ),
   );
   if (settingsStore.state.jailbreakToggle) {
     sections.jailbreak.push(
       ...parseLegacyPrompt(
-        risuChatParser(settingsStore.state.jailbreak, { chara: currentChar }),
+        risuChatParser(settingsStore.state.jailbreak, {
+          chara: currentChar,
+          chatTarget: target,
+        }),
       ),
     );
   }
 }
 
-function buildLegacyGlobalNote(sections: PromptSections, currentChar: character) {
+function buildLegacyGlobalNote(
+  sections: PromptSections,
+  currentChar: character,
+  target?: ChatTarget,
+) {
   const globalNote =
     currentChar.replaceGlobalNote?.replaceAll(
       "{{original}}",
       settingsStore.state.globalNote,
     ) || settingsStore.state.globalNote;
   sections.globalNote.push(
-    ...parseLegacyPrompt(risuChatParser(globalNote, { chara: currentChar })),
+    ...parseLegacyPrompt(
+      risuChatParser(globalNote, { chara: currentChar, chatTarget: target }),
+    ),
   );
 }
 
@@ -122,10 +140,11 @@ function buildLegacyPromptSections(
   sections: PromptSections,
   currentChar: character,
   promptTemplate: PromptItem[] | null | undefined,
+  target?: ChatTarget,
 ) {
   if (currentChar.utilityBot || promptTemplate) return;
-  buildLegacyMainPrompts(sections, currentChar);
-  buildLegacyGlobalNote(sections, currentChar);
+  buildLegacyMainPrompts(sections, currentChar, target);
+  buildLegacyGlobalNote(sections, currentChar, target);
 }
 
 function buildAuthorAndControlPrompts(
@@ -133,12 +152,16 @@ function buildAuthorAndControlPrompts(
   currentChar: character,
   currentChat: Chat,
   usingPromptTemplate: boolean,
+  target?: ChatTarget,
 ) {
   const authorNote = currentChat.note || getAuthorNoteDefaultText();
   if (authorNote) {
     sections.authorNote.push({
       role: "system",
-      content: risuChatParser(authorNote, { chara: currentChar }),
+      content: risuChatParser(authorNote, {
+        chara: currentChar,
+        chatTarget: target,
+      }),
     });
   }
 
@@ -154,27 +177,38 @@ function buildAuthorAndControlPrompts(
   }
 }
 
-async function buildDescriptionText(currentChar: character, currentChat: Chat) {
+async function buildDescriptionText(
+  currentChar: character,
+  currentChat: Chat,
+  target?: ChatTarget,
+) {
   let description = risuChatParser(
     (settingsStore.state.promptPreprocess
       ? settingsStore.state.descriptionPrefix
       : "") + currentChar.desc,
-    { chara: currentChar },
+    { chara: currentChar, chatTarget: target },
   );
-  const additionalInfo = await additionalInformations(currentChar, currentChat);
+  const additionalInfo = await additionalInformations(
+    currentChar,
+    currentChat,
+    target,
+  );
   if (additionalInfo) {
-    description += `\n\n${risuChatParser(additionalInfo, { chara: currentChar })}`;
+    description += `\n\n${risuChatParser(additionalInfo, {
+      chara: currentChar,
+      chatTarget: target,
+    })}`;
   }
   if (currentChar.personality) {
     description += risuChatParser(
       `\n\nDescription of {{char}}: ${currentChar.personality}`,
-      { chara: currentChar },
+      { chara: currentChar, chatTarget: target },
     );
   }
   if (currentChar.scenario) {
     description += risuChatParser(
       `\n\nCircumstances and context of the dialogue: ${currentChar.scenario}`,
-      { chara: currentChar },
+      { chara: currentChar, chatTarget: target },
     );
   }
   return description;
@@ -197,10 +231,11 @@ async function buildDescriptionPrompt(
   currentChar: character,
   currentChat: Chat,
   nowChatroom: character | groupChat,
+  target?: ChatTarget,
 ) {
   const prompt: OpenAIChat = {
     role: "system",
-    content: await buildDescriptionText(currentChar, currentChat),
+    content: await buildDescriptionText(currentChar, currentChat, target),
   };
   sections.description.push(prompt);
   appendGroupSpeakerInstruction(sections, currentChar, nowChatroom);
@@ -233,11 +268,13 @@ function buildLorebookSections(
   currentChar: character,
   lorePrompt: LorePrompt,
   resolvePosition: (text: string, maxDepth?: number) => string,
+  target?: ChatTarget,
 ) {
   const toChat = (lorebook: LorePrompt["actives"][number]): OpenAIChat => ({
     role: lorebook.role,
     content: risuChatParser(resolvePosition(lorebook.prompt), {
       chara: currentChar,
+      chatTarget: target,
     }),
   });
 
@@ -266,6 +303,7 @@ function appendDepthZeroLorebookPrompts(
   currentChar: character,
   lorePrompt: LorePrompt,
   resolvePosition: (text: string, maxDepth?: number) => string,
+  target?: ChatTarget,
 ) {
   const append = (assistant: boolean) => {
     for (const lorebook of lorePrompt.actives) {
@@ -278,6 +316,7 @@ function appendDepthZeroLorebookPrompts(
           role: lorebook.role,
           content: risuChatParser(resolvePosition(lorebook.prompt), {
             chara: currentChar,
+            chatTarget: target,
           }),
         });
       }
@@ -289,11 +328,18 @@ function appendDepthZeroLorebookPrompts(
   append(true);
 }
 
-function addPersonaAndInlayPrompts(sections: PromptSections, currentChar: character) {
+function addPersonaAndInlayPrompts(
+  sections: PromptSections,
+  currentChar: character,
+  target?: ChatTarget,
+) {
   if (settingsStore.state.personaPrompt) {
     sections.personaPrompt.push({
       role: "system",
-      content: risuChatParser(getPersonaPrompt(), { chara: currentChar }),
+      content: risuChatParser(getPersonaPrompt(target), {
+        chara: currentChar,
+        chatTarget: target,
+      }),
     });
   }
 
@@ -363,27 +409,36 @@ export async function preparePromptSections(
   currentChar: character,
   currentChat: Chat,
   nowChatroom: character | groupChat,
+  target?: { characterIndex: number; chatIndex: number },
 ) {
   const sections = createPromptSections();
   const { promptTemplate, usingPromptTemplate } = resolvePromptTemplate(currentChar);
-  buildLegacyPromptSections(sections, currentChar, promptTemplate);
-  buildAuthorAndControlPrompts(sections, currentChar, currentChat, usingPromptTemplate);
+  buildLegacyPromptSections(sections, currentChar, promptTemplate, target);
+  buildAuthorAndControlPrompts(
+    sections,
+    currentChar,
+    currentChat,
+    usingPromptTemplate,
+    target,
+  );
 
   await buildDescriptionPrompt(
     sections,
     currentChar,
     currentChat,
     nowChatroom,
+    target,
   );
-  const lorePrompt = await loadLoreBookV3Prompt();
+  const lorePrompt = await loadLoreBookV3Prompt(target);
   const resolvePosition = createPositionResolver(lorePrompt);
-  buildLorebookSections(sections, currentChar, lorePrompt, resolvePosition);
-  addPersonaAndInlayPrompts(sections, currentChar);
+  buildLorebookSections(sections, currentChar, lorePrompt, resolvePosition, target);
+  addPersonaAndInlayPrompts(sections, currentChar, target);
   appendDepthZeroLorebookPrompts(
     sections,
     currentChar,
     lorePrompt,
     resolvePosition,
+    target,
   );
 
   return {

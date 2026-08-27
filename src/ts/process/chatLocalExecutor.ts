@@ -1,6 +1,6 @@
 import type { MessageGenerationInfo } from "../storage/database.svelte";
 import { language } from "../../lang";
-import { chatProcessStage } from "./chatRuntimeState";
+import { setChatProcessStage } from "./chatRuntimeState";
 import {
   createChatGenerationPlan,
   executeChatModelRequest,
@@ -58,6 +58,7 @@ export class LocalChatExecutor implements ChatExecutor {
     const errorContext: ChatErrorContext = {
       selectedChar: -1,
       selectedChat: -1,
+      targetChatId: arg.targetChatId,
     };
     const throwError = createChatErrorHandler(errorContext);
     const stageTimings = createStageTimings();
@@ -70,7 +71,14 @@ export class LocalChatExecutor implements ChatExecutor {
       errorContext,
       throwError,
       sendGroupMember: ({ chatProcessIndex, chatAdditonalTokens, signal }) =>
-        this.execute(chatProcessIndex, { chatAdditonalTokens, signal }),
+        this.execute(chatProcessIndex, {
+          chatAdditonalTokens,
+          signal,
+          targetCharacterId: arg.targetCharacterId,
+          targetChatId: arg.targetChatId,
+        }),
+      targetCharacterId: arg.targetCharacterId,
+      targetChatId: arg.targetChatId,
     });
     if (session.status === "done") return session.result;
 
@@ -141,7 +149,7 @@ export class LocalChatExecutor implements ChatExecutor {
     };
     errorContext.generationInfo = generationInfo;
 
-    chatProcessStage.set(3);
+    setChatProcessStage(currentChat.id, 3);
     stageTimings.stage3Start = Date.now();
     if (arg.preview) {
       this.sink.setPreviewFormated(plan.formated);
@@ -166,6 +174,7 @@ export class LocalChatExecutor implements ChatExecutor {
         {
           plan,
           biases: prompt.biases,
+          triggerTarget: { characterIndex: selectedChar, chatIndex: selectedChat },
           currentChar,
           isGroupChat: nowChatroom.type === "group",
           continueGeneration: arg.continue,
@@ -257,9 +266,15 @@ export class LocalChatExecutor implements ChatExecutor {
           continue: true,
           signal: abortSignal,
           usedContinueTokens: resultTokens,
+          targetCharacterId: arg.targetCharacterId,
+          targetChatId: arg.targetChatId,
         }),
       resendGeneration: () =>
-        this.execute(chatProcessIndex, { signal: abortSignal }),
+        this.execute(chatProcessIndex, {
+          signal: abortSignal,
+          targetCharacterId: arg.targetCharacterId,
+          targetChatId: arg.targetChatId,
+        }),
     });
   }
 }

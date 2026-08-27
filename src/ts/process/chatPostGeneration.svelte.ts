@@ -255,6 +255,10 @@ async function processImageGeneration(options: PostGenerationEffectsOptions) {
   await stableDiff(
     options.currentChar,
     buildImageGenerationTranscript(options.selectedChar, options.selectedChat),
+    {
+      characterIndex: options.selectedChar,
+      chatIndex: options.selectedChat,
+    },
   );
 }
 

@@ -47,7 +47,6 @@ import {
 import { updateInlayScreen } from "./process/inlayScreen";
 import { parseMarkdownSafe } from "./parser/parser.svelte";
 import { translateHTML } from "./translator/translator";
-import { doingChat } from "./process/chatRuntimeState";
 import { importCharacter } from "./characterCards";
 import { PngChunk } from "./pngChunk";
 import { getColdStorageItem, preLoadChat } from "./process/coldstorage.svelte";
@@ -1052,12 +1051,6 @@ export async function changeChar(
   } = {},
 ) {
   const reseter = arg.reseter ?? (() => {});
-  if (get(doingChat)) {
-    if (get(pendingCharID) === index) {
-      pendingCharID.set(-1);
-    }
-    return;
-  }
   // Do not let the previous character's idle eviction/GC work compete with
   // SQL hydration and first paint for the character we are opening now.
   cancelInactiveChatMessageRelease();

@@ -14,7 +14,7 @@ import {
   endsWithCompletionPunctuation,
 } from "@risuai/chat-core/finalization.cjs";
 import { risuChatParser } from "./scripts";
-import { chatProcessStage, doingChat } from "./chatRuntimeState";
+import { setChatProcessStage } from "./chatRuntimeState";
 import { peerSync } from "../sync/multiuser";
 import { processPostGenerationEffects } from "./chatPostGeneration.svelte";
 import { tryCreateNodeAutoContinuationDecision } from "./chatNodePlanner";
@@ -61,15 +61,22 @@ async function shouldAutoContinue(
 async function appendIgpResult(
   selectedChar: number,
   selectedChat: number,
+  currentChar: character,
   abortSignal: AbortSignal,
 ) {
-  const igp = risuChatParser(settingsStore.state.igpPrompt ?? "");
+  const chatTarget = { characterIndex: selectedChar, chatIndex: selectedChat };
+  const igp = risuChatParser(settingsStore.state.igpPrompt ?? "", {
+    chara: currentChar,
+    chatTarget,
+  });
   if (!igp) return;
 
   const response = await requestChatData(
     {
       formated: parseChatML(igp),
       bias: {},
+      currentChar,
+      triggerTarget: chatTarget,
     },
     "emotion",
     abortSignal,
@@ -147,7 +154,9 @@ function startPostGenerationStage(options: FinalizeChatGenerationOptions) {
     options.generationInfo.stageTiming.stage3 =
       options.stageTimings.stage3Duration;
   }
-  chatProcessStage.set(4);
+  const chatId =
+    characterStore.characters[options.selectedChar]?.chats?.[options.selectedChat]?.id;
+  setChatProcessStage(chatId, 4);
   options.stageTimings.stage4Start = Date.now();
 }
 
@@ -161,7 +170,6 @@ async function handleResend(options: FinalizeChatGenerationOptions) {
     options.selectedChat,
     options.generationInfo,
   );
-  doingChat.set(false);
   return options.resendGeneration();
 }
 
@@ -196,13 +204,13 @@ export async function finalizeChatGeneration(
     options.usedContinueTokens ?? 0,
   );
   if (continuation.shouldContinue) {
-    doingChat.set(false);
     return options.continueGeneration(continuation.resultTokens);
   }
 
   await appendIgpResult(
     options.selectedChar,
     options.selectedChat,
+    options.currentChar,
     options.abortSignal,
   );
   startPostGenerationStage(options);

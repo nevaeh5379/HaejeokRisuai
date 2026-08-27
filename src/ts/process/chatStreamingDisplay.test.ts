@@ -30,6 +30,8 @@ test("applies editoutput scripts to cached streaming rerolls", async () => {
   const room = { type: "character" };
   const options = {
     nowChatroom: room,
+    selectedChar: 2,
+    selectedChat: 5,
     prefix: "continued: ",
     msgIndex: 7,
     reformatContent: (value: string) => `formatted(${value})`,
@@ -52,5 +54,7 @@ test("applies editoutput scripts to cached streaming rerolls", async () => {
     "formatted(continued: cached raw)",
     "editoutput",
     7,
+    {},
+    { characterIndex: 2, chatIndex: 5 },
   );
 });

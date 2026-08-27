@@ -12,6 +12,10 @@ import type {
   RequestDataArgumentExtended,
   requestDataResponse,
 } from "../requestContracts";
+import {
+  resolveRequestParserContext,
+  resolveRequestToolContext,
+} from "../requestContext";
 import type { OpenAIChatExtra, ToolCall } from "./types";
 
 export interface InterpretOpenAINonStreamingOptions {
@@ -33,7 +37,7 @@ export async function interpretOpenAINonStreamingResponse(
       if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
         try {
           const parsed = JSON.parse(text);
-          const extracted = extractJSON(parsed, arg.extractJson);
+          const extracted = extractJSON(parsed, arg.extractJson, resolveRequestParserContext(arg));
           return extracted;
         } catch (error) {
           console.log(error);
@@ -43,7 +47,7 @@ export async function interpretOpenAINonStreamingResponse(
       return text;
     }
     if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
-      return extractJSON(dat.choices[0].message.content, arg.extractJson);
+      return extractJSON(dat.choices[0].message.content, arg.extractJson, resolveRequestParserContext(arg));
     }
     return formatOpenAIReasoningText(dat, {
       deepSeekThinkingOutput: arg.modelInfo.flags.includes(
@@ -106,7 +110,7 @@ export async function interpretOpenAINonStreamingResponse(
                 });
               } else {
                 const parsed = functionArgs;
-                const x = (await callTool(tool.name, parsed)).filter(
+                const x = (await callTool(tool.name, parsed, tool.mcpURL, resolveRequestToolContext(arg))).filter(
                   (m) => m.type === "text",
                 );
                 if (x.length > 0) {
@@ -190,6 +194,7 @@ export async function interpretOpenAINonStreamingResponse(
             const extracted = extractJSON(
               v.message.content ?? "",
               arg.extractJson,
+              resolveRequestParserContext(arg),
             );
             return ["char", extracted];
           });

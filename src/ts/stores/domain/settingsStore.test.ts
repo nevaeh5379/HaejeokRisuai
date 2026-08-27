@@ -317,6 +317,57 @@ describe("SettingsStore Reactivity and Persistence", () => {
     expect(mockStorage.commit).not.toHaveBeenCalled();
   });
 
+  it("hydrates remote setting keys without re-saving them or dropping local dirty keys", async () => {
+    settingsStore.init(
+      { theme: "dark", temperature: 70, username: "Old" } as any,
+      mockStorage,
+    );
+    settingsStore.set("username" as any, "Local edit" as any);
+    settingsStore.hydrateSettingKey("theme", "light", true);
+    settingsStore.hydrateSettingKey("temperature", undefined, false);
+
+    await settingsStore.flush();
+
+    expect(settingsStore.state.theme).toBe("light");
+    expect(settingsStore.state.temperature).toBeUndefined();
+    expect(committed).toHaveLength(1);
+    expect(committed[0].root.upserts).toEqual([
+      { key: "username", value: "Local edit" },
+    ]);
+    expect(committed[0].root.deletes).toEqual([]);
+  });
+
+  it("hydrates remote plugin storage without overwriting local pending writes", async () => {
+    settingsStore.init(
+      {
+        pluginCustomStorage: {
+          stale: { value: 1 },
+          remote: { value: 1 },
+          local: { value: 1 },
+        },
+      } as any,
+      mockStorage,
+    );
+    settingsStore.setPluginCustomStorageKey("local", { value: 2 });
+    settingsStore.hydrateRemotePluginCustomStorageKey("remote", { value: 9 });
+    settingsStore.hydrateRemotePluginCustomStorageKey("local", { value: 99 });
+    settingsStore.hydrateRemotePluginCustomStorageDelete("stale");
+    settingsStore.hydrateRemotePluginCustomStorageClear();
+    settingsStore.hydrateRemotePluginCustomStorageKey("after-clear", { value: 3 });
+
+    await settingsStore.flush();
+
+    expect(settingsStore.state.pluginCustomStorage).toEqual({
+      local: { value: 2 },
+      "after-clear": { value: 3 },
+    });
+    expect(committed).toHaveLength(1);
+    expect(committed[0].pluginStorage?.upserts).toEqual([
+      { key: "local", value: { value: 2 } },
+    ]);
+    expect(committed[0].pluginStorage?.clear).toBeUndefined();
+  });
+
   it("retains the newest setting and plugin values after a failed commit", async () => {
     vi.mocked(mockStorage.commit)
       .mockRejectedValueOnce(new Error("disk full"))

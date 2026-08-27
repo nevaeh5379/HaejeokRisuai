@@ -24,6 +24,7 @@ import {
 } from "src/ts/stores.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
+import { messageStore } from "src/ts/stores/domain/messageStore.svelte";
 import { v4 } from "uuid";
 import { sleep } from "src/ts/util";
 import { alertConfirm, alertError, alertNormal } from "src/ts/alert";
@@ -57,7 +58,7 @@ import {
   type LLMModel,
 } from "src/ts/model/types";
 import { customV3ProviderMetaStore } from "./providerStore";
-import { doingChat } from "src/ts/process/chatRuntimeState";
+import { isChatGenerationActive } from "src/ts/process/chatRuntimeState";
 import { getModelInfo } from "src/ts/model/modellist";
 import type { ModelModeExtended } from "src/ts/process/request/shared";
 import { requestChatDataMain } from "src/ts/process/request/request";
@@ -1447,10 +1448,6 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
         throw new Error("Message must be a string");
       }
 
-      if (get(doingChat)) {
-        throw new Error("A chat is already in progress");
-      }
-
       if (
         getModelInfo(settingsStore.state.aiModel).id.startsWith(
           "pluginmodel:::",
@@ -1472,24 +1469,34 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       if (!chat) {
         throw new Error("No active chat found");
       }
+      const chatWasNew = !chat.id;
+      chat.id ??= v4();
+      if (isChatGenerationActive(chat.id)) {
+        throw new Error("This chat already has a generation in progress");
+      }
 
+      let appendedUserMessage: (typeof chat.message)[number] | undefined;
       if (message) {
-        chat.message.push({
+        appendedUserMessage = {
           role: "user",
           data: message,
           time: Date.now(),
-        });
+        };
+        chat.message.push(appendedUserMessage);
       }
 
-      try {
-        const { sendChat: processSendChat } =
-          await import("src/ts/process/index.svelte");
-        await processSendChat(-1, {});
-      } finally {
-        // Plugin API path does not pass through the UI unlock logic,
-        // so release doingChat here on both success and failure.
-        doingChat.set(false);
+      if (chatWasNew) {
+        await messageStore.persistNewChat(char.chaId, chat.id, chat.message);
+      } else if (appendedUserMessage) {
+        await messageStore.appendMessage(chat.id, appendedUserMessage);
       }
+
+      const { sendChat: processSendChat } =
+        await import("src/ts/process/index.svelte");
+      await processSendChat(-1, {
+        targetCharacterId: char.chaId,
+        targetChatId: chat.id,
+      });
 
       return true;
     },

@@ -1,5 +1,6 @@
 import { endsWithCompletionPunctuation } from "@risuai/chat-core/finalization.cjs";
 import { get, writable, type Writable } from "svelte/store";
+import type { ChatVarTarget } from "./parser/chatVar.svelte";
 import type { Database, Message } from "./storage/database.svelte";
 import { getDatabase } from "./storage/database.svelte";
 import { selectedCharID } from "./stores.svelte";
@@ -105,22 +106,23 @@ export async function selectMultipleFile(ext: string[]) {
   }
 }
 
-export const replacePlaceholders = (msg: string, name: string) => {
-  let db = getDatabase();
-  let selectedChar = get(selectedCharID);
-  let currentChar = db.characters[selectedChar];
+export const replacePlaceholders = (
+  msg: string,
+  name: string,
+  target?: ChatVarTarget,
+) => {
   return msg
-    .replace(/({{char}})|({{Char}})|(<Char>)|(<char>)/gi, currentChar.name)
-    .replace(/({{user}})|({{User}})|(<User>)|(<user>)/gi, getUserName())
+    .replace(/({{char}})|({{Char}})|(<Char>)|(<char>)/gi, name)
+    .replace(/({{user}})|({{User}})|(<User>)|(<user>)/gi, getUserName(target))
     .replace(/(\{\{((set)|(get))var::.+?\}\})/gu, "");
 };
 
-export function checkPersonaBinded() {
+export function checkPersonaBinded(target?: ChatVarTarget) {
   try {
-    const selectedChar = get(selectedCharID);
+    const selectedChar = target?.characterIndex ?? get(selectedCharID);
     const character = characterStore.characters[selectedChar];
-    const chat = character.chats[character.chatPage];
-    if (!chat.bindedPersona) {
+    const chat = character?.chats?.[target?.chatIndex ?? character.chatPage];
+    if (!chat?.bindedPersona) {
       return null;
     }
     const persona = settingsStore.state.personas?.find(
@@ -132,8 +134,8 @@ export function checkPersonaBinded() {
   }
 }
 
-export function getUserName() {
-  const bindedPersona = checkPersonaBinded();
+export function getUserName(target?: ChatVarTarget) {
+  const bindedPersona = checkPersonaBinded(target);
   if (bindedPersona) {
     return bindedPersona.name;
   }
@@ -141,8 +143,8 @@ export function getUserName() {
   return db.username ?? "User";
 }
 
-export function getUserIcon() {
-  const bindedPersona = checkPersonaBinded();
+export function getUserIcon(target?: ChatVarTarget) {
+  const bindedPersona = checkPersonaBinded(target);
   if (bindedPersona) {
     return bindedPersona.icon;
   }
@@ -150,8 +152,8 @@ export function getUserIcon() {
   return db.userIcon ?? "";
 }
 
-export function getPersonaPrompt() {
-  const bindedPersona = checkPersonaBinded();
+export function getPersonaPrompt(target?: ChatVarTarget) {
+  const bindedPersona = checkPersonaBinded(target);
   if (bindedPersona) {
     return bindedPersona.personaPrompt;
   }
@@ -159,9 +161,9 @@ export function getPersonaPrompt() {
   return db.personaPrompt ?? "";
 }
 
-export function getUserIconProtrait() {
+export function getUserIconProtrait(target?: ChatVarTarget) {
   try {
-    const bindedPersona = checkPersonaBinded();
+    const bindedPersona = checkPersonaBinded(target);
     if (bindedPersona) {
       return bindedPersona.largePortrait;
     }

@@ -20,7 +20,7 @@ import { risuChatParser } from "./scripts";
 import { getModuleToggles } from "./modules";
 import { pluginV2 } from "../plugins/plugins.svelte";
 import { preLoadChat } from "./coldstorage.svelte";
-import { chatProcessStage, doingChat } from "./chatRuntimeState";
+import { setChatProcessStage } from "./chatRuntimeState";
 import {
   connectionOpen,
   peerRevertChat,
@@ -42,6 +42,8 @@ export interface PrepareChatSessionOptions {
   errorContext: ChatErrorContext;
   throwError: (error: string) => void;
   sendGroupMember: (request: GroupGenerationRequest) => Promise<boolean>;
+  targetCharacterId?: string;
+  targetChatId?: string;
 }
 
 function createCharacterLookup() {
@@ -54,11 +56,16 @@ function createCharacterLookup() {
   };
 }
 
-function runCurrentChatVariables(chat: Chat, currentChar: character) {
+function runCurrentChatVariables(
+  chat: Chat,
+  currentChar: character,
+  chatTarget: { characterIndex: number; chatIndex: number },
+) {
   for (const message of chat.message) {
     message.data = risuChatParser(message.data, {
       chara: currentChar,
       runVar: true,
+      chatTarget,
     });
   }
   return chat;
@@ -80,25 +87,27 @@ async function applyPresetChain(chatProcessIndex: number) {
   }
 }
 
-async function synchronizePeer(throwError: (error: string) => void) {
+async function synchronizePeer(
+  throwError: (error: string) => void,
+  chatId?: string,
+) {
   if (!connectionOpen) return true;
-  chatProcessStage.set(4);
+  setChatProcessStage(chatId, 4);
   const safe = await peerSafeCheck();
   if (!safe) {
     peerRevertChat();
-    doingChat.set(false);
     throwError(language.otherUserRequesting);
     return false;
   }
   await peerSync();
-  chatProcessStage.set(0);
+  setChatProcessStage(chatId, 0);
   return true;
 }
 
-function buildPromptInfo(): MessagePresetInfo {
+function buildPromptInfo(room: character | groupChat): MessagePresetInfo {
   if (!settingsStore.state.promptInfoInsideChat) return {};
   const promptToggles = parseToggleSyntax(
-    settingsStore.state.customPromptTemplateToggle + getModuleToggles(),
+    settingsStore.state.customPromptTemplateToggle + getModuleToggles(room),
   ).flatMap((toggle) => {
     const raw =
       settingsStore.state.globalChatVariables[`toggle_${toggle.key}`];
@@ -129,26 +138,30 @@ function getGroupOrder(room: groupChat, findCharacter: (id: string) => character
 }
 
 async function initializeGeneration(options: PrepareChatSessionOptions) {
-  chatProcessStage.set(0);
-  if (get(doingChat) && options.chatProcessIndex === -1) return false;
-
-  doingChat.set(true);
+  setChatProcessStage(options.targetChatId, 0);
+  if ((characterStore as any)?.ensureLoaded) {
+    await (characterStore as any).ensureLoaded();
+  }
   await applyPresetChain(options.chatProcessIndex);
-  return synchronizePeer(options.throwError);
+  return synchronizePeer(options.throwError, options.targetChatId);
 }
 
 async function loadSelectedChat(options: PrepareChatSessionOptions) {
   settingsStore.state.statics.messages += 1;
-  const selectedChar = get(selectedCharID);
+  const selectedChar = options.targetCharacterId
+    ? characterStore.characters.findIndex(
+        (character) => character?.chaId === options.targetCharacterId,
+      )
+    : get(selectedCharID);
   options.errorContext.selectedChar = selectedChar;
   const nowChatroom = characterStore.characters[selectedChar];
-  if (!nowChatroom) {
-    doingChat.set(false);
-    return null;
-  }
+  if (!nowChatroom) return null;
 
   characterStore.touchCharacterInteraction(selectedChar);
-  const selectedChat = nowChatroom.chatPage;
+  const selectedChat = options.targetChatId
+    ? nowChatroom.chats.findIndex((chat) => chat?.id === options.targetChatId)
+    : nowChatroom.chatPage;
+  if (selectedChat < 0 || !nowChatroom.chats[selectedChat]) return null;
   options.errorContext.selectedChat = selectedChat;
   await preLoadChat(selectedChar, selectedChat, {
     full: true,
@@ -228,6 +241,10 @@ function buildReadySession(
   const currentChat = runCurrentChatVariables(
     selection.nowChatroom.chats[selection.selectedChat],
     currentChar,
+    {
+      characterIndex: selection.selectedChar,
+      chatIndex: selection.selectedChat,
+    },
   );
   selection.nowChatroom.chats[selection.selectedChat] = currentChat;
   return {
@@ -235,7 +252,7 @@ function buildReadySession(
     ...selection,
     currentChar,
     currentChat,
-    promptInfo: buildPromptInfo(),
+    promptInfo: buildPromptInfo(selection.nowChatroom),
     tokenizer,
     maxContextTokens: settingsStore.state.maxContext,
     findCharacter,

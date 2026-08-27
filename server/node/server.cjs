@@ -39,6 +39,11 @@ const { gzip } = require('zlib');
 const { createJsonStream } = require('./streamJson.cjs');
 const { streamZip } = require('./zipStream.cjs');
 const { createModelJobManager } = require('./modelJobs.cjs');
+const {
+    createRealtimeEventHub,
+    describeSqlCommitChange,
+    normalizeClientId,
+} = require('./realtimeEvents.cjs');
 const { createNodeChatExecutor } = require('./chatExecutor.cjs');
 const { createNodeProviderExecutor } = require('./providerExecutor.cjs');
 const { createHypaMemoryExecutor } = require('./hypaMemoryExecutor.cjs');
@@ -258,7 +263,16 @@ if(!existsSync(savePath)){
 }
 configureVectorIndexPersistence(path.join(savePath, '__vector_indexes'));
 
-const modelJobManager = createModelJobManager({ saveDir: savePath, logger: console });
+const realtimeEventHub = createRealtimeEventHub();
+const modelJobManager = createModelJobManager({
+    saveDir: savePath,
+    logger: console,
+    onEvent: (phase, job, context) => realtimeEventHub.broadcast('model-job', {
+        phase,
+        job,
+        sourceClientId: normalizeClientId(context?.sourceClientId),
+    }),
+});
 const nodeChatExecutor = createNodeChatExecutor();
 const nodeProviderExecutor = createNodeProviderExecutor();
 const hypaMemoryExecutor = createHypaMemoryExecutor();
@@ -1786,6 +1800,22 @@ async function requireNodeAuth(req, res, next) {
         next();
     }
 }
+
+app.get('/api/realtime/events', authenticatedRouteLimiter, requireNodeAuth, (req, res) => {
+    realtimeEventHub.connect(req, res);
+});
+
+app.post('/api/realtime/generation-state', authenticatedRouteLimiter, requireNodeAuth, (req, res) => {
+    const state = realtimeEventHub.updateGenerationState(
+        req.body,
+        req.headers['x-risu-client-id'],
+    );
+    if (!state) {
+        res.status(400).send({ error: 'Invalid generation state payload' });
+        return;
+    }
+    res.send({ success: true });
+});
 
 const reverseProxyFunc = async (req, res, next) => {
     if(!await checkProxyAuth(req, res)){
@@ -4399,6 +4429,12 @@ app.post(
 
         try {
             const result = await postgresStorage.sync(req.body);
+            realtimeEventHub.broadcast('database-change', {
+                revision: result.revision,
+                action: req.body?.action || 'sync',
+                sourceClientId: normalizeClientId(req.headers['x-risu-client-id']),
+                ...describeSqlCommitChange(req.body),
+            });
             // Keep at most one large parsed mutation alive: wait for the serial
             // mirror, while preserving primary-write success if the backup fails.
             if (backupStorage?.enabled && backupConfig.mirroring?.enabled) {
