@@ -10,11 +10,10 @@
     import { getAbsoluteChatMessageIndex } from 'src/ts/chatLoadPages';
     
     const getCurrentChatRoomId = () => {
-        const charId = get(selectedCharID);
-        if (charId < 0) return null;
-        const char = characterStore.characters[charId];
+        if (targetCharacterIndex < 0 || targetChatIndex < 0) return null;
+        const char = characterStore.characters[targetCharacterIndex];
         if (!char) return null;
-        return char.chats?.[char.chatPage]?.id ?? null;
+        return char.chats?.[targetChatIndex]?.id ?? null;
     };
 
     let {
@@ -29,6 +28,8 @@
         hasNewUnreadMessage = $bindable(false),
         hideButtons = false,
         renderFromBeginning = false,
+        targetCharacterIndex = get(selectedCharID),
+        targetChatIndex = characterStore.characters[targetCharacterIndex]?.chatPage ?? 0,
     }:{
         messages: Message[]
         currentCharacter: character|groupChat
@@ -41,6 +42,8 @@
         hasNewUnreadMessage?: boolean
         hideButtons?: boolean
         renderFromBeginning?: boolean
+        targetCharacterIndex?: number
+        targetChatIndex?: number
     } = $props();
 
     let chatBody: HTMLDivElement;
@@ -119,7 +122,7 @@
             loadStart = Math.min(messages.length - 1, Math.max(0, (loadPages ?? messages.length) - 1))
             loadEnd = 0
         }
-        const currentChat = currentCharacter?.chats?.[currentCharacter.chatPage]
+        const currentChat = currentCharacter?.chats?.[targetChatIndex]
         const configuredPerformanceMode = settingsStore.state.streamingDisplayOptimizationMode ?? 'off';
         const performanceMode = currentChat?.isStreaming
             ? currentChat.activeStreamingDisplayOptimizationMode ?? configuredPerformanceMode
@@ -201,6 +204,8 @@
                         streamingOptimizationMode: performanceMode,
                         rawStreamingText: message.data,
                         hideButtons: hideButtons,
+                        targetCharacterIndex,
+                        targetChatIndex,
                     },
                 })
                 entry = { signature, instance, element };

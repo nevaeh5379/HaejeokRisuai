@@ -2,7 +2,7 @@
     import { getCustomBackground, getEmotion } from "../../ts/util";
     
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
-    import { CharEmotion, selectedCharID } from "../../ts/stores.svelte";
+    import { CharEmotion, MobileGUI, selectedCharID } from "../../ts/stores.svelte";
     import ResizeBox from './ResizeBox.svelte'
     import DefaultChatScreen from "./DefaultChatScreen.svelte";
     import defaultWallpaper from '../../etc/bg.jpg'
@@ -11,6 +11,7 @@
     import BackgroundDom from "./BackgroundDom.svelte";
     import SideBarArrow from "../UI/GUI/SideBarArrow.svelte";
     import ModuleChatMenu from "../Setting/Pages/Module/ModuleChatMenu.svelte";
+    import { chatTabsStore } from 'src/ts/chatTabs.svelte';
     let openChatList = $state(false)
     let openModuleList = $state(false)
 
@@ -31,7 +32,35 @@
             }
         })()
     });
+
+    let splitRatio = $state(0.5)
+    let splitContainer: HTMLDivElement | undefined = $state()
+    let draggingSplit = $state(false)
+    let splitColumns = $derived(
+        chatTabsStore.groups.length > 1
+            ? `minmax(0, ${splitRatio}fr) 4px minmax(0, ${1 - splitRatio}fr)`
+            : 'minmax(0, 1fr)'
+    )
+
+    function startSplitDrag(event: PointerEvent){
+        if($MobileGUI || chatTabsStore.groups.length < 2) return
+        draggingSplit = true
+        event.preventDefault()
+    }
+
+    function moveSplitDrag(event: PointerEvent){
+        if(!draggingSplit || !splitContainer) return
+        const rect = splitContainer.getBoundingClientRect()
+        if(rect.width <= 0) return
+        splitRatio = Math.max(0.2, Math.min(0.8, (event.clientX - rect.left) / rect.width))
+    }
+
+    function stopSplitDrag(){
+        draggingSplit = false
+    }
 </script>
+
+<svelte:window onpointermove={moveSplitDrag} onpointerup={stopSplitDrag} onpointercancel={stopSplitDrag} />
 
 {#if settingsStore.state.theme === 'waifu'}
     <div class="grow h-full flex justify-center relative" style="{bgImg.length < 4 ? wallPaper : bgImg}">
@@ -70,13 +99,41 @@
     <div class="grow h-full min-w-0 relative justify-center flex">
         <SideBarArrow />
         <BackgroundDom />
-        <div style={bgImg} class="h-full w-full" class:max-w-6xl={settingsStore.state.classicMaxWidth}>
+        <div style={bgImg} class="h-full w-full min-w-0" class:max-w-6xl={settingsStore.state.classicMaxWidth}>
             {#if $selectedCharID >= 0}
                 {#if characterStore.characters[$selectedCharID].viewScreen !== 'none' && (characterStore.characters[$selectedCharID].type === 'group' || (!characterStore.characters[$selectedCharID].inlayViewScreen))}
                     <ResizeBox />
                 {/if}
             {/if}
-            <DefaultChatScreen customStyle={bgImg.length > 2 ? `${externalStyles}`: ''} bind:openChatList bind:openModuleList/>
+            <div
+                bind:this={splitContainer}
+                class="h-full w-full min-w-0 grid"
+                style:grid-template-columns={splitColumns}
+                class:select-none={draggingSplit}
+            >
+                {#each chatTabsStore.groups as group, index (group.id)}
+                    {#if index > 0}
+                        <div
+                            role="separator"
+                            aria-orientation="vertical"
+                            aria-label="Resize chat split"
+                            class="h-full cursor-col-resize bg-darkborderc hover:bg-textcolor2 transition-colors z-20"
+                            class:bg-textcolor2={draggingSplit}
+                            onpointerdown={startSplitDrag}
+                        ></div>
+                    {/if}
+                    <div class="h-full min-w-0 overflow-hidden">
+                        <DefaultChatScreen
+                            customStyle={bgImg.length > 2 ? `${externalStyles}`: ''}
+                            groupId={group.id}
+                            reserveSidebarSpace={index === 0}
+                            allowSplit={!$MobileGUI}
+                            bind:openChatList
+                            bind:openModuleList
+                        />
+                    </div>
+                {/each}
+            </div>
         </div>
     </div>
 {/if}

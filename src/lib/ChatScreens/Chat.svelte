@@ -16,8 +16,7 @@
     import { language } from "../../lang"
     import { alertClear, alertConfirm, alertInput, alertNormal, alertRequestData, alertWait } from "../../ts/alert"
     import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
-    import { getCurrentCharacter, getCurrentChat, setCurrentChat, type MessageGenerationInfo, type StreamingDisplayOptimizationMode } from "../../ts/storage/database.svelte"
-    import { selectedCharID } from "../../ts/stores.svelte"
+    import { type MessageGenerationInfo, type StreamingDisplayOptimizationMode } from "../../ts/storage/database.svelte"
     import { HideIconStore, ReloadGUIPointer, selIdState } from "../../ts/stores.svelte"
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
     import ChatBody from './ChatBody.svelte'
@@ -58,6 +57,8 @@
         streamingOptimizationMode?: StreamingDisplayOptimizationMode;
         rawStreamingText?: string;
         hideButtons?: boolean;
+        targetCharacterIndex?: number;
+        targetChatIndex?: number;
     }
 
     let {
@@ -85,6 +86,8 @@
         streamingOptimizationMode = 'off',
         rawStreamingText = message,
         hideButtons = false,
+        targetCharacterIndex = selIdState.selId,
+        targetChatIndex = characterStore.characters[targetCharacterIndex]?.chatPage ?? 0,
     }: Props = $props();
 
     let msgDisplay = $state('')
@@ -102,9 +105,9 @@
     }
 
     function findChatIndex(): { characterIndex: number; chatIndex: number } {
-        const characterIndex = selIdState.selId
+        const characterIndex = targetCharacterIndex
         const char = characterStore.characters[characterIndex]
-        const chatIndex = char?.chatPage ?? 0
+        const chatIndex = targetChatIndex ?? 0
         return { characterIndex, chatIndex }
     }
 
@@ -132,8 +135,8 @@
     async function rm(e:MouseEvent, rec?:boolean){
         const targetIndex = await ensureFullMessageIndex()
         if (targetIndex < 0) return
-        const char = characterStore.characters[selIdState.selId]
-        const currentChat = char?.chats?.[char.chatPage]
+        const char = characterStore.characters[targetCharacterIndex]
+        const currentChat = char?.chats?.[targetChatIndex]
         if (!currentChat || !currentChat.message) return
 
         if(e.shiftKey){
@@ -175,8 +178,8 @@
     }
 
     async function edit(){
-        const char = characterStore.characters[selIdState.selId]
-        const currentChat = char?.chats?.[char.chatPage]
+        const char = characterStore.characters[targetCharacterIndex]
+        const currentChat = char?.chats?.[targetChatIndex]
         if (currentChat && currentChat.message?.[idx]) {
             currentChat.message[idx].data = message
             if (currentChat.id) {
@@ -188,8 +191,8 @@
     function handlePartialEditSave(e: CustomEvent<{ newData: string }>) {
         if (idx >= 0) {
             message = e.detail.newData
-            const char = characterStore.characters[selIdState.selId]
-            const currentChat = char?.chats?.[char.chatPage]
+            const char = characterStore.characters[targetCharacterIndex]
+            const currentChat = char?.chats?.[targetChatIndex]
             if (currentChat && currentChat.message?.[idx]) {
                 currentChat.message[idx].data = e.detail.newData
                 displaya(e.detail.newData)
@@ -204,7 +207,7 @@
         try{
             const cbsConditions:CbsConditions = {
                 firstmsg: firstMessage ?? false,
-                chatRole: characterStore.characters[selIdState.selId]?.chats?.[characterStore.characters[selIdState.selId].chatPage]?.message?.[idx]?.role ?? null,
+                chatRole: characterStore.characters[targetCharacterIndex]?.chats?.[targetChatIndex]?.message?.[idx]?.role ?? null,
             }
             return cbsConditions
         }
@@ -300,15 +303,16 @@
             return
         }
 
-        const characterIndex = selIdState.selId
+        const characterIndex = targetCharacterIndex
         const character = characterStore.characters?.[characterIndex]
         if (!character) {
             return
         }
 
-        await preLoadChat(characterIndex, character.chatPage, { full: true })
-        const currentChar = getCurrentCharacter()
-        if(!currentChar || currentChar.type === 'group'){
+        await preLoadChat(characterIndex, targetChatIndex, { full: true })
+        const currentChar = characterStore.characters?.[characterIndex]
+        const currentChat = currentChar?.chats?.[targetChatIndex]
+        if(!currentChar || currentChar.type === 'group' || !currentChat){
             return
         }
 
@@ -319,7 +323,8 @@
         const triggerResult = triggerName
             ? await import('src/ts/process/triggers').then(({ runTrigger }) =>
                 runTrigger(currentChar, 'manual', {
-                    chat: getCurrentChat(),
+                    chat: currentChat,
+                    target: { characterIndex, chatIndex: targetChatIndex },
                     manualName: triggerName,
                     triggerId: triggerId || undefined,
                 }))
@@ -328,8 +333,8 @@
                     runLuaButtonTrigger(currentChar, btnEvent))
                 : null
 
-        if(triggerResult) {
-            setCurrentChat(triggerResult.chat)
+        if(triggerResult?.chat) {
+            currentChar.chats[targetChatIndex] = triggerResult.chat
             ReloadChatPointer.update((v) => {
                 v[idx] = (v[idx] ?? 0) + 1
                 return v
@@ -344,13 +349,13 @@
     }
 
     let isBookmarked = $derived(
-        characterStore.characters[selIdState.selId]
-            ?.chats?.[characterStore.characters[selIdState.selId].chatPage]
-            ?.bookmarks?.includes(characterStore.characters[selIdState.selId]?.chats?.[characterStore.characters[selIdState.selId].chatPage]?.message?.[idx]?.chatId) ?? false
+        characterStore.characters[targetCharacterIndex]
+            ?.chats?.[targetChatIndex]
+            ?.bookmarks?.includes(characterStore.characters[targetCharacterIndex]?.chats?.[targetChatIndex]?.message?.[idx]?.chatId) ?? false
     );
 
     async function toggleBookmark() {
-        const chat = characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage];
+        const chat = characterStore.characters[targetCharacterIndex].chats[targetChatIndex];
         
         if(!chat.message[idx]) return;
 
@@ -433,7 +438,7 @@
                     hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center" 
                     onclick={() => {
                         const currentGenerationInfo = idx >= 0 ? 
-                            characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].message[idx].generationInfo :
+                            characterStore.characters[targetCharacterIndex].chats[targetChatIndex].message[idx].generationInfo :
                             messageGenerationInfo
 
                         alertRequestData({
@@ -589,13 +594,13 @@
                 {@render translationButton()}
                 {#if window.innerWidth >= 640}
                     {@render majorIconButtonsBody(false)}
-                    {#if characterStore.characters[selIdState.selId]}
+                    {#if characterStore.characters[targetCharacterIndex]}
                         <PopupButton>
                             {@render minorIconButtonsBody(true)}
                         </PopupButton>
                     {/if}
                 {:else}
-                    {#if characterStore.characters[selIdState.selId]}
+                    {#if characterStore.characters[targetCharacterIndex]}
                         <PopupButton>
                             {@render majorIconButtonsBody(true)}
                             {@render minorIconButtonsBody(true)}
@@ -626,7 +631,7 @@
 
                 const parser = new DOMParser()
                 const doc = parser.parseFromString(
-                    await ParseMarkdown(copyText, getCurrentCharacter(), 'normal', scriptIdx, getCbsCondition())
+                    await ParseMarkdown(copyText, characterStore.characters[targetCharacterIndex], 'normal', scriptIdx, getCbsCondition())
                 , 'text/html')
                 
                 doc.querySelectorAll('mark').forEach((el) => {
@@ -710,7 +715,7 @@
                 let hasValidImage = false
                 
                 try {
-                    const iconImage = (await getFileSrc(characterStore.characters[selIdState.selId].image ?? '', { thumbnail: true })) ?? ''
+                    const iconImage = (await getFileSrc(characterStore.characters[targetCharacterIndex].image ?? '', { thumbnail: true })) ?? ''
                     
                     if(iconImage && (iconImage.startsWith('http://asset.localhost') || iconImage.startsWith('https://asset.localhost') || iconImage.startsWith('https://sv.risuai') || iconImage.startsWith('data:') || iconImage.startsWith('http') || iconImage.startsWith('/'))){
                         if(iconImage.startsWith('data:')){
@@ -866,7 +871,7 @@
     </button>
 {/if}
 {#if idx > -1}
-    {#if characterStore.characters[selIdState.selId].type !== 'group' && characterStore.characters[selIdState.selId].ttsMode !== 'none' && (characterStore.characters[selIdState.selId].ttsMode)}
+    {#if characterStore.characters[targetCharacterIndex].type !== 'group' && characterStore.characters[targetCharacterIndex].ttsMode !== 'none' && (characterStore.characters[targetCharacterIndex].ttsMode)}
         <button class="flex items-center hover:text-blue-500 transition-colors button-icon-tts" onclick={async ()=>{
             const { sayTTS } = await import('src/ts/process/tts')
             return sayTTS(null, isOptimizedStreamingMessage ? rawStreamingText : message)
@@ -957,8 +962,8 @@
         await sleep(1)
         const targetIndex = await ensureFullMessageIndex()
         if (targetIndex < 0) return
-        const char = characterStore.characters[selIdState.selId]
-        const currentChat = char.chats[char.chatPage]
+        const char = characterStore.characters[targetCharacterIndex]
+        const currentChat = char.chats[targetChatIndex]
 
         currentChat.id ??= v4()
         const previousMessages = $state.snapshot(currentChat.message)
@@ -980,8 +985,8 @@
 
     <button class="flex items-center hover:text-blue-500 transition-colors" onclick={async () => {
         await sleep(1)
-        const char = characterStore.characters[selIdState.selId]
-        const currentChat = char?.chats?.[char.chatPage]
+        const char = characterStore.characters[targetCharacterIndex]
+        const currentChat = char?.chats?.[targetChatIndex]
         if (currentChat?.message?.[idx]) {
             const currentMessage = currentChat.message[idx]
             currentMessage.disabled = !currentMessage.disabled
@@ -998,8 +1003,8 @@
 
     <button class="flex items-center hover:text-blue-500 transition-colors" onclick={async () => {
         await sleep(1)
-        const char = characterStore.characters[selIdState.selId]
-        const currentChat = char?.chats?.[char.chatPage]
+        const char = characterStore.characters[targetCharacterIndex]
+        const currentChat = char?.chats?.[targetChatIndex]
         if (currentChat?.message?.[idx]) {
             const currentMessage = currentChat.message[idx]
             currentMessage.disabled = currentMessage.disabled === 'allBefore' ? false : 'allBefore'
@@ -1017,7 +1022,7 @@
 
 {#snippet senderIcon(options:{rounded?:boolean,styleFix?:string} = {})}
     {#if !blankMessage && !$HideIconStore}
-        {#if characterStore.characters[selIdState.selId]?.chaId === "§playground"}
+        {#if characterStore.characters[targetCharacterIndex]?.chaId === "§playground"}
         <div class="shadow-lg border-textcolor2 border flex justify-center items-center text-textcolor2" style={options?.styleFix ?? `height:${settingsStore.state.iconsize * 3.5 / 100}rem;width:${settingsStore.state.iconsize * 3.5 / 100}rem;min-width:${settingsStore.state.iconsize * 3.5 / 100}rem`}
             class:rounded-md={options?.rounded} class:rounded-full={options?.rounded}>
                 {#if name === 'assistant'}
@@ -1189,7 +1194,7 @@
 {/if}
 <div class="flex max-w-full justify-center risu-chat items-center"
      data-chat-index={idx}
-     data-chat-id={characterStore.characters?.[selIdState.selId]?.chats?.[characterStore.characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.chatId ?? ''}
+     data-chat-id={characterStore.characters?.[targetCharacterIndex]?.chats?.[targetChatIndex]?.message?.[idx]?.chatId ?? ''}
      style:border-top={isLastMemory ? `${settingsStore.state.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7)` : ''}
      onclickcapture={handleButtonTriggerWithin}>
     <div class="text-textcolor mt-1 ml-4 mr-4 mb-1 p-2 bg-transparent grow border-t-gray-900 border-opacity/30 border-transparent flexium items-start" style:max-width={getMaxWidth()}>
@@ -1212,7 +1217,7 @@
                         class:rounded-tr-none={role === 'user'}
                     >
                         <div class="text-textcolor">{@render textBox()}</div>
-                        {#if characterStore.characters?.[selIdState.selId]?.chats?.[characterStore.characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.time}
+                        {#if characterStore.characters?.[targetCharacterIndex]?.chats?.[targetChatIndex]?.message?.[idx]?.time}
                             <span class="text-xs text-textcolor2/80 mt-1 block" class:text-right={role === 'user'}>
                                 {new Intl.DateTimeFormat(undefined, {
                                     hour: '2-digit',
@@ -1221,7 +1226,7 @@
                                     month: '2-digit',
                                     day: '2-digit',
                                     hour12: false
-                                }).format(characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].time)}
+                                }).format(characterStore.characters[targetCharacterIndex].chats[targetChatIndex].message[idx].time)}
                             </span>
                         {/if}
                     </div>
@@ -1283,13 +1288,13 @@
             {@render senderIcon({rounded: settingsStore.state.roundIcons})}
             <span class="flex flex-col ml-4 w-full max-w-full min-w-0 text-black">
                 <div class="flexium items-center chat-width">
-                    {#if characterStore.characters[selIdState.selId]?.chaId === "§playground" && !blankMessage && characterStore.characters[selIdState.selId]?.chats?.[characterStore.characters[selIdState.selId]?.chatPage]?.message?.[idx]}
+                    {#if characterStore.characters[targetCharacterIndex]?.chaId === "§playground" && !blankMessage && characterStore.characters[targetCharacterIndex]?.chats?.[targetChatIndex]?.message?.[idx]}
                         <span class="chat-width text-xl border-darkborderc flex items-center text-textcolor">
-                            <span>{characterStore.characters[selIdState.selId].chats[characterStore.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'Assistant' : 'User'}</span>
+                            <span>{characterStore.characters[targetCharacterIndex].chats[targetChatIndex].message[idx].role === 'char' ? 'Assistant' : 'User'}</span>
                             {#if !hideButtons}
                             <button class="ml-2 text-textcolor2 hover:text-textcolor" onclick={() => {
-                                const char = characterStore.characters[selIdState.selId]
-                                const currentChat = char?.chats?.[char.chatPage]
+                                const char = characterStore.characters[targetCharacterIndex]
+                                const currentChat = char?.chats?.[targetChatIndex]
                                 if (currentChat?.message?.[idx]) {
                                     const currentMessage = currentChat.message[idx]
                                     currentMessage.role = currentMessage.role === 'char' ? 'user' : 'char'
