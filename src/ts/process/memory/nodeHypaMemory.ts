@@ -1,5 +1,7 @@
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 import { risuChatParser } from "../../parser/parser.svelte";
+import type { ChatVarTarget } from "../../parser/chatVar.svelte";
+import type { character } from "../../storage/database.svelte";
 import { forageStorage } from "../../globalApi.svelte";
 import { isNodeServer } from "../../platform";
 import { NodeStorage } from "../../storage/nodeStorage";
@@ -30,20 +32,30 @@ export type NodeHypaResult<T> =
   | { handled: false }
   | { handled: true; result: T };
 
+export type HypaGenerationContext = {
+  currentChar?: character;
+  chatTarget?: ChatVarTarget;
+};
+
 function parseActionMessages(
   messages: OpenAIChat[],
   parseContents: boolean | undefined,
+  context: HypaGenerationContext,
 ): OpenAIChat[] {
   if (!parseContents) return messages;
   return messages.map((message) => ({
     ...message,
-    content: risuChatParser(message.content),
+    content: risuChatParser(message.content, {
+      chara: context.currentChar,
+      chatTarget: context.chatTarget,
+    }),
   }));
 }
 
 async function executeAction(
   action: HypaAction,
   tokenizer: ChatTokenizer,
+  context: HypaGenerationContext,
 ): Promise<unknown> {
   if (action.type === "tokenize") {
     return await tokenizer.tokenizeChatsDetailed(action.messages);
@@ -66,6 +78,7 @@ async function executeAction(
   const messages = parseActionMessages(
     action.messages,
     action.parseContents,
+    context,
   );
   if (action.localModel) {
     try {
@@ -95,6 +108,8 @@ async function executeAction(
       bias: {},
       useStreaming: false,
       noMultiGen: true,
+      currentChar: context.currentChar,
+      triggerTarget: context.chatTarget,
     },
     "memory",
   );
@@ -119,6 +134,7 @@ async function executeAction(
 export async function tryRunNodeHypaMemory<T>(
   request: unknown,
   tokenizer: ChatTokenizer,
+  context: HypaGenerationContext = {},
 ): Promise<NodeHypaResult<T>> {
   if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
     return { handled: false };
@@ -140,7 +156,7 @@ export async function tryRunNodeHypaMemory<T>(
   try {
     while (response.status === "action") {
       sessionId = response.sessionId;
-      const value = await executeAction(response.action, tokenizer);
+      const value = await executeAction(response.action, tokenizer, context);
       response = await storage.continueHypaMemorySession(
         response.sessionId,
         response.action.id,

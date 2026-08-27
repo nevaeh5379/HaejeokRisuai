@@ -119,6 +119,13 @@ async function applyHypaV2Memory(
     state.currentChat,
     options.nowChatroom,
     options.tokenizer,
+    {
+      currentChar: options.currentChar,
+      chatTarget: {
+        characterIndex: options.selectedChar,
+        chatIndex: options.selectedChat,
+      },
+    },
   );
   if (result.error) {
     options.throwError(result.error);
@@ -148,6 +155,13 @@ async function applyHypaV3Memory(
     state.currentChat,
     options.nowChatroom,
     options.tokenizer,
+    {
+      currentChar: options.currentChar,
+      chatTarget: {
+        characterIndex: options.selectedChar,
+        chatIndex: options.selectedChat,
+      },
+    },
   );
   if (result.error) {
     if (result.memory) {

@@ -11,7 +11,10 @@ import { requestChatData } from "../request/chatRequestOrchestrator";
 import { HypaProcesser } from "./hypamemory";
 import { globalFetch } from "src/ts/globalApi.svelte";
 import { runSummarizer } from "../transformers";
-import { tryRunNodeHypaMemory } from "./nodeHypaMemory";
+import {
+  tryRunNodeHypaMemory,
+  type HypaGenerationContext,
+} from "./nodeHypaMemory";
 
 export interface HypaV2Data {
   lastMainChunkID: number; // can be removed, but exists to more readability of the code.
@@ -41,6 +44,7 @@ export interface SerializableHypaV2Data extends Omit<HypaV2Data, "mainChunks"> {
 
 async function summary(
   stringlizedChat: string,
+  context: HypaGenerationContext,
 ): Promise<{ success: boolean; data: string }> {
   const db = getDatabase();
   console.log("Summarizing");
@@ -137,6 +141,8 @@ async function summary(
         bias: {},
         useStreaming: false,
         noMultiGen: true,
+        currentChar: context.currentChar,
+        triggerTarget: context.chatTarget,
       },
       "memory",
     );
@@ -358,6 +364,7 @@ export async function hypaMemoryV2(
   room: Chat,
   char: character | groupChat,
   tokenizer: ChatTokenizer,
+  context: HypaGenerationContext = {},
 ): Promise<{
   currentTokens: number;
   chats: OpenAIChat[];
@@ -395,6 +402,7 @@ export async function hypaMemoryV2(
       },
     },
     tokenizer,
+    context,
   );
   if (nodeResult.handled) return nodeResult.result;
 
@@ -561,7 +569,7 @@ export async function hypaMemoryV2(
       .join("\n");
 
     // Summarize the accumulated chunk
-    const summaryData = await summary(stringlizedChat);
+    const summaryData = await summary(stringlizedChat, context);
 
     if (!summaryData.success) {
       console.log("Summarization failed:", summaryData.data);

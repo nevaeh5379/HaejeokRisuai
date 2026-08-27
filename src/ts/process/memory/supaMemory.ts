@@ -69,6 +69,7 @@ export async function supaMemory(
         },
       },
       tokenizer,
+      { currentChar: arg.currentChar, chatTarget: arg.chatTarget },
     );
     if (nodeResult.handled) return nodeResult.result;
   }
