@@ -452,7 +452,9 @@ export async function loadLoreBookV3Prompt(
     for (const index of serverRecursiveLore.activatedIndexes) {
       const entry = serverRecursiveLore.entries.get(index);
       if (!entry) continue;
-      activeTokenTexts.push(risuChatParser(entry.content, { chara: char }));
+      activeTokenTexts.push(
+        risuChatParser(entry.content, { chara: char, chatTarget: chatVarTarget }),
+      );
       actives.push({
         depth: entry.depth,
         pos: entry.pos,
@@ -803,7 +805,9 @@ export async function loadLoreBookV3Prompt(
       if (activated) {
         // Evaluate CBS now to preserve the original chat-variable timing, then batch only
         // the expensive tokenizer work after activation is complete.
-        activeTokenTexts.push(risuChatParser(content, { chara: char }));
+        activeTokenTexts.push(
+          risuChatParser(content, { chara: char, chatTarget: chatVarTarget }),
+        );
         actives.push({
           depth: depth,
           pos: pos,
