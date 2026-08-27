@@ -1,4 +1,4 @@
-import type { Database } from "../../storage/database.svelte";
+import type { Database, DatabaseSettings } from "../../storage/schema";
 import type { ISqlStorage } from "../../storage/ISqlStorage";
 import { getSqlStorage } from "../../storage/sqlStorageFactory";
 import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
@@ -24,8 +24,8 @@ class SettingsStore {
   private keyDisposers = new Map<string, () => void>();
   private keySetDispose: (() => void) | null = null;
 
-  private stateData = $state<Record<string, any>>({});
-  readonly state = new Proxy({} as Record<string, any>, {
+  private stateData = $state<DatabaseSettings>({} as DatabaseSettings);
+  readonly state = new Proxy({} as DatabaseSettings, {
     get: (_target, prop) => {
       if (typeof prop === "string") this.requestDeferredLoad(prop);
       return Reflect.get(this.stateData, prop);
@@ -74,7 +74,7 @@ class SettingsStore {
       Object.keys(settingsCopy.pluginCustomStorage),
     );
 
-    this.stateData = settingsCopy;
+    this.stateData = settingsCopy as DatabaseSettings;
     this.observe();
   }
 
@@ -257,7 +257,7 @@ class SettingsStore {
     }
   }
 
-  getStateRecord(): Record<string, any> {
+  getStateRecord(): DatabaseSettings {
     return this.stateData;
   }
 

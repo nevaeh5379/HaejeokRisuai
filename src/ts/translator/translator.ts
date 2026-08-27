@@ -1,11 +1,8 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { get } from "svelte/store";
 import { parseChatML } from "../parser/chatML";
-import {
-  getDatabase,
-  type character,
-  type customscript,
-  type groupChat,
-} from "../storage/database.svelte";
+import type { character, customscript, groupChat } from "../storage/schema";
+
 import {
   defaultTranslatorPrompt,
   getCurrentTranslatorPresetFromState,
@@ -48,11 +45,11 @@ export const LLMCacheStorage = localforage.createInstance({
 let waitTrans = 0;
 
 export function getCurrentTranslatorPreset(): TranslatorPreset {
-  return getCurrentTranslatorPresetFromState(getDatabase());
+  return getCurrentTranslatorPresetFromState(settingsStore.state);
 }
 
 export async function translate(text: string, reverse: boolean) {
-  let db = getDatabase();
+  let db = settingsStore.state;
   if (!reverse) {
     const ind = cache.origin.indexOf(text);
     if (ind !== -1) {
@@ -142,7 +139,7 @@ async function translateMain(
   text: string,
   arg: { from: string; to: string; host: string; translatorNote?: string },
 ) {
-  let db = getDatabase();
+  let db = settingsStore.state;
   if (db.translatorType === "llm") {
     const tr = arg.to || "en";
     return translateLLM(text, {
@@ -291,7 +288,7 @@ async function jaTrans(text: string) {
 }
 
 export function isExpTranslator() {
-  const db = getDatabase();
+  const db = settingsStore.state;
   return (
     db.translatorType === "llm" ||
     db.translatorType === "deepl" ||
@@ -309,7 +306,7 @@ export async function translateHTML(
   let alwaysExistChar: character | groupChat | simpleCharacterArgument;
   if (charArg !== "") {
     if (typeof charArg === "string") {
-      const db = getDatabase();
+      const db = settingsStore.state;
       const charId = get(selectedCharID);
       alwaysExistChar = db.characters[charId];
     } else {
@@ -324,7 +321,7 @@ export async function translateHTML(
       chaId: "simple",
     };
   }
-  let db = getDatabase();
+  let db = settingsStore.state;
   let DoingChat = get(doingChat);
   if (DoingChat) {
     if (isExpTranslator()) {
@@ -586,7 +583,7 @@ export async function translateHTML(
 }
 
 function needSuperChunkedTranslate() {
-  return getDatabase().translatorType === "deeplX";
+  return settingsStore.state.translatorType === "deeplX";
 }
 
 async function translateLLM(
@@ -611,7 +608,7 @@ async function translateLLM(
     return `<style-data style-index="${styleDecodes.length - 1}"></style-data>`;
   });
 
-  const db = getDatabase();
+  const db = settingsStore.state;
   const charIndex = get(selectedCharID);
   const currentChar = db.characters[charIndex];
   let translatorNote = "";
@@ -745,7 +742,7 @@ export function applyEdittransRegex(
 ): string {
   if (charArg === "") return text;
 
-  const db = getDatabase();
+  const db = settingsStore.state;
   let scripts: customscript[] = [];
   scripts = (db.presetRegex ?? [])
     .concat(getModuleRegexScripts() ?? [])

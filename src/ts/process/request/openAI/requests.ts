@@ -1,3 +1,4 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { normalizeOpenAIProviderMessages } from "@risuai/chat-core/openAIProvider.cjs";
 import { prepareOpenAILogitBias } from "./biasPreparation";
 import { prepareOpenAIProviderMessages } from "./messagePreparation";
@@ -5,7 +6,7 @@ import { requestMistral } from "./mistralRequest";
 import { prepareModernOpenAIRequest } from "./modernRequestPreparation";
 import { requestHTTPOpenAI } from "./nonStreamingTransport";
 import { requestOpenAIStreamingTransport } from "./streamingTransport";
-import { getDatabase } from "src/ts/storage/database.svelte";
+
 import { LLMFlags, LLMFormat } from "src/ts/model/modellist";
 import type {
   RequestDataArgumentExtended,
@@ -19,7 +20,7 @@ export async function requestOpenAI(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
   const formated = arg.formated;
-  const db = getDatabase();
+  const db = settingsStore.state;
   const aiModel = arg.aiModel;
   let formatedChat = await prepareOpenAIProviderMessages(
     formated as OpenAIChatExtra[],

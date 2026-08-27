@@ -4,7 +4,7 @@ import { preLoadChat } from "./coldstorage.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";
 import { getNodeServerProxyAuth } from "../storage/nodeStorage";
-import type { Message } from "../storage/database.svelte";
+import type { Message } from "../storage/schema";
 import type { DurableModelJobRecord } from "../../../packages/protocol/modelJobs.cjs";
 import { setRemoteChatGeneration } from "./chatRuntimeState";
 import { getNodeClientSessionId } from "../network/nodeClientSession";

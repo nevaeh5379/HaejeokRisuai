@@ -1,3 +1,4 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { type memoryVector, HypaProcesser, similarity } from "./hypamemory";
 import { isContextModel, getContextProvider } from "./contextualEmbedding";
 import { TaskRateLimiter } from "./taskRateLimiter";
@@ -8,12 +9,8 @@ import {
 } from "./hypamemoryv2";
 import { type DisplayMode as ModalDisplayMode } from "src/lib/Others/HypaV3Modal/types";
 import { parseChatML } from "src/ts/parser/chatML";
-import {
-  type Chat,
-  type character,
-  type groupChat,
-  getDatabase,
-} from "src/ts/storage/database.svelte";
+import type { Chat, character, groupChat } from "../../storage/schema";
+
 import { type OpenAIChat } from "@risuai/chat-core/types.cjs";
 import { requestChatData } from "../request/chatRequestOrchestrator";
 import { chatCompletion, unloadEngine } from "../webllm";
@@ -106,7 +103,7 @@ export async function hypaMemoryV3(
   const settings = getCurrentHypaV3Preset().settings;
 
   try {
-    const db = getDatabase();
+    const db = settingsStore.state;
     const nodeResult = await tryRunNodeHypaMemory<HypaV3Result>(
       {
         mode: "v3",
@@ -191,7 +188,7 @@ async function hypaMemoryV3MainExp(
   tokenizer: ChatTokenizer,
   context: HypaGenerationContext,
 ): Promise<HypaV3Result> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const settings = getCurrentHypaV3Preset().settings;
 
   // Validate settings
@@ -979,7 +976,7 @@ async function hypaMemoryV3Main(
   tokenizer: ChatTokenizer,
   context: HypaGenerationContext,
 ): Promise<HypaV3Result> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const settings = getCurrentHypaV3Preset().settings;
 
   // Validate settings
@@ -1712,7 +1709,7 @@ export async function summarize(
   isResummarize: boolean = false,
   context: HypaGenerationContext = {},
 ): Promise<string> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const settings = getCurrentHypaV3Preset().settings;
 
   const strMessages = oaiMessages
@@ -1810,7 +1807,7 @@ export async function summarize(
 }
 
 export function getCurrentHypaV3Preset(): HypaV3Preset {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const preset = db.hypaV3Presets?.[db.hypaV3PresetId];
 
   if (!preset) {

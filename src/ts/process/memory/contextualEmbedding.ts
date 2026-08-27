@@ -1,5 +1,6 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { globalFetch } from "src/ts/globalApi.svelte";
-import { getDatabase } from "src/ts/storage/database.svelte";
+
 import { contextHash, type VectorArray } from "./hypamemory";
 
 export interface ContextualEmbeddingProvider {
@@ -33,7 +34,7 @@ class VoyageContext3Provider implements ContextualEmbeddingProvider {
   readonly modelId = VOYAGE_MODEL;
 
   private getApiKey(): string {
-    const db = getDatabase();
+    const db = settingsStore.state;
     const apiKey = db.voyageApiKey?.trim();
     if (!apiKey) {
       throw new Error("Voyage Context 3 requires a Voyage API Key");

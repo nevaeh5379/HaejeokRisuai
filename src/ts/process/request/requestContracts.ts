@@ -1,5 +1,6 @@
 import type { LLMModel } from "../../model/modellist";
-import type { character } from "../../storage/database.svelte";
+import type { character } from "../../storage/schema";
+import type { ChatExecutionTarget } from "../../chatTarget";
 import type {
   ChatModelResponse,
   ChatStreamChunk,
@@ -15,7 +16,7 @@ export type ToolCall = {
 
 export interface requestDataArgument {
   formated: OpenAIChat[];
-  triggerTarget?: { characterIndex: number; chatIndex: number };
+  triggerTarget?: ChatExecutionTarget;
   bias: { [key: number]: number };
   biasString?: [string, number][];
   currentChar?: character;

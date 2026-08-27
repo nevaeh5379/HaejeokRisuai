@@ -7,7 +7,7 @@ import {
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
 import { getModuleMcps } from "../modules";
-import type { character, groupChat } from "src/ts/storage/database.svelte";
+import type { character, groupChat } from "../../storage/schema";
 import { alertError, alertInput, alertNormal } from "src/ts/alert";
 import { v4 } from "uuid";
 import type { MCPClientLike } from "./internalmcp";
@@ -16,6 +16,7 @@ import { isTauri } from "src/ts/platform";
 import { sleep } from "src/ts/util";
 import { registeredCustomPluginMCPs } from "./pluginmcp";
 import { Mutex } from "../../mutex";
+import type { ChatExecutionTarget } from "../../chatTarget";
 
 export type MCPToolWithURL = MCPTool & {
   mcpURL: string;
@@ -23,7 +24,7 @@ export type MCPToolWithURL = MCPTool & {
 
 export type MCPToolCallContext = {
   currentChar?: character;
-  chatTarget?: { characterIndex: number; chatIndex: number };
+  chatTarget?: ChatExecutionTarget;
 };
 
 export const MCPs: Record<string, MCPClient | MCPClientLike> = {};

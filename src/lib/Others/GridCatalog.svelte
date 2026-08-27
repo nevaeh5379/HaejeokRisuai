@@ -1,6 +1,6 @@
 <script lang="ts">
     import { changeChar, getCharImage, removeChar } from "../../ts/characters";
-    import { type Database, type character, type groupChat } from "../../ts/storage/database.svelte";
+    import type { Database, character, groupChat } from "../../ts/storage/schema";
     import { characterStore } from 'src/ts/stores/domain';
     import { findCharacterIndexbyId } from "../../ts/util";
     import BarIcon from "../SideBars/BarIcon.svelte";

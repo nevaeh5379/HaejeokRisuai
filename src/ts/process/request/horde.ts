@@ -1,9 +1,10 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import {
   STABLE_HORDE_TEXT_ASYNC_URL,
   buildStableHordeStatusUrl,
 } from "@risuai/chat-core/hordeProvider.cjs";
 import { LLMFormat } from "../../model/modellist";
-import { getDatabase } from "../../storage/database.svelte";
+
 import { sleep } from "../../util";
 import { unstringlizeChat } from "../stringlize";
 import { applyChatTemplate } from "../templates/chatTemplate";
@@ -19,7 +20,7 @@ export async function requestHorde(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
   const formated = arg.formated;
-  const db = getDatabase();
+  const db = settingsStore.state;
   const aiModel = arg.aiModel;
   const currentChar = resolveRequestCharacter(arg);
   const abortSignal = arg.abortSignal;

@@ -3,7 +3,7 @@
     import { loadoutModalStore, openPersonaList, openPresetList, selectedCharID, settingsOpen, SettingsMenuIndex } from 'src/ts/stores.svelte';
     import { characterStore, settingsStore, personaStore, presetStore } from 'src/ts/stores/domain';
     import Button from '../UI/GUI/Button.svelte';
-    import type { CustomSideBarItem } from 'src/ts/storage/database.svelte';
+    import type { CustomSideBarItem } from '../../ts/storage/schema';
     import { language } from 'src/lang';
     import TextInput from '../UI/GUI/TextInput.svelte';
     import { getFullSettingsData } from 'src/ts/setting/utils';

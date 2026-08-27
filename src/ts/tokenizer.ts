@@ -1,12 +1,9 @@
+import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import type { Tiktoken } from "@dqbd/tiktoken";
 import type { Tokenizer } from "@mlc-ai/web-tokenizers";
-import {
-  type groupChat,
-  type character,
-  type Chat,
-  getCurrentCharacter,
-  getDatabase,
-} from "./storage/database.svelte";
+import type { groupChat, character, Chat } from "./storage/schema";
+
 import type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
 import {
   calculateMultimodalTokenCost,
@@ -101,7 +98,7 @@ function resolveServerTiktokenEncoding(
   modelInfo: LLMModel,
   pluginTokenizer: string,
 ): TokenizerEncoding | null {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const nonTiktoken = new Set([
     "mistral", "llama", "novelai", "claude", "novellist", "llama3",
     "gemma", "cohere", "deepseek", "deepseek-v4", "glm4", "glm5",
@@ -123,7 +120,7 @@ function resolveServerTiktokenEncoding(
 }
 
 export function getServerTiktokenEncoding(): TokenizerEncoding | null {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const modelInfo = getModelInfo(db.aiModel);
   const pluginTokenizer =
     pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizer ?? "none";
@@ -132,7 +129,7 @@ export function getServerTiktokenEncoding(): TokenizerEncoding | null {
 
 export async function countTokenTexts(texts: string[]): Promise<number[]> {
   if (texts.length === 0) return [];
-  const db = getDatabase();
+  const db = settingsStore.state;
   const modelInfo = getModelInfo(db.aiModel);
   const pluginTokenizer =
     pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizer ?? "none";
@@ -178,7 +175,7 @@ export async function countTokenTexts(texts: string[]): Promise<number[]> {
 export async function encode(
   data: string,
 ): Promise<number[] | Uint32Array | Int32Array> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const modelInfo = getModelInfo(db.aiModel);
   const pluginTokenizer =
     pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizer ?? "none";
@@ -369,7 +366,7 @@ let lastTikModel = "cl100k_base";
 const googleCloudTokenizedCache = new LRUMap<string, number>(128);
 
 async function tokenizeGoogleCloud(text: string) {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const model = getModelInfo(db.aiModel);
   const cacheKey = text + model.internalID;
 
@@ -452,7 +449,7 @@ async function tikJS(text: string, model = "cl100k_base") {
 }
 
 async function geminiTokenizer(text: string) {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const fetchResult = await globalFetch(
     `https://generativelanguage.googleapis.com/v1beta/${db.aiModel}:countTextTokens`,
     {
@@ -585,7 +582,7 @@ export class ChatTokenizer {
   }
 
   getTokenAccountingOptions(countThoughts = false): ChatTokenAccountingOptions {
-    const db = getDatabase();
+    const db = settingsStore.state;
     return {
       chatAdditionalTokens: this.chatAdditionalTokens,
       useName: this.useName === "name",
@@ -686,7 +683,7 @@ export async function strongBan(data: string, bias: { [key: number]: number }) {
 
 export async function getCharToken(char?: character | groupChat | null) {
   if (!char) {
-    char = getCurrentCharacter();
+    char = characterStore.currentCharacter;
   }
   if (char.type === "group") {
     return { persistant: 0, dynamic: 0 };

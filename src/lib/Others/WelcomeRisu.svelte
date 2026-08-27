@@ -23,7 +23,8 @@
   } from '@lucide/svelte';
 
   import { changeLanguage, language } from 'src/lang';
-  import { setPreset, setDatabaseLite } from 'src/ts/storage/database.svelte';
+  import { setPreset } from '../../ts/storage/presetService';
+import { initializeDomainStores } from 'src/ts/storage/databaseLifecycle';
   import { settingsStore } from 'src/ts/stores/domain';
   import { prebuiltPresets } from 'src/ts/process/templates/templates';
   import { updateTextThemeAndCSS } from 'src/ts/gui/colorscheme';
@@ -286,7 +287,7 @@
       if (success) {
         const reloaded = await storage.loadDatabase({ shallow: true });
         if (reloaded && reloaded.database) {
-          setDatabaseLite(reloaded.database, storage);
+          initializeDomainStores(reloaded.database, storage);
         }
         migrationDone = true;
         isMigrating = false;

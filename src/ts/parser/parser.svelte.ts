@@ -1,18 +1,11 @@
 import DOMPurify from "dompurify";
 import markdownit from "markdown-it";
-import {
-  appVer,
-  getCurrentCharacter,
-  getDatabase,
-  type Database,
-  type character,
-  type customscript,
-  type groupChat,
-  type triggerscript,
-} from "../storage/database.svelte";
-import { selIdState } from "../stores.svelte";
+import { appVer } from "../appVersion";
+import type { DatabaseSettings, character, customscript, groupChat, triggerscript } from "../storage/schema";
+
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
+import type { ChatExecutionTarget } from "../chatTarget";
 import { aiWatermarkingLawApplies, getFileSrc } from "../globalApi.svelte";
 import { isTauri, isNodeServer } from "src/ts/platform";
 import { getChatVar, setChatVar, getGlobalChatVar } from "./chatVar.svelte";
@@ -568,7 +561,7 @@ export function resetAssetsCache(
 
 $effect.root(() => {
   $effect(() => {
-    const charId = selIdState.selId;
+    const charId = characterStore.selectedId;
     const char = characterStore.characters?.[charId];
     if (!char || char.type !== "character") {
       return;
@@ -705,7 +698,7 @@ async function parseAdditionalAssets(
   );
 
   if (needsSourceAccess) {
-    const chara = getCurrentCharacter();
+    const chara = characterStore.currentCharacter;
     if (chara.image) {
     }
     data = data.replace(
@@ -1250,7 +1243,8 @@ function initMatcher() {
         matcherMap.set(name, callback);
       }
     },
-    getDatabase: getDatabase,
+    getSettings: () => settingsStore.state,
+    getCharacters: () => characterStore.characters,
     getUserName: getUserName,
     getPersonaPrompt: getPersonaPrompt,
     risuChatParser: risuChatParser,
@@ -1833,7 +1827,7 @@ export function risuChatParser(
   da: string,
   arg: {
     chatID?: number;
-    db?: Database;
+    db?: DatabaseSettings;
     chara?: string | character | groupChat;
     rmVar?: boolean;
     var?: { [key: string]: string };
@@ -1845,12 +1839,12 @@ export function risuChatParser(
     functions?: Map<string, { data: string; arg: string[] }>;
     callStack?: number;
     cbsConditions?: CbsConditions;
-    chatTarget?: { characterIndex: number; chatIndex: number };
+    chatTarget?: ChatExecutionTarget;
     triggerId?: string;
   } = {},
 ): string {
   const chatID = arg.chatID ?? -1;
-  const db = arg.db ?? getDatabase();
+  const db = arg.db ?? settingsStore.state;
   const aChara = arg.chara;
   let chara: character | string = null;
 
@@ -1871,8 +1865,8 @@ export function risuChatParser(
     }
   }
   if (arg.tokenizeAccurate) {
-    const db = arg.db ?? getDatabase();
-    const selchar = chara ?? db.characters[get(selectedCharID)];
+    const db = arg.db ?? settingsStore.state;
+    const selchar = chara ?? characterStore.characters[get(selectedCharID)];
     if (!selchar) {
       chara = "bot";
     }

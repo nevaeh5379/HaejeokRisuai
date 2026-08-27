@@ -1,6 +1,7 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { prepareProviderExecutionContext } from "@risuai/chat-core/providerContext.cjs";
 import { getModelInfo } from "../../model/modellist";
-import { getDatabase } from "../../storage/database.svelte";
+
 import type { requestDataArgument } from "./requestContracts";
 import type { ModelModeExtended } from "./shared";
 
@@ -8,7 +9,7 @@ export function prepareBrowserProviderContext(
   arg: requestDataArgument,
   model: ModelModeExtended,
 ) {
-  const db = getDatabase();
+  const db = settingsStore.state;
   return {
     prepared: prepareProviderExecutionContext(
       { ...arg, mode: model },

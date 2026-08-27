@@ -1,8 +1,9 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { invoke } from "@tauri-apps/api/core";
 import * as path from "@tauri-apps/api/path";
 import { exists, readTextFile } from "@tauri-apps/plugin-fs";
 import { alertClear, alertWait } from "src/ts/alert";
-import { getDatabase } from "src/ts/storage/database.svelte";
+
 import { sleep } from "src/ts/util";
 
 let initPython = false;
@@ -86,7 +87,7 @@ async function getLocalKey(retry = true) {
 
 export async function tokenizeGGUFModel(prompt: string): Promise<number[]> {
   const key = await getLocalKey();
-  const db = getDatabase();
+  const db = settingsStore.state;
   const modelPath = db.aiModel.replace("local_", "");
   const b = await fetch("http://localhost:10026/llamacpp/tokenize", {
     method: "POST",

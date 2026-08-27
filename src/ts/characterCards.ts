@@ -1,3 +1,5 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+import { createDatabaseSnapshot } from "src/ts/storage/databaseSnapshot";
 import { showRealmInfoStore } from "./realmStore";
 import {
   alertCardExport,
@@ -10,21 +12,10 @@ import {
   alertRisuServiceTOS,
   alertWait,
 } from "./alert";
-import {
-  defaultSdDataFunc,
-  type character,
-  setDatabase,
-  type customscript,
-  type loreSettings,
-  type loreBook,
-  type triggerscript,
-  importPreset,
-  type groupChat,
-  setCurrentCharacter,
-  getCurrentCharacter,
-  getDatabase,
-  setDatabaseLite,
-} from "./storage/database.svelte";
+import { defaultSdDataFunc } from "./storage/presetDefaults";
+import type { character, customscript, loreSettings, loreBook, triggerscript, groupChat } from "./storage/schema";
+import { importPreset } from "./storage/presetService";
+
 import {
   checkNullish,
   decryptBuffer,
@@ -115,7 +106,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
         : new Uint8Array(await f.data.arrayBuffer());
     const da = JSON.parse(Buffer.from(data).toString("utf-8"));
     if (await importCharacterCardSpec(da)) {
-      let db = getDatabase();
+      let db = settingsStore.state;
       return (db.characters.length - 1) as any;
     }
     if (
@@ -131,7 +122,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
       return;
     }
   }
-  let db = getDatabase();
+  let db = settingsStore.state;
   db.statics.imports += 1;
 
   if (
@@ -181,7 +172,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
     if (f.returnCharacter) {
       return v as any;
     }
-    let db = getDatabase();
+    let db = settingsStore.state;
     return db.characters.length - 1;
   }
 
@@ -336,7 +327,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
             if (
               await importCharacterCardSpec(charaData, img, "normal", assets)
             ) {
-              let db = getDatabase();
+              let db = settingsStore.state;
               return db.characters.length - 1;
             } else {
               throw new Error("Error while importing");
@@ -353,7 +344,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
             Buffer.from(decrypted).toString("utf-8"),
           );
           if (await importCharacterCardSpec(charaData, img, "normal", assets)) {
-            let db = getDatabase();
+            let db = settingsStore.state;
             return db.characters.length - 1;
           }
         } catch (error) {
@@ -705,7 +696,7 @@ function convertOffSpecCards(
 }
 
 export async function exportChar(charaID: number): Promise<string> {
-  const db = getDatabase({ snapshot: true });
+  const db = createDatabaseSnapshot();
   let char = safeStructuredClone(db.characters[charaID]);
 
   if (char.type === "group") {
@@ -2120,7 +2111,7 @@ export async function downloadRisuHub(
       res.headers.get("content-type") === "application/zip" ||
       res.headers.get("content-type") === "application/charx"
     ) {
-      let db = getDatabase();
+      let db = settingsStore.state;
       if (
         res.headers.get("content-type") === "application/zip" ||
         res.headers.get("content-type") === "application/charx"
@@ -2138,7 +2129,7 @@ export async function downloadRisuHub(
         });
       }
       checkCharOrder();
-      db = getDatabase();
+      db = settingsStore.state;
       if (
         db.characters[db.characters.length - 1] &&
         (db.goCharacterOnImport || arg.forceRedirect)
@@ -2157,7 +2148,7 @@ export async function downloadRisuHub(
 
     await importCharacterCardSpec(data, await getHubResources(img), "hub");
     checkCharOrder();
-    let db = getDatabase();
+    let db = settingsStore.state;
     if (
       db.characters[db.characters.length - 1] &&
       (db.goCharacterOnImport || arg.forceRedirect)

@@ -1,4 +1,4 @@
-import type { FormatingOrderItem } from "../storage/database.svelte";
+import type { FormatingOrderItem } from "../storage/schema";
 import type { PromptItem, PromptSettings } from "./prompt";
 
 /**

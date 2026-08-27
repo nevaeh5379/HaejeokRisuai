@@ -1,5 +1,5 @@
-import type { Database } from "./database.svelte";
-import { normalizeDatabaseDefaults } from "./database.svelte";
+import type { Database } from "./schema";
+import { normalizeDatabaseDefaults } from "./databaseDefaults";
 import { decodeRisuSave } from "./risuSave";
 import type { ISqlStorage } from "./ISqlStorage";
 import { isTauri } from "../platform";

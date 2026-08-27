@@ -1,9 +1,4 @@
-import type {
-  character,
-  Chat,
-  groupChat,
-  MessagePresetInfo,
-} from "../storage/database.svelte";
+import type { character, Chat, groupChat, MessagePresetInfo } from "../storage/schema";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { ChatTokenizer } from "../tokenizer";
 import { setChatProcessStage } from "./chatRuntimeState";
@@ -16,7 +11,7 @@ import {
 import { buildChatHistory } from "./chatHistoryBuilder";
 import { applyChatMemory } from "./chatMemory";
 import type { ChatStageTimings, OpenAIChat } from "@risuai/chat-core/types.cjs";
-import type { ChatVarTarget } from "../parser/chatVar.svelte";
+import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import { generationOverride, type ChatGenerationOverrides } from "./chatGenerationContext";
 import {
   applyMemoryPromptPolicy,
@@ -35,10 +30,23 @@ type ReadyChatHistory = Extract<
   { stopSending: false }
 >;
 
+function createExecutionTarget(
+  options: Pick<BuildGenerationPromptOptions, "currentChar" | "currentChat" | "generation">,
+): ChatExecutionTarget {
+  if (!options.currentChar.chaId || !options.currentChat.id) {
+    throw new Error("Generation target requires stable character and chat IDs");
+  }
+  return {
+    characterId: options.currentChar.chaId,
+    chatId: options.currentChat.id,
+    globalVariables: options.generation?.chatVariables,
+  };
+}
+
 function createRenderContext(
   currentChar: character,
   sections: PreparedPromptSections,
-  chatTarget: ChatVarTarget,
+  chatTarget: ChatExecutionTarget,
   generation?: ChatGenerationOverrides,
 ) {
   return {
@@ -56,11 +64,7 @@ async function buildHistoryStage(
   options: BuildGenerationPromptOptions,
   sections: PreparedPromptSections,
 ) {
-  const chatTarget: ChatVarTarget = {
-    characterIndex: options.selectedChar,
-    chatIndex: options.selectedChat,
-    globalVariables: options.generation?.chatVariables,
-  };
+  const chatTarget = createExecutionTarget(options);
   const renderContext = createRenderContext(
     options.currentChar,
     sections,
@@ -189,10 +193,7 @@ export async function buildGenerationPrompt(
     options.currentChar,
     options.currentChat,
     options.nowChatroom,
-    {
-      characterIndex: options.selectedChar,
-      chatIndex: options.selectedChat,
-    },
+    createExecutionTarget(options),
     options.generation,
   );
   const historyStage = await buildHistoryStage(options, sections);

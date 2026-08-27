@@ -1,7 +1,8 @@
 <script lang="ts">
-    import { XIcon } from "@lucide/svelte"
-    import { getDatabase, type PromptDiffPrefs } from "../../ts/storage/database.svelte"
-    import type { PromptItem, PromptItemPlain, PromptItemChatML, PromptItemTyped, PromptItemAuthorNote, PromptItemChat } from "src/ts/process/prompt.ts";
+    import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+import { XIcon } from "@lucide/svelte"
+    import type { PromptDiffPrefs } from "../../ts/storage/schema";
+import type { PromptItem, PromptItemPlain, PromptItemChatML, PromptItemTyped, PromptItemAuthorNote, PromptItemChat } from "src/ts/process/prompt.ts";
     import { presetStore } from 'src/ts/stores/domain/presetStore.svelte';
 
     interface Props {
@@ -148,7 +149,7 @@
         contextRadius: 3,
     }
 
-    const db = getDatabase()
+    const db = settingsStore.state
     const prefs = db.promptDiffPrefs
 
     let diffStyle = $state<DiffStyle>(prefs?.diffStyle ?? DEFAULT_PROMPT_DIFF_PREFS.diffStyle)
@@ -164,7 +165,7 @@
     let expandedRanges = $state<ExpandedRange[]>([])
 
     function savePrefsToDB() {
-        const db = getDatabase()
+        const db = settingsStore.state
 
         db.promptDiffPrefs = {
             ...DEFAULT_PROMPT_DIFF_PREFS,

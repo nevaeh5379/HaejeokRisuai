@@ -1,5 +1,8 @@
-import type { character, Chat, groupChat, Message } from "../storage/database.svelte";
-import type { ChatVarTarget } from "../parser/chatVar.svelte";
+import type { character, Chat, groupChat, Message } from "../storage/schema";
+import {
+  replaceTargetChat,
+  type ChatExecutionTarget,
+} from "src/ts/chatTarget";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { ChatTokenizer } from "../tokenizer";
 import { getUserName } from "../util";
@@ -42,7 +45,7 @@ async function addFirstMessage(
   nowChatroom: character | groupChat,
   currentChat: Chat,
   usingPromptTemplate: boolean,
-  chatTarget: ChatVarTarget,
+  chatTarget: ChatExecutionTarget,
   generation?: ChatGenerationOverrides,
 ) {
   const active = getActiveMessages(currentChat);
@@ -166,7 +169,7 @@ function resolveMessageRole(
   usingPromptTemplate: boolean,
   findCharacter: (id: string) => character,
   content: string,
-  chatTarget: ChatVarTarget,
+  chatTarget: ChatExecutionTarget,
   generation?: ChatGenerationOverrides,
 ) {
   let role: "user" | "assistant" | "system" =
@@ -223,7 +226,7 @@ async function resolveHistoryMessagePayload(
   index: number,
   currentChar: character,
   nowChatroom: character | groupChat,
-  chatTarget: ChatVarTarget,
+  chatTarget: ChatExecutionTarget,
   generation?: ChatGenerationOverrides,
 ) {
   const parsed = risuChatParser(message.data, {
@@ -261,7 +264,7 @@ async function formatHistoryMessage(
   nowChatroom: character | groupChat,
   usingPromptTemplate: boolean,
   findCharacter: (id: string) => character,
-  chatTarget: ChatVarTarget,
+  chatTarget: ChatExecutionTarget,
   generation?: ChatGenerationOverrides,
 ): Promise<OpenAIChat> {
   message.chatId ??= v4();
@@ -311,7 +314,7 @@ export interface BuildChatHistoryOptions {
   lorePrompt: LorePrompt;
   resolvePosition: (text: string, maxDepth?: number) => string;
   findCharacter: (id: string) => character;
-  chatTarget: ChatVarTarget;
+  chatTarget: ChatExecutionTarget;
   generation?: ChatGenerationOverrides;
 }
 
@@ -373,12 +376,7 @@ async function runStartTrigger(
   }
 
   currentChat = triggerResult.chat;
-  const targetCharacter =
-    characterStore.characters[options.chatTarget.characterIndex];
-  if (targetCharacter?.chats?.[options.chatTarget.chatIndex]) {
-    targetCharacter.chats[options.chatTarget.chatIndex] = currentChat;
-    if (currentChat.id) characterStore.markChatDirty(currentChat.id);
-  }
+  replaceTargetChat(options.chatTarget, currentChat);
   active = getActiveMessages(currentChat);
   currentTokens += triggerResult.tokens;
   return {

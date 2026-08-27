@@ -5,7 +5,7 @@
     import SliderInput from "../UI/GUI/SliderInput.svelte";
     import SegmentedControl from "../UI/GUI/SegmentedControl.svelte";
     import ClaudeThinkingSeparateParams from "../Setting/Pages/ClaudeThinkingSeparateParams.svelte";
-    import type { SeparateParameters } from "src/ts/storage/database.svelte";
+    import type { SeparateParameters } from "../../ts/storage/schema";
     import { downloadFile } from "src/ts/globalApi.svelte";
     import { FileDownIcon, FileUpIcon, ImportIcon } from "@lucide/svelte";
     import { selectSingleFile } from "src/ts/util";

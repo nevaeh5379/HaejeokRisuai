@@ -1,8 +1,9 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { hubURL } from "../characterCards";
-import { getDatabase } from "../storage/database.svelte";
+
 
 export function keiServerURL() {
-  const db = getDatabase();
+  const db = settingsStore.state;
   if (db.keiServerURL) return db.keiServerURL;
   return hubURL + "/kei";
 }

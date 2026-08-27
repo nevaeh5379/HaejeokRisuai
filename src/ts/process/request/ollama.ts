@@ -1,7 +1,8 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { Ollama } from "ollama/dist/browser.mjs";
 import { fetchNative } from "../../globalApi.svelte";
 import { LLMFormat } from "../../model/modellist";
-import { getDatabase } from "../../storage/database.svelte";
+
 import {
   DEFAULT_OLLAMA_CLOUD_CHAT_URL,
   resolveOllamaCloudTransportUrl,
@@ -147,7 +148,7 @@ export async function requestOllama(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
   const formated = arg.formated;
-  const db = getDatabase();
+  const db = settingsStore.state;
   const isCloud = arg.aiModel === "ollama-cloud";
   const requestFormat = isCloud ? db.ollamaRequestFormat : LLMFormat.Ollama;
   const ollamaModel = isCloud ? db.ollamaCloudModel : db.ollamaModel;

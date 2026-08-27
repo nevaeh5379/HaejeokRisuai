@@ -5,7 +5,7 @@ import {
   createEmptySqlCommit,
   hasSqlCommitChanges,
 } from "./sqlCommit";
-import type { Database } from "./database.svelte";
+import type { Database } from "./schema";
 
 describe("SQL row commits", () => {
   it("keeps character, chat, and message rows separate during explicit import", () => {

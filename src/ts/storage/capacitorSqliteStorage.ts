@@ -18,7 +18,7 @@ import {
   countSqliteCommitStatements,
 } from "./sqliteCommit";
 import type { SqliteTransactionStatement } from "./sqliteStorageUtils";
-import type { Database as DatabaseType } from "./database.svelte";
+import type { Database as DatabaseType } from "./schema";
 import { CapacitorSqliteRestoreStream } from "./capacitorSqliteRestoreStream";
 
 // @capacitor-community/sqlite routes PRAGMA statements that return rows through

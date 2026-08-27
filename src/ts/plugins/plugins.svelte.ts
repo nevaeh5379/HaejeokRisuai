@@ -1,11 +1,6 @@
+import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { get, writable } from "svelte/store";
 import { language } from "../../lang";
-import {
-  getCurrentCharacter,
-  getDatabase,
-  setDatabase,
-  setDatabaseLite,
-} from "../storage/database.svelte";
 import { alertConfirm, alertError, alertPluginConfirm } from "../alert";
 import { selectSingleFile, sleep } from "../util";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
@@ -162,7 +157,7 @@ export async function importPlugin(
 ) {
   try {
     let jsFile = "";
-    let db = getDatabase();
+    let db = settingsStore.state;
     let isUpdate = argu.isUpdate || false;
     let originalPluginName = argu.originalPluginName || "";
     let isTypescript = argu.isTypescript || false;
@@ -471,7 +466,7 @@ let pluginTranslator = false;
 
 export async function loadPlugins() {
   console.log("Loading plugins...");
-  let db = getDatabase();
+  let db = settingsStore.state;
 
   const enabledPlugins = safeStructuredClone(db.plugins).filter(
     (p: RisuPlugin) => p.enabled,
@@ -578,7 +573,7 @@ export const getV2PluginAPIs = () => {
     risuFetch: globalFetch,
     nativeFetch: fetchNative,
     getArg: (arg: string) => {
-      const db = getDatabase();
+      const db = settingsStore.state;
       const [name, realArg] = arg.split("::");
       for (const plugin of db.plugins) {
         if (plugin.name === name) {
@@ -587,13 +582,11 @@ export const getV2PluginAPIs = () => {
       }
     },
     getChar: () => {
-      return getCurrentCharacter({ snapshot: true });
+      return characterStore.getCharacterByIndex(characterStore.selectedId, { snapshot: true });
     },
     setChar: (char: any) => {
-      const db = getDatabase();
       const charid = get(selectedCharID);
-      db.characters[charid] = char;
-      setDatabaseLite(db);
+      characterStore.setCharacterByIndex(charid, char);
     },
     addProvider: (
       name: string,
@@ -655,7 +648,7 @@ export const getV2PluginAPIs = () => {
       pluginV2.unload.add(func);
     },
     setArg: (arg: string, value: string | number) => {
-      const db = getDatabase();
+      const db = settingsStore.state;
       const [name, realArg] = arg.split("::");
       for (const plugin of db.plugins) {
         if (plugin.name === name) {

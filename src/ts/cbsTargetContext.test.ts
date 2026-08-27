@@ -81,11 +81,8 @@ registerCBS({
     callbacks.set(name, callback);
     for (const item of alias) callbacks.set(item, callback);
   },
-  getDatabase: () =>
-    ({
-      characters: [selectedRoom, targetRoom],
-      promptTemplate: [],
-    }) as any,
+  getSettings: () => ({ promptTemplate: [] }) as any,
+  getCharacters: () => [selectedRoom, targetRoom] as any,
   getSelectedCharID: () => 0,
   risuChatParser: (text) => text,
   makeArray: (items) => JSON.stringify(items),
@@ -98,7 +95,7 @@ function run(name: string, overrides: Partial<matcherArg> = {}) {
   if (!callback) throw new Error(`Missing CBS callback: ${name}`);
   const arg = {
     chatID: -1,
-    db: { characters: [selectedRoom, targetRoom] },
+    db: { promptTemplate: [] },
     chara: speaker,
     rmVar: false,
     cbsConditions: {},

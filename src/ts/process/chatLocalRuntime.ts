@@ -1,5 +1,5 @@
 import { v4 } from "uuid";
-import type { character } from "../storage/database.svelte";
+import type { character } from "../storage/schema";
 import type { ChatModelResponse } from "@risuai/chat-core/types.cjs";
 import type { ChatTokenizer } from "../tokenizer";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";

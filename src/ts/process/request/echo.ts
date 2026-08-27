@@ -1,5 +1,6 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { LLMFormat } from "../../model/modellist";
-import { getDatabase } from "../../storage/database.svelte";
+
 import { sleep } from "../../util";
 import type {
   RequestDataArgumentExtended,
@@ -10,7 +11,7 @@ import { tryExecuteNodeProvider } from "./nodeProviderExecutor";
 export async function requestEcho(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const delay = db.echoDelay ?? 0;
   const message = db.echoMessage ?? "Echo Message";
   const remote = await tryExecuteNodeProvider(arg.modelInfo?.format ?? LLMFormat.Echo, {
@@ -28,4 +29,3 @@ export async function requestEcho(
     result: message,
   };
 }
-

@@ -1,7 +1,7 @@
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 import { risuChatParser } from "../../parser/parser.svelte";
-import type { ChatVarTarget } from "../../parser/chatVar.svelte";
-import type { character } from "../../storage/database.svelte";
+import type { ChatExecutionTarget } from "src/ts/chatTarget";
+import type { character } from "../../storage/schema";
 import { forageStorage } from "../../globalApi.svelte";
 import { isNodeServer } from "../../platform";
 import { NodeStorage } from "../../storage/nodeStorage";
@@ -34,7 +34,7 @@ export type NodeHypaResult<T> =
 
 export type HypaGenerationContext = {
   currentChar?: character;
-  chatTarget?: ChatVarTarget;
+  chatTarget?: ChatExecutionTarget;
 };
 
 function parseActionMessages(

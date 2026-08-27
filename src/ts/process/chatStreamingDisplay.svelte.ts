@@ -1,13 +1,10 @@
-import type {
-  groupChat,
-  character,
-  StreamingDisplayOptimizationMode,
-} from "../storage/database.svelte";
+import type { groupChat, character, StreamingDisplayOptimizationMode } from "../storage/schema";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { trimUntilPunctuation } from "../util";
 import { processScriptFull } from "./scripts";
 import { recordChatGenerationText } from "./chatGenerationStats";
+import { requireChatTargetFromIndexes } from "../chatTarget";
 
 export interface StreamDisplayOptions {
   reader: ReadableStreamDefaultReader<{ [key: string]: string }>;
@@ -39,7 +36,7 @@ export async function processStreamingRerollValues(
       "editoutput",
       options.msgIndex,
       {},
-      { characterIndex: options.selectedChar, chatIndex: options.selectedChat },
+      requireChatTargetFromIndexes(options.selectedChar, options.selectedChat),
     );
     processedValues.push(processed.data);
   }
@@ -77,7 +74,7 @@ async function writeDisplayResult(
       "editoutput",
       options.msgIndex,
       {},
-      { characterIndex: options.selectedChar, chatIndex: options.selectedChat },
+      requireChatTargetFromIndexes(options.selectedChar, options.selectedChat),
     );
     targetMessage(options).data = processed.data;
     state.emoChanged = processed.emoChanged;
@@ -239,7 +236,7 @@ async function applyFinalPostProcessing(
     "editoutput",
     options.msgIndex,
     {},
-    { characterIndex: options.selectedChar, chatIndex: options.selectedChat },
+    requireChatTargetFromIndexes(options.selectedChar, options.selectedChat),
   );
   targetMessage(options).data = processed.data;
   state.emoChanged = processed.emoChanged;

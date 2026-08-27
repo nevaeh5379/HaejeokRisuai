@@ -1,12 +1,13 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { writable } from "svelte/store";
-import { getDatabase } from "../storage/database.svelte";
+
 
 export let textAreaSize = writable(0);
 export let sideBarSize = writable(0);
 export let textAreaTextSize = writable(0);
 
 export function updateGuisize() {
-  let db = getDatabase();
+  let db = settingsStore.state;
   const root = document.querySelector(":root") as HTMLElement;
   if (!root) {
     return;

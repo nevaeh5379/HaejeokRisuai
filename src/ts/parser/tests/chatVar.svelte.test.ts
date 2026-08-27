@@ -15,16 +15,6 @@ import { resetChatVariables } from "./cbs/lib";
 
 //#region module mocks
 
-vi.mock(
-  import("../../storage/database.svelte"),
-  () =>
-    ({
-      appVer: "1234.5.67",
-      getCurrentCharacter: () => ({}),
-      getDatabase: () => ({}),
-    }) as typeof import("../../storage/database.svelte"),
-);
-
 vi.mock(import("../../globalApi.svelte"), () => ({
   aiWatermarkingLawApplies: () => false,
   getFileSrc: () => Promise.resolve(""),

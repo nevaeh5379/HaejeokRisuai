@@ -7,7 +7,7 @@ import {
   rebuildRelationalValue,
   type RelationalNodeRow,
 } from "./relationalNodeCodec";
-import type { Message } from "./database.svelte";
+import type { Message } from "./schema";
 
 export class AsyncSerialQueue {
   private tail: Promise<void> = Promise.resolve();

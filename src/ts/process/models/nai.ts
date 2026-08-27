@@ -1,4 +1,5 @@
-import { getDatabase } from "src/ts/storage/database.svelte";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+
 import { getUserName } from "src/ts/util";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 
@@ -7,7 +8,7 @@ export function stringlizeNAIChat(
   char: string,
   continued: boolean,
 ) {
-  const db = getDatabase();
+  const db = settingsStore.state;
   let seperator = db.NAIsettings.seperator.replaceAll("\\n", "\n") || "\n";
   let starter = db.NAIsettings.starter.replaceAll("\\n", "\n") || "⁂";
   let resultString: string[] = [];

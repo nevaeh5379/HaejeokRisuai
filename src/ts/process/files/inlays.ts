@@ -1,7 +1,8 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import localforage from "localforage";
 import { v4 } from "uuid";
 import { getImageType } from "src/ts/media";
-import { getDatabase } from "../../storage/database.svelte";
+
 import { getModelInfo, LLMFlags, LLMFormat } from "src/ts/model/modellist";
 import { asBuffer } from "../../util";
 
@@ -224,7 +225,7 @@ export async function removeInlayAsset(id: string) {
 }
 
 export function supportsInlayImage() {
-  const db = getDatabase();
+  const db = settingsStore.state;
   return getModelInfo(db.aiModel).flags.includes(LLMFlags.hasImageInput);
 }
 

@@ -4,7 +4,7 @@
   import { language } from 'src/lang';
   import ModelList from 'src/lib/UI/ModelList.svelte';
   import { BrainIcon, GlobeIcon, SmileIcon, CpuIcon } from "@lucide/svelte";
-  import { saveCurrentPreset } from 'src/ts/storage/database.svelte';
+  import { saveCurrentPreset } from '../../../../ts/storage/presetService';
 
   function persistModelSelection() {
     void saveCurrentPreset();

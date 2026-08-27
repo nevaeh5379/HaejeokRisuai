@@ -10,13 +10,10 @@ import {
 import { changeFullscreen, checkNullish, sleep } from "./util";
 import { v4 as uuidv4 } from "uuid";
 import { get } from "svelte/store";
-import {
-  setDatabase,
-  defaultSdDataFunc,
-  getDatabase,
-  setPreset,
-  type Database,
-} from "./storage/database.svelte";
+import { defaultSdDataFunc } from "./storage/presetDefaults";
+import { setPreset } from "./storage/presetService";
+import type { Database } from "./storage/schema";
+import { installDatabase } from "./storage/databaseLifecycle";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   MobileGUI,
@@ -172,19 +169,19 @@ export async function loadData() {
         LoadingStatusState.text = "Loading Database...";
         const reloaded = await storage.loadDatabase({ shallow: true });
         if (reloaded && reloaded.database) {
-          setDatabase(reloaded.database, storage);
+          installDatabase(reloaded.database, storage);
         } else {
           // Still empty — start with blank DB
-          setDatabase({} as Database, storage);
+          installDatabase({} as Database, storage);
         }
       } else if (loadResult && loadResult.database) {
-        setDatabase(loadResult.database, storage);
+        installDatabase(loadResult.database, storage);
       } else {
         // Load failed entirely
-        setDatabase({} as Database, storage);
+        installDatabase({} as Database, storage);
       }
 
-      const activeDb = getDatabase();
+      const activeDb = settingsStore.state;
 
       // Non-English dictionaries are separate chunks. Resolve the one
       // selected by this database before mounting the application so
@@ -236,7 +233,7 @@ export async function loadData() {
               .then(() => setUsingSw(true))
               .catch(() => setUsingSw(false))
           : Promise.resolve(setUsingSw(false));
-      if (getDatabase().didFirstSetup) {
+      if (settingsStore.state.didFirstSetup) {
         const urlParams = new URLSearchParams(location.search);
         if (urlParams.has("realm") || urlParams.has("charahub")) {
           const { characterURLImport } = await import("./characterCards");
@@ -348,7 +345,7 @@ export async function loadData() {
       } catch (error) {}
       LoadingStatusState.text = "Checking For Format Update...";
       await checkNewFormat();
-      const db = getDatabase();
+      const db = settingsStore.state;
 
       LoadingStatusState.text = "Updating States...";
       updateErrorHandling();
@@ -433,7 +430,7 @@ function updateErrorHandling() {
  * Updates the height mode of the document based on the value stored in the database.
  */
 function updateHeightMode() {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const root = document.querySelector(":root") as HTMLElement;
   switch (db.heightMode) {
     case "auto":
@@ -461,7 +458,8 @@ function updateHeightMode() {
  * Checks and updates the database format to the latest version.
  */
 async function checkNewFormat(): Promise<void> {
-  let db = getDatabase();
+  let db = settingsStore.state;
+  let characters = characterStore.characters;
 
   // Legacy file migrations operate on complete snapshots. SQL data is
   // migrated by the storage schema/codec and may only contain shallow
@@ -487,7 +485,7 @@ async function checkNewFormat(): Promise<void> {
   }
 
   // Check data integrity
-  db.characters = db.characters
+  characters = characters
     .map((v) => {
       if (!v) {
         return null;
@@ -518,6 +516,7 @@ async function checkNewFormat(): Promise<void> {
     .filter((v) => {
       return v !== null;
     });
+  characterStore.characters = characters;
 
   db.modules = await Promise.all(
     (db.modules ?? []).map(async (v) => {
@@ -647,18 +646,18 @@ async function checkNewFormat(): Promise<void> {
     db.customBackground = checkClean(db.customBackground);
     db.userIcon = checkClean(db.userIcon);
 
-    for (let i = 0; i < db.characters.length; i++) {
-      if (db.characters[i].image) {
-        db.characters[i].image = checkClean(db.characters[i].image);
+    for (let i = 0; i < characters.length; i++) {
+      if (characters[i].image) {
+        characters[i].image = checkClean(characters[i].image);
       }
-      if (db.characters[i].emotionImages) {
-        for (let i2 = 0; i2 < db.characters[i].emotionImages.length; i2++) {
+      if (characters[i].emotionImages) {
+        for (let i2 = 0; i2 < characters[i].emotionImages.length; i2++) {
           if (
-            db.characters[i].emotionImages[i2] &&
-            db.characters[i].emotionImages[i2].length >= 2
+            characters[i].emotionImages[i2] &&
+            characters[i].emotionImages[i2].length >= 2
           ) {
-            db.characters[i].emotionImages[i2][1] = checkClean(
-              db.characters[i].emotionImages[i2][1],
+            characters[i].emotionImages[i2][1] = checkClean(
+              characters[i].emotionImages[i2][1],
             );
           }
         }
@@ -668,8 +667,8 @@ async function checkNewFormat(): Promise<void> {
     db.formatversion = 2;
   }
   if (db.formatversion < 3) {
-    for (let i = 0; i < db.characters.length; i++) {
-      let cha = db.characters[i];
+    for (let i = 0; i < characters.length; i++) {
+      let cha = characters[i];
       if (cha.type === "character") {
         if (checkNullish(cha.sdData)) {
           cha.sdData = defaultSdDataFunc();
@@ -698,15 +697,14 @@ async function checkNewFormat(): Promise<void> {
   if (db.mainPrompt === oldJailbreak) {
     db.mainPrompt = defaultJailbreak;
   }
-  for (let i = 0; i < db.characters.length; i++) {
-    const trashTime = db.characters[i].trashTime;
+  for (let i = 0; i < characters.length; i++) {
+    const trashTime = characters[i].trashTime;
     const targetTrashTime = trashTime ? trashTime + 1000 * 60 * 60 * 24 * 3 : 0;
     if (trashTime && targetTrashTime < Date.now()) {
-      db.characters.splice(i, 1);
+      characters.splice(i, 1);
       i--;
     }
   }
-  setDatabase(db);
   checkCharOrder();
 }
 
@@ -719,7 +717,7 @@ async function cleanChunks(
   } = {},
 ) {
   const cleanColdStorage = options.cleanColdStorage ?? false;
-  const db = getDatabase();
+  const db = settingsStore.state;
   // SQL startup intentionally keeps character details lazy. A destructive
   // asset sweep cannot prove that images referenced by unhydrated fields
   // (emotionImages/additionalAssets/VITS/etc.) are unused, so never delete
@@ -731,7 +729,11 @@ async function cleanChunks(
     return;
   }
 
-  const uncleanable = new Set(await getUncleanables(db));
+  const uncleanable = new Set(
+    await getUncleanables(db as Database, "basename", {
+      chars: characterStore.characters,
+    }),
+  );
   if (isTauri) {
     const assets = await readDir("assets", { baseDir: BaseDirectory.AppData });
     console.log(assets);
@@ -757,7 +759,7 @@ async function cleanChunks(
     });
 
     const remoteUncleanables = new Set<string>(
-      db.characters.map((v) => v.chaId),
+      characterStore.characters.map((v) => v.chaId),
     );
     for (const remote of remotes) {
       try {
@@ -812,7 +814,9 @@ async function cleanChunks(
     }
   } else {
     const indexes = await forageStorage.keys();
-    const characterIds = new Set<string>(db.characters.map((v) => v.chaId));
+    const characterIds = new Set<string>(
+      characterStore.characters.map((v) => v.chaId),
+    );
     for (const asset of indexes) {
       if (asset.startsWith("assets/")) {
         const n = getBasename(asset);

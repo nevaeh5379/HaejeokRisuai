@@ -1,3 +1,4 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { language } from "src/lang";
 import {
   collectOpenAIToolCalls,
@@ -5,7 +6,7 @@ import {
 } from "@risuai/chat-core/openAIProvider.cjs";
 import { alertError } from "src/ts/alert";
 import { LLMFlags } from "src/ts/model/modellist";
-import { getDatabase } from "src/ts/storage/database.svelte";
+
 import { callTool, encodeToolCall } from "../../mcp/mcp";
 import { extractJSON } from "../../templates/jsonSchema";
 import type {
@@ -30,7 +31,7 @@ export async function interpretOpenAINonStreamingResponse(
   options: InterpretOpenAINonStreamingOptions,
 ): Promise<requestDataResponse> {
   const { ok, data, body, arg, retry } = options;
-  const db = getDatabase();
+  const db = settingsStore.state;
   function processTextResponse(dat: any): string {
     if (dat?.choices[0]?.text) {
       let text = dat.choices[0].text as string;

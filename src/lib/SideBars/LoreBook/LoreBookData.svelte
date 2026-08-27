@@ -1,8 +1,10 @@
 <script lang="ts">
-    import { XIcon, LinkIcon, SunIcon, BookCopyIcon, FolderIcon, FolderOpen, PlusIcon } from "@lucide/svelte";
+    import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
+import { XIcon, LinkIcon, SunIcon, BookCopyIcon, FolderIcon, FolderOpen, PlusIcon } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { language } from "../../../lang";
-    import { getCurrentCharacter, getCurrentChat, type loreBook } from "../../../ts/storage/database.svelte";
+    import type { loreBook } from "../../../ts/storage/schema";
+
     import { alertConfirm, alertMd } from "../../../ts/alert";
     import Check from "../../UI/GUI/CheckInput.svelte";
     import Help from "../../Others/Help.svelte";
@@ -50,7 +52,7 @@
     let tokens = $state(0)
 
     function isLocallyActivated(book: loreBook){
-        return book.id ? getCurrentChat()?.localLore.some(e => e.id === book.id) : false
+        return book.id ? characterStore.currentChat?.localLore.some(e => e.id === book.id) : false
     }
     function activateLocally(book: loreBook){
         if(!book.id){
@@ -68,11 +70,11 @@
             selective: false,
             id: book.id,
         }
-        getCurrentChat().localLore.push(childLore)
+        characterStore.currentChat.localLore.push(childLore)
     }
     function deactivateLocally(book: loreBook){
         if(!book.id) return
-        const chat = getCurrentChat()
+        const chat = characterStore.currentChat
         const childLore = chat?.localLore?.find(e => e.id === book.id)
         if(childLore){
             chat.localLore = chat.localLore.filter(e => e.id !== book.id)
@@ -87,7 +89,7 @@
     }
     function getParentLoreName(book: loreBook){
         if(book.mode === 'child'){
-            const value = getCurrentCharacter()?.globalLore.find(e => e.id === book.id)
+            const value = characterStore.currentCharacter?.globalLore.find(e => e.id === book.id)
             if(value){
                 return value.comment.length === 0 ? value.key.length === 0 ? "Unnamed Lore" : value.key : value.comment
             }
@@ -264,7 +266,7 @@
             <div class="flex items-center mt-4">
                 <Check bind:check={value.alwaysActive} name={language.alwaysActive}/>
             </div>
-            {#if !value.alwaysActive && getCurrentCharacter()?.globalLore?.includes(value) && settingsStore.state.localActivationInGlobalLorebook}
+            {#if !value.alwaysActive && characterStore.currentCharacter?.globalLore?.includes(value) && settingsStore.state.localActivationInGlobalLorebook}
                 <div class="flex items-center mt-2">
                     <Check check={isLocallyActivated(value)} onChange={(check: boolean) => toggleLocalActive(check, value)} name={language.alwaysActiveInChat}/>
                 </div>

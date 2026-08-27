@@ -1,5 +1,5 @@
 import { get, writable } from "svelte/store";
-import { getDatabase, setDatabase } from "../storage/database.svelte";
+
 import { downloadFile } from "../globalApi.svelte";
 import { BufferToText, selectSingleFile } from "../util";
 import { alertError } from "../alert";
@@ -265,7 +265,7 @@ export function updateCustomColorScheme() {
 
 export function updateColorScheme() {
   try {
-    let db = getDatabase();
+    let db = settingsStore.state;
 
     let colorScheme = db.colorScheme;
 

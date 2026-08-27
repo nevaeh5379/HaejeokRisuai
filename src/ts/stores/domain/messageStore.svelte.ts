@@ -1,4 +1,4 @@
-import type { Message, Chat } from "../../storage/database.svelte";
+import type { Message, Chat } from "../../storage/schema";
 import { getSqlStorage } from "../../storage/sqlStorageFactory";
 import { characterStore } from "./characterStore.svelte";
 import { settingsStore } from "./settingsStore.svelte";

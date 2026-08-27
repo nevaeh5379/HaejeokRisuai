@@ -1,3 +1,4 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import {
   appendOpenAIStreamingFragment,
   mergeOpenAIStreamingToolCallDeltas,
@@ -5,7 +6,7 @@ import {
 import { alertError } from "src/ts/alert";
 import { addFetchLog, fetchNative } from "src/ts/globalApi.svelte";
 import { LLMFlags } from "src/ts/model/modellist";
-import { getDatabase } from "src/ts/storage/database.svelte";
+
 import { callTool, encodeToolCall } from "../../mcp/mcp";
 import { extractJSON } from "../../templates/jsonSchema";
 import type { RequestDataArgumentExtended, StreamResponseChunk } from "../requestContracts";
@@ -22,7 +23,7 @@ export function getTranStream(
   let dataUint: Uint8Array | Buffer = new Uint8Array([]);
   let reasoningContent = "";
   let reasoningFromStructured = false;
-  const db = getDatabase();
+  const db = settingsStore.state;
 
   return new TransformStream<Uint8Array, StreamResponseChunk>({
     transform(chunk, control) {
@@ -170,7 +171,7 @@ export function wrapToolStream(
 ): ReadableStream<StreamResponseChunk> {
   return new ReadableStream<StreamResponseChunk>({
     async start(controller) {
-      const db = getDatabase();
+      const db = settingsStore.state;
       let reader = stream.getReader();
       let prefix = "";
       let lastValue;

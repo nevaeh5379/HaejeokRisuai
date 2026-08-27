@@ -47,9 +47,7 @@
         LogExporterSettings,
         LogMessageData,
     } from 'src/ts/logexporter/types'
-    import type { character, groupChat } from 'src/ts/storage/database.svelte'
-
-    // ── Responsive ───────────────────────────────────────────────────────
+    import type { character, groupChat } from '../../ts/storage/schema';// ── Responsive ───────────────────────────────────────────────────────
     let windowWidth = $state(typeof window !== 'undefined' ? window.innerWidth : 1280)
     const isMobile = $derived(windowWidth < 1024)
 
@@ -925,4 +923,3 @@
         {/if}
     </div>
 {/if}
-

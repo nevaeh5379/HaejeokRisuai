@@ -1,5 +1,5 @@
-import type { character, Chat, groupChat } from "../storage/database.svelte";
-import type { ChatVarTarget } from "../parser/chatVar.svelte";
+import type { character, Chat, groupChat } from "../storage/schema";
+import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { safeStructuredClone } from "../polyfill";
 import {
@@ -92,12 +92,11 @@ function parseLegacyPrompt(data: string): OpenAIChat[] {
   return chats;
 }
 
-type ChatTarget = ChatVarTarget;
 
 function buildLegacyMainPrompts(
   sections: PromptSections,
   currentChar: character,
-  target?: ChatTarget,
+  target?: ChatExecutionTarget,
   generation?: ChatGenerationOverrides,
 ) {
   const baseMainPrompt = generationOverride(
@@ -147,7 +146,7 @@ function buildLegacyMainPrompts(
 function buildLegacyGlobalNote(
   sections: PromptSections,
   currentChar: character,
-  target?: ChatTarget,
+  target?: ChatExecutionTarget,
   generation?: ChatGenerationOverrides,
 ) {
   const baseGlobalNote = generationOverride(
@@ -171,7 +170,7 @@ function buildLegacyPromptSections(
   sections: PromptSections,
   currentChar: character,
   promptTemplate: PromptItem[] | null | undefined,
-  target?: ChatTarget,
+  target?: ChatExecutionTarget,
   generation?: ChatGenerationOverrides,
 ) {
   if (currentChar.utilityBot || promptTemplate) return;
@@ -184,7 +183,7 @@ function buildAuthorAndControlPrompts(
   currentChar: character,
   currentChat: Chat,
   usingPromptTemplate: boolean,
-  target?: ChatTarget,
+  target?: ChatExecutionTarget,
   generation?: ChatGenerationOverrides,
 ) {
   const authorNote = currentChat.note || getAuthorNoteDefaultText();
@@ -218,7 +217,7 @@ function buildAuthorAndControlPrompts(
 async function buildDescriptionText(
   currentChar: character,
   currentChat: Chat,
-  target?: ChatTarget,
+  target?: ChatExecutionTarget,
   generation?: ChatGenerationOverrides,
 ) {
   const promptPreprocess = generationOverride(
@@ -273,7 +272,7 @@ async function buildDescriptionPrompt(
   currentChar: character,
   currentChat: Chat,
   nowChatroom: character | groupChat,
-  target?: ChatTarget,
+  target?: ChatExecutionTarget,
   generation?: ChatGenerationOverrides,
 ) {
   const prompt: OpenAIChat = {
@@ -311,7 +310,7 @@ function buildLorebookSections(
   currentChar: character,
   lorePrompt: LorePrompt,
   resolvePosition: (text: string, maxDepth?: number) => string,
-  target?: ChatTarget,
+  target?: ChatExecutionTarget,
 ) {
   const toChat = (lorebook: LorePrompt["actives"][number]): OpenAIChat => ({
     role: lorebook.role,
@@ -346,7 +345,7 @@ function appendDepthZeroLorebookPrompts(
   currentChar: character,
   lorePrompt: LorePrompt,
   resolvePosition: (text: string, maxDepth?: number) => string,
-  target?: ChatTarget,
+  target?: ChatExecutionTarget,
 ) {
   const append = (assistant: boolean) => {
     for (const lorebook of lorePrompt.actives) {
@@ -374,7 +373,7 @@ function appendDepthZeroLorebookPrompts(
 function addPersonaAndInlayPrompts(
   sections: PromptSections,
   currentChar: character,
-  target?: ChatTarget,
+  target?: ChatExecutionTarget,
 ) {
   if (settingsStore.state.personaPrompt) {
     sections.personaPrompt.push({
@@ -452,11 +451,11 @@ export async function preparePromptSections(
   currentChar: character,
   currentChat: Chat,
   nowChatroom: character | groupChat,
-  target?: ChatTarget,
+  target?: ChatExecutionTarget,
   generation?: ChatGenerationOverrides,
 ) {
   const sections = createPromptSections();
-  const scopedTarget: ChatTarget | undefined = target
+  const scopedTarget: ChatExecutionTarget | undefined = target
     ? { ...target, globalVariables: generation?.chatVariables }
     : target;
   const { promptTemplate, usingPromptTemplate } = resolvePromptTemplate(

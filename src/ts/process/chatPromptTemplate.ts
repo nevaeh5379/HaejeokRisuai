@@ -1,5 +1,5 @@
-import type { character, MessagePresetInfo } from "../storage/database.svelte";
-import type { ChatVarTarget } from "../parser/chatVar.svelte";
+import type { character, MessagePresetInfo } from "../storage/schema";
+import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { safeStructuredClone } from "../polyfill";
 import { prebuiltAssetCommand } from "../util";
@@ -28,7 +28,7 @@ interface RenderContext {
   usingPromptTemplate: boolean;
   positionParser: (text: string, location: string) => string;
   getDescriptionPrompts: (role?: PromptRole) => OpenAIChat[];
-  chatTarget: ChatVarTarget;
+  chatTarget: ChatExecutionTarget;
   generation?: ChatGenerationOverrides;
 }
 

@@ -1,11 +1,7 @@
 import { parseChatML } from "../parser/chatML";
 import { risuChatParser } from "../parser/parser.svelte";
-import {
-  getDatabase,
-  setDatabase,
-  type Chat,
-  type character,
-} from "../storage/database.svelte";
+import type { Chat, character } from "../storage/schema";
+
 import { tokenize } from "../tokenizer";
 import { getModuleTriggers } from "./modules";
 import { get } from "svelte/store";
@@ -26,6 +22,11 @@ import { generateAIImage } from "./stableDiff";
 import { writeInlayImage } from "./files/inlays";
 import { runScripted } from "./scriptings";
 import { calcString } from "./infunctions";
+import {
+  getSelectedChatTarget,
+  resolveChatTarget,
+  type ChatExecutionTarget,
+} from "../chatTarget";
 
 export interface triggerscript {
   comment: string;
@@ -1168,14 +1169,12 @@ async function collectStreamingText(
   return lastChunk;
 }
 
-type TriggerTarget = { characterIndex: number; chatIndex: number };
-
 export async function runTrigger(
   char: character,
   mode: triggerMode,
   arg: {
     chat: Chat;
-    target?: TriggerTarget;
+    target?: ChatExecutionTarget;
     recursiveCount?: number;
     additonalSysPrompt?: additonalSysPrompt;
     stopSending?: boolean;
@@ -1200,14 +1199,13 @@ export async function runTrigger(
     historyend: "",
     promptend: "",
   };
-  const db = getDatabase();
-  const selectedAtStart = get(selectedCharID);
-  const selectedCharacterAtStart = characterStore.characters[selectedAtStart];
-  const target: TriggerTarget = arg.target ?? {
-    characterIndex: selectedAtStart,
-    chatIndex: selectedCharacterAtStart?.chatPage ?? 0,
-  };
-  const moduleRoom = characterStore.characters[target.characterIndex] ?? char;
+  const db = settingsStore.state;
+  const target: ChatExecutionTarget | undefined =
+    arg.target ??
+    (char.chaId && arg.chat.id
+      ? { characterId: char.chaId, chatId: arg.chat.id }
+      : getSelectedChatTarget() ?? undefined);
+  const moduleRoom = (target ? resolveChatTarget(target)?.character : null) ?? char;
   const triggers = (char.triggerscript || [])
     .map((v) => {
       if (typeof v === "string") {
@@ -2520,7 +2518,7 @@ export async function runTrigger(
           break;
         }
         case "v2GetPersonaDesc": {
-          const db = getDatabase();
+          const db = settingsStore.state;
           const currentPersonaPrompt = db.personaPrompt ?? "";
           const savedPersonaPrompt =
             db.personas[db.selectedPersona]?.personaPrompt ?? "";

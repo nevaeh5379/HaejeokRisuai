@@ -1,10 +1,7 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { parseChatML } from "src/ts/parser/chatML";
-import {
-  getDatabase,
-  type Chat,
-  type character,
-  type groupChat,
-} from "src/ts/storage/database.svelte";
+import type { Chat, character, groupChat } from "../../storage/schema";
+
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 import type { ChatTokenizer } from "src/ts/tokenizer";
 import { requestChatData } from "../request/chatRequestOrchestrator";
@@ -46,7 +43,7 @@ async function summary(
   stringlizedChat: string,
   context: HypaGenerationContext,
 ): Promise<{ success: boolean; data: string }> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   console.log("Summarizing");
 
   if (db.supaModelType === "distilbart") {
@@ -371,7 +368,7 @@ export async function hypaMemoryV2(
   error?: string;
   memory?: SerializableHypaV2Data;
 }> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const nodeResult = await tryRunNodeHypaMemory<{
     currentTokens: number;
     chats: OpenAIChat[];

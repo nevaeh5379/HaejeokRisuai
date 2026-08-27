@@ -1,14 +1,5 @@
 import { v4 } from "uuid";
-import type {
-  BtwSession,
-  BtwSessionConfig,
-  botPreset,
-  character,
-  Chat,
-  groupChat,
-  Message,
-  MessagePresetInfo,
-} from "../storage/database.svelte";
+import type { BtwSession, BtwSessionConfig, botPreset, character, Chat, groupChat, Message, MessagePresetInfo } from "../storage/schema";
 import { safeStructuredClone } from "../polyfill";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
@@ -21,6 +12,7 @@ import { findCharacterbyId, parseToggleSyntax } from "../util";
 import { ChatTokenizer } from "../tokenizer";
 import { buildGenerationPrompt } from "./chatPromptPipeline";
 import type { ChatGenerationOverrides } from "./chatGenerationContext";
+import { requireChatTargetFromIndexes } from "../chatTarget";
 import {
   createChatGenerationPlan,
   executeChatModelRequest,
@@ -273,10 +265,10 @@ async function createSession(
       continue;
     }
     const key = `toggle_${toggle.key}`;
-    const value = getGlobalChatVar(key, {
-      characterIndex,
-      chatIndex,
-    });
+    const value = getGlobalChatVar(
+      key,
+      requireChatTargetFromIndexes(characterIndex, chatIndex),
+    );
     toggleValues[key] = value === "null" ? "" : value;
   }
   const now = Date.now();

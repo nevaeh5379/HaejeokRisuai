@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { makeCapacitorStorage } from "./sqliteTestHarness";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
 import { buildFullDatabase } from "./sqliteTestFixtures";
-import { presetTemplate } from "./database.svelte";
+import { presetTemplate } from "./presetDefaults";
 
 describe("CapacitorSqliteStorage", () => {
   it("runs commits through the native transaction bridge with real SQL", async () => {

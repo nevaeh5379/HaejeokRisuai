@@ -1,6 +1,8 @@
 <script lang="ts">
     import { language } from "../../lang";
-    import { getCurrentCharacter, saveImage as saveAsset, type character, type groupChat } from "../../ts/storage/database.svelte";
+    import { saveImage as saveAsset } from "../../ts/storage/assetPersistence";
+import type { character, groupChat } from "../../ts/storage/schema";
+
     import { characterStore, settingsStore, moduleStore } from 'src/ts/stores/domain';
     import { onDestroy } from 'svelte';
     import { CharConfigSubMenu, MobileGUI, ShowRealmFrameStore, selectedCharID, hypaV3ModalOpen } from "../../ts/stores.svelte";
@@ -1186,7 +1188,7 @@
 
         <Button
             onclick={async () => {
-                const char = getCurrentCharacter()
+                const char = characterStore.currentCharacter
                 if(char.type === 'group'){
                     return
                 }

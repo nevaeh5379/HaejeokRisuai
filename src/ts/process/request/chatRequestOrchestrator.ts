@@ -1,12 +1,9 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { executeChatRequestFallbacks } from "@risuai/chat-core/requestLoop.cjs";
 import { risuEscape, risuUnescape } from "../../parser/parser.svelte";
 import { pluginV2 } from "../../plugins/plugins.svelte";
 import { safeStructuredClone } from "../../polyfill";
-import {
-  getCurrentCharacter,
-  getCurrentChat,
-  getDatabase,
-} from "../../storage/database.svelte";
+
 import { sleep } from "../../util";
 import { characterStore } from "../../stores/domain/characterStore.svelte";
 import { getTools } from "../mcp/mcp";
@@ -23,11 +20,11 @@ export async function requestChatData(
   model: ModelModeExtended,
   abortSignal: AbortSignal = null,
 ): Promise<requestDataResponse> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const fallBackModels: string[] = safeStructuredClone(
     db?.fallbackModels?.[model] ?? [],
   );
-  const requestCharacter = arg.currentChar ?? getCurrentCharacter();
+  const requestCharacter = arg.currentChar ?? characterStore.currentCharacter;
   const tools = arg.tools ?? (await getTools(requestCharacter));
   fallBackModels.push("");
 
@@ -70,7 +67,7 @@ export async function requestChatData(
             ? characterStore.characters[arg.triggerTarget.characterIndex]?.chats?.[
                 arg.triggerTarget.chatIndex
               ]
-            : getCurrentChat();
+            : characterStore.currentChat;
           if (currentChar?.type !== "group" && triggerChat) {
             const perf = performance.now();
             const triggerResult = await runTrigger(currentChar, "request", {

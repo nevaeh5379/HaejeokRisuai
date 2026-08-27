@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
-import type { botPreset } from "../../storage/database.svelte";
-import { presetTemplate } from "../../storage/database.svelte";
+import type { botPreset } from "../../storage/schema";
+import { presetTemplate } from "../../storage/presetDefaults";
 import type {
   BotPresetSummary,
   ISqlStorage,

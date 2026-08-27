@@ -13,17 +13,10 @@ import { v4 as uuidv4 } from "uuid";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { get } from "svelte/store";
 import { open } from "@tauri-apps/plugin-shell";
-import {
-  setDatabase,
-  type Database,
-  defaultSdDataFunc,
-  getDatabase,
-  appVer,
-  getCurrentCharacter,
-  type character,
-  type groupChat,
-  appSubVer,
-} from "./storage/database.svelte";
+import type { Database, character, groupChat } from "./storage/schema";
+import { defaultSdDataFunc } from "./storage/presetDefaults";
+import { appVer, appSubVer } from "./appVersion";
+import { installDatabase } from "./storage/databaseLifecycle";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { checkRisuUpdate } from "./update";
 import {
@@ -32,7 +25,6 @@ import {
   selectedCharID,
   loadedStore,
   LoadingStatusState,
-  selIdState,
   ReloadGUIPointer,
   bodyIntercepterStore,
   saving,
@@ -750,7 +742,7 @@ export async function globalFetch(
   arg: GlobalFetchArgs = {},
 ): Promise<GlobalFetchResult> {
   try {
-    const db = getDatabase();
+    const db = settingsStore.state;
     if (arg.abortSignal?.aborted) {
       return { ok: false, data: "aborted", headers: {}, status: 400 };
     }
@@ -1152,10 +1144,12 @@ export function getBasename(data: string) {
 export async function getUncleanables(
   db: Database,
   uptype: "basename" | "pure" = "basename",
+  options?: { chars: (character | groupChat)[] },
 ) {
   let chars: (character | groupChat)[] = [];
-  if (db.characters) {
-    for (let cha of db.characters) {
+  const sourceCharacters = options?.chars ?? db.characters;
+  if (sourceCharacters) {
+    for (let cha of sourceCharacters) {
       if (cha?.coldstorage) {
         const { getColdStorageItem } =
           await import("./process/coldstorage.svelte");
@@ -2632,7 +2626,9 @@ export async function loadInternalBackup() {
       })
     : await forageStorage.getItem(selectedBackup);
 
-  setDatabase(await decodeRisuSave(Buffer.from(data) as unknown as Uint8Array));
+  installDatabase(
+    await decodeRisuSave(Buffer.from(data) as unknown as Uint8Array),
+  );
   alertNormal("Loaded backup");
 }
 
@@ -2920,7 +2916,7 @@ $effect.root(() => {
     if (!chatFoldedState.data) {
       return;
     }
-    const char = characterStore.characters[selIdState.selId];
+    const char = characterStore.characters[characterStore.selectedId];
     if (!char || !char.chats) return;
     const chat = char.chats[char.chatPage];
     if (!chat) return;
@@ -2937,7 +2933,7 @@ $effect.root(() => {
       chatFoldedStateMessageIndex.index = -1;
       return;
     }
-    const char = characterStore.characters[selIdState.selId];
+    const char = characterStore.characters[characterStore.selectedId];
     if (!char || !char.chats) return;
     const chat = char.chats[char.chatPage];
     if (!chat) return;
@@ -2960,14 +2956,14 @@ $effect.root(() => {
 export function foldChatToMessage(targetMessageIdOrIndex: string | number) {
   let targetMessageId = "";
   if (typeof targetMessageIdOrIndex === "number") {
-    const char = getCurrentCharacter();
+    const char = characterStore.currentCharacter;
     const chat = char.chats[char.chatPage];
     const message = chat.message[targetMessageIdOrIndex];
     targetMessageId = message.chatId;
   } else {
     targetMessageId = targetMessageIdOrIndex;
   }
-  const char = getCurrentCharacter();
+  const char = characterStore.currentCharacter;
   const chat = char.chats[char.chatPage];
   chatFoldedState.data = {
     targetCharacterId: char.chaId,
@@ -2983,7 +2979,7 @@ export function changeChatTo(IdOrIndex: string | number) {
   }
 
   if (typeof IdOrIndex === "string") {
-    const currentCharacter = getCurrentCharacter();
+    const currentCharacter = characterStore.currentCharacter;
     index = currentCharacter.chats.findIndex((v) => {
       return v.id === IdOrIndex;
     });
@@ -2993,9 +2989,9 @@ export function changeChatTo(IdOrIndex: string | number) {
     return;
   }
 
-  const nextChat = characterStore.characters[selIdState.selId]?.chats?.[index];
-  if (characterStore.characters[selIdState.selId]) {
-    characterStore.characters[selIdState.selId].chatPage = index;
+  const nextChat = characterStore.characters[characterStore.selectedId]?.chats?.[index];
+  if (characterStore.characters[characterStore.selectedId]) {
+    characterStore.characters[characterStore.selectedId].chatPage = index;
   }
   ReloadGUIPointer.set(Math.random());
   releaseInactiveChatMessages(nextChat?.id);
@@ -3008,7 +3004,7 @@ export function createChatCopyName(
   let name = originalName.replaceAll(/\(((Copy|Branch)( \d+)?)\)$/g, "").trim();
   let copyIndex = 1;
   let newName = `${name} (${type})`;
-  const char = getCurrentCharacter();
+  const char = characterStore.currentCharacter;
   while (char.chats.find((v) => v.name === newName)) {
     copyIndex++;
     newName = `${name} (${type} ${copyIndex})`;

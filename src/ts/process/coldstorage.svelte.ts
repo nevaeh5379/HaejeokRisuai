@@ -16,7 +16,7 @@ import {
 } from "fflate";
 import { alertClear, alertConfirm, alertError, alertWait } from "../alert";
 import { language } from "src/lang";
-import type { Database } from "../storage/database.svelte";
+import type { Database } from "../storage/schema";
 import {
   coldStorageHeader,
   getColdStorageAffectedCharacters,

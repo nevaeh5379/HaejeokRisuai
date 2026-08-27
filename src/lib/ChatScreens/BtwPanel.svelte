@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Plus, Send, Square, Trash2, X } from "@lucide/svelte";
-  import type { Chat as ChatSession, BtwSession } from "src/ts/storage/database.svelte";
+  import type { Chat as ChatSession, BtwSession } from "../../ts/storage/schema";
   import {
     btwRuntime,
     cancelBtwGeneration,

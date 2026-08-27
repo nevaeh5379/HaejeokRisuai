@@ -1,5 +1,7 @@
+import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { changeUserPersona } from "./persona";
-import { changeToPreset, getCurrentCharacter } from "./storage/database.svelte";
+import { changeToPreset } from "./storage/presetService";
+
 import { safeStructuredClone } from "./polyfill";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import { presetStore } from "./stores/domain/presetStore.svelte";
@@ -19,7 +21,7 @@ export type Loadout = {
 };
 
 export function makeLoadout(options: { name: string }): Loadout {
-  const character = getCurrentCharacter();
+  const character = characterStore.currentCharacter;
   const id = crypto.randomUUID();
   const preset = presetStore.activePreset;
   const icons = [];
@@ -54,7 +56,7 @@ export function applyLoadout(
   ],
 ) {
   loadout.lastUsed = Date.now();
-  const char = getCurrentCharacter();
+  const char = characterStore.currentCharacter;
   if (char) {
     loadout.characterIds.push(char.chaId);
   }

@@ -1,4 +1,5 @@
-import { getDatabase } from "src/ts/storage/database.svelte";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+
 import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
 
 export interface LocalNetworkRequestOptions {
@@ -8,7 +9,7 @@ export interface LocalNetworkRequestOptions {
 
 export function getLocalNetworkRequestOptions(
   url: string,
-  db = getDatabase(),
+  db = settingsStore.state,
   useStreaming = false,
 ): LocalNetworkRequestOptions {
   if (!db.localNetworkMode || !isLocalNetworkUrl(url)) {

@@ -1,6 +1,7 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { language } from "../../../lang";
 import { pluginProcess, pluginV2 } from "../../plugins/plugins.svelte";
-import { getDatabase } from "../../storage/database.svelte";
+
 import { unstringlizeChat } from "../stringlize";
 import { applyChatTemplate } from "../templates/chatTemplate";
 import { runTransformers } from "../transformers";
@@ -19,7 +20,7 @@ import {
 export async function requestPlugin(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const isV3Model = arg.aiModel.startsWith("pluginmodel:::");
   const responseModel = isV3Model ? arg.aiModel : "custom";
   try {
@@ -129,7 +130,7 @@ export async function requestWebLLM(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
   const formated = arg.formated;
-  const db = getDatabase();
+  const db = settingsStore.state;
   const aiModel = arg.aiModel;
   const currentChar = resolveRequestCharacter(arg);
   const maxTokens = arg.maxTokens;

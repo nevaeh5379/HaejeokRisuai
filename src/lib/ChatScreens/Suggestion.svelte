@@ -2,7 +2,7 @@
 	import { requestChatData } from "src/ts/process/request/chatRequestOrchestrator";
     import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
     import { activeGenerationChatIds } from "../../ts/process/chatRuntimeState";
-    import { type character, type Message, type groupChat } from "../../ts/storage/database.svelte";
+    import type { character, Message, groupChat } from "../../ts/storage/schema";
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import { selectedCharID } from "../../ts/stores.svelte";
     import { isTauri } from 'src/ts/platform';
@@ -14,6 +14,7 @@
     import { onDestroy } from 'svelte';
     import { ParseMarkdown } from "src/ts/parser/parser.svelte";
     import {defaultAutoSuggestPrompt} from "../../ts/storage/defaultPrompts.js";
+    import { requireChatTargetFromIndexes } from "../../ts/chatTarget";
 
     interface Props {
         send: () => any;
@@ -68,10 +69,10 @@
         if(!currentChat){
             return
         }
-        const requestTarget = {
-            characterIndex: requestCharId,
-            chatIndex: requestChatPage,
-        }
+        const requestTarget = requireChatTargetFromIndexes(
+            requestCharId,
+            requestChatPage,
+        )
         let messages:Message[] = []
         
         messages = [...messages, ...currentChat.message];

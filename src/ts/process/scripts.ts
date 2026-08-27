@@ -1,17 +1,14 @@
+import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { get } from "svelte/store";
 import {
   CharEmotion,
   scriptCacheRevision,
   selectedCharID,
 } from "../stores.svelte";
-import {
-  type character,
-  type customscript,
-  type groupChat,
-  getDatabase,
-  getCurrentCharacter,
-  getCurrentChat,
-} from "../storage/database.svelte";
+import type { character, customscript, groupChat } from "../storage/schema";
+import { resolveChatTarget, type ChatExecutionTarget } from "../chatTarget";
+
 import { downloadFile } from "../globalApi.svelte";
 import { alertError, alertNormal } from "../alert";
 import { language } from "src/lang";
@@ -46,7 +43,7 @@ export async function processScript(
   data: string,
   mode: ScriptMode,
   cbsConditions: CbsConditions = {},
-  chatTarget?: { characterIndex: number; chatIndex: number },
+  chatTarget?: ChatExecutionTarget,
 ) {
   return (
     await processScriptFull(char, data, mode, -1, cbsConditions, chatTarget)
@@ -54,7 +51,7 @@ export async function processScript(
 }
 
 export function exportRegex(s?: customscript[]) {
-  let db = getDatabase();
+  let db = settingsStore.state;
   const script = s ?? db.globalscript;
   const data = Buffer.from(
     JSON.stringify({
@@ -73,7 +70,7 @@ export async function importRegex(o?: customscript[]): Promise<customscript[]> {
   if (!filedata) {
     return o;
   }
-  let db = getDatabase();
+  let db = settingsStore.state;
   try {
     const imported = JSON.parse(Buffer.from(filedata).toString("utf-8"));
     if (imported.type === "regex" && imported.data) {
@@ -105,10 +102,10 @@ function generateScriptCacheKey(
   mode: ScriptMode,
   chatID = -1,
   cbsConditions: CbsConditions = {},
-  chatTarget?: { characterIndex: number; chatIndex: number },
+  chatTarget?: ChatExecutionTarget,
 ) {
   const targetKey = chatTarget
-    ? `${chatTarget.characterIndex}:${chatTarget.chatIndex}`
+    ? `${chatTarget.characterId}:${chatTarget.chatId}`
     : "selected";
   let hash =
     data +
@@ -163,9 +160,9 @@ export async function processScriptFull(
   mode: ScriptMode,
   chatID = -1,
   cbsConditions: CbsConditions = {},
-  chatTarget?: { characterIndex: number; chatIndex: number },
+  chatTarget?: ChatExecutionTarget,
 ) {
-  let db = getDatabase();
+  let db = settingsStore.state;
   let emoChanged = false;
   data = await runLuaEditTrigger(
     char,
@@ -176,12 +173,12 @@ export async function processScriptFull(
   );
 
   if (mode === "editdisplay") {
-    const currentChar = getCurrentCharacter();
+    const currentChar = characterStore.currentCharacter;
     if (currentChar && currentChar.type !== "group") {
       try {
         const perf = performance.now();
         const d = await runTrigger(currentChar, "display", {
-          chat: getCurrentChat(),
+          chat: characterStore.currentChat,
           displayMode: true,
           displayData: data,
         });
@@ -205,7 +202,7 @@ export async function processScriptFull(
 
   data = risuChatParser(data, { chatID: chatID, cbsConditions, chatTarget });
   const moduleRoom = chatTarget
-    ? db.characters[chatTarget.characterIndex]
+    ? resolveChatTarget(chatTarget)?.character
     : char.type === "simple"
       ? undefined
       : char;

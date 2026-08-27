@@ -1,16 +1,6 @@
 import localforage from "localforage";
 import { getNodeClientSessionId } from "../network/nodeClientSession";
-import type {
-  Database,
-  Message,
-  character,
-  groupChat,
-  Chat,
-  RisuPersona,
-  botPreset,
-  loreBook,
-  customscript,
-} from "./database.svelte";
+import type { Database, Message, character, groupChat, Chat, RisuPersona, botPreset, loreBook, customscript } from "./schema";
 import type { RisuModule } from "../process/modules";
 import type {
   INodeSqlStorageAdmin,

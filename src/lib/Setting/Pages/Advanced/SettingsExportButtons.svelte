@@ -1,10 +1,11 @@
 <script lang="ts">
-    import { language } from "src/lang";
+    import { createDatabaseSnapshot } from "src/ts/storage/databaseSnapshot";
+import { language } from "src/lang";
     import Button from "src/lib/UI/GUI/Button.svelte";
     import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
     import { alertMd, alertNormal } from "src/ts/alert";
     import { downloadFile, getRequestLog } from "src/ts/globalApi.svelte";
-    import { getDatabase } from "src/ts/storage/database.svelte";
+    
     import { isNodeServer, isTauri } from "src/ts/platform";
 
 </script>
@@ -36,9 +37,7 @@ Show Statistics
 <Button
     className="mt-4"
     onclick={async () => {
-        const db = safeStructuredClone(getDatabase({
-            snapshot: true
-        }))
+        const db = safeStructuredClone(createDatabaseSnapshot())
 
         const keyToRemove = [
             'characters', 'loreBook', 'plugins', 'account', 'personas', 'username', 'userIcon', 'userNote',

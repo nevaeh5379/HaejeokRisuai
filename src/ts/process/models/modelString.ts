@@ -1,7 +1,8 @@
-import { getDatabase } from "src/ts/storage/database.svelte";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+
 
 export function getGenerationModelString(name?: string) {
-  const db = getDatabase();
+  const db = settingsStore.state;
   switch (name ?? db.aiModel) {
     case "reverse_proxy":
       return (

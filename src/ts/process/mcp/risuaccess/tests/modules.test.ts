@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import type { RisuModule } from "src/ts/process/modules";
-import type { customscript, loreBook } from "src/ts/storage/database.svelte";
+import type { customscript, loreBook } from "../../../../storage/schema";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { RPCToolCallTextContent } from "../../mcplib";

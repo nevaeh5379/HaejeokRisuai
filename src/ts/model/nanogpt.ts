@@ -1,4 +1,5 @@
-import { getDatabase } from "../storage/database.svelte";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+
 import {
   NANOGPT_PERSONALIZED_MODELS_ENDPOINT,
   NANOGPT_MODELS_ENDPOINT,
@@ -176,7 +177,7 @@ export async function getNanoGPTSubscriptionModels(
 
 export async function getNanoGPTModels(): Promise<NanoGPTModelInfo[]> {
   try {
-    const db = getDatabase();
+    const db = settingsStore.state;
     const key = db.nanogptKey;
 
     const endpoint =

@@ -1,3 +1,4 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import {
   applyOpenAIPostParameterBodyPolicies,
   applyOpenAIPreParameterBodyPolicies,
@@ -6,7 +7,7 @@ import {
   resolveOpenAIRequestModel,
   shouldUseOpenAIFlexProcessing,
 } from "@risuai/chat-core/openAIProvider.cjs";
-import { getDatabase } from "src/ts/storage/database.svelte";
+
 import { LLMFlags, LLMProvider } from "src/ts/model/modellist";
 import { getFreeOpenRouterModels } from "src/ts/model/openrouter";
 import { simplifySchema } from "src/ts/util";
@@ -49,7 +50,7 @@ export async function prepareModernOpenAIRequest(
   arg: RequestDataArgumentExtended,
   formatedChat: OpenAIChatExtra[],
 ): Promise<OpenAIRequestPreparationResult> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const aiModel = arg.aiModel;
   let openRouterRequestModel = db.openrouterRequestModel;
   if (aiModel === "openrouter" && db.openrouterRequestModel === "risu/free") {

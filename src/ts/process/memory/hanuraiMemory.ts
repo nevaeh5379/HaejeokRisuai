@@ -1,9 +1,10 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { alertError } from "src/ts/alert";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 import { HypaProcesser } from "./hypamemory";
 import { language } from "src/lang";
 import type { ChatTokenizer } from "src/ts/tokenizer";
-import { getDatabase } from "src/ts/storage/database.svelte";
+
 
 const maxRecentChatQuery = 4;
 export async function hanuraiMemory(
@@ -15,7 +16,7 @@ export async function hanuraiMemory(
     serverIndexId?: string;
   },
 ) {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const tokenizer = arg.tokenizer;
   const processer = new HypaProcesser(
     "auto",

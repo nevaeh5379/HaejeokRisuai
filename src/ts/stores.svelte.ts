@@ -45,9 +45,9 @@ type PluginSafetyError = {
     | "errorInVerification"
     | "storageAccess";
 };
-type Character = import("./storage/database.svelte").character;
-type GroupChat = import("./storage/database.svelte").groupChat;
-type Database = import("./storage/database.svelte").Database;
+type Character = import("./storage/schema").character;
+type GroupChat = import("./storage/schema").groupChat;
+type Database = import("./storage/schema").Database;
 type SimpleCharacter = import("./parser/parser.svelte").simpleCharacterArgument;
 type HubType = import("./hubCatalog").hubType;
 
@@ -115,10 +115,6 @@ export const hypaV3ProgressStore = writable({
   msg: "",
   subMsg: "",
 });
-export const selIdState = $state({
-  selId: -1,
-});
-
 CustomCSSStore.subscribe((css) => {
   console.log(css);
   const q = document.querySelector("#customcss");
@@ -252,19 +248,17 @@ ReloadGUIPointer.subscribe(() => {
 
 $effect.root(() => {
   selectedCharID.subscribe((v) => {
-    selIdState.selId = v;
-
     // Apply selection-time runtime defaults before attaching the active
     // persistence observer. Otherwise `alwaysToggleOn` changes supaMemory after
     // the baseline is captured and turns a simple bot switch into a full
     // character rewrite, including large asset/lore relational trees.
-    if (characterStore.characters?.[selIdState.selId]) {
+    if (characterStore.characters?.[v]) {
       if (
         settingsStore.state.hypaV3 &&
         settingsStore.state.hypaV3Presets?.[settingsStore.state.hypaV3PresetId]
           ?.settings?.alwaysToggleOn
       ) {
-        characterStore.characters[selIdState.selId].supaMemory = true;
+        characterStore.characters[v].supaMemory = true;
       }
     }
 
@@ -273,11 +267,11 @@ $effect.root(() => {
   $effect(() => {
     const enabledModuleCount = settingsStore.state.enabledModules?.length ?? 0;
     const chatModuleCount =
-      characterStore.characters?.[selIdState.selId]?.chats?.[
-        characterStore.characters?.[selIdState.selId]?.chatPage
+      characterStore.characters?.[characterStore.selectedId]?.chats?.[
+        characterStore.characters?.[characterStore.selectedId]?.chatPage
       ]?.modules?.length ?? 0;
-    characterStore.characters?.[selIdState.selId]?.hideChatIcon;
-    characterStore.characters?.[selIdState.selId]?.backgroundHTML;
+    characterStore.characters?.[characterStore.selectedId]?.hideChatIcon;
+    characterStore.characters?.[characterStore.selectedId]?.backgroundHTML;
     settingsStore.state.moduleIntergration;
     if (enabledModuleCount > 0 || chatModuleCount > 0) {
       void import("./process/modules").then(({ moduleUpdate }) =>

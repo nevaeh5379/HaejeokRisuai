@@ -1,5 +1,6 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
+    import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
+import { onMount } from 'svelte';
     import { popUpEditorStore } from '../../ts/stores.svelte';
     import { settingsStore } from 'src/ts/stores/domain';
     import type MonacoEditorType from './MonacoEditor.svelte';
@@ -7,7 +8,7 @@
     import { ParseMarkdown, risuChatParser } from "src/ts/parser/parser.svelte";
     import { tokenize } from 'src/ts/tokenizer';
     import Toggles from '../SideBars/Toggles.svelte';
-    import { getCurrentCharacter } from 'src/ts/storage/database.svelte';
+    
 
     let languageMode = $state(popUpEditorStore.language || 'markdown');
     let previewing = $state(false);

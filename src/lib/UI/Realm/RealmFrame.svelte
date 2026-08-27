@@ -1,7 +1,7 @@
 <script lang="ts">
     import { alertMd, alertRisuServiceTOS } from "src/ts/alert";
     import { shareRealmCardData } from "src/ts/realm";
-    import { downloadPreset } from "src/ts/storage/database.svelte";
+    import { downloadPreset } from "../../../ts/storage/presetService";
     import { characterStore, settingsStore, moduleStore } from 'src/ts/stores/domain';
     import { selectedCharID, ShowRealmFrameStore } from "src/ts/stores.svelte";
     import { sleep } from "src/ts/util";
@@ -76,8 +76,10 @@
         }
         else if($ShowRealmFrameStore.startsWith('module')){
             const predata = (moduleStore.modules ?? settingsStore.state.modules)[Number($ShowRealmFrameStore.split(':')[1])]
-            predata.type = 'risuModule'
-            const encodedPredata = new TextEncoder().encode(JSON.stringify(predata))
+            const encodedPredata = new TextEncoder().encode(JSON.stringify({
+                ...predata,
+                type: 'risuModule'
+            }))
             const encodedPredataName = new TextEncoder().encode(predata.name + '.json')
             data = {
                 data: toArrayBuffer(encodedPredata),

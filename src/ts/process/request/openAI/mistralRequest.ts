@@ -1,3 +1,4 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { language } from "src/lang";
 import {
   DEFAULT_MISTRAL_API_URL,
@@ -5,7 +6,7 @@ import {
   formatMistralMessages,
 } from "@risuai/chat-core/mistralProvider.cjs";
 import { globalFetch } from "src/ts/globalApi.svelte";
-import { getDatabase } from "src/ts/storage/database.svelte";
+
 import { LLMFormat } from "src/ts/model/modellist";
 import type {
   RequestDataArgumentExtended,
@@ -27,7 +28,7 @@ export async function requestMistral(
   arg: RequestDataArgumentExtended,
   formatedChat: OpenAIChatExtra[],
 ): Promise<requestDataResponse> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const reformatedChat = formatMistralMessages(formatedChat);
   const requestURL = resolveMistralRequestUrl(arg.customURL);
   const networkOptions = getLocalNetworkRequestOptions(requestURL, db, false);

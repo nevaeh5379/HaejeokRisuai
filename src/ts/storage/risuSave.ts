@@ -1,11 +1,9 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { Packr, Unpackr, decode } from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
-import {
-  getDatabase,
-  presetTemplate,
-  type Database,
-  type PortableDatabase,
-} from "./database.svelte";
+import { presetTemplate } from "./presetDefaults";
+import type { Database, PortableDatabase } from "./schema";
+
 import localforage from "localforage";
 import { forageStorage } from "../globalApi.svelte";
 import { isNodeServer, isTauri } from "src/ts/platform";
@@ -28,7 +26,7 @@ const unpackr = new Unpackr({
 
 const disableRemoteSaving = () => {
   try {
-    const db = getDatabase();
+    const db = settingsStore.state;
     return !db.enableRemoteSaving;
   } catch (error) {
     return true;

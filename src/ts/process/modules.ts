@@ -1,3 +1,5 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { language } from "src/lang";
 import {
   alertClear,
@@ -8,17 +10,8 @@ import {
   alertStore,
   alertWait,
 } from "../alert";
-import {
-  getCurrentCharacter,
-  getDatabase,
-  setCurrentCharacter,
-  setDatabase,
-  type character,
-  type customscript,
-  type groupChat,
-  type loreBook,
-  type triggerscript,
-} from "../storage/database.svelte";
+import type { character, customscript, groupChat, loreBook, triggerscript } from "../storage/schema";
+
 import {
   AppendableBuffer,
   downloadFile,
@@ -450,7 +443,7 @@ function deduplicateModuleById(modules: RisuModule[]) {
 }
 
 function getModulesForCharacter(character: character | groupChat | undefined) {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const currentChat = character?.chats?.[character.chatPage];
   const persona = currentChat?.bindedPersona
     ? db.personas?.find((item) => item.id === currentChat.bindedPersona)
@@ -477,7 +470,7 @@ export function getModules(
   overrideIds?: string[],
 ) {
   if (overrideIds !== undefined) return getModuleByIds(overrideIds);
-  return getModulesForCharacter(character ?? getCurrentCharacter());
+  return getModulesForCharacter(character ?? characterStore.currentCharacter);
 }
 
 export function getModuleLorebooks(
@@ -590,7 +583,7 @@ export async function applyModule() {
     return;
   }
 
-  const currentChar = getCurrentCharacter();
+  const currentChar = characterStore.currentCharacter;
   if (!currentChar) {
     return;
   }
@@ -614,7 +607,7 @@ export async function applyModule() {
     }
   }
 
-  setCurrentCharacter(currentChar);
+  characterStore.setCurrentCharacter(currentChar);
 
   alertNormal(language.successApplyModule);
 }
@@ -629,8 +622,8 @@ export function moduleUpdate(
 ) {
   const character =
     characterIndex === undefined
-      ? getCurrentCharacter()
-      : getDatabase().characters[characterIndex];
+      ? characterStore.currentCharacter
+      : characterStore.characters[characterIndex];
   const m = getModulesForCharacter(character);
 
   const ids = m.map((m) => m.id).join("-");

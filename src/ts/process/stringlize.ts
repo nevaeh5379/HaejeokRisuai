@@ -1,6 +1,7 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
-import type { ChatVarTarget } from "../parser/chatVar.svelte";
-import { getDatabase } from "../storage/database.svelte";
+import type { ChatExecutionTarget } from "src/ts/chatTarget";
+
 import { getUserName } from "../util";
 
 export function multiChatReplacer() {}
@@ -45,9 +46,9 @@ export function stringlizeChatOba(
   characterName: string,
   suggesting: boolean,
   continued: boolean,
-  chatTarget?: ChatVarTarget,
+  chatTarget?: ChatExecutionTarget,
 ) {
-  const db = getDatabase();
+  const db = settingsStore.state;
   let resultString: string[] = [];
   let { systemPrefix, userPrefix, assistantPrefix, seperator } =
     db.ooba.formating;
@@ -120,7 +121,7 @@ function toTitleCase(s: string) {
   return s[0].toUpperCase() + s.slice(1).toLowerCase();
 }
 export function getStopStrings(suggesting: boolean = false) {
-  const db = getDatabase();
+  const db = settingsStore.state;
   let { userPrefix, seperator } = db.ooba.formating;
   if (!seperator) {
     seperator = "\n";
@@ -155,7 +156,7 @@ export function unstringlizeChat(
   text: string,
   formated: OpenAIChat[],
   char: string = "",
-  chatTarget?: ChatVarTarget,
+  chatTarget?: ChatExecutionTarget,
 ) {
   let minIndex = -1;
 
@@ -182,7 +183,7 @@ export function getUnstringlizerChunks(
   formated: OpenAIChat[],
   char: string,
   mode: "ain" | "normal" = "normal",
-  chatTarget?: ChatVarTarget,
+  chatTarget?: ChatExecutionTarget,
 ) {
   let chunks: string[] = [
     "system note:",
@@ -191,7 +192,7 @@ export function getUnstringlizerChunks(
     "system：",
   ];
   let charNames: string[] = [];
-  const db = getDatabase();
+  const db = settingsStore.state;
   if (char) {
     charNames.push(char);
     if (mode === "ain") {
@@ -243,10 +244,10 @@ export function stringlizeAINChat(
   formated: OpenAIChat[],
   char: string,
   continued: boolean,
-  chatTarget?: ChatVarTarget,
+  chatTarget?: ChatExecutionTarget,
 ) {
   let resultString: string[] = [];
-  const db = getDatabase();
+  const db = settingsStore.state;
 
   for (const form of formated) {
     console.log(form);
@@ -340,9 +341,9 @@ export function unstringlizeAIN(
   data: string,
   formated: OpenAIChat[],
   char: string = "",
-  chatTarget?: ChatVarTarget,
+  chatTarget?: ChatExecutionTarget,
 ) {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const chunksResult = getUnstringlizerChunks(formated, char, "ain", chatTarget);
   const chunks = chunksResult.chunks;
   let result: ["char" | "user", string][] = [];

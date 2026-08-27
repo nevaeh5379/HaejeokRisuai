@@ -1,4 +1,4 @@
-import type { character, groupChat, Chat } from "../../storage/database.svelte";
+import type { character, groupChat, Chat } from "../../storage/schema";
 import type { ISqlStorage } from "../../storage/ISqlStorage";
 import { getSqlStorage } from "../../storage/sqlStorageFactory";
 import { v4 as uuidv4 } from "uuid";

@@ -1,10 +1,7 @@
+import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { getChatBranchMessages } from "../chatBranches";
-import {
-  getCurrentCharacter,
-  type Chat,
-  type ChatBranchReason,
-  type Message,
-} from "../storage/database.svelte";
+import type { Chat, ChatBranchReason, Message } from "../storage/schema";
+
 
 export interface ChatGraphTerminal {
   branchId: string;
@@ -421,7 +418,7 @@ export function buildChatMessageGraph(
 }
 
 export function getChatBranches(targetChat?: Chat | null): ChatBranchGraph {
-  const character = targetChat === undefined ? getCurrentCharacter() : undefined;
+  const character = targetChat === undefined ? characterStore.currentCharacter : undefined;
   const chat = targetChat === undefined
     ? character?.chats?.[character.chatPage ?? 0]
     : targetChat;

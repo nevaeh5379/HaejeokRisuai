@@ -30,7 +30,7 @@
     } from "@lucide/svelte";
     import { selectedCharID, assetManagerModalStore } from "src/ts/stores.svelte";
     import { characterStore, settingsStore } from "src/ts/stores/domain";
-    import type { character } from "src/ts/storage/database.svelte";
+    import type { character } from "../../ts/storage/schema";
     import { language } from "src/lang";
     import { getFileSrc } from "src/ts/globalApi.svelte";
     import { selectMultipleFile } from "src/ts/util";

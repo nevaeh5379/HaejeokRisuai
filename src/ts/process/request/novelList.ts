@@ -1,6 +1,7 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { globalFetch } from "../../globalApi.svelte";
 import { LLMFormat } from "../../model/modellist";
-import { getDatabase } from "../../storage/database.svelte";
+
 import {
   DEFAULT_NOVELLIST_API_URL,
   buildNovelListRequestBody,
@@ -18,7 +19,7 @@ export async function requestNovelList(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
   const formated = arg.formated;
-  const db = getDatabase();
+  const db = settingsStore.state;
   const maxTokens = arg.maxTokens;
   const temperature = arg.temperature;
   const biasString = arg.biasString;
@@ -104,4 +105,3 @@ export async function requestNovelList(
     result: unstr,
   };
 }
-

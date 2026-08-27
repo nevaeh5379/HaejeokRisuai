@@ -1,9 +1,14 @@
 import { get } from "svelte/store";
 import { getChatVar, setChatVar } from "../parser/chatVar.svelte";
 import { selectedCharID } from "../stores.svelte";
-import { type Chat, type Message, type loreBook } from "../storage/database.svelte";
+import type { Chat, Message, loreBook } from "../storage/schema";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
+import {
+  requireChatTarget,
+  requireSelectedChatTarget,
+  type ChatExecutionTarget,
+} from "../chatTarget";
 import { countTokenTexts } from "../tokenizer";
 import { risuChatParser } from "../parser/parser.svelte";
 import { findCharacterbyId, pickHashRand, selectSingleFile } from "../util";
@@ -75,20 +80,20 @@ export function addLorebookFolder(type: number) {
 }
 
 export async function loadLoreBookV3Prompt(
-  target?: { characterIndex: number; chatIndex: number },
+  target?: ChatExecutionTarget,
   generation?: {
     chat?: Chat;
     moduleIds?: string[];
     chatVariables?: Record<string, string>;
   },
 ) {
-  const selectedID = target?.characterIndex ?? get(selectedCharID);
-  const char = characterStore.characters[selectedID];
-  const page = target?.chatIndex ?? char.chatPage;
-  const sourceChat = generation?.chat ?? char.chats[page];
+  const resolved = target
+    ? requireChatTarget(target)
+    : requireSelectedChatTarget();
+  const char = resolved.character;
+  const sourceChat = generation?.chat ?? resolved.chat;
   const chatVarTarget = {
-    characterIndex: selectedID,
-    chatIndex: page,
+    ...resolved.target,
     globalVariables: generation?.chatVariables,
   };
   const characterLore = char.globalLore ?? [];

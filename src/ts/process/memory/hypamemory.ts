@@ -1,7 +1,8 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import localforage from "localforage";
 import { forageStorage, globalFetch } from "src/ts/globalApi.svelte";
 import { appendLastPath } from "src/ts/util";
-import { getDatabase } from "src/ts/storage/database.svelte";
+
 import { isContextModel, getContextProvider } from "./contextualEmbedding";
 import { isNodeServer } from "src/ts/platform";
 import { NodeStorage } from "src/ts/storage/nodeStorage";
@@ -51,7 +52,7 @@ export class HypaProcesser {
       name: "hypaVector",
     });
     this.vectors = [];
-    const db = getDatabase();
+    const db = settingsStore.state;
     this.model = normalizeHypaModel(model === "auto" ? db.hypaModel : model);
     this.customEmbeddingUrl =
       customEmbeddingUrl?.trim() || db.hypaCustomSettings?.url?.trim() || "";
@@ -98,7 +99,7 @@ export class HypaProcesser {
         ? customEmbeddingUrl
         : appendLastPath(customEmbeddingUrl, "embeddings");
 
-      const db = getDatabase();
+      const db = settingsStore.state;
       const fetchArgs = {
         headers: {
           ...(db.hypaCustomSettings?.key?.trim()
@@ -120,7 +121,7 @@ export class HypaProcesser {
       this.model === "openai3small" ||
       this.model === "openai3large"
     ) {
-      const db = getDatabase();
+      const db = settingsStore.state;
       const models = {
         ada: "text-embedding-ada-002",
         openai3small: "text-embedding-3-small",
@@ -163,7 +164,7 @@ export class HypaProcesser {
   }
 
   private getEmbeddingCacheKey(text: string): string {
-    const db = getDatabase();
+    const db = settingsStore.state;
     const suffix =
       this.model === "custom" && db.hypaCustomSettings?.model?.trim()
         ? `-${db.hypaCustomSettings.model.trim()}`
@@ -173,7 +174,7 @@ export class HypaProcesser {
 
   private getServerVectorIndexId(): string | null {
     if (!this.serverIndexId || isContextModel(this.model)) return null;
-    const db = getDatabase();
+    const db = settingsStore.state;
     return [
       this.serverIndexId,
       this.model,

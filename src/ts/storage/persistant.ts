@@ -1,4 +1,5 @@
-import { getDatabase } from "./database.svelte";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+
 import { alertNormal } from "../alert";
 import { language } from "src/lang";
 import { isTauri, isNodeServer, isFirefox } from "src/ts/platform";
@@ -35,7 +36,7 @@ async function requestPersistantStorageMain() {
 }
 
 export async function persistantStorageRecommended() {
-  const db = getDatabase();
+  const db = settingsStore.state;
   if (
     navigator.storage &&
     navigator.storage.persist &&

@@ -1,14 +1,4 @@
-import type {
-  botPreset,
-  character,
-  Chat,
-  customscript,
-  Database as DatabaseType,
-  groupChat,
-  loreBook,
-  Message,
-  RisuPersona,
-} from "./database.svelte";
+import type { botPreset, character, Chat, customscript, Database as DatabaseType, groupChat, loreBook, Message, RisuPersona } from "./schema";
 import type { RisuModule } from "../process/modules";
 import type {
   BotPresetSummary,

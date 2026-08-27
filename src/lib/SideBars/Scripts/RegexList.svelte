@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { customscript } from "src/ts/storage/database.svelte";
+    import type { customscript } from "../../../ts/storage/schema";
     import RegexData from "./RegexData.svelte";
     import Sortable from "sortablejs";
     import { sleep, sortableOptions } from "src/ts/util";

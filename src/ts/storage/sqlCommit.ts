@@ -1,12 +1,4 @@
-import type {
-  Chat,
-  Database,
-  PortableDatabase,
-  Message,
-  character,
-  groupChat,
-  botPreset,
-} from "./database.svelte";
+import type { Chat, Database, PortableDatabase, Message, character, groupChat, botPreset } from "./schema";
 import { v4 as uuidv4 } from "uuid";
 
 export type {

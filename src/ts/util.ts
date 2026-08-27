@@ -1,8 +1,12 @@
 import { endsWithCompletionPunctuation } from "@risuai/chat-core/finalization.cjs";
 import { get, writable, type Writable } from "svelte/store";
-import type { ChatVarTarget } from "./parser/chatVar.svelte";
-import type { Database, Message } from "./storage/database.svelte";
-import { getDatabase } from "./storage/database.svelte";
+import {
+  resolveChatTarget,
+  resolveSelectedChatTarget,
+  type ChatExecutionTarget,
+} from "src/ts/chatTarget";
+import type { Database, Message } from "./storage/schema";
+
 import { selectedCharID } from "./stores.svelte";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import { characterStore } from "./stores/domain/characterStore.svelte";
@@ -109,7 +113,7 @@ export async function selectMultipleFile(ext: string[]) {
 export const replacePlaceholders = (
   msg: string,
   name: string,
-  target?: ChatVarTarget,
+  target?: ChatExecutionTarget,
 ) => {
   return msg
     .replace(/({{char}})|({{Char}})|(<Char>)|(<char>)/gi, name)
@@ -117,11 +121,12 @@ export const replacePlaceholders = (
     .replace(/(\{\{((set)|(get))var::.+?\}\})/gu, "");
 };
 
-export function checkPersonaBinded(target?: ChatVarTarget) {
+export function checkPersonaBinded(target?: ChatExecutionTarget) {
   try {
-    const selectedChar = target?.characterIndex ?? get(selectedCharID);
-    const character = characterStore.characters[selectedChar];
-    const chat = character?.chats?.[target?.chatIndex ?? character.chatPage];
+    const chat = (target
+      ? resolveChatTarget(target)
+      : resolveSelectedChatTarget()
+    )?.chat;
     if (!chat?.bindedPersona) {
       return null;
     }
@@ -134,40 +139,40 @@ export function checkPersonaBinded(target?: ChatVarTarget) {
   }
 }
 
-export function getUserName(target?: ChatVarTarget) {
+export function getUserName(target?: ChatExecutionTarget) {
   const bindedPersona = checkPersonaBinded(target);
   if (bindedPersona) {
     return bindedPersona.name;
   }
-  const db = getDatabase();
+  const db = settingsStore.state;
   return db.username ?? "User";
 }
 
-export function getUserIcon(target?: ChatVarTarget) {
+export function getUserIcon(target?: ChatExecutionTarget) {
   const bindedPersona = checkPersonaBinded(target);
   if (bindedPersona) {
     return bindedPersona.icon;
   }
-  const db = getDatabase();
+  const db = settingsStore.state;
   return db.userIcon ?? "";
 }
 
-export function getPersonaPrompt(target?: ChatVarTarget) {
+export function getPersonaPrompt(target?: ChatExecutionTarget) {
   const bindedPersona = checkPersonaBinded(target);
   if (bindedPersona) {
     return bindedPersona.personaPrompt;
   }
-  const db = getDatabase();
+  const db = settingsStore.state;
   return db.personaPrompt ?? "";
 }
 
-export function getUserIconProtrait(target?: ChatVarTarget) {
+export function getUserIconProtrait(target?: ChatExecutionTarget) {
   try {
     const bindedPersona = checkPersonaBinded(target);
     if (bindedPersona) {
       return bindedPersona.largePortrait;
     }
-    const db = getDatabase();
+    const db = settingsStore.state;
     return db?.personas?.[db?.selectedPersona]?.largePortrait ?? false;
   } catch (error) {
     return false;
@@ -183,7 +188,7 @@ export function selectFileByDom(
     fileInput.type = "file";
     fileInput.multiple = multiple === "multiple";
     const acceptAll =
-      getDatabase().allowAllExtentionFiles ||
+      settingsStore.state.allowAllExtentionFiles ||
       isIOS() ||
       allowedExtensions[0] === "*";
     if (!acceptAll) {
@@ -238,7 +243,7 @@ function readFileAsUint8Array(file: File) {
 }
 
 export async function changeFullscreen() {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const isFull = await appWindow.isFullscreen();
   if (db.fullScreen && !isFull) {
     await appWindow.setFullscreen(true);
@@ -261,7 +266,7 @@ export async function getCustomBackground(
 }
 
 export function findCharacterbyId(id: string) {
-  const db = getDatabase();
+  const db = settingsStore.state;
   for (const char of db.characters) {
     if (char.type !== "group") {
       if (char.chaId === id) {
@@ -275,7 +280,7 @@ export function findCharacterbyId(id: string) {
 }
 
 export function findCharacterIndexbyId(id: string) {
-  const db = getDatabase();
+  const db = settingsStore.state;
   let i = 0;
   for (const char of db.characters) {
     if (char.chaId === id) {
@@ -287,7 +292,7 @@ export function findCharacterIndexbyId(id: string) {
 }
 
 export function getCharacterIndexObject() {
-  const db = getDatabase();
+  const db = settingsStore.state;
   let i = 0;
   let result: { [key: string]: number } = {};
   for (const char of db.characters) {
@@ -387,7 +392,7 @@ export async function getEmotion(
 }
 
 export function getAuthorNoteDefaultText() {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const template = db.promptTemplate;
   if (!template) {
     return "";

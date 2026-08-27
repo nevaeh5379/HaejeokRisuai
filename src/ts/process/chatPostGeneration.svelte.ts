@@ -1,5 +1,5 @@
 import { get } from "svelte/store";
-import type { character } from "../storage/database.svelte";
+import type { character } from "../storage/schema";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { CharEmotion } from "../stores.svelte";
@@ -9,6 +9,7 @@ import { requestChatData } from "./request/chatRequestOrchestrator";
 import { HypaProcesser } from "./memory/hypamemory";
 import { stableDiff } from "./stableDiff";
 import type { ChatModelResponse, OpenAIChat } from "@risuai/chat-core/types.cjs";
+import { requireChatTargetFromIndexes } from "../chatTarget";
 
 type EmotionAsset = [string, string];
 type EmotionHistoryEntry = [string, string, number];
@@ -255,10 +256,7 @@ async function processImageGeneration(options: PostGenerationEffectsOptions) {
   await stableDiff(
     options.currentChar,
     buildImageGenerationTranscript(options.selectedChar, options.selectedChat),
-    {
-      characterIndex: options.selectedChar,
-      chatIndex: options.selectedChat,
-    },
+    requireChatTargetFromIndexes(options.selectedChar, options.selectedChat),
   );
 }
 

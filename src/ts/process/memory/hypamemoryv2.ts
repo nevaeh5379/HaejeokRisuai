@@ -1,9 +1,10 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import localforage from "localforage";
 import { normalizeHypaModel, type HypaModel } from "./hypamemory";
 import { isContextModel, getContextProvider } from "./contextualEmbedding";
 import { TaskRateLimiter, TaskCanceledError } from "./taskRateLimiter";
 import { forageStorage, globalFetch } from "src/ts/globalApi.svelte";
-import { getDatabase } from "src/ts/storage/database.svelte";
+
 import { appendLastPath } from "src/ts/util";
 import { isNodeServer } from "src/ts/platform";
 import { NodeStorage } from "src/ts/storage/nodeStorage";
@@ -40,7 +41,7 @@ export class HypaProcessorV2<TMetadata> {
   });
 
   public constructor(options?: HypaProcessorV2Options) {
-    const db = getDatabase();
+    const db = settingsStore.state;
 
     const model = normalizeHypaModel(options?.model ?? db.hypaModel);
     this.options = {
@@ -346,7 +347,7 @@ export class HypaProcessorV2<TMetadata> {
     if (!this.options.serverIndexId || isContextModel(this.options.model)) return null;
     if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) return null;
 
-    const db = getDatabase();
+    const db = settingsStore.state;
     const indexId = [
       this.options.serverIndexId,
       this.options.model,
@@ -417,7 +418,7 @@ export class HypaProcessorV2<TMetadata> {
   }
 
   private getCacheKey(content: string, contextTexts?: string[]): string {
-    const db = getDatabase();
+    const db = settingsStore.state;
     const suffix =
       this.options.model === "custom" && db.hypaCustomSettings?.model?.trim()
         ? `-${db.hypaCustomSettings.model.trim()}`
@@ -448,7 +449,7 @@ export class HypaProcessorV2<TMetadata> {
   }
 
   private async getAPIEmbeds(contents: string[]): Promise<EmbeddingVector[]> {
-    const db = getDatabase();
+    const db = settingsStore.state;
     let response = null;
 
     if (this.options.model === "custom") {

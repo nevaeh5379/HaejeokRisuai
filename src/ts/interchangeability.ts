@@ -1,6 +1,6 @@
 import { v4 } from "uuid";
 import type { RisuModule } from "./process/modules.ts";
-import type { character, RisuPersona } from "./storage/database.svelte.js";
+import type { character, RisuPersona } from "./storage/schema.js";
 import { createBlankChar } from "src/ts/characters";
 
 export function convertModuleToCharacter(m: RisuModule): character {

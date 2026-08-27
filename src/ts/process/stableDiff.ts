@@ -1,6 +1,8 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { get } from "svelte/store";
-import { getDatabase, type character } from "../storage/database.svelte";
-import type { ChatVarTarget } from "../parser/chatVar.svelte";
+import type { character } from "../storage/schema";
+
+import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import { requestChatData } from "./request/chatRequestOrchestrator";
 import { alertError } from "../alert";
 import { fetchNative, globalFetch, readImage } from "../globalApi.svelte";
@@ -13,9 +15,9 @@ import random from "lodash/random";
 export async function stableDiff(
   currentChar: character,
   prompt: string,
-  chatTarget?: ChatVarTarget,
+  chatTarget?: ChatExecutionTarget,
 ) {
-  let db = getDatabase();
+  let db = settingsStore.state;
 
   if (db.sdProvider === "") {
     alertError("Stable diffusion is not set in settings.");
@@ -72,7 +74,7 @@ export async function generateAIImage(
   neg: string,
   returnSdData: string,
 ): Promise<string | false> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   console.log(db.sdProvider);
   if (db.sdProvider === "webui") {
     const uri = new URL(db.webUiUrl);

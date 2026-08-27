@@ -174,7 +174,7 @@
     if (name.endsWith('.risup')) {
         const [{ language }, { alertNormal }] = await Promise.all([import('./lang'), import('./ts/alert')])
         const data = new Uint8Array(await file.arrayBuffer())
-        const { importPreset } = await import('./ts/storage/database.svelte')
+        const { importPreset } = await import('./ts/storage/presetService')
         await importPreset({ name: file.name, data })
         alertNormal(language.successImport)
     } else if (name.endsWith('.risum')) {

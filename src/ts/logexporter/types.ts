@@ -113,11 +113,7 @@ export interface LogExportProgressCallbacks {
 // 4. Chat Data Model (native)
 // ============================================================================
 
-import type {
-  character,
-  groupChat,
-  Message,
-} from "src/ts/storage/database.svelte";
+import type { character, groupChat, Message } from "../storage/schema";
 
 /** A single rendered log entry ready for theming. */
 export interface LogMessageData {

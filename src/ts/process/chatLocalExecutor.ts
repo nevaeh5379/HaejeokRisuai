@@ -1,4 +1,4 @@
-import type { MessageGenerationInfo } from "../storage/database.svelte";
+import type { MessageGenerationInfo } from "../storage/schema";
 import { language } from "../../lang";
 import { setChatProcessStage } from "./chatRuntimeState";
 import {

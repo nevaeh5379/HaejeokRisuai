@@ -1,11 +1,6 @@
 import { get } from "svelte/store";
-import type {
-  character,
-  groupChat,
-  Chat,
-  MessagePresetInfo,
-} from "../storage/database.svelte";
-import { changeToPreset } from "../storage/database.svelte";
+import type { character, groupChat, Chat, MessagePresetInfo } from "../storage/schema";
+import { changeToPreset } from "../storage/presetService";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { presetStore } from "../stores/domain/presetStore.svelte";

@@ -26,7 +26,7 @@
     import Help from "./Help.svelte";
     import AirisuMascot from "../UI/AirisuMascot.svelte";
     import BranchGraphModal from "./BranchGraphModal.svelte";
-    import { appVer } from "src/ts/storage/database.svelte";
+    import { appVer } from "../../ts/appVersion";
     import { translateStackTrace } from "../../ts/sourcemap";
     import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from "src/ts/platform";
     import {

@@ -1,3 +1,4 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import {
   alertError,
   alertInput,
@@ -6,10 +7,9 @@ import {
   alertStore,
   alertProgress,
 } from "../alert";
-import {
-  getDatabase,
-  type Database,
-} from "../storage/database.svelte";
+import type { Database } from "../storage/schema";
+import { createDatabaseSnapshot } from "../storage/databaseSnapshot";
+
 import { forageStorage, getUncleanables, openURL } from "../globalApi.svelte";
 import { isNodeServer, isTauri } from "src/ts/platform";
 import {
@@ -141,7 +141,7 @@ let lastSaved: number = parseInt(
 let BackupDb: Database = null;
 
 export function syncDrive() {
-  BackupDb = safeStructuredClone(getDatabase());
+  BackupDb = createDatabaseSnapshot();
   return;
 }
 
@@ -155,15 +155,16 @@ async function backupDrive(ACCESS_TOKEN: string) {
     return d.name;
   });
 
+  const databaseSnapshot = createDatabaseSnapshot();
   const coldStoragePayloads =
-    await collectColdStorageBackupPayloads(getDatabase());
+    await collectColdStorageBackupPayloads(databaseSnapshot);
   const unavailableColdStorageKeys = [
     ...coldStoragePayloads.missingKeys,
     ...coldStoragePayloads.invalidKeys,
   ];
   if (
     !(await confirmIncompleteColdStorageOperation(
-      getDatabase(),
+      databaseSnapshot,
       unavailableColdStorageKeys,
       "backup",
     ))
@@ -280,7 +281,7 @@ async function loadDrive(
   const files: DriveFile[] = await getFilesInFolder(ACCESS_TOKEN);
   let foragekeys: string[] = [];
   let loadedForageKeys = false;
-  let db = getDatabase();
+  let db = settingsStore.state;
 
   async function checkImageExists(images: string) {
     if (db?.account?.useSync) {

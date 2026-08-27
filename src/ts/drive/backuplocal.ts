@@ -22,13 +22,9 @@ import {
   decodeRisuSave,
   encodeRisuSaveLegacyAsync,
 } from "../storage/risuSave";
-import {
-  getDatabase,
-  normalizeDatabaseDefaults,
-  setDatabaseLite,
-  type Database,
-  type PortableDatabase,
-} from "../storage/database.svelte";
+import { normalizeDatabaseDefaults } from "../storage/databaseDefaults";
+import type { Database, PortableDatabase } from "../storage/schema";
+
 import { relaunch } from "@tauri-apps/plugin-process";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { decryptBuffer, encryptBuffer, sleep } from "../util";
@@ -44,6 +40,7 @@ import {
   setColdStorageItem,
 } from "../process/coldstorage.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
+import { createDatabaseSnapshot } from "../storage/databaseSnapshot";
 import { NodeStorage } from "../storage/nodeStorage";
 import { getSqlStorage } from "../storage/sqlStorageFactory";
 import { presetStore } from "../stores/domain/presetStore.svelte";
@@ -436,7 +433,7 @@ async function loadFallbackBackupSnapshot(
 ): Promise<PortableDatabase> {
   onProgress?.("Loading database from storage...");
   await settingsStore.ensureDeferredLoaded();
-  const live = getDatabase() as PortableDatabase;
+  const live = createDatabaseSnapshot() as PortableDatabase;
   const snapshot = safeStructuredClone(live) as PortableDatabase;
 
   try {

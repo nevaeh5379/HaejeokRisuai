@@ -1,15 +1,13 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { risuChatParser } from "src/ts/parser/parser.svelte";
-import type { ChatVarTarget } from "src/ts/parser/chatVar.svelte";
-import {
-  getDatabase,
-  type character,
-  type groupChat,
-} from "src/ts/storage/database.svelte";
+import type { ChatExecutionTarget } from "src/ts/chatTarget";
+import type { character, groupChat } from "../../storage/schema";
+
 import { jsonOutputTrimmer } from "src/ts/util";
 
 export type JSONSchemaParserContext = {
   chara?: character | groupChat;
-  chatTarget?: ChatVarTarget;
+  chatTarget?: ChatExecutionTarget;
 };
 
 export function convertInterfaceToSchema(
@@ -142,7 +140,7 @@ export function getOpenAIJSONSchema(
   schema?: string,
   context: JSONSchemaParserContext = {},
 ) {
-  const db = getDatabase();
+  const db = settingsStore.state;
   return {
     name: "format",
     strict: db.strictJsonSchema,
@@ -155,7 +153,7 @@ export function getGeneralJSONSchema(
   excludes: string[] = [],
   context: JSONSchemaParserContext = {},
 ) {
-  const db = getDatabase();
+  const db = settingsStore.state;
 
   function process(data: any) {
     const keys = Object.keys(data);

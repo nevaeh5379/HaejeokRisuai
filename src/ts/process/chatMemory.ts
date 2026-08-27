@@ -1,4 +1,4 @@
-import type { character, Chat, groupChat } from "../storage/database.svelte";
+import type { character, Chat, groupChat } from "../storage/schema";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { language } from "../../lang";
@@ -9,6 +9,7 @@ import { hypaMemoryV2 } from "./memory/hypav2";
 import { hypaMemoryV3 } from "./memory/hypav3";
 import { supaMemory } from "./memory/supaMemory";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+import { requireChatTargetFromIndexes } from "../chatTarget";
 
 interface MemoryState {
   chats: OpenAIChat[];
@@ -123,10 +124,10 @@ async function applyHypaV2Memory(
     options.tokenizer,
     {
       currentChar: options.currentChar,
-      chatTarget: {
-        characterIndex: options.selectedChar,
-        chatIndex: options.selectedChat,
-      },
+      chatTarget: requireChatTargetFromIndexes(
+        options.selectedChar,
+        options.selectedChat,
+      ),
     },
   );
   if (result.error) {
@@ -159,10 +160,10 @@ async function applyHypaV3Memory(
     options.tokenizer,
     {
       currentChar: options.currentChar,
-      chatTarget: {
-        characterIndex: options.selectedChar,
-        chatIndex: options.selectedChat,
-      },
+      chatTarget: requireChatTargetFromIndexes(
+        options.selectedChar,
+        options.selectedChat,
+      ),
     },
   );
   if (result.error) {
@@ -199,10 +200,10 @@ async function applySupaMemory(
     options.tokenizer,
     {
       asHyper: settingsStore.state.hypaMemory,
-      chatTarget: {
-        characterIndex: options.selectedChar,
-        chatIndex: options.selectedChat,
-      },
+      chatTarget: requireChatTargetFromIndexes(
+        options.selectedChar,
+        options.selectedChat,
+      ),
       currentChar: options.currentChar,
     },
   );

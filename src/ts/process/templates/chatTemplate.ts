@@ -1,12 +1,10 @@
+import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { Template } from "@huggingface/jinja";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
-import {
-  getCurrentCharacter,
-  getDatabase,
-  type character,
-  type groupChat,
-} from "src/ts/storage/database.svelte";
-import type { ChatVarTarget } from "src/ts/parser/chatVar.svelte";
+import type { character, groupChat } from "../../storage/schema";
+
+import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import { getUserName } from "src/ts/util";
 
 export const chatTemplates = {
@@ -36,11 +34,11 @@ export const applyChatTemplate = (
     type?: string;
     custom?: string;
     currentChar?: character | groupChat;
-    chatTarget?: ChatVarTarget;
+    chatTarget?: ChatExecutionTarget;
   } = {},
 ) => {
-  const db = getDatabase();
-  const currentChar = arg.currentChar ?? getCurrentCharacter();
+  const db = settingsStore.state;
+  const currentChar = arg.currentChar ?? characterStore.currentCharacter;
   const type = arg.type ?? db.instructChatTemplate;
   if (!type) {
     throw new Error("Template type is not set");

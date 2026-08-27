@@ -1,3 +1,4 @@
+import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { v4 } from "uuid";
 import {
   alertError,
@@ -7,15 +8,8 @@ import {
   alertWait,
 } from "../alert";
 import { get } from "svelte/store";
-import {
-  setDatabase,
-  type character,
-  saveImage,
-  type Chat,
-  getCurrentChat,
-  setCurrentChat,
-  getDatabase,
-} from "../storage/database.svelte";
+import type { character, Chat } from "../storage/schema";
+import { saveImage } from "../storage/assetPersistence";
 import { selectedCharID } from "../stores.svelte";
 import { findCharacterIndexbyId, sleep } from "../util";
 import type { DataConnection, Peer } from "peerjs";
@@ -110,11 +104,10 @@ export async function createMultiuserRoom() {
     console.log("new connection", conn);
 
     async function requestChar(excludeAssets: string[] | null = null) {
-      const db = getDatabase({
-        snapshot: true,
-      });
       const selectedCharId = get(selectedCharID);
-      const char = safeStructuredClone(db.characters[selectedCharId]);
+      const char = safeStructuredClone(
+        characterStore.characters[selectedCharId],
+      );
       if (char.type === "group") {
         return;
       }
@@ -158,11 +151,8 @@ export async function createMultiuserRoom() {
         requestChar();
       }
       if (data.type === "receive-char") {
-        const db = getDatabase({
-          snapshot: true,
-        });
         const selectedCharId = get(selectedCharID);
-        const char = safeStructuredClone(db.characters[selectedCharId]);
+        const char = characterStore.characters[selectedCharId];
         const recivedChar = data.data;
         if (char.type === "group") {
           return;
@@ -170,13 +160,11 @@ export async function createMultiuserRoom() {
         char.chats[char.chatPage] = recivedChar.chats[0];
       }
       if (data.type === "request-chat-sync") {
-        const db = getDatabase();
         const selectedCharId = get(selectedCharID);
-        const char = db.characters[selectedCharId];
+        const char = characterStore.characters[selectedCharId];
         char.chats[char.chatPage] = data.data;
-        db.characters[selectedCharId] = char;
+        characterStore.characters[selectedCharId] = char;
         latestSyncChat = data.data;
-        setDatabase(db);
 
         for (const connection of connections) {
           if (connection.connectionId === conn.connectionId) {
@@ -190,9 +178,8 @@ export async function createMultiuserRoom() {
         }
       }
       if (data.type === "request-chat") {
-        const db = getDatabase();
         const selectedCharId = get(selectedCharID);
-        const char = db.characters[selectedCharId];
+        const char = characterStore.characters[selectedCharId];
         const chat = char.chats[char.chatPage];
         const rs: ReciveSync = {
           type: "receive-chat",
@@ -313,22 +300,20 @@ export async function joinMultiuserRoom() {
       switch (data.type) {
         case "receive-char": {
           //create temp character
-          const db = getDatabase();
           const cha = data.data;
           cha.chaId = "§temp";
           cha.chatPage = 0;
           const ind = findCharacterIndexbyId("§temp");
           const selectedcharIndex = get(selectedCharID);
           if (ind === -1) {
-            db.characters.push(cha);
+            characterStore.characters.push(cha);
           } else {
-            db.characters[ind] = cha;
+            characterStore.characters[ind] = cha;
           }
           const tempInd = findCharacterIndexbyId("§temp");
           if (selectedcharIndex !== tempInd) {
             selectedCharID.set(tempInd);
           }
-          setDatabase(db);
           break;
         }
         case "receive-asset": {
@@ -336,15 +321,11 @@ export async function joinMultiuserRoom() {
           break;
         }
         case "receive-chat": {
-          const db = getDatabase({
-            snapshot: true,
-          });
           const selectedCharId = get(selectedCharID);
-          const char = safeStructuredClone(db.characters[selectedCharId]);
+          const char = characterStore.characters[selectedCharId];
           char.chats[char.chatPage] = data.data;
-          db.characters[selectedCharId] = char;
+          characterStore.characters[selectedCharId] = char;
           latestSyncChat = data.data;
-          setDatabase(db);
           break;
         }
         case "request-chat-safe": {
@@ -392,7 +373,7 @@ export async function peerSync() {
     return;
   }
   await sleep(1);
-  const chat = getCurrentChat();
+  const chat = characterStore.currentChat;
   latestSyncChat = chat;
   if (!conn) {
     // host user
@@ -450,5 +431,5 @@ export function peerRevertChat() {
   if (!connectionOpen || !latestSyncChat) {
     return;
   }
-  setCurrentChat(latestSyncChat);
+  characterStore.setCurrentChat(latestSyncChat);
 }

@@ -1,14 +1,9 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { get, writable } from "svelte/store";
-import {
-  saveImage,
-  type character,
-  type Chat,
-  defaultSdDataFunc,
-  type loreBook,
-  getDatabase,
-  getCharacterByIndex,
-  setCharacterByIndex,
-} from "./storage/database.svelte";
+import { saveImage } from "./storage/assetPersistence";
+import type { character, Chat, loreBook } from "./storage/schema";
+import { defaultSdDataFunc } from "./storage/presetDefaults";
+
 import {
   alertAddCharacter,
   alertConfirm,
@@ -515,7 +510,7 @@ export async function importChat() {
         const folders = json.folders || [];
         const chats = Array.isArray(json.data) ? json.data : [json.data];
         const selectedID = get(selectedCharID);
-        let db = getDatabase();
+        let db = settingsStore.state;
         let folderIdMap = {};
         folders.forEach((folder) => {
           if (
@@ -627,7 +622,7 @@ export async function importChat() {
 export async function exportAllChats() {
   try {
     const selectedID = get(selectedCharID);
-    const db = getDatabase();
+    const db = settingsStore.state;
     const char = db.characters[selectedID];
     if (char && Array.isArray(char.chats)) {
       for (let i = 0; i < char.chats.length; i++) {
@@ -657,7 +652,7 @@ export async function exportAllChats() {
 }
 
 function formatTavernChat(chat: string, charName: string) {
-  const db = getDatabase();
+  const db = settingsStore.state;
   return chat
     .replace(/<([Uu]ser)>|\{\{([Uu]ser)\}\}/g, getUserName())
     .replace(/((\{\{)|<)([Cc]har)(=.+)?((\}\})|>)/g, charName);
@@ -673,7 +668,7 @@ export function characterFormatUpdate(
 ) {
   let cha =
     typeof indexOrCharacter === "number"
-      ? getCharacterByIndex(indexOrCharacter)
+      ? characterStore.getCharacterByIndex(indexOrCharacter)
       : indexOrCharacter;
   const characterIndex =
     typeof indexOrCharacter === "number" ? indexOrCharacter : null;
@@ -846,7 +841,7 @@ export function characterFormatUpdate(
   if (characterIndex !== null) {
     if (!sqlHydrated) {
       // Legacy/non-SQL objects retain the historical eager persistence path.
-      setCharacterByIndex(characterIndex, cha);
+      characterStore.setCharacterByIndex(characterIndex, cha);
     } else {
       if (needsFullCharacterPersistence) {
         characterStore.markCharacterDirty(cha.chaId);
@@ -889,7 +884,7 @@ export async function makeGroupImage() {
       type: "wait",
       msg: `Loading..`,
     });
-    const db = getDatabase();
+    const db = settingsStore.state;
     const charID = get(selectedCharID);
     const group = db.characters[charID];
     if (group.type !== "group") {
@@ -975,7 +970,7 @@ export async function removeChar(
   name: string,
   type: "normal" | "permanent" | "permanentForce" = "normal",
 ) {
-  const db = getDatabase();
+  const db = settingsStore.state;
   if (type !== "permanentForce") {
     const conf = await alertConfirm(language.removeConfirm + name);
     if (!conf) {
@@ -1037,7 +1032,7 @@ export async function addCharacter(
       MobileGUIStack.set(1);
       return;
   }
-  let db = getDatabase();
+  let db = settingsStore.state;
   if (db.characters[db.characters.length - 1]) {
     changeChar(db.characters.length - 1);
   }

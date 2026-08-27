@@ -1,10 +1,4 @@
-import type {
-  character,
-  groupChat,
-  Chat,
-  MessageGenerationInfo,
-  MessagePresetInfo,
-} from "../storage/database.svelte";
+import type { character, groupChat, Chat, MessageGenerationInfo, MessagePresetInfo } from "../storage/schema";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import type { ChatModelResponse } from "@risuai/chat-core/types.cjs";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
@@ -18,6 +12,7 @@ import {
   findMessageIndexByChatId,
   runChatOutputListeners,
 } from "./chatResponseShared.svelte";
+import { requireChatTargetFromIndexes } from "../chatTarget";
 
 type NonStreamingRequest = Exclude<
   ChatModelResponse,
@@ -64,7 +59,7 @@ async function processResponseContent(
     "editoutput",
     msgIndex,
     {},
-    { characterIndex: options.selectedChar, chatIndex: options.selectedChat },
+    requireChatTargetFromIndexes(options.selectedChar, options.selectedChat),
   );
   if (settingsStore.state.removeIncompleteResponse) {
     processed.data = trimUntilPunctuation(processed.data);

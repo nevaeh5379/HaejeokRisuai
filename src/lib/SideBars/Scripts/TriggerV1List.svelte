@@ -1,8 +1,7 @@
 <script lang="ts">
   import { PlusIcon } from '@lucide/svelte'
   import Sortable from 'sortablejs'
-  import type { triggerscript } from 'src/ts/storage/database.svelte'
-  import { sleep, sortableOptions } from 'src/ts/util'
+  import type { triggerscript } from '../../../ts/storage/schema';import { sleep, sortableOptions } from 'src/ts/util'
   import { onDestroy, onMount } from 'svelte'
   import TriggerData from './TriggerV1Data.svelte'
 

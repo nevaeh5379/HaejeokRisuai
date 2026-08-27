@@ -1,12 +1,13 @@
 <script lang="ts">
-    import isEqual from "lodash/isEqual"
+    import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
+import isEqual from "lodash/isEqual"
     import { settingsStore } from 'src/ts/stores/domain'
     import { sleep } from "src/ts/util"
     import { alertError } from "../../ts/alert"
     import { addMetadataToElement, getDistance, ParseMarkdown, postTranslationParse, trimMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
     import { getLLMCache, translateHTML } from "../../ts/translator/translator"
     import { resolveCurrentChatAsset } from "src/ts/chatAssetResolver";
-    import { getCurrentCharacter } from "src/ts/storage/database.svelte";
+    
     import { getFileSrc } from "src/ts/globalApi.svelte";
 
     interface Props {
@@ -176,7 +177,7 @@
         const imgs = bodyRoot.querySelectorAll('img:not([src^="data:"]):not([src^="http:"]):not([src^="https:"]):not([src^="blob:"]):not([src^="file:"]):not([src^="tauri:"]):not([noimage])') as NodeListOf<HTMLImageElement>
         
         if (imgs.length > 0) {
-            const currentCharacter = getCurrentCharacter()
+            const currentCharacter = characterStore.currentCharacter
             const styl = currentCharacter.prebuiltAssetStyle
 
             imgs.forEach(async (img) => {

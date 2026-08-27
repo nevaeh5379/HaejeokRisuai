@@ -1,3 +1,4 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import {
   GOOGLE_GENERATION_PARAMETER_RENAMES,
   buildGoogleGenerateContentUrl,
@@ -17,7 +18,6 @@ import type {
 } from "@risuai/chat-core/googleProvider.cjs";
 import { fetchNative, textifyReadableStream } from "src/ts/globalApi.svelte";
 import { LLMFlags, LLMFormat, type LLMModel } from "src/ts/model/modellist";
-import { getDatabase, setDatabase } from "src/ts/storage/database.svelte";
 import { base64url, simplifySchema } from "src/ts/util";
 import { v4 } from "uuid";
 import {
@@ -51,7 +51,7 @@ export async function requestGoogleCloudVertex(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
   const formated = arg.formated;
-  const db = getDatabase();
+  const db = settingsStore.state;
   const maxTokens = arg.maxTokens;
 
   const preparedConversation = prepareGoogleConversation(formated, {
@@ -384,10 +384,9 @@ export async function requestGoogleCloudVertex(
       throw new Error("No google access token in the response");
     }
 
-    const db2 = getDatabase();
+    const db2 = settingsStore.state;
     db2.vertexAccessToken = token;
     db2.vertexAccessTokenExpires = Date.now() + 3500 * 1000;
-    setDatabase(db2);
     return token;
   }
 
@@ -495,7 +494,7 @@ async function requestGoogle(
   headers: { [key: string]: string },
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
-  const db = getDatabase();
+  const db = settingsStore.state;
 
   const fallBackGemini = async (
     originalError: string,
@@ -1020,7 +1019,7 @@ function wrapToolStream(
 ): ReadableStream<StreamResponseChunk> {
   return new ReadableStream<StreamResponseChunk>({
     async start(controller) {
-      const db = getDatabase();
+      const db = settingsStore.state;
       let reader = stream.getReader();
       let prefix = "";
       let lastValue = initStreamState();

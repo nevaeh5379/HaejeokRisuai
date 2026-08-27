@@ -1,5 +1,5 @@
 import { CCardLib } from "@risuai/ccardlib";
-import type { loreBook } from "../storage/database.svelte";
+import type { loreBook } from "../storage/schema";
 
 export type PreparedLoreQuery = {
   keys: string[];

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { type character, type groupChat } from "src/ts/storage/database.svelte";
+    import type { character, groupChat } from "../../ts/storage/schema";
     import { characterStore } from 'src/ts/stores/domain';
     import BarIcon from "../SideBars/BarIcon.svelte";
     import { addCharacter, changeChar, getCharImage } from "src/ts/characters";

@@ -1,11 +1,7 @@
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { get } from "svelte/store";
 import { selectedCharID } from "src/ts/stores.svelte";
-import type {
-  character,
-  groupChat,
-  Message,
-} from "src/ts/storage/database.svelte";
+import type { character, groupChat, Message } from "../storage/schema";
 import { preLoadChat } from "src/ts/process/coldstorage.svelte";
 import { ParseMarkdown } from "src/ts/parser/parser.svelte";
 import { getFileSrc } from "src/ts/globalApi.svelte";

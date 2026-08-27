@@ -1,7 +1,7 @@
 <script lang="ts">
-    import { getNanoGPTBalance, getNanoGPTSubscription } from 'src/ts/model/nanogpt'
+    import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+import { getNanoGPTBalance, getNanoGPTSubscription } from 'src/ts/model/nanogpt'
     import type { NanoGPTBalance, NanoGPTSubscriptionUsage } from 'src/ts/model/nanogpt'
-    import { getDatabase } from 'src/ts/storage/database.svelte'
     import { language } from 'src/lang'
 
     interface Props {
@@ -25,7 +25,7 @@
             getNanoGPTSubscription(key),
         ])
         // Persist subscription state so chat requests can pick the right endpoint
-        const db = getDatabase()
+        const db = settingsStore.state
         db.nanogptSubscriptionState = subscription?.state ?? ''
         return { balance, subscription }
     }

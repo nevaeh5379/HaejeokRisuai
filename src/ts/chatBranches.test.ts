@@ -7,7 +7,7 @@ import {
   resolveRerollTarget,
   syncActiveChatBranch,
 } from "./chatBranches";
-import type { Chat, Message } from "./storage/database.svelte";
+import type { Chat, Message } from "./storage/schema";
 
 function makeMessage(role: Message["role"], data: string, chatId: string): Message {
   return { role, data, chatId };

@@ -6,7 +6,7 @@
     import SliderInput from 'src/lib/UI/GUI/SliderInput.svelte';
     import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte';
     import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte';
-    import type { SeparateParameters } from 'src/ts/storage/database.svelte';
+    import type { SeparateParameters } from '../../../ts/storage/schema';
 
     type AuxModelKey = keyof typeof settingsStore.state.seperateModels
 

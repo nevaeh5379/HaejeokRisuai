@@ -2,7 +2,7 @@ import { findCharacterbyId } from "../util";
 import { alertConfirm, alertError, alertSelectChar } from "../alert";
 import { language } from "src/lang";
 import { get } from "svelte/store";
-import { getDatabase, setDatabase } from "../storage/database.svelte";
+
 import { selectedCharID } from "../stores.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { orderGroupSpeakers } from "@risuai/chat-core/group.cjs";

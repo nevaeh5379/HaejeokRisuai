@@ -1,12 +1,12 @@
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
-import type { ChatVarTarget } from "../parser/chatVar.svelte";
-import type { character } from "../storage/database.svelte";
+import type { ChatExecutionTarget } from "src/ts/chatTarget";
+import type { character } from "../storage/schema";
 import { risuChatParser } from "./scripts";
 
 export function exampleMessage(
   char: character,
   userName: string,
-  chatTarget?: ChatVarTarget,
+  chatTarget?: ChatExecutionTarget,
 ): OpenAIChat[] {
   if (char.exampleMessage === "") {
     return [];

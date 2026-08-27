@@ -16,8 +16,7 @@
     import { language } from "../../lang"
     import { alertClear, alertConfirm, alertInput, alertNormal, alertRequestData, alertWait } from "../../ts/alert"
     import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
-    import { type MessageGenerationInfo, type StreamingDisplayOptimizationMode } from "../../ts/storage/database.svelte"
-    import { HideIconStore, ReloadGUIPointer, selIdState } from "../../ts/stores.svelte"
+    import type { MessageGenerationInfo, StreamingDisplayOptimizationMode } from "../../ts/storage/schema";import { HideIconStore, ReloadGUIPointer } from "../../ts/stores.svelte"
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
     import ChatBody from './ChatBody.svelte'
     import PopupButton from "../UI/PopupButton.svelte";
@@ -86,7 +85,7 @@
         streamingOptimizationMode = 'off',
         rawStreamingText = message,
         hideButtons = false,
-        targetCharacterIndex = selIdState.selId,
+        targetCharacterIndex = characterStore.selectedId,
         targetChatIndex = characterStore.characters[targetCharacterIndex]?.chatPage ?? 0,
     }: Props = $props();
 

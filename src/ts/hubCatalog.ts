@@ -1,4 +1,4 @@
-import { appVer } from "./storage/database.svelte";
+import { appVer } from "./appVersion";
 import { hubURL } from "./hub";
 import { isNodeServer, isTauri } from "./platform";
 

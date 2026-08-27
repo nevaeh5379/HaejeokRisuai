@@ -1,9 +1,10 @@
+import type { ChatExecutionTarget } from "src/ts/chatTarget";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { asBuffer } from "src/ts/util";
 import {
   getChatVar,
   getGlobalChatVar,
   setChatVar,
-  type ChatVarTarget,
 } from "../parser/chatVar.svelte";
 import {
   hasher,
@@ -11,16 +12,8 @@ import {
   risuChatParser,
 } from "../parser/parser.svelte";
 import { LuaEngine, LuaFactory } from "wasmoon";
-import {
-  getCurrentCharacter,
-  getCurrentChat,
-  getDatabase,
-  setDatabase,
-  type Chat,
-  type character,
-  type groupChat,
-  type triggerscript,
-} from "../storage/database.svelte";
+import type { Chat, character, groupChat, triggerscript } from "../storage/schema";
+
 import { get } from "svelte/store";
 import { ReloadChatPointer, ReloadGUIPointer } from "../stores.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
@@ -57,7 +50,7 @@ interface BasicScriptingEngineState {
   mutex: Mutex;
   char?: character | groupChat | simpleCharacterArgument;
   chat?: Chat;
-  chatTarget?: ChatVarTarget;
+  chatTarget?: ChatExecutionTarget;
   triggerId?: string;
   setVar?: (key: string, value: string) => boolean | void;
   getVar?: (key: string) => string;
@@ -87,7 +80,7 @@ export async function runScripted(
   arg: {
     char?: character | groupChat | simpleCharacterArgument;
     chat?: Chat;
-    chatTarget?: ChatVarTarget;
+    chatTarget?: ChatExecutionTarget;
     triggerId?: string;
     data?: string | OpenAIChat[];
     setVar?: (key: string, value: string) => boolean | void;
@@ -99,7 +92,7 @@ export async function runScripted(
   },
 ) {
   const type: "lua" | "py" = arg.type ?? "lua";
-  const char = arg.char ?? getCurrentCharacter();
+  const char = arg.char ?? characterStore.currentCharacter;
   const data = arg.data ?? "";
   const setVar =
     arg.setVar ??
@@ -108,7 +101,7 @@ export async function runScripted(
   const meta = arg.meta ?? {};
   const mode = arg.mode ?? "manual";
 
-  let chat = arg.chat ?? getCurrentChat();
+  let chat = arg.chat ?? characterStore.currentChat;
   let lowLevelAccess = arg.lowLevelAccess ?? false;
 
   if (type === "lua") {
@@ -130,7 +123,7 @@ export async function runScripted(
       if (scriptingChar && scriptingChar.type !== "simple") return scriptingChar;
       const target = ScriptingEngineState.chatTarget;
       if (target) return characterStore.characters[target.characterIndex];
-      return getCurrentCharacter();
+      return characterStore.currentCharacter;
     };
     const getStoredScriptingCharacter = () => {
       const scriptingChar = getScriptingCharacter();
@@ -961,7 +954,7 @@ export async function runScripted(
           return;
         }
 
-        const db = getDatabase();
+        const db = settingsStore.state;
         const selectedChar = getScriptingCharacter();
 
         if (!selectedChar || selectedChar.type !== "character") {
@@ -1583,7 +1576,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
   mode: string,
   content: T,
   meta?: object,
-  chatTarget?: ChatVarTarget,
+  chatTarget?: ChatExecutionTarget,
 ): Promise<T> {
   switch (mode) {
     case "editinput":

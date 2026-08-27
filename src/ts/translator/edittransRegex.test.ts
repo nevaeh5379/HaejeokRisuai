@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { character, customscript } from "../storage/database.svelte";
+import type { character, customscript } from "../storage/schema";
 
 const database: { presetRegex: customscript[] } = { presetRegex: [] };
 

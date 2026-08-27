@@ -1,11 +1,5 @@
+import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { get } from "svelte/store";
-import {
-  getCurrentCharacter,
-  getCurrentChat,
-  getDatabase,
-  setCurrentChat,
-  setDatabase,
-} from "../storage/database.svelte";
 import { selectedCharID } from "../stores.svelte";
 import { alertInput, alertMd, alertNormal, alertSelect } from "../alert";
 import { sayTTS } from "./tts";
@@ -46,8 +40,7 @@ async function processCommand(
   command: string,
   pipe: string,
 ): Promise<false | string> {
-  const db = getDatabase();
-  const currentChar = db.characters[get(selectedCharID)];
+  const currentChar = characterStore.characters[get(selectedCharID)];
   const currentChat = currentChar.chats[currentChar.chatPage];
   let { commandName, arg, namedArg } = commandParser(command, pipe);
 
@@ -117,7 +110,6 @@ async function processCommand(
         role: "user",
         data: arg,
       });
-      setDatabase(db);
       return pipe;
     }
     case "sendas": {
@@ -126,14 +118,12 @@ async function processCommand(
         role: "char",
         data: arg,
       });
-      setDatabase(db);
       return pipe;
     }
     case "comment": {
       //works differently, but its close enough
       const addition = `<Comment>\n${arg}\n</Comment>`;
       currentChat.message[currentChat.message.length - 1].data += addition;
-      setDatabase(db);
       return pipe;
     }
     case "cut": {
@@ -143,18 +133,15 @@ async function processCommand(
           parseInt(start),
           parseInt(end),
         );
-        setDatabase(db);
       } else if (!isNaN(parseInt(arg))) {
         const index = parseInt(arg);
         currentChat.message = currentChat.message.splice(index, 1);
-        setDatabase(db);
       } else {
         //For risu, doesn'ts work for STScript
         const id = arg;
         currentChat.message = currentChat.message.filter(
           (e) => e.chatId !== id,
         );
-        setDatabase(db);
       }
       return pipe;
     }
@@ -164,7 +151,6 @@ async function processCommand(
         currentChat.message = currentChat.message.slice(
           currentChat.message.length - size,
         );
-        setDatabase(db);
       }
       return pipe;
     }
@@ -198,23 +184,20 @@ async function processCommand(
     }
     case "setvar": {
       console.log(namedArg, arg);
-      const db = getDatabase();
       const selectedChar = get(selectedCharID);
-      const char = db.characters[selectedChar];
+      const char = characterStore.characters[selectedChar];
       const chat = char.chats[char.chatPage];
       chat.scriptstate = chat.scriptstate ?? {};
       chat.scriptstate["$" + namedArg["key"]] = arg;
       console.log(chat.scriptstate);
 
       char.chats[char.chatPage] = chat;
-      db.characters[selectedChar] = char;
-      setDatabase(db);
+      characterStore.characters[selectedChar] = char;
       return "";
     }
     case "addvar": {
-      const db = getDatabase();
       const selectedChar = get(selectedCharID);
-      const char = db.characters[selectedChar];
+      const char = characterStore.characters[selectedChar];
       const chat = char.chats[char.chatPage];
       chat.scriptstate = chat.scriptstate ?? {};
       chat.scriptstate["$" + namedArg["key"]] = (
@@ -222,14 +205,12 @@ async function processCommand(
       ).toString();
 
       char.chats[char.chatPage] = chat;
-      db.characters[selectedChar] = char;
-      setDatabase(db);
+      characterStore.characters[selectedChar] = char;
       return "";
     }
     case "getvar": {
-      const db = getDatabase();
       const selectedChar = get(selectedCharID);
-      const char = db.characters[selectedChar];
+      const char = characterStore.characters[selectedChar];
       const chat = char.chats[char.chatPage];
       chat.scriptstate = chat.scriptstate ?? {};
       pipe = chat.scriptstate["$" + namedArg["key"]].toString() ?? "null";
@@ -242,17 +223,17 @@ async function processCommand(
       return JSON.stringify(p);
     }
     case "trigger": {
-      const currentChar = getCurrentCharacter();
+      const currentChar = characterStore.currentCharacter;
       if (!currentChar || currentChar.type === "group") {
         return;
       }
       const triggerResult = await runTrigger(currentChar, "manual", {
-        chat: getCurrentChat(),
+        chat: characterStore.currentChat,
         manualName: arg,
       });
 
       if (triggerResult) {
-        setCurrentChat(triggerResult.chat);
+        characterStore.setCurrentChat(triggerResult.chat);
       }
       return;
     }

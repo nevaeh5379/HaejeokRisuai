@@ -1,7 +1,8 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { language } from "../../../lang";
 import { globalFetch } from "../../globalApi.svelte";
 import { LLMFormat } from "../../model/modellist";
-import { getDatabase } from "../../storage/database.svelte";
+
 import { tokenizeNum } from "../../tokenizer";
 import {
   buildNovelAIRequest,
@@ -21,7 +22,7 @@ export async function requestNovelAI(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
   const formated = arg.formated;
-  const db = getDatabase();
+  const db = settingsStore.state;
   const aiModel = arg.aiModel;
   const temperature = arg.temperature;
   const maxTokens = arg.maxTokens;
@@ -124,4 +125,3 @@ export async function requestNovelAI(
     ),
   };
 }
-

@@ -1,4 +1,4 @@
-import type { Database, Message } from "./database.svelte";
+import type { Database, Message } from "./schema";
 
 /**
  * Shared fixture database used by the SQLite storage test suites.

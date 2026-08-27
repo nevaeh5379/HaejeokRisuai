@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
-import { defaultSdDataFunc, type character } from "./storage/database.svelte";
+import { defaultSdDataFunc } from "./storage/presetDefaults";
+import type { character } from "./storage/schema";
 
 export function createBlankChar(): character {
   return {

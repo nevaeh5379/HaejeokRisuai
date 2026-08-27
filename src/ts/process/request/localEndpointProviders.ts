@@ -1,7 +1,8 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { language } from "../../../lang";
 import { globalFetch } from "../../globalApi.svelte";
 import { risuChatParser } from "../../parser/parser.svelte";
-import { getDatabase } from "../../storage/database.svelte";
+
 import { OobaParams } from "../prompt";
 import { getStopStrings, unstringlizeChat } from "../stringlize";
 import { applyChatTemplate } from "../templates/chatTemplate";
@@ -23,7 +24,7 @@ export async function requestOobaLegacy(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
   const formated = arg.formated;
-  const db = getDatabase();
+  const db = settingsStore.state;
   const aiModel = arg.aiModel;
   const maxTokens = arg.maxTokens;
   const currentChar = resolveRequestCharacter(arg);
@@ -186,7 +187,7 @@ export async function requestOoba(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
   const formated = arg.formated;
-  const db = getDatabase();
+  const db = settingsStore.state;
   const aiModel = arg.aiModel;
   const maxTokens = arg.maxTokens;
   const temperature = arg.temperature;
@@ -275,7 +276,7 @@ export async function requestKobold(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
   const formated = arg.formated;
-  const db = getDatabase();
+  const db = settingsStore.state;
   const maxTokens = arg.maxTokens;
   const abortSignal = arg.abortSignal;
   const currentChar = resolveRequestCharacter(arg);

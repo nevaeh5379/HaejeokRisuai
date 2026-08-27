@@ -1,6 +1,7 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { language } from "src/lang";
 import { alertError } from "src/ts/alert";
-import { getDatabase } from "src/ts/storage/database.svelte";
+
 import { LLMFlags, LLMFormat } from "src/ts/model/modellist";
 import { DEFAULT_OPENAI_RESPONSES_URL } from "@risuai/chat-core/openAIProvider.cjs";
 import {
@@ -117,7 +118,7 @@ async function buildResponseInputItems(
 ): Promise<ResponseItem[]> {
   const items: ResponseItem[] = [];
   const developerRole = arg.modelInfo.flags.includes(LLMFlags.DeveloperRole);
-  const db = getDatabase();
+  const db = settingsStore.state;
 
   for (const content of arg.formated as OpenAIChatExtra[]) {
     switch (content.role) {
@@ -215,7 +216,7 @@ function getResponsesRequestURL(arg: RequestDataArgumentExtended): {
   requestURL: string;
   risuIdentify: boolean;
 } {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const aiModel = arg.aiModel;
   let requestURL =
     aiModel === "nanogpt"
@@ -282,7 +283,7 @@ function buildResponsesHeaders(
   arg: RequestDataArgumentExtended,
   risuIdentify: boolean,
 ): Record<string, string> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const aiModel = arg.aiModel;
   const headers = {
     Authorization:
@@ -315,7 +316,7 @@ function buildResponsesHeaders(
 }
 
 function getResponsesRequestModel(arg: RequestDataArgumentExtended): string {
-  const db = getDatabase();
+  const db = settingsStore.state;
   if (arg.aiModel === "nanogpt") {
     return db.nanogptRequestModel || arg.modelInfo.internalID || arg.aiModel;
   }
@@ -395,7 +396,7 @@ function toExternalResponsesBody(
 async function buildResponsesBody(
   arg: RequestDataArgumentExtended,
 ): Promise<Record<string, any>> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const tools: any[] = [];
 
   if (arg.tools && arg.tools.length > 0) {
@@ -509,7 +510,7 @@ function extractResponsesText(
   data: any,
   arg: RequestDataArgumentExtended,
 ): string {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const texts: string[] = [];
   const refusals: string[] = [];
   const thoughts: string[] = [];
@@ -574,7 +575,7 @@ async function appendResponsesToolOutputs(
   arg: RequestDataArgumentExtended,
   assistantText: string,
 ): Promise<string> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const input = body.input as ResponseItem[];
   for (const item of body.__lastOutput ?? []) {
     const sanitized = sanitizeResponsesContinuationItem(item);
@@ -641,7 +642,7 @@ async function requestHTTPResponsesAPI(
   arg: RequestDataArgumentExtended,
   networkOptions: LocalNetworkRequestOptions,
 ): Promise<requestDataResponse> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const externalBody = toExternalResponsesBody(body);
   let nodeTransport:
     | { format: LLMFormat; payload: Record<string, unknown> }
@@ -764,7 +765,7 @@ async function requestHTTPResponsesAPI(
 function getResponsesTranStream(
   arg: RequestDataArgumentExtended,
 ): TransformStream<Uint8Array, StreamResponseChunk> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const decoder = new TextDecoder();
   let buffer = "";
   let text = "";
@@ -942,7 +943,7 @@ function wrapResponsesToolStream(
 ): ReadableStream<StreamResponseChunk> {
   return new ReadableStream<StreamResponseChunk>({
     async start(controller) {
-      const db = getDatabase();
+      const db = settingsStore.state;
       let reader = stream.getReader();
       let prefix = "";
       let lastValue: StreamResponseChunk = { "0": "" };
@@ -1030,7 +1031,7 @@ function wrapResponsesToolStream(
 export async function requestOpenAIResponseAPI(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const aiModel = arg.aiModel;
   let body = await buildResponsesBody(arg);
   const { requestURL, risuIdentify } = getResponsesRequestURL(arg);

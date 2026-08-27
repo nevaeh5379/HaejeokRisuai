@@ -1,4 +1,4 @@
-import type { Database } from "src/ts/storage/database.svelte";
+import type { Database } from "../../storage/schema";
 
 export function templateCheck(db: Database) {
   const temp = db.promptTemplate;

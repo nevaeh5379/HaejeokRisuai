@@ -1,4 +1,4 @@
-import type { RisuPersona } from "../../storage/database.svelte";
+import type { RisuPersona } from "../../storage/schema";
 import { settingsStore } from "./settingsStore.svelte";
 
 class PersonaStore {

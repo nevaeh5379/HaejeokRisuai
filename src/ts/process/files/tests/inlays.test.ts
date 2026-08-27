@@ -64,18 +64,6 @@ vi.mock(import("src/ts/model/modellist"), () => ({
   getModelInfo: vi.fn(),
 }));
 
-vi.mock(import("src/ts/storage/database.svelte"), () => ({
-  getDatabase: vi.fn(),
-}));
-
-vi.mock(
-  import("src/ts/util"),
-  () =>
-    ({
-      asBuffer: (arr: Uint8Array) => arr,
-    }) as typeof import("src/ts/util"),
-);
-
 //#endregion
 
 const supportedAudioExts = ["wav", "mp3", "ogg", "flac"] as const;

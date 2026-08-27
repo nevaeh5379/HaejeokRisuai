@@ -1,11 +1,8 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
-import {
-  getDatabase,
-  type Chat,
-  type character,
-  type groupChat,
-} from "../../storage/database.svelte";
-import type { ChatVarTarget } from "../../parser/chatVar.svelte";
+import type { Chat, character, groupChat } from "../../storage/schema";
+
+import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import { tokenize, type ChatTokenizer } from "../../tokenizer";
 import { requestChatData } from "../request/chatRequestOrchestrator";
 import { HypaProcesser } from "./hypamemory";
@@ -25,7 +22,7 @@ export async function supaMemory(
   tokenizer: ChatTokenizer,
   arg: {
     asHyper?: boolean;
-    chatTarget?: ChatVarTarget;
+    chatTarget?: ChatExecutionTarget;
     currentChar?: character;
   } = {},
 ): Promise<{
@@ -35,7 +32,7 @@ export async function supaMemory(
   memory?: string;
   lastId?: string;
 }> {
-  const db = getDatabase();
+  const db = settingsStore.state;
 
   if (arg.asHyper) {
     const nodeResult = await tryRunNodeHypaMemory<{

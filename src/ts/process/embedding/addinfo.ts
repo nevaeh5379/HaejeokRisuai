@@ -1,19 +1,17 @@
-import type { ChatVarTarget } from "src/ts/parser/chatVar.svelte";
-import {
-  getDatabase,
-  type Chat,
-  type character,
-} from "src/ts/storage/database.svelte";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+import type { ChatExecutionTarget } from "src/ts/chatTarget";
+import type { Chat, character } from "../../storage/schema";
+
 import { HypaProcesser } from "../memory/hypamemory";
 import { getUserName } from "src/ts/util";
 
 export async function additionalInformations(
   char: character,
   chats: Chat,
-  chatTarget?: ChatVarTarget,
+  chatTarget?: ChatExecutionTarget,
 ) {
   const processer = new HypaProcesser();
-  const db = getDatabase();
+  const db = settingsStore.state;
 
   const info = char.additionalText;
   if (info) {

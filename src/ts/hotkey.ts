@@ -1,3 +1,4 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { get } from "svelte/store";
 import {
   alertMd,
@@ -7,10 +8,8 @@ import {
   doingAlert,
   alertRequestLogs,
 } from "./alert";
-import {
-  changeToPreset as changeToPreset2,
-  getDatabase,
-} from "./storage/database.svelte";
+import { changeToPreset as changeToPreset2 } from "./storage/presetService";
+
 import {
   alertStore,
   loadoutModalStore,
@@ -43,7 +42,7 @@ export function initHotkey() {
       return;
     }
 
-    const database = getDatabase();
+    const database = settingsStore.state;
 
     const hotKeys = database?.hotkeys ?? defaultHotkeys;
 
@@ -331,7 +330,7 @@ export function initHotkey() {
         const isCharacterDrag = types.includes(RISU_SIDEBAR_DRAG_TYPE);
 
         if (isCharacterDrag) {
-          const db = getDatabase();
+          const db = settingsStore.state;
           if (db.enableScrollToActiveChar !== false) {
             const now = Date.now();
             if (now - lastScrollTime > SCROLL_COOLDOWN) {

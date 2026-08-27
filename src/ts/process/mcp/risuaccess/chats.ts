@@ -5,7 +5,7 @@ import {
 } from "../mcplib";
 import { getCharacter } from "./utils";
 import type { MCPToolCallContext } from "../mcp";
-import { type character, type groupChat } from "src/ts/storage/database.svelte";
+import type { character, groupChat } from "../../../storage/schema";
 
 export class ChatHandler extends MCPToolHandler {
   getTools(): MCPTool[] {

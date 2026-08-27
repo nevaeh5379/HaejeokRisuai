@@ -1,3 +1,4 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { Sha256 } from "@aws-crypto/sha256-js";
 import { HttpRequest } from "@smithy/protocol-http";
 import { SignatureV4 } from "@smithy/signature-v4";
@@ -10,7 +11,7 @@ import {
 import { LLMFlags, LLMFormat } from "src/ts/model/modellist";
 import { registerClaudeObserver } from "src/ts/observer.svelte";
 import { isNodeServer, isTauri } from "src/ts/platform";
-import { getDatabase } from "src/ts/storage/database.svelte";
+
 import { replaceAsync, simplifySchema, sleep } from "src/ts/util";
 import { v4 } from "uuid";
 import {
@@ -47,7 +48,7 @@ export async function requestClaude(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
   const formated = arg.formated;
-  const db = getDatabase();
+  const db = settingsStore.state;
   const aiModel = arg.aiModel;
   const useStreaming = arg.useStreaming;
   const ollamaCloudAnthropic = aiModel === "ollama-cloud";
@@ -901,7 +902,7 @@ async function requestClaudeHTTP(
     };
   }
 
-  const db = getDatabase();
+  const db = settingsStore.state;
   let nodeTransport:
     | { format: LLMFormat; payload: Record<string, unknown> }
     | null = null;

@@ -1,4 +1,5 @@
-import { getDatabase } from "../storage/database.svelte";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+
 import type { ModelGridItem } from "./modelGrid";
 
 /** Per-1M-token price entry. undefined means the field is not available for this model. */
@@ -34,7 +35,7 @@ export async function getOpenRouterProviders(): Promise<
   { name: string; slug: string }[]
 > {
   try {
-    const db = getDatabase();
+    const db = settingsStore.state;
     const headers = {
       Authorization: "Bearer " + db.openrouterKey,
       "Content-Type": "application/json",
@@ -57,7 +58,7 @@ export async function getOpenRouterProviders(): Promise<
 
 export async function getOpenRouterModels(): Promise<OpenRouterModelInfo[]> {
   try {
-    const db = getDatabase();
+    const db = settingsStore.state;
     const headers = {
       Authorization: "Bearer " + db.openrouterKey,
       "Content-Type": "application/json",

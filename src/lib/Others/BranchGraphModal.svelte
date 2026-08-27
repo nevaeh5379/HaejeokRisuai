@@ -4,9 +4,7 @@
 
     import { language } from 'src/lang'
     import { getChatBranches } from 'src/ts/gui/branches'
-    import type { Chat } from 'src/ts/storage/database.svelte'
-
-    interface Props {
+    import type { Chat } from '../../ts/storage/schema';interface Props {
         chat?: Chat | null
         onselect: (branchId: string) => void | Promise<void>
         onclose: () => void

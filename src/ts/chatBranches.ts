@@ -1,12 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { safeStructuredClone } from "./polyfill";
-import type {
-  Chat,
-  ChatBranchReason,
-  ChatBranchState,
-  ChatBranchTimeline,
-  Message,
-} from "./storage/database.svelte";
+import type { Chat, ChatBranchReason, ChatBranchState, ChatBranchTimeline, Message } from "./storage/schema";
 
 export interface CreateChatTimelineBranchOptions {
   branchMessageIndex: number;

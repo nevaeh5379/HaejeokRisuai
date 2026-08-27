@@ -1,9 +1,8 @@
+import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { alertError } from "../alert";
-import {
-  getCurrentCharacter,
-  getDatabase,
-  type character,
-} from "../storage/database.svelte";
+import type { character } from "../storage/schema";
+
 import { runTranslator, translateVox } from "../translator/translator";
 import { globalFetch, loadAsset } from "../globalApi.svelte";
 import { language } from "src/lang";
@@ -94,7 +93,7 @@ async function playAudio(
 export async function sayTTS(character: character, text: string) {
   try {
     if (!character) {
-      const v = getCurrentCharacter();
+      const v = characterStore.currentCharacter;
       if (v.type === "group") {
         return;
       }
@@ -105,7 +104,7 @@ export async function sayTTS(character: character, text: string) {
       return;
     }
 
-    let db = getDatabase();
+    let db = settingsStore.state;
     text = text.replace(/\*/g, "");
 
     if (character.ttsReadOnlyQuoted) {
@@ -527,7 +526,7 @@ export function getWebSpeechTTSVoices() {
 }
 
 export async function getElevenTTSVoices() {
-  let db = getDatabase();
+  let db = settingsStore.state;
 
   const data = await fetch("https://api.elevenlabs.io/v1/voices", {
     headers: {
@@ -541,7 +540,7 @@ export async function getElevenTTSVoices() {
 }
 
 export async function getVOICEVOXVoices() {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const speakerData = await fetch(`${db.voicevoxUrl}/speakers`);
   const speakerList = await speakerData.json();
   const speakersInfo = speakerList.map((speaker) => {

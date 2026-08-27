@@ -9,7 +9,7 @@ import {
   type RisuPlugin,
 } from "../plugins.svelte";
 import { SandboxHost } from "./factory";
-import { getDatabase } from "src/ts/storage/database.svelte";
+
 import { SafeLocalPluginStorage, tagWhitelist } from "../pluginSafeClass";
 import DOMPurify from "dompurify";
 import {
@@ -891,7 +891,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       if (!conf) {
         return null;
       }
-      const db = getDatabase();
+      const db = settingsStore.state;
       let liteDB = {};
       for (const key of allowedDbKeys) {
         if (includeOnly !== "all" && !includeOnly.includes(key)) {
@@ -988,7 +988,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
 
     //New APIs for v3
     getArgument: async (key: string) => {
-      const db = getDatabase();
+      const db = settingsStore.state;
       for (const p of db.plugins) {
         if (p.name === plugin.name) {
           return p.realArg[key];
@@ -996,7 +996,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       }
     },
     setArgument: async (key: string, value: string) => {
-      const db = getDatabase();
+      const db = settingsStore.state;
       for (const p of db.plugins) {
         if (p.name === plugin.name) {
           p.realArg[key] = value;

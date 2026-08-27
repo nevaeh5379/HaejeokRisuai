@@ -1,4 +1,4 @@
-import type { character, Chat } from "../storage/database.svelte";
+import type { character, Chat } from "../storage/schema";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { pluginV2 } from "../plugins/plugins.svelte";
 import { risuChatParser } from "./scripts";

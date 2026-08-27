@@ -9,7 +9,7 @@ import { characterStore } from "./characterStore.svelte";
 import { setSqlStorageForTesting } from "../../storage/sqlStorageFactory";
 import type { ISqlStorage } from "../../storage/ISqlStorage";
 import type { SqlCommit, SqlCommitResult } from "../../storage/sqlCommit";
-import type { character, Message } from "../../storage/database.svelte";
+import type { character, Message } from "../../storage/schema";
 
 class MockSqlStorage {
   backendKind = "web-sqlite" as const;

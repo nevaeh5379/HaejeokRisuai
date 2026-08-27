@@ -1,4 +1,4 @@
-import { getDatabase } from "../storage/database.svelte";
+
 import {
   LLMFlags,
   LLMProvider,
@@ -1018,7 +1018,7 @@ export async function registerModelDynamic() {
 globalThis.registerModelDynamic = registerModelDynamic;
 
 export function getModelInfo(id?: string | null): LLMModel {
-  const db = getDatabase();
+  const db = settingsStore.state;
   if (!id) {
     return {
       id: "",

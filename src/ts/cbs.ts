@@ -1,22 +1,19 @@
-import type {
-  Database,
-  character,
-  groupChat,
-  loreBook,
-} from "./storage/database.svelte";
+import type { DatabaseSettings, character, groupChat, loreBook } from "./storage/schema";
 import type { CbsConditions } from "./parser/parser.svelte";
 import type { RisuModule } from "./process/modules";
 import type { LLMModel } from "./model/modellist";
 import { get } from "svelte/store";
 import { CurrentTriggerIdStore } from "./stores.svelte";
+import type { ChatExecutionTarget } from "./chatTarget";
 
 export const defaultCBSRegisterArg: CBSRegisterArg = {
   registerFunction: () => {
     throw new Error("registerFunction not implemented");
   },
-  getDatabase: () => {
-    throw new Error("getDatabase not implemented");
+  getSettings: () => {
+    throw new Error("getSettings not implemented");
   },
+  getCharacters: () => [],
   getUserName: () => "placeholder_user",
   getPersonaPrompt: () => "placeholder_persona",
   risuChatParser: (text: string) => text,
@@ -69,7 +66,7 @@ export const defaultCBSRegisterArg: CBSRegisterArg = {
 
 export type matcherArg = {
   chatID: number;
-  db: Database;
+  db: DatabaseSettings;
   chara: character | string;
   rmVar: boolean;
   var?: { [key: string]: string };
@@ -84,7 +81,7 @@ export type matcherArg = {
   lowLevelAccess?: boolean;
   cbsConditions: CbsConditions;
   triggerId?: string;
-  chatTarget?: { characterIndex: number; chatIndex: number };
+  chatTarget?: ChatExecutionTarget;
   getNested?: () => string[];
   setNestedRoot?: (val: string) => void;
 };
@@ -116,9 +113,10 @@ export type CBSRegisterArg = {
     };
     internalOnly?: boolean;
   }) => void | Promise<void>;
-  getDatabase: () => Database;
-  getUserName: (target?: { characterIndex: number; chatIndex: number }) => string;
-  getPersonaPrompt: (target?: { characterIndex: number; chatIndex: number }) => string;
+  getSettings: () => DatabaseSettings;
+  getCharacters: () => (character | groupChat)[];
+  getUserName: (target?: ChatExecutionTarget) => string;
+  getPersonaPrompt: (target?: ChatExecutionTarget) => string;
   risuChatParser: (text: string, arg: matcherArg) => string;
   makeArray: (arr: unknown[]) => string;
   safeStructuredClone: <T>(obj: T) => T;
@@ -126,16 +124,16 @@ export type CBSRegisterArg = {
   parseDict: (str: string) => { [key: string]: unknown };
   getChatVar: (
     key: string,
-    target?: { characterIndex: number; chatIndex: number },
+    target?: ChatExecutionTarget,
   ) => string;
   setChatVar: (
     key: string,
     value: string,
-    target?: { characterIndex: number; chatIndex: number },
+    target?: ChatExecutionTarget,
   ) => void;
   getGlobalChatVar: (
     key: string,
-    target?: { characterIndex: number; chatIndex: number },
+    target?: ChatExecutionTarget,
   ) => string;
   calcString: (str: string) => number;
   dateTimeFormat: (format: string, timestamp?: number) => string;
@@ -154,7 +152,8 @@ export type CBSRegisterArg = {
 export function registerCBS(arg: CBSRegisterArg) {
   const {
     registerFunction,
-    getDatabase,
+    getSettings,
+    getCharacters,
     getUserName,
     getPersonaPrompt,
     risuChatParser,
@@ -180,10 +179,18 @@ export function registerCBS(arg: CBSRegisterArg) {
   } = arg;
 
   const resolveRoom = (matcherArg: matcherArg) => {
-    const db = getDatabase();
-    const characterIndex = matcherArg.chatTarget?.characterIndex ?? getSelectedCharID();
-    const room = db.characters[characterIndex];
-    const chatIndex = matcherArg.chatTarget?.chatIndex ?? room?.chatPage ?? 0;
+    const characters = getCharacters();
+    const characterIndex = matcherArg.chatTarget
+      ? characters.findIndex(
+          (candidate) => candidate.chaId === matcherArg.chatTarget?.characterId,
+        )
+      : getSelectedCharID();
+    const room = characters[characterIndex];
+    const chatIndex = matcherArg.chatTarget
+      ? (room?.chats?.findIndex(
+          (candidate) => candidate.id === matcherArg.chatTarget?.chatId,
+        ) ?? -1)
+      : (room?.chatPage ?? 0);
     const chat = room?.chats?.[chatIndex];
     return { room, chat, characterIndex, chatIndex };
   };
@@ -356,7 +363,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "mainprompt",
     callback: (str, matcherArg, args, vars) => {
-      const db = getDatabase();
+      const db = getSettings();
       return risuChatParser(db.mainPrompt, matcherArg);
     },
     alias: ["systemprompt", "main_prompt"],
@@ -431,7 +438,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "jb",
     callback: (str, matcherArg, args, vars) => {
-      const db = getDatabase();
+      const db = getSettings();
       return risuChatParser(db.jailbreak, matcherArg);
     },
     alias: ["jailbreak"],
@@ -442,7 +449,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "globalnote",
     callback: (str, matcherArg, args, vars) => {
-      const db = getDatabase();
+      const db = getSettings();
       return risuChatParser(db.globalNote, matcherArg);
     },
     alias: ["globalnote", "systemnote", "ujb"],
@@ -453,7 +460,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "authornote",
     callback: (str, matcherArg, args, vars) => {
-      const db = getDatabase();
+      const db = getSettings();
       const { chat } = resolveRoom(matcherArg);
       if (chat?.note) {
         return risuChatParser(chat.note, matcherArg);
@@ -725,7 +732,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "model",
     callback: (str, matcherArg, args, vars) => {
-      const db = getDatabase();
+      const db = getSettings();
       return db.aiModel;
     },
     alias: [],
@@ -736,7 +743,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "axmodel",
     callback: (str, matcherArg, args, vars) => {
-      const db = getDatabase();
+      const db = getSettings();
       return db.subModel;
     },
     alias: [],
@@ -780,7 +787,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "jbtoggled",
     callback: (str, matcherArg, args, vars) => {
-      const db = getDatabase();
+      const db = getSettings();
       return db.jailbreakToggle ? "1" : "0";
     },
     alias: [],
@@ -791,7 +798,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "maxcontext",
     callback: (str, matcherArg, args, vars) => {
-      const db = getDatabase();
+      const db = getSettings();
       return db.maxContext.toString();
     },
     alias: [],
@@ -1501,7 +1508,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "prefillsupported",
     callback: (str, matcherArg, args, vars) => {
-      const db = getDatabase();
+      const db = getSettings();
       return db.aiModel.startsWith("claude") ? "1" : "0";
     },
     alias: ["prefill_supported", "prefill"],
@@ -2061,7 +2068,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "metadata",
     callback: (str, matcherArg, args, vars) => {
-      const db = getDatabase();
+      const db = getSettings();
       switch (args[0].toLocaleLowerCase()) {
         case "mobile": {
           return isMobile ? "1" : "0";

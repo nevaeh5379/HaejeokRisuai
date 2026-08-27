@@ -1,4 +1,5 @@
-import { getDatabase } from "src/ts/storage/database.svelte";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+
 import { parseAdditionalParamJsonValue } from "./additionalParams";
 
 export type LLMParameter =
@@ -48,7 +49,7 @@ export function setObjectValue<T>(obj: T, key: string, value: any): T {
 }
 
 export function getAdditionalParameters(aiModel?: string): [string, string][] {
-  const db = getDatabase();
+  const db = settingsStore.state;
 
   if (!aiModel) {
     return [];
@@ -153,7 +154,7 @@ export function applyParameters(
     modelId: string;
   },
 ): Record<string, any> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const reasoningDisabledEffort = parameters.includes("reasoning_effort_none")
     ? "none"
     : "minimal";

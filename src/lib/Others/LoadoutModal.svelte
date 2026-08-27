@@ -1,5 +1,6 @@
 <script lang="ts">
-    import {
+    import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
+import {
         XIcon,
         StarIcon,
         ClockIcon,
@@ -11,7 +12,7 @@
     import { loadoutModalStore } from "src/ts/stores.svelte";
     import { settingsStore } from "src/ts/stores/domain";
     import { applyLoadout, saveCurrentLoadout, type Loadout } from "src/ts/loadout";
-    import { getCurrentCharacter } from "src/ts/storage/database.svelte";
+    
 
     type LoadoutApplyOption = 'modules' | 'globalVariables' | 'preset' | 'persona';
 
@@ -48,7 +49,7 @@
     }
 
     function getCharacterLoadouts(): Loadout[] {
-        const chaId = getCurrentCharacter()?.chaId;
+        const chaId = characterStore.currentCharacter?.chaId;
         if (!chaId) return [];
         return getSortedLoadouts()
             .filter((l) => l.characterIds?.includes(chaId))

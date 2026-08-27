@@ -1,9 +1,6 @@
 import { tokenizeAccurate } from "../tokenizer";
-import {
-  getDatabase,
-  presetTemplate,
-  setDatabase,
-} from "../storage/database.svelte";
+import { presetTemplate } from "../storage/presetDefaults";
+
 import { alertError, alertNormal } from "../alert";
 import type { OobaChatCompletionRequestParams } from "../model/ooba";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";

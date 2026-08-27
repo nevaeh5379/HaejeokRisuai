@@ -1,9 +1,8 @@
+import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { exportCharacterCard } from "./characterCards";
 import { VirtualWriter } from "./globalApi.svelte";
-import {
-  getCurrentCharacter,
-  type character,
-} from "./storage/database.svelte";
+import type { character } from "./storage/schema";
+
 import { alertStore } from "./alert";
 import { asBuffer } from "./util";
 
@@ -22,7 +21,7 @@ export async function shareRealmCardData(): Promise<{
   data: ArrayBuffer;
 }> {
   const char = safeStructuredClone(
-    getCurrentCharacter({ snapshot: true }),
+    characterStore.getCharacterByIndex(characterStore.selectedId, { snapshot: true }),
   ) as character;
   const trimedName = char.name.replace(/[^a-zA-Z0-9]/g, "") || "character";
   const writer = new VirtualWriter();

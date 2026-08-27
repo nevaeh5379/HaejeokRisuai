@@ -1,8 +1,9 @@
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { DEFAULT_OPENAI_COMPLETIONS_URL } from "@risuai/chat-core/openAIProvider.cjs";
 import { language } from "src/lang";
 import { globalFetch } from "src/ts/globalApi.svelte";
 import { LLMFormat } from "src/ts/model/modellist";
-import { getDatabase } from "src/ts/storage/database.svelte";
+
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,
@@ -49,7 +50,7 @@ export function buildOpenAILegacyInstructPrompt(
 export async function requestOpenAILegacyInstruct(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
-  const db = getDatabase();
+  const db = settingsStore.state;
   const prompt = buildOpenAILegacyInstructPrompt(arg.formated);
   if (arg.previewBody) {
     return {

@@ -36,14 +36,8 @@ import {
   makeHarness,
   type QueryLog,
 } from "./sqliteTestHarness";
-import {
-  getDatabase,
-  setDatabase,
-  type Database,
-  type character,
-  type Chat,
-  type Message,
-} from "./database.svelte";
+import type { Database, character, Chat, Message } from "./schema";
+import { installDatabase } from "./databaseLifecycle";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 
 type MakeStorage = (database: DatabaseSync) => ISqlStorage;
@@ -174,15 +168,15 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
 
     // The domain store owns lazy hydration: defaults are immediately usable,
     // then the targeted storage value replaces them without becoming a write.
-    setDatabase(db as Database, storage);
+    installDatabase(db as Database, storage);
     queryLog.clear();
-    const live = getDatabase();
+    const live = settingsStore.state;
     expect(queryLog.touching("setting_extension_nodes")).toBe(0);
     expect(live.loreBook).toEqual([
       { name: "My First LoreBook", data: [] },
     ]);
     await settingsStore.ensureDeferredKey("loreBook");
-    expect(getDatabase().loreBook).toEqual(source.loreBook);
+    expect(settingsStore.state.loreBook).toEqual(source.loreBook);
     expect(queryLog.touching("setting_extension_nodes")).toBeGreaterThan(0);
     settingsStore.dispose();
     database.close();
@@ -207,10 +201,10 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       ).toBe(false);
     }
 
-    setDatabase(loaded as Database, storage);
-    expect(getDatabase().mainPrompt).not.toBe("leaky-mainPrompt");
+    installDatabase(loaded as Database, storage);
+    expect(settingsStore.state.mainPrompt).not.toBe("leaky-mainPrompt");
     await settingsStore.ensureDeferredKey("mainPrompt");
-    expect(getDatabase().mainPrompt).toBe("leaky-mainPrompt");
+    expect(settingsStore.state.mainPrompt).toBe("leaky-mainPrompt");
     settingsStore.dispose();
     database.close();
   });
