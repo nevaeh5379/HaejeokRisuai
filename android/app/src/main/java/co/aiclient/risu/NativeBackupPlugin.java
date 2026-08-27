@@ -78,7 +78,11 @@ public class NativeBackupPlugin extends Plugin {
                 ret.put("raw", imported.raw);
                 call.resolve(ret);
             } catch (Exception error) {
-                call.reject("Failed to extract local backup", error);
+                String detail = error.getMessage();
+                String message = detail == null || detail.trim().isEmpty()
+                    ? "Failed to extract local backup"
+                    : "Failed to extract local backup: " + detail;
+                call.reject(message, error);
             }
         });
     }
@@ -221,6 +225,7 @@ public class NativeBackupPlugin extends Plugin {
         byte[] copyBuffer = new byte[COPY_BUFFER_SIZE];
         int assetsWritten = 0;
         boolean hasDatabase = false;
+        long logicalBytesRead = 0L;
         try (
             ProgressInputStream tracked = new ProgressInputStream(
                 requireInput(resolver.openInputStream(uri)),
@@ -233,13 +238,18 @@ public class NativeBackupPlugin extends Plugin {
             while (true) {
                 Long nameLength = readUint32LEOrEof(input);
                 if (nameLength == null) break;
+                logicalBytesRead += 4L;
                 if (nameLength <= 0 || nameLength > MAX_NAME_LENGTH) {
                     throw new IOException("Invalid backup entry name length");
                 }
                 byte[] nameBytes = readExact(input, nameLength.intValue());
+                logicalBytesRead += nameLength;
                 String name = new String(nameBytes, StandardCharsets.UTF_8);
                 long dataLength = requireUint32LE(input, "backup entry data length");
-                if (totalBytes >= 0L && dataLength > totalBytes - tracked.getBytesRead()) {
+                logicalBytesRead += 4L;
+                // BufferedInputStream may read ahead by several KiB. Validate against
+                // parser-consumed bytes, not the underlying stream's prefetch count.
+                if (totalBytes > 0L && dataLength > totalBytes - logicalBytesRead) {
                     throw new IOException("Backup entry exceeds the remaining file size");
                 }
                 if (isSpecialEntry(name)) {
@@ -261,6 +271,7 @@ public class NativeBackupPlugin extends Plugin {
                     assetsWritten++;
                     progress.report("extracting", tracked.getBytesRead(), assetsWritten, 0, false);
                 }
+                logicalBytesRead += dataLength;
             }
         }
         if (!hasDatabase) {
