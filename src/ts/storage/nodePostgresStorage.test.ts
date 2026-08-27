@@ -483,7 +483,8 @@ describe("NodePostgresStorage browser client", () => {
     const shallowDb = shallowResult?.database as any;
     expect(shallowDb?.username).toBe("test-user");
     expect(shallowDb?.theme).toBe("dark");
-    expect(shallowDb.isDomainLoaded("plugins")).toBe(false);
+    expect(shallowDb?.isSql).toBe(true);
+    expect(typeof shallowDb?.isDomainLoaded).toBe("undefined");
     expect(fetchMock.mock.calls[0][0]).toBe("/api/database-v2?shallow=true");
 
     const fullResult = await storage.loadDatabase({ shallow: false });
@@ -752,7 +753,7 @@ describe("NodePostgresStorage browser client", () => {
     expect(db.isSql).toBe(true);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(db.isDomainLoaded("personas")).toBe(false);
+    expect(typeof db.isDomainLoaded).toBe("undefined");
     expect(
       fetchMock.mock.calls.some(
         ([url]) => url === "/api/database-v2/bootstrap",

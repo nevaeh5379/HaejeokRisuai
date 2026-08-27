@@ -12,7 +12,6 @@ import type {
   customscript,
 } from "./database.svelte";
 import type { RisuModule } from "../process/modules";
-import { createSqlDatabaseAdapter } from "./databaseAdapters.svelte";
 import type {
   INodeSqlStorageAdmin,
   SqlLoadDatabaseOptions,
@@ -987,12 +986,10 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     } = await response.json();
     this.status = "enabled";
     if (body.status === "ready" && body.database) {
-      if (options.shallow !== false) {
-        this.revision = body.revision;
-        const adapter = createSqlDatabaseAdapter(body.database, this, []);
-        return { status: "ready", revision: body.revision, database: adapter };
-      }
       this.revision = body.revision;
+      if (options.shallow !== false) {
+        (body.database as Database & { isSql?: boolean }).isSql = true;
+      }
       return {
         status: "ready",
         revision: body.revision,

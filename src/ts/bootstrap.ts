@@ -253,8 +253,7 @@ export async function loadData() {
           // Older SQL migrations copied the stale botPresets entry without
           // folding in the live root value for the active preset. Repair that
           // representation before setPreset can blank the visible setting.
-          const liveModuleIntegration =
-            settingsStore.state.moduleIntergration;
+          const liveModuleIntegration = settingsStore.state.moduleIntergration;
           if (
             activePreset &&
             activePreset.moduleIntergration === undefined &&
@@ -267,10 +266,29 @@ export async function loadData() {
             });
             activePreset = presetStore.activePreset;
           }
-          if (activePreset)
+          if (activePreset) {
             settingsStore.hydrate((state) =>
               setPreset(state as Database, activePreset),
             );
+            const presetOwnedDeferredKeys = [
+              "promptTemplate",
+              "promptSettings",
+              "customPromptTemplateToggle",
+              ...(activePreset.mainPrompt !== undefined ? ["mainPrompt"] : []),
+              ...(activePreset.jailbreak !== undefined ? ["jailbreak"] : []),
+              ...(activePreset.globalNote !== undefined ? ["globalNote"] : []),
+              ...(activePreset.autoSuggestPrompt !== undefined
+                ? ["autoSuggestPrompt"]
+                : []),
+              ...(activePreset.instructChatTemplate !== undefined
+                ? ["instructChatTemplate"]
+                : []),
+              ...(activePreset.JinjaTemplate !== undefined
+                ? ["JinjaTemplate"]
+                : []),
+            ];
+            settingsStore.markDeferredLoaded(presetOwnedDeferredKeys);
+          }
           performance.mark("active-preset-ready");
         })
         .catch(() => undefined);
@@ -294,12 +312,15 @@ export async function loadData() {
             settingsStore.hydrate((state) => {
               state.plugins = plugins ?? [];
               if (customModels !== undefined) state.customModels = customModels;
-              state.personas = personas;
-              state.personaPrompt =
-                personaPrompt ??
-                personas[state.selectedPersona]?.personaPrompt ??
-                "";
             });
+            settingsStore.hydrateSettingKey("personas", personas);
+            settingsStore.hydrateSettingKey(
+              "personaPrompt",
+              personaPrompt ??
+                personas[settingsStore.state.selectedPersona]?.personaPrompt ??
+                "",
+            );
+            settingsStore.hydrateSettingKey("modules", modules ?? []);
             settingsStore.hydratePluginCustomStorageKeys(
               pluginCustomStorageKeys,
             );

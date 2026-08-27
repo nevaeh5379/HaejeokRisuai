@@ -39,10 +39,7 @@ import {
   SqlSchemaResetRequiredError,
 } from "./relationalNodeCodec";
 import { applySqliteCommit, writeSqliteColdStorage } from "./sqliteCommit";
-import {
-  createSqlDatabaseAdapter,
-  DEFERRED_STARTUP_SETTING_KEYS,
-} from "./databaseAdapters.svelte";
+import { DEFERRED_STARTUP_SETTING_KEYS } from "./sqlDeferredSettings";
 import {
   AsyncSerialQueue,
   buildCharacterAssetFieldsQuery,
@@ -328,10 +325,8 @@ export abstract class NativeSqliteStorageBase {
     }
 
     if (shallow) {
-      const adapter = createSqlDatabaseAdapter(db, this);
-      return { status: "ready", revision: this.revision, database: adapter };
+      (db as DatabaseType & { isSql?: boolean }).isSql = true;
     }
-
     return { status: "ready", revision: this.revision, database: db };
   }
 

@@ -356,13 +356,9 @@ async function loadFullSqlBackupSnapshot(
 async function loadFallbackBackupSnapshot(
   onProgress?: (msg: string) => void,
 ): Promise<PortableDatabase> {
-  const live = getDatabase() as PortableDatabase & {
-    ensureLoaded?: () => Promise<void>;
-  };
-  if (typeof live.ensureLoaded === "function") {
-    onProgress?.("Loading database from storage...");
-    await live.ensureLoaded();
-  }
+  onProgress?.("Loading database from storage...");
+  await settingsStore.ensureDeferredLoaded();
+  const live = getDatabase() as PortableDatabase;
   const snapshot = safeStructuredClone(live) as PortableDatabase;
 
   try {

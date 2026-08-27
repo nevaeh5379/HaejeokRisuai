@@ -20,7 +20,10 @@ import {
   type SqlCommit,
 } from "./sqlCommit";
 import type { ISqlStorage } from "./ISqlStorage";
-import { DEFERRED_STARTUP_SETTING_KEYS, PROMPT_SETTING_KEYS } from "./databaseAdapters.svelte";
+import {
+  DEFERRED_STARTUP_SETTING_KEYS,
+  PROMPT_SETTING_KEYS,
+} from "./sqlDeferredSettings";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
 import {
   flattenRelationalValue,
@@ -33,7 +36,15 @@ import {
   makeHarness,
   type QueryLog,
 } from "./sqliteTestHarness";
-import type { Database, character, Chat, Message } from "./database.svelte";
+import {
+  getDatabase,
+  setDatabase,
+  type Database,
+  type character,
+  type Chat,
+  type Message,
+} from "./database.svelte";
+import { settingsStore } from "../stores/domain/settingsStore.svelte";
 
 type MakeStorage = (database: DatabaseSync) => ISqlStorage;
 
@@ -115,7 +126,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
 
   it("shallow load keeps characters, chats, and deferred settings lazy", async () => {
     const { storage, database, queryLog } = makeFreshHarness(make);
-    await seed(storage);
+    const source = await seed(storage);
     queryLog.clear();
 
     const loaded = await storage.loadDatabase({ shallow: true });
@@ -133,14 +144,15 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(db.characters[0].chats).toEqual([]);
     expect(db.characters[0].message).toBeUndefined();
 
-    // Deferred domains were not loaded. Accessing one triggers a lazy domain
-    // load, which must happen through a targeted per-key query — the assert
-    // block below runs before any domain access to check the pure load.
-    expect(db.isDomainLoaded("personas")).toBe(false);
-    expect(db.isDomainLoaded("loreBook")).toBe(false);
-    expect(db.isDomainLoaded("modules")).toBe(false);
-    expect(db.isDomainLoaded("scripts")).toBe(false);
-    expect(db.isDomainLoaded("prompts")).toBe(false);
+    // Storage returns plain shallow data now; deferred domains are omitted
+    // instead of being hidden behind the deleted database adapter proxy.
+    expect(Object.prototype.hasOwnProperty.call(db, "personas")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(db, "loreBook")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(db, "modules")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(db, "globalscript")).toBe(
+      false,
+    );
+    expect(typeof db.isDomainLoaded).toBe("undefined");
 
     // Lazy loading contract: every setting-node read in a shallow load must
     // exclude the deferred keys; plugin storage must not be read at all.
@@ -160,8 +172,19 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(queryLog.touching("chat_extension_nodes")).toBe(0);
     expect(queryLog.touching("message_extension_nodes")).toBe(0);
 
-    // Lazy domain access hydrates through the adapter proxy.
-    expect(db.loreBook).toEqual([{ name: "Default", data: [] }]);
+    // The domain store owns lazy hydration: defaults are immediately usable,
+    // then the targeted storage value replaces them without becoming a write.
+    setDatabase(db as Database, storage);
+    queryLog.clear();
+    const live = getDatabase();
+    expect(queryLog.touching("setting_extension_nodes")).toBe(0);
+    expect(live.loreBook).toEqual([
+      { name: "My First LoreBook", data: [] },
+    ]);
+    await settingsStore.ensureDeferredKey("loreBook");
+    expect(getDatabase().loreBook).toEqual(source.loreBook);
+    expect(queryLog.touching("setting_extension_nodes")).toBeGreaterThan(0);
+    settingsStore.dispose();
     database.close();
   });
 
@@ -178,19 +201,17 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       ?.database as any;
     for (const key of DEFERRED_STARTUP_SETTING_KEYS) {
       if (key === "pluginCustomStorage") continue;
-      // Deferred keys must not appear as plain core data at startup.
-      const leaked =
-        Object.prototype.hasOwnProperty.call(loaded.coreData ?? loaded, key) &&
-        typeof (loaded.coreData ?? loaded)[key] === "string" &&
-        String((loaded.coreData ?? loaded)[key]).startsWith("leaky-");
-      expect(leaked, `deferred key '${key}' leaked into shallow core`).toBe(
-        false,
-      );
-      if (PROMPT_SETTING_KEYS.includes(key as any)) {
-        // Prompt keys surface through the defaults layer, not storage.
-        expect(loaded[key]).not.toBe(`leaky-${key}`);
-      }
+      expect(
+        Object.prototype.hasOwnProperty.call(loaded, key),
+        `deferred key '${key}' must be absent from the raw shallow snapshot`,
+      ).toBe(false);
     }
+
+    setDatabase(loaded as Database, storage);
+    expect(getDatabase().mainPrompt).not.toBe("leaky-mainPrompt");
+    await settingsStore.ensureDeferredKey("mainPrompt");
+    expect(getDatabase().mainPrompt).toBe("leaky-mainPrompt");
+    settingsStore.dispose();
     database.close();
   });
 
@@ -315,7 +336,11 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       )
       .get() as { last_interaction_time: number };
     expect(rows.last_interaction_time).toBe(987654321);
-    expect(queryLog.entries.some((e) => e.kind === "run" && e.sql.includes("character_extension_nodes"))).toBe(false);
+    expect(
+      queryLog.entries.some(
+        (e) => e.kind === "run" && e.sql.includes("character_extension_nodes"),
+      ),
+    ).toBe(false);
     database.close();
   });
 

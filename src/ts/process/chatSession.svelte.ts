@@ -139,9 +139,6 @@ function getGroupOrder(room: groupChat, findCharacter: (id: string) => character
 
 async function initializeGeneration(options: PrepareChatSessionOptions) {
   setChatProcessStage(options.targetChatId, 0);
-  if ((characterStore as any)?.ensureLoaded) {
-    await (characterStore as any).ensureLoaded();
-  }
   await applyPresetChain(options.chatProcessIndex);
   return synchronizePeer(options.throwError, options.targetChatId);
 }

@@ -47,6 +47,47 @@ describe("SettingsStore Reactivity and Persistence", () => {
     expect(mockStorage.commit).not.toHaveBeenCalled();
   });
 
+  it("hydrates deferred SQL domains without scheduling a write", async () => {
+    mockStorage.loadLorebooks = vi.fn(async () => [
+      { name: "Stored Lore", data: [{ key: "x", content: "y" }] },
+    ]) as any;
+    settingsStore.init(
+      {
+        loreBook: [{ name: "Placeholder", data: [] }],
+      } as any,
+      mockStorage,
+      { deferredUnloaded: ["loreBook"] },
+    );
+
+    expect(settingsStore.state.loreBook).toEqual([
+      { name: "Placeholder", data: [] },
+    ]);
+    await settingsStore.ensureDeferredKey("loreBook");
+    expect(settingsStore.state.loreBook).toEqual([
+      { name: "Stored Lore", data: [{ key: "x", content: "y" }] },
+    ]);
+    expect(mockStorage.loadLorebooks).toHaveBeenCalledTimes(1);
+    await settingsStore.flush();
+    expect(mockStorage.commit).not.toHaveBeenCalled();
+  });
+
+  it("does not let a deferred prompt reload overwrite an authoritative value", async () => {
+    mockStorage.loadPrompts = vi.fn(async () => ({
+      mainPrompt: "stale stored prompt",
+    })) as any;
+    settingsStore.init(
+      { mainPrompt: "active preset prompt" } as any,
+      mockStorage,
+      { deferredUnloaded: ["mainPrompt"] },
+    );
+
+    settingsStore.markDeferredLoaded(["mainPrompt"]);
+    await settingsStore.ensureDeferredKey("mainPrompt");
+
+    expect(settingsStore.state.mainPrompt).toBe("active preset prompt");
+    expect(mockStorage.loadPrompts).not.toHaveBeenCalled();
+  });
+
   it("detects deep mutations on customModels across consecutive edits", async () => {
     settingsStore.init(
       {
@@ -353,7 +394,9 @@ describe("SettingsStore Reactivity and Persistence", () => {
     settingsStore.hydrateRemotePluginCustomStorageKey("local", { value: 99 });
     settingsStore.hydrateRemotePluginCustomStorageDelete("stale");
     settingsStore.hydrateRemotePluginCustomStorageClear();
-    settingsStore.hydrateRemotePluginCustomStorageKey("after-clear", { value: 3 });
+    settingsStore.hydrateRemotePluginCustomStorageKey("after-clear", {
+      value: 3,
+    });
 
     await settingsStore.flush();
 

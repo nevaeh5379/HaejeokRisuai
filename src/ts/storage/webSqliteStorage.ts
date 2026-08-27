@@ -31,10 +31,9 @@ import type {
   NodePostgresTableData,
 } from "./nodePostgresStorage";
 import {
-  createSqlDatabaseAdapter,
   DEFERRED_STARTUP_SETTING_KEYS,
   PROMPT_SETTING_KEYS,
-} from "./databaseAdapters.svelte";
+} from "./sqlDeferredSettings";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
 import {
   buildSqlReplaceCommit,
@@ -530,8 +529,7 @@ export class WebSqliteStorage implements ISqlStorage {
     if (!isInit)
       return { status: "empty", revision: this.revision, database: null };
     if (shallow) {
-      const adapter = createSqlDatabaseAdapter(db, this);
-      return { status: "ready", revision: this.revision, database: adapter };
+      (db as DatabaseType & { isSql?: boolean }).isSql = true;
     }
     return { status: "ready", revision: this.revision, database: db };
   }

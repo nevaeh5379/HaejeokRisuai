@@ -41,6 +41,7 @@ import {
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { presetStore } from "../stores/domain/presetStore.svelte";
+import { DEFERRED_STARTUP_SETTING_KEYS } from "./sqlDeferredSettings";
 
 // HaejeokRisuAI uses the Git commit count as its public build number (bNNNN).
 // Vite injects this value for local builds, CI builds, Docker, and Tauri.
@@ -858,23 +859,16 @@ export function setDatabase(
   data: Database,
   storage: import("./ISqlStorage").ISqlStorage | null = null,
 ) {
-  // Normalize the adapter's plain core snapshot. Running normalization on
-  // the adapter proxy itself would access lazy getters and defeat selective
-  // SQL reads.
-  if ((data as Database & { isSql?: boolean }).isSql) {
-    data.characters ??= [];
-    (
-      data as Database & {
-        applyCoreDefaults?: (
-          normalize: (coreData: Database) => Database,
-        ) => void;
-      }
-    ).applyCoreDefaults?.(normalizeDatabaseDefaults);
-  } else {
-    normalizeDatabaseDefaults(data);
-  }
+  const isSql = (data as Database & { isSql?: boolean }).isSql === true;
+  const deferredUnloaded = isSql
+    ? DEFERRED_STARTUP_SETTING_KEYS.filter(
+        (key) => !Object.prototype.hasOwnProperty.call(data, key),
+      )
+    : [];
+
+  normalizeDatabaseDefaults(data);
   if (data.language) refreshLanguage(data);
-  setDatabaseLite(data, storage);
+  setDatabaseLite(data, storage, { deferredUnloaded });
 }
 
 function refreshLanguage(data: Database): void {
@@ -888,9 +882,10 @@ function refreshLanguage(data: Database): void {
 export function setDatabaseLite(
   data: Database,
   storage: import("./ISqlStorage").ISqlStorage | null = null,
+  options: { deferredUnloaded?: readonly string[] } = {},
 ) {
   characterStore.init(data.characters ?? [], storage as any);
-  settingsStore.init(data, storage);
+  settingsStore.init(data, storage, options);
 }
 
 interface getDatabaseOptions {
@@ -899,13 +894,24 @@ interface getDatabaseOptions {
 
 export function getDatabase(options: getDatabaseOptions = {}): Database {
   const combined: any = {
-    ...settingsStore.state,
+    ...settingsStore.getStateRecord(),
     characters: characterStore.characters,
   };
   if (options.snapshot) {
     return $state.snapshot(combined) as Database;
   }
-  return combined as Database;
+  return new Proxy(combined, {
+    get(target, prop, receiver) {
+      if (prop === "characters") return characterStore.characters;
+      if (typeof prop === "string") {
+        settingsStore.requestDeferredLoad(prop);
+        if (Object.prototype.hasOwnProperty.call(settingsStore.state, prop)) {
+          return settingsStore.state[prop];
+        }
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  }) as Database;
 }
 
 export function getCurrentCharacter(

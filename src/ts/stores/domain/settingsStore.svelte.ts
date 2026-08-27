@@ -2,6 +2,11 @@ import type { Database } from "../../storage/database.svelte";
 import type { ISqlStorage } from "../../storage/ISqlStorage";
 import { getSqlStorage } from "../../storage/sqlStorageFactory";
 import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
+import {
+  getSqlDeferredDomain,
+  PROMPT_SETTING_KEYS,
+  type SqlDeferredDomain,
+} from "../../storage/sqlDeferredSettings";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 
 class SettingsStore {
@@ -14,12 +19,32 @@ class SettingsStore {
   private pendingPluginStorageClear = false;
   private pluginStorageKeys = new Set<string>();
   private pluginStorageLoads = new Map<string, Promise<any>>();
+  private deferredUnloaded = new Set<string>();
+  private deferredDomainLoads = new Map<SqlDeferredDomain, Promise<void>>();
   private keyDisposers = new Map<string, () => void>();
   private keySetDispose: (() => void) | null = null;
 
-  state = $state<Record<string, any>>({});
+  private stateData = $state<Record<string, any>>({});
+  readonly state = new Proxy({} as Record<string, any>, {
+    get: (_target, prop) => {
+      if (typeof prop === "string") this.requestDeferredLoad(prop);
+      return Reflect.get(this.stateData, prop);
+    },
+    set: (_target, prop, value) => Reflect.set(this.stateData, prop, value),
+    deleteProperty: (_target, prop) => Reflect.deleteProperty(this.stateData, prop),
+    has: (_target, prop) => Reflect.has(this.stateData, prop),
+    ownKeys: () => Reflect.ownKeys(this.stateData),
+    getOwnPropertyDescriptor: (_target, prop) => {
+      const descriptor = Reflect.getOwnPropertyDescriptor(this.stateData, prop);
+      return descriptor ? { ...descriptor, configurable: true } : undefined;
+    },
+  });
 
-  init(initialSettings: Partial<Database>, storage: ISqlStorage | null): void {
+  init(
+    initialSettings: Partial<Database>,
+    storage: ISqlStorage | null,
+    options: { deferredUnloaded?: readonly string[] } = {},
+  ): void {
     this.storage = storage;
     for (const dispose of this.keyDisposers.values()) dispose();
     this.keyDisposers.clear();
@@ -31,13 +56,14 @@ class SettingsStore {
     this.pendingPluginStorageDeletes.clear();
     this.pendingPluginStorageClear = false;
     this.pluginStorageLoads.clear();
+    this.deferredDomainLoads.clear();
+    this.deferredUnloaded = new Set(options.deferredUnloaded ?? []);
 
-    const adapter = initialSettings as Partial<Database> & {
-      getLoadedRootKeys?: () => string[];
-    };
-    const keys = adapter.getLoadedRootKeys?.() ?? Object.keys(initialSettings);
     const settingsCopy = Object.fromEntries(
-      keys.map((key) => [key, (initialSettings as any)[key]]),
+      Object.keys(initialSettings).map((key) => [
+        key,
+        (initialSettings as any)[key],
+      ]),
     );
     delete (settingsCopy as any).characters;
     delete (settingsCopy as any).isSql;
@@ -48,15 +74,15 @@ class SettingsStore {
       Object.keys(settingsCopy.pluginCustomStorage),
     );
 
-    this.state = settingsCopy;
+    this.stateData = settingsCopy;
     this.observe();
   }
 
   private observe(): void {
-    for (const key of Object.keys(this.state)) this.observeKey(key);
+    for (const key of Object.keys(this.stateData)) this.observeKey(key);
     this.keySetDispose = $effect.root(() => {
       $effect(() => {
-        const keys = new Set(Object.keys(this.state));
+        const keys = new Set(Object.keys(this.stateData));
         for (const key of keys) this.observeKey(key);
         for (const key of this.keyDisposers.keys()) {
           if (!keys.has(key)) {
@@ -82,24 +108,24 @@ class SettingsStore {
     // Synchronous baseline taken at observe time.  The first (async) effect
     // run compares against it so mutations occurring between observe and the
     // first flush are still detected; later runs mark unconditionally.
-    const baseline = Object.prototype.hasOwnProperty.call(this.state, key)
-      ? snapshotFingerprint($state.snapshot(this.state[key]))
+    const baseline = Object.prototype.hasOwnProperty.call(this.stateData, key)
+      ? snapshotFingerprint($state.snapshot(this.stateData[key]))
       : undefined;
     let initial = true;
     const dispose = $effect.root(() => {
       $effect(() => {
-        if (!Object.prototype.hasOwnProperty.call(this.state, key)) {
+        if (!Object.prototype.hasOwnProperty.call(this.stateData, key)) {
           initial = false;
           this.dirtyKeys.delete(key);
           this.pendingDeletes.add(key);
           this.scheduleCommit();
           return;
         }
-        trackDeep(this.state[key]);
+        trackDeep(this.stateData[key]);
         if (initial) {
           initial = false;
           if (
-            snapshotFingerprint($state.snapshot(this.state[key])) !== baseline
+            snapshotFingerprint($state.snapshot(this.stateData[key])) !== baseline
           ) {
             this.dirtyKeys.add(key);
             this.scheduleCommit();
@@ -140,9 +166,9 @@ class SettingsStore {
     // Serialise at flush time — snapshots are never retained between commits
     const upserts: { key: string; value: unknown }[] = [];
     for (const key of this.dirtyKeys) {
-      if (!Object.prototype.hasOwnProperty.call(this.state, key)) continue;
+      if (!Object.prototype.hasOwnProperty.call(this.stateData, key)) continue;
       if (this.pendingDeletes.has(key)) continue;
-      upserts.push({ key, value: $state.snapshot(this.state[key]) });
+      upserts.push({ key, value: $state.snapshot(this.stateData[key]) });
     }
     const deletes = Array.from(this.pendingDeletes);
     this.dirtyKeys.clear();
@@ -180,7 +206,7 @@ class SettingsStore {
       });
     } catch (error) {
       for (const { key } of upserts) {
-        if (Object.prototype.hasOwnProperty.call(this.state, key)) {
+        if (Object.prototype.hasOwnProperty.call(this.stateData, key)) {
           this.pendingDeletes.delete(key);
           this.dirtyKeys.add(key);
         } else {
@@ -189,7 +215,7 @@ class SettingsStore {
         }
       }
       for (const key of deletes) {
-        if (Object.prototype.hasOwnProperty.call(this.state, key)) {
+        if (Object.prototype.hasOwnProperty.call(this.stateData, key)) {
           this.pendingDeletes.delete(key);
           this.dirtyKeys.add(key);
         } else {
@@ -203,18 +229,20 @@ class SettingsStore {
         ]);
         if (pluginStoragePayload.clear) {
           this.pendingPluginStorageClear = true;
-          for (const key of Object.keys(this.state.pluginCustomStorage ?? {}))
+          for (const key of Object.keys(this.stateData.pluginCustomStorage ?? {}))
             impactedKeys.add(key);
         }
         for (const key of impactedKeys) {
-          if (Object.prototype.hasOwnProperty.call(
-            this.state.pluginCustomStorage ?? {},
-            key,
-          )) {
+          if (
+            Object.prototype.hasOwnProperty.call(
+              this.stateData.pluginCustomStorage ?? {},
+              key,
+            )
+          ) {
             this.pendingPluginStorageDeletes.delete(key);
             this.pendingPluginStorageUpserts.set(
               key,
-              $state.snapshot(this.state.pluginCustomStorage[key]),
+              $state.snapshot(this.stateData.pluginCustomStorage[key]),
             );
           } else {
             this.pendingPluginStorageUpserts.delete(key);
@@ -229,6 +257,10 @@ class SettingsStore {
     }
   }
 
+  getStateRecord(): Record<string, any> {
+    return this.stateData;
+  }
+
   hasPendingWrites(): boolean {
     return (
       this.dirtyKeys.size > 0 ||
@@ -239,14 +271,102 @@ class SettingsStore {
     );
   }
 
+  requestDeferredLoad(key: string): void {
+    void this.ensureDeferredKey(key);
+  }
+
+  async ensureDeferredKey(key: string): Promise<void> {
+    if (!this.deferredUnloaded.has(key)) return;
+    const domain = getSqlDeferredDomain(key);
+    if (!domain) return;
+    await this.ensureDeferredDomain(domain);
+  }
+
+  markDeferredLoaded(keys: Iterable<string>): void {
+    for (const key of keys) this.deferredUnloaded.delete(key);
+  }
+
+  async ensureDeferredLoaded(): Promise<void> {
+    const domains = new Set<SqlDeferredDomain>();
+    for (const key of this.deferredUnloaded) {
+      const domain = getSqlDeferredDomain(key);
+      if (domain) domains.add(domain);
+    }
+    await Promise.all(
+      Array.from(domains, (domain) => this.ensureDeferredDomain(domain)),
+    );
+  }
+
+  private async ensureDeferredDomain(domain: SqlDeferredDomain): Promise<void> {
+    const existing = this.deferredDomainLoads.get(domain);
+    if (existing) return existing;
+
+    const pending = (async () => {
+      const storage = this.storage || (await getSqlStorage());
+      try {
+        if (domain === "personas") {
+          const personas = await storage.loadPersonas();
+          const value =
+            personas.length > 0
+              ? personas.map((persona) => ({
+                  ...persona,
+                  largePortrait: persona.largePortrait ?? false,
+                }))
+              : [
+                  {
+                    name: this.stateData.username || "User",
+                    icon: this.stateData.userIcon || "",
+                    personaPrompt: "",
+                    note: this.stateData.userNote || "",
+                    largePortrait: false,
+                  },
+                ];
+          this.hydrateSettingKey("personas", value);
+          return;
+        }
+        if (domain === "loreBook") {
+          this.hydrateSettingKey("loreBook", await storage.loadLorebooks());
+          return;
+        }
+        if (domain === "modules") {
+          this.hydrateSettingKey("modules", await storage.loadModules());
+          return;
+        }
+        if (domain === "scripts") {
+          this.hydrateSettingKey("globalscript", await storage.loadScripts());
+          return;
+        }
+
+        const prompts = await storage.loadPrompts();
+        for (const key of PROMPT_SETTING_KEYS) {
+          if (Object.prototype.hasOwnProperty.call(prompts, key)) {
+            this.hydrateSettingKey(key, (prompts as any)[key]);
+          } else {
+            this.deferredUnloaded.delete(key);
+          }
+        }
+      } catch (error) {
+        console.error(`[SettingsStore] Failed to hydrate ${domain}:`, error);
+      }
+    })().finally(() => {
+      if (this.deferredDomainLoads.get(domain) === pending) {
+        this.deferredDomainLoads.delete(domain);
+      }
+    });
+
+    this.deferredDomainLoads.set(domain, pending);
+    return pending;
+  }
+
   get<K extends keyof Database>(key: K): Database[K] | undefined {
     const keyStr = String(key);
-    return this.state[keyStr];
+    this.requestDeferredLoad(keyStr);
+    return this.stateData[keyStr];
   }
 
   set<K extends keyof Database>(key: K, value: Database[K]): void {
     const keyStr = String(key);
-    this.state[keyStr] = value;
+    this.stateData[keyStr] = value;
     if (keyStr === "pluginCustomStorage") {
       this.pluginStorageKeys.clear();
       if (value && typeof value === "object") {
@@ -263,8 +383,8 @@ class SettingsStore {
   }
 
   update(updater: (state: Record<string, any>) => void): void {
-    updater(this.state);
-    for (const key of Object.keys(this.state)) {
+    updater(this.stateData);
+    for (const key of Object.keys(this.stateData)) {
       if (
         key === "characters" ||
         key === "isSql" ||
@@ -281,8 +401,8 @@ class SettingsStore {
   hydrate(updater: (state: Record<string, any>) => void): void {
     const dirtyValues = new Map<string, any>();
     for (const key of this.dirtyKeys) {
-      if (Object.prototype.hasOwnProperty.call(this.state, key)) {
-        dirtyValues.set(key, $state.snapshot(this.state[key]));
+      if (Object.prototype.hasOwnProperty.call(this.stateData, key)) {
+        dirtyValues.set(key, $state.snapshot(this.stateData[key]));
       }
     }
     const pendingDeletes = new Set(this.pendingDeletes);
@@ -292,10 +412,10 @@ class SettingsStore {
     this.keyDisposers.clear();
     this.keySetDispose?.();
     this.keySetDispose = null;
-    updater(this.state);
-    for (const [key, value] of dirtyValues) this.state[key] = value;
-    for (const key of pendingDeletes) delete this.state[key];
-    for (const key of Object.keys(this.state)) {
+    updater(this.stateData);
+    for (const [key, value] of dirtyValues) this.stateData[key] = value;
+    for (const key of pendingDeletes) delete this.stateData[key];
+    for (const key of Object.keys(this.stateData)) {
       if (
         key === "characters" ||
         key === "isSql" ||
@@ -310,7 +430,7 @@ class SettingsStore {
     this.observe();
     // Svelte may replay invalidations from the hydration mutation while the
     // new root effect is installed. Explicit local deletions win last.
-    for (const key of pendingDeletes) delete this.state[key];
+    for (const key of pendingDeletes) delete this.stateData[key];
   }
 
   hydrateSettingKey(key: string, value: unknown, exists = true): void {
@@ -319,11 +439,12 @@ class SettingsStore {
     this.keyDisposers.delete(key);
     this.dirtyKeys.delete(key);
     this.pendingDeletes.delete(key);
+    this.deferredUnloaded.delete(key);
     if (exists) {
-      this.state[key] = value;
+      this.stateData[key] = value;
       this.observeKey(key);
     } else {
-      delete this.state[key];
+      delete this.stateData[key];
     }
   }
 
@@ -333,7 +454,7 @@ class SettingsStore {
       this.clearPluginCustomStorage();
       return;
     }
-    delete this.state[keyStr];
+    delete this.stateData[keyStr];
     this.keyDisposers.get(keyStr)?.();
     this.keyDisposers.delete(keyStr);
     this.dirtyKeys.delete(keyStr);
@@ -342,8 +463,8 @@ class SettingsStore {
   }
 
   getPluginCustomStorage(): Record<string, any> {
-    this.state.pluginCustomStorage ??= {};
-    return this.state.pluginCustomStorage;
+    this.stateData.pluginCustomStorage ??= {};
+    return this.stateData.pluginCustomStorage;
   }
 
   getPluginCustomStorageKeys(): string[] {
@@ -356,7 +477,7 @@ class SettingsStore {
 
   hasLoadedPluginCustomStorageKey(key: string): boolean {
     return Object.prototype.hasOwnProperty.call(
-      this.state.pluginCustomStorage ?? {},
+      this.stateData.pluginCustomStorage ?? {},
       key,
     );
   }
@@ -364,13 +485,13 @@ class SettingsStore {
   hydratePluginCustomStorageKeys(keys: string[]): void {
     this.pluginStorageKeys = new Set([
       ...keys,
-      ...Object.keys(this.state.pluginCustomStorage ?? {}),
+      ...Object.keys(this.stateData.pluginCustomStorage ?? {}),
     ]);
   }
 
   hydratePluginCustomStorageKey(key: string, value: any): void {
-    this.state.pluginCustomStorage ??= {};
-    this.state.pluginCustomStorage[key] = value;
+    this.stateData.pluginCustomStorage ??= {};
+    this.stateData.pluginCustomStorage[key] = value;
     this.pluginStorageKeys.add(key);
   }
 
@@ -391,19 +512,22 @@ class SettingsStore {
       this.pendingPluginStorageUpserts.has(key)
     )
       return;
-    if (this.state.pluginCustomStorage) delete this.state.pluginCustomStorage[key];
+    if (this.stateData.pluginCustomStorage)
+      delete this.stateData.pluginCustomStorage[key];
     this.pluginStorageKeys.delete(key);
   }
 
   hydrateRemotePluginCustomStorageClear(): void {
-    const preserved = Object.fromEntries(this.pendingPluginStorageUpserts.entries());
-    this.state.pluginCustomStorage = preserved;
+    const preserved = Object.fromEntries(
+      this.pendingPluginStorageUpserts.entries(),
+    );
+    this.stateData.pluginCustomStorage = preserved;
     this.pluginStorageKeys = new Set(Object.keys(preserved));
   }
 
   async loadPluginCustomStorageKey(key: string): Promise<any> {
     if (this.hasLoadedPluginCustomStorageKey(key)) {
-      return this.state.pluginCustomStorage[key];
+      return this.stateData.pluginCustomStorage[key];
     }
     const existingLoad = this.pluginStorageLoads.get(key);
     if (existingLoad) return existingLoad;
@@ -417,7 +541,7 @@ class SettingsStore {
         )
           return undefined;
         if (this.hasLoadedPluginCustomStorageKey(key))
-          return this.state.pluginCustomStorage[key];
+          return this.stateData.pluginCustomStorage[key];
         if (value !== undefined) this.hydratePluginCustomStorageKey(key, value);
         return value;
       })
@@ -430,8 +554,8 @@ class SettingsStore {
   }
 
   setPluginCustomStorageKey(key: string, value: any): void {
-    this.state.pluginCustomStorage ??= {};
-    this.state.pluginCustomStorage[key] = value;
+    this.stateData.pluginCustomStorage ??= {};
+    this.stateData.pluginCustomStorage[key] = value;
     this.pluginStorageKeys.add(key);
     this.pendingPluginStorageDeletes.delete(key);
     this.pendingPluginStorageUpserts.set(key, $state.snapshot(value));
@@ -439,8 +563,8 @@ class SettingsStore {
   }
 
   removePluginCustomStorageKey(key: string): void {
-    if (this.state.pluginCustomStorage) {
-      delete this.state.pluginCustomStorage[key];
+    if (this.stateData.pluginCustomStorage) {
+      delete this.stateData.pluginCustomStorage[key];
     }
     this.pluginStorageKeys.delete(key);
     this.pendingPluginStorageUpserts.delete(key);
@@ -449,7 +573,7 @@ class SettingsStore {
   }
 
   clearPluginCustomStorage(): void {
-    this.state.pluginCustomStorage = {};
+    this.stateData.pluginCustomStorage = {};
     this.pluginStorageKeys.clear();
     this.pendingPluginStorageUpserts.clear();
     this.pendingPluginStorageDeletes.clear();
