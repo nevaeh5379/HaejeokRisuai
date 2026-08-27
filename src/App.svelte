@@ -2,7 +2,7 @@
     import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, saving, AccountWarning, selectedCharID, PlaygroundStore } from './ts/stores.svelte';
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
-    import { isCapacitor, isNodeServer } from './ts/platform';
+    import { isCapacitor, isNodeServer, isTauri } from './ts/platform';
     import { registerPlugin } from '@capacitor/core';
     import { onMount } from 'svelte';
     import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
@@ -153,7 +153,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<main class="flex bg-bg w-full h-full max-w-100vw text-textcolor" ondragover={(e) => {
+<main class="flex bg-bg w-full h-full max-w-100vw text-textcolor" class:tauri-native={isTauri} ondragover={(e) => {
     const dropEffect = getMainDropEffect(e)
     e.preventDefault()
     e.dataTransfer.dropEffect = dropEffect

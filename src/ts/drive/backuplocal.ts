@@ -30,6 +30,7 @@ import {
   type PortableDatabase,
 } from "../storage/database.svelte";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { open } from "@tauri-apps/plugin-dialog";
 import { decryptBuffer, encryptBuffer, sleep } from "../util";
 import { hubURL } from "../characterCards";
 import { language } from "src/lang";
@@ -1432,10 +1433,32 @@ async function loadCapacitorLocalBackup() {
   }
 }
 
+async function loadTauriLocalBackup() {
+  const selected = await open({
+    multiple: false,
+    filters: [
+      {
+        name: "RisuAI local backup",
+        extensions: ["bin", "risubackup"],
+      },
+    ],
+  });
+  if (selected === null) return;
+
+  const data = await readFile(selected);
+  const fileName =
+    selected.replace(/\\/g, "/").split("/").pop() ?? "backup.bin";
+  await restoreLocalBackupFile(new File([data], fileName));
+}
+
 export async function LoadLocalBackup() {
   try {
     if (isCapacitor) {
       await loadCapacitorLocalBackup();
+      return;
+    }
+    if (isTauri) {
+      await loadTauriLocalBackup();
       return;
     }
     const input = document.createElement("input");

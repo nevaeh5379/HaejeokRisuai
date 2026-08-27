@@ -160,6 +160,11 @@ body {
   overflow-x: hidden;
 }
 
+/* WebKitGTK renders Lucide's default stroke heavier than browser engines do. */
+.tauri-native svg.lucide-icon[stroke-width="2"] {
+  stroke-width: 1.5;
+}
+
 :root {
   --FontColorStandard: #fafafa;
   --FontColorBold: #e5e5e5;

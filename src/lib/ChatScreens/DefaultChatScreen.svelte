@@ -100,6 +100,7 @@
     let currentChatProcessStage = $derived(
         getChatProcessStage($chatProcessStages, currentChatSession?.id)
     )
+    let isFocusedPane = $derived(chatTabsStore.focusedGroupId === paneGroupId)
 
     $effect(() => {
         const activeTabId = chatTabsStore.getGroup(paneGroupId)?.activeTabId
@@ -221,7 +222,7 @@
         }
     }
     $effect(() => {
-        if(ScrollToMessageStore.value !== -1){
+        if(isFocusedPane && ScrollToMessageStore.value !== -1){
             const index = ScrollToMessageStore.value
             ScrollToMessageStore.value = -1
             scrollToMessage(index)
@@ -1339,19 +1340,21 @@
     {/if}
 </div>
 
-{#if additionalFloatingActionButtons.length > 0}
-    <div class="fixed top-4 right-4 flex flex-col gap-3 z-50">
-        {#each additionalFloatingActionButtons as button}
-            <button class="bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 hover:bg-blue-600 transition-colors" onclick={() => {
-                button.callback()
-            }}>
-                <PluginDefinedIcon ico={button} />
-            </button>
-        {/each}
-    </div>
-{/if}
+{#if isFocusedPane}
+    {#if additionalFloatingActionButtons.length > 0}
+        <div class="fixed top-4 right-4 flex flex-col gap-3 z-50">
+            {#each additionalFloatingActionButtons as button}
+                <button class="bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 hover:bg-blue-600 transition-colors" onclick={() => {
+                    button.callback()
+                }}>
+                    <PluginDefinedIcon ico={button} />
+                </button>
+            {/each}
+        </div>
+    {/if}
 
-<LogExporterModal />
+    <LogExporterModal />
+{/if}
 <style>
 
     .chat-process-stage-1{
