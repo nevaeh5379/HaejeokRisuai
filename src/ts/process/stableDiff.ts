@@ -1,5 +1,6 @@
 import { get } from "svelte/store";
 import { getDatabase, type character } from "../storage/database.svelte";
+import type { ChatVarTarget } from "../parser/chatVar.svelte";
 import { requestChatData } from "./request/chatRequestOrchestrator";
 import { alertError } from "../alert";
 import { fetchNative, globalFetch, readImage } from "../globalApi.svelte";
@@ -9,7 +10,11 @@ import { processZip } from "./processzip";
 import { keiServerURL } from "../kei/kei";
 import random from "lodash/random";
 
-export async function stableDiff(currentChar: character, prompt: string) {
+export async function stableDiff(
+  currentChar: character,
+  prompt: string,
+  chatTarget?: ChatVarTarget,
+) {
   let db = getDatabase();
 
   if (db.sdProvider === "") {
@@ -34,6 +39,7 @@ export async function stableDiff(currentChar: character, prompt: string) {
     {
       formated: promptbody,
       currentChar: currentChar,
+      triggerTarget: chatTarget,
       temperature: 0.2,
       maxTokens: 300,
       bias: {},
