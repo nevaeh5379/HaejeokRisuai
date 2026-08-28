@@ -18,7 +18,6 @@ import { defaultSdDataFunc } from "./storage/presetDefaults";
 import { appVer, appSubVer } from "./appVersion";
 import { installDatabase } from "./storage/databaseLifecycle";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { checkRisuUpdate } from "./update";
 import {
   MobileGUI,
   botMakerMode,

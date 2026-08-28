@@ -62,6 +62,7 @@ import {
   getPreparedNativeThumbnailSrc,
 } from "./globalApi.svelte";
 import { isCapacitor, isNodeServer, isTauri } from "./platform";
+import { checkRisuUpdate } from "./update";
 import { registerModelDynamic } from "./model/modellist";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { appDataDir, join } from "@tauri-apps/api/path";
@@ -465,6 +466,10 @@ export async function loadData() {
       alertTOS().then((a) => {
         if (a === false) {
           location.reload();
+          return;
+        }
+        if (isTauri || isCapacitor) {
+          void checkRisuUpdate();
         }
       });
     } catch (error) {

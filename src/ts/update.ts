@@ -1,116 +1,248 @@
-import { alertConfirm, alertSelect, alertWait } from "./alert";
+import { Capacitor, registerPlugin } from "@capacitor/core";
+import {
+  alertClear,
+  alertConfirm,
+  alertError,
+  alertProgress,
+  alertSelect,
+} from "./alert";
 import { language } from "../lang";
-import { check } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
+import { isCapacitor, isTauri } from "./platform";
 
 const UPDATE_REMINDER_KEY = "risu_update_reminder";
+const isAndroidNative =
+  isCapacitor && Capacitor.getPlatform() === "android";
+
+type ListenerHandle = { remove(): Promise<void> };
+
+type AndroidUpdateCheck = {
+  available: boolean;
+  currentVersion: string;
+  latestVersion: string;
+  latestVersionCode: number;
+};
+
+type AndroidDownloadProgress = {
+  bytesDownloaded: number;
+  totalBytes: number;
+  percent: number;
+};
+
+interface NativeUpdaterPlugin {
+  check(): Promise<AndroidUpdateCheck>;
+  downloadAndInstall(): Promise<void>;
+  addListener(
+    eventName: "downloadProgress",
+    listener: (event: AndroidDownloadProgress) => void,
+  ): Promise<ListenerHandle>;
+}
+
+const nativeUpdater = isAndroidNative
+  ? registerPlugin<NativeUpdaterPlugin>("NativeUpdater")
+  : null;
 
 interface UpdateReminder {
-  until: number;
+  version: string;
+  until?: number;
+  ignored?: boolean;
 }
+
+interface UpdateCandidate {
+  version: string;
+  currentVersion: string;
+  install: () => Promise<void>;
+}
+
+let activeUpdateCheck: Promise<void> | null = null;
 
 function getUpdateReminder(): UpdateReminder | null {
   try {
     const stored = localStorage.getItem(UPDATE_REMINDER_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
+    return stored ? (JSON.parse(stored) as UpdateReminder) : null;
   } catch {
-    // Ignore parse errors
+    return null;
   }
-  return null;
 }
 
-function setUpdateReminder(days: number): void {
-  const until = Date.now() + days * 24 * 60 * 60 * 1000;
-  localStorage.setItem(UPDATE_REMINDER_KEY, JSON.stringify({ until }));
+function setUpdateReminder(version: string, days: number): void {
+  localStorage.setItem(
+    UPDATE_REMINDER_KEY,
+    JSON.stringify({
+      version,
+      until: Date.now() + days * 24 * 60 * 60 * 1000,
+    } satisfies UpdateReminder),
+  );
+}
+
+function ignoreUpdate(version: string): void {
+  localStorage.setItem(
+    UPDATE_REMINDER_KEY,
+    JSON.stringify({ version, ignored: true } satisfies UpdateReminder),
+  );
 }
 
 function clearUpdateReminder(): void {
   localStorage.removeItem(UPDATE_REMINDER_KEY);
 }
 
-function isUpdateReminderActive(): boolean {
+function isUpdateReminderActive(version: string): boolean {
   const reminder = getUpdateReminder();
-  if (reminder && reminder.until > Date.now()) {
-    return true;
-  }
-  if (reminder) {
+  if (!reminder) return false;
+  if (reminder.version !== version) {
     clearUpdateReminder();
+    return false;
   }
+  if (reminder.ignored) return true;
+  if ((reminder.until ?? 0) > Date.now()) return true;
+  clearUpdateReminder();
   return false;
 }
 
-export async function checkRisuUpdate() {
-  try {
-    const checked = await check();
-    if (checked) {
-      if (isUpdateReminderActive()) {
-        return;
-      }
+function showDownloadProgress(
+  version: string,
+  downloaded: number,
+  total: number,
+): void {
+  const percent = total > 0 ? (downloaded / total) * 100 : 0;
+  alertProgress(`Updating to ${version}...`, percent);
+}
 
-      const conf = await alertConfirm(language.newVersion);
-      if (conf) {
-        clearUpdateReminder();
-        alertWait(`Updating to ${checked.version}...`);
-        await checked.downloadAndInstall();
-        await relaunch();
-      } else {
-        const options = [
-          language.remindIgnore,
-          language.remindLater1Day,
-          language.remindLater3Days,
-          language.remindLater5Days,
-          language.remindLater1Week,
-        ];
+async function getTauriUpdate(): Promise<UpdateCandidate | null> {
+  if (!isTauri) return null;
+  const [{ check }, { relaunch }] = await Promise.all([
+    import("@tauri-apps/plugin-updater"),
+    import("@tauri-apps/plugin-process"),
+  ]);
+  const update = await check();
+  if (!update) return null;
 
-        const selected = await alertSelect(
-          options,
-          language.remindLaterQuestion,
-        );
-        const selectedIndex = parseInt(selected);
-
-        switch (selectedIndex) {
-          case 0:
-            break;
-          case 1:
-            setUpdateReminder(1);
-            break;
-          case 2:
-            setUpdateReminder(3);
-            break;
-          case 3:
-            setUpdateReminder(5);
-            break;
-          case 4:
-            setUpdateReminder(7);
-            break;
+  return {
+    version: update.version,
+    currentVersion: update.currentVersion,
+    install: async () => {
+      let downloaded = 0;
+      let total = 0;
+      await update.downloadAndInstall((event) => {
+        if (event.event === "Started") {
+          total = event.data.contentLength ?? 0;
+          showDownloadProgress(update.version, 0, total);
+        } else if (event.event === "Progress") {
+          downloaded += event.data.chunkLength;
+          showDownloadProgress(update.version, downloaded, total);
+        } else if (event.event === "Finished") {
+          alertProgress(`Updating to ${update.version}...`, 100);
         }
+      });
+      await relaunch();
+    },
+  };
+}
+
+async function getAndroidUpdate(): Promise<UpdateCandidate | null> {
+  if (!nativeUpdater) return null;
+  const checked = await nativeUpdater.check();
+  if (!checked.available) return null;
+  return {
+    version: checked.latestVersion,
+    currentVersion: checked.currentVersion,
+    install: async () => {
+      const listener = await nativeUpdater.addListener(
+        "downloadProgress",
+        (event) => {
+          if (event.totalBytes > 0) {
+            alertProgress(
+              `Updating to ${checked.latestVersion}...`,
+              event.percent,
+            );
+          } else {
+            alertProgress(`Updating to ${checked.latestVersion}...`, 0);
+          }
+        },
+      );
+      try {
+        await nativeUpdater.downloadAndInstall();
+      } finally {
+        await listener.remove();
       }
+    },
+  };
+}
+
+async function findUpdate(): Promise<UpdateCandidate | null> {
+  if (isTauri) return getTauriUpdate();
+  if (isAndroidNative) return getAndroidUpdate();
+  return null;
+}
+
+async function promptForUpdate(candidate: UpdateCandidate): Promise<void> {
+  if (isUpdateReminderActive(candidate.version)) return;
+
+  const conf = await alertConfirm(
+    `${language.newVersion}\n\n${candidate.currentVersion} → ${candidate.version}`,
+  );
+  if (conf) {
+    clearUpdateReminder();
+    try {
+      alertProgress(`Updating to ${candidate.version}...`, 0);
+      await candidate.install();
+      alertClear();
+    } catch (error) {
+      alertClear();
+      console.error("Failed to install application update:", error);
+      alertError(
+        error instanceof Error
+          ? `Failed to install update: ${error.message}`
+          : `Failed to install update: ${String(error)}`,
+      );
     }
-  } catch (error) {
-    console.error(error);
+    return;
+  }
+
+  const selected = await alertSelect(
+    [
+      language.remindIgnore,
+      language.remindLater1Day,
+      language.remindLater3Days,
+      language.remindLater5Days,
+      language.remindLater1Week,
+    ],
+    language.remindLaterQuestion,
+  );
+
+  switch (Number.parseInt(selected, 10)) {
+    case 0:
+      ignoreUpdate(candidate.version);
+      break;
+    case 1:
+      setUpdateReminder(candidate.version, 1);
+      break;
+    case 2:
+      setUpdateReminder(candidate.version, 3);
+      break;
+    case 3:
+      setUpdateReminder(candidate.version, 5);
+      break;
+    case 4:
+      setUpdateReminder(candidate.version, 7);
+      break;
   }
 }
 
-// Test function for web console
-// @ts-ignore
-if (typeof window !== "undefined") {
-  (window as any).testUpdateReminder = async () => {
-    const conf = await alertConfirm(language.newVersion);
-    if (conf) {
-      console.log("User chose to install");
-    } else {
-      const options = [
-        language.remindIgnore,
-        language.remindLater1Day,
-        language.remindLater3Days,
-        language.remindLater5Days,
-        language.remindLater1Week,
-      ];
+async function checkRisuUpdateInternal(): Promise<void> {
+  if (!isTauri && !isAndroidNative) return;
+  try {
+    const candidate = await findUpdate();
+    if (candidate) await promptForUpdate(candidate);
+  } catch (error) {
+    console.warn("Failed to check for application updates:", error);
+  }
+}
 
-      const selected = await alertSelect(options, language.remindLaterQuestion);
-      console.log("Selected index:", selected);
-    }
-  };
+export function checkRisuUpdate(): Promise<void> {
+  if (!activeUpdateCheck) {
+    activeUpdateCheck = checkRisuUpdateInternal().finally(() => {
+      activeUpdateCheck = null;
+    });
+  }
+  return activeUpdateCheck;
 }

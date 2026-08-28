@@ -14,6 +14,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NativeImagePlugin.class);
         registerPlugin(NativeChatPlugin.class);
         registerPlugin(NativeAppControlPlugin.class);
+        registerPlugin(NativeUpdaterPlugin.class);
         super.onCreate(savedInstanceState);
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().setWebViewClient(new RisuWebViewClient(getBridge(), getApplicationContext()));

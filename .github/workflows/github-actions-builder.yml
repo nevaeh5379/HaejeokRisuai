@@ -357,6 +357,7 @@ jobs:
       - name: Verify and prepare signed Android release artifact
         shell: bash
         env:
+          BUILD_NUMBER: ${{ needs.prepare-release.outputs.build_number }}
           BUILD_TAG: ${{ needs.prepare-release.outputs.build_tag }}
         run: |
           APK_PATH="android/app/build/outputs/apk/release/app-release.apk"
@@ -377,7 +378,16 @@ jobs:
           mkdir -p dist-android
           OUTPUT="dist-android/RisuAI-Android-${BUILD_TAG}.apk"
           cp "$APK_PATH" "$OUTPUT"
-          sha256sum "$OUTPUT" > "${OUTPUT}.sha256"
+          SHA256=$(sha256sum "$OUTPUT" | awk '{print $1}')
+          printf '%s  %s\n' "$SHA256" "$(basename "$OUTPUT")" > "${OUTPUT}.sha256"
+          DOWNLOAD_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${BUILD_TAG}/$(basename "$OUTPUT")"
+          jq -n \
+            --arg version "0.0.${BUILD_NUMBER}" \
+            --argjson versionCode "$BUILD_NUMBER" \
+            --arg url "$DOWNLOAD_URL" \
+            --arg sha256 "$SHA256" \
+            '{version: $version, versionCode: $versionCode, url: $url, sha256: $sha256}' \
+            > dist-android/android-update.json
 
       - name: Upload Android APK to draft release
         shell: bash
