@@ -65,6 +65,38 @@ describe("CapacitorSqliteStorage", () => {
     database.close();
   });
 
+  it("restores plugin definitions and custom storage through the Android path", async () => {
+    const database = new DatabaseSync(":memory:");
+    database.exec(sqliteSchemaSql);
+    const storage = makeCapacitorStorage(database);
+    const source = buildFullDatabase() as any;
+    source.plugins = [{
+      name: "android-restore-plugin",
+      displayName: "Android Restore Plugin",
+      version: "3.0",
+      enabled: true,
+      script: "console.log('android restore')",
+    }];
+    source.pluginCustomStorage = {
+      "android-restore-plugin": { enabledFeature: true, count: 7 },
+    };
+
+    await storage.replaceDatabase(source);
+
+    expect(await storage.loadPlugins()).toEqual(source.plugins);
+    expect(await storage.loadPluginCustomStorage()).toEqual(
+      source.pluginCustomStorage,
+    );
+    const shallow = await storage.loadDatabase({ shallow: true });
+    expect(shallow?.deferredSettingKeys).toContain("plugins");
+    installDatabase(shallow!.database as any, storage, {
+      deferredUnloaded: shallow?.deferredSettingKeys,
+    });
+    await settingsStore.ensureDeferredKey("plugins");
+    expect(settingsStore.state.plugins).toEqual(source.plugins);
+    database.close();
+  });
+
   it("defers oversized shallow settings and hydrates them on demand", async () => {
     const database = new DatabaseSync(":memory:");
     database.exec(sqliteSchemaSql);

@@ -13,6 +13,13 @@ describe("RisuSave decode memory behavior", () => {
       personas: [{ name: "A", icon: "", personaPrompt: "" }],
       modules: [{ id: "module-1", name: "Module" }],
       botPresets: [{ name: "Preset", mainPrompt: "hello" }],
+      plugins: [{
+        name: "backup-plugin",
+        version: "3.0",
+        enabled: true,
+        script: "console.log('backup')",
+      }],
+      pluginCustomStorage: { "backup-plugin": { restored: true } },
     });
     const guarded = new NoCopyUint8Array(new ArrayBuffer(source.byteLength));
     guarded.set(source);
@@ -22,5 +29,9 @@ describe("RisuSave decode memory behavior", () => {
     expect(decoded.personas).toHaveLength(1);
     expect(decoded.modules).toHaveLength(1);
     expect(decoded.botPresets).toHaveLength(1);
+    expect(decoded.plugins?.[0]?.name).toBe("backup-plugin");
+    expect(decoded.pluginCustomStorage).toEqual({
+      "backup-plugin": { restored: true },
+    });
   });
 });

@@ -71,6 +71,51 @@ describe("SettingsStore Reactivity and Persistence", () => {
     expect(mockStorage.commit).not.toHaveBeenCalled();
   });
 
+  it("hydrates standalone deferred plugin settings before backup snapshots", async () => {
+    const plugins = [{
+      name: "restored-plugin",
+      version: "3.0",
+      enabled: true,
+      script: "console.log('restored')",
+    }];
+    mockStorage.loadSettingKey = vi.fn(async (key: string) =>
+      key === "plugins" ? plugins : undefined,
+    ) as any;
+    settingsStore.init(
+      { plugins: [], pluginCustomStorage: {} } as any,
+      mockStorage,
+      { deferredUnloaded: ["plugins", "pluginCustomStorage"] },
+    );
+
+    await settingsStore.ensureDeferredLoaded();
+
+    expect(settingsStore.state.plugins).toEqual(plugins);
+    expect(mockStorage.loadSettingKey).toHaveBeenCalledWith("plugins");
+    expect(mockStorage.loadSettingKey).not.toHaveBeenCalledWith(
+      "pluginCustomStorage",
+    );
+    await settingsStore.flush();
+    expect(mockStorage.commit).not.toHaveBeenCalled();
+  });
+
+  it("blocks backup hydration when deferred plugins cannot be loaded", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockStorage.loadSettingKey = vi.fn(async () => {
+      throw new Error("database read failed");
+    }) as any;
+    settingsStore.init(
+      { plugins: [], pluginCustomStorage: {} } as any,
+      mockStorage,
+      { deferredUnloaded: ["plugins"] },
+    );
+
+    await expect(settingsStore.ensureDeferredLoaded()).rejects.toThrow(
+      /deferred settings failed to load: plugins/,
+    );
+    expect(settingsStore.state.plugins).toEqual([]);
+    errorSpy.mockRestore();
+  });
+
   it("does not let a deferred prompt reload overwrite an authoritative value", async () => {
     mockStorage.loadPrompts = vi.fn(async () => ({
       mainPrompt: "stale stored prompt",

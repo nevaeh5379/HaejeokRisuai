@@ -310,13 +310,33 @@ class SettingsStore {
 
   async ensureDeferredLoaded(): Promise<void> {
     const domains = new Set<SqlDeferredDomain>();
+    const individualKeys = new Set<string>();
     for (const key of this.deferredUnloaded) {
       const domain = getSqlDeferredDomain(key);
-      if (domain) domains.add(domain);
+      if (domain) {
+        domains.add(domain);
+      } else if (key !== "pluginCustomStorage") {
+        // pluginCustomStorage values live in their own table and are loaded
+        // lazily per key. Other standalone deferred settings (notably large
+        // plugin scripts) must be hydrated before a fallback backup snapshot
+        // is serialized, or the normalized empty startup value is backed up.
+        individualKeys.add(key);
+      }
     }
-    await Promise.all(
-      Array.from(domains, (domain) => this.ensureDeferredDomain(domain)),
+    // Backup hydration is intentionally sequential. The final snapshot must
+    // contain every value, but loading several large domains/scripts through
+    // the Android bridge concurrently creates avoidable peak memory pressure.
+    for (const domain of domains) await this.ensureDeferredDomain(domain);
+    for (const key of individualKeys) await this.ensureDeferredKey(key);
+
+    const unresolved = [...this.deferredUnloaded].filter(
+      (key) => key !== "pluginCustomStorage",
     );
+    if (unresolved.length > 0) {
+      throw new Error(
+        `Cannot create a complete backup because deferred settings failed to load: ${unresolved.join(", ")}`,
+      );
+    }
   }
 
   private async ensureDeferredDomain(domain: SqlDeferredDomain): Promise<void> {
