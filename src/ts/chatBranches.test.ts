@@ -232,4 +232,69 @@ describe("chatBranches", () => {
       responseMessageIndex: 3,
     });
   });
+
+  it("restores chat-scoped Lua state together with branch messages", () => {
+    const chat = makeChat([
+      makeMessage("user", "hello", "m1"),
+      makeMessage("char", "original", "m2"),
+    ]);
+    chat.scriptstate = { "$lb-xnai-stack": "root-state" };
+    chat.GLGlobalVariables = { localToggle: "root" };
+    chat.useLocallySetGlobalVariables = true;
+
+    const child = createChatTimelineBranch(chat, {
+      branchMessageIndex: 0,
+      reason: "reroll",
+      createdAt: 10,
+    });
+    const rootId = child.parentBranchId!;
+
+    chat.message.push(makeMessage("char", "alternative", "r1"));
+    chat.scriptstate = { "$lb-xnai-stack": "child-state" };
+    chat.GLGlobalVariables = { localToggle: "child" };
+    chat.useLocallySetGlobalVariables = false;
+    syncActiveChatBranch(chat);
+
+    activateChatBranch(chat, rootId);
+    expect(data(chat)).toEqual(["hello", "original"]);
+    expect(chat.scriptstate).toEqual({ "$lb-xnai-stack": "root-state" });
+    expect(chat.GLGlobalVariables).toEqual({ localToggle: "root" });
+    expect(chat.useLocallySetGlobalVariables).toBe(true);
+
+    activateChatBranch(chat, child.id);
+    expect(data(chat)).toEqual(["hello", "alternative"]);
+    expect(chat.scriptstate).toEqual({ "$lb-xnai-stack": "child-state" });
+    expect(chat.GLGlobalVariables).toEqual({ localToggle: "child" });
+    expect(chat.useLocallySetGlobalVariables).toBe(false);
+  });
+
+  it("keeps current script state when switching to a legacy branch without snapshots", () => {
+    const chat = makeChat([makeMessage("user", "hello", "m1")]);
+    chat.scriptstate = { "$legacy": "keep-me" };
+    chat.branchState = {
+      baseMessageIndex: 0,
+      activeBranchId: "root",
+      branches: [
+        {
+          id: "root",
+          branchMessageIndex: 0,
+          reason: "root",
+          createdAt: 1,
+          messages: [],
+        },
+        {
+          id: "legacy-child",
+          parentBranchId: "root",
+          branchMessageIndex: 0,
+          reason: "manual",
+          createdAt: 2,
+          messages: [makeMessage("char", "legacy", "m2")],
+        },
+      ],
+    };
+
+    activateChatBranch(chat, "legacy-child");
+    expect(chat.scriptstate).toEqual({ "$legacy": "keep-me" });
+    expect(data(chat)).toEqual(["hello", "legacy"]);
+  });
 });

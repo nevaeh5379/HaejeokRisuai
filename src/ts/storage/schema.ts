@@ -1137,6 +1137,11 @@ export interface ChatBranchTimeline {
   createdAt: number;
   /** Messages after ChatBranchState.baseMessageIndex for this timeline. */
   messages: Message[];
+  /** Chat-scoped script variables captured with this branch. Null means intentionally empty. */
+  scriptstate?: { [key: string]: string | number | boolean } | null;
+  /** Locally overridden global variables captured with this branch. Null means intentionally empty. */
+  GLGlobalVariables?: { [key: string]: string } | null;
+  useLocallySetGlobalVariables?: boolean | null;
 }
 
 export interface ChatBranchState {

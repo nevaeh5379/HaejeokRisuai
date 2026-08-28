@@ -62,6 +62,35 @@ function cloneMessages(messages: Message[]): Message[] {
   return safeStructuredClone(messages);
 }
 
+function cloneBranchScriptState(chat: Chat) {
+  return {
+    scriptstate: chat.scriptstate ? safeStructuredClone(chat.scriptstate) : null,
+    GLGlobalVariables: chat.GLGlobalVariables
+      ? safeStructuredClone(chat.GLGlobalVariables)
+      : null,
+    useLocallySetGlobalVariables: chat.useLocallySetGlobalVariables ?? null,
+  };
+}
+
+function restoreBranchScriptState(
+  chat: Chat,
+  branch: ChatBranchTimeline,
+): void {
+  if ("scriptstate" in branch) {
+    chat.scriptstate = branch.scriptstate
+      ? safeStructuredClone(branch.scriptstate)
+      : undefined;
+  }
+  if ("GLGlobalVariables" in branch) {
+    chat.GLGlobalVariables = branch.GLGlobalVariables
+      ? safeStructuredClone(branch.GLGlobalVariables)
+      : undefined;
+  }
+  if ("useLocallySetGlobalVariables" in branch) {
+    chat.useLocallySetGlobalVariables = branch.useLocallySetGlobalVariables ?? undefined;
+  }
+}
+
 function updateChatMessageRuntime(chat: Chat): void {
   chat.messagesLoaded = true;
   chat.messageOffset = 0;
@@ -81,6 +110,7 @@ export function syncActiveChatBranch(chat: Chat): void {
   const active = activeTimeline(chat);
   if (!state || !active) return;
   active.messages = cloneMessages(chat.message.slice(state.baseMessageIndex + 1));
+  Object.assign(active, cloneBranchScriptState(chat));
 }
 
 function createRootState(chat: Chat, forkIndex: number): ChatBranchState {
@@ -96,6 +126,7 @@ function createRootState(chat: Chat, forkIndex: number): ChatBranchState {
         reason: "root",
         createdAt: Date.now(),
         messages: cloneMessages(chat.message.slice(forkIndex + 1)),
+        ...cloneBranchScriptState(chat),
       },
     ],
   };
@@ -146,6 +177,7 @@ export function activateChatBranch(
   const target = state.branches.find((branch) => branch.id === branchId)!;
   const prefix = chat.message.slice(0, state.baseMessageIndex + 1);
   chat.message = [...cloneMessages(prefix), ...cloneMessages(target.messages)];
+  restoreBranchScriptState(chat, target);
   state.activeBranchId = branchId;
   updateChatMessageRuntime(chat);
   return {
@@ -172,6 +204,7 @@ export function createChatTimelineBranch(
     messages: cloneMessages(
       chat.message.slice(state.baseMessageIndex + 1, options.branchMessageIndex + 1),
     ),
+    ...cloneBranchScriptState(chat),
   };
 
   state.branches.push(branch);
