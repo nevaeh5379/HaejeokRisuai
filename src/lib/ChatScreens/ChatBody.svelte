@@ -120,7 +120,7 @@ import isEqual from "lodash/isEqual"
                 if(settingsStore.state.translatorType === 'llm' && settingsStore.state.translateBeforeHTMLFormatting){
                     await sleep(100)
                     translating = true
-                    data = await translateHTML(data, false, charArg, chatID, retranslate)
+                    data = await translateHTML(data, false, charArg, chatID, retranslate, chatTarget)
                     translating = false
                     const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), chatTarget)
                     lastParsedQueue = marked
@@ -130,7 +130,7 @@ import isEqual from "lodash/isEqual"
                 else if(!settingsStore.state.legacyTranslation){
                     const marked = await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition(), chatTarget)
                     translating = true
-                    const translated = await postTranslationParse(await translateHTML(marked, false, charArg, chatID, retranslate))
+                    const translated = await postTranslationParse(await translateHTML(marked, false, charArg, chatID, retranslate, chatTarget))
                     translating = false
                     lastParsedQueue = translated
                     lastCharArg = charArg
@@ -139,7 +139,7 @@ import isEqual from "lodash/isEqual"
                 else{
                     const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), chatTarget)
                     translating = true
-                    const translated = await translateHTML(marked, false, charArg, chatID, retranslate)
+                    const translated = await translateHTML(marked, false, charArg, chatID, retranslate, chatTarget)
                     translating = false
                     lastParsedQueue = translated
                     lastCharArg = charArg

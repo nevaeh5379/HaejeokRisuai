@@ -21,6 +21,7 @@ import {
   type simpleCharacterArgument,
 } from "../parser/parser.svelte";
 import { selectedCharID } from "../stores.svelte";
+import { resolveChatTarget, type ChatExecutionTarget } from "../chatTarget";
 import { getModuleRegexScripts } from "../process/modules";
 import { getNodetextToSentence, sleep } from "../util";
 import { processScriptFull } from "../process/scripts";
@@ -303,12 +304,14 @@ export async function translateHTML(
   charArg: simpleCharacterArgument | string = "",
   chatID: number,
   regenerate = false,
+  chatTarget?: ChatExecutionTarget,
 ): Promise<string> {
+  const resolvedTarget = chatTarget ? resolveChatTarget(chatTarget) : null;
   let alwaysExistChar: character | groupChat | simpleCharacterArgument;
   if (charArg !== "") {
     if (typeof charArg === "string") {
       const charId = get(selectedCharID);
-      alwaysExistChar = characterStore.characters[charId];
+      alwaysExistChar = resolvedTarget?.character ?? characterStore.characters[charId];
     } else {
       alwaysExistChar = charArg;
     }
@@ -341,7 +344,7 @@ export async function translateHTML(
       audio.play().catch(() => {});
     }
 
-    return applyEdittransRegex(r, charArg, alwaysExistChar, chatID);
+    return applyEdittransRegex(r, charArg, alwaysExistChar, chatID, chatTarget);
   }
   if (db.translatorType == "bergamot" && db.htmlTranslation) {
     const from = db.aiModel.startsWith("novellist") ? "ja" : "en";
@@ -357,6 +360,7 @@ export async function translateHTML(
       charArg,
       alwaysExistChar,
       chatID,
+      chatTarget,
     );
   }
   const dom = new DOMParser().parseFromString(html, "text/html");
@@ -457,6 +461,8 @@ export async function translateHTML(
         translated,
         "editdisplay",
         chatID,
+        {},
+        chatTarget,
       );
       // If the translation is the same, don't replace the node
       if (translated == processedTranslated) {
@@ -574,6 +580,7 @@ export async function translateHTML(
     charArg,
     alwaysExistChar,
     chatID,
+    chatTarget,
   );
 
   // console.log(html)
@@ -739,13 +746,18 @@ export function applyEdittransRegex(
   charArg: simpleCharacterArgument | string,
   alwaysExistChar: character | groupChat | simpleCharacterArgument,
   chatID = -1,
+  chatTarget?: ChatExecutionTarget,
 ): string {
   if (charArg === "") return text;
 
   const db = settingsStore.state;
+  const resolvedTarget = chatTarget ? resolveChatTarget(chatTarget) : null;
+  const moduleCharacter =
+    resolvedTarget?.character ??
+    (alwaysExistChar.type === "simple" ? undefined : alwaysExistChar);
   let scripts: customscript[] = [];
   scripts = (db.presetRegex ?? [])
-    .concat(getModuleRegexScripts() ?? [])
+    .concat(getModuleRegexScripts(moduleCharacter, undefined, resolvedTarget?.chat) ?? [])
     .concat(alwaysExistChar?.customscript ?? []);
 
   const parsedScripts: pEdittransScript[] = [];

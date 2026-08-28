@@ -498,8 +498,9 @@ export function getModuleLorebooks(
 export function getModuleAssets(
   character?: character | groupChat,
   overrideIds?: string[],
+  chat?: Chat,
 ) {
-  const modules = getModules(character, overrideIds);
+  const modules = getModules(character, overrideIds, chat);
   let assets: [string, string, string][] = [];
   for (const module of modules) {
     if (!module) {
@@ -538,8 +539,9 @@ export function getModuleTriggers(
 export function getModuleRegexScripts(
   character?: character | groupChat,
   overrideIds?: string[],
+  chat?: Chat,
 ) {
-  const modules = getModules(character, overrideIds);
+  const modules = getModules(character, overrideIds, chat);
   let customscripts: customscript[] = [];
   for (const module of modules) {
     if (!module) {

@@ -377,9 +377,12 @@ export async function runScripted(
           return;
         }
         const realValue = JSON.parse(value);
+        const previousMessages = ScriptingEngineState.chat.message ?? [];
 
-        ScriptingEngineState.chat.message = realValue.map((v) => {
+        ScriptingEngineState.chat.message = realValue.map((v, index) => {
+          const previous = previousMessages[index];
           return {
+            ...(previous ?? {}),
             role: v.role,
             data: v.data,
           };

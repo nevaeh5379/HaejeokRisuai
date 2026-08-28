@@ -2,7 +2,7 @@
     import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, DownloadIcon, FileText, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors } from "@lucide/svelte"
     import { aiLawApplies, changeChatTo, foldChatToMessage, getFileSrc } from "src/ts/globalApi.svelte"
     import { createChatTimelineBranch } from "src/ts/chatBranches"
-    import { requireChatTargetFromIndexes, type ChatExecutionTarget } from "src/ts/chatTarget"
+    import { chatTargetFromIndexes, requireChatTargetFromIndexes, type ChatExecutionTarget } from "src/ts/chatTarget"
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme"
     import { longpress } from "src/ts/gui/longtouch"
     import { getModelInfo } from "src/ts/model/modellist"
@@ -93,6 +93,10 @@
         sourceMessage,
         chatTarget,
     }: Props = $props();
+
+    let effectiveChatTarget = $derived(
+        chatTarget ?? chatTargetFromIndexes(targetCharacterIndex, targetChatIndex) ?? undefined
+    )
 
     let msgDisplay = $state('')
     let translated = $state(false)
@@ -231,9 +235,9 @@
             return msgDisplay
         }
         if(!settingsStore.state.legacyTranslation){
-            return await ParseMarkdown(msgDisplay, character, 'pretranslate', scriptIdx, getCbsCondition(), chatTarget)
+            return await ParseMarkdown(msgDisplay, character, 'pretranslate', scriptIdx, getCbsCondition(), effectiveChatTarget)
         }
-        return await ParseMarkdown(msgDisplay, character, 'notrim', scriptIdx, getCbsCondition(), chatTarget)
+        return await ParseMarkdown(msgDisplay, character, 'notrim', scriptIdx, getCbsCondition(), effectiveChatTarget)
     }
 
     async function loadTranslationForEdit() {
@@ -252,7 +256,7 @@
     }
 
     function displaya(message:string){
-        msgDisplay = risuChatParser(message, {chara: name, chatID: scriptIdx, rmVar: true, visualize: true, cbsConditions: getCbsCondition(), chatTarget})
+        msgDisplay = risuChatParser(message, {chara: name, chatID: scriptIdx, rmVar: true, visualize: true, cbsConditions: getCbsCondition(), chatTarget: effectiveChatTarget})
     }
 
     const setStatusMessage = (message:string, timeout:number = 0)=>{
@@ -294,7 +298,7 @@
     function RenderGUIHtml(html:string){
         try {
             const parser = new DOMParser()
-            const doc = parser.parseFromString(risuChatParser(html ?? '', {chatID: scriptIdx, cbsConditions: getCbsCondition(), chatTarget}), 'text/html')
+            const doc = parser.parseFromString(risuChatParser(html ?? '', {chatID: scriptIdx, cbsConditions: getCbsCondition(), chatTarget: effectiveChatTarget}), 'text/html')
             return doc.body   
         } catch (error) {
             const placeholder = document.createElement('div')
@@ -344,7 +348,7 @@
         if(triggerResult?.chat) {
             currentChar.chats[targetChatIndex] = triggerResult.chat
             ReloadChatPointer.update((v) => {
-                v[idx] = (v[idx] ?? 0) + 1
+                v[scriptIdx] = (v[scriptIdx] ?? 0) + 1
                 return v
             })
         }
@@ -568,7 +572,7 @@
                     bind:retranslate={retranslate}
                     {renderRawStreaming}
                     {rawStreamingText}
-                    {chatTarget} />
+                    chatTarget={effectiveChatTarget} />
             {/key}
             {#if !hideButtons && idx >= 0 && !editMode && !isOptimizedStreamingMessage && partialEditEnabled && (settingsStore.state.enableBlockPartialEdit || settingsStore.state.enableDragPartialEdit)}
                 <PartialEditController
@@ -631,7 +635,7 @@
     {#if settingsStore.state.useChatCopy && !blankMessage}
     <button class="flex items-center hover:text-blue-500 transition-colors button-icon-copy" onclick={async ()=>{
         const copyText = renderRawStreaming
-            ? risuChatParser(rawStreamingText, {chara: name, chatID: scriptIdx, rmVar: true, visualize: true, cbsConditions: getCbsCondition(), chatTarget})
+            ? risuChatParser(rawStreamingText, {chara: name, chatID: scriptIdx, rmVar: true, visualize: true, cbsConditions: getCbsCondition(), chatTarget: effectiveChatTarget})
             : msgDisplay
         if(window.navigator.clipboard.write){
             try {
@@ -640,7 +644,7 @@
 
                 const parser = new DOMParser()
                 const doc = parser.parseFromString(
-                    await ParseMarkdown(copyText, characterStore.characters[targetCharacterIndex], 'normal', scriptIdx, getCbsCondition(), chatTarget)
+                    await ParseMarkdown(copyText, characterStore.characters[targetCharacterIndex], 'normal', scriptIdx, getCbsCondition(), effectiveChatTarget)
                 , 'text/html')
                 
                 doc.querySelectorAll('mark').forEach((el) => {
@@ -1312,7 +1316,7 @@
                                     }
                                 }
                                 ReloadChatPointer.update((v) => {
-                                    v[idx] = (v[idx] ?? 0) + 1
+                                    v[scriptIdx] = (v[scriptIdx] ?? 0) + 1
                                     return v
                                 })
                             }}><ArrowLeftRightIcon size="18" /></button>

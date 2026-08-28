@@ -145,7 +145,7 @@
             const key = messageRenderKey(message, i);
             currentKeys.add(key);
             const messageLargePortrait = message.role === 'user' ? (userIconPortrait ?? false) : ((currentCharacter as character).largePortrait ?? false);
-            const reloadPointer = reloadPointerMap[i] ?? 0;
+            const reloadPointer = reloadPointerMap[scriptIdx] ?? 0;
             const activeStreamingMessage = i === activeStreamingIndex && message.role === 'char';
             const rerollIcon = message.role === 'char' || (message.role === 'user' && i === messages.length - 1);
             const signature: RenderSignature = {

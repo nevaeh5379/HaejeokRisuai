@@ -282,6 +282,44 @@ test("does not persist when Lua sets a chat message to the same value", async ()
   expect(commitMessages).not.toHaveBeenCalled();
 });
 
+test("preserves message metadata when Lua replaces the full chat", async () => {
+  commitMessages.mockClear();
+  const chat: any = {
+    id: "chat-1",
+    message: [
+      {
+        role: "char",
+        data: "before",
+        chatId: "message-1",
+        time: 123,
+        name: "Narrator",
+        generationInfo: { model: "test-model" },
+      },
+    ],
+  } as never;
+
+  await runScripted(
+    `
+      function onStart(id)
+        local full = getFullChat(id)
+        full[1].data = "after"
+        setFullChat(id, full)
+      end
+    `,
+    { char: {} as never, chat, mode: "start" },
+  );
+
+  expect(chat.message[0]).toMatchObject({
+    role: "char",
+    data: "after",
+    chatId: "message-1",
+    time: 123,
+    name: "Narrator",
+    generationInfo: { model: "test-model" },
+  });
+  expect(commitMessages).toHaveBeenCalledWith("chat-1", chat.message);
+});
+
 test("checks module button triggers when character triggers are missing", async () => {
   moduleTriggers.mockClear();
 

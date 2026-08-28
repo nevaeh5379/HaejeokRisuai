@@ -358,10 +358,11 @@
         else{
             const char = characterStore.characters[selectedChar]
             if(char.type === 'character'){
+                const executionTarget = requireChatTargetFromIndexes(selectedChar, currentChatPage)
                 const { runTrigger } = await import('src/ts/process/triggers')
                 let triggerResult = await runTrigger(char,'input', {
                     chat: char.chats[currentChatPage],
-                    target: requireChatTargetFromIndexes(selectedChar, currentChatPage)
+                    target: executionTarget
                 })
                 if(triggerResult){
                     cha = triggerResult.chat.message
@@ -369,7 +370,7 @@
 
                 appendedUserMessage = {
                     role: 'user',
-                    data: await processScript(char,messageInput,'editinput'),
+                    data: await processScript(char,messageInput,'editinput', {}, executionTarget),
                     time: Date.now(),
                     name: $ConnectionOpenStore ? settingsStore.state.username : null
                 }

@@ -172,13 +172,17 @@ export async function processScriptFull(
     chatTarget,
   );
 
+  const resolvedTarget = chatTarget ? resolveChatTarget(chatTarget) : null;
+
   if (mode === "editdisplay") {
-    const currentChar = characterStore.currentCharacter;
-    if (currentChar && currentChar.type !== "group") {
+    const displayCharacter = resolvedTarget?.character ?? characterStore.currentCharacter;
+    const displayChat = resolvedTarget?.chat ?? characterStore.currentChat;
+    if (displayCharacter && displayCharacter.type !== "group" && displayChat) {
       try {
         const perf = performance.now();
-        const d = await runTrigger(currentChar, "display", {
-          chat: characterStore.currentChat,
+        const d = await runTrigger(displayCharacter, "display", {
+          chat: displayChat,
+          target: chatTarget,
           displayMode: true,
           displayData: data,
         });
@@ -201,14 +205,10 @@ export async function processScriptFull(
   }
 
   data = risuChatParser(data, { chatID: chatID, cbsConditions, chatTarget });
-  const moduleRoom = chatTarget
-    ? resolveChatTarget(chatTarget)?.character
-    : char.type === "simple"
-      ? undefined
-      : char;
+  const moduleRoom = resolvedTarget?.character ?? (char.type === "simple" ? undefined : char);
   const scripts = (db.presetRegex ?? [])
     .concat(char.customscript ?? [])
-    .concat(getModuleRegexScripts(moduleRoom))
+    .concat(getModuleRegexScripts(moduleRoom, undefined, resolvedTarget?.chat))
     .filter((script): script is customscript => !!script);
   const hash = generateScriptCacheKey(
     scripts,
@@ -487,7 +487,7 @@ export async function processScriptFull(
     }
     const assetNames = char.additionalAssets.map((v) => v[0]);
 
-    const moduleAssets = getModuleAssets(moduleRoom);
+    const moduleAssets = getModuleAssets(moduleRoom, undefined, resolvedTarget?.chat);
     if (moduleAssets.length > 0) {
       for (const asset of moduleAssets) {
         assetNames.push(asset[0]);
