@@ -375,6 +375,20 @@ export abstract class NativeSqliteStorageBase {
           chatData.detailsLoaded = true;
           return chatData;
         });
+        for (const chat of chats) {
+          if (!chat.id) continue;
+          chat.message = await this.loadMessageRowsBatch(
+            chat.id,
+            undefined,
+            0,
+            false,
+          );
+          chat.messageOffset = 0;
+          chat.messageTotal = chat.message.length;
+          chat.messagesLoaded = true;
+          chat.messagesFullyLoaded = true;
+          chat.detailsLoaded = true;
+        }
         fullChar.chats = chats;
         characters.push(fullChar);
       }

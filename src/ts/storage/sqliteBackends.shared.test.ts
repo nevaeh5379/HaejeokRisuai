@@ -81,6 +81,14 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(db.username).toBe("tester");
     expect(db.language).toBe("en");
     expect(db.theme).toBe("dark");
+    expect(db.characters[0].chats[0].message.map((m: Message) => m.data)).toEqual([
+      "one",
+      "two",
+    ]);
+    expect(db.characters[0].chats[0].messagesLoaded).toBe(true);
+    expect(db.characters[0].chats[0].messagesFullyLoaded).toBe(true);
+    expect(db.characters[0].chats[0].messageOffset).toBe(0);
+    expect(db.characters[0].chats[0].messageTotal).toBe(2);
     expect(await storage.loadPersonas()).toEqual(source.personas);
     expect(await storage.loadLorebooks()).toEqual(source.loreBook);
     expect(await storage.loadModules()).toEqual(source.modules);

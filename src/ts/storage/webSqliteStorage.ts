@@ -503,7 +503,17 @@ export class WebSqliteStorage implements ISqlStorage {
         )) ?? {}) as any;
         fullChar.chaId = row.id;
         fullChar.detailsLoaded = true;
-        fullChar.chats = await this.loadCharacterChats(row.id as string);
+        const chats = await this.loadCharacterChats(row.id as string);
+        for (const chat of chats) {
+          if (!chat.id) continue;
+          chat.message = await this.loadMessagesBatch(chat.id);
+          chat.messageOffset = 0;
+          chat.messageTotal = chat.message.length;
+          chat.messagesLoaded = true;
+          chat.messagesFullyLoaded = true;
+          chat.detailsLoaded = true;
+        }
+        fullChar.chats = chats;
         characters.push(fullChar);
       }
     }
