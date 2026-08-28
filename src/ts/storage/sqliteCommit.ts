@@ -428,36 +428,7 @@ export async function applySqliteCommit(
     await execute("DELETE FROM plugin_custom_storage");
     await execute("DELETE FROM bot_presets");
   }
-  for (const upsert of commit.root.upserts) {
-    if (upsert.key === "botPresets" || upsert.key === "botPresetsId")
-      throw new Error(`${upsert.key} must be written through presets`);
-    if (upsert.key === "pluginCustomStorage") continue;
-    const root = flattenRelationalValue(upsert.value)[0];
-    await execute(
-      `INSERT INTO system_settings
-            (key, domain, value_type, text_value, encoded_text_value, number_value, boolean_value, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET
-            domain=excluded.domain, value_type=excluded.value_type, text_value=excluded.text_value,
-            encoded_text_value=excluded.encoded_text_value, number_value=excluded.number_value,
-            boolean_value=excluded.boolean_value, updated_at=datetime('now')`,
-      [
-        upsert.key,
-        settingDomain(upsert.key),
-        root.value_type,
-        root.text_value,
-        root.encoded_text_value,
-        root.number_value,
-        root.boolean_value,
-      ],
-    );
-    await replaceNodes(
-      execute,
-      "setting_extension_nodes",
-      ["setting_key"],
-      [upsert.key],
-      upsert.value,
-    );
-  }
+  await applySettingUpsert(commit, execute);
   for (const key of commit.root.deletes) {
     if (key === "botPresets" || key === "botPresetsId")
       throw new Error(`${key} is not a root setting`);
@@ -702,3 +673,37 @@ export async function applySqliteCommit(
       );
     }
 }
+
+async function applySettingUpsert(commit: SqlCommit, execute: SqliteExecute) {
+  for (const upsert of commit.root.upserts) {
+    if (upsert.key === "botPresets" || upsert.key === "botPresetsId")
+      throw new Error(`${upsert.key} must be written through presets`);
+    if (upsert.key === "pluginCustomStorage") continue;
+    const root = flattenRelationalValue(upsert.value)[0];
+    await execute(
+      `INSERT INTO system_settings
+            (key, domain, value_type, text_value, encoded_text_value, number_value, boolean_value, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET
+            domain=excluded.domain, value_type=excluded.value_type, text_value=excluded.text_value,
+            encoded_text_value=excluded.encoded_text_value, number_value=excluded.number_value,
+            boolean_value=excluded.boolean_value, updated_at=datetime('now')`,
+      [
+        upsert.key,
+        settingDomain(upsert.key),
+        root.value_type,
+        root.text_value,
+        root.encoded_text_value,
+        root.number_value,
+        root.boolean_value,
+      ]
+    );
+    await replaceNodes(
+      execute,
+      "setting_extension_nodes",
+      ["setting_key"],
+      [upsert.key],
+      upsert.value
+    );
+  }
+}
+
