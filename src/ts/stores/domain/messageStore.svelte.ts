@@ -96,17 +96,25 @@ class MessageStore {
     const nonEmptyChats = chats.filter(({ messages }) => messages.length > 0);
     if (nonEmptyChats.length === 0) return;
 
-    const messageUpserts = nonEmptyChats.flatMap(({ chatId, messages }) =>
-      messages.map((message, position) => {
-        message.chatId ||= uuidv4();
+    const messageUpserts = nonEmptyChats.flatMap(({ chatId, messages }) => {
+      const usedIds = new Set<string>();
+      return messages.map((message, position) => {
+        let messageId = message.chatId;
+        if (!messageId || usedIds.has(messageId)) {
+          do {
+            messageId = uuidv4();
+          } while (usedIds.has(messageId));
+          message.chatId = messageId;
+        }
+        usedIds.add(messageId);
         return {
           id: message.chatId,
           chatId,
           position,
           data: sqlMessageData(message),
         };
-      }),
-    );
+      });
+    });
 
     await this.persist({
       baseRevision: 0,

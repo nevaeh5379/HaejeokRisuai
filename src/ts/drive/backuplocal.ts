@@ -1259,9 +1259,13 @@ async function restoreLocalBackupSource(
     } else {
       const inlayKey = getInlayBackupKey(name);
       if (inlayKey) {
-        await setInlayAsset(inlayKey, decodeInlayAssetBackup(data));
-        entriesWritten++;
-        entriesRestored++;
+        try {
+          await setInlayAsset(inlayKey, decodeInlayAssetBackup(data));
+          entriesWritten++;
+          entriesRestored++;
+        } catch (e) {
+          console.error(`Failed to restore inlay item ${inlayKey}:`, e);
+        }
         currentEntryName = "";
         return;
       }

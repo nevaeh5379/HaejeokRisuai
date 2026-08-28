@@ -26,7 +26,7 @@
     import { alertConfirm, alertInput, alertNormal, alertSelect } from "src/ts/alert";
     import { language } from "src/lang";
     import { changeChatTo, createChatCopyName } from "src/ts/globalApi.svelte";
-    import { exportChat, importChat, exportAllChats } from "src/ts/characters";
+    import { exportChat, importChat, exportAllChats, duplicateChat } from "src/ts/characters";
     import { getCharImage } from "src/ts/characters";
 
     let chara = $derived(characterStore.characters[$selectedCharID]);
@@ -139,22 +139,11 @@
 
     async function handleDuplicateChat(chatIndex: number) {
         activeActionChat = null;
-        if (!chara) return;
-        const originalChat = chara.chats[chatIndex];
-        if (!originalChat) return;
-
-        const copyName = createChatCopyName(originalChat.name || "Chat", "Copy");
-        const newChat: Chat = JSON.parse(JSON.stringify(originalChat));
-        newChat.id = v4();
-        newChat.name = copyName;
-
-        chara.chats.splice(chatIndex + 1, 0, newChat);
-        if (newChat.id) {
-            await messageStore.persistNewChat(chara.chaId, newChat.id, newChat.message);
+        if (!chara || !chara.chaId) return;
+        const duplicated = await duplicateChat($selectedCharID, chatIndex);
+        if (duplicated) {
+            alertNormal("Chat duplicated");
         }
-        characterStore.markCharacterDirty(chara.chaId);
-        $ReloadGUIPointer += 1;
-        alertNormal("Chat duplicated");
     }
 
     async function handleBranchGraph(chat: Chat) {

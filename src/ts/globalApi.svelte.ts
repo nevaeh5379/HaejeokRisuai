@@ -3173,13 +3173,15 @@ export function changeChatTo(IdOrIndex: string | number) {
 
 export function createChatCopyName(
   originalName: string,
-  type: "Copy" | "Branch",
+  type: "Copy" | "Branch" = "Copy",
+  existingChats?: Array<{ name?: string }>,
 ): string {
-  let name = originalName.replaceAll(/\(((Copy|Branch)( \d+)?)\)$/g, "").trim();
+  let name = (originalName || "Chat").replaceAll(/\(((Copy|Branch)( \d+)?)\)$/g, "").trim();
+  if (!name) name = "Chat";
   let copyIndex = 1;
   let newName = `${name} (${type})`;
-  const char = characterStore.currentCharacter;
-  while (char.chats.find((v) => v.name === newName)) {
+  const chats = existingChats ?? characterStore.currentCharacter?.chats ?? [];
+  while (chats.some((v) => v?.name === newName)) {
     copyIndex++;
     newName = `${name} (${type} ${copyIndex})`;
   }
