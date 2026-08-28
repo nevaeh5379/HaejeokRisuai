@@ -431,20 +431,9 @@ export async function applySqliteCommit(
   await applySettingUpsert(commit, execute);
   await applySettingDeletes(commit, execute);
 
-  if (commit.pluginStorage) {
-    if (commit.pluginStorage.clear)
-      await execute("DELETE FROM plugin_custom_storage");
-    for (const key of commit.pluginStorage.deletes)
-      await execute("DELETE FROM plugin_custom_storage WHERE key = ?", [key]);
-    for (const upsert of commit.pluginStorage.upserts) {
-      await execute(
-        `INSERT INTO plugin_custom_storage (key, value, updated_at) VALUES (?, ?, datetime('now'))
-                ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')`,
-        [upsert.key, JSON.stringify(upsert.value)],
-      );
-    }
-  }
-
+  if (commit.pluginStorage)
+    await applyPluginStorage(commit, execute);
+  
   if (commit.presets) {
     for (const id of commit.presets.deletes) {
       await execute("DELETE FROM bot_presets WHERE preset_id = ?", [id]);
@@ -668,6 +657,22 @@ export async function applySqliteCommit(
         [deletion.chatId, ...deletion.ids],
       );
     }
+}
+
+async function applyPluginStorage(commit: SqlCommit, execute: SqliteExecute) {
+  if (commit.pluginStorage.clear)
+    await execute("DELETE FROM plugin_custom_storage");
+
+  for (const key of commit.pluginStorage.deletes)
+    await execute("DELETE FROM plugin_custom_storage WHERE key = ?", [key]);
+
+  for (const upsert of commit.pluginStorage.upserts) {
+    await execute(
+      `INSERT INTO plugin_custom_storage (key, value, updated_at) VALUES (?, ?, datetime('now'))
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')`,
+      [upsert.key, JSON.stringify(upsert.value)]
+    );
+  }
 }
 
 async function applySettingDeletes(commit: SqlCommit, execute: SqliteExecute) {
