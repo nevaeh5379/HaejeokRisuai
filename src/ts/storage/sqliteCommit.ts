@@ -434,105 +434,10 @@ export async function applySqliteCommit(
   if (commit.pluginStorage)
     await applyPluginStorage(commit, execute);
   
-  if (commit.presets) {
-    for (const id of commit.presets.deletes) {
-      await execute("DELETE FROM bot_presets WHERE preset_id = ?", [id]);
-    }
-    for (const entry of commit.presets.upserts) {
-      const data = { ...entry.data } as Record<string, unknown>;
-      delete data.id;
-      const serialized = JSON.stringify(data);
-      const position = entry.position ?? 0;
-      await execute(
-        `INSERT INTO bot_presets
-                (preset_id, position, name, image, api_type, ai_model, data, content_hash, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                ON CONFLICT(preset_id) DO UPDATE SET position=excluded.position,
-                name=excluded.name, image=excluded.image, api_type=excluded.api_type,
-                ai_model=excluded.ai_model, data=excluded.data,
-                content_hash=excluded.content_hash, updated_at=datetime('now')`,
-        [
-          entry.id,
-          position,
-          data.name ?? "",
-          data.image ?? "",
-          data.apiType ?? "",
-          data.aiModel ?? "",
-          serialized,
-          presetContentHash(data),
-        ],
-      );
-    }
-    if (commit.presets.order) {
-      await execute("UPDATE bot_presets SET position = position + 1000000000");
-      for (const [position, id] of commit.presets.order.entries()) {
-        await execute(
-          "UPDATE bot_presets SET position = ? WHERE preset_id = ?",
-          [position, id],
-        );
-      }
-    }
-    if (commit.presets.activeId !== undefined) {
-      const value = commit.presets.activeId;
-      const root = flattenRelationalValue(value)[0];
-      await execute(
-        `INSERT INTO system_settings
-                (key, domain, value_type, text_value, encoded_text_value, number_value, boolean_value, updated_at)
-                VALUES ('activeBotPresetId', 'model', ?, ?, ?, ?, ?, datetime('now'))
-                ON CONFLICT(key) DO UPDATE SET value_type=excluded.value_type,
-                text_value=excluded.text_value, encoded_text_value=excluded.encoded_text_value,
-                number_value=excluded.number_value, boolean_value=excluded.boolean_value,
-                updated_at=datetime('now')`,
-        [
-          root.value_type,
-          root.text_value,
-          root.encoded_text_value,
-          root.number_value,
-          root.boolean_value,
-        ],
-      );
-      await replaceNodes(
-        execute,
-        "setting_extension_nodes",
-        ["setting_key"],
-        ["activeBotPresetId"],
-        value,
-      );
-    }
-  }
+  if (commit.presets)
+    await applyPresets(commit, execute);
 
-  for (const entry of commit.characters) {
-    const data = entry.data as Record<string, unknown>;
-    await execute(
-      `INSERT INTO characters
-            (id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now')) ON CONFLICT(id) DO UPDATE SET
-            position=excluded.position, kind=excluded.kind, name=excluded.name, image=excluded.image,
-            trash_time=excluded.trash_time, creation_time=excluded.creation_time,
-            modification_time=excluded.modification_time, last_interaction_time=excluded.last_interaction_time,
-            details_loaded=1, updated_at=datetime('now')`,
-      [
-        entry.id,
-        entry.position,
-        data.type === "group" ? "group" : "character",
-        data.name ?? "",
-        data.image ?? null,
-        data.trashTime ?? null,
-        data.creationDate ?? data.creation_date ?? null,
-        data.modificationDate ?? data.modification_date ?? null,
-        data.lastInteraction ?? null,
-      ],
-    );
-    await replaceNodes(
-      execute,
-      "character_extension_nodes",
-      ["character_id"],
-      [entry.id],
-      data,
-      replacingEntities,
-    );
-    await replaceCharacterTags(execute, entry.id, data.tags);
-  }
+  await applyCharacters(commit, execute, replacingEntities);
   for (const touch of commit.characterTouches ?? []) {
     await execute(
       "UPDATE characters SET last_interaction_time = ?, updated_at = datetime('now') WHERE id = ?",
@@ -657,6 +562,108 @@ export async function applySqliteCommit(
         [deletion.chatId, ...deletion.ids],
       );
     }
+}
+
+async function applyCharacters(commit: SqlCommit, execute: SqliteExecute, replacingEntities: boolean) {
+  for (const entry of commit.characters) {
+    const data = entry.data as Record<string, unknown>;
+    await execute(
+      `INSERT INTO characters
+            (id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now')) ON CONFLICT(id) DO UPDATE SET
+            position=excluded.position, kind=excluded.kind, name=excluded.name, image=excluded.image,
+            trash_time=excluded.trash_time, creation_time=excluded.creation_time,
+            modification_time=excluded.modification_time, last_interaction_time=excluded.last_interaction_time,
+            details_loaded=1, updated_at=datetime('now')`,
+      [
+        entry.id,
+        entry.position,
+        data.type === "group" ? "group" : "character",
+        data.name ?? "",
+        data.image ?? null,
+        data.trashTime ?? null,
+        data.creationDate ?? data.creation_date ?? null,
+        data.modificationDate ?? data.modification_date ?? null,
+        data.lastInteraction ?? null,
+      ]
+    );
+    await replaceNodes(
+      execute,
+      "character_extension_nodes",
+      ["character_id"],
+      [entry.id],
+      data,
+      replacingEntities
+    );
+    await replaceCharacterTags(execute, entry.id, data.tags);
+  }
+}
+
+async function applyPresets(commit: SqlCommit, execute: SqliteExecute) {
+  for (const id of commit.presets.deletes) {
+    await execute("DELETE FROM bot_presets WHERE preset_id = ?", [id]);
+  }
+  for (const entry of commit.presets.upserts) {
+    const data = { ...entry.data } as Record<string, unknown>;
+    delete data.id;
+    const serialized = JSON.stringify(data);
+    const position = entry.position ?? 0;
+    await execute(
+      `INSERT INTO bot_presets
+                (preset_id, position, name, image, api_type, ai_model, data, content_hash, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(preset_id) DO UPDATE SET position=excluded.position,
+                name=excluded.name, image=excluded.image, api_type=excluded.api_type,
+                ai_model=excluded.ai_model, data=excluded.data,
+                content_hash=excluded.content_hash, updated_at=datetime('now')`,
+      [
+        entry.id,
+        position,
+        data.name ?? "",
+        data.image ?? "",
+        data.apiType ?? "",
+        data.aiModel ?? "",
+        serialized,
+        presetContentHash(data),
+      ]
+    );
+  }
+  if (commit.presets.order) {
+    await execute("UPDATE bot_presets SET position = position + 1000000000");
+    for (const [position, id] of commit.presets.order.entries()) {
+      await execute(
+        "UPDATE bot_presets SET position = ? WHERE preset_id = ?",
+        [position, id]
+      );
+    }
+  }
+  if (commit.presets.activeId !== undefined) {
+    const value = commit.presets.activeId;
+    const root = flattenRelationalValue(value)[0];
+    await execute(
+      `INSERT INTO system_settings
+                (key, domain, value_type, text_value, encoded_text_value, number_value, boolean_value, updated_at)
+                VALUES ('activeBotPresetId', 'model', ?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(key) DO UPDATE SET value_type=excluded.value_type,
+                text_value=excluded.text_value, encoded_text_value=excluded.encoded_text_value,
+                number_value=excluded.number_value, boolean_value=excluded.boolean_value,
+                updated_at=datetime('now')`,
+      [
+        root.value_type,
+        root.text_value,
+        root.encoded_text_value,
+        root.number_value,
+        root.boolean_value,
+      ]
+    );
+    await replaceNodes(
+      execute,
+      "setting_extension_nodes",
+      ["setting_key"],
+      ["activeBotPresetId"],
+      value
+    );
+  }
 }
 
 async function applyPluginStorage(commit: SqlCommit, execute: SqliteExecute) {
