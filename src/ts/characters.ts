@@ -1128,14 +1128,32 @@ export async function duplicateChat(
 ): Promise<Chat | null> {
   const char = characterStore.characters[characterIndex];
   if (!char || !char.chats || !char.chaId) return null;
-  const sourceChat = char.chats[chatIndex];
-  if (!sourceChat) return null;
+  if (!char.chats[chatIndex]) return null;
 
-  // Duplicating a lazily hydrated chat without preloading its messages would
-  // clone an empty shell and silently drop the whole conversation history.
+  // A lazy chat must be fully hydrated before cloning. preLoadChat intentionally
+  // swallows storage errors for ordinary UI reads, so verify the postcondition
+  // here before creating a permanent copy of a partial message page.
   await preLoadChat(characterIndex, chatIndex, { full: true });
+  const sourceChat = char.chats[chatIndex];
+  if (
+    !sourceChat ||
+    sourceChat.messagesLoaded === false ||
+    sourceChat.messagesFullyLoaded === false ||
+    sourceChat.detailsLoaded === false
+  ) {
+    const error = new Error(
+      "Could not fully load this chat before duplicating it. The original chat was left unchanged.",
+    );
+    console.error("[duplicateChat] Chat hydration did not complete", {
+      characterIndex,
+      chatIndex,
+      chatId: sourceChat?.id,
+    });
+    alertError(error);
+    return null;
+  }
 
-  const newChat: Chat = safeStructuredClone(char.chats[chatIndex]);
+  const newChat: Chat = safeStructuredClone(sourceChat);
   newChat.id = uuidv4();
   newChat.name = createChatCopyName(sourceChat.name || "Chat", "Copy", char.chats);
   newChat.branch = undefined;
@@ -1171,21 +1189,20 @@ export async function duplicateChat(
   newChat.detailsLoaded = true;
 
   const selectNew = options.selectNew ?? false;
-  const insertIndex = options.insertIndex ?? (selectNew ? 0 : chatIndex + 1);
+  const requestedInsertIndex = options.insertIndex ?? (selectNew ? 0 : chatIndex + 1);
+  const insertIndex = Math.max(0, Math.min(requestedInsertIndex, char.chats.length));
+  const activeChatIndex = char.chatPage ?? 0;
+
+  char.chats.splice(insertIndex, 0, newChat);
+  if (newChat.id) {
+    await messageStore.persistNewChat(char.chaId, newChat.id, newChat.message ?? []);
+  }
 
   if (selectNew) {
-    char.chats.unshift(newChat);
-    if (newChat.id) {
-      await messageStore.persistNewChat(char.chaId, newChat.id, newChat.message ?? []);
-    }
-    changeChatTo(0);
+    changeChatTo(insertIndex);
   } else {
-    char.chats.splice(insertIndex, 0, newChat);
-    if (insertIndex <= (char.chatPage ?? 0)) {
-      char.chatPage = (char.chatPage ?? 0) + 1;
-    }
-    if (newChat.id) {
-      await messageStore.persistNewChat(char.chaId, newChat.id, newChat.message ?? []);
+    if (insertIndex <= activeChatIndex) {
+      char.chatPage = activeChatIndex + 1;
     }
     ReloadGUIPointer.set(Math.random());
   }

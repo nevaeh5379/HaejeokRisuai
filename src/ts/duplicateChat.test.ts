@@ -74,6 +74,7 @@ describe("duplicateChat", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    preLoadChatMock.mockReset();
     messageStore.resetPersistenceForTesting();
     mockStorage = new MockSqlStorage();
     setSqlStorageForTesting(mockStorage as unknown as ISqlStorage);
@@ -133,6 +134,29 @@ describe("duplicateChat", () => {
     expect(duplicated!.message.map((m) => m.data)).toEqual(["restored"]);
   });
 
+  it("aborts duplication when full chat hydration does not complete", async () => {
+    const lazyChat = makeChat("chat-failed-load", [], {
+      messagesLoaded: false,
+      messagesFullyLoaded: false,
+      detailsLoaded: false,
+    });
+    const testChar = {
+      chaId: "char-failed-load",
+      type: "character",
+      name: "Failed Load",
+      chatPage: 0,
+      chats: [lazyChat],
+    } as unknown as character;
+    characterStore.init([testChar], mockStorage as unknown as ISqlStorage);
+    preLoadChatMock.mockResolvedValue(undefined);
+
+    const duplicated = await duplicateChat(0, 0);
+
+    expect(duplicated).toBeNull();
+    expect(characterStore.characters[0].chats).toEqual([lazyChat]);
+    expect(mockStorage.commits).toEqual([]);
+  });
+
   it("remaps bookmarks and bookmarkNames to the duplicated message IDs", async () => {
     const sourceChat = makeChat("chat-bm", [
       makeMessage("m1", "bookmarked"),
@@ -186,5 +210,28 @@ describe("duplicateChat", () => {
     expect(characterStore.characters[0].chats).toHaveLength(3);
     expect(characterStore.characters[0].chatPage).toBe(2);
     expect(characterStore.characters[0].chats[2].id).toBe("chat-b");
+  });
+
+  it("honors insertIndex when selecting the duplicated chat", async () => {
+    const source = makeChat("chat-source", [makeMessage("s1", "one")]);
+    const other = makeChat("chat-other", [makeMessage("o1", "two")]);
+    const testChar = {
+      chaId: "char-select-index",
+      type: "character",
+      name: "Select Index",
+      chatPage: 0,
+      chats: [source, other],
+    } as unknown as character;
+    characterStore.init([testChar], mockStorage as unknown as ISqlStorage);
+    characterStore.select(0);
+
+    const duplicated = await duplicateChat(0, 0, {
+      selectNew: true,
+      insertIndex: 1,
+    });
+
+    expect(duplicated).not.toBeNull();
+    expect(characterStore.characters[0].chats[1].id).toBe(duplicated!.id);
+    expect(characterStore.characters[0].chatPage).toBe(1);
   });
 });

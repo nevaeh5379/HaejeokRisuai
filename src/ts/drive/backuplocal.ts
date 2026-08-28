@@ -10,6 +10,7 @@ import localforage from "localforage";
 import {
   alertError,
   alertNormal,
+  alertNormalWait,
   alertStore,
   alertMd,
   alertConfirm,
@@ -1062,6 +1063,38 @@ export async function SavePartialLocalBackup() {
   }
 }
 
+export type InlayRestoreResult =
+  | { status: "restored" }
+  | { status: "invalid"; error: unknown }
+  | { status: "storage-error"; error: unknown };
+
+export async function restoreInlayBackupEntry(
+  inlayKey: string,
+  data: Uint8Array,
+  dependencies: {
+    decode?: typeof decodeInlayAssetBackup;
+    write?: typeof setInlayAsset;
+  } = {},
+): Promise<InlayRestoreResult> {
+  const decode = dependencies.decode ?? decodeInlayAssetBackup;
+  const write = dependencies.write ?? setInlayAsset;
+  let asset: ReturnType<typeof decodeInlayAssetBackup>;
+
+  try {
+    asset = decode(data);
+  } catch (error) {
+    return { status: "invalid", error };
+  }
+
+  try {
+    await write(inlayKey, asset);
+  } catch (error) {
+    return { status: "storage-error", error };
+  }
+
+  return { status: "restored" };
+}
+
 async function restoreLocalBackupSource(
   file: LocalBackupSource,
   parserProgress: { start: number; end: number } = { start: 0, end: 90 },
@@ -1084,6 +1117,8 @@ async function restoreLocalBackupSource(
   let pendingNodeAssetBytes = 0;
   let entriesRestored = 0;
   let entriesWritten = 0;
+  const invalidInlayEntries: string[] = [];
+  const failedInlayWrites: string[] = [];
   let currentEntryName = "";
   let bytesRead = 0;
   const useTauriBulkRestore = isTauri;
@@ -1259,12 +1294,16 @@ async function restoreLocalBackupSource(
     } else {
       const inlayKey = getInlayBackupKey(name);
       if (inlayKey) {
-        try {
-          await setInlayAsset(inlayKey, decodeInlayAssetBackup(data));
+        const result = await restoreInlayBackupEntry(inlayKey, data);
+        entriesRestored++;
+        if (result.status === "restored") {
           entriesWritten++;
-          entriesRestored++;
-        } catch (e) {
-          console.error(`Failed to restore inlay item ${inlayKey}:`, e);
+        } else if (result.status === "invalid") {
+          invalidInlayEntries.push(inlayKey);
+          console.warn(`Skipping invalid inlay item ${inlayKey}:`, result.error);
+        } else {
+          failedInlayWrites.push(inlayKey);
+          console.error(`Failed to store inlay item ${inlayKey}:`, result.error);
         }
         currentEntryName = "";
         return;
@@ -1558,6 +1597,20 @@ async function restoreLocalBackupSource(
     }
   }
 
+  if (failedInlayWrites.length > 0) {
+    throw new Error(
+      `Failed to restore ${failedInlayWrites.length} inlay item(s) because local storage writes failed. ` +
+        `The database replacement was not applied. First failed item: ${failedInlayWrites[0]}`,
+    );
+  }
+
+  if (invalidInlayEntries.length > 0) {
+    await alertNormalWait(
+      `This backup contains ${invalidInlayEntries.length} invalid inlay item(s). ` +
+        "Those items will be skipped, but the database restore can continue.",
+    );
+  }
+
   if (!pendingDatabase) {
     throw new Error("Backup does not contain a database entry");
   }
@@ -1642,22 +1695,31 @@ async function restoreLocalBackupSource(
     alertProgress(`${baseMsg}\n${step}\nSQL restore: ${sqlPercent}%`, progress);
   });
 
+  const completionMessage =
+    invalidInlayEntries.length > 0
+      ? `Success, but skipped ${invalidInlayEntries.length} invalid inlay item(s). Refreshing your app.`
+      : "Success, Refreshing your app.";
+
   if (isTauri) {
-    await relaunch();
     alertStore.set({
       type: "wait",
-      msg: "Success, Refreshing your app.",
+      msg: completionMessage,
     });
+    await relaunch();
   } else {
     location.search = "";
     alertStore.set({
       type: "wait",
-      msg: "Success, Refreshing your app.",
+      msg: completionMessage,
     });
     location.reload();
   }
 
-  alertNormal("Success");
+  alertNormal(
+    invalidInlayEntries.length > 0
+      ? `Success, but skipped ${invalidInlayEntries.length} invalid inlay item(s).`
+      : "Success",
+  );
 }
 
 export async function restoreLocalBackupFile(file: File) {

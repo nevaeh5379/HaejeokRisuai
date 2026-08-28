@@ -5,6 +5,7 @@ import {
   createNativeImportSource,
   ensureTauriBackupAssetsDirectory,
   normalizeLocalBackupAssetPath,
+  restoreInlayBackupEntry,
 } from "./backuplocal";
 
 describe("createNativeImportSource", () => {
@@ -99,6 +100,42 @@ describe("ensureTauriBackupAssetsDirectory", () => {
       baseDir: BaseDirectory.AppData,
       recursive: true,
     });
+  });
+});
+
+describe("restoreInlayBackupEntry", () => {
+  it("classifies malformed inlay payloads without attempting a storage write", async () => {
+    const decodeError = new Error("bad inlay payload");
+    const write = vi.fn(async () => {});
+
+    const result = await restoreInlayBackupEntry("broken", new Uint8Array([1]), {
+      decode: () => {
+        throw decodeError;
+      },
+      write,
+    });
+
+    expect(result).toEqual({ status: "invalid", error: decodeError });
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes storage failures from invalid backup data", async () => {
+    const storageError = new Error("quota exceeded");
+    const asset = {
+      name: "image",
+      ext: "png",
+      type: "image" as const,
+      data: new Blob(["image"]),
+    };
+
+    const result = await restoreInlayBackupEntry("image-id", new Uint8Array(), {
+      decode: () => asset,
+      write: async () => {
+        throw storageError;
+      },
+    });
+
+    expect(result).toEqual({ status: "storage-error", error: storageError });
   });
 });
 
