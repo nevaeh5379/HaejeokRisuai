@@ -248,6 +248,28 @@ describe("SQL row commits", () => {
     ).toBe(false);
   });
 
+  it("treats chat and message manifests as non-destructive", async () => {
+    const commit = createEmptySqlCommit(6, "entity-delete");
+    commit.chatManifests = [{ characterId: "character-1", ids: [] }];
+    commit.messageManifests = [{ chatId: "chat-1", ids: [] }];
+    commit.chatDeletes = ["chat-removed"];
+    commit.messageDeletes = [{ chatId: "chat-1", ids: ["message-removed"] }];
+    const statements: { sql: string; bind: unknown[] }[] = [];
+
+    await applySqliteCommit(commit, (sql, bind = []) => {
+      statements.push({ sql, bind });
+    });
+
+    expect(statements).toEqual([
+      { sql: "DELETE FROM chats WHERE id = ?", bind: ["chat-removed"] },
+      {
+        sql: "DELETE FROM messages WHERE chat_id = ? AND id IN (?)",
+        bind: ["chat-1", "message-removed"],
+      },
+    ]);
+    expect(statements.some(({ sql }) => sql.includes("NOT IN"))).toBe(false);
+  });
+
   it("ensures pluginCustomStorage is always included in buildSqlReplaceCommit root upserts", () => {
     const minimalDb = {
       apiType: "gemini-3-flash-preview",

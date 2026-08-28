@@ -176,7 +176,11 @@ class MessageStore {
     }
   }
 
-  async commitMessages(chatId: string, msgs: Message[]): Promise<void> {
+  async commitMessages(
+    chatId: string,
+    msgs: Message[],
+    previousMessageIds: string[] = [],
+  ): Promise<void> {
     const chat = findChatAcrossCharacters(chatId);
     const allMessages = chat?.message ?? msgs;
     const baseOffset =
@@ -198,6 +202,10 @@ class MessageStore {
       chat.messagesFullyLoaded !== false &&
       msgs.length === allMessages.length &&
       msgs.every((message, index) => message.chatId === allMessages[index]?.chatId);
+    const currentIds = new Set(
+      messageUpserts.map((message) => message.id),
+    );
+    const removedIds = previousMessageIds.filter((id) => !currentIds.has(id));
 
     try {
       await this.persist({
@@ -216,6 +224,8 @@ class MessageStore {
               },
             ]
           : [],
+        messageDeletes:
+          removedIds.length > 0 ? [{ chatId, ids: removedIds }] : [],
       });
     } catch (error) {
       console.error("[MessageStore] Failed to commit messages:", error);

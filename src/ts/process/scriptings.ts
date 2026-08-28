@@ -110,6 +110,9 @@ export async function runScripted(
   let ScriptingEngineState = await getOrCreateEngineState(mode, type);
 
   return await ScriptingEngineState.mutex.runExclusive(async () => {
+    const previousMessageIds = (chat?.message ?? [])
+      .map((message) => message.chatId)
+      .filter((id): id is string => Boolean(id));
     ScriptingEngineState.char = char;
     ScriptingEngineState.chat = chat;
     ScriptingEngineState.chatTarget = arg.chatTarget;
@@ -1330,7 +1333,11 @@ export async function runScripted(
     chat = ScriptingEngineState.chat;
 
     if (ScriptingEngineState.messagesMutated && chat?.id) {
-      await messageStore.commitMessages(chat.id, chat.message ?? []);
+      await messageStore.commitMessages(
+        chat.id,
+        chat.message ?? [],
+        previousMessageIds,
+      );
     }
 
     return {

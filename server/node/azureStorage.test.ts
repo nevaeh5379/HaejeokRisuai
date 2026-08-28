@@ -223,7 +223,7 @@ function makeRecordingMssqlMock() {
 }
 
 describe('AzureStorage.sync() entity deletion', () => {
-    it('deletes only explicit characters while retaining chat/message manifest pruning', async () => {
+    it('deletes only explicitly named characters, chats, and messages', async () => {
         const { sql, queries } = makeRecordingMssqlMock()
 
         // Patch the module-local `sql` reference by constructing AzureStorage
@@ -273,10 +273,12 @@ describe('AzureStorage.sync() entity deletion', () => {
                 { characterId: 'char-a', ids: ['chat-1', 'chat-2'] },
                 { characterId: 'char-b', ids: [] },
             ],
+            chatDeletes: ['chat-old'],
             messages: [],
             messageManifests: [
                 { chatId: 'chat-1', ids: ['msg-1'] },
             ],
+            messageDeletes: [{ chatId: 'chat-1', ids: ['msg-old'] }],
         }
 
         await storage.sync(payload)
@@ -287,13 +289,10 @@ describe('AzureStorage.sync() entity deletion', () => {
         expect(joined).toMatch(/DELETE target FROM \[character\]\.\[characters\] target INNER JOIN OPENJSON\(@character_delete_ids\)/)
         expect(joined).not.toMatch(/DELETE FROM \[character\]\.\[characters\] WHERE id NOT IN/)
 
-        // Chat pruning uses NOT IN with the manifest ids for each character.
-        expect(joined).toMatch(/DELETE FROM \[chat\]\.\[chats\] WHERE character_id = @chat_manifest_character_id AND id NOT IN \('chat-1', 'chat-2'\)/)
-        // An empty manifest must delete ALL chats for that character (no NOT IN clause).
-        expect(joined).toMatch(/DELETE FROM \[chat\]\.\[chats\] WHERE character_id = @chat_manifest_character_id;/)
-
-        // Message pruning uses NOT IN with the manifest ids for each chat.
-        expect(joined).toMatch(/DELETE FROM \[chat\]\.\[messages\] WHERE chat_id = @msg_manifest_chat_id AND id NOT IN \('msg-1'\)/)
+        expect(joined).toMatch(/DELETE target FROM \[chat\]\.\[chats\] target INNER JOIN OPENJSON\(@chat_delete_ids\)/)
+        expect(joined).toMatch(/DELETE FROM \[chat\]\.\[messages\] WHERE chat_id = @msg_del_chat_id AND id IN \('msg-old'\)/)
+        expect(joined).not.toMatch(/DELETE FROM \[chat\]\.\[chats\].*NOT IN/)
+        expect(joined).not.toMatch(/DELETE FROM \[chat\]\.\[messages\].*NOT IN/)
     })
 })
 

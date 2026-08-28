@@ -303,6 +303,7 @@ describe("messageStore", () => {
       chatId: "chat-1",
       ids: chat.message.map((message) => message.chatId),
     });
+    expect(commit.messageDeletes).toEqual([]);
   });
 
   it("persists an empty fully-loaded message list", async () => {
@@ -310,12 +311,15 @@ describe("messageStore", () => {
     chat.messagesFullyLoaded = true;
     chat.message = [];
 
-    await messageStore.commitMessages("chat-1", []);
+    await messageStore.commitMessages("chat-1", [], ["msg-1", "msg-2"]);
 
     expect(mockStorage.commits).toHaveLength(1);
     const commit = mockStorage.commits[0];
     expect(commit.messages).toEqual([]);
     expect(commit.messageManifests).toEqual([{ chatId: "chat-1", ids: [] }]);
+    expect(commit.messageDeletes).toEqual([
+      { chatId: "chat-1", ids: ["msg-1", "msg-2"] },
+    ]);
   });
 
   it("persists a new chat row before committing its messages", async () => {

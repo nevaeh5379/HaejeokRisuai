@@ -397,7 +397,7 @@ export function countSqliteCommitStatements(commit: SqlCommit): number {
   for (const entry of commit.chats) {
     total += 1 + countReplaceNodeStatements(entry.data, replacingEntities);
   }
-  if (!replacingEntities) total += commit.chatManifests.length;
+  total += commit.chatDeletes?.length ?? 0;
 
   for (const entry of commit.messages) {
     const data = entry.data as Record<string, any>;
@@ -411,7 +411,6 @@ export function countSqliteCommitStatements(commit: SqlCommit): number {
         : countReplaceNodeStatements(extension, replacingEntities)
     );
   }
-  if (!replacingEntities) total += commit.messageManifests.length;
   total += (commit.messageDeletes ?? []).filter(
     (deletion) => deletion.ids.length > 0,
   ).length;
@@ -476,19 +475,8 @@ export async function applySqliteCommit(
       replacingEntities,
     );
   }
-  if (!replacingEntities) {
-    for (const manifest of commit.chatManifests) {
-      if (!manifest.ids.length)
-        await execute("DELETE FROM chats WHERE character_id = ?", [
-          manifest.characterId,
-        ]);
-      else
-        await execute(
-          `DELETE FROM chats WHERE character_id = ? AND id NOT IN (${manifest.ids.map(() => "?").join(",")})`,
-          [manifest.characterId, ...manifest.ids],
-        );
-    }
-  }
+  for (const id of commit.chatDeletes ?? [])
+    await execute("DELETE FROM chats WHERE id = ?", [id]);
 
   for (const entry of commit.messages) {
     const data = entry.data as Record<string, any>;
@@ -534,19 +522,6 @@ export async function applySqliteCommit(
         extension,
         replacingEntities,
       );
-    }
-  }
-  if (!replacingEntities) {
-    for (const manifest of commit.messageManifests) {
-      if (!manifest.ids.length)
-        await execute("DELETE FROM messages WHERE chat_id = ?", [
-          manifest.chatId,
-        ]);
-      else
-        await execute(
-          `DELETE FROM messages WHERE chat_id = ? AND id NOT IN (${manifest.ids.map(() => "?").join(",")})`,
-          [manifest.chatId, ...manifest.ids],
-        );
     }
   }
   for (const deletion of commit.messageDeletes ?? [])

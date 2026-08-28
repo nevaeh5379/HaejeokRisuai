@@ -60,6 +60,7 @@ export interface SqlCommit<TPreset extends object = Record<string, unknown>> {
   characterDeletes?: string[];
   chats: SqlChatUpsert[];
   chatManifests: { characterId: string; ids: string[] }[];
+  chatDeletes?: string[];
   messages: SqlMessageUpsert[];
   messageManifests: { chatId: string; ids: string[] }[];
   messageDeletes?: { chatId: string; ids: string[] }[];

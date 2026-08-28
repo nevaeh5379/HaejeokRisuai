@@ -555,6 +555,22 @@ describe("CharacterStore", () => {
     expect(committed[0].characterIds).toEqual([chars[0].chaId, chars[2].chaId]);
   });
 
+  it("records exact chat IDs removed from the active character", async () => {
+    const char = makeChar("chat-delete", 3);
+    characterStore.init([char], mockStorage);
+    characterStore.select(0);
+    await new Promise((r) => setTimeout(r, 30));
+
+    const removedId = characterStore.characters[0].chats[1].id!;
+    characterStore.characters[0].chats.splice(1, 1);
+    await new Promise((r) => setTimeout(r, 30));
+    await characterStore.flush();
+
+    expect(committed).toHaveLength(1);
+    expect(committed[0].chatDeletes).toEqual([removedId]);
+    expect(committed[0].chatManifests[0].ids).not.toContain(removedId);
+  });
+
   it("handles whole-object replacements via setCurrentCharacter and setCharacterByIndex", async () => {
     const chars = [makeChar("a"), makeChar("b")];
     characterStore.init(chars, mockStorage);

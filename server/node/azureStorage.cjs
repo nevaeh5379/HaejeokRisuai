@@ -1232,41 +1232,12 @@ class AzureStorage extends SqlStorageBase {
                     INNER JOIN OPENJSON(@character_delete_ids) values_json ON target.id = values_json.[value];`);
             }
 
-            // Prune chats/messages removed on the client using the manifests.
-            // payload.chatManifests / payload.messageManifests carry the full list of
-            // ids that should remain for each parent; anything else must be deleted.
             if (!payload.replaceAll) {
-                for (const manifest of payload.chatManifests) {
-                    const chatIdsList = manifest.ids.length > 0
-                        ? manifest.ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(', ')
-                        : null;
-                    const chatReq = tx.request();
-                    chatReq.input('chat_manifest_character_id', sql.NVarChar(450), manifest.characterId);
-                    if (chatIdsList) {
-                        await chatReq.query(
-                            `DELETE FROM [chat].[chats] WHERE character_id = @chat_manifest_character_id AND id NOT IN (${chatIdsList});`
-                        );
-                    } else {
-                        await chatReq.query(
-                            `DELETE FROM [chat].[chats] WHERE character_id = @chat_manifest_character_id;`
-                        );
-                    }
-                }
-                for (const manifest of payload.messageManifests) {
-                    const msgIdsList = manifest.ids.length > 0
-                        ? manifest.ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(', ')
-                        : null;
-                    const msgReq = tx.request();
-                    msgReq.input('msg_manifest_chat_id', sql.NVarChar(450), manifest.chatId);
-                    if (msgIdsList) {
-                        await msgReq.query(
-                            `DELETE FROM [chat].[messages] WHERE chat_id = @msg_manifest_chat_id AND id NOT IN (${msgIdsList});`
-                        );
-                    } else {
-                        await msgReq.query(
-                            `DELETE FROM [chat].[messages] WHERE chat_id = @msg_manifest_chat_id;`
-                        );
-                    }
+                if (payload.chatDeletes?.length) {
+                    const chatDeleteReq = tx.request();
+                    chatDeleteReq.input('chat_delete_ids', sql.NVarChar(sql.MAX), JSON.stringify(payload.chatDeletes));
+                    await chatDeleteReq.query(`DELETE target FROM [chat].[chats] target
+                        INNER JOIN OPENJSON(@chat_delete_ids) values_json ON target.id = values_json.[value];`);
                 }
                 if (payload.messageDeletes) {
                     for (const del of payload.messageDeletes) {

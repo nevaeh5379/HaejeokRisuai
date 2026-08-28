@@ -102,6 +102,7 @@ class CharacterStore {
   private dirtyCharacterDeletes = new Set<string>();
   private dirtyCharacterTouches = new Map<string, number>();
   private dirtyChats = new Set<string>();
+  private dirtyChatDeletes = new Set<string>();
   private dirtyChatManifests = new Set<string>(); // character IDs whose chat list changed
   private dirtyCharacterIds = false; // character order changed
 
@@ -140,6 +141,7 @@ class CharacterStore {
     this.dirtyCharacterDeletes.clear();
     this.dirtyCharacterTouches.clear();
     this.dirtyChats.clear();
+    this.dirtyChatDeletes.clear();
     this.dirtyChatManifests.clear();
     this.generationOnlyMetadataChats.clear();
     this.dirtyCharacterIds = false;
@@ -229,6 +231,7 @@ class CharacterStore {
       : "";
     let lastManifestKey = (char.chats ?? []).map((c) => c?.id).filter(Boolean).join(",");
     const knownChatIds = new Set<string>((char.chats ?? []).map((c) => c?.id).filter(Boolean) as string[]);
+    let previousChatIds = new Set(knownChatIds);
 
     this.activeDispose = $effect.root(() => {
       $effect(() => {
@@ -286,6 +289,14 @@ class CharacterStore {
           }
         }
         const manifestKey = chats.map((c) => c?.id).filter(Boolean).join(",");
+        const currentChatIds = new Set(
+          chats.map((c) => c?.id).filter(Boolean) as string[],
+        );
+        for (const id of previousChatIds) {
+          if (!currentChatIds.has(id)) this.dirtyChatDeletes.add(id);
+        }
+        for (const id of currentChatIds) this.dirtyChatDeletes.delete(id);
+        previousChatIds = currentChatIds;
         if (manifestKey === lastManifestKey && !added) return;
         lastManifestKey = manifestKey;
         this.dirtyChatManifests.add(char.chaId);
@@ -382,6 +393,7 @@ class CharacterStore {
       this.dirtyCharacterDeletes.size === 0 &&
       this.dirtyCharacterTouches.size === 0 &&
       this.dirtyChats.size === 0 &&
+      this.dirtyChatDeletes.size === 0 &&
       this.dirtyChatManifests.size === 0 &&
       !this.dirtyCharacterIds
     ) {
@@ -434,6 +446,13 @@ class CharacterStore {
       }
     }
 
+    const chatDeletes = Array.from(this.dirtyChatDeletes).filter(
+      (id) =>
+        !this.characters.some((character) =>
+          character.chats?.some((chat) => chat?.id === id),
+        ),
+    );
+
     // Chat manifests (chat list order per character)
     const chatManifests: { characterId: string; ids: string[] }[] = [];
     for (const chaId of this.dirtyChatManifests) {
@@ -466,6 +485,7 @@ class CharacterStore {
     const committedCharacterDeletes = new Set(characterDeletes);
     const committedTouches = new Map(this.dirtyCharacterTouches);
     const committedChatIds = new Set(this.dirtyChats);
+    const committedChatDeletes = new Set(chatDeletes);
     const committedManifestIds = new Set(this.dirtyChatManifests);
     const committedCharacterOrder = this.dirtyCharacterIds;
     this.dirtyCharacters.clear();
@@ -473,6 +493,7 @@ class CharacterStore {
       this.dirtyCharacterDeletes.delete(id);
     this.dirtyCharacterTouches.clear();
     this.dirtyChats.clear();
+    for (const id of committedChatDeletes) this.dirtyChatDeletes.delete(id);
     this.dirtyChatManifests.clear();
     this.dirtyCharacterIds = false;
 
@@ -487,6 +508,7 @@ class CharacterStore {
         characterDeletes,
         chats,
         chatManifests,
+        chatDeletes,
         messages: [],
         messageManifests: [],
       });
@@ -506,6 +528,12 @@ class CharacterStore {
         }
       }
       for (const id of committedChatIds) this.dirtyChats.add(id);
+      for (const id of committedChatDeletes) {
+        const stillAbsent = !this.characters.some((character) =>
+          character.chats?.some((chat) => chat?.id === id),
+        );
+        if (stillAbsent) this.dirtyChatDeletes.add(id);
+      }
       for (const id of committedManifestIds)
         this.dirtyChatManifests.add(id);
       this.dirtyCharacterIds ||= committedCharacterOrder;
@@ -522,6 +550,7 @@ class CharacterStore {
       this.dirtyCharacterDeletes.size > 0 ||
       this.dirtyCharacterTouches.size > 0 ||
       this.dirtyChats.size > 0 ||
+      this.dirtyChatDeletes.size > 0 ||
       this.dirtyChatManifests.size > 0 ||
       this.dirtyCharacterIds
     );

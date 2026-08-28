@@ -2544,18 +2544,10 @@ class PostgresStorage extends SqlStorageBase {
                     [payload.characterDeletes]
                 );
             }
-            for (const manifest of payload.chatManifests) {
+            if (payload.chatDeletes?.length) {
                 await client.query(
-                    `DELETE FROM chat.chats
-                     WHERE character_id = $1 AND NOT (id = ANY($2::text[]))`,
-                    [manifest.characterId, manifest.ids]
-                );
-            }
-            for (const manifest of payload.messageManifests) {
-                await client.query(
-                    `DELETE FROM chat.messages
-                     WHERE chat_id = $1 AND NOT (id = ANY($2::text[]))`,
-                    [manifest.chatId, manifest.ids]
+                    'DELETE FROM chat.chats WHERE id = ANY($1::text[])',
+                    [payload.chatDeletes]
                 );
             }
             if (payload.messageDeletes) {

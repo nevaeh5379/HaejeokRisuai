@@ -21,6 +21,7 @@ test('describeSqlCommitChange extracts affected chat and character ids', () => {
         characters: [{ id: 'char-a' }],
         characterDeletes: ['char-deleted'],
         chats: [{ id: 'chat-a', characterId: 'char-a' }],
+        chatDeletes: ['chat-deleted'],
         messages: [
             { id: 'msg-a', chatId: 'chat-a' },
             { id: 'msg-b', chatId: 'chat-b' },
@@ -36,7 +37,7 @@ test('describeSqlCommitChange extracts affected chat and character ids', () => {
         },
     });
 
-    assert.deepEqual(change.chatIds.sort(), ['chat-a', 'chat-b']);
+    assert.deepEqual(change.chatIds.sort(), ['chat-a', 'chat-b', 'chat-deleted']);
     assert.deepEqual(change.characterIds, ['char-a', 'char-deleted']);
     assert.deepEqual(change.rootUpsertKeys, ['temperature']);
     assert.deepEqual(change.rootDeleteKeys, ['oldSetting']);

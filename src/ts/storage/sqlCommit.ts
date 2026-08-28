@@ -37,6 +37,7 @@ export function createEmptySqlCommit(
     characterDeletes: [],
     chats: [],
     chatManifests: [],
+    chatDeletes: [],
     messages: [],
     messageManifests: [],
     messageDeletes: [],
@@ -67,6 +68,7 @@ export function hasSqlCommitChanges(commit: SqlCommit): boolean {
     (commit.characterDeletes !== undefined && commit.characterDeletes.length > 0) ||
     commit.chats.length > 0 ||
     commit.chatManifests.length > 0 ||
+    (commit.chatDeletes !== undefined && commit.chatDeletes.length > 0) ||
     commit.messages.length > 0 ||
     commit.messageManifests.length > 0 ||
     (commit.messageDeletes !== undefined && commit.messageDeletes.length > 0)

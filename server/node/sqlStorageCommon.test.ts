@@ -107,12 +107,14 @@ describe('shared SQL storage helpers', () => {
             characters: [{ id: 'character-1', position: 0, data: {} }],
             characterDeletes: ['character-old'],
             chatManifests: [{ characterId: 'character-1', ids: ['chat-1'] }],
+            chatDeletes: ['chat-old'],
         })
 
         expect(payload.action).toBe('character')
         expect(payload.characters).toEqual([{ id: 'character-1', position: 0, data: {} }])
         expect(payload.characterDeletes).toEqual(['character-old'])
         expect(payload.chatManifests).toEqual([{ characterId: 'character-1', ids: ['chat-1'] }])
+        expect(payload.chatDeletes).toEqual(['chat-old'])
         expect(() => helpers.validateSyncPayload({
             baseRevision: 2,
             messageManifests: [{ chatId: 'chat-1', ids: [null] }],
@@ -120,6 +122,10 @@ describe('shared SQL storage helpers', () => {
         expect(() => helpers.validateSyncPayload({
             baseRevision: 2,
             characterDeletes: [null],
+        })).toThrow(TestPayloadError)
+        expect(() => helpers.validateSyncPayload({
+            baseRevision: 2,
+            chatDeletes: [null],
         })).toThrow(TestPayloadError)
     })
 

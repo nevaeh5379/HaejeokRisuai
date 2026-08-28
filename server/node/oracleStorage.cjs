@@ -2012,25 +2012,9 @@ class OracleStorage extends SqlStorageBase {
                 await conn.executeMany(`DELETE FROM character_characters WHERE id = :1`,
                     payload.characterDeletes.map((id) => [id]));
             }
-            for (const manifest of payload.chatManifests) {
-                const allChats = await fetchRows(conn,
-                    `SELECT id FROM chat_chats WHERE character_id = :1`, [manifest.characterId]);
-                const retainedSet = new Set(manifest.ids);
-                const toDelete = allChats.filter((r) => !retainedSet.has(r.id));
-                if (toDelete.length > 0) {
-                    await conn.executeMany(`DELETE FROM chat_chats WHERE id = :1`,
-                        toDelete.map((r) => [r.id]));
-                }
-            }
-            for (const manifest of payload.messageManifests) {
-                const allMsgs = await fetchRows(conn,
-                    `SELECT id FROM chat_messages WHERE chat_id = :1`, [manifest.chatId]);
-                const retainedSet = new Set(manifest.ids);
-                const toDelete = allMsgs.filter((r) => !retainedSet.has(r.id));
-                if (toDelete.length > 0) {
-                    await conn.executeMany(`DELETE FROM chat_messages WHERE id = :1`,
-                        toDelete.map((r) => [r.id]));
-                }
+            if (payload.chatDeletes?.length) {
+                await conn.executeMany(`DELETE FROM chat_chats WHERE id = :1`,
+                    payload.chatDeletes.map((id) => [id]));
             }
             if (payload.messageDeletes) {
                 for (const del of payload.messageDeletes) {

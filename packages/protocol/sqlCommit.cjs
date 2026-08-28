@@ -168,6 +168,12 @@ function createSqlCommitValidator({ PayloadError, maxIdLength = 4000 } = {}) {
         const messageDeletes = payload.messageDeletes === undefined
             ? undefined
             : validateManifests(payload.messageDeletes, 'messageDeletes', 'chatId');
+        const chatDeletes = payload.chatDeletes === undefined
+            ? undefined
+            : asArray(payload.chatDeletes, 'chatDeletes').map((id, index) => {
+                assertId(id, `chatDeletes[${index}]`);
+                return id;
+            });
         const characterIds = payload.characterIds === undefined
             ? undefined
             : asArray(payload.characterIds, 'characterIds').map((id, index) => {
@@ -199,6 +205,7 @@ function createSqlCommitValidator({ PayloadError, maxIdLength = 4000 } = {}) {
             chats,
             messages,
             chatManifests,
+            chatDeletes,
             messageManifests,
             messageDeletes,
             characterIds,
