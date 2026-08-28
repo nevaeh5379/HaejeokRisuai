@@ -199,7 +199,7 @@ class CharacterStore {
     // Preserve the legacy invariant: every chat must have a stable id
     // (the old observe loop assigned these during traversal).
     for (const c of char.chats ?? []) {
-      if (!c.id) c.id = uuidv4();
+      if (c && !c.id) c.id = uuidv4();
     }
 
     // Track only data that is actually persisted. Message bodies live in the
@@ -218,8 +218,8 @@ class CharacterStore {
           CHAT_RUNTIME_KEYS,
         )
       : "";
-    let lastManifestKey = (char.chats ?? []).map((c) => c.id).join(",");
-    const knownChatIds = new Set<string>((char.chats ?? []).map((c) => c.id));
+    let lastManifestKey = (char.chats ?? []).map((c) => c?.id).filter(Boolean).join(",");
+    const knownChatIds = new Set<string>((char.chats ?? []).map((c) => c?.id).filter(Boolean) as string[]);
 
     this.activeDispose = $effect.root(() => {
       $effect(() => {
@@ -268,6 +268,7 @@ class CharacterStore {
         const chats = char.chats ?? [];
         let added = false;
         for (const c of chats) {
+          if (!c) continue;
           if (!c.id) c.id = uuidv4();
           if (!knownChatIds.has(c.id)) {
             knownChatIds.add(c.id);
@@ -275,7 +276,7 @@ class CharacterStore {
             added = true;
           }
         }
-        const manifestKey = chats.map((c) => c.id).join(",");
+        const manifestKey = chats.map((c) => c?.id).filter(Boolean).join(",");
         if (manifestKey === lastManifestKey && !added) return;
         lastManifestKey = manifestKey;
         this.dirtyChatManifests.add(char.chaId);
@@ -406,7 +407,7 @@ class CharacterStore {
     }[] = [];
     for (const chatId of this.dirtyChats) {
       for (const char of this.characters) {
-        const chatIdx = char.chats?.findIndex((c) => c.id === chatId);
+        const chatIdx = char.chats?.findIndex((c) => c?.id === chatId);
         if (chatIdx !== undefined && chatIdx >= 0) {
           chats.push({
             id: chatId,
@@ -422,11 +423,11 @@ class CharacterStore {
     // Chat manifests (chat list order per character)
     const chatManifests: { characterId: string; ids: string[] }[] = [];
     for (const chaId of this.dirtyChatManifests) {
-      const char = this.characters.find((c) => c.chaId === chaId);
+      const char = this.characters.find((c) => c?.chaId === chaId);
       if (char?.chats) {
         chatManifests.push({
           characterId: chaId,
-          ids: char.chats.map((c) => c.id).filter(Boolean) as string[],
+          ids: char.chats.map((c) => c?.id).filter(Boolean) as string[],
         });
       }
     }

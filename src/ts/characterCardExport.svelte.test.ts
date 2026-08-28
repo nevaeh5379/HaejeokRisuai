@@ -52,7 +52,45 @@ vi.mock("./media", () => ({
 }));
 
 import { VirtualWriter } from "./globalApi.svelte";
-import { exportChar, exportCharacterCard } from "./characterCards";
+import { createBaseV3, exportChar, exportCharacterCard } from "./characterCards";
+
+describe("createBaseV3 asset packaging", () => {
+  it("includes main icon asset even when emotionImages is undefined", () => {
+    const char = {
+      type: "character",
+      chaId: "char-no-emotions",
+      name: "No Emotions Char",
+      image: "assets/char.png",
+      emotionImages: undefined,
+      ccAssets: [],
+    } as unknown as character;
+
+    const v3Card = createBaseV3(char);
+    const mainIcon = v3Card.data.assets?.find(
+      (asset) => asset.type === "icon" && asset.name === "main",
+    );
+    expect(mainIcon).toBeDefined();
+    expect(mainIcon?.uri).toBe("ccdefault:");
+  });
+
+  it("includes main icon asset when emotionImages is empty array", () => {
+    const char = {
+      type: "character",
+      chaId: "char-empty-emotions",
+      name: "Empty Emotions Char",
+      image: "assets/char.png",
+      emotionImages: [],
+      ccAssets: [],
+    } as unknown as character;
+
+    const v3Card = createBaseV3(char);
+    const mainIcon = v3Card.data.assets?.find(
+      (asset) => asset.type === "icon" && asset.name === "main",
+    );
+    expect(mainIcon).toBeDefined();
+    expect(mainIcon?.uri).toBe("ccdefault:");
+  });
+});
 
 describe("character export with shallow details", () => {
   let mockStorage: ISqlStorage;
@@ -67,6 +105,7 @@ describe("character export with shallow details", () => {
             type: "character",
             chaId: "char-shallow-1",
             name: "Fully Loaded Character",
+            image: "asset-1",
             desc: "A rich detailed character description",
             personality: "Kind and curious",
             scenario: "In an ancient library",

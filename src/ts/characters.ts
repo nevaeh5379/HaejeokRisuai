@@ -224,6 +224,89 @@ export function rmCharEmotion(charId: number, emotionId: number) {
   }
 }
 
+type ChatExportCharacter = {
+  char: character | groupChat;
+  index: number;
+};
+
+async function hydrateCharacterForChatExport(
+  characterId: string,
+): Promise<ChatExportCharacter> {
+  let index = characterStore.characters.findIndex(
+    (candidate) => candidate?.chaId === characterId,
+  );
+  if (index < 0) {
+    throw new Error("Character changed while preparing the chat export");
+  }
+
+  let char = characterStore.characters[index];
+  if (char.coldstorage) {
+    const coldStorageKey = char.coldstorage;
+    const coldData = await getColdStorageItem(coldStorageKey);
+    if (coldData?.character?.chaId !== characterId) {
+      throw new Error(language.errors.coldStorageRestoreFailed);
+    }
+
+    index = characterStore.characters.findIndex(
+      (candidate) => candidate?.chaId === characterId,
+    );
+    if (index < 0) {
+      throw new Error("Character changed while preparing the chat export");
+    }
+
+    char = characterStore.characters[index];
+    if (char.coldstorage !== coldStorageKey) {
+      throw new Error("Character changed while preparing the chat export");
+    }
+    characterStore.characters[index] = coldData.character;
+    char = coldData.character;
+  }
+
+  if (char.detailsLoaded === false) {
+    await characterStore.ensureCharacterDetails(characterId);
+    index = characterStore.characters.findIndex(
+      (candidate) => candidate?.chaId === characterId,
+    );
+    const hydratedChar =
+      index >= 0 ? characterStore.characters[index] : undefined;
+    if (!hydratedChar || hydratedChar.detailsLoaded === false) {
+      throw new Error(
+        `Failed to hydrate character before chat export: ${characterId}`,
+      );
+    }
+    char = hydratedChar;
+  }
+
+  return { char, index };
+}
+
+function resolveExportChatIndex(
+  char: character | groupChat,
+  chatId: string | undefined,
+  fallbackIndex: number,
+): number {
+  if (chatId) {
+    return char.chats?.findIndex((candidate) => candidate?.id === chatId) ?? -1;
+  }
+  return char.chats?.[fallbackIndex] ? fallbackIndex : -1;
+}
+
+function assertChatReadyForExport(
+  chat: Chat | undefined,
+  expectedMessageTotal: number | null,
+): asserts chat is Chat {
+  if (
+    !chat ||
+    chat.messagesLoaded === false ||
+    chat.messagesFullyLoaded === false ||
+    chat.detailsLoaded === false ||
+    (expectedMessageTotal !== null &&
+      (chat.message?.length ?? 0) < expectedMessageTotal)
+  ) {
+    throw new Error("Could not fully load this chat before exporting it");
+  }
+}
+
 export async function exportChat(page: number) {
   try {
     const mode = await alertSelect([
@@ -247,9 +330,29 @@ export async function exportChat(page: number) {
           ])) === "1"
         : false;
     const selectedID = get(selectedCharID);
-    await preLoadChat(selectedID, page, { full: true });
-    const char = characterStore.characters[selectedID];
-    const chat = char.chats[page];
+    const initialChar = characterStore.characters[selectedID];
+    if (!initialChar?.chaId) return;
+    const characterId = initialChar.chaId;
+    const initialChat = initialChar.chats?.[page];
+    const chatId = initialChat?.id;
+    const expectedMessageTotal =
+      typeof initialChat?.messageTotal === "number"
+        ? initialChat.messageTotal
+        : null;
+
+    let { char, index: characterIndex } =
+      await hydrateCharacterForChatExport(characterId);
+    let chatIndex = resolveExportChatIndex(char, chatId, page);
+    if (chatIndex < 0) {
+      throw new Error("Chat changed while preparing the export");
+    }
+
+    await preLoadChat(characterIndex, chatIndex, { full: true });
+    ({ char, index: characterIndex } =
+      await hydrateCharacterForChatExport(characterId));
+    chatIndex = resolveExportChatIndex(char, chatId, page);
+    const chat = chatIndex >= 0 ? char.chats[chatIndex] : undefined;
+    assertChatReadyForExport(chat, expectedMessageTotal);
     const date = new Date().toJSON();
     const htmlChatParse = async (v: string) => {
       v = parseMarkdownSafe(v);
@@ -274,7 +377,7 @@ export async function exportChat(page: number) {
     if (mode === "0") {
       let folders = [];
       if (chat.folderId) {
-        folders = characterStore.characters[selectedID].chatFolders?.filter(
+        folders = char.chatFolders?.filter(
           (f) => f.id === chat.folderId,
         );
       }
@@ -643,11 +746,53 @@ export async function importChat() {
 export async function exportAllChats() {
   try {
     const selectedID = get(selectedCharID);
-    const char = characterStore.characters[selectedID];
-    if (char && Array.isArray(char.chats)) {
-      for (let i = 0; i < char.chats.length; i++) {
-        await preLoadChat(selectedID, i, { full: true });
+    const initialChar = characterStore.characters[selectedID];
+    if (!initialChar?.chaId) return;
+    const characterId = initialChar.chaId;
+    let { char } = await hydrateCharacterForChatExport(characterId);
+    const chatTargets = (char.chats ?? []).map((chat, index) => ({
+      id: chat?.id,
+      fallbackIndex: index,
+      expectedMessageTotal:
+        typeof chat?.messageTotal === "number" ? chat.messageTotal : null,
+    }));
+
+    for (const target of chatTargets) {
+      const resolved = await hydrateCharacterForChatExport(characterId);
+      const chatIndex = resolveExportChatIndex(
+        resolved.char,
+        target.id,
+        target.fallbackIndex,
+      );
+      if (chatIndex < 0) {
+        throw new Error("Chats changed while preparing the export");
       }
+      await preLoadChat(resolved.index, chatIndex, { full: true });
+
+      const loaded = await hydrateCharacterForChatExport(characterId);
+      const loadedChatIndex = resolveExportChatIndex(
+        loaded.char,
+        target.id,
+        target.fallbackIndex,
+      );
+      const loadedChat =
+        loadedChatIndex >= 0 ? loaded.char.chats[loadedChatIndex] : undefined;
+      assertChatReadyForExport(loadedChat, target.expectedMessageTotal);
+    }
+
+    ({ char } = await hydrateCharacterForChatExport(characterId));
+    if (char.chats.length !== chatTargets.length) {
+      throw new Error("Chats changed while preparing the export");
+    }
+    for (const target of chatTargets) {
+      const finalChatIndex = resolveExportChatIndex(
+        char,
+        target.id,
+        target.fallbackIndex,
+      );
+      const finalChat =
+        finalChatIndex >= 0 ? char.chats[finalChatIndex] : undefined;
+      assertChatReadyForExport(finalChat, target.expectedMessageTotal);
     }
     const date = new Date().toISOString().replace(/[:.]/g, "-");
     const allChats = char.chats;
@@ -1165,11 +1310,11 @@ export async function duplicateChat(
   // The await above gives realtime sync/reordering a chance to move the chat. Re-find
   // both the character and chat by stable identity instead of trusting stale indexes.
   const char = characterStore.characters.find(
-    (candidate) => candidate.chaId === characterId,
+    (candidate) => candidate?.chaId === characterId,
   );
   if (!char?.chats) return null;
   const sourceIndex = sourceChatId
-    ? char.chats.findIndex((chat) => chat.id === sourceChatId)
+    ? char.chats.findIndex((chat) => chat?.id === sourceChatId)
     : char.chats.indexOf(initialSourceChat);
   const sourceChat = sourceIndex >= 0 ? char.chats[sourceIndex] : undefined;
   if (!sourceChat) return null;
@@ -1243,6 +1388,9 @@ export async function duplicateChat(
   if (!selectNew && insertIndex <= activeChatIndex) {
     char.chatPage = activeChatIndex + 1;
   }
+  characterStore.markChatDirty(newChat.id);
+  characterStore.markChatManifestDirty(characterId);
+  characterStore.markCharacterDirty(characterId);
   await messageStore.persistNewChat(characterId, newChat.id, newChat.message ?? []);
 
   const selectedCharacter = characterStore.characters[get(selectedCharID)];

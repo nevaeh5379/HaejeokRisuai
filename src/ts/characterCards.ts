@@ -1929,7 +1929,9 @@ export function createBaseV3(char: character) {
         ext: "png",
       });
     }
+  }
 
+  if (!assets.some((asset) => asset.type === "icon" && asset.name === "main")) {
     assets.push({
       type: "icon",
       uri: "ccdefault:",

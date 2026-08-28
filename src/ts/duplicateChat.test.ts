@@ -400,4 +400,46 @@ describe("messageStore unique ID handling in persistNewChats", () => {
     expect(new Set(ids).size).toBe(2);
     expect(commit!.messageManifests[0].ids).toEqual(ids);
   });
+
+  it("marks chat and chat manifest dirty so flushing commits to SQL storage for inactive character", async () => {
+    const sourceChat = makeChat("chat-inactive-1", [makeMessage("m1", "hello")]);
+    const char1 = {
+      chaId: "char-inactive-target",
+      type: "character",
+      name: "Target Char",
+      chatPage: 0,
+      chats: [sourceChat],
+    } as unknown as character;
+    const char2 = {
+      chaId: "char-active",
+      type: "character",
+      name: "Active Char",
+      chatPage: 0,
+      chats: [makeChat("chat-active-1", [])],
+    } as unknown as character;
+
+    characterStore.init([char1, char2], mockStorage as unknown as ISqlStorage);
+    // Active character is char2 (index 1), duplicating chat on char1 (index 0)
+    characterStore.select(1);
+
+    const duplicated = await duplicateChat(0, 0);
+    expect(duplicated).not.toBeNull();
+
+    await characterStore.flush();
+
+    const chatCommit = mockStorage.commits.find(
+      (candidate) =>
+        candidate.chats.some((c) => c.id === duplicated!.id) ||
+        candidate.chatManifests.some((m) => m.characterId === "char-inactive-target"),
+    );
+    expect(chatCommit).toBeDefined();
+    expect(chatCommit!.chats.some((c) => c.id === duplicated!.id)).toBe(true);
+    expect(
+      chatCommit!.chatManifests.some(
+        (m) =>
+          m.characterId === "char-inactive-target" &&
+          m.ids.includes(duplicated!.id!),
+      ),
+    ).toBe(true);
+  });
 });

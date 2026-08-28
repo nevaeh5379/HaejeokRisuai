@@ -1,10 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { characterStore, messageStore } from "./stores/domain";
-import { duplicateCharacter } from "./characters";
+import { duplicateCharacter, exportAllChats, exportChat } from "./characters";
+import { selectedCharID } from "./stores.svelte";
 import type { character, groupChat, Chat, Message } from "./storage/schema";
 import type { ISqlStorage } from "./storage/ISqlStorage";
 import type { SqlCommit, SqlCommitResult } from "./storage/sqlCommit";
 import { setSqlStorageForTesting } from "./storage/sqlStorageFactory";
+
+const downloadFileMock = vi.fn();
+const alertSelectMock = vi.fn();
+vi.mock("./alert", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./alert")>();
+  return {
+    ...actual,
+    alertError: vi.fn(),
+    alertNormal: vi.fn(),
+    alertSelect: (...args: any[]) => alertSelectMock(...args),
+  };
+});
+
+vi.mock("./globalApi.svelte", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./globalApi.svelte")>();
+  return {
+    ...actual,
+    downloadFile: (...args: any[]) => downloadFileMock(...args),
+  };
+});
 
 const preLoadChatMock = vi.fn();
 const getColdStorageItemMock = vi.fn();
@@ -78,6 +99,8 @@ describe("duplicateCharacter", () => {
     vi.clearAllMocks();
     preLoadChatMock.mockReset();
     getColdStorageItemMock.mockReset();
+    alertSelectMock.mockReset();
+    alertSelectMock.mockResolvedValue("0");
     messageStore.resetPersistenceForTesting();
     mockStorage = new MockSqlStorage();
     setSqlStorageForTesting(mockStorage as unknown as ISqlStorage);
@@ -414,5 +437,175 @@ describe("duplicateCharacter", () => {
     expect(duplicated!.name).toBe("Adventuring Party (Copy)");
     expect((duplicated as groupChat).characters).toEqual(["char-a", "char-b"]);
     expect((duplicated as groupChat).characterTalks).toEqual([0.5, 0.5]);
+  });
+
+  it("hydrates shallow character before exporting all chats", async () => {
+    const shallowChar = {
+      chaId: "char-shallow-all-chats",
+      type: "character",
+      name: "Shallow Export Char",
+      detailsLoaded: false,
+      chats: [],
+      chatFolders: [],
+    } as unknown as character;
+
+    const fullChar = {
+      chaId: "char-shallow-all-chats",
+      type: "character",
+      name: "Hydrated Export Char",
+      detailsLoaded: true,
+      chatFolders: [{ id: "f1", name: "Folder 1" }],
+      chats: [
+        makeChat("chat-exp-1", [makeMessage("m1", "exported message")]),
+      ],
+    } as unknown as character;
+
+    mockStorage.loadCharacter = vi.fn(async (id: string) => {
+      if (id === "char-shallow-all-chats") return fullChar;
+      return null;
+    });
+
+    characterStore.init([shallowChar], mockStorage as unknown as ISqlStorage);
+    selectedCharID.set(0);
+
+    await exportAllChats();
+
+    expect(mockStorage.loadCharacter).toHaveBeenCalledWith("char-shallow-all-chats");
+    expect(preLoadChatMock).toHaveBeenCalledWith(0, 0, { full: true });
+    expect(downloadFileMock).toHaveBeenCalledTimes(1);
+
+    const [filename, buffer] = downloadFileMock.mock.calls[0];
+    expect(filename).toContain("Hydrated Export Char_all_chats");
+    const exported = JSON.parse(Buffer.from(buffer).toString("utf-8"));
+    expect(exported.type).toBe("risuAllChats");
+    expect(exported.data).toHaveLength(1);
+    expect(exported.data[0].id).toBe("chat-exp-1");
+  });
+
+  it("re-finds a cold-storage character after the character list is reordered", async () => {
+    const sourceChar = {
+      chaId: "char-cold-export",
+      type: "character",
+      name: "Cold Export Char",
+      coldstorage: "cold-export-key",
+      chats: [],
+      chatFolders: [],
+    } as unknown as character;
+    const otherChar = {
+      chaId: "char-other-export",
+      type: "character",
+      name: "Other Export Char",
+      chats: [makeChat("chat-other-export", [])],
+      chatFolders: [],
+      detailsLoaded: true,
+    } as unknown as character;
+    const restoredChar = {
+      chaId: "char-cold-export",
+      type: "character",
+      name: "Restored Export Char",
+      chats: [makeChat("chat-cold-export", [makeMessage("m-cold", "restored")])],
+      chatFolders: [],
+      detailsLoaded: true,
+    } as unknown as character;
+
+    characterStore.init(
+      [sourceChar, otherChar],
+      mockStorage as unknown as ISqlStorage,
+    );
+    selectedCharID.set(0);
+    getColdStorageItemMock.mockImplementation(async () => {
+      characterStore.characters = [otherChar, sourceChar];
+      return { character: restoredChar };
+    });
+
+    await exportAllChats();
+
+    expect(characterStore.characters[0].chaId).toBe("char-other-export");
+    expect(characterStore.characters[1].chaId).toBe("char-cold-export");
+    expect(preLoadChatMock).toHaveBeenCalledWith(1, 0, { full: true });
+    const [, buffer] = downloadFileMock.mock.calls[0];
+    const exported = JSON.parse(Buffer.from(buffer).toString("utf-8"));
+    expect(exported.data[0].id).toBe("chat-cold-export");
+  });
+
+  it("does not export when shallow character hydration fails", async () => {
+    const shallowChar = {
+      chaId: "char-failed-export",
+      type: "character",
+      name: "Failed Export Char",
+      detailsLoaded: false,
+      chats: [],
+      chatFolders: [],
+    } as unknown as character;
+
+    mockStorage.loadCharacter = vi.fn().mockResolvedValue(null);
+    characterStore.init([shallowChar], mockStorage as unknown as ISqlStorage);
+    selectedCharID.set(0);
+
+    await exportAllChats();
+
+    expect(downloadFileMock).not.toHaveBeenCalled();
+  });
+
+  it("does not export when full chat hydration fails", async () => {
+    const lazyChat = makeChat("chat-failed-export", [], {
+      messagesLoaded: false,
+      messagesFullyLoaded: false,
+      detailsLoaded: false,
+      messageTotal: 1,
+    });
+    const sourceChar = {
+      chaId: "char-lazy-export",
+      type: "character",
+      name: "Lazy Export Char",
+      detailsLoaded: true,
+      chats: [lazyChat],
+      chatFolders: [],
+    } as unknown as character;
+
+    characterStore.init([sourceChar], mockStorage as unknown as ISqlStorage);
+    selectedCharID.set(0);
+    preLoadChatMock.mockResolvedValue(undefined);
+
+    await exportAllChats();
+
+    expect(downloadFileMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the requested chat target when characters reorder during export", async () => {
+    const targetChat = makeChat("chat-stable-export", [
+      makeMessage("m-stable", "stable export"),
+    ]);
+    const sourceChar = {
+      chaId: "char-stable-export",
+      type: "character",
+      name: "Stable Export Char",
+      detailsLoaded: true,
+      chats: [targetChat],
+      chatFolders: [],
+    } as unknown as character;
+    const otherChar = {
+      chaId: "char-other-during-export",
+      type: "character",
+      name: "Other During Export",
+      detailsLoaded: true,
+      chats: [makeChat("chat-other-during-export", [])],
+      chatFolders: [],
+    } as unknown as character;
+
+    characterStore.init(
+      [sourceChar, otherChar],
+      mockStorage as unknown as ISqlStorage,
+    );
+    selectedCharID.set(0);
+    preLoadChatMock.mockImplementation(async () => {
+      characterStore.characters = [otherChar, sourceChar];
+    });
+
+    await exportChat(0);
+
+    const [, buffer] = downloadFileMock.mock.calls[0];
+    const exported = JSON.parse(Buffer.from(buffer).toString("utf-8"));
+    expect(exported.data.id).toBe("chat-stable-export");
   });
 });
