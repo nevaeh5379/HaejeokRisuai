@@ -724,39 +724,9 @@
 {/snippet}
 
 {#if isMobile}
-    <div class="fixed inset-0 z-40 bg-bgcolor flex flex-col w-full h-full text-textcolor overflow-hidden rs-setting-cont">
-        <!-- Mobile Header (Safe Area Aware) -->
-        <div class="w-full px-4 pt-[max(env(safe-area-inset-top),12px)] pb-3 border-b border-b-darkborderc bg-darkbg/95 backdrop-blur-md flex justify-between items-center shrink-0 z-20">
-            <div class="flex items-center gap-2 min-w-0">
-                {#if $SettingsMenuIndex !== -1}
-                    <button
-                        class="hover:text-green-500 text-textcolor transition-colors cursor-pointer shrink-0 p-1 flex items-center justify-center"
-                        onclick={() => {
-                            $SettingsMenuIndex = -1;
-                            mobileBotTarget = null;
-                        }}
-                        aria-label="Back"
-                    >
-                        <CircleArrowLeft size={settingsStore.state.settingsCloseButtonSize || 24} />
-                    </button>
-                {/if}
-                <h1 class="font-bold text-lg text-textcolor truncate m-0">
-                    {$SettingsMenuIndex === -1 ? language.settings : currentMenuTitle}
-                </h1>
-            </div>
-            <button
-                class="hover:text-green-500 text-textcolor transition-colors cursor-pointer shrink-0 p-1 flex items-center justify-center"
-                onclick={() => {
-                    settingsOpen.set(false);
-                }}
-                aria-label="Close"
-            >
-                <CircleXIcon size={settingsStore.state.settingsCloseButtonSize || 24} />
-            </button>
-        </div>
-
-        <!-- Mobile Content -->
-        <div class="flex-1 overflow-y-auto min-w-0 bg-bgcolor rs-setting-mobile-view">
+    {#if $MobileGUI}
+        <!-- MobileGUI embedded view in MobileBody -->
+        <div class="flex-1 overflow-y-auto min-w-0 bg-bgcolor rs-setting-mobile-view w-full h-full">
             {#if $SettingsMenuIndex === -1}
                 {@render mobileMenuList()}
             {:else}
@@ -767,7 +737,53 @@
                 {/key}
             {/if}
         </div>
-    </div>
+    {:else}
+        <!-- Standalone Mobile Modal (Dynamic GUI) -->
+        <div class="fixed inset-0 z-40 bg-bgcolor flex flex-col w-full h-full text-textcolor overflow-hidden rs-setting-cont">
+            <!-- Mobile Header (Safe Area Aware) -->
+            <div class="w-full px-4 pt-[max(env(safe-area-inset-top),12px)] pb-3 border-b border-b-darkborderc bg-darkbg/95 backdrop-blur-md flex justify-between items-center shrink-0 z-20">
+                <div class="flex items-center gap-2 min-w-0">
+                    {#if $SettingsMenuIndex !== -1}
+                        <button
+                            class="hover:text-green-500 text-textcolor transition-colors cursor-pointer shrink-0 p-1 flex items-center justify-center"
+                            onclick={() => {
+                                $SettingsMenuIndex = -1;
+                                mobileBotTarget = null;
+                            }}
+                            aria-label="Back"
+                        >
+                            <CircleArrowLeft size={settingsStore.state.settingsCloseButtonSize || 24} />
+                        </button>
+                    {/if}
+                    <h1 class="font-bold text-lg text-textcolor truncate m-0">
+                        {$SettingsMenuIndex === -1 ? language.settings : currentMenuTitle}
+                    </h1>
+                </div>
+                <button
+                    class="hover:text-green-500 text-textcolor transition-colors cursor-pointer shrink-0 p-1 flex items-center justify-center"
+                    onclick={() => {
+                        settingsOpen.set(false);
+                    }}
+                    aria-label="Close"
+                >
+                    <CircleXIcon size={settingsStore.state.settingsCloseButtonSize || 24} />
+                </button>
+            </div>
+
+            <!-- Mobile Content -->
+            <div class="flex-1 overflow-y-auto min-w-0 bg-bgcolor rs-setting-mobile-view">
+                {#if $SettingsMenuIndex === -1}
+                    {@render mobileMenuList()}
+                {:else}
+                    {#key $SettingsMenuIndex}
+                        <div class="py-4 px-4 pb-[max(env(safe-area-inset-bottom),32px)] flex flex-col min-w-0">
+                            {@render pageContent()}
+                        </div>
+                    {/key}
+                {/if}
+            </div>
+        </div>
+    {/if}
 {:else}
     <!-- Desktop Floating Modal -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->

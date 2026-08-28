@@ -400,24 +400,24 @@ function focusQuery(query: string) {
 }
 
 export function initMobileGesture() {
-  let pressingPointers = new Map<number, { x: number; y: number }>();
+  let pressingPointers = new Map<number, { x: number; y: number; time: number }>();
 
   document.addEventListener(
     "touchstart",
     (ev) => {
       for (const touch of ev.changedTouches) {
-        const ele = touch.target as HTMLElement;
+        const ele = touch.target as HTMLElement | null;
         if (
-          ele.tagName === "BUTTON" ||
-          ele.tagName === "INPUT" ||
-          ele.tagName === "SELECT" ||
-          ele.tagName === "TEXTAREA"
+          ele?.closest(
+            "button, input, select, textarea, [role='slider'], [role='tab'], .no-gesture, pre, code, [data-no-swipe]",
+          )
         ) {
           continue;
         }
         pressingPointers.set(touch.identifier, {
           x: touch.clientX,
           y: touch.clientY,
+          time: Date.now(),
         });
       }
     },
@@ -436,26 +436,47 @@ export function initMobileGesture() {
         }
         const moveX = touch.clientX - d.x;
         const moveY = touch.clientY - d.y;
+        const duration = Date.now() - d.time;
 
-        if (moveX > 50 && Math.abs(moveY) < Math.abs(moveX)) {
-          if (get(selectedCharID) === -1) {
-            if (get(MobileGUIStack) > 0) {
-              MobileGUIStack.update((v) => v - 1);
-            }
+        // Ignore long presses or slow drags
+        if (duration > 600) {
+          continue;
+        }
+
+        // Must be a predominantly horizontal swipe
+        const isHorizontalSwipe =
+          Math.abs(moveX) >= 65 && Math.abs(moveY) < Math.abs(moveX) * 0.55;
+
+        if (!isHorizontalSwipe) {
+          continue;
+        }
+
+        const currentCharId = get(selectedCharID);
+        const currentSideBar = get(MobileSideBar);
+
+        if (currentCharId === -1) {
+          // Home tabs navigation (0: Realm, 1: Characters, 2: Settings)
+          if (moveX > 0) {
+            MobileGUIStack.update((v) => Math.max(0, v - 1));
           } else {
-            if (get(MobileSideBar) > 0) {
-              MobileSideBar.update((v) => v - 1);
-            }
+            MobileGUIStack.update((v) => Math.min(2, v + 1));
           }
-        } else if (moveX < -50 && Math.abs(moveY) < Math.abs(moveX)) {
-          if (get(selectedCharID) === -1) {
-            if (get(MobileGUIStack) < 2) {
-              MobileGUIStack.update((v) => v + 1);
-            }
+        } else if (currentSideBar > 0) {
+          // Inside sidebar sub-panels navigation
+          if (moveX > 0) {
+            MobileSideBar.update((v) => Math.max(0, v - 1));
           } else {
-            if (get(MobileSideBar) < 3) {
-              MobileSideBar.update((v) => v + 1);
-            }
+            MobileSideBar.update((v) => Math.min(3, v + 1));
+          }
+        } else {
+          // Inside chat screen: edge swipe gestures
+          const screenWidth = window.innerWidth;
+          if (d.x < 45 && moveX > 60) {
+            // Left edge swipe to go back to character list
+            selectedCharID.set(-1);
+          } else if (d.x > screenWidth - 45 && moveX < -60) {
+            // Right edge swipe to open sidebar panel
+            MobileSideBar.set(1);
           }
         }
       }

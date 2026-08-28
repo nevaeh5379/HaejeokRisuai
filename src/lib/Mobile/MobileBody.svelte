@@ -4,7 +4,7 @@
     import { language } from "src/lang";
     import { isLite } from "src/ts/lite";
     import LazyComponent from '../Others/LazyComponent.svelte'
-    import { loadCharConfig, loadSideChatList } from '../SideBars/sidebarPanelLoaders'
+    import { loadCharConfig } from '../SideBars/sidebarPanelLoaders'
     import { btwRuntime } from 'src/ts/process/btwRuntime.svelte';
     
     const settingsLoader = () => import('../Setting/Settings.svelte')
@@ -13,52 +13,86 @@
     const chatLoader = () => import('../ChatScreens/ChatScreen.svelte')
     const devToolLoader = () => import('../SideBars/DevTool.svelte')
     const btwPanelLoader = () => import('../ChatScreens/BtwPanel.svelte')
+    const quickSettingsLoader = () => import('../Others/QuickSettingsGUI.svelte')
+    const mobileChatListLoader = () => import('./MobileChatList.svelte')
 
 </script>
 
 {#if $MobileSideBar > 0 && !$isLite}
-<div class="w-full px-2 py-1 text-textcolor2 border-b border-b-darkborderc bg-darkbg flex justify-start items-center gap-2">
-    <button class="flex-1 border-r border-r-darkborderc" class:text-textcolor={$MobileSideBar === 1} onclick={() => {
-        void loadSideChatList()
-        $MobileSideBar = 1
-    }}>
-        {language.Chat}
+<nav class="w-full px-2 py-1.5 text-xs font-semibold text-textcolor2 border-b border-b-darkborderc bg-darkbg flex items-center justify-around gap-1 shrink-0 select-none">
+    <!-- Tab 1: Chats List -->
+    <button
+        class="flex-1 py-1.5 px-2 rounded-xl text-center transition-all cursor-pointer truncate {$MobileSideBar === 1 ? 'bg-selected/20 text-selected font-bold' : 'hover:bg-darkbutton hover:text-textcolor'}"
+        onclick={() => {
+            $MobileSideBar = 1;
+        }}
+    >
+        {language.Chat || "Chats"}
     </button>
-    <button class="flex-1 border-r border-r-darkborderc" class:text-textcolor={$MobileSideBar === 2} onclick={() => {
-        void loadCharConfig()
-        $MobileSideBar = 2
-    }}>
-        {language.character}
+
+    <!-- Tab 2: Character Config -->
+    <button
+        class="flex-1 py-1.5 px-2 rounded-xl text-center transition-all cursor-pointer truncate {$MobileSideBar === 2 ? 'bg-selected/20 text-selected font-bold' : 'hover:bg-darkbutton hover:text-textcolor'}"
+        onclick={() => {
+            void loadCharConfig();
+            $MobileSideBar = 2;
+        }}
+    >
+        {language.character || "Character"}
     </button>
-    <button class="flex-1" class:text-textcolor={$MobileSideBar === 3} onclick={() => {
-        $MobileSideBar = 3
-    }}>
-        <WrenchIcon size={18} />
+
+    <!-- Tab 5: Quick Settings -->
+    <button
+        class="flex-1 py-1.5 px-2 rounded-xl text-center transition-all cursor-pointer truncate {$MobileSideBar === 5 ? 'bg-selected/20 text-selected font-bold' : 'hover:bg-darkbutton hover:text-textcolor'}"
+        onclick={() => {
+            $MobileSideBar = 5;
+        }}
+    >
+        Quick Settings
     </button>
+
+    <!-- Tab 3: Dev Tools -->
+    <button
+        class="py-1.5 px-2.5 rounded-xl text-center transition-all cursor-pointer flex items-center justify-center {$MobileSideBar === 3 ? 'bg-selected/20 text-selected font-bold' : 'hover:bg-darkbutton hover:text-textcolor'}"
+        onclick={() => {
+            $MobileSideBar = 3;
+        }}
+        title="Dev Tools"
+        aria-label="Dev Tools"
+    >
+        <WrenchIcon size={16} />
+    </button>
+
+    <!-- Tab 4: BTW (if enabled) -->
     {#if btwRuntime.open}
-        <button class="flex-1 border-l border-l-darkborderc" class:text-textcolor={$MobileSideBar === 4} onclick={() => {
-            $MobileSideBar = 4
-        }}>
+        <button
+            class="py-1.5 px-2 rounded-xl text-center transition-all cursor-pointer truncate {$MobileSideBar === 4 ? 'bg-selected/20 text-selected font-bold' : 'hover:bg-darkbutton hover:text-textcolor'}"
+            onclick={() => {
+                $MobileSideBar = 4;
+            }}
+        >
             BTW
         </button>
     {/if}
-</div>
+</nav>
 {/if}
-<div class="w-full flex-1 overflow-y-auto bg-bgcolor relative">
+
+<div class="w-full flex-1 overflow-y-auto bg-bgcolor relative min-h-0">
     {#if $MobileSideBar > 0}
         <div
-            class="w-full flex flex-col h-full"
-            class:p-2={$MobileSideBar !== 4}
-            class:mt-2={$MobileSideBar !== 4}
+            class="w-full flex flex-col h-full overflow-y-auto"
+            class:p-2={$MobileSideBar !== 4 && $MobileSideBar !== 1}
         >
             {#if $MobileSideBar === 1}
-                <LazyComponent loader={loadSideChatList} />
+                <LazyComponent loader={mobileChatListLoader} />
             {:else if $MobileSideBar === 2}
                 <LazyComponent loader={loadCharConfig} />
             {:else if $MobileSideBar === 3}
                 <LazyComponent loader={devToolLoader} />
             {:else if $MobileSideBar === 4}
                 <LazyComponent loader={btwPanelLoader} />
+            {:else if $MobileSideBar === 5}
+                <LazyComponent loader={quickSettingsLoader} />
             {/if}
         </div>
     {:else if $selectedCharID !== -1}

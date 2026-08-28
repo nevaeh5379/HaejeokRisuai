@@ -54,8 +54,13 @@
             if ($CustomGUISettingMenuStore) { $CustomGUISettingMenuStore = false; return }
             if ($MobileSideBar > 0) { $MobileSideBar = 0; return }
             if ($selectedCharID >= 0) { $selectedCharID = -1; return }
-            if ($MobileGUIStack === 2 && $SettingsMenuIndex > -1) { $SettingsMenuIndex = -1; return }
-            if ($MobileGUIStack !== 0) { $MobileGUIStack = 0; return }
+            if ($MobileGUI) {
+                if ($MobileGUIStack === 2 && $SettingsMenuIndex > -1) { $SettingsMenuIndex = -1; return }
+                if ($MobileGUIStack !== 1) { $MobileGUIStack = 1; return }
+            } else {
+                if ($MobileGUIStack === 2 && $SettingsMenuIndex > -1) { $SettingsMenuIndex = -1; return }
+                if ($MobileGUIStack !== 0) { $MobileGUIStack = 0; return }
+            }
             if (exitConfirmationOpen) return
 
             exitConfirmationOpen = true
