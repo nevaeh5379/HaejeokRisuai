@@ -1126,28 +1126,50 @@ export async function duplicateChat(
   chatIndex: number,
   options: { selectNew?: boolean; insertIndex?: number } = {},
 ): Promise<Chat | null> {
-  const char = characterStore.characters[characterIndex];
-  if (!char || !char.chats || !char.chaId) return null;
-  if (!char.chats[chatIndex]) return null;
+  const initialChar = characterStore.characters[characterIndex];
+  if (!initialChar?.chats || !initialChar.chaId) return null;
+  const initialSourceChat = initialChar.chats[chatIndex];
+  if (!initialSourceChat) return null;
 
-  // A lazy chat must be fully hydrated before cloning. preLoadChat intentionally
-  // swallows storage errors for ordinary UI reads, so verify the postcondition
-  // here before creating a permanent copy of a partial message page.
+  const characterId = initialChar.chaId;
+  const sourceChatId = initialSourceChat.id;
+  const expectedMessageTotal =
+    initialSourceChat.messagesFullyLoaded === false &&
+    typeof initialSourceChat.messageTotal === "number"
+      ? initialSourceChat.messageTotal
+      : null;
+
+  // Lazy chat hydration can fail without throwing because preLoadChat is also used
+  // by ordinary UI reads. Verify the postcondition before creating a permanent copy.
   await preLoadChat(characterIndex, chatIndex, { full: true });
-  const sourceChat = char.chats[chatIndex];
+
+  // The await above gives realtime sync/reordering a chance to move the chat. Re-find
+  // both the character and chat by stable identity instead of trusting stale indexes.
+  const char = characterStore.characters.find(
+    (candidate) => candidate.chaId === characterId,
+  );
+  if (!char?.chats) return null;
+  const sourceIndex = sourceChatId
+    ? char.chats.findIndex((chat) => chat.id === sourceChatId)
+    : char.chats.indexOf(initialSourceChat);
+  const sourceChat = sourceIndex >= 0 ? char.chats[sourceIndex] : undefined;
+  if (!sourceChat) return null;
+
   if (
-    !sourceChat ||
     sourceChat.messagesLoaded === false ||
     sourceChat.messagesFullyLoaded === false ||
-    sourceChat.detailsLoaded === false
+    sourceChat.detailsLoaded === false ||
+    (expectedMessageTotal !== null && sourceChat.message.length < expectedMessageTotal)
   ) {
     const error = new Error(
       "Could not fully load this chat before duplicating it. The original chat was left unchanged.",
     );
     console.error("[duplicateChat] Chat hydration did not complete", {
-      characterIndex,
-      chatIndex,
-      chatId: sourceChat?.id,
+      characterId,
+      sourceChatId,
+      sourceIndex,
+      expectedMessageTotal,
+      loadedMessages: sourceChat.message.length,
     });
     alertError(error);
     return null;
@@ -1158,6 +1180,9 @@ export async function duplicateChat(
   newChat.name = createChatCopyName(sourceChat.name || "Chat", "Copy", char.chats);
   newChat.branch = undefined;
   newChat.branchState = undefined;
+  newChat.isStreaming = false;
+  newChat.activeStreamingDisplayOptimizationMode = undefined;
+  newChat.preventMessageCompaction = undefined;
 
   const idMap = new Map<string, string>();
   const messages = newChat.message ?? [];
@@ -1165,7 +1190,9 @@ export async function duplicateChat(
     const oldId = msg.chatId;
     const newId = uuidv4();
     msg.chatId = newId;
-    if (oldId) idMap.set(oldId, newId);
+    // Legacy data can contain duplicate message IDs. Relational persistence keeps
+    // the first occurrence stable, so bookmark remapping must follow the same rule.
+    if (oldId && !idMap.has(oldId)) idMap.set(oldId, newId);
   }
 
   if (Array.isArray(newChat.bookmarks)) {
@@ -1189,21 +1216,24 @@ export async function duplicateChat(
   newChat.detailsLoaded = true;
 
   const selectNew = options.selectNew ?? false;
-  const requestedInsertIndex = options.insertIndex ?? (selectNew ? 0 : chatIndex + 1);
+  const requestedInsertIndex = options.insertIndex ?? (selectNew ? 0 : sourceIndex + 1);
   const insertIndex = Math.max(0, Math.min(requestedInsertIndex, char.chats.length));
   const activeChatIndex = char.chatPage ?? 0;
 
   char.chats.splice(insertIndex, 0, newChat);
-  if (newChat.id) {
-    await messageStore.persistNewChat(char.chaId, newChat.id, newChat.message ?? []);
+  if (!selectNew && insertIndex <= activeChatIndex) {
+    char.chatPage = activeChatIndex + 1;
   }
+  await messageStore.persistNewChat(characterId, newChat.id, newChat.message ?? []);
 
+  const selectedCharacter = characterStore.characters[get(selectedCharID)];
   if (selectNew) {
-    changeChatTo(insertIndex);
-  } else {
-    if (insertIndex <= activeChatIndex) {
-      char.chatPage = activeChatIndex + 1;
+    if (selectedCharacter?.chaId === characterId) {
+      changeChatTo(insertIndex);
+    } else {
+      char.chatPage = insertIndex;
     }
+  } else if (selectedCharacter?.chaId === characterId) {
     ReloadGUIPointer.set(Math.random());
   }
 
