@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS chats (
 );
 CREATE INDEX IF NOT EXISTS chats_character_position_idx ON chats (character_id, position);
 CREATE INDEX IF NOT EXISTS chats_folder_idx ON chats (character_id, folder_id) WHERE folder_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS chats_recent_idx ON chats (last_message_time DESC);
 
 CREATE TABLE IF NOT EXISTS chat_extension_nodes (
     chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,

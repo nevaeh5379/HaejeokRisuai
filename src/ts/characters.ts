@@ -855,6 +855,9 @@ export function characterFormatUpdate(
 }
 
 export function updateLorebooks(book: loreBook[]) {
+  if (!book.some((v) => (v.bookVersion ?? 1) < 2)) {
+    return book;
+  }
   return book.map((v) => {
     v.bookVersion ??= 1;
     if (v.bookVersion >= 2) {
@@ -1037,6 +1040,7 @@ export async function changeChar(
   index: number,
   arg: {
     reseter?: () => any;
+    chatId?: string;
   } = {},
 ) {
   const reseter = arg.reseter ?? (() => {});
@@ -1081,20 +1085,35 @@ export async function changeChar(
   }
 
   const currentChar = characterStore.characters?.[index];
-  const currentChatPage = currentChar?.chatPage ?? 0;
+  if (arg.chatId && currentChar?.chats) {
+    const requestedChatIndex = currentChar.chats.findIndex((chat) => chat.id === arg.chatId);
+    if (requestedChatIndex >= 0) currentChar.chatPage = requestedChatIndex;
+  }
   characterFormatUpdate(index, {
     updateInteraction: true,
   });
-  const { moduleUpdate } = await modulePromise;
-  if (get(pendingCharID) !== index) {
-    return;
+  const currentChatPage = currentChar?.chatPage ?? 0;
+  const activeChatId = currentChar?.chats?.[currentChatPage]?.id;
+
+  // Start the active chat read before mounting ChatScreen so native SQLite I/O
+  // overlaps the first render instead of beginning one frame later in {#await}.
+  void preLoadChat(index, currentChatPage);
+
+  // Character metadata is sufficient to mount the shell. Module chunk loading
+  // is independent and must not hold navigation hostage on a cold first click.
+  selectedCharID.set(index);
+  pendingCharID.set(-1);
+  if (arg.chatId) {
+    changeChatTo(arg.chatId);
+  } else {
+    releaseInactiveChatMessages(activeChatId);
   }
 
-  // Switch the UI as soon as character metadata is ready. The chat screen
-  // already knows how to render its loading state and hydrate an unloaded chat
-  // asynchronously, so navigation must not wait on Firefox/OPFS message I/O.
-  selectedCharID.set(index);
-  moduleUpdate(index, { reloadMessages: false });
-  pendingCharID.set(-1);
-  releaseInactiveChatMessages(currentChar?.chats?.[currentChatPage]?.id);
+  void modulePromise
+    .then(({ moduleUpdate }) => {
+      if (get(selectedCharID) === index) {
+        moduleUpdate(index, { reloadMessages: false });
+      }
+    })
+    .catch((error) => console.error("Failed to load character modules", error));
 }

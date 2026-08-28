@@ -1,8 +1,11 @@
 <script lang="ts">
+    import { onMount } from 'svelte';
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import { language } from 'src/lang';
     import { getCharImage } from 'src/ts/characterImage';
     import { getPreparedNativeThumbnailSrc } from 'src/ts/globalApi.svelte';
+    import { sideBarStore } from 'src/ts/stores.svelte';
+    import { getSqlRuntime } from 'src/ts/storage/sqlRuntime';
     import SidebarAvatar from './SidebarAvatar.svelte';
     import {
         MessageSquareIcon,
@@ -67,6 +70,7 @@
     interface SessionItem {
         charIndex: number;
         chatIndex: number;
+        chatId?: string;
         characterName: string;
         characterImage?: string;
         characterId?: string;
@@ -88,61 +92,95 @@
             .trim();
     }
 
-    let allSessions = $derived.by<SessionItem[]>(() => {
+    let allSessions = $state<SessionItem[]>([]);
+    let refreshToken = 0;
+
+    function buildLocalSessionSnapshot(): SessionItem[] {
         const characters = characterStore.characters ?? [];
         const sessions: SessionItem[] = [];
-
         for (let charIdx = 0; charIdx < characters.length; charIdx++) {
             const char = characters[charIdx];
             if (!char || char.trashTime) continue;
-
-            const chats = char.chats ?? [];
-            const isGroup = char.type === 'group';
-
-            for (let chatIdx = 0; chatIdx < chats.length; chatIdx++) {
-                const chat = chats[chatIdx];
+            for (let chatIdx = 0; chatIdx < (char.chats?.length ?? 0); chatIdx++) {
+                const chat = char.chats[chatIdx];
                 if (!chat) continue;
-
-                const lastMsg =
-                    chat.message && chat.message.length > 0
-                        ? chat.message[chat.message.length - 1]
-                        : null;
-
-                const rawSnippet = lastMsg?.data ?? '';
-                const snippet = cleanSnippet(rawSnippet);
-
-                const timestamp =
-                    chat.lastDate ||
-                    lastMsg?.time ||
-                    (chatIdx === char.chatPage ? char.lastInteraction : 0) ||
-                    0;
-
-                let folderName: string | undefined = undefined;
-                if (chat.folderId && char.chatFolders) {
-                    const folder = char.chatFolders.find((f) => f.id === chat.folderId);
-                    folderName = folder?.name;
-                }
-
+                const lastMsg = chat.message?.[chat.message.length - 1];
+                const timestamp = chat.lastDate || lastMsg?.time || 0;
+                const folderName = chat.folderId
+                    ? char.chatFolders?.find((folder) => folder.id === chat.folderId)?.name
+                    : undefined;
                 sessions.push({
                     charIndex: charIdx,
                     chatIndex: chatIdx,
+                    chatId: chat.id,
                     characterName: char.name ?? 'Unknown',
                     characterImage: char.image,
                     characterId: char.chaId,
-                    isGroup,
+                    isGroup: char.type === 'group',
                     chatName: chat.name || `${language.Chat} ${chatIdx + 1}`,
                     folderName,
-                    lastMessageSnippet: snippet,
+                    lastMessageSnippet: cleanSnippet(lastMsg?.data ?? ''),
                     timestamp,
                     agoText: makeAgoText(timestamp),
                 });
             }
         }
+        return sessions.sort((a, b) => b.timestamp - a.timestamp).slice(0, 50);
+    }
 
-        // Sort descending by latest interaction/message time
-        return sessions
-            .sort((a, b) => b.timestamp - a.timestamp)
-            .slice(0, 50);
+    async function refreshSessions() {
+        const token = ++refreshToken;
+        const storage = getSqlRuntime().storage;
+        if (!storage?.listRecentChats) {
+            allSessions = buildLocalSessionSnapshot();
+            return;
+        }
+        try {
+            const rows = await storage.listRecentChats(50);
+            if (token !== refreshToken) return;
+            const indexById = new Map(
+                (characterStore.characters ?? []).map((character, index) => [character.chaId, index]),
+            );
+            allSessions = rows.flatMap((row) => {
+                const charIndex = indexById.get(row.characterId);
+                if (charIndex === undefined) return [];
+                const char = characterStore.characters[charIndex];
+                const folderName = row.folderId
+                    ? char?.chatFolders?.find((folder) => folder.id === row.folderId)?.name
+                    : undefined;
+                const timestamp = row.lastDate ?? char?.lastInteraction ?? 0;
+                return [{
+                    charIndex,
+                    chatIndex: row.chatPosition,
+                    chatId: row.chatId,
+                    characterName: row.characterName || char?.name || 'Unknown',
+                    characterImage: row.characterImage ?? char?.image,
+                    characterId: row.characterId,
+                    isGroup: row.characterType === 'group',
+                    chatName: row.chatName || `${language.Chat} ${row.chatPosition + 1}`,
+                    folderName,
+                    lastMessageSnippet: cleanSnippet(row.lastMessage),
+                    timestamp,
+                    agoText: makeAgoText(timestamp),
+                } satisfies SessionItem];
+            });
+        } catch (error) {
+            console.warn('[RecentSessions] SQL feed failed; using loaded chats', error);
+            if (token === refreshToken) allSessions = buildLocalSessionSnapshot();
+        }
+    }
+
+    onMount(() => {
+        // Sidebar stays mounted while hidden on the dynamic/mobile layout. Fill
+        // the feed before the drawer animation so opening it is paint-only.
+        void refreshSessions();
+    });
+
+    $effect(() => {
+        if (!$sideBarStore) return;
+        const delayMs = Math.max(0, Number(settingsStore.state.animationSpeed ?? 0.2) * 1000 + 32);
+        const timer = window.setTimeout(() => void refreshSessions(), delayMs);
+        return () => window.clearTimeout(timer);
     });
 
     let filteredSessions = $derived.by(() => {
@@ -162,14 +200,13 @@
 
     async function selectSession(item: SessionItem) {
         const { changeChar } = await import('../../ts/characters');
-        const { changeChatTo } = await import('../../ts/globalApi.svelte');
-
         const char = characterStore.characters[item.charIndex];
         if (!char) return;
 
-        char.chatPage = item.chatIndex;
-        await changeChar(item.charIndex, { reseter });
-        changeChatTo(item.chatIndex);
+        await changeChar(item.charIndex, {
+            reseter,
+            chatId: item.chatId,
+        });
     }
 </script>
 
@@ -247,10 +284,11 @@
                 </p>
             </div>
         {:else}
-            {#each filteredSessions as session (`${session.charIndex}-${session.chatIndex}`)}
+            {#each filteredSessions as session (`${session.characterId ?? session.charIndex}-${session.chatId ?? session.chatIndex}`)}
                 <button
                     type="button"
-                    class="flex items-center gap-2.5 p-2 rounded-lg text-left transition-all bg-bgcolor/40 hover:bg-bgcolor border border-darkborderc/40 hover:border-selected/60 group w-full cursor-pointer overflow-hidden relative shrink-0"
+                    class="flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors bg-bgcolor/40 hover:bg-bgcolor border border-darkborderc/40 hover:border-selected/60 group w-full cursor-pointer overflow-hidden relative shrink-0"
+                    style="content-visibility:auto; contain-intrinsic-size:56px;"
                     onclick={() => void selectSession(session)}
                 >
                     <!-- Avatar with Group Badge -->

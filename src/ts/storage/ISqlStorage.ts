@@ -67,6 +67,19 @@ export interface SqlChatMetadata {
   lastDate: number | null;
 }
 
+export interface SqlRecentChatMetadata {
+  characterId: string;
+  characterName: string;
+  characterImage: string | null;
+  characterType: "character" | "group";
+  chatId: string;
+  chatPosition: number;
+  chatName: string;
+  folderId: string | null;
+  lastDate: number | null;
+  lastMessage: string;
+}
+
 export type StoredBotPreset = botPreset & { id: string };
 
 export interface BotPresetSummary {
@@ -147,6 +160,8 @@ export interface ISqlStorage {
     before: number | undefined,
     limit: number,
   ): Promise<SqlMessagePage>;
+  /** Lightweight recent-chat feed; avoids hydrating character/chat trees. */
+  listRecentChats?(limit?: number): Promise<SqlRecentChatMetadata[]>;
 
   // ── Domain loaders (deferred by the adapter) ─────────────────────────
 

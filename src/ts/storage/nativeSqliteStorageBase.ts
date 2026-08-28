@@ -14,6 +14,7 @@ import type {
   BotPresetSummary,
   SqlLoadDatabaseOptions,
   SqlLoadDatabaseResult,
+  SqlRecentChatMetadata,
   StoredBotPreset,
 } from "./ISqlStorage";
 import type {
@@ -106,6 +107,7 @@ export abstract class NativeSqliteStorageBase {
         await this.applySchema();
         await this.loadRevisionFromMeta();
       }
+      await this.ensurePerformanceIndexes();
       this._enabled = true;
       this.initialized = true;
       return true;
@@ -156,6 +158,15 @@ export abstract class NativeSqliteStorageBase {
       "SELECT revision FROM system_storage_meta WHERE singleton = 1",
     );
     if (rows.length > 0) this.revision = Number(rows[0].revision) || 0;
+  }
+
+  private async ensurePerformanceIndexes(): Promise<void> {
+    await this.executeNativeTransaction(null, [
+      {
+        sql: "CREATE INDEX IF NOT EXISTS chats_recent_idx ON chats (last_message_time DESC)",
+        bind: [],
+      },
+    ]);
   }
 
   private async loadAllSettingValues(
@@ -619,28 +630,31 @@ export abstract class NativeSqliteStorageBase {
     // Interactive selection only needs the character tree plus chat summary
     // rows. Hydrating every chat's extension nodes here would defeat lazy
     // loading on character switches.
-    const row = await this.selectOne<{ id: string }>(
-      "SELECT id FROM characters WHERE id = ?",
-      [characterId],
-    );
+    const [row, fullCharValue, chatRows] = await Promise.all([
+      this.selectOne<{ id: string }>(
+        "SELECT id FROM characters WHERE id = ?",
+        [characterId],
+      ),
+      this.loadNodeValue(
+        "character_extension_nodes",
+        "character_id = ?",
+        [characterId],
+      ),
+      this.selectRows<{
+        id: string;
+        name: string;
+        note: string;
+        folder_id: string | null;
+        last_message_time: number | null;
+      }>(
+        "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
+        [characterId],
+      ),
+    ]);
     if (!row) return null;
-    const fullChar = ((await this.loadNodeValue(
-      "character_extension_nodes",
-      "character_id = ?",
-      [characterId],
-    )) ?? {}) as any;
+    const fullChar = (fullCharValue ?? {}) as any;
     fullChar.chaId = characterId;
     fullChar.detailsLoaded = true;
-    const chatRows = await this.selectRows<{
-      id: string;
-      name: string;
-      note: string;
-      folder_id: string | null;
-      last_message_time: number | null;
-    }>(
-      "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
-      [characterId],
-    );
     fullChar.chats = chatRows.map((chatRow) => ({
       id: chatRow.id,
       name: chatRow.name ?? "",
@@ -659,33 +673,32 @@ export abstract class NativeSqliteStorageBase {
     chatId: string,
     options?: { messageLimit?: number },
   ): Promise<Chat | null> {
-    const chatRow = await this.selectOne<{
-      id: string;
-      name: string;
-      note: string;
-      folder_id: string | null;
-      last_message_time: number | null;
-    }>(
-      "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
-      [chatId],
-    );
+    const [chatRow, chatValue, totalRow] = await Promise.all([
+      this.selectOne<{
+        id: string;
+        name: string;
+        note: string;
+        folder_id: string | null;
+        last_message_time: number | null;
+      }>(
+        "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
+        [chatId],
+      ),
+      this.loadNodeValue("chat_extension_nodes", "chat_id = ?", [chatId]),
+      this.selectOne<{ total: number }>(
+        "SELECT COUNT(*) AS total FROM messages WHERE chat_id = ?",
+        [chatId],
+      ),
+    ]);
     if (!chatRow) return null;
 
-    const chatData = ((await this.loadNodeValue(
-      "chat_extension_nodes",
-      "chat_id = ?",
-      [chatId],
-    )) ?? {}) as any;
+    const chatData = (chatValue ?? {}) as any;
     chatData.id = chatRow.id;
     chatData.name = chatRow.name ?? "";
     chatData.note = chatRow.note ?? "";
     chatData.folderId = chatRow.folder_id ?? undefined;
     chatData.lastDate = chatRow.last_message_time ?? undefined;
 
-    const totalRow = await this.selectOne<{ total: number }>(
-      "SELECT COUNT(*) AS total FROM messages WHERE chat_id = ?",
-      [chatId],
-    );
     const total = Number(totalRow?.total ?? 0);
     const requestedLimit = options?.messageLimit;
     const limit =
@@ -757,6 +770,58 @@ export abstract class NativeSqliteStorageBase {
       total,
       hasMore: offset > 0,
     };
+  }
+
+  async listRecentChats(limit = 50): Promise<SqlRecentChatMetadata[]> {
+    const normalizedLimit = Math.max(1, Math.min(Math.floor(limit), 100));
+    const rows = await this.selectRows<{
+      character_id: string;
+      character_name: string;
+      character_image: string | null;
+      character_kind: string;
+      chat_id: string;
+      chat_position: number;
+      chat_name: string;
+      folder_id: string | null;
+      last_message_time: number | null;
+      last_message_text: string | null;
+    }>(
+      `SELECT c.id AS character_id,
+              c.name AS character_name,
+              c.image AS character_image,
+              c.kind AS character_kind,
+              ch.id AS chat_id,
+              ch.position AS chat_position,
+              ch.name AS chat_name,
+              ch.folder_id AS folder_id,
+              ch.last_message_time AS last_message_time,
+              COALESCE((
+                SELECT m.content_text
+                  FROM messages m
+                 WHERE m.chat_id = ch.id
+                 ORDER BY m.position DESC
+                 LIMIT 1
+              ), '') AS last_message_text
+         FROM chats ch
+         JOIN characters c ON c.id = ch.character_id
+        WHERE c.trash_time IS NULL
+        ORDER BY ch.last_message_time DESC
+        LIMIT ?`,
+      [normalizedLimit],
+    );
+    return rows.map((row) => ({
+      characterId: row.character_id,
+      characterName: row.character_name ?? "",
+      characterImage: row.character_image ?? null,
+      characterType: row.character_kind === "group" ? "group" : "character",
+      chatId: row.chat_id,
+      chatPosition: Number(row.chat_position) || 0,
+      chatName: row.chat_name ?? "",
+      folderId: row.folder_id ?? null,
+      lastDate:
+        row.last_message_time == null ? null : Number(row.last_message_time),
+      lastMessage: row.last_message_text ?? "",
+    }));
   }
 
   async loadPersonas(): Promise<RisuPersona[]> {
