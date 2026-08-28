@@ -85,10 +85,10 @@ export async function writeInlayImage(
   let drawWidth = 0;
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
-  await new Promise((resolve) => {
-    imgObj.onload = () => {
-      drawHeight = imgObj.height;
-      drawWidth = imgObj.width;
+  await new Promise((resolve, reject) => {
+    const processImage = () => {
+      drawHeight = imgObj.naturalHeight || imgObj.height;
+      drawWidth = imgObj.naturalWidth || imgObj.width;
 
       //resize image to fit inlay, if total pixels exceed 1024*1024
       const maxPixels = 1024 * 1024;
@@ -102,9 +102,19 @@ export async function writeInlayImage(
 
       canvas.width = drawWidth;
       canvas.height = drawHeight;
-      ctx.drawImage(imgObj, 0, 0, drawWidth, drawHeight);
+      if (ctx) {
+        ctx.drawImage(imgObj, 0, 0, drawWidth, drawHeight);
+      }
       resolve(null);
     };
+
+    if (imgObj.complete && (imgObj.naturalWidth !== 0 || imgObj.width !== 0)) {
+      processImage();
+    } else {
+      imgObj.onload = processImage;
+      imgObj.onerror = (err) =>
+        reject(err ?? new Error("Failed to load image for inlay"));
+    }
   });
   const imageBlob = await new Promise((resolve) =>
     canvas.toBlob(resolve, "image/png"),

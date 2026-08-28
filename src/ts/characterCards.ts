@@ -692,6 +692,14 @@ function convertOffSpecCards(
 }
 
 export async function exportChar(charaID: number): Promise<string> {
+  const targetChar = characterStore.characters[charaID];
+  if (targetChar?.detailsLoaded === false && targetChar.chaId) {
+    try {
+      await characterStore.ensureCharacterDetails(targetChar.chaId);
+    } catch (e) {
+      console.error("Failed to load character details for export:", e);
+    }
+  }
   const db = createDatabaseSnapshot();
   let char = safeStructuredClone(db.characters[charaID]);
 
@@ -1202,7 +1210,7 @@ function convertCharbook(arg: {
 
 function createBaseV2(char: character) {
   let charBook: charBookEntry[] = [];
-  for (const lore of char.globalLore) {
+  for (const lore of char.globalLore ?? []) {
     let ext: {
       risu_case_sensitive?: boolean;
       risu_activationPercent?: number;
@@ -1516,6 +1524,12 @@ export async function exportCharacterCard(
   if (char.detailsLoaded === false && char.chaId) {
     try {
       await characterStore.ensureCharacterDetails(char.chaId);
+      const loaded = characterStore.characters.find(
+        (c) => c?.chaId === char.chaId,
+      );
+      if (loaded) {
+        Object.assign(char, safeStructuredClone(loaded));
+      }
     } catch (e) {
       console.error("Failed to load character details for export:", e);
     }
@@ -1917,7 +1931,7 @@ export function createBaseV3(char: character) {
     });
   }
 
-  for (const lore of char.globalLore) {
+  for (const lore of char.globalLore ?? []) {
     let ext: {
       risu_case_sensitive?: boolean;
       risu_activationPercent?: number;

@@ -541,6 +541,39 @@ describe("writeInlayImage", () => {
       ),
     );
   });
+
+  test("handles pre-completed image without waiting for onload", async () => {
+    store.clear();
+    const img = new Image();
+    Object.defineProperty(img, "naturalWidth", { value: 120 });
+    Object.defineProperty(img, "naturalHeight", { value: 80 });
+    Object.defineProperty(img, "complete", { value: true });
+
+    const id = await writeInlayImage(img, { id: "completed-img" });
+    expect(id).toBe("completed-img");
+
+    const stored = store.get("completed-img") as InlayAsset;
+    expect(stored).toMatchObject({
+      width: 120,
+      height: 80,
+      type: "image",
+    });
+  });
+
+  test("rejects when image loading fails", async () => {
+    const img = new Image();
+    Object.defineProperty(img, "complete", { value: false });
+    Object.defineProperty(img, "onerror", {
+      set(fn: (err: any) => void) {
+        fn?.(new Error("Image decode failed"));
+      },
+      get() {
+        return null;
+      },
+    });
+
+    await expect(writeInlayImage(img)).rejects.toThrow("Image decode failed");
+  });
 });
 
 describe("set -> get round-trip", () => {
