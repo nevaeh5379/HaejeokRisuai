@@ -99,6 +99,7 @@ class CharacterStore {
 
   // Dirty sets — only IDs, no snapshots.  Serialised at flush time.
   private dirtyCharacters = new Set<string>();
+  private dirtyCharacterDeletes = new Set<string>();
   private dirtyCharacterTouches = new Map<string, number>();
   private dirtyChats = new Set<string>();
   private dirtyChatManifests = new Set<string>(); // character IDs whose chat list changed
@@ -136,6 +137,7 @@ class CharacterStore {
     this.activeDispose?.();
     this.activeDispose = null;
     this.dirtyCharacters.clear();
+    this.dirtyCharacterDeletes.clear();
     this.dirtyCharacterTouches.clear();
     this.dirtyChats.clear();
     this.dirtyChatManifests.clear();
@@ -164,6 +166,7 @@ class CharacterStore {
     const knownCharIds = new Set<string>(
       this.characters.map((c) => c.chaId).filter(Boolean),
     );
+    let previousCharIds = new Set(knownCharIds);
 
     this.arrayDispose = $effect.root(() => {
       $effect(() => {
@@ -177,6 +180,12 @@ class CharacterStore {
             orderChanged = true;
           }
         }
+        const currentCharIds = new Set(chars.map((c) => c.chaId));
+        for (const id of previousCharIds) {
+          if (!currentCharIds.has(id)) this.dirtyCharacterDeletes.add(id);
+        }
+        for (const id of currentCharIds) this.dirtyCharacterDeletes.delete(id);
+        previousCharIds = currentCharIds;
         const currentIds = chars.map((c) => c.chaId).join(",");
         if (currentIds !== this.charIdsSnapshot || orderChanged) {
           this.charIdsSnapshot = currentIds;
@@ -370,6 +379,7 @@ class CharacterStore {
     }
     if (
       this.dirtyCharacters.size === 0 &&
+      this.dirtyCharacterDeletes.size === 0 &&
       this.dirtyCharacterTouches.size === 0 &&
       this.dirtyChats.size === 0 &&
       this.dirtyChatManifests.size === 0 &&
@@ -397,6 +407,10 @@ class CharacterStore {
       this.dirtyCharacterTouches,
       ([id, lastInteraction]) => ({ id, lastInteraction }),
     ).filter((touch) => !this.dirtyCharacters.has(touch.id));
+
+    const characterDeletes = Array.from(this.dirtyCharacterDeletes).filter(
+      (id) => !this.characters.some((character) => character.chaId === id),
+    );
 
     // Serialise dirty chats
     const chats: {
@@ -449,11 +463,14 @@ class CharacterStore {
     }
 
     const committedCharacterIds = new Set(this.dirtyCharacters);
+    const committedCharacterDeletes = new Set(characterDeletes);
     const committedTouches = new Map(this.dirtyCharacterTouches);
     const committedChatIds = new Set(this.dirtyChats);
     const committedManifestIds = new Set(this.dirtyChatManifests);
     const committedCharacterOrder = this.dirtyCharacterIds;
     this.dirtyCharacters.clear();
+    for (const id of committedCharacterDeletes)
+      this.dirtyCharacterDeletes.delete(id);
     this.dirtyCharacterTouches.clear();
     this.dirtyChats.clear();
     this.dirtyChatManifests.clear();
@@ -467,6 +484,7 @@ class CharacterStore {
         characters,
         characterTouches,
         characterIds,
+        characterDeletes,
         chats,
         chatManifests,
         messages: [],
@@ -476,6 +494,10 @@ class CharacterStore {
       for (const id of committedCharacterIds) {
         this.dirtyCharacterTouches.delete(id);
         this.dirtyCharacters.add(id);
+      }
+      for (const id of committedCharacterDeletes) {
+        if (!this.characters.some((character) => character.chaId === id))
+          this.dirtyCharacterDeletes.add(id);
       }
       for (const [id, timestamp] of committedTouches) {
         if (!this.dirtyCharacters.has(id)) {
@@ -497,6 +519,7 @@ class CharacterStore {
   hasPendingWrites(): boolean {
     return (
       this.dirtyCharacters.size > 0 ||
+      this.dirtyCharacterDeletes.size > 0 ||
       this.dirtyCharacterTouches.size > 0 ||
       this.dirtyChats.size > 0 ||
       this.dirtyChatManifests.size > 0 ||
@@ -587,7 +610,9 @@ class CharacterStore {
 
   remove(index: number): void {
     if (index >= 0 && index < this.characters.length) {
+      const removedId = this.characters[index]?.chaId;
       this.characters.splice(index, 1);
+      if (removedId) this.dirtyCharacterDeletes.add(removedId);
       this.dirtyCharacterIds = true;
       this.scheduleCommit();
       if (this.selectedId >= this.characters.length) {

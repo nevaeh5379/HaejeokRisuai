@@ -392,7 +392,7 @@ export function countSqliteCommitStatements(commit: SqlCommit): number {
     total += countCharacterTagStatements(data.tags);
   }
   total += commit.characterTouches?.length ?? 0;
-  if (commit.characterIds !== undefined && !replacingEntities) total++;
+  total += commit.characterDeletes?.length ?? 0;
 
   for (const entry of commit.chats) {
     total += 1 + countReplaceNodeStatements(entry.data, replacingEntities);
@@ -445,14 +445,8 @@ export async function applySqliteCommit(
     );
   }
 
-  if (commit.characterIds !== undefined && !replacingEntities) {
-    if (!commit.characterIds.length) await execute("DELETE FROM characters");
-    else
-      await execute(
-        `DELETE FROM characters WHERE id NOT IN (${commit.characterIds.map(() => "?").join(",")})`,
-        commit.characterIds,
-      );
-  }
+  for (const id of commit.characterDeletes ?? [])
+    await execute("DELETE FROM characters WHERE id = ?", [id]);
 
   for (const entry of commit.chats) {
     const data = entry.data as Record<string, unknown>;
@@ -722,4 +716,3 @@ async function applySettingUpsert(commit: SqlCommit, execute: SqliteExecute) {
     );
   }
 }
-

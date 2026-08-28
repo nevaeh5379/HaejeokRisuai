@@ -1225,13 +1225,11 @@ class AzureStorage extends SqlStorageBase {
             // 4. Characters, Chats, Messages
             if (payload.replaceAll) {
                 await tx.request().query('DELETE FROM [character].[characters];');
-            } else if (payload.characterIds && payload.characterIds.length > 0) {
-                // characterIds is the full manifest of characters that should exist.
-                // Delete characters NOT in the manifest (i.e. removed on the client).
-                // ON DELETE CASCADE on chat.chats.character_id and chat.messages.chat_id
-                // propagates the removal to chats and messages.
-                const charIdsList = payload.characterIds.map((id) => `'${id.replace(/'/g, "''")}'`).join(', ');
-                await tx.request().query(`DELETE FROM [character].[characters] WHERE id NOT IN (${charIdsList});`);
+            } else if (payload.characterDeletes?.length) {
+                const deleteRequest = tx.request();
+                deleteRequest.input('character_delete_ids', sql.NVarChar(sql.MAX), JSON.stringify(payload.characterDeletes));
+                await deleteRequest.query(`DELETE target FROM [character].[characters] target
+                    INNER JOIN OPENJSON(@character_delete_ids) values_json ON target.id = values_json.[value];`);
             }
 
             // Prune chats/messages removed on the client using the manifests.

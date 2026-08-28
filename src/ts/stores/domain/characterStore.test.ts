@@ -537,6 +537,22 @@ describe("CharacterStore", () => {
 
     expect(committed.length).toBe(1);
     expect(committed[0].characterIds).toEqual([newChar.chaId]);
+    expect(committed[0].characterDeletes).toEqual([chars[0].chaId]);
+  });
+
+  it("records exact character IDs removed by direct array mutation", async () => {
+    const chars = [makeChar("a"), makeChar("b"), makeChar("c")];
+    characterStore.init(chars, mockStorage);
+    await new Promise((r) => setTimeout(r, 30));
+
+    const removedId = chars[1].chaId;
+    characterStore.characters.splice(1, 1);
+    await new Promise((r) => setTimeout(r, 30));
+    await characterStore.flush();
+
+    expect(committed).toHaveLength(1);
+    expect(committed[0].characterDeletes).toEqual([removedId]);
+    expect(committed[0].characterIds).toEqual([chars[0].chaId, chars[2].chaId]);
   });
 
   it("handles whole-object replacements via setCurrentCharacter and setCharacterByIndex", async () => {

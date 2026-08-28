@@ -222,8 +222,8 @@ function makeRecordingMssqlMock() {
     return { sql, queries }
 }
 
-describe('AzureStorage.sync() manifest-based pruning', () => {
-    it('prunes characters/chats/messages NOT IN the manifest (not IN it)', async () => {
+describe('AzureStorage.sync() entity deletion', () => {
+    it('deletes only explicit characters while retaining chat/message manifest pruning', async () => {
         const { sql, queries } = makeRecordingMssqlMock()
 
         // Patch the module-local `sql` reference by constructing AzureStorage
@@ -267,6 +267,7 @@ describe('AzureStorage.sync() manifest-based pruning', () => {
             root: { upserts: [], deletes: [] },
             characters: [],
             characterIds: ['char-a', 'char-b'],
+            characterDeletes: ['char-old'],
             chats: [],
             chatManifests: [
                 { characterId: 'char-a', ids: ['chat-1', 'chat-2'] },
@@ -282,9 +283,9 @@ describe('AzureStorage.sync() manifest-based pruning', () => {
 
         const joined = queries.join('\n')
 
-        // Character pruning must keep manifest members (NOT IN), never delete them (IN).
-        expect(joined).toMatch(/DELETE FROM \[character\]\.\[characters\] WHERE id NOT IN \('char-a', 'char-b'\)/)
-        expect(joined).not.toMatch(/DELETE FROM \[character\]\.\[characters\] WHERE id IN \('char-a', 'char-b'\)/)
+        // Character order manifests are non-destructive; only explicit IDs are deleted.
+        expect(joined).toMatch(/DELETE target FROM \[character\]\.\[characters\] target INNER JOIN OPENJSON\(@character_delete_ids\)/)
+        expect(joined).not.toMatch(/DELETE FROM \[character\]\.\[characters\] WHERE id NOT IN/)
 
         // Chat pruning uses NOT IN with the manifest ids for each character.
         expect(joined).toMatch(/DELETE FROM \[chat\]\.\[chats\] WHERE character_id = @chat_manifest_character_id AND id NOT IN \('chat-1', 'chat-2'\)/)

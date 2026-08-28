@@ -174,6 +174,12 @@ function createSqlCommitValidator({ PayloadError, maxIdLength = 4000 } = {}) {
                 assertId(id, `characterIds[${index}]`);
                 return id;
             });
+        const characterDeletes = payload.characterDeletes === undefined
+            ? undefined
+            : asArray(payload.characterDeletes, 'characterDeletes').map((id, index) => {
+                assertId(id, `characterDeletes[${index}]`);
+                return id;
+            });
         const action = typeof payload.action === 'string' && payload.action.length > 0 && payload.action.length <= 64
             ? payload.action
             : undefined;
@@ -196,6 +202,7 @@ function createSqlCommitValidator({ PayloadError, maxIdLength = 4000 } = {}) {
             messageManifests,
             messageDeletes,
             characterIds,
+            characterDeletes,
         };
     };
 }

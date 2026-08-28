@@ -20,6 +20,7 @@ function describeSqlCommitChange(payload) {
         addCharacter(row?.characterId);
     }
     for (const row of payload?.characters ?? []) addCharacter(row?.id);
+    for (const id of payload?.characterDeletes ?? []) addCharacter(id);
     for (const row of payload?.chatManifests ?? []) addCharacter(row?.characterId);
 
     const rootUpsertKeys = (payload?.root?.upserts ?? [])

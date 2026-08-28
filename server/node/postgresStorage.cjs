@@ -2538,10 +2538,10 @@ class PostgresStorage extends SqlStorageBase {
                 );
             }
 
-            if (payload.characterIds !== undefined) {
+            if (payload.characterDeletes?.length) {
                 await client.query(
-                    'DELETE FROM character.characters WHERE NOT (id = ANY($1::text[]))',
-                    [payload.characterIds]
+                    'DELETE FROM character.characters WHERE id = ANY($1::text[])',
+                    [payload.characterDeletes]
                 );
             }
             for (const manifest of payload.chatManifests) {

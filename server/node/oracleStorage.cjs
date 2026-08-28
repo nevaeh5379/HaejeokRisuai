@@ -2007,15 +2007,10 @@ class OracleStorage extends SqlStorageBase {
             await this._bulkInsertRows(conn, 'chat_message_prompt_items', ['chat_id', 'message_id', 'position', 'payload'],
                 splitMessages.flatMap((item) => item.prompt?.items || []), onProgress);
 
-            // manifest 기반 삭제
-            if (payload.characterIds !== undefined) {
-                const allChars = await fetchRows(conn, `SELECT id FROM character_characters`);
-                const retainedSet = new Set(payload.characterIds);
-                const toDelete = allChars.filter((r) => !retainedSet.has(r.id));
-                if (toDelete.length > 0) {
-                    await conn.executeMany(`DELETE FROM character_characters WHERE id = :1`,
-                        toDelete.map((r) => [r.id]));
-                }
+            // 명시적으로 지정된 캐릭터만 삭제한다.
+            if (payload.characterDeletes?.length) {
+                await conn.executeMany(`DELETE FROM character_characters WHERE id = :1`,
+                    payload.characterDeletes.map((id) => [id]));
             }
             for (const manifest of payload.chatManifests) {
                 const allChats = await fetchRows(conn,

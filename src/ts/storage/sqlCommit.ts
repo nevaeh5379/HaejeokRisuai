@@ -34,6 +34,7 @@ export function createEmptySqlCommit(
     root: { upserts: [], deletes: [] },
     characters: [],
     characterTouches: [],
+    characterDeletes: [],
     chats: [],
     chatManifests: [],
     messages: [],
@@ -63,6 +64,7 @@ export function hasSqlCommitChanges(commit: SqlCommit): boolean {
     commit.characters.length > 0 ||
     (commit.characterTouches !== undefined && commit.characterTouches.length > 0) ||
     commit.characterIds !== undefined ||
+    (commit.characterDeletes !== undefined && commit.characterDeletes.length > 0) ||
     commit.chats.length > 0 ||
     commit.chatManifests.length > 0 ||
     commit.messages.length > 0 ||

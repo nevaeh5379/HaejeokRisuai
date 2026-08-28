@@ -227,6 +227,27 @@ describe("SQL row commits", () => {
     expect(statements[0].bind).toEqual(["chat-1", "msg-1", "msg-2"]);
   });
 
+  it("deletes only explicitly named characters", async () => {
+    const commit = createEmptySqlCommit(5, "character-delete");
+    commit.characterIds = ["character-kept"];
+    commit.characterDeletes = ["character-removed"];
+    const statements: { sql: string; bind: unknown[] }[] = [];
+
+    await applySqliteCommit(commit, (sql, bind = []) => {
+      statements.push({ sql, bind });
+    });
+
+    expect(statements).toEqual([
+      {
+        sql: "DELETE FROM characters WHERE id = ?",
+        bind: ["character-removed"],
+      },
+    ]);
+    expect(
+      statements.some(({ sql }) => sql.includes("NOT IN")),
+    ).toBe(false);
+  });
+
   it("ensures pluginCustomStorage is always included in buildSqlReplaceCommit root upserts", () => {
     const minimalDb = {
       apiType: "gemini-3-flash-preview",
