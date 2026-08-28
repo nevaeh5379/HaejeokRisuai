@@ -147,9 +147,13 @@ export async function saveInlayedSignature(
 }
 
 function base64ToBlob(b64: string): Blob {
-  const splitDataURI = b64.split(",");
-  const byteString = atob(splitDataURI[1]);
-  const mimeString = splitDataURI[0].split(":")[1].split(";")[0];
+  const separatorIndex = b64.indexOf(",");
+  if (separatorIndex === -1) {
+    throw new Error("Invalid base64 data URI");
+  }
+  const header = b64.slice(0, separatorIndex);
+  const byteString = atob(b64.slice(separatorIndex + 1));
+  const mimeString = header.split(":")[1]?.split(";")[0] ?? "";
 
   const ab = new ArrayBuffer(byteString.length);
   const ia = new Uint8Array(ab);
@@ -188,18 +192,25 @@ export async function getInlayAsset(id: string) {
   return { ...img, data };
 }
 
-// Returns with Blob
+// Returns media data as Blob; signature data remains text.
 export async function getInlayAssetBlob(id: string) {
   const img = await inlayStorage.getItem<InlayAsset | null>(id);
   if (img === null) {
     return null;
   }
 
+  if (img.type === "signature") {
+    return img;
+  }
+
   let data: Blob;
   if (typeof img.data === "string") {
-    // Migrate to Blob
+    if (!img.data.startsWith("data:")) {
+      throw new Error(`Invalid inlay data URI: ${id}`);
+    }
+    // Migrate legacy data URI to Blob
     data = base64ToBlob(img.data);
-    setInlayAsset(id, { ...img, data });
+    await setInlayAsset(id, { ...img, data });
   } else {
     data = img.data;
   }

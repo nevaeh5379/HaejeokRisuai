@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { classifyBackupEntry } from "@risuai/backup-core/entryPolicy.cjs";
+import {
+  classifyBackupEntry,
+  getInlayBackupKey,
+} from "@risuai/backup-core/entryPolicy.cjs";
 
 describe("backup entry policy", () => {
   it("keeps core entries and supported asset layouts", () => {
@@ -14,6 +17,11 @@ describe("backup entry policy", () => {
     expect(classifyBackupEntry(
       "inlay_11111111-1111-4111-8111-111111111111.risuinlay",
     ).kind).toBe("inlay");
+    expect(
+      getInlayBackupKey("inlay_11111111-1111-4111-8111-111111111111.risuinlay"),
+    ).toBe("11111111-1111-4111-8111-111111111111");
+    expect(getInlayBackupKey("assets/avatar.png")).toBeNull();
+    expect(getInlayBackupKey("invalid")).toBeNull();
   });
 
   it("keeps both cold-storage naming variants", () => {

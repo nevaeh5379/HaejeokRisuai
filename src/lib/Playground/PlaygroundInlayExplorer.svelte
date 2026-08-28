@@ -25,7 +25,7 @@
   const getPreviewURL = async (id: string) => {
     if (previewURLs.has(id)) return previewURLs.get(id)!
     const result = await getInlayAssetBlob(id)
-    if (result) {
+    if (result?.data instanceof Blob) {
       const url = URL.createObjectURL(result.data)
       previewURLs.set(id, url)
       return url

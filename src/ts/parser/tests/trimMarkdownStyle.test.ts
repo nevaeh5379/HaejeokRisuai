@@ -9,6 +9,19 @@ vi.mock(import('../../globalApi.svelte'), () => ({
   getFileSrc: () => Promise.resolve(''),
 }))
 
+vi.mock(import('../../process/files/inlays'), () => ({
+  getInlayAssetBlob: vi.fn(async (id: string) =>
+    id === 'signature-id'
+      ? {
+          data: '{"signatures":[]}',
+          ext: 'json',
+          name: id,
+          type: 'signature' as const,
+        }
+      : null,
+  ),
+}))
+
 vi.mock(import('../../stores.svelte'), () => {
   return {
     DBState: {
@@ -53,6 +66,12 @@ const expectScopedStyles = (body: HTMLElement, count: number) => {
 }
 
 describe('trimMarkdown style handling', () => {
+    it('removes signature inlay markers without creating a media URL', async () => {
+        const out = await ParseMarkdown('{{inlayeddata::signature-id}}visible', null, 'back')
+        expect(out).not.toContain('inlayeddata::signature-id')
+        expect(out).toContain('visible')
+    })
+
     it('decodes <style> into a scoped style tag', async () => {
         const out = await ParseMarkdown('<style>.mybox { color: red; }</style><div class="mybox">hello</div>', null, 'back')
         expect(out).toContain('<style>.chattext .x-risu-mybox{color:red;}</style>')

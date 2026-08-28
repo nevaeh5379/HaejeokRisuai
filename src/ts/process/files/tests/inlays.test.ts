@@ -268,6 +268,59 @@ describe("getInlayAssetBlob", () => {
     const updated = store.get("legacy-id") as InlayAsset;
     expect(updated.data).toBeInstanceOf(Blob);
   });
+
+  test("preserves signature inlays stored as string without attempting data URI migration", async () => {
+    const signatureJson = JSON.stringify({
+      signatures: [{ type: "function", content: "test()" }],
+      sourceFormat: "openai",
+      source: "gpt-4",
+    });
+    const asset: InlayAsset = {
+      data: signatureJson,
+      ext: "json",
+      name: "sig-1",
+      type: "signature",
+    };
+    store.set("sig-id", asset);
+
+    const result = await getInlayAssetBlob("sig-id");
+    expect(result).not.toBeNull();
+    expect(result!.data).toBe(signatureJson);
+    expect(result!.type).toBe("signature");
+
+    const unchanged = store.get("sig-id") as InlayAsset;
+    expect(unchanged.data).toBe(signatureJson);
+  });
+
+  test("rejects invalid legacy media strings without overwriting storage", async () => {
+    const asset: InlayAsset = {
+      data: "not-a-data-uri",
+      ext: "png",
+      name: "broken.png",
+      type: "image",
+    };
+    store.set("broken-id", asset);
+
+    await expect(getInlayAssetBlob("broken-id")).rejects.toThrow(
+      "Invalid inlay data URI: broken-id",
+    );
+    expect(store.get("broken-id")).toBe(asset);
+  });
+
+  test("rejects malformed data URIs instead of creating a fallback Blob", async () => {
+    const asset: InlayAsset = {
+      data: "data:image/png;base64",
+      ext: "png",
+      name: "malformed.png",
+      type: "image",
+    };
+    store.set("malformed-id", asset);
+
+    await expect(getInlayAssetBlob("malformed-id")).rejects.toThrow(
+      "Invalid base64 data URI",
+    );
+    expect(store.get("malformed-id")).toBe(asset);
+  });
 });
 
 describe("listInlayAssets", () => {

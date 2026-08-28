@@ -812,8 +812,13 @@ async function parseInlayAssets(data: string) {
       let postfix = inlayType !== "inlay" ? `</div>\n\n` : "";
 
       const asset = await getInlayAssetBlob(id);
+      if (asset?.type === "signature") {
+        data = data.replace(inlay, "");
+        continue;
+      }
+
       let url = blobUrlCache.get(id);
-      if (!url && asset?.data) {
+      if (!url && asset?.data instanceof Blob) {
         url = URL.createObjectURL(asset.data);
         blobUrlCache.set(id, url);
         const cacheLimit = settingsStore.state.lowSpecMode ? 8 : 24;
