@@ -11,6 +11,14 @@
   } from "@lucide/svelte";
   import { tick } from "svelte";
   import type { BtwSession } from "../../ts/storage/schema";
+  import { getCharImage } from "../../ts/characterImage";
+  import { createSimpleCharacter } from "../../ts/stores.svelte";
+  import { chatTargetFromIndexes } from "../../ts/chatTarget";
+  import {
+    getUserIcon,
+    getUserIconProtrait,
+    getUserName,
+  } from "../../ts/util";
   import {
     cancelBtwGeneration,
     closeBtwPanel,
@@ -25,6 +33,7 @@
   } from "src/ts/process/btwSession.svelte";
   import { btwRuntime } from "src/ts/process/btwRuntime.svelte";
   import { characterStore, moduleStore, presetStore } from "src/ts/stores/domain";
+  import ChatMessage from "./Chat.svelte";
 
   let input = $state("");
   let toggleDefinitions = $state<BtwToggleDefinition[]>([]);
@@ -36,6 +45,19 @@
   let chat = $derived(
     characterStore.characters[characterIndex]?.chats?.[chatIndex],
   );
+  let room = $derived(characterStore.characters[characterIndex]);
+  let chatTarget = $derived(
+    chatTargetFromIndexes(characterIndex, chatIndex) ?? undefined,
+  );
+  let simpleCharacter = $derived(room ? createSimpleCharacter(room) : null);
+  let userName = $derived(getUserName(chatTarget));
+  let userIcon = $derived(
+    getCharImage(getUserIcon(chatTarget), "css", { thumbnail: true }),
+  );
+  let userLargePortrait = $derived(getUserIconProtrait(chatTarget));
+  let characterIcon = $derived(
+    room ? getCharImage(room.image, "css", { thumbnail: true }) : "",
+  );
   let sessions = $derived(chat?.btwSessions ?? []);
   let activeSession = $derived(
     sessions.find((session) => session.id === chat?.activeBtwSessionId) ??
@@ -43,11 +65,6 @@
   );
   let generating = $derived(
     activeSession ? Boolean(btwRuntime.generating[activeSession.id]) : false,
-  );
-  let failedMessageId = $derived(
-    activeSession && btwRuntime.errors[activeSession.id]
-      ? activeSession.messages.at(-1)?.chatId
-      : undefined,
   );
 
   $effect(() => {
@@ -307,15 +324,32 @@
       <div class="rounded-md border border-dashed border-darkborderc px-2 py-1.5 text-[11px] leading-relaxed text-textcolor2">
         Parent context frozen at {activeSession.baseMessageCount} messages. This thread stays out of the main chat.
       </div>
-      {#each activeSession.messages as message (message.chatId)}
-        <div class="flex {message.role === 'user' ? 'justify-end' : 'justify-start'}">
-          <div
-            class="max-w-[92%] whitespace-pre-wrap break-words rounded-xl px-3 py-2 text-sm {message.role === 'user' ? 'bg-selected text-white' : message.chatId === failedMessageId ? 'border border-red-500/40 bg-red-500/10 text-red-300' : 'border border-darkborderc bg-bgcolor text-textcolor'}"
-          >
-            {message.data || (message.role === "char" && generating ? "…" : "")}
-          </div>
-        </div>
-      {/each}
+      {#if room && chatTarget}
+        {#each activeSession.messages as message, index (message.chatId)}
+          <ChatMessage
+            message={message.data}
+            name={message.role === "user" ? userName : message.name || room.name}
+            largePortrait={message.role === "user"
+              ? userLargePortrait
+              : room.type === "character" && room.largePortrait}
+            isLastMemory={false}
+            img={message.role === "user" ? userIcon : characterIcon}
+            idx={index}
+            scriptIdx={activeSession.baseMessageCount + index}
+            messageGenerationInfo={message.generationInfo}
+            role={message.role}
+            totalLength={activeSession.messages.length}
+            character={simpleCharacter}
+            isComment={message.isComment ?? false}
+            disabled={message.disabled ?? false}
+            hideButtons={true}
+            targetCharacterIndex={characterIndex}
+            targetChatIndex={chatIndex}
+            sourceMessage={message}
+            {chatTarget}
+          />
+        {/each}
+      {/if}
     </div>
 
     <div class="flex shrink-0 items-end gap-2 border-t border-darkborderc p-2">

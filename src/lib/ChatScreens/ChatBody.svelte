@@ -7,6 +7,7 @@ import isEqual from "lodash/isEqual"
     import { addMetadataToElement, getDistance, ParseMarkdown, postTranslationParse, trimMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
     import { getLLMCache, translateHTML } from "../../ts/translator/translator"
     import { resolveCurrentChatAsset } from "src/ts/chatAssetResolver";
+    import type { ChatExecutionTarget } from "src/ts/chatTarget";
     
     import { getFileSrc } from "src/ts/globalApi.svelte";
 
@@ -24,6 +25,7 @@ import isEqual from "lodash/isEqual"
         modelShortName: string
         renderRawStreaming?: boolean
         rawStreamingText?: string
+        chatTarget?: ChatExecutionTarget
     }
 
     let {
@@ -39,6 +41,7 @@ import isEqual from "lodash/isEqual"
         modelShortName = '',
         renderRawStreaming = false,
         rawStreamingText = '',
+        chatTarget,
     }: Props =  $props()
 
     // svelte-ignore non_reactive_update
@@ -82,8 +85,8 @@ import isEqual from "lodash/isEqual"
                             const cache = settingsStore.state.translateBeforeHTMLFormatting
                             ? await getLLMCache(data)
                             : !settingsStore.state.legacyTranslation
-                            ? await getLLMCache(await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition()))
-                            : await getLLMCache(await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition()))
+                            ? await getLLMCache(await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition(), chatTarget))
+                            : await getLLMCache(await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), chatTarget))
                   
                             translateText = cache !== null
                         }
@@ -119,13 +122,13 @@ import isEqual from "lodash/isEqual"
                     translating = true
                     data = await translateHTML(data, false, charArg, chatID, retranslate)
                     translating = false
-                    const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition())
+                    const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), chatTarget)
                     lastParsedQueue = marked
                     lastCharArg = charArg
                     transResult = marked
                 }
                 else if(!settingsStore.state.legacyTranslation){
-                    const marked = await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition())
+                    const marked = await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition(), chatTarget)
                     translating = true
                     const translated = await postTranslationParse(await translateHTML(marked, false, charArg, chatID, retranslate))
                     translating = false
@@ -134,7 +137,7 @@ import isEqual from "lodash/isEqual"
                     transResult = translated
                 }
                 else{
-                    const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition())
+                    const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), chatTarget)
                     translating = true
                     const translated = await translateHTML(marked, false, charArg, chatID, retranslate)
                     translating = false
@@ -150,7 +153,7 @@ import isEqual from "lodash/isEqual"
                 return transResult
             }
             else{
-                const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition())
+                const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), chatTarget)
                 lastParsedQueue = marked
                 lastCharArg = charArg
                 return marked

@@ -2,7 +2,7 @@
     import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, DownloadIcon, FileText, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors } from "@lucide/svelte"
     import { aiLawApplies, changeChatTo, foldChatToMessage, getFileSrc } from "src/ts/globalApi.svelte"
     import { createChatTimelineBranch } from "src/ts/chatBranches"
-    import { requireChatTargetFromIndexes } from "src/ts/chatTarget"
+    import { requireChatTargetFromIndexes, type ChatExecutionTarget } from "src/ts/chatTarget"
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme"
     import { longpress } from "src/ts/gui/longtouch"
     import { getModelInfo } from "src/ts/model/modellist"
@@ -17,7 +17,7 @@
     import { language } from "../../lang"
     import { alertClear, alertConfirm, alertInput, alertNormal, alertRequestData, alertWait } from "../../ts/alert"
     import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
-    import type { MessageGenerationInfo, StreamingDisplayOptimizationMode } from "../../ts/storage/schema";import { HideIconStore, ReloadGUIPointer } from "../../ts/stores.svelte"
+    import type { Message, MessageGenerationInfo, StreamingDisplayOptimizationMode } from "../../ts/storage/schema";import { HideIconStore, ReloadGUIPointer } from "../../ts/stores.svelte"
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
     import ChatBody from './ChatBody.svelte'
     import PopupButton from "../UI/PopupButton.svelte";
@@ -59,6 +59,8 @@
         hideButtons?: boolean;
         targetCharacterIndex?: number;
         targetChatIndex?: number;
+        sourceMessage?: Message;
+        chatTarget?: ChatExecutionTarget;
     }
 
     let {
@@ -88,11 +90,16 @@
         hideButtons = false,
         targetCharacterIndex = characterStore.selectedId,
         targetChatIndex = characterStore.characters[targetCharacterIndex]?.chatPage ?? 0,
+        sourceMessage,
+        chatTarget,
     }: Props = $props();
 
     let msgDisplay = $state('')
     let translated = $state(false)
     let partialEditEnabled = $state(true)
+    let renderedSourceMessage = $derived(
+        sourceMessage ?? characterStore.characters[targetCharacterIndex]?.chats?.[targetChatIndex]?.message?.[idx]
+    )
 
     export function updateStreamingDisplay(state: {
         isOptimizedStreamingMessage: boolean
@@ -207,7 +214,7 @@
         try{
             const cbsConditions:CbsConditions = {
                 firstmsg: firstMessage ?? false,
-                chatRole: characterStore.characters[targetCharacterIndex]?.chats?.[targetChatIndex]?.message?.[idx]?.role ?? null,
+                chatRole: renderedSourceMessage?.role ?? role ?? null,
             }
             return cbsConditions
         }
@@ -224,9 +231,9 @@
             return msgDisplay
         }
         if(!settingsStore.state.legacyTranslation){
-            return await ParseMarkdown(msgDisplay, character, 'pretranslate', scriptIdx, getCbsCondition())
+            return await ParseMarkdown(msgDisplay, character, 'pretranslate', scriptIdx, getCbsCondition(), chatTarget)
         }
-        return await ParseMarkdown(msgDisplay, character, 'notrim', scriptIdx, getCbsCondition())
+        return await ParseMarkdown(msgDisplay, character, 'notrim', scriptIdx, getCbsCondition(), chatTarget)
     }
 
     async function loadTranslationForEdit() {
@@ -245,7 +252,7 @@
     }
 
     function displaya(message:string){
-        msgDisplay = risuChatParser(message, {chara: name, chatID: scriptIdx, rmVar: true, visualize: true, cbsConditions: getCbsCondition()})
+        msgDisplay = risuChatParser(message, {chara: name, chatID: scriptIdx, rmVar: true, visualize: true, cbsConditions: getCbsCondition(), chatTarget})
     }
 
     const setStatusMessage = (message:string, timeout:number = 0)=>{
@@ -287,7 +294,7 @@
     function RenderGUIHtml(html:string){
         try {
             const parser = new DOMParser()
-            const doc = parser.parseFromString(risuChatParser(html ?? '', {chatID: scriptIdx, cbsConditions: getCbsCondition()}), 'text/html')
+            const doc = parser.parseFromString(risuChatParser(html ?? '', {chatID: scriptIdx, cbsConditions: getCbsCondition(), chatTarget}), 'text/html')
             return doc.body   
         } catch (error) {
             const placeholder = document.createElement('div')
@@ -559,7 +566,8 @@
                     bind:translating={translating}
                     bind:retranslate={retranslate}
                     {renderRawStreaming}
-                    {rawStreamingText} />
+                    {rawStreamingText}
+                    {chatTarget} />
             {/key}
             {#if !hideButtons && idx >= 0 && !editMode && !isOptimizedStreamingMessage && partialEditEnabled && (settingsStore.state.enableBlockPartialEdit || settingsStore.state.enableDragPartialEdit)}
                 <PartialEditController
@@ -622,7 +630,7 @@
     {#if settingsStore.state.useChatCopy && !blankMessage}
     <button class="flex items-center hover:text-blue-500 transition-colors button-icon-copy" onclick={async ()=>{
         const copyText = renderRawStreaming
-            ? risuChatParser(rawStreamingText, {chara: name, chatID: scriptIdx, rmVar: true, visualize: true, cbsConditions: getCbsCondition()})
+            ? risuChatParser(rawStreamingText, {chara: name, chatID: scriptIdx, rmVar: true, visualize: true, cbsConditions: getCbsCondition(), chatTarget})
             : msgDisplay
         if(window.navigator.clipboard.write){
             try {
@@ -631,7 +639,7 @@
 
                 const parser = new DOMParser()
                 const doc = parser.parseFromString(
-                    await ParseMarkdown(copyText, characterStore.characters[targetCharacterIndex], 'normal', scriptIdx, getCbsCondition())
+                    await ParseMarkdown(copyText, characterStore.characters[targetCharacterIndex], 'normal', scriptIdx, getCbsCondition(), chatTarget)
                 , 'text/html')
                 
                 doc.querySelectorAll('mark').forEach((el) => {
@@ -1194,7 +1202,7 @@
 {/if}
 <div class="flex max-w-full justify-center risu-chat items-center"
      data-chat-index={idx}
-     data-chat-id={characterStore.characters?.[targetCharacterIndex]?.chats?.[targetChatIndex]?.message?.[idx]?.chatId ?? ''}
+     data-chat-id={renderedSourceMessage?.chatId ?? ''}
      style:border-top={isLastMemory ? `${settingsStore.state.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7)` : ''}
      onclickcapture={handleButtonTriggerWithin}>
     <div class="text-textcolor mt-1 ml-4 mr-4 mb-1 p-2 bg-transparent grow border-t-gray-900 border-opacity/30 border-transparent flexium items-start" style:max-width={getMaxWidth()}>
@@ -1217,7 +1225,7 @@
                         class:rounded-tr-none={role === 'user'}
                     >
                         <div class="text-textcolor">{@render textBox()}</div>
-                        {#if characterStore.characters?.[targetCharacterIndex]?.chats?.[targetChatIndex]?.message?.[idx]?.time}
+                        {#if renderedSourceMessage?.time}
                             <span class="text-xs text-textcolor2/80 mt-1 block" class:text-right={role === 'user'}>
                                 {new Intl.DateTimeFormat(undefined, {
                                     hour: '2-digit',
@@ -1226,7 +1234,7 @@
                                     month: '2-digit',
                                     day: '2-digit',
                                     hour12: false
-                                }).format(characterStore.characters[targetCharacterIndex].chats[targetChatIndex].message[idx].time)}
+                                }).format(renderedSourceMessage.time)}
                             </span>
                         {/if}
                     </div>
@@ -1288,9 +1296,9 @@
             {@render senderIcon({rounded: settingsStore.state.roundIcons})}
             <span class="flex flex-col ml-4 w-full max-w-full min-w-0 text-black">
                 <div class="flexium items-center chat-width">
-                    {#if characterStore.characters[targetCharacterIndex]?.chaId === "§playground" && !blankMessage && characterStore.characters[targetCharacterIndex]?.chats?.[targetChatIndex]?.message?.[idx]}
+                    {#if characterStore.characters[targetCharacterIndex]?.chaId === "§playground" && !blankMessage && renderedSourceMessage}
                         <span class="chat-width text-xl border-darkborderc flex items-center text-textcolor">
-                            <span>{characterStore.characters[targetCharacterIndex].chats[targetChatIndex].message[idx].role === 'char' ? 'Assistant' : 'User'}</span>
+                            <span>{renderedSourceMessage.role === 'char' ? 'Assistant' : 'User'}</span>
                             {#if !hideButtons}
                             <button class="ml-2 text-textcolor2 hover:text-textcolor" onclick={() => {
                                 const char = characterStore.characters[targetCharacterIndex]

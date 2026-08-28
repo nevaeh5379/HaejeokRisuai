@@ -901,6 +901,7 @@ export async function ParseMarkdown(
   mode: "normal" | "back" | "pretranslate" | "notrim" = "normal",
   chatID = -1,
   cbsConditions: CbsConditions = {},
+  chatTarget?: ChatExecutionTarget,
 ) {
   let firstParsed = "";
   const additionalAssetMode = mode === "back" ? "back" : "normal";
@@ -915,7 +916,14 @@ export async function ParseMarkdown(
 
   if (char) {
     data = (
-      await processScriptFull(char, data, "editdisplay", chatID, cbsConditions)
+      await processScriptFull(
+        char,
+        data,
+        "editdisplay",
+        chatID,
+        cbsConditions,
+        chatTarget,
+      )
     ).data;
   }
 
