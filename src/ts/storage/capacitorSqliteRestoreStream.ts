@@ -1,7 +1,8 @@
 import { registerPlugin } from "@capacitor/core";
 import { Buffer } from "buffer";
 
-const TRANSPORT_TEXT_CHUNK = 256 * 1024;
+const TRANSPORT_BASE64_CHUNK = 256 * 1024;
+const TRANSPORT_BYTE_CHUNK = Math.floor((TRANSPORT_BASE64_CHUNK - 1) / 4) * 3;
 const JSON_STRING_SLICE = 16 * 1024;
 
 interface NativeSqliteRestorePlugin {
@@ -34,7 +35,9 @@ function safeSliceEnd(value: string, start: number, requestedEnd: number) {
 }
 
 class ChunkSink {
-  private pending = "";
+  private readonly pending = new Uint8Array(TRANSPORT_BYTE_CHUNK);
+  private pendingLength = 0;
+  private readonly encoder = new TextEncoder();
 
   constructor(
     private readonly id: string,
@@ -42,24 +45,25 @@ class ChunkSink {
   ) {}
 
   async write(value: string) {
+    const bytes = this.encoder.encode(value);
     let offset = 0;
-    while (offset < value.length) {
-      const remaining = TRANSPORT_TEXT_CHUNK - this.pending.length;
-      const end = safeSliceEnd(value, offset, offset + remaining);
-      this.pending += value.slice(offset, end);
-      offset = end;
-      if (this.pending.length >= TRANSPORT_TEXT_CHUNK) await this.flush();
+    while (offset < bytes.length) {
+      const remaining = TRANSPORT_BYTE_CHUNK - this.pendingLength;
+      const copied = Math.min(remaining, bytes.length - offset);
+      this.pending.set(bytes.subarray(offset, offset + copied), this.pendingLength);
+      this.pendingLength += copied;
+      offset += copied;
+      if (this.pendingLength >= TRANSPORT_BYTE_CHUNK) await this.flush();
     }
   }
 
   async flush() {
-    if (!this.pending) return;
-    const bytes = new TextEncoder().encode(this.pending);
-    this.pending = "";
-    await this.plugin.append({
-      id: this.id,
-      data: Buffer.from(bytes).toString("base64"),
-    });
+    if (this.pendingLength === 0) return;
+    const data = Buffer.from(
+      this.pending.subarray(0, this.pendingLength),
+    ).toString("base64");
+    this.pendingLength = 0;
+    await this.plugin.append({ id: this.id, data });
   }
 }
 
@@ -205,4 +209,4 @@ export class CapacitorSqliteRestoreStream {
   }
 }
 
-export const CAPACITOR_SQLITE_RESTORE_TRANSPORT_CHUNK = TRANSPORT_TEXT_CHUNK;
+export const CAPACITOR_SQLITE_RESTORE_TRANSPORT_CHUNK = TRANSPORT_BASE64_CHUNK;
