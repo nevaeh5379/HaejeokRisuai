@@ -127,46 +127,49 @@ function isReservedRootSettingKey(key: string): boolean {
   return (RESERVED_ROOT_SETTING_KEYS as readonly string[]).includes(key);
 }
 
-export function createSqlCommitValidator(
-  options: SqlCommitValidatorOptions,
-): SqlCommitValidator {
-  const { PayloadError, maxIdLength = 4000 } = options ?? {};
-  if (typeof PayloadError !== "function") {
-    throw new TypeError("PayloadError must be an error constructor");
-  }
+// Holds validator configuration and exposes each commit-section parser as a
+// private method, so validation state does not depend on nested function scopes.
+class SqlCommitParser {
+  constructor(
+    private readonly PayloadError: PayloadErrorConstructor,
+    private readonly maxIdLength: number,
+  ) {}
 
   // Reads an optional array field, defaulting omitted fields to an empty array
   // and rejecting values of any other type.
-  function asArray(value: unknown, field: string): unknown[] {
+  private asArray(value: unknown, field: string): unknown[] {
     if (value === undefined) return [];
     if (!Array.isArray(value)) {
-      throw new PayloadError(`${field} must be an array`);
+      throw new this.PayloadError(`${field} must be an array`);
     }
     return value;
   }
 
-  function assertId(value: unknown, field: string): asserts value is string {
+  private assertId(
+    value: unknown,
+    field: string,
+  ): asserts value is string {
     if (
       typeof value !== "string" ||
       value.length === 0 ||
-      value.length > maxIdLength
+      value.length > this.maxIdLength
     ) {
-      throw new PayloadError(
-        `${field} must be a non-empty string of at most ${maxIdLength} characters`,
+      throw new this.PayloadError(
+        `${field} must be a non-empty string of at most ${this.maxIdLength} characters`,
       );
     }
   }
 
-  function assertPosition(
+  private assertPosition(
     value: unknown,
     field: string,
   ): asserts value is number {
     if (!Number.isSafeInteger(value) || (value as number) < 0) {
-      throw new PayloadError(`${field} must be a non-negative integer`);
+      throw new this.PayloadError(`${field} must be a non-negative integer`);
     }
   }
 
-  function assertData(
+  private assertData(
     row: UnknownRecord,
     field: string,
   ): asserts row is UnknownRecord & { data: UnknownRecord } {
@@ -174,20 +177,20 @@ export function createSqlCommitValidator(
       !Object.prototype.hasOwnProperty.call(row, "data") ||
       !isRecord(row.data)
     ) {
-      throw new PayloadError(`${field} must be a JSON object`);
+      throw new this.PayloadError(`${field} must be a JSON object`);
     }
   }
 
   // Parses an array of JSON objects and delegates each validated row to the
   // domain-specific row parser.
-  function parseRows<T>(
+  private parseRows<T>(
     value: unknown,
     field: string,
     parseRow: (row: UnknownRecord, index: number) => T,
   ): T[] {
-    return asArray(value, field).map((row, index) => {
+    return this.asArray(value, field).map((row, index) => {
       if (!isRecord(row)) {
-        throw new PayloadError(`${field}[${index}] must be an object`);
+        throw new this.PayloadError(`${field}[${index}] must be an object`);
       }
       return parseRow(row, index);
     });
@@ -195,13 +198,13 @@ export function createSqlCommitValidator(
 
   // Parses an ID array and optionally applies an additional domain rule after
   // each ID passes the shared string and length checks.
-  function parseIds(
+  private parseIds(
     value: unknown,
     field: string,
     validateId?: (id: string, index: number) => void,
   ): string[] {
-    return asArray(value, field).map((id, index) => {
-      assertId(id, `${field}[${index}]`);
+    return this.asArray(value, field).map((id, index) => {
+      this.assertId(id, `${field}[${index}]`);
       validateId?.(id, index);
       return id;
     });
@@ -209,13 +212,13 @@ export function createSqlCommitValidator(
 
   // Parses setting upserts into { key, value } rows and optionally applies a
   // section-specific key rule.
-  function parseSettingUpserts(
+  private parseSettingUpserts(
     value: unknown,
     field: string,
     validateKey?: (key: string, index: number) => void,
   ): SqlSettingUpsert[] {
-    return parseRows(value, field, (row, index) => {
-      assertId(row.key, `${field}[${index}].key`);
+    return this.parseRows(value, field, (row, index) => {
+      this.assertId(row.key, `${field}[${index}].key`);
       validateKey?.(row.key, index);
       return { key: row.key, value: row.value };
     });
@@ -223,36 +226,36 @@ export function createSqlCommitValidator(
 
   // Parses character upserts directly and chat/message upserts with their
   // characterId or chatId owner field.
-  function parseEntityRows(value: unknown, field: string): SqlCharacterUpsert[];
-  function parseEntityRows(
+  private parseEntityRows(value: unknown, field: string): SqlCharacterUpsert[];
+  private parseEntityRows(
     value: unknown,
     field: string,
     ownerKey: "characterId",
   ): SqlChatUpsert[];
-  function parseEntityRows(
+  private parseEntityRows(
     value: unknown,
     field: string,
     ownerKey: "chatId",
   ): SqlMessageUpsert[];
-  function parseEntityRows(
+  private parseEntityRows(
     value: unknown,
     field: string,
     ownerKey?: OwnerKey,
   ): Array<SqlCharacterUpsert | SqlChatUpsert | SqlMessageUpsert> {
-    return parseRows(value, field, (row, index) => {
+    return this.parseRows(value, field, (row, index) => {
       const rowField = `${field}[${index}]`;
-      assertId(row.id, `${rowField}.id`);
+      this.assertId(row.id, `${rowField}.id`);
 
       if (ownerKey === undefined) {
-        assertPosition(row.position, `${rowField}.position`);
-        assertData(row, `${rowField}.data`);
+        this.assertPosition(row.position, `${rowField}.position`);
+        this.assertData(row, `${rowField}.data`);
         return { id: row.id, position: row.position, data: row.data };
       }
 
       const ownerId = row[ownerKey];
-      assertId(ownerId, `${rowField}.${ownerKey}`);
-      assertPosition(row.position, `${rowField}.position`);
-      assertData(row, `${rowField}.data`);
+      this.assertId(ownerId, `${rowField}.${ownerKey}`);
+      this.assertPosition(row.position, `${rowField}.position`);
+      this.assertData(row, `${rowField}.data`);
       if (ownerKey === "characterId") {
         return {
           id: row.id,
@@ -272,27 +275,27 @@ export function createSqlCommitValidator(
 
   // Preserves undefined for optional deletion collections while reusing the
   // standard ID-array parser when the field is present.
-  function parseOptionalIds(
+  private parseOptionalIds(
     value: unknown,
     field: string,
   ): string[] | undefined {
     if (value === undefined) return undefined;
-    return parseIds(value, field);
+    return this.parseIds(value, field);
   }
 
   // Parses owner-to-child-ID manifests used to synchronize chat and message
   // membership and explicit message deletions.
-  function parseManifests<K extends OwnerKey>(
+  private parseManifests<K extends OwnerKey>(
     value: unknown,
     field: string,
     ownerKey: K,
   ): Array<Record<K, string> & { ids: string[] }> {
-    return parseRows(value, field, (item, index) => {
+    return this.parseRows(value, field, (item, index) => {
       const itemField = `${field}[${index}]`;
       const idsField = `${itemField}.ids`;
       const ownerId = item[ownerKey];
-      assertId(ownerId, `${itemField}.${ownerKey}`);
-      const ids = parseIds(item.ids, idsField);
+      this.assertId(ownerId, `${itemField}.${ownerKey}`);
+      const ids = this.parseIds(item.ids, idsField);
       return { [ownerKey]: ownerId, ids } as Record<K, string> & {
         ids: string[];
       };
@@ -301,83 +304,83 @@ export function createSqlCommitValidator(
 
   // Rejects non-object request bodies and narrows the top-level payload to a
   // record for the section parsers below.
-  function parsePayload(rawPayload: unknown): UnknownRecord {
+  private parsePayload(rawPayload: unknown): UnknownRecord {
     if (!isRecord(rawPayload))
-      throw new PayloadError("Sync payload must be an object");
+      throw new this.PayloadError("Sync payload must be an object");
 
     return rawPayload;
   }
 
-  function parseBaseRevision(value: unknown): number {
-    assertPosition(value, "baseRevision");
+  private parseBaseRevision(value: unknown): number {
+    this.assertPosition(value, "baseRevision");
     return value;
   }
 
   // Prevents preset-owned settings from being written or deleted through the
   // generic root-settings section.
-  function rejectReservedRootUpsert(key: string): void {
+  private rejectReservedRootUpsert(key: string): void {
     if (isReservedRootSettingKey(key))
-      throw new PayloadError(`${key} must be written through presets`);
+      throw new this.PayloadError(`${key} must be written through presets`);
   }
 
-  function rejectReservedRootDelete(key: string): void {
+  private rejectReservedRootDelete(key: string): void {
     if (isReservedRootSettingKey(key))
-      throw new PayloadError(`${key} is not a root setting`);
+      throw new this.PayloadError(`${key} is not a root setting`);
   }
 
   // Parses generic root-setting upserts and deletes, applying the reserved-key
   // policy to both operations.
-  function parseRoot(value: unknown): {
+  private parseRoot(value: unknown): {
     rootUpserts: SqlSettingUpsert[];
     rootDeletes: string[];
   } {
     if (value === undefined) return { rootUpserts: [], rootDeletes: [] };
 
-    if (!isRecord(value)) throw new PayloadError("root must be an object");
+    if (!isRecord(value)) throw new this.PayloadError("root must be an object");
 
-    const rootUpserts = parseSettingUpserts(
+    const rootUpserts = this.parseSettingUpserts(
       value.upserts,
       "root.upserts",
-      rejectReservedRootUpsert,
+      (key) => this.rejectReservedRootUpsert(key),
     );
-    const rootDeletes = parseIds(
+    const rootDeletes = this.parseIds(
       value.deletes,
       "root.deletes",
-      rejectReservedRootDelete,
+      (key) => this.rejectReservedRootDelete(key),
     );
     return { rootUpserts, rootDeletes };
   }
 
   // Parses preset upserts, deletes, ordering, and the active preset identifier.
-  function parsePresets(value: unknown): NormalizedSqlCommit["presets"] {
+  private parsePresets(value: unknown): NormalizedSqlCommit["presets"] {
     if (value === undefined) return undefined;
     if (!isRecord(value)) {
-      throw new PayloadError("presets must be an object");
+      throw new this.PayloadError("presets must be an object");
     }
-    const upserts = parseRows(
+    const upserts = this.parseRows(
       value.upserts,
       "presets.upserts",
       (item, index) => {
-        assertId(item.id, `presets.upserts[${index}].id`);
+        this.assertId(item.id, `presets.upserts[${index}].id`);
 
         if (item.position !== undefined)
-          assertPosition(item.position, `presets.upserts[${index}].position`);
+          this.assertPosition(item.position, `presets.upserts[${index}].position`);
 
         if (!isRecord(item.data))
-          throw new PayloadError(
+          throw new this.PayloadError(
             `presets.upserts[${index}].data must be an object`,
           );
 
         return { id: item.id, position: item.position, data: item.data };
       },
     );
-    const deletes = parseIds(value.deletes, "presets.deletes");
+    const deletes = this.parseIds(value.deletes, "presets.deletes");
     const order =
       value.order === undefined
         ? undefined
-        : parseIds(value.order, "presets.order");
+        : this.parseIds(value.order, "presets.order");
     if (value.activeId !== undefined) {
-      assertId(value.activeId, "presets.activeId");
+      this.assertId(value.activeId, "presets.activeId");
     }
     return {
       upserts,
@@ -388,7 +391,7 @@ export function createSqlCommitValidator(
   }
 
   // Parses plugin-storage upserts, deletes, and the optional clear operation.
-  function parsePluginStorage(value: unknown): {
+  private parsePluginStorage(value: unknown): {
     pluginStorageUpserts: SqlSettingUpsert[];
     pluginStorageDeletes: string[];
     pluginStorageClear: boolean;
@@ -401,13 +404,13 @@ export function createSqlCommitValidator(
       };
     }
     if (!isRecord(value)) {
-      throw new PayloadError("pluginStorage must be an object");
+      throw new this.PayloadError("pluginStorage must be an object");
     }
-    const pluginStorageUpserts = parseSettingUpserts(
+    const pluginStorageUpserts = this.parseSettingUpserts(
       value.upserts,
       "pluginStorage.upserts",
     );
-    const pluginStorageDeletes = parseIds(
+    const pluginStorageDeletes = this.parseIds(
       value.deletes,
       "pluginStorage.deletes",
     );
@@ -418,15 +421,15 @@ export function createSqlCommitValidator(
     };
   }
 
-  function parseCharacterTouches(value: unknown): SqlCharacterTouch[] {
-    return parseRows(value, "characterTouches", (row, index) => {
+  private parseCharacterTouches(value: unknown): SqlCharacterTouch[] {
+    return this.parseRows(value, "characterTouches", (row, index) => {
       const rowField = `characterTouches[${index}]`;
-      assertId(row.id, `${rowField}.id`);
+      this.assertId(row.id, `${rowField}.id`);
       if (
         !Number.isSafeInteger(row.lastInteraction) ||
         (row.lastInteraction as number) < 0
       ) {
-        throw new PayloadError(
+        throw new this.PayloadError(
           `${rowField}.lastInteraction must be a non-negative safe integer`,
         );
       }
@@ -434,13 +437,13 @@ export function createSqlCommitValidator(
     });
   }
 
-  function parseAction(value: unknown): string | undefined {
+  private parseAction(value: unknown): string | undefined {
     return typeof value === "string" && value.length > 0 && value.length <= 64
       ? value
       : undefined;
   }
 
-  function parseEntities(
+  private parseEntities(
     payload: UnknownRecord,
   ): Pick<
     NormalizedSqlCommit,
@@ -457,16 +460,22 @@ export function createSqlCommitValidator(
   > {
     // Parses every character, chat, message, manifest, and explicit deletion
     // collection into the normalized entity portion of the commit.
-    const characters = parseEntityRows(payload.characters, "characters");
-    const characterTouches = parseCharacterTouches(payload.characterTouches);
-    const chats = parseEntityRows(payload.chats, "chats", "characterId");
-    const messages = parseEntityRows(payload.messages, "messages", "chatId");
-    const chatManifests = parseManifests(
+    const characters = this.parseEntityRows(payload.characters, "characters");
+    const characterTouches = this.parseCharacterTouches(
+      payload.characterTouches,
+    );
+    const chats = this.parseEntityRows(payload.chats, "chats", "characterId");
+    const messages = this.parseEntityRows(
+      payload.messages,
+      "messages",
+      "chatId",
+    );
+    const chatManifests = this.parseManifests(
       payload.chatManifests,
       "chatManifests",
       "characterId",
     );
-    const messageManifests = parseManifests(
+    const messageManifests = this.parseManifests(
       payload.messageManifests,
       "messageManifests",
       "chatId",
@@ -474,10 +483,17 @@ export function createSqlCommitValidator(
     const messageDeletes =
       payload.messageDeletes === undefined
         ? undefined
-        : parseManifests(payload.messageDeletes, "messageDeletes", "chatId");
-    const chatDeletes = parseOptionalIds(payload.chatDeletes, "chatDeletes");
-    const characterIds = parseOptionalIds(payload.characterIds, "characterIds");
-    const characterDeletes = parseOptionalIds(
+        : this.parseManifests(
+            payload.messageDeletes,
+            "messageDeletes",
+            "chatId",
+          );
+    const chatDeletes = this.parseOptionalIds(payload.chatDeletes, "chatDeletes");
+    const characterIds = this.parseOptionalIds(
+      payload.characterIds,
+      "characterIds",
+    );
+    const characterDeletes = this.parseOptionalIds(
       payload.characterDeletes,
       "characterDeletes",
     );
@@ -498,22 +514,34 @@ export function createSqlCommitValidator(
 
   // Parses each commit section in validation order and assembles the normalized
   // payload returned to the storage backend.
-  return function validateSqlCommit(rawPayload: unknown): NormalizedSqlCommit {
-    const payload = parsePayload(rawPayload);
-    const baseRevision = parseBaseRevision(payload.baseRevision);
-    const root = parseRoot(payload.root);
-    const presets = parsePresets(payload.presets);
-    const pluginStorage = parsePluginStorage(payload.pluginStorage);
-    const entities = parseEntities(payload);
+  public validate(rawPayload: unknown): NormalizedSqlCommit {
+    const payload = this.parsePayload(rawPayload);
+    const baseRevision = this.parseBaseRevision(payload.baseRevision);
+    const root = this.parseRoot(payload.root);
+    const presets = this.parsePresets(payload.presets);
+    const pluginStorage = this.parsePluginStorage(payload.pluginStorage);
+    const entities = this.parseEntities(payload);
 
     return {
       replaceAll: Boolean(payload.replaceAll),
-      action: parseAction(payload.action),
+      action: this.parseAction(payload.action),
       baseRevision,
       ...root,
       ...pluginStorage,
       presets,
       ...entities,
     };
-  };
+  }
+}
+
+export function createSqlCommitValidator(
+  options: SqlCommitValidatorOptions,
+): SqlCommitValidator {
+  const { PayloadError, maxIdLength = 4000 } = options ?? {};
+  if (typeof PayloadError !== "function") {
+    throw new TypeError("PayloadError must be an error constructor");
+  }
+
+  const parser = new SqlCommitParser(PayloadError, maxIdLength);
+  return parser.validate.bind(parser);
 }
