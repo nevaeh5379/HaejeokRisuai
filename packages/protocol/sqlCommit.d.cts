@@ -111,6 +111,10 @@ export interface NormalizedSqlCommit {
     characterIds?: string[];
     characterDeletes?: string[];
 }
+/**
+ * Validates a raw SQL commit body and returns the normalized commit consumed by
+ * storage backends. The raw body is unknown until these runtime checks pass.
+ */
 export type SqlCommitValidator = (rawPayload: unknown) => NormalizedSqlCommit;
 export declare const RESERVED_ROOT_SETTING_KEYS: readonly ["botPresets", "botPresetsId"];
 export declare function createSqlCommitValidator(options: SqlCommitValidatorOptions): SqlCommitValidator;

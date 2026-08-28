@@ -17,6 +17,8 @@ function createSqlCommitValidator(options) {
     if (typeof PayloadError !== "function") {
         throw new TypeError("PayloadError must be an error constructor");
     }
+    // Reads an optional array field, defaulting omitted fields to an empty array
+    // and rejecting values of any other type.
     function asArray(value, field) {
         if (value === undefined)
             return [];
@@ -43,6 +45,8 @@ function createSqlCommitValidator(options) {
             throw new PayloadError(`${field} must be a JSON object`);
         }
     }
+    // Parses an array of JSON objects and delegates each validated row to the
+    // domain-specific row parser.
     function parseRows(value, field, parseRow) {
         return asArray(value, field).map((row, index) => {
             if (!isRecord(row)) {
@@ -51,6 +55,8 @@ function createSqlCommitValidator(options) {
             return parseRow(row, index);
         });
     }
+    // Parses an ID array and optionally applies an additional domain rule after
+    // each ID passes the shared string and length checks.
     function parseIds(value, field, validateId) {
         return asArray(value, field).map((id, index) => {
             assertId(id, `${field}[${index}]`);
@@ -58,6 +64,8 @@ function createSqlCommitValidator(options) {
             return id;
         });
     }
+    // Parses setting upserts into { key, value } rows and optionally applies a
+    // section-specific key rule.
     function parseSettingUpserts(value, field, validateKey) {
         return parseRows(value, field, (row, index) => {
             assertId(row.key, `${field}[${index}].key`);
@@ -94,11 +102,15 @@ function createSqlCommitValidator(options) {
             };
         });
     }
+    // Preserves undefined for optional deletion collections while reusing the
+    // standard ID-array parser when the field is present.
     function parseOptionalIds(value, field) {
         if (value === undefined)
             return undefined;
         return parseIds(value, field);
     }
+    // Parses owner-to-child-ID manifests used to synchronize chat and message
+    // membership and explicit message deletions.
     function parseManifests(value, field, ownerKey) {
         return parseRows(value, field, (item, index) => {
             const itemField = `${field}[${index}]`;
@@ -109,6 +121,8 @@ function createSqlCommitValidator(options) {
             return { [ownerKey]: ownerId, ids };
         });
     }
+    // Rejects non-object request bodies and narrows the top-level payload to a
+    // record for the section parsers below.
     function parsePayload(rawPayload) {
         if (!isRecord(rawPayload))
             throw new PayloadError("Sync payload must be an object");
@@ -118,16 +132,18 @@ function createSqlCommitValidator(options) {
         assertPosition(value, "baseRevision");
         return value;
     }
+    // Prevents preset-owned settings from being written or deleted through the
+    // generic root-settings section.
     function rejectReservedRootUpsert(key) {
-        if (isReservedRootSettingKey(key)) {
+        if (isReservedRootSettingKey(key))
             throw new PayloadError(`${key} must be written through presets`);
-        }
     }
     function rejectReservedRootDelete(key) {
-        if (isReservedRootSettingKey(key)) {
+        if (isReservedRootSettingKey(key))
             throw new PayloadError(`${key} is not a root setting`);
-        }
     }
+    // Parses generic root-setting upserts and deletes, applying the reserved-key
+    // policy to both operations.
     function parseRoot(value) {
         if (value === undefined)
             return { rootUpserts: [], rootDeletes: [] };
@@ -137,6 +153,7 @@ function createSqlCommitValidator(options) {
         const rootDeletes = parseIds(value.deletes, "root.deletes", rejectReservedRootDelete);
         return { rootUpserts, rootDeletes };
     }
+    // Parses preset upserts, deletes, ordering, and the active preset identifier.
     function parsePresets(value) {
         if (value === undefined)
             return undefined;
@@ -145,12 +162,10 @@ function createSqlCommitValidator(options) {
         }
         const upserts = parseRows(value.upserts, "presets.upserts", (item, index) => {
             assertId(item.id, `presets.upserts[${index}].id`);
-            if (item.position !== undefined) {
+            if (item.position !== undefined)
                 assertPosition(item.position, `presets.upserts[${index}].position`);
-            }
-            if (!isRecord(item.data)) {
+            if (!isRecord(item.data))
                 throw new PayloadError(`presets.upserts[${index}].data must be an object`);
-            }
             return { id: item.id, position: item.position, data: item.data };
         });
         const deletes = parseIds(value.deletes, "presets.deletes");
@@ -167,6 +182,7 @@ function createSqlCommitValidator(options) {
             activeId: value.activeId,
         };
     }
+    // Parses plugin-storage upserts, deletes, and the optional clear operation.
     function parsePluginStorage(value) {
         if (value === undefined) {
             return {
@@ -203,6 +219,8 @@ function createSqlCommitValidator(options) {
             : undefined;
     }
     function parseEntities(payload) {
+        // Parses every character, chat, message, manifest, and explicit deletion
+        // collection into the normalized entity portion of the commit.
         const characters = parseEntityRows(payload.characters, "characters");
         const characterTouches = parseCharacterTouches(payload.characterTouches);
         const chats = parseEntityRows(payload.chats, "chats", "characterId");
@@ -228,6 +246,8 @@ function createSqlCommitValidator(options) {
             characterDeletes,
         };
     }
+    // Parses each commit section in validation order and assembles the normalized
+    // payload returned to the storage backend.
     return function validateSqlCommit(rawPayload) {
         const payload = parsePayload(rawPayload);
         const baseRevision = parseBaseRevision(payload.baseRevision);

@@ -108,6 +108,10 @@ export interface NormalizedSqlCommit {
   characterDeletes?: string[];
 }
 
+/**
+ * Validates a raw SQL commit body and returns the normalized commit consumed by
+ * storage backends. The raw body is unknown until these runtime checks pass.
+ */
 export type SqlCommitValidator = (rawPayload: unknown) => NormalizedSqlCommit;
 
 export const RESERVED_ROOT_SETTING_KEYS = Object.freeze([
@@ -131,6 +135,8 @@ export function createSqlCommitValidator(
     throw new TypeError("PayloadError must be an error constructor");
   }
 
+  // Reads an optional array field, defaulting omitted fields to an empty array
+  // and rejecting values of any other type.
   function asArray(value: unknown, field: string): unknown[] {
     if (value === undefined) return [];
     if (!Array.isArray(value)) {
@@ -172,6 +178,8 @@ export function createSqlCommitValidator(
     }
   }
 
+  // Parses an array of JSON objects and delegates each validated row to the
+  // domain-specific row parser.
   function parseRows<T>(
     value: unknown,
     field: string,
@@ -185,6 +193,8 @@ export function createSqlCommitValidator(
     });
   }
 
+  // Parses an ID array and optionally applies an additional domain rule after
+  // each ID passes the shared string and length checks.
   function parseIds(
     value: unknown,
     field: string,
@@ -197,6 +207,8 @@ export function createSqlCommitValidator(
     });
   }
 
+  // Parses setting upserts into { key, value } rows and optionally applies a
+  // section-specific key rule.
   function parseSettingUpserts(
     value: unknown,
     field: string,
@@ -209,6 +221,8 @@ export function createSqlCommitValidator(
     });
   }
 
+  // Parses character upserts directly and chat/message upserts with their
+  // characterId or chatId owner field.
   function parseEntityRows(value: unknown, field: string): SqlCharacterUpsert[];
   function parseEntityRows(
     value: unknown,
@@ -256,6 +270,8 @@ export function createSqlCommitValidator(
     });
   }
 
+  // Preserves undefined for optional deletion collections while reusing the
+  // standard ID-array parser when the field is present.
   function parseOptionalIds(
     value: unknown,
     field: string,
@@ -264,6 +280,8 @@ export function createSqlCommitValidator(
     return parseIds(value, field);
   }
 
+  // Parses owner-to-child-ID manifests used to synchronize chat and message
+  // membership and explicit message deletions.
   function parseManifests<K extends OwnerKey>(
     value: unknown,
     field: string,
@@ -281,6 +299,8 @@ export function createSqlCommitValidator(
     });
   }
 
+  // Rejects non-object request bodies and narrows the top-level payload to a
+  // record for the section parsers below.
   function parsePayload(rawPayload: unknown): UnknownRecord {
     if (!isRecord(rawPayload))
       throw new PayloadError("Sync payload must be an object");
@@ -293,6 +313,8 @@ export function createSqlCommitValidator(
     return value;
   }
 
+  // Prevents preset-owned settings from being written or deleted through the
+  // generic root-settings section.
   function rejectReservedRootUpsert(key: string): void {
     if (isReservedRootSettingKey(key))
       throw new PayloadError(`${key} must be written through presets`);
@@ -303,6 +325,8 @@ export function createSqlCommitValidator(
       throw new PayloadError(`${key} is not a root setting`);
   }
 
+  // Parses generic root-setting upserts and deletes, applying the reserved-key
+  // policy to both operations.
   function parseRoot(value: unknown): {
     rootUpserts: SqlSettingUpsert[];
     rootDeletes: string[];
@@ -324,6 +348,7 @@ export function createSqlCommitValidator(
     return { rootUpserts, rootDeletes };
   }
 
+  // Parses preset upserts, deletes, ordering, and the active preset identifier.
   function parsePresets(value: unknown): NormalizedSqlCommit["presets"] {
     if (value === undefined) return undefined;
     if (!isRecord(value)) {
@@ -362,6 +387,7 @@ export function createSqlCommitValidator(
     };
   }
 
+  // Parses plugin-storage upserts, deletes, and the optional clear operation.
   function parsePluginStorage(value: unknown): {
     pluginStorageUpserts: SqlSettingUpsert[];
     pluginStorageDeletes: string[];
@@ -429,6 +455,8 @@ export function createSqlCommitValidator(
     | "messageManifests"
     | "messageDeletes"
   > {
+    // Parses every character, chat, message, manifest, and explicit deletion
+    // collection into the normalized entity portion of the commit.
     const characters = parseEntityRows(payload.characters, "characters");
     const characterTouches = parseCharacterTouches(payload.characterTouches);
     const chats = parseEntityRows(payload.chats, "chats", "characterId");
@@ -468,6 +496,8 @@ export function createSqlCommitValidator(
     };
   }
 
+  // Parses each commit section in validation order and assembles the normalized
+  // payload returned to the storage backend.
   return function validateSqlCommit(rawPayload: unknown): NormalizedSqlCommit {
     const payload = parsePayload(rawPayload);
     const baseRevision = parseBaseRevision(payload.baseRevision);
