@@ -366,6 +366,43 @@ describe("messageStore", () => {
     ]);
   });
 
+  it("assigns unique message IDs when persisting a chat with duplicated IDs", async () => {
+    const character = characterStore.characters[0];
+    const duplicatedChat = {
+      id: "chat-clone",
+      name: "Chat 1 (Copy)",
+      note: "",
+      localLore: [],
+      message: [
+        { chatId: "duplicate-message", role: "user", data: "first" },
+        { chatId: "duplicate-message", role: "char", data: "second" },
+        { role: "user", data: "missing id" },
+      ],
+      messagesFullyLoaded: true,
+    } as any;
+    character.chats.unshift(duplicatedChat);
+
+    await messageStore.persistNewChat(
+      character.chaId,
+      duplicatedChat.id,
+      duplicatedChat.message,
+    );
+
+    const commit = mockStorage.commits.at(-1)!;
+    const ids = commit.messages.map((message) => message.id);
+    expect(commit.messages.map((message) => message.data)).toEqual([
+      { role: "user", data: "first" },
+      { role: "char", data: "second" },
+      { role: "user", data: "missing id" },
+    ]);
+    expect(ids[0]).toBe("duplicate-message");
+    expect(new Set(ids).size).toBe(3);
+    expect(duplicatedChat.message.map((m: Message) => m.chatId)).toEqual(ids);
+    expect(commit.messageManifests).toEqual([
+      { chatId: "chat-clone", ids },
+    ]);
+  });
+
   it("retains a message commit after a transient storage failure", async () => {
     const originalCommit = mockStorage.commit.bind(mockStorage);
     vi.spyOn(mockStorage, "commit")

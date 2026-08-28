@@ -19,6 +19,7 @@
     import Toggles from "./Toggles.svelte";
     import { releaseInactiveChatMessages } from "src/ts/stores/domain/messageStore.svelte";
     import { chatTabsStore } from "src/ts/chatTabs.svelte";
+    import { duplicateChat } from "src/ts/characters";
 
     interface Props {
         chara: character|groupChat;
@@ -149,17 +150,6 @@
         chara.chatPage = index
         ReloadGUIPointer.set(Math.random())
         releaseInactiveChatMessages(chara.chats[index]?.id)
-    }
-
-    const createChatCopyName = (originalName: string) => {
-        const name = originalName.replaceAll(/\(((Copy|Branch)( \d+)?)\)$/g, '').trim()
-        let copyIndex = 1
-        let newName = `${name} (Copy)`
-        while (chara.chats.some((chat) => chat.name === newName)) {
-            copyIndex += 1
-            newName = `${name} (Copy ${copyIndex})`
-        }
-        return newName
     }
 
     const createStb = async () => {
@@ -399,22 +389,7 @@
                                 switch(option){
                                     case 0:{
                                         const chatIdx = chara.chats.indexOf(chat)
-                                        const { preLoadChat } = await import('src/ts/process/coldstorage.svelte')
-                                        await preLoadChat($selectedCharID, chatIdx, { full: true })
-                                        const newChat = $state.snapshot(chara.chats[chatIdx])
-                                        newChat.name = createChatCopyName(newChat.name)
-                                        newChat.id = v4()
-                                        newChat.branch = undefined
-                                        newChat.branchState = undefined
-                                        for (const msg of newChat.message ?? []) {
-                                            msg.chatId = v4()
-                                        }
-                                        chara.chats.unshift(newChat)
-                                        if (newChat.id) {
-                                            await messageStore.persistNewChat(chara.chaId, newChat.id, newChat.message ?? [])
-                                        }
-                                        changeChatTo(0)
-                                        chara.chats = chara.chats
+                                        await duplicateChat($selectedCharID, chatIdx, { selectNew: true })
                                         break
                                     }
                                     case 1:{
@@ -529,22 +504,7 @@
                         const option = await alertChatOptions()
                         switch(option){
                             case 0:{
-                                const { preLoadChat } = await import('src/ts/process/coldstorage.svelte')
-                                await preLoadChat($selectedCharID, i, { full: true })
-                                const newChat = $state.snapshot(chara.chats[i])
-                                newChat.name = createChatCopyName(newChat.name)
-                                newChat.id = v4()
-                                newChat.branch = undefined
-                                newChat.branchState = undefined
-                                for (const msg of newChat.message ?? []) {
-                                    msg.chatId = v4()
-                                }
-                                chara.chats.unshift(newChat)
-                                if (newChat.id) {
-                                    await messageStore.persistNewChat(chara.chaId, newChat.id, newChat.message ?? [])
-                                }
-                                changeChatTo(0)
-                                chara.chats = chara.chats
+                                await duplicateChat($selectedCharID, i, { selectNew: true })
                                 break
                             }
                             case 1:{

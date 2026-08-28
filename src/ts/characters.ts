@@ -3,6 +3,7 @@ import { get, writable } from "svelte/store";
 import { saveImage } from "./storage/assetPersistence";
 import type { character, Chat, loreBook } from "./storage/schema";
 import { defaultSdDataFunc } from "./storage/presetDefaults";
+import { safeStructuredClone } from "./polyfill";
 
 import {
   alertAddCharacter,
@@ -29,12 +30,14 @@ import {
   OpenRealmStore,
   pendingCharID,
   selectedCharID,
+  ReloadGUIPointer,
 } from "./stores.svelte";
 import { characterStore } from "./stores/domain/characterStore.svelte";
 import {
   AppendableBuffer,
   changeChatTo,
   checkCharOrder,
+  createChatCopyName,
   downloadFile,
   forageStorage,
   getFileSrc,
@@ -1116,4 +1119,76 @@ export async function changeChar(
       }
     })
     .catch((error) => console.error("Failed to load character modules", error));
+}
+
+export async function duplicateChat(
+  characterIndex: number,
+  chatIndex: number,
+  options: { selectNew?: boolean; insertIndex?: number } = {},
+): Promise<Chat | null> {
+  const char = characterStore.characters[characterIndex];
+  if (!char || !char.chats || !char.chaId) return null;
+  const sourceChat = char.chats[chatIndex];
+  if (!sourceChat) return null;
+
+  // Duplicating a lazily hydrated chat without preloading its messages would
+  // clone an empty shell and silently drop the whole conversation history.
+  await preLoadChat(characterIndex, chatIndex, { full: true });
+
+  const newChat: Chat = safeStructuredClone(char.chats[chatIndex]);
+  newChat.id = uuidv4();
+  newChat.name = createChatCopyName(sourceChat.name || "Chat", "Copy", char.chats);
+  newChat.branch = undefined;
+  newChat.branchState = undefined;
+
+  const idMap = new Map<string, string>();
+  const messages = newChat.message ?? [];
+  for (const msg of messages) {
+    const oldId = msg.chatId;
+    const newId = uuidv4();
+    msg.chatId = newId;
+    if (oldId) idMap.set(oldId, newId);
+  }
+
+  if (Array.isArray(newChat.bookmarks)) {
+    newChat.bookmarks = newChat.bookmarks
+      .map((id) => idMap.get(id))
+      .filter((id): id is string => typeof id === "string");
+  }
+  if (newChat.bookmarkNames && typeof newChat.bookmarkNames === "object") {
+    const nextBookmarkNames: { [key: string]: string } = {};
+    for (const [oldId, name] of Object.entries(newChat.bookmarkNames)) {
+      const nextId = idMap.get(oldId);
+      if (nextId) nextBookmarkNames[nextId] = name;
+    }
+    newChat.bookmarkNames = nextBookmarkNames;
+  }
+
+  newChat.messagesLoaded = true;
+  newChat.messagesFullyLoaded = true;
+  newChat.messageOffset = 0;
+  newChat.messageTotal = messages.length;
+  newChat.detailsLoaded = true;
+
+  const selectNew = options.selectNew ?? false;
+  const insertIndex = options.insertIndex ?? (selectNew ? 0 : chatIndex + 1);
+
+  if (selectNew) {
+    char.chats.unshift(newChat);
+    if (newChat.id) {
+      await messageStore.persistNewChat(char.chaId, newChat.id, newChat.message ?? []);
+    }
+    changeChatTo(0);
+  } else {
+    char.chats.splice(insertIndex, 0, newChat);
+    if (insertIndex <= (char.chatPage ?? 0)) {
+      char.chatPage = (char.chatPage ?? 0) + 1;
+    }
+    if (newChat.id) {
+      await messageStore.persistNewChat(char.chaId, newChat.id, newChat.message ?? []);
+    }
+    ReloadGUIPointer.set(Math.random());
+  }
+
+  return newChat;
 }
