@@ -28,6 +28,52 @@ Haejeok RisuAI is currently an actively developed independent build. The primary
 - No built-in Risu Account login or account synchronization
 - RisuRealm is treated as an external upstream service and keeps its own authentication, terms, and content rules
 
+## Q&A
+
+Q. Does it run on the Galaxy S2?
+
+A. No
+
+Q. Does it run on Power Mac?
+
+A. No
+
+Q. Does it run on the Samsung Omnia series?
+
+A. No
+
+Q. Does it run on the LG Optimus series?
+
+A. No
+
+Q. Does it run on the iPhone 3GS?
+
+A. No
+
+Q. Does it run on Windows 98/95?
+
+A. No
+
+Q. Does it run on the Intel 80486?
+
+A. No
+
+Q. Does it run on the Compaq Deskpro?
+
+A. No
+
+Q. Does it run on the Tandy 1000?
+
+A. No
+
+Q. Does it run on the Anycall series?
+
+A. No
+
+Q. Does it run on the Intel 4004?
+
+A. No
+
 ## Core features
 
 Haejeok RisuAI inherits the broad feature set of RisuAI, including:
