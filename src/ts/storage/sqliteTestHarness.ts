@@ -313,60 +313,72 @@ export function makeTauriStorage(database: DatabaseSync): TauriSqliteStorage {
 // ── Capacitor harness ────────────────────────────────────────────────
 
 /**
- * Mocks @capacitor-community/sqlite's SQLiteDBConnection over a real
- * node:sqlite database.
+ * Mocks the RisuAI NativeSqlite Capacitor plugin over a real node:sqlite
+ * database while preserving the production transaction/session contract.
  */
 export function makeCapacitorStorage(
   database: DatabaseSync,
 ): CapacitorSqliteStorage {
   const log = new QueryLog();
   const db = new NodeSqliteDatabase(database, log);
-  let transactionActive = false;
+  let transactionId: string | null = null;
 
   const bridge = {
-    query: async (sql: string, bind: unknown[] = []) => {
-      const rows = db.selectRows(sql, bind);
-      return { values: rows };
-    },
-    run: async (sql: string, bind: unknown[] = []) => {
-      db.run(sql, bind);
-      return { changes: { changes: 0 } };
-    },
-    execute: async (sql: string) => {
-      db.run(sql);
-      return { changes: { changes: 0 } };
-    },
-    // Mirrors the real plugin's executeSet: one bridge call per statement
-    // list, each entry { statement, values }.
-    executeSet: async (set: { statement: string; values?: unknown[] }[]) => {
-      for (const entry of set) {
-        db.run(entry.statement, entry.values ?? []);
-      }
-      return { changes: { changes: 0 } };
-    },
-    beginTransaction: async () => {
-      if (transactionActive) {
-        throw new Error("Transaction already active");
-      }
-      transactionActive = true;
+    open: async () => {},
+    close: async () => {},
+    query: async ({ sql, bind = [] }: { sql: string; bind?: unknown[] }) => ({
+      values: db.selectRows(sql, bind),
+    }),
+    beginTransaction: async ({
+      expectedRevision,
+    }: {
+      expectedRevision?: number | null;
+    }) => {
+      if (transactionId) throw new Error("Transaction already active");
       db.run("BEGIN");
+      if (expectedRevision !== null && expectedRevision !== undefined) {
+        const row = db.selectRows(
+          "SELECT revision FROM system_storage_meta WHERE singleton = 1",
+        )[0];
+        const actual = Number(row?.revision) || 0;
+        if (actual !== expectedRevision) {
+          db.run("ROLLBACK");
+          throw new Error(
+            `SQLite revision conflict: expected ${expectedRevision}, got ${actual}`,
+          );
+        }
+      }
+      transactionId = "tx-1";
+      return { id: transactionId };
     },
-    commitTransaction: async () => {
-      transactionActive = false;
+    executeBatch: async ({
+      id,
+      statements,
+    }: {
+      id: string;
+      statements: Array<{ sql: string; bind?: unknown[] }>;
+    }) => {
+      if (id !== transactionId) throw new Error("Inactive transaction");
+      for (const statement of statements) {
+        db.run(statement.sql, statement.bind ?? []);
+      }
+      return { statements: statements.length };
+    },
+    commitTransaction: async ({ id }: { id: string }) => {
+      if (id !== transactionId) throw new Error("Inactive transaction");
       db.run("COMMIT");
+      transactionId = null;
     },
-    rollbackTransaction: async () => {
-      transactionActive = false;
+    rollbackTransaction: async ({ id }: { id: string }) => {
+      if (id !== transactionId) throw new Error("Inactive transaction");
       db.run("ROLLBACK");
+      transactionId = null;
     },
-    close: async () => {
-      /* tests keep the database open for inspection */
-    },
+    addListener: async () => ({ remove: async () => {} }),
   };
 
-  const storage = new CapacitorSqliteStorage();
-  (storage as any).db = bridge;
-  (storage as any).dbName = "risuai-local";
+  const storage = new CapacitorSqliteStorage(bridge as any);
+  (storage as any).dbOpen = true;
   (storage as any)._enabled = true;
   (storage as any).initialized = true;
   (storage as any).revision = 0;
@@ -383,7 +395,7 @@ export function makeCapacitorStorage(
         if (opened) throw new Error("Restore stream already open");
         opened = true;
         progress = onProgress;
-        await bridge.beginTransaction();
+        db.run("BEGIN");
       },
       writeStatement: async (sql: string, bind: unknown[] = []) => {
         if (!opened) throw new Error("Restore stream is not open");
@@ -392,12 +404,12 @@ export function makeCapacitorStorage(
         progress?.(statementCount);
       },
       finish: async () => {
-        await bridge.commitTransaction();
+        db.run("COMMIT");
         opened = false;
         return statementCount;
       },
       abort: async () => {
-        if (opened) await bridge.rollbackTransaction();
+        if (opened) db.run("ROLLBACK");
         opened = false;
       },
     };

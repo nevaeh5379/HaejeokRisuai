@@ -1,11 +1,6 @@
 import { NativeSqliteStorageBase } from "./nativeSqliteStorageBase";
 import type { ISqlStorage } from "./ISqlStorage";
 import { isCapacitor } from "../platform";
-import {
-  CapacitorSQLite,
-  SQLiteConnection,
-  type SQLiteDBConnection,
-} from "@capacitor-community/sqlite";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
 import {
   buildSqlReplaceRootCommit,
@@ -18,22 +13,25 @@ import { applySqliteCommit, countSqliteCommitStatements } from "./sqliteCommit";
 import type { SqliteTransactionStatement } from "./sqliteStorageUtils";
 import type { Database as DatabaseType } from "./schema";
 import { CapacitorSqliteRestoreStream } from "./capacitorSqliteRestoreStream";
+import {
+  nativeSqlite,
+  type NativeSqlitePlugin,
+} from "./capacitorNativeSqlite";
 
-// @capacitor-community/sqlite routes PRAGMA statements that return rows through
-// query()/rawQuery(). Passing them inside execute() makes Android reject the
-// entire schema batch as a query. The native plugin already enables foreign
-// keys when opening the database; WAL is an optional tuning pragma, so keep
-// both out of the DDL batch while preserving the shared schema for Web/Tauri.
-const capacitorSchemaSql = sqliteSchemaSql.replace(
-  /^\s*PRAGMA\s+(?:journal_mode|foreign_keys)\s*=.*?;\s*$/gim,
-  "",
-);
+// The Android native backend applies connection-local PRAGMAs itself. Keep
+// those out of the shared DDL script and send the remaining statements through
+// the same native transaction API used by normal commits.
+const capacitorSchemaStatements = sqliteSchemaSql
+  .replace(/^\s*PRAGMA\s+(?:journal_mode|foreign_keys)\s*=.*?;\s*$/gim, "")
+  .split(/;\s*(?:\r?\n|$)/)
+  .map((statement) => statement.trim())
+  .filter(Boolean);
 
 /**
  * Capacitor native SQLite storage backend for Android/iOS builds.
  *
- * Uses @capacitor-community/sqlite so the database is an app-private native
- * SQLite file rather than browser IndexedDB/OPFS storage.
+ * Uses RisuAI's native Android SQLite plugin. One native SQLiteDatabase owner
+ * serves normal reads/writes and the OOM-safe streaming restore path.
  */
 export class CapacitorSqliteStorage
   extends NativeSqliteStorageBase
@@ -41,9 +39,11 @@ export class CapacitorSqliteStorage
 {
   readonly backendKind = "capacitor-sqlite" as const;
 
-  private sqlite: SQLiteConnection | null = null;
-  private db: SQLiteDBConnection | null = null;
-  private dbName: string | null = null;
+  private dbOpen = false;
+
+  constructor(private readonly plugin: NativeSqlitePlugin = nativeSqlite) {
+    super();
+  }
   protected readonly backendName = "CapacitorSqliteStorage";
 
   protected isPlatformAvailable(): boolean {
@@ -51,49 +51,37 @@ export class CapacitorSqliteStorage
   }
 
   protected async openBackend(): Promise<void> {
-    this.sqlite = new SQLiteConnection(CapacitorSQLite);
-    this.dbName = "risuai-local";
-    await this.sqlite.checkConnectionsConsistency();
-    const existing = await this.sqlite.isConnection(this.dbName, false);
-    this.db = existing.result
-      ? await this.sqlite.retrieveConnection(this.dbName, false)
-      : await this.sqlite.createConnection(
-          this.dbName,
-          false,
-          "no-encryption",
-          1,
-          false,
-        );
-    await this.db.open();
+    await this.plugin.open({ database: "risuai-local" });
+    this.dbOpen = true;
   }
 
   protected async applySchema(): Promise<void> {
-    if (!this.db) throw new Error("Database not opened");
-    await this.db.execute(capacitorSchemaSql, false);
+    if (!this.dbOpen) throw new Error("Database not opened");
+    await this.runNativeTransaction(null, async (execute) => {
+      for (const sql of capacitorSchemaStatements) await execute(sql);
+    });
   }
 
   protected async cleanupBackend(): Promise<void> {
     try {
-      if (this.db) await this.db.close();
+      if (this.dbOpen) await this.plugin.close();
     } finally {
-      this.db = null;
-      this.sqlite = null;
-      this.dbName = null;
+      this.dbOpen = false;
     }
   }
 
   // ── Low-level helpers ───────────────────────────────────────────────
 
   protected isStorageReady(): boolean {
-    return !!this.db && !!this.dbName;
+    return this.dbOpen;
   }
 
   protected async selectRows<T extends Record<string, unknown>>(
     sql: string,
     bind: unknown[] = [],
   ): Promise<T[]> {
-    if (!this.db) throw new Error("Database not opened");
-    const result = await this.db.query(sql, bind);
+    if (!this.dbOpen) throw new Error("Database not opened");
+    const result = await this.plugin.query({ sql, bind });
     return (result.values ?? []) as T[];
   }
 
@@ -134,10 +122,8 @@ export class CapacitorSqliteStorage
       execute: (sql: string, bind?: unknown[]) => Promise<void>,
     ) => Promise<T>,
   ): Promise<T> {
-    if (!this.db || !this.dbName) {
-      throw new Error("SQLite storage is not enabled");
-    }
-    await this.db.beginTransaction();
+    if (!this.dbOpen) throw new Error("SQLite storage is not enabled");
+    const transaction = await this.plugin.beginTransaction({ expectedRevision });
     let pendingBatch: SqliteTransactionStatement[] = [];
     let batchPayloadChars = 0;
     const flushBatch = async () => {
@@ -145,25 +131,12 @@ export class CapacitorSqliteStorage
       const chunk = pendingBatch;
       pendingBatch = [];
       batchPayloadChars = 0;
-      await this.db!.executeSet(
-        chunk.map((statement) => ({
-          statement: statement.sql,
-          values: statement.bind ?? [],
-        })),
-        false,
-        "no",
-      );
+      await this.plugin.executeBatch({
+        id: transaction.id,
+        statements: chunk,
+      });
     };
     try {
-      if (expectedRevision !== null) {
-        const meta = await this.selectOne<{ revision: number }>(
-          "SELECT revision FROM system_storage_meta WHERE singleton = 1",
-        );
-        const currentRevision = Number(meta?.revision) || 0;
-        if (currentRevision !== expectedRevision) {
-          throw new SqlRevisionConflictError(currentRevision);
-        }
-      }
       const execute = async (sql: string, bind: unknown[] = []) => {
         let bindChars = 0;
         for (const value of bind) {
@@ -180,13 +153,13 @@ export class CapacitorSqliteStorage
       };
       const result = await task(execute);
       await flushBatch();
-      await this.db.commitTransaction();
+      await this.plugin.commitTransaction({ id: transaction.id });
       return result;
     } catch (error) {
       pendingBatch = [];
       batchPayloadChars = 0;
       try {
-        await this.db.rollbackTransaction();
+        await this.plugin.rollbackTransaction({ id: transaction.id });
       } catch {
         // Preserve the original transaction error.
       }
@@ -195,7 +168,7 @@ export class CapacitorSqliteStorage
   }
 
   protected createRestoreStream() {
-    return new CapacitorSqliteRestoreStream();
+    return new CapacitorSqliteRestoreStream(this.plugin);
   }
 
   override async replaceDatabase(
@@ -347,9 +320,9 @@ export class CapacitorSqliteStorage
   }
 
   /**
-   * Normal Capacitor commits stay on the community SQLite bridge. Explicit
-   * whole-database restores use the streaming JsonReader path above so giant
-   * bind payloads never become one org.json JSONStringer allocation.
+   * Normal commits and whole-database restores share the same native SQLite
+   * backend. Restore keeps its streaming transport so giant bind payloads never
+   * become one org.json JSONStringer allocation.
    */
   protected override async commitInternal(
     commit: SqlCommit,

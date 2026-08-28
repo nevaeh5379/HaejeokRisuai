@@ -7,16 +7,16 @@ describe("CapacitorSqliteRestoreStream", () => {
     const chunks: string[] = [];
     let parsed: Array<{ sql: string; bind: unknown[] }> = [];
     const plugin = {
-      open: async () => ({ id: "restore-1" }),
-      append: async ({ data }: { id: string; data: string }) => {
+      restoreOpen: async () => ({ id: "restore-1" }),
+      restoreAppend: async ({ data }: { id: string; data: string }) => {
         chunks.push(data);
       },
-      finish: async () => {
+      restoreFinish: async () => {
         const bytes = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk, "base64")));
         parsed = JSON.parse(bytes.toString("utf8"));
         return { statements: parsed.length };
       },
-      abort: async () => {},
+      restoreAbort: async () => {},
       addListener: async () => ({ remove: async () => {} }),
     };
 

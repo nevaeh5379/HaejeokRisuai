@@ -1,27 +1,10 @@
-import { registerPlugin } from "@capacitor/core";
 import { Buffer } from "buffer";
 
 const TRANSPORT_BASE64_CHUNK = 256 * 1024;
 const TRANSPORT_BYTE_CHUNK = Math.floor((TRANSPORT_BASE64_CHUNK - 1) / 4) * 3;
 const JSON_STRING_SLICE = 16 * 1024;
 
-interface NativeSqliteRestorePlugin {
-  open(options: {
-    database: string;
-    expectedRevision: number;
-  }): Promise<{ id: string }>;
-  append(options: { id: string; data: string }): Promise<void>;
-  finish(options: { id: string }): Promise<{ statements: number }>;
-  abort(options: { id: string }): Promise<void>;
-  addListener(
-    eventName: "restoreProgress",
-    listener: (event: { id: string; completed: number; stage?: string }) => void,
-  ): Promise<{ remove(): Promise<void> }>;
-}
-
-const nativeRestore = registerPlugin<NativeSqliteRestorePlugin>(
-  "NativeSqliteRestore",
-);
+import { nativeSqlite, type NativeSqlitePlugin } from "./capacitorNativeSqlite";
 
 function safeSliceEnd(value: string, start: number, requestedEnd: number) {
   let end = Math.min(value.length, requestedEnd);
@@ -41,7 +24,7 @@ class ChunkSink {
 
   constructor(
     private readonly id: string,
-    private readonly plugin: NativeSqliteRestorePlugin,
+    private readonly plugin: NativeSqlitePlugin,
   ) {}
 
   async write(value: string) {
@@ -63,7 +46,7 @@ class ChunkSink {
       this.pending.subarray(0, this.pendingLength),
     ).toString("base64");
     this.pendingLength = 0;
-    await this.plugin.append({ id: this.id, data });
+    await this.plugin.restoreAppend({ id: this.id, data });
   }
 }
 
@@ -118,17 +101,14 @@ export class CapacitorSqliteRestoreStream {
   private progressListener: { remove(): Promise<void> } | null = null;
 
   constructor(
-    private readonly plugin: NativeSqliteRestorePlugin = nativeRestore,
+    private readonly plugin: NativeSqlitePlugin = nativeSqlite,
   ) {}
 
   async open(
     expectedRevision: number,
     onProgress?: (completed: number, stage?: string) => void,
   ) {
-    const opened = await this.plugin.open({
-      database: "risuai-local",
-      expectedRevision,
-    });
+    const opened = await this.plugin.restoreOpen({ expectedRevision });
     this.id = opened.id;
     this.sink = new ChunkSink(opened.id, this.plugin);
     this.progressListener = await this.plugin.addListener(
@@ -182,7 +162,7 @@ export class CapacitorSqliteRestoreStream {
     try {
       await this.sink.write("]");
       await this.sink.flush();
-      const result = await this.plugin.finish({ id });
+      const result = await this.plugin.restoreFinish({ id });
       return result.statements;
     } finally {
       await this.cleanupListener();
@@ -196,7 +176,7 @@ export class CapacitorSqliteRestoreStream {
     this.id = null;
     this.sink = null;
     try {
-      if (id) await this.plugin.abort({ id });
+      if (id) await this.plugin.restoreAbort({ id });
     } finally {
       await this.cleanupListener();
     }

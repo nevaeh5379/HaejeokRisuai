@@ -10,12 +10,6 @@ const config: CapacitorConfig = {
   plugins: {
     CapacitorHttp: {
       enabled: true
-    },
-    CapacitorSQLite: {
-      androidIsEncryption: false,
-      androidBiometric: {
-        biometricAuth: false
-      }
     }
   }
 };
