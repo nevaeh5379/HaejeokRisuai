@@ -110,6 +110,10 @@ export interface NormalizedSqlCommit {
   characterDeletes?: string[];
 }
 
+export type SqlCommitValidator = (
+  payload: SqlCommit,
+) => NormalizedSqlCommit;
+
 export const RESERVED_ROOT_SETTING_KEYS = Object.freeze([
   "botPresets",
   "botPresetsId",
@@ -125,7 +129,7 @@ function isReservedRootSettingKey(key: string): boolean {
 
 export function createSqlCommitValidator(
   options: SqlCommitValidatorOptions,
-): (payload: unknown) => NormalizedSqlCommit {
+): SqlCommitValidator {
   const { PayloadError, maxIdLength = 4000 } = options ?? {};
   if (typeof PayloadError !== "function") {
     throw new TypeError("PayloadError must be an error constructor");
@@ -266,7 +270,7 @@ export function createSqlCommitValidator(
     });
   }
 
-  return function validateSqlCommit(payload: unknown): NormalizedSqlCommit {
+  return function validateSqlCommit(payload: SqlCommit): NormalizedSqlCommit {
     if (!isRecord(payload)) {
       throw new PayloadError("Sync payload must be an object");
     }

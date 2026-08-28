@@ -111,6 +111,7 @@ export interface NormalizedSqlCommit {
     characterIds?: string[];
     characterDeletes?: string[];
 }
+export type SqlCommitValidator = (payload: SqlCommit) => NormalizedSqlCommit;
 export declare const RESERVED_ROOT_SETTING_KEYS: readonly ["botPresets", "botPresetsId"];
-export declare function createSqlCommitValidator(options: SqlCommitValidatorOptions): (payload: unknown) => NormalizedSqlCommit;
+export declare function createSqlCommitValidator(options: SqlCommitValidatorOptions): SqlCommitValidator;
 export {};
