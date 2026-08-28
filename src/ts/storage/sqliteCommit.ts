@@ -429,11 +429,7 @@ export async function applySqliteCommit(
     await execute("DELETE FROM bot_presets");
   }
   await applySettingUpsert(commit, execute);
-  for (const key of commit.root.deletes) {
-    if (key === "botPresets" || key === "botPresetsId")
-      throw new Error(`${key} is not a root setting`);
-    await execute("DELETE FROM system_settings WHERE key = ?", [key]);
-  }
+  await applySettingDeletes(commit, execute);
 
   if (commit.pluginStorage) {
     if (commit.pluginStorage.clear)
@@ -672,6 +668,14 @@ export async function applySqliteCommit(
         [deletion.chatId, ...deletion.ids],
       );
     }
+}
+
+async function applySettingDeletes(commit: SqlCommit, execute: SqliteExecute) {
+  for (const key of commit.root.deletes) {
+    if (key === "botPresets" || key === "botPresetsId")
+      throw new Error(`${key} is not a root setting`);
+    await execute("DELETE FROM system_settings WHERE key = ?", [key]);
+  }
 }
 
 async function applySettingUpsert(commit: SqlCommit, execute: SqliteExecute) {
