@@ -36,9 +36,7 @@ export interface SqlPresetUpsert<
   data: TPreset;
 }
 
-export interface SqlCommit<
-  TPreset extends object = Record<string, unknown>,
-> {
+export interface SqlCommit<TPreset extends object = Record<string, unknown>> {
   baseRevision: number;
   idempotencyKey?: string;
   replaceAll?: boolean;
@@ -110,9 +108,7 @@ export interface NormalizedSqlCommit {
   characterDeletes?: string[];
 }
 
-export type SqlCommitValidator = (
-  rawPayload: unknown,
-) => NormalizedSqlCommit;
+export type SqlCommitValidator = (rawPayload: unknown) => NormalizedSqlCommit;
 
 export const RESERVED_ROOT_SETTING_KEYS = Object.freeze([
   "botPresets",
@@ -176,39 +172,60 @@ export function createSqlCommitValidator(
     }
   }
 
-  function validateRows<T>(
+  function parseRows<T>(
     value: unknown,
     field: string,
-    validateRow: (row: UnknownRecord, index: number) => T,
+    parseRow: (row: UnknownRecord, index: number) => T,
   ): T[] {
     return asArray(value, field).map((row, index) => {
       if (!isRecord(row)) {
         throw new PayloadError(`${field}[${index}] must be an object`);
       }
-      return validateRow(row, index);
+      return parseRow(row, index);
     });
   }
 
-  function validateEntityRows(
+  function parseIds(
     value: unknown,
     field: string,
-  ): SqlCharacterUpsert[];
-  function validateEntityRows(
+    validateId?: (id: string, index: number) => void,
+  ): string[] {
+    return asArray(value, field).map((id, index) => {
+      assertId(id, `${field}[${index}]`);
+      validateId?.(id, index);
+      return id;
+    });
+  }
+
+  function parseSettingUpserts(
+    value: unknown,
+    field: string,
+    validateKey?: (key: string, index: number) => void,
+  ): SqlSettingUpsert[] {
+    return parseRows(value, field, (row, index) => {
+      assertId(row.key, `${field}[${index}].key`);
+      validateKey?.(row.key, index);
+      return { key: row.key, value: row.value };
+    });
+  }
+
+  function parseEntityRows(value: unknown, field: string): SqlCharacterUpsert[];
+  function parseEntityRows(
     value: unknown,
     field: string,
     ownerKey: "characterId",
   ): SqlChatUpsert[];
-  function validateEntityRows(
+  function parseEntityRows(
     value: unknown,
     field: string,
     ownerKey: "chatId",
   ): SqlMessageUpsert[];
-  function validateEntityRows(
+  function parseEntityRows(
     value: unknown,
     field: string,
     ownerKey?: OwnerKey,
   ): Array<SqlCharacterUpsert | SqlChatUpsert | SqlMessageUpsert> {
-    return validateRows(value, field, (row, index) => {
+    return parseRows(value, field, (row, index) => {
       const rowField = `${field}[${index}]`;
       assertId(row.id, `${rowField}.id`);
 
@@ -239,31 +256,25 @@ export function createSqlCommitValidator(
     });
   }
 
-  function validateOptionalIds(
+  function parseOptionalIds(
     value: unknown,
     field: string,
   ): string[] | undefined {
     if (value === undefined) return undefined;
-    return asArray(value, field).map((id, index) => {
-      assertId(id, `${field}[${index}]`);
-      return id;
-    });
+    return parseIds(value, field);
   }
 
-  function validateManifests<K extends OwnerKey>(
+  function parseManifests<K extends OwnerKey>(
     value: unknown,
     field: string,
     ownerKey: K,
   ): Array<Record<K, string> & { ids: string[] }> {
-    return validateRows(value, field, (item, index) => {
+    return parseRows(value, field, (item, index) => {
       const itemField = `${field}[${index}]`;
       const idsField = `${itemField}.ids`;
       const ownerId = item[ownerKey];
       assertId(ownerId, `${itemField}.${ownerKey}`);
-      const ids = asArray(item.ids, idsField).map((id, idIndex) => {
-        assertId(id, `${idsField}[${idIndex}]`);
-        return id;
-      });
+      const ids = parseIds(item.ids, idsField);
       return { [ownerKey]: ownerId, ids } as Record<K, string> & {
         ids: string[];
       };
@@ -271,9 +282,9 @@ export function createSqlCommitValidator(
   }
 
   function parsePayload(rawPayload: unknown): UnknownRecord {
-    if (!isRecord(rawPayload)) {
+    if (!isRecord(rawPayload))
       throw new PayloadError("Sync payload must be an object");
-    }
+
     return rawPayload;
   }
 
@@ -282,36 +293,33 @@ export function createSqlCommitValidator(
     return value;
   }
 
+  function rejectReservedRootUpsert(key: string): void {
+    if (isReservedRootSettingKey(key))
+      throw new PayloadError(`${key} must be written through presets`);
+  }
+
+  function rejectReservedRootDelete(key: string): void {
+    if (isReservedRootSettingKey(key))
+      throw new PayloadError(`${key} is not a root setting`);
+  }
+
   function parseRoot(value: unknown): {
     rootUpserts: SqlSettingUpsert[];
     rootDeletes: string[];
   } {
-    if (value === undefined) {
-      return { rootUpserts: [], rootDeletes: [] };
-    }
-    if (!isRecord(value)) {
-      throw new PayloadError("root must be an object");
-    }
-    const rootUpserts = asArray(value.upserts, "root.upserts").map(
-      (item, index) => {
-        if (!isRecord(item)) {
-          throw new PayloadError(`root.upserts[${index}] must be an object`);
-        }
-        assertId(item.key, `root.upserts[${index}].key`);
-        if (isReservedRootSettingKey(item.key)) {
-          throw new PayloadError(`${item.key} must be written through presets`);
-        }
-        return { key: item.key, value: item.value };
-      },
+    if (value === undefined) return { rootUpserts: [], rootDeletes: [] };
+
+    if (!isRecord(value)) throw new PayloadError("root must be an object");
+
+    const rootUpserts = parseSettingUpserts(
+      value.upserts,
+      "root.upserts",
+      rejectReservedRootUpsert,
     );
-    const rootDeletes = asArray(value.deletes, "root.deletes").map(
-      (key, index) => {
-        assertId(key, `root.deletes[${index}]`);
-        if (isReservedRootSettingKey(key)) {
-          throw new PayloadError(`${key} is not a root setting`);
-        }
-        return key;
-      },
+    const rootDeletes = parseIds(
+      value.deletes,
+      "root.deletes",
+      rejectReservedRootDelete,
     );
     return { rootUpserts, rootDeletes };
   }
@@ -321,38 +329,28 @@ export function createSqlCommitValidator(
     if (!isRecord(value)) {
       throw new PayloadError("presets must be an object");
     }
-    const upserts = asArray(value.upserts, "presets.upserts").map(
+    const upserts = parseRows(
+      value.upserts,
+      "presets.upserts",
       (item, index) => {
-        if (!isRecord(item)) {
-          throw new PayloadError(
-            `presets.upserts[${index}] must be an object`,
-          );
-        }
         assertId(item.id, `presets.upserts[${index}].id`);
-        if (item.position !== undefined) {
+
+        if (item.position !== undefined)
           assertPosition(item.position, `presets.upserts[${index}].position`);
-        }
-        if (!isRecord(item.data)) {
+
+        if (!isRecord(item.data))
           throw new PayloadError(
             `presets.upserts[${index}].data must be an object`,
           );
-        }
+
         return { id: item.id, position: item.position, data: item.data };
       },
     );
-    const deletes = asArray(value.deletes, "presets.deletes").map(
-      (id, index) => {
-        assertId(id, `presets.deletes[${index}]`);
-        return id;
-      },
-    );
+    const deletes = parseIds(value.deletes, "presets.deletes");
     const order =
       value.order === undefined
         ? undefined
-        : asArray(value.order, "presets.order").map((id, index) => {
-            assertId(id, `presets.order[${index}]`);
-            return id;
-          });
+        : parseIds(value.order, "presets.order");
     if (value.activeId !== undefined) {
       assertId(value.activeId, "presets.activeId");
     }
@@ -379,25 +377,14 @@ export function createSqlCommitValidator(
     if (!isRecord(value)) {
       throw new PayloadError("pluginStorage must be an object");
     }
-    const pluginStorageUpserts = asArray(
+    const pluginStorageUpserts = parseSettingUpserts(
       value.upserts,
       "pluginStorage.upserts",
-    ).map((item, index) => {
-      if (!isRecord(item)) {
-        throw new PayloadError(
-          `pluginStorage.upserts[${index}] must be an object`,
-        );
-      }
-      assertId(item.key, `pluginStorage.upserts[${index}].key`);
-      return { key: item.key, value: item.value };
-    });
-    const pluginStorageDeletes = asArray(
+    );
+    const pluginStorageDeletes = parseIds(
       value.deletes,
       "pluginStorage.deletes",
-    ).map((key, index) => {
-      assertId(key, `pluginStorage.deletes[${index}]`);
-      return key;
-    });
+    );
     return {
       pluginStorageUpserts,
       pluginStorageDeletes,
@@ -406,7 +393,7 @@ export function createSqlCommitValidator(
   }
 
   function parseCharacterTouches(value: unknown): SqlCharacterTouch[] {
-    return validateRows(value, "characterTouches", (row, index) => {
+    return parseRows(value, "characterTouches", (row, index) => {
       const rowField = `characterTouches[${index}]`;
       assertId(row.id, `${rowField}.id`);
       if (
@@ -427,7 +414,9 @@ export function createSqlCommitValidator(
       : undefined;
   }
 
-  function parseEntities(payload: UnknownRecord): Pick<
+  function parseEntities(
+    payload: UnknownRecord,
+  ): Pick<
     NormalizedSqlCommit,
     | "characters"
     | "characterTouches"
@@ -440,16 +429,16 @@ export function createSqlCommitValidator(
     | "messageManifests"
     | "messageDeletes"
   > {
-    const characters = validateEntityRows(payload.characters, "characters");
+    const characters = parseEntityRows(payload.characters, "characters");
     const characterTouches = parseCharacterTouches(payload.characterTouches);
-    const chats = validateEntityRows(payload.chats, "chats", "characterId");
-    const messages = validateEntityRows(payload.messages, "messages", "chatId");
-    const chatManifests = validateManifests(
+    const chats = parseEntityRows(payload.chats, "chats", "characterId");
+    const messages = parseEntityRows(payload.messages, "messages", "chatId");
+    const chatManifests = parseManifests(
       payload.chatManifests,
       "chatManifests",
       "characterId",
     );
-    const messageManifests = validateManifests(
+    const messageManifests = parseManifests(
       payload.messageManifests,
       "messageManifests",
       "chatId",
@@ -457,13 +446,10 @@ export function createSqlCommitValidator(
     const messageDeletes =
       payload.messageDeletes === undefined
         ? undefined
-        : validateManifests(payload.messageDeletes, "messageDeletes", "chatId");
-    const chatDeletes = validateOptionalIds(payload.chatDeletes, "chatDeletes");
-    const characterIds = validateOptionalIds(
-      payload.characterIds,
-      "characterIds",
-    );
-    const characterDeletes = validateOptionalIds(
+        : parseManifests(payload.messageDeletes, "messageDeletes", "chatId");
+    const chatDeletes = parseOptionalIds(payload.chatDeletes, "chatDeletes");
+    const characterIds = parseOptionalIds(payload.characterIds, "characterIds");
+    const characterDeletes = parseOptionalIds(
       payload.characterDeletes,
       "characterDeletes",
     );

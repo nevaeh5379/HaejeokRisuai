@@ -43,16 +43,30 @@ function createSqlCommitValidator(options) {
             throw new PayloadError(`${field} must be a JSON object`);
         }
     }
-    function validateRows(value, field, validateRow) {
+    function parseRows(value, field, parseRow) {
         return asArray(value, field).map((row, index) => {
             if (!isRecord(row)) {
                 throw new PayloadError(`${field}[${index}] must be an object`);
             }
-            return validateRow(row, index);
+            return parseRow(row, index);
         });
     }
-    function validateEntityRows(value, field, ownerKey) {
-        return validateRows(value, field, (row, index) => {
+    function parseIds(value, field, validateId) {
+        return asArray(value, field).map((id, index) => {
+            assertId(id, `${field}[${index}]`);
+            validateId?.(id, index);
+            return id;
+        });
+    }
+    function parseSettingUpserts(value, field, validateKey) {
+        return parseRows(value, field, (row, index) => {
+            assertId(row.key, `${field}[${index}].key`);
+            validateKey?.(row.key, index);
+            return { key: row.key, value: row.value };
+        });
+    }
+    function parseEntityRows(value, field, ownerKey) {
+        return parseRows(value, field, (row, index) => {
             const rowField = `${field}[${index}]`;
             assertId(row.id, `${rowField}.id`);
             if (ownerKey === undefined) {
@@ -80,61 +94,47 @@ function createSqlCommitValidator(options) {
             };
         });
     }
-    function validateOptionalIds(value, field) {
+    function parseOptionalIds(value, field) {
         if (value === undefined)
             return undefined;
-        return asArray(value, field).map((id, index) => {
-            assertId(id, `${field}[${index}]`);
-            return id;
-        });
+        return parseIds(value, field);
     }
-    function validateManifests(value, field, ownerKey) {
-        return validateRows(value, field, (item, index) => {
+    function parseManifests(value, field, ownerKey) {
+        return parseRows(value, field, (item, index) => {
             const itemField = `${field}[${index}]`;
             const idsField = `${itemField}.ids`;
             const ownerId = item[ownerKey];
             assertId(ownerId, `${itemField}.${ownerKey}`);
-            const ids = asArray(item.ids, idsField).map((id, idIndex) => {
-                assertId(id, `${idsField}[${idIndex}]`);
-                return id;
-            });
+            const ids = parseIds(item.ids, idsField);
             return { [ownerKey]: ownerId, ids };
         });
     }
     function parsePayload(rawPayload) {
-        if (!isRecord(rawPayload)) {
+        if (!isRecord(rawPayload))
             throw new PayloadError("Sync payload must be an object");
-        }
         return rawPayload;
     }
     function parseBaseRevision(value) {
         assertPosition(value, "baseRevision");
         return value;
     }
+    function rejectReservedRootUpsert(key) {
+        if (isReservedRootSettingKey(key)) {
+            throw new PayloadError(`${key} must be written through presets`);
+        }
+    }
+    function rejectReservedRootDelete(key) {
+        if (isReservedRootSettingKey(key)) {
+            throw new PayloadError(`${key} is not a root setting`);
+        }
+    }
     function parseRoot(value) {
-        if (value === undefined) {
+        if (value === undefined)
             return { rootUpserts: [], rootDeletes: [] };
-        }
-        if (!isRecord(value)) {
+        if (!isRecord(value))
             throw new PayloadError("root must be an object");
-        }
-        const rootUpserts = asArray(value.upserts, "root.upserts").map((item, index) => {
-            if (!isRecord(item)) {
-                throw new PayloadError(`root.upserts[${index}] must be an object`);
-            }
-            assertId(item.key, `root.upserts[${index}].key`);
-            if (isReservedRootSettingKey(item.key)) {
-                throw new PayloadError(`${item.key} must be written through presets`);
-            }
-            return { key: item.key, value: item.value };
-        });
-        const rootDeletes = asArray(value.deletes, "root.deletes").map((key, index) => {
-            assertId(key, `root.deletes[${index}]`);
-            if (isReservedRootSettingKey(key)) {
-                throw new PayloadError(`${key} is not a root setting`);
-            }
-            return key;
-        });
+        const rootUpserts = parseSettingUpserts(value.upserts, "root.upserts", rejectReservedRootUpsert);
+        const rootDeletes = parseIds(value.deletes, "root.deletes", rejectReservedRootDelete);
         return { rootUpserts, rootDeletes };
     }
     function parsePresets(value) {
@@ -143,10 +143,7 @@ function createSqlCommitValidator(options) {
         if (!isRecord(value)) {
             throw new PayloadError("presets must be an object");
         }
-        const upserts = asArray(value.upserts, "presets.upserts").map((item, index) => {
-            if (!isRecord(item)) {
-                throw new PayloadError(`presets.upserts[${index}] must be an object`);
-            }
+        const upserts = parseRows(value.upserts, "presets.upserts", (item, index) => {
             assertId(item.id, `presets.upserts[${index}].id`);
             if (item.position !== undefined) {
                 assertPosition(item.position, `presets.upserts[${index}].position`);
@@ -156,16 +153,10 @@ function createSqlCommitValidator(options) {
             }
             return { id: item.id, position: item.position, data: item.data };
         });
-        const deletes = asArray(value.deletes, "presets.deletes").map((id, index) => {
-            assertId(id, `presets.deletes[${index}]`);
-            return id;
-        });
+        const deletes = parseIds(value.deletes, "presets.deletes");
         const order = value.order === undefined
             ? undefined
-            : asArray(value.order, "presets.order").map((id, index) => {
-                assertId(id, `presets.order[${index}]`);
-                return id;
-            });
+            : parseIds(value.order, "presets.order");
         if (value.activeId !== undefined) {
             assertId(value.activeId, "presets.activeId");
         }
@@ -187,17 +178,8 @@ function createSqlCommitValidator(options) {
         if (!isRecord(value)) {
             throw new PayloadError("pluginStorage must be an object");
         }
-        const pluginStorageUpserts = asArray(value.upserts, "pluginStorage.upserts").map((item, index) => {
-            if (!isRecord(item)) {
-                throw new PayloadError(`pluginStorage.upserts[${index}] must be an object`);
-            }
-            assertId(item.key, `pluginStorage.upserts[${index}].key`);
-            return { key: item.key, value: item.value };
-        });
-        const pluginStorageDeletes = asArray(value.deletes, "pluginStorage.deletes").map((key, index) => {
-            assertId(key, `pluginStorage.deletes[${index}]`);
-            return key;
-        });
+        const pluginStorageUpserts = parseSettingUpserts(value.upserts, "pluginStorage.upserts");
+        const pluginStorageDeletes = parseIds(value.deletes, "pluginStorage.deletes");
         return {
             pluginStorageUpserts,
             pluginStorageDeletes,
@@ -205,7 +187,7 @@ function createSqlCommitValidator(options) {
         };
     }
     function parseCharacterTouches(value) {
-        return validateRows(value, "characterTouches", (row, index) => {
+        return parseRows(value, "characterTouches", (row, index) => {
             const rowField = `characterTouches[${index}]`;
             assertId(row.id, `${rowField}.id`);
             if (!Number.isSafeInteger(row.lastInteraction) ||
@@ -221,18 +203,18 @@ function createSqlCommitValidator(options) {
             : undefined;
     }
     function parseEntities(payload) {
-        const characters = validateEntityRows(payload.characters, "characters");
+        const characters = parseEntityRows(payload.characters, "characters");
         const characterTouches = parseCharacterTouches(payload.characterTouches);
-        const chats = validateEntityRows(payload.chats, "chats", "characterId");
-        const messages = validateEntityRows(payload.messages, "messages", "chatId");
-        const chatManifests = validateManifests(payload.chatManifests, "chatManifests", "characterId");
-        const messageManifests = validateManifests(payload.messageManifests, "messageManifests", "chatId");
+        const chats = parseEntityRows(payload.chats, "chats", "characterId");
+        const messages = parseEntityRows(payload.messages, "messages", "chatId");
+        const chatManifests = parseManifests(payload.chatManifests, "chatManifests", "characterId");
+        const messageManifests = parseManifests(payload.messageManifests, "messageManifests", "chatId");
         const messageDeletes = payload.messageDeletes === undefined
             ? undefined
-            : validateManifests(payload.messageDeletes, "messageDeletes", "chatId");
-        const chatDeletes = validateOptionalIds(payload.chatDeletes, "chatDeletes");
-        const characterIds = validateOptionalIds(payload.characterIds, "characterIds");
-        const characterDeletes = validateOptionalIds(payload.characterDeletes, "characterDeletes");
+            : parseManifests(payload.messageDeletes, "messageDeletes", "chatId");
+        const chatDeletes = parseOptionalIds(payload.chatDeletes, "chatDeletes");
+        const characterIds = parseOptionalIds(payload.characterIds, "characterIds");
+        const characterDeletes = parseOptionalIds(payload.characterDeletes, "characterDeletes");
         return {
             characters,
             characterTouches,
