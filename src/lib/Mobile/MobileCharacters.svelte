@@ -26,7 +26,6 @@
     } from "@lucide/svelte";
     import { alertConfirm, alertNormal } from "src/ts/alert";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
-    import { v4 } from "uuid";
     import { language } from "src/lang";
     import AirisuMascot from "../UI/AirisuMascot.svelte";
 

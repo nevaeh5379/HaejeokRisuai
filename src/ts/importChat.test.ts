@@ -82,7 +82,7 @@ describe("importChat HTML support", () => {
     const exportedChatData: Chat = {
       id: "old-chat-id",
       name: "Exported Story",
-      note: "Important note",
+      note: "",
       localLore: [],
       message: [
         { chatId: "m1", role: "user", data: "Hello" },

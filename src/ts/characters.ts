@@ -613,7 +613,12 @@ export async function importChat() {
         return;
       }
       const json = JSON.parse(chat);
-      if (json.message && json.note && json.name && json.localLore) {
+      if (
+        Array.isArray(json?.message) &&
+        typeof json?.note === "string" &&
+        typeof json?.name === "string" &&
+        Array.isArray(json?.localLore)
+      ) {
         json.id = v4();
         json.fmIndex ??= -1;
         characterStore.characters[selectedID].chats.unshift(json);
@@ -1262,79 +1267,158 @@ export async function duplicateCharacter(
   if (!initialChar?.chaId) return null;
 
   const characterId = initialChar.chaId;
+  const findSourceIndex = () =>
+    characterStore.characters.findIndex((candidate) => candidate.chaId === characterId);
+  const findSourceCharacter = () => {
+    const index = findSourceIndex();
+    return index >= 0 ? characterStore.characters[index] : undefined;
+  };
+  const failHydration = (message: string, details?: Record<string, unknown>) => {
+    const error = new Error(message);
+    console.error("[duplicateCharacter] Hydration did not complete", {
+      characterId,
+      ...details,
+    });
+    alertError(error);
+    return null;
+  };
 
   if (initialChar.coldstorage) {
     const coldData = await getColdStorageItem(initialChar.coldstorage);
-    if (
-      coldData?.character &&
-      coldData.character.chaId === characterId
-    ) {
-      characterStore.characters[characterIndex] = coldData.character;
+    const currentIndex = findSourceIndex();
+    if (currentIndex < 0) return null;
+    if (coldData?.character?.chaId === characterId) {
+      characterStore.characters[currentIndex] = coldData.character;
     } else {
       alertError(language.errors.coldStorageRestoreFailed);
       return null;
     }
   }
 
-  const charBeforeDetails = characterStore.characters[characterIndex];
-  if (charBeforeDetails?.detailsLoaded === false && charBeforeDetails.chaId) {
+  let sourceChar = findSourceCharacter();
+  if (!sourceChar) return null;
+  if (sourceChar.detailsLoaded === false) {
     try {
-      await characterStore.ensureCharacterDetails(charBeforeDetails.chaId);
+      await characterStore.ensureCharacterDetails(characterId);
     } catch (error) {
       console.error("[duplicateCharacter] Failed to ensure character details:", error);
       alertError(error);
       return null;
     }
+    sourceChar = findSourceCharacter();
+    if (!sourceChar || sourceChar.detailsLoaded === false) {
+      return failHydration(
+        "Could not fully load character details before duplicating. The original character was left unchanged.",
+      );
+    }
   }
 
-  const charBeforeChats = characterStore.characters.find(
-    (c) => c.chaId === characterId,
-  );
-  if (!charBeforeChats) return null;
-  const chats = charBeforeChats.chats ?? [];
+  type ChatTarget = {
+    id?: string;
+    ref: Chat;
+    expectedMessageTotal: number | null;
+  };
+  const chatTargets: ChatTarget[] = (sourceChar.chats ?? []).map((chat) => ({
+    id: chat.id,
+    ref: chat,
+    expectedMessageTotal:
+      typeof chat.messageTotal === "number" ? chat.messageTotal : null,
+  }));
 
-  for (let i = 0; i < chats.length; i++) {
-    const chat = chats[i];
+  const resolveChatIndex = (
+    char: character | groupChat,
+    ref: Chat,
+    id?: string,
+  ) => {
+    const byReference = char.chats?.indexOf(ref) ?? -1;
+    if (byReference >= 0) return byReference;
+    if (!id) return -1;
+
+    let match = -1;
+    for (let i = 0; i < (char.chats?.length ?? 0); i++) {
+      if (char.chats[i]?.id !== id) continue;
+      if (match >= 0) return -1;
+      match = i;
+    }
+    return match;
+  };
+
+  for (const target of chatTargets) {
+    const currentCharacterIndex = findSourceIndex();
+    if (currentCharacterIndex < 0) return null;
+    const currentChar = characterStore.characters[currentCharacterIndex];
+    const chatIndex = resolveChatIndex(currentChar, target.ref, target.id);
+    if (chatIndex < 0) {
+      return failHydration(
+        "Character chats changed while preparing the duplicate. Please try again.",
+        { chatId: target.id },
+      );
+    }
+
+    const chatBeforeLoad = currentChar.chats[chatIndex];
     const expectedMessageTotal =
-      chat.messagesFullyLoaded === false &&
-      typeof chat.messageTotal === "number"
-        ? chat.messageTotal
-        : null;
+      typeof chatBeforeLoad.messageTotal === "number"
+        ? chatBeforeLoad.messageTotal
+        : target.expectedMessageTotal;
 
-    await preLoadChat(characterIndex, i, { full: true });
+    await preLoadChat(currentCharacterIndex, chatIndex, { full: true });
 
-    const currentChar = characterStore.characters.find(
-      (c) => c.chaId === characterId,
+    const loadedChar = findSourceCharacter();
+    if (!loadedChar) return null;
+    const loadedChatIndex = resolveChatIndex(
+      loadedChar,
+      chatBeforeLoad,
+      target.id,
     );
-    const loadedChat = currentChar?.chats?.[i];
+    const loadedChat =
+      loadedChatIndex >= 0 ? loadedChar.chats[loadedChatIndex] : undefined;
     if (
       !loadedChat ||
       loadedChat.messagesLoaded === false ||
       loadedChat.messagesFullyLoaded === false ||
       loadedChat.detailsLoaded === false ||
-      (expectedMessageTotal !== null && loadedChat.message.length < expectedMessageTotal)
+      (expectedMessageTotal !== null &&
+        (loadedChat.message?.length ?? 0) < expectedMessageTotal)
     ) {
-      const error = new Error(
+      return failHydration(
         "Could not fully load character chats before duplicating. The original character was left unchanged.",
+        {
+          chatId: target.id,
+          expectedMessageTotal,
+          loadedMessages: loadedChat?.message?.length ?? 0,
+        },
       );
-      console.error("[duplicateCharacter] Chat hydration did not complete", {
-        characterId,
-        chatIndex: i,
-        chatId: chat.id,
-      });
-      alertError(error);
-      return null;
     }
   }
 
-  const sourceChar = characterStore.characters.find(
-    (c) => c.chaId === characterId,
-  );
+  sourceChar = findSourceCharacter();
   if (!sourceChar) return null;
+  if (sourceChar.chats.length !== chatTargets.length) {
+    return failHydration(
+      "Character chats changed while preparing the duplicate. Please try again.",
+      { expectedChats: chatTargets.length, actualChats: sourceChar.chats.length },
+    );
+  }
+
+  const resolvedChatIndexes = chatTargets.map((target) =>
+    resolveChatIndex(sourceChar!, target.ref, target.id),
+  );
+  if (
+    resolvedChatIndexes.some((index) => index < 0) ||
+    new Set(resolvedChatIndexes).size !== chatTargets.length
+  ) {
+    return failHydration(
+      "Character chats changed while preparing the duplicate. Please try again.",
+    );
+  }
 
   const newChar: character | groupChat = safeStructuredClone(sourceChar);
   newChar.chaId = uuidv4();
-  newChar.name = createChatCopyName(sourceChar.name || "Character", "Copy", characterStore.characters);
+  newChar.name = createChatCopyName(
+    sourceChar.name || "Character",
+    "Copy",
+    characterStore.characters,
+  );
   newChar.lastInteraction = Date.now();
   newChar.detailsLoaded = true;
   newChar.trashTime = undefined;
@@ -1406,9 +1490,11 @@ export async function duplicateCharacter(
     await messageStore.persistNewChats(newChar.chaId, chatsToPersist);
   }
 
-  const newIndex = characterStore.characters.length - 1;
-  if (options.selectNew) {
-    changeChar(newIndex);
+  const newIndex = characterStore.characters.findIndex(
+    (candidate) => candidate.chaId === newChar.chaId,
+  );
+  if (options.selectNew && newIndex >= 0) {
+    await changeChar(newIndex);
   }
 
   return newChar;
