@@ -10,7 +10,7 @@ import {
   alertStore,
   alertWait,
 } from "../alert";
-import type { character, customscript, groupChat, loreBook, triggerscript } from "../storage/schema";
+import type { Chat, character, customscript, groupChat, loreBook, triggerscript } from "../storage/schema";
 
 import {
   AppendableBuffer,
@@ -442,9 +442,12 @@ function deduplicateModuleById(modules: RisuModule[]) {
   return newModules;
 }
 
-function getModulesForCharacter(character: character | groupChat | undefined) {
+function getModulesForCharacter(
+  character: character | groupChat | undefined,
+  chat?: Chat,
+) {
   const db = settingsStore.state;
-  const currentChat = character?.chats?.[character.chatPage];
+  const currentChat = chat ?? character?.chats?.[character.chatPage];
   const persona = currentChat?.bindedPersona
     ? db.personas?.find((item) => item.id === currentChat.bindedPersona)
     : null;
@@ -468,16 +471,18 @@ function getModulesForCharacter(character: character | groupChat | undefined) {
 export function getModules(
   character?: character | groupChat,
   overrideIds?: string[],
+  chat?: Chat,
 ) {
   if (overrideIds !== undefined) return getModuleByIds(overrideIds);
-  return getModulesForCharacter(character ?? characterStore.currentCharacter);
+  return getModulesForCharacter(character ?? characterStore.currentCharacter, chat);
 }
 
 export function getModuleLorebooks(
   character?: character | groupChat,
   overrideIds?: string[],
+  chat?: Chat,
 ) {
-  const modules = getModules(character, overrideIds);
+  const modules = getModules(character, overrideIds, chat);
   let lorebooks: loreBook[] = [];
   for (const module of modules) {
     if (!module) {
@@ -510,8 +515,9 @@ export function getModuleAssets(
 export function getModuleTriggers(
   character?: character | groupChat,
   overrideIds?: string[],
+  chat?: Chat,
 ) {
-  const modules = getModules(character, overrideIds);
+  const modules = getModules(character, overrideIds, chat);
   let triggers: triggerscript[] = [];
   for (const module of modules) {
     if (!module) {

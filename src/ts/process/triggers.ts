@@ -1205,7 +1205,10 @@ export async function runTrigger(
     (char.chaId && arg.chat.id
       ? { characterId: char.chaId, chatId: arg.chat.id }
       : getSelectedChatTarget() ?? undefined);
-  const moduleRoom = (target ? resolveChatTarget(target)?.character : null) ?? char;
+  const resolvedTarget = target ? resolveChatTarget(target) : null;
+  const moduleRoom = resolvedTarget?.character ?? char;
+  const getTargetChat = () =>
+    target ? resolveChatTarget(target)?.chat : undefined;
   const triggers = (char.triggerscript || [])
     .map((v) => {
       if (typeof v === "string") {
@@ -1219,9 +1222,7 @@ export async function runTrigger(
       return v;
     })
     .filter((v) => v && typeof v === "object")
-    .concat(getModuleTriggers(moduleRoom));
-  const getTargetChat = () =>
-    target ? resolveChatTarget(target)?.chat : undefined;
+    .concat(getModuleTriggers(moduleRoom, undefined, resolvedTarget?.chat));
   const getStoredTriggerCharacter = () => {
     const stored = characterStore.characters.find(
       (candidate) => candidate?.chaId === char.chaId,

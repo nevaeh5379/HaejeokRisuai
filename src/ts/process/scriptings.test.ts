@@ -310,13 +310,100 @@ test("resolves module edit triggers against the explicit character", async () =>
     triggerscript: [],
   } as never;
 
+  const target = {
+    characterId: "target-room",
+    chatId: "target-chat",
+  };
   await expect(
-    runLuaEditTrigger(char, "editoutput", "hello", undefined, {
-      characterId: "target-room",
-      chatId: "target-chat",
-    }),
+    runLuaEditTrigger(char, "editoutput", "hello", undefined, target),
   ).resolves.toBe("hello");
-  expect(moduleTriggers).toHaveBeenCalledWith(char);
+  expect(moduleTriggers).toHaveBeenCalledWith(
+    char,
+    undefined,
+    databaseState.value.characters[0].chats[0],
+  );
+});
+
+test("pins Lua module button actions to the clicked chat target", async () => {
+  commitMessages.mockClear();
+  moduleTriggers.mockReset();
+  setChatVarMock.mockClear();
+
+  const targetChat = { id: "target-chat", message: [] as any[] };
+  const otherChat = { id: "other-chat", message: [] as any[] };
+  databaseState.value = {
+    characters: [
+      {
+        type: "character",
+        chaId: "target-room",
+        name: "Target Room",
+        chatPage: 1,
+        chats: [targetChat, otherChat],
+        triggerscript: [],
+      },
+    ],
+  } as any;
+  currentChatState.value = otherChat as any;
+  moduleTriggers.mockReturnValue([
+    {
+      effect: [
+        {
+          type: "triggerlua",
+          code: `
+            function onButtonClick(id, button)
+              if button == "target-button" then
+                setState(id, "button-state", { ok = true })
+                addChat(id, "user", "target chat only")
+              end
+            end
+          `,
+        },
+      ],
+      lowLevelAccess: false,
+    },
+  ] as never);
+
+  const target = { characterId: "target-room", chatId: "target-chat" };
+  const result = await runLuaButtonTrigger(
+    {
+      type: "simple",
+      chaId: "snapshot",
+      customscript: [],
+      triggerscript: undefined,
+    } as never,
+    "target-button",
+    target,
+  );
+
+  expect(result.chat).toBe(targetChat);
+  expect(targetChat.message).toEqual([
+    { role: "user", data: "target chat only" },
+  ]);
+  expect(otherChat.message).toEqual([]);
+  expect(moduleTriggers).toHaveBeenCalledWith(
+    databaseState.value.characters[0],
+    undefined,
+    targetChat,
+  );
+  expect(setChatVarMock).toHaveBeenCalledWith(
+    "__button-state",
+    expect.any(String),
+    target,
+  );
+  expect(commitMessages).toHaveBeenCalledWith("target-chat", targetChat.message);
+
+  moduleTriggers.mockReset();
+  databaseState.value = {
+    characters: [
+      {
+        type: "character",
+        chaId: "target-room",
+        name: "Target Room",
+        chats: [{ id: "target-chat", message: [] }],
+      },
+    ],
+  } as any;
+  currentChatState.value = { message: [] } as any;
 });
 
 test("runs module button actions that read lorebooks before character details hydrate", async () => {

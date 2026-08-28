@@ -875,7 +875,7 @@ export async function runScripted(
         const loreSources = [
           ScriptingEngineState.chat?.localLore ?? [],
           selectedChar.globalLore ?? [],
-          getModuleLorebooks(selectedChar) ?? [],
+          getModuleLorebooks(selectedChar, undefined, ScriptingEngineState.chat) ?? [],
         ];
 
         const found = [];
@@ -1594,8 +1594,15 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
 
   try {
     let data = content;
-    const moduleCharacter = char.type === "simple" ? undefined : char;
-    const moduleTriggers = getModuleTriggers(moduleCharacter);
+    const resolvedTarget = chatTarget ? resolveChatTarget(chatTarget) : null;
+    const targetChat = resolvedTarget?.chat;
+    const moduleCharacter =
+      char.type === "simple" ? resolvedTarget?.character : char;
+    const moduleTriggers = getModuleTriggers(
+      moduleCharacter,
+      undefined,
+      targetChat,
+    );
 
     const triggers =
       char.type === "group"
@@ -1614,10 +1621,6 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
             })
             .filter((v) => v && typeof v === "object")
             .concat(moduleTriggers);
-
-    const targetChat = chatTarget
-      ? resolveChatTarget(chatTarget)?.chat
-      : undefined;
 
     for (let trigger of triggers) {
       if (trigger?.effect?.[0]?.type === "triggerlua") {
@@ -1643,11 +1646,19 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
 export async function runLuaButtonTrigger(
   char: character | groupChat | simpleCharacterArgument,
   data: string,
+  chatTarget?: ChatExecutionTarget,
 ): Promise<any> {
   let runResult;
   try {
-    const moduleCharacter = char.type === "simple" ? undefined : char;
-    const moduleTriggers = getModuleTriggers(moduleCharacter);
+    const resolvedTarget = chatTarget ? resolveChatTarget(chatTarget) : null;
+    const targetChat = resolvedTarget?.chat;
+    const moduleCharacter =
+      char.type === "simple" ? resolvedTarget?.character : char;
+    const moduleTriggers = getModuleTriggers(
+      moduleCharacter,
+      undefined,
+      targetChat,
+    );
     const triggers =
       char.type === "group"
         ? moduleTriggers
@@ -1674,6 +1685,8 @@ export async function runLuaButtonTrigger(
       if (trigger?.effect?.[0]?.type === "triggerlua") {
         runResult = await runScripted(trigger.effect[0].code, {
           char: char,
+          chat: targetChat,
+          chatTarget,
           lowLevelAccess: trigger.lowLevelAccess,
           mode: "onButtonClick",
           data: data,

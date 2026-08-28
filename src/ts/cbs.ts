@@ -1,4 +1,4 @@
-import type { DatabaseSettings, character, groupChat, loreBook } from "./storage/schema";
+import type { Chat, DatabaseSettings, character, groupChat, loreBook } from "./storage/schema";
 import type { CbsConditions } from "./parser/parser.svelte";
 import type { RisuModule } from "./process/modules";
 import type { LLMModel } from "./model/modellist";
@@ -138,7 +138,11 @@ export type CBSRegisterArg = {
   calcString: (str: string) => number;
   dateTimeFormat: (format: string, timestamp?: number) => string;
   getModules: (character?: character | groupChat) => RisuModule[];
-  getModuleLorebooks: (character?: character | groupChat) => loreBook[];
+  getModuleLorebooks: (
+    character?: character | groupChat,
+    overrideIds?: string[],
+    chat?: Chat,
+  ) => loreBook[];
   pickHashRand: (seed: number, hash: string) => number;
   getSelectedCharID: () => number;
   getModelInfo: (model: string) => LLMModel;
@@ -380,7 +384,7 @@ export function registerCBS(arg: CBSRegisterArg) {
         !achara || achara.type === "group" ? [] : (achara.globalLore ?? []);
       const chatLore = chat?.localLore ?? [];
       const fullLore = characterLore.concat(
-        chatLore.concat(getModuleLorebooks(room)),
+        chatLore.concat(getModuleLorebooks(room, undefined, chat)),
       );
       return makeArray(
         fullLore.map((v) => {

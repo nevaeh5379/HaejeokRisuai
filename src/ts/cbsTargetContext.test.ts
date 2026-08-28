@@ -123,5 +123,5 @@ test("combines speaker, target chat, and target room module lore", () => {
     "target-local",
     "target-module",
   ]);
-  expect(getModuleLorebooks).toHaveBeenCalledWith(targetRoom);
+  expect(getModuleLorebooks).toHaveBeenCalledWith(targetRoom, undefined, targetRoom.chats[1]);
 });

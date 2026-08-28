@@ -326,18 +326,19 @@
         const triggerName = origin.getAttribute('risu-trigger')
         const triggerId = origin.getAttribute('risu-id')
         const btnEvent = origin.getAttribute('risu-btn')
+        const executionTarget = requireChatTargetFromIndexes(characterIndex, targetChatIndex)
 
         const triggerResult = triggerName
             ? await import('src/ts/process/triggers').then(({ runTrigger }) =>
                 runTrigger(currentChar, 'manual', {
                     chat: currentChat,
-                    target: requireChatTargetFromIndexes(characterIndex, targetChatIndex),
+                    target: executionTarget,
                     manualName: triggerName,
                     triggerId: triggerId || undefined,
                 }))
             : btnEvent
                 ? await import('src/ts/process/scriptings').then(({ runLuaButtonTrigger }) =>
-                    runLuaButtonTrigger(currentChar, btnEvent))
+                    runLuaButtonTrigger(currentChar, btnEvent, executionTarget))
                 : null
 
         if(triggerResult?.chat) {
