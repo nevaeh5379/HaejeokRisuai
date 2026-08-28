@@ -2,7 +2,7 @@
     import type { character, groupChat, folder } from "../../ts/storage/schema";
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import BarIcon from "../SideBars/BarIcon.svelte";
-    import { createNewCharacter, createNewGroup, changeChar, getCharImage, removeChar } from "src/ts/characters";
+    import { createNewCharacter, createNewGroup, changeChar, getCharImage, removeChar, duplicateCharacter } from "src/ts/characters";
     import { exportChar, importCharacter } from "src/ts/characterCards";
     import { MobileSearch, selectedCharID, MobileGUIStack } from "src/ts/stores.svelte";
     import {
@@ -240,17 +240,10 @@
 
     async function handleDuplicateChar(charIndex: number) {
         activeActionMenuChar = null;
-        const target = characterStore.characters[charIndex];
-        if (!target) return;
-        const copy = JSON.parse(JSON.stringify(target));
-        copy.chaId = v4();
-        copy.name = `${copy.name || 'Character'} (Copy)`;
-        copy.lastInteraction = Date.now();
-        characterStore.characters.push(copy);
-        checkCharOrder();
-        characterStore.markCharacterDirty(copy.chaId);
-        characterStore.markCharacterOrderDirty();
-        alertNormal("Character duplicated");
+        const duplicated = await duplicateCharacter(charIndex);
+        if (duplicated) {
+            alertNormal("Character duplicated");
+        }
     }
 
     async function handleExportChar(charIndex: number) {

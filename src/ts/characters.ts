@@ -1,7 +1,7 @@
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { get, writable } from "svelte/store";
 import { saveImage } from "./storage/assetPersistence";
-import type { character, Chat, loreBook } from "./storage/schema";
+import type { character, groupChat, Chat, loreBook, Message } from "./storage/schema";
 import { defaultSdDataFunc } from "./storage/presetDefaults";
 import { safeStructuredClone } from "./polyfill";
 
@@ -607,10 +607,24 @@ export async function importChat() {
         Buffer.from(dat.data).toString("utf-8"),
         "text/html",
       );
-      const chat = doc.querySelector(".idat").textContent;
+      const chat = doc.querySelector(".idat")?.textContent;
+      if (!chat) {
+        alertError(language.errors.noData);
+        return;
+      }
       const json = JSON.parse(chat);
       if (json.message && json.note && json.name && json.localLore) {
+        json.id = v4();
+        json.fmIndex ??= -1;
         characterStore.characters[selectedID].chats.unshift(json);
+        if (json.id) {
+          await messageStore.persistNewChat(
+            characterStore.characters[selectedID].chaId,
+            json.id,
+            json.message ?? [],
+          );
+        }
+        changeChatTo(0);
         alertNormal(language.successImport);
       } else {
         alertError(language.errors.noData);
@@ -1238,4 +1252,164 @@ export async function duplicateChat(
   }
 
   return newChat;
+}
+
+export async function duplicateCharacter(
+  characterIndex: number,
+  options: { selectNew?: boolean } = {},
+): Promise<character | groupChat | null> {
+  const initialChar = characterStore.characters[characterIndex];
+  if (!initialChar?.chaId) return null;
+
+  const characterId = initialChar.chaId;
+
+  if (initialChar.coldstorage) {
+    const coldData = await getColdStorageItem(initialChar.coldstorage);
+    if (
+      coldData?.character &&
+      coldData.character.chaId === characterId
+    ) {
+      characterStore.characters[characterIndex] = coldData.character;
+    } else {
+      alertError(language.errors.coldStorageRestoreFailed);
+      return null;
+    }
+  }
+
+  const charBeforeDetails = characterStore.characters[characterIndex];
+  if (charBeforeDetails?.detailsLoaded === false && charBeforeDetails.chaId) {
+    try {
+      await characterStore.ensureCharacterDetails(charBeforeDetails.chaId);
+    } catch (error) {
+      console.error("[duplicateCharacter] Failed to ensure character details:", error);
+      alertError(error);
+      return null;
+    }
+  }
+
+  const charBeforeChats = characterStore.characters.find(
+    (c) => c.chaId === characterId,
+  );
+  if (!charBeforeChats) return null;
+  const chats = charBeforeChats.chats ?? [];
+
+  for (let i = 0; i < chats.length; i++) {
+    const chat = chats[i];
+    const expectedMessageTotal =
+      chat.messagesFullyLoaded === false &&
+      typeof chat.messageTotal === "number"
+        ? chat.messageTotal
+        : null;
+
+    await preLoadChat(characterIndex, i, { full: true });
+
+    const currentChar = characterStore.characters.find(
+      (c) => c.chaId === characterId,
+    );
+    const loadedChat = currentChar?.chats?.[i];
+    if (
+      !loadedChat ||
+      loadedChat.messagesLoaded === false ||
+      loadedChat.messagesFullyLoaded === false ||
+      loadedChat.detailsLoaded === false ||
+      (expectedMessageTotal !== null && loadedChat.message.length < expectedMessageTotal)
+    ) {
+      const error = new Error(
+        "Could not fully load character chats before duplicating. The original character was left unchanged.",
+      );
+      console.error("[duplicateCharacter] Chat hydration did not complete", {
+        characterId,
+        chatIndex: i,
+        chatId: chat.id,
+      });
+      alertError(error);
+      return null;
+    }
+  }
+
+  const sourceChar = characterStore.characters.find(
+    (c) => c.chaId === characterId,
+  );
+  if (!sourceChar) return null;
+
+  const newChar: character | groupChat = safeStructuredClone(sourceChar);
+  newChar.chaId = uuidv4();
+  newChar.name = createChatCopyName(sourceChar.name || "Character", "Copy", characterStore.characters);
+  newChar.lastInteraction = Date.now();
+  newChar.detailsLoaded = true;
+  newChar.trashTime = undefined;
+
+  const newChats: Chat[] = [];
+  const chatsToPersist: Array<{ chatId: string; messages: Message[] }> = [];
+
+  for (const chat of newChar.chats ?? []) {
+    const newChat: Chat = { ...chat };
+    newChat.id = uuidv4();
+    newChat.branch = undefined;
+    newChat.branchState = undefined;
+    newChat.isStreaming = false;
+    newChat.activeStreamingDisplayOptimizationMode = undefined;
+    newChat.preventMessageCompaction = undefined;
+
+    const idMap = new Map<string, string>();
+    const messages = (newChat.message ?? []).map((msg) => {
+      const oldId = msg.chatId;
+      const newId = uuidv4();
+      const clonedMsg = { ...msg, chatId: newId };
+      if (oldId && !idMap.has(oldId)) idMap.set(oldId, newId);
+      return clonedMsg;
+    });
+
+    newChat.message = messages;
+
+    if (Array.isArray(newChat.bookmarks)) {
+      newChat.bookmarks = newChat.bookmarks
+        .map((id) => idMap.get(id))
+        .filter((id): id is string => typeof id === "string");
+    }
+    if (newChat.bookmarkNames && typeof newChat.bookmarkNames === "object") {
+      const nextBookmarkNames: { [key: string]: string } = {};
+      for (const [oldId, name] of Object.entries(newChat.bookmarkNames)) {
+        const nextId = idMap.get(oldId);
+        if (nextId) nextBookmarkNames[nextId] = name;
+      }
+      newChat.bookmarkNames = nextBookmarkNames;
+    }
+
+    newChat.messagesLoaded = true;
+    newChat.messagesFullyLoaded = true;
+    newChat.messageOffset = 0;
+    newChat.messageTotal = messages.length;
+    newChat.detailsLoaded = true;
+
+    newChats.push(newChat);
+    if (newChat.id) {
+      chatsToPersist.push({ chatId: newChat.id, messages: newChat.message });
+    }
+  }
+
+  newChar.chats = newChats;
+
+  characterStore.characters.push(newChar);
+  checkCharOrder();
+  characterStore.markCharacterDirty(newChar.chaId);
+  characterStore.markCharacterOrderDirty();
+
+  for (const chat of newChats) {
+    if (chat.id) {
+      characterStore.markChatDirty(chat.id);
+    }
+  }
+  characterStore.markChatManifestDirty(newChar.chaId);
+
+  if (chatsToPersist.length > 0) {
+    await messageStore.persistNewChats(newChar.chaId, chatsToPersist);
+  }
+
+  const newIndex = characterStore.characters.length - 1;
+  if (options.selectNew) {
+    changeChar(newIndex);
+  }
+
+  return newChar;
 }
