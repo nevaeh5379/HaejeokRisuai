@@ -101,6 +101,32 @@ export function sqlMessageData(value: Message): unknown {
   return data;
 }
 
+/**
+ * Legacy saves can contain repeated message IDs within one chat. Relational
+ * storage uses (chat_id, id) as the message primary key, so leaving those IDs
+ * unchanged either drops a message or makes PostgreSQL reject the whole
+ * restore. Keep the first occurrence stable and assign fresh IDs only to
+ * missing or later conflicting messages.
+ */
+function ensureUniqueMessageIds(messages: Message[]): string[] {
+  const usedIds = new Set<string>();
+  const messageIds: string[] = [];
+
+  for (const message of messages) {
+    let messageId = message.chatId;
+    if (!messageId || usedIds.has(messageId)) {
+      do {
+        messageId = uuidv4();
+      } while (usedIds.has(messageId));
+      message.chatId = messageId;
+    }
+    usedIds.add(messageId);
+    messageIds.push(messageId);
+  }
+
+  return messageIds;
+}
+
 /** Used only by explicit database import/reset. Normal persistence must not call this. */
 export function buildSqlReplaceCommit(
   database: Database,
@@ -216,10 +242,10 @@ export function buildSqlReplaceCommit(
         data: sqlChatData(chat),
       });
       const messages = chat.message ?? [];
-      for (const message of messages) message.chatId ||= uuidv4();
+      const messageIds = ensureUniqueMessageIds(messages);
       commit.messageManifests.push({
         chatId: chat.id!,
-        ids: messages.map((message) => message.chatId!),
+        ids: messageIds,
       });
       for (
         let messagePosition = 0;
@@ -228,7 +254,7 @@ export function buildSqlReplaceCommit(
       ) {
         const message = messages[messagePosition];
         commit.messages.push({
-          id: message.chatId!,
+          id: messageIds[messagePosition],
           chatId: chat.id!,
           position: messagePosition,
           data: sqlMessageData(message),
@@ -298,7 +324,7 @@ export function* iterateSqlReplaceEntityCommits(
     for (let chatPosition = 0; chatPosition < chats.length; chatPosition++) {
       const chat = chats[chatPosition];
       const messages = chat.message ?? [];
-      for (const message of messages) message.chatId ||= uuidv4();
+      const messageIds = ensureUniqueMessageIds(messages);
 
       const chatCommit = createEmptySqlCommit(baseRevision, "replace-entities");
       chatCommit.chats.push({
@@ -309,7 +335,7 @@ export function* iterateSqlReplaceEntityCommits(
       });
       chatCommit.messageManifests.push({
         chatId: chat.id!,
-        ids: messages.map((message) => message.chatId!),
+        ids: messageIds,
       });
       yield chatCommit;
 
@@ -319,7 +345,7 @@ export function* iterateSqlReplaceEntityCommits(
         for (let messagePosition = offset; messagePosition < end; messagePosition++) {
           const message = messages[messagePosition];
           messageCommit.messages.push({
-            id: message.chatId!,
+            id: messageIds[messagePosition],
             chatId: chat.id!,
             position: messagePosition,
             data: sqlMessageData(message),

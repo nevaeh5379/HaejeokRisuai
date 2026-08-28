@@ -57,4 +57,34 @@ describe("batched SQL database replacement", () => {
     expect(manifest.ids[299]).toBe("message-299");
     expect(batches.at(-1)?.characterIds).toEqual(["character-1"]);
   });
+
+  it("keeps colliding legacy message IDs unique across restore batches", () => {
+    const database = {
+      characters: [{
+        chaId: "character-1",
+        name: "Bot",
+        chats: [{
+          id: "chat-1",
+          name: "Chat",
+          message: [
+            { chatId: "duplicate-message", role: "user", data: "first" },
+            { chatId: "duplicate-message", role: "char", data: "second" },
+          ],
+        }],
+      }],
+    } as unknown as Database;
+
+    const batches = [...iterateSqlReplaceEntityCommits(database, 0, 1)];
+    const messages = batches.flatMap((batch) => batch.messages);
+    const ids = messages.map((message) => message.id);
+    const manifest = batches.flatMap((batch) => batch.messageManifests)[0];
+
+    expect(messages.map((message) => message.data)).toEqual([
+      { role: "user", data: "first" },
+      { role: "char", data: "second" },
+    ]);
+    expect(ids[0]).toBe("duplicate-message");
+    expect(new Set(ids).size).toBe(2);
+    expect(manifest.ids).toEqual(ids);
+  });
 });

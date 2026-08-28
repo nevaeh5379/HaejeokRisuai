@@ -68,6 +68,36 @@ describe("SQL row commits", () => {
     ]);
   });
 
+  it("preserves legacy messages whose IDs collide during explicit import", () => {
+    const database = {
+      characters: [{
+        chaId: "character-1",
+        name: "Character",
+        chats: [{
+          id: "chat-1",
+          name: "Chat",
+          message: [
+            { chatId: "duplicate-message", role: "user", data: "first" },
+            { chatId: "duplicate-message", role: "char", data: "second" },
+            { role: "user", data: "missing id" },
+          ],
+        }],
+      }],
+    } as unknown as Database;
+
+    const commit = buildSqlReplaceCommit(database, 0);
+    const ids = commit.messages.map((message) => message.id);
+
+    expect(commit.messages.map((message) => message.data)).toEqual([
+      { role: "user", data: "first" },
+      { role: "char", data: "second" },
+      { role: "user", data: "missing id" },
+    ]);
+    expect(ids[0]).toBe("duplicate-message");
+    expect(new Set(ids).size).toBe(3);
+    expect(commit.messageManifests[0].ids).toEqual(ids);
+  });
+
   it("recognizes an empty commit without serializing a Database and tracks action", () => {
     const commit = createEmptySqlCommit(3, "message");
     expect(hasSqlCommitChanges(commit)).toBe(false);
