@@ -210,6 +210,19 @@
     let startIndex = $derived(Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - OVERSCAN));
     let endIndex = $derived(Math.min(totalCount, Math.ceil((scrollTop + viewportHeight) / ITEM_HEIGHT) + OVERSCAN));
 
+    let columnCount = $derived.by(() => {
+        if (typeof window !== 'undefined' && window.innerWidth >= 640) return 3;
+        return 2;
+    });
+
+    let columns = $derived.by(() => {
+        const cols: typeof filteredChars[] = Array.from({ length: columnCount }, () => []);
+        for (let i = 0; i < filteredChars.length; i++) {
+            cols[i % columnCount].push(filteredChars[i]);
+        }
+        return cols;
+    });
+
     let visibleItems = $derived(
         filteredChars.slice(startIndex, endIndex).map((item, relIndex) => ({
             item,
@@ -632,87 +645,100 @@
                 {/if}
             </div>
 
-        <!-- GRID VIEW -->
+        <!-- GRID VIEW (Masonry Layout with Natural Automatic Image Ratios) -->
         {:else}
-            <div class="w-full h-full overflow-y-auto p-3 pb-24 grid grid-cols-2 sm:grid-cols-3 gap-3 content-start">
-                {#each filteredChars as char}
-                    <div
-                        role="button"
-                        tabindex="0"
-                        class="group relative flex flex-col rounded-2xl border border-darkborderc bg-darkbg/40 overflow-hidden shadow-xs hover:border-textcolor/30 active:scale-[0.98] transition-all cursor-pointer"
-                        onclick={() => {
-                            if (!showTrash) {
-                                changeChar(char.i);
-                                endGrid();
-                            }
-                        }}
-                        onkeydown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                                if (!showTrash) {
-                                    changeChar(char.i);
-                                    endGrid();
-                                }
-                            }
-                        }}
-                    >
-                        <!-- Image Container (Square aspect ratio with gradient overlay) -->
-                        <div class="relative w-full aspect-square bg-darkbg overflow-hidden flex items-center justify-center border-b border-darkborderc/40">
-                            {#if char.image}
-                                {#await getCharImage(char.image, 'lgcss', { thumbnail: true })}
-                                    <div class="w-full h-full bg-darkbg animate-pulse"></div>
-                                {:then im}
-                                    <div class="w-full h-full bg-cover bg-center" style={im}></div>
-                                {/await}
-                            {:else}
-                                <div class="text-textcolor2/40">
-                                    {#if char.isGroup}
-                                        <UsersIcon size={36} />
-                                    {:else}
-                                        <UserIcon size={36} />
-                                    {/if}
-                                </div>
-                            {/if}
-
-                            <!-- Type badge (Group chat indicator) -->
-                            {#if char.isGroup}
-                                <div class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-blue-600/90 text-white text-[10px] font-bold shadow-xs flex items-center gap-1">
-                                    <UsersIcon size={11} />
-                                    <span>Group</span>
-                                </div>
-                            {/if}
-
-                            <!-- More Menu button (Top-Right) -->
-                            <button
-                                onclick={(e) => {
-                                    e.stopPropagation();
-                                    if (showTrash) {
-                                        handleRestoreChar(char.i);
-                                    } else {
-                                        activeActionMenuChar = { item: char.c, index: char.i };
+            <div class="w-full h-full overflow-y-auto p-2.5 pb-24 flex gap-2.5 items-start">
+                {#each columns as col}
+                    <div class="flex-1 flex flex-col gap-2.5 min-w-0">
+                        {#each col as char (char.c.chaId || char.i)}
+                            <div
+                                role="button"
+                                tabindex="0"
+                                class="group relative w-full overflow-hidden rounded-2xl border border-darkborderc bg-darkbg/60 block transition-all shadow-xs hover:border-textcolor/40 active:scale-[0.98] cursor-pointer"
+                                onclick={() => {
+                                    if (!showTrash) {
+                                        changeChar(char.i);
+                                        endGrid();
                                     }
                                 }}
-                                class="absolute top-1.5 right-1.5 p-1 rounded-lg bg-black/60 hover:bg-black/80 text-white/90 backdrop-blur-xs transition-colors"
-                                aria-label="More options"
+                                onkeydown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        if (!showTrash) {
+                                            changeChar(char.i);
+                                            endGrid();
+                                        }
+                                    }
+                                }}
                             >
-                                {#if showTrash}
-                                    <Undo2Icon size={14} />
+                                <!-- Full Artwork Image in Natural Automatic Aspect Ratio -->
+                                {#if char.image}
+                                    {#await getCharImage(char.image, 'plain')}
+                                        <div class="w-full min-h-[140px] aspect-[3/4] bg-darkbg animate-pulse flex items-center justify-center">
+                                            <UserIcon size={32} class="text-textcolor2/30" />
+                                        </div>
+                                    {:then src}
+                                        {#if src}
+                                            <img
+                                                {src}
+                                                alt={char.name}
+                                                class="w-full h-auto object-cover object-top block transition-transform duration-300 group-hover:scale-105"
+                                                loading="lazy"
+                                                decoding="async"
+                                                draggable="false"
+                                            />
+                                        {:else}
+                                            <div class="w-full aspect-[3/4] flex items-center justify-center text-textcolor2/40 bg-darkbg">
+                                                {#if char.isGroup}<UsersIcon size={36} />{:else}<UserIcon size={36} />{/if}
+                                            </div>
+                                        {/if}
+                                    {:catch}
+                                        <div class="w-full aspect-[3/4] flex items-center justify-center text-textcolor2/40 bg-darkbg">
+                                            <UserIcon size={36} />
+                                        </div>
+                                    {/await}
                                 {:else}
-                                    <MoreVerticalIcon size={14} />
+                                    <div class="w-full aspect-square flex items-center justify-center text-textcolor2/40 bg-darkbg">
+                                        {#if char.isGroup}<UsersIcon size={36} />{:else}<UserIcon size={36} />{/if}
+                                    </div>
                                 {/if}
-                            </button>
 
-                            <!-- Chats count badge (Bottom-Right of image) -->
-                            <div class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-black/70 text-white text-[10px] font-medium backdrop-blur-xs flex items-center gap-1">
-                                <MessageSquareIcon size={10} />
-                                <span>{char.chats}</span>
+                                <!-- Type badge (Group chat indicator) -->
+                                {#if char.isGroup}
+                                    <div class="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-blue-600/90 text-white text-[10px] font-bold shadow-xs flex items-center gap-1 backdrop-blur-xs">
+                                        <UsersIcon size={11} />
+                                        <span>Group</span>
+                                    </div>
+                                {/if}
+
+                                <!-- More Menu button (Top-Right) -->
+                                <button
+                                    onclick={(e) => {
+                                        e.stopPropagation();
+                                        if (showTrash) {
+                                            handleRestoreChar(char.i);
+                                        } else {
+                                            activeActionMenuChar = { item: char.c, index: char.i };
+                                        }
+                                    }}
+                                    class="absolute top-2 right-2 p-1.5 rounded-xl bg-black/60 hover:bg-black/80 text-white/90 backdrop-blur-md transition-colors shadow-sm cursor-pointer"
+                                    aria-label="More options"
+                                >
+                                    {#if showTrash}
+                                        <Undo2Icon size={14} />
+                                    {:else}
+                                        <MoreVerticalIcon size={14} />
+                                    {/if}
+                                </button>
+
+                                <!-- Chats count badge (Bottom-Right of image) -->
+                                {#if char.chats > 0}
+                                    <div class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded-md bg-black/70 text-white text-[10px] font-medium backdrop-blur-xs flex items-center gap-1 shadow-xs">
+                                        <MessageSquareIcon size={10} />
+                                        <span>{char.chats}</span>
+                                    </div>
+                                {/if}
                             </div>
-                        </div>
-
-                        <!-- Card Caption -->
-                        <div class="p-2 flex flex-col min-w-0 bg-darkbg/60">
-                            <span class="font-bold text-xs text-textcolor truncate leading-tight">{char.name}</span>
-                            <span class="text-[10px] text-textcolor2 truncate mt-0.5">{char.agoText}</span>
-                        </div>
+                        {/each}
                     </div>
                 {/each}
             </div>
@@ -732,49 +758,41 @@
             ></button>
 
             <!-- Speed Dial Options Popover -->
-            <div class="absolute bottom-20 right-4 z-50 flex flex-col items-end gap-2.5 pb-2">
+            <div class="fixed bottom-33 right-4 z-50 flex flex-col items-end gap-1.5 pb-1">
                 <!-- 1. Create from scratch -->
                 <button
                     onclick={handleCreateNewChar}
-                    class="flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-darkbg border border-darkborderc shadow-xl text-xs font-semibold text-textcolor hover:bg-selected transition-all active:scale-95"
+                    class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-darkbg border border-darkborderc shadow-lg text-xs font-semibold text-textcolor hover:bg-darkbutton transition-all active:scale-95 cursor-pointer"
                 >
                     <span>{language.createfromScratch}</span>
-                    <div class="w-8 h-8 rounded-xl bg-selected/20 text-selected flex items-center justify-center">
-                        <PlusIcon size={18} />
-                    </div>
+                    <PlusIcon size={15} class="text-textcolor2" />
                 </button>
 
                 <!-- 2. Import Card -->
                 <button
                     onclick={handleImportCard}
-                    class="flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-darkbg border border-darkborderc shadow-xl text-xs font-semibold text-textcolor hover:bg-selected transition-all active:scale-95"
+                    class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-darkbg border border-darkborderc shadow-lg text-xs font-semibold text-textcolor hover:bg-darkbutton transition-all active:scale-95 cursor-pointer"
                 >
                     <span>{language.importCharacter}</span>
-                    <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                        <UploadIcon size={18} />
-                    </div>
+                    <UploadIcon size={15} class="text-textcolor2" />
                 </button>
 
                 <!-- 3. Create Group -->
                 <button
                     onclick={handleCreateGroup}
-                    class="flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-darkbg border border-darkborderc shadow-xl text-xs font-semibold text-textcolor hover:bg-selected transition-all active:scale-95"
+                    class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-darkbg border border-darkborderc shadow-lg text-xs font-semibold text-textcolor hover:bg-darkbutton transition-all active:scale-95 cursor-pointer"
                 >
                     <span>Create Group</span>
-                    <div class="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center">
-                        <UsersIcon size={18} />
-                    </div>
+                    <UsersIcon size={15} class="text-textcolor2" />
                 </button>
 
                 <!-- 4. Browse Realm -->
                 <button
                     onclick={handleOpenRealm}
-                    class="flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-darkbg border border-darkborderc shadow-xl text-xs font-semibold text-textcolor hover:bg-selected transition-all active:scale-95"
+                    class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-darkbg border border-darkborderc shadow-lg text-xs font-semibold text-textcolor hover:bg-darkbutton transition-all active:scale-95 cursor-pointer"
                 >
                     <span>RisuRealm</span>
-                    <div class="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
-                        <GlobeIcon size={18} />
-                    </div>
+                    <GlobeIcon size={15} class="text-textcolor2" />
                 </button>
             </div>
         {/if}

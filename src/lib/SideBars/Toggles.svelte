@@ -1,6 +1,6 @@
 <script lang="ts">
     import { getModuleToggles } from "src/ts/process/modules";
-    import { MobileGUI, selectedCharID } from "src/ts/stores.svelte";
+    import { selectedCharID } from "src/ts/stores.svelte";
     import { characterStore, settingsStore } from "src/ts/stores/domain";
     import { parseToggleSyntax, type sidebarToggle, type sidebarToggleGroup } from "src/ts/util";
     import { language } from "src/lang";
@@ -117,7 +117,7 @@
                 </Accordion>
             </div>
         {:else if toggle.type === 'select'}
-            <div class="w-full flex gap-2 mt-2 items-center" class:justify-end={$MobileGUI} >
+            <div class="w-full flex gap-2 mt-2 items-center">
                 <span>{@render getToggleDisplayName(toggle)}</span>
                 <SelectInput className="w-32" value={getGlobalChatVarNH(`toggle_${toggle.key}`)} onchange={(e) => {
                     setGlobalChatVar(`toggle_${toggle.key}`, e.currentTarget.value)
@@ -128,14 +128,14 @@
                 </SelectInput>
             </div>
         {:else if toggle.type === 'text'}
-            <div class="w-full flex gap-2 mt-2 items-center" class:justify-end={$MobileGUI}>
+            <div class="w-full flex gap-2 mt-2 items-center">
                 <span>{@render getToggleDisplayName(toggle)}</span>
                 <TextInput className="w-32" value={getGlobalChatVarNH(`toggle_${toggle.key}`)} onchange={(e) => {
                     setGlobalChatVar(`toggle_${toggle.key}`, e.currentTarget.value)
                 }} />
             </div>
         {:else if toggle.type === 'textarea'}
-            <div class="w-full flex gap-2 mt-2 items-start" class:justify-end={$MobileGUI}>
+            <div class="w-full flex gap-2 mt-2 items-start">
                 <span class="mt-1.5">{@render getToggleDisplayName(toggle)}</span>
                 <TextAreaInput className="w-32" height='20' value={getGlobalChatVarNH(`toggle_${toggle.key}`)} onchange={(e) => {
                     if(e.currentTarget instanceof HTMLDivElement){
@@ -152,7 +152,7 @@
         {:else if toggle.type === 'divider'}
             <!-- Prevent multiple dividers appearing in a row -->
             {#if index === 0 || items[index - 1]?.type !== 'divider' || items[index - 1]?.value !== toggle.value}
-                <div class="w-full min-h-5 flex gap-2 mt-2 items-center" class:justify-end={!reverse}>
+                <div class="w-full min-h-5 flex gap-2 mt-2 items-center">
                     {#if toggle.value}
                         <span class="shrink-0">{@render getToggleDisplayName(toggle)}</span>
                     {/if}
@@ -160,7 +160,7 @@
                 </div>
             {/if}
         {:else}
-            <div class="w-full flex mt-2 items-center" class:justify-end={$MobileGUI}>
+            <div class="w-full flex mt-2 items-center">
                 <CheckInput check={getGlobalChatVarNH(`toggle_${toggle.key}`) === '1'} reverse={reverse} name={toggle.value} onChange={() => {
                     setGlobalChatVar(`toggle_${toggle.key}`, getGlobalChatVarNH(`toggle_${toggle.key}`) === '1' ? '0' : '1')
                 }}>
@@ -176,14 +176,14 @@
         <CustomSideBar />
 
         {#if hasJailbreakPrompt}
-            <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI}>
+            <div class="flex mt-2 items-center w-full">
                 <CheckInput bind:check={settingsStore.state.jailbreakToggle} name={language.jailbreakToggle} reverse />
             </div>
         {/if}
 
         {@render toggles(groupedToggles, true)}
         {#if chara && (settingsStore.state.supaModelType !== 'none' || settingsStore.state.hanuraiEnable || settingsStore.state.hypaV3)}
-            <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI}>
+            <div class="flex mt-2 items-center w-full">
                 <CheckInput bind:check={chara.supaMemory} reverse name={settingsStore.state.hypaV3 ? language.ToggleHypaMemory : settingsStore.state.hanuraiEnable ? language.hanuraiMemory : settingsStore.state.hypaMemory ? language.ToggleHypaMemory : language.ToggleSuperMemory}/>
             </div>
         {/if}
@@ -203,7 +203,7 @@
         </div>
     {/if}
     {#if chara}
-        <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI}>
+        <div class="flex mt-2 items-center w-full">
             <CheckInput check={characterStore.getCurrentChat()?.useLocallySetGlobalVariables ?? false} name={language.localToggles} onChange={() => {
                 const chat = characterStore.getCurrentChat()
                 if(chat){

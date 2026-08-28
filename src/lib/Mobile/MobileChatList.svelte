@@ -20,7 +20,8 @@
         ChevronRightIcon,
         HardDriveUploadIcon,
         SlidersHorizontalIcon,
-        UserIcon
+        UserIcon,
+        ToggleLeftIcon
     } from "@lucide/svelte";
     import { alertConfirm, alertInput, alertNormal, alertSelect } from "src/ts/alert";
     import { language } from "src/lang";
@@ -496,7 +497,7 @@
             </div>
         {/if}
 
-        <!-- Bottom Quick Switcher Cards: Persona & Preset -->
+        <!-- Quick Persona & Model Cards -->
         <div class="mt-4 pt-3 border-t border-darkborderc/60 flex flex-col gap-2">
             <span class="text-[11px] font-semibold text-textcolor2 px-1 uppercase tracking-wider">Quick Switcher</span>
             

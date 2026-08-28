@@ -13,8 +13,8 @@
     const chatLoader = () => import('../ChatScreens/ChatScreen.svelte')
     const devToolLoader = () => import('../SideBars/DevTool.svelte')
     const btwPanelLoader = () => import('../ChatScreens/BtwPanel.svelte')
-    const quickSettingsLoader = () => import('../Others/QuickSettingsGUI.svelte')
     const mobileChatListLoader = () => import('./MobileChatList.svelte')
+    const mobileTogglesLoader = () => import('./MobileToggles.svelte')
 
 </script>
 
@@ -22,38 +22,38 @@
 <nav class="w-full px-2 py-1.5 text-xs font-semibold text-textcolor2 border-b border-b-darkborderc bg-darkbg flex items-center justify-around gap-1 shrink-0 select-none">
     <!-- Tab 1: Chats List -->
     <button
-        class="flex-1 py-1.5 px-2 rounded-xl text-center transition-all cursor-pointer truncate {$MobileSideBar === 1 ? 'bg-selected/20 text-selected font-bold' : 'hover:bg-darkbutton hover:text-textcolor'}"
+        class="flex-1 py-1.5 px-2 rounded-xl text-center transition-all cursor-pointer truncate shrink-0 {$MobileSideBar === 1 ? 'bg-selected/20 text-selected font-bold' : 'hover:bg-darkbutton hover:text-textcolor'}"
         onclick={() => {
             $MobileSideBar = 1;
         }}
     >
-        {language.Chat || "Chats"}
+        {language.Chat || "챗"}
     </button>
 
     <!-- Tab 2: Character Config -->
     <button
-        class="flex-1 py-1.5 px-2 rounded-xl text-center transition-all cursor-pointer truncate {$MobileSideBar === 2 ? 'bg-selected/20 text-selected font-bold' : 'hover:bg-darkbutton hover:text-textcolor'}"
+        class="flex-1 py-1.5 px-2 rounded-xl text-center transition-all cursor-pointer truncate shrink-0 {$MobileSideBar === 2 ? 'bg-selected/20 text-selected font-bold' : 'hover:bg-darkbutton hover:text-textcolor'}"
         onclick={() => {
             void loadCharConfig();
             $MobileSideBar = 2;
         }}
     >
-        {language.character || "Character"}
+        {language.character || "캐릭터"}
     </button>
 
-    <!-- Tab 5: Quick Settings -->
+    <!-- Tab 6: Module & Prompt Toggles -->
     <button
-        class="flex-1 py-1.5 px-2 rounded-xl text-center transition-all cursor-pointer truncate {$MobileSideBar === 5 ? 'bg-selected/20 text-selected font-bold' : 'hover:bg-darkbutton hover:text-textcolor'}"
+        class="flex-1 py-1.5 px-2 rounded-xl text-center transition-all cursor-pointer truncate shrink-0 {$MobileSideBar === 6 ? 'bg-selected/20 text-selected font-bold' : 'hover:bg-darkbutton hover:text-textcolor'}"
         onclick={() => {
-            $MobileSideBar = 5;
+            $MobileSideBar = 6;
         }}
     >
-        Quick Settings
+        {language.promptTemplate || "토글"}
     </button>
 
     <!-- Tab 3: Dev Tools -->
     <button
-        class="py-1.5 px-2.5 rounded-xl text-center transition-all cursor-pointer flex items-center justify-center {$MobileSideBar === 3 ? 'bg-selected/20 text-selected font-bold' : 'hover:bg-darkbutton hover:text-textcolor'}"
+        class="py-1.5 px-3 rounded-xl text-center transition-all cursor-pointer flex items-center justify-center shrink-0 {$MobileSideBar === 3 ? 'bg-selected/20 text-selected font-bold' : 'hover:bg-darkbutton hover:text-textcolor'}"
         onclick={() => {
             $MobileSideBar = 3;
         }}
@@ -66,7 +66,7 @@
     <!-- Tab 4: BTW (if enabled) -->
     {#if btwRuntime.open}
         <button
-            class="py-1.5 px-2 rounded-xl text-center transition-all cursor-pointer truncate {$MobileSideBar === 4 ? 'bg-selected/20 text-selected font-bold' : 'hover:bg-darkbutton hover:text-textcolor'}"
+            class="py-1.5 px-2 rounded-xl text-center transition-all cursor-pointer truncate shrink-0 {$MobileSideBar === 4 ? 'bg-selected/20 text-selected font-bold' : 'hover:bg-darkbutton hover:text-textcolor'}"
             onclick={() => {
                 $MobileSideBar = 4;
             }}
@@ -81,18 +81,18 @@
     {#if $MobileSideBar > 0}
         <div
             class="w-full flex flex-col h-full overflow-y-auto"
-            class:p-2={$MobileSideBar !== 4 && $MobileSideBar !== 1}
+            class:p-2={$MobileSideBar !== 4 && $MobileSideBar !== 1 && $MobileSideBar !== 6}
         >
             {#if $MobileSideBar === 1}
                 <LazyComponent loader={mobileChatListLoader} />
             {:else if $MobileSideBar === 2}
                 <LazyComponent loader={loadCharConfig} />
+            {:else if $MobileSideBar === 6}
+                <LazyComponent loader={mobileTogglesLoader} />
             {:else if $MobileSideBar === 3}
                 <LazyComponent loader={devToolLoader} />
             {:else if $MobileSideBar === 4}
                 <LazyComponent loader={btwPanelLoader} />
-            {:else if $MobileSideBar === 5}
-                <LazyComponent loader={quickSettingsLoader} />
             {/if}
         </div>
     {:else if $selectedCharID !== -1}

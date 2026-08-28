@@ -62,84 +62,81 @@
 
 <!-- ================= 2. CHARACTER CONFIGURATION BOTTOM BAR ($MobileSideBar === 2) ================= -->
 {#if $selectedCharID !== -1 && $MobileSideBar === 2}
-  <nav class="w-full px-2 pt-1.5 pb-[max(env(safe-area-inset-bottom),0.5rem)] border-t border-t-darkborderc bg-darkbg/95 backdrop-blur-md flex items-center justify-around text-textcolor2 shrink-0 z-30 select-none overflow-x-auto no-scrollbar">
+  <nav class="w-full px-2 py-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] border-t border-t-darkborderc bg-darkbg/95 backdrop-blur-md flex items-center justify-around text-textcolor2 shrink-0 z-30 select-none">
     <!-- Submenu 0: Basic Info -->
     <button
-      class="flex justify-center items-center flex-col gap-1 py-1 px-2 min-w-[52px] rounded-xl transition-all cursor-pointer {$CharConfigSubMenu === 0 ? 'text-selected font-bold bg-selected/15' : 'text-textcolor2 hover:text-textcolor'}"
+      class="flex justify-center items-center p-2.5 rounded-2xl transition-all cursor-pointer {$CharConfigSubMenu === 0 ? 'text-selected bg-selected/20 font-bold scale-105' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton'}"
       onclick={() => { CharConfigSubMenu.set(0); }}
+      title={language.basicInfo || "Basic"}
+      aria-label={language.basicInfo || "Basic"}
     >
-      <UserIcon size={20} />
-      <span class="text-[10px] truncate max-w-[56px]">{language.basicInfo || "Basic"}</span>
+      <UserIcon size={22} />
     </button>
 
     <!-- Submenu 1: Display / Icon -->
     <button
-      class="flex justify-center items-center flex-col gap-1 py-1 px-2 min-w-[52px] rounded-xl transition-all cursor-pointer {$CharConfigSubMenu === 1 ? 'text-selected font-bold bg-selected/15' : 'text-textcolor2 hover:text-textcolor'}"
+      class="flex justify-center items-center p-2.5 rounded-2xl transition-all cursor-pointer {$CharConfigSubMenu === 1 ? 'text-selected bg-selected/20 font-bold scale-105' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton'}"
       onclick={() => { CharConfigSubMenu.set(1); }}
+      title={language.characterDisplay || "Display"}
+      aria-label={language.characterDisplay || "Display"}
     >
       {#if isGroup}
-        <UsersIcon size={20} />
+        <UsersIcon size={22} />
       {:else}
-        <SmileIcon size={20} />
+        <SmileIcon size={22} />
       {/if}
-      <span class="text-[10px] truncate max-w-[56px]">{language.characterDisplay || "Display"}</span>
     </button>
 
     <!-- Submenu 3: LoreBook -->
     <button
-      class="flex justify-center items-center flex-col gap-1 py-1 px-2 min-w-[52px] rounded-xl transition-all cursor-pointer {$CharConfigSubMenu === 3 ? 'text-selected font-bold bg-selected/15' : 'text-textcolor2 hover:text-textcolor'}"
+      class="flex justify-center items-center p-2.5 rounded-2xl transition-all cursor-pointer {$CharConfigSubMenu === 3 ? 'text-selected bg-selected/20 font-bold scale-105' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton'}"
       onclick={() => { CharConfigSubMenu.set(3); }}
+      title={language.loreBook || "LoreBook"}
+      aria-label={language.loreBook || "LoreBook"}
     >
-      <BookIcon size={20} />
-      <span class="text-[10px] truncate max-w-[56px]">{language.loreBook || "LoreBook"}</span>
+      <BookIcon size={22} />
     </button>
 
     <!-- Submenu 5: TTS (Individual Characters only) -->
     {#if !isGroup}
       <button
-        class="flex justify-center items-center flex-col gap-1 py-1 px-2 min-w-[52px] rounded-xl transition-all cursor-pointer {$CharConfigSubMenu === 5 ? 'text-selected font-bold bg-selected/15' : 'text-textcolor2 hover:text-textcolor'}"
+        class="flex justify-center items-center p-2.5 rounded-2xl transition-all cursor-pointer {$CharConfigSubMenu === 5 ? 'text-selected bg-selected/20 font-bold scale-105' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton'}"
         onclick={() => { CharConfigSubMenu.set(5); }}
+        title="TTS"
+        aria-label="TTS"
       >
-        <Volume2Icon size={20} />
-        <span class="text-[10px] truncate max-w-[56px]">TTS</span>
+        <Volume2Icon size={22} />
       </button>
 
       <!-- Submenu 4: Scripts (Individual Characters only) -->
       <button
-        class="flex justify-center items-center flex-col gap-1 py-1 px-2 min-w-[52px] rounded-xl transition-all cursor-pointer {$CharConfigSubMenu === 4 ? 'text-selected font-bold bg-selected/15' : 'text-textcolor2 hover:text-textcolor'}"
+        class="flex justify-center items-center p-2.5 rounded-2xl transition-all cursor-pointer {$CharConfigSubMenu === 4 ? 'text-selected bg-selected/20 font-bold scale-105' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton'}"
         onclick={() => { CharConfigSubMenu.set(4); }}
+        title={language.scripts || "Scripts"}
+        aria-label={language.scripts || "Scripts"}
       >
-        <Braces size={20} />
-        <span class="text-[10px] truncate max-w-[56px]">{language.scripts || "Scripts"}</span>
+        <Braces size={22} />
       </button>
     {/if}
 
     <!-- Submenu 2: Advanced -->
     <button
-      class="flex justify-center items-center flex-col gap-1 py-1 px-2 min-w-[52px] rounded-xl transition-all cursor-pointer {$CharConfigSubMenu === 2 ? 'text-selected font-bold bg-selected/15' : 'text-textcolor2 hover:text-textcolor'}"
+      class="flex justify-center items-center p-2.5 rounded-2xl transition-all cursor-pointer {$CharConfigSubMenu === 2 ? 'text-selected bg-selected/20 font-bold scale-105' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton'}"
       onclick={() => { CharConfigSubMenu.set(2); }}
+      title={language.advanced || "Advanced"}
+      aria-label={language.advanced || "Advanced"}
     >
-      <ActivityIcon size={20} />
-      <span class="text-[10px] truncate max-w-[56px]">{language.advanced || "Advanced"}</span>
+      <ActivityIcon size={22} />
     </button>
 
     <!-- Submenu 6: Manage / Export / Delete -->
     <button
-      class="flex justify-center items-center flex-col gap-1 py-1 px-2 min-w-[52px] rounded-xl transition-all cursor-pointer {$CharConfigSubMenu === 6 ? 'text-selected font-bold bg-selected/15' : 'text-textcolor2 hover:text-textcolor'}"
+      class="flex justify-center items-center p-2.5 rounded-2xl transition-all cursor-pointer {$CharConfigSubMenu === 6 ? 'text-selected bg-selected/20 font-bold scale-105' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton'}"
       onclick={() => { CharConfigSubMenu.set(6); }}
+      title={language.shareExport || "Manage"}
+      aria-label={language.shareExport || "Manage"}
     >
-      <SlidersHorizontal size={20} />
-      <span class="text-[10px] truncate max-w-[56px]">{language.shareExport || "Manage"}</span>
+      <SlidersHorizontal size={22} />
     </button>
   </nav>
 {/if}
-
-<style>
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
-  .no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-</style>

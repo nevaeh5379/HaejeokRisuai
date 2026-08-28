@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, saving, AccountWarning, selectedCharID, PlaygroundStore } from './ts/stores.svelte';
+    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, saving, AccountWarning, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
     import { isCapacitor, isNodeServer, isTauri } from './ts/platform';
@@ -53,6 +53,14 @@
             }
             if ($CustomGUISettingMenuStore) { $CustomGUISettingMenuStore = false; return }
             if ($MobileSideBar > 0) { $MobileSideBar = 0; return }
+            if ($MobileGUI && $MobileGUIStack === 2 && mobileSettingsReturnChar.value) {
+                const ret = mobileSettingsReturnChar.value;
+                mobileSettingsReturnChar.value = null;
+                $SettingsMenuIndex = -1;
+                $selectedCharID = ret.charId;
+                $MobileSideBar = ret.sideBar ?? 0;
+                return;
+            }
             if ($selectedCharID >= 0) { $selectedCharID = -1; return }
             if ($MobileGUI) {
                 if ($MobileGUIStack === 2 && $SettingsMenuIndex > -1) { $SettingsMenuIndex = -1; return }

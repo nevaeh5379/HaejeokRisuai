@@ -12,7 +12,8 @@
         PlusIcon,
         DownloadIcon,
         RotateCcwIcon,
-        SlidersHorizontalIcon
+        SlidersHorizontalIcon,
+        PackageIcon
     } from "@lucide/svelte";
     import { language } from "src/lang";
     import { characterStore, settingsStore, presetStore } from 'src/ts/stores/domain';
@@ -27,16 +28,20 @@
         openPresetList,
         bookmarkListOpen,
         alertStore,
-        ReloadGUIPointer
+        ReloadGUIPointer,
+        mobileSettingsReturnChar,
+        openMobileSettingsPage
     } from "src/ts/stores.svelte";
     import { preloadChatSidebarPanel } from '../SideBars/sidebarPanelLoaders';
     import { getCharImage } from "src/ts/characters";
     import { changeChatTo } from "src/ts/globalApi.svelte";
     import { alertConfirm, alertNormal, alertInput } from "src/ts/alert";
     import { downloadRisuHub } from "src/ts/characterCards";
+    import ModuleChatMenu from '../Setting/Pages/Module/ModuleChatMenu.svelte';
     import { v4 } from "uuid";
 
     let chatQuickMenuOpen = $state(false);
+    let openModuleMenu = $state(false);
 
     let currentChar = $derived(characterStore.characters[$selectedCharID]);
     let activePersonaIcon = $derived(
@@ -85,7 +90,7 @@
             case 2: return language.character || "Character";
             case 3: return "Dev Tools";
             case 4: return "BTW";
-            case 5: return "Quick Settings";
+            case 6: return language.promptTemplate || "Toggles";
             default: return language.menu;
         }
     });
@@ -149,6 +154,11 @@
         }
         await downloadRisuHub(id);
     }
+
+    function handleGoGlobalModules() {
+        chatQuickMenuOpen = false;
+        openMobileSettingsPage(14, $selectedCharID, $MobileSideBar);
+    }
 </script>
 
 <header class="w-full pt-[max(env(safe-area-inset-top),0.5rem)] px-3 pb-2 border-b border-darkborderc bg-darkbg/95 backdrop-blur-md flex items-center justify-between gap-2 shrink-0 z-30 select-none shadow-xs">
@@ -187,12 +197,6 @@
                     <BookmarkCheckIcon size={18} />
                 </button>
             {/if}
-            <button
-                onclick={() => { MobileSideBar.set(0); }}
-                class="px-3 py-1 rounded-xl bg-darkbutton border border-darkborderc text-xs font-semibold text-textcolor hover:bg-selected transition-colors"
-            >
-                Done
-            </button>
         </div>
 
     <!-- ================= 2. IN ACTIVE CHAT ================= -->
@@ -311,6 +315,20 @@
                             <UserIcon size={15} class="text-teal-400" />
                             <span>{language.persona || "Switch Persona"}</span>
                         </button>
+                        <button
+                            onclick={() => { chatQuickMenuOpen = false; openModuleMenu = true; }}
+                            class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-textcolor hover:bg-darkbutton transition-colors"
+                        >
+                            <PackageIcon size={15} class="text-orange-400" />
+                            <span>대화 모듈</span>
+                        </button>
+                        <button
+                            onclick={handleGoGlobalModules}
+                            class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-textcolor hover:bg-darkbutton transition-colors"
+                        >
+                            <GlobeIcon size={15} class="text-blue-400" />
+                            <span>전역 모듈 (설정)</span>
+                        </button>
                         <div class="my-1 border-t border-darkborderc/50"></div>
                         <button
                             onclick={handleExportChat}
@@ -344,11 +362,21 @@
     <!-- ================= 3. SETTINGS STACK (STACK === 2) ================= -->
     {:else if $MobileGUIStack === 2}
         <div class="flex items-center gap-2 min-w-0 flex-1">
-            {#if $SettingsMenuIndex > -1}
+            {#if $SettingsMenuIndex > -1 || mobileSettingsReturnChar.value}
                 <button
-                    onclick={() => { SettingsMenuIndex.set(-1); }}
+                    onclick={() => {
+                        if (mobileSettingsReturnChar.value) {
+                            const ret = mobileSettingsReturnChar.value;
+                            mobileSettingsReturnChar.value = null;
+                            SettingsMenuIndex.set(-1);
+                            selectedCharID.set(ret.charId);
+                            MobileSideBar.set(ret.sideBar ?? 0);
+                            return;
+                        }
+                        SettingsMenuIndex.set(-1);
+                    }}
                     class="p-2 -ml-1 rounded-xl text-textcolor2 hover:text-textcolor hover:bg-darkbutton transition-colors cursor-pointer shrink-0"
-                    aria-label="Back to settings root"
+                    aria-label="Back"
                 >
                     <ArrowLeft size={20} />
                 </button>
@@ -432,3 +460,9 @@
         </div>
     {/if}
 </header>
+
+{#if openModuleMenu}
+    <div class="fixed inset-0 z-50">
+        <ModuleChatMenu close={() => { openModuleMenu = false; }} />
+    </div>
+{/if}

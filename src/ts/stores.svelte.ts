@@ -229,6 +229,20 @@ export const assetManagerModalStore = $state({
 //Set might be more ideal, however since Svelte doesn't support reactive Sets, using array for now
 export const hotReloading = $state<string[]>([]);
 
+export const mobileSettingsReturnChar = $state<{ value: { charId: number; sideBar?: number } | null }>({
+  value: null,
+});
+
+export function openMobileSettingsPage(menuIndex: number, fromCharId?: number, sidebar?: number) {
+  if (fromCharId !== undefined && fromCharId >= 0) {
+    mobileSettingsReturnChar.value = { charId: fromCharId, sideBar: sidebar ?? 0 };
+  }
+  selectedCharID.set(-1);
+  MobileSideBar.set(0);
+  MobileGUIStack.set(2);
+  SettingsMenuIndex.set(menuIndex);
+}
+
 // SQL 데이터베이스 설정 상태 (Node 서버 환경에서 사용)
 // - configured: DB vendor가 설정되어 활성화됨
 export const sqlConfiguredStore = writable<boolean | null>(null);
