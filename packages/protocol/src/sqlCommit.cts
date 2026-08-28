@@ -129,9 +129,9 @@ function isReservedRootSettingKey(key: string): boolean {
 
 const ERROR_MESSAGES = {
   UPSERT: (key: string) => `${key} must be written through presets`,
-  DELETE: (key: string) => `${key} is not a root setting`
+  DELETE: (key: string) => `${key} is not a root setting`,
 } as const;
- type RejectReservedRootType = keyof typeof ERROR_MESSAGES;
+type RejectReservedRootType = keyof typeof ERROR_MESSAGES;
 // Holds validator configuration and exposes each commit-section parser as a
 // private method, so validation state does not depend on nested function scopes.
 class SqlCommitParser {
@@ -150,10 +150,7 @@ class SqlCommitParser {
     return value;
   }
 
-  private assertId(
-    value: unknown,
-    field: string,
-  ): asserts value is string {
+  private assertId(value: unknown, field: string): asserts value is string {
     if (
       typeof value !== "string" ||
       value.length === 0 ||
@@ -321,7 +318,6 @@ class SqlCommitParser {
     return value;
   }
 
-
   // Prevents preset-owned settings from being written or deleted through the
   // generic root-settings section.
   // private rejectReservedRootUpsert(key: string): void {
@@ -334,11 +330,11 @@ class SqlCommitParser {
   //     throw new this.PayloadError(`${key} is not a root setting`);
   // }
 
-    private rejectReservedRoot(action: RejectReservedRootType, key: string) {
-      if (!isReservedRootSettingKey(key)) return;
+  private rejectReservedRoot(action: RejectReservedRootType, key: string) {
+    if (!isReservedRootSettingKey(key)) return;
 
-      throw new this.PayloadError(ERROR_MESSAGES[action](key))
-    }
+    throw new this.PayloadError(ERROR_MESSAGES[action](key));
+  }
   // Parses generic root-setting upserts and deletes, applying the reserved-key
   // policy to both operations.
   private parseRoot(value: unknown): {
@@ -354,10 +350,8 @@ class SqlCommitParser {
       "root.upserts",
       (key) => this.rejectReservedRoot("UPSERT", key),
     );
-    const rootDeletes = this.parseIds(
-      value.deletes,
-      "root.deletes",
-      (key) => this.rejectReservedRoot("DELETE", key),
+    const rootDeletes = this.parseIds(value.deletes, "root.deletes", (key) =>
+      this.rejectReservedRoot("DELETE", key),
     );
     return { rootUpserts, rootDeletes };
   }
@@ -375,7 +369,10 @@ class SqlCommitParser {
         this.assertId(item.id, `presets.upserts[${index}].id`);
 
         if (item.position !== undefined)
-          this.assertPosition(item.position, `presets.upserts[${index}].position`);
+          this.assertPosition(
+            item.position,
+            `presets.upserts[${index}].position`,
+          );
 
         if (!isRecord(item.data))
           throw new this.PayloadError(
@@ -499,7 +496,10 @@ class SqlCommitParser {
             "messageDeletes",
             "chatId",
           );
-    const chatDeletes = this.parseOptionalIds(payload.chatDeletes, "chatDeletes");
+    const chatDeletes = this.parseOptionalIds(
+      payload.chatDeletes,
+      "chatDeletes",
+    );
     const characterIds = this.parseOptionalIds(
       payload.characterIds,
       "characterIds",
