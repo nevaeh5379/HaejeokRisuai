@@ -13,7 +13,7 @@
         }}>
             <ArrowLeft />
         </button>
-        <span class="font-bold text-lg w-2/3 truncate">{language.menu}</span>
+        <span class="font-bold text-lg w-2/3 truncate">{$MobileSideBar === 4 ? 'BTW' : language.menu}</span>
     {:else if $selectedCharID !== -1}
         <button onclick={() => {
             selectedCharID.set(-1)

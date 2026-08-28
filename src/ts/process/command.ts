@@ -7,8 +7,17 @@ import { risuChatParser } from "../parser/parser.svelte";
 import { sendChat } from "./index.svelte";
 import { loadLoreBookV3Prompt } from "./lorebook.svelte";
 import { runTrigger } from "./triggers";
+import { chatTargetFromIndexes } from "../chatTarget";
 
-export async function processMultiCommand(command: string) {
+export interface CommandTargetCoordinates {
+  characterIndex: number;
+  chatIndex: number;
+}
+
+export async function processMultiCommand(
+  command: string,
+  target?: CommandTargetCoordinates,
+) {
   let pipe = "";
   const splited: string[] = [];
   let lastIndex = 0;
@@ -25,7 +34,7 @@ export async function processMultiCommand(command: string) {
   splited.push(command.slice(lastIndex));
   console.log(splited);
   for (let i = 0; i < splited.length; i++) {
-    const result = await processCommand(splited[i].trim(), pipe);
+    const result = await processCommand(splited[i].trim(), pipe, target);
     console.log(pipe);
     if (result === false) {
       return false;
@@ -39,9 +48,15 @@ export async function processMultiCommand(command: string) {
 async function processCommand(
   command: string,
   pipe: string,
+  target?: CommandTargetCoordinates,
 ): Promise<false | string> {
-  const currentChar = characterStore.characters[get(selectedCharID)];
-  const currentChat = currentChar.chats[currentChar.chatPage];
+  const characterIndex = target?.characterIndex ?? get(selectedCharID);
+  const currentChar = characterStore.characters[characterIndex];
+  if (!currentChar) return false;
+  const chatIndex = target?.chatIndex ?? currentChar.chatPage;
+  const currentChat = currentChar.chats[chatIndex];
+  if (!currentChat) return false;
+  const chatTarget = chatTargetFromIndexes(characterIndex, chatIndex) ?? undefined;
   let { commandName, arg, namedArg } = commandParser(command, pipe);
 
   if (!arg) {
@@ -50,19 +65,21 @@ async function processCommand(
 
   arg = risuChatParser(arg, {
     chara: currentChar.type === "character" ? currentChar : null,
+    chatTarget,
   });
 
   const namedArgKeys = Object.keys(namedArg);
   for (const key of namedArgKeys) {
     namedArg[key] = risuChatParser(namedArg[key], {
       chara: currentChar.type === "character" ? currentChar : null,
+      chatTarget,
     });
   }
 
   switch (commandName) {
     case "btw": {
       const { openBtwPanel } = await import("./btwSession.svelte");
-      await openBtwPanel(get(selectedCharID), currentChar.chatPage, arg);
+      await openBtwPanel(characterIndex, chatIndex, arg);
       return pipe;
     }
     //STScript compatibility commands

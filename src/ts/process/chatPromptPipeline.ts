@@ -31,8 +31,18 @@ type ReadyChatHistory = Extract<
 >;
 
 function createExecutionTarget(
-  options: Pick<BuildGenerationPromptOptions, "currentChar" | "currentChat" | "generation">,
+  options: Pick<
+    BuildGenerationPromptOptions,
+    "currentChar" | "currentChat" | "chatTarget" | "generation"
+  >,
 ): ChatExecutionTarget {
+  if (options.chatTarget) {
+    return {
+      ...options.chatTarget,
+      globalVariables:
+        options.generation?.chatVariables ?? options.chatTarget.globalVariables,
+    };
+  }
   if (!options.currentChar.chaId || !options.currentChat.id) {
     throw new Error("Generation target requires stable character and chat IDs");
   }
@@ -181,6 +191,8 @@ export interface BuildGenerationPromptOptions {
   continued?: boolean;
   findCharacter: (id: string) => character;
   throwError: (error: string) => void;
+  /** Stable variable/script target when currentChat is an isolated snapshot. */
+  chatTarget?: ChatExecutionTarget;
   generation?: ChatGenerationOverrides;
 }
 

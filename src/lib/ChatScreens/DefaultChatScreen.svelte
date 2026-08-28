@@ -36,8 +36,6 @@
     import { openLogExporter } from 'src/ts/logexporter/index';
     import LogExporterModal from 'src/lib/LogExporter/LogExporterModal.svelte';
     import GenerationStatsFloat from './GenerationStatsFloat.svelte';
-    import BtwPanel from './BtwPanel.svelte';
-    import { btwRuntime } from 'src/ts/process/btwSession.svelte';
 
     let lowSpecMode = $derived(settingsStore.state.lowSpecMode === true)
 
@@ -325,7 +323,10 @@
 
         if(messageInput.startsWith('/')){
             const { processMultiCommand } = await import('src/ts/process/command')
-            const commandProcessed = await processMultiCommand(messageInput)
+            const commandProcessed = await processMultiCommand(messageInput, {
+                characterIndex: selectedChar,
+                chatIndex: currentChatPage,
+            })
             if(commandProcessed !== false){
                 messageInput = ''
                 if (activeChat.id) void compactChatMessages(activeChat.id)
@@ -794,9 +795,6 @@
             }}
         >
             <ChatTabs groupId={paneGroupId} reserveSidebarSpace={reserveSidebarSpace} allowSplit={allowSplit} />
-            {#if btwRuntime.open && btwRuntime.characterIndex === selectedCharacterIndex && btwRuntime.chatIndex === selectedChatIndex}
-                <BtwPanel characterIndex={selectedCharacterIndex} chatIndex={selectedChatIndex} chat={currentChatSession} />
-            {/if}
             <div bind:this={chatScrollContainer} class="grow min-h-0 w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen" onscroll={async (e) => {
             const chatTarget = e.target as HTMLElement;
             const scrolledFromTop = chatTarget.scrollHeight - chatTarget.clientHeight + chatTarget.scrollTop

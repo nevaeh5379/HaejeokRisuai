@@ -24,18 +24,13 @@ import type {
 import { createLocalChatGenerationRuntime } from "./chatLocalRuntime";
 import { tryCreateNodeChatGenerationPlan } from "./chatNodePlanner";
 import { runChatOutputListeners } from "./chatResponseShared.svelte";
+import {
+  btwRuntime,
+  closeBtwSidebar,
+  showBtwSidebar,
+} from "./btwRuntime.svelte";
 
 export type BtwToggleDefinition = ReturnType<typeof parseToggleSyntax>[number];
-
-class BtwRuntimeStore {
-  open = $state(false);
-  characterIndex = $state(-1);
-  chatIndex = $state(-1);
-  generating = $state<Record<string, boolean>>({});
-  errors = $state<Record<string, string>>({});
-}
-
-export const btwRuntime = new BtwRuntimeStore();
 
 function createStageTimings(): ChatStageTimings {
   return {
@@ -342,7 +337,7 @@ export function renameBtwSession(chat: Chat, session: BtwSession, name: string) 
 }
 
 export function closeBtwPanel() {
-  btwRuntime.open = false;
+  closeBtwSidebar();
 }
 
 export function cancelBtwGeneration(sessionId: string) {
@@ -372,7 +367,7 @@ export async function sendBtwMessage(
     time: Date.now(),
     chatId: v4(),
   };
-  const assistantMessage: Message = {
+  const assistantMessageDraft: Message = {
     role: "char",
     data: "",
     time: Date.now(),
@@ -381,7 +376,10 @@ export async function sendBtwMessage(
   if (session.messages.length === 0 && session.name.startsWith("BTW ")) {
     session.name = trimmed.replace(/\s+/g, " ").slice(0, 48);
   }
-  session.messages.push(userMessage, assistantMessage);
+  session.messages.push(userMessage, assistantMessageDraft);
+  // Objects inserted into a Svelte deep-state array are proxied. Keep mutating
+  // the stored proxy so streaming chunks are rendered and persisted.
+  const assistantMessage = session.messages.at(-1)!;
   markBtwDirty(parent, session);
 
   const controller = new AbortController();
@@ -413,6 +411,10 @@ export async function sendBtwMessage(
       findCharacter: (id) => findCharacter(id)!,
       throwError: (error) => {
         throw new Error(error);
+      },
+      chatTarget: {
+        ...requireChatTargetFromIndexes(characterIndex, chatIndex),
+        globalVariables: generation.chatVariables,
       },
       generation,
     });
@@ -497,9 +499,7 @@ export async function openBtwPanel(
   await preLoadChat(characterIndex, chatIndex, { full: true });
   const chat = activeChat(characterIndex, chatIndex);
   if (!chat) throw new Error("BTW target chat not found");
-  btwRuntime.characterIndex = characterIndex;
-  btwRuntime.chatIndex = chatIndex;
-  btwRuntime.open = true;
+  showBtwSidebar(characterIndex, chatIndex);
 
   let session: BtwSession | undefined;
   if (question.trim()) {
@@ -519,3 +519,4 @@ export async function openBtwPanel(
 }
 
 export { moduleStore, presetStore };
+export { btwRuntime } from "./btwRuntime.svelte";

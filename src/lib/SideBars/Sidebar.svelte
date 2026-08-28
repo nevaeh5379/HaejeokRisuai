@@ -51,6 +51,7 @@
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
     import { get } from 'svelte/store';
     import { loadCharConfig, loadSideChatList, preloadChatSidebarPanel } from './sidebarPanelLoaders';
+    import { btwRuntime } from 'src/ts/process/btwRuntime.svelte';
   let sideBarMode = $state(0);
   let editMode = $state(false);
   let menuMode = $state(0);
@@ -59,6 +60,7 @@
   const recentSessionsLoader = () => import('./RecentSessionsList.svelte')
   const devToolLoader = () => import('./DevTool.svelte')
   const quickSettingsLoader = () => import('../Others/QuickSettingsGUI.svelte')
+  const btwPanelLoader = () => import('../ChatScreens/BtwPanel.svelte')
 
   function sidebarThumbnail(loc: string) {
     return getPreparedNativeThumbnailSrc(loc) ?? getCharImage(loc, "plain", { thumbnail: true })
@@ -937,7 +939,11 @@
 </div>
 {/if}
 <div
-  class="setting-area h-full flex-col overflow-y-auto overflow-x-hidden bg-darkbg py-6 text-textcolor max-h-full"
+  class="setting-area h-full flex-col overflow-x-hidden bg-darkbg text-textcolor max-h-full"
+  class:overflow-hidden={btwRuntime.open}
+  class:overflow-y-auto={!btwRuntime.open}
+  class:py-0={btwRuntime.open}
+  class:py-6={!btwRuntime.open}
   class:risu-sidebar={!$sideBarClosing}
   class:w-96={$sideBarSize === 0}
   class:w-110={$sideBarSize === 1}
@@ -948,8 +954,9 @@
   class:min-w-110={!$DynamicGUI && $sideBarSize === 1}
   class:min-w-124={!$DynamicGUI && $sideBarSize === 2}
   class:min-w-138={!$DynamicGUI && $sideBarSize === 3}
-  class:px-2={$DynamicGUI}
-  class:px-4={!$DynamicGUI}
+  class:px-0={btwRuntime.open}
+  class:px-2={$DynamicGUI && !btwRuntime.open}
+  class:px-4={!$DynamicGUI && !btwRuntime.open}
   class:dynamic-sidebar={$DynamicGUI}
   class:hidden={hidden}
   class:flex={!hidden}
@@ -972,7 +979,9 @@
     <!-- <button class="border-none bg-transparent p-0 text-textcolor"><X /></button> -->
   </button>
   {#if sideBarMode === 0}
-    {#if $selectedCharID < 0 || $settingsOpen}
+    {#if btwRuntime.open}
+      <LazyComponent loader={btwPanelLoader} />
+    {:else if $selectedCharID < 0 || $settingsOpen}
       <LazyComponent loader={recentSessionsLoader} props={{ reseter }} />
     {:else if characterStore.characters[$selectedCharID]?.chaId === '§playground'}
       <LazyComponent loader={loadSideChatList} />
