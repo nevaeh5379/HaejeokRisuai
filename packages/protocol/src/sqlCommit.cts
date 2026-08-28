@@ -111,7 +111,7 @@ export interface NormalizedSqlCommit {
 }
 
 export type SqlCommitValidator = (
-  payload: SqlCommit,
+  rawPayload: unknown,
 ) => NormalizedSqlCommit;
 
 export const RESERVED_ROOT_SETTING_KEYS = Object.freeze([
@@ -270,50 +270,59 @@ export function createSqlCommitValidator(
     });
   }
 
-  return function validateSqlCommit(payload: SqlCommit): NormalizedSqlCommit {
-    if (!isRecord(payload)) {
+  function parsePayload(rawPayload: unknown): UnknownRecord {
+    if (!isRecord(rawPayload)) {
       throw new PayloadError("Sync payload must be an object");
     }
-    assertPosition(payload.baseRevision, "baseRevision");
+    return rawPayload;
+  }
 
-    let rootUpserts: SqlSettingUpsert[] = [];
-    let rootDeletes: string[] = [];
-    if (payload.root !== undefined) {
-      if (!isRecord(payload.root)) {
-        throw new PayloadError("root must be an object");
-      }
-      rootUpserts = asArray(payload.root.upserts, "root.upserts").map(
-        (item, index) => {
-          if (!isRecord(item)) {
-            throw new PayloadError(`root.upserts[${index}] must be an object`);
-          }
-          assertId(item.key, `root.upserts[${index}].key`);
-          if (isReservedRootSettingKey(item.key)) {
-            throw new PayloadError(`${item.key} must be written through presets`);
-          }
-          return { key: item.key, value: item.value };
-        },
-      );
-      rootDeletes = asArray(payload.root.deletes, "root.deletes").map(
-        (key, index) => {
-          assertId(key, `root.deletes[${index}]`);
-          if (isReservedRootSettingKey(key)) {
-            throw new PayloadError(`${key} is not a root setting`);
-          }
-          return key;
-        },
-      );
+  function parseBaseRevision(value: unknown): number {
+    assertPosition(value, "baseRevision");
+    return value;
+  }
+
+  function parseRoot(value: unknown): {
+    rootUpserts: SqlSettingUpsert[];
+    rootDeletes: string[];
+  } {
+    if (value === undefined) {
+      return { rootUpserts: [], rootDeletes: [] };
     }
+    if (!isRecord(value)) {
+      throw new PayloadError("root must be an object");
+    }
+    const rootUpserts = asArray(value.upserts, "root.upserts").map(
+      (item, index) => {
+        if (!isRecord(item)) {
+          throw new PayloadError(`root.upserts[${index}] must be an object`);
+        }
+        assertId(item.key, `root.upserts[${index}].key`);
+        if (isReservedRootSettingKey(item.key)) {
+          throw new PayloadError(`${item.key} must be written through presets`);
+        }
+        return { key: item.key, value: item.value };
+      },
+    );
+    const rootDeletes = asArray(value.deletes, "root.deletes").map(
+      (key, index) => {
+        assertId(key, `root.deletes[${index}]`);
+        if (isReservedRootSettingKey(key)) {
+          throw new PayloadError(`${key} is not a root setting`);
+        }
+        return key;
+      },
+    );
+    return { rootUpserts, rootDeletes };
+  }
 
-    let presets: NormalizedSqlCommit["presets"];
-    if (payload.presets !== undefined) {
-      if (!isRecord(payload.presets)) {
-        throw new PayloadError("presets must be an object");
-      }
-      const upserts = asArray(
-        payload.presets.upserts,
-        "presets.upserts",
-      ).map((item, index) => {
+  function parsePresets(value: unknown): NormalizedSqlCommit["presets"] {
+    if (value === undefined) return undefined;
+    if (!isRecord(value)) {
+      throw new PayloadError("presets must be an object");
+    }
+    const upserts = asArray(value.upserts, "presets.upserts").map(
+      (item, index) => {
         if (!isRecord(item)) {
           throw new PayloadError(
             `presets.upserts[${index}] must be an object`,
@@ -329,81 +338,110 @@ export function createSqlCommitValidator(
           );
         }
         return { id: item.id, position: item.position, data: item.data };
-      });
-      const deletes = asArray(
-        payload.presets.deletes,
-        "presets.deletes",
-      ).map((id, index) => {
-        assertId(id, `presets.deletes[${index}]`);
-        return id;
-      });
-      const order =
-        payload.presets.order === undefined
-          ? undefined
-          : asArray(payload.presets.order, "presets.order").map(
-              (id, index) => {
-                assertId(id, `presets.order[${index}]`);
-                return id;
-              },
-            );
-      if (payload.presets.activeId !== undefined) {
-        assertId(payload.presets.activeId, "presets.activeId");
-      }
-      presets = {
-        upserts,
-        deletes,
-        order,
-        activeId: payload.presets.activeId,
-      };
-    }
-
-    let pluginStorageUpserts: SqlSettingUpsert[] = [];
-    let pluginStorageDeletes: string[] = [];
-    let pluginStorageClear = false;
-    if (payload.pluginStorage !== undefined) {
-      if (!isRecord(payload.pluginStorage)) {
-        throw new PayloadError("pluginStorage must be an object");
-      }
-      pluginStorageClear = Boolean(payload.pluginStorage.clear);
-      pluginStorageUpserts = asArray(
-        payload.pluginStorage.upserts,
-        "pluginStorage.upserts",
-      ).map((item, index) => {
-        if (!isRecord(item)) {
-          throw new PayloadError(
-            `pluginStorage.upserts[${index}] must be an object`,
-          );
-        }
-        assertId(item.key, `pluginStorage.upserts[${index}].key`);
-        return { key: item.key, value: item.value };
-      });
-      pluginStorageDeletes = asArray(
-        payload.pluginStorage.deletes,
-        "pluginStorage.deletes",
-      ).map((key, index) => {
-        assertId(key, `pluginStorage.deletes[${index}]`);
-        return key;
-      });
-    }
-
-    const characters = validateEntityRows(payload.characters, "characters");
-    const characterTouches = validateRows(
-      payload.characterTouches,
-      "characterTouches",
-      (row, index) => {
-        const rowField = `characterTouches[${index}]`;
-        assertId(row.id, `${rowField}.id`);
-        if (
-          !Number.isSafeInteger(row.lastInteraction) ||
-          (row.lastInteraction as number) < 0
-        ) {
-          throw new PayloadError(
-            `${rowField}.lastInteraction must be a non-negative safe integer`,
-          );
-        }
-        return { id: row.id, lastInteraction: row.lastInteraction as number };
       },
     );
+    const deletes = asArray(value.deletes, "presets.deletes").map(
+      (id, index) => {
+        assertId(id, `presets.deletes[${index}]`);
+        return id;
+      },
+    );
+    const order =
+      value.order === undefined
+        ? undefined
+        : asArray(value.order, "presets.order").map((id, index) => {
+            assertId(id, `presets.order[${index}]`);
+            return id;
+          });
+    if (value.activeId !== undefined) {
+      assertId(value.activeId, "presets.activeId");
+    }
+    return {
+      upserts,
+      deletes,
+      order,
+      activeId: value.activeId,
+    };
+  }
+
+  function parsePluginStorage(value: unknown): {
+    pluginStorageUpserts: SqlSettingUpsert[];
+    pluginStorageDeletes: string[];
+    pluginStorageClear: boolean;
+  } {
+    if (value === undefined) {
+      return {
+        pluginStorageUpserts: [],
+        pluginStorageDeletes: [],
+        pluginStorageClear: false,
+      };
+    }
+    if (!isRecord(value)) {
+      throw new PayloadError("pluginStorage must be an object");
+    }
+    const pluginStorageUpserts = asArray(
+      value.upserts,
+      "pluginStorage.upserts",
+    ).map((item, index) => {
+      if (!isRecord(item)) {
+        throw new PayloadError(
+          `pluginStorage.upserts[${index}] must be an object`,
+        );
+      }
+      assertId(item.key, `pluginStorage.upserts[${index}].key`);
+      return { key: item.key, value: item.value };
+    });
+    const pluginStorageDeletes = asArray(
+      value.deletes,
+      "pluginStorage.deletes",
+    ).map((key, index) => {
+      assertId(key, `pluginStorage.deletes[${index}]`);
+      return key;
+    });
+    return {
+      pluginStorageUpserts,
+      pluginStorageDeletes,
+      pluginStorageClear: Boolean(value.clear),
+    };
+  }
+
+  function parseCharacterTouches(value: unknown): SqlCharacterTouch[] {
+    return validateRows(value, "characterTouches", (row, index) => {
+      const rowField = `characterTouches[${index}]`;
+      assertId(row.id, `${rowField}.id`);
+      if (
+        !Number.isSafeInteger(row.lastInteraction) ||
+        (row.lastInteraction as number) < 0
+      ) {
+        throw new PayloadError(
+          `${rowField}.lastInteraction must be a non-negative safe integer`,
+        );
+      }
+      return { id: row.id, lastInteraction: row.lastInteraction as number };
+    });
+  }
+
+  function parseAction(value: unknown): string | undefined {
+    return typeof value === "string" && value.length > 0 && value.length <= 64
+      ? value
+      : undefined;
+  }
+
+  function parseEntities(payload: UnknownRecord): Pick<
+    NormalizedSqlCommit,
+    | "characters"
+    | "characterTouches"
+    | "characterIds"
+    | "characterDeletes"
+    | "chats"
+    | "chatManifests"
+    | "chatDeletes"
+    | "messages"
+    | "messageManifests"
+    | "messageDeletes"
+  > {
+    const characters = validateEntityRows(payload.characters, "characters");
+    const characterTouches = parseCharacterTouches(payload.characterTouches);
     const chats = validateEntityRows(payload.chats, "chats", "characterId");
     const messages = validateEntityRows(payload.messages, "messages", "chatId");
     const chatManifests = validateManifests(
@@ -429,23 +467,8 @@ export function createSqlCommitValidator(
       payload.characterDeletes,
       "characterDeletes",
     );
-    const action =
-      typeof payload.action === "string" &&
-      payload.action.length > 0 &&
-      payload.action.length <= 64
-        ? payload.action
-        : undefined;
 
     return {
-      replaceAll: Boolean(payload.replaceAll),
-      action,
-      baseRevision: payload.baseRevision,
-      rootUpserts,
-      rootDeletes,
-      pluginStorageUpserts,
-      pluginStorageDeletes,
-      pluginStorageClear,
-      presets,
       characters,
       characterTouches,
       chats,
@@ -456,6 +479,25 @@ export function createSqlCommitValidator(
       messageDeletes,
       characterIds,
       characterDeletes,
+    };
+  }
+
+  return function validateSqlCommit(rawPayload: unknown): NormalizedSqlCommit {
+    const payload = parsePayload(rawPayload);
+    const baseRevision = parseBaseRevision(payload.baseRevision);
+    const root = parseRoot(payload.root);
+    const presets = parsePresets(payload.presets);
+    const pluginStorage = parsePluginStorage(payload.pluginStorage);
+    const entities = parseEntities(payload);
+
+    return {
+      replaceAll: Boolean(payload.replaceAll),
+      action: parseAction(payload.action),
+      baseRevision,
+      ...root,
+      ...pluginStorage,
+      presets,
+      ...entities,
     };
   };
 }
