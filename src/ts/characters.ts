@@ -1126,18 +1126,51 @@ export async function duplicateChat(
   chatIndex: number,
   options: { selectNew?: boolean; insertIndex?: number } = {},
 ): Promise<Chat | null> {
-  const char = characterStore.characters[characterIndex];
-  if (!char || !char.chats || !char.chaId) return null;
-  const sourceChat = char.chats[chatIndex];
-  if (!sourceChat) return null;
+  const initialChar = characterStore.characters[characterIndex];
+  if (!initialChar?.chats || !initialChar.chaId) return null;
+  const initialSourceChat = initialChar.chats[chatIndex];
+  if (!initialSourceChat) return null;
 
+  const characterId = initialChar.chaId;
+  const sourceChatId = initialSourceChat.id;
+  const expectedMessageTotal =
+    initialSourceChat.messagesFullyLoaded === false &&
+    typeof initialSourceChat.messageTotal === "number"
+      ? initialSourceChat.messageTotal
+      : null;
   await preLoadChat(characterIndex, chatIndex, { full: true });
 
-  const newChat: Chat = safeStructuredClone(char.chats[chatIndex]);
+  // The preload is asynchronous and intentionally swallows storage errors. Re-find
+  // the source by stable IDs so realtime sync/reordering cannot make us clone a
+  // different chat, and never turn a partially hydrated chat into a "full" copy.
+  const char = characterStore.characters.find((candidate) => candidate.chaId === characterId);
+  if (!char?.chats) return null;
+  const sourceIndex = sourceChatId
+    ? char.chats.findIndex((chat) => chat.id === sourceChatId)
+    : char.chats.indexOf(initialSourceChat);
+  const sourceChat = sourceIndex >= 0 ? char.chats[sourceIndex] : undefined;
+  if (!sourceChat) return null;
+  if (
+    sourceChat.messagesLoaded === false ||
+    sourceChat.messagesFullyLoaded === false ||
+    sourceChat.detailsLoaded === false ||
+    (expectedMessageTotal !== null && sourceChat.message.length < expectedMessageTotal)
+  ) {
+    console.error(
+      `[duplicateChat] Refusing to duplicate incompletely loaded chat ${sourceChat.id ?? sourceIndex}`,
+    );
+    alertError("Failed to duplicate chat because its full history could not be loaded.");
+    return null;
+  }
+
+  const newChat: Chat = safeStructuredClone(sourceChat);
   newChat.id = uuidv4();
   newChat.name = createChatCopyName(sourceChat.name || "Chat", "Copy", char.chats);
   newChat.branch = undefined;
   newChat.branchState = undefined;
+  newChat.isStreaming = false;
+  newChat.activeStreamingDisplayOptimizationMode = undefined;
+  newChat.preventMessageCompaction = undefined;
 
   const idMap = new Map<string, string>();
   const messages = newChat.message ?? [];
@@ -1145,7 +1178,7 @@ export async function duplicateChat(
     const oldId = msg.chatId;
     const newId = uuidv4();
     msg.chatId = newId;
-    if (oldId) idMap.set(oldId, newId);
+    if (oldId && !idMap.has(oldId)) idMap.set(oldId, newId);
   }
 
   if (newChat.bookmarks && Array.isArray(newChat.bookmarks)) {
@@ -1169,23 +1202,29 @@ export async function duplicateChat(
   newChat.detailsLoaded = true;
 
   const selectNew = options.selectNew ?? false;
-  const insertIndex = options.insertIndex ?? (selectNew ? 0 : chatIndex + 1);
 
   if (selectNew) {
     char.chats.unshift(newChat);
-    if (newChat.id) {
-      await messageStore.persistNewChat(char.chaId, newChat.id, newChat.message ?? []);
+    char.chatPage = 0;
+    await messageStore.persistNewChat(characterId, newChat.id, newChat.message ?? []);
+
+    const selectedCharacter = characterStore.characters[get(selectedCharID)];
+    if (selectedCharacter?.chaId === characterId) {
+      changeChatTo(0);
     }
-    changeChatTo(0);
   } else {
+    const requestedInsertIndex = options.insertIndex ?? sourceIndex + 1;
+    const insertIndex = Math.max(0, Math.min(char.chats.length, requestedInsertIndex));
     char.chats.splice(insertIndex, 0, newChat);
     if (insertIndex <= (char.chatPage ?? 0)) {
       char.chatPage = (char.chatPage ?? 0) + 1;
     }
-    if (newChat.id) {
-      await messageStore.persistNewChat(char.chaId, newChat.id, newChat.message ?? []);
+    await messageStore.persistNewChat(characterId, newChat.id, newChat.message ?? []);
+
+    const selectedCharacter = characterStore.characters[get(selectedCharID)];
+    if (selectedCharacter?.chaId === characterId) {
+      ReloadGUIPointer.set(Math.random());
     }
-    ReloadGUIPointer.set(Math.random());
   }
 
   return newChat;

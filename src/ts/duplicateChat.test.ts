@@ -84,6 +84,7 @@ describe("duplicateChat", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    preLoadChatMock.mockReset();
     messageStore.resetPersistenceForTesting();
     mockStorage = new MockSqlStorage();
     setSqlStorageForTesting(mockStorage as unknown as ISqlStorage);
@@ -116,6 +117,9 @@ describe("duplicateChat", () => {
           ],
           messagesLoaded: false,
           messagesFullyLoaded: false,
+          isStreaming: true,
+          activeStreamingDisplayOptimizationMode: "balanced",
+          preventMessageCompaction: true,
         } as any,
       ],
     } as any;
@@ -140,6 +144,9 @@ describe("duplicateChat", () => {
     expect(duplicated?.branchState).toBeUndefined();
     expect(duplicated?.messagesLoaded).toBe(true);
     expect(duplicated?.messagesFullyLoaded).toBe(true);
+    expect(duplicated?.isStreaming).toBe(false);
+    expect(duplicated?.activeStreamingDisplayOptimizationMode).toBeUndefined();
+    expect(duplicated?.preventMessageCompaction).toBeUndefined();
 
     // Verify messages have new unique IDs
     expect(duplicated?.message).toHaveLength(2);
@@ -195,6 +202,111 @@ describe("duplicateChat", () => {
     expect(charInStore.chats).toHaveLength(3);
     expect(charInStore.chatPage).toBe(2);
     expect(charInStore.chats[2].id).toBe("chat-1");
+  });
+
+  it("refuses to duplicate a chat when full hydration fails", async () => {
+    const testChar: character = {
+      chaId: "char-partial",
+      type: "character",
+      name: "Partial",
+      chatPage: 0,
+      chats: [
+        {
+          id: "chat-partial",
+          name: "Partial Chat",
+          message: [{ chatId: "recent-only", role: "char", data: "Recent page" }],
+          messagesLoaded: true,
+          messagesFullyLoaded: false,
+          messageTotal: 3,
+          detailsLoaded: true,
+        },
+      ],
+    } as any;
+
+    characterStore.init([testChar], mockStorage as unknown as ISqlStorage);
+    preLoadChatMock.mockImplementation(async () => {
+      // Simulate a loader that reports completion after returning only the cached page.
+      const chat = characterStore.characters[0].chats[0];
+      chat.messagesFullyLoaded = true;
+      chat.messageTotal = chat.message.length;
+    });
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const duplicated = await duplicateChat(0, 0);
+
+    expect(duplicated).toBeNull();
+    expect(characterStore.characters[0].chats).toHaveLength(1);
+    expect(mockStorage.commits).toHaveLength(0);
+    consoleSpy.mockRestore();
+  });
+
+  it("maps legacy duplicate message IDs to the first duplicated message", async () => {
+    const testChar: character = {
+      chaId: "char-legacy-ids",
+      type: "character",
+      name: "Legacy IDs",
+      chatPage: 0,
+      chats: [
+        {
+          id: "chat-legacy-ids",
+          name: "Legacy",
+          message: [
+            { chatId: "duplicate-id", role: "user", data: "First" },
+            { chatId: "duplicate-id", role: "char", data: "Second" },
+          ],
+          bookmarks: ["duplicate-id"],
+          bookmarkNames: { "duplicate-id": "Legacy bookmark" },
+        },
+      ],
+    } as any;
+
+    characterStore.init([testChar], mockStorage as unknown as ISqlStorage);
+
+    const duplicated = await duplicateChat(0, 0);
+
+    expect(duplicated).not.toBeNull();
+    const firstId = duplicated!.message[0].chatId!;
+    const secondId = duplicated!.message[1].chatId!;
+    expect(firstId).not.toBe(secondId);
+    expect(duplicated?.bookmarks).toEqual([firstId]);
+    expect(duplicated?.bookmarkNames).toEqual({ [firstId]: "Legacy bookmark" });
+  });
+
+  it("re-finds the source chat after an async reorder and inserts beside it", async () => {
+    const testChar: character = {
+      chaId: "char-race",
+      type: "character",
+      name: "Race",
+      chatPage: 0,
+      chats: [
+        {
+          id: "chat-source",
+          name: "Source",
+          message: [{ chatId: "source-msg", role: "user", data: "Source message" }],
+        },
+        {
+          id: "chat-other",
+          name: "Other",
+          message: [{ chatId: "other-msg", role: "char", data: "Other message" }],
+        },
+      ],
+    } as any;
+
+    characterStore.init([testChar], mockStorage as unknown as ISqlStorage);
+    preLoadChatMock.mockImplementation(async () => {
+      const char = characterStore.characters[0];
+      char.chats = [char.chats[1], char.chats[0]];
+    });
+
+    const duplicated = await duplicateChat(0, 0);
+
+    expect(duplicated?.name).toBe("Source (Copy)");
+    expect(duplicated?.message[0].data).toBe("Source message");
+    expect(characterStore.characters[0].chats.map((chat) => chat.id)).toEqual([
+      "chat-other",
+      "chat-source",
+      duplicated?.id,
+    ]);
   });
 });
 

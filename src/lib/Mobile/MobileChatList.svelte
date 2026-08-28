@@ -25,7 +25,7 @@
     } from "@lucide/svelte";
     import { alertConfirm, alertInput, alertNormal, alertSelect } from "src/ts/alert";
     import { language } from "src/lang";
-    import { changeChatTo, createChatCopyName } from "src/ts/globalApi.svelte";
+    import { changeChatTo } from "src/ts/globalApi.svelte";
     import { exportChat, importChat, exportAllChats, duplicateChat } from "src/ts/characters";
     import { getCharImage } from "src/ts/characters";
 

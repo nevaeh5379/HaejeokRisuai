@@ -1084,6 +1084,7 @@ async function restoreLocalBackupSource(
   let pendingNodeAssetBytes = 0;
   let entriesRestored = 0;
   let entriesWritten = 0;
+  let failedInlayEntries = 0;
   let currentEntryName = "";
   let bytesRead = 0;
   const useTauriBulkRestore = isTauri;
@@ -1262,9 +1263,13 @@ async function restoreLocalBackupSource(
         try {
           await setInlayAsset(inlayKey, decodeInlayAssetBackup(data));
           entriesWritten++;
-          entriesRestored++;
         } catch (e) {
+          failedInlayEntries++;
           console.error(`Failed to restore inlay item ${inlayKey}:`, e);
+        } finally {
+          // This counter represents parsed entries, not only successful writes.
+          // Keep progress accounting correct even when a corrupt inlay is skipped.
+          entriesRestored++;
         }
         currentEntryName = "";
         return;
@@ -1580,9 +1585,20 @@ async function restoreLocalBackupSource(
       );
     }
   }
+  const restoreWarnings: string[] = [];
+  if (ignoredExtensionEntries > 0) {
+    restoreWarnings.push(
+      `Skipped ${ignoredExtensionEntries} unsupported fork extension entries.`,
+    );
+  }
+  if (failedInlayEntries > 0) {
+    restoreWarnings.push(
+      `Skipped ${failedInlayEntries} corrupt inlay entr${failedInlayEntries === 1 ? "y" : "ies"}.`,
+    );
+  }
   alertProgress(
-    ignoredExtensionEntries > 0
-      ? `Decoding database...\nSkipped ${ignoredExtensionEntries} unsupported fork extension entries.`
+    restoreWarnings.length > 0
+      ? `Decoding database...\n${restoreWarnings.join("\n")}`
       : "Decoding database...",
     91,
   );
