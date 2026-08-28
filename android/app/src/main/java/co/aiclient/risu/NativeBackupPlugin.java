@@ -241,7 +241,8 @@ public class NativeBackupPlugin extends Plugin {
                 if (
                     kind == BackupEntryPolicy.Kind.DATABASE ||
                     kind == BackupEntryPolicy.Kind.ENCRYPTION ||
-                    kind == BackupEntryPolicy.Kind.COLD_STORAGE
+                    kind == BackupEntryPolicy.Kind.COLD_STORAGE ||
+                    kind == BackupEntryPolicy.Kind.INLAY
                 ) {
                     if (kind == BackupEntryPolicy.Kind.DATABASE) state.hasDatabase = true;
                     BackupContainerCodec.writeEntry(

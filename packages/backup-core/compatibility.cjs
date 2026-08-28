@@ -109,12 +109,30 @@ function remapBookmarks(chat, idMap) {
     }
 }
 
-function makeStandaloneChat(source, messages, name, idFactory, cloneValue) {
+function applyBranchScriptState(chat, branch, cloneValue) {
+    if (!branch || typeof branch !== 'object') return;
+    if (chat.branchState?.activeBranchId === branch.id) return;
+    if (Object.prototype.hasOwnProperty.call(branch, 'scriptstate')) {
+        if (branch.scriptstate == null) delete chat.scriptstate;
+        else chat.scriptstate = cloneValue(branch.scriptstate);
+    }
+    if (Object.prototype.hasOwnProperty.call(branch, 'GLGlobalVariables')) {
+        if (branch.GLGlobalVariables == null) delete chat.GLGlobalVariables;
+        else chat.GLGlobalVariables = cloneValue(branch.GLGlobalVariables);
+    }
+    if (Object.prototype.hasOwnProperty.call(branch, 'useLocallySetGlobalVariables')) {
+        if (branch.useLocallySetGlobalVariables == null) delete chat.useLocallySetGlobalVariables;
+        else chat.useLocallySetGlobalVariables = branch.useLocallySetGlobalVariables;
+    }
+}
+
+function makeStandaloneChat(source, messages, name, idFactory, cloneValue, branch) {
     const chat = cloneValue(source);
     const cloned = cloneMessagesWithFreshIds(messages, idFactory, cloneValue);
     chat.id = idFactory();
     chat.name = name;
     chat.message = cloned.messages;
+    applyBranchScriptState(chat, branch, cloneValue);
     remapBookmarks(chat, cloned.idMap);
     delete chat.branch;
     delete chat.branchState;
@@ -157,7 +175,8 @@ function expandChatBranchesForCompatibility(source, idFactory = randomUUID, opti
             getBranchMessages(source, branch, cloneValue),
             `${source.name || 'Chat'}${suffix}`,
             idFactory,
-            cloneValue
+            cloneValue,
+            branch
         );
     });
     return {

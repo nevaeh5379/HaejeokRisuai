@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { decodeRisuSave, encodeRisuSaveLegacy } from "./risuSave";
+import {
+  decodeRisuSave,
+  encodeRisuSaveLegacy,
+  encodeRisuSaveLegacyAsync,
+} from "./risuSave";
 
 class NoCopyUint8Array extends Uint8Array<ArrayBuffer> {
   override slice(start?: number, end?: number): Uint8Array<ArrayBuffer> {
@@ -32,6 +36,62 @@ describe("RisuSave decode memory behavior", () => {
     expect(decoded.plugins?.[0]?.name).toBe("backup-plugin");
     expect(decoded.pluginCustomStorage).toEqual({
       "backup-plugin": { restored: true },
+    });
+  });
+
+  it("preserves branch-scoped Lua state through compressed backup encoding", async () => {
+    const largeState = JSON.stringify({ scenes: ["x".repeat(128 * 1024)] });
+    const source = {
+      characters: [{
+        chaId: "char-1",
+        type: "character",
+        name: "Bot",
+        chats: [{
+          id: "chat-1",
+          name: "Chat",
+          note: "",
+          localLore: [],
+          message: [{ role: "user", data: "hello", chatId: "m1" }],
+          scriptstate: { "$lb-xnai-stack": "live" },
+          branchState: {
+            baseMessageIndex: 0,
+            activeBranchId: "child",
+            branches: [
+              {
+                id: "root",
+                branchMessageIndex: 0,
+                reason: "root",
+                createdAt: 1,
+                messages: [],
+                scriptstate: { "$lb-xnai-stack": largeState },
+                GLGlobalVariables: { lightboard: "root" },
+                useLocallySetGlobalVariables: true,
+              },
+              {
+                id: "child",
+                parentBranchId: "root",
+                branchMessageIndex: 0,
+                reason: "reroll",
+                createdAt: 2,
+                messages: [],
+                scriptstate: null,
+                GLGlobalVariables: null,
+                useLocallySetGlobalVariables: false,
+              },
+            ],
+          },
+        }],
+      }],
+    };
+
+    const encoded = await encodeRisuSaveLegacyAsync(source, "compression");
+    const decoded = await decodeRisuSave(encoded);
+
+    expect(decoded.characters[0].chats[0].branchState).toEqual(
+      source.characters[0].chats[0].branchState,
+    );
+    expect(decoded.characters[0].chats[0].scriptstate).toEqual({
+      "$lb-xnai-stack": "live",
     });
   });
 });

@@ -51,7 +51,16 @@ import {
 
 import { registerPlugin } from "@capacitor/core";
 import { Buffer } from "buffer";
-import { classifyBackupEntry } from "@risuai/backup-core/entryPolicy.cjs";
+import {
+  classifyBackupEntry,
+  getInlayBackupKey,
+} from "@risuai/backup-core/entryPolicy.cjs";
+import {
+  decodeInlayAssetBackup,
+  encodeInlayAssetBackup,
+  listInlayAssets,
+  setInlayAsset,
+} from "../process/files/inlays";
 
 const alertProgress = (msg: string, progress: number | string) =>
   showProgressAlert(msg, progress, "backup");
@@ -351,13 +360,72 @@ async function initializeLocalBackupWriter(
   }
 }
 
+const INLAY_BACKUP_PREFIX = "inlay_";
+const INLAY_BACKUP_SUFFIX = ".risuinlay";
+
+function getInlayBackupEntryName(id: string) {
+  return `${INLAY_BACKUP_PREFIX}${id}${INLAY_BACKUP_SUFFIX}`;
+}
+
+async function writeLocalBackupInlays(writer: LocalWriter, label: string) {
+  const inlays = await listInlayAssets();
+  for (let index = 0; index < inlays.length; index++) {
+    const [id, asset] = inlays[index];
+    const name = getInlayBackupEntryName(id);
+    if (getInlayBackupKey(name) !== id) {
+      console.warn(`Skipping inlay with unsupported backup key: ${id}`);
+      continue;
+    }
+    if (index === 0 || index === inlays.length - 1 || index % 8 === 0) {
+      alertProgress(`${label} (Saving inlays ${index + 1} / ${inlays.length})`, 88);
+      await sleep(0);
+    }
+    await writer.writeBackup(name, await encodeInlayAssetBackup(asset));
+  }
+}
+
+async function clearNodeBackupInlayStage(storage: NodeStorage) {
+  const keys = (await storage.keys(INLAY_BACKUP_PREFIX)).filter(
+    (key) => getInlayBackupKey(key) !== null,
+  );
+  if (keys.length > 0) await storage.removeItem(keys);
+}
+
+async function stageNodeInlaysForBackup(storage: NodeStorage) {
+  await clearNodeBackupInlayStage(storage);
+  const inlays = await listInlayAssets();
+  let batch = new Map<string, Uint8Array>();
+  let batchBytes = 0;
+  const flush = async () => {
+    if (batch.size === 0) return;
+    await storage.setItems(batch);
+    batch = new Map();
+    batchBytes = 0;
+  };
+  for (const [id, asset] of inlays) {
+    const name = getInlayBackupEntryName(id);
+    if (getInlayBackupKey(name) !== id) continue;
+    const encoded = await encodeInlayAssetBackup(asset);
+    batch.set(name, encoded);
+    batchBytes += encoded.byteLength;
+    if (batch.size >= 32 || batchBytes >= 32 * 1024 * 1024) await flush();
+  }
+  await flush();
+}
+
 async function saveNodeLocalBackupStream(mode: LocalBackupMode) {
   await forageStorage.Init();
   if (!(forageStorage.realStorage instanceof NodeStorage)) {
     throw new Error("Node local backup requires NodeStorage");
   }
-  const auth = await forageStorage.realStorage.getCachedAuth();
-  alertProgress(
+  const nodeStorage = forageStorage.realStorage;
+  if (mode === "native") {
+    alertProgress("Saving HaejeokRisuAI local backup... (Staging inlays)", 1);
+    await stageNodeInlaysForBackup(nodeStorage);
+  }
+  try {
+    const auth = await nodeStorage.getCachedAuth();
+    alertProgress(
     mode === "compatible"
       ? "Saving compatible local backup... (Starting server stream)"
       : "Saving HaejeokRisuAI local backup... (Starting server stream)",
@@ -407,7 +475,16 @@ async function saveNodeLocalBackupStream(mode: LocalBackupMode) {
         `Local backup download failed (${completed.status})`,
     );
   }
-  alertNormal("Success");
+    alertNormal("Success");
+  } finally {
+    if (mode === "native") {
+      try {
+        await clearNodeBackupInlayStage(nodeStorage);
+      } catch (error) {
+        console.warn("Failed to clean staged backup inlays:", error);
+      }
+    }
+  }
 }
 
 async function loadFullSqlBackupSnapshot(
@@ -901,6 +978,9 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
     db,
     options,
   );
+  if (options.mode === "native" && !options.partial) {
+    await writeLocalBackupInlays(writer, label);
+  }
   await writeBackupColdStorage(writer, coldStoragePayloads, label);
 
   alertProgress(`${label} (Compressing database)`, 92);
@@ -1177,6 +1257,15 @@ async function restoreLocalBackupSource(
     } else if (name === "database.risudat") {
       pendingDatabase = data;
     } else {
+      const inlayKey = getInlayBackupKey(name);
+      if (inlayKey) {
+        await setInlayAsset(inlayKey, decodeInlayAssetBackup(data));
+        entriesWritten++;
+        entriesRestored++;
+        currentEntryName = "";
+        return;
+      }
+
       const coldStorageKey = getColdStorageBackupKey(name);
       let handledAsColdStorage = false;
 

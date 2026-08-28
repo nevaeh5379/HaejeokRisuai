@@ -41,6 +41,36 @@ describe("typed relational node codec", () => {
     ).toBe(true);
   });
 
+  it("round trips branch-scoped Lua state including empty snapshots", () => {
+    const largeStack = JSON.stringify({ scenes: ["x".repeat(128 * 1024)] });
+    const value = {
+      baseMessageIndex: 3,
+      activeBranchId: "reroll-2",
+      branches: [
+        {
+          id: "root",
+          reason: "root",
+          createdAt: 1,
+          messages: [],
+          scriptstate: { "$lb-xnai-stack": largeStack },
+          GLGlobalVariables: { lightboard: "root" },
+          useLocallySetGlobalVariables: true,
+        },
+        {
+          id: "reroll-2",
+          reason: "reroll",
+          createdAt: 2,
+          messages: [],
+          scriptstate: null,
+          GLGlobalVariables: null,
+          useLocallySetGlobalVariables: false,
+        },
+      ],
+    };
+
+    expect(rebuildRelationalValue(flattenRelationalValue(value))).toEqual(value);
+  });
+
   it("enforces depth and row limits before persistence", () => {
     let value: unknown = null;
     for (let index = 0; index <= MAX_RELATIONAL_NODE_DEPTH; index++)

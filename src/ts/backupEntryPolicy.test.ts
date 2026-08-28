@@ -10,6 +10,12 @@ describe("backup entry policy", () => {
     expect(classifyBackupEntry("assets/folder/avatar.png").kind).toBe("asset");
   });
 
+  it("recognizes HaejeokRisuAI inlay sidecars without treating them as normal assets", () => {
+    expect(classifyBackupEntry(
+      "inlay_11111111-1111-4111-8111-111111111111.risuinlay",
+    ).kind).toBe("inlay");
+  });
+
   it("keeps both cold-storage naming variants", () => {
     expect(classifyBackupEntry(
       "coldstorage/11111111-1111-1111-1111-111111111111.json",

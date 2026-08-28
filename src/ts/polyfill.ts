@@ -39,7 +39,7 @@ try {
 
 globalThis.safeStructuredClone = safeStructuredClone;
 
-globalThis.Buffer = BufferPolyfill;
+globalThis.Buffer ??= BufferPolyfill;
 
 if (
   !globalThis.ReadableStream ||

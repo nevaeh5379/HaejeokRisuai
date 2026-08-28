@@ -61,6 +61,9 @@ describe('local backup format', () => {
                     ],
                     bookmarks: ['u1', 'r1'],
                     bookmarkNames: { u1: 'fork', r1: 'answer' },
+                    scriptstate: { '$lb-xnai-stack': 'reroll-live' },
+                    GLGlobalVariables: { lightboard: 'reroll-live' },
+                    useLocallySetGlobalVariables: false,
                     branchState: {
                         baseMessageIndex: 0,
                         activeBranchId: 'reroll',
@@ -71,6 +74,9 @@ describe('local backup format', () => {
                                 branchMessageIndex: 0,
                                 createdAt: 1,
                                 messages: [{ chatId: 'a1', role: 'char', data: 'Mountain' }],
+                                scriptstate: { '$lb-xnai-stack': 'root' },
+                                GLGlobalVariables: { lightboard: 'root' },
+                                useLocallySetGlobalVariables: true,
                             },
                             {
                                 id: 'reroll',
@@ -79,6 +85,9 @@ describe('local backup format', () => {
                                 branchMessageIndex: 0,
                                 createdAt: 2,
                                 messages: [{ chatId: 'r1', role: 'char', data: 'River' }],
+                                scriptstate: { '$lb-xnai-stack': 'stale-reroll-snapshot' },
+                                GLGlobalVariables: { lightboard: 'stale-reroll' },
+                                useLocallySetGlobalVariables: true,
                             },
                         ],
                     },
@@ -95,6 +104,12 @@ describe('local backup format', () => {
             ['Choose', 'River'],
         ])
         expect(chats.every((chat) => chat.branchState === undefined)).toBe(true)
+        expect(chats[0].scriptstate).toEqual({ '$lb-xnai-stack': 'root' })
+        expect(chats[0].GLGlobalVariables).toEqual({ lightboard: 'root' })
+        expect(chats[0].useLocallySetGlobalVariables).toBe(true)
+        expect(chats[1].scriptstate).toEqual({ '$lb-xnai-stack': 'reroll-live' })
+        expect(chats[1].GLGlobalVariables).toEqual({ lightboard: 'reroll-live' })
+        expect(chats[1].useLocallySetGlobalVariables).toBe(false)
         expect(new Set(chats.map((chat) => chat.id)).size).toBe(2)
         expect(portable.characters[0].chatPage).toBe(1)
         expect(portable).not.toHaveProperty('moduleFolders')

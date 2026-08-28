@@ -249,33 +249,36 @@ export function buildMessageRowsQuery(
     bind.push(limit, offset);
   }
 
-  // Excluded subtrees: every node descending from a root child whose
-  // object_key names a metadata field. node ids are dense preorder indices,
-  // so "descendant" can be computed with the (chat_id, message_id, node_id)
-  // key plus a recursive CTE walking parent links.
+  const withExcluded =
+    mode === "generation"
+      ? `,
+excluded(chat_id, message_id, node_id) AS (
+  SELECT chat_id, message_id, node_id
+    FROM message_extension_nodes
+   WHERE chat_id = ?
+     AND parent_node_id = 0
+     AND object_key IN ('promptInfo', 'generationInfo')
+  UNION ALL
+  SELECT child.chat_id, child.message_id, child.node_id
+    FROM message_extension_nodes child
+    JOIN excluded ON child.chat_id = excluded.chat_id
+       AND child.message_id = excluded.message_id
+       AND child.parent_node_id = excluded.node_id
+)`
+      : "";
+
   const metadataFilter =
     mode === "generation"
-      ? ` WHERE n.node_id IS NULL OR n.node_id = 0 OR n.node_id NOT IN (
-     WITH RECURSIVE excluded(chat_id, message_id, node_id) AS (
-       SELECT chat_id, message_id, node_id
-         FROM message_extension_nodes
-        WHERE chat_id = ?
-          AND parent_node_id = 0
-          AND object_key IN ('promptInfo', 'generationInfo')
-       UNION ALL
-       SELECT child.chat_id, child.message_id, child.node_id
-         FROM message_extension_nodes child
-         JOIN excluded ON child.chat_id = excluded.chat_id
-            AND child.message_id = excluded.message_id
-            AND child.parent_node_id = excluded.node_id
-     )
-     SELECT node_id FROM excluded WHERE chat_id = ?
+      ? ` WHERE n.node_id IS NULL OR n.node_id = 0 OR NOT EXISTS (
+     SELECT 1 FROM excluded
+      WHERE excluded.message_id = n.message_id
+        AND excluded.node_id = n.node_id
    )`
       : "";
-  const metadataBind = mode === "generation" ? [chatId, chatId] : [];
+  const metadataBind = mode === "generation" ? [chatId] : [];
 
   return {
-    sql: `WITH selected AS (${selectedSql})
+    sql: `WITH selected AS (${selectedSql})${withExcluded}
    SELECT selected.id AS message_id, selected.position AS message_position,
           selected.role AS message_role, selected.content_text AS message_content_text,
           selected.sender_name AS message_sender_name, selected.sent_time AS message_sent_time,

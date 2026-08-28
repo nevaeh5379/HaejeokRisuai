@@ -33,6 +33,9 @@ describe("SQL row commits", () => {
                   reason: "root",
                   createdAt: 1,
                   messages: [{ chatId: "branch-message", role: "char", data: "saved branch" }],
+                  scriptstate: { "$lb-xnai-stack": "root-state" },
+                  GLGlobalVariables: { lightboard: "root" },
+                  useLocallySetGlobalVariables: true,
                 }],
               },
               message: [{ chatId: "message-1", role: "user", data: "hello" }],
@@ -55,6 +58,11 @@ describe("SQL row commits", () => {
     expect(commit.chats).toHaveLength(1);
     expect(commit.chats[0].data).not.toHaveProperty("message");
     expect(commit.chats[0].data).toHaveProperty("branchState");
+    expect((commit.chats[0].data as any).branchState.branches[0]).toMatchObject({
+      scriptstate: { "$lb-xnai-stack": "root-state" },
+      GLGlobalVariables: { lightboard: "root" },
+      useLocallySetGlobalVariables: true,
+    });
     expect(commit.chats[0].data).not.toHaveProperty("messageOffset");
     expect(commit.chats[0].data).not.toHaveProperty("messageTotal");
     expect(commit.chats[0].data).not.toHaveProperty("messagesFullyLoaded");

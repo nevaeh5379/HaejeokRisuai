@@ -2,6 +2,8 @@ import fc from "fast-check";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { InlayAsset } from "../inlays";
 import {
+  decodeInlayAssetBackup,
+  encodeInlayAssetBackup,
   getInlayAsset,
   getInlayAssetBlob,
   listInlayAssets,
@@ -100,6 +102,43 @@ function makeImage(w: number, h: number): HTMLImageElement {
 beforeEach(() => {
   vi.clearAllMocks();
   store.clear();
+});
+
+describe("inlay backup payload", () => {
+  test("round trips binary image metadata without base64 expansion", async () => {
+    const asset: InlayAsset = {
+      data: new Blob(["image-bytes"], { type: "image/png" }),
+      ext: "png",
+      height: 720,
+      width: 1280,
+      name: "scene.png",
+      type: "image",
+    };
+
+    const encoded = await encodeInlayAssetBackup(asset);
+    const decoded = decodeInlayAssetBackup(encoded);
+
+    expect(decoded).toMatchObject({
+      ext: "png",
+      height: 720,
+      width: 1280,
+      name: "scene.png",
+      type: "image",
+    });
+    expect(decoded.data).toBeInstanceOf(Blob);
+    expect((decoded.data as Blob).type).toBe("image/png");
+    expect(await (decoded.data as Blob).text()).toBe("image-bytes");
+  });
+
+  test("round trips text signature inlays", async () => {
+    const asset: InlayAsset = {
+      data: JSON.stringify({ signature: "hello" }),
+      ext: "json",
+      name: "signature",
+      type: "signature",
+    };
+    expect(decodeInlayAssetBackup(await encodeInlayAssetBackup(asset))).toEqual(asset);
+  });
 });
 
 describe("setInlayAsset", () => {

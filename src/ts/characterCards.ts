@@ -1541,7 +1541,6 @@ export async function exportCharacterCard(
   let img = await readImage(char.image);
   const spec: "v2" | "v3" = requestedSpec; //backward compatibility
   try {
-    char.image = "";
     img = type === "png" ? await reencodeImage(img) : img;
     const localWriter = arg.writer ?? new LocalWriter();
     if (!arg.writer && type !== "json") {

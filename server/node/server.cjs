@@ -2756,6 +2756,10 @@ async function streamServerLocalBackup(res, mode = 'native') {
         ? await resolveCatalogedAssetKeys(storage, 'assets/')
         : { keys: await storage.list('assets/') };
     const assetKeys = resolved.keys.filter((key) => typeof key === 'string' && key.startsWith('assets/'));
+    const inlayKeys = mode === 'native'
+        ? (await storage.list('inlay_')).filter((key) =>
+            typeof key === 'string' && /^inlay_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.risuinlay$/.test(key))
+        : [];
 
     res.status(200);
     res.setHeader('Content-Type', 'application/octet-stream');
@@ -2768,7 +2772,7 @@ async function streamServerLocalBackup(res, mode = 'native') {
     res.setHeader('X-Accel-Buffering', 'no');
     if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
-    for (const key of assetKeys) {
+    for (const key of [...assetKeys, ...inlayKeys]) {
         const opened = typeof storage.openReadStream === 'function'
             ? await storage.openReadStream(keyToHex(key))
             : await storage.read(keyToHex(key));

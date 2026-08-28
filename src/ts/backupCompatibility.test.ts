@@ -23,6 +23,9 @@ function branchedChat(): Chat {
     ],
     bookmarks: ["u1", "r1-msg"],
     bookmarkNames: { u1: "fork", "r1-msg": "active answer" },
+    scriptstate: { "$lb-xnai-stack": "reroll-live-state" },
+    GLGlobalVariables: { lightboard: "reroll-live" },
+    useLocallySetGlobalVariables: false,
     branchState: {
       baseMessageIndex: 0,
       activeBranchId: "reroll-1",
@@ -34,6 +37,9 @@ function branchedChat(): Chat {
           reason: "root",
           createdAt: 1,
           messages: [{ chatId: "a1", role: "char", data: "Take the mountain" }],
+          scriptstate: { "$lb-xnai-stack": "root-state" },
+          GLGlobalVariables: { lightboard: "root" },
+          useLocallySetGlobalVariables: true,
         },        {
           id: "manual-1",
           parentBranchId: "root",
@@ -42,6 +48,9 @@ function branchedChat(): Chat {
           reason: "manual",
           createdAt: 2,
           messages: [],
+          scriptstate: null,
+          GLGlobalVariables: null,
+          useLocallySetGlobalVariables: null,
         },
         {
           id: "reroll-1",
@@ -51,6 +60,9 @@ function branchedChat(): Chat {
           reason: "reroll",
           createdAt: 3,
           messages: [{ chatId: "r1-msg", role: "char", data: "Take the river" }],
+          scriptstate: { "$lb-xnai-stack": "reroll-stale-snapshot" },
+          GLGlobalVariables: { lightboard: "reroll-stale" },
+          useLocallySetGlobalVariables: false,
         },
       ],
     },
@@ -75,6 +87,22 @@ describe("compatible branch backup expansion", () => {
       ["Choose a road", "Take the river"],
     ]);
     expect(source.branchState).toBeDefined();
+  });
+
+  it("exports each timeline with its own chat-scoped script state", () => {
+    const result = expandChatBranchesForCompatibility(branchedChat(), ids());
+
+    expect(result.chats[0].scriptstate).toEqual({ "$lb-xnai-stack": "root-state" });
+    expect(result.chats[0].GLGlobalVariables).toEqual({ lightboard: "root" });
+    expect(result.chats[0].useLocallySetGlobalVariables).toBe(true);
+
+    expect(result.chats[1].scriptstate).toBeUndefined();
+    expect(result.chats[1].GLGlobalVariables).toBeUndefined();
+    expect(result.chats[1].useLocallySetGlobalVariables).toBeUndefined();
+
+    expect(result.chats[2].scriptstate).toEqual({ "$lb-xnai-stack": "reroll-live-state" });
+    expect(result.chats[2].GLGlobalVariables).toEqual({ lightboard: "reroll-live" });
+    expect(result.chats[2].useLocallySetGlobalVariables).toBe(false);
   });
 
   it("removes branch metadata and gives exported chats independent ids", () => {
