@@ -386,10 +386,9 @@ export async function loadData() {
         .catch(() => undefined);
       // Keep heavyweight relational settings out of one giant Capacitor result.
       // The Android bridge serializes every returned row to JSON, so combining
-      // modules/personas/plugins into one 40k+ row payload creates large
-      // temporary strings and can exhaust the WebView process heap. Hydrate
-      // startup-critical domains sequentially instead; the shell is already
-      // visible while this runs on normal devices.
+      // heavyweight settings into one giant payload creates large temporary
+      // strings and can exhaust the WebView process heap. Hydrate the remaining
+      // startup-critical domains sequentially; non-critical personas stay lazy.
       const runtimeSettingsReady = (async () => {
         await settingsStore.ensureDeferredKey("customModels");
 
