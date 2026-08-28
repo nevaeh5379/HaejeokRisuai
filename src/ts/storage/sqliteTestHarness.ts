@@ -322,13 +322,27 @@ export function makeCapacitorStorage(
   const log = new QueryLog();
   const db = new NodeSqliteDatabase(database, log);
   let transactionId: string | null = null;
+  const bridgeStats = { queryCalls: 0, queryBatchCalls: 0 };
 
   const bridge = {
     open: async () => {},
     close: async () => {},
-    query: async ({ sql, bind = [] }: { sql: string; bind?: unknown[] }) => ({
-      values: db.selectRows(sql, bind),
-    }),
+    query: async ({ sql, bind = [] }: { sql: string; bind?: unknown[] }) => {
+      bridgeStats.queryCalls++;
+      return { values: db.selectRows(sql, bind) };
+    },
+    queryBatch: async ({
+      queries,
+    }: {
+      queries: Array<{ sql: string; bind?: unknown[] }>;
+    }) => {
+      bridgeStats.queryBatchCalls++;
+      return {
+        results: queries.map((query) =>
+          db.selectRows(query.sql, query.bind ?? []),
+        ),
+      };
+    },
     beginTransaction: async ({
       expectedRevision,
     }: {
@@ -383,6 +397,7 @@ export function makeCapacitorStorage(
   (storage as any).initialized = true;
   (storage as any).revision = 0;
   (storage as any).__log = log;
+  (storage as any).__bridgeStats = bridgeStats;
   (storage as any).createRestoreStream = () => {
     let statementCount = 0;
     let opened = false;

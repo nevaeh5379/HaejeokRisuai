@@ -559,8 +559,11 @@
     let { userIconPortrait, currentUsername, userIcon } = $derived.by(() => {
         const bindedPersona = characterStore.characters?.[selectedCharacterIndex]?.chats?.[selectedChatIndex]?.bindedPersona
 
-        if(bindedPersona && (personaStore.list ?? settingsStore.state?.personas)){
-            const persona = (personaStore.list ?? settingsStore.state?.personas)?.find((p: any) => p.id === bindedPersona)
+        // A specifically bound persona genuinely needs the deferred persona list.
+        // Normal chats do not: username/userIcon/personaPrompt are persisted root
+        // mirrors of the active persona and are available in the shallow snapshot.
+        if(bindedPersona){
+            const persona = personaStore.list?.find((p: any) => p.id === bindedPersona)
             if(persona){
                 return {
                     currentUsername: persona.name,
@@ -570,12 +573,14 @@
             }
         }
 
-        const selectedPersonaIndex = personaStore.activeIndex ?? settingsStore.state?.selectedPersona ?? 0
-        const selectedPersona = (personaStore.list ?? settingsStore.state?.personas)?.[selectedPersonaIndex]
+        // Read an already-hydrated persona only as an optional enhancement. Using
+        // getStateRecord() here deliberately does not trigger deferred hydration.
+        const state = settingsStore.getStateRecord()
+        const selectedPersona = state.personas?.[state.selectedPersona ?? 0]
         return {
-            currentUsername: selectedPersona?.name ?? settingsStore.state?.username ?? '',
+            currentUsername: state.username ?? selectedPersona?.name ?? '',
             userIconPortrait: selectedPersona?.largePortrait ?? false,
-            userIcon: selectedPersona?.icon ?? settingsStore.state?.userIcon ?? ''
+            userIcon: state.userIcon ?? selectedPersona?.icon ?? ''
         }
     })
 

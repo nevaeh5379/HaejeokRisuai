@@ -35,6 +35,8 @@ export interface SqlLoadDatabaseResult {
   status: "ready" | "empty";
   revision: number;
   database: Database | null;
+  /** Settings intentionally omitted from a shallow snapshot and loaded on first access. */
+  deferredSettingKeys?: string[];
 }
 
 export interface SqlChatLoadOptions {

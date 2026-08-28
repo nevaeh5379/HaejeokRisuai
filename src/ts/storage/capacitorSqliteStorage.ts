@@ -85,6 +85,14 @@ export class CapacitorSqliteStorage
     return (result.values ?? []) as T[];
   }
 
+  protected override async selectRowSets(
+    queries: SqliteTransactionStatement[],
+  ): Promise<Record<string, unknown>[][]> {
+    if (!this.dbOpen) throw new Error("Database not opened");
+    const result = await this.plugin.queryBatch({ queries });
+    return result.results ?? [];
+  }
+
   protected async executeNativeTransaction(
     expectedRevision: number | null,
     statements: SqliteTransactionStatement[],

@@ -12,7 +12,7 @@ import { v4 as uuidv4 } from "uuid";
 import { get } from "svelte/store";
 import { defaultSdDataFunc } from "./storage/presetDefaults";
 import { setPreset } from "./storage/presetService";
-import type { Database, RisuPersona } from "./storage/schema";
+import type { Database } from "./storage/schema";
 import { installDatabase } from "./storage/databaseLifecycle";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
@@ -255,13 +255,17 @@ export async function loadData() {
         LoadingStatusState.text = "Loading Database...";
         const reloaded = await storage.loadDatabase({ shallow: true });
         if (reloaded && reloaded.database) {
-          installDatabase(reloaded.database, storage);
+          installDatabase(reloaded.database, storage, {
+            deferredUnloaded: reloaded.deferredSettingKeys,
+          });
         } else {
           // Still empty — start with blank DB
           installDatabase({} as Database, storage);
         }
       } else if (loadResult && loadResult.database) {
-        installDatabase(loadResult.database, storage);
+        installDatabase(loadResult.database, storage, {
+          deferredUnloaded: loadResult.deferredSettingKeys,
+        });
       } else {
         // Load failed entirely
         installDatabase({} as Database, storage);
@@ -380,52 +384,36 @@ export async function loadData() {
           performance.mark("active-preset-ready");
         })
         .catch(() => undefined);
-      // One batched multi-key read collapses what used to be four separate
-      // bridge round trips (plugins, modules, customModels, personas +
-      // personaPrompt) into a single native query on Android/Tauri.
-      const settingKeyBatch = storage.loadSettingKeys
-        ? storage.loadSettingKeys([
-            "plugins",
-            "modules",
-            "customModels",
-            "personas",
-            "personaPrompt",
-          ])
-        : null;
-      const pluginsReady = Promise.all([
-        settingKeyBatch,
-        storage.listPluginCustomStorageKeys(),
-      ])
-        .then(async ([settingKeys, pluginCustomStorageKeys]) => {
-          const readKey = <T>(key: string, fallback: T): T =>
-            (settingKeys?.get(key) as T | undefined) ?? fallback;
-          const plugins = readKey<any[] | null>("plugins", null);
-          const modules = readKey<any[]>("modules", []);
-          const customModels = settingKeys?.get("customModels");
-          const personas = readKey<RisuPersona[]>("personas", []);
-          const personaPrompt = settingKeys?.get("personaPrompt");
-          settingsStore.hydrate((state) => {
-            state.plugins = plugins ?? [];
-            if (customModels !== undefined) state.customModels = customModels;
-          });
-          settingsStore.hydrateSettingKey("personas", personas);
-          settingsStore.hydrateSettingKey(
-            "personaPrompt",
-            personaPrompt ??
-              personas[settingsStore.state.selectedPersona]?.personaPrompt ??
-              "",
-          );
-          settingsStore.hydrateSettingKey("modules", modules ?? []);
-          settingsStore.hydratePluginCustomStorageKeys(pluginCustomStorageKeys);
-          moduleStore.init(
-            modules ?? [],
-            activeDb.enabledModules ?? [],
-            activeDb.moduleFolders ?? [],
-          );
-          await loadPlugins();
-        })
-        .catch(() => undefined);
-      await Promise.all([presetReady, pluginsReady, serviceWorkerReady]);
+      // Keep heavyweight relational settings out of one giant Capacitor result.
+      // The Android bridge serializes every returned row to JSON, so combining
+      // modules/personas/plugins into one 40k+ row payload creates large
+      // temporary strings and can exhaust the WebView process heap. Hydrate
+      // startup-critical domains sequentially instead; the shell is already
+      // visible while this runs on normal devices.
+      const runtimeSettingsReady = (async () => {
+        await settingsStore.ensureDeferredKey("customModels");
+
+        await settingsStore.ensureDeferredKey("modules");
+        const hydrated = settingsStore.getStateRecord();
+        moduleStore.init(
+          hydrated.modules ?? [],
+          hydrated.enabledModules ?? [],
+          hydrated.moduleFolders ?? [],
+        );
+
+        // Personas can contain multi-megabyte legacy inline icons/notes. The
+        // active persona already has root mirrors (username/userIcon/personaPrompt),
+        // so loading the entire persona array here only occupies Android's single
+        // SQLite executor while the shell is already interactive. Keep it truly
+        // lazy; persona-specific UI or a bound-persona chat will request it.
+
+        await settingsStore.ensureDeferredKey("plugins");
+        settingsStore.hydratePluginCustomStorageKeys(
+          await storage.listPluginCustomStorageKeys(),
+        );
+        await loadPlugins();
+      })().catch(() => undefined);
+      await Promise.all([presetReady, runtimeSettingsReady, serviceWorkerReady]);
       try {
         const standaloneNavigator = window.navigator as Navigator & {
           standalone?: boolean;
@@ -560,15 +548,19 @@ async function checkNewFormat(): Promise<void> {
   // migrated by the storage schema/codec and may only contain shallow
   // entities here; walking it would hydrate every deferred domain.
   if (getSqlRuntime().isSql) {
-    const personas = db.personas ?? [];
+    // Format checking must not turn a deferred domain into background I/O.
+    // In particular, touching the reactive personas proxy here could start a
+    // multi-megabyte read just as the already-visible Android shell is clicked.
+    const passiveDb = settingsStore.getStateRecord();
+    const personas = passiveDb.personas ?? [];
     const selectedPersona =
-      typeof db.selectedPersona === "number" &&
-      db.selectedPersona >= 0 &&
-      db.selectedPersona < personas.length
-        ? db.selectedPersona
+      typeof passiveDb.selectedPersona === "number" &&
+      passiveDb.selectedPersona >= 0 &&
+      passiveDb.selectedPersona < personas.length
+        ? passiveDb.selectedPersona
         : 0;
     const activePersona = personas[selectedPersona];
-    if (activePersona && db.userIcon !== (activePersona.icon ?? "")) {
+    if (activePersona && passiveDb.userIcon !== (activePersona.icon ?? "")) {
       // This is runtime hydration, not a user edit. Avoid an unnecessary SQL
       // settings commit merely because the legacy active-avatar mirror was lazy.
       settingsStore.hydrate((state) => {

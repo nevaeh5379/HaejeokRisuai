@@ -51,6 +51,8 @@ import {
   type SqliteTransactionStatement,
 } from "./sqliteStorageUtils";
 
+const STARTUP_SETTING_TEXT_LIMIT = 256 * 1024;
+
 export abstract class NativeSqliteStorageBase {
   protected revision = 0;
   protected readonly writeQueue = new AsyncSerialQueue();
@@ -70,6 +72,16 @@ export abstract class NativeSqliteStorageBase {
     sql: string,
     bind?: unknown[],
   ): Promise<T[]>;
+
+  protected async selectRowSets(
+    queries: SqliteTransactionStatement[],
+  ): Promise<Record<string, unknown>[][]> {
+    const results: Record<string, unknown>[][] = [];
+    for (const query of queries) {
+      results.push(await this.selectRows(query.sql, query.bind ?? []));
+    }
+    return results;
+  }
 
   protected abstract executeNativeTransaction(
     expectedRevision: number | null,
@@ -169,28 +181,36 @@ export abstract class NativeSqliteStorageBase {
     ]);
   }
 
-  private async loadAllSettingValues(
+  private buildSettingRowsQuery(
     deferredKeyList: readonly string[] = [],
-  ): Promise<{
-    values: Map<string, unknown>;
-    keyCount: number;
-  }> {
-    const rows = await this.selectRows<{
-      setting_key: string;
-      node_id: number | null;
-      parent_node_id: number | null;
-      node_order: number | null;
-      object_key: string | null;
-      object_key_encoded: string | null;
-      value_type: string | null;
-      text_value: string | null;
-      encoded_text_value: string | null;
-      number_value: number | null;
-      boolean_value: number | null;
-    }>(
-      `SELECT s.key AS setting_key, n.node_id, n.parent_node_id, n.node_order,
-              n.object_key, n.object_key_encoded, n.value_type, n.text_value,
-              n.encoded_text_value, n.number_value, n.boolean_value
+    shallow = false,
+  ): SqliteTransactionStatement {
+    const textValue = shallow
+      ? `CASE WHEN length(n.text_value) > ${STARTUP_SETTING_TEXT_LIMIT} THEN NULL ELSE n.text_value END`
+      : "n.text_value";
+    const encodedTextValue = shallow
+      ? `CASE WHEN length(n.encoded_text_value) > ${STARTUP_SETTING_TEXT_LIMIT} THEN NULL ELSE n.encoded_text_value END`
+      : "n.encoded_text_value";
+    const objectKey = shallow
+      ? `CASE WHEN length(n.object_key) > ${STARTUP_SETTING_TEXT_LIMIT} THEN NULL ELSE n.object_key END`
+      : "n.object_key";
+    const encodedObjectKey = shallow
+      ? `CASE WHEN length(n.object_key_encoded) > ${STARTUP_SETTING_TEXT_LIMIT} THEN NULL ELSE n.object_key_encoded END`
+      : "n.object_key_encoded";
+    const oversizedMarker = shallow
+      ? `CASE WHEN length(n.text_value) > ${STARTUP_SETTING_TEXT_LIMIT}
+                    OR length(n.encoded_text_value) > ${STARTUP_SETTING_TEXT_LIMIT}
+                    OR length(n.object_key) > ${STARTUP_SETTING_TEXT_LIMIT}
+                    OR length(n.object_key_encoded) > ${STARTUP_SETTING_TEXT_LIMIT}
+               THEN 1 ELSE 0 END AS startup_oversized,`
+      : "";
+    return {
+      sql: `SELECT s.key AS setting_key, n.node_id, n.parent_node_id, n.node_order,
+              ${objectKey} AS object_key, ${encodedObjectKey} AS object_key_encoded,
+              n.value_type, ${textValue} AS text_value,
+              ${encodedTextValue} AS encoded_text_value, n.number_value, n.boolean_value,
+              ${oversizedMarker}
+              0 AS startup_projection
          FROM system_settings s
          LEFT JOIN setting_extension_nodes n ON n.setting_key = s.key${
            deferredKeyList.length
@@ -198,22 +218,31 @@ export abstract class NativeSqliteStorageBase {
              : ""
          }
          ORDER BY s.key, n.node_id`,
-      [...deferredKeyList],
-    );
+      bind: [...deferredKeyList],
+    };
+  }
+
+  private rebuildSettingRows(
+    rows: Record<string, unknown>[],
+    deferredKeyList: readonly string[] = [],
+  ): { values: Map<string, unknown>; keyCount: number; deferredKeys: Set<string> } {
     const deferredKeys = new Set(deferredKeyList);
     const grouped = new Map<string, Record<string, unknown>[]>();
     for (const row of rows) {
-      const nodes = grouped.get(row.setting_key) ?? [];
+      const key = String(row.setting_key ?? "");
+      if (Number(row.startup_oversized) === 1) deferredKeys.add(key);
+      const nodes = grouped.get(key) ?? [];
       if (row.node_id !== null) nodes.push(row);
-      grouped.set(row.setting_key, nodes);
+      grouped.set(key, nodes);
     }
     const values = new Map<string, unknown>();
     for (const [key, nodes] of grouped) {
       if (deferredKeys.has(key)) continue;
       values.set(key, nodes.length ? rebuildRelationalValue(nodes) : undefined);
     }
-    return { values, keyCount: grouped.size };
+    return { values, keyCount: grouped.size, deferredKeys };
   }
+
 
   async loadDatabase(
     options?: SqlLoadDatabaseOptions,
@@ -226,10 +255,25 @@ export abstract class NativeSqliteStorageBase {
     const shallow = options?.shallow !== false;
     const db: DatabaseType = {} as any;
 
-    // Load all settings in one native bridge query.
-    const settings = await this.loadAllSettingValues(
-      shallow ? DEFERRED_STARTUP_SETTING_KEYS : [],
-    );
+    const deferredKeyList = shallow ? DEFERRED_STARTUP_SETTING_KEYS : [];
+    const settingQuery = this.buildSettingRowsQuery(deferredKeyList, shallow);
+    const characterQuery: SqliteTransactionStatement = {
+      sql: "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
+      bind: [],
+    };
+    const metaQuery: SqliteTransactionStatement = {
+      sql: "SELECT initialized FROM system_storage_meta WHERE singleton = 1",
+      bind: [],
+    };
+
+    // Backends may collapse these independent startup reads into one native
+    // bridge call. Capacitor does so to avoid three serial JS/native hops.
+    const [settingRows, characterRows, metaRows] = await this.selectRowSets([
+      settingQuery,
+      characterQuery,
+      metaQuery,
+    ]);
+    const settings = this.rebuildSettingRows(settingRows, deferredKeyList);
     for (const [key, value] of settings.values) {
       (db as any)[key] = value;
     }
@@ -258,7 +302,7 @@ export abstract class NativeSqliteStorageBase {
     db.pluginCustomStorage ??= {};
 
     // Load characters
-    const charRows = await this.selectRows<{
+    const charRows = characterRows as Array<{
       id: string;
       position: number;
       kind: string;
@@ -269,9 +313,7 @@ export abstract class NativeSqliteStorageBase {
       modification_time: number | null;
       last_interaction_time: number | null;
       details_loaded: number;
-    }>(
-      "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
-    );
+    }>;
 
     const characters: (character | groupChat)[] = [];
     for (const row of charRows) {
@@ -339,9 +381,7 @@ export abstract class NativeSqliteStorageBase {
     }
     db.characters = characters;
 
-    const metaRow = await this.selectOne<{ initialized: number }>(
-      "SELECT initialized FROM system_storage_meta WHERE singleton = 1",
-    );
+    const metaRow = metaRows[0] as { initialized?: number } | undefined;
     const isInitialized =
       metaRow?.initialized === 1 ||
       characters.length > 0 ||
@@ -354,7 +394,12 @@ export abstract class NativeSqliteStorageBase {
     if (shallow) {
       (db as DatabaseType & { isSql?: boolean }).isSql = true;
     }
-    return { status: "ready", revision: this.revision, database: db };
+    return {
+      status: "ready",
+      revision: this.revision,
+      database: db,
+      deferredSettingKeys: shallow ? [...settings.deferredKeys] : undefined,
+    };
   }
 
   protected async commitInternal(
@@ -629,30 +674,38 @@ export abstract class NativeSqliteStorageBase {
   ): Promise<character | groupChat | null> {
     // Interactive selection only needs the character tree plus chat summary
     // rows. Hydrating every chat's extension nodes here would defeat lazy
-    // loading on character switches.
-    const [row, fullCharValue, chatRows] = await Promise.all([
-      this.selectOne<{ id: string }>(
-        "SELECT id FROM characters WHERE id = ?",
-        [characterId],
-      ),
-      this.loadNodeValue(
-        "character_extension_nodes",
-        "character_id = ?",
-        [characterId],
-      ),
-      this.selectRows<{
-        id: string;
-        name: string;
-        note: string;
-        folder_id: string | null;
-        last_message_time: number | null;
-      }>(
-        "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
-        [characterId],
-      ),
+    // loading on character switches. Keep the three independent reads in one
+    // backend batch so Capacitor crosses the JS/native bridge only once.
+    const [characterRows, characterNodeRows, chatRowsRaw] = await this.selectRowSets([
+      {
+        sql: "SELECT id FROM characters WHERE id = ?",
+        bind: [characterId],
+      },
+      {
+        sql: `SELECT node_id, parent_node_id, node_order, object_key,
+                     object_key_encoded, value_type, text_value, encoded_text_value,
+                     number_value, boolean_value
+                FROM character_extension_nodes
+               WHERE character_id = ?
+               ORDER BY node_id`,
+        bind: [characterId],
+      },
+      {
+        sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
+        bind: [characterId],
+      },
     ]);
-    if (!row) return null;
-    const fullChar = (fullCharValue ?? {}) as any;
+    if (characterRows.length === 0) return null;
+    const fullChar = (characterNodeRows.length
+      ? rebuildRelationalValue(characterNodeRows)
+      : {}) as any;
+    const chatRows = chatRowsRaw as Array<{
+      id: string;
+      name: string;
+      note: string;
+      folder_id: string | null;
+      last_message_time: number | null;
+    }>;
     fullChar.chaId = characterId;
     fullChar.detailsLoaded = true;
     fullChar.chats = chatRows.map((chatRow) => ({
@@ -673,45 +726,64 @@ export abstract class NativeSqliteStorageBase {
     chatId: string,
     options?: { messageLimit?: number },
   ): Promise<Chat | null> {
-    const [chatRow, chatValue, totalRow] = await Promise.all([
-      this.selectOne<{
-        id: string;
-        name: string;
-        note: string;
-        folder_id: string | null;
-        last_message_time: number | null;
-      }>(
-        "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
-        [chatId],
-      ),
-      this.loadNodeValue("chat_extension_nodes", "chat_id = ?", [chatId]),
-      this.selectOne<{ total: number }>(
-        "SELECT COUNT(*) AS total FROM messages WHERE chat_id = ?",
-        [chatId],
-      ),
+    const requestedLimit = options?.messageLimit;
+    const limit =
+      requestedLimit === undefined
+        ? undefined
+        : normalizeSqliteLimit(requestedLimit);
+    // For a paged initial load, selecting the newest N rows does not require
+    // knowing the total first. That lets chat core metadata, extension nodes,
+    // count, and recent messages share one native query batch.
+    const messageQuery = buildMessageRowsQuery(
+      chatId,
+      limit,
+      0,
+      limit !== undefined,
+      "full",
+    );
+    const [chatRows, chatNodeRows, totalRows, messageRows] = await this.selectRowSets([
+      {
+        sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
+        bind: [chatId],
+      },
+      {
+        sql: `SELECT node_id, parent_node_id, node_order, object_key,
+                     object_key_encoded, value_type, text_value, encoded_text_value,
+                     number_value, boolean_value
+                FROM chat_extension_nodes
+               WHERE chat_id = ?
+               ORDER BY node_id`,
+        bind: [chatId],
+      },
+      {
+        sql: "SELECT COUNT(*) AS total FROM messages WHERE chat_id = ?",
+        bind: [chatId],
+      },
+      messageQuery,
     ]);
+    const chatRow = chatRows[0] as
+      | {
+          id: string;
+          name: string;
+          note: string;
+          folder_id: string | null;
+          last_message_time: number | null;
+        }
+      | undefined;
     if (!chatRow) return null;
 
-    const chatData = (chatValue ?? {}) as any;
+    const chatData = (chatNodeRows.length
+      ? rebuildRelationalValue(chatNodeRows)
+      : {}) as any;
     chatData.id = chatRow.id;
     chatData.name = chatRow.name ?? "";
     chatData.note = chatRow.note ?? "";
     chatData.folderId = chatRow.folder_id ?? undefined;
     chatData.lastDate = chatRow.last_message_time ?? undefined;
 
-    const total = Number(totalRow?.total ?? 0);
-    const requestedLimit = options?.messageLimit;
-    const limit =
-      requestedLimit === undefined
-        ? undefined
-        : normalizeSqliteLimit(requestedLimit);
-    const offset = limit === undefined ? 0 : Math.max(0, total - limit);
-    chatData.message = await this.loadMessageRowsBatch(
-      chatId,
-      limit,
-      offset,
-      false,
-    );
+    const total = Number((totalRows[0] as { total?: number } | undefined)?.total ?? 0);
+    chatData.message = rebuildMessageRows(messageRows);
+    const offset = Math.max(0, total - chatData.message.length);
     chatData.messageOffset = offset;
     chatData.messageTotal = total;
     chatData.messagesFullyLoaded = offset === 0;

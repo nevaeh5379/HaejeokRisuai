@@ -176,7 +176,9 @@ export function getUserIconProtrait(target?: ChatExecutionTarget) {
     if (bindedPersona) {
       return bindedPersona.largePortrait;
     }
-    const db = settingsStore.state;
+    // The active persona's largePortrait flag is cosmetic. Do not turn a chat
+    // paint into a full deferred persona-array read just for this flag.
+    const db = settingsStore.getStateRecord();
     return db?.personas?.[db?.selectedPersona]?.largePortrait ?? false;
   } catch (error) {
     return false;

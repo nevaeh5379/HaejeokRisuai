@@ -21,6 +21,7 @@ class SettingsStore {
   private pluginStorageLoads = new Map<string, Promise<any>>();
   private deferredUnloaded = new Set<string>();
   private deferredDomainLoads = new Map<SqlDeferredDomain, Promise<void>>();
+  private deferredKeyLoads = new Map<string, Promise<void>>();
   private keyDisposers = new Map<string, () => void>();
   private keySetDispose: (() => void) | null = null;
 
@@ -57,6 +58,7 @@ class SettingsStore {
     this.pendingPluginStorageClear = false;
     this.pluginStorageLoads.clear();
     this.deferredDomainLoads.clear();
+    this.deferredKeyLoads.clear();
     this.deferredUnloaded = new Set(options.deferredUnloaded ?? []);
 
     const settingsCopy = Object.fromEntries(
@@ -278,8 +280,28 @@ class SettingsStore {
   async ensureDeferredKey(key: string): Promise<void> {
     if (!this.deferredUnloaded.has(key)) return;
     const domain = getSqlDeferredDomain(key);
-    if (!domain) return;
-    await this.ensureDeferredDomain(domain);
+    if (domain) {
+      await this.ensureDeferredDomain(domain);
+      return;
+    }
+
+    const existing = this.deferredKeyLoads.get(key);
+    if (existing) return existing;
+    const pending = (async () => {
+      const storage = this.storage || (await getSqlStorage());
+      try {
+        const value = await storage.loadSettingKey(key);
+        this.hydrateSettingKey(key, value, value !== undefined);
+      } catch (error) {
+        console.error(`[SettingsStore] Failed to hydrate setting ${key}:`, error);
+      }
+    })().finally(() => {
+      if (this.deferredKeyLoads.get(key) === pending) {
+        this.deferredKeyLoads.delete(key);
+      }
+    });
+    this.deferredKeyLoads.set(key, pending);
+    return pending;
   }
 
   markDeferredLoaded(keys: Iterable<string>): void {
@@ -590,6 +612,7 @@ class SettingsStore {
     this.keyDisposers.clear();
     this.keySetDispose?.();
     this.keySetDispose = null;
+    this.deferredKeyLoads.clear();
   }
 }
 

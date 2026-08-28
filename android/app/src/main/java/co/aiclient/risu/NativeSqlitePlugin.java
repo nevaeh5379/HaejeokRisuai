@@ -29,6 +29,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -38,9 +40,10 @@ public class NativeSqlitePlugin extends Plugin {
     private static final int PIPE_BUFFER_SIZE = 512 * 1024;
     private static final int PROGRESS_STATEMENT_INTERVAL = 25;
     private static final int QUERY_FALLBACK_PAGE_ROWS = 128;
-    private static final int LARGE_TEXT_CHUNK_CHARS = 64 * 1024;
-    private static final int LARGE_BLOB_CHUNK_BYTES = 128 * 1024;
+    private static final int LARGE_TEXT_CHUNK_CHARS = 256 * 1024;
+    private static final int LARGE_BLOB_CHUNK_BYTES = 512 * 1024;
     private static final String TAG = "RisuNativeSqlite";
+    private static final Pattern CURSOR_REQUIRED_POS = Pattern.compile("requiredPos=(\\d+)");
 
     // Every SQLiteDatabase operation runs on this one thread. Android's
     // transaction state is thread-local, so this also lets a transaction span
@@ -127,6 +130,31 @@ public class NativeSqlitePlugin extends Plugin {
                 call.resolve(result);
             } catch (Exception error) {
                 call.reject("Native SQLite query failed: " + errorMessage(error), error);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void queryBatch(PluginCall call) {
+        final List<SqlStatement> queries;
+        try {
+            queries = readStatements(call.getArray("queries"));
+        } catch (Exception error) {
+            call.reject("Invalid native SQLite query batch", error);
+            return;
+        }
+        runWhenTransactionIdle(() -> {
+            try {
+                ensureOpen();
+                JSArray results = new JSArray();
+                for (SqlStatement query : queries) {
+                    results.put(queryRows(query.sql, query.bind));
+                }
+                JSObject result = new JSObject();
+                result.put("results", results);
+                call.resolve(result);
+            } catch (Exception error) {
+                call.reject("Native SQLite query batch failed: " + errorMessage(error), error);
             }
         });
     }
@@ -411,13 +439,30 @@ public class NativeSqlitePlugin extends Plugin {
     }
 
     private JSArray queryRows(String sql, List<Object> bind) {
+        long startedAt = System.nanoTime();
+        JSArray result;
         try {
-            return queryRowsDirect(sql, bind);
+            result = queryRowsDirect(sql, bind);
         } catch (RuntimeException error) {
             if (!isCursorWindowRowTooLarge(error)) throw error;
-            Log.w(TAG, "CursorWindow row overflow; retrying query with chunked row fallback");
-            return queryRowsWithLargeRowFallback(sql, bind);
+            Long requiredPos = cursorWindowRequiredPos(error);
+            Log.w(
+                TAG,
+                requiredPos == null
+                    ? "CursorWindow row overflow; retrying query with chunked row fallback"
+                    : "CursorWindow row overflow at row " + requiredPos + "; using direct oversized-row fallback"
+            );
+            result = queryRowsWithLargeRowFallback(sql, bind, requiredPos);
         }
+        long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L;
+        if (elapsedMs >= 100) {
+            Log.i(
+                TAG,
+                "Slow " + classifyStatement(sql) + " query" + queryDiagnosticSuffix(sql, bind) +
+                    ": " + elapsedMs + " ms, " + result.length() + " rows"
+            );
+        }
+        return result;
     }
 
     private JSArray queryRowsDirect(String sql, List<Object> bind) {
@@ -453,11 +498,36 @@ public class NativeSqlitePlugin extends Plugin {
         }
     }
 
-    private JSArray queryRowsWithLargeRowFallback(String sql, List<Object> bind) {
+    private JSArray queryRowsWithLargeRowFallback(String sql, List<Object> bind, Long requiredPos) {
         String innerSql = normalizeSubquerySql(sql);
         String[] columns = queryColumnNames(innerSql, bind);
         long total = queryCount(innerSql, bind);
         JSArray rows = new JSArray();
+
+        // SQLiteCursor reports the first row it could not place in CursorWindow.
+        // Jump directly to that row instead of replaying the whole ordered query
+        // in 128-row LIMIT/OFFSET pages. On a 6k-row startup query this avoids
+        // dozens of repeated sorts/scans and turns the fallback into roughly
+        // one prefix read + one chunked row reconstruction.
+        if (requiredPos != null && requiredPos >= 0 && requiredPos < total) {
+            long badRow = requiredPos;
+            try {
+                if (badRow > 0) {
+                    JSArray prefix = queryRowsDirect(wrapQueryRange(innerSql, 0, badRow), bind);
+                    for (int index = 0; index < prefix.length(); index++) rows.put(prefix.opt(index));
+                }
+                rows.put(queryOversizedRowAtOffset(innerSql, bind, columns, badRow));
+                long suffixCount = total - badRow - 1;
+                if (suffixCount > 0) {
+                    appendQueryRange(rows, innerSql, bind, columns, badRow + 1, suffixCount);
+                }
+                return rows;
+            } catch (RuntimeException retryError) {
+                if (!isCursorWindowRowTooLarge(retryError)) throw retryError;
+                rows = new JSArray();
+            }
+        }
+
         appendQueryRange(rows, innerSql, bind, columns, 0, total);
         return rows;
     }
@@ -485,7 +555,7 @@ public class NativeSqlitePlugin extends Plugin {
         }
 
         if (pageCount == 1) {
-            output.put(queryOversizedRow(innerSql, bind, columns, offset));
+            output.put(queryOversizedRowAtOffset(innerSql, bind, columns, offset));
             if (count > 1) appendQueryRange(output, innerSql, bind, columns, offset + 1, count - 1);
             return;
         }
@@ -496,6 +566,66 @@ public class NativeSqlitePlugin extends Plugin {
         if (count > pageCount) {
             appendQueryRange(output, innerSql, bind, columns, offset + pageCount, count - pageCount);
         }
+    }
+
+    private JSObject queryOversizedRowAtOffset(
+        String innerSql,
+        List<Object> bind,
+        String[] columns,
+        long rowOffset
+    ) {
+        SqlStatement direct = directRelationalNodeQuery(innerSql, bind, rowOffset);
+        if (direct != null) {
+            return queryOversizedRow(direct.sql, direct.bind, columns, 0);
+        }
+        return queryOversizedRow(innerSql, bind, columns, rowOffset);
+    }
+
+    /**
+     * loadNodeValue() reads one relational-node table ordered by node_id. When
+     * one TEXT/BLOB cell is larger than CursorWindow, resolving it again through
+     * the original subquery + OFFSET repeats the same ordered scan for every
+     * chunk. Relational nodes already have a composite primary key, so resolve
+     * the offending node_id once and chunk that exact row by PK instead.
+     */
+    private SqlStatement directRelationalNodeQuery(
+        String innerSql,
+        List<Object> bind,
+        long rowOffset
+    ) {
+        if (bind == null || bind.size() != 1) return null;
+        String table = null;
+        String ownerColumn = null;
+        if (innerSql.contains("FROM setting_extension_nodes") && innerSql.contains("WHERE setting_key = ?")) {
+            table = "setting_extension_nodes";
+            ownerColumn = "setting_key";
+        } else if (innerSql.contains("FROM character_extension_nodes") && innerSql.contains("WHERE character_id = ?")) {
+            table = "character_extension_nodes";
+            ownerColumn = "character_id";
+        } else if (innerSql.contains("FROM chat_extension_nodes") && innerSql.contains("WHERE chat_id = ?")) {
+            table = "chat_extension_nodes";
+            ownerColumn = "chat_id";
+        } else if (innerSql.contains("FROM cold_extension_nodes") && innerSql.contains("WHERE archive_id = ?")) {
+            table = "cold_extension_nodes";
+            ownerColumn = "archive_id";
+        }
+        if (table == null || !innerSql.contains("ORDER BY node_id")) return null;
+
+        Object nodeId = querySingleValue(
+            "SELECT node_id AS v FROM " + table + " WHERE " + ownerColumn +
+                " = ? ORDER BY node_id LIMIT 1 OFFSET " + rowOffset,
+            bind
+        );
+        if (!(nodeId instanceof Number)) return null;
+
+        List<Object> directBind = new ArrayList<>();
+        directBind.add(bind.get(0));
+        directBind.add(((Number) nodeId).longValue());
+        String directSql =
+            "SELECT node_id, parent_node_id, node_order, object_key, object_key_encoded, " +
+            "value_type, text_value, encoded_text_value, number_value, boolean_value FROM " +
+            table + " WHERE " + ownerColumn + " = ? AND node_id = ?";
+        return new SqlStatement(directSql, directBind);
     }
 
     private JSObject queryOversizedRow(
@@ -606,6 +736,23 @@ public class NativeSqlitePlugin extends Plugin {
         return "\"" + identifier.replace("\"", "\"\"") + "\"";
     }
 
+    private static Long cursorWindowRequiredPos(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null) {
+                Matcher matcher = CURSOR_REQUIRED_POS.matcher(message);
+                if (matcher.find()) {
+                    try {
+                        return Long.parseLong(matcher.group(1));
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+            current = current.getCause();
+        }
+        return null;
+    }
+
     private static boolean isCursorWindowRowTooLarge(Throwable error) {
         Throwable current = error;
         while (current != null) {
@@ -688,6 +835,20 @@ public class NativeSqlitePlugin extends Plugin {
 
     private static boolean isValidDatabaseName(String database) {
         return database != null && database.matches("[A-Za-z0-9._-]+");
+    }
+
+    private static String queryDiagnosticSuffix(String sql, List<Object> bind) {
+        if (
+            sql.contains("setting_extension_nodes") &&
+            bind != null &&
+            !bind.isEmpty() &&
+            bind.get(0) instanceof String
+        ) {
+            String key = ((String) bind.get(0)).replace("\n", "").replace("\r", "");
+            if (key.length() > 80) key = key.substring(0, 80);
+            return " [key=" + key + "]";
+        }
+        return "";
     }
 
     private static String classifyStatement(String sql) {

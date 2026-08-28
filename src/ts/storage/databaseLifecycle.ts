@@ -22,12 +22,18 @@ export function initializeDomainStores(
 export function installDatabase(
   data: Database,
   storage: ISqlStorage | null = null,
+  options: DomainStoreInitializationOptions = {},
 ): void {
   const isSql = (data as Database & { isSql?: boolean }).isSql === true;
   const deferredUnloaded = isSql
-    ? DEFERRED_STARTUP_SETTING_KEYS.filter(
-        (key) => !Object.prototype.hasOwnProperty.call(data, key),
-      )
+    ? [
+        ...new Set([
+          ...DEFERRED_STARTUP_SETTING_KEYS.filter(
+            (key) => !Object.prototype.hasOwnProperty.call(data, key),
+          ),
+          ...(options.deferredUnloaded ?? []),
+        ]),
+      ]
     : [];
 
   normalizeDatabaseDefaults(data);

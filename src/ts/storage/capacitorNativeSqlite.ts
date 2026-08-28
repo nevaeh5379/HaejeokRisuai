@@ -12,6 +12,9 @@ export interface NativeSqlitePlugin {
     sql: string;
     bind?: unknown[];
   }): Promise<{ values: Record<string, unknown>[] }>;
+  queryBatch(options: {
+    queries: NativeSqliteStatement[];
+  }): Promise<{ results: Record<string, unknown>[][] }>;
   beginTransaction(options: {
     expectedRevision?: number | null;
   }): Promise<{ id: string }>;
