@@ -19,14 +19,21 @@ import {
 const fakeCtx = {
   drawImage: vi.fn(),
 };
+let canvasContextAvailable = true;
+let canvasBlobAvailable = true;
 const origCreateElement = document.createElement.bind(document);
 vi.spyOn(document, "createElement").mockImplementation(
   (tag: string, options?: any) => {
     const el = origCreateElement(tag, options);
     if (tag === "canvas") {
-      (el as HTMLCanvasElement).getContext = (() => fakeCtx) as any;
+      (el as HTMLCanvasElement).getContext = (() =>
+        canvasContextAvailable ? fakeCtx : null) as any;
       (el as HTMLCanvasElement).toBlob = ((cb: BlobCallback) => {
-        cb(new Blob(["fake-png"], { type: "image/png" }));
+        cb(
+          canvasBlobAvailable
+            ? new Blob(["fake-png"], { type: "image/png" })
+            : null,
+        );
       }) as any;
     }
     return el;
@@ -86,6 +93,8 @@ const allSupportedExts = [
 
 function makeImage(w: number, h: number): HTMLImageElement {
   const img = new Image();
+  Object.defineProperty(img, "naturalWidth", { get: () => w });
+  Object.defineProperty(img, "naturalHeight", { get: () => h });
   Object.defineProperty(img, "width", { get: () => w });
   Object.defineProperty(img, "height", { get: () => h });
   Object.defineProperty(img, "onload", {
@@ -102,6 +111,8 @@ function makeImage(w: number, h: number): HTMLImageElement {
 beforeEach(() => {
   vi.clearAllMocks();
   store.clear();
+  canvasContextAvailable = true;
+  canvasBlobAvailable = true;
 });
 
 describe("inlay backup payload", () => {
@@ -560,6 +571,19 @@ describe("writeInlayImage", () => {
     });
   });
 
+  test("rejects an already-completed failed image instead of hanging", async () => {
+    const img = new Image();
+    Object.defineProperty(img, "complete", { value: true });
+    Object.defineProperty(img, "naturalWidth", { value: 0 });
+    Object.defineProperty(img, "naturalHeight", { value: 0 });
+    Object.defineProperty(img, "width", { value: 120 });
+    Object.defineProperty(img, "height", { value: 80 });
+
+    await expect(writeInlayImage(img)).rejects.toThrow(
+      "Failed to load image for inlay",
+    );
+  });
+
   test("rejects when image loading fails", async () => {
     const img = new Image();
     Object.defineProperty(img, "complete", { value: false });
@@ -572,7 +596,23 @@ describe("writeInlayImage", () => {
       },
     });
 
-    await expect(writeInlayImage(img)).rejects.toThrow("Image decode failed");
+    await expect(writeInlayImage(img)).rejects.toThrow(
+      "Failed to load image for inlay",
+    );
+  });
+
+  test("rejects when a 2D canvas context is unavailable", async () => {
+    canvasContextAvailable = false;
+    await expect(writeInlayImage(makeImage(120, 80))).rejects.toThrow(
+      "2D canvas context is unavailable",
+    );
+  });
+
+  test("rejects when canvas image encoding returns null", async () => {
+    canvasBlobAvailable = false;
+    await expect(writeInlayImage(makeImage(120, 80))).rejects.toThrow(
+      "Failed to encode inlay image",
+    );
   });
 });
 

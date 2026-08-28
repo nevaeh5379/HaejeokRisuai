@@ -136,4 +136,40 @@ describe("character export with shallow details", () => {
     expect(storedChar.personality).toBe("Kind and curious");
     expect(storedChar.firstMessage).toBe("Hello, traveler!");
   });
+
+  it("aborts exportCharacterCard when shallow hydration does not load details", async () => {
+    const shallowChar: character = {
+      type: "character",
+      chaId: "char-missing",
+      name: "Missing Character",
+      detailsLoaded: false,
+      chats: [],
+      chatPage: 0,
+    } as unknown as character;
+    characterStore.init([shallowChar], mockStorage);
+
+    const writer = new VirtualWriter();
+    await expect(
+      exportCharacterCard(shallowChar, "png", { writer, spec: "v2" }),
+    ).rejects.toThrow(
+      "Failed to hydrate character before export: char-missing",
+    );
+  });
+
+  it("aborts exportChar before prompting when shallow hydration fails", async () => {
+    const shallowChar: character = {
+      type: "character",
+      chaId: "char-missing",
+      name: "Missing Character",
+      detailsLoaded: false,
+      chats: [],
+      chatPage: 0,
+    } as unknown as character;
+    characterStore.init([shallowChar], mockStorage);
+
+    await expect(exportChar(0)).rejects.toThrow(
+      "Failed to hydrate character before export: char-missing",
+    );
+    expect(alertCardExportMock).not.toHaveBeenCalled();
+  });
 });

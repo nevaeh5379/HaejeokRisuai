@@ -85,10 +85,17 @@ export async function writeInlayImage(
   let drawWidth = 0;
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("2D canvas context is unavailable");
+  }
   await new Promise((resolve, reject) => {
     const processImage = () => {
-      drawHeight = imgObj.naturalHeight || imgObj.height;
-      drawWidth = imgObj.naturalWidth || imgObj.width;
+      drawHeight = imgObj.naturalHeight;
+      drawWidth = imgObj.naturalWidth;
+      if (drawWidth <= 0 || drawHeight <= 0) {
+        reject(new Error("Failed to load image for inlay"));
+        return;
+      }
 
       //resize image to fit inlay, if total pixels exceed 1024*1024
       const maxPixels = 1024 * 1024;
@@ -102,22 +109,26 @@ export async function writeInlayImage(
 
       canvas.width = drawWidth;
       canvas.height = drawHeight;
-      if (ctx) {
-        ctx.drawImage(imgObj, 0, 0, drawWidth, drawHeight);
-      }
+      ctx.drawImage(imgObj, 0, 0, drawWidth, drawHeight);
       resolve(null);
     };
 
-    if (imgObj.complete && (imgObj.naturalWidth !== 0 || imgObj.width !== 0)) {
+    if (imgObj.complete) {
       processImage();
-    } else {
-      imgObj.onload = processImage;
-      imgObj.onerror = (err) =>
-        reject(err ?? new Error("Failed to load image for inlay"));
+      return;
     }
+
+    imgObj.onload = processImage;
+    imgObj.onerror = () => reject(new Error("Failed to load image for inlay"));
   });
-  const imageBlob = await new Promise((resolve) =>
-    canvas.toBlob(resolve, "image/png"),
+  const imageBlob = await new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+      } else {
+        reject(new Error("Failed to encode inlay image"));
+      }
+    }, "image/png"),
   );
 
   const imgid = arg.id ?? v4();

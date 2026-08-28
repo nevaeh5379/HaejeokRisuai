@@ -691,14 +691,28 @@ function convertOffSpecCards(
   };
 }
 
+async function hydrateCharacterForExport(
+  char: character | groupChat,
+): Promise<character | groupChat> {
+  if (char.detailsLoaded !== false) {
+    return char;
+  }
+  if (!char.chaId) {
+    throw new Error("Cannot export shallow character without an id");
+  }
+
+  await characterStore.ensureCharacterDetails(char.chaId);
+  const loaded = characterStore.characters.find((c) => c?.chaId === char.chaId);
+  if (!loaded || loaded.detailsLoaded === false) {
+    throw new Error(`Failed to hydrate character before export: ${char.chaId}`);
+  }
+  return loaded;
+}
+
 export async function exportChar(charaID: number): Promise<string> {
   const targetChar = characterStore.characters[charaID];
-  if (targetChar?.detailsLoaded === false && targetChar.chaId) {
-    try {
-      await characterStore.ensureCharacterDetails(targetChar.chaId);
-    } catch (e) {
-      console.error("Failed to load character details for export:", e);
-    }
+  if (targetChar) {
+    await hydrateCharacterForExport(targetChar);
   }
   const db = createDatabaseSnapshot();
   let char = safeStructuredClone(db.characters[charaID]);
@@ -1521,17 +1535,10 @@ export async function exportCharacterCard(
     spec?: "v2" | "v3";
   } = {},
 ) {
-  if (char.detailsLoaded === false && char.chaId) {
-    try {
-      await characterStore.ensureCharacterDetails(char.chaId);
-      const loaded = characterStore.characters.find(
-        (c) => c?.chaId === char.chaId,
-      );
-      if (loaded) {
-        Object.assign(char, safeStructuredClone(loaded));
-      }
-    } catch (e) {
-      console.error("Failed to load character details for export:", e);
+  if (char.detailsLoaded === false) {
+    const loaded = await hydrateCharacterForExport(char);
+    if (loaded !== char) {
+      Object.assign(char, safeStructuredClone(loaded));
     }
   }
   const requestedSpec = arg.spec ?? "v2";
