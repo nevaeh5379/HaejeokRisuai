@@ -8,7 +8,11 @@ import {
 } from "src/ts/model/types";
 import { fetchNative } from "src/ts/globalApi.svelte";
 import { callTool } from "../../mcp/mcp";
-import { __testResponsesAPI, requestOpenAIResponseAPI } from "./requests";
+import {
+  __testResponsesAPI,
+  requestOpenAI,
+  requestOpenAIResponseAPI,
+} from "./requests";
 
 const mocks = vi.hoisted(() => ({
   db: {
@@ -26,8 +30,14 @@ const mocks = vi.hoisted(() => ({
     nanogptKey: "nanogpt-key",
     nanogptProvider: "",
     nanogptRequestModel: "nanogpt-model",
+    nanogptSubProvider: "",
+    nanogptSubRequestModel: "nanogpt-sub-model",
+    nanogptSubUseSubscriptionEndpoint: false,
     nanogptUseSubscriptionEndpoint: false,
     openAIKey: "openai-key",
+    openrouterKey: "openrouter-key",
+    openrouterRequestModel: "openrouter-main-model",
+    openrouterSubRequestModel: "openrouter-sub-model",
     proxyKey: "proxy-key",
     requestRetrys: 0,
     reasoningEffort: 2,
@@ -119,6 +129,9 @@ vi.mock("src/ts/model/modellist", () => ({
   LLMFormat: {
     Mistral: 4,
     OpenAIResponseAPI: 18,
+  },
+  LLMProvider: {
+    OpenAI: 0,
   },
   getFreeOpenRouterModels: vi.fn(),
 }));
@@ -217,10 +230,41 @@ describe("OpenAI Responses API helpers", () => {
     mocks.db.customModels = [];
     mocks.db.nanogptProvider = "";
     mocks.db.nanogptRequestModel = "nanogpt-model";
+    mocks.db.nanogptSubProvider = "";
+    mocks.db.nanogptSubRequestModel = "nanogpt-sub-model";
+    mocks.db.nanogptSubUseSubscriptionEndpoint = false;
     mocks.db.nanogptUseSubscriptionEndpoint = false;
+    mocks.db.openrouterRequestModel = "openrouter-main-model";
+    mocks.db.openrouterSubRequestModel = "openrouter-sub-model";
     mocks.db.reasoningEffort = 2;
     mocks.db.simplifiedToolUse = false;
     mocks.db.autofillRequestUrl = false;
+  });
+
+  it("uses the independent OpenRouter auxiliary request model", async () => {
+    const result = await requestOpenAI(
+      baseArg({
+        aiModel: "openrouter",
+        formated: [{ role: "user", content: "hello" }],
+        mode: "submodel",
+        previewBody: true,
+        useStreaming: false,
+        modelInfo: {
+          ...baseArg().modelInfo,
+          flags: [],
+          format: LLMFormat.OpenAICompatible,
+          id: "openrouter",
+          internalID: "openrouter",
+          parameters: [],
+          provider: LLMProvider.AsIs,
+        },
+      }),
+    );
+
+    expect(result.type).toBe("success");
+    const preview = JSON.parse(result.result as string);
+    expect(preview.body.model).toBe("openrouter-sub-model");
+    expect(preview.headers.Authorization).toBe("Bearer openrouter-key");
   });
 
   it("builds a Responses request body for text, developer role, multimodal input, tools, and model parameters", async () => {
@@ -637,6 +681,50 @@ describe("OpenAI Responses API helpers", () => {
     expect(preview.body.model).toBe("nanogpt-model");
     expect(preview.headers.Authorization).toBe("Bearer nanogpt-key");
     expect(preview.headers["X-Provider"]).toBe("provider-a");
+  });
+
+  it("uses independent NanoGPT auxiliary model, endpoint, and provider settings", async () => {
+    mocks.db.nanogptSubProvider = "provider-sub";
+
+    const standardResult = await requestOpenAIResponseAPI(
+      baseArg({
+        aiModel: "nanogpt",
+        mode: "submodel",
+        previewBody: true,
+        modelInfo: {
+          ...baseArg().modelInfo,
+          internalID: "nanogpt",
+          format: LLMFormat.NanoGPTResponses,
+        },
+      }),
+    );
+
+    expect(standardResult.type).toBe("success");
+    const standardPreview = JSON.parse(standardResult.result as string);
+    expect(standardPreview.body.model).toBe("nanogpt-sub-model");
+    expect(standardPreview.url).toBe("https://nano-gpt.com/api/v1/responses");
+    expect(standardPreview.headers["X-Provider"]).toBe("provider-sub");
+
+    mocks.db.nanogptSubUseSubscriptionEndpoint = true;
+    const subscriptionResult = await requestOpenAIResponseAPI(
+      baseArg({
+        aiModel: "nanogpt",
+        mode: "memory",
+        previewBody: true,
+        modelInfo: {
+          ...baseArg().modelInfo,
+          internalID: "nanogpt",
+          format: LLMFormat.NanoGPTResponses,
+        },
+      }),
+    );
+
+    expect(subscriptionResult.type).toBe("success");
+    const subscriptionPreview = JSON.parse(subscriptionResult.result as string);
+    expect(subscriptionPreview.url).toBe(
+      "https://nano-gpt.com/api/subscription/v1/responses",
+    );
+    expect(subscriptionPreview.headers["X-Provider"]).toBeUndefined();
   });
 
   it("applies reverse proxy Responses endpoint autofill and additional params", async () => {

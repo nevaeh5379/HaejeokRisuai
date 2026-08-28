@@ -130,4 +130,46 @@ describe("backup database defaults", () => {
       { id: "f1", name: "Folder 1", color: "" },
     ]);
   });
+
+  it("migrates legacy Ollama models to independent auxiliary defaults", async () => {
+    const { normalizeDatabaseDefaults } =
+      await import("../storage/databaseDefaults");
+    const db = {
+      aiModel: "ollama-cloud",
+      subModel: "ollama-cloud",
+      ollamaModel: "local-legacy",
+      ollamaModelName: "Local Legacy",
+      ollamaCloudModel: "cloud-legacy",
+      ollamaCloudModelName: "Cloud Legacy",
+    } as unknown as Database;
+
+    normalizeDatabaseDefaults(db);
+
+    expect(db.ollamaSubModel).toBe("local-legacy");
+    expect(db.ollamaSubModelName).toBe("Local Legacy");
+    expect(db.ollamaCloudSubModel).toBe("cloud-legacy");
+    expect(db.ollamaCloudSubModelName).toBe("Cloud Legacy");
+  });
+
+  it("migrates shared provider models to independent auxiliary defaults", async () => {
+    const { normalizeDatabaseDefaults } =
+      await import("../storage/databaseDefaults");
+    const db = {
+      openrouterRequestModel: "openrouter-main",
+      nanogptRequestModel: "nanogpt-main",
+      nanogptRequestModelName: "NanoGPT Main",
+      nanogptProvider: "provider-main",
+      nanogptUseSubscriptionEndpoint: true,
+      customProxyRequestModel: "proxy-main",
+    } as unknown as Database;
+
+    normalizeDatabaseDefaults(db);
+
+    expect(db.openrouterSubRequestModel).toBe("openrouter-main");
+    expect(db.nanogptSubRequestModel).toBe("nanogpt-main");
+    expect(db.nanogptSubRequestModelName).toBe("NanoGPT Main");
+    expect(db.nanogptSubProvider).toBe("provider-main");
+    expect(db.nanogptSubUseSubscriptionEndpoint).toBe(true);
+    expect(db.customProxySubRequestModel).toBe("proxy-main");
+  });
 });

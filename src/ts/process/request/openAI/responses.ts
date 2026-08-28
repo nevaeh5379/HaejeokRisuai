@@ -27,6 +27,10 @@ import {
 } from "../requestContext";
 import { matchesNodeOllamaCloudEndpoint } from "../ollamaTransport";
 import {
+  resolveProviderRoleModel,
+  resolveProviderRoleSetting,
+} from "../providerRoleSettings";
+import {
   applyAdditionalParameters,
   applyParameters,
   getAdditionalParameters,
@@ -222,7 +226,11 @@ function getResponsesRequestURL(arg: RequestDataArgumentExtended): {
     aiModel === "nanogpt"
       ? resolveNanoGPTTransportUrl(
           "responses",
-          !!db.nanogptUseSubscriptionEndpoint,
+          resolveProviderRoleSetting(
+            db.nanogptUseSubscriptionEndpoint,
+            db.nanogptSubUseSubscriptionEndpoint,
+            arg.mode,
+          ),
         )!
       : (arg.customURL ?? DEFAULT_OPENAI_RESPONSES_URL);
   if (arg.modelInfo?.endpoint) {
@@ -306,10 +314,22 @@ function buildResponsesHeaders(
   }
   if (
     aiModel === "nanogpt" &&
-    db.nanogptProvider &&
-    !db.nanogptUseSubscriptionEndpoint
+    resolveProviderRoleSetting(
+      db.nanogptProvider,
+      db.nanogptSubProvider,
+      arg.mode,
+    ) &&
+    !resolveProviderRoleSetting(
+      db.nanogptUseSubscriptionEndpoint,
+      db.nanogptSubUseSubscriptionEndpoint,
+      arg.mode,
+    )
   ) {
-    headers["X-Provider"] = db.nanogptProvider;
+    headers["X-Provider"] = resolveProviderRoleSetting(
+      db.nanogptProvider,
+      db.nanogptSubProvider,
+      arg.mode,
+    );
   }
 
   return headers;
@@ -318,7 +338,13 @@ function buildResponsesHeaders(
 function getResponsesRequestModel(arg: RequestDataArgumentExtended): string {
   const db = settingsStore.state;
   if (arg.aiModel === "nanogpt") {
-    return db.nanogptRequestModel || arg.modelInfo.internalID || arg.aiModel;
+    return (
+      resolveProviderRoleModel(
+        db.nanogptRequestModel,
+        db.nanogptSubRequestModel,
+        arg.mode,
+      ) || arg.modelInfo.internalID || arg.aiModel
+    );
   }
   return arg.modelInfo.internalID || arg.aiModel || "gpt-4.1";
 }

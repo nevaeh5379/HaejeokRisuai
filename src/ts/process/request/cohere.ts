@@ -25,7 +25,10 @@ export async function requestCohere(
   const db = settingsStore.state;
   const aiModel = arg.aiModel;
 
-  const conversation = prepareCohereConversation(formated, aiModel);
+  const conversation = prepareCohereConversation(
+    formated,
+    arg.modelInfo.internalID || aiModel,
+  );
   if (conversation.ok === false) {
     return {
       type: "fail",

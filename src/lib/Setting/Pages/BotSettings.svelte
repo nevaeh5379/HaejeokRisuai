@@ -47,6 +47,7 @@
     import ModelBrowser from "src/lib/UI/Model/ModelBrowser.svelte";
 
     let modelTab = $state<'main' | 'sub' | 'provider'>('main');
+    let providerModelRole = $state<'main' | 'sub'>('main');
     let auxSubTab = $state<'memory' | 'translate' | 'emotion' | 'otherAx'>('memory');
     let openProviders = $state<Record<string, boolean>>({});
     
@@ -55,36 +56,62 @@
         { id: 'openrouter/auto', displayName: 'OpenRouter Auto', providerName: 'OpenRouter' },
     ]
 
-    // Reset model selection and display name when subscription mode toggles
-    let _nanogptSubModeInitialized = false
-    $effect(() => {
-        const _sub = settingsStore.state.nanogptUseSubscriptionEndpoint
-        if (!_nanogptSubModeInitialized) { _nanogptSubModeInitialized = true; return }
-        settingsStore.state.nanogptRequestModel = ''
-        settingsStore.state.nanogptRequestModelName = ''
-    })
-
-    // Reset provider selection to Auto when the model or subscription mode changes
-    let _nanogptProviderResetInitialized = false
-    $effect(() => {
-        const _model = settingsStore.state.nanogptRequestModel
-        const _sub   = settingsStore.state.nanogptUseSubscriptionEndpoint
-        if (!_nanogptProviderResetInitialized) { _nanogptProviderResetInitialized = true; return }
-        settingsStore.state.nanogptProvider = ''
-    })
-
-    // Reset subscription mode (and related state) when API key is cleared
-    let _nanogptKeyInitialized = false
-    $effect(() => {
-        const _key = settingsStore.state.nanogptKey
-        if (!_nanogptKeyInitialized) { _nanogptKeyInitialized = true; return }
-        if (!_key) {
-            settingsStore.state.nanogptUseSubscriptionEndpoint = false
-            settingsStore.state.nanogptSubscriptionState = ''
+    function clearNanoGPTSelection(role: 'main' | 'sub') {
+        if (role === 'main') {
             settingsStore.state.nanogptRequestModel = ''
             settingsStore.state.nanogptRequestModelName = ''
             settingsStore.state.nanogptProvider = ''
+        } else {
+            settingsStore.state.nanogptSubRequestModel = ''
+            settingsStore.state.nanogptSubRequestModelName = ''
+            settingsStore.state.nanogptSubProvider = ''
         }
+    }
+
+    let nanogptInputModes = $state<Record<'main' | 'sub', 'list' | 'manual'>>({
+        main: settingsStore.state.nanogptRequestModel && !settingsStore.state.nanogptRequestModelName ? 'manual' : 'list',
+        sub: settingsStore.state.nanogptSubRequestModel && !settingsStore.state.nanogptSubRequestModelName ? 'manual' : 'list',
+    })
+
+    function getNanoGPTInputMode(): 'list' | 'manual' {
+        return nanogptInputModes[providerModelRole]
+    }
+
+    function changeNanoGPTInputMode(value: string | number) {
+        if (value !== 'list' && value !== 'manual') return
+        if (value === getNanoGPTInputMode()) return
+        nanogptInputModes[providerModelRole] = value
+        clearNanoGPTSelection(providerModelRole)
+    }
+
+    let previousNanoGPTSubscriptionMode = $state({
+        main: settingsStore.state.nanogptUseSubscriptionEndpoint,
+        sub: settingsStore.state.nanogptSubUseSubscriptionEndpoint,
+    })
+    $effect(() => {
+        const main = settingsStore.state.nanogptUseSubscriptionEndpoint
+        if (main !== previousNanoGPTSubscriptionMode.main) {
+            previousNanoGPTSubscriptionMode.main = main
+            clearNanoGPTSelection('main')
+        }
+        const sub = settingsStore.state.nanogptSubUseSubscriptionEndpoint
+        if (sub !== previousNanoGPTSubscriptionMode.sub) {
+            previousNanoGPTSubscriptionMode.sub = sub
+            clearNanoGPTSelection('sub')
+        }
+    })
+
+    let previousNanoGPTKey = $state(settingsStore.state.nanogptKey)
+    $effect(() => {
+        const key = settingsStore.state.nanogptKey
+        if (previousNanoGPTKey && !key) {
+            settingsStore.state.nanogptUseSubscriptionEndpoint = false
+            settingsStore.state.nanogptSubUseSubscriptionEndpoint = false
+            settingsStore.state.nanogptSubscriptionState = ''
+            clearNanoGPTSelection('main')
+            clearNanoGPTSelection('sub')
+        }
+        previousNanoGPTKey = key
     })
 
     let tokens = $state({
@@ -132,23 +159,24 @@
         }
         if (targetModelTab !== undefined) {
             modelTab = targetModelTab
+            if (targetModelTab !== 'provider') providerModelRole = targetModelTab
         }
     })
     let modelInfo = $derived(getModelInfo(settingsStore.state.aiModel))
     let subModelInfo = $derived(getModelInfo(settingsStore.state.subModel))
-    let nanogptInputMode = $state<'list' | 'manual'>(settingsStore.state.nanogptRequestModel && !settingsStore.state.nanogptRequestModelName ? 'manual' : 'list')
-    // svelte-ignore state_referenced_locally
-    let prevNanogptInputMode = nanogptInputMode;
-    $effect(() => {
-        if (nanogptInputMode !== prevNanogptInputMode) {
-            settingsStore.state.nanogptRequestModel = '';
-            settingsStore.state.nanogptRequestModelName = '';
-            prevNanogptInputMode = nanogptInputMode;
+    let configuredModelIds = $derived.by(() => {
+        const ids = [settingsStore.state.aiModel, settingsStore.state.subModel]
+        if (settingsStore.state.seperateModelsForAxModels) {
+            for (const key of ['memory', 'translate', 'emotion', 'otherAx'] as const) {
+                const modelId = settingsStore.state.seperateModels[key]
+                if (modelId) ids.push(modelId)
+            }
         }
-    });
+        return ids
+    })
 
-    let usesOllamaLocal = $derived(settingsStore.state.aiModel === 'ollama-hosted' || settingsStore.state.subModel === 'ollama-hosted')
-    let usesOllamaCloud = $derived(settingsStore.state.aiModel === 'ollama-cloud' || settingsStore.state.subModel === 'ollama-cloud')
+    let usesOllamaLocal = $derived(configuredModelIds.includes('ollama-hosted'))
+    let usesOllamaCloud = $derived(configuredModelIds.includes('ollama-cloud'))
 
     let activeProviders = $derived.by(() => {
         const set = new Set<LLMProvider>();
@@ -175,16 +203,16 @@
     let usesNovelAI = $derived(isProviderActive(LLMProvider.NovelAI));
     let usesNovelList = $derived(isProviderActive(LLMProvider.NovelList));
     let usesCohere = $derived(isProviderActive(LLMProvider.Cohere));
-    let usesMancer = $derived(settingsStore.state.aiModel.startsWith('mancer') || settingsStore.state.subModel.startsWith('mancer'));
-    let usesOpenRouter = $derived(settingsStore.state.aiModel === 'openrouter' || settingsStore.state.subModel === 'openrouter');
-    let usesNanoGPT = $derived(settingsStore.state.aiModel === 'nanogpt' || settingsStore.state.subModel === 'nanogpt');
-    let usesReverseProxy = $derived(settingsStore.state.aiModel === 'reverse_proxy' || settingsStore.state.subModel === 'reverse_proxy');
-    let usesHorde = $derived(settingsStore.state.aiModel.startsWith('horde') || settingsStore.state.subModel.startsWith('horde'));
-    let usesKobold = $derived(settingsStore.state.aiModel === 'kobold' || settingsStore.state.subModel === 'kobold');
-    let usesTextGen = $derived(settingsStore.state.aiModel === 'textgen_webui' || settingsStore.state.subModel === 'textgen_webui');
-    let usesOoba = $derived(settingsStore.state.aiModel === 'ooba' || settingsStore.state.subModel === 'ooba');
+    let usesMancer = $derived(configuredModelIds.some((modelId) => modelId.startsWith('mancer')));
+    let usesOpenRouter = $derived(configuredModelIds.includes('openrouter'));
+    let usesNanoGPT = $derived(configuredModelIds.includes('nanogpt'));
+    let usesReverseProxy = $derived(configuredModelIds.includes('reverse_proxy'));
+    let usesHorde = $derived(configuredModelIds.some((modelId) => modelId.startsWith('horde')));
+    let usesKobold = $derived(configuredModelIds.includes('kobold'));
+    let usesTextGen = $derived(configuredModelIds.includes('textgen_webui'));
+    let usesOoba = $derived(configuredModelIds.includes('ooba'));
     let usesCustomPlugin = $derived(settingsStore.state.aiModel === 'custom' || settingsStore.state.subModel === 'custom');
-    let usesEcho = $derived(settingsStore.state.aiModel === 'echo_model' || settingsStore.state.subModel === 'echo_model');
+    let usesEcho = $derived(configuredModelIds.includes('echo_model'));
     
     let hasAnyProviderSettings = $derived(
         usesGoogle || usesVertex || usesAnthropicOrAWS || usesOpenAI || usesMistral ||
@@ -243,6 +271,18 @@
     });
 </script>
 
+{#snippet providerRoleSelector(providerName: string)}
+    <span class="text-xs text-textcolor2">{providerName} {language.model}</span>
+    <SegmentedControl
+        bind:value={providerModelRole}
+        options={[
+            { value: 'main', label: language.mainModelCardTitle || language.model },
+            { value: 'sub', label: language.subModelCardTitle || language.submodel }
+        ]}
+        size="md"
+    />
+{/snippet}
+
 <div class="mb-3 flex items-center justify-between">
     <div class="flex items-baseline gap-2.5">
         <h2 class="text-2xl font-bold">{language.chatBot}</h2>
@@ -283,14 +323,14 @@
             <!-- Submenu 0 Tabs: Main Model vs Auxiliary Model vs Provider Credentials (Slim Single Line) -->
             <div class="flex w-full rounded-xl border border-darkborderc overflow-hidden bg-darkbg/40 p-1 gap-1">
                 <button 
-                    onclick={() => { modelTab = 'main'; }}
+                    onclick={() => { modelTab = 'main'; providerModelRole = 'main'; }}
                     class="py-1.5 px-3 flex-1 rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap {modelTab === 'main' ? 'bg-darkbutton text-textcolor shadow-sm' : 'text-textcolor2 hover:text-textcolor'}"
                 >
                     <span>{language.mainModelCardTitle || language.model}</span>
                     <Help key="model" />
                 </button>
                 <button 
-                    onclick={() => { modelTab = 'sub'; }}
+                    onclick={() => { modelTab = 'sub'; providerModelRole = 'sub'; }}
                     class="py-1.5 px-3 flex-1 rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap {modelTab === 'sub' ? 'bg-darkbutton text-textcolor shadow-sm' : 'text-textcolor2 hover:text-textcolor'}"
                 >
                     <span>{language.subModelCardTitle || language.submodel}</span>
@@ -534,6 +574,8 @@
                         </button>
                         {#if isProviderOpen('openrouter', usesOpenRouter)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                {@render providerRoleSelector('OpenRouter')}
+
                                 <span class="text-xs text-textcolor2">OpenRouter {language.apiKey}</span>
                                 <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.openrouterKey} />
 
@@ -546,9 +588,17 @@
 
                                 <span class="text-xs text-textcolor2 mt-1">OpenRouter {language.model}</span>
                                 {#await getOpenRouterModels()}
-                                    <ModelGrid bind:value={settingsStore.state.openrouterRequestModel} pinnedItems={openrouterPinnedItems} loading={true} />
+                                    {#if providerModelRole === 'main'}
+                                        <ModelGrid bind:value={settingsStore.state.openrouterRequestModel} pinnedItems={openrouterPinnedItems} loading={true} />
+                                    {:else}
+                                        <ModelGrid bind:value={settingsStore.state.openrouterSubRequestModel} pinnedItems={openrouterPinnedItems} loading={true} />
+                                    {/if}
                                 {:then m}
-                                    <ModelGrid bind:value={settingsStore.state.openrouterRequestModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
+                                    {#if providerModelRole === 'main'}
+                                        <ModelGrid bind:value={settingsStore.state.openrouterRequestModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
+                                    {:else}
+                                        <ModelGrid bind:value={settingsStore.state.openrouterSubRequestModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
+                                    {/if}
                                 {/await}
                             </div>
                         {/if}
@@ -572,6 +622,8 @@
                         </button>
                         {#if isProviderOpen('nanogpt', usesNanoGPT)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                {@render providerRoleSelector('NanoGPT')}
+
                                 <span class="text-xs text-textcolor2">NanoGPT {language.apiKey}</span>
                                 <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} bind:value={settingsStore.state.nanogptKey} />
 
@@ -579,13 +631,18 @@
 
                                 {#if settingsStore.state.nanogptSubscriptionState === 'active' || settingsStore.state.nanogptSubscriptionState === 'grace'}
                                     <div class="flex items-center">
-                                        <CheckInput bind:check={settingsStore.state.nanogptUseSubscriptionEndpoint} name={language.nanoGPTUseSubscriptionEndpoint} />
+                                        {#if providerModelRole === 'main'}
+                                            <CheckInput bind:check={settingsStore.state.nanogptUseSubscriptionEndpoint} name={language.nanoGPTUseSubscriptionEndpoint} />
+                                        {:else}
+                                            <CheckInput bind:check={settingsStore.state.nanogptSubUseSubscriptionEndpoint} name={language.nanoGPTUseSubscriptionEndpoint} />
+                                        {/if}
                                     </div>
                                 {/if}
 
                                 <span class="text-xs text-textcolor2 mt-1">NanoGPT {language.model}</span>
                                 <SegmentedControl
-                                    bind:value={nanogptInputMode}
+                                    value={getNanoGPTInputMode()}
+                                    onchange={changeNanoGPTInputMode}
                                     options={[
                                         { value: 'list', label: (language as any).nanoGPTSelectFromList || 'Select from List' },
                                         { value: 'manual', label: (language as any).nanoGPTManualInput || 'Manual Input' }
@@ -593,25 +650,50 @@
                                     size="md"
                                 />
 
-                                {#if nanogptInputMode === 'manual'}
-                                    <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.nanogptRequestModel} placeholder={(language as any).nanoGPTManualModelSelect || "Manual Model Select"} oninput={() => settingsStore.state.nanogptRequestModelName = ''}/>
+                                {#if getNanoGPTInputMode() === 'manual'}
+                                    {#if providerModelRole === 'main'}
+                                        <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.nanogptRequestModel} placeholder={(language as any).nanoGPTManualModelSelect || "Manual Model Select"} oninput={() => { settingsStore.state.nanogptRequestModelName = ''; settingsStore.state.nanogptProvider = ''; }}/>
+                                    {:else}
+                                        <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.nanogptSubRequestModel} placeholder={(language as any).nanoGPTManualModelSelect || "Manual Model Select"} oninput={() => { settingsStore.state.nanogptSubRequestModelName = ''; settingsStore.state.nanogptSubProvider = ''; }}/>
+                                    {/if}
                                 {:else}
                                     {#await Promise.all([getNanoGPTModels(), getNanoGPTSubscriptionModels(settingsStore.state.nanogptKey)])}
-                                        <ModelGrid bind:value={settingsStore.state.nanogptRequestModel} loading={true} />
+                                        {#if providerModelRole === 'main'}
+                                            <ModelGrid bind:value={settingsStore.state.nanogptRequestModel} loading={true} />
+                                        {:else}
+                                            <ModelGrid bind:value={settingsStore.state.nanogptSubRequestModel} loading={true} showSubBadge={settingsStore.state.nanogptSubUseSubscriptionEndpoint} />
+                                        {/if}
                                     {:then [regular, sub]}
-                                        <ModelGrid
-                                            bind:value={settingsStore.state.nanogptRequestModel}
-                                            items={settingsStore.state.nanogptUseSubscriptionEndpoint ? (sub ?? []).map(ngToGridItem) : (regular ?? []).map(ngToGridItem)}
-                                            showSubBadge={settingsStore.state.nanogptUseSubscriptionEndpoint}
-                                            selectedLabelOverride={settingsStore.state.nanogptRequestModel && !settingsStore.state.nanogptRequestModelName ? settingsStore.state.nanogptRequestModel : undefined}
-                                            onselect={(_id, name) => { settingsStore.state.nanogptRequestModelName = name }}
-                                        />
-                                        {#if !settingsStore.state.nanogptUseSubscriptionEndpoint}
-                                            <NanoGPTProviderPicker
-                                                apiKey={settingsStore.state.nanogptKey}
-                                                modelId={settingsStore.state.nanogptRequestModel}
-                                                bind:value={settingsStore.state.nanogptProvider}
+                                        {#if providerModelRole === 'main'}
+                                            <ModelGrid
+                                                bind:value={settingsStore.state.nanogptRequestModel}
+                                                items={settingsStore.state.nanogptUseSubscriptionEndpoint ? (sub ?? []).map(ngToGridItem) : (regular ?? []).map(ngToGridItem)}
+                                                showSubBadge={settingsStore.state.nanogptUseSubscriptionEndpoint}
+                                                selectedLabelOverride={settingsStore.state.nanogptRequestModel && !settingsStore.state.nanogptRequestModelName ? settingsStore.state.nanogptRequestModel : undefined}
+                                                onselect={(_id, name) => { settingsStore.state.nanogptRequestModelName = name; settingsStore.state.nanogptProvider = ''; }}
                                             />
+                                            {#if !settingsStore.state.nanogptUseSubscriptionEndpoint}
+                                                <NanoGPTProviderPicker
+                                                    apiKey={settingsStore.state.nanogptKey}
+                                                    modelId={settingsStore.state.nanogptRequestModel}
+                                                    bind:value={settingsStore.state.nanogptProvider}
+                                                />
+                                            {/if}
+                                        {:else}
+                                            <ModelGrid
+                                                bind:value={settingsStore.state.nanogptSubRequestModel}
+                                                items={settingsStore.state.nanogptSubUseSubscriptionEndpoint ? (sub ?? []).map(ngToGridItem) : (regular ?? []).map(ngToGridItem)}
+                                                showSubBadge={settingsStore.state.nanogptSubUseSubscriptionEndpoint}
+                                                selectedLabelOverride={settingsStore.state.nanogptSubRequestModel && !settingsStore.state.nanogptSubRequestModelName ? settingsStore.state.nanogptSubRequestModel : undefined}
+                                                onselect={(_id, name) => { settingsStore.state.nanogptSubRequestModelName = name; settingsStore.state.nanogptSubProvider = ''; }}
+                                            />
+                                            {#if !settingsStore.state.nanogptSubUseSubscriptionEndpoint}
+                                                <NanoGPTProviderPicker
+                                                    apiKey={settingsStore.state.nanogptKey}
+                                                    modelId={settingsStore.state.nanogptSubRequestModel}
+                                                    bind:value={settingsStore.state.nanogptSubProvider}
+                                                />
+                                            {/if}
                                         {/if}
                                     {/await}
                                 {/if}
@@ -637,11 +719,17 @@
                         </button>
                         {#if isProviderOpen('ollama', usesOllamaLocal || usesOllamaCloud)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                {@render providerRoleSelector('Ollama')}
+
                                 <span class="text-xs text-textcolor2">Ollama URL</span>
                                 <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaURL} />
                                 
-                                <span class="text-xs text-textcolor2 mt-1">Ollama Model</span>
-                                <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaModel} placeholder="Model" oninput={() => { settingsStore.state.ollamaModelSource = 'local'; settingsStore.state.ollamaModelName = '' }} />
+                                <span class="text-xs text-textcolor2 mt-1">Ollama Local</span>
+                                {#if providerModelRole === 'main'}
+                                    <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaModel} placeholder="Model" oninput={() => { settingsStore.state.ollamaModelSource = 'local'; settingsStore.state.ollamaModelName = '' }} />
+                                {:else}
+                                    <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaSubModel} placeholder="Model" oninput={() => { settingsStore.state.ollamaModelSource = 'local'; settingsStore.state.ollamaSubModelName = '' }} />
+                                {/if}
 
                                 <span class="text-xs text-textcolor2 mt-1">Ollama Cloud / Remote</span>
                                 <SegmentedControl
@@ -654,20 +742,40 @@
                                 />
 
                                 {#if settingsStore.state.ollamaInputMode === 'manual'}
-                                    <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaCloudModel} placeholder="Model" oninput={() => settingsStore.state.ollamaCloudModelName = ''} />
+                                    {#if providerModelRole === 'main'}
+                                        <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaCloudModel} placeholder="Model" oninput={() => settingsStore.state.ollamaCloudModelName = ''} />
+                                    {:else}
+                                        <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaCloudSubModel} placeholder="Model" oninput={() => settingsStore.state.ollamaCloudSubModelName = ''} />
+                                    {/if}
                                 {:else}
                                     {#await getOllamaModels(settingsStore.state.ollamaURL, 'cloud', settingsStore.state.ollamaApiKey)}
-                                        <ModelGrid bind:value={settingsStore.state.ollamaCloudModel} loading={true} />
+                                        {#if providerModelRole === 'main'}
+                                            <ModelGrid bind:value={settingsStore.state.ollamaCloudModel} loading={true} />
+                                        {:else}
+                                            <ModelGrid bind:value={settingsStore.state.ollamaCloudSubModel} loading={true} />
+                                        {/if}
                                     {:then cloudModels}
-                                        <ModelGrid
-                                            bind:value={settingsStore.state.ollamaCloudModel}
-                                            items={cloudModels ?? []}
-                                            selectedLabelOverride={settingsStore.state.ollamaCloudModel ? `Cloud / ${settingsStore.state.ollamaCloudModelName || settingsStore.state.ollamaCloudModel}` : undefined}
-                                            onselect={(_id, name) => {
-                                                settingsStore.state.ollamaModelSource = 'cloud'
-                                                settingsStore.state.ollamaCloudModelName = name
-                                            }}
-                                        />
+                                        {#if providerModelRole === 'main'}
+                                            <ModelGrid
+                                                bind:value={settingsStore.state.ollamaCloudModel}
+                                                items={cloudModels ?? []}
+                                                selectedLabelOverride={settingsStore.state.ollamaCloudModel ? `Cloud / ${settingsStore.state.ollamaCloudModelName || settingsStore.state.ollamaCloudModel}` : undefined}
+                                                onselect={(_id, name) => {
+                                                    settingsStore.state.ollamaModelSource = 'cloud'
+                                                    settingsStore.state.ollamaCloudModelName = name
+                                                }}
+                                            />
+                                        {:else}
+                                            <ModelGrid
+                                                bind:value={settingsStore.state.ollamaCloudSubModel}
+                                                items={cloudModels ?? []}
+                                                selectedLabelOverride={settingsStore.state.ollamaCloudSubModel ? `Cloud / ${settingsStore.state.ollamaCloudSubModelName || settingsStore.state.ollamaCloudSubModel}` : undefined}
+                                                onselect={(_id, name) => {
+                                                    settingsStore.state.ollamaModelSource = 'cloud'
+                                                    settingsStore.state.ollamaCloudSubModelName = name
+                                                }}
+                                            />
+                                        {/if}
                                     {/await}
                                 {/if}
 
@@ -715,6 +823,8 @@
                         </button>
                         {#if isProviderOpen('proxy', usesReverseProxy)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                {@render providerRoleSelector('Reverse Proxy')}
+
                                 <span class="text-xs text-textcolor2">URL <Help key="forceUrl"/></span>
                                 <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.forceReplaceUrl} placeholder="https://..." />
                                 
@@ -722,7 +832,11 @@
                                 <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} placeholder="leave blank if none" bind:value={settingsStore.state.proxyKey} />
                                 
                                 <span class="text-xs text-textcolor2 mt-1">{language.proxyRequestModel}</span>
-                                <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.customProxyRequestModel} placeholder="Model Name" />
+                                {#if providerModelRole === 'main'}
+                                    <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.customProxyRequestModel} placeholder="Model Name" />
+                                {:else}
+                                    <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.customProxySubRequestModel} placeholder="Model Name" />
+                                {/if}
                                 
                                 <span class="text-xs text-textcolor2 mt-1">{language.format}</span>
                                 <SelectInput value={settingsStore.state.customAPIFormat.toString()} onchange={(e) => {

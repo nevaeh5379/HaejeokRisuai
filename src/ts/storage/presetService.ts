@@ -48,6 +48,7 @@ export async function saveCurrentPreset() {
     ainconfig: safeStructuredClone(db.ainconfig),
     proxyRequestModel: db.proxyRequestModel,
     openrouterRequestModel: db.openrouterRequestModel,
+    openrouterSubRequestModel: db.openrouterSubRequestModel,
     NAISettings: safeStructuredClone(db.NAIsettings),
     promptTemplate: normalizePromptTemplate(db.promptTemplate) ?? null,
     NAIadventure: db.NAIadventure ?? false,
@@ -55,6 +56,7 @@ export async function saveCurrentPreset() {
     localStopStrings: db.localStopStrings,
     autoSuggestPrompt: db.autoSuggestPrompt,
     customProxyRequestModel: db.customProxyRequestModel,
+    customProxySubRequestModel: db.customProxySubRequestModel,
     reverseProxyOobaArgs: safeStructuredClone(db.reverseProxyOobaArgs) ?? null,
     top_p: db.top_p ?? 1,
     promptSettings: safeStructuredClone(db.promptSettings) ?? null,
@@ -159,6 +161,10 @@ export function setPreset(db: Database, newPres: botPreset) {
   db.ainconfig = safeStructuredClone(newPres.ainconfig ?? db.ainconfig);
   db.openrouterRequestModel =
     newPres.openrouterRequestModel ?? db.openrouterRequestModel;
+  db.openrouterSubRequestModel =
+    newPres.openrouterSubRequestModel ??
+    newPres.openrouterRequestModel ??
+    db.openrouterSubRequestModel;
   db.proxyRequestModel = newPres.proxyRequestModel ?? db.proxyRequestModel;
   db.NAIsettings = newPres.NAISettings ?? db.NAIsettings;
   db.autoSuggestPrompt = newPres.autoSuggestPrompt ?? db.autoSuggestPrompt;
@@ -172,6 +178,10 @@ export function setPreset(db: Database, newPres: botPreset) {
   db.NAIsettings.mirostat_lr ??= 1;
   db.localStopStrings = newPres.localStopStrings;
   db.customProxyRequestModel = newPres.customProxyRequestModel ?? "";
+  db.customProxySubRequestModel =
+    newPres.customProxySubRequestModel ??
+    newPres.customProxyRequestModel ??
+    db.customProxyRequestModel;
   db.reverseProxyOobaArgs = safeStructuredClone(
     newPres.reverseProxyOobaArgs,
   ) ?? {

@@ -20,6 +20,10 @@ import {
 } from "../requestContext";
 import type { RequestDataArgumentExtended } from "../requestContracts";
 import {
+  resolveProviderRoleModel,
+  resolveProviderRoleSetting,
+} from "../providerRoleSettings";
+import {
   applyAdditionalParameters,
   applyParameters,
   getAdditionalParameters,
@@ -52,8 +56,27 @@ export async function prepareModernOpenAIRequest(
 ): Promise<OpenAIRequestPreparationResult> {
   const db = settingsStore.state;
   const aiModel = arg.aiModel;
-  let openRouterRequestModel = db.openrouterRequestModel;
-  if (aiModel === "openrouter" && db.openrouterRequestModel === "risu/free") {
+  let openRouterRequestModel = resolveProviderRoleModel(
+    db.openrouterRequestModel,
+    db.openrouterSubRequestModel,
+    arg.mode,
+  );
+  const nanoGPTRequestModel = resolveProviderRoleModel(
+    db.nanogptRequestModel,
+    db.nanogptSubRequestModel,
+    arg.mode,
+  );
+  const nanoGPTUseSubscriptionEndpoint = resolveProviderRoleSetting(
+    db.nanogptUseSubscriptionEndpoint,
+    db.nanogptSubUseSubscriptionEndpoint,
+    arg.mode,
+  );
+  const nanoGPTProvider = resolveProviderRoleSetting(
+    db.nanogptProvider,
+    db.nanogptSubProvider,
+    arg.mode,
+  );
+  if (aiModel === "openrouter" && openRouterRequestModel === "risu/free") {
     openRouterRequestModel = await getFreeOpenRouterModels();
   }
 
@@ -62,9 +85,9 @@ export async function prepareModernOpenAIRequest(
     model: resolveOpenAIRequestModel({
       aiModel,
       requestModel:
-        aiModel === "reverse_proxy" ? db.customProxyRequestModel : aiModel,
+        aiModel === "reverse_proxy" ? arg.modelInfo.internalID : aiModel,
       openRouterRequestModel,
-      nanoGPTRequestModel: db.nanogptRequestModel,
+      nanoGPTRequestModel,
       internalID: arg.modelInfo.internalID,
     }),
     messages: formatedChat,
@@ -128,7 +151,7 @@ export async function prepareModernOpenAIRequest(
         (aiModel === "reverse_proxy" &&
           (db.proxyRequestModel?.startsWith("gpt") ||
             (db.proxyRequestModel === "custom" &&
-              db.customProxyRequestModel.startsWith("gpt"))))
+              (arg.modelInfo.internalID ?? "").startsWith("gpt"))))
       ),
     multiGen: arg.multiGen,
     hasTools,
@@ -143,7 +166,7 @@ export async function prepareModernOpenAIRequest(
     aiModel,
     customURL: arg.customURL,
     modelEndpoint: arg.modelInfo?.endpoint,
-    nanoGPTUseSubscriptionEndpoint: db.nanogptUseSubscriptionEndpoint,
+    nanoGPTUseSubscriptionEndpoint,
     autofillRequestUrl: db.autofillRequestUrl,
   });
   const replacerURL = endpoint.url;
@@ -168,7 +191,7 @@ export async function prepareModernOpenAIRequest(
     openRouterKey: db.openrouterKey,
     keyIdentifier: arg.modelInfo?.keyIdentifier,
     keyByIdentifier: db.OaiCompAPIKeys,
-    nanoGPTProvider: db.nanogptProvider,
+    nanoGPTProvider,
     risuIdentify: endpoint.risuIdentify,
   });
 

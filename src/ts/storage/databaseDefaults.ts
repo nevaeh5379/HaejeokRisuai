@@ -408,12 +408,18 @@ export function normalizeDatabaseDefaults(data: Database) {
   data.ainconfig ??= safeStructuredClone(defaultAIN);
   data.openrouterKey ??= "";
   data.openrouterRequestModel ??= "openai/gpt-3.5-turbo";
+  data.openrouterSubRequestModel ??= data.openrouterRequestModel;
   data.nanogptKey ??= "";
   data.nanogptRequestModel ??= "";
   data.nanogptRequestModelName ??= "";
   data.nanogptProvider ??= "";
+  data.nanogptSubRequestModel ??= data.nanogptRequestModel;
+  data.nanogptSubRequestModelName ??= data.nanogptRequestModelName;
+  data.nanogptSubProvider ??= data.nanogptProvider;
   data.nanogptSubscriptionState ??= "";
   data.nanogptUseSubscriptionEndpoint ??= false;
+  data.nanogptSubUseSubscriptionEndpoint ??=
+    data.nanogptUseSubscriptionEndpoint;
   data.NAIsettings ??= safeStructuredClone(prebuiltNAIpresets);
   data.assetWidth ??= -1;
   data.chatLimitSize ??= -1;
@@ -447,6 +453,7 @@ export function normalizeDatabaseDefaults(data: Database) {
   data.NAIsettings.mirostat_lr ??= 1;
   data.autofillRequestUrl ??= true;
   data.customProxyRequestModel ??= "";
+  data.customProxySubRequestModel ??= data.customProxyRequestModel;
   data.generationSeed ??= -1;
   data.newOAIHandle ??= true;
   data.localNetworkMode ??= false;
@@ -518,7 +525,6 @@ export function normalizeDatabaseDefaults(data: Database) {
   data.ollamaModelName ??= "";
   data.ollamaCloudModel ??= "";
   data.ollamaCloudModelName ??= "";
-  data.ollamaThinkingMode ??= "auto";
   if (
     (data.aiModel === "ollama-cloud" || data.subModel === "ollama-cloud") &&
     !data.ollamaCloudModel
@@ -526,6 +532,11 @@ export function normalizeDatabaseDefaults(data: Database) {
     data.ollamaCloudModel = data.ollamaModel;
     data.ollamaCloudModelName = data.ollamaModelName;
   }
+  data.ollamaSubModel ??= data.ollamaModel;
+  data.ollamaSubModelName ??= data.ollamaModelName;
+  data.ollamaCloudSubModel ??= data.ollamaCloudModel;
+  data.ollamaCloudSubModelName ??= data.ollamaCloudModelName;
+  data.ollamaThinkingMode ??= "auto";
   data.autoContinueChat ??= false;
   data.autoContinueMinTokens ??= 0;
   data.repetition_penalty ??= 1;

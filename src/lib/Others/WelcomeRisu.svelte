@@ -346,20 +346,28 @@ import { initializeDomainStores } from 'src/ts/storage/databaseLifecycle';
       settingsStore.state.subModel = targetModel;
       if (trimmedApiKey) settingsStore.state.google.accessToken = trimmedApiKey;
     } else if (selectedProvider === 'openrouter') {
+      const targetModel = trimmedModel || 'anthropic/claude-3.7-sonnet';
       settingsStore.state.aiModel = 'openrouter';
       settingsStore.state.subModel = 'openrouter';
-      settingsStore.state.openrouterRequestModel = trimmedModel || 'anthropic/claude-3.7-sonnet';
+      settingsStore.state.openrouterRequestModel = targetModel;
+      settingsStore.state.openrouterSubRequestModel = targetModel;
       if (trimmedApiKey) settingsStore.state.openrouterKey = trimmedApiKey;
     } else if (selectedProvider === 'reverse_proxy') {
       settingsStore.state.aiModel = 'reverse_proxy';
       settingsStore.state.subModel = 'reverse_proxy';
       if (trimmedUrl) settingsStore.state.forceReplaceUrl = trimmedUrl;
-      if (trimmedModel) settingsStore.state.customProxyRequestModel = trimmedModel;
+      if (trimmedModel) {
+        settingsStore.state.customProxyRequestModel = trimmedModel;
+        settingsStore.state.customProxySubRequestModel = trimmedModel;
+      }
       if (trimmedApiKey) settingsStore.state.proxyKey = trimmedApiKey;
     } else if (selectedProvider === 'ollama') {
       settingsStore.state.aiModel = 'ollama-hosted';
       settingsStore.state.subModel = 'ollama-hosted';
-      if (trimmedModel) settingsStore.state.ollamaModel = trimmedModel;
+      if (trimmedModel) {
+        settingsStore.state.ollamaModel = trimmedModel;
+        settingsStore.state.ollamaSubModel = trimmedModel;
+      }
       if (trimmedUrl) settingsStore.state.ollamaURL = trimmedUrl;
       settingsStore.state.ollamaModelSource = 'local';
     } else if (selectedProvider === 'horde') {

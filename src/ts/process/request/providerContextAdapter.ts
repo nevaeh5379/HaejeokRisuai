@@ -3,6 +3,7 @@ import { prepareProviderExecutionContext } from "@risuai/chat-core/providerConte
 import { getModelInfo } from "../../model/modellist";
 
 import type { requestDataArgument } from "./requestContracts";
+import { resolveProviderRoleModel } from "./providerRoleSettings";
 import type { ModelModeExtended } from "./shared";
 
 export function prepareBrowserProviderContext(
@@ -24,7 +25,11 @@ export function prepareBrowserProviderContext(
         genTime: db.genTime,
         extractJson: db.extractJson,
         reverseProxy: {
-          requestModel: db.customProxyRequestModel,
+          requestModel: resolveProviderRoleModel(
+            db.customProxyRequestModel,
+            db.customProxySubRequestModel,
+            model,
+          ),
           format: db.customAPIFormat,
           url: db.forceReplaceUrl,
           key: db.proxyKey,

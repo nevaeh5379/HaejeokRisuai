@@ -35,7 +35,7 @@ export async function requestMistral(
 
   const body = applyParameters(
     {
-      model: arg.aiModel,
+      model: arg.modelInfo.internalID || arg.aiModel,
       messages: reformatedChat,
       safe_prompt: false,
       max_tokens: arg.maxTokens,

@@ -182,14 +182,19 @@ export interface Database {
   ainconfig: AINsettings;
   personaPrompt: string;
   openrouterRequestModel: string;
+  openrouterSubRequestModel: string;
   openrouterKey: string;
   openrouterMiddleOut: boolean;
   nanogptKey: string;
   nanogptRequestModel: string;
   nanogptRequestModelName: string;
   nanogptProvider: string;
+  nanogptSubRequestModel: string;
+  nanogptSubRequestModelName: string;
+  nanogptSubProvider: string;
   nanogptSubscriptionState: string;
   nanogptUseSubscriptionEndpoint: boolean;
+  nanogptSubUseSubscriptionEndpoint: boolean;
   openrouterFallback: boolean;
   selectedPersona: number;
   personas: RisuPersona[];
@@ -226,6 +231,7 @@ export interface Database {
   localStopStrings?: string[];
   autofillRequestUrl: boolean;
   customProxyRequestModel: string;
+  customProxySubRequestModel: string;
   generationSeed: number;
   newOAIHandle: boolean;
   gptVisionQuality: string;
@@ -274,8 +280,12 @@ export interface Database {
   ollamaRequestFormat: LLMFormat;
   ollamaApiKey: string;
   ollamaModelName: string;
+  ollamaSubModel: string;
+  ollamaSubModelName: string;
   ollamaCloudModel: string;
   ollamaCloudModelName: string;
+  ollamaCloudSubModel: string;
+  ollamaCloudSubModelName: string;
   ollamaThinkingMode: "auto" | "off" | "on" | "low" | "medium" | "high";
   autoContinueChat: boolean;
   autoContinueMinTokens: number;
@@ -889,6 +899,7 @@ export interface botPreset {
   bias: [string, number][];
   proxyRequestModel?: string;
   openrouterRequestModel?: string;
+  openrouterSubRequestModel?: string;
   proxyKey?: string;
   ooba: OobaSettings;
   ainconfig: AINsettings;
@@ -902,6 +913,7 @@ export interface botPreset {
   NAIappendName?: boolean;
   localStopStrings?: string[];
   customProxyRequestModel?: string;
+  customProxySubRequestModel?: string;
   reverseProxyOobaArgs?: OobaChatCompletionRequestParams;
   top_p?: number;
   promptSettings?: PromptSettings;

@@ -14,6 +14,7 @@ import type {
   requestDataResponse,
 } from "./requestContracts";
 import type { StreamResponseChunk } from "./requestContracts";
+import { resolveOllamaRequestModel } from "./ollamaModel";
 import { shouldUseNodeOllamaCloudTransport } from "./ollamaTransport";
 import { tryExecuteNodeProviderTransport } from "./nodeProviderExecutor";
 import { requestOpenAI, requestOpenAIResponseAPI } from "./openAI/requests";
@@ -151,7 +152,11 @@ export async function requestOllama(
   const db = settingsStore.state;
   const isCloud = arg.aiModel === "ollama-cloud";
   const requestFormat = isCloud ? db.ollamaRequestFormat : LLMFormat.Ollama;
-  const ollamaModel = isCloud ? db.ollamaCloudModel : db.ollamaModel;
+  const ollamaModel = resolveOllamaRequestModel(
+    db,
+    isCloud ? "cloud" : "local",
+    arg.mode,
+  );
   const ollamaThinkMode = getOllamaThinkMode(db.ollamaThinkingMode);
 
   if (isCloud && requestFormat === LLMFormat.OpenAICompatible) {
@@ -215,7 +220,7 @@ export async function requestOllama(
           ? DEFAULT_OLLAMA_CLOUD_CHAT_URL
           : `${db.ollamaURL}/api/chat`,
         model: ollamaModel,
-        source: db.ollamaModelSource,
+        source: isCloud ? "cloud" : "local",
         stream: arg.useStreaming,
         think: ollamaThinkMode,
         headers:
