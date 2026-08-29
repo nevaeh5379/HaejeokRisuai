@@ -48,6 +48,8 @@ let lastRequestsCount = 0;
 interface BasicScriptingEngineState {
   code?: string;
   mutex: Mutex;
+  activeRuns: number;
+  executionToken?: symbol;
   char?: character | groupChat | simpleCharacterArgument;
   chat?: Chat;
   chatTarget?: ChatExecutionTarget;
@@ -71,9 +73,8 @@ interface PythonScriptingEngineState extends BasicScriptingEngineState {
 type ScriptingEngineState =
   LuaScriptingEngineState | PythonScriptingEngineState;
 
-let ScriptingEngines = new Map<string, ScriptingEngineState>();
+const ScriptingEngines = new Map<string, ScriptingEngineState>();
 let luaFactoryPromise: Promise<void> | null = null;
-let pendingEngineCreations = new Map<string, Promise<ScriptingEngineState>>();
 
 export async function runScripted(
   code: string,
@@ -107,9 +108,12 @@ export async function runScripted(
   if (type === "lua") {
     await ensureLuaFactory();
   }
-  let ScriptingEngineState = await getOrCreateEngineState(mode, type);
+  const ScriptingEngineState = acquireScriptingEngineState(mode, type);
+  const executionToken = Symbol();
+  let invocationAccessKey: string | undefined;
 
-  return await ScriptingEngineState.mutex.runExclusive(async () => {
+  const run = ScriptingEngineState.mutex.runExclusive(async () => {
+    ScriptingEngineState.executionToken = executionToken;
     const previousMessageIds = (chat?.message ?? [])
       .map((message) => message.chatId)
       .filter((id): id is string => Boolean(id));
@@ -1212,6 +1216,7 @@ export async function runScripted(
       ScriptingEngineState.code = code;
     }
     let accessKey = v4();
+    invocationAccessKey = accessKey;
     if (mode === "editDisplay") {
       ScriptingEditDisplayIds.add(accessKey);
     } else {
@@ -1347,6 +1352,23 @@ export async function runScripted(
       res,
     };
   });
+
+  return await run.finally(() => {
+    if (invocationAccessKey) {
+      ScriptingSafeIds.delete(invocationAccessKey);
+      ScriptingEditDisplayIds.delete(invocationAccessKey);
+      ScriptingLowLevelIds.delete(invocationAccessKey);
+    }
+    ScriptingEngineState.activeRuns = Math.max(
+      0,
+      ScriptingEngineState.activeRuns - 1,
+    );
+    if (ScriptingEngineState.executionToken === executionToken) {
+      releaseScriptingExecutionContext(ScriptingEngineState);
+      ScriptingEngineState.executionToken = undefined;
+    }
+    trimScriptingEngines();
+  });
 }
 
 async function makeLuaFactory() {
@@ -1389,35 +1411,66 @@ async function ensureLuaFactory() {
   }
 }
 
-async function getOrCreateEngineState(
+function releaseScriptingExecutionContext(engineState: ScriptingEngineState) {
+  engineState.char = undefined;
+  engineState.chat = undefined;
+  engineState.chatTarget = undefined;
+  engineState.triggerId = undefined;
+  engineState.setVar = undefined;
+  engineState.getVar = undefined;
+  engineState.messagesMutated = false;
+  engineState.stopSending = false;
+}
+
+function disposeScriptingEngineState(engineState: ScriptingEngineState) {
+  releaseScriptingExecutionContext(engineState);
+  engineState.executionToken = undefined;
+  engineState.code = undefined;
+  try {
+    if (engineState.type === "lua") {
+      engineState.engine?.global.close();
+      engineState.engine = undefined;
+    } else {
+      engineState.pyodide?.close();
+      engineState.pyodide = undefined;
+    }
+  } catch (error) {
+    console.warn("Failed to dispose scripting engine state", error);
+  }
+}
+
+function trimScriptingEngines() {
+  const maxEntries = settingsStore.state.lowSpecMode ? 4 : 8;
+  if (ScriptingEngines.size <= maxEntries) return;
+
+  for (const [key, engineState] of ScriptingEngines) {
+    if (ScriptingEngines.size <= maxEntries) break;
+    if (engineState.activeRuns > 0) continue;
+    ScriptingEngines.delete(key);
+    disposeScriptingEngineState(engineState);
+  }
+}
+
+function acquireScriptingEngineState(
   mode: string,
   type: "lua" | "py",
-): Promise<ScriptingEngineState> {
-  let engineState = ScriptingEngines.get(mode);
+): ScriptingEngineState {
+  const key = `${type}:${mode}`;
+  let engineState = ScriptingEngines.get(key);
   if (engineState) {
-    return engineState;
-  }
-
-  let pendingCreation = pendingEngineCreations.get(mode);
-  if (pendingCreation) {
-    return pendingCreation;
-  }
-
-  const creationPromise = (() => {
-    const engineState: ScriptingEngineState = {
+    ScriptingEngines.delete(key);
+    ScriptingEngines.set(key, engineState);
+  } else {
+    engineState = {
       mutex: new Mutex(),
-      type: type,
+      type,
+      activeRuns: 0,
     };
-    ScriptingEngines.set(mode, engineState);
-
-    pendingEngineCreations.delete(mode);
-
-    return Promise.resolve(engineState);
-  })();
-
-  pendingEngineCreations.set(mode, creationPromise);
-
-  return creationPromise;
+    ScriptingEngines.set(key, engineState);
+  }
+  engineState.activeRuns += 1;
+  trimScriptingEngines();
+  return engineState;
 }
 
 function luaCodeWrapper(code: string) {
