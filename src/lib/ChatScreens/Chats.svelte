@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { character, groupChat, Message, StreamingDisplayOptimizationMode } from '../../ts/storage/schema';
+    import type { character, groupChat, Message, StreamingDisplayOptimizationMode } from '../../ts/storage/database/schema';
     import { mount, onDestroy, unmount } from 'svelte';
     import Chat from './Chat.svelte';
     import { getCharImage } from 'src/ts/characters';

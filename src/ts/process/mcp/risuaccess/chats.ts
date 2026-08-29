@@ -5,7 +5,7 @@ import {
 } from "../mcplib";
 import { getCharacter } from "./utils";
 import type { MCPToolCallContext } from "../mcp";
-import type { character, groupChat } from "../../../storage/schema";
+import type { character, groupChat } from "../../../storage/database/schema";
 import { resolveChatTarget } from "../../../chatTarget";
 
 export class ChatHandler extends MCPToolHandler {

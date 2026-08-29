@@ -17,7 +17,7 @@ import {
 } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
-import { getSqlStorage } from "../storage/sqlStorageFactory";
+import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
 import type { ScriptMode } from "../process/scripts";
 import { checkCodeSafety } from "./pluginSafety";
 import {

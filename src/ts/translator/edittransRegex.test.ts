@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { character, customscript } from "../storage/schema";
+import type { character, customscript } from "../storage/database/schema";
 
 const database = vi.hoisted(() => ({ presetRegex: [] as customscript[] }));
 

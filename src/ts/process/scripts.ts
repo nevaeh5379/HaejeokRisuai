@@ -6,7 +6,7 @@ import {
   scriptCacheRevision,
   selectedCharID,
 } from "../stores.svelte";
-import type { character, customscript, groupChat } from "../storage/schema";
+import type { character, customscript, groupChat } from "../storage/database/schema";
 import { resolveChatTarget, type ChatExecutionTarget } from "../chatTarget";
 
 import { downloadFile } from "../globalApi.svelte";

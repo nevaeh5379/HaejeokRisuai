@@ -1,5 +1,5 @@
 import { characterStore } from "./stores/domain/characterStore.svelte";
-import type { Chat, character, groupChat } from "./storage/schema";
+import type { Chat, character, groupChat } from "./storage/database/schema";
 
 export interface ChatTarget {
   characterId: string;

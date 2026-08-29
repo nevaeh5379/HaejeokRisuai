@@ -1,5 +1,5 @@
 import { forageStorage } from "src/ts/globalApi.svelte";
-import { NodeStorage } from "src/ts/storage/nodeStorage";
+import { NodeStorage } from "src/ts/storage/files/nodeStorage";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { personaStore } from "src/ts/stores/domain/personaStore.svelte";

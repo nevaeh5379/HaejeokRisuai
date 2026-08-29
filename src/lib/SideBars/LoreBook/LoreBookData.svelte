@@ -3,7 +3,7 @@
 import { XIcon, LinkIcon, SunIcon, BookCopyIcon, FolderIcon, FolderOpen, PlusIcon } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { language } from "../../../lang";
-    import type { loreBook } from "../../../ts/storage/schema";
+    import type { loreBook } from "../../../ts/storage/database/schema";
 
     import { alertConfirm, alertMd } from "../../../ts/alert";
     import Check from "../../UI/GUI/CheckInput.svelte";

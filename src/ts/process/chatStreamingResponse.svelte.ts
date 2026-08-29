@@ -1,4 +1,4 @@
-import type { character, groupChat, Chat, MessageGenerationInfo, MessagePresetInfo, StreamingDisplayOptimizationMode } from "../storage/schema";
+import type { character, groupChat, Chat, MessageGenerationInfo, MessagePresetInfo, StreamingDisplayOptimizationMode } from "../storage/database/schema";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import type { ChatModelResponse } from "@risuai/chat-core/types.cjs";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";

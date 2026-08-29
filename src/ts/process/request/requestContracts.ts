@@ -1,5 +1,5 @@
 import type { LLMModel } from "../../model/modellist";
-import type { character } from "../../storage/schema";
+import type { character } from "../../storage/database/schema";
 import type { ChatExecutionTarget } from "../../chatTarget";
 import type {
   ChatModelResponse,

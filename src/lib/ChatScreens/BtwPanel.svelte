@@ -9,7 +9,7 @@
     X,
   } from "@lucide/svelte";
   import { tick } from "svelte";
-  import type { BtwSession } from "../../ts/storage/schema";
+  import type { BtwSession } from "../../ts/storage/database/schema";
   import { getCharImage } from "../../ts/characterImage";
   import { createSimpleCharacter } from "../../ts/stores.svelte";
   import { chatTargetFromIndexes } from "../../ts/chatTarget";

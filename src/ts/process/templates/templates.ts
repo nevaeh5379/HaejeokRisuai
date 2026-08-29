@@ -1,4 +1,4 @@
-import type { botPreset } from "../../storage/schema";
+import type { botPreset } from "../../storage/database/schema";
 import type { NAISettings } from "../models/nai";
 
 export const prebuiltPresets = {

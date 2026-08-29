@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { safeStructuredClone } from "./polyfill";
-import type { Chat, ChatBranchReason, ChatBranchState, ChatBranchTimeline, Message } from "./storage/schema";
+import type { Chat, ChatBranchReason, ChatBranchState, ChatBranchTimeline, Message } from "./storage/database/schema";
 
 export interface CreateChatTimelineBranchOptions {
   branchMessageIndex: number;

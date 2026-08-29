@@ -1,5 +1,5 @@
 import { tokenizeAccurate } from "../tokenizer";
-import { presetTemplate } from "../storage/presetDefaults";
+import { presetTemplate } from "../storage/presets/presetDefaults";
 
 import { alertError, alertNormal } from "../alert";
 import type { OobaChatCompletionRequestParams } from "../model/ooba";

@@ -3,7 +3,7 @@
     import { language } from "src/lang";
     import { ReloadGUIPointer } from "src/ts/stores.svelte";
     import { alertConfirm } from "src/ts/alert";
-    import type { customscript } from "../../../ts/storage/schema";
+    import type { customscript } from "../../../ts/storage/database/schema";
     import Check from "../../UI/GUI/CheckInput.svelte";
     import TextInput from "../../UI/GUI/TextInput.svelte";
     import TextAreaInput from "../../UI/GUI/TextAreaInput.svelte";

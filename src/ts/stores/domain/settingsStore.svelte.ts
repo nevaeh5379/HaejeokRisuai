@@ -1,8 +1,8 @@
-import type { DatabaseSettings } from "../../storage/schema";
-import type { ISqlStorage } from "../../storage/ISqlStorage";
-import { getSqlStorage } from "../../storage/sqlStorageFactory";
-import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
-import { DOMAIN_STORE_SETTING_KEYS } from "../../storage/sqlDeferredSettings";
+import type { DatabaseSettings } from "../../storage/database/schema";
+import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import { getSqlStorage } from "../../storage/sql/sqlStorageFactory";
+import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
+import { DOMAIN_STORE_SETTING_KEYS } from "../../storage/sql/sqlDeferredSettings";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 import type {
   FlushableStore,
@@ -198,7 +198,7 @@ class SettingsStore
     this.dirtyKeys.clear();
     this.pendingDeletes.clear();
 
-    let pluginStoragePayload: import("../../storage/sqlCommit").SqlCommit["pluginStorage"] =
+    let pluginStoragePayload: import("../../storage/sql/sqlCommit").SqlCommit["pluginStorage"] =
       undefined;
     if (hasPluginChanges) {
       pluginStoragePayload = {

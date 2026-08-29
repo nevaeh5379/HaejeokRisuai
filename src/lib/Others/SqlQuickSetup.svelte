@@ -7,14 +7,14 @@
     import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
     import { alertError, alertNormal } from 'src/ts/alert'
     import { forageStorage } from 'src/ts/globalApi.svelte'
-    import { NodeStorage } from 'src/ts/storage/nodeStorage'
+    import { NodeStorage } from 'src/ts/storage/files/nodeStorage'
     import {
         buildSqlVendorParams,
         isSqlVendorParamsComplete,
         type DbVendor,
         type NodeSqlStorageRuntime,
         type SqlVendorFormValues,
-    } from 'src/ts/storage/nodePostgresStorage'
+    } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
     import { sqlConfiguredStore } from 'src/ts/stores.svelte'
 
     type Step = 'welcome' | 'vendor' | 'connection'

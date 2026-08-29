@@ -1,7 +1,7 @@
 <script lang="ts">
     import { language } from "src/lang";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
-    import type { loreBook } from "../../../../ts/storage/schema";
+    import type { loreBook } from "../../../../ts/storage/database/schema";
     import LoreBookList from "src/lib/SideBars/LoreBook/LoreBookList.svelte";
     import { type CCLorebook, convertExternalLorebook } from "src/ts/process/lorebook.svelte";
     import type { RisuModule } from "src/ts/process/modules";

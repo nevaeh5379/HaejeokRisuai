@@ -5,7 +5,7 @@ import {
   getChatBranches,
   type ChatGraphTimeline,
 } from "./branches";
-import type { Chat, Message } from "../storage/schema";
+import type { Chat, Message } from "../storage/database/schema";
 
 function message(
   chatId: string,

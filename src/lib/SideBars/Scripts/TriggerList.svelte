@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { triggerscript } from "../../../ts/storage/schema";
+    import type { triggerscript } from "../../../ts/storage/database/schema";
     import { language } from "src/lang";
     import { alertConfirm } from "src/ts/alert";
     import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";

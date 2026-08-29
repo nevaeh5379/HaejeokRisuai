@@ -1,5 +1,5 @@
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
-import { createDatabaseSnapshot } from "src/ts/storage/databaseSnapshot";
+import { createDatabaseSnapshot } from "src/ts/storage/database/databaseSnapshot";
 import { showRealmInfoStore } from "./realmStore";
 import {
   alertCardExport,
@@ -12,9 +12,9 @@ import {
   alertRisuServiceTOS,
   alertWait,
 } from "./alert";
-import { defaultSdDataFunc } from "./storage/presetDefaults";
-import type { character, customscript, loreSettings, loreBook, triggerscript, groupChat } from "./storage/schema";
-import { importPreset } from "./storage/presetService";
+import { defaultSdDataFunc } from "./storage/presets/presetDefaults";
+import type { character, customscript, loreSettings, loreBook, triggerscript, groupChat } from "./storage/database/schema";
+import { importPreset } from "./storage/presets/presetService";
 
 import {
   checkNullish,
@@ -65,7 +65,7 @@ import {
 } from "./process/modules";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
-import { NodeStorage } from "./storage/nodeStorage";
+import { NodeStorage } from "./storage/files/nodeStorage";
 import { hubURL } from "./hub";
 
 export { hubURL };

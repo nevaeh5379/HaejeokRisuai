@@ -28,7 +28,7 @@
     import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
     import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
     import { alertConfirm, alertError, alertNormal } from 'src/ts/alert'
-    import type { NodeVectorCacheStats } from 'src/ts/storage/nodeStorage'
+    import type { NodeVectorCacheStats } from 'src/ts/storage/files/nodeStorage'
     import { formatBytes, getNodeStorage } from '../utils'
     import {
         buildSqlVendorParams,
@@ -37,7 +37,7 @@
         type NodeBackupConfig,
         type NodeBackupProgressEvent,
         type SqlVendorFormValues
-    } from 'src/ts/storage/nodePostgresStorage'
+    } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
     import type { AssetStorageType, NodeS3ServerConfig, NodeStorageSummary } from '../types'
 
     interface Props {

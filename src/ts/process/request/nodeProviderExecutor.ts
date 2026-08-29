@@ -3,7 +3,7 @@ import { resolveProviderRoute } from "@risuai/chat-core/providerRouting.cjs";
 import type { NodeProviderTransportResult } from "../../../../packages/protocol/providerExecution.cjs";
 import { forageStorage } from "../../globalApi.svelte";
 import { isNodeServer } from "../../platform";
-import { NodeStorage } from "../../storage/nodeStorage";
+import { NodeStorage } from "../../storage/files/nodeStorage";
 
 export async function tryExecuteNodeProvider(
   format: number,

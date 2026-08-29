@@ -1,4 +1,4 @@
-import { getNodeServerProxyAuth } from "../storage/nodeStorage";
+import { getNodeServerProxyAuth } from "../storage/files/nodeStorage";
 import { getNodeClientSessionId } from "./nodeClientSession";
 import type {
   CreateModelJobRequest,

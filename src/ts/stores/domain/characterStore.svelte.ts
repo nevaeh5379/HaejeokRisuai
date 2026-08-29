@@ -1,12 +1,12 @@
-import type { character, groupChat, Chat } from "../../storage/schema";
-import type { ISqlStorage } from "../../storage/ISqlStorage";
-import { getSqlStorage } from "../../storage/sqlStorageFactory";
+import type { character, groupChat, Chat } from "../../storage/database/schema";
+import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import { getSqlStorage } from "../../storage/sql/sqlStorageFactory";
 import { v4 as uuidv4 } from "uuid";
-import { sqlCharacterData, sqlChatData } from "../../storage/sqlCommit";
+import { sqlCharacterData, sqlChatData } from "../../storage/sql/sqlCommit";
 import { settingsStore } from "./settingsStore.svelte";
 import { getInitialChatLoadPages } from "../../chatLoadPages";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
-import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
+import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import type {
   FlushableStore,
   InitializableStore,

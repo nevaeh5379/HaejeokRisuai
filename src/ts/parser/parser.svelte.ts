@@ -1,7 +1,7 @@
 import DOMPurify from "dompurify";
 import markdownit from "markdown-it";
 import { appVer } from "../appVersion";
-import type { DatabaseSettings, character, customscript, groupChat, triggerscript } from "../storage/schema";
+import type { DatabaseSettings, character, customscript, groupChat, triggerscript } from "../storage/database/schema";
 
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";

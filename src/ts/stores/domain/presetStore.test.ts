@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ISqlStorage, StoredBotPreset } from "../../storage/ISqlStorage";
+import type { ISqlStorage, StoredBotPreset } from "../../storage/sql/ISqlStorage";
 import { presetStore } from "./presetStore.svelte";
 
 describe("PresetStore active ownership", () => {

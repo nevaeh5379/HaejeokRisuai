@@ -5,7 +5,7 @@ import { appendLastPath } from "src/ts/util";
 
 import { isContextModel, getContextProvider } from "./contextualEmbedding";
 import { isNodeServer } from "src/ts/platform";
-import { NodeStorage } from "src/ts/storage/nodeStorage";
+import { NodeStorage } from "src/ts/storage/files/nodeStorage";
 import {
   vectorContentSignature,
   vectorDescriptorRevision,

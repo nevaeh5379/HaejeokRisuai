@@ -1,5 +1,5 @@
 import { v4 } from "uuid";
-import type { BtwSession, BtwSessionConfig, botPreset, character, Chat, groupChat, Message, MessagePresetInfo } from "../storage/schema";
+import type { BtwSession, BtwSessionConfig, botPreset, character, Chat, groupChat, Message, MessagePresetInfo } from "../storage/database/schema";
 import { safeStructuredClone } from "../polyfill";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";

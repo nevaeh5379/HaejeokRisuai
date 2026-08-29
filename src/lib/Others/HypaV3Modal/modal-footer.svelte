@@ -3,7 +3,7 @@
     type SerializableHypaV3Data,
     getCurrentHypaV3Preset,
   } from "src/ts/process/memory/hypav3";
-  import type { Message } from "../../../ts/storage/schema";
+  import type { Message } from "../../../ts/storage/database/schema";
   import { selectedCharID } from "src/ts/stores.svelte";
   import { characterStore } from "src/ts/stores/domain";
   import { language } from "src/lang";

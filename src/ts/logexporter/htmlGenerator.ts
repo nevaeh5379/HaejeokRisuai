@@ -14,7 +14,7 @@ import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { createSimpleCharacter, selectedCharID } from "src/ts/stores.svelte";
 import { get } from "svelte/store";
 import { getUserIcon, getUserName, findCharacterbyId } from "src/ts/util";
-import type { character, groupChat, Message } from "../storage/schema";
+import type { character, groupChat, Message } from "../storage/database/schema";
 
 /**
  * Standalone HTML / Markdown / Text export generation.

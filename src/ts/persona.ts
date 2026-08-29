@@ -1,4 +1,4 @@
-import { saveImage } from "./storage/assetPersistence";
+import { saveImage } from "./storage/files/assetPersistence";
 
 import { selectSingleFile, sleep } from "./util";
 import { alertError, alertNormal, alertStore } from "./alert";

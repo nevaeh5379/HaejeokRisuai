@@ -5,7 +5,7 @@
     import { getCharImage } from 'src/ts/characterImage';
     import { getPreparedNativeThumbnailSrc } from 'src/ts/globalApi.svelte';
     import { sideBarStore } from 'src/ts/stores.svelte';
-    import { getSqlRuntime } from 'src/ts/storage/sqlRuntime';
+    import { getSqlRuntime } from 'src/ts/storage/sql/sqlRuntime';
     import SidebarAvatar from './SidebarAvatar.svelte';
     import {
         MessageSquareIcon,

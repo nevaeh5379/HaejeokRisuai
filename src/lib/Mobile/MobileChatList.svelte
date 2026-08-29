@@ -1,6 +1,6 @@
 <script lang="ts">
     import { v4 } from "uuid";
-    import type { Chat, ChatFolder } from "../../ts/storage/schema";
+    import type { Chat, ChatFolder } from "../../ts/storage/database/schema";
     import { ReloadGUIPointer, selectedCharID, MobileSideBar, alertStore, openPersonaList, openPresetList } from 'src/ts/stores.svelte';
     import { characterStore, settingsStore, messageStore, presetStore, personaStore } from 'src/ts/stores/domain';
     import {

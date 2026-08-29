@@ -76,7 +76,7 @@ vi.mock(
 );
 
 vi.mock(
-  import("../storage/nodeStorage"),
+  import("../storage/files/nodeStorage"),
   () =>
     ({
       NodeStorage: nodeStorageMock.NodeStorage,

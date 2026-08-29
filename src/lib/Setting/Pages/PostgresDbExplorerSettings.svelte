@@ -9,7 +9,7 @@
     import { language } from 'src/lang'
     import Button from 'src/lib/UI/GUI/Button.svelte'
     import { forageStorage } from 'src/ts/globalApi.svelte'
-    import { NodeStorage } from 'src/ts/storage/nodeStorage'
+    import { NodeStorage } from 'src/ts/storage/files/nodeStorage'
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte'
     import { characterStore } from 'src/ts/stores/domain/characterStore.svelte'
     import { moduleStore } from 'src/ts/stores/domain/moduleStore.svelte'
@@ -28,7 +28,7 @@
         NodePostgresRevision,
         NodePostgresTableInfo,
         NodePostgresTokenUsage,
-    } from 'src/ts/storage/nodePostgresStorage'
+    } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
 
     interface Props {
         close?: () => void

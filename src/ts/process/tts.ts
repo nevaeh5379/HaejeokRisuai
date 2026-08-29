@@ -1,7 +1,7 @@
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { alertError } from "../alert";
-import type { character } from "../storage/schema";
+import type { character } from "../storage/database/schema";
 
 import { runTranslator, translateVox } from "../translator/translator";
 import { globalFetch, loadAsset } from "../globalApi.svelte";

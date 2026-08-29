@@ -3,9 +3,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { characterStore } from "./characterStore.svelte";
 import { settingsStore } from "./settingsStore.svelte";
-import type { ISqlStorage } from "../../storage/ISqlStorage";
-import type { SqlCommit } from "../../storage/sqlCommit";
-import type { character, Chat, groupChat } from "../../storage/schema";
+import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type { SqlCommit } from "../../storage/sql/sqlCommit";
+import type { character, Chat, groupChat } from "../../storage/database/schema";
 
 function makeChat(name: string): Chat {
   return {

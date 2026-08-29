@@ -1,10 +1,10 @@
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 import { risuChatParser } from "../../parser/parser.svelte";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
-import type { character } from "../../storage/schema";
+import type { character } from "../../storage/database/schema";
 import { forageStorage } from "../../globalApi.svelte";
 import { isNodeServer } from "../../platform";
-import { NodeStorage } from "../../storage/nodeStorage";
+import { NodeStorage } from "../../storage/files/nodeStorage";
 import { tokenize as countPlainTokens, type ChatTokenizer } from "../../tokenizer";
 import { requestChatData } from "../request/chatRequestOrchestrator";
 import { runSummarizer } from "../transformers";

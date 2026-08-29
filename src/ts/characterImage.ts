@@ -1,6 +1,6 @@
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import { forageStorage, getFileSrc } from "./globalApi.svelte";
-import { NodeStorage } from "./storage/nodeStorage";
+import { NodeStorage } from "./storage/files/nodeStorage";
 import { getMimeType } from "./media/mimeType";
 import { isCapacitor } from "./platform";
 

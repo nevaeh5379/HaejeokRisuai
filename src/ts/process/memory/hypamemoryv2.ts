@@ -7,7 +7,7 @@ import { forageStorage, globalFetch } from "src/ts/globalApi.svelte";
 
 import { appendLastPath } from "src/ts/util";
 import { isNodeServer } from "src/ts/platform";
-import { NodeStorage } from "src/ts/storage/nodeStorage";
+import { NodeStorage } from "src/ts/storage/files/nodeStorage";
 import { vectorContentSignature, vectorDescriptorRevision } from "./vectorIndexSignature";
 
 export interface HypaProcessorV2Options {

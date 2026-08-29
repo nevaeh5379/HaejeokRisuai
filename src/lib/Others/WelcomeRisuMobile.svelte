@@ -28,18 +28,18 @@
   import ModelBrowser from 'src/lib/UI/Model/ModelBrowser.svelte';
   import { getModelInfo, LLMProvider } from 'src/ts/model/modellist';
   import { changeLanguage, language } from 'src/lang';
-  import { setPreset } from '../../ts/storage/presetService';
-  import { installStartupData } from 'src/ts/storage/databaseLifecycle';
+  import { setPreset } from '../../ts/storage/presets/presetService';
+  import { installStartupData } from 'src/ts/storage/database/databaseLifecycle';
   import { settingsStore, personaStore } from 'src/ts/stores/domain';
   import { prebuiltPresets } from 'src/ts/process/templates/templates';
   import { updateTextThemeAndCSS } from 'src/ts/gui/colorscheme';
-  import { getSqlRuntime } from 'src/ts/storage/sqlRuntime';
-  import { getSqlStorage } from 'src/ts/storage/sqlStorageFactory';
+  import { getSqlRuntime } from 'src/ts/storage/sql/sqlRuntime';
+  import { getSqlStorage } from 'src/ts/storage/sql/sqlStorageFactory';
   import {
     detectLocalLegacyDatabase,
     migrateLegacyDatabase,
     type LegacyDatabaseInfo
-  } from 'src/ts/storage/migration';
+  } from 'src/ts/storage/database/migration';
   import { LoadLocalBackup, restoreLocalBackupFile } from 'src/ts/drive/backuplocal';
   import AirisuMascot from '../UI/AirisuMascot.svelte';
 

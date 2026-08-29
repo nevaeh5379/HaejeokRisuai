@@ -16,7 +16,7 @@
     import Accordion from "src/lib/UI/Accordion.svelte";
     import ModelList from "src/lib/UI/ModelList.svelte";
     import { onDestroy, onMount } from "svelte";
-    import {defaultAutoSuggestPrompt} from "../../../ts/storage/defaultPrompts";
+    import {defaultAutoSuggestPrompt} from "../../../ts/storage/presets/defaultPrompts";
     import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
 
     let sorted = 0

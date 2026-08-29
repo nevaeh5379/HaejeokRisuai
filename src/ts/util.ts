@@ -5,7 +5,7 @@ import {
   resolveSelectedChatTarget,
   type ChatExecutionTarget,
 } from "src/ts/chatTarget";
-import type { Database, Message } from "./storage/schema";
+import type { Database, Message } from "./storage/database/schema";
 
 import { selectedCharID } from "./stores.svelte";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";

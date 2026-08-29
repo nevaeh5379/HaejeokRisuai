@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { characterStore, messageStore } from "./stores/domain";
 import { duplicateCharacter, exportAllChats, exportChat } from "./characters";
 import { selectedCharID } from "./stores.svelte";
-import type { character, groupChat, Chat, Message } from "./storage/schema";
-import type { ISqlStorage } from "./storage/ISqlStorage";
-import type { SqlCommit, SqlCommitResult } from "./storage/sqlCommit";
-import { setSqlStorageForTesting } from "./storage/sqlStorageFactory";
+import type { character, groupChat, Chat, Message } from "./storage/database/schema";
+import type { ISqlStorage } from "./storage/sql/ISqlStorage";
+import type { SqlCommit, SqlCommitResult } from "./storage/sql/sqlCommit";
+import { setSqlStorageForTesting } from "./storage/sql/sqlStorageFactory";
 
 const downloadFileMock = vi.fn();
 const alertSelectMock = vi.fn();

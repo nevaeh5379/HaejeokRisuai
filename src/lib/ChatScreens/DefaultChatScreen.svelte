@@ -6,7 +6,7 @@
     import { tick, untrack } from 'svelte';
     import { get } from 'svelte/store';
     import Chat from "./Chat.svelte";
-    import type { Chat as ChatSession, Message } from "../../ts/storage/schema";
+    import type { Chat as ChatSession, Message } from "../../ts/storage/database/schema";
     import { characterStore, settingsStore, personaStore, messageStore, presetStore } from 'src/ts/stores/domain';
     import { getCharImage } from "../../ts/characterImage";
     import { activeGenerationChatIds, chatProcessStages, getChatProcessStage } from "../../ts/process/chatRuntimeState";

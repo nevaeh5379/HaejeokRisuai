@@ -1,7 +1,7 @@
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { exportCharacterCard } from "./characterCards";
 import { VirtualWriter } from "./globalApi.svelte";
-import type { character } from "./storage/schema";
+import type { character } from "./storage/database/schema";
 
 import { alertStore } from "./alert";
 import { asBuffer } from "./util";

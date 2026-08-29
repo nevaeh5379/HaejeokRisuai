@@ -28,7 +28,7 @@ vi.mock("../../globalApi.svelte", () => ({
   forageStorage: { realStorage: storage },
 }));
 vi.mock("../../platform", () => ({ isNodeServer: true }));
-vi.mock("../../storage/nodeStorage", () => ({
+vi.mock("../../storage/files/nodeStorage", () => ({
   NodeStorage: class {
     static [Symbol.hasInstance](instance: unknown) {
       return instance === storage;

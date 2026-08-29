@@ -7,8 +7,8 @@ import {
   alertStore,
   alertProgress,
 } from "../alert";
-import type { Database } from "../storage/schema";
-import { createDatabaseSnapshot } from "../storage/databaseSnapshot";
+import type { Database } from "../storage/database/schema";
+import { createDatabaseSnapshot } from "../storage/database/databaseSnapshot";
 
 import { forageStorage, getUncleanables, openURL } from "../globalApi.svelte";
 import { isNodeServer, isTauri } from "src/ts/platform";
@@ -23,7 +23,7 @@ import { language } from "../../lang";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { sleep } from "../util";
 import { hubURL } from "../characterCards";
-import { decodeRisuSave, encodeRisuSaveLegacyAsync } from "../storage/risuSave";
+import { decodeRisuSave, encodeRisuSaveLegacyAsync } from "../storage/backup/risuSave";
 import {
   collectColdStorageBackupPayloads,
   confirmIncompleteColdStorageOperation,
@@ -32,12 +32,12 @@ import {
   listColdDataKeys,
   setColdStorageItem,
 } from "../process/coldstorage.svelte";
-import { NodeStorage } from "../storage/nodeStorage";
+import { NodeStorage } from "../storage/files/nodeStorage";
 import {
   buildPortableLocalBackupDatabase,
   createBackupDatabaseSnapshot,
 } from "./backuplocal";
-import { getSqlStorage } from "../storage/sqlStorageFactory";
+import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
 
 export async function checkDriver(
   type: "save" | "load" | "loadtauri" | "savetauri" | "reftoken",

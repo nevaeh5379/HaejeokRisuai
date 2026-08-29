@@ -22,7 +22,7 @@
         DbOverallStats,
         ModelStatsSortType
     } from '../types'
-    import type { NodePostgresTokenUsage } from 'src/ts/storage/nodePostgresStorage'
+    import type { NodePostgresTokenUsage } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
 
     interface Props {
         botStats: BotChatStats[]

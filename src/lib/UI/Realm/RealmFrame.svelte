@@ -1,7 +1,7 @@
 <script lang="ts">
     import { alertMd, alertRisuServiceTOS } from "src/ts/alert";
     import { shareRealmCardData } from "src/ts/realm";
-    import { downloadPreset } from "../../../ts/storage/presetService";
+    import { downloadPreset } from "../../../ts/storage/presets/presetService";
     import { characterStore, settingsStore, moduleStore } from 'src/ts/stores/domain';
     import { selectedCharID, ShowRealmFrameStore } from "src/ts/stores.svelte";
     import { sleep } from "src/ts/util";

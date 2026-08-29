@@ -1,9 +1,9 @@
-import type { ISqlStorage } from "../../storage/ISqlStorage";
+import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
 import {
   getSqlDeferredDomain,
   PROMPT_SETTING_KEYS,
   type SqlDeferredDomain,
-} from "../../storage/sqlDeferredSettings";
+} from "../../storage/sql/sqlDeferredSettings";
 
 type HydrateSettingKey = (
   key: string,

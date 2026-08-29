@@ -1,4 +1,4 @@
-import type { FormatingOrderItem } from "../storage/schema";
+import type { FormatingOrderItem } from "../storage/database/schema";
 import type { PromptItem, PromptSettings } from "./prompt";
 
 /**

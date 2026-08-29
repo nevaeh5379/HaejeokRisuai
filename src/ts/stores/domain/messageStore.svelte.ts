@@ -1,10 +1,10 @@
-import type { Message, Chat } from "../../storage/schema";
-import { getSqlStorage } from "../../storage/sqlStorageFactory";
+import type { Message, Chat } from "../../storage/database/schema";
+import { getSqlStorage } from "../../storage/sql/sqlStorageFactory";
 import { characterStore } from "./characterStore.svelte";
 import { settingsStore } from "./settingsStore.svelte";
 import { v4 as uuidv4 } from "uuid";
-import { sqlMessageData, type SqlCommit } from "../../storage/sqlCommit";
-import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
+import { sqlMessageData, type SqlCommit } from "../../storage/sql/sqlCommit";
+import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { isCapacitor } from "../../platform";
 import type { FlushableStore } from "./storeContracts";
 

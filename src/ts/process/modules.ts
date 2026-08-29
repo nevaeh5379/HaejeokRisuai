@@ -10,7 +10,7 @@ import {
   alertStore,
   alertWait,
 } from "../alert";
-import type { Chat, character, customscript, groupChat, loreBook, triggerscript } from "../storage/schema";
+import type { Chat, character, customscript, groupChat, loreBook, triggerscript } from "../storage/database/schema";
 
 import {
   AppendableBuffer,

@@ -18,7 +18,7 @@
     pendingCharID,
 
   } from "../../ts/stores.svelte";
-    import type { folder } from "../../ts/storage/schema";
+    import type { folder } from "../../ts/storage/database/schema";
 
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import BarIcon from "./BarIcon.svelte";

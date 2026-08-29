@@ -1,4 +1,4 @@
-import type { Database } from "../../storage/schema";
+import type { Database } from "../../storage/database/schema";
 
 export function templateCheck(db: Database) {
   const temp = db.promptTemplate;

@@ -10,13 +10,13 @@ import {
 import { changeFullscreen, checkNullish, sleep } from "./util";
 import { v4 as uuidv4 } from "uuid";
 import { get } from "svelte/store";
-import { defaultSdDataFunc } from "./storage/presetDefaults";
+import { defaultSdDataFunc } from "./storage/presets/presetDefaults";
 import {
   createActivePresetSnapshot,
   setPreset,
-} from "./storage/presetService";
-import type { Database } from "./storage/schema";
-import { installStartupData } from "./storage/databaseLifecycle";
+} from "./storage/presets/presetService";
+import type { Database } from "./storage/database/schema";
+import { installStartupData } from "./storage/database/databaseLifecycle";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   syncMobileGUI,
@@ -43,7 +43,7 @@ import {
   defaultMainPrompt,
   oldJailbreak,
   oldMainPrompt,
-} from "./storage/defaultPrompts";
+} from "./storage/presets/defaultPrompts";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
 import { changeLanguage, language } from "src/lang";
@@ -52,7 +52,7 @@ import { updateGuisize } from "./gui/guisize";
 import {
   getRemoteSaveCleanupAction,
   getRemoteSavePayloadName,
-} from "./storage/remoteSaveCleanup";
+} from "./storage/backup/remoteSaveCleanup";
 import {
   forageStorage,
   getDbBackups,
@@ -68,20 +68,20 @@ import { checkRisuUpdate } from "./update";
 import { registerModelDynamic } from "./model/modellist";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { appDataDir, join } from "@tauri-apps/api/path";
-import { getSqlStorage } from "./storage/sqlStorageFactory";
-import type { ISqlStorage, INodeSqlStorageAdmin } from "./storage/ISqlStorage";
-import { isNodeSqlStorageAdmin } from "./storage/ISqlStorage";
+import { getSqlStorage } from "./storage/sql/sqlStorageFactory";
+import type { ISqlStorage, INodeSqlStorageAdmin } from "./storage/sql/ISqlStorage";
+import { isNodeSqlStorageAdmin } from "./storage/sql/ISqlStorage";
 import {
   checkAndMigrateLegacyDatabase,
   migrateLegacyDatabase,
-} from "./storage/migration";
+} from "./storage/database/migration";
 import { moduleStore } from "./stores/domain/moduleStore.svelte";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "./stores/domain/deferredSettingsLoader";
 import { characterStore } from "./stores/domain/characterStore.svelte";
 import { presetStore } from "./stores/domain/presetStore.svelte";
 import { personaStore } from "./stores/domain/personaStore.svelte";
-import { setSqlRuntime, getSqlRuntime } from "./storage/sqlRuntime";
+import { setSqlRuntime, getSqlRuntime } from "./storage/sql/sqlRuntime";
 import { initDurableModelJobRecovery } from "./process/modelJobRecovery";
 import { initNodeRealtimeSync } from "./process/nodeRealtimeSync";
 

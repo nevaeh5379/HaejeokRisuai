@@ -13,7 +13,7 @@ import type {
   NodePostgresTableInfo,
   NodePostgresTableSummary,
   NodePostgresTokenUsage,
-} from "src/ts/storage/nodePostgresStorage";
+} from "src/ts/storage/sql/postgres/nodePostgresStorage";
 
 export type {
   NodePostgresAuditLogItem,

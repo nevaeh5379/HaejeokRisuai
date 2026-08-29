@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { character, groupChat, folder } from "../../ts/storage/schema";
+    import type { character, groupChat, folder } from "../../ts/storage/database/schema";
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import BarIcon from "../SideBars/BarIcon.svelte";
     import { createNewCharacter, createNewGroup, changeChar, getCharImage, removeChar, duplicateCharacter } from "src/ts/characters";

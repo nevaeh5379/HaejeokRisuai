@@ -6,10 +6,10 @@ import {
   releaseInactiveChatMessages,
 } from "./messageStore.svelte";
 import { characterStore } from "./characterStore.svelte";
-import { setSqlStorageForTesting } from "../../storage/sqlStorageFactory";
-import type { ISqlStorage } from "../../storage/ISqlStorage";
-import type { SqlCommit, SqlCommitResult } from "../../storage/sqlCommit";
-import type { character, Message } from "../../storage/schema";
+import { setSqlStorageForTesting } from "../../storage/sql/sqlStorageFactory";
+import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type { SqlCommit, SqlCommitResult } from "../../storage/sql/sqlCommit";
+import type { character, Message } from "../../storage/database/schema";
 
 class MockSqlStorage {
   backendKind = "web-sqlite" as const;

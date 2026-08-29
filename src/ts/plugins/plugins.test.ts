@@ -3,8 +3,8 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { getV2PluginAPIs, importPlugin } from "./plugins.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import type { ISqlStorage } from "../storage/ISqlStorage";
-import type { SqlCommit } from "../storage/sqlCommit";
+import type { ISqlStorage } from "../storage/sql/ISqlStorage";
+import type { SqlCommit } from "../storage/sql/sqlCommit";
 
 describe("Plugin Storage & SafeDatabase Persistence", () => {
   let committed: SqlCommit[] = [];

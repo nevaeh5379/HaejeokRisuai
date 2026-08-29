@@ -3,8 +3,8 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { settingsStore } from "./settingsStore.svelte";
 import { deferredSettingsLoader } from "./deferredSettingsLoader";
-import type { ISqlStorage } from "../../storage/ISqlStorage";
-import type { SqlCommit } from "../../storage/sqlCommit";
+import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type { SqlCommit } from "../../storage/sql/sqlCommit";
 
 describe("SettingsStore Reactivity and Persistence", () => {
   let committed: SqlCommit[] = [];

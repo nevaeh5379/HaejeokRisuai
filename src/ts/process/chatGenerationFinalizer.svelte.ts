@@ -1,4 +1,4 @@
-import type { character, MessageGenerationInfo } from "../storage/schema";
+import type { character, MessageGenerationInfo } from "../storage/database/schema";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";

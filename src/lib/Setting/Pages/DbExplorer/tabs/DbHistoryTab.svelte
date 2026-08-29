@@ -21,7 +21,7 @@
     import { language } from 'src/lang'
     import Button from 'src/lib/UI/GUI/Button.svelte'
     import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
-    import type { NodePostgresRevision } from 'src/ts/storage/nodePostgresStorage'
+    import type { NodePostgresRevision } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
     import type { HistoryScopeFilter } from '../types'
     import DbRevisionCard from '../components/DbRevisionCard.svelte'
     import DbRevisionAuditDrawer from '../components/DbRevisionAuditDrawer.svelte'

@@ -3,11 +3,11 @@
     import { RefreshCwIcon, TableIcon, XIcon } from '@lucide/svelte'
     import { language } from 'src/lang'
     import Button from 'src/lib/UI/GUI/Button.svelte'
-    import { getSqlStorage } from 'src/ts/storage/sqlStorageFactory'
+    import { getSqlStorage } from 'src/ts/storage/sql/sqlStorageFactory'
     import type {
         NodePostgresTableData,
         NodePostgresTableInfo
-    } from 'src/ts/storage/nodePostgresStorage'
+    } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
     import DbTableExplorerTab from './DbExplorer/tabs/DbTableExplorerTab.svelte'
 
     interface Props {

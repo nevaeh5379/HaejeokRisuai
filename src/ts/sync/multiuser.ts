@@ -8,8 +8,8 @@ import {
   alertWait,
 } from "../alert";
 import { get } from "svelte/store";
-import type { character, Chat } from "../storage/schema";
-import { saveImage } from "../storage/assetPersistence";
+import type { character, Chat } from "../storage/database/schema";
+import { saveImage } from "../storage/files/assetPersistence";
 import { selectedCharID } from "../stores.svelte";
 import { findCharacterIndexbyId, sleep } from "../util";
 import type { DataConnection, Peer } from "peerjs";

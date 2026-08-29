@@ -19,14 +19,14 @@ import {
 } from "../alert";
 import { LocalWriter, forageStorage } from "../globalApi.svelte";
 import { isCapacitor, isNodeServer, isTauri } from "src/ts/platform";
-import { decodeRisuSave, encodeRisuSaveLegacyAsync } from "../storage/risuSave";
-import { normalizeDatabaseDefaults } from "../storage/databaseDefaults";
+import { decodeRisuSave, encodeRisuSaveLegacyAsync } from "../storage/backup/risuSave";
+import { normalizeDatabaseDefaults } from "../storage/database/databaseDefaults";
 import type {
   CanonicalDatabase,
   Database,
   LegacyPersonaMirrorKey,
   PortableDatabase,
-} from "../storage/schema";
+} from "../storage/database/schema";
 
 import { relaunch } from "@tauri-apps/plugin-process";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -44,15 +44,15 @@ import {
 } from "../process/coldstorage.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
-import { createDatabaseSnapshot } from "../storage/databaseSnapshot";
-import { NodeStorage } from "../storage/nodeStorage";
-import { getSqlStorage } from "../storage/sqlStorageFactory";
+import { createDatabaseSnapshot } from "../storage/database/databaseSnapshot";
+import { NodeStorage } from "../storage/files/nodeStorage";
+import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";
 import { personaStore } from "../stores/domain/personaStore.svelte";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
-import { saveCurrentPreset } from "../storage/presetService";
+import { saveCurrentPreset } from "../storage/presets/presetService";
 import type { FlushableStore } from "../stores/domain/storeContracts";
 import { decryptLegacyAccountBackup } from "./legacyBackupEncryption";
 import {

@@ -14,7 +14,7 @@
     import { XIcon } from "@lucide/svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import CustomModelsSettings from "src/lib/Setting/Pages/Advanced/CustomModelsSettings.svelte";
-    import { saveCurrentPreset } from "../../../ts/storage/presetService";
+    import { saveCurrentPreset } from "../../../ts/storage/presets/presetService";
 
     let selectedOption = $state('models');
     let selectedParameterOption = $state('memory')

@@ -1,6 +1,6 @@
 import { parseChatML } from "../parser/chatML";
 import { risuChatParser } from "../parser/parser.svelte";
-import type { Chat, character } from "../storage/schema";
+import type { Chat, character } from "../storage/database/schema";
 
 import { tokenize } from "../tokenizer";
 import { getModuleTriggers } from "./modules";

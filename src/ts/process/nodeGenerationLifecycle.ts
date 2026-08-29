@@ -1,6 +1,6 @@
 import { isNodeServer } from "../platform";
 import { getNodeClientSessionId } from "../network/nodeClientSession";
-import { getNodeServerProxyAuth } from "../storage/nodeStorage";
+import { getNodeServerProxyAuth } from "../storage/files/nodeStorage";
 
 type GenerationLifecycleState = "started" | "finished" | "failed" | "aborted";
 

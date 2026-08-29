@@ -1,5 +1,5 @@
 import { get } from "svelte/store";
-import type { character } from "../storage/schema";
+import type { character } from "../storage/database/schema";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { CharEmotion } from "../stores.svelte";

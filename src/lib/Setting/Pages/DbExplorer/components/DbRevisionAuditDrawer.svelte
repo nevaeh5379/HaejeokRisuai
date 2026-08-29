@@ -19,7 +19,7 @@
     import Button from 'src/lib/UI/GUI/Button.svelte'
     import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
     import { forageStorage } from 'src/ts/globalApi.svelte'
-    import { NodeStorage } from 'src/ts/storage/nodeStorage'
+    import { NodeStorage } from 'src/ts/storage/files/nodeStorage'
     import type {
         NodePostgresAuditLogItem,
         NodePostgresRevision,

@@ -6,7 +6,7 @@
     import { checkDriver } from "src/ts/drive/drive";
     import { LoadLocalBackup, SaveLocalBackup, SavePartialLocalBackup } from "src/ts/drive/backuplocal";
     import Button from "src/lib/UI/GUI/Button.svelte";
-    import { exportAsDataset } from "src/ts/storage/exportAsDataset";
+    import { exportAsDataset } from "src/ts/storage/backup/exportAsDataset";
     import { cleanColdStorage } from "src/ts/process/coldstorage.svelte";
 </script>
 

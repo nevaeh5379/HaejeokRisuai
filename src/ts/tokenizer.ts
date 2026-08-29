@@ -2,7 +2,7 @@ import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import type { Tiktoken } from "@dqbd/tiktoken";
 import type { Tokenizer } from "@mlc-ai/web-tokenizers";
-import type { groupChat, character, Chat } from "./storage/schema";
+import type { groupChat, character, Chat } from "./storage/database/schema";
 
 import type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
 import {
@@ -19,7 +19,7 @@ import { pluginV2 } from "./plugins/plugins.svelte";
 import type { GemmaTokenizer } from "@huggingface/transformers";
 import { LRUMap } from "mnemonist";
 import { isNodeServer } from "./platform";
-import { NodeStorage } from "./storage/nodeStorage";
+import { NodeStorage } from "./storage/files/nodeStorage";
 import type { TokenizerEncoding } from "../../packages/protocol/compute.cjs";
 
 const MAX_CACHE_SIZE = 128;

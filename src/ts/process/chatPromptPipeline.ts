@@ -1,4 +1,4 @@
-import type { character, Chat, groupChat, MessagePresetInfo } from "../storage/schema";
+import type { character, Chat, groupChat, MessagePresetInfo } from "../storage/database/schema";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { ChatTokenizer } from "../tokenizer";
 import { setChatProcessStage } from "./chatRuntimeState";

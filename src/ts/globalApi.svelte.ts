@@ -13,10 +13,10 @@ import { v4 as uuidv4 } from "uuid";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { get } from "svelte/store";
 import { open } from "@tauri-apps/plugin-shell";
-import type { Database, character, groupChat } from "./storage/schema";
-import { defaultSdDataFunc } from "./storage/presetDefaults";
+import type { Database, character, groupChat } from "./storage/database/schema";
+import { defaultSdDataFunc } from "./storage/presets/presetDefaults";
 import { appVer, appSubVer } from "./appVersion";
-import { installStartupData } from "./storage/databaseLifecycle";
+import { installStartupData } from "./storage/database/databaseLifecycle";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   MobileGUI,
@@ -46,9 +46,9 @@ import {
   defaultMainPrompt,
   oldJailbreak,
   oldMainPrompt,
-} from "./storage/defaultPrompts";
-import { decodeRisuSave, encodeRisuSaveLegacy } from "./storage/risuSave";
-import { AutoStorage } from "./storage/autoStorage";
+} from "./storage/presets/defaultPrompts";
+import { decodeRisuSave, encodeRisuSaveLegacy } from "./storage/backup/risuSave";
+import { AutoStorage } from "./storage/files/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -71,7 +71,7 @@ import {
   fetchViaDurableModelJob,
   getDurableGenerationContext,
 } from "./network/durableModelJobs";
-import { getNodeServerProxyAuth, NodeStorage } from "./storage/nodeStorage";
+import { getNodeServerProxyAuth, NodeStorage } from "./storage/files/nodeStorage";
 import { generateClientThumbnail } from "./media/thumbnail";
 import { getMimeType } from "./media/mimeType";
 import { BoundedCache } from "./memory/boundedCache";
@@ -684,7 +684,7 @@ export async function getDbBackups() {
   // SQL-only: return revision IDs from the SQL backend.
   // Legacy database.bin backups are no longer created or managed.
   try {
-    const { getSqlStorage } = await import("./storage/sqlStorageFactory");
+    const { getSqlStorage } = await import("./storage/sql/sqlStorageFactory");
     const storage = await getSqlStorage();
     if (!storage.isEnabled()) {
       return [];
@@ -2802,7 +2802,7 @@ export async function loadInternalBackup() {
   const decoded = await decodeRisuSave(
     Buffer.from(data) as unknown as Uint8Array,
   );
-  const { getSqlStorage } = await import("./storage/sqlStorageFactory");
+  const { getSqlStorage } = await import("./storage/sql/sqlStorageFactory");
   const storage = await getSqlStorage();
   await storage.replaceDatabase(decoded);
   const startup = await storage.loadStartupData();

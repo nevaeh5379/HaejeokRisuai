@@ -1,7 +1,7 @@
 import { BaseDirectory, mkdir } from "@tauri-apps/plugin-fs";
 import { describe, expect, it, vi } from "vitest";
-import type { Database } from "../storage/schema";
-import type { DatabaseInput } from "../storage/databaseDefaults";
+import type { Database } from "../storage/database/schema";
+import type { DatabaseInput } from "../storage/database/databaseDefaults";
 import {
   createNativeImportSource,
   ensureTauriBackupAssetsDirectory,
@@ -143,7 +143,7 @@ describe("restoreInlayBackupEntry", () => {
 describe("backup database defaults", () => {
   it("preserves plugin custom storage during normalization", async () => {
     const { normalizeDatabaseDefaults } =
-      await import("../storage/databaseDefaults");
+      await import("../storage/database/databaseDefaults");
     const db = {
       pluginCustomStorage: { pm_store: { version: 5 } },
     } as unknown as Database;
@@ -155,7 +155,7 @@ describe("backup database defaults", () => {
 
   it("initializes module folders without replacing existing folders", async () => {
     const { normalizeDatabaseDefaults } =
-      await import("../storage/databaseDefaults");
+      await import("../storage/database/databaseDefaults");
     const emptyDb: DatabaseInput = {};
     const normalizedEmptyDb = normalizeDatabaseDefaults(emptyDb);
     expect(normalizedEmptyDb.moduleFolders).toEqual([]);
@@ -171,7 +171,7 @@ describe("backup database defaults", () => {
 
   it("migrates legacy Ollama models to independent auxiliary defaults", async () => {
     const { normalizeDatabaseDefaults } =
-      await import("../storage/databaseDefaults");
+      await import("../storage/database/databaseDefaults");
     const db = {
       aiModel: "ollama-cloud",
       subModel: "ollama-cloud",
@@ -191,7 +191,7 @@ describe("backup database defaults", () => {
 
   it("migrates shared provider models to independent auxiliary defaults", async () => {
     const { normalizeDatabaseDefaults } =
-      await import("../storage/databaseDefaults");
+      await import("../storage/database/databaseDefaults");
     const db = {
       openrouterRequestModel: "openrouter-main",
       nanogptRequestModel: "nanogpt-main",
@@ -213,8 +213,8 @@ describe("backup database defaults", () => {
 
   it("does not mutate the shared preset template when creating defaults", async () => {
     const { normalizeDatabaseDefaults } =
-      await import("../storage/databaseDefaults");
-    const { presetTemplate } = await import("../storage/presetDefaults");
+      await import("../storage/database/databaseDefaults");
+    const { presetTemplate } = await import("../storage/presets/presetDefaults");
     const originalName = presetTemplate.name;
     const db: DatabaseInput = {};
 

@@ -1,6 +1,6 @@
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { changeUserPersona } from "./persona";
-import { changeToPreset } from "./storage/presetService";
+import { changeToPreset } from "./storage/presets/presetService";
 
 import { safeStructuredClone } from "./polyfill";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";

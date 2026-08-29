@@ -1,6 +1,6 @@
 import { get } from "svelte/store";
 import { processScriptFull, risuChatParser } from "src/ts/process/scripts";
-import type { Message } from "../../../ts/storage/schema";
+import type { Message } from "../../../ts/storage/database/schema";
 import { alertConfirm } from "src/ts/alert";
 import { selectedCharID } from "src/ts/stores.svelte";
 import { characterStore } from "src/ts/stores/domain";

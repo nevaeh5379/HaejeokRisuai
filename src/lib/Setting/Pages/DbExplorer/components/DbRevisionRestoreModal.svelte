@@ -14,7 +14,7 @@
     import Button from 'src/lib/UI/GUI/Button.svelte'
     import { alertError, alertNormal } from 'src/ts/alert'
     import { forageStorage } from 'src/ts/globalApi.svelte'
-    import { NodeStorage } from 'src/ts/storage/nodeStorage'
+    import { NodeStorage } from 'src/ts/storage/files/nodeStorage'
     import type {
         NodePostgresRestorePreview,
         NodePostgresRevision

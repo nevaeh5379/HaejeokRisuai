@@ -1,13 +1,13 @@
 import { v4 as uuidv4 } from "uuid";
-import type { botPreset } from "../../storage/schema";
-import { presetTemplate } from "../../storage/presetDefaults";
+import type { botPreset } from "../../storage/database/schema";
+import { presetTemplate } from "../../storage/presets/presetDefaults";
 import type {
   BotPresetSummary,
   ISqlStorage,
   StoredBotPreset,
-} from "../../storage/ISqlStorage";
+} from "../../storage/sql/ISqlStorage";
 import { safeStructuredClone } from "../../polyfill";
-import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
+import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { BoundedCache } from "../../memory/boundedCache";
 import type { InitializableStore } from "./storeContracts";
 

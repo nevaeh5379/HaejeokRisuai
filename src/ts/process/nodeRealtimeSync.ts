@@ -1,9 +1,9 @@
 import { alertError } from "../alert";
 import { notifyChatResponse } from "../chatNotifications";
 import { isNodeServer } from "../platform";
-import { getSqlStorage } from "../storage/sqlStorageFactory";
-import { NodePostgresStorage } from "../storage/nodePostgresStorage";
-import { getNodeServerProxyAuth } from "../storage/nodeStorage";
+import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
+import { NodePostgresStorage } from "../storage/sql/postgres/nodePostgresStorage";
+import { getNodeServerProxyAuth } from "../storage/files/nodeStorage";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";

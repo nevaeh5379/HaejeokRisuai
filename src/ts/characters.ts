@@ -1,8 +1,8 @@
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { get, writable } from "svelte/store";
-import { saveImage } from "./storage/assetPersistence";
-import type { character, groupChat, Chat, loreBook, Message } from "./storage/schema";
-import { defaultSdDataFunc } from "./storage/presetDefaults";
+import { saveImage } from "./storage/files/assetPersistence";
+import type { character, groupChat, Chat, loreBook, Message } from "./storage/database/schema";
+import { defaultSdDataFunc } from "./storage/presets/presetDefaults";
 import { safeStructuredClone } from "./polyfill";
 
 import {

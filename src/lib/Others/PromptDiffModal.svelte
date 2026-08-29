@@ -1,7 +1,7 @@
 <script lang="ts">
     import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { XIcon } from "@lucide/svelte"
-    import type { PromptDiffPrefs } from "../../ts/storage/schema";
+    import type { PromptDiffPrefs } from "../../ts/storage/database/schema";
 import type { PromptItem, PromptItemPlain, PromptItemChatML, PromptItemTyped, PromptItemAuthorNote, PromptItemChat } from "src/ts/process/prompt.ts";
     import { presetStore } from 'src/ts/stores/domain/presetStore.svelte';
 

@@ -12,7 +12,7 @@ import {
   risuChatParser,
 } from "../parser/parser.svelte";
 import { LuaEngine, LuaFactory } from "wasmoon";
-import type { Chat, character, groupChat, triggerscript } from "../storage/schema";
+import type { Chat, character, groupChat, triggerscript } from "../storage/database/schema";
 
 import { get } from "svelte/store";
 import { ReloadChatPointer, ReloadGUIPointer } from "../stores.svelte";

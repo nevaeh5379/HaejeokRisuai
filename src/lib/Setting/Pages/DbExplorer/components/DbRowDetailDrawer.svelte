@@ -8,7 +8,7 @@
     import { language } from 'src/lang'
     import Button from 'src/lib/UI/GUI/Button.svelte'
     import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
-    import type { NodePostgresColumnInfo } from 'src/ts/storage/nodePostgresStorage'
+    import type { NodePostgresColumnInfo } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
 
     interface Props {
         tableName: string

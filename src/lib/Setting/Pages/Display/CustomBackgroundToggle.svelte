@@ -1,6 +1,6 @@
 <script lang="ts">
     import { language } from 'src/lang';
-    import { saveImage } from '../../../../ts/storage/assetPersistence';
+    import { saveImage } from '../../../../ts/storage/files/assetPersistence';
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { selectSingleFile } from 'src/ts/util';
     import Check from 'src/lib/UI/GUI/CheckInput.svelte';

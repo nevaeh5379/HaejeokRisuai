@@ -2,7 +2,7 @@ import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { get } from "svelte/store";
 import { parseChatML } from "../parser/chatML";
-import type { character, customscript, groupChat } from "../storage/schema";
+import type { character, customscript, groupChat } from "../storage/database/schema";
 
 import {
   defaultTranslatorPrompt,

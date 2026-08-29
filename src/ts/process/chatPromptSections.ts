@@ -1,4 +1,4 @@
-import type { character, Chat, groupChat } from "../storage/schema";
+import type { character, Chat, groupChat } from "../storage/database/schema";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { safeStructuredClone } from "../polyfill";

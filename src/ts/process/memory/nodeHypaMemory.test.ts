@@ -20,7 +20,7 @@ vi.mock("../../globalApi.svelte", () => ({
     },
   },
 }));
-vi.mock("../../storage/nodeStorage", () => {
+vi.mock("../../storage/files/nodeStorage", () => {
   class NodeStorage {
     startHypaMemorySession(...args: any[]) {
       return mocks.start(...args);
@@ -40,7 +40,7 @@ vi.mock("../request/chatRequestOrchestrator", () => ({
 }));
 vi.mock("../transformers", () => ({ runSummarizer: vi.fn() }));
 
-import { NodeStorage } from "../../storage/nodeStorage";
+import { NodeStorage } from "../../storage/files/nodeStorage";
 import { tryRunNodeHypaMemory } from "./nodeHypaMemory";
 
 beforeEach(() => {

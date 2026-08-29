@@ -1,7 +1,7 @@
 <script lang="ts">
     import { language } from "../../lang";
-    import { saveImage as saveAsset } from "../../ts/storage/assetPersistence";
-import type { character, groupChat } from "../../ts/storage/schema";
+    import { saveImage as saveAsset } from "../../ts/storage/files/assetPersistence";
+import type { character, groupChat } from "../../ts/storage/database/schema";
 
     import { characterStore, settingsStore, moduleStore } from 'src/ts/stores/domain';
     import { onDestroy } from 'svelte';

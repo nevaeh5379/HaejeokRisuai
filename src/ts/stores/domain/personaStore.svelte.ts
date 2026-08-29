@@ -1,7 +1,7 @@
-import type { RisuPersona } from "../../storage/schema";
-import type { ISqlStorage } from "../../storage/ISqlStorage";
-import { createEmptySqlCommit } from "../../storage/sqlCommit";
-import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
+import type { RisuPersona } from "../../storage/database/schema";
+import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import { createEmptySqlCommit } from "../../storage/sql/sqlCommit";
+import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { snapshotFingerprint, trackDeep } from "./reactiveUtils";
 import type {
   FlushableStore,

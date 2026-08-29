@@ -20,7 +20,7 @@
     getCurrentHypaV3Preset,
   } from "src/ts/process/memory/hypav3";
   import { type OpenAIChat } from "@risuai/chat-core/types.cjs";
-  import type { Message } from "../../../ts/storage/schema";
+  import type { Message } from "../../../ts/storage/database/schema";
   import { translateHTML } from "src/ts/translator/translator";
   import { alertConfirm } from "src/ts/alert";
   import { selectedCharID } from "src/ts/stores.svelte";

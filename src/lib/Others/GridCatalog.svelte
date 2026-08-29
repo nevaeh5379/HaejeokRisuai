@@ -1,6 +1,6 @@
 <script lang="ts">
     import { changeChar, getCharImage, removeChar } from "../../ts/characters";
-    import type { Database, character, groupChat } from "../../ts/storage/schema";
+    import type { Database, character, groupChat } from "../../ts/storage/database/schema";
     import { characterStore } from 'src/ts/stores/domain';
     import { findCharacterIndexbyId } from "../../ts/util";
     import BarIcon from "../SideBars/BarIcon.svelte";
@@ -11,8 +11,8 @@
     import { language } from "src/lang";
     import { parseMultilangString } from "src/ts/util";
     import { checkCharOrder, forageStorage } from "src/ts/globalApi.svelte";
-    import { NodeStorage } from "src/ts/storage/nodeStorage";
-    import type { NodePostgresCharacterSearchResult } from "src/ts/storage/nodePostgresStorage";
+    import { NodeStorage } from "src/ts/storage/files/nodeStorage";
+    import type { NodePostgresCharacterSearchResult } from "src/ts/storage/sql/postgres/nodePostgresStorage";
     import MobileCharacters from "../Mobile/MobileCharacters.svelte";
     interface Props {
         endGrid?: any;

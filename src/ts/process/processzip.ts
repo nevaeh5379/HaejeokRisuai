@@ -10,7 +10,7 @@ import { asBuffer, Semaphore, sleep } from "../util";
 import { alertStore } from "../alert";
 import { hasher } from "../hash";
 import { hubURL } from "../characterCards";
-import { NodeStorage } from "../storage/nodeStorage";
+import { NodeStorage } from "../storage/files/nodeStorage";
 import { v4 as uuidv4 } from "uuid";
 
 // File size and chunk size constants

@@ -46,9 +46,9 @@ type PluginSafetyError = {
     | "errorInVerification"
     | "storageAccess";
 };
-type Character = import("./storage/schema").character;
-type GroupChat = import("./storage/schema").groupChat;
-type Database = import("./storage/schema").Database;
+type Character = import("./storage/database/schema").character;
+type GroupChat = import("./storage/database/schema").groupChat;
+type Database = import("./storage/database/schema").Database;
 type SimpleCharacter = import("./parser/parser.svelte").simpleCharacterArgument;
 type HubType = import("./hubCatalog").hubType;
 

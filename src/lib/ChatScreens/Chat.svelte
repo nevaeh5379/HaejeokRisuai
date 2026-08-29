@@ -17,7 +17,7 @@
     import { language } from "../../lang"
     import { alertClear, alertConfirm, alertInput, alertNormal, alertRequestData, alertWait } from "../../ts/alert"
     import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
-    import type { Message, MessageGenerationInfo, StreamingDisplayOptimizationMode } from "../../ts/storage/schema";import { HideIconStore, ReloadGUIPointer } from "../../ts/stores.svelte"
+    import type { Message, MessageGenerationInfo, StreamingDisplayOptimizationMode } from "../../ts/storage/database/schema";import { HideIconStore, ReloadGUIPointer } from "../../ts/stores.svelte"
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
     import ChatBody from './ChatBody.svelte'
     import PopupButton from "../UI/PopupButton.svelte";

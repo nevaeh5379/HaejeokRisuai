@@ -9,7 +9,7 @@ import {
 } from "./hypamemoryv2";
 import { type DisplayMode as ModalDisplayMode } from "src/lib/Others/HypaV3Modal/types";
 import { parseChatML } from "src/ts/parser/chatML";
-import type { Chat, character, groupChat } from "../../storage/schema";
+import type { Chat, character, groupChat } from "../../storage/database/schema";
 
 import { type OpenAIChat } from "@risuai/chat-core/types.cjs";
 import { requestChatData } from "../request/chatRequestOrchestrator";

@@ -1,6 +1,6 @@
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { getChatBranchMessages } from "../chatBranches";
-import type { Chat, ChatBranchReason, Message } from "../storage/schema";
+import type { Chat, ChatBranchReason, Message } from "../storage/database/schema";
 
 
 export interface ChatGraphTerminal {

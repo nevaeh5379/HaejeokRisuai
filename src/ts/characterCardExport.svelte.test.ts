@@ -2,8 +2,8 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { characterStore } from "./stores/domain/characterStore.svelte";
-import type { character } from "./storage/schema";
-import type { ISqlStorage } from "./storage/ISqlStorage";
+import type { character } from "./storage/database/schema";
+import type { ISqlStorage } from "./storage/sql/ISqlStorage";
 
 const alertCardExportMock = vi.fn();
 
@@ -26,7 +26,7 @@ vi.mock("./globalApi.svelte", async (importOriginal) => {
   };
 });
 
-vi.mock("./storage/persistant", () => ({
+vi.mock("./storage/files/persistant", () => ({
   readImage: vi.fn(async () => new Uint8Array([1, 2, 3, 4])),
   saveAsset: vi.fn(async () => "asset-1"),
   loadAsset: vi.fn(async () => new Uint8Array([5, 6, 7, 8])),

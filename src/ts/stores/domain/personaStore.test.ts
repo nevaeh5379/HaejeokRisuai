@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ISqlStorage } from "../../storage/ISqlStorage";
-import type { SqlCommit } from "../../storage/sqlCommit";
+import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type { SqlCommit } from "../../storage/sql/sqlCommit";
 import { personaStore } from "./personaStore.svelte";
 
 describe("PersonaStore", () => {

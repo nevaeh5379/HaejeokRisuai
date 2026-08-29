@@ -1,4 +1,4 @@
-import type { groupChat, character, StreamingDisplayOptimizationMode } from "../storage/schema";
+import type { groupChat, character, StreamingDisplayOptimizationMode } from "../storage/database/schema";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { trimUntilPunctuation } from "../util";

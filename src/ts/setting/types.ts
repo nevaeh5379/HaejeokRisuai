@@ -5,7 +5,7 @@
  * Settings are defined as data and rendered automatically by SettingRenderer.
  */
 
-import type { Database } from "../storage/schema";
+import type { Database } from "../storage/database/schema";
 import type {
   CustomComponentId,
   CustomComponentProps,

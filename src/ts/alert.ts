@@ -3,7 +3,7 @@ import { get, writable } from "svelte/store";
 import { sleep } from "./util";
 import { language } from "../lang";
 import { isTauri, isNodeServer } from "src/ts/platform";
-import type { MessageGenerationInfo } from "./storage/schema";
+import type { MessageGenerationInfo } from "./storage/database/schema";
 
 import { alertStore as alertStoreImported } from "./stores.svelte";
 

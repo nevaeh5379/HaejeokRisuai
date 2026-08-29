@@ -1,6 +1,6 @@
 <script lang="ts">
     import { FileMusicIcon, PlusIcon } from "@lucide/svelte";
-    import type { character, groupChat } from "../../ts/storage/schema";
+    import type { character, groupChat } from "../../ts/storage/database/schema";
     import { getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
     import { selectMultipleFile } from "src/ts/util";
     import { getMimeType } from "src/ts/media";

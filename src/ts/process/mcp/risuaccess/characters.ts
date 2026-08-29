@@ -1,6 +1,6 @@
 import { language } from "src/lang";
 import { alertConfirm } from "src/ts/alert";
-import type { character, groupChat, loreBook } from "../../../storage/schema";
+import type { character, groupChat, loreBook } from "../../../storage/database/schema";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { pickHashRand } from "src/ts/util";
 import {

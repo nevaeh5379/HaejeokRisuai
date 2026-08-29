@@ -1,4 +1,4 @@
-import type { Chat, DatabaseSettings, character, groupChat, loreBook } from "./storage/schema";
+import type { Chat, DatabaseSettings, character, groupChat, loreBook } from "./storage/database/schema";
 import type { CbsConditions } from "./parser/parser.svelte";
 import type { RisuModule } from "./process/modules";
 import type { LLMModel } from "./model/modellist";

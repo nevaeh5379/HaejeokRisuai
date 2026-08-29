@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { createDatabaseSnapshot } from "src/ts/storage/databaseSnapshot";
+    import { createDatabaseSnapshot } from "src/ts/storage/database/databaseSnapshot";
 import { language } from "src/lang";
     import Button from "src/lib/UI/GUI/Button.svelte";
     import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";

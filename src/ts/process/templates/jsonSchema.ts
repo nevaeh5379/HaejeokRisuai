@@ -1,7 +1,7 @@
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { risuChatParser } from "src/ts/parser/parser.svelte";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
-import type { character, groupChat } from "../../storage/schema";
+import type { character, groupChat } from "../../storage/database/schema";
 
 import { jsonOutputTrimmer } from "src/ts/util";
 

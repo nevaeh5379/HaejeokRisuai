@@ -1,4 +1,4 @@
-import type { character, groupChat } from "../../../storage/schema";
+import type { character, groupChat } from "../../../storage/database/schema";
 
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 

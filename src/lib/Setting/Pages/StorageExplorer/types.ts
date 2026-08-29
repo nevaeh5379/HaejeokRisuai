@@ -5,7 +5,7 @@ import type {
   NodeStorageAssetDetails,
   NodeStorageAssetItem,
   NodeStorageSummary,
-} from "src/ts/storage/nodeS3Storage";
+} from "src/ts/storage/files/nodeS3Storage";
 
 export type TabType = "bots" | "modules" | "backend" | "files";
 export type ViewTarget = AssetStorageType;

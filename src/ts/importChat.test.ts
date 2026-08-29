@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { characterStore, messageStore } from "./stores/domain";
 import { importChat } from "./characters";
-import type { character, Chat } from "./storage/schema";
-import type { ISqlStorage } from "./storage/ISqlStorage";
-import type { SqlCommit, SqlCommitResult } from "./storage/sqlCommit";
-import { setSqlStorageForTesting } from "./storage/sqlStorageFactory";
+import type { character, Chat } from "./storage/database/schema";
+import type { ISqlStorage } from "./storage/sql/ISqlStorage";
+import type { SqlCommit, SqlCommitResult } from "./storage/sql/sqlCommit";
+import { setSqlStorageForTesting } from "./storage/sql/sqlStorageFactory";
 import { selectedCharID } from "./stores.svelte";
 import * as util from "./util";
 

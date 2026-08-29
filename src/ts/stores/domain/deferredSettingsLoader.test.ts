@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ISqlStorage } from "../../storage/ISqlStorage";
+import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
 import { deferredSettingsLoader } from "./deferredSettingsLoader";
 
 describe("DeferredSettingsLoader", () => {

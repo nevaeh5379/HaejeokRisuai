@@ -9,14 +9,14 @@ import {
 import { forageStorage } from "../globalApi.svelte";
 import { isTauri, isNodeServer } from "src/ts/platform";
 import { characterStore } from "../stores/domain/characterStore.svelte";
-import { NodeStorage } from "../storage/nodeStorage";
+import { NodeStorage } from "../storage/files/nodeStorage";
 import {
   compress as fflateCompress,
   decompress as fflateDecompress,
 } from "fflate";
 import { alertClear, alertConfirm, alertError, alertWait } from "../alert";
 import { language } from "src/lang";
-import type { Database } from "../storage/schema";
+import type { Database } from "../storage/database/schema";
 import {
   coldStorageHeader,
   getColdStorageAffectedCharacters,

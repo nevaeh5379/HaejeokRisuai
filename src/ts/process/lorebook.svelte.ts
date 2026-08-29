@@ -1,7 +1,7 @@
 import { get } from "svelte/store";
 import { getChatVar, setChatVar } from "../parser/chatVar.svelte";
 import { selectedCharID } from "../stores.svelte";
-import type { Chat, Message, loreBook } from "../storage/schema";
+import type { Chat, Message, loreBook } from "../storage/database/schema";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import {
@@ -19,7 +19,7 @@ import { getModuleLorebooks } from "./modules";
 import { CCardLib } from "@risuai/ccardlib";
 import { v4 } from "uuid";
 import { isNodeServer } from "../platform";
-import { NodeStorage } from "../storage/nodeStorage";
+import { NodeStorage } from "../storage/files/nodeStorage";
 import { prepareLoreEntriesForServer, type PreparedServerLoreEntry } from "./loreServerPrepare";
 
 export function addLorebook(type: number) {

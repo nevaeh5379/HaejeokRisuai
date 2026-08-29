@@ -7,7 +7,7 @@ import {
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
 import { getModuleMcps } from "../modules";
-import type { character, groupChat } from "../../storage/schema";
+import type { character, groupChat } from "../../storage/database/schema";
 import { alertError, alertInput, alertNormal } from "src/ts/alert";
 import { v4 } from "uuid";
 import type { MCPClientLike } from "./internalmcp";

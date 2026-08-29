@@ -6,8 +6,8 @@
     import { messageSearchOpen, selectedCharID, ScrollToMessageStore } from "src/ts/stores.svelte";
     import { characterStore } from "src/ts/stores/domain";
     import { forageStorage } from "src/ts/globalApi.svelte";
-    import { NodeStorage } from "src/ts/storage/nodeStorage";
-    import type { NodePostgresMessageSearchResult } from "src/ts/storage/nodePostgresStorage";
+    import { NodeStorage } from "src/ts/storage/files/nodeStorage";
+    import type { NodePostgresMessageSearchResult } from "src/ts/storage/sql/postgres/nodePostgresStorage";
     import { changeChar } from "src/ts/characters";
     import { changeChatTo } from "src/ts/globalApi.svelte";
     import { findCharacterIndexbyId } from "src/ts/util";

@@ -21,7 +21,7 @@
         readImageFromTarget,
         runStorageAnalysis
     } from './StorageExplorer/utils'
-    import type { NodeBackupConfig } from 'src/ts/storage/nodePostgresStorage'
+    import type { NodeBackupConfig } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
     import type {
         AssetStorageType,
         AssetUsageMap,

@@ -1,4 +1,4 @@
-import type { character, Chat, groupChat, Message } from "../storage/schema";
+import type { character, Chat, groupChat, Message } from "../storage/database/schema";
 import {
   replaceTargetChat,
   type ChatExecutionTarget,
