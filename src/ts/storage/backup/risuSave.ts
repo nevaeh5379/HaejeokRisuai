@@ -32,7 +32,6 @@ const disableRemoteSaving = () => {
     return true;
   }
 };
-const checkedRemoteExistence = new Set<string>();
 const magicHeader = new Uint8Array([0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 7]);
 const magicCompressedHeader = new Uint8Array([
   0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 8,

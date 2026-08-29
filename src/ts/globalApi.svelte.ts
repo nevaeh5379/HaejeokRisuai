@@ -155,7 +155,6 @@ export async function downloadFile(
 const pathCache = new BoundedCache<string, string>({
   maxEntries: () => (settingsStore.state.lowSpecMode ? 256 : 1024),
 });
-let checkedPaths: string[] = [];
 
 const revokeObjectUrl = (url: string) => {
   if (url.startsWith("blob:")) URL.revokeObjectURL(url);

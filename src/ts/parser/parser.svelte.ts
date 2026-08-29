@@ -1078,6 +1078,9 @@ function encodeMetadata(modelShortName: string) {
   }
 
   encodedMetadataCache.set(metadata, encodedMetaCode);
+  if (encodedMetadataCache.size > 64) {
+    encodedMetadataCache.delete(encodedMetadataCache.keys().next().value!);
+  }
   return encodedMetaCode;
 }
 
