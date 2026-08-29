@@ -12,6 +12,10 @@ function isRecord(value) {
 function isReservedRootSettingKey(key) {
     return exports.RESERVED_ROOT_SETTING_KEYS.includes(key);
 }
+const ERROR_MESSAGES = {
+    UPSERT: (key) => `${key} must be written through presets`,
+    DELETE: (key) => `${key} is not a root setting`,
+};
 // Holds validator configuration and exposes each commit-section parser as a
 // private method, so validation state does not depend on nested function scopes.
 class SqlCommitParser {
@@ -138,13 +142,18 @@ class SqlCommitParser {
     }
     // Prevents preset-owned settings from being written or deleted through the
     // generic root-settings section.
-    rejectReservedRootUpsert(key) {
-        if (isReservedRootSettingKey(key))
-            throw new this.PayloadError(`${key} must be written through presets`);
-    }
-    rejectReservedRootDelete(key) {
-        if (isReservedRootSettingKey(key))
-            throw new this.PayloadError(`${key} is not a root setting`);
+    // private rejectReservedRootUpsert(key: string): void {
+    //   if (isReservedRootSettingKey(key))
+    //     throw new this.PayloadError(`${key} must be written through presets`);
+    // }
+    // private rejectReservedRootDelete(key: string): void {
+    //   if (isReservedRootSettingKey(key))
+    //     throw new this.PayloadError(`${key} is not a root setting`);
+    // }
+    rejectReservedRoot(action, key) {
+        if (!isReservedRootSettingKey(key))
+            return;
+        throw new this.PayloadError(ERROR_MESSAGES[action](key));
     }
     // Parses generic root-setting upserts and deletes, applying the reserved-key
     // policy to both operations.
@@ -153,8 +162,8 @@ class SqlCommitParser {
             return { rootUpserts: [], rootDeletes: [] };
         if (!isRecord(value))
             throw new this.PayloadError("root must be an object");
-        const rootUpserts = this.parseSettingUpserts(value.upserts, "root.upserts", (key) => this.rejectReservedRootUpsert(key));
-        const rootDeletes = this.parseIds(value.deletes, "root.deletes", (key) => this.rejectReservedRootDelete(key));
+        const rootUpserts = this.parseSettingUpserts(value.upserts, "root.upserts", (key) => this.rejectReservedRoot("UPSERT", key));
+        const rootDeletes = this.parseIds(value.deletes, "root.deletes", (key) => this.rejectReservedRoot("DELETE", key));
         return { rootUpserts, rootDeletes };
     }
     // Parses preset upserts, deletes, ordering, and the active preset identifier.
