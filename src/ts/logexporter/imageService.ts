@@ -177,11 +177,28 @@ async function renderOffscreen(
 
 // ─── Capture ─────────────────────────────────────────────────────────────────
 
+// ─── Capture ─────────────────────────────────────────────────────────────────
+
+/**
+ * html-to-image copies the capture root's computed styles into its clone,
+ * including `position:fixed; left:-10000px` from the off-screen wrapper. The
+ * SVG foreignObject honors those offsets too, so the content lands outside
+ * the rendered box and the capture comes out fully transparent. Overriding
+ * the clone root back into view fixes this (verified headlessly).
+ */
+const SECTION_CAPTURE_STYLE: Partial<CSSStyleDeclaration> = {
+  position: "static",
+  left: "0px",
+  top: "0px",
+  margin: "0px",
+};
+
 async function captureElementToBlob(
   element: HTMLElement,
   format: ImageFormat,
   bgColor: string,
   pixelRatio: number,
+  styleOverride?: Partial<CSSStyleDeclaration>,
 ): Promise<Blob> {
   const scale = getTransformScale(element);
   const options = {
@@ -193,6 +210,7 @@ async function captureElementToBlob(
     // the whole capture.
     imagePlaceholder: getImagePlaceholderDataUrl(),
     onImageErrorHandler: () => undefined,
+    style: styleOverride,
   };
   let blob: Blob | null = null;
   try {
@@ -260,6 +278,7 @@ async function forEachSection(
         format === "webp" ? "png" : format,
         bgColor,
         resolution,
+        SECTION_CAPTURE_STYLE,
       );
       await onSectionBlob(blob);
     } finally {
