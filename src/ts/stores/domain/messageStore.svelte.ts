@@ -399,9 +399,12 @@ export function cancelInactiveChatMessageRelease(): void {
   inactiveReleaseGeneration += 1;
 }
 
-function evictInactiveChatMessages(chats: Chat[], activeChatId?: string): void {
+function evictInactiveChatMessages(
+  chats: Chat[],
+  protectedChatIds: ReadonlySet<string>,
+): void {
   for (const chat of chats) {
-    if (!chat.id || chat.id === activeChatId) continue;
+    if (!chat.id || protectedChatIds.has(chat.id)) continue;
     if (chat.preventMessageCompaction) continue;
     if (
       chat.message &&
@@ -416,25 +419,23 @@ function evictInactiveChatMessages(chats: Chat[], activeChatId?: string): void {
 }
 
 /**
- * Evicts the message array of every chat except the active one (and any chat
- * flagged with `preventMessageCompaction`, e.g. while generation is running).
+ * Evicts message arrays outside the current working set. Visible split panes,
+ * local/remote generation targets, and transition targets are protected;
+ * `preventMessageCompaction` remains a final per-chat safety guard.
  *
- * Evicted chats are marked `messagesLoaded = false` so that the next access
- * transparently reloads them from SQL storage via `ensureChatMessages` /
- * `preLoadChat`. Because messages are persisted to the DB on every commit,
- * dropping the in-memory copy does not lose data.
- *
- * This is the single biggest memory win when a user has browsed through many
- * chats: without it, every chat ever visited keeps its full message array
- * live in the Svelte `$state` tree and cannot be garbage-collected.
+ * Evicted chats are marked `messagesLoaded = false` so the next access reloads
+ * them transparently from SQL storage. A bounded idle timeout prevents cleanup
+ * from being starved forever by continuous rendering/navigation work.
  */
-export function releaseInactiveChatMessages(activeChatId?: string): void {
+export function releaseInactiveChatMessages(
+  getProtectedChatIds: () => ReadonlySet<string> = () => new Set(),
+): void {
   const generation = ++inactiveReleaseGeneration;
   const batchSize = settingsStore.state.lowSpecMode ? 4 : isCapacitor ? 8 : 32;
 
   const scheduleIdle = (callback: () => void) => {
     if ("requestIdleCallback" in globalThis) {
-      globalThis.requestIdleCallback(callback);
+      globalThis.requestIdleCallback(callback, { timeout: 1500 });
     } else {
       globalThis.setTimeout(callback, 0);
     }
@@ -446,10 +447,11 @@ export function releaseInactiveChatMessages(activeChatId?: string): void {
   scheduleIdle(() => {
     if (generation !== inactiveReleaseGeneration) return;
     const inactiveChats: Chat[] = [];
+    const protectedChatIds = getProtectedChatIds();
     for (const char of characterStore.characters) {
       if (!char.chats) continue;
       for (const chat of char.chats) {
-        if (!chat.id || chat.id === activeChatId) continue;
+        if (!chat.id || protectedChatIds.has(chat.id)) continue;
         if (chat.preventMessageCompaction) continue;
         if (chat.messagesLoaded === false || !chat.message?.length) continue;
         inactiveChats.push(chat);
@@ -462,7 +464,7 @@ export function releaseInactiveChatMessages(activeChatId?: string): void {
       const nextCursor = Math.min(cursor + batchSize, inactiveChats.length);
       evictInactiveChatMessages(
         inactiveChats.slice(cursor, nextCursor),
-        activeChatId,
+        getProtectedChatIds(),
       );
       cursor = nextCursor;
       if (cursor < inactiveChats.length) scheduleIdle(releaseBatch);

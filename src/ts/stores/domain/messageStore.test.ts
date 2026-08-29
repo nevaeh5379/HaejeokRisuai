@@ -91,12 +91,36 @@ describe("messageStore", () => {
         messagesFullyLoaded: true,
       } as any);
 
-      releaseInactiveChatMessages("chat-1");
+      releaseInactiveChatMessages(() => new Set(["chat-1"]));
 
       expect(character.chats[1].message).toHaveLength(1);
       await vi.runAllTimersAsync();
       expect(character.chats[1].message).toEqual([]);
       expect(character.chats[1].messagesLoaded).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("re-checks the protected working set before idle eviction runs", async () => {
+    vi.useFakeTimers();
+    try {
+      const character = characterStore.characters[0];
+      character.chats.push({
+        id: "chat-2",
+        name: "Chat 2",
+        message: [{ chatId: "msg-live", role: "char", data: "live" }],
+        messagesLoaded: true,
+        messagesFullyLoaded: true,
+      } as any);
+      const protectedIds = new Set(["chat-1"]);
+
+      releaseInactiveChatMessages(() => protectedIds);
+      protectedIds.add("chat-2");
+
+      await vi.runAllTimersAsync();
+      expect(character.chats[1].message).toHaveLength(1);
+      expect(character.chats[1].messagesLoaded).not.toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -114,7 +138,7 @@ describe("messageStore", () => {
         messagesFullyLoaded: true,
       } as any);
 
-      releaseInactiveChatMessages("chat-1");
+      releaseInactiveChatMessages(() => new Set(["chat-1"]));
       cancelInactiveChatMessageRelease();
 
       await vi.runAllTimersAsync();

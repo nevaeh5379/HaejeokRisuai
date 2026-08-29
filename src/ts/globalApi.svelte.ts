@@ -76,6 +76,7 @@ import { generateClientThumbnail } from "./media/thumbnail";
 import { getMimeType } from "./media/mimeType";
 import { BoundedCache } from "./memory/boundedCache";
 import { releaseInactiveChatMessages } from "./stores/domain/messageStore.svelte";
+import { getProtectedChatIds } from "./memory/chatWorkingSet";
 
 export const forageStorage = new AutoStorage();
 
@@ -3176,7 +3177,7 @@ export function changeChatTo(IdOrIndex: string | number) {
     characterStore.characters[characterStore.selectedId].chatPage = index;
   }
   ReloadGUIPointer.set(Math.random());
-  releaseInactiveChatMessages(nextChat?.id);
+  releaseInactiveChatMessages(() => getProtectedChatIds([nextChat?.id]));
 }
 
 export function createChatCopyName(

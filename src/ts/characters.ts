@@ -59,6 +59,7 @@ import {
   getCharImagesBatch,
   preloadCharacterImage,
 } from "./characterImage";
+import { getProtectedChatIds } from "./memory/chatWorkingSet";
 
 export { createBlankChar } from "./characterDefaults";
 export { getCharImage, getCharImagesBatch } from "./characterImage";
@@ -1214,6 +1215,7 @@ export async function changeChar(
   // Do not let the previous character's idle eviction/GC work compete with
   // SQL hydration and first paint for the character we are opening now.
   cancelInactiveChatMessageRelease();
+  characterStore.cancelInactiveCharacterDetailRelease();
   void preloadCharacterImage(characterStore.characters?.[index]?.image);
   reseter();
   pendingCharID.set(index);
@@ -1272,9 +1274,10 @@ export async function changeChar(
   pendingCharID.set(-1);
   if (arg.chatId) {
     changeChatTo(arg.chatId);
-  } else {
-    releaseInactiveChatMessages(activeChatId);
   }
+  const getProtectedIds = () => getProtectedChatIds([activeChatId]);
+  releaseInactiveChatMessages(getProtectedIds);
+  characterStore.releaseInactiveCharacterDetails(getProtectedIds);
 
   void modulePromise
     .then(({ moduleUpdate }) => {

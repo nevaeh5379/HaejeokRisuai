@@ -7,6 +7,7 @@ import { settingsStore } from "./settingsStore.svelte";
 import { getInitialChatLoadPages } from "../../chatLoadPages";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
+import { isCapacitor } from "../../platform";
 import type {
   FlushableStore,
   InitializableStore,
@@ -60,7 +61,6 @@ function mergeLoadedChats(loaded: Chat[], current: Chat[]): Chat[] {
     const existing = currentById.get(chat.id);
     if (!existing) return chat;
     Object.assign(chat, existing);
-    chat.detailsLoaded = true;
     return chat;
   });
 
@@ -95,6 +95,58 @@ function mergeLoadedMessages(
   return merged;
 }
 
+function toChatSummary(chat: Chat): Chat {
+  return {
+    id: chat.id,
+    name: chat.name ?? "",
+    note: chat.note ?? "",
+    folderId: chat.folderId ?? undefined,
+    lastDate: chat.lastDate ?? undefined,
+    message: [],
+    messagesLoaded: false,
+    messagesFullyLoaded: false,
+    detailsLoaded: false,
+  } as Chat;
+}
+
+function toCharacterSummary(
+  char: character | groupChat,
+): character | groupChat {
+  const chats = (char.chats ?? []).map(toChatSummary);
+  const chatPage = Math.min(
+    Math.max(char.chatPage ?? 0, 0),
+    Math.max(chats.length - 1, 0),
+  );
+  const runtimeDates = char as unknown as {
+    creationDate?: number;
+    modificationDate?: number;
+    creation_date?: number;
+    modification_date?: number;
+  };
+  const creationDate = runtimeDates.creationDate ?? runtimeDates.creation_date;
+  const modificationDate =
+    runtimeDates.modificationDate ?? runtimeDates.modification_date;
+  return {
+    chaId: char.chaId,
+    type: char.type ?? "character",
+    name: char.name ?? "",
+    image: char.image ?? "",
+    trashTime: char.trashTime,
+    creationDate,
+    modificationDate,
+    creation_date: creationDate,
+    modification_date: modificationDate,
+    lastInteraction: char.lastInteraction,
+    coldstorage: char.coldstorage,
+    coldStoragedChats: char.coldStoragedChats
+      ? [...char.coldStoragedChats]
+      : undefined,
+    detailsLoaded: false,
+    chats,
+    chatPage,
+  } as unknown as character | groupChat;
+}
+
 class CharacterStore
   implements
     InitializableStore<[
@@ -127,6 +179,8 @@ class CharacterStore
   private olderChatPromises = new Map<string, Promise<number>>();
   // Full history can be loaded without expensive historical generation/prompt metadata.
   private generationOnlyMetadataChats = new Set<string>();
+  private hydratedCharacterLru: string[] = [];
+  private inactiveDetailReleaseGeneration = 0;
 
   characters = $state<(character | groupChat)[]>([]);
   selectedId = $state<number>(-1);
@@ -139,6 +193,12 @@ class CharacterStore
     const char = this.currentCharacter;
     if (!char || !char.chats) return undefined;
     return char.chats[char.chatPage ?? 0];
+  }
+
+  private touchHydratedCharacter(chaId: string): void {
+    const index = this.hydratedCharacterLru.indexOf(chaId);
+    if (index >= 0) this.hydratedCharacterLru.splice(index, 1);
+    this.hydratedCharacterLru.push(chaId);
   }
 
   init(characters: (character | groupChat)[], storage: ISqlStorage): void {
@@ -155,10 +215,13 @@ class CharacterStore
     this.dirtyChatDeletes.clear();
     this.dirtyChatManifests.clear();
     this.generationOnlyMetadataChats.clear();
+    this.hydratedCharacterLru = [];
+    this.inactiveDetailReleaseGeneration += 1;
     this.dirtyCharacterIds = false;
 
     for (const char of characters) {
       char.chaId ||= uuidv4();
+      if (char.detailsLoaded !== false) this.touchHydratedCharacter(char.chaId);
       for (const chat of char.chats ?? []) {
         chat.id ||= uuidv4();
       }
@@ -634,6 +697,10 @@ class CharacterStore
 
   select(index: number): void {
     this.selectedId = index;
+    const char = this.characters[index];
+    if (char?.chaId && char.detailsLoaded !== false) {
+      this.touchHydratedCharacter(char.chaId);
+    }
     // Re-observe the new active character
     this.observeActive();
   }
@@ -662,7 +729,106 @@ class CharacterStore
     }
   }
 
+  private hasProtectedCharacterDetails(
+    char: character | groupChat,
+    protectedChatIds: ReadonlySet<string>,
+  ): boolean {
+    const chaId = char.chaId;
+    if (!chaId) return true;
+    if (
+      this.dirtyCharacters.has(chaId) ||
+      this.dirtyChatManifests.has(chaId) ||
+      this.characterDetailPromises.has(chaId)
+    ) {
+      return true;
+    }
+    return (char.chats ?? []).some((chat) =>
+      Boolean(
+        chat.id &&
+          (protectedChatIds.has(chat.id) ||
+            chat.preventMessageCompaction ||
+            this.dirtyChats.has(chat.id) ||
+            this.chatDetailPromises.has(chat.id) ||
+            this.olderChatPromises.has(chat.id)),
+      ),
+    );
+  }
+
+  cancelInactiveCharacterDetailRelease(): void {
+    this.inactiveDetailReleaseGeneration += 1;
+  }
+
+  releaseInactiveCharacterDetails(
+    getProtectedChatIds: () => ReadonlySet<string>,
+  ): void {
+    const generation = ++this.inactiveDetailReleaseGeneration;
+    const batchSize = settingsStore.state.lowSpecMode ? 2 : isCapacitor ? 4 : 8;
+    const warmCount = settingsStore.state.lowSpecMode ? 1 : isCapacitor ? 2 : 4;
+    const scheduleIdle = (callback: () => void) => {
+      if ("requestIdleCallback" in globalThis) {
+        globalThis.requestIdleCallback(callback, { timeout: 2000 });
+      } else {
+        globalThis.setTimeout(callback, 0);
+      }
+    };
+
+    scheduleIdle(() => {
+      if (generation !== this.inactiveDetailReleaseGeneration) return;
+      const protectedCharacterIds = new Set<string>();
+      const protectedChats = getProtectedChatIds();
+      const selected = this.characters[this.selectedId]?.chaId;
+      if (selected) protectedCharacterIds.add(selected);
+
+      for (const char of this.characters) {
+        if (!char.chaId) continue;
+        if (this.hasProtectedCharacterDetails(char, protectedChats)) {
+          protectedCharacterIds.add(char.chaId);
+        }
+      }
+
+      const warmIds = new Set(
+        this.hydratedCharacterLru
+          .filter((id) => !protectedCharacterIds.has(id))
+          .slice(-warmCount),
+      );
+      const candidates = this.characters
+        .filter(
+          (char) =>
+            char.chaId &&
+            char.detailsLoaded !== false &&
+            !protectedCharacterIds.has(char.chaId) &&
+            !warmIds.has(char.chaId),
+        )
+        .map((char) => char.chaId!);
+
+      let cursor = 0;
+      const releaseBatch = () => {
+        if (generation !== this.inactiveDetailReleaseGeneration) return;
+        const protectedNow = getProtectedChatIds();
+        const nextCursor = Math.min(cursor + batchSize, candidates.length);
+        for (; cursor < nextCursor; cursor += 1) {
+          const chaId = candidates[cursor];
+          const index = this.characters.findIndex((char) => char.chaId === chaId);
+          const char = this.characters[index];
+          if (!char || index === this.selectedId || char.detailsLoaded === false) continue;
+          if (this.hasProtectedCharacterDetails(char, protectedNow)) continue;
+
+          for (const chat of char.chats ?? []) {
+            if (chat.id) this.generationOnlyMetadataChats.delete(chat.id);
+          }
+          this.characters[index] = toCharacterSummary(char);
+          this.hydratedCharacterLru = this.hydratedCharacterLru.filter(
+            (id) => id !== chaId,
+          );
+        }
+        if (cursor < candidates.length) scheduleIdle(releaseBatch);
+      };
+      releaseBatch();
+    });
+  }
+
   async ensureCharacterDetails(chaId: string): Promise<void> {
+    this.cancelInactiveCharacterDetailRelease();
     if (this.characterDetailPromises.has(chaId)) {
       return this.characterDetailPromises.get(chaId);
     }
@@ -684,6 +850,7 @@ class CharacterStore
                 detailsLoaded: true,
               },
             );
+            this.touchHydratedCharacter(chaId);
             if (idx === this.selectedId) {
               this.observeActive();
             }
@@ -859,6 +1026,8 @@ class CharacterStore
     this.activeDispose?.();
     this.activeDispose = null;
     this.generationOnlyMetadataChats.clear();
+    this.hydratedCharacterLru = [];
+    this.inactiveDetailReleaseGeneration += 1;
   }
 }
 

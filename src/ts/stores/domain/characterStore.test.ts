@@ -571,6 +571,164 @@ describe("CharacterStore", () => {
     expect(committed[0].chatManifests[0].ids).not.toContain(removedId);
   });
 
+  it("compacts only old inactive character details outside the working set", async () => {
+    vi.useFakeTimers();
+    try {
+      settingsStore.hydrate((state) => {
+        state.lowSpecMode = true;
+      });
+      const chars = [0, 1, 2, 3].map((index) => {
+        const char = makeChar(`compact-${index}`);
+        char.detailsLoaded = true;
+        char.chats[0].id = `chat-compact-${index}`;
+        char.chats[0].message = [
+          { chatId: `msg-${index}`, role: "char", data: "resident" } as any,
+        ];
+        char.chats[0].messagesLoaded = true;
+        char.chats[0].messagesFullyLoaded = true;
+        (char as any).globalLore = [{ key: `heavy-${index}` }];
+        return char;
+      });
+      chars[0].coldstorage = "legacy-cold-character";
+      chars[0].coldStoragedChats = ["chat-compact-0"];
+      characterStore.init(chars, mockStorage);
+      characterStore.select(3);
+
+      characterStore.releaseInactiveCharacterDetails(
+        () => new Set(["chat-compact-1"]),
+      );
+      await vi.runAllTimersAsync();
+
+      const evicted = characterStore.characters[0] as any;
+      expect(evicted.detailsLoaded).toBe(false);
+      expect(evicted.globalLore).toBeUndefined();
+      expect(evicted.coldstorage).toBe("legacy-cold-character");
+      expect(evicted.coldStoragedChats).toEqual(["chat-compact-0"]);
+      expect(evicted.chats[0]).toMatchObject({
+        id: "chat-compact-0",
+        message: [],
+        messagesLoaded: false,
+        messagesFullyLoaded: false,
+        detailsLoaded: false,
+      });
+      expect(characterStore.characters[1].detailsLoaded).toBe(true);
+      expect(characterStore.characters[2].detailsLoaded).toBe(true);
+      expect(characterStore.characters[3].detailsLoaded).toBe(true);
+    } finally {
+      settingsStore.hydrate((state) => {
+        state.lowSpecMode = false;
+      });
+      vi.useRealTimers();
+    }
+  });
+
+  it("never compacts dirty characters or chats with compaction guards", async () => {
+    vi.useFakeTimers();
+    try {
+      settingsStore.hydrate((state) => {
+        state.lowSpecMode = true;
+      });
+      const chars = [0, 1, 2, 3, 4].map((index) => {
+        const char = makeChar(`guarded-${index}`);
+        char.detailsLoaded = true;
+        char.chats[0].id = `chat-guarded-${index}`;
+        (char as any).globalLore = [{ key: `heavy-${index}` }];
+        return char;
+      });
+      chars[1].chats[0].preventMessageCompaction = true;
+      characterStore.init(chars, mockStorage);
+      characterStore.select(4);
+      characterStore.markCharacterDirty(chars[0].chaId!);
+
+      characterStore.releaseInactiveCharacterDetails(() => new Set());
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(characterStore.characters[0].detailsLoaded).toBe(true);
+      expect(characterStore.characters[1].detailsLoaded).toBe(true);
+      expect(characterStore.characters[2].detailsLoaded).toBe(false);
+      expect(characterStore.characters[3].detailsLoaded).toBe(true);
+      expect(characterStore.characters[4].detailsLoaded).toBe(true);
+    } finally {
+      settingsStore.hydrate((state) => {
+        state.lowSpecMode = false;
+      });
+      vi.useRealTimers();
+    }
+  });
+
+  it("re-checks protected chats before character detail eviction", async () => {
+    vi.useFakeTimers();
+    try {
+      settingsStore.hydrate((state) => {
+        state.lowSpecMode = true;
+      });
+      const chars = [0, 1, 2].map((index) => {
+        const char = makeChar(`dynamic-${index}`);
+        char.detailsLoaded = true;
+        char.chats[0].id = `chat-dynamic-${index}`;
+        (char as any).globalLore = [{ key: `heavy-${index}` }];
+        return char;
+      });
+      characterStore.init(chars, mockStorage);
+      characterStore.select(2);
+      const protectedIds = new Set<string>();
+
+      characterStore.releaseInactiveCharacterDetails(() => protectedIds);
+      protectedIds.add("chat-dynamic-0");
+      await vi.runAllTimersAsync();
+
+      expect(characterStore.characters[0].detailsLoaded).toBe(true);
+    } finally {
+      settingsStore.hydrate((state) => {
+        state.lowSpecMode = false;
+      });
+      vi.useRealTimers();
+    }
+  });
+
+  it("rehydrates an evicted character without marking chat summaries as loaded", async () => {
+    vi.useFakeTimers();
+    try {
+      settingsStore.hydrate((state) => {
+        state.lowSpecMode = true;
+      });
+      const chars = [0, 1, 2].map((index) => {
+        const char = makeChar(`rehydrate-${index}`);
+        char.detailsLoaded = true;
+        char.chats[0].id = `chat-rehydrate-${index}`;
+        (char as any).globalLore = [{ key: `old-${index}` }];
+        return char;
+      });
+      const evictedId = chars[0].chaId!;
+      characterStore.init(chars, mockStorage);
+      characterStore.select(2);
+      characterStore.releaseInactiveCharacterDetails(() => new Set());
+      await vi.runAllTimersAsync();
+      expect(characterStore.characters[0].detailsLoaded).toBe(false);
+
+      const loaded = makeChar("rehydrated", 1);
+      loaded.chaId = evictedId;
+      loaded.detailsLoaded = true;
+      loaded.chats[0].id = "chat-rehydrate-0";
+      loaded.chats[0].detailsLoaded = false;
+      (loaded as any).globalLore = [{ key: "restored" }];
+      (mockStorage as any).loadCharacterForSelection = vi.fn(async () => loaded);
+
+      await characterStore.ensureCharacterDetails(evictedId);
+
+      const hydrated = characterStore.characters[0] as any;
+      expect(hydrated.detailsLoaded).toBe(true);
+      expect(hydrated.globalLore).toEqual([{ key: "restored" }]);
+      expect(hydrated.chats[0].id).toBe("chat-rehydrate-0");
+      expect(hydrated.chats[0].detailsLoaded).toBe(false);
+    } finally {
+      settingsStore.hydrate((state) => {
+        state.lowSpecMode = false;
+      });
+      vi.useRealTimers();
+    }
+  });
+
   it("handles whole-object replacements via setCurrentCharacter and setCharacterByIndex", async () => {
     const chars = [makeChar("a"), makeChar("b")];
     characterStore.init(chars, mockStorage);

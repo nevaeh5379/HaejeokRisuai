@@ -18,6 +18,7 @@
     import { language } from "src/lang";
     import Toggles from "./Toggles.svelte";
     import { releaseInactiveChatMessages } from "src/ts/stores/domain/messageStore.svelte";
+    import { getProtectedChatIds } from "src/ts/memory/chatWorkingSet";
     import { chatTabsStore } from "src/ts/chatTabs.svelte";
     import { duplicateChat } from "src/ts/characters";
 
@@ -149,7 +150,7 @@
         if (index < 0 || index >= chara.chats.length) return
         chara.chatPage = index
         ReloadGUIPointer.set(Math.random())
-        releaseInactiveChatMessages(chara.chats[index]?.id)
+        releaseInactiveChatMessages(() => getProtectedChatIds([chara.chats[index]?.id]))
     }
 
     const createStb = async () => {
