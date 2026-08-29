@@ -40,6 +40,7 @@
     import { generateExport } from 'src/ts/logexporter/htmlGenerator'
     import { copyToClipboard, saveAsFile, sanitizeFilename } from 'src/ts/logexporter/fileService'
     import { clearBatchCache, clearImageUrlCache } from 'src/ts/logexporter/messageRenderer'
+    import { alertError } from 'src/ts/alert'
     import type {
         ColorPalette,
         ExportFormat,
@@ -268,6 +269,10 @@
         return `Risu_Log_${sanitizeFilename(charInfo.name)}_${sanitizeFilename(charInfo.chatName)}.${ext}`
     }
 
+    function describeError(e: unknown): string {
+        return e instanceof Error ? e.message : String(e)
+    }
+
     async function handleSaveImage() {
         try {
             await saveAsImage(viewData, settings, palette, settings.imageFormat, {
@@ -276,8 +281,9 @@
                 onProgressEnd: endProgress,
             })
         } catch (e) {
-            console.error(e)
+            console.error('[logexporter] Image save failed:', e)
             endProgress()
+            alertError(`이미지 저장에 실패했습니다: ${describeError(e)}`)
         }
     }
 
@@ -302,8 +308,9 @@
                 await saveAsFile(exportFilename('html'), result.content)
             }
         } catch (e) {
-            console.error(e)
+            console.error('[logexporter] HTML export failed:', e)
             endProgress()
+            alertError(`HTML 내보내기에 실패했습니다: ${describeError(e)}`)
         }
     }
 
@@ -319,8 +326,9 @@
                 await saveAsFile(exportFilename(result.extension), result.content)
             }
         } catch (e) {
-            console.error(e)
+            console.error('[logexporter] Text/Markdown export failed:', e)
             endProgress()
+            alertError(`내보내기에 실패했습니다: ${describeError(e)}`)
         }
     }
 
