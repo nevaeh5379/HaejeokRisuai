@@ -382,6 +382,7 @@ export async function saveAsImage(
       );
 
       let blob: Blob | null = null;
+      let mergedExt: string = format;
       const isTooTall = renderedHeight > finalMaxHeight;
 
       if (isTooTall && settings.splitImage === "chunk") {
@@ -397,7 +398,13 @@ export async function saveAsImage(
           },
           onProgressUpdate,
         );
-        blob = await mergeImagesVertically(blobs, format, onProgressUpdate);
+        const merged = await mergeImagesVertically(
+          blobs,
+          format,
+          onProgressUpdate,
+        );
+        blob = merged.blob;
+        mergedExt = merged.ext;
       } else if (isTooTall && settings.splitImage === "message") {
         let sectionIndex = 0;
         const numSections = Math.ceil(element.offsetHeight / finalMaxHeight);
@@ -411,9 +418,11 @@ export async function saveAsImage(
             onProgressUpdate?.({
               message: `[섹션 ${sectionIndex + 1}/${numSections}] 파일 저장 중...`,
             });
+            // webp sections are rasterized as PNG (html-to-image cannot encode
+            // webp directly), so the extension must follow the actual blob.
             await downloadBlob(
               b,
-              `${baseFilename}_part${++sectionIndex}.${format}`,
+              `${baseFilename}_part${++sectionIndex}.${format === "webp" ? "png" : format}`,
             );
             await delay(DOWNLOAD_PREPARATION_DELAY_MS);
           },
@@ -428,7 +437,7 @@ export async function saveAsImage(
       if (!blob) throw new Error("Failed to generate image blob.");
       onProgressUpdate?.({ message: "파일 다운로드 중..." });
       await delay(DOWNLOAD_PREPARATION_DELAY_MS);
-      await downloadBlob(blob, `${baseFilename}.${format}`);
+      await downloadBlob(blob, `${baseFilename}.${mergedExt}`);
     } finally {
       await render.destroy();
     }

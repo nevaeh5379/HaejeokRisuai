@@ -1,5 +1,6 @@
 import type { FFmpeg } from "@ffmpeg/ffmpeg";
 import type { ImageFormat } from "./types";
+import { mergePngBlobsVertically } from "./pngStitch";
 
 /**
  * ffmpeg.wasm media service.
@@ -121,27 +122,62 @@ function mimeFor(format: ImageFormat): string {
 }
 
 /**
- * Stitches image blobs vertically into one file using ffmpeg's vstack filter.
+ * Stitches image blobs vertically into one file.
  *
- * Falls back to canvas stitching when ffmpeg is unavailable (offline CDN,
- * worker restrictions); see mergeBlobsViaCanvas for its limits.
+ * Falls back in order when a merge strategy is unavailable:
+ * 1. ffmpeg.wasm — not limited by browser canvas caps, format-faithful.
+ * 2. canvas draw — bounded by browser canvas caps, format preserved.
+ * 3. canvas-free streaming PNG merge — works for any total height, but the
+ *    output is always PNG (so the caller adjusts the file extension).
  */
+export interface MergedVertically {
+  blob: Blob;
+  /** Actual extension of the produced blob (may differ from the requested format). */
+  ext: string;
+}
+
 export async function mergeImagesVertically(
   blobs: Blob[],
   format: ImageFormat = "png",
   onProgressUpdate?: (update: { message?: string }) => void,
-): Promise<Blob> {
+): Promise<MergedVertically> {
   if (blobs.length === 0) throw new Error("No images to merge");
-  if (blobs.length === 1) return blobs[0];
+  if (blobs.length === 1) return { blob: blobs[0], ext: format };
   try {
-    return await mergeBlobsWithFFmpeg(blobs, format, onProgressUpdate);
+    return {
+      blob: await mergeBlobsWithFFmpeg(blobs, format, onProgressUpdate),
+      ext: format,
+    };
   } catch (e) {
     console.warn(
       "[logexporter] ffmpeg merge failed, falling back to canvas stitching:",
       e,
     );
   }
-  return await mergeBlobsViaCanvas(blobs, format, onProgressUpdate);
+  try {
+    return {
+      blob: await mergeBlobsViaCanvas(blobs, format, onProgressUpdate),
+      ext: format,
+    };
+  } catch (e) {
+    console.warn(
+      "[logexporter] canvas merge failed, falling back to streaming PNG stitching:",
+      e,
+    );
+  }
+  // Split capture exists to build exports taller than the canvas limit, so a
+  // very tall log must still come out as one file. The streaming PNG merger
+  // bypasses the canvas entirely (row-level scanline surgery, bounded memory).
+  onProgressUpdate?.({
+    message: `캔버스 한도를 우회한 스트리밍 병합 중 (${blobs.length}개 섹션)...`,
+  });
+  const stitched = await mergePngBlobsVertically(blobs);
+  if (format !== "png") {
+    onProgressUpdate?.({
+      message: `브라우저에서 ${format.toUpperCase()} 인코딩이 불가하여 PNG로 저장됩니다`,
+    });
+  }
+  return { blob: stitched.blob, ext: "png" };
 }
 
 async function mergeBlobsWithFFmpeg(
