@@ -486,6 +486,8 @@
     pink: 'bg-pink-700/20',
   }
 
+  const folderColors = ["red", "green", "blue", "yellow", "indigo", "purple", "pink", "default"]
+
   function toggleFolderOpen(folderId: string) {
     if (openFolders.includes(folderId)) {
       openFolders.splice(openFolders.indexOf(folderId), 1)
@@ -499,61 +501,55 @@
   async function handleFolderContextMenu(e: MouseEvent, ind: number, currentName: string) {
     e.preventDefault()
     const sel = parseInt(await alertSelect([language.renameFolder, language.changeFolderColor, language.changeFolderImage, language.cancel]))
-    if(sel === 0){
-      const v = await alertInput(language.changeFolderName, [], currentName)
+
+    const applyToFolder = async (mutate: (entry: folder) => void | Promise<void>): Promise<boolean> => {
       const db = settingsStore.state
-      if(v){
-        const orderEntry = db.characterOrder[ind]
-        if(typeof(orderEntry) === 'string'){
+      const orderEntry = db.characterOrder[ind]
+      if (typeof (orderEntry) === 'string') {
+        return false
+      }
+      await mutate(orderEntry)
+      db.characterOrder[ind] = orderEntry
+      return true
+    }
+
+    if (sel === 0) {
+      const v = await alertInput(language.changeFolderName, [], currentName)
+      if (v) {
+        await applyToFolder((entry) => {
+          entry.name = v
+        })
+      }
+    }
+    else if (sel === 1) {
+      const colorSel = parseInt(await alertSelect(folderColors))
+      await applyToFolder((entry) => {
+        entry.color = folderColors[colorSel].toLocaleLowerCase()
+      })
+    }
+    else if (sel === 2) {
+      const imageSel = parseInt(await alertSelect(['Reset to Default Image', 'Select Image File']))
+      if (imageSel === 0) {
+        await applyToFolder((entry) => {
+          entry.imgFile = null
+          entry.img = ''
+        })
+      }
+      else if (imageSel === 1) {
+        const folderImage = await selectSingleFile([
+          'png',
+          'jpg',
+          'webp',
+        ])
+        if (!folderImage) {
           return
         }
-        orderEntry.name = v
-        db.characterOrder[ind] = orderEntry
-      }
-    }
-    else if(sel === 1){
-      const colors = ["red","green","blue","yellow","indigo","purple","pink","default"]
-      const colorSel = parseInt(await alertSelect(colors))
-      const db = settingsStore.state
-      const orderEntry = db.characterOrder[ind]
-      if(typeof(orderEntry) === 'string'){
-        return
-      }
-      orderEntry.color = colors[colorSel].toLocaleLowerCase()
-      db.characterOrder[ind] = orderEntry
-    }
-    else if(sel === 2) {
-      const imageSel = parseInt(await alertSelect(['Reset to Default Image', 'Select Image File']))
-      const db = settingsStore.state
-      const orderEntry = db.characterOrder[ind]
-      if(typeof(orderEntry) === 'string'){
-        return
-      }
-
-      switch (imageSel) {
-        case 0:
-          orderEntry.imgFile = null
-          orderEntry.img = ''
-          break;
-
-        case 1: {
-          const folderImage = await selectSingleFile([
-            'png',
-            'jpg',
-            'webp',
-          ])
-
-          if(!folderImage) {
-            return
-          }
-
-          const folderImageData = await saveAsset(folderImage.data)
-
-          orderEntry.imgFile = folderImageData
-          orderEntry.img = await getFileSrc(folderImageData)
-          db.characterOrder[ind] = orderEntry
-          break;
-        }
+        const folderImageData = await saveAsset(folderImage.data)
+        const imgSrc = await getFileSrc(folderImageData)
+        await applyToFolder((entry) => {
+          entry.imgFile = folderImageData
+          entry.img = imgSrc
+        })
       }
     }
   }
