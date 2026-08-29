@@ -3,9 +3,16 @@ import type { ISqlStorage } from "../../storage/ISqlStorage";
 import { createEmptySqlCommit } from "../../storage/sqlCommit";
 import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
 import { snapshotFingerprint, trackDeep } from "./reactiveUtils";
-import { DurableStore } from "./durableStore";
+import type {
+  FlushableStore,
+  InitializableStore,
+} from "./storeContracts";
 
-class ModuleStore extends DurableStore {
+class ModuleStore
+  implements
+    InitializableStore<[storage: ISqlStorage]>,
+    FlushableStore
+{
   modules = $state<RisuModule[]>([]);
   enabledModules = $state<string[]>([]);
   moduleFolders = $state<ModuleFolder[]>([]);

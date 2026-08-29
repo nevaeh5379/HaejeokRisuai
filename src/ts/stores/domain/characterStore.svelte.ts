@@ -7,7 +7,10 @@ import { settingsStore } from "./settingsStore.svelte";
 import { getInitialChatLoadPages } from "../../chatLoadPages";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
-import { DurableStore } from "./durableStore";
+import type {
+  FlushableStore,
+  InitializableStore,
+} from "./storeContracts";
 
 // Keep persisted history ordering, overlay newer in-memory fields, and retain
 // stable-ID messages that have not reached storage yet.
@@ -92,7 +95,14 @@ function mergeLoadedMessages(
   return merged;
 }
 
-class CharacterStore extends DurableStore {
+class CharacterStore
+  implements
+    InitializableStore<[
+      characters: (character | groupChat)[],
+      storage: ISqlStorage,
+    ]>,
+    FlushableStore
+{
   private storage: ISqlStorage | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private touchDebounceTimer: ReturnType<typeof setTimeout> | null = null;

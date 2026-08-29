@@ -4,7 +4,10 @@ import { getSqlStorage } from "../../storage/sqlStorageFactory";
 import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
 import { DOMAIN_STORE_SETTING_KEYS } from "../../storage/sqlDeferredSettings";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
-import { DurableStore } from "./durableStore";
+import type {
+  FlushableStore,
+  InitializableStore,
+} from "./storeContracts";
 import { deferredSettingsLoader } from "./deferredSettingsLoader";
 
 const FORBIDDEN_SETTINGS_KEYS = new Set([
@@ -38,7 +41,14 @@ function guardedSettingsState(state: Record<string, any>): Record<string, any> {
   });
 }
 
-class SettingsStore extends DurableStore {
+class SettingsStore
+  implements
+    InitializableStore<[
+      initialSettings: Partial<DatabaseSettings>,
+      storage: ISqlStorage | null,
+    ]>,
+    FlushableStore
+{
   private storage: ISqlStorage | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private dirtyKeys = new Set<string>();

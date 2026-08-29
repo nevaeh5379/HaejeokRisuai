@@ -53,6 +53,7 @@ import { messageStore } from "../stores/domain/messageStore.svelte";
 import { personaStore } from "../stores/domain/personaStore.svelte";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
 import { saveCurrentPreset } from "../storage/presetService";
+import type { FlushableStore } from "../stores/domain/storeContracts";
 import { decryptLegacyAccountBackup } from "./legacyBackupEncryption";
 import {
   makeLegacyCompatibleDatabase,
@@ -611,20 +612,15 @@ async function flushDurableStores(): Promise<void> {
   // SettingsStore is the canonical live model/prompt configuration. Fold it
   // into the active preset before taking a storage-level backup snapshot.
   await saveCurrentPreset();
-  await Promise.all([
-    characterStore.flush(),
-    settingsStore.flush(),
-    messageStore.flush(),
-    personaStore.flush(),
-    moduleStore.flush(),
-  ]);
-  if (
-    characterStore.hasPendingWrites() ||
-    settingsStore.hasPendingWrites() ||
-    messageStore.hasPendingWrites() ||
-    personaStore.hasPendingWrites() ||
-    moduleStore.hasPendingWrites()
-  ) {
+  const stores: readonly FlushableStore[] = [
+    characterStore,
+    settingsStore,
+    messageStore,
+    personaStore,
+    moduleStore,
+  ];
+  await Promise.all(stores.map((store) => store.flush()));
+  if (stores.some((store) => store.hasPendingWrites())) {
     throw new Error("Cannot create a backup while database writes are pending");
   }
 }

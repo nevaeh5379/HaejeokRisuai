@@ -3,7 +3,10 @@ import type { ISqlStorage } from "../../storage/ISqlStorage";
 import { createEmptySqlCommit } from "../../storage/sqlCommit";
 import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
 import { snapshotFingerprint, trackDeep } from "./reactiveUtils";
-import { DurableStore } from "./durableStore";
+import type {
+  FlushableStore,
+  InitializableStore,
+} from "./storeContracts";
 
 const createDefaultPersona = (): RisuPersona => ({
   name: "User",
@@ -13,7 +16,11 @@ const createDefaultPersona = (): RisuPersona => ({
   largePortrait: false,
 });
 
-class PersonaStore extends DurableStore {
+class PersonaStore
+  implements
+    InitializableStore<[storage: ISqlStorage]>,
+    FlushableStore
+{
   personas = $state<RisuPersona[]>([]);
   activeIndex = $state(0);
   loaded = $state(false);

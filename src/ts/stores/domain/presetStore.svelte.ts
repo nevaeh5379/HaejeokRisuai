@@ -9,6 +9,7 @@ import type {
 import { safeStructuredClone } from "../../polyfill";
 import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
 import { BoundedCache } from "../../memory/boundedCache";
+import type { InitializableStore } from "./storeContracts";
 
 export type PresetLoadStatus = "idle" | "loading" | "ready" | "error";
 
@@ -19,7 +20,7 @@ export type PresetLoadStatus = "idle" | "loading" | "ready" | "error";
  */
 const PRESET_CACHE_MAX_ENTRIES = 6;
 
-class PresetStore {
+class PresetStore implements InitializableStore<[storage: ISqlStorage]> {
   private storage: ISqlStorage | null = null;
   private activePresetProvider: (() => StoredBotPreset | undefined) | null =
     null;
