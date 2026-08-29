@@ -11,6 +11,7 @@ import {
   selectedCharID,
 } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
+import { personaStore } from "../stores/domain/personaStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { processMultiCommand } from "./command";
 import { parseKeyValue, sleep } from "../util";
@@ -2519,13 +2520,9 @@ export async function runTrigger(
           break;
         }
         case "v2GetPersonaDesc": {
-          const db = settingsStore.state;
-          const currentPersonaPrompt = db.personaPrompt ?? "";
-          const savedPersonaPrompt =
-            db.personas[db.selectedPersona]?.personaPrompt ?? "";
           setVar(
             parseTriggerText(effect.outputVar, { chara: char }),
-            currentPersonaPrompt || savedPersonaPrompt,
+            personaStore.activePersona?.personaPrompt ?? "",
           );
           break;
         }
@@ -2534,11 +2531,7 @@ export async function runTrigger(
             effect.valueType === "value"
               ? parseTriggerText(effect.value, { chara: char })
               : getVar(parseTriggerText(effect.value, { chara: char }));
-          const selPersona = settingsStore.state.selectedPersona ?? 0;
-          if (settingsStore.state.personas?.[selPersona]) {
-            settingsStore.state.personas[selPersona].personaPrompt = value;
-            settingsStore.state.personaPrompt = value;
-          }
+          personaStore.requireActive("v2SetPersonaDesc").personaPrompt = value;
           break;
         }
         case "v2GetReplaceGlobalNote": {

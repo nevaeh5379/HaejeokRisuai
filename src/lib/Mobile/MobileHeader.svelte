@@ -16,7 +16,7 @@
         PackageIcon
     } from "@lucide/svelte";
     import { language } from "src/lang";
-    import { characterStore, settingsStore, presetStore } from 'src/ts/stores/domain';
+    import { characterStore, settingsStore, presetStore, personaStore } from 'src/ts/stores/domain';
     import {
         MobileGUIStack,
         MobileSearch,
@@ -44,16 +44,8 @@
     let openModuleMenu = $state(false);
 
     let currentChar = $derived(characterStore.characters[$selectedCharID]);
-    let activePersonaIcon = $derived(
-        settingsStore.state.personas?.[settingsStore.state.selectedPersona]?.icon ||
-        settingsStore.state.userIcon ||
-        ''
-    );
-    let activePersonaName = $derived(
-        settingsStore.state.personas?.[settingsStore.state.selectedPersona]?.name ||
-        settingsStore.state.username ||
-        'User'
-    );
+    let activePersonaIcon = $derived(personaStore.activePersona?.icon ?? '');
+    let activePersonaName = $derived(personaStore.activePersona?.name ?? 'User');
 
     let currentPresetName = $derived(
         presetStore.summaries?.[settingsStore.state.selectedPreset]?.name ||

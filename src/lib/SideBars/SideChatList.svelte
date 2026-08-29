@@ -403,7 +403,7 @@
                                         else{
                                             const confirm = await alertConfirm(language.doYouWantToBindCurrentPersona)
                                             if(confirm){
-                                                const currentPersona = personaStore.list?.[personaStore.activeIndex] ?? settingsStore.state.personas?.[settingsStore.state.selectedPersona]
+                                                const currentPersona = personaStore.activePersona
                                                 if(currentPersona){
                                                     if(!currentPersona.id){
                                                         currentPersona.id = v4()
@@ -519,7 +519,7 @@
                                 else{
                                     const confirm = await alertConfirm(language.doYouWantToBindCurrentPersona)
                                     if(confirm){
-                                        const currentPersona = personaStore.list?.[personaStore.activeIndex] ?? settingsStore.state.personas?.[settingsStore.state.selectedPersona]
+                                        const currentPersona = personaStore.activePersona
                                         if(currentPersona){
                                             if(!currentPersona.id){
                                                 currentPersona.id = v4()

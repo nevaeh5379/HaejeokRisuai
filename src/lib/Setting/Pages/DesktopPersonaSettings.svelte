@@ -6,11 +6,11 @@
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import { alertConfirm, alertSelect } from "src/ts/alert";
     import { getCharImage } from "src/ts/characters";
-    import { changeUserPersona, exportUserPersona, importUserPersona, saveUserPersona, selectUserImg } from "src/ts/persona";
+    import { changeUserPersona, exportUserPersona, importUserPersona, selectUserImg } from "src/ts/persona";
     import Sortable from 'sortablejs/modular/sortable.core.esm.js';
     import { onDestroy, onMount } from "svelte";
     import { sleep, sortableOptions } from "src/ts/util";
-    import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
+    import { settingsStore, personaStore } from 'src/ts/stores/domain';
     import { v4 } from "uuid";
     import { 
         PlusIcon, 
@@ -28,26 +28,12 @@
     let selectedId: string = null;
     let searchQuery = $state('');
 
-    let selectedPersona = $derived(settingsStore.state.personas?.[settingsStore.state.selectedPersona]);
-    let selectedPersonaIcon = $derived(selectedPersona?.icon ?? settingsStore.state.userIcon ?? '');
-
-    $effect(() => {
-        if (!settingsStore?.state?.personas || settingsStore.state.personas.length === 0) {
-            settingsStore.state.personas = [{
-                name: settingsStore?.state?.username || 'User',
-                icon: settingsStore?.state?.userIcon || '',
-                personaPrompt: settingsStore?.state?.personaPrompt || '',
-                note: settingsStore?.state?.userNote || '',
-                largePortrait: false
-            }];
-        }
-        if (settingsStore.state.selectedPersona >= settingsStore.state.personas.length || settingsStore.state.selectedPersona < 0) {
-            settingsStore.state.selectedPersona = 0;
-        }
-    });
+    let personasReady = $state(personaStore.isLoaded);
+    let selectedPersona = $derived(personaStore.activePersona);
+    let selectedPersonaIcon = $derived(selectedPersona?.icon ?? '');
 
     let filteredPersonas = $derived.by(() => {
-        const list = settingsStore.state.personas || [];
+        const list = personaStore.list;
         const q = searchQuery.trim().toLowerCase();
         if (!q) {
             return list.map((p, idx) => ({ persona: p, originalIndex: idx }));
@@ -66,10 +52,10 @@
         if (!ele || searchQuery.trim() !== '') return;
         stb = Sortable.create(ele, {
             onStart: async () => {
-                if (settingsStore?.state?.personas?.[settingsStore.state.selectedPersona]) {
-                    settingsStore.state.personas[settingsStore.state.selectedPersona].id ??= v4();
-                    selectedId = settingsStore.state.personas[settingsStore.state.selectedPersona].id;
-                    saveUserPersona();
+                const currentPersona = personaStore.activePersona;
+                if (currentPersona) {
+                    currentPersona.id ??= v4();
+                    selectedId = currentPersona.id;
                 }
             },
             onEnd: async () => {
@@ -86,11 +72,11 @@
                     id?: string;
                 }[] = [];
                 idx.forEach((i) => {
-                    newValue.push(settingsStore.state.personas[i]);
+                    newValue.push(personaStore.require(i, "persona-sort"));
                 });
-                settingsStore.state.personas = newValue;
-                const foundIndex = settingsStore.state.personas.findIndex((e) => e.id === selectedId);
-                changeUserPersona(foundIndex !== -1 ? foundIndex : 0, 'noSave');
+                personaStore.replace(newValue);
+                const foundIndex = personaStore.list.findIndex((e) => e.id === selectedId);
+                changeUserPersona(foundIndex !== -1 ? foundIndex : 0);
                 try {
                     stb.destroy();
                 } catch (error) {}
@@ -102,7 +88,16 @@
         });
     };
 
-    onMount(createStb);
+    onMount(() => {
+        if (personasReady) {
+            createStb();
+            return;
+        }
+        void personaStore.ensureLoaded().then(() => {
+            personasReady = true;
+            createStb();
+        });
+    });
 
     onDestroy(() => {
         if (stb) {
@@ -115,8 +110,7 @@
     async function addNewPersona() {
         const sel = parseInt(await alertSelect([language.createfromScratch, language.importCharacter]));
         if (sel === 0) {
-            saveUserPersona();
-            settingsStore.state.personas.push({
+            const index = personaStore.add({
                 name: 'New Persona',
                 icon: '',
                 personaPrompt: '',
@@ -124,17 +118,16 @@
                 largePortrait: false,
                 id: v4()
             });
-            changeUserPersona(settingsStore.state.personas.length - 1);
+            changeUserPersona(index);
         } else if (sel === 1) {
             await importUserPersona();
         }
     }
 
     function duplicateCurrentPersona() {
-        saveUserPersona();
-        const current = settingsStore.state.personas[settingsStore.state.selectedPersona];
+        const current = personaStore.activePersona;
         if (!current) return;
-        settingsStore.state.personas.push({
+        const index = personaStore.add({
             name: `${current.name || 'Persona'} (Copy)`,
             icon: current.icon || '',
             personaPrompt: current.personaPrompt || '',
@@ -142,28 +135,27 @@
             largePortrait: current.largePortrait || false,
             id: v4()
         });
-        changeUserPersona(settingsStore.state.personas.length - 1);
+        changeUserPersona(index);
     }
 
     function removeUserImg() {
-        settingsStore.state.userIcon = '';
-        saveUserPersona();
+        if (selectedPersona) selectedPersona.icon = '';
     }
 
     async function deleteCurrentPersona() {
-        if (settingsStore.state.personas.length <= 1) return;
-        const currentName = settingsStore.state.personas[settingsStore.state.selectedPersona]?.name ?? '';
+        if (personaStore.list.length <= 1) return;
+        const currentName = personaStore.activePersona?.name ?? '';
         const d = await alertConfirm(`${language.removeConfirm}${currentName}`);
         if (d) {
-            saveUserPersona();
-            let personas = settingsStore.state.personas;
-            personas.splice(settingsStore.state.selectedPersona, 1);
-            settingsStore.state.personas = personas;
-            changeUserPersona(0, 'noSave');
+            const personas = [...personaStore.list];
+            personas.splice(personaStore.activeIndex, 1);
+            personaStore.replace(personas);
+            changeUserPersona(0);
         }
     }
 </script>
 
+{#if personasReady}
 <div class="flex-1 flex flex-col min-h-0 w-full">
     <h2 class="mb-2 text-xl sm:text-2xl font-bold shrink-0">{language.persona}</h2>
 
@@ -180,7 +172,7 @@
                     <input 
                         type="text"
                         bind:value={searchQuery}
-                        placeholder={`${language.persona} (${settingsStore.state.personas.length})...`}
+                        placeholder={`${language.persona} (${personaStore.list.length})...`}
                         class="w-full h-8 pl-8 pr-7 rounded-lg border border-darkborderc bg-darkbutton/70 text-textcolor placeholder-textcolor2/60 text-xs focus:outline-none focus:ring-1 focus:ring-textcolor/30 transition-all"
                     />
                     {#if searchQuery}
@@ -210,7 +202,7 @@
                     bind:this={ele}
                 >
                     {#each filteredPersonas as { persona, originalIndex }}
-                        {@const isSelected = originalIndex === settingsStore.state.selectedPersona}
+                        {@const isSelected = originalIndex === personaStore.activeIndex}
                         <div
                             data-risu-idx={originalIndex}
                             class="group relative flex items-center gap-2 p-1.5 rounded-lg border transition-all cursor-pointer {isSelected ? 'border-selected bg-selected/20 ring-1 ring-selected/70 shadow-xs' : 'border-darkborderc/60 bg-darkbg/30 hover:bg-darkbutton hover:border-textcolor/30'}"
@@ -318,8 +310,8 @@
                             marginBottom={false} 
                             size="sm" 
                             placeholder="User" 
-                            bind:value={settingsStore.state.username} 
-                            oninput={saveUserPersona} 
+                            bind:value={selectedPersona.name}
+
                             fullwidth
                         />
                     </div>
@@ -330,8 +322,8 @@
                             <TextInput 
                                 marginBottom={false} 
                                 size="sm" 
-                                bind:value={settingsStore.state.userNote} 
-                                oninput={saveUserPersona} 
+                                bind:value={selectedPersona.note}
+
                                 placeholder={`Put a unique identifier for this persona here. Example: [Alternate Hunters persona]`} 
                                 fullwidth
                             />
@@ -347,8 +339,8 @@
                     <TextAreaInput 
                         autocomplete="off" 
                         height={"full"} 
-                        bind:value={settingsStore.state.personaPrompt} 
-                        onInput={saveUserPersona} 
+                        bind:value={selectedPersona.personaPrompt}
+
                         placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`} 
                         fullwidth
                     />
@@ -361,17 +353,20 @@
                     <Button onclick={exportUserPersona} size="sm">{language.export}</Button>
                     <Button onclick={importUserPersona} size="sm">{language.import}</Button>
                     <Button onclick={duplicateCurrentPersona} size="sm">Duplicate</Button>
-                    {#if settingsStore.state.personas.length > 1}
+                    {#if personaStore.list.length > 1}
                         <Button styled="danger" size="sm" onclick={deleteCurrentPersona}>{language.remove}</Button>
                     {/if}
                 </div>
 
-                {#if settingsStore.state.personas[settingsStore.state.selectedPersona]}
+                {#if selectedPersona}
                     <div class="flex items-center text-xs">
-                        <Check bind:check={settingsStore.state.personas[settingsStore.state.selectedPersona].largePortrait} name={language.largePortrait} />
+                        <Check bind:check={selectedPersona.largePortrait} name={language.largePortrait} />
                     </div>
                 {/if}
             </div>
         </div>
     </div>
 </div>
+{:else}
+    <div class="flex-1 flex items-center justify-center text-textcolor2">Loading personas...</div>
+{/if}

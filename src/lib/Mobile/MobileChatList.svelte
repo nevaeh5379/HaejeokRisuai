@@ -2,7 +2,7 @@
     import { v4 } from "uuid";
     import type { Chat, ChatFolder } from "../../ts/storage/schema";
     import { ReloadGUIPointer, selectedCharID, MobileSideBar, alertStore, openPersonaList, openPresetList } from 'src/ts/stores.svelte';
-    import { characterStore, settingsStore, messageStore, presetStore } from 'src/ts/stores/domain';
+    import { characterStore, settingsStore, messageStore, presetStore, personaStore } from 'src/ts/stores/domain';
     import {
         PlusIcon,
         SearchIcon,
@@ -36,16 +36,8 @@
     let activeActionChat = $state<{ chat: Chat; index: number } | null>(null);
     let activeFolderAction = $state<{ folder: ChatFolder; index: number } | null>(null);
 
-    let activePersonaIcon = $derived(
-        settingsStore.state.personas?.[settingsStore.state.selectedPersona]?.icon ||
-        settingsStore.state.userIcon ||
-        ''
-    );
-    let activePersonaName = $derived(
-        settingsStore.state.personas?.[settingsStore.state.selectedPersona]?.name ||
-        settingsStore.state.username ||
-        'User'
-    );
+    let activePersonaIcon = $derived(personaStore.activePersona?.icon ?? '');
+    let activePersonaName = $derived(personaStore.activePersona?.name ?? 'User');
     let currentPresetName = $derived(
         presetStore.summaries?.[settingsStore.state.selectedPreset]?.name ||
         settingsStore.state.aiModel ||

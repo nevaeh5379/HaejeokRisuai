@@ -375,10 +375,11 @@ function addPersonaAndInlayPrompts(
   currentChar: character,
   target?: ChatExecutionTarget,
 ) {
-  if (settingsStore.state.personaPrompt) {
+  const personaPrompt = getPersonaPrompt(target);
+  if (personaPrompt) {
     sections.personaPrompt.push({
       role: "system",
-      content: risuChatParser(getPersonaPrompt(target), {
+      content: risuChatParser(personaPrompt, {
         chara: currentChar,
         chatTarget: target,
       }),

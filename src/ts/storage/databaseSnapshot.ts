@@ -5,8 +5,18 @@ import type { Database } from "./schema";
 
 /** Builds a detached aggregate only at serialization and external API boundaries. */
 export function createDatabaseSnapshot(): Database {
+  const state = settingsStore.getStateRecord();
+  const activePersona = state.personas?.[state.selectedPersona];
   const target = {
-    ...settingsStore.getStateRecord(),
+    ...state,
+    ...(activePersona
+      ? {
+          username: activePersona.name,
+          userIcon: activePersona.icon,
+          userNote: activePersona.note ?? "",
+          personaPrompt: activePersona.personaPrompt,
+        }
+      : {}),
     characters: characterStore.characters,
   };
   try {

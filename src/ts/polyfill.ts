@@ -1,4 +1,4 @@
-import { Buffer as BufferPolyfill } from "buffer";
+import { Buffer as BufferPolyfill } from "node:buffer";
 import rfdc from "rfdc";
 import { isIOS } from "./platform";
 /**

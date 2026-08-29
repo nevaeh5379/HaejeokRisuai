@@ -29,8 +29,8 @@
   import { getModelInfo, LLMProvider } from 'src/ts/model/modellist';
   import { changeLanguage, language } from 'src/lang';
   import { setPreset } from '../../ts/storage/presetService';
-import { initializeDomainStores } from 'src/ts/storage/databaseLifecycle';
-  import { settingsStore } from 'src/ts/stores/domain';
+import { installDatabase } from 'src/ts/storage/databaseLifecycle';
+  import { settingsStore, personaStore } from 'src/ts/stores/domain';
   import { prebuiltPresets } from 'src/ts/process/templates/templates';
   import { updateTextThemeAndCSS } from 'src/ts/gui/colorscheme';
   import { getSqlRuntime } from 'src/ts/storage/sqlRuntime';
@@ -63,7 +63,7 @@ import { initializeDomainStores } from 'src/ts/storage/databaseLifecycle';
   });
 
   // Form State
-  let username = $state(settingsStore.state.username || 'User');
+  let username = $state(personaStore.activePersona?.name ?? 'User');
   let selectedProvider = $state('claude');
   let modelName = $state('claude-3-7-sonnet-20250219');
   let customURL = $state('');
@@ -242,6 +242,11 @@ import { initializeDomainStores } from 'src/ts/storage/databaseLifecycle';
       langTick++;
     });
 
+    void personaStore.ensureLoaded().then(() => {
+      const activeName = personaStore.activePersona?.name;
+      if (activeName && username === 'User') username = activeName;
+    }).catch(() => {});
+
     void detectLocalLegacyDatabase().then((info) => {
       if (info && info.stats.characterCount > 0) {
         detectedLocalDb = info;
@@ -280,7 +285,9 @@ import { initializeDomainStores } from 'src/ts/storage/databaseLifecycle';
       if (success) {
         const reloaded = await storage.loadDatabase({ shallow: true });
         if (reloaded && reloaded.database) {
-          initializeDomainStores(reloaded.database, storage);
+          installDatabase(reloaded.database, storage, {
+            deferredUnloaded: reloaded.deferredSettingKeys,
+          });
         }
         migrationDone = true;
         isMigrating = false;
@@ -307,8 +314,9 @@ import { initializeDomainStores } from 'src/ts/storage/databaseLifecycle';
     const contextTokens = Number(maxContext);
     const responseTokens = Number(maxResponse);
 
+    await personaStore.ensureLoaded();
     if (trimmedUsername) {
-      settingsStore.state.username = trimmedUsername;
+      personaStore.requireActive(finishAndEnterApp.name).name = trimmedUsername;
     }
 
     settingsStore.state.maxContext = Number.isFinite(contextTokens)

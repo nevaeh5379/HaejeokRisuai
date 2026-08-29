@@ -22,10 +22,7 @@
     })
 
     let personaName = $derived.by(() => {
-        if(bindedPersona){
-            return bindedPersona?.name
-        }
-        return settingsStore.state.username
+        return bindedPersona?.name ?? personaStore.activePersona?.name ?? 'User'
     })
 </script>
 
@@ -77,7 +74,7 @@
                 }} onclick={(e) => {
                     e.stopPropagation()
                     const chatIndex = characterStore.characters[$selectedCharID].chatPage
-                    const currentPersona = personaStore.list?.[personaStore.activeIndex] ?? settingsStore.state.personas?.[settingsStore.state.selectedPersona]
+                    const currentPersona = personaStore.activePersona
                     if(!currentPersona) return
                     if(!currentPersona.id){
                         currentPersona.id = v4()

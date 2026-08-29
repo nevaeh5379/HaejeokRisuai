@@ -308,6 +308,10 @@ class SettingsStore {
     for (const key of keys) this.deferredUnloaded.delete(key);
   }
 
+  isDeferredLoaded(key: string): boolean {
+    return !this.deferredUnloaded.has(key);
+  }
+
   async ensureDeferredLoaded(): Promise<void> {
     const domains = new Set<SqlDeferredDomain>();
     const individualKeys = new Set<string>();
@@ -358,7 +362,7 @@ class SettingsStore {
                   {
                     name: this.stateData.username || "User",
                     icon: this.stateData.userIcon || "",
-                    personaPrompt: "",
+                    personaPrompt: this.stateData.personaPrompt || "",
                     note: this.stateData.userNote || "",
                     largePortrait: false,
                   },

@@ -2,6 +2,7 @@ import { forageStorage } from "src/ts/globalApi.svelte";
 import { NodeStorage } from "src/ts/storage/nodeStorage";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
+import { personaStore } from "src/ts/stores/domain/personaStore.svelte";
 import { language } from "src/lang";
 import type {
   AssetUsageInfo,
@@ -124,6 +125,7 @@ export async function runStorageAnalysis(
   assetMap: Map<string, NodeStorageAssetItem>,
   assetDetails: NodeStorageAssetDetails | null,
 ): Promise<AnalysisResult> {
+  await personaStore.ensureLoaded();
   const characters = characterStore.characters || [];
 
   // SQL storage lazy-loads characters with only core fields. The analyzer
@@ -355,9 +357,7 @@ export async function runStorageAnalysis(
       displayName: module.name,
     }),
   );
-  for (const [index, persona] of (
-    settingsStore.state.personas || []
-  ).entries()) {
+  for (const [index, persona] of personaStore.list.entries()) {
     if (!persona?.embeddedModule) continue;
     moduleEntries.push({
       module: persona.embeddedModule,
@@ -451,9 +451,7 @@ export async function runStorageAnalysis(
   }
 
   // Include persona icons
-  for (const [index, persona] of (
-    settingsStore.state.personas || []
-  ).entries()) {
+  for (const [index, persona] of personaStore.list.entries()) {
     if (persona?.icon) {
       resolveAsset(persona.icon);
       recordUsage(persona.icon, {
@@ -466,17 +464,7 @@ export async function runStorageAnalysis(
     }
   }
 
-  // Include user icon & global custom background
-  if (settingsStore.state.userIcon) {
-    resolveAsset(settingsStore.state.userIcon);
-    recordUsage(settingsStore.state.userIcon, {
-      ownerId: "global:userIcon",
-      ownerName: "User Profile",
-      ownerType: "other",
-      originalName: language.storageUserIcon || "User Icon",
-      assetType: "avatar",
-    });
-  }
+  // Include global custom background. Persona icons are tracked above.
   if (settingsStore.state.customBackground) {
     resolveAsset(settingsStore.state.customBackground);
     recordUsage(settingsStore.state.customBackground, {

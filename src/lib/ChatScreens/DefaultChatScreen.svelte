@@ -318,6 +318,7 @@
         const currentChatPage = selectedChatIndex
         await preLoadChat(selectedChar, currentChatPage, { full: true })
         const activeChat = characterStore.characters[selectedChar].chats[currentChatPage]
+        const activePersonaName = personaStore.requireActive("sendMain").name
         let cha = activeChat.message
         let appendedUserMessage: Message | undefined
 
@@ -348,7 +349,7 @@
                         appendedUserMessage = {
                             role: 'user',
                             data: '*says nothing*',
-                            name: $ConnectionOpenStore ? settingsStore.state.username : null
+                            name: $ConnectionOpenStore ? activePersonaName : null
                         }
                         cha.push(appendedUserMessage)
                     }
@@ -372,7 +373,7 @@
                     role: 'user',
                     data: await processScript(char,messageInput,'editinput', {}, executionTarget),
                     time: Date.now(),
-                    name: $ConnectionOpenStore ? settingsStore.state.username : null
+                    name: $ConnectionOpenStore ? activePersonaName : null
                 }
                 cha.push(appendedUserMessage)
             }
@@ -381,7 +382,7 @@
                     role: 'user',
                     data: messageInput,
                     time: Date.now(),
-                    name: $ConnectionOpenStore ? settingsStore.state.username : null
+                    name: $ConnectionOpenStore ? activePersonaName : null
                 }
                 cha.push(appendedUserMessage)
             }
@@ -560,29 +561,14 @@
 
     let { userIconPortrait, currentUsername, userIcon } = $derived.by(() => {
         const bindedPersona = characterStore.characters?.[selectedCharacterIndex]?.chats?.[selectedChatIndex]?.bindedPersona
+        const persona = bindedPersona
+            ? personaStore.list.find((item) => item.id === bindedPersona) ?? personaStore.activePersona
+            : personaStore.activePersona
 
-        // A specifically bound persona genuinely needs the deferred persona list.
-        // Normal chats do not: username/userIcon/personaPrompt are persisted root
-        // mirrors of the active persona and are available in the shallow snapshot.
-        if(bindedPersona){
-            const persona = personaStore.list?.find((p: any) => p.id === bindedPersona)
-            if(persona){
-                return {
-                    currentUsername: persona.name,
-                    userIconPortrait: persona.largePortrait ?? false,
-                    userIcon: persona.icon
-                }
-            }
-        }
-
-        // Read an already-hydrated persona only as an optional enhancement. Using
-        // getStateRecord() here deliberately does not trigger deferred hydration.
-        const state = settingsStore.getStateRecord()
-        const selectedPersona = state.personas?.[state.selectedPersona ?? 0]
         return {
-            currentUsername: state.username ?? selectedPersona?.name ?? '',
-            userIconPortrait: selectedPersona?.largePortrait ?? false,
-            userIcon: state.userIcon ?? selectedPersona?.icon ?? ''
+            currentUsername: persona?.name ?? 'User',
+            userIconPortrait: persona?.largePortrait ?? false,
+            userIcon: persona?.icon ?? ''
         }
     })
 

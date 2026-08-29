@@ -10,6 +10,7 @@ import type { Database, Message } from "./storage/schema";
 import { selectedCharID } from "./stores.svelte";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import { characterStore } from "./stores/domain/characterStore.svelte";
+import { personaStore } from "./stores/domain/personaStore.svelte";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { basename } from "@tauri-apps/api/path";
@@ -134,7 +135,7 @@ export function checkPersonaBinded(target?: ChatExecutionTarget) {
     if (!chat?.bindedPersona) {
       return null;
     }
-    const persona = settingsStore.state.personas?.find(
+    const persona = personaStore.list.find(
       (v) => v.id === chat.bindedPersona,
     );
     return persona;
@@ -148,8 +149,7 @@ export function getUserName(target?: ChatExecutionTarget) {
   if (bindedPersona) {
     return bindedPersona.name;
   }
-  const db = settingsStore.state;
-  return db.username ?? "User";
+  return personaStore.activePersona?.name ?? "User";
 }
 
 export function getUserIcon(target?: ChatExecutionTarget) {
@@ -157,8 +157,7 @@ export function getUserIcon(target?: ChatExecutionTarget) {
   if (bindedPersona) {
     return bindedPersona.icon;
   }
-  const db = settingsStore.state;
-  return db.userIcon ?? "";
+  return personaStore.activePersona?.icon ?? "";
 }
 
 export function getPersonaPrompt(target?: ChatExecutionTarget) {
@@ -166,8 +165,7 @@ export function getPersonaPrompt(target?: ChatExecutionTarget) {
   if (bindedPersona) {
     return bindedPersona.personaPrompt;
   }
-  const db = settingsStore.state;
-  return db.personaPrompt ?? "";
+  return personaStore.activePersona?.personaPrompt ?? "";
 }
 
 export function getUserIconProtrait(target?: ChatExecutionTarget) {
@@ -176,10 +174,7 @@ export function getUserIconProtrait(target?: ChatExecutionTarget) {
     if (bindedPersona) {
       return bindedPersona.largePortrait;
     }
-    // The active persona's largePortrait flag is cosmetic. Do not turn a chat
-    // paint into a full deferred persona-array read just for this flag.
-    const db = settingsStore.getStateRecord();
-    return db?.personas?.[db?.selectedPersona]?.largePortrait ?? false;
+    return personaStore.activePersona?.largePortrait ?? false;
   } catch (error) {
     return false;
   }

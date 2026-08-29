@@ -76,6 +76,7 @@ import { moduleStore } from "./stores/domain/moduleStore.svelte";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import { characterStore } from "./stores/domain/characterStore.svelte";
 import { presetStore } from "./stores/domain/presetStore.svelte";
+import { personaStore } from "./stores/domain/personaStore.svelte";
 import { setSqlRuntime, getSqlRuntime } from "./storage/sqlRuntime";
 import { initDurableModelJobRecovery } from "./process/modelJobRecovery";
 import { initNodeRealtimeSync } from "./process/nodeRealtimeSync";
@@ -389,33 +390,33 @@ export async function loadData() {
         })
         .catch(() => undefined);
       // Keep heavyweight relational settings out of one giant Capacitor result.
-      // The Android bridge serializes every returned row to JSON, so combining
-      // heavyweight settings into one giant payload creates large temporary
-      // strings and can exhaust the WebView process heap. Hydrate the remaining
-      // startup-critical domains sequentially; non-critical personas stay lazy.
+      // The Android bridge serializes every returned row to JSON, so hydrate
+      // startup domains sequentially to limit temporary peak memory.
       const runtimeSettingsReady = (async () => {
         await settingsStore.ensureDeferredKey("customModels");
 
-        await settingsStore.ensureDeferredKey("modules");
-        const hydrated = settingsStore.getStateRecord();
-        moduleStore.init(
-          hydrated.modules ?? [],
-          hydrated.enabledModules ?? [],
-          hydrated.moduleFolders ?? [],
-        );
+        // Active persona data is canonical. This load is correctness-critical:
+        // never expose chat-ready with a stale legacy identity or prompt.
+        await personaStore.ensureLoaded();
 
-        // Personas can contain multi-megabyte legacy inline icons/notes. The
-        // active persona already has root mirrors (username/userIcon/personaPrompt),
-        // so loading the entire persona array here only occupies Android's single
-        // SQLite executor while the shell is already interactive. Keep it truly
-        // lazy; persona-specific UI or a bound-persona chat will request it.
+        // The remaining runtime extras retain their historical best-effort
+        // behavior. Persona hydration above deliberately stays outside this catch.
+        try {
+          await settingsStore.ensureDeferredKey("modules");
+          const hydrated = settingsStore.getStateRecord();
+          moduleStore.init(
+            hydrated.modules ?? [],
+            hydrated.enabledModules ?? [],
+            hydrated.moduleFolders ?? [],
+          );
 
-        await settingsStore.ensureDeferredKey("plugins");
-        settingsStore.hydratePluginCustomStorageKeys(
-          await storage.listPluginCustomStorageKeys(),
-        );
-        await loadPlugins();
-      })().catch(() => undefined);
+          await settingsStore.ensureDeferredKey("plugins");
+          settingsStore.hydratePluginCustomStorageKeys(
+            await storage.listPluginCustomStorageKeys(),
+          );
+          await loadPlugins();
+        } catch {}
+      })();
       await Promise.all([presetReady, runtimeSettingsReady, serviceWorkerReady]);
       try {
         const standaloneNavigator = window.navigator as Navigator & {
@@ -548,22 +549,6 @@ async function checkNewFormat(): Promise<void> {
     // Format checking must not turn a deferred domain into background I/O.
     // In particular, touching the reactive personas proxy here could start a
     // multi-megabyte read just as the already-visible Android shell is clicked.
-    const passiveDb = settingsStore.getStateRecord();
-    const personas = passiveDb.personas ?? [];
-    const selectedPersona =
-      typeof passiveDb.selectedPersona === "number" &&
-      passiveDb.selectedPersona >= 0 &&
-      passiveDb.selectedPersona < personas.length
-        ? passiveDb.selectedPersona
-        : 0;
-    const activePersona = personas[selectedPersona];
-    if (activePersona && passiveDb.userIcon !== (activePersona.icon ?? "")) {
-      // This is runtime hydration, not a user edit. Avoid an unnecessary SQL
-      // settings commit merely because the legacy active-avatar mirror was lazy.
-      settingsStore.hydrate((state) => {
-        state.userIcon = activePersona.icon ?? "";
-      });
-    }
     checkCharOrder();
     return;
   }
@@ -705,13 +690,6 @@ async function checkNewFormat(): Promise<void> {
     db.selectedPersona >= db.personas.length
   ) {
     db.selectedPersona = 0;
-  }
-
-  // Keep the legacy active-avatar mirror aligned with the persona selected
-  // after file-format migration and selected-index validation.
-  const activePersona = db.personas[db.selectedPersona];
-  if (activePersona) {
-    db.userIcon = activePersona.icon ?? "";
   }
 
   if (!db.formatversion) {

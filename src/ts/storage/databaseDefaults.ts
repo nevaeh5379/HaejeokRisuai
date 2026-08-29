@@ -397,7 +397,7 @@ export function normalizeDatabaseDefaults(data: Database) {
   data.personas ??= [
     {
       name: data.username,
-      personaPrompt: "",
+      personaPrompt: data.personaPrompt ?? "",
       icon: data.userIcon,
       note: data.userNote,
       largePortrait: false,

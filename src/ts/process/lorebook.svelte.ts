@@ -11,7 +11,7 @@ import {
 } from "../chatTarget";
 import { countTokenTexts } from "../tokenizer";
 import { risuChatParser } from "../parser/parser.svelte";
-import { findCharacterbyId, pickHashRand, selectSingleFile } from "../util";
+import { findCharacterbyId, getUserName, pickHashRand, selectSingleFile } from "../util";
 import { alertError, alertNormal } from "../alert";
 import { language } from "../../lang";
 import { downloadFile, forageStorage } from "../globalApi.svelte";
@@ -96,6 +96,7 @@ export async function loadLoreBookV3Prompt(
     ...resolved.target,
     globalVariables: generation?.chatVariables,
   };
+  const userName = getUserName(chatVarTarget);
   const characterLore = char.globalLore ?? [];
   const chatLore = sourceChat.localLore ?? [];
   const moduleLorebook = getModuleLorebooks(char, generation?.moduleIds);
@@ -172,7 +173,7 @@ export async function loadLoreBookV3Prompt(
           return {
             source: `message ${i} by user`,
             prompt:
-              `\x01{{${settingsStore.state.username}}}:` + msg.data + "\x01",
+              `\x01{{${userName}}}:` + msg.data + "\x01",
             data: msg.data,
           };
         } else {
@@ -361,7 +362,7 @@ export async function loadLoreBookV3Prompt(
       const results = await forageStorage.realStorage.loreMatchBatch({
         messages,
         requests: requestEntries.map(([, request]) => request),
-        username: settingsStore.state.username,
+        username: userName,
         charName: char.name,
       });
       if (results.length !== requestEntries.length) return;
@@ -401,7 +402,7 @@ export async function loadLoreBookV3Prompt(
       const result = await forageStorage.realStorage.loreResolve({
         messages,
         entries: prepared,
-        username: settingsStore.state.username,
+        username: userName,
         charName: char.name,
       });
       return {
