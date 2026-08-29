@@ -168,6 +168,19 @@ export function getPersonaPrompt(target?: ChatExecutionTarget) {
   return personaStore.activePersona?.personaPrompt ?? "";
 }
 
+export function getPersonaLorebooks(target?: ChatExecutionTarget) {
+  const resolved = target
+    ? resolveChatTarget(target)
+    : resolveSelectedChatTarget();
+  if (!resolved?.character.chaId) return [];
+
+  const boundPersona = resolved.chat.bindedPersona
+    ? personaStore.list.find((item) => item.id === resolved.chat.bindedPersona)
+    : undefined;
+  const persona = boundPersona ?? personaStore.activePersona;
+  return persona?.botLorebooks?.[resolved.character.chaId] ?? [];
+}
+
 export function getUserIconProtrait(target?: ChatExecutionTarget) {
   try {
     const bindedPersona = checkPersonaBinded(target);

@@ -4,6 +4,7 @@
     import Check from "src/lib/UI/GUI/CheckInput.svelte";
     import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
+    import PersonaBotLorebooks from "./PersonaBotLorebooks.svelte";
     import { alertConfirm, alertSelect } from "src/ts/alert";
     import { getCharImage } from "src/ts/characters";
     import { changeUserPersona, exportUserPersona, importUserPersona, selectUserImg } from "src/ts/persona";
@@ -12,6 +13,7 @@
     import { sleep, sortableOptions } from "src/ts/util";
     import { settingsStore, personaStore } from 'src/ts/stores/domain';
     import { v4 } from "uuid";
+    import { safeStructuredClone } from "src/ts/polyfill";
     import { 
         PlusIcon, 
         UserIcon, 
@@ -133,6 +135,9 @@
             personaPrompt: current.personaPrompt || '',
             note: current.note || '',
             largePortrait: current.largePortrait || false,
+            botLorebooks: current.botLorebooks
+                ? safeStructuredClone(current.botLorebooks)
+                : undefined,
             id: v4()
         });
         changeUserPersona(index);
@@ -346,6 +351,10 @@
                     />
                 </div>
             </div>
+
+            {#if selectedPersona}
+                <PersonaBotLorebooks persona={selectedPersona} />
+            {/if}
 
             <!-- Bottom Action Toolbar -->
             <div class="flex items-center justify-between pt-2 border-t border-darkborderc/40 flex-wrap gap-1.5 shrink-0">

@@ -4,6 +4,7 @@
     import Check from "src/lib/UI/GUI/CheckInput.svelte";
     import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
+    import PersonaBotLorebooks from "./PersonaBotLorebooks.svelte";
     import { alertConfirm, alertSelect } from "src/ts/alert";
     import { getCharImage } from "src/ts/characters";
     import { 
@@ -15,6 +16,7 @@
     import { settingsStore, personaStore } from 'src/ts/stores/domain';
     import { onMount } from "svelte";
     import { v4 } from "uuid";
+    import { safeStructuredClone } from "src/ts/polyfill";
     import { 
         PlusIcon, 
         UserIcon, 
@@ -93,6 +95,9 @@
             personaPrompt: current.personaPrompt || '',
             note: current.note || '',
             largePortrait: current.largePortrait || false,
+            botLorebooks: current.botLorebooks
+                ? safeStructuredClone(current.botLorebooks)
+                : undefined,
             id: v4()
         });
         changeUserPersona(index);
@@ -461,6 +466,10 @@
                         />
                     </div>
                 </div>
+
+                {#if selectedPersona}
+                    <PersonaBotLorebooks persona={selectedPersona} />
+                {/if}
 
                 <!-- Action Buttons Card -->
                 <div class="p-3 rounded-xl border border-darkborderc bg-darkbg/35 flex flex-col gap-2">

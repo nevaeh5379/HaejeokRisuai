@@ -363,6 +363,8 @@ interface Persona {
     id?: string;
     /** Persona note */
     note?: string;
+    /** Lorebook entries keyed by bot/character ID */
+    botLorebooks?: Record<string, any[]>;
 }
 
 /**

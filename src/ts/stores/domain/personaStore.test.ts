@@ -64,6 +64,41 @@ describe("PersonaStore", () => {
     expect(storage.commit).not.toHaveBeenCalled();
   });
 
+  it("persists per-bot persona lorebooks as persona-owned data", async () => {
+    storage.loadPersonas = vi.fn(async () => [
+      { name: "A", icon: "", personaPrompt: "A" },
+    ]);
+    await personaStore.init(storage);
+
+    personaStore.requireActive().botLorebooks = {
+      "char-a": [
+        {
+          key: "secret",
+          secondkey: "",
+          insertorder: 100,
+          comment: "Persona lore",
+          content: "Only for char-a",
+          mode: "normal",
+          alwaysActive: false,
+          selective: false,
+        },
+      ],
+    };
+    await personaStore.flush();
+
+    expect(commits).toHaveLength(1);
+    expect(commits[0].root.upserts).toContainEqual({
+      key: "personas",
+      value: [
+        expect.objectContaining({
+          botLorebooks: {
+            "char-a": [expect.objectContaining({ comment: "Persona lore" })],
+          },
+        }),
+      ],
+    });
+  });
+
   it("persists persona selection through PersonaStore itself", async () => {
     storage.loadPersonas = vi.fn(async () => [
       { name: "A", icon: "", personaPrompt: "A" },

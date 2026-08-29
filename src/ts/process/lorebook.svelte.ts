@@ -11,7 +11,13 @@ import {
 } from "../chatTarget";
 import { countTokenTexts } from "../tokenizer";
 import { risuChatParser } from "../parser/parser.svelte";
-import { findCharacterbyId, getUserName, pickHashRand, selectSingleFile } from "../util";
+import {
+  findCharacterbyId,
+  getPersonaLorebooks,
+  getUserName,
+  pickHashRand,
+  selectSingleFile,
+} from "../util";
 import { alertError, alertNormal } from "../alert";
 import { language } from "../../lang";
 import { downloadFile, forageStorage } from "../globalApi.svelte";
@@ -98,10 +104,11 @@ export async function loadLoreBookV3Prompt(
   };
   const userName = getUserName(chatVarTarget);
   const characterLore = char.globalLore ?? [];
+  const personaLore = getPersonaLorebooks(chatVarTarget);
   const chatLore = sourceChat.localLore ?? [];
   const moduleLorebook = getModuleLorebooks(char, generation?.moduleIds);
   const fullLore = safeStructuredClone(
-    characterLore.concat(chatLore).concat(moduleLorebook),
+    characterLore.concat(personaLore).concat(chatLore).concat(moduleLorebook),
   );
   const currentChat = sourceChat.message;
   const loreDepth =

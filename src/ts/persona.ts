@@ -8,6 +8,7 @@ import { reencodeImage } from "./process/files/inlays";
 import { PngChunk } from "./pngChunk";
 import { v4 } from "uuid";
 import { personaStore } from "./stores/domain/personaStore.svelte";
+import type { loreBook } from "./storage/database/schema";
 
 export async function selectUserImg() {
   const selected = await selectSingleFile(["png"]);
@@ -28,6 +29,7 @@ interface PersonaCard {
   name: string;
   personaPrompt: string;
   note?: string;
+  botLorebooks?: Record<string, loreBook[]>;
 }
 
 export async function exportUserPersona() {
@@ -58,6 +60,7 @@ export async function exportUserPersona() {
     name: persona.name,
     personaPrompt: persona.personaPrompt,
     note: persona.note,
+    botLorebooks: persona.botLorebooks,
   };
 
   alertStore.set({
@@ -119,6 +122,7 @@ export async function importUserPersona() {
         icon: await saveImage(await reencodeImage(v.data)),
         personaPrompt: data.personaPrompt,
         note: data.note,
+        botLorebooks: data.botLorebooks,
         id: v4(),
       });
       alertNormal(language.successImport);
