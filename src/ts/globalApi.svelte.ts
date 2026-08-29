@@ -329,7 +329,9 @@ export function preloadThumbnails(keys: string[]) {
   thumbnailBatchLoader.preload(keys);
 }
 
-const preparedNativeThumbnailKeys = new Set<string>();
+const preparedNativeThumbnailKeys = new BoundedCache<string, true>({
+  maxEntries: () => (settingsStore.state.lowSpecMode ? 4096 : 32768),
+});
 
 function nativeThumbnailCacheKey(loc: string, width: number, height: number) {
   return `${width}x${height}:${loc}`;
@@ -350,7 +352,7 @@ export function getPreparedNativeThumbnailSrc(
 ): string | undefined {
   if (
     !isCapacitor ||
-    !preparedNativeThumbnailKeys.has(
+    !preparedNativeThumbnailKeys.get(
       nativeThumbnailCacheKey(loc, width, height),
     )
   ) {
@@ -380,8 +382,9 @@ export async function prepareNativeThumbnails(
     maxHeight,
   });
   for (const loc of result.ready) {
-    preparedNativeThumbnailKeys.add(
+    preparedNativeThumbnailKeys.set(
       nativeThumbnailCacheKey(loc, maxWidth, maxHeight),
+      true,
     );
   }
   return result;

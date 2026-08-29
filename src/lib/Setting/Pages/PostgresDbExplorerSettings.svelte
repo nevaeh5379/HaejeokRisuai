@@ -46,6 +46,8 @@
 
     // Thumbnail cache for Bot avatars in Stats tab
     let thumbnailUrls = $state<Map<string, string>>(new Map())
+    const thumbnailLoads = new Set<string>()
+    let thumbnailCacheDisposed = false
     let remoteBotStats = $state<BotChatStats[] | null>(null)
 
     // ── 봇별 및 전체 통계 계산 ──
@@ -154,33 +156,55 @@
         return forageStorage.realStorage
     }
 
-    async function loadThumbnail(key: string) {
-        if (!key || thumbnailUrls.has(key)) return
-        if (key.startsWith('data:') || key.startsWith('http:') || key.startsWith('https:')) {
-            thumbnailUrls.set(key, key)
-            thumbnailUrls = new Map(thumbnailUrls)
+    function setThumbnailUrl(key: string, url: string) {
+        if (thumbnailCacheDisposed) {
+            if (url.startsWith('blob:')) URL.revokeObjectURL(url)
             return
         }
+        const previous = thumbnailUrls.get(key)
+        if (previous?.startsWith('blob:') && previous !== url) {
+            URL.revokeObjectURL(previous)
+        }
+        thumbnailUrls.delete(key)
+        thumbnailUrls.set(key, url)
+        const maxEntries = settingsStore.state.lowSpecMode ? 64 : 256
+        while (thumbnailUrls.size > maxEntries) {
+            const oldestKey = thumbnailUrls.keys().next().value
+            if (!oldestKey) break
+            const oldestUrl = thumbnailUrls.get(oldestKey)
+            if (oldestUrl?.startsWith('blob:')) URL.revokeObjectURL(oldestUrl)
+            thumbnailUrls.delete(oldestKey)
+        }
+        thumbnailUrls = new Map(thumbnailUrls)
+    }
+
+    async function loadThumbnail(key: string) {
+        if (!key || thumbnailUrls.has(key) || thumbnailLoads.has(key)) return
+        thumbnailLoads.add(key)
         try {
-            const storage = getNodeStorage()
-            const data = await storage.getItem(key)
-            if (data && data.length > 0) {
-                const blob = new Blob([data as unknown as BlobPart], { type: getMimeType(key) })
-                const url = URL.createObjectURL(blob)
-                thumbnailUrls.set(key, url)
-                thumbnailUrls = new Map(thumbnailUrls)
+            if (key.startsWith('data:') || key.startsWith('http:') || key.startsWith('https:')) {
+                setThumbnailUrl(key, key)
                 return
             }
-        } catch {}
-        try {
-            const data = await forageStorage.getItem(key)
-            if (data && data.length > 0) {
-                const blob = new Blob([data as unknown as BlobPart], { type: getMimeType(key) })
-                const url = URL.createObjectURL(blob)
-                thumbnailUrls.set(key, url)
-                thumbnailUrls = new Map(thumbnailUrls)
-            }
-        } catch {}
+            try {
+                const storage = getNodeStorage()
+                const data = await storage.getItem(key)
+                if (data && data.length > 0) {
+                    const blob = new Blob([data as unknown as BlobPart], { type: getMimeType(key) })
+                    setThumbnailUrl(key, URL.createObjectURL(blob))
+                    return
+                }
+            } catch {}
+            try {
+                const data = await forageStorage.getItem(key)
+                if (data && data.length > 0) {
+                    const blob = new Blob([data as unknown as BlobPart], { type: getMimeType(key) })
+                    setThumbnailUrl(key, URL.createObjectURL(blob))
+                }
+            } catch {}
+        } finally {
+            thumbnailLoads.delete(key)
+        }
     }
 
     function clearThumbnailCache() {
@@ -213,7 +237,9 @@
     })
 
     onDestroy(() => {
+        thumbnailCacheDisposed = true
         clearThumbnailCache()
+        thumbnailLoads.clear()
     })
 </script>
 
