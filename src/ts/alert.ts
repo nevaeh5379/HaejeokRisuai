@@ -257,11 +257,15 @@ export async function alertPluginConfirm(msg: string) {
   return get(alertStoreImported).msg === "yes";
 }
 
-export async function alertCardExport(type: string = "") {
+export async function alertCardExport(
+  type: string = "",
+  datalist?: [string, string][],
+) {
   alertStoreImported.set({
     type: "cardexport",
     msg: "",
     submsg: type,
+    datalist,
   });
 
   await waitAlert();
@@ -269,6 +273,7 @@ export async function alertCardExport(type: string = "") {
   return JSON.parse(get(alertStoreImported).msg) as {
     type: string;
     type2: string;
+    excludedLorebookIndices?: number[];
   };
 }
 

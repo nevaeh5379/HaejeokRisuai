@@ -709,6 +709,25 @@ async function hydrateCharacterForExport(
   return loaded;
 }
 
+export function filterLorebooksForExport(
+  lorebooks: loreBook[] | undefined,
+  excludedIndices: number[] | undefined,
+): loreBook[] {
+  if (!lorebooks?.length) {
+    return [];
+  }
+  if (!excludedIndices?.length) {
+    return [...lorebooks];
+  }
+
+  const excluded = new Set(
+    excludedIndices.filter(
+      (index) => Number.isInteger(index) && index >= 0 && index < lorebooks.length,
+    ),
+  );
+  return lorebooks.filter((_, index) => !excluded.has(index));
+}
+
 export async function exportChar(charaID: number): Promise<string> {
   const targetChar = characterStore.characters[charaID];
   if (targetChar) {
@@ -727,7 +746,21 @@ export async function exportChar(charaID: number): Promise<string> {
     char.image = await saveAsset(data);
   }
 
-  const option = await alertCardExport();
+  const lorebookExportOptions: [string, string][] = (char.globalLore ?? []).map(
+    (lore, index) => [
+      String(index),
+      lore.mode === "folder"
+        ? `📁 ${lore.comment?.trim() || lore.key?.trim() || `Unnamed Lore ${index + 1}`}`
+        : lore.comment?.trim() || lore.key?.trim() || `Unnamed Lore ${index + 1}`,
+    ],
+  );
+  const option = await alertCardExport("", lorebookExportOptions);
+  if (option.type === "" || option.type === "ccv2") {
+    char.globalLore = filterLorebooksForExport(
+      char.globalLore,
+      option.excludedLorebookIndices,
+    );
+  }
   if (option.type === "") {
     exportCharacterCard(
       char,
