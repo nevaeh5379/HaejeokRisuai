@@ -1,6 +1,7 @@
 import { changeLanguage } from "../../lang";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
+import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
 import type { ISqlStorage, SqlStartupDataResult } from "./ISqlStorage";
 import { normalizeSettingsDefaults, type SettingsInput } from "./databaseDefaults";
 
@@ -20,7 +21,11 @@ export function installStartupData(
   }
 
   characterStore.init(startup.characters, storage);
-  settingsStore.init(startup.settings, storage, {
-    deferredUnloaded: startup.deferredSettingKeys ?? [],
+  settingsStore.init(startup.settings, storage);
+  deferredSettingsLoader.init({
+    storage,
+    unloadedKeys: startup.deferredSettingKeys ?? [],
+    hydrateSettingKey: (key, value, exists) =>
+      settingsStore.hydrateSettingKey(key, value, exists),
   });
 }

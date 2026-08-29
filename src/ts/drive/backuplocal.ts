@@ -43,6 +43,7 @@ import {
   setColdStorageItem,
 } from "../process/coldstorage.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
+import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
 import { createDatabaseSnapshot } from "../storage/databaseSnapshot";
 import { NodeStorage } from "../storage/nodeStorage";
 import { getSqlStorage } from "../storage/sqlStorageFactory";
@@ -534,7 +535,7 @@ async function loadFallbackBackupSnapshot(
   onProgress?: (msg: string) => void,
 ): Promise<BackupDatabaseDraft> {
   onProgress?.("Loading database from storage...");
-  await settingsStore.ensureDeferredLoaded();
+  await deferredSettingsLoader.ensureAll();
   // $state.snapshot already returns a detached deep copy of the reactive
   // tree, so a second structuredClone here doubled the peak memory of the
   // backup path (the dominant cost on 4GB Android devices) for no benefit.

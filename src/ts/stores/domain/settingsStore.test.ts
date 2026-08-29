@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { settingsStore } from "./settingsStore.svelte";
+import { deferredSettingsLoader } from "./deferredSettingsLoader";
 import type { ISqlStorage } from "../../storage/ISqlStorage";
 import type { SqlCommit } from "../../storage/sqlCommit";
 
@@ -10,6 +11,7 @@ describe("SettingsStore Reactivity and Persistence", () => {
   let mockStorage: ISqlStorage;
 
   beforeEach(() => {
+    deferredSettingsLoader.reset();
     committed = [];
     mockStorage = {
       getRevision: vi.fn(() => committed.length),
@@ -56,13 +58,18 @@ describe("SettingsStore Reactivity and Persistence", () => {
         loreBook: [{ name: "Placeholder", data: [] }],
       } as any,
       mockStorage,
-      { deferredUnloaded: ["loreBook"] },
     );
+    deferredSettingsLoader.init({
+      storage: mockStorage,
+      unloadedKeys: ["loreBook"],
+      hydrateSettingKey: (key, value, exists) =>
+        settingsStore.hydrateSettingKey(key, value, exists),
+    });
 
     expect(settingsStore.state.loreBook).toEqual([
       { name: "Placeholder", data: [] },
     ]);
-    await settingsStore.ensureDeferredKey("loreBook");
+    await deferredSettingsLoader.ensureKey("loreBook");
     expect(settingsStore.state.loreBook).toEqual([
       { name: "Stored Lore", data: [{ key: "x", content: "y" }] },
     ]);
@@ -84,10 +91,15 @@ describe("SettingsStore Reactivity and Persistence", () => {
     settingsStore.init(
       { plugins: [], pluginCustomStorage: {} } as any,
       mockStorage,
-      { deferredUnloaded: ["plugins", "pluginCustomStorage"] },
     );
+    deferredSettingsLoader.init({
+      storage: mockStorage,
+      unloadedKeys: ["plugins", "pluginCustomStorage"],
+      hydrateSettingKey: (key, value, exists) =>
+        settingsStore.hydrateSettingKey(key, value, exists),
+    });
 
-    await settingsStore.ensureDeferredLoaded();
+    await deferredSettingsLoader.ensureAll();
 
     expect(settingsStore.state.plugins).toEqual(plugins);
     expect(mockStorage.loadSettingKey).toHaveBeenCalledWith("plugins");
@@ -106,10 +118,15 @@ describe("SettingsStore Reactivity and Persistence", () => {
     settingsStore.init(
       { plugins: [], pluginCustomStorage: {} } as any,
       mockStorage,
-      { deferredUnloaded: ["plugins"] },
     );
+    deferredSettingsLoader.init({
+      storage: mockStorage,
+      unloadedKeys: ["plugins"],
+      hydrateSettingKey: (key, value, exists) =>
+        settingsStore.hydrateSettingKey(key, value, exists),
+    });
 
-    await expect(settingsStore.ensureDeferredLoaded()).rejects.toThrow(
+    await expect(deferredSettingsLoader.ensureAll()).rejects.toThrow(
       /deferred settings failed to load: plugins/,
     );
     expect(settingsStore.state.plugins).toEqual([]);
@@ -123,11 +140,16 @@ describe("SettingsStore Reactivity and Persistence", () => {
     settingsStore.init(
       { mainPrompt: "active preset prompt" } as any,
       mockStorage,
-      { deferredUnloaded: ["mainPrompt"] },
     );
+    deferredSettingsLoader.init({
+      storage: mockStorage,
+      unloadedKeys: ["mainPrompt"],
+      hydrateSettingKey: (key, value, exists) =>
+        settingsStore.hydrateSettingKey(key, value, exists),
+    });
 
-    settingsStore.markDeferredLoaded(["mainPrompt"]);
-    await settingsStore.ensureDeferredKey("mainPrompt");
+    deferredSettingsLoader.markLoaded(["mainPrompt"]);
+    await deferredSettingsLoader.ensureKey("mainPrompt");
 
     expect(settingsStore.state.mainPrompt).toBe("active preset prompt");
     expect(mockStorage.loadPrompts).not.toHaveBeenCalled();

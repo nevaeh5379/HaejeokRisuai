@@ -6,6 +6,7 @@ import { NodePostgresStorage } from "../storage/nodePostgresStorage";
 import { getNodeServerProxyAuth } from "../storage/nodeStorage";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
+import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
 import { recoverDurableModelJobs } from "./modelJobRecovery";
 import { getNodeClientSessionId } from "../network/nodeClientSession";
 import {
@@ -97,7 +98,7 @@ async function applyDatabaseChange(
     typeof change.pluginName === "string" &&
     typeof change.pluginEnabled === "boolean"
   ) {
-    if (settingsStore.isDeferredLoaded("plugins")) {
+    if (deferredSettingsLoader.isLoaded("plugins")) {
       settingsStore.hydrate((state) => {
         const plugin = state.plugins?.find(
           (candidate) => candidate?.name === change.pluginName,

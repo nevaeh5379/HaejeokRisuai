@@ -6,6 +6,7 @@ import { buildFullDatabase } from "./sqliteTestFixtures";
 import { presetTemplate } from "./presetDefaults";
 import { installStartupData } from "./databaseLifecycle";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
+import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
 
 describe("CapacitorSqliteStorage", () => {
   it("loads shallow startup data in one native query batch", async () => {
@@ -91,7 +92,7 @@ describe("CapacitorSqliteStorage", () => {
     expect(startup?.deferredSettingKeys).toContain("plugins");
     expect(startup?.settings.plugins).toBeUndefined();
     installStartupData(startup!, storage);
-    await settingsStore.ensureDeferredKey("plugins");
+    await deferredSettingsLoader.ensureKey("plugins");
     expect(settingsStore.state.plugins).toEqual(source.plugins);
     database.close();
   });
@@ -116,7 +117,7 @@ describe("CapacitorSqliteStorage", () => {
 
     installStartupData(loaded!, storage);
     expect((settingsStore.getStateRecord() as any).largeStartupProbe).toBeUndefined();
-    await settingsStore.ensureDeferredKey("largeStartupProbe");
+    await deferredSettingsLoader.ensureKey("largeStartupProbe");
     expect((settingsStore.getStateRecord() as any).largeStartupProbe).toBe(
       source.largeStartupProbe,
     );

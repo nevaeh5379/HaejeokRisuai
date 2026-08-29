@@ -24,6 +24,7 @@ import {
   type MenuDef,
 } from "src/ts/stores.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+import { deferredSettingsLoader } from "src/ts/stores/domain/deferredSettingsLoader";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { messageStore } from "src/ts/stores/domain/messageStore.svelte";
 import { v4 } from "uuid";
@@ -992,7 +993,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       return getRuntimePlugin(plugin.name)?.realArg[key];
     },
     setArgument: async (key: string, value: string) => {
-      await settingsStore.ensureDeferredKey("plugins");
+      await deferredSettingsLoader.ensureKey("plugins");
       const storedPlugin = settingsStore.state.plugins?.find(
         (candidate) => candidate.name === plugin.name,
       );

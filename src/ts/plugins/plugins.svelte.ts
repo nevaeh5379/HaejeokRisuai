@@ -16,6 +16,7 @@ import {
   selectedCharID,
 } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
+import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
 import { getSqlStorage } from "../storage/sqlStorageFactory";
 import type { ScriptMode } from "../process/scripts";
 import { checkCodeSafety } from "./pluginSafety";
@@ -471,7 +472,7 @@ export function getRuntimePlugin(name: string): RisuPlugin | undefined {
 }
 
 export async function togglePluginEnabled(index: number): Promise<void> {
-  await settingsStore.ensureDeferredKey("plugins");
+  await deferredSettingsLoader.ensureKey("plugins");
   const plugin = settingsStore.state.plugins?.[index];
   if (!plugin) return;
 
@@ -494,7 +495,7 @@ export async function togglePluginEnabled(index: number): Promise<void> {
 
 export async function loadPlugins() {
   console.log("Loading plugins...");
-  const plugins = settingsStore.isDeferredLoaded("plugins")
+  const plugins = deferredSettingsLoader.isLoaded("plugins")
     ? settingsStore.state.plugins ?? []
     : ((await (await getSqlStorage()).loadPlugins({ enabledOnly: true })) as RisuPlugin[] | null) ?? [];
 

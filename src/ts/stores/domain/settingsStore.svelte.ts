@@ -2,14 +2,10 @@ import type { DatabaseSettings } from "../../storage/schema";
 import type { ISqlStorage } from "../../storage/ISqlStorage";
 import { getSqlStorage } from "../../storage/sqlStorageFactory";
 import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
-import {
-  DOMAIN_STORE_SETTING_KEYS,
-  getSqlDeferredDomain,
-  PROMPT_SETTING_KEYS,
-  type SqlDeferredDomain,
-} from "../../storage/sqlDeferredSettings";
+import { DOMAIN_STORE_SETTING_KEYS } from "../../storage/sqlDeferredSettings";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 import { DurableStore } from "./durableStore";
+import { deferredSettingsLoader } from "./deferredSettingsLoader";
 
 const FORBIDDEN_SETTINGS_KEYS = new Set([
   "characters",
@@ -52,16 +48,13 @@ class SettingsStore extends DurableStore {
   private pendingPluginStorageClear = false;
   private pluginStorageKeys = new Set<string>();
   private pluginStorageLoads = new Map<string, Promise<any>>();
-  private deferredUnloaded = new Set<string>();
-  private deferredDomainLoads = new Map<SqlDeferredDomain, Promise<void>>();
-  private deferredKeyLoads = new Map<string, Promise<void>>();
   private keyDisposers = new Map<string, () => void>();
   private keySetDispose: (() => void) | null = null;
 
   private stateData = $state<DatabaseSettings>({} as DatabaseSettings);
   readonly state = new Proxy({} as DatabaseSettings, {
     get: (_target, prop) => {
-      if (typeof prop === "string") this.requestDeferredLoad(prop);
+      if (typeof prop === "string") deferredSettingsLoader.request(prop);
       return Reflect.get(this.stateData, prop);
     },
     set: (_target, prop, value) => {
@@ -83,7 +76,6 @@ class SettingsStore extends DurableStore {
   init(
     initialSettings: Partial<DatabaseSettings>,
     storage: ISqlStorage | null,
-    options: { deferredUnloaded?: readonly string[] } = {},
   ): void {
     this.storage = storage;
     for (const dispose of this.keyDisposers.values()) dispose();
@@ -96,10 +88,6 @@ class SettingsStore extends DurableStore {
     this.pendingPluginStorageDeletes.clear();
     this.pendingPluginStorageClear = false;
     this.pluginStorageLoads.clear();
-    this.deferredDomainLoads.clear();
-    this.deferredKeyLoads.clear();
-    this.deferredUnloaded = new Set(options.deferredUnloaded ?? []);
-
     for (const key of Object.keys(initialSettings)) assertSettingsKey(key);
     const settingsCopy = { ...initialSettings } as DatabaseSettings;
     settingsCopy.pluginCustomStorage ??= {};
@@ -297,117 +285,10 @@ class SettingsStore extends DurableStore {
     );
   }
 
-  requestDeferredLoad(key: string): void {
-    void this.ensureDeferredKey(key);
-  }
-
-  async ensureDeferredKey(key: string): Promise<void> {
-    if (!this.deferredUnloaded.has(key)) return;
-    const domain = getSqlDeferredDomain(key);
-    if (domain) {
-      await this.ensureDeferredDomain(domain);
-      return;
-    }
-
-    const existing = this.deferredKeyLoads.get(key);
-    if (existing) return existing;
-    const pending = (async () => {
-      const storage = this.storage || (await getSqlStorage());
-      try {
-        const value = await storage.loadSettingKey(key);
-        this.hydrateSettingKey(key, value, value !== undefined);
-      } catch (error) {
-        console.error(`[SettingsStore] Failed to hydrate setting ${key}:`, error);
-      }
-    })().finally(() => {
-      if (this.deferredKeyLoads.get(key) === pending) {
-        this.deferredKeyLoads.delete(key);
-      }
-    });
-    this.deferredKeyLoads.set(key, pending);
-    return pending;
-  }
-
-  markDeferredLoaded(keys: Iterable<string>): void {
-    for (const key of keys) this.deferredUnloaded.delete(key);
-  }
-
-  isDeferredLoaded(key: string): boolean {
-    return !this.deferredUnloaded.has(key);
-  }
-
-  async ensureDeferredLoaded(): Promise<void> {
-    const domains = new Set<SqlDeferredDomain>();
-    const individualKeys = new Set<string>();
-    for (const key of this.deferredUnloaded) {
-      const domain = getSqlDeferredDomain(key);
-      if (domain) {
-        domains.add(domain);
-      } else if (key !== "pluginCustomStorage") {
-        // pluginCustomStorage values live in their own table and are loaded
-        // lazily per key. Other standalone deferred settings (notably large
-        // plugin scripts) must be hydrated before a fallback backup snapshot
-        // is serialized, or the normalized empty startup value is backed up.
-        individualKeys.add(key);
-      }
-    }
-    // Backup hydration is intentionally sequential. The final snapshot must
-    // contain every value, but loading several large domains/scripts through
-    // the Android bridge concurrently creates avoidable peak memory pressure.
-    for (const domain of domains) await this.ensureDeferredDomain(domain);
-    for (const key of individualKeys) await this.ensureDeferredKey(key);
-
-    const unresolved = [...this.deferredUnloaded].filter(
-      (key) => key !== "pluginCustomStorage",
-    );
-    if (unresolved.length > 0) {
-      throw new Error(
-        `Cannot create a complete backup because deferred settings failed to load: ${unresolved.join(", ")}`,
-      );
-    }
-  }
-
-  private async ensureDeferredDomain(domain: SqlDeferredDomain): Promise<void> {
-    const existing = this.deferredDomainLoads.get(domain);
-    if (existing) return existing;
-
-    const pending = (async () => {
-      const storage = this.storage || (await getSqlStorage());
-      try {
-        if (domain === "loreBook") {
-          this.hydrateSettingKey("loreBook", await storage.loadLorebooks());
-          return;
-        }
-        if (domain === "scripts") {
-          this.hydrateSettingKey("globalscript", await storage.loadScripts());
-          return;
-        }
-
-        const prompts = await storage.loadPrompts();
-        for (const key of PROMPT_SETTING_KEYS) {
-          if (Object.prototype.hasOwnProperty.call(prompts, key)) {
-            this.hydrateSettingKey(key, (prompts as any)[key]);
-          } else {
-            this.deferredUnloaded.delete(key);
-          }
-        }
-      } catch (error) {
-        console.error(`[SettingsStore] Failed to hydrate ${domain}:`, error);
-      }
-    })().finally(() => {
-      if (this.deferredDomainLoads.get(domain) === pending) {
-        this.deferredDomainLoads.delete(domain);
-      }
-    });
-
-    this.deferredDomainLoads.set(domain, pending);
-    return pending;
-  }
-
   get<K extends keyof DatabaseSettings>(key: K): DatabaseSettings[K] | undefined {
     const keyStr = String(key);
     assertSettingsKey(keyStr);
-    this.requestDeferredLoad(keyStr);
+    deferredSettingsLoader.request(keyStr);
     return this.stateData[keyStr];
   }
 
@@ -484,7 +365,7 @@ class SettingsStore extends DurableStore {
     this.keyDisposers.delete(key);
     this.dirtyKeys.delete(key);
     this.pendingDeletes.delete(key);
-    this.deferredUnloaded.delete(key);
+    deferredSettingsLoader.markLoaded([key]);
     if (exists) {
       this.stateData[key] = value;
       this.observeKey(key);
@@ -636,7 +517,6 @@ class SettingsStore extends DurableStore {
     this.keyDisposers.clear();
     this.keySetDispose?.();
     this.keySetDispose = null;
-    this.deferredKeyLoads.clear();
   }
 }
 

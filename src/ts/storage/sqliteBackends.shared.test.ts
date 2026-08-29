@@ -40,6 +40,7 @@ import {
 import type { Database, character, Chat, Message } from "./schema";
 import { installStartupData } from "./databaseLifecycle";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
+import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
 
 type MakeStorage = (database: DatabaseSync) => ISqlStorage;
 
@@ -188,7 +189,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(queryLog.touching("chat_extension_nodes")).toBe(0);
     expect(queryLog.touching("message_extension_nodes")).toBe(0);
 
-    // The domain store owns lazy hydration: defaults are immediately usable,
+    // The deferred loader owns hydration: defaults are immediately usable,
     // then the targeted storage value replaces them without becoming a write.
     installStartupData(startup!, storage);
     queryLog.clear();
@@ -197,7 +198,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(live.loreBook).toEqual([
       { name: "My First LoreBook", data: [] },
     ]);
-    await settingsStore.ensureDeferredKey("loreBook");
+    await deferredSettingsLoader.ensureKey("loreBook");
     expect(settingsStore.state.loreBook).toEqual(source.loreBook);
     expect(queryLog.touching("setting_extension_nodes")).toBeGreaterThan(0);
     settingsStore.dispose();
@@ -226,7 +227,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
 
     installStartupData(startup!, storage);
     expect(settingsStore.state.mainPrompt).not.toBe("leaky-mainPrompt");
-    await settingsStore.ensureDeferredKey("mainPrompt");
+    await deferredSettingsLoader.ensureKey("mainPrompt");
     expect(settingsStore.state.mainPrompt).toBe("leaky-mainPrompt");
     settingsStore.dispose();
     database.close();

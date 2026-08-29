@@ -77,6 +77,7 @@ import {
 } from "./storage/migration";
 import { moduleStore } from "./stores/domain/moduleStore.svelte";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
+import { deferredSettingsLoader } from "./stores/domain/deferredSettingsLoader";
 import { characterStore } from "./stores/domain/characterStore.svelte";
 import { presetStore } from "./stores/domain/presetStore.svelte";
 import { personaStore } from "./stores/domain/personaStore.svelte";
@@ -379,7 +380,7 @@ export async function loadData() {
                 ? ["JinjaTemplate"]
                 : []),
             ];
-            settingsStore.markDeferredLoaded(presetOwnedDeferredKeys);
+            deferredSettingsLoader.markLoaded(presetOwnedDeferredKeys);
             presetStore.bindActivePresetProvider(() => {
               const metadata = presetStore.activePresetMetadata;
               return metadata
@@ -394,7 +395,7 @@ export async function loadData() {
       // The Android bridge serializes every returned row to JSON, so hydrate
       // startup domains sequentially to limit temporary peak memory.
       const runtimeSettingsReady = (async () => {
-        await settingsStore.ensureDeferredKey("customModels");
+        await deferredSettingsLoader.ensureKey("customModels");
 
         // Domain stores load their own state; SettingsStore never receives it.
         // Persona hydration is correctness-critical because prompts depend on it.
