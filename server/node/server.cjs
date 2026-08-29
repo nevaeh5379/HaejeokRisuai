@@ -2127,11 +2127,11 @@ async function hubProxyFunc(req, res) {
 
 app.get('/proxy', authenticatedRouteLimiter, reverseProxyFunc_get);
 app.get('/proxy2', authenticatedRouteLimiter, reverseProxyFunc_get);
-app.get('/hub-proxy/*', authenticatedRouteLimiter, hubProxyFunc);
+app.get('/hub-proxy/{*path}', authenticatedRouteLimiter, hubProxyFunc);
 
 app.post('/proxy', authenticatedRouteLimiter, reverseProxyFunc);
 app.post('/proxy2', authenticatedRouteLimiter, reverseProxyFunc);
-app.post('/hub-proxy/*', authenticatedRouteLimiter, hubProxyFunc);
+app.post('/hub-proxy/{*path}', authenticatedRouteLimiter, hubProxyFunc);
 modelJobManager.registerRoutes(app, {
     auth: checkProxyAuth,
     limiter: authenticatedRouteLimiter,
