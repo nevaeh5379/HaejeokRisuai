@@ -249,9 +249,11 @@ test("persists a user message added by Lua", async () => {
   );
 
   expect(commitMessages).toHaveBeenCalledOnce();
-  expect(commitMessages).toHaveBeenCalledWith("chat-1", [
-    { role: "user", data: "persist me" },
-  ]);
+  expect(commitMessages).toHaveBeenCalledWith(
+    "chat-1",
+    [{ role: "user", data: "persist me" }],
+    [],
+  );
 });
 
 test("does not persist when Lua only reads chat messages", async () => {
@@ -325,7 +327,11 @@ test("preserves message metadata when Lua replaces the full chat", async () => {
     name: "Narrator",
     generationInfo: { model: "test-model" },
   });
-  expect(commitMessages).toHaveBeenCalledWith("chat-1", chat.message);
+  expect(commitMessages).toHaveBeenCalledWith(
+    "chat-1",
+    chat.message,
+    ["message-1"],
+  );
 });
 
 test("checks module button triggers when character triggers are missing", async () => {
@@ -436,7 +442,11 @@ test("pins Lua module button actions to the clicked chat target", async () => {
     expect.any(String),
     target,
   );
-  expect(commitMessages).toHaveBeenCalledWith("target-chat", targetChat.message);
+  expect(commitMessages).toHaveBeenCalledWith(
+    "target-chat",
+    targetChat.message,
+    [],
+  );
 
   moduleTriggers.mockReset();
   databaseState.value = {
