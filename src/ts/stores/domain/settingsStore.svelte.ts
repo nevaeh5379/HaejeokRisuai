@@ -9,6 +9,7 @@ import {
   type SqlDeferredDomain,
 } from "../../storage/sqlDeferredSettings";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
+import { DurableStore } from "./durableStore";
 
 const FORBIDDEN_SETTINGS_KEYS = new Set([
   "characters",
@@ -41,7 +42,7 @@ function guardedSettingsState(state: Record<string, any>): Record<string, any> {
   });
 }
 
-class SettingsStore {
+class SettingsStore extends DurableStore {
   private storage: ISqlStorage | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private dirtyKeys = new Set<string>();

@@ -3,6 +3,7 @@ import type { ISqlStorage } from "../../storage/ISqlStorage";
 import { createEmptySqlCommit } from "../../storage/sqlCommit";
 import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
 import { snapshotFingerprint, trackDeep } from "./reactiveUtils";
+import { DurableStore } from "./durableStore";
 
 const createDefaultPersona = (): RisuPersona => ({
   name: "User",
@@ -12,7 +13,7 @@ const createDefaultPersona = (): RisuPersona => ({
   largePortrait: false,
 });
 
-class PersonaStore {
+class PersonaStore extends DurableStore {
   personas = $state<RisuPersona[]>([]);
   activeIndex = $state(0);
   loaded = $state(false);
@@ -184,6 +185,13 @@ class PersonaStore {
     await operation;
     this.committedPersonas = personasFingerprint;
     this.committedActiveIndex = activeIndex;
+  }
+
+  hasPendingWrites(): boolean {
+    return (
+      snapshotFingerprint($state.snapshot(this.personas)) !==
+        this.committedPersonas || this.activeIndex !== this.committedActiveIndex
+    );
   }
 
   private scheduleCommit(): void {

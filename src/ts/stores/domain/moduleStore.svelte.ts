@@ -3,8 +3,9 @@ import type { ISqlStorage } from "../../storage/ISqlStorage";
 import { createEmptySqlCommit } from "../../storage/sqlCommit";
 import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
 import { snapshotFingerprint, trackDeep } from "./reactiveUtils";
+import { DurableStore } from "./durableStore";
 
-class ModuleStore {
+class ModuleStore extends DurableStore {
   modules = $state<RisuModule[]>([]);
   enabledModules = $state<string[]>([]);
   moduleFolders = $state<ModuleFolder[]>([]);
@@ -198,6 +199,15 @@ class ModuleStore {
     this.writeChain = operation.then(() => undefined, () => undefined);
     await operation;
     this.committed = current;
+  }
+
+  hasPendingWrites(): boolean {
+    const current = this.fingerprints();
+    return (
+      current.modules !== this.committed.modules ||
+      current.enabled !== this.committed.enabled ||
+      current.folders !== this.committed.folders
+    );
   }
 
   private fingerprints() {

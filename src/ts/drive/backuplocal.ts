@@ -620,7 +620,9 @@ async function flushDurableStores(): Promise<void> {
   if (
     characterStore.hasPendingWrites() ||
     settingsStore.hasPendingWrites() ||
-    messageStore.hasPendingWrites()
+    messageStore.hasPendingWrites() ||
+    personaStore.hasPendingWrites() ||
+    moduleStore.hasPendingWrites()
   ) {
     throw new Error("Cannot create a backup while database writes are pending");
   }

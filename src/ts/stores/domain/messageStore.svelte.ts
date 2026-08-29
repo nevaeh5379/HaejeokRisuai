@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import { sqlMessageData, type SqlCommit } from "../../storage/sqlCommit";
 import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
 import { isCapacitor } from "../../platform";
+import { DurableStore } from "./durableStore";
 
 /**
  * In-memory retention cap for a single active chat. Messages beyond the most
@@ -30,7 +31,7 @@ function findChatAcrossCharacters(chatId: string): Chat | undefined {
     : undefined;
 }
 
-class MessageStore {
+class MessageStore extends DurableStore {
   private pendingCommits: SqlCommit[] = [];
   private writeChain: Promise<void> = Promise.resolve();
 
