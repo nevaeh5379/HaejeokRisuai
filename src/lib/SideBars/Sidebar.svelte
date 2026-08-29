@@ -498,59 +498,83 @@
     openFolders = openFolders
   }
 
-  async function handleFolderContextMenu(e: MouseEvent, ind: number, currentName: string) {
-    e.preventDefault()
-    const sel = parseInt(await alertSelect([language.renameFolder, language.changeFolderColor, language.changeFolderImage, language.cancel]))
+  const FOLDER_MENU = {
+    rename: 0,
+    color: 1,
+    image: 2,
+  } as const
 
-    const applyToFolder = async (mutate: (entry: folder) => void | Promise<void>): Promise<boolean> => {
-      const db = settingsStore.state
-      const orderEntry = db.characterOrder[ind]
-      if (typeof (orderEntry) === 'string') {
-        return false
-      }
-      await mutate(orderEntry)
-      db.characterOrder[ind] = orderEntry
-      return true
-    }
+  const FOLDER_IMAGE_MENU = {
+    reset: 0,
+    pick: 1,
+  } as const
 
-    if (sel === 0) {
-      const v = await alertInput(language.changeFolderName, [], currentName)
-      if (v) {
-        await applyToFolder((entry) => {
-          entry.name = v
-        })
-      }
+  const askIndex = async (options: string[]): Promise<number> => parseInt(await alertSelect(options))
+
+  async function updateFolderEntry(ind: number, mutate: (entry: folder) => void | Promise<void>) {
+    const db = settingsStore.state
+    const orderEntry = db.characterOrder[ind]
+    if (typeof (orderEntry) === 'string') {
+      return
     }
-    else if (sel === 1) {
-      const colorSel = parseInt(await alertSelect(folderColors))
-      await applyToFolder((entry) => {
-        entry.color = folderColors[colorSel].toLocaleLowerCase()
+    await mutate(orderEntry)
+    db.characterOrder[ind] = orderEntry
+  }
+
+  async function promptFolderRename(ind: number, currentName: string) {
+    const newName = await alertInput(language.changeFolderName, [], currentName)
+    if (!newName) {
+      return
+    }
+    await updateFolderEntry(ind, (entry) => {
+      entry.name = newName
+    })
+  }
+
+  async function promptFolderColor(ind: number) {
+    const colorSel = await askIndex(folderColors)
+    await updateFolderEntry(ind, (entry) => {
+      entry.color = folderColors[colorSel].toLocaleLowerCase()
+    })
+  }
+
+  async function promptFolderImage(ind: number) {
+    const imageSel = await askIndex(['Reset to Default Image', 'Select Image File'])
+    if (imageSel === FOLDER_IMAGE_MENU.reset) {
+      await updateFolderEntry(ind, (entry) => {
+        entry.imgFile = null
+        entry.img = ''
       })
     }
-    else if (sel === 2) {
-      const imageSel = parseInt(await alertSelect(['Reset to Default Image', 'Select Image File']))
-      if (imageSel === 0) {
-        await applyToFolder((entry) => {
-          entry.imgFile = null
-          entry.img = ''
-        })
+    else if (imageSel === FOLDER_IMAGE_MENU.pick) {
+      const imageFile = await selectSingleFile([
+        'png',
+        'jpg',
+        'webp',
+      ])
+      if (!imageFile) {
+        return
       }
-      else if (imageSel === 1) {
-        const folderImage = await selectSingleFile([
-          'png',
-          'jpg',
-          'webp',
-        ])
-        if (!folderImage) {
-          return
-        }
-        const folderImageData = await saveAsset(folderImage.data)
-        const imgSrc = await getFileSrc(folderImageData)
-        await applyToFolder((entry) => {
-          entry.imgFile = folderImageData
-          entry.img = imgSrc
-        })
-      }
+      const imageId = await saveAsset(imageFile.data)
+      const imageSrc = await getFileSrc(imageId)
+      await updateFolderEntry(ind, (entry) => {
+        entry.imgFile = imageId
+        entry.img = imageSrc
+      })
+    }
+  }
+
+  async function handleFolderContextMenu(e: MouseEvent, ind: number, currentName: string) {
+    e.preventDefault()
+    const menu = await askIndex([language.renameFolder, language.changeFolderColor, language.changeFolderImage, language.cancel])
+    if (menu === FOLDER_MENU.rename) {
+      await promptFolderRename(ind, currentName)
+    }
+    else if (menu === FOLDER_MENU.color) {
+      await promptFolderColor(ind)
+    }
+    else if (menu === FOLDER_MENU.image) {
+      await promptFolderImage(ind)
     }
   }
 </script>
