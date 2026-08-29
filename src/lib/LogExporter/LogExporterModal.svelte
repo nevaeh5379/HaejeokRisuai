@@ -137,6 +137,10 @@
         windowWidth = window.innerWidth
         resetViewState()
         void loadData()
+        return () => {
+            clearBatchCache()
+            clearImageUrlCache()
+        }
     })
 
     function resetViewState() {

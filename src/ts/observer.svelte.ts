@@ -131,6 +131,7 @@ export function startObserveDom() {
 }
 
 let claudeObserverRunning = false;
+let claudeObserverTimer: ReturnType<typeof setInterval> | null = null;
 let lastClaudeObserverLoad = 0;
 let lastClaudeRequestTimes = 0;
 let lastClaudeObserverPayload: any = null;
@@ -151,6 +152,17 @@ export function registerClaudeObserver(arg: {
   claudeObserver();
 }
 
+function stopClaudeObserver() {
+  if (claudeObserverTimer !== null) {
+    clearInterval(claudeObserverTimer);
+    claudeObserverTimer = null;
+  }
+  claudeObserverRunning = false;
+  lastClaudeObserverPayload = null;
+  lastClaudeObserverHeaders = null;
+  lastClaudeObserverURL = null;
+}
+
 function claudeObserver() {
   if (claudeObserverRunning) {
     return;
@@ -165,7 +177,7 @@ function claudeObserver() {
     });
     if (res.status >= 400) {
       if (tries < 3) {
-        fetchIt(tries + 1);
+        void fetchIt(tries + 1);
       }
     }
   };
@@ -177,12 +189,13 @@ function claudeObserver() {
     }
 
     if (lastClaudeRequestTimes > 4) {
+      stopClaudeObserver();
       return;
     }
-    fetchIt();
+    void fetchIt();
     lastClaudeObserverLoad = Date.now();
     lastClaudeRequestTimes += 1;
   };
 
-  setInterval(func, 20000);
+  claudeObserverTimer = setInterval(func, 20000);
 }
