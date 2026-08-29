@@ -1,6 +1,6 @@
 import { BaseDirectory, mkdir } from "@tauri-apps/plugin-fs";
 import { describe, expect, it, vi } from "vitest";
-import type { Database } from "../storage/schema";
+import type { Database, PortableDatabase } from "../storage/schema";
 import {
   createNativeImportSource,
   ensureTauriBackupAssetsDirectory,
@@ -208,5 +208,19 @@ describe("backup database defaults", () => {
     expect(db.nanogptSubProvider).toBe("provider-main");
     expect(db.nanogptSubUseSubscriptionEndpoint).toBe(true);
     expect(db.customProxySubRequestModel).toBe("proxy-main");
+  });
+
+  it("does not mutate the shared preset template when creating defaults", async () => {
+    const { normalizeDatabaseDefaults } =
+      await import("../storage/databaseDefaults");
+    const { presetTemplate } = await import("../storage/presetDefaults");
+    const originalName = presetTemplate.name;
+    const db = {} as Database & Partial<PortableDatabase>;
+
+    normalizeDatabaseDefaults(db);
+
+    expect(db.botPresets?.[0]?.name).toBe("Default");
+    expect(db.botPresets?.[0]).not.toBe(presetTemplate);
+    expect(presetTemplate.name).toBe(originalName);
   });
 });
