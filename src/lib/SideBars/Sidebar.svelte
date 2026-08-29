@@ -97,11 +97,11 @@
   type sortTypeNormal = { type:'normal',img: string, index: number, name:string }
   type sortType =  sortTypeNormal|{type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, img?:string}
   let charImages: sortType[] = $state([]);
-  let IconRounded = $state(false)
+  const iconRounded = $derived(settingsStore.state.roundIcons);
   let openFolders:string[] = $state([])
   let currentDrag: DragData | null = $state(null)
   interface Props {
-    openGrid?: any;
+    openGrid?: () => void;
     hidden?: boolean;
   }
 
@@ -109,8 +109,8 @@
 
   sideBarClosing.set(false)
 
-  $effect(() => {
-    let newCharImages: sortType[] = [];
+  function buildCharList(): sortType[] {
+    const newCharImages: sortType[] = [];
     const idObject = getCharacterIndexObject()
     for (const id of settingsStore.state.characterOrder) {
       if(typeof(id) === 'string'){
@@ -127,9 +127,9 @@
       }
       else{
         const folder = id
-        let folderCharImages: sortTypeNormal[] = []
-        for(const id of folder.data){
-          const index = idObject[id] ?? -1
+        const folderCharImages: sortTypeNormal[] = []
+        for(const entryId of folder.data){
+          const index = idObject[entryId] ?? -1
           if(index !== -1){
             const cha = characterStore.characters[index]
             folderCharImages.push({
@@ -150,11 +150,13 @@
         });
       }
     }
-    if (!isEqual(charImages, newCharImages)) {
-      charImages = newCharImages;
-    }
-    if(IconRounded !== settingsStore.state.roundIcons){
-      IconRounded = settingsStore.state.roundIcons
+    return newCharImages;
+  }
+
+  $effect(() => {
+    const nextCharImages = buildCharList();
+    if (!isEqual(charImages, nextCharImages)) {
+      charImages = nextCharImages;
     }
   })
 
@@ -423,7 +425,263 @@
     e.stopPropagation()
     return false
   }
+
+  const toDragData = (index: number, folderId: string | undefined): DragData => {
+    if (folderId === undefined) {
+      return { index }
+    }
+    return { index, folder: folderId }
+  }
+
+  function goHome() {
+    reseter();
+    selectedCharID.set(-1)
+    PlaygroundStore.set(0)
+    OpenRealmStore.set(false)
+  }
+
+  function toggleSettings() {
+    if ($settingsOpen) {
+      reseter();
+      settingsOpen.set(false);
+    } else {
+      reseter();
+      settingsOpen.set(true);
+    }
+  }
+
+  function openCharacterGrid() {
+    reseter();
+    openGrid();
+  }
+
+  function togglePlayground() {
+    reseter()
+    if ($selectedCharID === -1 && $PlaygroundStore !== 0) {
+      PlaygroundStore.set(0)
+      return
+    }
+    selectedCharID.set(-1)
+    PlaygroundStore.set(1)
+  }
+
+  function openPlayground() {
+    reseter();
+    selectedCharID.set(-1)
+    PlaygroundStore.set(1)
+  }
+
+  function openMessageSearch() {
+    reseter();
+    messageSearchOpen.set(true);
+  }
+
+  const folderColorBg: Record<string, string> = {
+    red: 'bg-red-700/20',
+    yellow: 'bg-yellow-700/20',
+    green: 'bg-green-700/20',
+    blue: 'bg-blue-700/20',
+    indigo: 'bg-indigo-700/20',
+    purple: 'bg-purple-700/20',
+    pink: 'bg-pink-700/20',
+  }
+
+  function toggleFolderOpen(folderId: string) {
+    if (openFolders.includes(folderId)) {
+      openFolders.splice(openFolders.indexOf(folderId), 1)
+    }
+    else {
+      openFolders.push(folderId)
+    }
+    openFolders = openFolders
+  }
+
+  async function handleFolderContextMenu(e: MouseEvent, ind: number, currentName: string) {
+    e.preventDefault()
+    const sel = parseInt(await alertSelect([language.renameFolder, language.changeFolderColor, language.changeFolderImage, language.cancel]))
+    if(sel === 0){
+      const v = await alertInput(language.changeFolderName, [], currentName)
+      const db = settingsStore.state
+      if(v){
+        const orderEntry = db.characterOrder[ind]
+        if(typeof(orderEntry) === 'string'){
+          return
+        }
+        orderEntry.name = v
+        db.characterOrder[ind] = orderEntry
+      }
+    }
+    else if(sel === 1){
+      const colors = ["red","green","blue","yellow","indigo","purple","pink","default"]
+      const colorSel = parseInt(await alertSelect(colors))
+      const db = settingsStore.state
+      const orderEntry = db.characterOrder[ind]
+      if(typeof(orderEntry) === 'string'){
+        return
+      }
+      orderEntry.color = colors[colorSel].toLocaleLowerCase()
+      db.characterOrder[ind] = orderEntry
+    }
+    else if(sel === 2) {
+      const imageSel = parseInt(await alertSelect(['Reset to Default Image', 'Select Image File']))
+      const db = settingsStore.state
+      const orderEntry = db.characterOrder[ind]
+      if(typeof(orderEntry) === 'string'){
+        return
+      }
+
+      switch (imageSel) {
+        case 0:
+          orderEntry.imgFile = null
+          orderEntry.img = ''
+          break;
+
+        case 1: {
+          const folderImage = await selectSingleFile([
+            'png',
+            'jpg',
+            'webp',
+          ])
+
+          if(!folderImage) {
+            return
+          }
+
+          const folderImageData = await saveAsset(folderImage.data)
+
+          orderEntry.imgFile = folderImageData
+          orderEntry.img = await getFileSrc(folderImageData)
+          db.characterOrder[ind] = orderEntry
+          break;
+        }
+      }
+    }
+  }
 </script>
+
+{#snippet dropZone(dropIndex: number, folderId: string | undefined, zoneClass: string)}
+<div
+  class="h-4 min-h-4 w-14 {zoneClass}"
+  role="listitem"
+  ondragover={(e) => {
+    if(!getCurrentSidebarDrag(e)){ return }
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    e.currentTarget.classList.add('bg-green-500')
+  }}
+  ondragleave={(e) => {
+    e.currentTarget.classList.remove('bg-green-500')
+  }}
+  ondrop={(e) => {
+    const drag = getCurrentSidebarDrag(e)
+    if(!drag){ return }
+    e.preventDefault()
+    e.stopPropagation()
+    e.currentTarget.classList.remove('bg-green-500')
+    try {
+      if(folderId === undefined){
+        inserter(drag,{index: dropIndex})
+      }
+      else{
+        inserter(drag,{index: dropIndex, folder: folderId})
+      }
+    } finally {
+      clearCurrentDrag()
+    }
+  }}
+  ondragenter={preventAll}
+></div>
+{/snippet}
+
+{#snippet charItem(index: number, img: string, name: string, folderId: string | undefined, itemClass: string)}
+<div
+  class={itemClass}
+  role="listitem"
+  draggable="true"
+  ondragstart={(e) => { avatarDragStart(toDragData(index, folderId), e) }}
+  ondragend={clearCurrentDrag}
+  ondragover={avatarDragOver}
+  ondrop={(e) => { avatarDrop(toDragData(index, folderId), e) }}
+  ondragenter={preventAll}
+>
+  <SidebarIndicator
+    isActive={($pendingCharID === index || ($pendingCharID < 0 && $selectedCharID === index)) && sideBarMode !== 1}
+  />
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <div
+    role="button" tabindex="0"
+    onpointerenter={() => void preloadChatSidebarPanel()}
+    onfocus={() => void preloadChatSidebarPanel()}
+    onclick={() => {
+      void changeCharacter(index)
+    }}
+    onkeydown={(e) => {
+      if (e.key === "Enter") {
+        void changeCharacter(index)
+      }
+    }}
+  >
+    <SidebarAvatar
+      src={img ? () => sidebarThumbnail(img) : "/none.webp"}
+      size="56"
+      rounded={iconRounded}
+      name={name}
+      chaId={characterStore.characters[index]?.chaId}
+    />
+  </div>
+</div>
+{/snippet}
+
+{#snippet hamburgerMenuItems()}
+  <BarIcon
+    onClick={toggleSettings}><Settings /></BarIcon
+  >
+  <div class="mt-2"></div>
+  <BarIcon
+    onClick={goHome}><HomeIcon /></BarIcon>
+  <div class="mt-2"></div>
+  <BarIcon
+    onClick={togglePlayground}
+  ><ShellIcon /></BarIcon>
+  <div class="mt-2"></div>
+  <BarIcon
+    onClick={openMessageSearch}><SearchIcon /></BarIcon
+  >
+  {#each additionalHamburgerMenu as menu}
+    <div class="mt-2"></div>
+    <BarIcon
+      onClick={() => {
+        reseter();
+        menu.callback();
+      }}>
+      <PluginDefinedIcon ico={menu} />
+    </BarIcon>
+  {/each}
+  <div class="mt-2"></div>
+  <BarIcon
+    onClick={openCharacterGrid}><LayoutGridIcon /></BarIcon
+  >
+{/snippet}
+
+{#snippet hamburgerPanel(position: 'top' | 'bottom')}
+<div
+  class={position === 'top'
+    ? "mt-2 border-b border-b-selected w-full relative text-white"
+    : "border-t border-t-selected w-full relative text-white"}
+>
+  {#if menuMode === 1}
+    <div
+      class={position === 'top'
+        ? "absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2"
+        : "absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2"}
+    >
+      {@render hamburgerMenuItems()}
+    </div>
+  {/if}
+</div>
+{/snippet}
+
 {#if settingsStore.state.menuSideBar}
 <div
   class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
@@ -440,12 +698,7 @@
     $PlaygroundStore === 0 &&
     !$settingsOpen
   )}
-  onclick={() => {
-    reseter();
-    selectedCharID.set(-1)
-    PlaygroundStore.set(0)
-    OpenRealmStore.set(false)
-  }}
+  onclick={goHome}
 >
   <HomeIcon />
   <span class="text-xs">{language.home}</span>
@@ -453,15 +706,7 @@
 <button
   class="flex items-center justify-center py-2 flex-col gap-1 w-full"
   class:text-textcolor2={!$settingsOpen}
-  onclick={() => {
-    if ($settingsOpen) {
-      reseter();
-      settingsOpen.set(false);
-    } else {
-      reseter();
-      settingsOpen.set(true);
-    }
-  }}
+  onclick={toggleSettings}
 >
   <Settings />
   <span class="text-xs">{language.settings}</span>
@@ -471,11 +716,7 @@
   class:text-textcolor2={!(
     $selectedCharID >= 0
   )}
-  onclick={() => {
-    reseter();
-    openGrid();
-
-  }}
+  onclick={openCharacterGrid}
 >
   <User2Icon />
   <span class="text-xs">{language.character}</span>
@@ -486,11 +727,7 @@
     $selectedCharID < 0 &&
     $PlaygroundStore !== 0
   )}
-  onclick={() => {
-    reseter();
-    selectedCharID.set(-1)
-    PlaygroundStore.set(1)
-  }}
+  onclick={openPlayground}
 >
   <ShellIcon />
   <span class="text-xs">{language.playground.playground}</span>
@@ -512,205 +749,40 @@
       menuMode = 1 - menuMode;
     }}><ListIcon />
   </button>
-  <div class="mt-2 border-b border-b-selected w-full relative text-white ">
-    {#if menuMode === 1}
-      <div class="absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2">
-        <BarIcon
-        onClick={() => {
-          if ($settingsOpen) {
-            reseter();
-            settingsOpen.set(false);
-          } else {
-            reseter();
-            settingsOpen.set(true);
-          }
-        }}><Settings /></BarIcon
-      >
-      <div class="mt-2"></div>
-      <BarIcon
-        onClick={() => {
-          reseter();
-          selectedCharID.set(-1)
-          PlaygroundStore.set(0)
-          OpenRealmStore.set(false)
-        }}><HomeIcon /></BarIcon>
-      <div class="mt-2"></div>
-      <BarIcon
-        onClick={() => {
-          reseter()
-          if($selectedCharID === -1 && $PlaygroundStore !== 0){
-            PlaygroundStore.set(0)
-            return
-          }
-          selectedCharID.set(-1)
-          PlaygroundStore.set(1)
-        }}
-      ><ShellIcon /></BarIcon>
-      <div class="mt-2"></div>
-      <BarIcon
-        onClick={() => {
-          reseter();
-          messageSearchOpen.set(true);
-        }}><SearchIcon /></BarIcon
-      >
-      {#each additionalHamburgerMenu as menu}
-        <div class="mt-2"></div>
-        <BarIcon
-          onClick={() => {
-            reseter();
-            menu.callback();
-          }}>
-            <PluginDefinedIcon ico={menu} />
-          </BarIcon
-        >
-      {/each}
-      <div class="mt-2"></div>
-      <BarIcon
-        onClick={() => {
-          reseter();
-          openGrid();
-        }}><LayoutGridIcon /></BarIcon
-      >
-    </div>
-    {/if}
-  </div>
+  {@render hamburgerPanel('top')}
   {/if}
   <div class="flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0">
-    <div class="h-4 min-h-4 w-14" role="listitem" ondragover={(e) => {
-      if(!getCurrentSidebarDrag(e)){ return }
-      e.preventDefault()
-      e.stopPropagation()
-      e.dataTransfer.dropEffect = 'move'
-      e.currentTarget.classList.add('bg-green-500')
-    }} ondragleave={(e) => {
-      e.currentTarget.classList.remove('bg-green-500')
-    }} ondrop={(e) => {
-      const drag = getCurrentSidebarDrag(e)
-      if(!drag){ return }
-      e.preventDefault()
-      e.stopPropagation()
-      e.currentTarget.classList.remove('bg-green-500')
-      try {
-        inserter(drag,{index:0})
-      } finally {
-        clearCurrentDrag()
-      }
-    }} ondragenter={preventAll}></div>
+    {@render dropZone(0, undefined, '')}
     {#each charImages as char, ind}
-      <div class="group relative flex items-center px-2 [content-visibility:auto] [contain-intrinsic-size:64px]"
-        role="listitem"
-        draggable="true"
-        ondragstart={(e) => {avatarDragStart({index:ind}, e)}}
-        ondragend={clearCurrentDrag}
-        ondragover={avatarDragOver}
-        ondrop={(e) => {avatarDrop({index:ind}, e)}}
-        ondragenter={preventAll}
-      >
-        <SidebarIndicator
-          isActive={char.type === 'normal' && ($pendingCharID === char.index || ($pendingCharID < 0 && $selectedCharID === char.index)) && sideBarMode !== 1}
-        />
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-        <div
+      {#if char.type === 'normal'}
+        {@render charItem(char.index, char.img, char.name, undefined, "group relative flex items-center px-2 [content-visibility:auto] [contain-intrinsic-size:64px]")}
+      {:else if char.type === "folder"}
+        <div class="group relative flex items-center px-2 [content-visibility:auto] [contain-intrinsic-size:64px]"
+          role="listitem"
+          draggable="true"
+          ondragstart={(e) => { avatarDragStart({index: ind}, e) }}
+          ondragend={clearCurrentDrag}
+          ondragover={avatarDragOver}
+          ondrop={(e) => { avatarDrop({index: ind}, e) }}
+          ondragenter={preventAll}
+        >
+          <SidebarIndicator isActive={false} />
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <div
             role="button" tabindex="0"
             onpointerenter={() => void preloadChatSidebarPanel()}
             onfocus={() => void preloadChatSidebarPanel()}
-            onclick={() => {
-              if(char.type === "normal"){
-                void changeCharacter(char.index);
-              }
-            }}
-            onkeydown={(e) => {
-              if (e.key === "Enter") {
-                if(char.type === "normal"){
-                  void changeCharacter(char.index);
-                }
-              }
-            }}
           >
-          {#if char.type === 'normal'}
-            <SidebarAvatar 
-              src={char.img ? () => sidebarThumbnail(char.img) : "/none.webp"}
-              size="56" 
-              rounded={IconRounded} 
-              name={char.name}
-              chaId={characterStore.characters[char.index]?.chaId}
-            />
-          {:else if char.type === "folder"}
             {#key char.color}
             {#key char.name}
-              <SidebarAvatar src="slot" size="56" rounded={IconRounded} bordered name={char.name} color={char.color} backgroundimg={char.img ? () => sidebarThumbnail(char.img) : ""}
-              oncontextmenu={async (e) => {
-                e.preventDefault()
-                const sel = parseInt(await alertSelect([language.renameFolder,language.changeFolderColor,language.changeFolderImage,language.cancel]))
-                if(sel === 0){
-                  const v = await alertInput(language.changeFolderName, [], char.name)
-                  const db = settingsStore.state
-                  if(v){
-                    const oder = db.characterOrder[ind]
-                    if(typeof(oder) === 'string'){
-                      return
-                    }
-                    oder.name = v
-                    db.characterOrder[ind] = oder
-                  }
-                }
-                else if(sel === 1){
-                  const colors = ["red","green","blue","yellow","indigo","purple","pink","default"]
-                  const sel = parseInt(await alertSelect(colors))
-                  const db = settingsStore.state
-                  const oder = db.characterOrder[ind]
-                  if(typeof(oder) === 'string'){
+              <SidebarAvatar src="slot" size="56" rounded={iconRounded} bordered name={char.name} color={char.color} backgroundimg={char.img ? () => sidebarThumbnail(char.img) : ""}
+                oncontextmenu={(e) => void handleFolderContextMenu(e, ind, char.name)}
+                onClick={() => {
+                  if(char.type !== 'folder'){
                     return
                   }
-                  oder.color = colors[sel].toLocaleLowerCase()
-                  db.characterOrder[ind] = oder
-                }
-                else if(sel === 2) {
-                  const sel = parseInt(await alertSelect(['Reset to Default Image', 'Select Image File']))
-                  const db = settingsStore.state
-                  const oder = db.characterOrder[ind]
-                  if(typeof(oder) === 'string'){
-                    return
-                  }
-
-                  switch (sel) {
-                    case 0:
-                      oder.imgFile = null
-                      oder.img = ''
-                      break;
-                  
-                    case 1:
-                      const folderImage = await selectSingleFile([
-                        'png',
-                        'jpg',
-                        'webp',
-                      ])
-
-                      if(!folderImage) {
-                        return
-                      }
-
-                      const folderImageData = await saveAsset(folderImage.data)
-
-                      oder.imgFile = folderImageData
-                      oder.img = await getFileSrc(folderImageData)
-                      db.characterOrder[ind] = oder
-                      break;
-                  }
-                }
-              }}
-              onClick={() => {
-                if(char.type !== 'folder'){
-                  return
-                }
-                if(openFolders.includes(char.id)){
-                  openFolders.splice(openFolders.indexOf(char.id), 1)
-                }
-                else{
-                  openFolders.push(char.id)
-                }
-                openFolders = openFolders
-              }}>
+                  toggleFolderOpen(char.id)
+                }}>
                 {#if settingsStore.state.showFolderName}
                   <div class="h-full w-full flex justify-center items-center">
                     <span class="hyphens-auto truncate font-bold">{char.name}</span>
@@ -723,130 +795,22 @@
               </SidebarAvatar>
             {/key}
             {/key}
-          {/if}
+          </div>
         </div>
-      </div>
-      {#if char.type === 'folder' && openFolders.includes(char.id)}
-        {#key char.color}
-        <div class="p-1 flex flex-col items-center py-1 mt-1 rounded-lg relative">
-          <div class="absolute top-0 left-1 border border-selected w-full h-full rounded-lg z-0 {
-            char.color === 'red' ? 'bg-red-700/20' :
-            char.color === 'yellow' ? 'bg-yellow-700/20' :
-            char.color === 'green' ? 'bg-green-700/20' :
-            char.color === 'blue' ? 'bg-blue-700/20' :
-            char.color === 'indigo' ? 'bg-indigo-700/20' :
-            char.color === 'purple' ? 'bg-purple-700/20' :
-            char.color === 'pink' ? 'bg-pink-700/20' :
-            'bg-darkbg/20'
-          }"></div>
-          <div class="h-4 min-h-4 w-14 relative z-10" role="listitem" ondragover={(e) => {
-            if(!getCurrentSidebarDrag(e)){ return }
-            e.preventDefault()
-            e.stopPropagation()
-            e.dataTransfer.dropEffect = 'move'
-            e.currentTarget.classList.add('bg-green-500')
-          }} ondragleave={(e) => {
-            e.currentTarget.classList.remove('bg-green-500')
-          }} ondrop={(e) => {
-            const drag = getCurrentSidebarDrag(e)
-            if(!drag){ return }
-            e.preventDefault()
-            e.stopPropagation()
-            e.currentTarget.classList.remove('bg-green-500')
-            try {
-              if(char.type === 'folder'){
-                inserter(drag,{index:0,folder:char.id})
-              }
-            } finally {
-              clearCurrentDrag()
-            }
-          }} ondragenter={preventAll}></div>
-          {#each char.folder as char2, ind}
-              <div class="group relative flex items-center px-2 z-10"
-              role="listitem"
-              draggable="true"
-              ondragstart={(e) => {if(char.type === 'folder'){avatarDragStart({index: ind, folder:char.id}, e)}}}
-              ondragend={clearCurrentDrag}
-              ondragover={avatarDragOver}
-              ondrop={(e) => {if(char.type === 'folder'){avatarDrop({index: ind, folder:char.id}, e)}}}
-              ondragenter={preventAll}
-            >
-              <SidebarIndicator
-                isActive={($pendingCharID === char2.index || ($pendingCharID < 0 && $selectedCharID === char2.index)) && sideBarMode !== 1}
-              />
-              <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-              <div
-                  role="button" tabindex="0"
-                  onpointerenter={() => void preloadChatSidebarPanel()}
-                  onfocus={() => void preloadChatSidebarPanel()}
-                  onclick={() => {
-                    if(char2.type === "normal"){
-                      void changeCharacter(char2.index);
-                    }
-                  }}
-                  onkeydown={(e) => {
-                    if (e.key === "Enter") {
-                      if(char2.type === "normal"){
-                        void changeCharacter(char2.index);
-                      }
-                    }
-                  }}
-                >
-                <SidebarAvatar 
-                  src={char2.img ? () => sidebarThumbnail(char2.img) : "/none.webp"}
-                  size="56" 
-                  rounded={IconRounded} 
-                  name={char2.name}
-                  chaId={characterStore.characters[char2.index]?.chaId}
-                />
-              </div>
-            </div>
-            <div class="h-4 min-h-4 w-14 relative z-20" role="listitem" ondragover={(e) => {
-              if(!getCurrentSidebarDrag(e)){ return }
-              e.preventDefault()
-              e.stopPropagation()
-              e.dataTransfer.dropEffect = 'move'
-              e.currentTarget.classList.add('bg-green-500')
-            }} ondragleave={(e) => {
-              e.currentTarget.classList.remove('bg-green-500')
-            }} ondrop={(e) => {
-              const drag = getCurrentSidebarDrag(e)
-              if(!drag){ return }
-              e.preventDefault()
-              e.stopPropagation()
-              e.currentTarget.classList.remove('bg-green-500')
-              try {
-                if(char.type === 'folder'){
-                  inserter(drag,{index:ind+1,folder:char.id})
-                }
-              } finally {
-                clearCurrentDrag()
-              }
-            }} ondragenter={preventAll}></div>
-          {/each}
-        </div>
-        {/key}
+        {#if openFolders.includes(char.id)}
+          {#key char.color}
+          <div class="p-1 flex flex-col items-center py-1 mt-1 rounded-lg relative">
+            <div class="absolute top-0 left-1 border border-selected w-full h-full rounded-lg z-0 {folderColorBg[char.color] ?? 'bg-darkbg/20'}"></div>
+            {@render dropZone(0, char.id, "relative z-10")}
+            {#each char.folder as char2, ind2}
+              {@render charItem(char2.index, char2.img, char2.name, char.id, "group relative flex items-center px-2 z-10")}
+              {@render dropZone(ind2 + 1, char.id, "relative z-20")}
+            {/each}
+          </div>
+          {/key}
+        {/if}
       {/if}
-      <div class="h-4 min-h-4 w-14" role="listitem" ondragover={((e) => {
-        if(!getCurrentSidebarDrag(e)){ return }
-        e.preventDefault()
-        e.stopPropagation()
-        e.dataTransfer.dropEffect = 'move'
-        e.currentTarget.classList.add('bg-green-500')
-      })} ondragleave={(e) => {
-        e.currentTarget.classList.remove('bg-green-500')
-      }} ondrop={(e) => {
-        const drag = getCurrentSidebarDrag(e)
-        if(!drag){ return }
-        e.preventDefault()
-        e.stopPropagation()
-        e.currentTarget.classList.remove('bg-green-500')
-        try {
-          inserter(drag,{index:ind+1})
-        } finally {
-          clearCurrentDrag()
-        }
-      }} ondragenter={preventAll}></div>
+      {@render dropZone(ind + 1, undefined, '')}
     {/each}
     <div class="flex flex-col items-center gap-2 px-2">
       <BaseRoundedButton
@@ -867,68 +831,7 @@
     </div>
   </div>
   {#if settingsStore.state.hamburgerButtonBottom}
-  <div class="border-t border-t-selected w-full relative text-white ">
-    {#if menuMode === 1}
-      <div class="absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2">
-        <BarIcon
-        onClick={() => {
-          if ($settingsOpen) {
-            reseter();
-            settingsOpen.set(false);
-          } else {
-            reseter();
-            settingsOpen.set(true);
-          }
-        }}><Settings /></BarIcon
-      >
-      <div class="mt-2"></div>
-      <BarIcon
-        onClick={() => {
-          reseter();
-          selectedCharID.set(-1)
-          PlaygroundStore.set(0)
-          OpenRealmStore.set(false)
-        }}><HomeIcon /></BarIcon>
-      <div class="mt-2"></div>
-      <BarIcon
-        onClick={() => {
-          reseter()
-          if($selectedCharID === -1 && $PlaygroundStore !== 0){
-            PlaygroundStore.set(0)
-            return
-          }
-          selectedCharID.set(-1)
-          PlaygroundStore.set(1)
-        }}
-      ><ShellIcon /></BarIcon>
-      <div class="mt-2"></div>
-      <BarIcon
-        onClick={() => {
-          reseter();
-          messageSearchOpen.set(true);
-        }}><SearchIcon /></BarIcon
-      >
-      {#each additionalHamburgerMenu as menu}
-        <div class="mt-2"></div>
-        <BarIcon
-          onClick={() => {
-            reseter();
-            menu.callback();
-          }}>
-            <PluginDefinedIcon ico={menu} />
-          </BarIcon
-        >
-      {/each}
-      <div class="mt-2"></div>
-      <BarIcon
-        onClick={() => {
-          reseter();
-          openGrid();
-        }}><LayoutGridIcon /></BarIcon
-      >
-    </div>
-    {/if}
-  </div>
+  {@render hamburgerPanel('bottom')}
   <button
     class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mb-2 mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
     onclick={() => {
