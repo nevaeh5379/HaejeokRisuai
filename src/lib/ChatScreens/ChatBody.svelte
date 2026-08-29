@@ -10,6 +10,7 @@ import isEqual from "lodash/isEqual"
     import type { ChatExecutionTarget } from "src/ts/chatTarget";
     
     import { getFileSrc } from "src/ts/globalApi.svelte";
+    import { isTauriAssetUrl } from "src/ts/mediaSrc";
 
     interface Props {
         character?: simpleCharacterArgument|string|null
@@ -185,6 +186,10 @@ import isEqual from "lodash/isEqual"
 
             imgs.forEach(async (img) => {
                 const name = img.getAttribute('src')?.toLocaleLowerCase() || ''
+
+                if(isTauriAssetUrl(name)){
+                    return
+                }
 
                 if(
                     name.length > 200 ||

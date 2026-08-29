@@ -46,6 +46,7 @@ import { getModelInfo } from "../model/modellist";
 import { registerCBS, type matcherArg, type RegisterCallback } from "../cbs";
 import cssSelectorParser from "postcss-selector-parser";
 import { getMimeType } from "../media/mimeType";
+import { shouldForceKeepMediaSrc } from "../mediaSrc";
 
 const markdownItOptions = {
   html: true,
@@ -185,7 +186,7 @@ DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
     ["IMG", "SOURCE", "VIDEO", "AUDIO", "STYLE"].includes(node.nodeName) &&
     data.attrName === "src"
   ) {
-    if (data.attrValue.startsWith("blob:")) {
+    if (shouldForceKeepMediaSrc(data.attrValue, isTauri)) {
       data.forceKeepAttr = true;
     }
   }
