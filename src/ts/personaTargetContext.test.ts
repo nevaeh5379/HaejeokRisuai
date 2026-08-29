@@ -20,6 +20,20 @@ vi.mock("./stores/domain/characterStore.svelte", () => ({
     ],
   },
 }));
+vi.mock("./stores/domain/personaStore.svelte", () => ({
+  personaStore: {
+    list: [
+      { id: "persona-a", name: "Alpha", icon: "a.png", personaPrompt: "A prompt" },
+      { id: "persona-b", name: "Beta", icon: "b.png", personaPrompt: "B prompt" },
+    ],
+    activePersona: {
+      id: "persona-a",
+      name: "Alpha",
+      icon: "a.png",
+      personaPrompt: "A prompt",
+    },
+  },
+}));
 vi.mock("./stores/domain/settingsStore.svelte", () => ({
   settingsStore: {
     state: {
