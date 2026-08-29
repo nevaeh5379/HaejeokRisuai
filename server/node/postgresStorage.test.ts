@@ -211,6 +211,39 @@ describe('PostgreSQL sync payload validation', () => {
         expect(storage.loadPostgresSchemaSql).toHaveBeenCalledTimes(1)
     })
 
+    it('loads chat shells with character details', async () => {
+        const queries:string[] = []
+        const client = {
+            query: async (sql:string) => {
+                queries.push(sql)
+                if (sql.includes('FROM character.characters ')) {
+                    return { rows: [{
+                        id: 'character-1', position: 0, kind: 'character', name: 'Alpha',
+                        image: null, first_message: 'hello', chat_page: 0,
+                    }] }
+                }
+                if (sql.includes('FROM chat.chats ')) {
+                    return { rows: [{
+                        id: 'chat-1', name: 'Main', note: 'note', folder_id: 'folder-1',
+                        last_message_time: 123,
+                    }] }
+                }
+                return { rows: [] }
+            },
+            release: () => {},
+        }
+        const storage = new PostgresStorage({ connectionString: 'postgres://test' })
+        storage.pool = { connect: async () => client }
+
+        const character = await storage.loadCharacter('character-1')
+
+        expect(character?.chats).toEqual([{
+            id: 'chat-1', name: 'Main', note: 'note', folderId: 'folder-1', lastDate: 123,
+            message: [], messagesLoaded: false, messagesFullyLoaded: false, detailsLoaded: false,
+        }])
+        expect(queries.some((query) => query.includes('FROM chat.chats '))).toBe(true)
+    })
+
     it('skips generation and prompt metadata queries for generation history loads', async () => {
         const queries:string[] = []
         const client = {

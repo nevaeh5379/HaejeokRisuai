@@ -48,6 +48,7 @@ const {
     createSqlStorageHelpers,
     groupRows,
     groupMessageRows,
+    buildChatShell,
     createCharacterRelations,
     createChatRelations,
     createMessageRelations,
@@ -817,7 +818,7 @@ class AzureStorage extends SqlStorageBase {
         const [
             charRes, attrsRes, tagsRes, greetingsRes, biasesRes,
             emotionsRes, modulesRes, groupMembersRes, foldersRes,
-            scriptsRes, sdDataRes, assetsRes, loreRes,
+            scriptsRes, sdDataRes, assetsRes, loreRes, chatsRes,
         ] = await Promise.all([
             pool.request().input('id', sql.NVarChar(450), characterId).query('SELECT * FROM [character].[characters] WHERE id = @id'),
             pool.request().input('id', sql.NVarChar(450), characterId).query('SELECT * FROM [character].[attributes] WHERE character_id = @id ORDER BY [key]'),
@@ -832,6 +833,7 @@ class AzureStorage extends SqlStorageBase {
             pool.request().input('id', sql.NVarChar(450), characterId).query('SELECT * FROM [character].[sd_data] WHERE character_id = @id ORDER BY position'),
             pool.request().input('id', sql.NVarChar(450), characterId).query('SELECT * FROM [character].[assets] WHERE character_id = @id ORDER BY position'),
             pool.request().input('id', sql.NVarChar(450), characterId).query('SELECT * FROM [character].[lore_entries] WHERE character_id = @id ORDER BY position'),
+            pool.request().input('id', sql.NVarChar(450), characterId).query('SELECT id, name, note, folder_id, last_message_time FROM [chat].[chats] WHERE character_id = @id ORDER BY position, id'),
         ]);
 
         if (charRes.recordset.length === 0) return null;
@@ -853,6 +855,7 @@ class AzureStorage extends SqlStorageBase {
         };
 
         const character = rebuildCharacter(charRes.recordset[0], characterRelations, { shallow: false });
+        character.chats = chatsRes.recordset.map(buildChatShell);
         character.detailsLoaded = true;
         return character;
     }

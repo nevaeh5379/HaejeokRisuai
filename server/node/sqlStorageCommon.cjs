@@ -330,6 +330,20 @@ function groupMessageRows(rows) {
     return grouped;
 }
 
+function buildChatShell(row) {
+    return {
+        id: row.id,
+        name: row.name || '',
+        note: row.note || '',
+        folderId: row.folder_id ?? undefined,
+        lastDate: row.last_message_time ?? undefined,
+        message: [],
+        messagesLoaded: false,
+        messagesFullyLoaded: false,
+        detailsLoaded: false,
+    };
+}
+
 function createMessageRelations({ attributes, generations, promptInfos, promptToggles, promptItems }) {
     return {
         attributes: groupMessageRows(attributes),
@@ -440,6 +454,7 @@ module.exports = {
     createSqlStorageHelpers,
     groupRows,
     groupMessageRows,
+    buildChatShell,
     createCharacterRelations,
     createChatRelations,
     createMessageRelations,

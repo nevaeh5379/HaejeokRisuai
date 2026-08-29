@@ -38,6 +38,7 @@ const {
     createSqlStorageHelpers,
     groupRows,
     groupMessageRows,
+    buildChatShell,
     createCharacterRelations,
     createChatRelations,
     createMessageRelations,
@@ -1602,12 +1603,13 @@ class PostgresStorage extends SqlStorageBase {
                 'SELECT * FROM character.sd_data WHERE character_id = $1 ORDER BY position',
                 'SELECT * FROM character.assets WHERE character_id = $1 ORDER BY position',
                 'SELECT * FROM character.lore_entries WHERE character_id = $1 ORDER BY position',
+                'SELECT id, name, note, folder_id, last_message_time FROM chat.chats WHERE character_id = $1 ORDER BY position, id',
             ];
             const results = await Promise.all(queries.map((q) => client.query(q, [characterId])));
             const [
                 charRes, attributesRes, tagsRes, greetingsRes, biasesRes, emotionsRes,
                 modulesRes, groupMembersRes, chatFoldersRes, scriptsRes, sdDataRes,
-                assetsRes, loreRes
+                assetsRes, loreRes, chatsRes
             ] = results;
 
             if (charRes.rows.length === 0) {
@@ -1631,6 +1633,7 @@ class PostgresStorage extends SqlStorageBase {
             };
 
             const character = rebuildCharacter(charRes.rows[0], characterRelations);
+            character.chats = chatsRes.rows.map(buildChatShell);
             character.detailsLoaded = true;
 
             await client.query('COMMIT');

@@ -313,11 +313,10 @@ export abstract class NativeSqliteStorageBase {
       if (!ok) return null;
     }
 
-    const shallow = false;
     const db: CanonicalDatabase = {} as CanonicalDatabase;
 
     const deferredKeyList = [...LEGACY_PERSONA_MIRROR_KEYS];
-    const settingQuery = this.buildSettingRowsQuery(deferredKeyList, shallow);
+    const settingQuery = this.buildSettingRowsQuery(deferredKeyList);
     const characterQuery: SqliteTransactionStatement = {
       sql: "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
       bind: [],
@@ -341,9 +340,8 @@ export abstract class NativeSqliteStorageBase {
 
     // Also merge plugin_custom_storage table if present
     if (
-      !shallow &&
-      (!db.pluginCustomStorage ||
-        Object.keys(db.pluginCustomStorage).length === 0)
+      !db.pluginCustomStorage ||
+      Object.keys(db.pluginCustomStorage).length === 0
     ) {
       const pluginStorageRows = await this.selectRows<{
         key: string;
@@ -378,81 +376,65 @@ export abstract class NativeSqliteStorageBase {
 
     const characters: (character | groupChat)[] = [];
     for (const row of charRows) {
-      if (shallow) {
-        characters.push({
-          chaId: row.id,
-          type: (row.kind as "character" | "group") ?? "character",
-          name: row.name ?? "",
-          image: row.image ?? "",
-          trashTime: row.trash_time ?? undefined,
-          creationDate: row.creation_time ?? undefined,
-          modificationDate: row.modification_time ?? undefined,
-          lastInteraction: row.last_interaction_time ?? undefined,
-          detailsLoaded: false,
-          chats: [],
-          chatPage: 0,
-        } as any);
-      } else {
-        const fullChar = ((await this.loadNodeValue(
-          "character_extension_nodes",
-          "character_id = ?",
-          [row.id],
-        )) ?? {}) as any;
-        fullChar.chaId = row.id;
-        fullChar.detailsLoaded = true;
-        const chatRows = await this.selectRows<{
-          id: string;
-          name: string;
-          note: string;
-          folder_id: string | null;
-          last_message_time: number | null;
-        }>(
-          "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
-          [row.id],
+      const fullChar = ((await this.loadNodeValue(
+        "character_extension_nodes",
+        "character_id = ?",
+        [row.id],
+      )) ?? {}) as any;
+      fullChar.chaId = row.id;
+      fullChar.detailsLoaded = true;
+      const chatRows = await this.selectRows<{
+        id: string;
+        name: string;
+        note: string;
+        folder_id: string | null;
+        last_message_time: number | null;
+      }>(
+        "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
+        [row.id],
+      );
+      const chatValues = chatRows.length
+        ? await this.rebuildGroupedNodeValues(
+            await this.selectRows(
+              `SELECT chat_id, node_id, parent_node_id, node_order, object_key,
+                      object_key_encoded, value_type, text_value, encoded_text_value,
+                      number_value, boolean_value
+               FROM chat_extension_nodes
+               WHERE chat_id IN (SELECT id FROM chats WHERE character_id = ?)
+               ORDER BY chat_id, node_id`,
+              [row.id],
+            ),
+            "chat_id",
+          )
+        : new Map<string, unknown>();
+      const chats: Chat[] = chatRows.map((chatRow) => {
+        const chatData = (chatValues.get(chatRow.id) ?? {}) as any;
+        chatData.id = chatRow.id;
+        chatData.name = chatRow.name ?? "";
+        chatData.note = chatRow.note ?? "";
+        chatData.folderId = chatRow.folder_id ?? undefined;
+        chatData.lastDate = chatRow.last_message_time ?? undefined;
+        chatData.message = [];
+        chatData.messagesLoaded = false;
+        chatData.detailsLoaded = true;
+        return chatData;
+      });
+      for (const chat of chats) {
+        if (!chat.id) continue;
+        chat.message = await this.loadMessageRowsBatch(
+          chat.id,
+          undefined,
+          0,
+          false,
         );
-        const chatValues = chatRows.length
-          ? await this.rebuildGroupedNodeValues(
-              await this.selectRows(
-                `SELECT chat_id, node_id, parent_node_id, node_order, object_key,
-                        object_key_encoded, value_type, text_value, encoded_text_value,
-                        number_value, boolean_value
-                 FROM chat_extension_nodes
-                 WHERE chat_id IN (SELECT id FROM chats WHERE character_id = ?)
-                 ORDER BY chat_id, node_id`,
-                [row.id],
-              ),
-              "chat_id",
-            )
-          : new Map<string, unknown>();
-        const chats: Chat[] = chatRows.map((chatRow) => {
-          const chatData = (chatValues.get(chatRow.id) ?? {}) as any;
-          chatData.id = chatRow.id;
-          chatData.name = chatRow.name ?? "";
-          chatData.note = chatRow.note ?? "";
-          chatData.folderId = chatRow.folder_id ?? undefined;
-          chatData.lastDate = chatRow.last_message_time ?? undefined;
-          chatData.message = [];
-          chatData.messagesLoaded = false;
-          chatData.detailsLoaded = true;
-          return chatData;
-        });
-        for (const chat of chats) {
-          if (!chat.id) continue;
-          chat.message = await this.loadMessageRowsBatch(
-            chat.id,
-            undefined,
-            0,
-            false,
-          );
-          chat.messageOffset = 0;
-          chat.messageTotal = chat.message.length;
-          chat.messagesLoaded = true;
-          chat.messagesFullyLoaded = true;
-          chat.detailsLoaded = true;
-        }
-        fullChar.chats = chats;
-        characters.push(fullChar);
+        chat.messageOffset = 0;
+        chat.messageTotal = chat.message.length;
+        chat.messagesLoaded = true;
+        chat.messagesFullyLoaded = true;
+        chat.detailsLoaded = true;
       }
+      fullChar.chats = chats;
+      characters.push(fullChar);
     }
     db.characters = characters;
 

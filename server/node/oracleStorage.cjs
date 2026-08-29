@@ -62,6 +62,7 @@ const {
     createSqlStorageHelpers,
     groupRows,
     groupMessageRows,
+    buildChatShell,
     createCharacterRelations,
     createChatRelations,
     createMessageRelations,
@@ -1435,7 +1436,7 @@ class OracleStorage extends SqlStorageBase {
                 await conn.rollback();
                 return null;
             }
-            const [attributes, tags, greetings, biases, emotions, modules, groupMembers, chatFolders, scripts, sdData, assets, lore] = await Promise.all([
+            const [attributes, tags, greetings, biases, emotions, modules, groupMembers, chatFolders, scripts, sdData, assets, lore, chats] = await Promise.all([
                 fetchRows(conn, `SELECT * FROM character_attributes WHERE character_id = :1 ORDER BY key_value`, [characterId]),
                 fetchRows(conn, `SELECT * FROM character_tags WHERE character_id = :1 ORDER BY position`, [characterId]),
                 fetchRows(conn, `SELECT * FROM character_greetings WHERE character_id = :1 ORDER BY greeting_type, position`, [characterId], { clobColumns: ['content'] }),
@@ -1448,10 +1449,12 @@ class OracleStorage extends SqlStorageBase {
                 fetchRows(conn, `SELECT * FROM character_sd_data WHERE character_id = :1 ORDER BY position`, [characterId], { clobColumns: ['value'] }),
                 fetchRows(conn, `SELECT * FROM character_assets WHERE character_id = :1 ORDER BY position`, [characterId], { clobColumns: ['uri', 'extra_value'] }),
                 fetchRows(conn, `SELECT * FROM character_lore_entries WHERE character_id = :1 ORDER BY position`, [characterId], { clobColumns: ['comment_text', 'content'] }),
+                fetchRows(conn, `SELECT id, name, note, folder_id, last_message_time FROM chat_chats WHERE character_id = :1 ORDER BY position, id`, [characterId], { clobColumns: ['note'] }),
             ]);
             const character = rebuildCharacter(charRow, {
                 attributes, tags, greetings, biases, emotions, modules, groupMembers, chatFolders, scripts, sdData, assets, lore,
             });
+            character.chats = chats.map(buildChatShell);
             character.detailsLoaded = true;
             await conn.rollback();
             return character;
