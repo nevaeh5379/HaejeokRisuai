@@ -860,6 +860,42 @@ class AzureStorage extends SqlStorageBase {
         return character;
     }
 
+    // Asset-bearing fields only (image, customBackground, gptSoVitsConfig, vits,
+    // emotionImages, additionalAssets, ccAssets). The storage explorer's orphan
+    // analysis needs these without hydrating lore, scripts or chats.
+    async loadCharacterAssetFields(characterId) {
+        const pool = await this.getPool();
+        const [charRes, attrsRes, emotionsRes, assetsRes] = await Promise.all([
+            pool.request().input('id', sql.NVarChar(450), characterId).query('SELECT image FROM [character].[characters] WHERE id = @id'),
+            pool.request().input('id', sql.NVarChar(450), characterId).query('SELECT * FROM [character].[attributes] WHERE character_id = @id ORDER BY [key]'),
+            pool.request().input('id', sql.NVarChar(450), characterId).query('SELECT * FROM [character].[emotions] WHERE character_id = @id ORDER BY position'),
+            pool.request().input('id', sql.NVarChar(450), characterId).query('SELECT * FROM [character].[assets] WHERE character_id = @id ORDER BY position'),
+        ]);
+        if (charRes.recordset.length === 0) return null;
+        const fields = {};
+        const core = charRes.recordset[0];
+        if (core.image !== null && core.image !== undefined) fields.image = core.image;
+        for (const row of attrsRes.recordset) {
+            const raw = row.value;
+            const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            fields[row.key] = decodePostgresJsonValue(parsed);
+        }
+        if (emotionsRes.recordset.length) {
+            fields.emotionImages = emotionsRes.recordset.map((item) => [item.emotion, item.asset]);
+        }
+        const additionalAssets = assetsRes.recordset
+            .filter((item) => item.asset_source === 'additional')
+            .map((item) => [item.name, item.uri, item.extension]);
+        if (additionalAssets.length) fields.additionalAssets = additionalAssets;
+        const ccAssets = assetsRes.recordset
+            .filter((item) => item.asset_source === 'character-card')
+            .map((item) => ({
+                type: item.asset_type, uri: item.uri, name: item.name, ext: item.extension,
+            }));
+        if (ccAssets.length) fields.ccAssets = ccAssets;
+        return { assets: fields };
+    }
+
     async loadChat(chatId) {
         const pool = await this.getPool();
         const [

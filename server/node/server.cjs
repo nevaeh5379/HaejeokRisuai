@@ -4284,6 +4284,34 @@ app.get('/api/database-v2/characters/:characterId', authenticatedRouteLimiter, a
     }
 });
 
+app.get('/api/database-v2/characters/:characterId/asset-fields', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({
+            error: 'PostgreSQL storage is not configured',
+            code: 'postgres_disabled',
+        });
+        return;
+    }
+
+    try {
+        const assets = await postgresStorage.loadCharacterAssetFields(req.params.characterId);
+        if (!assets) {
+            res.status(404).send({ error: 'Character not found', code: 'character_not_found' });
+            return;
+        }
+        await sendCompressedJson(req, res, assets);
+    } catch (error) {
+        if (error instanceof PostgresPayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_character_id' });
+            return;
+        }
+        next(error);
+    }
+});
+
 app.get('/api/database-v2/chats/:chatId', authenticatedRouteLimiter, async (req, res, next) => {
     if (!await checkAuth(req, res)) {
         return;

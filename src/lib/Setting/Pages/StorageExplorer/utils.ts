@@ -145,14 +145,13 @@ export async function runStorageAnalysis(
         }),
     );
   } else {
-    const adapter = settingsStore.state as any;
-    if (adapter?.ensureCharacterDetails) {
-      await Promise.allSettled(
-        characters
-          .filter((c: any) => c && c.detailsLoaded === false && c.chaId)
-          .map((c: any) => adapter.ensureCharacterDetails(c.chaId)),
-      );
-    }
+    // Backends without a targeted loader: hydrate the missing characters
+    // through the standard lazy-loads path.
+    await Promise.allSettled(
+      characters
+        .filter((c: any) => c && c.detailsLoaded === false && c.chaId)
+        .map((c: any) => characterStore.ensureCharacterDetails(c.chaId)),
+    );
   }
 
   const referencedKeys = new Set<string>();

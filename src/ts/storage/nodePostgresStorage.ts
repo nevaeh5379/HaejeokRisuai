@@ -1039,6 +1039,39 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     return body.character ?? null;
   }
 
+  /**
+   * Reads only the asset-bearing fields of a character (image, emotionImages,
+   * additionalAssets, ccAssets, customBackground, vits…). Used by the storage
+   * explorer's orphan-asset analysis so unhydrated characters still count as
+   * referencing their assets.
+   */
+  async loadCharacterAssetFields(
+    characterId: string,
+  ): Promise<Partial<character> | null> {
+    if (!(await this.ensureEnabled())) {
+      return null;
+    }
+    const response = await fetch(
+      `/api/database-v2/characters/${encodeURIComponent(characterId)}/asset-fields`,
+      {
+        method: "GET",
+        cache: "no-cache",
+        headers: await this.authHeaders(),
+      },
+    );
+    if (response.status === 404) {
+      return null;
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(
+        response,
+        "PostgreSQL character asset fields load failed",
+      );
+    }
+    const body: { assets: Partial<character> } = await response.json();
+    return body.assets ?? null;
+  }
+
   async loadChat(
     chatId: string,
     options?: { messageLimit?: number },

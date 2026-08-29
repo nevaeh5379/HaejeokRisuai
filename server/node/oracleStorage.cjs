@@ -1466,6 +1466,55 @@ class OracleStorage extends SqlStorageBase {
         }
     }
 
+    // Asset-bearing fields only (image, customBackground, gptSoVitsConfig, vits,
+    // emotionImages, additionalAssets, ccAssets). The storage explorer's orphan
+    // analysis needs these without hydrating lore, scripts or chats.
+    async loadCharacterAssetFields(characterId) {
+        this.assertEnabled();
+        assertId(characterId, 'characterId');
+        const conn = await this.pool.getConnection();
+        try {
+            await conn.execute('SET TRANSACTION READ ONLY');
+            const charRow = await fetchOne(conn,
+                `SELECT image FROM character_characters WHERE id = :1`, [characterId],
+                { clobColumns: ['image'] });
+            if (!charRow) {
+                await conn.rollback();
+                return null;
+            }
+            const [attributes, emotions, assets] = await Promise.all([
+                fetchRows(conn, `SELECT * FROM character_attributes WHERE character_id = :1 ORDER BY key_value`, [characterId]),
+                fetchRows(conn, `SELECT * FROM character_emotions WHERE character_id = :1 ORDER BY position`, [characterId], { clobColumns: ['asset'] }),
+                fetchRows(conn, `SELECT * FROM character_assets WHERE character_id = :1 ORDER BY position`, [characterId], { clobColumns: ['uri', 'extra_value'] }),
+            ]);
+            const fields = {};
+            if (charRow.image !== null && charRow.image !== undefined) fields.image = charRow.image;
+            for (const row of attributes) {
+                fields[row.key_value] = decodePostgresJsonValue(row.value);
+            }
+            if (emotions.length) {
+                fields.emotionImages = emotions.map((item) => [item.emotion, item.asset]);
+            }
+            const additionalAssets = assets
+                .filter((item) => item.asset_source === 'additional')
+                .map((item) => [item.name, item.uri, item.extension]);
+            if (additionalAssets.length) fields.additionalAssets = additionalAssets;
+            const ccAssets = assets
+                .filter((item) => item.asset_source === 'character-card')
+                .map((item) => ({
+                    type: item.asset_type, uri: item.uri, name: item.name, ext: item.extension,
+                }));
+            if (ccAssets.length) fields.ccAssets = ccAssets;
+            await conn.rollback();
+            return { assets: fields };
+        } catch (error) {
+            try { await conn.rollback(); } catch (e) {}
+            throw error;
+        } finally {
+            try { await conn.close(); } catch (e) {}
+        }
+    }
+
     async loadChat(chatId) {
         this.assertEnabled();
         assertId(chatId, 'chatId');

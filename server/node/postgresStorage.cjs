@@ -1646,6 +1646,57 @@ class PostgresStorage extends SqlStorageBase {
         }
     }
 
+    // Asset-bearing fields only (image, customBackground, gptSoVitsConfig, vits,
+    // emotionImages, additionalAssets, ccAssets). The storage explorer's orphan
+    // analysis needs these without hydrating lore, scripts or chats.
+    async loadCharacterAssetFields(characterId) {
+        this.assertEnabled();
+        assertId(characterId, 'characterId');
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+            const [charRes, attributesRes, emotionsRes, assetsRes] = await Promise.all([
+                'SELECT image FROM character.characters WHERE id = $1',
+                'SELECT * FROM character.attributes WHERE character_id = $1 ORDER BY key',
+                'SELECT * FROM character.emotions WHERE character_id = $1 ORDER BY position',
+                'SELECT * FROM character.assets WHERE character_id = $1 ORDER BY position',
+            ].map((q) => client.query(q, [characterId])));
+
+            if (charRes.rows.length === 0) {
+                await client.query('COMMIT');
+                return null;
+            }
+
+            const assets = {};
+            const core = charRes.rows[0];
+            if (core.image !== null && core.image !== undefined) assets.image = core.image;
+            for (const row of attributesRes.rows) {
+                assets[row.key] = decodePostgresJsonValue(row.value);
+            }
+            if (emotionsRes.rows.length) {
+                assets.emotionImages = emotionsRes.rows.map((item) => [item.emotion, item.asset]);
+            }
+            const additionalAssets = assetsRes.rows
+                .filter((item) => item.asset_source === 'additional')
+                .map((item) => [item.name, item.uri, item.extension]);
+            if (additionalAssets.length) assets.additionalAssets = additionalAssets;
+            const ccAssets = assetsRes.rows
+                .filter((item) => item.asset_source === 'character-card')
+                .map((item) => ({
+                    type: item.asset_type, uri: item.uri, name: item.name, ext: item.extension,
+                }));
+            if (ccAssets.length) assets.ccAssets = ccAssets;
+
+            await client.query('COMMIT');
+            return { assets };
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
     async loadChat(chatId) {
         this.assertEnabled();
         assertId(chatId, 'chatId');
