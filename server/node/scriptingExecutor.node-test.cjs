@@ -222,6 +222,82 @@ end`,
     }
 });
 
+test('edit responses report the listener counts for the client probe cache', async () => {
+    const { executor, close } = makeExecutor();
+    try {
+        const withListener = await executor.run(payload({
+            mode: 'editDisplay',
+            code: 'listenEdit("editDisplay", function(id, value, meta) return value .. "!" end)',
+            data: 'x',
+        }));
+        assert.equal(withListener.res, 'x!');
+        assert.deepEqual(withListener.editListeners, { editRequest: 0, editDisplay: 1, editInput: 0, editOutput: 0 });
+
+        const withoutListener = await executor.run(payload({
+            mode: 'editDisplay',
+            code: 'onInput = function(id) return 1 end',
+            data: 'x',
+        }));
+        assert.equal(withoutListener.res, 'x', 'no listener means the content passes through');
+        assert.deepEqual(withoutListener.editListeners, { editRequest: 0, editDisplay: 0, editInput: 0, editOutput: 0 });
+
+        const direct = await executor.run(payload({
+            code: 'onInput = function(id) return 1 end',
+        }));
+        assert.equal(direct.editListeners, undefined, 'direct modes do not report edit listeners');
+    } finally {
+        close();
+    }
+});
+
+test('edit batches process every entry in one run', async () => {
+    const { executor, close } = makeExecutor();
+    try {
+        const result = await executor.runEditBatch(payload({
+            mode: 'editDisplay',
+            code: 'listenEdit("editDisplay", function(id, value, meta) if type(value) == "string" then return meta.index .. ":" .. value end return value end)',
+            edits: [
+                { editId: 'a', data: 'one', meta: { index: 1 } },
+                { editId: 'b', data: 'two', meta: { index: 2 } },
+                { editId: 'c', data: [{ role: 'user', content: 'three' }], meta: { index: 3 } },
+            ],
+        }));
+        assert.equal(result.ok, true);
+        assert.deepEqual(result.edits, [
+            { editId: 'a', res: '1:one' },
+            { editId: 'b', res: '2:two' },
+            { editId: 'c', res: [{ role: 'user', content: 'three' }] },
+        ]);
+        assert.deepEqual(result.editListeners, { editRequest: 0, editDisplay: 1, editInput: 0, editOutput: 0 });
+    } finally {
+        close();
+    }
+});
+
+test('invalid edit batches are rejected', async () => {
+    const { executor, close } = makeExecutor();
+    try {
+        await assert.rejects(
+            () => executor.runEditBatch(payload({ mode: 'input', code: 'x', edits: [{ editId: 'a', data: 'x', meta: {} }] })),
+            /edit mode/,
+        );
+        await assert.rejects(
+            () => executor.runEditBatch(payload({ mode: 'editDisplay', code: 'x', edits: [] })),
+            /requires edits/,
+        );
+        await assert.rejects(
+            () => executor.runEditBatch(payload({ mode: 'editDisplay', code: 'x', edits: [{ data: 'x' }] })),
+            /entry 0 is invalid/,
+        );
+        await assert.rejects(
+            () => executor.runEditBatch(payload({ mode: 'editDisplay', code: 'x', edits: [{ editId: 'a', data: 42, meta: {} }] })),
+            /entry 0 data is invalid/,
+        );
+    } finally {
+        close();
+    }
+});
+
 test('LLM calls bridge to the client and resolve with the answered payload', async () => {
     const { executor, events, close } = makeExecutor();
     try {

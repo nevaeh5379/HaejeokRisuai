@@ -392,6 +392,19 @@ callListenMain = async(function(type, id, value, meta)
     return json.encode(realValue)
 end)
 
+-- Reports how many edit listeners the loaded code registered. The client
+-- caches this per code and skips the server round trip entirely for edit
+-- modes with zero listeners (the common case when a chat re-render runs
+-- every triggerlua trigger in editDisplay mode).
+function __risu_edit_listener_counts()
+    return json.encode({
+        editRequest = #editRequestFuncs,
+        editDisplay = #editDisplayFuncs,
+        editInput = #editInputFuncs,
+        editOutput = #editOutputFuncs,
+    })
+end
+
 ${code}
 `;
 }
@@ -1103,6 +1116,39 @@ function createNodeScriptingExecutor({
         return state;
     }
 
+    const EDIT_MODES = ['editRequest', 'editDisplay', 'editInput', 'editOutput'];
+    const MAX_BATCH_EDITS = 512;
+
+    async function getEditListenerCounts(state) {
+        try {
+            const counts = state.engine.global.get('__risu_edit_listener_counts');
+            if (typeof counts !== 'function') return undefined;
+            return JSON.parse(String(counts()));
+        } catch {
+            return undefined;
+        }
+    }
+
+    function buildRunResponse(ctx) {
+        return {
+            stopSending: ctx.stopSending === true,
+            messagesMutated: ctx.messagesMutated === true,
+            chatFieldsMutated: ctx.chatFieldsMutated === true,
+            chat: {
+                message: ctx.chat.message,
+                scriptstate: ctx.chat.scriptstate,
+                GLGlobalVariables: ctx.chat.GLGlobalVariables,
+                localLore: ctx.chat.localLore,
+                note: ctx.chat.note,
+            },
+            varWrites: ctx.varWrites.size > 0 ? [...ctx.varWrites.entries()] : undefined,
+            charChanges: Object.keys(ctx.charChanges).length > 0 ? ctx.charChanges : undefined,
+            reloadDisplay: ctx.reloadDisplay === true,
+            reloadChat: ctx.reloadChatIndexes.size > 0 ? [...ctx.reloadChatIndexes] : undefined,
+            errors: ctx.errors.length > 0 ? ctx.errors : undefined,
+        };
+    }
+
     async function run(rawPayload) {
         const payload = normalizeRunPayload(rawPayload);
         const state = await getOrCreateEngine(payload.mode, payload.code);
@@ -1113,7 +1159,7 @@ function createNodeScriptingExecutor({
             const mode = payload.mode;
             const luaEngine = state.engine;
             try {
-                if (mode === 'editRequest' || mode === 'editDisplay' || mode === 'editInput' || mode === 'editOutput') {
+                if (EDIT_MODES.includes(mode)) {
                     const func = luaEngine.global.get('callListenMain');
                     if (func) {
                         res = await func(
@@ -1143,23 +1189,78 @@ function createNodeScriptingExecutor({
             return {
                 ok: true,
                 res,
-                stopSending: ctx.stopSending === true,
-                messagesMutated: ctx.messagesMutated === true,
-                chatFieldsMutated: ctx.chatFieldsMutated === true,
-                chat: {
-                    message: ctx.chat.message,
-                    scriptstate: ctx.chat.scriptstate,
-                    GLGlobalVariables: ctx.chat.GLGlobalVariables,
-                    localLore: ctx.chat.localLore,
-                    note: ctx.chat.note,
-                },
-                varWrites: ctx.varWrites.size > 0 ? [...ctx.varWrites.entries()] : undefined,
-                charChanges: Object.keys(ctx.charChanges).length > 0 ? ctx.charChanges : undefined,
-                reloadDisplay: ctx.reloadDisplay === true,
-                reloadChat: ctx.reloadChatIndexes.size > 0 ? [...ctx.reloadChatIndexes] : undefined,
-                errors: ctx.errors.length > 0 ? ctx.errors : undefined,
+                ...buildRunResponse(ctx),
+                editListeners: EDIT_MODES.includes(mode) ? await getEditListenerCounts(state) : undefined,
             };
         });
+    }
+
+    async function runEditBatch(rawPayload) {
+        if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
+            throw Object.assign(new TypeError('scripting edit batch payload must be an object'), { code: 'invalid_scripting_run' });
+        }
+        if (!Array.isArray(rawPayload.edits) || rawPayload.edits.length === 0) {
+            throw Object.assign(new TypeError('scripting edit batch requires edits'), { code: 'invalid_scripting_run' });
+        }
+        if (rawPayload.edits.length > MAX_BATCH_EDITS) {
+            throw Object.assign(new TypeError(`scripting edit batch exceeds ${MAX_BATCH_EDITS} edits`), { code: 'invalid_scripting_run' });
+        }
+        const payload = normalizeRunPayload(rawPayload);
+        if (!EDIT_MODES.includes(payload.mode)) {
+            throw Object.assign(new TypeError('scripting edit batch requires an edit mode'), { code: 'invalid_scripting_run' });
+        }
+        const edits = rawPayload.edits.map((edit, index) => {
+            if (!edit || typeof edit !== 'object' || Array.isArray(edit) ||
+                typeof edit.editId !== 'string' || edit.editId.length === 0 || edit.editId.length > 128) {
+                throw Object.assign(new TypeError(`scripting edit batch entry ${index} is invalid`), { code: 'invalid_scripting_run' });
+            }
+            const data = edit.data === undefined ? '' : edit.data;
+            if (typeof data !== 'string' && !Array.isArray(data)) {
+                throw Object.assign(new TypeError(`scripting edit batch entry ${index} data is invalid`), { code: 'invalid_scripting_run' });
+            }
+            const meta = edit.meta && typeof edit.meta === 'object' && !Array.isArray(edit.meta) ? edit.meta : {};
+            return { editId: edit.editId, data, meta };
+        });
+        const state = await getOrCreateEngine(payload.mode, payload.code);
+        return state.mutex.runExclusive(async () => {
+            const ctx = makeRunContext(payload);
+            state.ctx = ctx;
+            const func = state.engine.global.get('callListenMain');
+            const results = [];
+            if (func) {
+                for (const edit of edits) {
+                    let res;
+                    try {
+                        res = await func(
+                            payload.mode,
+                            ctx.accessKey,
+                            JSON.stringify(edit.data),
+                            JSON.stringify(edit.meta),
+                        );
+                        if (typeof res === 'string') res = JSON.parse(res);
+                    } catch (error) {
+                        ctx.errors.push(String(error?.message ?? error));
+                    }
+                    results.push({ editId: edit.editId, res });
+                }
+            }
+            state.ctx = null;
+            return {
+                ok: true,
+                edits: results,
+                ...buildRunResponse(ctx),
+                editListeners: await getEditListenerCounts(state),
+            };
+        });
+    }
+
+    function handleInvalidScriptingError(error, res, next) {
+        if (error?.code === 'invalid_scripting_run' || error instanceof TypeError || error instanceof RangeError) {
+            res.status(400).send({ error: error.message });
+            return true;
+        }
+        next(error);
+        return false;
     }
 
     function registerRoutes(app, { auth, limiter } = {}) {
@@ -1169,11 +1270,15 @@ function createNodeScriptingExecutor({
             try {
                 res.send(await run(req.body));
             } catch (error) {
-                if (error?.code === 'invalid_scripting_run' || error instanceof TypeError || error instanceof RangeError) {
-                    res.status(400).send({ error: error.message });
-                    return;
-                }
-                next(error);
+                handleInvalidScriptingError(error, res, next);
+            }
+        });
+        app.post('/api/scripting/edit-batch', ...guards, async (req, res, next) => {
+            if (auth && !await auth(req, res)) return;
+            try {
+                res.send(await runEditBatch(req.body));
+            } catch (error) {
+                handleInvalidScriptingError(error, res, next);
             }
         });
         app.post('/api/scripting/call-response', ...guards, async (req, res, next) => {
@@ -1211,6 +1316,7 @@ function createNodeScriptingExecutor({
 
     return {
         run,
+        runEditBatch,
         registerRoutes,
         resolvePendingCall,
         closeAll,

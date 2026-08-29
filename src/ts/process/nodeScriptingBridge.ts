@@ -121,6 +121,7 @@ interface NodeScriptingRunResponse {
   reloadChat?: number[];
   varWrites?: [string, string][];
   errors?: string[];
+  editListeners?: Record<string, number>;
 }
 
 const pendingRuns = new Map<string, NodeScriptingRunContext>();
@@ -492,22 +493,53 @@ export function handleNodeScriptingCall(
   })();
 }
 
+const EDIT_MODES = new Set(["editRequest", "editDisplay", "editInput", "editOutput"]);
+
 /**
- * Server-side counterpart of runScripted. Only used when the app is backed by
- * a Node server; otherwise the local wasmoon engine handles the script.
+ * code -> per-edit-mode listener counts reported by the server. A count of 0
+ * means the code registered no listener for that mode, so running it cannot
+ * change the content. Chat re-renders run every triggerlua trigger in
+ * editDisplay mode; caching the probe result lets those runs skip the
+ * network round trip entirely after the first one.
  */
-export async function runScriptedOnNode(
+const editListenerCounts = new Map<string, Record<string, number>>();
+const EDIT_LISTENER_CACHE_MAX = 64;
+
+function cacheEditListenerCounts(
+  code: string,
+  counts: Record<string, number> | undefined,
+): void {
+  if (!counts) return;
+  if (!editListenerCounts.has(code) && editListenerCounts.size >= EDIT_LISTENER_CACHE_MAX) {
+    const oldest = editListenerCounts.keys().next().value;
+    if (oldest !== undefined) editListenerCounts.delete(oldest);
+  }
+  editListenerCounts.set(code, counts);
+}
+
+function hashCode(value: string): string {
+  let hash = 5381;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 33 + value.charCodeAt(i)) | 0;
+  }
+  return String(hash >>> 0);
+}
+
+/**
+ * Build the context payload shared by single runs and edit batches. The chat
+ * is read live at call time so batches always post a fresh snapshot.
+ */
+function buildRunPayload(
   code: string,
   arg: NodeScriptingRunArgument,
-): Promise<{ stopSending: boolean; chat: Chat | undefined; res: unknown }> {
-  const mode = arg.mode ?? "manual";
-  const char = arg.char ?? characterStore.currentCharacter;
-  const chat = arg.chat ?? characterStore.currentChat;
+  chat: Chat | undefined,
+  mode: string,
+): Record<string, any> {
   const chatTarget = arg.chatTarget;
-  const scriptingChar = resolveScriptingCharacter(char, chatTarget);
-
-  const runId = v4();
-  const clientId = await getClientId();
+  const scriptingChar = resolveScriptingCharacter(
+    arg.char ?? characterStore.currentCharacter,
+    chatTarget,
+  );
 
   const personaName = getUserName(chatTarget);
   const personaDescription = risuChatParser(getPersonaPrompt(chatTarget), {
@@ -535,9 +567,7 @@ export async function runScriptedOnNode(
     withParsedContent(book, scriptingChar, chatTarget),
   );
 
-  const payload = {
-    runId,
-    clientId,
+  return {
     mode,
     code,
     lowLevelAccess: arg.lowLevelAccess === true,
@@ -590,129 +620,312 @@ export async function runScriptedOnNode(
     },
     encoding: getServerTiktokenEncoding() ?? "o200k_base",
   };
+}
 
-  const lockKey = `${chat?.id ?? "none"}::${mode}`;
+/**
+ * Apply a run response to the local stores. Shared by single runs and edit
+ * batches.
+ */
+async function applyRunResult(
+  result: NodeScriptingRunResponse,
+  chat: Chat | undefined,
+  arg: NodeScriptingRunArgument,
+): Promise<void> {
+  if (result.errors?.length) {
+    for (const entry of result.errors) console.error("[NodeScripting]", entry);
+  }
 
-  return await withRunLock(lockKey, async () => {
+  const previousMessageIds = (chat?.message ?? [])
+    .map((message) => message.chatId)
+    .filter((id): id is string => Boolean(id));
+
+  if (chat && result.chat) {
+    // Only touch the chat when the server reports real changes. Replacing
+    // chat.message with a fresh array (even when the content is identical)
+    // triggers a Svelte 5 re-render, which re-runs the display triggers
+    // and calls back into this bridge in an endless loop.
+    if (result.messagesMutated && Array.isArray(result.chat.message)) {
+      chat.message = result.chat.message;
+    }
+    if (result.chatFieldsMutated) {
+      if (result.chat.scriptstate !== undefined) {
+        chat.scriptstate = result.chat.scriptstate;
+      }
+      if (result.chat.GLGlobalVariables !== undefined) {
+        chat.GLGlobalVariables = result.chat.GLGlobalVariables;
+      }
+      if (result.chat.localLore !== undefined) {
+        chat.localLore = result.chat.localLore;
+      }
+      if (result.chat.note !== undefined) {
+        chat.note = result.chat.note;
+      }
+    }
+  }
+
+  if (result.messagesMutated && chat?.id) {
+    await messageStore.commitMessages(
+      chat.id,
+      chat.message ?? [],
+      previousMessageIds,
+    );
+  }
+  if (result.chatFieldsMutated && chat?.id) {
+    characterStore.markChatDirty(chat.id);
+  }
+
+  // Replay variable writes through the trigger engine's own closure so that
+  // local-scope variables, display temp vars and the trigger's own
+  // persistence (varChanged) behave exactly like local execution.
+  if (result.varWrites?.length && arg.setVar) {
+    for (const [key, value] of result.varWrites) {
+      arg.setVar(key, value);
+    }
+  }
+
+  if (result.charChanges) {
+    const scriptingChar = resolveScriptingCharacter(arg.char, arg.chatTarget);
+    const storedCharacter =
+      scriptingChar?.chaId && scriptingChar.type !== "simple"
+        ? characterStore.characters.find(
+            (candidate) => candidate?.chaId === scriptingChar.chaId,
+          ) ?? (scriptingChar as character)
+        : scriptingChar && scriptingChar.type !== "simple"
+          ? (scriptingChar as character)
+          : undefined;
+    if (storedCharacter) {
+      if (result.charChanges.name !== undefined) {
+        storedCharacter.name = result.charChanges.name;
+      }
+      if (result.charChanges.firstMessage !== undefined) {
+        storedCharacter.firstMessage = result.charChanges.firstMessage;
+      }
+      if (storedCharacter.type === "character") {
+        if (result.charChanges.desc !== undefined) {
+          storedCharacter.desc = result.charChanges.desc;
+        }
+        if (result.charChanges.backgroundHTML !== undefined) {
+          storedCharacter.backgroundHTML = result.charChanges.backgroundHTML;
+        }
+      }
+      if (storedCharacter.chaId) {
+        characterStore.markCharacterDirty(storedCharacter.chaId);
+      }
+    }
+  }
+
+  if (result.reloadDisplay) {
+    ReloadGUIPointer.set(get(ReloadGUIPointer) + 1);
+  }
+  if (result.reloadChat?.length) {
+    ReloadChatPointer.update((value) => {
+      for (const index of result.reloadChat ?? []) {
+        value[index] = (value[index] ?? 0) + 1;
+      }
+      return value;
+    });
+  }
+}
+
+interface PendingEdit {
+  editId: string;
+  data: unknown;
+  meta: object;
+  resolve: (res: unknown) => void;
+}
+
+interface EditBatch {
+  key: string;
+  mode: string;
+  code: string;
+  args: NodeScriptingRunArgument;
+  edits: PendingEdit[];
+  flushTimer: ReturnType<typeof setTimeout> | null;
+  flushing: boolean;
+}
+
+/**
+ * Pending edit runs grouped per (chat, mode, code). A render pass queues one
+ * entry per message; the flush posts them all in a single request, so a chat
+ * with N messages costs one round trip per code instead of N.
+ */
+const editBatches = new Map<string, EditBatch>();
+const EDIT_BATCH_CACHE_MAX = 128;
+
+function scheduleEditBatchFlush(batch: EditBatch): void {
+  if (batch.flushTimer !== null || batch.flushing) return;
+  batch.flushTimer = setTimeout(() => {
+    batch.flushTimer = null;
+    void flushEditBatch(batch);
+  }, 0);
+}
+
+async function flushEditBatch(batch: EditBatch): Promise<void> {
+  const edits = batch.edits.splice(0);
+  if (edits.length === 0) return;
+  batch.flushing = true;
+  const runId = v4();
+  const chat = batch.args.chat ?? characterStore.currentChat;
+  let resolved = false;
+  try {
     pendingRuns.set(runId, {
       runId,
-      char: scriptingChar,
+      char: resolveScriptingCharacter(batch.args.char, batch.args.chatTarget),
       chat,
-      chatTarget,
-      triggerId: arg.triggerId,
+      chatTarget: batch.args.chatTarget,
+      triggerId: batch.args.triggerId,
     });
-
-    try {
-      const auth = await getNodeServerProxyAuth();
-    const response = await fetch("/api/scripting/run", {
+    const auth = await getNodeServerProxyAuth();
+    const response = await fetch("/api/scripting/edit-batch", {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "risu-auth": auth,
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        ...buildRunPayload(batch.code, batch.args, chat, batch.mode),
+        runId,
+        clientId: await getClientId(),
+        edits: edits.map((edit) => ({
+          editId: edit.editId,
+          data: edit.data,
+          meta: edit.meta,
+        })),
+      }),
     });
-    if (!response.ok) {
+    if (response.ok) {
+      const result = (await response.json()) as NodeScriptingRunResponse & {
+        edits?: { editId: string; res: unknown }[];
+      };
+      cacheEditListenerCounts(batch.code, result.editListeners);
+      await applyRunResult(result, chat, batch.args);
+      const resultsById = new Map(
+        (result.edits ?? []).map((entry) => [entry.editId, entry.res]),
+      );
+      for (const edit of edits) edit.resolve(resultsById.get(edit.editId));
+      resolved = true;
+    } else {
       const message = await response.text();
       console.error(
-        `[NodeScripting] run failed (${response.status}): ${message}`,
+        `[NodeScripting] edit batch failed (${response.status}): ${message}`,
       );
+    }
+  } catch (error) {
+    console.error("[NodeScripting] edit batch failed", error);
+  } finally {
+    if (!resolved) {
+      for (const edit of edits) edit.resolve(undefined);
+    }
+    pendingRuns.delete(runId);
+    batch.flushing = false;
+    scheduleEditBatchFlush(batch);
+  }
+}
+
+function queueEditRun(
+  code: string,
+  arg: NodeScriptingRunArgument,
+  chat: Chat | undefined,
+  mode: string,
+): Promise<{ stopSending: boolean; chat: Chat | undefined; res: unknown }> {
+  const key = `${chat?.id ?? "none"}::${mode}::${hashCode(code)}`;
+  let batch = editBatches.get(key);
+  if (!batch) {
+    if (editBatches.size >= EDIT_BATCH_CACHE_MAX) {
+      for (const [batchKey, candidate] of editBatches) {
+        if (candidate.edits.length === 0 && !candidate.flushing) {
+          if (candidate.flushTimer !== null) clearTimeout(candidate.flushTimer);
+          editBatches.delete(batchKey);
+          break;
+        }
+      }
+    }
+    batch = {
+      key,
+      mode,
+      code,
+      args: arg,
+      edits: [],
+      flushTimer: null,
+      flushing: false,
+    };
+    editBatches.set(key, batch);
+  }
+  const editId = v4();
+  const promise = new Promise<{ stopSending: boolean; chat: Chat | undefined; res: unknown }>((resolve) => {
+    batch.edits.push({
+      editId,
+      data: arg.data ?? "",
+      meta: arg.meta ?? {},
+      resolve: (res) => resolve({ stopSending: false, chat, res }),
+    });
+  });
+  scheduleEditBatchFlush(batch);
+  return promise;
+}
+
+/**
+ * Server-side counterpart of runScripted. Only used when the app is backed by
+ * a Node server; otherwise the local wasmoon engine handles the script.
+ */
+export async function runScriptedOnNode(
+  code: string,
+  arg: NodeScriptingRunArgument,
+): Promise<{ stopSending: boolean; chat: Chat | undefined; res: unknown }> {
+  const mode = arg.mode ?? "manual";
+  const chat = arg.chat ?? characterStore.currentChat;
+
+  if (EDIT_MODES.has(mode)) {
+    // Fast path: the server confirmed this code registers no listeners for
+    // this mode, so running it cannot change the content — skip the round
+    // trip entirely.
+    const counts = editListenerCounts.get(code);
+    if (counts && (counts[mode] ?? 0) === 0) {
       return { stopSending: false, chat, res: undefined };
     }
-    const result = (await response.json()) as NodeScriptingRunResponse;
-    if (result.errors?.length) {
-      for (const entry of result.errors) console.error("[NodeScripting]", entry);
-    }
+    // Edit runs are batched per (chat, mode, code): a render pass becomes a
+    // single POST instead of one per message.
+    return queueEditRun(code, arg, chat, mode);
+  }
 
-    const previousMessageIds = (chat?.message ?? [])
-      .map((message) => message.chatId)
-      .filter((id): id is string => Boolean(id));
+  const payload = buildRunPayload(code, arg, chat, mode);
+  const runId = v4();
+  const lockKey = `${chat?.id ?? "none"}::${mode}`;
 
-    if (chat && result.chat) {
-      // Only touch the chat when the server reports real changes. Replacing
-      // chat.message with a fresh array (even when the content is identical)
-      // triggers a Svelte 5 re-render, which re-runs the display triggers
-      // and calls back into this bridge in an endless loop.
-      if (result.messagesMutated && Array.isArray(result.chat.message)) {
-        chat.message = result.chat.message;
-      }
-      if (result.chatFieldsMutated) {
-        if (result.chat.scriptstate !== undefined) {
-          chat.scriptstate = result.chat.scriptstate;
-        }
-        if (result.chat.GLGlobalVariables !== undefined) {
-          chat.GLGlobalVariables = result.chat.GLGlobalVariables;
-        }
-        if (result.chat.localLore !== undefined) {
-          chat.localLore = result.chat.localLore;
-        }
-        if (result.chat.note !== undefined) {
-          chat.note = result.chat.note;
-        }
-      }
-    }
+  return await withRunLock(lockKey, async () => {
+    pendingRuns.set(runId, {
+      runId,
+      char: resolveScriptingCharacter(arg.char, arg.chatTarget),
+      chat,
+      chatTarget: arg.chatTarget,
+      triggerId: arg.triggerId,
+    });
 
-    if (result.messagesMutated && chat?.id) {
-      await messageStore.commitMessages(
-        chat.id,
-        chat.message ?? [],
-        previousMessageIds,
-      );
-    }
-    if (result.chatFieldsMutated && chat?.id) {
-      characterStore.markChatDirty(chat.id);
-    }
-
-    // Replay variable writes through the trigger engine's own closure so that
-    // local-scope variables, display temp vars and the trigger's own
-    // persistence (varChanged) behave exactly like local execution.
-    if (result.varWrites?.length && arg.setVar) {
-      for (const [key, value] of result.varWrites) {
-        arg.setVar(key, value);
-      }
-    }
-
-    if (result.charChanges) {
-      const storedCharacter =
-        scriptingChar?.chaId && scriptingChar.type !== "simple"
-          ? characterStore.characters.find(
-              (candidate) => candidate?.chaId === scriptingChar.chaId,
-            ) ?? (scriptingChar as character)
-          : scriptingChar && scriptingChar.type !== "simple"
-            ? (scriptingChar as character)
-            : undefined;
-      if (storedCharacter) {
-        if (result.charChanges.name !== undefined) {
-          storedCharacter.name = result.charChanges.name;
-        }
-        if (result.charChanges.firstMessage !== undefined) {
-          storedCharacter.firstMessage = result.charChanges.firstMessage;
-        }
-        if (storedCharacter.type === "character") {
-          if (result.charChanges.desc !== undefined) {
-            storedCharacter.desc = result.charChanges.desc;
-          }
-          if (result.charChanges.backgroundHTML !== undefined) {
-            storedCharacter.backgroundHTML = result.charChanges.backgroundHTML;
-          }
-        }
-        if (storedCharacter.chaId) {
-          characterStore.markCharacterDirty(storedCharacter.chaId);
-        }
-      }
-    }
-
-    if (result.reloadDisplay) {
-      ReloadGUIPointer.set(get(ReloadGUIPointer) + 1);
-    }
-    if (result.reloadChat?.length) {
-      ReloadChatPointer.update((value) => {
-        for (const index of result.reloadChat ?? []) {
-          value[index] = (value[index] ?? 0) + 1;
-        }
-        return value;
+    try {
+      const auth = await getNodeServerProxyAuth();
+      const response = await fetch("/api/scripting/run", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "risu-auth": auth,
+        },
+        body: JSON.stringify({
+          ...payload,
+          runId,
+          clientId: await getClientId(),
+        }),
       });
-    }
+      if (!response.ok) {
+        const message = await response.text();
+        console.error(
+          `[NodeScripting] run failed (${response.status}): ${message}`,
+        );
+        return { stopSending: false, chat, res: undefined };
+      }
+      const result = (await response.json()) as NodeScriptingRunResponse;
+      cacheEditListenerCounts(code, result.editListeners);
+
+      await applyRunResult(result, chat, arg);
 
       return {
         stopSending: result.stopSending === true,
