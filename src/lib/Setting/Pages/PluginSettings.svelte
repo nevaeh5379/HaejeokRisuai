@@ -6,7 +6,7 @@
 
     import { hotReloading } from "src/ts/stores.svelte";
     import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
-    import { checkPluginUpdate, createBlankPlugin, importPlugin, loadPlugins, updatePlugin } from "src/ts/plugins/plugins.svelte";
+    import { checkPluginUpdate, createBlankPlugin, importPlugin, loadPlugins, togglePluginEnabled, updatePlugin } from "src/ts/plugins/plugins.svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import NumberInput from "src/lib/UI/GUI/NumberInput.svelte";
     import SelectInput from "src/lib/UI/GUI/SelectInput.svelte";
@@ -98,9 +98,7 @@
             <button
                 class="textcolor2 hover:gray-200 cursor-pointer"
                 onclick={async (e) => {
-                    plugin.enabled = !plugin.enabled
-                    settingsStore.state.plugins[i] = plugin
-                    loadPlugins()
+                    await togglePluginEnabled(i)
                     e.preventDefault()
                 }}
             >

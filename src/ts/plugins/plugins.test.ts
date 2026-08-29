@@ -23,7 +23,6 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
 
     settingsStore.init(
       {
-        username: "TestUser",
         pluginCustomStorage: {},
       } as any,
       mockStorage,

@@ -16,7 +16,7 @@
     "customPromptTemplateToggle"
   ],
   "DEFERRED_STARTUP_SETTING_KEYS": [
-    "loreBook", "globalscript", "pluginCustomStorage",
+    "plugins", "loadouts", "loreBook", "globalscript", "pluginCustomStorage",
     "mainPrompt", "jailbreak", "globalNote", "additionalPrompt",
     "supaMemoryPrompt", "emotionPrompt", "emotionPrompt2",
     "autoSuggestPrompt", "translatorPrompt", "instructChatTemplate",

@@ -88,9 +88,10 @@ describe("CapacitorSqliteStorage", () => {
       source.pluginCustomStorage,
     );
     const startup = await storage.loadStartupData();
-    expect(startup?.deferredSettingKeys).not.toContain("plugins");
-    expect(startup?.settings.plugins).toEqual(source.plugins);
+    expect(startup?.deferredSettingKeys).toContain("plugins");
+    expect(startup?.settings.plugins).toBeUndefined();
     installStartupData(startup!, storage);
+    await settingsStore.ensureDeferredKey("plugins");
     expect(settingsStore.state.plugins).toEqual(source.plugins);
     database.close();
   });

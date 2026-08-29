@@ -16,6 +16,7 @@ import {
   selectedCharID,
 } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
+import { getSqlStorage } from "../storage/sqlStorageFactory";
 import type { ScriptMode } from "../process/scripts";
 import { checkCodeSafety } from "./pluginSafety";
 import {
@@ -463,14 +464,44 @@ export async function importPlugin(
 }
 
 let pluginTranslator = false;
+let runtimePlugins: RisuPlugin[] = [];
+
+export function getRuntimePlugin(name: string): RisuPlugin | undefined {
+  return runtimePlugins.find((plugin) => plugin.name === name);
+}
+
+export async function togglePluginEnabled(index: number): Promise<void> {
+  await settingsStore.ensureDeferredKey("plugins");
+  const plugin = settingsStore.state.plugins?.[index];
+  if (!plugin) return;
+
+  const enabled = !plugin.enabled;
+  const storage = await getSqlStorage();
+  if (storage.setPluginEnabled) {
+    await storage.setPluginEnabled(plugin.name, enabled);
+    settingsStore.hydrate((state) => {
+      if (state.plugins?.[index]?.name === plugin.name) {
+        state.plugins[index].enabled = enabled;
+      }
+    });
+  } else {
+    plugin.enabled = enabled;
+    settingsStore.set("plugins", settingsStore.state.plugins);
+    await settingsStore.flush();
+  }
+  await loadPlugins();
+}
 
 export async function loadPlugins() {
   console.log("Loading plugins...");
-  let db = settingsStore.state;
+  const plugins = settingsStore.isDeferredLoaded("plugins")
+    ? settingsStore.state.plugins ?? []
+    : ((await (await getSqlStorage()).loadPlugins({ enabledOnly: true })) as RisuPlugin[] | null) ?? [];
 
-  const enabledPlugins = safeStructuredClone(db.plugins).filter(
+  const enabledPlugins = safeStructuredClone(plugins).filter(
     (p: RisuPlugin) => p.enabled,
   );
+  runtimePlugins = enabledPlugins;
   const pluginV2 = enabledPlugins.filter(
     (a: RisuPlugin) => a.version === 2 || a.version === "2.1",
   );

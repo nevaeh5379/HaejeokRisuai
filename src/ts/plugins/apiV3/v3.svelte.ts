@@ -2,6 +2,7 @@ import {
   allowedDbKeys,
   customProviderStore,
   getV2PluginAPIs,
+  getRuntimePlugin,
   handlePluginInstallViaPlugin,
   pluginV2,
   type PluginV2ProviderArgument,
@@ -676,7 +677,7 @@ const getPluginPermission = async (
   pluginHash =
     (await hasher(
       new TextEncoder().encode(
-        settingsStore.state.plugins?.find((p) => p.name === pluginName)?.script,
+        getRuntimePlugin(pluginName)?.script,
       ),
     )) + `_${permissionDesc}`;
 
@@ -988,20 +989,16 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
 
     //New APIs for v3
     getArgument: async (key: string) => {
-      const db = settingsStore.state;
-      for (const p of db.plugins) {
-        if (p.name === plugin.name) {
-          return p.realArg[key];
-        }
-      }
+      return getRuntimePlugin(plugin.name)?.realArg[key];
     },
     setArgument: async (key: string, value: string) => {
-      const db = settingsStore.state;
-      for (const p of db.plugins) {
-        if (p.name === plugin.name) {
-          p.realArg[key] = value;
-        }
-      }
+      await settingsStore.ensureDeferredKey("plugins");
+      const storedPlugin = settingsStore.state.plugins?.find(
+        (candidate) => candidate.name === plugin.name,
+      );
+      if (storedPlugin) storedPlugin.realArg[key] = value;
+      const runtimePlugin = getRuntimePlugin(plugin.name);
+      if (runtimePlugin) runtimePlugin.realArg[key] = value;
     },
     getCharacterFromIndex: (index: number) => {
       const char = characterStore.characters[index];
@@ -1512,9 +1509,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       message: any,
     ) => {
       const currentPluginName = plugin.name;
-      const receiverPlugin = settingsStore.state.plugins?.find(
-        (p) => p.name === pluginName,
-      );
+      const receiverPlugin = getRuntimePlugin(pluginName);
 
       if (!receiverPlugin) {
         console.warn(

@@ -3867,7 +3867,14 @@ app.get('/api/database-v2/plugins', authenticatedRouteLimiter, async (req, res, 
 
     try {
         const result = await postgresStorage.loadPlugins();
-        const etag = `"risu-plugins-${result.hash}"`;
+        const enabledOnly = req.query.enabledOnly === '1' || req.query.enabledOnly === 'true';
+        const plugins = enabledOnly
+            ? result.plugins.filter((plugin) => plugin?.enabled)
+            : result.plugins;
+        const hash = enabledOnly
+            ? crypto.createHash('sha256').update(JSON.stringify(plugins)).digest('hex')
+            : result.hash;
+        const etag = `"risu-plugins-${enabledOnly ? 'runtime-' : ''}${hash}"`;
         res.setHeader('ETag', etag);
         res.setHeader('Cache-Control', 'private, no-cache');
         const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
@@ -3875,14 +3882,73 @@ app.get('/api/database-v2/plugins', authenticatedRouteLimiter, async (req, res, 
             res.status(304).end();
             return;
         }
-        await sendCompressedJson(req, res, {
-            plugins: result.plugins,
-            hash: result.hash,
-        });
+        await sendCompressedJson(req, res, { plugins, hash });
     } catch (error) {
         next(error);
     }
 });
+
+app.patch(
+    '/api/database-v2/plugins/:pluginName/enabled',
+    authenticatedRouteLimiter,
+    requireNodeAuth,
+    postgresJsonParser,
+    async (req, res, next) => {
+        if (!postgresStorage.enabled) {
+            res.status(404).send({ error: 'SQL storage is not configured', code: 'postgres_disabled' });
+            return;
+        }
+        try {
+            const enabled = req.body?.enabled;
+            const baseRevision = Number(req.body?.baseRevision);
+            if (typeof enabled !== 'boolean' || !Number.isSafeInteger(baseRevision) || baseRevision < 0) {
+                res.status(400).send({ error: 'enabled and baseRevision are required', code: 'invalid_plugin_toggle' });
+                return;
+            }
+            const loaded = await postgresStorage.loadPlugins();
+            const plugins = loaded.plugins.map((plugin) => ({ ...plugin }));
+            const plugin = plugins.find((item) => item?.name === req.params.pluginName);
+            if (!plugin) {
+                res.status(404).send({ error: 'Plugin not found', code: 'plugin_not_found' });
+                return;
+            }
+            plugin.enabled = enabled;
+            const result = await postgresStorage.sync({
+                baseRevision,
+                action: 'plugin-toggle',
+                root: {
+                    upserts: [{ key: 'plugins', value: plugins }],
+                    deletes: [],
+                },
+            });
+            realtimeEventHub.broadcast('database-change', {
+                revision: result.revision,
+                action: 'plugin-toggle',
+                sourceClientId: normalizeClientId(req.headers['x-risu-client-id']),
+                pluginName: req.params.pluginName,
+                pluginEnabled: enabled,
+            });
+            res.send({ success: true, revision: result.revision });
+        } catch (error) {
+            if (error instanceof PostgresRevisionConflictError || error instanceof StorageRevisionConflictError) {
+                res.status(409).send({
+                    error: error.message,
+                    code: 'revision_conflict',
+                    revision: error.revision,
+                });
+                return;
+            }
+            if (error instanceof PostgresPayloadError || error instanceof StoragePayloadError) {
+                res.status(400).send({
+                    error: error.message,
+                    code: 'invalid_plugin_toggle',
+                });
+                return;
+            }
+            next(error);
+        }
+    }
+);
 
 app.get('/api/database-v2/plugin-custom-storage/keys', authenticatedRouteLimiter, async (req, res, next) => {
     if (!await checkAuth(req, res)) {

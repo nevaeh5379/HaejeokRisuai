@@ -453,6 +453,79 @@ describe("NodePostgresStorage browser client", () => {
     );
   });
 
+  it("loads only enabled plugins for runtime without poisoning the full plugin cache", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            plugins: [{ name: "runtime", enabled: true, script: "run()" }],
+            hash: "runtime-hash",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            plugins: [
+              { name: "runtime", enabled: true, script: "run()" },
+              { name: "disabled", enabled: false, script: "large()" },
+            ],
+            hash: "full-hash",
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const storage = new NodePostgresStorage(async () => "test-auth");
+    (storage as any).status = "enabled";
+    (storage as any).pluginsCacheForage = {
+      getItem: vi.fn(async () => null),
+      setItem: vi.fn(async () => undefined),
+      removeItem: vi.fn(async () => undefined),
+    };
+
+    expect(await storage.loadPlugins({ enabledOnly: true })).toHaveLength(1);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/database-v2/plugins?enabledOnly=1",
+    );
+
+    expect(await storage.loadPlugins()).toHaveLength(2);
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/database-v2/plugins");
+  });
+
+  it("toggles one plugin with a tiny revision-guarded request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ success: true, revision: 12 }), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const storage = new NodePostgresStorage(async () => "test-auth");
+    (storage as any).status = "enabled";
+    (storage as any).revision = 11;
+    (storage as any).pluginsCacheForage = {
+      getItem: vi.fn(async () => null),
+      setItem: vi.fn(async () => undefined),
+      removeItem: vi.fn(async () => undefined),
+    };
+
+    await storage.setPluginEnabled("large-plugin", true);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/database-v2/plugins/large-plugin/enabled",
+    );
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: "PATCH",
+      body: JSON.stringify({ enabled: true, baseRevision: 11 }),
+    });
+    expect(storage.getRevision()).toBe(12);
+  });
+
   it("loads startup domains separately from full database snapshots", async () => {
     const fetchMock = vi
       .fn()

@@ -396,7 +396,6 @@ export async function loadData() {
         try {
           await moduleStore.init(storage);
 
-          await settingsStore.ensureDeferredKey("plugins");
           settingsStore.hydratePluginCustomStorageKeys(
             await storage.listPluginCustomStorageKeys(),
           );

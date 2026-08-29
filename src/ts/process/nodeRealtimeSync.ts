@@ -25,6 +25,8 @@ type DatabaseChangeEvent = {
   pluginStorageUpsertKeys?: string[];
   pluginStorageDeleteKeys?: string[];
   pluginStorageCleared?: boolean;
+  pluginName?: string;
+  pluginEnabled?: boolean;
 };
 
 type ModelJobEvent = {
@@ -89,6 +91,27 @@ async function applyDatabaseChange(
   const pluginStorageDeleteKeys = Array.isArray(change.pluginStorageDeleteKeys)
     ? [...new Set(change.pluginStorageDeleteKeys.filter(Boolean))]
     : [];
+
+  if (
+    change.action === "plugin-toggle" &&
+    typeof change.pluginName === "string" &&
+    typeof change.pluginEnabled === "boolean"
+  ) {
+    if (settingsStore.isDeferredLoaded("plugins")) {
+      settingsStore.hydrate((state) => {
+        const plugin = state.plugins?.find(
+          (candidate) => candidate?.name === change.pluginName,
+        );
+        if (plugin) plugin.enabled = change.pluginEnabled;
+      });
+    }
+    try {
+      const { loadPlugins } = await import("../plugins/plugins.svelte");
+      await loadPlugins();
+    } catch (error) {
+      console.warn("[NodeRealtimeSync] failed to apply plugin toggle", error);
+    }
+  }
 
   const rootValues = await Promise.all(
     rootUpsertKeys.map(async (key) => [key, await storage.loadSettingKey(key)] as const),

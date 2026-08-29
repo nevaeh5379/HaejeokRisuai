@@ -870,8 +870,9 @@ export class WebSqliteStorage implements ISqlStorage {
     );
   }
 
-  async loadPlugins(): Promise<any[] | null> {
-    return ((await this.loadSettingValue("plugins")) as any[] | undefined) ?? null;
+  async loadPlugins(options?: { enabledOnly?: boolean }): Promise<any[] | null> {
+    const plugins = ((await this.loadSettingValue("plugins")) as any[] | undefined) ?? null;
+    return options?.enabledOnly && plugins ? plugins.filter((plugin) => plugin?.enabled) : plugins;
   }
   async loadPluginCustomStorage(): Promise<Record<string, any> | null> {
     const rows = await this.selectRows(
