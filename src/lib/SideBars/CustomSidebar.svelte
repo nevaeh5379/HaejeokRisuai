@@ -10,20 +10,24 @@
     import { getModelInfo } from 'src/ts/model/modellist';
     import { get } from 'svelte/store';
     import SettingRenderer from '../Setting/SettingRenderer.svelte';
-    import { checkPersonaBinded, getUserName } from 'src/ts/util';
+    import { checkPersonaBinded, getPersonaForTarget } from 'src/ts/util';
     import { v4 } from 'uuid';
     let configPage:'list'|'add'|'addSettingsSubmenu' = $state('list')
     let search = $state('')
 
     let bindedPersona = $derived.by(() => {
-
         characterStore.characters[$selectedCharID].chatPage
         return checkPersonaBinded()
     })
 
-    let personaName = $derived.by(() => {
-        return bindedPersona?.name ?? personaStore.activePersona?.name ?? 'User'
+    let fixedPersona = $derived.by(() => {
+        const chara = characterStore.characters[$selectedCharID]
+        if (!chara || chara.type === 'group' || !chara.fixedPersonaId) return null
+        return personaStore.list.find((persona) => persona.id === chara.fixedPersonaId) ?? null
     })
+
+    let displayedPersona = $derived.by(() => getPersonaForTarget())
+    let personaName = $derived(displayedPersona?.name ?? 'User')
 </script>
 
 
@@ -55,15 +59,15 @@
             }}>{settingsStore.state.lastLoadedLoadoutName || language.loadouts}</Button>
         {:else if item.type === 'persona'}
             <Button className="flex" onclick={() => {
-                if(bindedPersona){
+                if(bindedPersona || fixedPersona){
                     return
                 }
                 openPersonaList.set(!get(openPersonaList))
             }}>
                 <div class="flex-1 flex-col flex text-left">
                     <span>{personaName}</span>
-                    {#if bindedPersona?.note}
-                        <span class="text-xs text-textcolor2">{bindedPersona?.note}</span>
+                    {#if displayedPersona?.note}
+                        <span class="text-xs text-textcolor2">{displayedPersona.note}</span>
                     {/if}
                 </div>
 
