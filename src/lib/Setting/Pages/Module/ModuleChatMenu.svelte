@@ -5,9 +5,7 @@
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import type { RisuModule } from "src/ts/process/modules";
     
-    import { ReloadGUIPointer } from 'src/ts/stores.svelte';
-    import { selectedCharID } from "src/ts/stores.svelte";
-    import { SettingsMenuIndex, settingsOpen } from "src/ts/stores.svelte";
+    import { ReloadGUIPointer, selectedCharID, SettingsMenuIndex, settingsOpen, MobileGUI, MobileSideBar, openMobileSettingsPage } from "src/ts/stores.svelte";
     import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
     import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
     import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
@@ -131,9 +129,14 @@
         </div>
         <div>
             <Button className="mt-4 grow-0" size="sm" onclick={() => {
-                $SettingsMenuIndex = 14
-                $settingsOpen = true
-                close('')
+                if ($MobileGUI) {
+                    close('')
+                    openMobileSettingsPage(14, $selectedCharID, $MobileSideBar);
+                } else {
+                    $SettingsMenuIndex = 14
+                    $settingsOpen = true
+                    close('')
+                }
             }}>{language.edit}</Button>
         </div>
     </div>

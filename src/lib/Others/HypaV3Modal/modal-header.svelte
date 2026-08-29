@@ -16,6 +16,10 @@
     hypaV3ModalOpen,
     settingsOpen,
     SettingsMenuIndex,
+    MobileGUI,
+    MobileSideBar,
+    selectedCharID,
+    openMobileSettingsPage,
   } from "src/ts/stores.svelte";
   import type { SearchState, BulkEditState, CategoryManagerState, FilterState, UIState } from "./types";
 
@@ -78,8 +82,12 @@
 
   function openGlobalSettings() {
     $hypaV3ModalOpen = false;
-    $settingsOpen = true;
-    $SettingsMenuIndex = 2; // Other bot settings
+    if ($MobileGUI) {
+      openMobileSettingsPage(2, $selectedCharID, $MobileSideBar);
+    } else {
+      $settingsOpen = true;
+      $SettingsMenuIndex = 2; // Other bot settings
+    }
   }
 
   function openDropdown(e: MouseEvent) {

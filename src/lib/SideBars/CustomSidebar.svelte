@@ -1,6 +1,6 @@
 <script lang="ts">
     import { Cog, PinIcon } from '@lucide/svelte'
-    import { loadoutModalStore, openPersonaList, openPresetList, selectedCharID, settingsOpen, SettingsMenuIndex } from 'src/ts/stores.svelte';
+    import { loadoutModalStore, openPersonaList, openPresetList, selectedCharID, settingsOpen, SettingsMenuIndex, MobileGUI, MobileSideBar, openMobileSettingsPage } from 'src/ts/stores.svelte';
     import { characterStore, settingsStore, personaStore, presetStore } from 'src/ts/stores/domain';
     import Button from '../UI/GUI/Button.svelte';
     import type { CustomSideBarItem } from '../../ts/storage/schema';
@@ -35,8 +35,12 @@
     {#each settingsStore.state.customSidebarItems as item}
         {#if item.type === 'model'}
             <Button onclick={() => {
-                $SettingsMenuIndex = 1;
-                settingsOpen.set(true);
+                if ($MobileGUI) {
+                    openMobileSettingsPage(1, $selectedCharID, $MobileSideBar);
+                } else {
+                    $SettingsMenuIndex = 1;
+                    settingsOpen.set(true);
+                }
             }}>{
                 getModelInfo(settingsStore.state.aiModel)?.fullName || settingsStore.state.aiModel || language.none
             }</Button>
