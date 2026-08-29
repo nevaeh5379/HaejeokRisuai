@@ -54,9 +54,6 @@ class MockSqlStorage {
   }
 
   async close(): Promise<void> {}
-  async loadDatabase(): Promise<any> {
-    return {};
-  }
   async replaceDatabase(): Promise<boolean> {
     return true;
   }

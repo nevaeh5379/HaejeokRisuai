@@ -1193,7 +1193,7 @@ import type { character, groupChat } from "../../ts/storage/schema";
                     return
                 }
                 const m = convertCharacterToModule(char)
-                const targetModules = moduleStore.modules ?? settingsStore.state.modules
+                const targetModules = moduleStore.modules
                 targetModules.push(m)
                 alertNormal(language.successfullyConverted)
             }}

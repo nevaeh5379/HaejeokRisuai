@@ -55,6 +55,8 @@ const {
     StoragePayloadError,
 } = require('./storageDriver.cjs');
 const {
+    DEFERRED_STARTUP_SETTING_KEYS,
+    DOMAIN_STORE_SETTING_KEYS,
     SqlStorageBase,
     createSqlStorageHelpers,
     groupRows,
@@ -172,6 +174,12 @@ const DB_EXPLORER_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const DB_EXPLORER_MAX_ROWS = 200;
 const deflateAsync = promisify(deflate);
 const unzipAsync = promisify(unzip);
+const STARTUP_EXCLUDED_SETTING_KEYS = [
+    ...new Set([...DEFERRED_STARTUP_SETTING_KEYS, ...DOMAIN_STORE_SETTING_KEYS]),
+];
+const STARTUP_EXCLUDED_KEYS_SQL_LITERAL = STARTUP_EXCLUDED_SETTING_KEYS
+    .map((key) => `'${key.replace(/'/g, "''")}'`)
+    .join(', ');
 
 // Oracle은 점 표기를 식별자로 사용 불가. 접두어 테이블명으로 변환 후 따옴표 처리.
 function assertSqlIdentifier(value) {
@@ -1239,8 +1247,68 @@ class OracleStorage extends SqlStorageBase {
         }
     }
 
-    async loadDatabase(options = {}) {
-        const shallow = Boolean(options.shallow);
+    async loadStartupData() {
+        this.assertEnabled();
+        const conn = await this.pool.getConnection();
+        try {
+            await conn.execute('SET TRANSACTION READ ONLY');
+            const metaRow = await fetchOne(conn,
+                `SELECT revision, initialized FROM system_storage_meta WHERE singleton = 1`);
+            const revision = Number(metaRow.revision);
+            const initialized = num1ToBool(metaRow.initialized);
+            if (!initialized) {
+                await conn.rollback();
+                return { status: 'empty', revision, settings: {}, characters: [], deferredSettingKeys: [] };
+            }
+            const settings = await fetchRows(conn,
+                `SELECT key, text_val, num_val, bool_val FROM system_settings ` +
+                `WHERE key NOT IN (${STARTUP_EXCLUDED_KEYS_SQL_LITERAL}) ORDER BY key`,
+                [], { clobColumns: ['text_val'] });
+            const settingValues = await fetchRows(conn,
+                `SELECT * FROM system_setting_values ` +
+                `WHERE setting_key NOT IN (${STARTUP_EXCLUDED_KEYS_SQL_LITERAL}) ` +
+                `ORDER BY setting_key, node_id`,
+                [], { clobColumns: ['member_key', 'encoded_member_key', 'text_value', 'encoded_text_value'] });
+            const rebuiltSettings = rebuildSettings(settings, settingValues);
+            for (const row of settings) {
+                if (!Object.prototype.hasOwnProperty.call(rebuiltSettings, row.key)) {
+                    rebuiltSettings[row.key] = mapColumnsToSettingValue(row);
+                }
+            }
+            const characterRows = await fetchRows(conn,
+                `SELECT id, kind, name, image, trash_time, creation_time, ` +
+                `modification_time, last_interaction_time FROM character_characters ` +
+                `ORDER BY position, id`, [], { clobColumns: ['image'] });
+            const characters = characterRows.map((row) => ({
+                chaId: row.id,
+                type: row.kind || 'character',
+                name: row.name || '',
+                image: row.image || '',
+                trashTime: row.trash_time ?? undefined,
+                creationDate: timestampToNumber(row.creation_time) ?? undefined,
+                modificationDate: timestampToNumber(row.modification_time) ?? undefined,
+                lastInteraction: timestampToNumber(row.last_interaction_time) ?? undefined,
+                detailsLoaded: false,
+                chats: [],
+                chatPage: 0,
+            }));
+            await conn.rollback();
+            return {
+                status: 'ready',
+                revision,
+                settings: rebuiltSettings,
+                characters,
+                deferredSettingKeys: [...DEFERRED_STARTUP_SETTING_KEYS],
+            };
+        } catch (error) {
+            try { await conn.rollback(); } catch (e) {}
+            throw error;
+        } finally {
+            try { await conn.close(); } catch (e) {}
+        }
+    }
+
+    async exportDatabaseSnapshot() {
         this.assertEnabled();
         const conn = await this.pool.getConnection();
         try {
@@ -1253,48 +1321,6 @@ class OracleStorage extends SqlStorageBase {
             if (!initialized) {
                 await conn.rollback();
                 return { revision, initialized, database: null };
-            }
-
-            if (shallow) {
-                const settings = await fetchRows(conn, `SELECT key, text_val, num_val, bool_val FROM system_settings ORDER BY key`,
-                    [], { clobColumns: ['text_val'] });
-                const settingValues = await fetchRows(conn, `SELECT * FROM system_setting_values ORDER BY setting_key, node_id`,
-                    [], { clobColumns: ['member_key', 'encoded_member_key', 'text_value', 'encoded_text_value'] });
-                const characters = await fetchRows(conn, `SELECT * FROM character_characters ORDER BY position, id`,
-                    [], { clobColumns: ['image', 'description', 'notes', 'creator_notes', 'system_prompt',
-                        'post_history_instructions', 'personality', 'scenario', 'example_message', 'license',
-                        'default_variables', 'additional_text', 'translator_note', 'background_html', 'background_css',
-                        'first_message'] });
-                const tags = await fetchRows(conn, `SELECT * FROM character_tags ORDER BY character_id, position`);
-                const groupMembers = await fetchRows(conn, `SELECT * FROM character_group_members ORDER BY group_id, position`);
-                const chatFolders = await fetchRows(conn, `SELECT * FROM character_chat_folders ORDER BY character_id, position`);
-                const chats = await fetchRows(conn, `SELECT * FROM chat_chats ORDER BY character_id, position, id`,
-                    [], { clobColumns: ['note', 'sd_data', 'supa_memory_data', 'last_memory'] });
-                const bookmarks = await fetchRows(conn, `SELECT * FROM chat_bookmarks ORDER BY chat_id, position`);
-
-                const database = rebuildSettings(settings, settingValues);
-                for (const row of settings) if (!Object.prototype.hasOwnProperty.call(database, row.key)) {
-                    database[row.key] = mapColumnsToSettingValue(row);
-                }
-                database.plugins ??= [];
-                // Plugin storage is loaded by key after startup.
-                database.pluginCustomStorage = {};
-
-                const characterRelations = {
-                    tags: groupRows(tags, 'character_id'),
-                    groupMembers: groupRows(groupMembers, 'group_id'),
-                    chatFolders: groupRows(chatFolders, 'character_id'),
-                };
-                const chatRelations = { bookmarks: groupRows(bookmarks, 'chat_id') };
-
-                rebuildDatabaseGraph({
-                    database, characters, chats,
-                    characterRelations, chatRelations,
-                    rebuildCharacter, rebuildChat, rebuildMessage,
-                    shallow: true,
-                });
-                await conn.rollback();
-                return { revision, initialized, database };
             }
 
             // 전체 로드

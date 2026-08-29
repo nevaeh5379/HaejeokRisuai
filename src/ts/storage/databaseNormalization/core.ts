@@ -1,7 +1,5 @@
 import { defaultJailbreak, defaultMainPrompt } from "../defaultPrompts";
-import { safeStructuredClone } from "../../polyfill";
-import type { Database, PortableDatabase } from "../schema";
-import { presetTemplate } from "../presetDefaults";
+import type { Database } from "../schema";
 import { normalizePromptTemplate } from "../presetService";
 import {
   defaultBoolean,
@@ -60,7 +58,6 @@ export type CoreValidatedDefaults = Required<
 
 export function normalizeCoreDatabaseSettings(data: Database): void {
   Object.assign(data, parseDefaults(coreScalarDefaults, data));
-  data.characters ??= [];
   data.formatingOrder ??= [
     "main",
     "description",
@@ -74,14 +71,6 @@ export function normalizeCoreDatabaseSettings(data: Database): void {
   ];
   data.plugins ??= [];
   data.pluginCustomStorage ??= {};
-  const portableData = data as Database & Partial<PortableDatabase>;
-  portableData.botPresets ??= [
-    {
-      ...safeStructuredClone(presetTemplate),
-      name: "Default",
-    },
-  ];
-  portableData.botPresetsId ??= 0;
   if (Array.isArray(data.promptTemplate)) {
     data.promptTemplate = normalizePromptTemplate(data.promptTemplate);
   } else {

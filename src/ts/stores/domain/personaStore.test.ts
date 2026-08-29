@@ -2,70 +2,84 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ISqlStorage } from "../../storage/ISqlStorage";
+import type { SqlCommit } from "../../storage/sqlCommit";
 import { personaStore } from "./personaStore.svelte";
-import { settingsStore } from "./settingsStore.svelte";
 
 describe("PersonaStore", () => {
   let storage: ISqlStorage;
+  let commits: SqlCommit[];
 
   beforeEach(() => {
+    personaStore.resetForTesting();
+    commits = [];
     storage = {
-      getRevision: vi.fn(() => 0),
-      commit: vi.fn(async () => ({ revision: 1 })),
-      loadPluginCustomStorageKey: vi.fn(async () => undefined),
+      getRevision: vi.fn(() => commits.length),
+      loadPersonas: vi.fn(async () => []),
+      loadSettingKey: vi.fn(async () => undefined),
+      commit: vi.fn(async (commit: SqlCommit) => {
+        commits.push(structuredClone(commit));
+        return { revision: commits.length };
+      }),
     } as unknown as ISqlStorage;
   });
 
-  it("uses the selected persona as the only active identity", () => {
-    settingsStore.init(
-      {
-        username: "stale-root-name",
-        personas: [
-          { name: "A", icon: "a.png", personaPrompt: "A prompt" },
-          { name: "B", icon: "b.png", personaPrompt: "B prompt" },
-        ],
-        selectedPersona: 1,
-      } as any,
-      storage,
+  it("loads and owns the selected persona without SettingsStore mirrors", async () => {
+    storage.loadPersonas = vi.fn(async () => [
+      { name: "A", icon: "a.png", personaPrompt: "A prompt" },
+      { name: "B", icon: "b.png", personaPrompt: "B prompt" },
+    ]);
+    storage.loadSettingKey = vi.fn(async (key: string) =>
+      key === "selectedPersona" ? 1 : undefined,
     );
 
+    await personaStore.init(storage);
+
+    expect(personaStore.activeIndex).toBe(1);
     expect(personaStore.activePersona?.name).toBe("B");
     expect(personaStore.activePersona?.personaPrompt).toBe("B prompt");
   });
 
-  it("throws instead of silently falling back for an invalid selection", () => {
-    settingsStore.init(
-      {
-        personas: [{ name: "A", icon: "", personaPrompt: "A prompt" }],
-        selectedPersona: 3,
-      } as any,
-      storage,
-    );
+  it("fails fast instead of repairing an invalid selected persona index", async () => {
+    storage.loadPersonas = vi.fn(async () => [
+      { name: "A", icon: "", personaPrompt: "A prompt" },
+    ]);
+    storage.loadSettingKey = vi.fn(async () => 3);
 
-    expect(personaStore.activePersona).toBeUndefined();
-    expect(() => personaStore.requireActive("test")).toThrow(
+    await expect(personaStore.init(storage)).rejects.toThrow(
       /Invalid persona index: 3/,
     );
+    expect(personaStore.isLoaded).toBe(false);
   });
 
-  it("does not expose the shallow placeholder while personas are deferred", async () => {
+  it("creates only the domain default for a genuinely empty persona store", async () => {
+    await personaStore.init(storage);
+
+    expect(personaStore.isLoaded).toBe(true);
+    expect(personaStore.list).toHaveLength(1);
+    expect(personaStore.activePersona).toMatchObject({
+      name: "User",
+      icon: "",
+      personaPrompt: "",
+    });
+    expect(storage.commit).not.toHaveBeenCalled();
+  });
+
+  it("persists persona selection through PersonaStore itself", async () => {
     storage.loadPersonas = vi.fn(async () => [
-      { name: "Real A", icon: "", personaPrompt: "A" },
-      { name: "Real B", icon: "", personaPrompt: "B" },
-    ]) as any;
-    settingsStore.init(
-      {
-        personas: [{ name: "Placeholder", icon: "", personaPrompt: "" }],
-        selectedPersona: 1,
-      } as any,
-      storage,
-      { deferredUnloaded: ["personas"] },
+      { name: "A", icon: "", personaPrompt: "A" },
+      { name: "B", icon: "", personaPrompt: "B" },
+    ]);
+    await personaStore.init(storage);
+
+    await personaStore.setActiveIndex(1);
+
+    expect(commits).toHaveLength(1);
+    expect(commits[0].root.upserts).toContainEqual({
+      key: "selectedPersona",
+      value: 1,
+    });
+    expect(commits[0].root.upserts.some(({ key }) => key === "personas")).toBe(
+      false,
     );
-
-    expect(personaStore.activePersona).toBeUndefined();
-    await personaStore.ensureLoaded();
-
-    expect(storage.loadPersonas).toHaveBeenCalledTimes(1);
-    expect(personaStore.activePersona?.name).toBe("Real B");
   });
 });

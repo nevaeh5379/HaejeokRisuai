@@ -1,112 +1,122 @@
 import type { RisuModule, ModuleFolder } from "../../process/modules";
-import { settingsStore } from "./settingsStore.svelte";
+import type { ISqlStorage } from "../../storage/ISqlStorage";
+import { createEmptySqlCommit } from "../../storage/sqlCommit";
+import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
+import { snapshotFingerprint, trackDeep } from "./reactiveUtils";
 
 class ModuleStore {
   modules = $state<RisuModule[]>([]);
   enabledModules = $state<string[]>([]);
   moduleFolders = $state<ModuleFolder[]>([]);
+  loaded = $state(false);
 
-  init(
-    modules: RisuModule[] = [],
-    enabled: string[] = [],
-    folders: ModuleFolder[] = [],
-  ): void {
-    this.modules = [...modules];
-    this.enabledModules = [...enabled];
-    this.moduleFolders = [...folders];
-    settingsStore.hydrate((state) => {
-      state.modules = this.modules;
-      state.enabledModules = this.enabledModules;
-      state.moduleFolders = this.moduleFolders;
-    });
-  }
+  private storage: ISqlStorage | null = null;
+  private observeDispose: (() => void) | null = null;
+  private commitTimer: ReturnType<typeof setTimeout> | null = null;
+  private writeChain: Promise<void> = Promise.resolve();
+  private committed = { modules: "", enabled: "", folders: "" };
 
   get list(): RisuModule[] {
-    return this.modules.length > 0
-      ? this.modules
-      : (settingsStore.get("modules") ?? []);
+    return this.modules;
   }
 
   get folders(): ModuleFolder[] {
-    return this.moduleFolders.length > 0
-      ? this.moduleFolders
-      : (settingsStore.get("moduleFolders") ?? []);
+    return this.moduleFolders;
   }
 
   get enabledList(): RisuModule[] {
-    const enabledSet = new Set(
-      this.enabledModules.length > 0
-        ? this.enabledModules
-        : (settingsStore.get("enabledModules") ?? []),
-    );
-    return this.list.filter((m) => enabledSet.has(m.id));
+    const enabled = new Set(this.enabledModules);
+    return this.modules.filter((module) => enabled.has(module.id));
+  }
+
+  async init(storage: ISqlStorage): Promise<void> {
+    this.disposeObserver();
+    this.storage = storage;
+    const [modules, enabled, folders] = await Promise.all([
+      storage.loadModules(),
+      storage.loadSettingKey("enabledModules"),
+      storage.loadSettingKey("moduleFolders"),
+    ]);
+    this.modules = [...modules];
+    this.enabledModules = Array.isArray(enabled)
+      ? enabled.filter((id): id is string => typeof id === "string")
+      : [];
+    this.moduleFolders = Array.isArray(folders)
+      ? folders as ModuleFolder[]
+      : [];
+    this.loaded = true;
+    this.committed = this.fingerprints();
+    this.observeDispose = $effect.root(() => {
+      $effect(() => {
+        trackDeep(this.modules);
+        trackDeep(this.enabledModules);
+        trackDeep(this.moduleFolders);
+        const current = this.fingerprints();
+        if (
+          current.modules !== this.committed.modules ||
+          current.enabled !== this.committed.enabled ||
+          current.folders !== this.committed.folders
+        ) this.scheduleCommit();
+      });
+    });
   }
 
   getById(id: string): RisuModule | undefined {
-    return this.list.find((m) => m.id === id);
+    return this.modules.find((module) => module.id === id);
   }
 
   getFolderById(id: string): ModuleFolder | undefined {
-    return this.folders.find((f) => f.id === id);
+    return this.moduleFolders.find((folder) => folder.id === id);
   }
 
   modulesInFolder(folderId: string | undefined): RisuModule[] {
-    return this.list.filter((m) => m.folderId === folderId);
+    return this.modules.filter((module) => module.folderId === folderId);
   }
 
   modulesWithoutFolder(): RisuModule[] {
-    return this.list.filter(
-      (m) => !m.folderId || !this.getFolderById(m.folderId),
+    return this.modules.filter(
+      (module) => !module.folderId || !this.getFolderById(module.folderId),
     );
   }
-
   async installModule(module: RisuModule): Promise<void> {
-    const current = [...this.list];
-    const index = current.findIndex((m) => m.id === module.id);
-    if (index >= 0) {
-      current[index] = module;
-    } else {
-      current.push(module);
-    }
-    this.modules = current;
-    settingsStore.set("modules", current);
-    await settingsStore.flush();
+    const index = this.modules.findIndex((current) => current.id === module.id);
+    if (index >= 0) this.modules[index] = module;
+    else this.modules.push(module);
+    await this.flush();
   }
 
   async updateModule(id: string, module: RisuModule): Promise<void> {
-    return this.installModule(module);
+    const index = this.modules.findIndex((current) => current.id === id);
+    if (index < 0) throw new Error(`Module not found: ${id}`);
+    this.modules[index] = module;
+    await this.flush();
   }
 
   async removeModule(id: string): Promise<void> {
-    this.modules = this.list.filter((m) => m.id !== id);
-    this.enabledModules = (settingsStore.get("enabledModules") ?? []).filter(
-      (mId: string) => mId !== id,
+    this.modules = this.modules.filter((module) => module.id !== id);
+    this.enabledModules = this.enabledModules.filter(
+      (moduleId) => moduleId !== id,
     );
-    settingsStore.set("modules", this.modules);
-    settingsStore.set("enabledModules", this.enabledModules);
-    await settingsStore.flush();
+    await this.flush();
   }
 
   async toggleModule(id: string, forceEnabled?: boolean): Promise<boolean> {
-    const currentEnabled =
-      settingsStore.get("enabledModules") ?? this.enabledModules;
-    const enabledSet = new Set(currentEnabled);
-    const shouldEnable =
-      forceEnabled !== undefined ? forceEnabled : !enabledSet.has(id);
-    if (shouldEnable) {
-      enabledSet.add(id);
-    } else {
-      enabledSet.delete(id);
-    }
-    this.enabledModules = Array.from(enabledSet);
-    settingsStore.set("enabledModules", this.enabledModules);
-    await settingsStore.flush();
+    const enabled = new Set(this.enabledModules);
+    const shouldEnable = forceEnabled ?? !enabled.has(id);
+    if (shouldEnable) enabled.add(id);
+    else enabled.delete(id);
+    this.enabledModules = [...enabled];
+    await this.flush();
     return shouldEnable;
   }
 
   isModuleEnabled(id: string): boolean {
-    const enabled = settingsStore.get("enabledModules") ?? this.enabledModules;
-    return enabled.includes(id);
+    return this.enabledModules.includes(id);
+  }
+
+  async setEnabledModules(ids: string[]): Promise<void> {
+    this.enabledModules = [...new Set(ids)];
+    await this.flush();
   }
 
   async addFolder(name: string, color = ""): Promise<ModuleFolder> {
@@ -115,40 +125,115 @@ class ModuleStore {
       name,
       color,
     };
-    this.moduleFolders = [...this.folders, folder];
-    settingsStore.set("moduleFolders", this.moduleFolders);
-    await settingsStore.flush();
+    this.moduleFolders.push(folder);
+    await this.flush();
     return folder;
   }
 
   async renameFolder(id: string, name: string): Promise<void> {
-    this.moduleFolders = this.folders.map((f) =>
-      f.id === id ? { ...f, name } : f,
-    );
-    settingsStore.set("moduleFolders", this.moduleFolders);
-    await settingsStore.flush();
+    const folder = this.getFolderById(id);
+    if (!folder) throw new Error(`Module folder not found: ${id}`);
+    folder.name = name;
+    await this.flush();
   }
 
   async removeFolder(id: string): Promise<void> {
-    this.moduleFolders = this.folders.filter((f) => f.id !== id);
-    const modules = this.list.map((m) =>
-      m.folderId === id ? { ...m, folderId: undefined } : m,
-    );
-    this.modules = modules;
-    settingsStore.set("moduleFolders", this.moduleFolders);
-    settingsStore.set("modules", this.modules);
-    await settingsStore.flush();
+    this.moduleFolders = this.moduleFolders.filter((folder) => folder.id !== id);
+    for (const module of this.modules) {
+      if (module.folderId === id) module.folderId = undefined;
+    }
+    await this.flush();
   }
 
   async moveModuleToFolder(
     moduleId: string,
     folderId: string | undefined,
   ): Promise<void> {
-    this.modules = this.list.map((m) =>
-      m.id === moduleId ? { ...m, folderId } : m,
-    );
-    settingsStore.set("modules", this.modules);
-    await settingsStore.flush();
+    const module = this.getById(moduleId);
+    if (!module) throw new Error(`Module not found: ${moduleId}`);
+    if (folderId !== undefined && !this.getFolderById(folderId)) {
+      throw new Error(`Module folder not found: ${folderId}`);
+    }
+    module.folderId = folderId;
+    await this.flush();
+  }
+
+  async flush(): Promise<void> {
+    if (this.commitTimer) {
+      clearTimeout(this.commitTimer);
+      this.commitTimer = null;
+    }
+    const current = this.fingerprints();
+    if (
+      current.modules === this.committed.modules &&
+      current.enabled === this.committed.enabled &&
+      current.folders === this.committed.folders
+    ) return;
+
+    const storage = this.storage;
+    if (!storage) {
+      this.committed = current;
+      return;
+    }
+    const commit = createEmptySqlCommit(0, "modules");
+    if (current.modules !== this.committed.modules) {
+      commit.root.upserts.push({
+        key: "modules",
+        value: $state.snapshot(this.modules),
+      });
+    }
+    if (current.enabled !== this.committed.enabled) {
+      commit.root.upserts.push({
+        key: "enabledModules",
+        value: $state.snapshot(this.enabledModules),
+      });
+    }
+    if (current.folders !== this.committed.folders) {
+      commit.root.upserts.push({
+        key: "moduleFolders",
+        value: $state.snapshot(this.moduleFolders),
+      });
+    }
+    const operation = this.writeChain.then(() => commitSqlChanges(storage, commit));
+    this.writeChain = operation.then(() => undefined, () => undefined);
+    await operation;
+    this.committed = current;
+  }
+
+  private fingerprints() {
+    return {
+      modules: snapshotFingerprint($state.snapshot(this.modules)),
+      enabled: snapshotFingerprint($state.snapshot(this.enabledModules)),
+      folders: snapshotFingerprint($state.snapshot(this.moduleFolders)),
+    };
+  }
+
+  private scheduleCommit(): void {
+    if (this.commitTimer) clearTimeout(this.commitTimer);
+    this.commitTimer = setTimeout(() => {
+      this.commitTimer = null;
+      void this.flush().catch((error) => {
+        console.error("[ModuleStore] Failed to persist modules:", error);
+      });
+    }, 100);
+  }
+
+  private disposeObserver(): void {
+    this.observeDispose?.();
+    this.observeDispose = null;
+    if (this.commitTimer) clearTimeout(this.commitTimer);
+    this.commitTimer = null;
+  }
+
+  resetForTesting(): void {
+    this.disposeObserver();
+    this.storage = null;
+    this.modules = [];
+    this.enabledModules = [];
+    this.moduleFolders = [];
+    this.loaded = false;
+    this.committed = { modules: "", enabled: "", folders: "" };
+    this.writeChain = Promise.resolve();
   }
 }
 

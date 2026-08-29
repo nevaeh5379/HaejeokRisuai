@@ -311,7 +311,7 @@ describe('Oracle Backup Archive Sync Test', () => {
         expect(syncResult.changed.chats).toBe(1)
         expect(syncResult.changed.messages).toBe(2)
 
-        // 5. Test storage.loadDatabase({ shallow: true })
+        // 5. Test storage.loadStartupData()
         const splitSettingRows = rootUpserts.map((u: any) => splitSetting(u.key, u.value))
         const allSettingRows = splitSettingRows.map((s: any) => ({
             KEY: s.setting.key,
@@ -357,10 +357,10 @@ describe('Oracle Backup Archive Sync Test', () => {
         }
 
         storage.pool.getConnection = vi.fn(async () => mockLoadConn)
-        const loadedShallow = await storage.loadDatabase({ shallow: true })
-        expect(loadedShallow).toBeDefined()
-        expect(loadedShallow.initialized).toBe(true)
-        expect(loadedShallow.database.characters.length).toBe(1)
-        expect(loadedShallow.database.characters[0].name).toBe('Test Character')
+        const startup = await storage.loadStartupData()
+        expect(startup).toBeDefined()
+        expect(startup.status).toBe('ready')
+        expect(startup.characters).toHaveLength(1)
+        expect(startup.characters[0].name).toBe('Test Character')
     })
 })

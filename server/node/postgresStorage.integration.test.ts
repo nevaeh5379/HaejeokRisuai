@@ -15,7 +15,7 @@ const {
         enabled:boolean
         initialize:() => Promise<void>
         reconfigure:(options:{connectionString:string, poolMax?:number}) => Promise<void>
-        loadDatabase:() => Promise<{
+        exportDatabaseSnapshot:() => Promise<{
             initialized:boolean
             revision:number
             database:Record<string, any>|null
@@ -189,7 +189,7 @@ describePostgres('PostgreSQL structured storage integration', () => {
         expect(first.revision).toBe(1)
         expect(await storage.getState()).toEqual({ revision: 1, initialized: true })
 
-        const loaded = await storage.loadDatabase()
+        const loaded = await storage.exportDatabaseSnapshot()
         expect(loaded.revision).toBe(1)
         expect(loaded.initialized).toBe(true)
         expect(loaded.database?.username).toBe('user')
@@ -252,7 +252,7 @@ describePostgres('PostgreSQL structured storage integration', () => {
             }],
         })
 
-        const updated = await storage.loadDatabase()
+        const updated = await storage.exportDatabaseSnapshot()
         expect(updated.revision).toBe(2)
         expect(updated.database?.username).toBe('renamed')
         expect(updated.database?.optionalValue).toBeUndefined()
@@ -491,7 +491,7 @@ describePostgres('PostgreSQL structured storage integration', () => {
             baseRevision: 0,
             root: { upserts: [{ key: 'username', value: 'stale' }], deletes: [] },
         })).rejects.toBeInstanceOf(PostgresRevisionConflictError)
-        expect((await storage.loadDatabase()).database?.username).toBe('first')
+        expect((await storage.exportDatabaseSnapshot()).database?.username).toBe('first')
     })
 
     it('stores cold data in relational chat and message tables and prunes it with one set operation', async () => {
@@ -649,8 +649,8 @@ describePostgres('PostgreSQL structured storage integration', () => {
         const history = await storage.listRevisions()
         expect(history.map((revision) => revision.id)).toEqual([2, 1])
         await storage.restoreRevision(1)
-        expect((await storage.loadDatabase()).database?.username).toBe('first')
-        expect((await storage.loadDatabase()).database?.translatorPresets).toEqual([
+        expect((await storage.exportDatabaseSnapshot()).database?.username).toBe('first')
+        expect((await storage.exportDatabaseSnapshot()).database?.translatorPresets).toEqual([
             { name: 'Old', prompt: 'old', maxResponse: 100 },
         ])
         expect(await storage.pool.query(
@@ -713,16 +713,16 @@ describePostgres('PostgreSQL structured storage integration', () => {
         expect((await storage.loadColdStorage(coldKey))?.data).toEqual({
             message: [{ role: 'char', data: 'archived' }],
         })
-        expect((await storage.loadDatabase()).database?.characters[0].chats[0].message[0]).toMatchObject({
+        expect((await storage.exportDatabaseSnapshot()).database?.characters[0].chats[0].message[0]).toMatchObject({
             data: 'after', generationInfo: { model: 'new-model' },
         })
 
         await storage.restoreRevision(1)
         expect(await storage.loadColdStorage(coldKey)).toBeNull()
-        expect((await storage.loadDatabase()).database?.characters[0].chats[0].message[0]).toMatchObject({
+        expect((await storage.exportDatabaseSnapshot()).database?.characters[0].chats[0].message[0]).toMatchObject({
             data: 'before\0binary', generationInfo: { model: 'old-model' },
         })
-        expect((await storage.loadDatabase()).database?.characters[0]).toMatchObject({
+        expect((await storage.exportDatabaseSnapshot()).database?.characters[0]).toMatchObject({
             vits: null,
             extensionLabel: 'old',
         })

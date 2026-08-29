@@ -31,6 +31,8 @@ const {
 } = require('./postgresSettingsCodec.cjs');
 const {
     DEFERRED_SETTING_KEYS,
+    DEFERRED_STARTUP_SETTING_KEYS,
+    DOMAIN_STORE_SETTING_KEYS,
     SqlStorageBase,
     createSqlStorageHelpers,
     groupRows,
@@ -77,7 +79,12 @@ const deflateAsync = promisify(deflate);
 const unzipAsync = promisify(unzip);
 
 
-const DEFERRED_KEYS_SQL_LITERAL = DEFERRED_SETTING_KEYS.map((k) => `'${k}'`).join(', ');
+const STARTUP_EXCLUDED_SETTING_KEYS = [
+    ...new Set([...DEFERRED_STARTUP_SETTING_KEYS, ...DOMAIN_STORE_SETTING_KEYS]),
+];
+const STARTUP_EXCLUDED_KEYS_SQL_LITERAL = STARTUP_EXCLUDED_SETTING_KEYS
+    .map((key) => `'${key}'`)
+    .join(', ');
 
 function mapSettingValueToColumns(value) {
     if (typeof value === 'boolean') {
@@ -1429,8 +1436,58 @@ class PostgresStorage extends SqlStorageBase {
         return { exported, archived: staleFiles.length };
     }
 
-    async loadDatabase(options = {}) {
-        const shallow = Boolean(options.shallow);
+    async loadStartupData() {
+        this.assertEnabled();
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+            const metaResult = await client.query(
+                'SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE'
+            );
+            const revision = Number(metaResult.rows[0].revision);
+            const initialized = Boolean(metaResult.rows[0].initialized);
+            if (!initialized) {
+                await client.query('COMMIT');
+                return { status: 'empty', revision, settings: {}, characters: [], deferredSettingKeys: [] };
+            }
+            const queries = [
+                `SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key NOT IN (${STARTUP_EXCLUDED_KEYS_SQL_LITERAL}) ORDER BY key`,
+                `SELECT * FROM system.setting_values WHERE setting_key NOT IN (${STARTUP_EXCLUDED_KEYS_SQL_LITERAL}) ORDER BY setting_key, node_id`,
+                'SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM character.characters ORDER BY position, id',
+            ];
+            const [settingsRows, settingValueRows, characterRows] =
+                (await client.query(queries.join(';\n'))).map((result) => result.rows);
+            const settings = rebuildSettingRows(settingsRows, settingValueRows);
+            const characters = characterRows.map((row) => ({
+                chaId: row.id,
+                type: row.kind || 'character',
+                name: row.name || '',
+                image: row.image || '',
+                trashTime: row.trash_time ?? undefined,
+                creationDate: row.creation_time ?? undefined,
+                modificationDate: row.modification_time ?? undefined,
+                lastInteraction: row.last_interaction_time ?? undefined,
+                detailsLoaded: false,
+                chats: [],
+                chatPage: 0,
+            }));
+            await client.query('COMMIT');
+            return {
+                status: 'ready',
+                revision,
+                settings,
+                characters,
+                deferredSettingKeys: [...DEFERRED_STARTUP_SETTING_KEYS],
+            };
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async exportDatabaseSnapshot() {
         this.assertEnabled();
         const client = await this.pool.connect();
         try {
@@ -1443,48 +1500,6 @@ class PostgresStorage extends SqlStorageBase {
             if (!initialized) {
                 await client.query('COMMIT');
                 return { revision, initialized, database: null };
-            }
-
-            if (shallow) {
-                const shallowQueries = [
-                    `SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key NOT IN (${DEFERRED_KEYS_SQL_LITERAL}) ORDER BY key`,
-                    `SELECT * FROM system.setting_values WHERE setting_key NOT IN (${DEFERRED_KEYS_SQL_LITERAL}) ORDER BY setting_key, node_id`,
-                    'SELECT * FROM character.characters ORDER BY position, id',
-                    'SELECT * FROM character.tags ORDER BY character_id, position',
-                    'SELECT * FROM character.group_members ORDER BY group_id, position',
-                    'SELECT * FROM character.chat_folders ORDER BY character_id, position',
-                    'SELECT * FROM chat.chats ORDER BY character_id, position, id',
-                    'SELECT * FROM chat.bookmarks ORDER BY chat_id, position',
-                ];
-                const results = await client.query(shallowQueries.join(';\n'));
-                const [
-                    settings, settingValues, characters, tags, groupMembers, chatFolders, chats, bookmarks
-                ] = results.map((result) => result.rows);
-
-                const database = rebuildSettingRows(settings, settingValues);
-                database.plugins ??= [];
-                // Plugin storage is loaded by key after startup. Keeping it out
-                // of the shallow shell prevents large, static plugin caches from
-                // being parsed and transferred twice during bootstrap.
-                database.pluginCustomStorage = {};
-
-                const characterRelations = {
-                    tags: groupRows(tags, 'character_id'),
-                    groupMembers: groupRows(groupMembers, 'group_id'),
-                    chatFolders: groupRows(chatFolders, 'character_id'),
-                };
-                const chatRelations = {
-                    bookmarks: groupRows(bookmarks, 'chat_id'),
-                };
-
-                rebuildDatabaseGraph({
-                    database, characters, chats,
-                    characterRelations, chatRelations,
-                    rebuildCharacter, rebuildChat, rebuildMessage,
-                    shallow: true,
-                });
-                await client.query('COMMIT');
-                return { revision, initialized, database };
             }
 
             const loadQueries = [

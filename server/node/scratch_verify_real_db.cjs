@@ -34,9 +34,9 @@ async function verify() {
         await conn.close();
     }
 
-    console.log('Testing storage.loadDatabase({ shallow: true })...');
-    const loaded = await storage.loadDatabase({ shallow: true });
-    console.log('loadDatabase successful! Characters:', loaded.database?.characters?.length, 'Revision:', loaded.revision);
+    console.log('Testing storage.loadStartupData()...');
+    const loaded = await storage.loadStartupData();
+    console.log('loadStartupData successful! Characters:', loaded.characters?.length, 'Revision:', loaded.revision);
 
     await storage.close();
     console.log('Verification completed successfully!');

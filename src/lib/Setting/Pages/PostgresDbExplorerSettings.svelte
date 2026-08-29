@@ -12,6 +12,7 @@
     import { NodeStorage } from 'src/ts/storage/nodeStorage'
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte'
     import { characterStore } from 'src/ts/stores/domain/characterStore.svelte'
+    import { moduleStore } from 'src/ts/stores/domain/moduleStore.svelte'
     import { getMimeType } from 'src/ts/media'
     import DbExplorerTabNav from './DbExplorer/DbExplorerTabNav.svelte'
     import DbTableExplorerTab from './DbExplorer/tabs/DbTableExplorerTab.svelte'
@@ -139,7 +140,7 @@
             totalInputTokens,
             totalOutputTokens,
             totalTokens: totalInputTokens + totalOutputTokens,
-            totalModules: (settingsStore.state.modules?.length ?? 0),
+            totalModules: (moduleStore.modules?.length ?? 0),
             totalLorebooks: (settingsStore.state.loreBook?.length ?? 0),
             totalTables: tables.length,
             totalRows

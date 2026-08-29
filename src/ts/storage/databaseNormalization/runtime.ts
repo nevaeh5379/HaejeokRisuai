@@ -106,15 +106,6 @@ function applyPlatformRuntimePolicy(data: Database): void {
   }
 }
 
-function resetTransientChatState(data: Database): void {
-  for (const char of data.characters) {
-    for (const chat of char.chats ?? []) {
-      chat.isStreaming = false;
-      chat.activeStreamingDisplayOptimizationMode = undefined;
-    }
-  }
-}
-
 export function normalizeRuntimeDatabaseSettings(data: Database): void {
   Object.assign(data, parseDefaults(runtimeScalarDefaults, data));
   data.customModels ??= [];
@@ -134,5 +125,4 @@ export function normalizeRuntimeDatabaseSettings(data: Database): void {
   data.loadouts ??= [];
   data.customSidebarItems ??= [];
   data.coldstorage ??= data?.plugins?.length === 0;
-  resetTransientChatState(data);
 }

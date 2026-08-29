@@ -1,48 +1,26 @@
 import { changeLanguage } from "../../lang";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { DEFERRED_STARTUP_SETTING_KEYS } from "./sqlDeferredSettings";
-import type { ISqlStorage } from "./ISqlStorage";
-import type { Database } from "./schema";
-import { normalizeDatabaseDefaults } from "./databaseDefaults";
+import type { ISqlStorage, SqlStartupDataResult } from "./ISqlStorage";
+import { normalizeSettingsDefaults, type SettingsInput } from "./databaseDefaults";
 
-export interface DomainStoreInitializationOptions {
-  deferredUnloaded?: readonly string[];
-}
-
-export function initializeDomainStores(
-  data: Database,
-  storage: ISqlStorage | null = null,
-  options: DomainStoreInitializationOptions = {},
+export function installStartupData(
+  startup: SqlStartupDataResult,
+  storage: ISqlStorage,
 ): void {
-  characterStore.init(data.characters ?? [], storage);
-  settingsStore.init(data, storage, options);
-}
+  normalizeSettingsDefaults(startup.settings as SettingsInput);
 
-export function installDatabase(
-  data: Database,
-  storage: ISqlStorage | null = null,
-  options: DomainStoreInitializationOptions = {},
-): void {
-  const isSql = (data as Database & { isSql?: boolean }).isSql === true;
-  const deferredUnloaded = isSql
-    ? [
-        ...new Set([
-          ...DEFERRED_STARTUP_SETTING_KEYS.filter(
-            (key) => !Object.prototype.hasOwnProperty.call(data, key),
-          ),
-          ...(options.deferredUnloaded ?? []),
-        ]),
-      ]
-    : [];
-
-  normalizeDatabaseDefaults(data);
-  if (data.language) {
-    void changeLanguage(data.language).then(() => {
-      if (settingsStore.state.language === data.language) {
-        settingsStore.state.language = data.language;
+  const language = startup.settings.language;
+  if (language) {
+    void changeLanguage(language).then(() => {
+      if (settingsStore.state.language === language) {
+        settingsStore.state.language = language;
       }
     });
   }
-  initializeDomainStores(data, storage, { deferredUnloaded });
+
+  characterStore.init(startup.characters, storage);
+  settingsStore.init(startup.settings, storage, {
+    deferredUnloaded: startup.deferredSettingKeys ?? [],
+  });
 }

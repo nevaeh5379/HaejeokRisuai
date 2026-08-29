@@ -212,14 +212,14 @@ async function syncBackupToAzure(backupPath, options = {}) {
     console.log(`\n🎉 Real Azure SQL sync SUCCESS! Result:`, result, `(took ${duration}s)\n`);
 
     if (options.shallowVerify !== false) {
-        console.log('[Azure Sync] Testing loadDatabase({ shallow: true }) from Azure SQL DB...');
-        const loaded = await storage.loadDatabase({ shallow: true });
-        console.log(`[Azure Sync] Shallow verification succeeded! Loaded characters: ${loaded.database?.characters?.length}, Revision: ${loaded.revision}`);
+        console.log('[Azure Sync] Testing loadStartupData() from Azure SQL DB...');
+        const loaded = await storage.loadStartupData();
+        console.log(`[Azure Sync] Startup verification succeeded! Loaded characters: ${loaded.characters?.length}, Revision: ${loaded.revision}`);
     }
 
     if (options.fullVerify) {
-        console.log('[Azure Sync] Testing full loadDatabase({ shallow: false }) with messages from Azure SQL DB...');
-        const fullLoaded = await storage.loadDatabase({ shallow: false });
+        console.log('[Azure Sync] Testing exportDatabaseSnapshot() with messages from Azure SQL DB...');
+        const fullLoaded = await storage.exportDatabaseSnapshot();
         let totalLoadedChats = 0;
         let totalLoadedMessages = 0;
         for (const c of fullLoaded.database?.characters || []) {

@@ -37,7 +37,7 @@ import {
   type QueryLog,
 } from "./sqliteTestHarness";
 import type { Database, character, Chat, Message } from "./schema";
-import { installDatabase } from "./databaseLifecycle";
+import { installStartupData } from "./databaseLifecycle";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 
 type MakeStorage = (database: DatabaseSync) => ISqlStorage;
@@ -70,13 +70,13 @@ function makeFreshHarness(make: MakeStorage) {
 // ── Contract suites ──────────────────────────────────────────────────
 
 describe.each(backendFactories)("$name contracts", ({ make }) => {
-  it("round-trips a full database through replaceDatabase + loadDatabase", async () => {
+  it("round-trips a full database through replaceDatabase + exportDatabaseSnapshot", async () => {
     const { storage, database } = makeFreshHarness(make);
     const source = await seed(storage);
 
-    const loaded = await storage.loadDatabase({ shallow: false });
-    expect(loaded?.status).toBe("ready");
+    const loaded = await storage.exportDatabaseSnapshot();
     const db = loaded?.database as any;
+    expect(db).toBeDefined();
 
     expect(db.username).toBe("tester");
     expect(db.language).toBe("en");
@@ -131,30 +131,30 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     const source = await seed(storage);
     queryLog.clear();
 
-    const loaded = await storage.loadDatabase({ shallow: true });
-    const db = loaded?.database as any;
-    expect(loaded?.status).toBe("ready");
-    expect(db.isSql).toBe(true);
+    const startup = await storage.loadStartupData();
+    expect(startup?.status).toBe("ready");
+    const settings = startup!.settings as any;
+    const characters = startup!.characters as any[];
 
-    // Characters are metadata shells.
-    expect(db.characters).toHaveLength(2);
-    expect(db.characters[0]).toMatchObject({
+    // Characters are a separate startup domain of metadata shells.
+    expect(characters).toHaveLength(2);
+    expect(characters[0]).toMatchObject({
       chaId: "char-1",
       name: "Alpha",
       detailsLoaded: false,
     });
-    expect(db.characters[0].chats).toEqual([]);
-    expect(db.characters[0].message).toBeUndefined();
+    expect(characters[0].chats).toEqual([]);
+    expect(characters[0].message).toBeUndefined();
 
-    // Storage returns plain shallow data now; deferred domains are omitted
-    // instead of being hidden behind the deleted database adapter proxy.
-    expect(Object.prototype.hasOwnProperty.call(db, "personas")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(db, "loreBook")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(db, "modules")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(db, "globalscript")).toBe(
-      false,
-    );
-    expect(typeof db.isDomainLoaded).toBe("undefined");
+    // Settings never contain data owned by other domain stores.
+    expect(Object.prototype.hasOwnProperty.call(settings, "personas")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(settings, "selectedPersona")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(settings, "modules")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(settings, "enabledModules")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(settings, "moduleFolders")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(settings, "activeBotPresetId")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(settings, "loreBook")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(settings, "globalscript")).toBe(false);
 
     // Lazy loading contract: every setting-node read in a shallow load must
     // exclude the deferred keys; plugin storage must not be read at all.
@@ -176,7 +176,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
 
     // The domain store owns lazy hydration: defaults are immediately usable,
     // then the targeted storage value replaces them without becoming a write.
-    installDatabase(db as Database, storage);
+    installStartupData(startup!, storage);
     queryLog.clear();
     const live = settingsStore.state;
     expect(queryLog.touching("setting_extension_nodes")).toBe(0);
@@ -199,17 +199,18 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     }
     await seed(storage, db);
 
-    const loaded = (await storage.loadDatabase({ shallow: true }))
-      ?.database as any;
+    const startup = await storage.loadStartupData();
+    expect(startup?.status).toBe("ready");
+    const loaded = startup!.settings as any;
     for (const key of DEFERRED_STARTUP_SETTING_KEYS) {
       if (key === "pluginCustomStorage") continue;
       expect(
         Object.prototype.hasOwnProperty.call(loaded, key),
-        `deferred key '${key}' must be absent from the raw shallow snapshot`,
+        `deferred key '${key}' must be absent from startup settings`,
       ).toBe(false);
     }
 
-    installDatabase(loaded as Database, storage);
+    installStartupData(startup!, storage);
     expect(settingsStore.state.mainPrompt).not.toBe("leaky-mainPrompt");
     await settingsStore.ensureDeferredKey("mainPrompt");
     expect(settingsStore.state.mainPrompt).toBe("leaky-mainPrompt");
@@ -354,8 +355,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     replacement.characters = [];
     await storage.replaceDatabase(replacement as Database);
 
-    const loaded = (await storage.loadDatabase({ shallow: false }))
-      ?.database as any;
+    const loaded = (await storage.exportDatabaseSnapshot())?.database as any;
     expect(loaded.username).toBe("replaced");
     expect(loaded.characters).toEqual([]);
     const charCount = database

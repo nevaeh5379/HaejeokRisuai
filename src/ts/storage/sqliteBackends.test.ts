@@ -339,8 +339,8 @@ describe("WebSqliteStorage", () => {
     } as any;
 
     await expect(storage.replaceDatabase(source)).resolves.toBe(true);
-    const loaded = await storage.loadDatabase({ shallow: true });
-    expect(loaded?.database?.username).toBe("Migration User");
+    const loaded = await storage.loadStartupData();
+    expect(loaded?.settings.username).toBe("Migration User");
     expect(await storage.loadPluginCustomStorageKey("plugin")).toEqual({
       nested: [1, null, "three"],
     });

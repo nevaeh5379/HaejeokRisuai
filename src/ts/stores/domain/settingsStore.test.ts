@@ -503,17 +503,57 @@ describe("SettingsStore Reactivity and Persistence", () => {
     settingsStore.hydrate((state) => {
       state.moduleIntergration = "hydrated-stale";
       state.apiType = "gemini";
-      state.modules = [{ id: "loaded-module" }];
     });
 
     expect(settingsStore.state.moduleIntergration).toBe("local-new");
     expect(Object.keys(settingsStore.state)).not.toContain("apiType");
-    expect(settingsStore.state.modules).toEqual([{ id: "loaded-module" }]);
     await settingsStore.flush();
     expect(committed[0].root.upserts).toContainEqual({
       key: "moduleIntergration",
       value: "local-new",
     });
     expect(committed[0].root.deletes).toContain("apiType");
+  });
+
+  it("rejects data owned by other domain stores at every mutation boundary", () => {
+    const forbidden = [
+      "characters",
+      "personas",
+      "selectedPersona",
+      "modules",
+      "enabledModules",
+      "moduleFolders",
+      "activeBotPresetId",
+      "botPresets",
+      "botPresetsId",
+      "isSql",
+    ];
+
+    for (const key of forbidden) {
+      expect(() =>
+        settingsStore.init({ [key]: [] } as any, mockStorage),
+      ).toThrow(/owned by another domain store/);
+    }
+
+    settingsStore.init({ theme: "dark" } as any, mockStorage);
+    for (const key of forbidden) {
+      expect(() =>
+        settingsStore.update((state) => {
+          state[key] = [];
+        }),
+      ).toThrow(/owned by another domain store/);
+      expect(Object.prototype.hasOwnProperty.call(settingsStore.state, key)).toBe(
+        false,
+      );
+
+      expect(() =>
+        settingsStore.hydrate((state) => {
+          state[key] = [];
+        }),
+      ).toThrow(/owned by another domain store/);
+      expect(Object.prototype.hasOwnProperty.call(settingsStore.state, key)).toBe(
+        false,
+      );
+    }
   });
 });

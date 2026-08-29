@@ -3,6 +3,7 @@ import { NodeStorage } from "src/ts/storage/nodeStorage";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { personaStore } from "src/ts/stores/domain/personaStore.svelte";
+import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
 import { language } from "src/lang";
 import type {
   AssetUsageInfo,
@@ -350,7 +351,7 @@ export async function runStorageAnalysis(
   }
 
   const modules: ModuleStorageInfo[] = [];
-  const moduleEntries = (settingsStore.state.modules || []).map(
+  const moduleEntries = (moduleStore.modules || []).map(
     (module: any, index: number) => ({
       module,
       storageId: module.id || `module:${index}`,

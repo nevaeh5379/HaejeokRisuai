@@ -41,7 +41,8 @@ const {
     StoragePayloadError,
 } = require('./storageDriver.cjs');
 const {
-    DEFERRED_SETTING_KEYS,
+    DEFERRED_STARTUP_SETTING_KEYS,
+    DOMAIN_STORE_SETTING_KEYS,
     SqlStorageBase,
     createSqlStorageHelpers,
     groupRows,
@@ -142,6 +143,12 @@ const DB_EXPLORER_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const DB_EXPLORER_MAX_ROWS = 200;
 const deflateAsync = promisify(deflate);
 const unzipAsync = promisify(unzip);
+const STARTUP_EXCLUDED_SETTING_KEYS = [
+    ...new Set([...DEFERRED_STARTUP_SETTING_KEYS, ...DOMAIN_STORE_SETTING_KEYS]),
+];
+const STARTUP_EXCLUDED_KEYS_SQL_LITERAL = STARTUP_EXCLUDED_SETTING_KEYS
+    .map((key) => `'${key.replace(/'/g, "''")}'`)
+    .join(', ');
 
 
 function assertSqlIdentifier(value) {
@@ -613,7 +620,60 @@ class AzureStorage extends SqlStorageBase {
         };
     }
 
-    async loadDatabase({ shallow = false, onlyKeys = null } = {}) {
+    async loadStartupData() {
+        const pool = await this.getPool();
+        const state = await this.getState();
+        if (!state.initialized) {
+            return { status: 'empty', revision: state.revision, settings: {}, characters: [], deferredSettingKeys: [] };
+        }
+        const settings = (await pool.request().query(
+            `SELECT [key], [text_val], [num_val], [bool_val] FROM [system].[settings] ` +
+            `WHERE [key] NOT IN (${STARTUP_EXCLUDED_KEYS_SQL_LITERAL}) ORDER BY [key]`
+        )).recordset;
+        const settingKeys = new Set(settings.map((row) => row.key));
+        const settingValues = (await pool.request().query(
+            `SELECT * FROM [system].[setting_values] ` +
+            `WHERE setting_key NOT IN (${STARTUP_EXCLUDED_KEYS_SQL_LITERAL}) ` +
+            `ORDER BY setting_key, node_id`
+        )).recordset;
+        const rebuiltSettings = rebuildSettings(
+            settings,
+            settingValues.filter((row) => settingKeys.has(row.setting_key)),
+        );
+        for (const row of settings) {
+            if (!Object.prototype.hasOwnProperty.call(rebuiltSettings, row.key)) {
+                rebuiltSettings[row.key] = mapColumnsToSettingValue(row);
+            }
+        }
+        const characterRows = (await pool.request().query(
+            `SELECT id, kind, name, image, trash_time, creation_time, ` +
+            `modification_time, last_interaction_time FROM [character].[characters] ` +
+            `ORDER BY position, id`
+        )).recordset;
+        const asTimestamp = (value) => value instanceof Date ? value.getTime() : value ?? undefined;
+        const characters = characterRows.map((row) => ({
+            chaId: row.id,
+            type: row.kind || 'character',
+            name: row.name || '',
+            image: row.image || '',
+            trashTime: asTimestamp(row.trash_time),
+            creationDate: asTimestamp(row.creation_time),
+            modificationDate: asTimestamp(row.modification_time),
+            lastInteraction: asTimestamp(row.last_interaction_time),
+            detailsLoaded: false,
+            chats: [],
+            chatPage: 0,
+        }));
+        return {
+            status: 'ready',
+            revision: state.revision,
+            settings: rebuiltSettings,
+            characters,
+            deferredSettingKeys: [...DEFERRED_STARTUP_SETTING_KEYS],
+        };
+    }
+
+    async exportDatabaseSnapshot() {
         const pool = await this.getPool();
         const state = await this.getState();
 
@@ -621,16 +681,8 @@ class AzureStorage extends SqlStorageBase {
             return { revision: state.revision, initialized: false, database: null };
         }
 
-        const deferredKeysLiteral = DEFERRED_SETTING_KEYS.map((k) => `'${k.replace(/'/g, "''")}'`).join(', ');
-
         // 1. Settings
-        let settingsQuery = 'SELECT [key], [text_val], [num_val], [bool_val] FROM [system].[settings] ORDER BY [key]';
-        if (Array.isArray(onlyKeys) && onlyKeys.length > 0) {
-            const keysList = onlyKeys.map((k) => `'${k.replace(/'/g, "''")}'`).join(', ');
-            settingsQuery = `SELECT [key], [text_val], [num_val], [bool_val] FROM [system].[settings] WHERE [key] IN (${keysList}) ORDER BY [key]`;
-        } else if (shallow) {
-            settingsQuery = `SELECT [key], [text_val], [num_val], [bool_val] FROM [system].[settings] WHERE [key] NOT IN (${deferredKeysLiteral}) ORDER BY [key]`;
-        }
+        const settingsQuery = 'SELECT [key], [text_val], [num_val], [bool_val] FROM [system].[settings] ORDER BY [key]';
         const settingsRes = await pool.request().query(settingsQuery);
         const settings = settingsRes.recordset;
         const settingKeys = new Set(settings.map((row) => row.key));
@@ -642,16 +694,10 @@ class AzureStorage extends SqlStorageBase {
         for (const row of settings) if (!Object.prototype.hasOwnProperty.call(database, row.key)) {
             database[row.key] = mapColumnsToSettingValue(row);
         }
-        if (shallow) {
-            database.plugins ??= [];
-            // Plugin storage is loaded by key after startup.
-            database.pluginCustomStorage = {};
-        } else {
             const pluginRows = (await pool.request().query(
                 'SELECT [key], [value] FROM [system].[plugin_custom_storage] ORDER BY [key]'
             )).recordset;
             database.pluginCustomStorage = Object.fromEntries(pluginRows.map((row) => [row.key, JSON.parse(row.value)]));
-        }
 
         // 2. Characters & 3. Chats
         let characterRelations;
@@ -659,47 +705,6 @@ class AzureStorage extends SqlStorageBase {
         let charsRes;
         let chatsRes;
 
-        if (shallow) {
-            const [
-                cRes, charTagsRes, charGroupMembersRes, charFoldersRes,
-                chRes, chatBookmarksRes
-            ] = await Promise.all([
-                pool.request().query('SELECT * FROM [character].[characters] ORDER BY position, id'),
-                pool.request().query('SELECT * FROM [character].[tags] ORDER BY character_id, position'),
-                pool.request().query('SELECT * FROM [character].[group_members] ORDER BY group_id, position'),
-                pool.request().query('SELECT * FROM [character].[chat_folders] ORDER BY character_id, position'),
-                pool.request().query('SELECT * FROM [chat].[chats] ORDER BY character_id, position, id'),
-                pool.request().query('SELECT * FROM [chat].[bookmarks] ORDER BY chat_id, position'),
-            ]);
-
-            charsRes = cRes;
-            chatsRes = chRes;
-
-            characterRelations = {
-                attributes: new Map(),
-                tags: groupRows(charTagsRes.recordset, 'character_id'),
-                greetings: new Map(),
-                biases: new Map(),
-                emotions: new Map(),
-                modules: new Map(),
-                groupMembers: groupRows(charGroupMembersRes.recordset, 'group_id'),
-                chatFolders: groupRows(charFoldersRes.recordset, 'character_id'),
-                scripts: new Map(),
-                sdData: new Map(),
-                assets: new Map(),
-                lore: new Map(),
-            };
-
-            chatRelations = {
-                attributes: new Map(),
-                suggestions: new Map(),
-                modules: new Map(),
-                scriptState: new Map(),
-                bookmarks: groupRows(chatBookmarksRes.recordset, 'chat_id'),
-                memory: new Map(),
-                lore: new Map(),
-            };
-        } else {
             const [
                 cRes, charAttrsRes, charTagsRes, charGreetingsRes, charBiasesRes,
                 charEmotionsRes, charModulesRes, charGroupMembersRes, charFoldersRes,
@@ -757,13 +762,11 @@ class AzureStorage extends SqlStorageBase {
                 memory: chatMemoryRes.recordset,
                 lore: chatLoreEntriesRes.recordset,
             });
-        }
 
         // 4. Messages (if not shallow)
         let messages = [];
         let messageRelations = null;
 
-        if (!shallow) {
             const [
                 msgsRes, msgAttrsRes, msgGenRes, msgPromptInfoRes,
                 msgPromptTogglesRes, msgPromptItemsRes,
@@ -784,7 +787,6 @@ class AzureStorage extends SqlStorageBase {
                 promptToggles: msgPromptTogglesRes.recordset,
                 promptItems: msgPromptItemsRes.recordset,
             });
-        }
 
         rebuildDatabaseGraph({
             database,
@@ -797,7 +799,6 @@ class AzureStorage extends SqlStorageBase {
             rebuildCharacter,
             rebuildChat,
             rebuildMessage,
-            shallow,
         });
 
         return {
@@ -1069,7 +1070,7 @@ class AzureStorage extends SqlStorageBase {
     }
 
     async getDatabaseSnapshot() {
-        const { database } = await this.loadDatabase({ shallow: false });
+        const { database } = await this.exportDatabaseSnapshot();
         return database;
     }
 

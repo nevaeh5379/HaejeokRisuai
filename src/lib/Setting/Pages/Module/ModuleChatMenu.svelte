@@ -18,7 +18,7 @@
     let { close = (i:string) => {}, alertMode = false }: Props = $props();
     let moduleSearch = $state('')
     let modules = $derived(moduleStore.list)
-    let enabledModules = $derived(settingsStore.state.enabledModules ?? moduleStore.enabledModules ?? [])
+    let enabledModules = $derived(moduleStore.enabledModules)
     let currentCharacter = $derived(characterStore.characters?.[$selectedCharID])
     let currentChat = $derived(currentCharacter?.chats?.[currentCharacter.chatPage])
 

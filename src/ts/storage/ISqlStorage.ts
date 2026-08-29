@@ -1,5 +1,6 @@
 import type {
   Database,
+  DatabaseSettings,
   character,
   groupChat,
   Chat,
@@ -27,16 +28,20 @@ import type {
 export type SqlBackendKind =
   "node" | "web-sqlite" | "tauri-sqlite" | "capacitor-sqlite";
 
-export interface SqlLoadDatabaseOptions {
-  shallow?: boolean;
-}
-
-export interface SqlLoadDatabaseResult {
+export interface SqlStartupDataResult {
   status: "ready" | "empty";
   revision: number;
-  database: Database | null;
-  /** Settings intentionally omitted from a shallow snapshot and loaded on first access. */
+  /** Only SettingsStore-owned values are present here. */
+  settings: Partial<DatabaseSettings>;
+  /** Lightweight character shells owned by CharacterStore. */
+  characters: (character | groupChat)[];
+  /** Settings intentionally omitted from startup and loaded on first access. */
   deferredSettingKeys?: string[];
+}
+
+export interface SqlDatabaseSnapshotResult {
+  revision: number;
+  database: Database | null;
 }
 
 export interface SqlChatLoadOptions {
@@ -100,9 +105,10 @@ export interface BotPresetSummary {
  * app talks to — no more database.bin / localForage / OPFS branching at the
  * call sites.
  *
- * Domain lazy-loading contract:
- *  - `loadDatabase({ shallow: true })` returns core settings + character/chat
- *    *metadata only* (no messages, no full character detail).
+ * Domain loading contract:
+ *  - `loadStartupData()` returns SettingsStore-owned settings and lightweight
+ *    character shells as separate domains.
+ *  - `exportDatabaseSnapshot()` is the only aggregate Database read boundary.
  *  - `loadCharacter(id)` returns a full character (with chats list but without
  *    message arrays).
  *  - `loadChat(id)` returns a full chat *with* its message array.
@@ -124,11 +130,10 @@ export interface ISqlStorage {
    */
   init(): Promise<boolean>;
 
-  // ── Database-level load / save ───────────────────────────────────────
+  // ── Startup / snapshot / save ───────────────────────────────────────
 
-  loadDatabase(
-    options?: SqlLoadDatabaseOptions,
-  ): Promise<SqlLoadDatabaseResult | null>;
+  loadStartupData(): Promise<SqlStartupDataResult | null>;
+  exportDatabaseSnapshot(): Promise<SqlDatabaseSnapshotResult | null>;
 
   commit(commit: SqlCommit): Promise<SqlCommitResult>;
 

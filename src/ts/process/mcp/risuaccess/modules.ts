@@ -1,6 +1,7 @@
 import { language } from "src/lang";
 import { alertConfirm } from "src/ts/alert";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
 import { pickHashRand } from "src/ts/util";
 import {
   type MCPTool,
@@ -371,8 +372,8 @@ export class ModuleHandler extends MCPToolHandler {
     if (count < 1) count = 1;
     if (offset < 0) offset = 0;
 
-    const modules = settingsStore.state.modules.filter((m) => !m.mcp);
-    const enabledModules = new Set(settingsStore.state.enabledModules || []);
+    const modules = moduleStore.modules.filter((m) => !m.mcp);
+    const enabledModules = new Set(moduleStore.enabledModules || []);
 
     const slicedModules = modules.slice(offset, offset + count);
 
@@ -395,13 +396,13 @@ export class ModuleHandler extends MCPToolHandler {
     id: string,
     fields?: string[],
   ): Promise<RPCToolCallContent[]> {
-    const module = settingsStore.state.modules.find((m) => m.id === id);
+    const module = moduleStore.modules.find((m) => m.id === id);
 
     if (!module || module.mcp) {
       return moduleNotFound(id);
     }
 
-    const enabledModules = new Set(settingsStore.state.enabledModules || []);
+    const enabledModules = new Set(moduleStore.enabledModules || []);
     const defaultFields = ["name", "description", "id", "enabled"];
     const targetFields = fields && fields.length > 0 ? fields : defaultFields;
 
@@ -439,7 +440,7 @@ export class ModuleHandler extends MCPToolHandler {
   }
 
   async setModuleInfo(id: string, data: any): Promise<RPCToolCallContent[]> {
-    const module = settingsStore.state.modules.find((m) => m.id === id);
+    const module = moduleStore.modules.find((m) => m.id === id);
     if (!module || module.mcp) {
       return [
         {
@@ -477,14 +478,14 @@ export class ModuleHandler extends MCPToolHandler {
 
       if (key === "enabled") {
         const enabledModules = new Set(
-          settingsStore.state.enabledModules || [],
+          moduleStore.enabledModules || [],
         );
         if (value) {
           enabledModules.add(id);
         } else {
           enabledModules.delete(id);
         }
-        settingsStore.state.enabledModules = Array.from(enabledModules);
+        moduleStore.enabledModules = Array.from(enabledModules);
       } else {
         // @ts-ignore
         module[key] = value;
@@ -504,7 +505,7 @@ export class ModuleHandler extends MCPToolHandler {
     count: number = 100,
     offset: number = 0,
   ): Promise<RPCToolCallContent[]> {
-    const module = settingsStore.state.modules.find((m) => m.id === id);
+    const module = moduleStore.modules.find((m) => m.id === id);
     if (!module || module.mcp) {
       return moduleNotFound(id);
     }
@@ -534,7 +535,7 @@ export class ModuleHandler extends MCPToolHandler {
     id: string,
     names: string[],
   ): Promise<RPCToolCallContent[]> {
-    const module = settingsStore.state.modules.find((m) => m.id === id);
+    const module = moduleStore.modules.find((m) => m.id === id);
     if (!module || module.mcp) {
       return moduleNotFound(id);
     }
@@ -577,7 +578,7 @@ export class ModuleHandler extends MCPToolHandler {
     newName?: string,
     alwaysActive?: boolean,
   ): Promise<RPCToolCallContent[]> {
-    const module = settingsStore.state.modules.find((m) => m.id === id);
+    const module = moduleStore.modules.find((m) => m.id === id);
     if (!module || module.mcp) {
       return moduleNotFound(id);
     }
@@ -656,7 +657,7 @@ export class ModuleHandler extends MCPToolHandler {
     id: string,
     name: string,
   ): Promise<RPCToolCallContent[]> {
-    const module = settingsStore.state.modules.find((m) => m.id === id);
+    const module = moduleStore.modules.find((m) => m.id === id);
     if (!module || module.mcp) {
       return moduleNotFound(id);
     }
@@ -705,7 +706,7 @@ export class ModuleHandler extends MCPToolHandler {
   }
 
   async getModuleRegexScripts(id: string): Promise<RPCToolCallContent[]> {
-    const module = settingsStore.state.modules.find((m) => m.id === id);
+    const module = moduleStore.modules.find((m) => m.id === id);
 
     if (!module || module.mcp) {
       return moduleNotFound(id);
@@ -742,7 +743,7 @@ export class ModuleHandler extends MCPToolHandler {
     flag?: string,
     ableFlag?: boolean,
   ): Promise<RPCToolCallContent[]> {
-    const module = settingsStore.state.modules.find((m) => m.id === id);
+    const module = moduleStore.modules.find((m) => m.id === id);
     if (!module || module.mcp) {
       return moduleNotFound(id);
     }
@@ -810,7 +811,7 @@ export class ModuleHandler extends MCPToolHandler {
     id: string,
     name: string,
   ): Promise<RPCToolCallContent[]> {
-    const module = settingsStore.state.modules.find((m) => m.id === id);
+    const module = moduleStore.modules.find((m) => m.id === id);
     if (!module || module.mcp) {
       return moduleNotFound(id);
     }
@@ -859,7 +860,7 @@ export class ModuleHandler extends MCPToolHandler {
   }
 
   async getModuleLuaScript(id: string): Promise<RPCToolCallContent[]> {
-    const module = settingsStore.state.modules.find((m) => m.id === id);
+    const module = moduleStore.modules.find((m) => m.id === id);
     if (!module || module.mcp) {
       return moduleNotFound(id);
     }
@@ -889,7 +890,7 @@ export class ModuleHandler extends MCPToolHandler {
     id: string,
     code: string,
   ): Promise<RPCToolCallContent[]> {
-    const module = settingsStore.state.modules.find((m) => m.id === id);
+    const module = moduleStore.modules.find((m) => m.id === id);
     if (!module || module.mcp) {
       return moduleNotFound(id);
     }

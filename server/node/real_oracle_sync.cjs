@@ -219,9 +219,9 @@ async function syncBackupToOracle(backupPath, options = {}) {
     console.log(`\n🎉 Real Oracle sync SUCCESS! Result:`, result, `(took ${duration}s)\n`);
 
     if (options.shallowVerify !== false) {
-        console.log('[Oracle Sync] Testing loadDatabase({ shallow: true }) from Oracle DB...');
-        const loaded = await storage.loadDatabase({ shallow: true });
-        console.log(`[Oracle Sync] Verification succeeded! Loaded characters: ${loaded.database?.characters?.length}, Revision: ${loaded.revision}`);
+        console.log('[Oracle Sync] Testing loadStartupData() from Oracle DB...');
+        const loaded = await storage.loadStartupData();
+        console.log(`[Oracle Sync] Verification succeeded! Loaded characters: ${loaded.characters?.length}, Revision: ${loaded.revision}`);
     }
 
     await storage.close();

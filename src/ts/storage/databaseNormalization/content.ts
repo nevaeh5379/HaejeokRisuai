@@ -33,7 +33,6 @@ const contentScalarDefaults = {
   voyageApiKey: defaultString(),
   supaModelType: defaultString("none"),
   askRemoval: defaultBoolean(true),
-  selectedPersona: defaultNumber(0),
   personaPrompt: defaultString(),
   sendWithEnter: defaultBoolean(true),
   autoSuggestPrompt: defaultString(defaultAutoSuggestPrompt),
@@ -128,7 +127,7 @@ function normalizeLoreBookState(data: Database): void {
   }
 }
 
-function normalizeLegacyPersonaState(data: Database): void {
+function normalizePersonaPromptFormatting(data: Database): void {
   if (!data.formatingOrder.includes("personaPrompt")) {
     data.formatingOrder.splice(
       data.formatingOrder.indexOf("main"),
@@ -136,15 +135,6 @@ function normalizeLegacyPersonaState(data: Database): void {
       "personaPrompt",
     );
   }
-  data.personas ??= [
-    {
-      name: data.username,
-      personaPrompt: data.personaPrompt,
-      icon: data.userIcon,
-      note: data.userNote,
-      largePortrait: false,
-    },
-  ];
 }
 
 export function normalizeContentDatabaseSettings(data: Database): void {
@@ -188,5 +178,5 @@ export function normalizeContentDatabaseSettings(data: Database): void {
   data.novelai = mergeDefaults(novelAiDefaults, data.novelai);
   normalizeLoreBookState(data);
   data.globalscript ??= [];
-  normalizeLegacyPersonaState(data);
+  normalizePersonaPromptFormatting(data);
 }

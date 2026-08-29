@@ -6,7 +6,7 @@ import wasm from "vite-plugin-wasm";
 import strip from '@rollup/plugin-strip';
 import tailwindcss from '@tailwindcss/vite'
 import { resolveBuildVersion } from './tooling/build-version.mjs'
-
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 const localCommonJsPackages = ['chat-core', 'protocol', 'backup-core'] as const
 const localCommonJsDependencies = localCommonJsPackages.flatMap((packageName) =>
   readdirSync(resolve(process.cwd(), `packages/${packageName}`))
@@ -16,6 +16,11 @@ const localCommonJsDependencies = localCommonJsPackages.flatMap((packageName) =>
 
 // https://vitejs.dev/config/
 export default defineConfig(({command, mode}) => {
+  nodePolyfills({
+      globals: {
+        Buffer: true,
+      },
+    })
   const buildVersion = resolveBuildVersion()
   console.log(`[HaejeokRisuAI] Build version: ${buildVersion.buildTag} (${buildVersion.source})`)
 
@@ -271,6 +276,7 @@ export default defineConfig(({command, mode}) => {
           handler(level, log);
         },
       },
-    }
+    },
+    
 }
 });

@@ -2,6 +2,7 @@ import fc from "fast-check";
 import type { RisuModule } from "src/ts/process/modules";
 import type { customscript, loreBook } from "../../../../storage/schema";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { RPCToolCallTextContent } from "../../mcplib";
 import { ModuleHandler } from "../modules";
@@ -87,8 +88,8 @@ test("lists installed modules with pagination", async () => {
   const modules = Array(10)
     .fill(0)
     .map((_, i) => makeModule(String(i)));
-  settingsStore.state.modules = modules;
-  settingsStore.state.enabledModules = [modules[0].id, modules[2].id];
+  moduleStore.modules = modules;
+  moduleStore.enabledModules = [modules[0].id, modules[2].id];
 
   expect(
     await instance.handle("risu-list-modules", { count: 3 }),
@@ -100,8 +101,8 @@ test("lists installed modules with pagination", async () => {
     await instance.handle("risu-list-modules", { count: 3, offset: 10 }),
   ).toMatchSnapshot();
 
-  settingsStore.state.modules = [];
-  settingsStore.state.enabledModules = [];
+  moduleStore.modules = [];
+  moduleStore.enabledModules = [];
 
   expect(await instance.handle("risu-list-modules", {})).toEqual(
     makeToolResponse([]),
@@ -114,8 +115,8 @@ test("retrieves bgEmbedding, toggles, description, id, enabled, low level access
   const modules = Array(10)
     .fill(0)
     .map((_, i) => makeModule(String(i)));
-  settingsStore.state.modules = modules;
-  settingsStore.state.enabledModules = [
+  moduleStore.modules = modules;
+  moduleStore.enabledModules = [
     modules[0].id,
     modules[2].id,
     modules[4].id,
@@ -134,7 +135,7 @@ test("retrieves bgEmbedding, toggles, description, id, enabled, low level access
       ]),
       fc.integer({ max: 9, min: 0 }),
       async (fieldsArg, targetIndex) => {
-        const target = settingsStore.state.modules[targetIndex];
+        const target = moduleStore.modules[targetIndex];
         const fields =
           fieldsArg.length > 0
             ? fieldsArg
@@ -145,7 +146,7 @@ test("retrieves bgEmbedding, toggles, description, id, enabled, low level access
             if (field === "enabled") {
               return [
                 "enabled",
-                settingsStore.state.enabledModules.includes(target.id),
+                moduleStore.enabledModules.includes(target.id),
               ];
             }
             return [field, target[field]];
@@ -172,7 +173,7 @@ test("lists lorebooks of a module with pagination", async () => {
       .fill(0)
       .map((_, i) => makeLorebook(String(i))),
   };
-  settingsStore.state.modules = [module];
+  moduleStore.modules = [module];
 
   expect(
     await instance.handle("risu-list-module-lorebooks", { count: 3, id: "A" }),
@@ -208,7 +209,7 @@ test("retrieves fields of a lorebook", async () => {
       .fill(0)
       .map((_, i) => makeLorebook(String(i))),
   };
-  settingsStore.state.modules = [module];
+  moduleStore.modules = [module];
 
   expect(
     await instance.handle("risu-get-module-lorebook", {
@@ -227,7 +228,7 @@ test("lists all regex scripts of a module", async () => {
       .fill(0)
       .map((_, i) => makeRegex(String(i))),
   };
-  settingsStore.state.modules = [module];
+  moduleStore.modules = [module];
 
   expect(
     await instance.handle("risu-get-module-regex-scripts", { id: "A" }),
@@ -259,7 +260,7 @@ test("retrieves a module Lua script", async () => {
       },
     ],
   };
-  settingsStore.state.modules = [module];
+  moduleStore.modules = [module];
 
   expect(
     await instance.handle("risu-get-module-lua-script", { id: "A" }),
@@ -269,7 +270,7 @@ test("retrieves a module Lua script", async () => {
 test("errs retrieving a module Lua script if it is not using one", async () => {
   const instance = new ModuleHandler();
 
-  settingsStore.state.modules = [makeModule("A")];
+  moduleStore.modules = [makeModule("A")];
 
   expect(
     await instance.handle("risu-get-module-lua-script", { id: "A" }),

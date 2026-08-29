@@ -6,6 +6,7 @@ import { safeStructuredClone } from "./polyfill";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import { presetStore } from "./stores/domain/presetStore.svelte";
 import { personaStore } from "./stores/domain/personaStore.svelte";
+import { moduleStore } from "./stores/domain/moduleStore.svelte";
 
 export type Loadout = {
   name: string;
@@ -36,7 +37,7 @@ export function makeLoadout(options: { name: string }): Loadout {
     lastUsed: Date.now(),
     favorite: false,
     characterIds: character ? [character.chaId] : [],
-    modules: settingsStore.state.enabledModules,
+    modules: moduleStore.enabledModules,
     globalVariables: settingsStore.state.globalChatVariables,
     presetName: preset?.name ?? "",
     personaId: personaStore.activePersona?.id,
@@ -77,7 +78,7 @@ export function applyLoadout(
     }
   }
   if (apply.includes("modules")) {
-    settingsStore.state.enabledModules = loadout.modules;
+    moduleStore.enabledModules = loadout.modules;
   }
   if (apply.includes("globalVariables")) {
     settingsStore.state.globalChatVariables = loadout.globalVariables;

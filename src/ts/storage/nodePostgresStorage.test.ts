@@ -453,7 +453,7 @@ describe("NodePostgresStorage browser client", () => {
     );
   });
 
-  it("loads database with shallow=true by default and supports full loading", async () => {
+  it("loads startup domains separately from full database snapshots", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -461,7 +461,9 @@ describe("NodePostgresStorage browser client", () => {
           JSON.stringify({
             status: "ready",
             revision: 10,
-            database: { username: "test-user", characters: [], theme: "dark" },
+            settings: { username: "test-user", theme: "dark" },
+            characters: [],
+            deferredSettingKeys: ["plugins"],
           }),
           { status: 200 },
         ),
@@ -469,7 +471,6 @@ describe("NodePostgresStorage browser client", () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            status: "ready",
             revision: 10,
             database: { username: "test-user", characters: [] },
           }),
@@ -479,18 +480,15 @@ describe("NodePostgresStorage browser client", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const storage = new NodePostgresStorage(async () => "test-auth");
-    const shallowResult = await storage.loadDatabase();
-    const shallowDb = shallowResult?.database as any;
-    expect(shallowDb?.username).toBe("test-user");
-    expect(shallowDb?.theme).toBe("dark");
-    expect(shallowDb?.isSql).toBe(true);
-    expect(typeof shallowDb?.isDomainLoaded).toBe("undefined");
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/database-v2?shallow=true");
+    const startup = await storage.loadStartupData();
+    expect(startup?.settings.username).toBe("test-user");
+    expect(startup?.settings.theme).toBe("dark");
+    expect(startup?.characters).toEqual([]);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/database-v2/startup");
 
-    const fullResult = await storage.loadDatabase({ shallow: false });
-    const fullDb = fullResult?.database as any;
-    expect(fullDb?.username).toBe("test-user");
-    expect(fetchMock.mock.calls[1][0]).toBe("/api/database-v2?shallow=false");
+    const snapshot = await storage.exportDatabaseSnapshot();
+    expect(snapshot?.database?.username).toBe("test-user");
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/database-v2/export");
   });
 
   it("loads chat details on demand", async () => {
@@ -501,7 +499,9 @@ describe("NodePostgresStorage browser client", () => {
           JSON.stringify({
             status: "ready",
             revision: 10,
-            database: { username: "test-user", characters: [] },
+            settings: { username: "test-user" },
+            characters: [],
+            deferredSettingKeys: ["plugins"],
           }),
           { status: 200 },
         ),
@@ -525,7 +525,7 @@ describe("NodePostgresStorage browser client", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const storage = new NodePostgresStorage(async () => "test-auth");
-    await storage.loadDatabase();
+    await storage.loadStartupData();
 
     const chat = await storage.loadChat("chat-123");
     expect(chat?.id).toBe("chat-123");
@@ -618,7 +618,9 @@ describe("NodePostgresStorage browser client", () => {
           JSON.stringify({
             status: "ready",
             revision: 10,
-            database: { username: "test-user", characters: [] },
+            settings: { username: "test-user" },
+            characters: [],
+            deferredSettingKeys: ["plugins"],
           }),
           { status: 200 },
         ),
@@ -639,7 +641,7 @@ describe("NodePostgresStorage browser client", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const storage = new NodePostgresStorage(async () => "test-auth");
-    await storage.loadDatabase();
+    await storage.loadStartupData();
 
     const char = await storage.loadCharacter("char-123");
     expect(char?.chaId).toBe("char-123");
@@ -707,7 +709,9 @@ describe("NodePostgresStorage browser client", () => {
           JSON.stringify({
             status: "ready",
             revision: 10,
-            database: { username: "test-user", characters: [] },
+            settings: { username: "test-user" },
+            characters: [],
+            deferredSettingKeys: ["plugins"],
           }),
           { status: 200 },
         ),
@@ -747,13 +751,11 @@ describe("NodePostgresStorage browser client", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const storage = new NodePostgresStorage(async () => "test-auth");
-    const result = (await storage.loadDatabase()) as any;
-    const db = result.database;
-    expect(db).toBeDefined();
-    expect(db.isSql).toBe(true);
+    const result = await storage.loadStartupData();
+    expect(result?.settings.username).toBe("test-user");
+    expect(result?.characters).toEqual([]);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(typeof db.isDomainLoaded).toBe("undefined");
     expect(
       fetchMock.mock.calls.some(
         ([url]) => url === "/api/database-v2/bootstrap",

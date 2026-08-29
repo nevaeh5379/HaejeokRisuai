@@ -75,7 +75,7 @@
             }
         }
         else if($ShowRealmFrameStore.startsWith('module')){
-            const predata = (moduleStore.modules ?? settingsStore.state.modules)[Number($ShowRealmFrameStore.split(':')[1])]
+            const predata = (moduleStore.modules)[Number($ShowRealmFrameStore.split(':')[1])]
             const encodedPredata = new TextEncoder().encode(JSON.stringify({
                 ...predata,
                 type: 'risuModule'

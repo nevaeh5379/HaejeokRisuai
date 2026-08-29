@@ -1,6 +1,7 @@
 import { writable } from "svelte/store";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import { characterStore } from "./stores/domain/characterStore.svelte";
+import { moduleStore } from "./stores/domain/moduleStore.svelte";
 
 type AlertData = {
   type:
@@ -309,7 +310,7 @@ $effect.root(() => {
     characterStore.select(v);
   });
   $effect(() => {
-    const enabledModuleCount = settingsStore.state.enabledModules?.length ?? 0;
+    const enabledModuleCount = moduleStore.enabledModules?.length ?? 0;
     const chatModuleCount =
       characterStore.characters?.[characterStore.selectedId]?.chats?.[
         characterStore.characters?.[characterStore.selectedId]?.chatPage

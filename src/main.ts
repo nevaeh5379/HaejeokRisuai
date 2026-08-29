@@ -3,6 +3,11 @@ import "katex/dist/katex.min.css";
 import App from "./App.svelte";
 import { preLoadCheck } from "./preload";
 import { mount } from "svelte";
+import { Buffer } from 'node:buffer';
+
+if (typeof window !== 'undefined') {
+  window.Buffer = Buffer;
+}
 
 window.addEventListener("vite:preloadError", (event) => {
   console.error("Chunk load error detected:", event);

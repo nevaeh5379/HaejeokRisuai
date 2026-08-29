@@ -1,11 +1,11 @@
 import localforage from "localforage";
 import { getNodeClientSessionId } from "../network/nodeClientSession";
-import type { Database, Message, character, groupChat, Chat, RisuPersona, botPreset, loreBook, customscript } from "./schema";
+import type { Database, DatabaseSettings, Message, character, groupChat, Chat, RisuPersona, botPreset, loreBook, customscript } from "./schema";
 import type { RisuModule } from "../process/modules";
 import type {
   INodeSqlStorageAdmin,
-  SqlLoadDatabaseOptions,
-  SqlLoadDatabaseResult,
+  SqlStartupDataResult,
+  SqlDatabaseSnapshotResult,
   BotPresetSummary,
   StoredBotPreset,
 } from "./ISqlStorage";
@@ -280,9 +280,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
   }
 
   private async ensureEnabled() {
-    if (this.status === "unknown") {
-      await this.loadDatabase();
-    }
+    if (this.status === "unknown") await this.init();
     return this.status === "enabled";
   }
 
@@ -951,12 +949,8 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     return body.value;
   }
 
-  async loadDatabase(
-    options: SqlLoadDatabaseOptions = { shallow: true },
-  ): Promise<SqlLoadDatabaseResult | null> {
-    const shallowParam =
-      options.shallow !== false ? "?shallow=true" : "?shallow=false";
-    const response = await fetch(`/api/database-v2${shallowParam}`, {
+  async loadStartupData(): Promise<SqlStartupDataResult | null> {
+    const response = await fetch("/api/database-v2/startup", {
       method: "GET",
       cache: "no-cache",
       headers: await this.authHeaders(),
@@ -965,29 +959,28 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       this.status = "disabled";
       return null;
     }
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "PostgreSQL database load failed");
+    if (!response.ok) {
+      throw await responseError(response, "SQL startup data load failed");
     }
-
-    const body: {
-      status: "ready" | "empty";
-      revision: number;
-      database: Database | null;
-    } = await response.json();
+    const body = (await response.json()) as SqlStartupDataResult;
     this.status = "enabled";
-    if (body.status === "ready" && body.database) {
-      this.revision = body.revision;
-      if (options.shallow !== false) {
-        (body.database as Database & { isSql?: boolean }).isSql = true;
-      }
-      return {
-        status: "ready",
-        revision: body.revision,
-        database: body.database,
-      };
-    }
     this.revision = body.revision;
-    return { status: "empty", revision: body.revision, database: null };
+    return body;
+  }
+
+  async exportDatabaseSnapshot(): Promise<SqlDatabaseSnapshotResult | null> {
+    if (!(await this.ensureEnabled())) return null;
+    const response = await fetch("/api/database-v2/export", {
+      method: "GET",
+      cache: "no-cache",
+      headers: await this.authHeaders(),
+    });
+    if (!response.ok) {
+      throw await responseError(response, "SQL database snapshot export failed");
+    }
+    const body = (await response.json()) as SqlDatabaseSnapshotResult;
+    this.revision = body.revision;
+    return body;
   }
 
   async loadCharacter(

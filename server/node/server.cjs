@@ -556,7 +556,7 @@ async function mirrorSyncPayloadToBackup(payload) {
 
 async function mirrorFullBackupToBackup(onProgress) {
     onProgress?.({ stage: 'reading', message: 'Reading data from main database...', percentage: 10 });
-    const loaded = await postgresStorage.loadDatabase({ shallow: false });
+    const loaded = await postgresStorage.exportDatabaseSnapshot();
     if (!loaded?.database) {
         return { skipped: 'primary_not_initialized' };
     }
@@ -650,7 +650,7 @@ async function runBackupSnapshot() {
 
 async function restoreBackupToMainDatabase(onProgress) {
     onProgress?.({ stage: 'reading', message: 'Reading data from backup database...', percentage: 10 });
-    const loaded = await backupStorage.loadDatabase({ shallow: false });
+    const loaded = await backupStorage.exportDatabaseSnapshot();
     if (!loaded?.database) {
         throw new Error('Backup database has no valid data to restore');
     }
@@ -2715,7 +2715,7 @@ async function writeLocalBackupEntry(output, name, source, size) {
 
 async function buildPortableServerDatabase() {
     if (!postgresStorage.enabled) throw new Error('SQL storage is not configured');
-    const loaded = await postgresStorage.loadDatabase({ shallow: false });
+    const loaded = await postgresStorage.exportDatabaseSnapshot();
     if (!loaded?.database) throw new Error('Database is not initialized');
     const database = loaded.database;
     const summaries = (await postgresStorage.listBotPresets()).presets;
@@ -3814,39 +3814,37 @@ app.delete('/api/vector-index/cache', authenticatedRouteLimiter, async (req, res
     }
 });
 
-app.get('/api/database-v2', authenticatedRouteLimiter, async (req, res, next) => {
-    if (!await checkAuth(req, res)) {
-        return;
-    }
+app.get('/api/database-v2/startup', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
     if (!postgresStorage.enabled) {
-        res.status(404).send({
-            error: 'PostgreSQL storage is not configured',
-            code: 'postgres_disabled',
-        });
+        res.status(404).send({ error: 'SQL storage is not configured', code: 'sql_disabled' });
         return;
     }
-
     try {
-        const shallow = req.query.shallow !== 'false';
         const state = await postgresStorage.getState();
         const requestEtag = normalizeAuthHeader(req.headers['if-none-match']);
-        const stateEtag = `"risu-postgres-${state.revision}"`;
-        if (state.initialized && requestEtag.split(',').map((value) => value.trim()).includes(stateEtag)) {
-            res.setHeader('ETag', stateEtag);
-            res.setHeader('Cache-Control', 'private, no-cache');
-            res.status(304).end();
-            return;
-        }
-        const stored = await postgresStorage.loadDatabase({ shallow });
-        const etag = `"risu-postgres-${stored.revision}"`;
+        const etag = `"risu-startup-${state.revision}"`;
         res.setHeader('ETag', etag);
         res.setHeader('Cache-Control', 'private, no-cache');
-        if (stored.initialized && requestEtag.split(',').map((value) => value.trim()).includes(etag)) {
+        if (state.initialized && requestEtag.split(',').map((value) => value.trim()).includes(etag)) {
             res.status(304).end();
             return;
         }
+        await sendCompressedJson(req, res, await postgresStorage.loadStartupData());
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/export', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'SQL storage is not configured', code: 'sql_disabled' });
+        return;
+    }
+    try {
+        const stored = await postgresStorage.exportDatabaseSnapshot();
         await sendCompressedJson(req, res, {
-            status: stored.initialized ? 'ready' : 'empty',
             revision: stored.revision,
             database: stored.database,
         });

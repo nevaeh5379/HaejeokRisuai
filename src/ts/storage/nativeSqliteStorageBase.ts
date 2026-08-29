@@ -4,6 +4,7 @@ import type {
   Chat,
   customscript,
   Database as DatabaseType,
+  DatabaseSettings,
   groupChat,
   loreBook,
   Message,
@@ -12,8 +13,8 @@ import type {
 import type { RisuModule } from "../process/modules";
 import type {
   BotPresetSummary,
-  SqlLoadDatabaseOptions,
-  SqlLoadDatabaseResult,
+  SqlStartupDataResult,
+  SqlDatabaseSnapshotResult,
   SqlRecentChatMetadata,
   StoredBotPreset,
 } from "./ISqlStorage";
@@ -40,7 +41,7 @@ import {
   SqlSchemaResetRequiredError,
 } from "./relationalNodeCodec";
 import { applySqliteCommit, writeSqliteColdStorage } from "./sqliteCommit";
-import { DEFERRED_STARTUP_SETTING_KEYS } from "./sqlDeferredSettings";
+import { DEFERRED_STARTUP_SETTING_KEYS, DOMAIN_STORE_SETTING_KEYS } from "./sqlDeferredSettings";
 import {
   AsyncSerialQueue,
   buildCharacterAssetFieldsQuery,
@@ -244,15 +245,70 @@ export abstract class NativeSqliteStorageBase {
   }
 
 
-  async loadDatabase(
-    options?: SqlLoadDatabaseOptions,
-  ): Promise<SqlLoadDatabaseResult | null> {
+  async loadStartupData(): Promise<SqlStartupDataResult | null> {
     if (!this._enabled) {
       const ok = await this.init();
       if (!ok) return null;
     }
 
-    const shallow = options?.shallow !== false;
+    const deferredKeys = [...DEFERRED_STARTUP_SETTING_KEYS];
+    const domainKeys = new Set<string>(DOMAIN_STORE_SETTING_KEYS);
+    const excludedKeys = [...new Set([...deferredKeys, ...DOMAIN_STORE_SETTING_KEYS])];
+    const settingQuery = this.buildSettingRowsQuery(excludedKeys, true);
+    const characterQuery: SqliteTransactionStatement = {
+      sql: "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
+      bind: [],
+    };
+    const metaQuery: SqliteTransactionStatement = {
+      sql: "SELECT initialized FROM system_storage_meta WHERE singleton = 1",
+      bind: [],
+    };
+    const [settingRows, characterRows, metaRows] = await this.selectRowSets([
+      settingQuery,
+      characterQuery,
+      metaQuery,
+    ]);
+    const rebuilt = this.rebuildSettingRows(settingRows, excludedKeys);
+    const settings: Partial<DatabaseSettings> = {};
+    for (const [key, value] of rebuilt.values) {
+      if (!domainKeys.has(key)) (settings as Record<string, unknown>)[key] = value;
+    }
+    const characters = (characterRows as Array<Record<string, unknown>>).map(
+      (row) => ({
+        chaId: String(row.id ?? ""),
+        type: (row.kind as "character" | "group") ?? "character",
+        name: String(row.name ?? ""),
+        image: String(row.image ?? ""),
+        trashTime: (row.trash_time as number | null) ?? undefined,
+        creationDate: (row.creation_time as number | null) ?? undefined,
+        modificationDate: (row.modification_time as number | null) ?? undefined,
+        lastInteraction: (row.last_interaction_time as number | null) ?? undefined,
+        detailsLoaded: false,
+        chats: [],
+        chatPage: 0,
+      }) as unknown as character | groupChat,
+    );
+    const metaRow = metaRows[0] as { initialized?: number } | undefined;
+    const initialized =
+      metaRow?.initialized === 1 || characters.length > 0 || rebuilt.keyCount > 0;
+    return {
+      status: initialized ? "ready" : "empty",
+      revision: this.revision,
+      settings,
+      characters,
+      deferredSettingKeys: [...rebuilt.deferredKeys].filter(
+        (key) => !domainKeys.has(key),
+      ),
+    };
+  }
+
+  async exportDatabaseSnapshot(): Promise<SqlDatabaseSnapshotResult | null> {
+    if (!this._enabled) {
+      const ok = await this.init();
+      if (!ok) return null;
+    }
+
+    const shallow = false;
     const db: DatabaseType = {} as any;
 
     const deferredKeyList = shallow ? DEFERRED_STARTUP_SETTING_KEYS : [];
@@ -402,18 +458,9 @@ export abstract class NativeSqliteStorageBase {
       settings.keyCount > 0;
 
     if (!isInitialized) {
-      return { status: "empty", revision: this.revision, database: null };
+      return { revision: this.revision, database: null };
     }
-
-    if (shallow) {
-      (db as DatabaseType & { isSql?: boolean }).isSql = true;
-    }
-    return {
-      status: "ready",
-      revision: this.revision,
-      database: db,
-      deferredSettingKeys: shallow ? [...settings.deferredKeys] : undefined,
-    };
+    return { revision: this.revision, database: db };
   }
 
   protected async commitInternal(

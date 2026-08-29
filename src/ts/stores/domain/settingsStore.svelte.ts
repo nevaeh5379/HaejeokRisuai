@@ -1,4 +1,41 @@
-import type { Database, DatabaseSettings } from "../../storage/schema";
+import type { DatabaseSettings } from "../../storage/schema";
+
+const FORBIDDEN_SETTINGS_KEYS = new Set([
+  "characters",
+  "isSql",
+  "botPresets",
+  "botPresetsId",
+  "personas",
+  "selectedPersona",
+  "modules",
+  "enabledModules",
+  "moduleFolders",
+  "activeBotPresetId",
+]);
+
+function assertSettingsKey(key: string): void {
+  if (FORBIDDEN_SETTINGS_KEYS.has(key)) {
+    throw new Error(`[SettingsStore] ${key} is owned by another domain store`);
+  }
+}
+
+function guardedSettingsState(state: Record<string, any>): Record<string, any> {
+  return new Proxy(state, {
+    set(target, property, value) {
+      if (typeof property === "string") assertSettingsKey(property);
+      return Reflect.set(target, property, value);
+    },
+    deleteProperty(target, property) {
+      if (typeof property === "string") assertSettingsKey(property);
+      return Reflect.deleteProperty(target, property);
+    },
+    defineProperty(target, property, descriptor) {
+      if (typeof property === "string") assertSettingsKey(property);
+      return Reflect.defineProperty(target, property, descriptor);
+    },
+  });
+}
+
 import type { ISqlStorage } from "../../storage/ISqlStorage";
 import { getSqlStorage } from "../../storage/sqlStorageFactory";
 import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
@@ -31,8 +68,14 @@ class SettingsStore {
       if (typeof prop === "string") this.requestDeferredLoad(prop);
       return Reflect.get(this.stateData, prop);
     },
-    set: (_target, prop, value) => Reflect.set(this.stateData, prop, value),
-    deleteProperty: (_target, prop) => Reflect.deleteProperty(this.stateData, prop),
+    set: (_target, prop, value) => {
+      if (typeof prop === "string") assertSettingsKey(prop);
+      return Reflect.set(this.stateData, prop, value);
+    },
+    deleteProperty: (_target, prop) => {
+      if (typeof prop === "string") assertSettingsKey(prop);
+      return Reflect.deleteProperty(this.stateData, prop);
+    },
     has: (_target, prop) => Reflect.has(this.stateData, prop),
     ownKeys: () => Reflect.ownKeys(this.stateData),
     getOwnPropertyDescriptor: (_target, prop) => {
@@ -42,7 +85,7 @@ class SettingsStore {
   });
 
   init(
-    initialSettings: Partial<Database>,
+    initialSettings: Partial<DatabaseSettings>,
     storage: ISqlStorage | null,
     options: { deferredUnloaded?: readonly string[] } = {},
   ): void {
@@ -61,16 +104,8 @@ class SettingsStore {
     this.deferredKeyLoads.clear();
     this.deferredUnloaded = new Set(options.deferredUnloaded ?? []);
 
-    const settingsCopy = Object.fromEntries(
-      Object.keys(initialSettings).map((key) => [
-        key,
-        (initialSettings as any)[key],
-      ]),
-    );
-    delete (settingsCopy as any).characters;
-    delete (settingsCopy as any).isSql;
-    delete (settingsCopy as any).botPresets;
-    delete (settingsCopy as any).botPresetsId;
+    for (const key of Object.keys(initialSettings)) assertSettingsKey(key);
+    const settingsCopy = { ...initialSettings } as DatabaseSettings;
     settingsCopy.pluginCustomStorage ??= {};
     this.pluginStorageKeys = new Set(
       Object.keys(settingsCopy.pluginCustomStorage),
@@ -98,15 +133,8 @@ class SettingsStore {
   }
 
   private observeKey(key: string): void {
-    if (
-      this.keyDisposers.has(key) ||
-      key === "characters" ||
-      key === "isSql" ||
-      key === "pluginCustomStorage" ||
-      key === "botPresets" ||
-      key === "botPresetsId"
-    )
-      return;
+    assertSettingsKey(key);
+    if (this.keyDisposers.has(key) || key === "pluginCustomStorage") return;
     // Synchronous baseline taken at observe time.  The first (async) effect
     // run compares against it so mutations occurring between observe and the
     // first flush are still detected; later runs mark unconditionally.
@@ -350,32 +378,8 @@ class SettingsStore {
     const pending = (async () => {
       const storage = this.storage || (await getSqlStorage());
       try {
-        if (domain === "personas") {
-          const personas = await storage.loadPersonas();
-          const value =
-            personas.length > 0
-              ? personas.map((persona) => ({
-                  ...persona,
-                  largePortrait: persona.largePortrait ?? false,
-                }))
-              : [
-                  {
-                    name: this.stateData.username || "User",
-                    icon: this.stateData.userIcon || "",
-                    personaPrompt: this.stateData.personaPrompt || "",
-                    note: this.stateData.userNote || "",
-                    largePortrait: false,
-                  },
-                ];
-          this.hydrateSettingKey("personas", value);
-          return;
-        }
         if (domain === "loreBook") {
           this.hydrateSettingKey("loreBook", await storage.loadLorebooks());
-          return;
-        }
-        if (domain === "modules") {
-          this.hydrateSettingKey("modules", await storage.loadModules());
           return;
         }
         if (domain === "scripts") {
@@ -404,14 +408,16 @@ class SettingsStore {
     return pending;
   }
 
-  get<K extends keyof Database>(key: K): Database[K] | undefined {
+  get<K extends keyof DatabaseSettings>(key: K): DatabaseSettings[K] | undefined {
     const keyStr = String(key);
+    assertSettingsKey(keyStr);
     this.requestDeferredLoad(keyStr);
     return this.stateData[keyStr];
   }
 
-  set<K extends keyof Database>(key: K, value: Database[K]): void {
+  set<K extends keyof DatabaseSettings>(key: K, value: DatabaseSettings[K]): void {
     const keyStr = String(key);
+    assertSettingsKey(keyStr);
     this.stateData[keyStr] = value;
     if (keyStr === "pluginCustomStorage") {
       this.pluginStorageKeys.clear();
@@ -429,14 +435,10 @@ class SettingsStore {
   }
 
   update(updater: (state: Record<string, any>) => void): void {
-    updater(this.stateData);
+    updater(guardedSettingsState(this.stateData));
     for (const key of Object.keys(this.stateData)) {
-      if (
-        key === "characters" ||
-        key === "isSql" ||
-        key === "pluginCustomStorage"
-      )
-        continue;
+      assertSettingsKey(key);
+      if (key === "pluginCustomStorage") continue;
       this.pendingDeletes.delete(key);
       this.dirtyKeys.add(key);
     }
@@ -458,18 +460,17 @@ class SettingsStore {
     this.keyDisposers.clear();
     this.keySetDispose?.();
     this.keySetDispose = null;
-    updater(this.stateData);
+    let hydrationError: unknown;
+    try {
+      updater(guardedSettingsState(this.stateData));
+    } catch (error) {
+      hydrationError = error;
+    }
+    for (const key of Object.keys(this.stateData)) assertSettingsKey(key);
     for (const [key, value] of dirtyValues) this.stateData[key] = value;
     for (const key of pendingDeletes) delete this.stateData[key];
     for (const key of Object.keys(this.stateData)) {
-      if (
-        key === "characters" ||
-        key === "isSql" ||
-        key === "pluginCustomStorage" ||
-        key === "botPresets" ||
-        key === "botPresetsId"
-      )
-        continue;
+      if (key === "pluginCustomStorage") continue;
       this.observeKey(key);
       if (!pendingDeletes.has(key)) this.pendingDeletes.delete(key);
     }
@@ -477,10 +478,12 @@ class SettingsStore {
     // Svelte may replay invalidations from the hydration mutation while the
     // new root effect is installed. Explicit local deletions win last.
     for (const key of pendingDeletes) delete this.stateData[key];
+    if (hydrationError) throw hydrationError;
   }
 
   hydrateSettingKey(key: string, value: unknown, exists = true): void {
-    if (!key || key === "characters" || key === "isSql") return;
+    if (!key) return;
+    assertSettingsKey(key);
     this.keyDisposers.get(key)?.();
     this.keyDisposers.delete(key);
     this.dirtyKeys.delete(key);
@@ -494,8 +497,9 @@ class SettingsStore {
     }
   }
 
-  delete(key: keyof Database): void {
+  delete(key: keyof DatabaseSettings): void {
     const keyStr = String(key);
+    assertSettingsKey(keyStr);
     if (keyStr === "pluginCustomStorage") {
       this.clearPluginCustomStorage();
       return;

@@ -1,9 +1,9 @@
-import type { Database, character, groupChat, Chat, Message, RisuPersona, botPreset, loreBook, customscript } from "./schema";
+import type { Database, DatabaseSettings, character, groupChat, Chat, Message, RisuPersona, botPreset, loreBook, customscript } from "./schema";
 import type { RisuModule } from "../process/modules";
 import type {
   ISqlStorage,
-  SqlLoadDatabaseOptions,
-  SqlLoadDatabaseResult,
+  SqlStartupDataResult,
+  SqlDatabaseSnapshotResult,
   BotPresetSummary,
   StoredBotPreset,
 } from "./ISqlStorage";
@@ -22,6 +22,7 @@ import type {
 } from "./nodePostgresStorage";
 import {
   DEFERRED_STARTUP_SETTING_KEYS,
+  DOMAIN_STORE_SETTING_KEYS,
   PROMPT_SETTING_KEYS,
 } from "./sqlDeferredSettings";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
@@ -423,14 +424,66 @@ export class WebSqliteStorage implements ISqlStorage {
     }
   }
 
-  async loadDatabase(
-    options?: SqlLoadDatabaseOptions,
-  ): Promise<SqlLoadDatabaseResult | null> {
+  async loadStartupData(): Promise<SqlStartupDataResult | null> {
     if (!this._enabled) {
       const ok = await this.init();
       if (!ok) return null;
     }
-    const shallow = options?.shallow !== false;
+
+    const settingsRows = await this.selectRows("SELECT key FROM system_settings");
+    const deferredKeys = new Set<string>(DEFERRED_STARTUP_SETTING_KEYS);
+    const domainKeys = new Set<string>(DOMAIN_STORE_SETTING_KEYS);
+    const excludedKeys = [...deferredKeys, ...domainKeys];
+    const settingNodeQuery = buildDeferredSettingsQuery(excludedKeys);
+    const settingNodeRows = await this.selectRows(
+      settingNodeQuery.sql,
+      settingNodeQuery.bind,
+    );
+    const settingValues = groupSettingNodeRows(settingNodeRows as any);
+    const settings: Partial<DatabaseSettings> = {};
+    for (const row of settingsRows) {
+      const key = row.key as string;
+      if (deferredKeys.has(key) || domainKeys.has(key)) continue;
+      (settings as Record<string, unknown>)[key] = settingValues.get(key);
+    }
+
+    const charRows = await this.selectRows(
+      "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
+    );
+    const characters: (character | groupChat)[] = charRows.map((row) => ({
+      chaId: row.id as string,
+      type: (row.kind as "character" | "group") ?? "character",
+      name: (row.name as string) ?? "",
+      image: (row.image as string) ?? "",
+      trashTime: (row.trash_time as number) ?? undefined,
+      creationDate: (row.creation_time as number) ?? undefined,
+      modificationDate: (row.modification_time as number) ?? undefined,
+      lastInteraction: (row.last_interaction_time as number) ?? undefined,
+      detailsLoaded: false,
+      chats: [],
+      chatPage: 0,
+    } as unknown as character | groupChat));
+
+    const metaRow = await this.selectOne(
+      "SELECT initialized FROM system_storage_meta WHERE singleton = 1",
+    );
+    const initialized =
+      metaRow?.initialized === 1 || characters.length > 0 || settingsRows.length > 0;
+    return {
+      status: initialized ? "ready" : "empty",
+      revision: this.revision,
+      settings,
+      characters,
+      deferredSettingKeys: [...deferredKeys],
+    };
+  }
+
+  async exportDatabaseSnapshot(): Promise<SqlDatabaseSnapshotResult | null> {
+    if (!this._enabled) {
+      const ok = await this.init();
+      if (!ok) return null;
+    }
+    const shallow = false;
     const db: Database = {} as any;
 
     const settingsRows = await this.selectRows("SELECT key FROM system_settings");
@@ -526,12 +579,8 @@ export class WebSqliteStorage implements ISqlStorage {
       metaRow?.initialized === 1 ||
       characters.length > 0 ||
       settingsRows.length > 0;
-    if (!isInit)
-      return { status: "empty", revision: this.revision, database: null };
-    if (shallow) {
-      (db as Database & { isSql?: boolean }).isSql = true;
-    }
-    return { status: "ready", revision: this.revision, database: db };
+    if (!isInit) return { revision: this.revision, database: null };
+    return { revision: this.revision, database: db };
   }
 
   async commit(commit: SqlCommit): Promise<SqlCommitResult> {

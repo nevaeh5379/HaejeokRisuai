@@ -29,6 +29,7 @@ import { updateTextThemeAndCSS } from "./gui/colorscheme";
 import { defaultHotkeys, type Hotkey } from "./defaulthotkeys";
 import { RISU_SIDEBAR_DRAG_TYPE } from "./dragTypes";
 import { presetStore } from "./stores/domain/presetStore.svelte";
+import { characterStore } from "./stores/domain/characterStore.svelte";
 
 export function initHotkey() {
   document.addEventListener("keydown", async (ev) => {
@@ -111,7 +112,7 @@ export function initHotkey() {
           break;
         }
         case "prevChar": {
-          const sorted = database.characters
+          const sorted = characterStore.characters
             .map((v, i) => {
               return { name: v.name, i };
             })
@@ -131,7 +132,7 @@ export function initHotkey() {
           break;
         }
         case "nextChar": {
-          const sorted = database.characters
+          const sorted = characterStore.characters
             .map((v, i) => {
               return { name: v.name, i };
             })

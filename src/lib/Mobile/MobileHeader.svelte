@@ -48,7 +48,7 @@
     let activePersonaName = $derived(personaStore.activePersona?.name ?? 'User');
 
     let currentPresetName = $derived(
-        presetStore.summaries?.[settingsStore.state.selectedPreset]?.name ||
+        presetStore.summaries?.[presetStore.activeIndex]?.name ||
         settingsStore.state.aiModel ||
         ''
     );

@@ -38,6 +38,7 @@ import {
 } from "../interchangeability";
 import { exportCharacterCard, importCharacterProcess } from "../characterCards";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
+import { personaStore } from "../stores/domain/personaStore.svelte";
 
 export interface MCPModule {
   url: string;
@@ -449,9 +450,9 @@ function getModulesForCharacter(
   const db = settingsStore.state;
   const currentChat = chat ?? character?.chats?.[character.chatPage];
   const persona = currentChat?.bindedPersona
-    ? db.personas?.find((item) => item.id === currentChat.bindedPersona)
+    ? personaStore.list.find((item) => item.id === currentChat.bindedPersona)
     : null;
-  let ids = db.enabledModules ?? [];
+  let ids = moduleStore.enabledModules ?? [];
   if (currentChat) {
     ids = ids.concat(currentChat.modules ?? []);
   }

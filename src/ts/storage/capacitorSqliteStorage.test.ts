@@ -4,7 +4,7 @@ import { makeCapacitorStorage } from "./sqliteTestHarness";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
 import { buildFullDatabase } from "./sqliteTestFixtures";
 import { presetTemplate } from "./presetDefaults";
-import { installDatabase } from "./databaseLifecycle";
+import { installStartupData } from "./databaseLifecycle";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 
 describe("CapacitorSqliteStorage", () => {
@@ -17,7 +17,7 @@ describe("CapacitorSqliteStorage", () => {
     const stats = (storage as any).__bridgeStats;
     stats.queryCalls = 0;
     stats.queryBatchCalls = 0;
-    const loaded = await storage.loadDatabase({ shallow: true });
+    const loaded = await storage.loadStartupData();
 
     expect(loaded?.status).toBe("ready");
     expect(stats.queryBatchCalls).toBe(1);
@@ -87,12 +87,10 @@ describe("CapacitorSqliteStorage", () => {
     expect(await storage.loadPluginCustomStorage()).toEqual(
       source.pluginCustomStorage,
     );
-    const shallow = await storage.loadDatabase({ shallow: true });
-    expect(shallow?.deferredSettingKeys).not.toContain("plugins");
-    expect(shallow?.database?.plugins).toEqual(source.plugins);
-    installDatabase(shallow!.database as any, storage, {
-      deferredUnloaded: shallow?.deferredSettingKeys,
-    });
+    const startup = await storage.loadStartupData();
+    expect(startup?.deferredSettingKeys).not.toContain("plugins");
+    expect(startup?.settings.plugins).toEqual(source.plugins);
+    installStartupData(startup!, storage);
     expect(settingsStore.state.plugins).toEqual(source.plugins);
     database.close();
   });
@@ -105,19 +103,17 @@ describe("CapacitorSqliteStorage", () => {
     source.largeStartupProbe = "x".repeat(300 * 1024);
     await storage.replaceDatabase(source);
 
-    const loaded = await storage.loadDatabase({ shallow: true });
+    const loaded = await storage.loadStartupData();
     expect(loaded?.status).toBe("ready");
     expect(loaded?.deferredSettingKeys).toContain("largeStartupProbe");
     expect(
       Object.prototype.hasOwnProperty.call(
-        loaded?.database ?? {},
+        loaded?.settings ?? {},
         "largeStartupProbe",
       ),
     ).toBe(false);
 
-    installDatabase(loaded!.database as any, storage, {
-      deferredUnloaded: loaded?.deferredSettingKeys,
-    });
+    installStartupData(loaded!, storage);
     expect((settingsStore.getStateRecord() as any).largeStartupProbe).toBeUndefined();
     await settingsStore.ensureDeferredKey("largeStartupProbe");
     expect((settingsStore.getStateRecord() as any).largeStartupProbe).toBe(

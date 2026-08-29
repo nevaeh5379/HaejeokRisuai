@@ -13,7 +13,7 @@ import { get } from "svelte/store";
 import { defaultSdDataFunc } from "./storage/presetDefaults";
 import { setPreset } from "./storage/presetService";
 import type { Database } from "./storage/schema";
-import { installDatabase } from "./storage/databaseLifecycle";
+import { installStartupData } from "./storage/databaseLifecycle";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   syncMobileGUI,
@@ -224,11 +224,14 @@ export async function loadData() {
         return;
       }
 
-      // ── Step 2: Load database (shallow) ───────────────────────────
+      // ── Step 2: Load startup domains ─────────────────────────────
       LoadingStatusState.text = "Loading Database...";
-      const loadResult = await storage.loadDatabase({ shallow: true });
+      let startup = await storage.loadStartupData();
+      if (!startup) {
+        throw new Error("SQL storage returned no startup data");
+      }
 
-      if (loadResult && loadResult.status === "empty") {
+      if (startup.status === "empty") {
         // ── Step 3: Check for legacy migration ──────────────────────
         LoadingStatusState.text = "Checking for Legacy Data...";
         const legacyDb = await checkAndMigrateLegacyDatabase(storage);
@@ -252,25 +255,14 @@ export async function loadData() {
             }
           }
         }
-        // Reload after potential migration
         LoadingStatusState.text = "Loading Database...";
-        const reloaded = await storage.loadDatabase({ shallow: true });
-        if (reloaded && reloaded.database) {
-          installDatabase(reloaded.database, storage, {
-            deferredUnloaded: reloaded.deferredSettingKeys,
-          });
-        } else {
-          // Still empty — start with blank DB
-          installDatabase({} as Database, storage);
+        startup = await storage.loadStartupData();
+        if (!startup) {
+          throw new Error("SQL storage returned no startup data after migration");
         }
-      } else if (loadResult && loadResult.database) {
-        installDatabase(loadResult.database, storage, {
-          deferredUnloaded: loadResult.deferredSettingKeys,
-        });
-      } else {
-        // Load failed entirely
-        installDatabase({} as Database, storage);
       }
+
+      installStartupData(startup, storage);
 
       const activeDb = settingsStore.state;
 
@@ -344,7 +336,7 @@ export async function loadData() {
       // ── Step 7: Plugins, format checks, state updates ─────────────
       LoadingStatusState.text = "Loading chat runtime...";
       const presetReady = presetStore
-        .init(storage, activeDb.activeBotPresetId)
+        .init(storage)
         .then(async () => {
           let activePreset = presetStore.activePreset;
           // Older SQL migrations copied the stale botPresets entry without
@@ -395,20 +387,14 @@ export async function loadData() {
       const runtimeSettingsReady = (async () => {
         await settingsStore.ensureDeferredKey("customModels");
 
-        // Active persona data is canonical. This load is correctness-critical:
-        // never expose chat-ready with a stale legacy identity or prompt.
-        await personaStore.ensureLoaded();
+        // Domain stores load their own state; SettingsStore never receives it.
+        // Persona hydration is correctness-critical because prompts depend on it.
+        await personaStore.init(storage);
 
         // The remaining runtime extras retain their historical best-effort
         // behavior. Persona hydration above deliberately stays outside this catch.
         try {
-          await settingsStore.ensureDeferredKey("modules");
-          const hydrated = settingsStore.getStateRecord();
-          moduleStore.init(
-            hydrated.modules ?? [],
-            hydrated.enabledModules ?? [],
-            hydrated.moduleFolders ?? [],
-          );
+          await moduleStore.init(storage);
 
           await settingsStore.ensureDeferredKey("plugins");
           settingsStore.hydratePluginCustomStorageKeys(
@@ -539,234 +525,9 @@ function updateHeightMode() {
  * Checks and updates the database format to the latest version.
  */
 async function checkNewFormat(): Promise<void> {
-  let db = settingsStore.state;
-  let characters = characterStore.characters;
-
-  // Legacy file migrations operate on complete snapshots. SQL data is
-  // migrated by the storage schema/codec and may only contain shallow
-  // entities here; walking it would hydrate every deferred domain.
-  if (getSqlRuntime().isSql) {
-    // Format checking must not turn a deferred domain into background I/O.
-    // In particular, touching the reactive personas proxy here could start a
-    // multi-megabyte read just as the already-visible Android shell is clicked.
-    checkCharOrder();
-    return;
-  }
-
-  // Check data integrity
-  characters = characters
-    .map((v) => {
-      if (!v) {
-        return null;
-      }
-      v.chaId ??= uuidv4();
-      v.type ??= "character";
-      v.chatPage ??= 0;
-      v.chats ??= [];
-      v.customscript ??= [];
-      v.firstMessage ??= "";
-      v.globalLore ??= [];
-      v.name ??= "";
-      v.viewScreen ??= "none";
-      v.emotionImages = v.emotionImages ?? [];
-
-      if (v.type === "character") {
-        v.bias ??= [];
-        v.characterVersion ??= "";
-        v.creator ??= "";
-        v.desc ??= "";
-        v.utilityBot ??= false;
-        v.tags ??= [];
-        v.systemPrompt ??= "";
-        v.scenario ??= "";
-      }
-      return v;
-    })
-    .filter((v) => {
-      return v !== null;
-    });
-  characterStore.characters = characters;
-
-  db.modules = await Promise.all(
-    (db.modules ?? []).map(async (v) => {
-      if (v?.lorebook) {
-        if (!Array.isArray(v.lorebook)) {
-          console.error("Critical: Invalid lorebook format detected in module");
-          console.error("Module data:", JSON.stringify(v, null, 2));
-
-          // Alert user about corrupted data
-          alertError(
-            language.bootstrap.dataCorruptionDetected(
-              v.name || "Unknown",
-              typeof v.lorebook,
-            ),
-          );
-          await waitAlert();
-
-          // Ask if user wants to report the issue
-          const shouldReport = await alertConfirm(
-            language.bootstrap.reportErrorQuestion,
-          );
-
-          if (shouldReport) {
-            try {
-              // Collect diagnostic information (without personal data)
-              const diagnosticInfo = {
-                timestamp: new Date().toISOString(),
-                moduleName: v.name || "Unknown",
-                lorebookType: typeof v.lorebook,
-                lorebookValue: JSON.stringify(v.lorebook).substring(0, 500), // First 500 chars only
-                isArray: Array.isArray(v.lorebook),
-                keys: v.lorebook ? Object.keys(v.lorebook).join(", ") : "N/A",
-                formatVersion: db.formatversion || "Unknown",
-              };
-
-              // Show the diagnostic info and allow user to copy or send
-              const reportData = JSON.stringify(diagnosticInfo, null, 2);
-              await alertMd(
-                language.bootstrap.diagnosticInformation(reportData),
-              );
-              await waitAlert();
-
-              console.log(
-                "Diagnostic information for developers:",
-                diagnosticInfo,
-              );
-            } catch (reportError) {
-              console.error(
-                "Failed to generate diagnostic report:",
-                reportError,
-              );
-            }
-          }
-
-          // Ask if user wants to reset the data
-          const shouldReset = await alertConfirm(
-            language.bootstrap.resetLorebookQuestion,
-          );
-
-          if (shouldReset) {
-            v.lorebook = [];
-            console.log("Lorebook reset to empty array by user choice");
-          } else {
-            console.warn("User chose to keep corrupted lorebook data");
-          }
-        } else {
-          const { updateLorebooks } = await import("./characters");
-          v.lorebook = updateLorebooks(v.lorebook);
-        }
-      }
-      return v;
-    }),
-  );
-
-  db.modules = db.modules.filter((v) => {
-    return v !== null && v !== undefined;
-  });
-
-  db.personas = (db.personas ?? [])
-    .map((v) => {
-      v.id ??= uuidv4();
-      v.largePortrait ??= false;
-      return v;
-    })
-    .filter((v) => {
-      return v !== null && v !== undefined;
-    });
-
-  if (db.personas.length === 0) {
-    db.personas.push({
-      name: db.username || "User",
-      icon: db.userIcon || "",
-      personaPrompt: "",
-      note: db.userNote || "",
-      largePortrait: false,
-      id: uuidv4(),
-    });
-  }
-  if (
-    typeof db.selectedPersona !== "number" ||
-    db.selectedPersona < 0 ||
-    db.selectedPersona >= db.personas.length
-  ) {
-    db.selectedPersona = 0;
-  }
-
-  if (!db.formatversion) {
-    function checkClean(data: string) {
-      if (data.startsWith("assets") || data.length < 3) {
-        return data;
-      } else {
-        const d = "assets/" + data.replace(/\\/g, "/").split("assets/")[1];
-        if (!d) {
-          return data;
-        }
-        return d;
-      }
-    }
-
-    db.customBackground = checkClean(db.customBackground);
-    db.userIcon = checkClean(db.userIcon);
-
-    for (let i = 0; i < characters.length; i++) {
-      if (characters[i].image) {
-        characters[i].image = checkClean(characters[i].image);
-      }
-      if (characters[i].emotionImages) {
-        for (let i2 = 0; i2 < characters[i].emotionImages.length; i2++) {
-          if (
-            characters[i].emotionImages[i2] &&
-            characters[i].emotionImages[i2].length >= 2
-          ) {
-            characters[i].emotionImages[i2][1] = checkClean(
-              characters[i].emotionImages[i2][1],
-            );
-          }
-        }
-      }
-    }
-
-    db.formatversion = 2;
-  }
-  if (db.formatversion < 3) {
-    for (let i = 0; i < characters.length; i++) {
-      let cha = characters[i];
-      if (cha.type === "character") {
-        if (checkNullish(cha.sdData)) {
-          cha.sdData = defaultSdDataFunc();
-        }
-      }
-    }
-
-    db.formatversion = 3;
-  }
-  if (db.formatversion < 4) {
-    //migration removed due to issues
-    db.formatversion = 4;
-  }
-  if (db.formatversion < 5) {
-    if (db.loreBookToken < 8000) {
-      db.loreBookToken = 8000;
-    }
-    db.formatversion = 5;
-  }
-  if (!db.characterOrder) {
-    db.characterOrder = [];
-  }
-  if (db.mainPrompt === oldMainPrompt) {
-    db.mainPrompt = defaultMainPrompt;
-  }
-  if (db.mainPrompt === oldJailbreak) {
-    db.mainPrompt = defaultJailbreak;
-  }
-  for (let i = 0; i < characters.length; i++) {
-    const trashTime = characters[i].trashTime;
-    const targetTrashTime = trashTime ? trashTime + 1000 * 60 * 60 * 24 * 3 : 0;
-    if (trashTime && targetTrashTime < Date.now()) {
-      characters.splice(i, 1);
-      i--;
-    }
-  }
+  // Runtime storage is SQL-only. Legacy aggregate migrations are completed
+  // before startup data is installed, so format checks must never reach into
+  // domain-owned state through SettingsStore.
   checkCharOrder();
 }
 

@@ -503,8 +503,8 @@ async function loadFullSqlBackupSnapshot(
     update();
     const timer = setInterval(update, 1000);
     try {
-      const loaded = await storage.loadDatabase({ shallow: false });
-      if (loaded?.status !== "ready" || !loaded.database) return null;
+      const loaded = await storage.exportDatabaseSnapshot();
+      if (!loaded?.database) return null;
       return loaded.database as PortableDatabase;
     } finally {
       clearInterval(timer);

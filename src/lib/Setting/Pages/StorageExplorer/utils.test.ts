@@ -8,6 +8,8 @@ import {
 } from "./utils";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
+import { personaStore } from "src/ts/stores/domain/personaStore.svelte";
 import { language } from "src/lang";
 import type { NodeStorageAssetDetails, NodeStorageAssetItem } from "./types";
 
@@ -86,9 +88,18 @@ describe("StorageExplorer utils", () => {
     beforeEach(() => {
       // Reset stores
       characterStore.characters = [];
-      settingsStore.state.modules = [];
-      settingsStore.state.personas = [];
-      settingsStore.state.userIcon = "";
+      moduleStore.modules = [];
+      personaStore.personas = [
+        {
+          name: "User",
+          icon: "",
+          personaPrompt: "",
+          note: "",
+          largePortrait: false,
+        },
+      ];
+      personaStore.activeIndex = 0;
+      personaStore.loaded = true;
       settingsStore.state.customBackground = "";
       settingsStore.state.characterOrder = [];
     });
@@ -162,26 +173,22 @@ describe("StorageExplorer utils", () => {
       expect(result.orphanSizeBytes).toBe(2200); // 2000 + 200
     });
 
-    it("correctly protects persona icons, user icons, and global background from orphan classification", async () => {
-      settingsStore.state.personas = [
+    it("correctly protects persona icons and the global background from orphan classification", async () => {
+      personaStore.personas = [
         {
           id: "p1",
           name: "User Persona",
           icon: "persona_icon.png",
-        } as any,
+          personaPrompt: "",
+          note: "",
+          largePortrait: false,
+        },
       ];
-      settingsStore.state.userIcon = "assets/user_icon.png";
       settingsStore.state.customBackground = "assets/global_bg.jpg";
 
       const storageAssets: NodeStorageAssetItem[] = [
         { key: "persona_icon.png", size: 500, mtime: 1 },
         { key: "thumbnails/persona_icon.png_128x128.webp", size: 50, mtime: 1 },
-        { key: "assets/user_icon.png", size: 400, mtime: 1 },
-        {
-          key: "thumbnails/assets/user_icon.png_128x128.webp",
-          size: 40,
-          mtime: 1,
-        },
         { key: "assets/global_bg.jpg", size: 1500, mtime: 1 },
         { key: "assets/truly_unused.png", size: 900, mtime: 1 },
       ];
@@ -219,7 +226,7 @@ describe("StorageExplorer utils", () => {
         } as any,
       ];
 
-      settingsStore.state.modules = [
+      moduleStore.modules = [
         {
           id: "mod-1",
           name: "Test Module",
@@ -302,7 +309,7 @@ describe("StorageExplorer utils", () => {
         } as any,
       ];
 
-      settingsStore.state.modules = [
+      moduleStore.modules = [
         {
           id: "mod-test",
           name: "Test Plugin Module",

@@ -1,8 +1,12 @@
 import type {
   botPreset,
   Database,
+  DatabaseSettings,
+  PortableDatabase,
   StreamingDisplayOptimizationMode,
 } from "./schema";
+import { safeStructuredClone } from "../polyfill";
+import { presetTemplate } from "./presetDefaults";
 import {
   normalizeCoreDatabaseSettings,
   type CoreValidatedDefaults,
@@ -13,6 +17,7 @@ import {
 } from "./databaseNormalization/content";
 import {
   normalizeProviderDatabaseSettings,
+  normalizePortablePreset,
   type ProviderValidatedDefaults,
 } from "./databaseNormalization/providers";
 import {
@@ -24,6 +29,61 @@ import {
   type RuntimeValidatedDefaults,
 } from "./databaseNormalization/runtime";
 
+export type SettingsInput = {
+  [K in keyof DatabaseSettings]?: unknown;
+} & Record<string, unknown>;
+
+export type NormalizedSettingsInput = SettingsInput &
+  CoreValidatedDefaults &
+  ContentValidatedDefaults &
+  ProviderValidatedDefaults &
+  FeatureValidatedDefaults &
+  RuntimeValidatedDefaults;
+
+const NON_SETTINGS_KEYS = new Set([
+  "characters",
+  "isSql",
+  "botPresets",
+  "botPresetsId",
+  "personas",
+  "selectedPersona",
+  "modules",
+  "enabledModules",
+  "moduleFolders",
+  "activeBotPresetId",
+]);
+function requireObject(input: unknown, label: string): Record<string, unknown> {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) {
+    throw new TypeError(`${label} must be a non-array object`);
+  }
+  return input as Record<string, unknown>;
+}
+
+function assertSettingsOwnership(input: Record<string, unknown>): void {
+  for (const key of Object.keys(input)) {
+    if (NON_SETTINGS_KEYS.has(key)) {
+      throw new Error(`${key} is owned by another domain store`);
+    }
+  }
+}
+
+export function normalizeSettingsDefaults<T extends SettingsInput>(
+  input: T,
+): T & NormalizedSettingsInput {
+  assertSettingsOwnership(input);
+  const data = input as unknown as Database;
+  normalizeCoreDatabaseSettings(data);
+  normalizeContentDatabaseSettings(data);
+  normalizeProviderDatabaseSettings(data);
+  normalizeFeatureDatabaseSettings(data);
+  normalizeRuntimeDatabaseSettings(data);
+  return input as T & NormalizedSettingsInput;
+}
+
+export function normalizeSettingsInput(input: unknown): NormalizedSettingsInput {
+  const data = requireObject(input, "Settings input") as SettingsInput;
+  return normalizeSettingsDefaults(data);
+}
 type DeepPartial<T> = T extends readonly (infer TItem)[]
   ? DeepPartial<TItem>[]
   : T extends object
@@ -44,53 +104,91 @@ type LegacyDatabaseOverrides = {
   botPresetsId?: number;
 };
 
-/** Sparse or legacy database data before current defaults are applied. */
 export type DatabaseInput = Omit<
   DeepPartial<Database>,
   keyof LegacyDatabaseOverrides
 > &
   LegacyDatabaseOverrides &
   Record<string, unknown>;
-
-/**
- * Fields whose current runtime shape is guaranteed by the normalization
- * pipeline. This intentionally does not claim to be a complete Database.
- */
 export type NormalizedDatabaseInput = DatabaseInput &
-  CoreValidatedDefaults &
-  ContentValidatedDefaults &
-  ProviderValidatedDefaults &
-  FeatureValidatedDefaults &
-  RuntimeValidatedDefaults;
+  NormalizedSettingsInput &
+  Required<
+    Pick<
+      Database,
+      | "characters"
+      | "personas"
+      | "selectedPersona"
+      | "modules"
+      | "enabledModules"
+      | "moduleFolders"
+    >
+  >;
 
-function isDatabaseInputObject(data: unknown): data is Record<string, unknown> {
-  return data !== null && typeof data === "object" && !Array.isArray(data);
+function normalizeAggregateDomains(data: Database): void {
+  data.characters ??= [];
+  data.modules ??= [];
+  data.enabledModules ??= [];
+  data.moduleFolders ??= [];
+
+  if (!Array.isArray(data.personas) || data.personas.length === 0) {
+    data.personas = [
+      {
+        name: data.username,
+        icon: data.userIcon,
+        personaPrompt: data.personaPrompt,
+        note: data.userNote,
+        largePortrait: false,
+      },
+    ];
+  } else {
+    for (const persona of data.personas) persona.largePortrait ??= false;
+  }
+  if (
+    typeof data.selectedPersona !== "number" ||
+    !Number.isInteger(data.selectedPersona) ||
+    !data.personas[data.selectedPersona]
+  ) {
+    data.selectedPersona = 0;
+  }
+
+  const portable = data as Database & Partial<PortableDatabase>;
+  if (!Array.isArray(portable.botPresets) || portable.botPresets.length === 0) {
+    portable.botPresets = [
+      {
+        ...safeStructuredClone(presetTemplate),
+        name: "Default",
+      },
+    ];
+  }
+  for (const preset of portable.botPresets) normalizePortablePreset(preset);
+  portable.botPresetsId ??= 0;
+
+  for (const character of data.characters) {
+    for (const chat of character.chats ?? []) {
+      chat.isStreaming = false;
+      chat.activeStreamingDisplayOptimizationMode = undefined;
+    }
+  }
 }
 
-/**
- * Applies current defaults, compatibility migrations, validation, and transient
- * runtime normalization without installing the database.
- */
 export function normalizeDatabaseDefaults(data: Database): Database;
 export function normalizeDatabaseDefaults<T extends DatabaseInput>(
   data: T,
 ): T & NormalizedDatabaseInput;
 export function normalizeDatabaseDefaults(
-  data: Database | DatabaseInput,
+  input: Database | DatabaseInput,
 ): Database | NormalizedDatabaseInput {
-  const mutable = data as Database;
-  normalizeCoreDatabaseSettings(mutable);
-  normalizeContentDatabaseSettings(mutable);
-  normalizeProviderDatabaseSettings(mutable);
-  normalizeFeatureDatabaseSettings(mutable);
-  normalizeRuntimeDatabaseSettings(mutable);
-  return data as Database | NormalizedDatabaseInput;
+  const data = input as Database;
+  normalizeCoreDatabaseSettings(data);
+  normalizeContentDatabaseSettings(data);
+  normalizeProviderDatabaseSettings(data);
+  normalizeFeatureDatabaseSettings(data);
+  normalizeRuntimeDatabaseSettings(data);
+  normalizeAggregateDomains(data);
+  return input as Database | NormalizedDatabaseInput;
 }
 
-/** Normalizes an untyped decoded root object without pretending it is complete. */
-export function normalizeDatabaseInput(data: unknown): NormalizedDatabaseInput {
-  if (!isDatabaseInputObject(data)) {
-    throw new TypeError("Database input must be a non-array object");
-  }
-  return normalizeDatabaseDefaults(data as DatabaseInput);
+export function normalizeDatabaseInput(input: unknown): NormalizedDatabaseInput {
+  const data = requireObject(input, "Database input") as DatabaseInput;
+  return normalizeDatabaseDefaults(data);
 }

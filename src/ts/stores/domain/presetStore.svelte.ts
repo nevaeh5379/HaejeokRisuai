@@ -58,13 +58,19 @@ class PresetStore {
     return this.cache.get(this.activeId);
   }
 
-  async init(storage: ISqlStorage, preferredActiveId?: string): Promise<void> {
+  async init(storage: ISqlStorage): Promise<void> {
     this.storage = storage;
     this.listStatus = "loading";
     this.activeStatus = "loading";
     this.error = null;
     try {
-      let summaries = await storage.listBotPresets();
+      const [initialSummaries, storedActiveId] = await Promise.all([
+        storage.listBotPresets(),
+        storage.loadSettingKey("activeBotPresetId"),
+      ]);
+      let summaries = initialSummaries;
+      const preferredActiveId =
+        typeof storedActiveId === "string" ? storedActiveId : undefined;
       if (summaries.length === 0) {
         const id = uuidv4();
         const data = safeStructuredClone(presetTemplate);

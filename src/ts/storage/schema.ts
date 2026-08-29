@@ -534,9 +534,20 @@ export interface Database {
   resizeTextarea?: boolean;
 }
 
-/** Runtime settings exclude character/chat entities, which belong to CharacterStore. */
-export type DatabaseSettings = Omit<Database, "characters"> &
-  Record<string, any>;
+/** Fields owned by dedicated domain stores rather than SettingsStore. */
+export type DomainStoreSettingKey =
+  | "personas"
+  | "selectedPersona"
+  | "modules"
+  | "enabledModules"
+  | "moduleFolders"
+  | "activeBotPresetId";
+
+/** Runtime settings contain only values owned by SettingsStore. */
+export type DatabaseSettings = Omit<
+  Database,
+  "characters" | DomainStoreSettingKey
+>;
 
 /** External backup/preset files retain the legacy ordered array boundary. */
 export type PortableDatabase = Database & {

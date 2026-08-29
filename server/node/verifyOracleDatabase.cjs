@@ -70,9 +70,9 @@ async function verifyOracleDatabase(options = {}) {
     }
 
     if (options.shallowVerify !== false) {
-        console.log('\nTesting storage.loadDatabase({ shallow: true })...');
-        const loaded = await storage.loadDatabase({ shallow: true });
-        console.log(`✅ loadDatabase verified! Characters count: ${loaded.database?.characters?.length}, Revision: ${loaded.revision}`);
+        console.log('\nTesting storage.loadStartupData()...');
+        const loaded = await storage.loadStartupData();
+        console.log(`✅ loadStartupData verified! Characters count: ${loaded.characters?.length}, Revision: ${loaded.revision}`);
     }
 
     await storage.close();

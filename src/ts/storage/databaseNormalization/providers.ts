@@ -2,7 +2,7 @@ import { prebuiltNAIpresets } from "../../process/templates/templates";
 import { defaultColorScheme } from "../../gui/colorscheme";
 import { safeStructuredClone } from "../../polyfill";
 import { LLMFormat } from "../../model/types";
-import type { botPreset, Database, PortableDatabase } from "../schema";
+import type { botPreset, Database } from "../schema";
 import { defaultAIN, defaultOoba } from "../presetDefaults";
 import { normalizePromptTemplate } from "../presetService";
 import {
@@ -158,7 +158,7 @@ function migrateOpenRouterProvider(
   return value as Database["openrouterProvider"] | undefined;
 }
 
-function normalizePortablePreset(preset: botPreset): void {
+export function normalizePortablePreset(preset: botPreset): void {
   if (Array.isArray(preset.promptTemplate)) {
     preset.promptTemplate = normalizePromptTemplate(preset.promptTemplate);
   }
@@ -195,7 +195,6 @@ function normalizeOllamaSettings(data: Database): void {
 
 export function normalizeProviderDatabaseSettings(data: Database): void {
   Object.assign(data, parseDefaults(providerScalarDefaults, data));
-  const portableData = data as Database & Partial<PortableDatabase>;
   data.ooba ??= safeStructuredClone(defaultOoba);
   data.ainconfig ??= safeStructuredClone(defaultAIN);
   data.openrouterSubRequestModel ??= data.openrouterRequestModel;
@@ -229,17 +228,11 @@ export function normalizeProviderDatabaseSettings(data: Database): void {
     promptSettingsDefaults,
     data.promptSettings,
   );
-  data.modules ??= [];
-  data.enabledModules ??= [];
-  data.moduleFolders ??= [];
   data.additionalParams ??= [];
   normalizeOllamaSettings(data);
   const migratedProvider = migrateOpenRouterProvider(data.openrouterProvider);
   if (migratedProvider) {
     data.openrouterProvider = migratedProvider;
-  }
-  for (const preset of portableData.botPresets ?? []) {
-    normalizePortablePreset(preset);
   }
   data.openrouterProvider = parseDefaults(
     openRouterProviderDefaults,

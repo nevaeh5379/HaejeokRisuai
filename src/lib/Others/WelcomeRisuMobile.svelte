@@ -29,7 +29,7 @@
   import { getModelInfo, LLMProvider } from 'src/ts/model/modellist';
   import { changeLanguage, language } from 'src/lang';
   import { setPreset } from '../../ts/storage/presetService';
-import { installDatabase } from 'src/ts/storage/databaseLifecycle';
+  import { installStartupData } from 'src/ts/storage/databaseLifecycle';
   import { settingsStore, personaStore } from 'src/ts/stores/domain';
   import { prebuiltPresets } from 'src/ts/process/templates/templates';
   import { updateTextThemeAndCSS } from 'src/ts/gui/colorscheme';
@@ -283,12 +283,11 @@ import { installDatabase } from 'src/ts/storage/databaseLifecycle';
       );
 
       if (success) {
-        const reloaded = await storage.loadDatabase({ shallow: true });
-        if (reloaded && reloaded.database) {
-          installDatabase(reloaded.database, storage, {
-            deferredUnloaded: reloaded.deferredSettingKeys,
-          });
+        const reloaded = await storage.loadStartupData();
+        if (!reloaded) {
+          throw new Error('SQL storage returned no startup data after migration');
         }
+        installStartupData(reloaded, storage);
         migrationDone = true;
         isMigrating = false;
       } else {

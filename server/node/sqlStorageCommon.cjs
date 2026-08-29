@@ -9,7 +9,9 @@ const COMPAT_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0
 
 const {
     DEFERRED_SETTING_KEYS,
+    DEFERRED_STARTUP_SETTING_KEYS,
     PROMPT_SETTING_KEYS,
+    DOMAIN_STORE_SETTING_KEYS,
     BOOTSTRAP_SETTING_KEYS,
 } = require('../../packages/protocol/settings.json');
 
@@ -416,7 +418,9 @@ function rebuildDatabaseGraph({
 
 module.exports = {
     DEFERRED_SETTING_KEYS,
+    DEFERRED_STARTUP_SETTING_KEYS,
     PROMPT_SETTING_KEYS,
+    DOMAIN_STORE_SETTING_KEYS,
     BOOTSTRAP_SETTING_KEYS,
     SqlStorageBase,
     createSqlStorageHelpers,

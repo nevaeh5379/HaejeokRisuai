@@ -16,7 +16,7 @@ import { open } from "@tauri-apps/plugin-shell";
 import type { Database, character, groupChat } from "./storage/schema";
 import { defaultSdDataFunc } from "./storage/presetDefaults";
 import { appVer, appSubVer } from "./appVersion";
-import { installDatabase } from "./storage/databaseLifecycle";
+import { installStartupData } from "./storage/databaseLifecycle";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   MobileGUI,
@@ -2799,9 +2799,17 @@ export async function loadInternalBackup() {
       })
     : await forageStorage.getItem(selectedBackup);
 
-  installDatabase(
-    await decodeRisuSave(Buffer.from(data) as unknown as Uint8Array),
+  const decoded = await decodeRisuSave(
+    Buffer.from(data) as unknown as Uint8Array,
   );
+  const { getSqlStorage } = await import("./storage/sqlStorageFactory");
+  const storage = await getSqlStorage();
+  await storage.replaceDatabase(decoded);
+  const startup = await storage.loadStartupData();
+  if (!startup) {
+    throw new Error("SQL storage returned no startup data after backup restore");
+  }
+  installStartupData(startup, storage);
   alertNormal("Loaded backup");
 }
 

@@ -26,7 +26,7 @@
     let charConversionMode = $state(false)
     let openFolders = $state<Set<string>>(new Set())
     let modules = $derived(moduleStore.list)
-    let enabledModules = $derived(settingsStore.state.enabledModules ?? moduleStore.enabledModules ?? [])
+    let enabledModules = $derived(moduleStore.enabledModules)
     let moduleFolders = $derived(moduleStore.folders)
 
     function sortModules(modules:RisuModule[], search:string){
