@@ -1,5 +1,32 @@
 import type { ModelModeExtended } from "./shared";
 
+export type ProviderFeatureMode = Exclude<
+  ModelModeExtended,
+  "model" | "submodel"
+>;
+
+export function isProviderFeatureMode(
+  mode?: ModelModeExtended,
+): mode is ProviderFeatureMode {
+  return (
+    mode === "memory" ||
+    mode === "emotion" ||
+    mode === "otherAx" ||
+    mode === "translate"
+  );
+}
+
+export function getProviderModeOverride<T>(
+  enabled: boolean,
+  overrides: Partial<Record<ProviderFeatureMode, T>> | null | undefined,
+  mode?: ModelModeExtended,
+): T | undefined {
+  if (!enabled || !isProviderFeatureMode(mode)) {
+    return undefined;
+  }
+  return overrides?.[mode];
+}
+
 export function isAuxiliaryProviderMode(mode?: ModelModeExtended): boolean {
   return mode !== undefined && mode !== "model";
 }

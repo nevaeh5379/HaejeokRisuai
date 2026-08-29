@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  getProviderModeOverride,
   isAuxiliaryProviderMode,
+  isProviderFeatureMode,
   resolveProviderRoleModel,
   resolveProviderRoleModelForMode,
   resolveProviderRoleSetting,
@@ -93,5 +95,26 @@ describe("provider role settings", () => {
         "override-provider",
       ),
     ).toBe("override-provider");
+  });
+
+  it.each(["memory", "emotion", "otherAx", "translate"] as const)(
+    "recognizes %s as a provider feature mode",
+    (mode) => {
+      expect(isProviderFeatureMode(mode)).toBe(true);
+    },
+  );
+
+  it("returns provider overrides only for enabled feature modes", () => {
+    const overrides = {
+      memory: { model: "memory-model" },
+      emotion: { model: "emotion-model" },
+    };
+
+    expect(getProviderModeOverride(true, overrides, "memory")).toEqual({
+      model: "memory-model",
+    });
+    expect(getProviderModeOverride(false, overrides, "memory")).toBeUndefined();
+    expect(getProviderModeOverride(true, overrides, "model")).toBeUndefined();
+    expect(getProviderModeOverride(true, overrides, "submodel")).toBeUndefined();
   });
 });

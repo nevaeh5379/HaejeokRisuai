@@ -20,12 +20,12 @@ import {
 } from "../requestContext";
 import type { RequestDataArgumentExtended } from "../requestContracts";
 import {
+  getProviderModeOverride,
   resolveProviderRoleModel,
   resolveProviderRoleModelForMode,
   resolveProviderRoleSetting,
   resolveProviderRoleSettingForMode,
 } from "../providerRoleSettings";
-import type { ProviderModelOverride } from "../../../storage/schema";
 import {
   applyAdditionalParameters,
   applyParameters,
@@ -59,10 +59,11 @@ export async function prepareModernOpenAIRequest(
 ): Promise<OpenAIRequestPreparationResult> {
   const db = settingsStore.state;
   const aiModel = arg.aiModel;
-  const modeOverride: ProviderModelOverride | undefined =
-    settingsStore.state.seperateModelsForAxModels
-      ? settingsStore.state.providerModelOverrides?.[arg.mode as keyof typeof settingsStore.state.providerModelOverrides]
-      : undefined;
+  const modeOverride = getProviderModeOverride(
+    db.seperateModelsForAxModels,
+    db.providerModelOverrides,
+    arg.mode,
+  );
 
   let openRouterRequestModel = resolveProviderRoleModelForMode(
     db.openrouterRequestModel,

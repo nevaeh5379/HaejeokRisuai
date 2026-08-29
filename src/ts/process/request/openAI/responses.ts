@@ -27,12 +27,12 @@ import {
 } from "../requestContext";
 import { matchesNodeOllamaCloudEndpoint } from "../ollamaTransport";
 import {
+  getProviderModeOverride,
   resolveProviderRoleModel,
   resolveProviderRoleModelForMode,
   resolveProviderRoleSetting,
   resolveProviderRoleSettingForMode,
 } from "../providerRoleSettings";
-import type { ProviderModelOverride } from "../../../storage/schema";
 import {
   applyAdditionalParameters,
   applyParameters,
@@ -225,10 +225,11 @@ function getResponsesRequestURL(arg: RequestDataArgumentExtended): {
 } {
   const db = settingsStore.state;
   const aiModel = arg.aiModel;
-  const modeOverride: ProviderModelOverride | undefined =
-    db.seperateModelsForAxModels
-      ? db.providerModelOverrides?.[arg.mode as keyof typeof db.providerModelOverrides]
-      : undefined;
+  const modeOverride = getProviderModeOverride(
+    db.seperateModelsForAxModels,
+    db.providerModelOverrides,
+    arg.mode,
+  );
   let requestURL =
     aiModel === "nanogpt"
       ? resolveNanoGPTTransportUrl(
@@ -301,10 +302,11 @@ function buildResponsesHeaders(
 ): Record<string, string> {
   const db = settingsStore.state;
   const aiModel = arg.aiModel;
-  const modeOverride: ProviderModelOverride | undefined =
-    db.seperateModelsForAxModels
-      ? db.providerModelOverrides?.[arg.mode as keyof typeof db.providerModelOverrides]
-      : undefined;
+  const modeOverride = getProviderModeOverride(
+    db.seperateModelsForAxModels,
+    db.providerModelOverrides,
+    arg.mode,
+  );
   const headers = {
     Authorization:
       "Bearer " +
@@ -353,10 +355,11 @@ function buildResponsesHeaders(
 function getResponsesRequestModel(arg: RequestDataArgumentExtended): string {
   const db = settingsStore.state;
   if (arg.aiModel === "nanogpt") {
-    const modeOverride: ProviderModelOverride | undefined =
-      db.seperateModelsForAxModels
-        ? db.providerModelOverrides?.[arg.mode as keyof typeof db.providerModelOverrides]
-        : undefined;
+    const modeOverride = getProviderModeOverride(
+      db.seperateModelsForAxModels,
+      db.providerModelOverrides,
+      arg.mode,
+    );
     return (
       resolveProviderRoleModelForMode(
         db.nanogptRequestModel,

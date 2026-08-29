@@ -16,6 +16,7 @@ import type {
 import type { StreamResponseChunk } from "./requestContracts";
 import { resolveOllamaRequestModel } from "./ollamaModel";
 import { shouldUseNodeOllamaCloudTransport } from "./ollamaTransport";
+import { getProviderModeOverride } from "./providerRoleSettings";
 import { tryExecuteNodeProviderTransport } from "./nodeProviderExecutor";
 import { requestOpenAI, requestOpenAIResponseAPI } from "./openAI/requests";
 import { applyAdditionalParameters, getAdditionalParameters } from "./shared";
@@ -152,9 +153,11 @@ export async function requestOllama(
   const db = settingsStore.state;
   const isCloud = arg.aiModel === "ollama-cloud";
   const requestFormat = isCloud ? db.ollamaRequestFormat : LLMFormat.Ollama;
-  const modeOverride = db.seperateModelsForAxModels
-    ? db.providerModelOverrides?.[arg.mode as keyof typeof db.providerModelOverrides]
-    : undefined;
+  const modeOverride = getProviderModeOverride(
+    db.seperateModelsForAxModels,
+    db.providerModelOverrides,
+    arg.mode,
+  );
   const ollamaModel = resolveOllamaRequestModel(
     db,
     isCloud ? "cloud" : "local",

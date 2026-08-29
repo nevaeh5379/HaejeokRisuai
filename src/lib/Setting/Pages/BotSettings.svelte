@@ -59,6 +59,14 @@
             ? settingsStore.state.providerModelOverrides[providerModelRole as FeatureRole]
             : undefined
     );
+
+    $effect(() => {
+        if (settingsStore.state.seperateModelsForAxModels) {
+            if (providerModelRole === 'sub') providerModelRole = auxSubTab
+        } else if (isFeatureRole) {
+            providerModelRole = 'sub'
+        }
+    })
     
     const openrouterPinnedItems: ModelGridPinnedItem[] = [
         { id: 'risu/free',       displayName: 'Free Auto',       providerName: 'Risu'       },
