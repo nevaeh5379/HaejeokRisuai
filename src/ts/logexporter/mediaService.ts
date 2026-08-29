@@ -1,96 +1,25 @@
-import type { FFmpeg } from "@ffmpeg/ffmpeg";
 import type { ImageFormat } from "./types";
 import { mergePngBlobsVertically } from "./pngStitch";
+import { getFFmpeg } from "./ffmpegClient";
 
 /**
  * ffmpeg.wasm media service.
  *
- * Replaces the plugin's hand-written binary codecs (png.ts / jpeg.ts /
- * webp.ts / webmConverter.ts): vertical image stitching, format conversion
- * and WebM → animated WebP conversion are delegated to a real ffmpeg build,
- * loaded on demand from CDN so it never touches the initial bundle.
+ * Vertical image stitching, format conversion and WebM → animated WebP
+ * conversion are delegated to a real ffmpeg build, loaded on demand from CDN
+ * so it never touches the initial bundle.
  *
- * Note: the core MUST use the ESM build (dist/esm). Every web worker in this
- * app is compiled as an ES module (vite worker.format='es') and
- * @ffmpeg/ffmpeg spawns its worker as a module worker, where
- * `importScripts()` is unavailable; the worker therefore imports the core
- * with a dynamic `import()`. The UMD core has no default export, so loading
- * it would fail with `ERROR_IMPORT_FAILURE` ("failed to import
- * ffmpeg-core.js"). The ESM core exports the expected default.
+ * The @ffmpeg/ffmpeg wrapper is replaced by ffmpegClient.ts: its worker is a
+ * MODULE worker under this app's build (vite worker.format='es'), where the
+ * classic UMD core cannot be importScripts'd and the ESM core fails with an
+ * FS error — the "failed to import ffmpeg-core.js" failure. A classic blob
+ * worker with importScripts supports every browser, so that is what runs the
+ * core now.
  */
-const CORE_VERSION = "0.12.10";
-// ESM build required — see the module-worker note above.
-const CORE_BASE_URL = `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/esm`;
-
-/** How long to wait (ms) for ffmpeg.wasm to be ready before giving up. */
-const FFMPEG_LOAD_TIMEOUT_MS = 45000;
 
 export const DEFAULT_WEBM_FPS = 10;
 export const DEFAULT_WEBM_MAX_WIDTH = 500;
 export const DEFAULT_WEBM_QUALITY = 80;
-
-let ffmpegInstance: FFmpeg | null = null;
-let loadPromise: Promise<FFmpeg> | null = null;
-
-export interface MediaProgress {
-  progress: number;
-  time: number;
-}
-
-/** Lazily loads (and caches) the ffmpeg.wasm core. */
-export async function getFFmpeg(
-  onLog?: (message: string) => void,
-): Promise<FFmpeg> {
-  if (ffmpegInstance) return ffmpegInstance;
-  if (!loadPromise) {
-    loadPromise = (async () => {
-      // Dynamic imports keep @ffmpeg/ffmpeg out of the initial bundle
-      const { FFmpeg: FFmpegClass } = await import("@ffmpeg/ffmpeg");
-      const { toBlobURL } = await import("@ffmpeg/util");
-      const ffmpeg = new FFmpegClass();
-      if (onLog) {
-        ffmpeg.on("log", ({ message }) => onLog(message));
-      }
-      await ffmpeg.load({
-        coreURL: await toBlobURL(
-          `${CORE_BASE_URL}/ffmpeg-core.js`,
-          "text/javascript",
-        ),
-        wasmURL: await toBlobURL(
-          `${CORE_BASE_URL}/ffmpeg-core.wasm`,
-          "application/wasm",
-        ),
-      });
-      ffmpegInstance = ffmpeg;
-      return ffmpeg;
-    })().catch((e) => {
-      loadPromise = null;
-      throw e;
-    });
-  }
-  // A stalled CDN fetch would otherwise leave callers (and the progress UI)
-  // hanging forever; race it with a timeout and let callers degrade.
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  const timedLoad = Promise.race([
-    loadPromise,
-    new Promise<never>((_, reject) => {
-      timeout = setTimeout(
-        () =>
-          reject(
-            new Error(
-              `ffmpeg.wasm 로드 시간 초과 (${FFMPEG_LOAD_TIMEOUT_MS / 1000}초). 네트워크 상태를 확인해주세요.`,
-            ),
-          ),
-        FFMPEG_LOAD_TIMEOUT_MS,
-      );
-    }),
-  ]).finally(() => clearTimeout(timeout));
-  return timedLoad;
-}
-
-export function isFFmpegLoaded(): boolean {
-  return ffmpegInstance !== null;
-}
 
 /** Converts a Blob into the data format ffmpeg.writeFile expects. */
 async function toFFmpegData(blob: Blob): Promise<Uint8Array> {
