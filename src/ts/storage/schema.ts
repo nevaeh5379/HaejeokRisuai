@@ -523,41 +523,60 @@ export interface DatabaseSettings {
   resizeTextarea?: boolean;
 }
 
-/**
- * Complete portable database shape. Domain-owned data is composed around the
- * settings shape so adding a setting requires changing only DatabaseSettings.
- */
-export interface DatabaseDomainData {
+/** CharacterStore-owned aggregate data. */
+export interface CharacterStoreData {
   characters: (character | groupChat)[];
+}
+
+/** Legacy persona mirrors synthesized only at compatibility boundaries. */
+export interface LegacyPersonaMirrorData {
   username: string;
   userIcon: string;
   userNote: string;
   personaPrompt: string;
-  activeBotPresetId?: string;
+}
+
+/** PersonaStore-owned data. */
+export interface PersonaStoreData {
   selectedPersona: number;
   personas: RisuPersona[];
+}
+
+/** ModuleStore-owned data. */
+export interface ModuleStoreData {
   modules: RisuModule[];
   enabledModules: string[];
   moduleFolders: ModuleFolder[];
 }
 
-export interface Database extends DatabaseSettings, DatabaseDomainData {}
+/** PresetStore-owned selection metadata. */
+export interface PresetStoreData {
+  activeBotPresetId?: string;
+}
 
-/** Legacy root mirrors synthesized only at external compatibility boundaries. */
-export type LegacyPersonaMirrorKey =
-  | "username"
-  | "userIcon"
-  | "userNote"
-  | "personaPrompt";
+/**
+ * Complete portable database shape, composed from each store's ownership
+ * contract plus compatibility-only persona mirrors.
+ */
+export interface Database
+  extends DatabaseSettings,
+    CharacterStoreData,
+    PersonaStoreData,
+    ModuleStoreData,
+    PresetStoreData,
+    LegacyPersonaMirrorData {}
+
+export type LegacyPersonaMirrorKey = keyof LegacyPersonaMirrorData;
 
 /** Canonical SQL snapshots never persist legacy persona mirrors. */
 export type CanonicalDatabase = Omit<Database, LegacyPersonaMirrorKey>;
 
 /** Fields owned by dedicated domain stores rather than SettingsStore. */
-export type DomainStoreSettingKey = Exclude<
-  keyof DatabaseDomainData,
-  "characters"
->;
+export type DomainStoreSettingKey =
+  | keyof PersonaStoreData
+  | keyof ModuleStoreData
+  | keyof PresetStoreData
+  | LegacyPersonaMirrorKey;
 
 /** External backup/preset files retain the legacy ordered array boundary. */
 export type PortableDatabase = Database & {
