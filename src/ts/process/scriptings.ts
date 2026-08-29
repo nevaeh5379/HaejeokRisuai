@@ -26,7 +26,11 @@ import {
 } from "../alert";
 import { HypaProcesser } from "./memory/hypamemory";
 import { generateAIImage } from "./stableDiff";
-import { writeInlayImage, getInlayAsset } from "./files/inlays";
+import {
+  writeInlayImage,
+  writeInlayImageFromBytes,
+  getInlayAsset,
+} from "./files/inlays";
 import type { OpenAIChat, MultiModal } from "@risuai/chat-core/types.cjs";
 import { requestChatData } from "./request/chatRequestOrchestrator";
 import type { StreamResponseChunk } from "./request/requestContracts";
@@ -532,14 +536,9 @@ export async function runScripted(
           }
 
           const img = await readImage(character.image);
-          const imgObj = new Image();
           const extention = character.image.split(".").at(-1);
 
-          imgObj.src = URL.createObjectURL(
-            new Blob([asBuffer(img)], { type: `image/${extention}` }),
-          );
-
-          const imgid = await writeInlayImage(imgObj, {
+          const imgid = await writeInlayImageFromBytes(img, {
             name: character.image,
             ext: extention,
             id: character.image,
@@ -565,14 +564,9 @@ export async function runScripted(
           }
 
           const img = await readImage(icon);
-          const imgObj = new Image();
           const extention = icon.split(".").at(-1);
 
-          imgObj.src = URL.createObjectURL(
-            new Blob([asBuffer(img)], { type: `image/${extention}` }),
-          );
-
-          const imgid = await writeInlayImage(imgObj, {
+          const imgid = await writeInlayImageFromBytes(img, {
             name: icon,
             ext: extention,
             id: icon,

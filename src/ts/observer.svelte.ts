@@ -49,11 +49,13 @@ function nodeObserve(node: HTMLElement) {
       );
       downloadOption.addEventListener("click", () => {
         const a = document.createElement("a");
-        a.href = URL.createObjectURL(
+        const objectUrl = URL.createObjectURL(
           new Blob([node.textContent], { type: "text/plain" }),
         );
+        a.href = objectUrl;
         a.download = "code." + hlLang;
         a.click();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
         menu.remove();
       });
 
