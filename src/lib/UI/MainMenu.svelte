@@ -17,6 +17,7 @@
     import LazyComponent from '../Others/LazyComponent.svelte'
     import { onDestroy } from "svelte";
     import { isCapacitor } from "src/ts/platform";
+    import { indexMainMenuCharacters } from "./mainMenuCharacters";
 
     const realmLoader = () => import('./Realm/RealmMain.svelte')
     // Keep original-quality character art. Android uses a direct app-owned
@@ -119,7 +120,7 @@
     }
 
     let sortedCharacters = $derived.by(() => {
-        let list = allCharacters.map((char, index) => ({ char, index, matchScore: 0 }))
+        let list = indexMainMenuCharacters(allCharacters)
 
         if (!showHidden) {
             list = list.filter(({ char }) => !isHidden(char))
