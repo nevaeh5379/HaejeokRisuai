@@ -13,7 +13,11 @@
         onselect?: (id: string, displayName: string) => void
     }
 
-    let { value = $bindable(''), items = [], pinnedItems = [], loading = false, showSubBadge = false, selectedLabelOverride, onselect }: Props = $props()
+    // Keep `value` fallback-free: `TextInput`-style optional bindings pass `undefined`
+    // (e.g. bind:value={currentOverride.ollamaCloudModel}), and a `$bindable('')` fallback
+    // makes Svelte throw props_invalid_value (https://svelte.dev/e/props_invalid_value).
+    // All reads below already tolerate `undefined`.
+    let { value = $bindable(), items = [], pinnedItems = [], loading = false, showSubBadge = false, selectedLabelOverride, onselect }: Props = $props()
 
     let searchQuery = $state('')
     let sortField = $state<'name' | 'price' | 'provider'>('price')
