@@ -390,16 +390,15 @@
                                     }
                                 })
                                 
-                                // Filter out the folder and all items belonging to it
-                                lore = lore.filter(item => 
+                                // Keep the caller-owned array identity so external lorebooks persist the deletion.
+                                const filteredLore = lore.filter(item =>
                                     item !== book && item.folder !== book.key
                                 )
+                                lore.splice(0, lore.length, ...filteredLore)
                             } else {
                                 // Delete regular item
                                 lore.splice(i, 1)
                             }
-                            
-                            externalLoreBooks = lore
                         }} 
                         onOpen={(isDetail = true) => onOpen(isDetail, book)}
                         onClose={(isDetail = true) => onClose(isDetail, book)}

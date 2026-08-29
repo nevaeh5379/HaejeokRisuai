@@ -48,6 +48,8 @@ export interface RisuPersona {
   largePortrait?: boolean;
   id?: string;
   note?: string;
+  /** Lorebook entries that only apply when this persona is used with a specific bot. */
+  botLorebooks?: Record<string, loreBook[]>;
   embeddedModule?: RisuModule;
 }
 
