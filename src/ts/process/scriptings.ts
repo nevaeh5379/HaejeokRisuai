@@ -1329,6 +1329,7 @@ export async function runScripted(
       }
     }
     ScriptingSafeIds.delete(accessKey);
+    ScriptingEditDisplayIds.delete(accessKey);
     ScriptingLowLevelIds.delete(accessKey);
     chat = ScriptingEngineState.chat;
 
