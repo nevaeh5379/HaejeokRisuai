@@ -46,9 +46,8 @@ if (
   !globalThis.WritableStream ||
   !globalThis.TransformStream
 ) {
-  void import("web-streams-polyfill/ponyfill/es2018").then(
+  void import("web-streams-polyfill").then(
     ({ ReadableStream, WritableStream, TransformStream }) => {
-      // @ts-expect-error ponyfill stream types differ slightly from the DOM declarations
       globalThis.WritableStream ??= WritableStream;
       // @ts-expect-error ponyfill stream types differ slightly from the DOM declarations
       globalThis.ReadableStream ??= ReadableStream;

@@ -2,11 +2,11 @@
     import { onMount, onDestroy } from 'svelte';
     import * as monaco from 'monaco-editor';
     import { registerCBSMonaco } from 'src/ts/gui/codearea/cbsMonaco';
-    import jsonWorkerUrl from 'monaco-editor/esm/vs/language/json/json.worker?url';
-    import cssWorkerUrl from 'monaco-editor/esm/vs/language/css/css.worker?url';
-    import htmlWorkerUrl from 'monaco-editor/esm/vs/language/html/html.worker?url';
-    import tsWorkerUrl from 'monaco-editor/esm/vs/language/typescript/ts.worker?url';
-    import editorWorkerUrl from 'monaco-editor/esm/vs/editor/editor.worker?url';
+    import jsonWorkerUrl from 'monaco-editor/language/json/json.worker.js?url';
+    import cssWorkerUrl from 'monaco-editor/language/css/css.worker.js?url';
+    import htmlWorkerUrl from 'monaco-editor/language/html/html.worker.js?url';
+    import tsWorkerUrl from 'monaco-editor/language/typescript/ts.worker.js?url';
+    import editorWorkerUrl from 'monaco-editor/editor/editor.worker.js?url';
 
     // Set up workers once globally
     if (!('MonacoEnvironment' in self)) {
