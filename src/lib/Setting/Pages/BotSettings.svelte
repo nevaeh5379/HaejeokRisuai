@@ -47,34 +47,80 @@
     import ModelBrowser from "src/lib/UI/Model/ModelBrowser.svelte";
 
     let modelTab = $state<'main' | 'sub' | 'provider'>('main');
-    let providerModelRole = $state<'main' | 'sub'>('main');
+    let providerModelRole = $state<'main' | 'sub' | 'memory' | 'translate' | 'emotion' | 'otherAx'>('main');
     let auxSubTab = $state<'memory' | 'translate' | 'emotion' | 'otherAx'>('memory');
     let openProviders = $state<Record<string, boolean>>({});
+
+    const featureRoles = ['memory', 'translate', 'emotion', 'otherAx'] as const;
+    type FeatureRole = typeof featureRoles[number];
+    let isFeatureRole = $derived(featureRoles.includes(providerModelRole as FeatureRole));
+    let currentOverride = $derived(
+        isFeatureRole
+            ? settingsStore.state.providerModelOverrides[providerModelRole as FeatureRole]
+            : undefined
+    );
     
     const openrouterPinnedItems: ModelGridPinnedItem[] = [
         { id: 'risu/free',       displayName: 'Free Auto',       providerName: 'Risu'       },
         { id: 'openrouter/auto', displayName: 'OpenRouter Auto', providerName: 'OpenRouter' },
     ]
 
-    function clearNanoGPTSelection(role: 'main' | 'sub') {
+    type ProviderRole = 'main' | 'sub' | FeatureRole;
+
+    function getEffectiveNanoGPTSubscription(role: ProviderRole): boolean {
+        if (role === 'main') return settingsStore.state.nanogptUseSubscriptionEndpoint
+        if (role === 'sub') return settingsStore.state.nanogptSubUseSubscriptionEndpoint
+        return settingsStore.state.providerModelOverrides[role].nanogptUseSubscriptionEndpoint
+            ?? settingsStore.state.nanogptSubUseSubscriptionEndpoint
+    }
+
+    function clearNanoGPTSelection(role: ProviderRole) {
         if (role === 'main') {
             settingsStore.state.nanogptRequestModel = ''
             settingsStore.state.nanogptRequestModelName = ''
             settingsStore.state.nanogptProvider = ''
-        } else {
+        } else if (role === 'sub') {
             settingsStore.state.nanogptSubRequestModel = ''
             settingsStore.state.nanogptSubRequestModelName = ''
             settingsStore.state.nanogptSubProvider = ''
+        } else {
+            const override = settingsStore.state.providerModelOverrides[role]
+            override.nanogptRequestModel = ''
+            override.nanogptRequestModelName = ''
+            override.nanogptProvider = ''
         }
     }
 
-    let nanogptInputModes = $state<Record<'main' | 'sub', 'list' | 'manual'>>({
-        main: settingsStore.state.nanogptRequestModel && !settingsStore.state.nanogptRequestModelName ? 'manual' : 'list',
-        sub: settingsStore.state.nanogptSubRequestModel && !settingsStore.state.nanogptSubRequestModelName ? 'manual' : 'list',
+    function setFeatureNanoGPTSubscription(role: FeatureRole, enabled: boolean) {
+        settingsStore.state.providerModelOverrides[role].nanogptUseSubscriptionEndpoint = enabled
+        clearNanoGPTSelection(role)
+    }
+
+    function initialNanoGPTInputMode(role: ProviderRole): 'list' | 'manual' {
+        const model = role === 'main'
+            ? settingsStore.state.nanogptRequestModel
+            : role === 'sub'
+                ? settingsStore.state.nanogptSubRequestModel
+                : settingsStore.state.providerModelOverrides[role].nanogptRequestModel
+        const modelName = role === 'main'
+            ? settingsStore.state.nanogptRequestModelName
+            : role === 'sub'
+                ? settingsStore.state.nanogptSubRequestModelName
+                : settingsStore.state.providerModelOverrides[role].nanogptRequestModelName
+        return model && !modelName ? 'manual' : 'list'
+    }
+
+    let nanogptInputModes = $state<Record<ProviderRole, 'list' | 'manual'>>({
+        main: initialNanoGPTInputMode('main'),
+        sub: initialNanoGPTInputMode('sub'),
+        memory: initialNanoGPTInputMode('memory'),
+        translate: initialNanoGPTInputMode('translate'),
+        emotion: initialNanoGPTInputMode('emotion'),
+        otherAx: initialNanoGPTInputMode('otherAx'),
     })
 
     function getNanoGPTInputMode(): 'list' | 'manual' {
-        return nanogptInputModes[providerModelRole]
+        return nanogptInputModes[providerModelRole] ?? 'list'
     }
 
     function changeNanoGPTInputMode(value: string | number) {
@@ -98,6 +144,11 @@
         if (sub !== previousNanoGPTSubscriptionMode.sub) {
             previousNanoGPTSubscriptionMode.sub = sub
             clearNanoGPTSelection('sub')
+            for (const role of featureRoles) {
+                if (settingsStore.state.providerModelOverrides[role].nanogptUseSubscriptionEndpoint === undefined) {
+                    clearNanoGPTSelection(role)
+                }
+            }
         }
     })
 
@@ -110,6 +161,10 @@
             settingsStore.state.nanogptSubscriptionState = ''
             clearNanoGPTSelection('main')
             clearNanoGPTSelection('sub')
+            for (const role of featureRoles) {
+                delete settingsStore.state.providerModelOverrides[role].nanogptUseSubscriptionEndpoint
+                clearNanoGPTSelection(role)
+            }
         }
         previousNanoGPTKey = key
     })
@@ -273,14 +328,30 @@
 
 {#snippet providerRoleSelector(providerName: string)}
     <span class="text-xs text-textcolor2">{providerName} {language.model}</span>
-    <SegmentedControl
-        bind:value={providerModelRole}
-        options={[
-            { value: 'main', label: language.mainModelCardTitle || language.model },
-            { value: 'sub', label: language.subModelCardTitle || language.submodel }
-        ]}
-        size="md"
-    />
+    {#if settingsStore.state.seperateModelsForAxModels}
+        <div class="flex flex-wrap gap-1">
+            <SegmentedControl
+                bind:value={providerModelRole}
+                options={[
+                    { value: 'main', label: language.mainModelCardTitle || language.model },
+                    { value: 'memory', label: 'Memory' },
+                    { value: 'translate', label: 'Translate' },
+                    { value: 'emotion', label: 'Emotion' },
+                    { value: 'otherAx', label: 'OtherAux' },
+                ]}
+                size="md"
+            />
+        </div>
+    {:else}
+        <SegmentedControl
+            bind:value={providerModelRole}
+            options={[
+                { value: 'main', label: language.mainModelCardTitle || language.model },
+                { value: 'sub', label: language.subModelCardTitle || language.submodel }
+            ]}
+            size="md"
+        />
+    {/if}
 {/snippet}
 
 <div class="mb-3 flex items-center justify-between">
@@ -590,12 +661,16 @@
                                 {#await getOpenRouterModels()}
                                     {#if providerModelRole === 'main'}
                                         <ModelGrid bind:value={settingsStore.state.openrouterRequestModel} pinnedItems={openrouterPinnedItems} loading={true} />
+                                    {:else if isFeatureRole && currentOverride}
+                                        <ModelGrid bind:value={currentOverride.openrouterRequestModel} pinnedItems={openrouterPinnedItems} loading={true} />
                                     {:else}
                                         <ModelGrid bind:value={settingsStore.state.openrouterSubRequestModel} pinnedItems={openrouterPinnedItems} loading={true} />
                                     {/if}
                                 {:then m}
                                     {#if providerModelRole === 'main'}
                                         <ModelGrid bind:value={settingsStore.state.openrouterRequestModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
+                                    {:else if isFeatureRole && currentOverride}
+                                        <ModelGrid bind:value={currentOverride.openrouterRequestModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
                                     {:else}
                                         <ModelGrid bind:value={settingsStore.state.openrouterSubRequestModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
                                     {/if}
@@ -633,6 +708,12 @@
                                     <div class="flex items-center">
                                         {#if providerModelRole === 'main'}
                                             <CheckInput bind:check={settingsStore.state.nanogptUseSubscriptionEndpoint} name={language.nanoGPTUseSubscriptionEndpoint} />
+                                        {:else if isFeatureRole && currentOverride}
+                                            <CheckInput
+                                                check={getEffectiveNanoGPTSubscription(providerModelRole)}
+                                                onChange={(check) => setFeatureNanoGPTSubscription(providerModelRole as FeatureRole, check)}
+                                                name={language.nanoGPTUseSubscriptionEndpoint}
+                                            />
                                         {:else}
                                             <CheckInput bind:check={settingsStore.state.nanogptSubUseSubscriptionEndpoint} name={language.nanoGPTUseSubscriptionEndpoint} />
                                         {/if}
@@ -653,6 +734,8 @@
                                 {#if getNanoGPTInputMode() === 'manual'}
                                     {#if providerModelRole === 'main'}
                                         <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.nanogptRequestModel} placeholder={(language as any).nanoGPTManualModelSelect || "Manual Model Select"} oninput={() => { settingsStore.state.nanogptRequestModelName = ''; settingsStore.state.nanogptProvider = ''; }}/>
+                                    {:else if isFeatureRole && currentOverride}
+                                        <TextInput marginBottom={false} size={"sm"} bind:value={currentOverride.nanogptRequestModel} placeholder={(language as any).nanoGPTManualModelSelect || "Manual Model Select"} oninput={() => { currentOverride.nanogptRequestModelName = ''; currentOverride.nanogptProvider = ''; }}/>
                                     {:else}
                                         <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.nanogptSubRequestModel} placeholder={(language as any).nanoGPTManualModelSelect || "Manual Model Select"} oninput={() => { settingsStore.state.nanogptSubRequestModelName = ''; settingsStore.state.nanogptSubProvider = ''; }}/>
                                     {/if}
@@ -660,6 +743,8 @@
                                     {#await Promise.all([getNanoGPTModels(), getNanoGPTSubscriptionModels(settingsStore.state.nanogptKey)])}
                                         {#if providerModelRole === 'main'}
                                             <ModelGrid bind:value={settingsStore.state.nanogptRequestModel} loading={true} />
+                                        {:else if isFeatureRole && currentOverride}
+                                            <ModelGrid bind:value={currentOverride.nanogptRequestModel} loading={true} showSubBadge={getEffectiveNanoGPTSubscription(providerModelRole)} />
                                         {:else}
                                             <ModelGrid bind:value={settingsStore.state.nanogptSubRequestModel} loading={true} showSubBadge={settingsStore.state.nanogptSubUseSubscriptionEndpoint} />
                                         {/if}
@@ -677,6 +762,21 @@
                                                     apiKey={settingsStore.state.nanogptKey}
                                                     modelId={settingsStore.state.nanogptRequestModel}
                                                     bind:value={settingsStore.state.nanogptProvider}
+                                                />
+                                            {/if}
+                                        {:else if isFeatureRole && currentOverride}
+                                            <ModelGrid
+                                                bind:value={currentOverride.nanogptRequestModel}
+                                                items={getEffectiveNanoGPTSubscription(providerModelRole) ? (sub ?? []).map(ngToGridItem) : (regular ?? []).map(ngToGridItem)}
+                                                showSubBadge={getEffectiveNanoGPTSubscription(providerModelRole)}
+                                                selectedLabelOverride={currentOverride.nanogptRequestModel && !currentOverride.nanogptRequestModelName ? currentOverride.nanogptRequestModel : undefined}
+                                                onselect={(_id, name) => { currentOverride.nanogptRequestModelName = name; currentOverride.nanogptProvider = ''; }}
+                                            />
+                                            {#if !getEffectiveNanoGPTSubscription(providerModelRole)}
+                                                <NanoGPTProviderPicker
+                                                    apiKey={settingsStore.state.nanogptKey}
+                                                    modelId={currentOverride.nanogptRequestModel}
+                                                    bind:value={currentOverride.nanogptProvider}
                                                 />
                                             {/if}
                                         {:else}
@@ -727,6 +827,8 @@
                                 <span class="text-xs text-textcolor2 mt-1">Ollama Local</span>
                                 {#if providerModelRole === 'main'}
                                     <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaModel} placeholder="Model" oninput={() => { settingsStore.state.ollamaModelSource = 'local'; settingsStore.state.ollamaModelName = '' }} />
+                                {:else if isFeatureRole && currentOverride}
+                                    <TextInput marginBottom={false} size={"sm"} bind:value={currentOverride.ollamaModel} placeholder="Model (override)" oninput={() => { currentOverride.ollamaModelName = '' }} />
                                 {:else}
                                     <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaSubModel} placeholder="Model" oninput={() => { settingsStore.state.ollamaModelSource = 'local'; settingsStore.state.ollamaSubModelName = '' }} />
                                 {/if}
@@ -744,6 +846,8 @@
                                 {#if settingsStore.state.ollamaInputMode === 'manual'}
                                     {#if providerModelRole === 'main'}
                                         <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaCloudModel} placeholder="Model" oninput={() => settingsStore.state.ollamaCloudModelName = ''} />
+                                    {:else if isFeatureRole && currentOverride}
+                                        <TextInput marginBottom={false} size={"sm"} bind:value={currentOverride.ollamaCloudModel} placeholder="Model (override)" oninput={() => { currentOverride.ollamaCloudModelName = '' }} />
                                     {:else}
                                         <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaCloudSubModel} placeholder="Model" oninput={() => settingsStore.state.ollamaCloudSubModelName = ''} />
                                     {/if}
@@ -751,6 +855,8 @@
                                     {#await getOllamaModels(settingsStore.state.ollamaURL, 'cloud', settingsStore.state.ollamaApiKey)}
                                         {#if providerModelRole === 'main'}
                                             <ModelGrid bind:value={settingsStore.state.ollamaCloudModel} loading={true} />
+                                        {:else if isFeatureRole && currentOverride}
+                                            <ModelGrid bind:value={currentOverride.ollamaCloudModel} loading={true} />
                                         {:else}
                                             <ModelGrid bind:value={settingsStore.state.ollamaCloudSubModel} loading={true} />
                                         {/if}
@@ -763,6 +869,15 @@
                                                 onselect={(_id, name) => {
                                                     settingsStore.state.ollamaModelSource = 'cloud'
                                                     settingsStore.state.ollamaCloudModelName = name
+                                                }}
+                                            />
+                                        {:else if isFeatureRole && currentOverride}
+                                            <ModelGrid
+                                                bind:value={currentOverride.ollamaCloudModel}
+                                                items={cloudModels ?? []}
+                                                selectedLabelOverride={currentOverride.ollamaCloudModel ? `Cloud / ${currentOverride.ollamaCloudModelName || currentOverride.ollamaCloudModel}` : undefined}
+                                                onselect={(_id, name) => {
+                                                    currentOverride.ollamaCloudModelName = name
                                                 }}
                                             />
                                         {:else}
@@ -834,6 +949,8 @@
                                 <span class="text-xs text-textcolor2 mt-1">{language.proxyRequestModel}</span>
                                 {#if providerModelRole === 'main'}
                                     <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.customProxyRequestModel} placeholder="Model Name" />
+                                {:else if isFeatureRole && currentOverride}
+                                    <TextInput marginBottom={false} size={"sm"} bind:value={currentOverride.customProxyRequestModel} placeholder="Model Name (override)" />
                                 {:else}
                                     <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.customProxySubRequestModel} placeholder="Model Name" />
                                 {/if}

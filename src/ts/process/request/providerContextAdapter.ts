@@ -3,7 +3,7 @@ import { prepareProviderExecutionContext } from "@risuai/chat-core/providerConte
 import { getModelInfo } from "../../model/modellist";
 
 import type { requestDataArgument } from "./requestContracts";
-import { resolveProviderRoleModel } from "./providerRoleSettings";
+import { resolveProviderRoleModel, resolveProviderRoleModelForMode } from "./providerRoleSettings";
 import type { ModelModeExtended } from "./shared";
 
 export function prepareBrowserProviderContext(
@@ -11,6 +11,10 @@ export function prepareBrowserProviderContext(
   model: ModelModeExtended,
 ) {
   const db = settingsStore.state;
+  const modeOverride = db.seperateModelsForAxModels
+    ? db.providerModelOverrides?.[model as keyof typeof db.providerModelOverrides]
+    : undefined;
+
   return {
     prepared: prepareProviderExecutionContext(
       { ...arg, mode: model },
@@ -25,10 +29,11 @@ export function prepareBrowserProviderContext(
         genTime: db.genTime,
         extractJson: db.extractJson,
         reverseProxy: {
-          requestModel: resolveProviderRoleModel(
+          requestModel: resolveProviderRoleModelForMode(
             db.customProxyRequestModel,
             db.customProxySubRequestModel,
             model,
+            modeOverride?.customProxyRequestModel,
           ),
           format: db.customAPIFormat,
           url: db.forceReplaceUrl,

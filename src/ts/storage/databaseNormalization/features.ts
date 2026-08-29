@@ -6,11 +6,14 @@ import { LLMFormat } from "../../model/types";
 import type { Database } from "../schema";
 import {
   defaultBoolean,
+  defaultLooseObject,
   defaultNumber,
   defaultPicklist,
   defaultString,
   defaultStringArray,
   mergeDefaults,
+  optionalBoolean,
+  optionalString,
   parseDefaults,
 } from "./valibotDefaults";
 
@@ -106,6 +109,26 @@ const separateModelDefaults = {
   otherAx: defaultString(),
 };
 
+const providerModelOverrideDefaults = {
+  ollamaModel: optionalString(),
+  ollamaModelName: optionalString(),
+  ollamaCloudModel: optionalString(),
+  ollamaCloudModelName: optionalString(),
+  openrouterRequestModel: optionalString(),
+  customProxyRequestModel: optionalString(),
+  nanogptRequestModel: optionalString(),
+  nanogptRequestModelName: optionalString(),
+  nanogptProvider: optionalString(),
+  nanogptUseSubscriptionEndpoint: optionalBoolean(),
+};
+
+const providerModelOverridesDefaults = {
+  memory: defaultLooseObject(providerModelOverrideDefaults),
+  emotion: defaultLooseObject(providerModelOverrideDefaults),
+  translate: defaultLooseObject(providerModelOverrideDefaults),
+  otherAx: defaultLooseObject(providerModelOverrideDefaults),
+};
+
 const fallbackModelDefaults = {
   model: defaultStringArray(),
   memory: defaultStringArray(),
@@ -137,6 +160,7 @@ export type FeatureValidatedDefaults = Required<
     | "fallbackModels"
     | "comfyConfig"
     | "statics"
+    | "providerModelOverrides"
   >
 >;
 
@@ -174,6 +198,13 @@ function normalizeSeparateModels(data: Database): void {
   data.seperateModels = mergeDefaults(
     separateModelDefaults,
     data.seperateModels,
+  );
+}
+
+function normalizeProviderModelOverrides(data: Database): void {
+  data.providerModelOverrides = mergeDefaults(
+    providerModelOverridesDefaults,
+    data.providerModelOverrides,
   );
 }
 
@@ -235,6 +266,7 @@ export function normalizeFeatureDatabaseSettings(data: Database): void {
   migrateAntiClaudeOverload(data);
   normalizeHypaCustomSettings(data);
   normalizeSeparateModels(data);
+  normalizeProviderModelOverrides(data);
   data.modelTools ??= [];
   normalizeHotkeys(data);
   normalizeFallbackModels(data);

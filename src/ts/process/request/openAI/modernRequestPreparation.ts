@@ -21,8 +21,11 @@ import {
 import type { RequestDataArgumentExtended } from "../requestContracts";
 import {
   resolveProviderRoleModel,
+  resolveProviderRoleModelForMode,
   resolveProviderRoleSetting,
+  resolveProviderRoleSettingForMode,
 } from "../providerRoleSettings";
+import type { ProviderModelOverride } from "../../../storage/schema";
 import {
   applyAdditionalParameters,
   applyParameters,
@@ -56,25 +59,34 @@ export async function prepareModernOpenAIRequest(
 ): Promise<OpenAIRequestPreparationResult> {
   const db = settingsStore.state;
   const aiModel = arg.aiModel;
-  let openRouterRequestModel = resolveProviderRoleModel(
+  const modeOverride: ProviderModelOverride | undefined =
+    settingsStore.state.seperateModelsForAxModels
+      ? settingsStore.state.providerModelOverrides?.[arg.mode as keyof typeof settingsStore.state.providerModelOverrides]
+      : undefined;
+
+  let openRouterRequestModel = resolveProviderRoleModelForMode(
     db.openrouterRequestModel,
     db.openrouterSubRequestModel,
     arg.mode,
+    modeOverride?.openrouterRequestModel,
   );
-  const nanoGPTRequestModel = resolveProviderRoleModel(
+  const nanoGPTRequestModel = resolveProviderRoleModelForMode(
     db.nanogptRequestModel,
     db.nanogptSubRequestModel,
     arg.mode,
+    modeOverride?.nanogptRequestModel,
   );
-  const nanoGPTUseSubscriptionEndpoint = resolveProviderRoleSetting(
+  const nanoGPTUseSubscriptionEndpoint = resolveProviderRoleSettingForMode(
     db.nanogptUseSubscriptionEndpoint,
     db.nanogptSubUseSubscriptionEndpoint,
     arg.mode,
+    modeOverride?.nanogptUseSubscriptionEndpoint,
   );
-  const nanoGPTProvider = resolveProviderRoleSetting(
+  const nanoGPTProvider = resolveProviderRoleSettingForMode(
     db.nanogptProvider,
     db.nanogptSubProvider,
     arg.mode,
+    modeOverride?.nanogptProvider,
   );
   if (aiModel === "openrouter" && openRouterRequestModel === "risu/free") {
     openRouterRequestModel = await getFreeOpenRouterModels();

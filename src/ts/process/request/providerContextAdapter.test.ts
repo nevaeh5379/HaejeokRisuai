@@ -50,11 +50,38 @@ describe("prepareBrowserProviderContext provider role settings", () => {
   });
 
   it.each(["submodel", "memory", "emotion", "otherAx", "translate"] as const)(
-    "uses the Reverse Proxy auxiliary model for %s requests",
+    "uses the Reverse Proxy auxiliary model for %s requests when no override is set",
     (mode) => {
       const { prepared } = prepareBrowserProviderContext(request, mode);
 
       expect(prepared.modelInfo.internalID).toBe("proxy-aux");
     },
   );
+
+  it("uses the per-feature override for Reverse Proxy when separateModelsForAxModels is enabled", () => {
+    mocks.db.seperateModelsForAxModels = true;
+    (mocks.db as any).providerModelOverrides = {
+      memory: { customProxyRequestModel: "proxy-memory-himoi" },
+      translate: { customProxyRequestModel: "proxy-translate-gemma4" },
+      emotion: {},
+      otherAx: {},
+    };
+
+    const memory = prepareBrowserProviderContext(request, "memory");
+    expect(memory.prepared.modelInfo.internalID).toBe("proxy-memory-himoi");
+
+    const translate = prepareBrowserProviderContext(request, "translate");
+    expect(translate.prepared.modelInfo.internalID).toBe("proxy-translate-gemma4");
+
+    // Falls back to sub model when feature override is empty
+    const emotion = prepareBrowserProviderContext(request, "emotion");
+    expect(emotion.prepared.modelInfo.internalID).toBe("proxy-aux");
+
+    // Main model is unaffected
+    const main = prepareBrowserProviderContext(request, "model");
+    expect(main.prepared.modelInfo.internalID).toBe("proxy-main");
+
+    // Cleanup
+    mocks.db.seperateModelsForAxModels = false;
+  });
 });

@@ -22,3 +22,27 @@ export function resolveProviderRoleModel(
   const selected = resolveProviderRoleSetting(mainModel, auxiliaryModel, mode);
   return selected || mainModel;
 }
+
+export function resolveProviderRoleModelForMode(
+  mainModel: string,
+  subModel: string | null | undefined,
+  mode?: ModelModeExtended,
+  modeOverride?: string | null | undefined,
+): string {
+  if (isAuxiliaryProviderMode(mode) && modeOverride) {
+    return modeOverride;
+  }
+  return resolveProviderRoleModel(mainModel, subModel, mode);
+}
+
+export function resolveProviderRoleSettingForMode<T>(
+  mainValue: T,
+  auxiliaryValue: T | null | undefined,
+  mode?: ModelModeExtended,
+  modeOverride?: T | null | undefined,
+): T {
+  if (isAuxiliaryProviderMode(mode) && modeOverride !== null && modeOverride !== undefined) {
+    return modeOverride;
+  }
+  return resolveProviderRoleSetting(mainValue, auxiliaryValue, mode);
+}

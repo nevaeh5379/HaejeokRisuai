@@ -44,4 +44,36 @@ describe("resolveOllamaRequestModel", () => {
       "legacy-cloud",
     );
   });
+
+  it("applies per-feature mode overrides when provided", () => {
+    const memoryOverride = {
+      ollamaModel: "local-himoi",
+      ollamaCloudModel: "cloud-himoi",
+    };
+    const translateOverride = {
+      ollamaModel: "local-gemma4",
+      ollamaCloudModel: "cloud-gemma4",
+    };
+
+    // Memory uses HiMOI override
+    expect(
+      resolveOllamaRequestModel(settings, "cloud", "memory", memoryOverride),
+    ).toBe("cloud-himoi");
+    expect(
+      resolveOllamaRequestModel(settings, "local", "memory", memoryOverride),
+    ).toBe("local-himoi");
+
+    // Translate uses Gemma4 override
+    expect(
+      resolveOllamaRequestModel(settings, "cloud", "translate", translateOverride),
+    ).toBe("cloud-gemma4");
+    expect(
+      resolveOllamaRequestModel(settings, "local", "translate", translateOverride),
+    ).toBe("local-gemma4");
+
+    // Without override, falls back to auxiliary setting
+    expect(
+      resolveOllamaRequestModel(settings, "cloud", "emotion", undefined),
+    ).toBe("cloud-aux");
+  });
 });

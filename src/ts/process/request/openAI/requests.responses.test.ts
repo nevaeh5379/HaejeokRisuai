@@ -234,6 +234,13 @@ describe("OpenAI Responses API helpers", () => {
     mocks.db.nanogptSubRequestModel = "nanogpt-sub-model";
     mocks.db.nanogptSubUseSubscriptionEndpoint = false;
     mocks.db.nanogptUseSubscriptionEndpoint = false;
+    (mocks.db as any).seperateModelsForAxModels = false;
+    (mocks.db as any).providerModelOverrides = {
+      memory: {},
+      emotion: {},
+      translate: {},
+      otherAx: {},
+    };
     mocks.db.openrouterRequestModel = "openrouter-main-model";
     mocks.db.openrouterSubRequestModel = "openrouter-sub-model";
     mocks.db.reasoningEffort = 2;
@@ -725,6 +732,63 @@ describe("OpenAI Responses API helpers", () => {
       "https://nano-gpt.com/api/subscription/v1/responses",
     );
     expect(subscriptionPreview.headers["X-Provider"]).toBeUndefined();
+  });
+
+  it("inherits the NanoGPT sub endpoint for a feature override when endpoint mode is unset", async () => {
+    (mocks.db as any).seperateModelsForAxModels = true;
+    mocks.db.nanogptSubUseSubscriptionEndpoint = true;
+    (mocks.db as any).providerModelOverrides.memory = {
+      nanogptRequestModel: "memory-model",
+      nanogptProvider: "memory-provider",
+    };
+
+    const result = await requestOpenAIResponseAPI(
+      baseArg({
+        aiModel: "nanogpt",
+        mode: "memory",
+        previewBody: true,
+        modelInfo: {
+          ...baseArg().modelInfo,
+          internalID: "nanogpt",
+          format: LLMFormat.NanoGPTResponses,
+        },
+      }),
+    );
+
+    expect(result.type).toBe("success");
+    const preview = JSON.parse(result.result as string);
+    expect(preview.body.model).toBe("memory-model");
+    expect(preview.url).toBe("https://nano-gpt.com/api/subscription/v1/responses");
+    expect(preview.headers["X-Provider"]).toBeUndefined();
+  });
+
+  it("lets a feature explicitly disable the inherited NanoGPT subscription endpoint", async () => {
+    (mocks.db as any).seperateModelsForAxModels = true;
+    mocks.db.nanogptSubUseSubscriptionEndpoint = true;
+    (mocks.db as any).providerModelOverrides.memory = {
+      nanogptRequestModel: "memory-model",
+      nanogptProvider: "memory-provider",
+      nanogptUseSubscriptionEndpoint: false,
+    };
+
+    const result = await requestOpenAIResponseAPI(
+      baseArg({
+        aiModel: "nanogpt",
+        mode: "memory",
+        previewBody: true,
+        modelInfo: {
+          ...baseArg().modelInfo,
+          internalID: "nanogpt",
+          format: LLMFormat.NanoGPTResponses,
+        },
+      }),
+    );
+
+    expect(result.type).toBe("success");
+    const preview = JSON.parse(result.result as string);
+    expect(preview.body.model).toBe("memory-model");
+    expect(preview.url).toBe("https://nano-gpt.com/api/v1/responses");
+    expect(preview.headers["X-Provider"]).toBe("memory-provider");
   });
 
   it("applies reverse proxy Responses endpoint autofill and additional params", async () => {

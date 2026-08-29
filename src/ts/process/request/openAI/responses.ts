@@ -28,8 +28,11 @@ import {
 import { matchesNodeOllamaCloudEndpoint } from "../ollamaTransport";
 import {
   resolveProviderRoleModel,
+  resolveProviderRoleModelForMode,
   resolveProviderRoleSetting,
+  resolveProviderRoleSettingForMode,
 } from "../providerRoleSettings";
+import type { ProviderModelOverride } from "../../../storage/schema";
 import {
   applyAdditionalParameters,
   applyParameters,
@@ -222,14 +225,19 @@ function getResponsesRequestURL(arg: RequestDataArgumentExtended): {
 } {
   const db = settingsStore.state;
   const aiModel = arg.aiModel;
+  const modeOverride: ProviderModelOverride | undefined =
+    db.seperateModelsForAxModels
+      ? db.providerModelOverrides?.[arg.mode as keyof typeof db.providerModelOverrides]
+      : undefined;
   let requestURL =
     aiModel === "nanogpt"
       ? resolveNanoGPTTransportUrl(
           "responses",
-          resolveProviderRoleSetting(
+          resolveProviderRoleSettingForMode(
             db.nanogptUseSubscriptionEndpoint,
             db.nanogptSubUseSubscriptionEndpoint,
             arg.mode,
+            modeOverride?.nanogptUseSubscriptionEndpoint,
           ),
         )!
       : (arg.customURL ?? DEFAULT_OPENAI_RESPONSES_URL);
@@ -293,6 +301,10 @@ function buildResponsesHeaders(
 ): Record<string, string> {
   const db = settingsStore.state;
   const aiModel = arg.aiModel;
+  const modeOverride: ProviderModelOverride | undefined =
+    db.seperateModelsForAxModels
+      ? db.providerModelOverrides?.[arg.mode as keyof typeof db.providerModelOverrides]
+      : undefined;
   const headers = {
     Authorization:
       "Bearer " +
@@ -314,21 +326,24 @@ function buildResponsesHeaders(
   }
   if (
     aiModel === "nanogpt" &&
-    resolveProviderRoleSetting(
+    resolveProviderRoleSettingForMode(
       db.nanogptProvider,
       db.nanogptSubProvider,
       arg.mode,
+      modeOverride?.nanogptProvider,
     ) &&
-    !resolveProviderRoleSetting(
+    !resolveProviderRoleSettingForMode(
       db.nanogptUseSubscriptionEndpoint,
       db.nanogptSubUseSubscriptionEndpoint,
       arg.mode,
+      modeOverride?.nanogptUseSubscriptionEndpoint,
     )
   ) {
-    headers["X-Provider"] = resolveProviderRoleSetting(
+    headers["X-Provider"] = resolveProviderRoleSettingForMode(
       db.nanogptProvider,
       db.nanogptSubProvider,
       arg.mode,
+      modeOverride?.nanogptProvider,
     );
   }
 
@@ -338,11 +353,16 @@ function buildResponsesHeaders(
 function getResponsesRequestModel(arg: RequestDataArgumentExtended): string {
   const db = settingsStore.state;
   if (arg.aiModel === "nanogpt") {
+    const modeOverride: ProviderModelOverride | undefined =
+      db.seperateModelsForAxModels
+        ? db.providerModelOverrides?.[arg.mode as keyof typeof db.providerModelOverrides]
+        : undefined;
     return (
-      resolveProviderRoleModel(
+      resolveProviderRoleModelForMode(
         db.nanogptRequestModel,
         db.nanogptSubRequestModel,
         arg.mode,
+        modeOverride?.nanogptRequestModel,
       ) || arg.modelInfo.internalID || arg.aiModel
     );
   }

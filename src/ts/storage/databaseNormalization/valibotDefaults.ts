@@ -2,9 +2,11 @@ import {
   array,
   boolean,
   fallback,
+  looseObject,
   nullish,
   number,
   object,
+  optional,
   parse,
   picklist,
   string,
@@ -24,6 +26,22 @@ export function defaultNumber(value: number) {
 
 export function defaultBoolean(value: boolean) {
   return fallback(nullish(boolean(), value), value);
+}
+
+export function optionalString() {
+  return fallback(optional(string()), undefined);
+}
+
+export function optionalBoolean() {
+  return fallback(optional(boolean()), undefined);
+}
+
+export function defaultLooseObject<const TEntries extends ObjectEntries>(
+  entries: TEntries,
+) {
+  const schema = looseObject(entries);
+  const createDefault = () => ({} as InferOutput<typeof schema>);
+  return fallback(nullish(schema, createDefault), createDefault);
 }
 
 export function defaultPicklist<

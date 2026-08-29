@@ -132,6 +132,35 @@ describe("normalizeDatabaseDefaults", () => {
     });
   });
 
+  it("validates provider model overrides without destroying inheritance or extensions", () => {
+    const db = normalizeDatabaseInput({
+      providerModelOverrides: {
+        memory: {
+          ollamaModel: 123,
+          nanogptUseSubscriptionEndpoint: "invalid",
+          futureProviderField: "keep-me",
+        },
+        emotion: { nanogptUseSubscriptionEndpoint: false },
+        translate: null,
+        otherAx: "invalid",
+      },
+    } as unknown as DatabaseInput);
+
+    expect(db.providerModelOverrides.memory.ollamaModel).toBeUndefined();
+    expect(
+      db.providerModelOverrides.memory.nanogptUseSubscriptionEndpoint,
+    ).toBeUndefined();
+    expect(
+      (db.providerModelOverrides.memory as Record<string, unknown>)
+        .futureProviderField,
+    ).toBe("keep-me");
+    expect(
+      db.providerModelOverrides.emotion.nanogptUseSubscriptionEndpoint,
+    ).toBe(false);
+    expect(db.providerModelOverrides.translate).toEqual({});
+    expect(db.providerModelOverrides.otherAx).toEqual({});
+  });
+
   it("normalizes sparse DatabaseInput without a Database assertion", () => {
     const input: DatabaseInput = {};
     const db = normalizeDatabaseDefaults(input);

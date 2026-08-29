@@ -1,5 +1,6 @@
 import type { ModelModeExtended } from "./shared";
-import { resolveProviderRoleModel } from "./providerRoleSettings";
+import { resolveProviderRoleModelForMode } from "./providerRoleSettings";
+import type { ProviderModelOverride } from "../../storage/schema";
 
 export type OllamaRequestModelSettings = {
   ollamaModel: string;
@@ -12,18 +13,21 @@ export function resolveOllamaRequestModel(
   settings: OllamaRequestModelSettings,
   source: "local" | "cloud",
   mode?: ModelModeExtended,
+  modeOverride?: ProviderModelOverride,
 ): string {
   if (source === "cloud") {
-    return resolveProviderRoleModel(
+    return resolveProviderRoleModelForMode(
       settings.ollamaCloudModel,
       settings.ollamaCloudSubModel,
       mode,
+      modeOverride?.ollamaCloudModel,
     );
   }
 
-  return resolveProviderRoleModel(
+  return resolveProviderRoleModelForMode(
     settings.ollamaModel,
     settings.ollamaSubModel,
     mode,
+    modeOverride?.ollamaModel,
   );
 }

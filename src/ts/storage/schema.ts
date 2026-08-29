@@ -18,6 +18,19 @@ import type { Loadout } from "../loadout";
 
 export type StreamingDisplayOptimizationMode = "off" | "balanced" | "strong";
 
+export interface ProviderModelOverride {
+  ollamaModel?: string;
+  ollamaModelName?: string;
+  ollamaCloudModel?: string;
+  ollamaCloudModelName?: string;
+  openrouterRequestModel?: string;
+  customProxyRequestModel?: string;
+  nanogptRequestModel?: string;
+  nanogptRequestModelName?: string;
+  nanogptProvider?: string;
+  nanogptUseSubscriptionEndpoint?: boolean;
+}
+
 export interface DynamicOutput {
   autoAdjustSchema: boolean;
   dynamicMessages: boolean;
@@ -418,6 +431,12 @@ export interface DatabaseSettings {
     otherAx: string;
   };
   doNotChangeSeperateModels: boolean;
+  providerModelOverrides: {
+    memory: ProviderModelOverride;
+    emotion: ProviderModelOverride;
+    translate: ProviderModelOverride;
+    otherAx: ProviderModelOverride;
+  };
   modelTools: string[];
   hotkeys: Hotkey[];
   fallbackModels: {
@@ -1006,6 +1025,12 @@ export interface botPreset {
     emotion: string;
     translate: string;
     otherAx: string;
+  };
+  providerModelOverrides?: {
+    memory: ProviderModelOverride;
+    emotion: ProviderModelOverride;
+    translate: ProviderModelOverride;
+    otherAx: ProviderModelOverride;
   };
   modelTools?: string[];
   fallbackModels?: {

@@ -35,6 +35,8 @@ const SETTING_DOMAINS: Record<string, ReadonlySet<string>> = {
     "bias",
     "customModels",
     "fallbackModels",
+    "seperateModels",
+    "providerModelOverrides",
   ]),
   provider: new Set([
     "openAIKey",

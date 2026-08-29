@@ -103,6 +103,9 @@ export function createActivePresetSnapshot(
     fallbackWhenBlankResponse: db.fallbackWhenBlankResponse ?? false,
     verbosity: db.verbosity ?? 1,
     dynamicOutput: db.dynamicOutput ?? null,
+    providerModelOverrides: db.doNotChangeSeperateModels
+      ? null
+      : safeStructuredClone(db.providerModelOverrides),
   };
 
   return { ...savedPreset, id: current.id } as StoredBotPreset;
@@ -243,6 +246,12 @@ export function setPreset(db: DatabaseSettings, newPres: botPreset) {
       emotion: "",
       translate: "",
       otherAx: "",
+    };
+    db.providerModelOverrides = safeStructuredClone(newPres.providerModelOverrides) ?? {
+      memory: {},
+      emotion: {},
+      translate: {},
+      otherAx: {},
     };
   }
   if (!db.doNotChangeFallbackModels) {

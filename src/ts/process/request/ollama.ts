@@ -152,10 +152,14 @@ export async function requestOllama(
   const db = settingsStore.state;
   const isCloud = arg.aiModel === "ollama-cloud";
   const requestFormat = isCloud ? db.ollamaRequestFormat : LLMFormat.Ollama;
+  const modeOverride = db.seperateModelsForAxModels
+    ? db.providerModelOverrides?.[arg.mode as keyof typeof db.providerModelOverrides]
+    : undefined;
   const ollamaModel = resolveOllamaRequestModel(
     db,
     isCloud ? "cloud" : "local",
     arg.mode,
+    modeOverride,
   );
   const ollamaThinkMode = getOllamaThinkMode(db.ollamaThinkingMode);
 
