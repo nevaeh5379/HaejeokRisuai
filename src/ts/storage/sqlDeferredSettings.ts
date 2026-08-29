@@ -3,7 +3,8 @@ import protocolSettings from "../../../packages/protocol/settings.json";
 export const PROMPT_SETTING_KEYS = protocolSettings.PROMPT_SETTING_KEYS;
 
 export const DEFERRED_STARTUP_SETTING_KEYS = [
-  "plugins",
+  //Adding the plugin to the lazy loading list is meaningless, as it will inevitably load during the initial loading phase.
+  // "plugins",
   "personas",
   "loreBook",
   "modules",

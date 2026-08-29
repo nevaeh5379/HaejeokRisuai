@@ -4,7 +4,82 @@ import {
   DEFAULT_CHAT_LOAD_INITIAL_PAGES,
   normalizeChatLoadPages,
 } from "../../chatLoadPages";
+import { number, object, string } from "valibot";
 import type { Database, StreamingDisplayOptimizationMode } from "../schema";
+import {
+  defaultArray,
+  defaultBoolean,
+  defaultNumber,
+  defaultPicklist,
+  defaultString,
+  defaultStringArray,
+  mergeDefaults,
+  parseDefaults,
+} from "./valibotDefaults";
+
+const runtimeScalarDefaults = {
+  openAIFlexProcessing: defaultBoolean(false),
+  rememberToolUsage: defaultBoolean(true),
+  simplifiedToolUse: defaultBoolean(false),
+  streamGeminiThoughts: defaultBoolean(false),
+  settingsCloseButtonSize: defaultNumber(24),
+  hideAllImages: defaultBoolean(false),
+  lowSpecMode: defaultBoolean(false),
+  blurHiddenCharacters: defaultBoolean(true),
+  ImagenModel: defaultString("imagen-4.0-generate-001"),
+  ImagenImageSize: defaultString("1K"),
+  ImagenAspectRatio: defaultString("1:1"),
+  ImagenPersonGeneration: defaultString("allow_all"),
+  autoScrollToNewMessage: defaultBoolean(true),
+  alwaysScrollToNewMessage: defaultBoolean(false),
+  newMessageButtonStyle: defaultString("bottom-center"),
+  echoMessage: defaultString("Echo Message"),
+  echoDelay: defaultNumber(0),
+  createFolderOnBranch: defaultBoolean(true),
+  hamburgerButtonBottom: defaultBoolean(false),
+  dynamicModelRegistry: defaultBoolean(true),
+  saveSignatures: defaultBoolean(false),
+  keepSessionAlive: defaultPicklist(["off", "pip", "sound"], "off"),
+  longPressToPopupEditor: defaultBoolean(false),
+  moveInsteadOfCopyOnCMPConvert: defaultBoolean(false),
+  skipSavingAssetsOnWebSync: defaultBoolean(true),
+  resizeTextarea: defaultBoolean(false),
+  characterFavorites: defaultStringArray(),
+  characterHidden: defaultStringArray(),
+};
+
+const openAiCompatImageDefaults = {
+  url: defaultString(),
+  key: defaultString(),
+  model: defaultString(),
+  size: defaultString("1024x1024"),
+  quality: defaultString("auto"),
+};
+
+const wavespeedImageDefaults = {
+  key: defaultString(),
+  model: defaultString(),
+  loras: defaultArray(
+    object({
+      path: string(),
+      scale: number(),
+    }),
+  ),
+  reference_mode: defaultString(),
+  reference_image: defaultString(),
+  reference_base64image: defaultString(),
+};
+
+export type RuntimeValidatedDefaults = Required<
+  Pick<
+    Database,
+    | keyof typeof runtimeScalarDefaults
+    | "openaiCompatImage"
+    | "wavespeedImage"
+    | "chatLoadInitialPages"
+    | "chatLoadAdditionalPages"
+  >
+>;
 
 function normalizeChatLoadSettings(data: Database): void {
   data.chatLoadInitialPages = normalizeChatLoadPages(
@@ -41,57 +116,23 @@ function resetTransientChatState(data: Database): void {
 }
 
 export function normalizeRuntimeDatabaseSettings(data: Database): void {
+  Object.assign(data, parseDefaults(runtimeScalarDefaults, data));
   data.customModels ??= [];
   data.authRefreshes ??= [];
-  data.openAIFlexProcessing ??= false;
-  data.rememberToolUsage ??= true;
-  data.simplifiedToolUse ??= false;
-  data.streamGeminiThoughts ??= false;
-  data.settingsCloseButtonSize ??= 24;
-  data.hideAllImages ??= false;
-  data.lowSpecMode ??= false;
-  data.blurHiddenCharacters ??= true;
-  data.characterFavorites ??= [];
-  data.characterHidden ??= [];
-  data.ImagenModel ??= "imagen-4.0-generate-001";
-  data.ImagenImageSize ??= "1K";
-  data.ImagenAspectRatio ??= "1:1";
-  data.ImagenPersonGeneration ??= "allow_all";
-  data.openaiCompatImage ??= {
-    url: "",
-    key: "",
-    model: "",
-    size: "1024x1024",
-    quality: "auto",
-  };
-  data.wavespeedImage ??= {
-    key: "",
-    model: "",
-    loras: [],
-    reference_mode: "",
-    reference_image: "",
-    reference_base64image: "",
-  };
-  data.autoScrollToNewMessage ??= true;
-  data.alwaysScrollToNewMessage ??= false;
-  data.newMessageButtonStyle ??= "bottom-center";
+  data.openaiCompatImage = mergeDefaults(
+    openAiCompatImageDefaults,
+    data.openaiCompatImage,
+  );
+  data.wavespeedImage = mergeDefaults(
+    wavespeedImageDefaults,
+    data.wavespeedImage,
+  );
   normalizeChatLoadSettings(data);
   migrateStreamingDisplayMode(data);
-  data.echoMessage ??= "Echo Message";
-  data.echoDelay ??= 0;
   applyPlatformRuntimePolicy(data);
-  data.createFolderOnBranch ??= true;
-  data.hamburgerButtonBottom ??= false;
-  data.dynamicModelRegistry ??= true;
-  data.saveSignatures ??= false;
   data.enableRisuaiProTools ??= data.plugins.length > 0;
-  data.keepSessionAlive ??= "off";
   data.loadouts ??= [];
-  data.longPressToPopupEditor ??= false;
   data.customSidebarItems ??= [];
-  data.moveInsteadOfCopyOnCMPConvert ??= false;
-  data.skipSavingAssetsOnWebSync ??= true;
-  data.resizeTextarea ??= false;
   data.coldstorage ??= data?.plugins?.length === 0;
   resetTransientChatState(data);
 }

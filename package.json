@@ -118,6 +118,7 @@
     "three": "^0.185.1",
     "tippy.js": "^6.3.7",
     "uuid": "^14.0.2",
+    "valibot": "^1.4.2",
     "wasmoon": "^1.16.0",
     "wavefile": "^11.0.0",
     "web-streams-polyfill": "^4.3.0",

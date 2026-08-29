@@ -5,6 +5,128 @@ import { LLMFormat } from "../../model/types";
 import type { botPreset, Database, PortableDatabase } from "../schema";
 import { defaultAIN, defaultOoba } from "../presetDefaults";
 import { normalizePromptTemplate } from "../presetService";
+import {
+  defaultBoolean,
+  defaultNumber,
+  defaultPicklist,
+  defaultString,
+  defaultStringArray,
+  mergeDefaults,
+  parseDefaults,
+} from "./valibotDefaults";
+
+
+const providerScalarDefaults = {
+  classicMaxWidth: defaultBoolean(false),
+  openrouterKey: defaultString(),
+  openrouterRequestModel: defaultString("openai/gpt-3.5-turbo"),
+  nanogptKey: defaultString(),
+  nanogptRequestModel: defaultString(),
+  nanogptRequestModelName: defaultString(),
+  nanogptProvider: defaultString(),
+  nanogptSubscriptionState: defaultString(),
+  nanogptUseSubscriptionEndpoint: defaultBoolean(false),
+  assetWidth: defaultNumber(-1),
+  chatLimitSize: defaultNumber(-1),
+  animationSpeed: defaultNumber(0.4),
+  colorSchemeName: defaultString("default"),
+  hypaModel: defaultString("openai3small"),
+  mancerHeader: defaultString(),
+  emotionProcesser: defaultPicklist(["submodel", "embedding"], "submodel"),
+  translatorType: defaultPicklist(
+    ["google", "deepl", "none", "llm", "deeplX", "bergamot"],
+    "google",
+  ),
+  htmlTranslation: defaultBoolean(false),
+  NAIadventure: defaultBoolean(false),
+  NAIappendName: defaultBoolean(true),
+  autofillRequestUrl: defaultBoolean(true),
+  customProxyRequestModel: defaultString(),
+  generationSeed: defaultNumber(-1),
+  newOAIHandle: defaultBoolean(true),
+  gptVisionQuality: defaultString("low"),
+  huggingfaceKey: defaultString(),
+  fishSpeechKey: defaultString(),
+  top_p: defaultNumber(1),
+  genTime: defaultNumber(1),
+  keiServerURL: defaultString(),
+  top_k: defaultNumber(0),
+  openrouterFallback: defaultBoolean(true),
+  openrouterMiddleOut: defaultBoolean(false),
+  removePunctuationHypa: defaultBoolean(true),
+  memoryLimitThickness: defaultNumber(1),
+  heightMode: defaultString("normal"),
+  antiClaudeOverload: defaultBoolean(false),
+  maxSupaChunkSize: defaultNumber(1200),
+  ollamaURL: defaultString(),
+  ollamaModel: defaultString(),
+  ollamaInputMode: defaultPicklist(["list", "manual"], "manual"),
+  ollamaApiKey: defaultString(),
+  ollamaModelName: defaultString(),
+  ollamaCloudModel: defaultString(),
+  ollamaCloudModelName: defaultString(),
+  ollamaThinkingMode: defaultPicklist(
+    ["auto", "off", "on", "low", "medium", "high"],
+    "auto",
+  ),
+  autoContinueChat: defaultBoolean(false),
+  autoContinueMinTokens: defaultNumber(0),
+  repetition_penalty: defaultNumber(1),
+  min_p: defaultNumber(0),
+  top_a: defaultNumber(0),
+  customTokenizer: defaultString("tik"),
+  instructChatTemplate: defaultString("chatml"),
+};
+
+const localNetworkDefaults = {
+  localNetworkMode: defaultBoolean(false),
+  localNetworkTimeoutSec: defaultNumber(600),
+};
+
+const openRouterProviderDefaults = {
+  order: defaultStringArray(),
+  only: defaultStringArray(),
+  ignore: defaultStringArray(),
+};
+
+const deeplOptionsDefaults = {
+  key: defaultString(),
+  freeApi: defaultBoolean(false),
+};
+
+const deeplXOptionsDefaults = {
+  url: defaultString(),
+  token: defaultString(),
+};
+
+const googleDefaults = {
+  accessToken: defaultString(),
+  projectId: defaultString(),
+};
+
+const promptSettingsDefaults = {
+  assistantPrefill: defaultString(),
+  postEndInnerFormat: defaultString(),
+  sendChatAsSystem: defaultBoolean(false),
+  sendName: defaultBoolean(false),
+  utilOverride: defaultBoolean(false),
+  customChainOfThought: defaultBoolean(false),
+  maxThoughtTagDepth: defaultNumber(-1),
+};
+
+export type ProviderValidatedDefaults = Required<
+  Pick<
+    Database,
+    | keyof typeof providerScalarDefaults
+    | "localNetworkMode"
+    | "localNetworkTimeoutSec"
+    | "deeplOptions"
+    | "deeplXOptions"
+    | "google"
+    | "promptSettings"
+    | "openrouterProvider"
+  >
+>;
 
 const supportedHypaModels = new Set([
   "custom",
@@ -20,18 +142,7 @@ type LocalNetworkSettings = Pick<
 >;
 
 function normalizeLocalNetworkSettings(settings: LocalNetworkSettings): void {
-  settings.localNetworkMode ??= false;
-  if (typeof settings.localNetworkMode !== "boolean") {
-    settings.localNetworkMode = false;
-  }
-
-  settings.localNetworkTimeoutSec ??= 600;
-  if (
-    typeof settings.localNetworkTimeoutSec !== "number" ||
-    Number.isNaN(settings.localNetworkTimeoutSec)
-  ) {
-    settings.localNetworkTimeoutSec = 600;
-  }
+  Object.assign(settings, parseDefaults(localNetworkDefaults, settings));
 }
 
 function migrateOpenRouterProvider(
@@ -52,22 +163,21 @@ function normalizePortablePreset(preset: botPreset): void {
     preset.promptTemplate = normalizePromptTemplate(preset.promptTemplate);
   }
   normalizeLocalNetworkSettings(preset);
-  preset.openrouterProvider = migrateOpenRouterProvider(preset.openrouterProvider);
+  const migratedProvider = migrateOpenRouterProvider(preset.openrouterProvider);
+  if (migratedProvider) {
+    preset.openrouterProvider = parseDefaults(
+      openRouterProviderDefaults,
+      migratedProvider,
+    );
+  }
 }
 
 function normalizeOllamaSettings(data: Database): void {
-  data.ollamaURL ??= "";
-  data.ollamaModel ??= "";
   data.ollamaModelSource ??=
     data.aiModel === "ollama-cloud" || data.subModel === "ollama-cloud"
       ? "cloud"
       : "local";
-  data.ollamaInputMode ??= "manual";
   data.ollamaRequestFormat ??= LLMFormat.Ollama;
-  data.ollamaApiKey ??= "";
-  data.ollamaModelName ??= "";
-  data.ollamaCloudModel ??= "";
-  data.ollamaCloudModelName ??= "";
 
   if (
     (data.aiModel === "ollama-cloud" || data.subModel === "ollama-cloud") &&
@@ -81,121 +191,49 @@ function normalizeOllamaSettings(data: Database): void {
   data.ollamaSubModelName ??= data.ollamaModelName;
   data.ollamaCloudSubModel ??= data.ollamaCloudModel;
   data.ollamaCloudSubModelName ??= data.ollamaCloudModelName;
-  data.ollamaThinkingMode ??= "auto";
 }
 
 export function normalizeProviderDatabaseSettings(data: Database): void {
+  Object.assign(data, parseDefaults(providerScalarDefaults, data));
   const portableData = data as Database & Partial<PortableDatabase>;
-  data.classicMaxWidth ??= false;
   data.ooba ??= safeStructuredClone(defaultOoba);
   data.ainconfig ??= safeStructuredClone(defaultAIN);
-  data.openrouterKey ??= "";
-  data.openrouterRequestModel ??= "openai/gpt-3.5-turbo";
   data.openrouterSubRequestModel ??= data.openrouterRequestModel;
-  data.nanogptKey ??= "";
-  data.nanogptRequestModel ??= "";
-  data.nanogptRequestModelName ??= "";
-  data.nanogptProvider ??= "";
   data.nanogptSubRequestModel ??= data.nanogptRequestModel;
   data.nanogptSubRequestModelName ??= data.nanogptRequestModelName;
   data.nanogptSubProvider ??= data.nanogptProvider;
-  data.nanogptSubscriptionState ??= "";
-  data.nanogptUseSubscriptionEndpoint ??= false;
   data.nanogptSubUseSubscriptionEndpoint ??=
     data.nanogptUseSubscriptionEndpoint;
   data.NAIsettings ??= safeStructuredClone(prebuiltNAIpresets);
-  data.assetWidth ??= -1;
-  data.chatLimitSize ??= -1;
-  data.animationSpeed ??= 0.4;
   data.colorScheme ??= safeStructuredClone(defaultColorScheme);
-  data.colorSchemeName ??= "default";
   data.customColorScheme ??= safeStructuredClone(
     data.colorSchemeName === "custom" ? data.colorScheme : defaultColorScheme,
   );
   data.NAIsettings.starter ??= "";
-  data.hypaModel ??= "openai3small";
   if (!supportedHypaModels.has(data.hypaModel as string)) {
     data.hypaModel = "openai3small";
   }
-  data.mancerHeader ??= "";
-  data.emotionProcesser ??= "submodel";
-  data.translatorType ??= "google";
-  data.htmlTranslation ??= false;
-  data.deeplOptions ??= {
-    key: "",
-    freeApi: false,
-  };
-  data.deeplXOptions ??= {
-    url: "",
-    token: "",
-  };
-  data.NAIadventure ??= false;
-  data.NAIappendName ??= true;
+  data.deeplOptions = mergeDefaults(deeplOptionsDefaults, data.deeplOptions);
+  data.deeplXOptions = mergeDefaults(deeplXOptionsDefaults, data.deeplXOptions);
   data.NAIsettings.cfg_scale ??= 1;
   data.NAIsettings.mirostat_tau ??= 0;
   data.NAIsettings.mirostat_lr ??= 1;
-  data.autofillRequestUrl ??= true;
-  data.customProxyRequestModel ??= "";
   data.customProxySubRequestModel ??= data.customProxyRequestModel;
-  data.generationSeed ??= -1;
-  data.newOAIHandle ??= true;
   normalizeLocalNetworkSettings(data);
-  data.gptVisionQuality ??= "low";
-  data.huggingfaceKey ??= "";
-  data.fishSpeechKey ??= "";
   data.presetRegex ??= [];
   data.reverseProxyOobaArgs ??= {
     mode: "instruct",
   };
-  data.top_p ??= 1;
-  if (typeof data.top_p !== "number") {
-    //idk why type changes, but it does so this is a fix
-    data.top_p = 1;
-  }
-  data.google ??= {
-    accessToken: "",
-    projectId: "",
-  };
-  data.google.accessToken ??= "";
-  data.google.projectId ??= "";
-  data.genTime ??= 1;
-  data.promptSettings ??= {
-    assistantPrefill: "",
-    postEndInnerFormat: "",
-    sendChatAsSystem: false,
-    sendName: false,
-    utilOverride: false,
-    customChainOfThought: false,
-    maxThoughtTagDepth: -1,
-  };
-  data.promptSettings.assistantPrefill ??= "";
-  data.promptSettings.postEndInnerFormat ??= "";
-  data.promptSettings.sendChatAsSystem ??= false;
-  data.promptSettings.sendName ??= false;
-  data.promptSettings.utilOverride ??= false;
-  data.promptSettings.customChainOfThought ??= false;
-  data.keiServerURL ??= "";
-  data.top_k ??= 0;
-  data.promptSettings.maxThoughtTagDepth ??= -1;
-  data.openrouterFallback ??= true;
-  data.openrouterMiddleOut ??= false;
-  data.removePunctuationHypa ??= true;
-  data.memoryLimitThickness ??= 1;
+  data.google = mergeDefaults(googleDefaults, data.google);
+  data.promptSettings = mergeDefaults(
+    promptSettingsDefaults,
+    data.promptSettings,
+  );
   data.modules ??= [];
   data.enabledModules ??= [];
   data.moduleFolders ??= [];
   data.additionalParams ??= [];
-  data.heightMode ??= "normal";
-  data.antiClaudeOverload ??= false;
-  data.maxSupaChunkSize ??= 1200;
   normalizeOllamaSettings(data);
-  data.autoContinueChat ??= false;
-  data.autoContinueMinTokens ??= 0;
-  data.repetition_penalty ??= 1;
-  data.min_p ??= 0;
-  data.top_a ??= 0;
-  data.customTokenizer ??= "tik";
-  data.instructChatTemplate ??= "chatml";
   const migratedProvider = migrateOpenRouterProvider(data.openrouterProvider);
   if (migratedProvider) {
     data.openrouterProvider = migratedProvider;
@@ -203,12 +241,8 @@ export function normalizeProviderDatabaseSettings(data: Database): void {
   for (const preset of portableData.botPresets ?? []) {
     normalizePortablePreset(preset);
   }
-  data.openrouterProvider ??= {
-    order: [],
-    only: [],
-    ignore: [],
-  };
-  data.openrouterProvider.order ??= [];
-  data.openrouterProvider.only ??= [];
-  data.openrouterProvider.ignore ??= [];
+  data.openrouterProvider = parseDefaults(
+    openRouterProviderDefaults,
+    data.openrouterProvider ?? {},
+  );
 }

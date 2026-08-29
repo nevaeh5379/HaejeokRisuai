@@ -88,11 +88,11 @@ describe("CapacitorSqliteStorage", () => {
       source.pluginCustomStorage,
     );
     const shallow = await storage.loadDatabase({ shallow: true });
-    expect(shallow?.deferredSettingKeys).toContain("plugins");
+    expect(shallow?.deferredSettingKeys).not.toContain("plugins");
+    expect(shallow?.database?.plugins).toEqual(source.plugins);
     installDatabase(shallow!.database as any, storage, {
       deferredUnloaded: shallow?.deferredSettingKeys,
     });
-    await settingsStore.ensureDeferredKey("plugins");
     expect(settingsStore.state.plugins).toEqual(source.plugins);
     database.close();
   });

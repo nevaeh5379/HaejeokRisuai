@@ -3,21 +3,64 @@ import { safeStructuredClone } from "../../polyfill";
 import type { Database, PortableDatabase } from "../schema";
 import { presetTemplate } from "../presetDefaults";
 import { normalizePromptTemplate } from "../presetService";
+import {
+  defaultBoolean,
+  defaultNumber,
+  defaultString,
+  parseDefaults,
+} from "./valibotDefaults";
+
+const coreScalarDefaults = {
+  apiType: defaultString("gemini-3-flash-preview"),
+  openAIKey: defaultString(),
+  mainPrompt: defaultString(defaultMainPrompt),
+  jailbreak: defaultString(defaultJailbreak),
+  globalNote: defaultString(),
+  temperature: defaultNumber(80),
+  maxContext: defaultNumber(4000),
+  maxResponse: defaultNumber(500),
+  frequencyPenalty: defaultNumber(70),
+  PresensePenalty: defaultNumber(70),
+  aiModel: defaultString("gemini-3-flash-preview"),
+  jailbreakToggle: defaultBoolean(false),
+  loreBookDepth: defaultNumber(5),
+  loreBookToken: defaultNumber(800),
+  username: defaultString("User"),
+  userIcon: defaultString(),
+  userNote: defaultString(),
+  additionalPrompt: defaultString(
+    "The assistant must act as {{char}}. user is {{user}}.",
+  ),
+  descriptionPrefix: defaultString("description of {{char}}: "),
+  forceReplaceUrl: defaultString(),
+  language: defaultString("en"),
+  swipe: defaultBoolean(true),
+  translator: defaultString(),
+  translatorMaxResponse: defaultNumber(1000),
+  currentPluginProvider: defaultString(),
+  zoomsize: defaultNumber(100),
+  customBackground: defaultString(),
+  textgenWebUIStreamURL: defaultString("wss://localhost/api/"),
+  textgenWebUIBlockingURL: defaultString("https://localhost/api/"),
+  autoTranslate: defaultBoolean(false),
+  fullScreen: defaultBoolean(false),
+  playMessage: defaultBoolean(false),
+  iconsize: defaultNumber(100),
+  theme: defaultString(),
+  subModel: defaultString("gemini-3-flash-preview"),
+  waifuWidth: defaultNumber(100),
+  waifuWidth2: defaultNumber(100),
+  emotionPrompt: defaultString(),
+  proxyKey: defaultString(),
+};
+
+export type CoreValidatedDefaults = Required<
+  Pick<Database, keyof typeof coreScalarDefaults>
+>;
 
 export function normalizeCoreDatabaseSettings(data: Database): void {
+  Object.assign(data, parseDefaults(coreScalarDefaults, data));
   data.characters ??= [];
-  data.apiType ??= "gemini-3-flash-preview";
-  data.openAIKey ??= "";
-  data.mainPrompt ??= defaultMainPrompt;
-  data.jailbreak ??= defaultJailbreak;
-  data.globalNote ??= ``;
-  data.temperature ??= 80;
-  data.maxContext ??= 4000;
-  data.maxResponse ??= 500;
-  data.frequencyPenalty ??= 70;
-  data.PresensePenalty ??= 70;
-  data.aiModel ??= "gemini-3-flash-preview";
-  data.jailbreakToggle ??= false;
   data.formatingOrder ??= [
     "main",
     "description",
@@ -29,36 +72,8 @@ export function normalizeCoreDatabaseSettings(data: Database): void {
     "globalNote",
     "authorNote",
   ];
-  data.loreBookDepth ??= 5;
-  data.loreBookToken ??= 800;
-  data.username ??= "User";
-  data.userIcon ??= "";
-  data.userNote ??= "";
-  data.additionalPrompt ??=
-    "The assistant must act as {{char}}. user is {{user}}.";
-  data.descriptionPrefix ??= "description of {{char}}: ";
-  data.forceReplaceUrl ??= "";
-  data.language ??= "en";
-  data.swipe ??= true;
-  data.translator ??= "";
-  data.translatorMaxResponse ??= 1000;
-  data.currentPluginProvider ??= "";
   data.plugins ??= [];
   data.pluginCustomStorage ??= {};
-  data.zoomsize ??= 100;
-  data.customBackground ??= "";
-  data.textgenWebUIStreamURL ??= "wss://localhost/api/";
-  data.textgenWebUIBlockingURL ??= "https://localhost/api/";
-  data.autoTranslate ??= false;
-  data.fullScreen ??= false;
-  data.playMessage ??= false;
-  data.iconsize ??= 100;
-  data.theme ??= "";
-  data.subModel ??= "gemini-3-flash-preview";
-  data.waifuWidth ??= 100;
-  data.waifuWidth2 ??= 100;
-  data.emotionPrompt ??= "";
-  data.proxyKey ??= "";
   const portableData = data as Database & Partial<PortableDatabase>;
   portableData.botPresets ??= [
     {

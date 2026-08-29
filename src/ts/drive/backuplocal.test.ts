@@ -1,6 +1,7 @@
 import { BaseDirectory, mkdir } from "@tauri-apps/plugin-fs";
 import { describe, expect, it, vi } from "vitest";
-import type { Database, PortableDatabase } from "../storage/schema";
+import type { Database } from "../storage/schema";
+import type { DatabaseInput } from "../storage/databaseDefaults";
 import {
   createNativeImportSource,
   ensureTauriBackupAssetsDirectory,
@@ -155,15 +156,15 @@ describe("backup database defaults", () => {
   it("initializes module folders without replacing existing folders", async () => {
     const { normalizeDatabaseDefaults } =
       await import("../storage/databaseDefaults");
-    const emptyDb = {} as Database;
-    normalizeDatabaseDefaults(emptyDb);
-    expect(emptyDb.moduleFolders).toEqual([]);
+    const emptyDb: DatabaseInput = {};
+    const normalizedEmptyDb = normalizeDatabaseDefaults(emptyDb);
+    expect(normalizedEmptyDb.moduleFolders).toEqual([]);
 
     const existingDb = {
       moduleFolders: [{ id: "f1", name: "Folder 1", color: "" }],
-    } as unknown as Database;
-    normalizeDatabaseDefaults(existingDb);
-    expect(existingDb.moduleFolders).toEqual([
+    } satisfies DatabaseInput;
+    const normalizedExistingDb = normalizeDatabaseDefaults(existingDb);
+    expect(normalizedExistingDb.moduleFolders).toEqual([
       { id: "f1", name: "Folder 1", color: "" },
     ]);
   });
@@ -215,12 +216,12 @@ describe("backup database defaults", () => {
       await import("../storage/databaseDefaults");
     const { presetTemplate } = await import("../storage/presetDefaults");
     const originalName = presetTemplate.name;
-    const db = {} as Database & Partial<PortableDatabase>;
+    const db: DatabaseInput = {};
 
-    normalizeDatabaseDefaults(db);
+    const normalizedDb = normalizeDatabaseDefaults(db);
 
-    expect(db.botPresets?.[0]?.name).toBe("Default");
-    expect(db.botPresets?.[0]).not.toBe(presetTemplate);
+    expect(normalizedDb.botPresets?.[0]?.name).toBe("Default");
+    expect(normalizedDb.botPresets?.[0]).not.toBe(presetTemplate);
     expect(presetTemplate.name).toBe(originalName);
   });
 });
