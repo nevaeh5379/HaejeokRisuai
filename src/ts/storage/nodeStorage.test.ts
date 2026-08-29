@@ -43,6 +43,34 @@ function createEndPacket(fileId: number): Buffer {
   return packet;
 }
 
+function createMemoryCacheStorage() {
+  const entries = new Map<string, Response>();
+  const toUrl = (request: RequestInfo | URL) =>
+    typeof request === "string"
+      ? request
+      : request instanceof URL
+        ? request.toString()
+        : request.url;
+  const cache = {
+    match: vi.fn(async (request: RequestInfo | URL) =>
+      entries.get(toUrl(request))?.clone(),
+    ),
+    put: vi.fn(async (request: RequestInfo | URL, response: Response) => {
+      entries.set(toUrl(request), response.clone());
+    }),
+    delete: vi.fn(async (request: RequestInfo | URL) =>
+      entries.delete(toUrl(request)),
+    ),
+    keys: vi.fn(async () =>
+      [...entries.keys()].map((url) => new Request(url)),
+    ),
+  };
+  return {
+    cache,
+    storage: { open: vi.fn(async () => cache) },
+  };
+}
+
 describe("NodeStorage.streamItems", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -159,6 +187,94 @@ describe("NodeStorage.streamItems", () => {
   });
 });
 
+describe("NodeStorage.getItems image cache", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("requests only uncached transformed images from read-bulk", async () => {
+    const { NodeStorage } = await import("./nodeStorage");
+    const payload = Buffer.from("cached thumbnail");
+    const protocolData = Buffer.concat([
+      createHeaderPacket(0, "assets/image.png", payload.length),
+      createChunkPacket(0, payload),
+      createEndPacket(0),
+    ]);
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(protocolData, {
+        headers: { "x-risu-total-files": "1" },
+      }),
+    );
+    const memoryCache = createMemoryCacheStorage();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("caches", memoryCache.storage);
+
+    const storage = new NodeStorage();
+    vi.spyOn(storage as any, "checkAuth").mockResolvedValue(undefined);
+    vi.spyOn(storage, "createAuth").mockResolvedValue("auth");
+
+    const first = await storage.getItems(["assets/image.png"], undefined, {
+      size: "display",
+      width: 512,
+      height: 768,
+    });
+    const second = await storage.getItems(["assets/image.png"], undefined, {
+      size: "display",
+      width: 512,
+      height: 768,
+    });
+
+    expect(first.get("assets/image.png")).toEqual(payload);
+    expect(second.get("assets/image.png")).toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(memoryCache.cache.put).toHaveBeenCalledTimes(1);
+  });
+
+  it("invalidates every cached size after overwriting an asset", async () => {
+    const { NodeStorage } = await import("./nodeStorage");
+    const oldPayload = Buffer.from("old thumbnail");
+    const newPayload = Buffer.from("new thumbnail");
+    const bulkResponse = (payload: Buffer) =>
+      new Response(
+        Buffer.concat([
+          createHeaderPacket(0, "assets/image.png", payload.length),
+          createChunkPacket(0, payload),
+          createEndPacket(0),
+        ]),
+        { headers: { "x-risu-total-files": "1" } },
+      );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(bulkResponse(oldPayload))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ success: true }), {
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(bulkResponse(newPayload));
+    const memoryCache = createMemoryCacheStorage();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("caches", memoryCache.storage);
+
+    const storage = new NodeStorage();
+    vi.spyOn(storage as any, "checkAuth").mockResolvedValue(undefined);
+    vi.spyOn(storage, "createAuth").mockResolvedValue("auth");
+    const options = { size: "thumb" as const, width: 128, height: 128 };
+
+    await storage.getItems(["assets/image.png"], undefined, options);
+    await storage.setItem("assets/image.png", new Uint8Array([1, 2, 3]));
+    const refreshed = await storage.getItems(
+      ["assets/image.png"],
+      undefined,
+      options,
+    );
+
+    expect(refreshed.get("assets/image.png")).toEqual(newPayload);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(memoryCache.cache.delete).toHaveBeenCalled();
+  });
+});
 
 describe("NodeStorage vector index requests", () => {
   afterEach(() => {

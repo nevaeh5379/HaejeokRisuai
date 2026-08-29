@@ -104,6 +104,50 @@ export type NodeVectorCacheStats = {
   };
 };
 
+const NODE_BULK_IMAGE_CACHE_NAME = "risu-node-bulk-images-v1";
+const NODE_BULK_IMAGE_CACHE_MAX_ENTRIES = 256;
+
+function canUseNodeBulkImageCache(): boolean {
+  return typeof caches !== "undefined" && typeof Response !== "undefined";
+}
+
+function getNodeBulkImageCacheUrl(
+  key: string,
+  options: {
+    thumbnail?: boolean;
+    size?: "thumb" | "display" | "full";
+    width?: number;
+    height?: number;
+  },
+): string {
+  const origin =
+    typeof location !== "undefined" && location.origin
+      ? location.origin
+      : "http://localhost";
+  const params = new URLSearchParams({
+    path: Buffer.from(key, "utf8").toString("hex"),
+    size: options.size ?? (options.thumbnail ? "thumb" : "full"),
+    width: String(options.width ?? 0),
+    height: String(options.height ?? 0),
+  });
+  return `${origin}/api/read-bulk-cache?${params.toString()}`;
+}
+
+function isCacheableBulkImageRequest(options?: {
+  thumbnail?: boolean;
+  size?: "thumb" | "display" | "full";
+  width?: number;
+  height?: number;
+}): options is NonNullable<typeof options> {
+  return Boolean(
+    options &&
+      (options.thumbnail ||
+        options.size === "thumb" ||
+        options.size === "display" ||
+        (options.width && options.height)),
+  );
+}
+
 export type NodeVectorCacheClearResult = {
   vector: {
     memoryIndexes: number;
@@ -125,6 +169,57 @@ export class NodeStorage {
     await this.checkAuth();
     return await this.createAuth();
   });
+
+  private async openBulkImageCache(): Promise<Cache | null> {
+    if (!canUseNodeBulkImageCache()) return null;
+    try {
+      return await caches.open(NODE_BULK_IMAGE_CACHE_NAME);
+    } catch {
+      return null;
+    }
+  }
+
+  private async trimBulkImageCache(cache: Cache): Promise<void> {
+    try {
+      const requests = await cache.keys();
+      const excess = requests.length - NODE_BULK_IMAGE_CACHE_MAX_ENTRIES;
+      if (excess <= 0) return;
+      await Promise.all(
+        requests.slice(0, excess).map((request) => cache.delete(request)),
+      );
+    } catch {
+      // CacheStorage is only an optimization; quota or browser failures must not
+      // make an otherwise valid asset read fail.
+    }
+  }
+
+  private async invalidateBulkImageCache(keys: Iterable<string>): Promise<void> {
+    const cache = await this.openBulkImageCache();
+    if (!cache) return;
+    const encodedKeys = new Set(
+      [...keys].map((key) => Buffer.from(key, "utf8").toString("hex")),
+    );
+    if (encodedKeys.size === 0) return;
+    try {
+      const requests = await cache.keys();
+      await Promise.all(
+        requests
+          .filter((request) => {
+            try {
+              return encodedKeys.has(
+                new URL(request.url).searchParams.get("path") ?? "",
+              );
+            } catch {
+              return false;
+            }
+          })
+          .map((request) => cache.delete(request)),
+      );
+    } catch {
+      // A stale cache entry is preferable to failing a completed write. The
+      // bounded cache will eventually evict it if the browser cache is damaged.
+    }
+  }
   JSONStringlifyAndbase64Url(obj: any) {
     return base64url(Buffer.from(JSON.stringify(obj), "utf-8"));
   }
@@ -638,6 +733,7 @@ export class NodeStorage {
     if (data.error) {
       throw data.error;
     }
+    await this.invalidateBulkImageCache([key]);
   }
 
   async setItems(
@@ -739,6 +835,7 @@ export class NodeStorage {
 
       request.send(body);
     });
+    await this.invalidateBulkImageCache(items.keys());
   }
 
   async getItem(
@@ -840,8 +937,39 @@ export class NodeStorage {
     const results = new Map<string, Buffer>();
     const receivingChunks = new Map<string, Buffer[]>();
 
+    const cache = isCacheableBulkImageRequest(options)
+      ? await this.openBulkImageCache()
+      : null;
+    const missingKeys: string[] = [];
+    if (cache) {
+      await Promise.all(
+        keys.map(async (key) => {
+          try {
+            const cached = await cache.match(
+              getNodeBulkImageCacheUrl(key, options),
+            );
+            if (cached) {
+              const data = Buffer.from(await cached.arrayBuffer());
+              if (data.length > 0) {
+                results.set(key, data);
+                return;
+              }
+            }
+          } catch {
+            // Treat an unreadable entry as a miss and repair it from the server.
+          }
+          missingKeys.push(key);
+        }),
+      );
+    } else {
+      missingKeys.push(...keys);
+    }
+
+    if (missingKeys.length === 0) return results;
+    const cacheWrites: Promise<void>[] = [];
+
     await this.streamItems(
-      keys,
+      missingKeys,
       {
         onFileStart: (name) => {
           receivingChunks.set(name, []);
@@ -858,13 +986,31 @@ export class NodeStorage {
           if (!chunks) {
             throw new Error(`Received file end before file start: ${name}`);
           }
-          results.set(name, Buffer.concat(chunks));
+          const data = Buffer.concat(chunks);
+          results.set(name, data);
           receivingChunks.delete(name);
+          if (cache && options) {
+            cacheWrites.push(
+              cache
+                .put(
+                  getNodeBulkImageCacheUrl(name, options),
+                  new Response(data as unknown as BodyInit, {
+                    headers: { "content-type": "application/octet-stream" },
+                  }),
+                )
+                .catch(() => undefined),
+            );
+          }
         },
       },
       onProgress,
       options,
     );
+
+    if (cacheWrites.length > 0) {
+      await Promise.all(cacheWrites);
+      await this.trimBulkImageCache(cache!);
+    }
 
     return results;
   }
@@ -1143,6 +1289,7 @@ export class NodeStorage {
     if (data.error) {
       throw data.error;
     }
+    await this.invalidateBulkImageCache(Array.isArray(key) ? key : [key]);
   }
 
   private async authorizeKey(password: string) {
