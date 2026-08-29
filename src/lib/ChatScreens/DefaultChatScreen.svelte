@@ -1,7 +1,7 @@
 <script lang="ts">
 
     import Suggestion from './Suggestion.svelte';
-    import { CameraIcon, DatabaseIcon, DicesIcon, FileText, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ArrowUp, SparkleIcon } from "@lucide/svelte";
+    import { CameraIcon, DatabaseIcon, DicesIcon, FileText, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, PictureInPicture2, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ArrowUp, SparkleIcon } from "@lucide/svelte";
     import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, easyPanelStore, chatPanelStore, startupPhase } from "../../ts/stores.svelte";
     import { tick, untrack } from 'svelte';
     import { get } from 'svelte/store';
@@ -48,6 +48,9 @@
         groupId?: string;
         reserveSidebarSpace?: boolean;
         allowSplit?: boolean;
+        /** Pins the chat screen to a specific character index (used by the floating window). */
+        pinnedCharacterIndex?: number;
+        showTabs?: boolean;
     }
 
     let messageInput:string = $state('')
@@ -74,10 +77,15 @@
         groupId,
         reserveSidebarSpace = false,
         allowSplit = false,
+        pinnedCharacterIndex = -1,
+        showTabs = true,
     }: Props = $props();
     let paneGroupId = $derived(groupId ?? chatTabsStore.focusedGroupId)
     let paneTab = $derived(chatTabsStore.activeTabForGroup(paneGroupId))
     let selectedCharacterIndex = $derived.by(() => {
+        if(pinnedCharacterIndex >= 0){
+            return Math.min(pinnedCharacterIndex, characterStore.characters.length - 1)
+        }
         if(paneTab?.characterId){
             const index = characterStore.characters.findIndex((character) => character.chaId === paneTab?.characterId)
             if(index >= 0) return index
@@ -544,6 +552,18 @@
         await cancelNodeChatGeneration(chatId)
     }
 
+    async function openFloatingWindow(){
+        const index = selectedCharacterIndex
+        if(index < 0) return
+        const character = characterStore.characters[index]
+        if(!character?.chaId) return
+        const { openFloatingChat } = await import('src/ts/floatingChat.svelte')
+        openFloatingChat(character.chaId)
+        // Return to the home screen; the chat keeps running inside the floating window.
+        selectedCharID.set(-1)
+        openMenu = false
+    }
+
     async function runAutoMode() {
         if(autoMode){
             autoMode = false
@@ -781,7 +801,9 @@
                 }
             }}
         >
-            <ChatTabs groupId={paneGroupId} reserveSidebarSpace={reserveSidebarSpace} allowSplit={allowSplit} />
+            {#if showTabs}
+                <ChatTabs groupId={paneGroupId} reserveSidebarSpace={reserveSidebarSpace} allowSplit={allowSplit} />
+            {/if}
             <div bind:this={chatScrollContainer} class="grow min-h-0 w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen" onscroll={async (e) => {
             const chatTarget = e.target as HTMLElement;
             const scrolledFromTop = chatTarget.scrollHeight - chatTarget.clientHeight + chatTarget.scrollTop
@@ -1220,6 +1242,15 @@
                         }}>
                             <SparkleIcon />
                             <span class="ml-2">{language.easyPanel}</span>
+                        </div>
+                    {/if}
+
+                    {#if pinnedCharacterIndex < 0}
+                        <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => {
+                            openFloatingWindow()
+                        }}>
+                            <PictureInPicture2 />
+                            <span class="ml-2">{language.floatingChat}</span>
                         </div>
                     {/if}
 

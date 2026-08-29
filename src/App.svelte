@@ -9,6 +9,7 @@
     import { hypaV3ModalOpen, hypaV3ProgressStore } from "./ts/stores.svelte";
     import sendSound from './etc/send.mp3'
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
+    import { floatingChatStore, closeFloatingChat } from './ts/floatingChat.svelte';
     import AirisuMascot from './lib/UI/AirisuMascot.svelte';
     import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
@@ -33,6 +34,7 @@
                 alertStore.set({ type: 'none', msg: '' })
                 return
             }
+            if (floatingChatStore.open) { closeFloatingChat(); return }
             if (assetManagerModalStore.open) { assetManagerModalStore.open = false; return }
             if (customSideBarConfigDialogStore.open) { customSideBarConfigDialogStore.open = false; return }
             if (irisStore.open) { irisStore.open = false; return }
@@ -132,6 +134,7 @@
     const sidebarConfigLoader = () => import('./lib/Others/CustomSidebarConfig.svelte')
     const assetManagerLoader = () => import('./lib/Others/AssetManagerModal.svelte')
     const savePopupLoader = () => import('./lib/Others/SavePopupIcon.svelte')
+    const floatingChatWindowLoader = () => import('./lib/ChatScreens/FloatingChatWindow.svelte')
 
     $effect(() => {
         if ($showRealmInfoStore && !RealmPopUp) {
@@ -405,6 +408,9 @@
     {/if}
     {#if assetManagerModalStore.open}
         <LazyComponent loader={assetManagerLoader} />
+    {/if}
+    {#if floatingChatStore.open}
+        <LazyComponent loader={floatingChatWindowLoader} />
     {/if}
 </main>
 
