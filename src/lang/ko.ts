@@ -1770,6 +1770,7 @@ export const languageKorean = {
   createFolder: "폴더 생성",
   removeFolder: "폴더 삭제",
   removeFolderConfirm: "정말로 이 폴더를 삭제하시겠습니까? 폴더 안의 모듈은 루트로 이동합니다.",
+  personaFolderRemoveConfirm: "정말로 이 페르소나 폴더를 삭제하시겠습니까? 폴더 안의 페르소나는 루트로 이동합니다.",
   moveToFolder: "폴더로 이동",
   noFolder: "폴더 없음",
   ungrouped: "폴더 미지정",

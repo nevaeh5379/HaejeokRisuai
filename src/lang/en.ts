@@ -1854,6 +1854,7 @@ export const languageEnglish = {
   createFolder: "Create Folder",
   removeFolder: "Remove Folder",
   removeFolderConfirm: "Do you really want to remove this folder? Modules inside will be moved to the root.",
+  personaFolderRemoveConfirm: "Do you really want to remove this persona folder? Personas inside will be moved to the root.",
   moveToFolder: "Move to Folder",
   noFolder: "No Folder",
   ungrouped: "Ungrouped",

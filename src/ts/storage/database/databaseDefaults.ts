@@ -113,6 +113,7 @@ export type NormalizedDatabaseInput = DatabaseInput &
       Database,
       | "characters"
       | "personas"
+      | "personaFolders"
       | "selectedPersona"
       | "modules"
       | "enabledModules"
@@ -132,6 +133,7 @@ function normalizeAggregateDomains(data: Database): void {
   data.characters ??= [];
   data.modules ??= [];
   data.enabledModules ??= [];
+  data.personaFolders ??= [];
   data.moduleFolders ??= [];
 
   if (!Array.isArray(data.personas) || data.personas.length === 0) {

@@ -1,4 +1,4 @@
-import type { RisuPersona } from "../../storage/database/schema";
+import type { RisuPersona, PersonaFolder } from "../../storage/database/schema";
 import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
 import { createEmptySqlCommit } from "../../storage/sql/sqlCommit";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
@@ -22,6 +22,7 @@ class PersonaStore
     FlushableStore
 {
   personas = $state<RisuPersona[]>([]);
+  personaFolders = $state<PersonaFolder[]>([]);
   activeIndex = $state(0);
   loaded = $state(false);
 
@@ -30,6 +31,7 @@ class PersonaStore
   private commitTimer: ReturnType<typeof setTimeout> | null = null;
   private writeChain: Promise<void> = Promise.resolve();
   private committedPersonas = "";
+  private committedFolders = "";
   private committedActiveIndex = 0;
 
   get isLoaded(): boolean {
@@ -44,11 +46,16 @@ class PersonaStore
     return this.personas[this.activeIndex];
   }
 
+  get folders(): PersonaFolder[] {
+    return this.personaFolders;
+  }
+
   async init(storage: ISqlStorage): Promise<void> {
     this.disposeObserver();
     this.storage = storage;
-    const [storedPersonas, selected] = await Promise.all([
+    const [storedPersonas, folders, selected] = await Promise.all([
       storage.loadPersonas(),
+      storage.loadSettingKey("personaFolders"),
       storage.loadSettingKey("selectedPersona"),
     ]);
     const personas = storedPersonas.length > 0
@@ -71,20 +78,31 @@ class PersonaStore
       );
     }
     this.personas = personas;
+    this.personaFolders = Array.isArray(folders)
+      ? folders as PersonaFolder[]
+      : [];
     this.activeIndex = index;
     this.loaded = true;
 
     this.committedPersonas = snapshotFingerprint($state.snapshot(this.personas));
+    this.committedFolders = snapshotFingerprint(
+      $state.snapshot(this.personaFolders),
+    );
     this.committedActiveIndex = this.activeIndex;
     this.observeDispose = $effect.root(() => {
       $effect(() => {
         trackDeep(this.personas);
+        trackDeep(this.personaFolders);
         const personasFingerprint = snapshotFingerprint(
           $state.snapshot(this.personas),
+        );
+        const foldersFingerprint = snapshotFingerprint(
+          $state.snapshot(this.personaFolders),
         );
         const activeIndex = this.activeIndex;
         if (
           personasFingerprint !== this.committedPersonas ||
+          foldersFingerprint !== this.committedFolders ||
           activeIndex !== this.committedActiveIndex
         ) {
           this.scheduleCommit();
@@ -160,6 +178,70 @@ class PersonaStore
     await this.flush();
   }
 
+  getPersonaFolderById(id: string): PersonaFolder | undefined {
+    return this.personaFolders.find((folder) => folder.id === id);
+  }
+
+  /** Personas whose folder is explicit and still exists. */
+  personasInFolder(folderId: string): RisuPersona[] {
+    return this.personas.filter((persona) => persona.folderId === folderId);
+  }
+
+  /** Personas without a folder assignment (root or a deleted folder reference). */
+  personasWithoutFolder(): RisuPersona[] {
+    return this.personas.filter(
+      (persona) =>
+        !persona.folderId || !this.getPersonaFolderById(persona.folderId),
+    );
+  }
+
+  async addFolder(name: string, color = ""): Promise<PersonaFolder> {
+    this.assertLoaded();
+    const folder: PersonaFolder = {
+      id: crypto.randomUUID(),
+      name,
+      color,
+    };
+    this.personaFolders.push(folder);
+    await this.flush();
+    return folder;
+  }
+
+  async renameFolder(id: string, name: string): Promise<void> {
+    this.assertLoaded();
+    const folder = this.getPersonaFolderById(id);
+    if (!folder) throw new Error(`Persona folder not found: ${id}`);
+    folder.name = name;
+    await this.flush();
+  }
+
+  async removeFolder(id: string): Promise<void> {
+    this.assertLoaded();
+    this.personaFolders = this.personaFolders.filter(
+      (folder) => folder.id !== id,
+    );
+    for (const persona of this.personas) {
+      if (persona.folderId === id) persona.folderId = undefined;
+    }
+    await this.flush();
+  }
+
+  async movePersonaToFolder(
+    personaId: string,
+    folderId: string | undefined,
+  ): Promise<void> {
+    this.assertLoaded();
+    const persona = this.personas.find((current) => current.id === personaId);
+    if (!persona) {
+      throw new Error(`Persona not found: ${personaId}`);
+    }
+    if (folderId !== undefined && !this.getPersonaFolderById(folderId)) {
+      throw new Error(`Persona folder not found: ${folderId}`);
+    }
+    persona.folderId = folderId;
+    await this.flush();
+  }
+
   async flush(): Promise<void> {
     if (this.commitTimer) {
       clearTimeout(this.commitTimer);
@@ -167,15 +249,19 @@ class PersonaStore
     }
     const personas = $state.snapshot(this.personas) as RisuPersona[];
     const personasFingerprint = snapshotFingerprint(personas);
+    const folders = $state.snapshot(this.personaFolders) as PersonaFolder[];
+    const foldersFingerprint = snapshotFingerprint(folders);
     const activeIndex = this.activeIndex;
     if (
       personasFingerprint === this.committedPersonas &&
+      foldersFingerprint === this.committedFolders &&
       activeIndex === this.committedActiveIndex
     ) return;
 
     const storage = this.storage;
     if (!storage) {
       this.committedPersonas = personasFingerprint;
+      this.committedFolders = foldersFingerprint;
       this.committedActiveIndex = activeIndex;
       return;
     }
@@ -184,6 +270,9 @@ class PersonaStore
     if (personasFingerprint !== this.committedPersonas) {
       commit.root.upserts.push({ key: "personas", value: personas });
     }
+    if (foldersFingerprint !== this.committedFolders) {
+      commit.root.upserts.push({ key: "personaFolders", value: folders });
+    }
     if (activeIndex !== this.committedActiveIndex) {
       commit.root.upserts.push({ key: "selectedPersona", value: activeIndex });
     }
@@ -191,13 +280,17 @@ class PersonaStore
     this.writeChain = operation.then(() => undefined, () => undefined);
     await operation;
     this.committedPersonas = personasFingerprint;
+    this.committedFolders = foldersFingerprint;
     this.committedActiveIndex = activeIndex;
   }
 
   hasPendingWrites(): boolean {
     return (
       snapshotFingerprint($state.snapshot(this.personas)) !==
-        this.committedPersonas || this.activeIndex !== this.committedActiveIndex
+        this.committedPersonas ||
+      snapshotFingerprint($state.snapshot(this.personaFolders)) !==
+        this.committedFolders ||
+      this.activeIndex !== this.committedActiveIndex
     );
   }
 
@@ -226,9 +319,11 @@ class PersonaStore
     this.disposeObserver();
     this.storage = null;
     this.personas = [];
+    this.personaFolders = [];
     this.activeIndex = 0;
     this.loaded = false;
     this.committedPersonas = "";
+    this.committedFolders = "";
     this.committedActiveIndex = 0;
     this.writeChain = Promise.resolve();
   }

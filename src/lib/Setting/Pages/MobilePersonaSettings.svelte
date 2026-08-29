@@ -10,7 +10,11 @@
         changeUserPersona, 
         exportUserPersona, 
         importUserPersona, 
-        selectUserImg 
+        selectUserImg,
+        createPersonaFolder,
+        renamePersonaFolder,
+        removePersonaFolder,
+        movePersonaToFolderByIndex
     } from "src/ts/persona";
     import { settingsStore, personaStore } from 'src/ts/stores/domain';
     import { onMount } from "svelte";
@@ -29,7 +33,12 @@
         DownloadIcon, 
         UploadIcon,
         LayoutGridIcon,
-        ListIcon
+        ListIcon,
+        FolderPlusIcon,
+        FolderIcon,
+        ChevronDownIcon,
+        ChevronRightIcon,
+        FolderInputIcon
     } from "@lucide/svelte";
 
     // View state: 'list' for persona cards, 'edit' for active persona editor
@@ -37,6 +46,8 @@
     // Display layout: 'list' for vertical row list, 'grid' for image card grid
     let displayMode = $state<'list' | 'grid'>('list');
     let searchQuery = $state('');
+    let openFolders = $state<Set<string>>(new Set());
+    let folders = $derived(personaStore.folders);
 
     let personasReady = $state(personaStore.isLoaded);
     let selectedPersona = $derived(personaStore.activePersona);
@@ -64,6 +75,26 @@
                 return name.includes(q) || note.includes(q) || prompt.includes(q);
             });
     });
+
+    let rootPersonas = $derived(
+        filteredPersonas.filter(({ persona }) => !persona.folderId || !personaStore.getPersonaFolderById(persona.folderId))
+    );
+    let folderedPersonas = $derived(
+        folders.map((folder) => ({
+            folder,
+            personas: filteredPersonas.filter(({ persona }) => persona.folderId === folder.id),
+        }))
+    );
+
+    function toggleFolder(id: string) {
+        const next = new Set(openFolders);
+        if (next.has(id)) {
+            next.delete(id);
+        } else {
+            next.add(id);
+        }
+        openFolders = next;
+    }
 
     async function addNewPersona() {
         const sel = parseInt(await alertSelect([language.createfromScratch, language.importCharacter]));
@@ -160,6 +191,16 @@
                     {/if}
                 </div>
 
+                <!-- Create Folder Button -->
+                <button
+                    onclick={createPersonaFolder}
+                    class="h-9 w-9 rounded-lg bg-darkbutton/70 hover:bg-darkbutton text-textcolor2 hover:text-amber-400 border border-darkborderc transition-colors cursor-pointer shrink-0 flex items-center justify-center"
+                    title={language.createFolder || "Create Folder"}
+                    aria-label={language.createFolder || "Create Folder"}
+                >
+                    <FolderPlusIcon size={16} />
+                </button>
+
                 <!-- View Layout Toggle (List / Grid) -->
                 <button
                     onclick={() => { displayMode = displayMode === 'list' ? 'grid' : 'list'; }}
@@ -202,65 +243,186 @@
                 </div>
             {/if}
 
-            {#if displayMode === 'list'}
-                <!-- Persona Cards List (List View) -->
-                <div class="flex flex-col gap-1.5 flex-1 min-h-0 overflow-y-auto pr-0.5">
-                    {#each filteredPersonas as { persona, originalIndex }}
-                        {@const isSelected = originalIndex === personaStore.activeIndex}
-                        <!-- svelte-ignore a11y_click_events_have_key_events -->
-                        <div
-                            class="group relative flex items-center justify-between gap-2.5 p-2 rounded-lg border transition-all cursor-pointer active:scale-[0.99] {isSelected ? 'border-selected bg-selected/20 ring-1 ring-selected/70 shadow-xs' : 'border-darkborderc/70 bg-darkbg/40 hover:bg-darkbutton/50 hover:border-textcolor/30'}"
-                            role="button"
-                            tabindex="0"
-                            onclick={() => handleSelectPersona(originalIndex)}
-                        >
-                            <!-- Left Info: Avatar + Details -->
-                            <div class="flex items-center gap-2.5 min-w-0 flex-1">
-                                <!-- Avatar Thumbnail -->
-                                <div class="relative w-9 rounded-md overflow-hidden bg-darkbg shrink-0 border border-darkborderc/50 flex items-center justify-center {persona.largePortrait ? 'h-13' : 'h-9'} shadow-xs">
-                                    {#if persona.icon === ''}
-                                        <UserIcon size={18} class="text-textcolor2/60" />
-                                    {:else}
-                                        {#await getCharImage(persona.icon, 'css', { thumbnail: true })}
-                                            <div class="w-full h-full bg-darkbg animate-pulse"></div>
-                                        {:then im}
-                                            <div class="w-full h-full bg-cover bg-center" style={im}></div>
-                                        {/await}
-                                    {/if}
-                                </div>
-
-                                <!-- Name & Note Info -->
-                                <div class="flex flex-col min-w-0 flex-1">
-                                    <div class="flex items-center gap-1.5">
-                                        <span class="font-bold text-xs sm:text-sm text-textcolor truncate leading-tight">
-                                            {persona.name || 'New Persona'}
-                                        </span>
-                                        {#if isSelected}
-                                            <span class="px-1.5 py-0.2 rounded-full text-[9px] bg-selected text-white font-medium shrink-0">
-                                                선택됨
-                                            </span>
-                                        {/if}
-                                    </div>
-                                    {#if persona.note}
-                                        <span class="text-[11px] text-textcolor2/80 truncate mt-0.5">
-                                            {persona.note}
-                                        </span>
-                                    {/if}
-                                </div>
-                            </div>
-
-                            <!-- Right Actions: Edit Button -->
-                            <div class="flex items-center gap-1 shrink-0">
-                                <button
-                                    onclick={(e) => handleEditPersona(originalIndex, e)}
-                                    class="p-1.5 rounded-md text-textcolor2 hover:text-textcolor hover:bg-darkbutton transition-colors cursor-pointer flex items-center justify-center"
-                                    title={language.edit || "Edit"}
-                                    aria-label="Edit persona"
-                                >
-                                    <PencilIcon size={15} />
-                                </button>
-                            </div>
+            {#snippet personaRow(persona: any, originalIndex: number)}
+                {@const isSelected = originalIndex === personaStore.activeIndex}
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <div
+                    class="group relative flex items-center justify-between gap-2.5 p-2 rounded-lg border transition-all cursor-pointer active:scale-[0.99] {isSelected ? 'border-selected bg-selected/20 ring-1 ring-selected/70 shadow-xs' : 'border-darkborderc/70 bg-darkbg/40 hover:bg-darkbutton/50 hover:border-textcolor/30'}"
+                    role="button"
+                    tabindex="0"
+                    onclick={() => handleSelectPersona(originalIndex)}
+                >
+                    <!-- Left Info: Avatar + Details -->
+                    <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                        <!-- Avatar Thumbnail -->
+                        <div class="relative w-9 rounded-md overflow-hidden bg-darkbg shrink-0 border border-darkborderc/50 flex items-center justify-center {persona.largePortrait ? 'h-13' : 'h-9'} shadow-xs">
+                            {#if persona.icon === ''}
+                                <UserIcon size={18} class="text-textcolor2/60" />
+                            {:else}
+                                {#await getCharImage(persona.icon, 'css', { thumbnail: true })}
+                                    <div class="w-full h-full bg-darkbg animate-pulse"></div>
+                                {:then im}
+                                    <div class="w-full h-full bg-cover bg-center" style={im}></div>
+                                {/await}
+                            {/if}
                         </div>
+
+                        <!-- Name & Note Info -->
+                        <div class="flex flex-col min-w-0 flex-1">
+                            <div class="flex items-center gap-1.5">
+                                <span class="font-bold text-xs sm:text-sm text-textcolor truncate leading-tight">
+                                    {persona.name || 'New Persona'}
+                                </span>
+                                {#if isSelected}
+                                    <span class="px-1.5 py-0.2 rounded-full text-[9px] bg-selected text-white font-medium shrink-0">
+                                        선택됨
+                                    </span>
+                                {/if}
+                            </div>
+                            {#if persona.note}
+                                <span class="text-[11px] text-textcolor2/80 truncate mt-0.5">
+                                    {persona.note}
+                                </span>
+                            {/if}
+                        </div>
+                    </div>
+
+                    <!-- Right Actions: Move to Folder + Edit Button -->
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button
+                            onclick={(e) => { e.stopPropagation(); movePersonaToFolderByIndex(originalIndex); }}
+                            class="p-1.5 rounded-md text-textcolor2 hover:text-amber-400 hover:bg-darkbutton transition-colors cursor-pointer flex items-center justify-center"
+                            title={language.moveToFolder || "Move to Folder"}
+                            aria-label={language.moveToFolder || "Move to Folder"}
+                        >
+                            <FolderInputIcon size={15} />
+                        </button>
+                        <button
+                            onclick={(e) => handleEditPersona(originalIndex, e)}
+                            class="p-1.5 rounded-md text-textcolor2 hover:text-textcolor hover:bg-darkbutton transition-colors cursor-pointer flex items-center justify-center"
+                            title={language.edit || "Edit"}
+                            aria-label="Edit persona"
+                        >
+                            <PencilIcon size={15} />
+                        </button>
+                    </div>
+                </div>
+            {/snippet}
+
+            {#snippet personaGridCard(persona: any, originalIndex: number)}
+                {@const isSelected = originalIndex === personaStore.activeIndex}
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <div
+                    class="group relative flex flex-col rounded-lg border overflow-hidden transition-all cursor-pointer active:scale-[0.98] {isSelected ? 'border-selected ring-2 ring-selected/70 shadow-sm bg-selected/10' : 'border-darkborderc/70 bg-darkbg/40 hover:bg-darkbutton/50 hover:border-textcolor/30'}"
+                    role="button"
+                    tabindex="0"
+                    onclick={() => handleSelectPersona(originalIndex)}
+                >
+                    <!-- Avatar Image (Aspect Square for clean card layout) -->
+                    <div class="relative w-full aspect-square bg-darkbg overflow-hidden flex items-center justify-center border-b border-darkborderc/40">
+                        {#if persona.icon === ''}
+                            <UserIcon size={32} class="text-textcolor2/40" />
+                        {:else}
+                            {#await getCharImage(persona.icon, persona.largePortrait ? 'lgcss' : 'css', { thumbnail: true })}
+                                <div class="w-full h-full bg-darkbg animate-pulse"></div>
+                            {:then im}
+                                <div class="w-full h-full bg-cover bg-center" style={im}></div>
+                            {/await}
+                        {/if}
+
+                        <!-- Selected Badge (Top-left) -->
+                        {#if isSelected}
+                            <div class="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-selected text-white text-[9px] font-bold shadow-xs flex items-center gap-0.5">
+                                <CheckIcon size={10} />
+                                <span>선택됨</span>
+                            </div>
+                        {/if}
+
+                        <!-- Move to Folder Button (Top-right, below edit) -->
+                        <button
+                            onclick={(e) => { e.stopPropagation(); movePersonaToFolderByIndex(originalIndex); }}
+                            class="absolute top-1 right-8 p-1 rounded bg-black/60 hover:bg-black/80 text-amber-300/90 hover:text-amber-200 backdrop-blur-xs transition-colors cursor-pointer"
+                            title={language.moveToFolder || "Move to Folder"}
+                            aria-label={language.moveToFolder || "Move to Folder"}
+                        >
+                            <FolderInputIcon size={13} />
+                        </button>
+
+                        <!-- Edit Button (Top-right) -->
+                        <button
+                            onclick={(e) => handleEditPersona(originalIndex, e)}
+                            class="absolute top-1 right-1 p-1 rounded bg-black/60 hover:bg-black/80 text-white/90 hover:text-white backdrop-blur-xs transition-colors cursor-pointer"
+                            title={language.edit || "Edit"}
+                            aria-label="Edit persona"
+                        >
+                            <PencilIcon size={13} />
+                        </button>
+                    </div>
+
+                    <!-- Name & Note Info -->
+                    <div class="p-1.5 flex flex-col min-w-0 bg-darkbg/50">
+                        <span class="font-bold text-xs text-textcolor truncate leading-tight">
+                            {persona.name || 'New Persona'}
+                        </span>
+                        {#if persona.note}
+                            <span class="text-[10px] text-textcolor2/80 truncate mt-0.5">
+                                {persona.note}
+                            </span>
+                        {/if}
+                    </div>
+                </div>
+            {/snippet}
+
+            {#snippet folderHeader(folder: any, count: number)}
+                <div class="flex items-center pl-2 pr-2 py-0.5 rounded-lg border border-darkborderc/40 bg-darkbg/30">
+                    <button
+                        class="grow flex items-center text-left hover:bg-textcolor/5 rounded-md pl-1.5 py-1.5 cursor-pointer"
+                        onclick={() => toggleFolder(folder.id)}
+                    >
+                        {#if openFolders.has(folder.id)}
+                            <ChevronDownIcon size={14} class="mr-1 text-textcolor2" />
+                        {:else}
+                            <ChevronRightIcon size={14} class="mr-1 text-textcolor2" />
+                        {/if}
+                        <FolderIcon size={14} class="mr-1.5 text-textcolor2" />
+                        <span class="text-xs font-semibold text-textcolor">{folder.name}</span>
+                        <span class="ml-1.5 text-[10px] text-textcolor2">({count})</span>
+                    </button>
+                    <button
+                        class="p-1.5 rounded text-textcolor2/70 hover:text-textcolor transition-colors cursor-pointer"
+                        onclick={() => renamePersonaFolder(folder.id)}
+                        title={language.renameFolder}
+                        aria-label={language.renameFolder}
+                    >
+                        <PencilIcon size={12} />
+                    </button>
+                    <button
+                        class="p-1.5 rounded text-textcolor2/70 hover:text-draculared transition-colors cursor-pointer"
+                        onclick={() => removePersonaFolder(folder.id)}
+                        title={language.removeFolder}
+                        aria-label={language.removeFolder}
+                    >
+                        <TrashIcon size={12} />
+                    </button>
+                </div>
+            {/snippet}
+
+            {#if displayMode === 'list'}
+                <!-- Persona Cards List (List View, Folder Grouped) -->
+                <div class="flex flex-col gap-1.5 flex-1 min-h-0 overflow-y-auto pr-0.5">
+                    {#each rootPersonas as { persona, originalIndex }}
+                        {@render personaRow(persona, originalIndex)}
+                    {/each}
+
+                    {#each folderedPersonas as { folder, personas }}
+                        {@render folderHeader(folder, personas.length)}
+                        {#if openFolders.has(folder.id)}
+                            <div class="flex flex-col gap-1.5 pl-3 border-l border-darkborderc/40">
+                                {#each personas as { persona, originalIndex }}
+                                    {@render personaRow(persona, originalIndex)}
+                                {/each}
+                            </div>
+                        {/if}
                     {/each}
 
                     {#if filteredPersonas.length === 0}
@@ -271,64 +433,27 @@
                     {/if}
                 </div>
             {:else}
-                <!-- Persona Image Grid (Grid View: 2 cols in portrait, 3 cols in landscape) -->
-                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 flex-1 min-h-0 overflow-y-auto pr-0.5 content-start">
-                    {#each filteredPersonas as { persona, originalIndex }}
-                        {@const isSelected = originalIndex === personaStore.activeIndex}
-                        <!-- svelte-ignore a11y_click_events_have_key_events -->
-                        <div
-                            class="group relative flex flex-col rounded-lg border overflow-hidden transition-all cursor-pointer active:scale-[0.98] {isSelected ? 'border-selected ring-2 ring-selected/70 shadow-sm bg-selected/10' : 'border-darkborderc/70 bg-darkbg/40 hover:bg-darkbutton/50 hover:border-textcolor/30'}"
-                            role="button"
-                            tabindex="0"
-                            onclick={() => handleSelectPersona(originalIndex)}
-                        >
-                            <!-- Avatar Image (Aspect Square for clean card layout) -->
-                            <div class="relative w-full aspect-square bg-darkbg overflow-hidden flex items-center justify-center border-b border-darkborderc/40">
-                                {#if persona.icon === ''}
-                                    <UserIcon size={32} class="text-textcolor2/40" />
-                                {:else}
-                                    {#await getCharImage(persona.icon, persona.largePortrait ? 'lgcss' : 'css', { thumbnail: true })}
-                                        <div class="w-full h-full bg-darkbg animate-pulse"></div>
-                                    {:then im}
-                                        <div class="w-full h-full bg-cover bg-center" style={im}></div>
-                                    {/await}
-                                {/if}
+                <!-- Persona Image Grid (Grid View, Folder Grouped) -->
+                <div class="flex flex-col gap-2 flex-1 min-h-0 overflow-y-auto pr-0.5">
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 content-start">
+                        {#each rootPersonas as { persona, originalIndex }}
+                            {@render personaGridCard(persona, originalIndex)}
+                        {/each}
+                    </div>
 
-                                <!-- Selected Badge (Top-left) -->
-                                {#if isSelected}
-                                    <div class="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-selected text-white text-[9px] font-bold shadow-xs flex items-center gap-0.5">
-                                        <CheckIcon size={10} />
-                                        <span>선택됨</span>
-                                    </div>
-                                {/if}
-
-                                <!-- Edit Button (Top-right) -->
-                                <button
-                                    onclick={(e) => handleEditPersona(originalIndex, e)}
-                                    class="absolute top-1 right-1 p-1 rounded bg-black/60 hover:bg-black/80 text-white/90 hover:text-white backdrop-blur-xs transition-colors cursor-pointer"
-                                    title={language.edit || "Edit"}
-                                    aria-label="Edit persona"
-                                >
-                                    <PencilIcon size={13} />
-                                </button>
+                    {#each folderedPersonas as { folder, personas }}
+                        {@render folderHeader(folder, personas.length)}
+                        {#if openFolders.has(folder.id)}
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 pl-3 content-start">
+                                {#each personas as { persona, originalIndex }}
+                                    {@render personaGridCard(persona, originalIndex)}
+                                {/each}
                             </div>
-
-                            <!-- Name & Note Info -->
-                            <div class="p-1.5 flex flex-col min-w-0 bg-darkbg/50">
-                                <span class="font-bold text-xs text-textcolor truncate leading-tight">
-                                    {persona.name || 'New Persona'}
-                                </span>
-                                {#if persona.note}
-                                    <span class="text-[10px] text-textcolor2/80 truncate mt-0.5">
-                                        {persona.note}
-                                    </span>
-                                {/if}
-                            </div>
-                        </div>
+                        {/if}
                     {/each}
 
                     {#if filteredPersonas.length === 0}
-                        <div class="col-span-full py-10 text-center text-xs text-textcolor2 flex flex-col items-center gap-2">
+                        <div class="py-10 text-center text-xs text-textcolor2 flex flex-col items-center gap-2">
                             <SearchIcon size={20} class="opacity-40" />
                             <span>No personas match "{searchQuery}"</span>
                         </div>

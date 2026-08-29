@@ -1270,6 +1270,7 @@ export const languageVietnamese = {
   createFolder: "Tạo thư mục",
   removeFolder: "Xóa thư mục",
   removeFolderConfirm: "Bạn có thực sự muốn xóa thư mục này? Các mô-đun bên trong sẽ được chuyển về thư mục gốc.",
+  personaFolderRemoveConfirm: "Bạn có thực sự muốn xóa thư mục nhân cách này? Các nhân cách bên trong sẽ được chuyển về thư mục gốc.",
   moveToFolder: "Chuyển vào thư mục",
   noFolder: "Không có thư mục",
   ungrouped: "Chưa phân nhóm",

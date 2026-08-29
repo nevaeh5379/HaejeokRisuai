@@ -1292,6 +1292,7 @@ export const languageSpanish = {
   createFolder: "Crear Carpeta",
   removeFolder: "Eliminar Carpeta",
   removeFolderConfirm: "¿Realmente deseas eliminar esta carpeta? Los módulos dentro se moverán a la raíz.",
+  personaFolderRemoveConfirm: "¿Realmente deseas eliminar esta carpeta de personajes? Los personajes dentro se moverán a la raíz.",
   moveToFolder: "Mover a Carpeta",
   noFolder: "Sin Carpeta",
   ungrouped: "Sin agrupar",

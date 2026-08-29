@@ -22,6 +22,7 @@ export function createDatabaseSnapshot(): Database {
       : {}),
     characters: characterStore.characters,
     personas: personaStore.list,
+    personaFolders: personaStore.personaFolders,
     selectedPersona: personaStore.activeIndex,
     modules: moduleStore.modules,
     enabledModules: moduleStore.enabledModules,

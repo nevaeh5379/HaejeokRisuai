@@ -49,6 +49,14 @@ export interface RisuPersona {
   id?: string;
   note?: string;
   embeddedModule?: RisuModule;
+  folderId?: string;
+}
+
+/** Folder grouping for personas; personas without a valid folderId render at the root. */
+export interface PersonaFolder {
+  id: string;
+  name: string;
+  color: string;
 }
 
 export interface DatabaseSettings {
@@ -559,6 +567,7 @@ export interface LegacyPersonaMirrorData {
 export interface PersonaStoreData {
   selectedPersona: number;
   personas: RisuPersona[];
+  personaFolders: PersonaFolder[];
 }
 
 /** ModuleStore-owned data. */

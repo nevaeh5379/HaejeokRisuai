@@ -1,7 +1,7 @@
 import { saveImage } from "./storage/files/assetPersistence";
 
 import { selectSingleFile, sleep } from "./util";
-import { alertError, alertNormal, alertStore } from "./alert";
+import { alertError, alertNormal, alertStore, alertConfirm, alertInput, alertSelect } from "./alert";
 import { AppendableBuffer, downloadFile, readImage } from "./globalApi.svelte";
 import { language } from "src/lang";
 import { reencodeImage } from "./process/files/inlays";
@@ -22,6 +22,51 @@ export async function selectUserImg() {
 
 export function changeUserPersona(id: number) {
   personaStore.select(id, changeUserPersona.name);
+}
+
+export async function createPersonaFolder() {
+  const name = await alertInput(language.folderName);
+  if (!name) return;
+  await personaStore.ensureLoaded();
+  const folder = await personaStore.addFolder(name);
+  return folder;
+}
+
+export async function renamePersonaFolder(folderId: string) {
+  const folder = personaStore.getPersonaFolderById(folderId);
+  if (!folder) return;
+  const name = await alertInput(language.renameFolder, undefined, folder.name);
+  if (!name) return;
+  await personaStore.renameFolder(folderId, name);
+}
+
+export async function removePersonaFolder(folderId: string) {
+  const folder = personaStore.getPersonaFolderById(folderId);
+  if (!folder) return;
+  const confirmed = await alertConfirm(
+    `${language.personaFolderRemoveConfirm} (${folder.name})`,
+  );
+  if (!confirmed) return;
+  await personaStore.removeFolder(folderId);
+}
+
+/** Opens a folder-picker and moves the persona at `index` to the chosen folder. */
+export async function movePersonaToFolderByIndex(index: number) {
+  await personaStore.ensureLoaded();
+  const persona = personaStore.require(index, movePersonaToFolderByIndex.name);
+  persona.id ??= v4();
+  const folders = personaStore.folders;
+  const options = [language.noFolder, ...folders.map((folder) => folder.name)];
+  const sel = parseInt(await alertSelect(options));
+  if (Number.isNaN(sel)) return;
+  if (sel === 0) {
+    await personaStore.movePersonaToFolder(persona.id, undefined);
+  } else {
+    const folder = folders[sel - 1];
+    if (folder) {
+      await personaStore.movePersonaToFolder(persona.id, folder.id);
+    }
+  }
 }
 
 interface PersonaCard {

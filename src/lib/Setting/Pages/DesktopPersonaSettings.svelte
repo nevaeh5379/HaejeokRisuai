@@ -6,7 +6,7 @@
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import { alertConfirm, alertSelect } from "src/ts/alert";
     import { getCharImage } from "src/ts/characters";
-    import { changeUserPersona, exportUserPersona, importUserPersona, selectUserImg } from "src/ts/persona";
+    import { changeUserPersona, exportUserPersona, importUserPersona, selectUserImg, createPersonaFolder, renamePersonaFolder, removePersonaFolder, movePersonaToFolderByIndex } from "src/ts/persona";
     import Sortable from 'sortablejs/modular/sortable.core.esm.js';
     import { onDestroy, onMount } from "svelte";
     import { sleep, sortableOptions } from "src/ts/util";
@@ -19,18 +19,28 @@
         CheckIcon, 
         SearchIcon, 
         XIcon, 
-        ImageOffIcon
+        ImageOffIcon,
+        FolderPlusIcon,
+        FolderIcon,
+        ChevronDownIcon,
+        ChevronRightIcon,
+        PencilIcon,
+        TrashIcon,
+        FolderInputIcon
     } from "@lucide/svelte";
 
-    let stb: Sortable = null;
+    let stbContainers: Sortable[] = [];
     let ele: HTMLDivElement = $state();
     let sorted = $state(0);
     let selectedId: string = null;
     let searchQuery = $state('');
+    let openFolders = $state<Set<string>>(new Set());
 
     let personasReady = $state(personaStore.isLoaded);
     let selectedPersona = $derived(personaStore.activePersona);
     let selectedPersonaIcon = $derived(selectedPersona?.icon ?? '');
+
+    let folders = $derived(personaStore.folders);
 
     let filteredPersonas = $derived.by(() => {
         const list = personaStore.list;
@@ -48,63 +58,95 @@
             });
     });
 
-    const createStb = () => {
-        if (!ele || searchQuery.trim() !== '') return;
-        stb = Sortable.create(ele, {
-            onStart: async () => {
-                const currentPersona = personaStore.activePersona;
-                if (currentPersona) {
-                    currentPersona.id ??= v4();
-                    selectedId = currentPersona.id;
-                }
-            },
-            onEnd: async () => {
-                let idx: number[] = [];
-                ele.querySelectorAll('[data-risu-idx]').forEach((e) => {
-                    idx.push(parseInt(e.getAttribute('data-risu-idx')));
-                });
-                let newValue: {
-                    personaPrompt: string;
-                    name: string;
-                    icon: string;
-                    note?: string;
-                    largePortrait?: boolean;
-                    id?: string;
-                }[] = [];
-                idx.forEach((i) => {
-                    newValue.push(personaStore.require(i, "persona-sort"));
-                });
-                personaStore.replace(newValue);
-                const foundIndex = personaStore.list.findIndex((e) => e.id === selectedId);
-                changeUserPersona(foundIndex !== -1 ? foundIndex : 0);
-                try {
-                    stb.destroy();
-                } catch (error) {}
-                sorted += 1;
-                await sleep(1);
-                createStb();
-            },
-            ...sortableOptions
-        });
-    };
+    let rootPersonas = $derived(
+        filteredPersonas.filter(({ persona }) => !persona.folderId || !personaStore.getPersonaFolderById(persona.folderId))
+    );
+    let folderedPersonas = $derived(
+        folders.map((folder) => ({
+            folder,
+            personas: filteredPersonas.filter(({ persona }) => persona.folderId === folder.id),
+        }))
+    );
 
-    onMount(() => {
-        if (personasReady) {
-            createStb();
-            return;
-        }
-        void personaStore.ensureLoaded().then(() => {
-            personasReady = true;
-            createStb();
-        });
-    });
-
-    onDestroy(() => {
-        if (stb) {
+    const destroySortables = () => {
+        for (const stb of stbContainers) {
             try {
                 stb.destroy();
             } catch (error) {}
         }
+        stbContainers = [];
+    };
+
+    function toggleFolder(id: string) {
+        const next = new Set(openFolders);
+        if (next.has(id)) {
+            next.delete(id);
+        } else {
+            next.add(id);
+        }
+        openFolders = next;
+    }
+
+    const createStb = () => {
+        if (!ele || searchQuery.trim() !== '') return;
+        destroySortables();
+        for (const section of Array.from(ele.querySelectorAll('[data-risu-sort-section]'))) {
+            stbContainers.push(
+                Sortable.create(section as HTMLElement, {
+                    onStart: async () => {
+                        const currentPersona = personaStore.activePersona;
+                        if (currentPersona) {
+                            currentPersona.id ??= v4();
+                            selectedId = currentPersona.id;
+                        }
+                    },
+                    onEnd: async (evt) => {
+                        if (evt.from !== section) return;
+                        const allContainers = Array.from(ele.querySelectorAll('[data-risu-sort-section]'));
+                        const ordered: number[] = [];
+                        for (const container of allContainers) {
+                            container.querySelectorAll('[data-risu-idx]').forEach((e) => {
+                                ordered.push(parseInt(e.getAttribute('data-risu-idx')));
+                            });
+                        }
+                        if (ordered.length !== personaStore.list.length) return;
+                        const unchanged = ordered.every((v, i) => v === i);
+                        if (unchanged) return;
+                        const selectedPrev = selectedId;
+                        personaStore.replace(ordered.map((i) => personaStore.require(i, "persona-sort")));
+                        const foundIndex = personaStore.list.findIndex((e) => e.id === selectedPrev);
+                        changeUserPersona(foundIndex !== -1 ? foundIndex : 0);
+                        destroySortables();
+                        sorted += 1;
+                        await sleep(1);
+                        createStb();
+                    },
+                    ...sortableOptions,
+                }),
+            );
+        }
+    };
+
+    onMount(() => {
+        if (personasReady) return;
+        void personaStore.ensureLoaded().then(() => {
+            personasReady = true;
+        });
+    });
+
+    // Re-create section sortables whenever the folder layout changes.
+    $effect(() => {
+        if (!personasReady) return;
+        void openFolders;
+        void folders.length;
+        void sorted;
+        if (searchQuery.trim() !== '') return;
+        const handle = setTimeout(() => { createStb(); }, 0);
+        return () => clearTimeout(handle);
+    });
+
+    onDestroy(() => {
+        destroySortables();
     });
 
     async function addNewPersona() {
@@ -187,6 +229,14 @@
                 </div>
 
                 <button
+                    onclick={createPersonaFolder}
+                    class="h-8 w-8 rounded-lg bg-darkbutton/70 hover:bg-darkbutton text-textcolor hover:text-amber-400 border border-darkborderc transition-colors cursor-pointer shrink-0 flex items-center justify-center"
+                    title={language.createFolder || "Create Folder"}
+                >
+                    <FolderPlusIcon size={15} />
+                </button>
+
+                <button
                     onclick={addNewPersona}
                     class="h-8 w-8 rounded-lg bg-darkbutton/70 hover:bg-darkbutton text-textcolor hover:text-green-500 border border-darkborderc transition-colors cursor-pointer shrink-0 flex items-center justify-center"
                     title={language.createfromScratch || "Add Persona"}
@@ -195,58 +245,127 @@
                 </button>
             </div>
 
-            <!-- Persona Cards Grid -->
+            <!-- Persona Cards Grid (Folder Grouped) -->
+            {#snippet personaRow(persona: any, originalIndex: number)}
+                {@const isSelected = originalIndex === personaStore.activeIndex}
+                <div
+                    data-risu-idx={originalIndex}
+                    class="group relative flex items-center gap-2 p-1.5 rounded-lg border transition-all cursor-pointer {isSelected ? 'border-selected bg-selected/20 ring-1 ring-selected/70 shadow-xs' : 'border-darkborderc/60 bg-darkbg/30 hover:bg-darkbutton hover:border-textcolor/30'}"
+                    role="button"
+                    tabindex="0"
+                    onclick={() => changeUserPersona(originalIndex)}
+                    onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') changeUserPersona(originalIndex); }}
+                >
+                    <!-- Avatar Thumbnail (Supports Large Portrait) -->
+                    <div class="relative w-9 rounded-md overflow-hidden bg-darkbg shrink-0 border border-darkborderc/40 flex items-center justify-center {persona.largePortrait ? 'h-13' : 'h-9'}">
+                        {#if persona.icon === ''}
+                            <UserIcon size={18} class="text-textcolor2/60" />
+                        {:else}
+                            {#await getCharImage(persona.icon, 'css', { thumbnail: true })}
+                                <div class="w-full h-full bg-darkbg animate-pulse"></div>
+                            {:then im}
+                                <div class="w-full h-full bg-cover bg-center" style={im}></div>
+                            {/await}
+                        {/if}
+                    </div>
+
+                    <!-- Name & Note Info -->
+                    <div class="flex flex-col min-w-0 flex-1">
+                        <span class="font-bold text-xs text-textcolor truncate leading-tight">
+                            {persona.name || 'New Persona'}
+                        </span>
+                        {#if persona.note}
+                            <span class="text-[10px] text-textcolor2/70 truncate mt-0.5">
+                                {persona.note}
+                            </span>
+                        {/if}
+                    </div>
+
+                    <!-- Move to Folder -->
+                    <button
+                        class="shrink-0 p-1 rounded text-textcolor2/60 hover:text-textcolor hover:bg-textcolor/10 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                        onclick={(e) => { e.stopPropagation(); movePersonaToFolderByIndex(originalIndex); }}
+                        title={language.moveToFolder || "Move to Folder"}
+                    >
+                        <FolderInputIcon size={13} />
+                    </button>
+
+                    <!-- Selected Badge / Checkmark -->
+                    {#if isSelected}
+                        <div class="shrink-0 text-textcolor flex items-center pr-0.5">
+                            <CheckIcon size={13} />
+                        </div>
+                    {/if}
+                </div>
+            {/snippet}
+
             {#key sorted}
                 <div 
-                    class="grid grid-cols-1 xl:grid-cols-2 gap-1.5 flex-1 min-h-0 overflow-y-auto pr-1 content-start"
+                    class="flex flex-col gap-1.5 flex-1 min-h-0 overflow-y-auto pr-1 content-start"
                     bind:this={ele}
                 >
-                    {#each filteredPersonas as { persona, originalIndex }}
-                        {@const isSelected = originalIndex === personaStore.activeIndex}
-                        <div
-                            data-risu-idx={originalIndex}
-                            class="group relative flex items-center gap-2 p-1.5 rounded-lg border transition-all cursor-pointer {isSelected ? 'border-selected bg-selected/20 ring-1 ring-selected/70 shadow-xs' : 'border-darkborderc/60 bg-darkbg/30 hover:bg-darkbutton hover:border-textcolor/30'}"
-                            role="button"
-                            tabindex="0"
-                            onclick={() => changeUserPersona(originalIndex)}
-                            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') changeUserPersona(originalIndex); }}
-                        >
-                            <!-- Avatar Thumbnail (Supports Large Portrait) -->
-                            <div class="relative w-9 rounded-md overflow-hidden bg-darkbg shrink-0 border border-darkborderc/40 flex items-center justify-center {persona.largePortrait ? 'h-13' : 'h-9'}">
-                                {#if persona.icon === ''}
-                                    <UserIcon size={18} class="text-textcolor2/60" />
-                                {:else}
-                                    {#await getCharImage(persona.icon, 'css', { thumbnail: true })}
-                                        <div class="w-full h-full bg-darkbg animate-pulse"></div>
-                                    {:then im}
-                                        <div class="w-full h-full bg-cover bg-center" style={im}></div>
-                                    {/await}
-                                {/if}
+                    <!-- Root (Ungrouped) Section -->
+                    <div
+                        data-risu-sort-section="root"
+                        class="grid grid-cols-1 xl:grid-cols-2 gap-1.5 content-start"
+                    >
+                        {#each rootPersonas as { persona, originalIndex }}
+                            {@render personaRow(persona, originalIndex)}
+                        {/each}
+                        {#if rootPersonas.length === 0 && folderedPersonas.some(({ personas }) => personas.length > 0)}
+                            <div class="py-2 text-center text-[10px] text-textcolor2/50">
+                                {language.noFolder}
                             </div>
+                        {/if}
+                    </div>
 
-                            <!-- Name & Note Info -->
-                            <div class="flex flex-col min-w-0 flex-1">
-                                <span class="font-bold text-xs text-textcolor truncate leading-tight">
-                                    {persona.name || 'New Persona'}
-                                </span>
-                                {#if persona.note}
-                                    <span class="text-[10px] text-textcolor2/70 truncate mt-0.5">
-                                        {persona.note}
-                                    </span>
-                                {/if}
+                    <!-- Folder Sections -->
+                    {#each folderedPersonas as { folder, personas }}
+                        <div class="rounded-lg border border-darkborderc/40 bg-darkbg/20">
+                            <div class="flex items-center pl-1.5 pr-2 py-0.5">
+                                <button
+                                    class="grow flex items-center text-left hover:bg-textcolor/5 rounded-md pl-1.5 py-1.5 cursor-pointer"
+                                    onclick={() => toggleFolder(folder.id)}
+                                >
+                                    {#if openFolders.has(folder.id)}
+                                        <ChevronDownIcon size={14} class="mr-1 text-textcolor2" />
+                                    {:else}
+                                        <ChevronRightIcon size={14} class="mr-1 text-textcolor2" />
+                                    {/if}
+                                    <FolderIcon size={14} class="mr-1.5 text-textcolor2" />
+                                    <span class="text-xs font-semibold text-textcolor">{folder.name}</span>
+                                    <span class="ml-1.5 text-[10px] text-textcolor2">({personas.length})</span>
+                                </button>
+                                <button
+                                    class="p-1 rounded text-textcolor2/70 hover:text-textcolor transition-colors cursor-pointer"
+                                    onclick={() => renamePersonaFolder(folder.id)}
+                                    title={language.renameFolder}
+                                >
+                                    <PencilIcon size={12} />
+                                </button>
+                                <button
+                                    class="p-1 rounded text-textcolor2/70 hover:text-draculared transition-colors cursor-pointer"
+                                    onclick={() => removePersonaFolder(folder.id)}
+                                    title={language.removeFolder}
+                                >
+                                    <TrashIcon size={12} />
+                                </button>
                             </div>
-
-                            <!-- Selected Badge / Checkmark -->
-                            {#if isSelected}
-                                <div class="shrink-0 text-textcolor flex items-center pr-0.5">
-                                    <CheckIcon size={13} />
+                            {#if openFolders.has(folder.id)}
+                                <div
+                                    data-risu-sort-section={folder.id}
+                                    class="grid grid-cols-1 xl:grid-cols-2 gap-1.5 px-1.5 pb-1.5 content-start"
+                                >
+                                    {#each personas as { persona, originalIndex }}
+                                        {@render personaRow(persona, originalIndex)}
+                                    {/each}
                                 </div>
                             {/if}
                         </div>
                     {/each}
 
                     {#if filteredPersonas.length === 0}
-                        <div class="col-span-full py-6 text-center text-xs text-textcolor2">
+                        <div class="py-6 text-center text-xs text-textcolor2">
                             No personas match "{searchQuery}"
                         </div>
                     {/if}

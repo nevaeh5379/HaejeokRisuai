@@ -1290,6 +1290,7 @@ export const languageGerman = {
   createFolder: "Ordner erstellen",
   removeFolder: "Ordner entfernen",
   removeFolderConfirm: "Möchten Sie diesen Ordner wirklich entfernen? Die darin enthaltenen Module werden in den Hauptordner verschoben.",
+  personaFolderRemoveConfirm: "Möchten Sie diesen Profil-Ordner wirklich entfernen? Die darin enthaltenen Profile werden in den Hauptordner verschoben.",
   moveToFolder: "In Ordner verschieben",
   noFolder: "Kein Ordner",
   ungrouped: "Ungruppiert",

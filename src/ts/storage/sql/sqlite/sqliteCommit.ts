@@ -113,6 +113,7 @@ const SETTING_DOMAINS: Record<string, ReadonlySet<string>> = {
   collection: new Set([
     "botPresets",
     "personas",
+    "personaFolders",
     "modules",
     "moduleFolders",
     "loreBook",

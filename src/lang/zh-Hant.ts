@@ -1247,6 +1247,7 @@ export const languageChineseTraditional = {
   createFolder: "建立資料夾",
   removeFolder: "刪除資料夾",
   removeFolderConfirm: "確定要刪除此資料夾嗎？其中的模組將移至根目錄。",
+  personaFolderRemoveConfirm: "確定要刪除此使用者設定資料夾嗎？其中的使用者設定將移至根目錄。",
   moveToFolder: "移至資料夾",
   noFolder: "無資料夾",
   ungrouped: "未分組",
