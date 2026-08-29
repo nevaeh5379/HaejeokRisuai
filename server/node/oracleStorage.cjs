@@ -1483,7 +1483,7 @@ class OracleStorage extends SqlStorageBase {
                 return null;
             }
             const [attributes, emotions, assets] = await Promise.all([
-                fetchRows(conn, `SELECT * FROM character_attributes WHERE character_id = :1 ORDER BY key_value`, [characterId]),
+                fetchRows(conn, `SELECT * FROM character_attributes WHERE character_id = :1 AND key_value IN ('customBackground', 'gptSoVitsConfig', 'vits', 'snapshotAssetRefs') ORDER BY key_value`, [characterId]),
                 fetchRows(conn, `SELECT * FROM character_emotions WHERE character_id = :1 ORDER BY position`, [characterId], { clobColumns: ['asset'] }),
                 fetchRows(conn, `SELECT * FROM character_assets WHERE character_id = :1 ORDER BY position`, [characterId], { clobColumns: ['uri', 'extra_value'] }),
             ]);

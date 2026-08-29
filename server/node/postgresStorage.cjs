@@ -1657,7 +1657,7 @@ class PostgresStorage extends SqlStorageBase {
             await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
             const [charRes, attributesRes, emotionsRes, assetsRes] = await Promise.all([
                 'SELECT image FROM character.characters WHERE id = $1',
-                'SELECT * FROM character.attributes WHERE character_id = $1 ORDER BY key',
+                "SELECT * FROM character.attributes WHERE character_id = $1 AND key IN ('customBackground', 'gptSoVitsConfig', 'vits', 'snapshotAssetRefs') ORDER BY key",
                 'SELECT * FROM character.emotions WHERE character_id = $1 ORDER BY position',
                 'SELECT * FROM character.assets WHERE character_id = $1 ORDER BY position',
             ].map((q) => client.query(q, [characterId])));

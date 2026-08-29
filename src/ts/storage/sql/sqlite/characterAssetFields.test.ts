@@ -37,6 +37,33 @@ describe.each(backendFactories)("$name loadCharacterAssetFields", ({ make }) => 
     database.close();
   });
 
+  it("returns compact snapshot asset references without loading snapshot data", async () => {
+    const { storage, database } = makeHarness(make, sqliteSchemaSql);
+    const fixture = buildFullDatabase() as any;
+    fixture.characters[0].snapshotAssetRefs = [
+      "assets/snapshot-avatar.png",
+      "assets/snapshot-voice.wav",
+    ];
+    fixture.characters[0].snapshots = [
+      {
+        id: "snapshot-1",
+        name: "Large snapshot",
+        createdAt: 1,
+        version: 1,
+        data: { desc: "must not be returned by the asset-only loader" },
+      },
+    ];
+    await storage.replaceDatabase(fixture);
+
+    const assets = (await storage.loadCharacterAssetFields("char-1")) as any;
+    expect(assets.snapshotAssetRefs).toEqual([
+      "assets/snapshot-avatar.png",
+      "assets/snapshot-voice.wav",
+    ]);
+    expect(assets.snapshots).toBeUndefined();
+    database.close();
+  });
+
   it("reads only the character's own extension nodes", async () => {
     const { storage, database, queryLog } = makeHarness(make, sqliteSchemaSql);
     await storage.replaceDatabase(buildFullDatabase() as any);

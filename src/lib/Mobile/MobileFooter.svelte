@@ -10,7 +10,8 @@
     SmileIcon,
     UserIcon,
     UsersIcon,
-    SlidersHorizontal
+    SlidersHorizontal,
+    HistoryIcon
   } from "@lucide/svelte";
   import { language } from "src/lang";
   import { characterStore } from "src/ts/stores/domain";
@@ -116,6 +117,16 @@
         aria-label={language.scripts || "Scripts"}
       >
         <Braces size={22} />
+      </button>
+
+      <!-- Submenu 7: Character snapshots -->
+      <button
+        class="flex justify-center items-center p-2.5 rounded-2xl transition-all cursor-pointer {$CharConfigSubMenu === 7 ? 'text-selected bg-selected/20 font-bold scale-105' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton'}"
+        onclick={() => { CharConfigSubMenu.set(7); }}
+        title={language.characterSnapshots.title}
+        aria-label={language.characterSnapshots.title}
+      >
+        <HistoryIcon size={22} />
       </button>
     {/if}
 

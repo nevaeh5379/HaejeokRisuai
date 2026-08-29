@@ -173,6 +173,7 @@ export const CHARACTER_ASSET_FIELD_KEYS = [
   "customBackground",
   "gptSoVitsConfig",
   "vits",
+  "snapshotAssetRefs",
 ] as const;
 
 /**

@@ -6,7 +6,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
     import { characterStore, settingsStore, moduleStore } from 'src/ts/stores/domain';
     import { onDestroy } from 'svelte';
     import { CharConfigSubMenu, MobileGUI, ShowRealmFrameStore, selectedCharID, hypaV3ModalOpen } from "../../ts/stores.svelte";
-    import { PlusIcon, SmileIcon, TrashIcon, UserIcon, ActivityIcon, BookIcon, User, Braces, Volume2Icon, DownloadIcon, HardDriveUploadIcon, Share2Icon, ImageIcon, ImageOffIcon, ArrowUp, ArrowDown } from '@lucide/svelte'
+    import { PlusIcon, SmileIcon, TrashIcon, UserIcon, ActivityIcon, BookIcon, User, Braces, Volume2Icon, DownloadIcon, HardDriveUploadIcon, Share2Icon, ImageIcon, ImageOffIcon, ArrowUp, ArrowDown, HistoryIcon } from '@lucide/svelte'
     import Check from "../UI/GUI/CheckInput.svelte";
     import { addCharEmotion, addingEmotion, getCharImage, rmCharEmotion, selectCharImg, makeGroupImage, removeChar, changeCharImage } from "../../ts/characters";
     import LoreBook from "./LoreBook/LoreBookSetting.svelte";
@@ -36,6 +36,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
     import { getMimeType } from "src/ts/media";
     import { createDeferredTokenCalculator } from "src/ts/deferredTokenCalculator";
     import AdditionalAssetsSection from "./Character/AdditionalAssetsSection.svelte";
+    import CharacterSnapshotsSection from "./Character/CharacterSnapshotsSection.svelte";
 
     let iconRemoveMode = $state(false)
     let viewSubMenu = $state(0)
@@ -152,7 +153,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
     });
 
     $effect.pre(() => {
-        if(characterStore.characters[$selectedCharID].type === 'group' && ($CharConfigSubMenu === 4 || $CharConfigSubMenu === 5)){
+        if(characterStore.characters[$selectedCharID].type === 'group' && ($CharConfigSubMenu === 4 || $CharConfigSubMenu === 5 || $CharConfigSubMenu === 7)){
             $CharConfigSubMenu = 0
         }
 
@@ -226,6 +227,9 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
             </button>
             <button class={$CharConfigSubMenu === 4 ? 'text-textcolor' : 'text-textcolor2'} onclick={() => {$CharConfigSubMenu = 4}}>
                 <Braces size={iconButtonSize} />
+            </button>
+            <button class={$CharConfigSubMenu === 7 ? 'text-textcolor' : 'text-textcolor2'} onclick={() => {$CharConfigSubMenu = 7}} title={language.characterSnapshots.title}>
+                <HistoryIcon size={iconButtonSize} />
             </button>
         {/if}
         <button class={$CharConfigSubMenu === 2 ? 'text-textcolor' : 'text-textcolor2'} onclick={() => {$CharConfigSubMenu = 2}}>
@@ -644,6 +648,10 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
             <span class="text-textcolor mt-4">{language.charjs} <Help key="charjs" unrecommended/></span>
             <TextAreaInput margin="both" autocomplete="off" bind:value={characterStore.characters[$selectedCharID].virtualscript}></TextAreaInput>
         {/if}
+    {/if}
+{:else if $CharConfigSubMenu === 7}
+    {#if characterStore.characters[$selectedCharID].type === 'character'}
+        <CharacterSnapshotsSection />
     {/if}
 {:else if $CharConfigSubMenu === 6}
 

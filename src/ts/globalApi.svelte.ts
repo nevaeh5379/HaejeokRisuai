@@ -1336,33 +1336,29 @@ export function getUncleanablesSync(
   addUncleanable(db.userIcon);
   const chars = options?.chars ?? db.characters;
 
-  for (let cha of chars) {
-    if (cha.image) {
-      addUncleanable(cha.image);
-    }
-    if (cha.emotionImages) {
-      for (const em of cha.emotionImages) {
-        addUncleanable(em[1]);
-      }
-    }
+  function addCharacterAssets(cha: {
+    image?: string;
+    customBackground?: string;
+    emotionImages?: [string, string][];
+    additionalAssets?: [string, string, string][];
+    vits?: character["vits"];
+    ccAssets?: character["ccAssets"];
+    gptSoVitsConfig?: character["gptSoVitsConfig"];
+  }) {
+    addUncleanable(cha.image ?? "");
+    addUncleanable(cha.customBackground ?? "");
+    for (const emotion of cha.emotionImages ?? []) addUncleanable(emotion[1]);
+    for (const asset of cha.additionalAssets ?? []) addUncleanable(asset[1]);
+    for (const asset of Object.values(cha.vits?.files ?? {})) addUncleanable(asset);
+    for (const asset of cha.ccAssets ?? []) addUncleanable(asset.uri);
+    addUncleanable(cha.gptSoVitsConfig?.ref_audio_data?.assetId ?? "");
+  }
+
+  for (const cha of chars) {
+    addCharacterAssets(cha);
     if (cha.type !== "group") {
-      if (cha.additionalAssets) {
-        for (const em of cha.additionalAssets) {
-          addUncleanable(em[1]);
-        }
-      }
-      if (cha.vits) {
-        const keys = Object.keys(cha.vits.files);
-        for (const key of keys) {
-          const vit = cha.vits.files[key];
-          addUncleanable(vit);
-        }
-      }
-      if (cha.ccAssets) {
-        for (const asset of cha.ccAssets) {
-          addUncleanable(asset.uri);
-        }
-      }
+      for (const ref of cha.snapshotAssetRefs ?? []) addUncleanable(ref);
+      for (const snapshot of cha.snapshots ?? []) addCharacterAssets(snapshot.data);
     }
   }
 
@@ -1433,20 +1429,37 @@ export function replaceDbResources(
   db.customBackground = replaceData(db.customBackground);
   db.userIcon = replaceData(db.userIcon);
 
+  function replaceCharacterAssets(target: {
+    image?: string;
+    customBackground?: string;
+    emotionImages?: [string, string][];
+    additionalAssets?: [string, string, string][];
+    vits?: character["vits"];
+    ccAssets?: character["ccAssets"];
+    gptSoVitsConfig?: character["gptSoVitsConfig"];
+  }) {
+    if (target.image) target.image = replaceData(target.image);
+    if (target.customBackground) target.customBackground = replaceData(target.customBackground);
+    for (const emotion of target.emotionImages ?? []) {
+      emotion[1] = replaceData(emotion[1]);
+    }
+    for (const asset of target.additionalAssets ?? []) {
+      asset[1] = replaceData(asset[1]);
+    }
+    for (const key of Object.keys(target.vits?.files ?? {})) {
+      target.vits!.files[key] = replaceData(target.vits!.files[key]);
+    }
+    for (const asset of target.ccAssets ?? []) asset.uri = replaceData(asset.uri);
+    const refAudio = target.gptSoVitsConfig?.ref_audio_data;
+    if (refAudio?.assetId) refAudio.assetId = replaceData(refAudio.assetId);
+  }
+
   for (const cha of db.characters) {
-    if (cha.image) {
-      cha.image = replaceData(cha.image);
-    }
-    if (cha.emotionImages) {
-      for (let i = 0; i < cha.emotionImages.length; i++) {
-        cha.emotionImages[i][1] = replaceData(cha.emotionImages[i][1]);
-      }
-    }
+    replaceCharacterAssets(cha);
     if (cha.type !== "group") {
-      if (cha.additionalAssets) {
-        for (let i = 0; i < cha.additionalAssets.length; i++) {
-          cha.additionalAssets[i][1] = replaceData(cha.additionalAssets[i][1]);
-        }
+      for (const snapshot of cha.snapshots ?? []) replaceCharacterAssets(snapshot.data);
+      if (cha.snapshotAssetRefs) {
+        cha.snapshotAssetRefs = [...new Set(cha.snapshotAssetRefs.map(replaceData))];
       }
     }
   }

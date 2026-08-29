@@ -729,6 +729,37 @@ describe("CharacterStore", () => {
     }
   });
 
+  it("keeps temporary character overrides out of SQL until explicitly kept", async () => {
+    const char = makeChar("snapshot-preview");
+    char.firstMessage = "original";
+    characterStore.init([char], mockStorage);
+    characterStore.select(0);
+
+    const preview = structuredClone(char);
+    preview.firstMessage = "preview";
+    expect(await characterStore.beginTemporaryCharacterOverride(0, preview)).toBe(true);
+    expect(characterStore.characters[0].firstMessage).toBe("preview");
+
+    characterStore.characters[0].firstMessage = "preview edited";
+    characterStore.markCharacterDirty(char.chaId!);
+    await characterStore.flush();
+    expect(committed).toHaveLength(0);
+
+    expect(characterStore.endTemporaryCharacterOverride(char.chaId!, false)).toBe(true);
+    expect(characterStore.characters[0].firstMessage).toBe("original");
+    await characterStore.flush();
+    expect(committed).toHaveLength(0);
+
+    const keptPreview = characterStore.getCharacterByIndex(0, { snapshot: true }) as character;
+    keptPreview.firstMessage = "kept preview";
+    expect(await characterStore.beginTemporaryCharacterOverride(0, keptPreview)).toBe(true);
+    expect(characterStore.endTemporaryCharacterOverride(char.chaId!, true)).toBe(true);
+    await characterStore.flush();
+
+    expect(committed).toHaveLength(1);
+    expect((committed[0].characters[0].data as any).firstMessage).toBe("kept preview");
+  });
+
   it("handles whole-object replacements via setCurrentCharacter and setCharacterByIndex", async () => {
     const chars = [makeChar("a"), makeChar("b")];
     characterStore.init(chars, mockStorage);

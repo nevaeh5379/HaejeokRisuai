@@ -173,6 +173,33 @@ describe("StorageExplorer utils", () => {
       expect(result.orphanSizeBytes).toBe(2200); // 2000 + 200
     });
 
+    it("keeps assets referenced only by character snapshots out of the orphan list", async () => {
+      characterStore.characters = [
+        {
+          chaId: "char-snapshot",
+          name: "Snapshot Bot",
+          snapshotAssetRefs: ["assets/old-avatar.png"],
+        } as any,
+      ];
+
+      const storageAssets: NodeStorageAssetItem[] = [
+        { key: "assets/old-avatar.png", size: 1000, mtime: 1 },
+        { key: "assets/orphan.png", size: 500, mtime: 1 },
+      ];
+      const assetMap = new Map(storageAssets.map((item) => [item.key, item]));
+      const result = await runStorageAnalysis(assetMap, {
+        storageType: "s3",
+        totalObjects: storageAssets.length,
+        totalSizeBytes: 1500,
+        assets: storageAssets,
+      });
+
+      expect(result.orphanAssets.map((asset) => asset.key)).toEqual([
+        "assets/orphan.png",
+      ]);
+      expect(result.bots[0].assets.some((asset) => asset.key === "assets/old-avatar.png")).toBe(true);
+    });
+
     it("correctly protects persona icons and the global background from orphan classification", async () => {
       personaStore.personas = [
         {

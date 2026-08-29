@@ -181,6 +181,7 @@ class CharacterStore
   private generationOnlyMetadataChats = new Set<string>();
   private hydratedCharacterLru: string[] = [];
   private inactiveDetailReleaseGeneration = 0;
+  private temporaryCharacterOriginals = new Map<string, character | groupChat>();
 
   characters = $state<(character | groupChat)[]>([]);
   selectedId = $state<number>(-1);
@@ -216,6 +217,7 @@ class CharacterStore
     this.dirtyChatManifests.clear();
     this.generationOnlyMetadataChats.clear();
     this.hydratedCharacterLru = [];
+    this.temporaryCharacterOriginals.clear();
     this.inactiveDetailReleaseGeneration += 1;
     this.dirtyCharacterIds = false;
 
@@ -315,6 +317,7 @@ class CharacterStore
         );
         if (fingerprint === lastCharFingerprint) return;
         lastCharFingerprint = fingerprint;
+        if (this.temporaryCharacterOriginals.has(char.chaId)) return;
         this.dirtyCharacterTouches.delete(char.chaId);
         this.dirtyCharacters.add(char.chaId);
         this.scheduleCommit();
@@ -382,6 +385,7 @@ class CharacterStore
   // ── Explicit dirty marking for non-active characters/chats ───────
 
   markCharacterDirty(chaId: string): void {
+    if (this.temporaryCharacterOriginals.has(chaId)) return;
     this.dirtyCharacterTouches.delete(chaId);
     this.dirtyCharacters.add(chaId);
     this.scheduleCommit();
@@ -657,9 +661,11 @@ class CharacterStore
     if (this.selectedId >= 0 && this.selectedId < this.characters.length) {
       char.chaId ||= this.characters[this.selectedId].chaId || uuidv4();
       this.characters[this.selectedId] = char;
-      this.dirtyCharacterTouches.delete(char.chaId);
-      this.dirtyCharacters.add(char.chaId);
-      this.scheduleCommit();
+      if (!this.temporaryCharacterOriginals.has(char.chaId)) {
+        this.dirtyCharacterTouches.delete(char.chaId);
+        this.dirtyCharacters.add(char.chaId);
+        this.scheduleCommit();
+      }
       this.observeActive();
     }
   }
@@ -675,13 +681,58 @@ class CharacterStore
     if (index >= 0 && index < this.characters.length) {
       char.chaId ||= this.characters[index].chaId || uuidv4();
       this.characters[index] = char;
-      this.dirtyCharacterTouches.delete(char.chaId);
-      this.dirtyCharacters.add(char.chaId);
-      this.scheduleCommit();
+      if (!this.temporaryCharacterOriginals.has(char.chaId)) {
+        this.dirtyCharacterTouches.delete(char.chaId);
+        this.dirtyCharacters.add(char.chaId);
+        this.scheduleCommit();
+      }
       if (index === this.selectedId) {
         this.observeActive();
       }
     }
+  }
+
+  async beginTemporaryCharacterOverride(
+    index: number,
+    char: character | groupChat,
+  ): Promise<boolean> {
+    const current = this.characters[index];
+    if (!current?.chaId || current.chaId !== char.chaId) return false;
+
+    if (!this.temporaryCharacterOriginals.has(current.chaId)) {
+      await this.flush();
+      if (this.hasPendingWrites()) return false;
+      const latest = this.characters[index];
+      if (!latest || latest.chaId !== current.chaId) return false;
+      this.temporaryCharacterOriginals.set(
+        current.chaId,
+        $state.snapshot(latest) as character | groupChat,
+      );
+    }
+
+    this.characters[index] = char;
+    if (index === this.selectedId) this.observeActive();
+    return true;
+  }
+
+  hasTemporaryCharacterOverride(chaId: string): boolean {
+    return this.temporaryCharacterOriginals.has(chaId);
+  }
+
+  endTemporaryCharacterOverride(chaId: string, persist: boolean): boolean {
+    const original = this.temporaryCharacterOriginals.get(chaId);
+    if (!original) return false;
+    const index = this.characters.findIndex((char) => char.chaId === chaId);
+    this.temporaryCharacterOriginals.delete(chaId);
+    if (index < 0) return false;
+
+    if (persist) {
+      this.setCharacterByIndex(index, this.characters[index]);
+    } else {
+      this.characters[index] = original;
+      if (index === this.selectedId) this.observeActive();
+    }
+    return true;
   }
 
   getCurrentChat(): Chat | undefined {
@@ -719,7 +770,10 @@ class CharacterStore
     if (index >= 0 && index < this.characters.length) {
       const removedId = this.characters[index]?.chaId;
       this.characters.splice(index, 1);
-      if (removedId) this.dirtyCharacterDeletes.add(removedId);
+      if (removedId) {
+        this.temporaryCharacterOriginals.delete(removedId);
+        this.dirtyCharacterDeletes.add(removedId);
+      }
       this.dirtyCharacterIds = true;
       this.scheduleCommit();
       if (this.selectedId >= this.characters.length) {
@@ -737,6 +791,7 @@ class CharacterStore
     if (!chaId) return true;
     if (
       this.dirtyCharacters.has(chaId) ||
+      this.temporaryCharacterOriginals.has(chaId) ||
       this.dirtyChatManifests.has(chaId) ||
       this.characterDetailPromises.has(chaId)
     ) {
