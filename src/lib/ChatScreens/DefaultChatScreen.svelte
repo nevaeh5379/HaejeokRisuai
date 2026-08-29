@@ -7,10 +7,10 @@
     import { get } from 'svelte/store';
     import Chat from "./Chat.svelte";
     import type { Chat as ChatSession, Message } from "../../ts/storage/database/schema";
-    import { characterStore, settingsStore, personaStore, messageStore, presetStore } from 'src/ts/stores/domain';
+    import { characterStore, settingsStore, messageStore, presetStore } from 'src/ts/stores/domain';
     import { getCharImage } from "../../ts/characterImage";
     import { activeGenerationChatIds, chatProcessStages, getChatProcessStage } from "../../ts/process/chatRuntimeState";
-    import { sleep } from "../../ts/util";
+    import { getPersonaForTarget, getUserName, sleep } from "../../ts/util";
     import { language } from "../../lang";
     import { alertError, alertNormal, alertWait, showHypaV2Alert } from "../../ts/alert";
     import sendSound from '../../etc/send.mp3'
@@ -318,7 +318,8 @@
         const currentChatPage = selectedChatIndex
         await preLoadChat(selectedChar, currentChatPage, { full: true })
         const activeChat = characterStore.characters[selectedChar].chats[currentChatPage]
-        const activePersonaName = personaStore.requireActive("sendMain").name
+        const executionTarget = requireChatTargetFromIndexes(selectedChar, currentChatPage)
+        const activePersonaName = getUserName(executionTarget)
         let cha = activeChat.message
         let appendedUserMessage: Message | undefined
 
@@ -359,7 +360,6 @@
         else{
             const char = characterStore.characters[selectedChar]
             if(char.type === 'character'){
-                const executionTarget = requireChatTargetFromIndexes(selectedChar, currentChatPage)
                 const { runTrigger } = await import('src/ts/process/triggers')
                 let triggerResult = await runTrigger(char,'input', {
                     chat: char.chats[currentChatPage],
@@ -560,10 +560,9 @@
     }
 
     let { userIconPortrait, currentUsername, userIcon } = $derived.by(() => {
-        const bindedPersona = characterStore.characters?.[selectedCharacterIndex]?.chats?.[selectedChatIndex]?.bindedPersona
-        const persona = bindedPersona
-            ? personaStore.list.find((item) => item.id === bindedPersona) ?? personaStore.activePersona
-            : personaStore.activePersona
+        const persona = currentCharacter?.chaId && currentChatSession?.id
+            ? getPersonaForTarget({ characterId: currentCharacter.chaId, chatId: currentChatSession.id })
+            : undefined
 
         return {
             currentUsername: persona?.name ?? 'User',

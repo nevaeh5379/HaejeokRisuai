@@ -126,58 +126,52 @@ export const replacePlaceholders = (
     .replace(/(\{\{((set)|(get))var::.+?\}\})/gu, "");
 };
 
+function resolvePersonaTarget(target?: ChatExecutionTarget) {
+  return target ? resolveChatTarget(target) : resolveSelectedChatTarget();
+}
+
+function findPersonaById(id?: string) {
+  if (!id) return null;
+  return personaStore.list.find((persona) => persona.id === id) ?? null;
+}
+
 export function checkPersonaBinded(target?: ChatExecutionTarget) {
   try {
-    const chat = (target
-      ? resolveChatTarget(target)
-      : resolveSelectedChatTarget()
-    )?.chat;
-    if (!chat?.bindedPersona) {
-      return null;
-    }
-    const persona = personaStore.list.find(
-      (v) => v.id === chat.bindedPersona,
-    );
-    return persona;
+    return findPersonaById(resolvePersonaTarget(target)?.chat.bindedPersona);
   } catch (error) {
     return null;
   }
 }
 
+export function getPersonaForTarget(target?: ChatExecutionTarget) {
+  try {
+    const resolved = resolvePersonaTarget(target);
+    const chatPersona = findPersonaById(resolved?.chat.bindedPersona);
+    if (chatPersona) return chatPersona;
+
+    if (resolved?.character.type !== "group") {
+      const characterPersona = findPersonaById(resolved?.character.fixedPersonaId);
+      if (characterPersona) return characterPersona;
+    }
+  } catch (error) {}
+
+  return personaStore.activePersona;
+}
+
 export function getUserName(target?: ChatExecutionTarget) {
-  const bindedPersona = checkPersonaBinded(target);
-  if (bindedPersona) {
-    return bindedPersona.name;
-  }
-  return personaStore.activePersona?.name ?? "User";
+  return getPersonaForTarget(target)?.name ?? "User";
 }
 
 export function getUserIcon(target?: ChatExecutionTarget) {
-  const bindedPersona = checkPersonaBinded(target);
-  if (bindedPersona) {
-    return bindedPersona.icon;
-  }
-  return personaStore.activePersona?.icon ?? "";
+  return getPersonaForTarget(target)?.icon ?? "";
 }
 
 export function getPersonaPrompt(target?: ChatExecutionTarget) {
-  const bindedPersona = checkPersonaBinded(target);
-  if (bindedPersona) {
-    return bindedPersona.personaPrompt;
-  }
-  return personaStore.activePersona?.personaPrompt ?? "";
+  return getPersonaForTarget(target)?.personaPrompt ?? "";
 }
 
 export function getUserIconProtrait(target?: ChatExecutionTarget) {
-  try {
-    const bindedPersona = checkPersonaBinded(target);
-    if (bindedPersona) {
-      return bindedPersona.largePortrait;
-    }
-    return personaStore.activePersona?.largePortrait ?? false;
-  } catch (error) {
-    return false;
-  }
+  return getPersonaForTarget(target)?.largePortrait ?? false;
 }
 
 export function selectFileByDom(

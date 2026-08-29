@@ -2,11 +2,12 @@
     import { language } from "../../lang";
     import { saveImage as saveAsset } from "../../ts/storage/files/assetPersistence";
 import type { character, groupChat } from "../../ts/storage/database/schema";
+import { v4 } from "uuid";
 
-    import { characterStore, settingsStore, moduleStore } from 'src/ts/stores/domain';
+    import { characterStore, settingsStore, moduleStore, personaStore } from 'src/ts/stores/domain';
     import { onDestroy } from 'svelte';
     import { CharConfigSubMenu, MobileGUI, ShowRealmFrameStore, selectedCharID, hypaV3ModalOpen } from "../../ts/stores.svelte";
-    import { PlusIcon, SmileIcon, TrashIcon, UserIcon, ActivityIcon, BookIcon, User, Braces, Volume2Icon, DownloadIcon, HardDriveUploadIcon, Share2Icon, ImageIcon, ImageOffIcon, ArrowUp, ArrowDown } from '@lucide/svelte'
+    import { PlusIcon, SmileIcon, TrashIcon, UserIcon, ActivityIcon, BookIcon, User, Braces, Volume2Icon, DownloadIcon, HardDriveUploadIcon, Share2Icon, ImageIcon, ImageOffIcon, ArrowUp, ArrowDown, PinIcon } from '@lucide/svelte'
     import Check from "../UI/GUI/CheckInput.svelte";
     import { addCharEmotion, addingEmotion, getCharImage, rmCharEmotion, selectCharImg, makeGroupImage, removeChar, changeCharImage } from "../../ts/characters";
     import LoreBook from "./LoreBook/LoreBookSetting.svelte";
@@ -185,6 +186,39 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
         }
     }
 
+
+    let fixedPersonaSelection = $derived.by(() => {
+        const chara = characterStore.characters[$selectedCharID]
+        if (!chara || chara.type === 'group') return ''
+        const fixedPersonaId = (chara as character).fixedPersonaId
+        const index = fixedPersonaId
+            ? personaStore.list.findIndex((persona) => persona.id === fixedPersonaId)
+            : -1
+        return index >= 0 ? `persona:${index}` : ''
+    })
+
+    async function changeFixedPersona(event: Event & { currentTarget: HTMLSelectElement }) {
+        const chara = characterStore.characters[$selectedCharID]
+        if (!chara || chara.type === 'group') return
+
+        const value = event.currentTarget.value
+        if (!value.startsWith('persona:')) {
+            ;(chara as character).fixedPersonaId = undefined
+            characterStore.markCharacterDirty(chara.chaId)
+            return
+        }
+
+        const index = Number(value.slice('persona:'.length))
+        const persona = personaStore.get(index)
+        if (!persona) return
+        if (!persona.id) {
+            persona.id = v4()
+            await personaStore.savePersona(persona, index)
+        }
+        ;(chara as character).fixedPersonaId = persona.id
+        characterStore.markCharacterDirty(chara.chaId)
+    }
+
     function moveAlternateGreetingUp(index: number) {
         if(index === 0) return
         if(characterStore.characters[$selectedCharID].type === 'character'){
@@ -244,6 +278,21 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
     {#if characterStore.characters[$selectedCharID].type !== 'group' && licensed !== 'private'}
         <div class="flex flex-col flex-1 min-h-0 h-full">
             <TextInput size="xl" marginBottom placeholder="Character Name" bind:value={characterStore.characters[$selectedCharID].name} />
+
+            <div class="flex items-center gap-2 mb-3 shrink-0">
+                <span class="text-sm text-textcolor2 shrink-0 flex items-center gap-1"><PinIcon size={15} /> {language.persona}</span>
+                <SelectInput
+                    size="sm"
+                    className="min-w-0 flex-1"
+                    value={fixedPersonaSelection}
+                    onchange={changeFixedPersona}
+                >
+                    <OptionInput value="">{language.none}</OptionInput>
+                    {#each personaStore.list as persona, i}
+                        <OptionInput value={`persona:${i}`}>{persona.name || `Persona ${i + 1}`}</OptionInput>
+                    {/each}
+                </SelectInput>
+            </div>
 
             <div class="flex w-full rounded-md border border-selected mb-3 shrink-0">
                 <button onclick={() => {

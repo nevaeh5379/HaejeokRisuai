@@ -681,6 +681,8 @@ export interface character {
   emotionImages: [string, string][];
   globalLore: loreBook[];
   chaId: string;
+  /** Persona used by default for this character across its chats. */
+  fixedPersonaId?: string;
   sdData: [string, string][];
   newGenData?: {
     prompt: string;
