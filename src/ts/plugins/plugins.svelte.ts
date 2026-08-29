@@ -680,7 +680,12 @@ export const getV2PluginAPIs = () => {
       //compatibility layer with old unsafe APIs
 
       //from PBV2
-      safeGlobal.showDirectoryPicker = window.showDirectoryPicker;
+      const directoryPicker = (
+        window as Window & {
+          showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
+        }
+      ).showDirectoryPicker;
+      safeGlobal.showDirectoryPicker = directoryPicker?.bind(window);
 
       safeGlobal.DBState = {
         db: toGetter(globalThis.__pluginApis__.getDatabase),

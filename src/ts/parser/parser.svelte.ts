@@ -11,7 +11,10 @@ import { isTauri, isNodeServer } from "src/ts/platform";
 import { getChatVar, setChatVar, getGlobalChatVar } from "./chatVar.svelte";
 import { processScriptFull } from "../process/scripts";
 import { get } from "svelte/store";
-import css, { type CssAtRuleAST } from "@adobe/css-tools";
+import css, {
+  type CssAtRuleAST,
+  type CssDeclarationAST,
+} from "@adobe/css-tools";
 import { selectedCharID } from "../stores.svelte";
 import {
   adaptInlineStyle,
@@ -51,6 +54,8 @@ const markdownItOptions = {
   typographer: true,
   quotes: "\u{E9b0}\u{E9b1}\u{E9b2}\u{E9b3}", //placeholder characters to convert to real quotes
 };
+
+type MarkdownItInstance = ReturnType<typeof markdownit>;
 
 const md = markdownit(markdownItOptions);
 const mdHighlight = markdownit({
@@ -221,7 +226,7 @@ export function risuEscape(text: string) {
   });
 }
 
-function renderMarkdown(md: markdownit, data: string) {
+function renderMarkdown(md: MarkdownItInstance, data: string) {
   let quotes = ["“", "”", "‘", "’"];
   if (settingsStore.state?.customQuotes) {
     quotes = settingsStore.state.customQuotesData ?? quotes;
@@ -1127,7 +1132,7 @@ function encodeStyle(txt: string) {
     return "<risu-style>" + Buffer.from(c1).toString("hex") + "</risu-style>";
   });
 }
-function decodeStyleRule(rule: CssAtRuleAST) {
+function decodeStyleRule<T extends CssAtRuleAST | CssDeclarationAST>(rule: T): T {
   if (rule.type === "rule") {
     if (rule.selectors) {
       for (let i = 0; i < rule.selectors.length; i++) {

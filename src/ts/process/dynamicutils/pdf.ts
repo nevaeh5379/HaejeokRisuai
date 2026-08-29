@@ -32,8 +32,9 @@ export async function convertPdfToImages(
     canvas.width = viewport.width;
 
     const renderContext = {
+      canvas,
       canvasContext: context,
-      viewport: viewport,
+      viewport,
     };
 
     await page.render(renderContext).promise;

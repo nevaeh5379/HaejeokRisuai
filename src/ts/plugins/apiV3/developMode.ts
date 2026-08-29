@@ -4,8 +4,18 @@ import { sleep } from "src/ts/util";
 
 export async function hotReloadPluginFiles() {
   const observerSupported = !("FileSystemObserver" in window);
+  const showOpenFilePicker = (
+    window as Window & {
+      showOpenFilePicker?: (options?: {
+        types?: Array<{
+          description?: string;
+          accept?: Record<string, string[]>;
+        }>;
+      }) => Promise<FileSystemFileHandle[]>;
+    }
+  ).showOpenFilePicker;
 
-  if (!("showOpenFilePicker" in window)) {
+  if (typeof showOpenFilePicker !== "function") {
     alertError(
       "Your browser does not support the File System Access API, which is required for hot-reloading plugin files.",
     );
@@ -14,7 +24,7 @@ export async function hotReloadPluginFiles() {
 
   let fileHandle: FileSystemFileHandle;
   try {
-    [fileHandle] = await window.showOpenFilePicker({
+    [fileHandle] = await showOpenFilePicker({
       types: [
         {
           description: "JavaScript or TypeScript Plugin File",

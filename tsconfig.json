@@ -6,17 +6,17 @@
     "useDefineForClassFields": true,
 
     /* Bundler Mode - Vite handles the actual build */
-    "noEmit": false,
+    "noEmit": true,
     "moduleResolution": "bundler",
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
 
     /* Module Resolution */
-    "baseUrl": ".",
     "paths": {
-      "@risuai/chat-core/*": ["packages/chat-core/*"],
-      "@risuai/protocol/*": ["packages/protocol/*"],
-      "@risuai/backup-core/*": ["packages/backup-core/*"]
+      "src/*": ["./src/*"],
+      "@risuai/chat-core/*": ["./packages/chat-core/*"],
+      "@risuai/protocol/*": ["./packages/protocol/*"],
+      "@risuai/backup-core/*": ["./packages/backup-core/*"]
     },
     "resolveJsonModule": true,
     "esModuleInterop": true,
