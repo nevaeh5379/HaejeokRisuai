@@ -1189,15 +1189,6 @@
             {#if settingsStore.state.hypaV3Presets?.[settingsStore.state.hypaV3PresetId]?.settings}
                 {@const settings = settingsStore.state.hypaV3Presets[settingsStore.state.hypaV3PresetId].settings}
 
-                <span class="text-textcolor">{language.SuperMemory} {language.model}</span>
-                <SelectInput className="mb-4" bind:value={settings.summarizationModel}>
-                    <OptionInput value="subModel">{language.submodel}</OptionInput>
-                    {#if "gpu" in navigator}
-                        <OptionInput value="Qwen3-1.7B-q4f32_1-MLC">Qwen3 1.7B (GPU)</OptionInput>
-                        <OptionInput value="Qwen3-4B-q4f32_1-MLC">Qwen3 4B (GPU)</OptionInput>
-                        <OptionInput value="Qwen3-8B-q4f32_1-MLC">Qwen3 8B (GPU)</OptionInput>
-                    {/if}
-                </SelectInput>
                 <span class="text-textcolor">{language.summarizationPrompt} <Help key="summarizationPrompt"/></span>
                 <div class="mb-4">
                     <TextAreaInput size="sm" placeholder={language.hypaV3Settings.supaMemoryPromptPlaceHolder} bind:value={settings.summarizationPrompt} />

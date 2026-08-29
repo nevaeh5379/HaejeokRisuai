@@ -38,7 +38,6 @@ vi.mock("../../storage/nodeStorage", () => ({
 vi.mock("../../tokenizer", () => ({ tokenize: vi.fn(async () => 1) }));
 vi.mock("../request/chatRequestOrchestrator", () => ({ requestChatData }));
 vi.mock("../transformers", () => ({ runSummarizer: vi.fn() }));
-vi.mock("../webllm", () => ({ chatCompletion: vi.fn() }));
 
 import { tryRunNodeHypaMemory } from "./nodeHypaMemory";
 

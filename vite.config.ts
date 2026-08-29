@@ -121,7 +121,7 @@ export default defineConfig(({command, mode}) => {
       minify: process.env.TAURI_ENV_DEBUG === 'true' ? false : 'oxc',
       // produce sourcemaps for debug builds
       sourcemap: process.env.TAURI_ENV_DEBUG === 'true',
-      // WebLLM/tokenizer runtimes are intentionally shipped as large lazy chunks.
+      // Optional tokenizer/runtime bundles are intentionally shipped as large lazy chunks.
       // Warn only if a future chunk grows beyond the current expected ceiling.
       chunkSizeWarningLimit: 6000,
       // Keep the root state module out of Rolldown's large shared feature chunk.
@@ -202,12 +202,6 @@ export default defineConfig(({command, mode}) => {
                 // Hugging Face transformers — large model inference lib.
                 name: 'transformers',
                 test: /node_modules[\\/]@huggingface[\\/]transformers/,
-                priority: 80,
-              },
-              {
-                // Web LLM — large, only needed for in-browser LLM inference.
-                name: 'webllm',
-                test: /node_modules[\\/]@mlc-ai[\\/]web-llm/,
                 priority: 80,
               },
               {

@@ -8,7 +8,6 @@ import { NodeStorage } from "../../storage/nodeStorage";
 import { tokenize as countPlainTokens, type ChatTokenizer } from "../../tokenizer";
 import { requestChatData } from "../request/chatRequestOrchestrator";
 import { runSummarizer } from "../transformers";
-import { chatCompletion } from "../webllm";
 
 type HypaAction =
   | { id: string; type: "tokenize"; messages: OpenAIChat[] }
@@ -19,9 +18,6 @@ type HypaAction =
       type: "summarize";
       messages: OpenAIChat[];
       parseContents?: boolean;
-      model: string;
-      localModel?: boolean;
-      maxTokens?: number;
     };
 
 type HypaSessionResponse<T> =
@@ -80,28 +76,6 @@ async function executeAction(
     action.parseContents,
     context,
   );
-  if (action.localModel) {
-    try {
-      const firstSystemIndex = messages.findIndex(
-        (message) => message.role === "system",
-      );
-      if (firstSystemIndex > 0) {
-        const [system] = messages.splice(firstSystemIndex, 1);
-        messages.unshift(system);
-      }
-      const text = await chatCompletion(messages, action.model, {
-        max_tokens: action.maxTokens ?? 8192,
-        temperature: 0,
-        extra_body: { enable_thinking: false },
-      });
-      return text?.trim()
-        ? { ok: true, text }
-        : { ok: false, error: "Empty summary returned" };
-    } catch (error) {
-      return { ok: false, error: String(error) };
-    }
-  }
-
   const response = await requestChatData(
     {
       formated: messages,

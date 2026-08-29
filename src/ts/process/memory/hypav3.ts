@@ -13,7 +13,6 @@ import type { Chat, character, groupChat } from "../../storage/schema";
 
 import { type OpenAIChat } from "@risuai/chat-core/types.cjs";
 import { requestChatData } from "../request/chatRequestOrchestrator";
-import { chatCompletion, unloadEngine } from "../webllm";
 import { hypaV3ProgressStore } from "src/ts/stores.svelte";
 import { type ChatTokenizer } from "src/ts/tokenizer";
 import { inlayTokenRegex } from "src/ts/util/inlayTokens";
@@ -170,12 +169,6 @@ export async function hypaMemoryV3(
     }
 
     throw new Error(`${logPrefix} ${errorMessage}`);
-  } finally {
-    if (settings.summarizationModel !== "subModel") {
-      try {
-        await unloadEngine();
-      } catch {}
-    }
   }
 }
 
@@ -389,17 +382,9 @@ async function hypaMemoryV3MainExp(
 
   // Process all collected summarization tasks
   if (toSummarizeArray.length > 0) {
-    // Initialize rate limiter
-    // Local model must be processed sequentially
     const rateLimiter = new TaskRateLimiter({
-      tasksPerMinute:
-        settings.summarizationModel === "subModel"
-          ? settings.summarizationRequestsPerMinute
-          : 1000,
-      maxConcurrentTasks:
-        settings.summarizationModel === "subModel"
-          ? settings.summarizationMaxConcurrent
-          : 1,
+      tasksPerMinute: settings.summarizationRequestsPerMinute,
+      maxConcurrentTasks: settings.summarizationMaxConcurrent,
     });
 
     rateLimiter.taskQueueChangeCallback = (queuedCount) => {
@@ -1737,70 +1722,37 @@ export async function summarize(
     },
   ];
 
-  // API
-  if (settings.summarizationModel === "subModel") {
-    console.log(logPrefix, `Using ax model ${db.subModel} for summarization.`);
+  console.log(logPrefix, `Using ax model ${db.subModel} for summarization.`);
 
-    const response = await requestChatData(
-      {
-        formated,
-        bias: {},
-        useStreaming: false,
-        noMultiGen: true,
-        currentChar: context.currentChar,
-        triggerTarget: context.chatTarget,
-      },
-      "memory",
-    );
-
-    if (response.type === "streaming" || response.type === "multiline") {
-      throw new Error("Unexpected response type");
-    }
-
-    if (response.type === "fail") {
-      throw new Error(response.result);
-    }
-
-    if (!response.result || response.result.trim().length === 0) {
-      throw new Error("Empty summary returned");
-    }
-
-    // Remove thoughts content for API
-    const thoughtsRegex = /<Thoughts>[\s\S]*?<\/Thoughts>/g;
-    const result = response.result.replace(thoughtsRegex, "").trim();
-
-    if (result.length === 0) {
-      throw new Error("Empty summary after removing thoughts content");
-    }
-
-    return result;
-  }
-
-  // Local — ensure system message comes first for WebLLM models
-  const firstSystemIndex = formated.findIndex((m) => m.role === "system");
-  if (firstSystemIndex > 0) {
-    const [system] = formated.splice(firstSystemIndex, 1);
-    formated.unshift(system);
-  }
-
-  const content = await chatCompletion(formated, settings.summarizationModel, {
-    max_tokens: 8192,
-    temperature: 0,
-    extra_body: {
-      enable_thinking: false,
+  const response = await requestChatData(
+    {
+      formated,
+      bias: {},
+      useStreaming: false,
+      noMultiGen: true,
+      currentChar: context.currentChar,
+      triggerTarget: context.chatTarget,
     },
-  });
+    "memory",
+  );
 
-  if (!content || content.trim().length === 0) {
+  if (response.type === "streaming" || response.type === "multiline") {
+    throw new Error("Unexpected response type");
+  }
+
+  if (response.type === "fail") {
+    throw new Error(response.result);
+  }
+
+  if (!response.result || response.result.trim().length === 0) {
     throw new Error("Empty summary returned");
   }
 
-  // Remove think content
-  const thinkRegex = /<think>[\s\S]*?<\/think>/g;
-  const result = content.replace(thinkRegex, "").trim();
+  const thoughtsRegex = /<Thoughts>[\s\S]*?<\/Thoughts>/g;
+  const result = response.result.replace(thoughtsRegex, "").trim();
 
   if (result.length === 0) {
-    throw new Error("Empty summary after removing think content");
+    throw new Error("Empty summary after removing thoughts content");
   }
 
   return result;

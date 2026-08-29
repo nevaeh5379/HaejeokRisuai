@@ -46,8 +46,7 @@ function v3Request() {
       customEmbedding: {},
       voyageApiKey: '',
       v3Settings: {
-        summarizationModel: 'subModel',
-        summarizationPrompt: '',
+            summarizationPrompt: '',
         reSummarizationPrompt: '',
         memoryTokensRatio: 0.2,
         extraSummarizationRatio: 0.1,

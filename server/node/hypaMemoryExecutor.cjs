@@ -417,15 +417,12 @@ async function* tokenizeTexts(texts) {
   return validateCounts(result, texts.length);
 }
 
-async function* summarizeTextWithClient(text, prompt, model, isV3 = false) {
+async function* summarizeTextWithClient(text, prompt) {
   const built = buildSummaryMessages(prompt, text);
   const result = yield {
     type: 'summarize',
     messages: built.messages,
     parseContents: built.parseContents,
-    model,
-    localModel: model !== 'subModel',
-    maxTokens: isV3 ? 8192 : undefined,
   };
   if (!result || result.ok !== true || typeof result.text !== 'string' || !result.text.trim()) {
     throw new Error(result?.error || 'Empty summary returned');
@@ -458,7 +455,7 @@ async function* summarizeV2(text, config) {
   }
   if (config.supaModelType === 'subModel') {
     const prompt = config.supaMemoryPrompt || '[Summarize the ongoing role story, It must also remove redundancy and unnecessary text and content from the output.]\n';
-    return yield* summarizeTextWithClient(text, prompt, 'subModel', false);
+    return yield* summarizeTextWithClient(text, prompt);
   }
   return directV2Summary(text, config);
 }
@@ -470,7 +467,7 @@ async function* summarizeLegacy(text, config) {
     return result.text;
   }
   const prompt = config.supaMemoryPrompt || '[Summarize the ongoing role story, It must also remove redundancy and unnecessary text and content from the output to reduce tokens for gpt3 and other sublanguage models]\n';
-  if (config.supaModelType === 'subModel') return yield* summarizeTextWithClient(text, prompt, 'subModel', false);
+  if (config.supaModelType === 'subModel') return yield* summarizeTextWithClient(text, prompt);
   return directV2Summary(text, { ...config, supaMemoryPrompt: prompt });
 }
 
@@ -841,7 +838,7 @@ async function* summarizeV3(chats, settings, isResummarize = false) {
     ? (String(settings.reSummarizationPrompt || '').trim() || 'Re-summarize this summaries.')
     : (String(settings.summarizationPrompt || '').trim() || '[Summarize the ongoing role story, It must also remove redundancy and unnecessary text and content from the output.]');
   const text = chats.map((chat) => `${chat.role}: ${sanitizeSummaryText(chat.content)}`).join('\n');
-  return yield* summarizeTextWithClient(text, prompt, settings.summarizationModel, true);
+  return yield* summarizeTextWithClient(text, prompt);
 }
 
 function addWithinBudget(candidates, tokenMap, budget, output) {

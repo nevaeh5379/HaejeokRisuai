@@ -4,7 +4,6 @@ export interface HypaV3Preset {
 }
 
 export interface HypaV3Settings {
-  summarizationModel: string;
   summarizationPrompt: string;
   reSummarizationPrompt: string;
   memoryTokensRatio: number;
@@ -31,7 +30,6 @@ export function createHypaV3Preset(
   existingSettings: Partial<HypaV3Settings> = {},
 ): HypaV3Preset {
   const settings: HypaV3Settings = {
-    summarizationModel: "subModel",
     summarizationPrompt: "",
     reSummarizationPrompt: "",
     memoryTokensRatio: 0.2,
