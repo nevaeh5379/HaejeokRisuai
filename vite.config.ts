@@ -27,12 +27,13 @@ export default defineConfig(({command, mode}) => {
     },
     plugins: [
       nodePolyfills({
-      globals: {
-        Buffer: true,
-        global: true,
-        process: true,
-      },
-    }),
+        globals: {
+          Buffer: true,
+          global: true,
+          process: true,
+        },
+        exclude: ['module'],
+      }),
       svelte({
         onwarn: (warning, handler) => {
           // disable a11y warnings

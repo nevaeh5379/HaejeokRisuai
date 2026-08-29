@@ -9,13 +9,40 @@ const version = resolveBuildVersion();
 const args = process.argv.slice(2);
 const command = args[0];
 const needsVersionConfig = command === "build" || command === "dev";
+const hasUpdaterSigningKey = Boolean(process.env.TAURI_SIGNING_PRIVATE_KEY);
+const tauriEnvironment = {
+  ...process.env,
+  ...(version.buildNumber === null
+    ? {}
+    : { HAEJEOK_BUILD_NUMBER: String(version.buildNumber) }),
+};
+
+if (process.platform === "linux" && command === "build") {
+  // linuxdeploy bundles an older strip that cannot read Arch Linux RELR sections.
+  tauriEnvironment.NO_STRIP ??= "1";
+}
+
+if (
+  process.platform === "linux" &&
+  command === "dev" &&
+  (process.env.XDG_SESSION_TYPE === "wayland" ||
+    process.env.GDK_BACKEND === "wayland")
+) {
+  // WebKitGTK's DMABUF renderer can terminate the web process on Wayland.
+  tauriEnvironment.WEBKIT_DISABLE_DMABUF_RENDERER ??= "1";
+}
 
 if (needsVersionConfig) {
+  const config = {
+    version: version.tauriVersion,
+    ...(command === "build" && !hasUpdaterSigningKey
+      ? { bundle: { createUpdaterArtifacts: false } }
+      : {}),
+  };
+
   args.push(
     "--config",
-    JSON.stringify({
-      version: version.tauriVersion,
-    }),
+    JSON.stringify(config),
   );
 }
 
@@ -25,12 +52,7 @@ console.log(
 
 const result = spawnSync(process.execPath, [tauriCli, ...args], {
   stdio: "inherit",
-  env: {
-    ...process.env,
-    ...(version.buildNumber === null
-      ? {}
-      : { HAEJEOK_BUILD_NUMBER: String(version.buildNumber) }),
-  },
+  env: tauriEnvironment,
 });
 if (result.error) {
   console.error(result.error);
