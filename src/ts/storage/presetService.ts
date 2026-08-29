@@ -9,16 +9,15 @@ import { presetStore } from "../stores/domain/presetStore.svelte";
 import { encode as encodeMsgpack, decode as decodeMsgpack } from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
 import { decodeRPack, encodeRPack } from "../rpack/rpack_js";
-import type { Database, botPreset } from "./schema";
+import type { DatabaseSettings, botPreset } from "./schema";
+import type { StoredBotPreset } from "./ISqlStorage";
 import { presetTemplate } from "./presetDefaults";
 import { LLMFormat } from "../model/types";
 
-export async function saveCurrentPreset() {
-  let db = settingsStore.state;
-  const current = presetStore.activePreset;
-  if (!current) {
-    return;
-  }
+export function createActivePresetSnapshot(
+  db: DatabaseSettings,
+  current: Pick<StoredBotPreset, "id" | "name" | "image">,
+): StoredBotPreset {
   const savedPreset: botPreset = {
     name: current.name,
     apiType: db.apiType,
@@ -106,7 +105,15 @@ export async function saveCurrentPreset() {
     dynamicOutput: db.dynamicOutput ?? null,
   };
 
-  await presetStore.savePreset({ ...savedPreset, id: current.id } as botPreset);
+  return { ...savedPreset, id: current.id } as StoredBotPreset;
+}
+
+export async function saveCurrentPreset() {
+  const current = presetStore.activePresetMetadata;
+  if (!current) return;
+  await presetStore.savePreset(
+    createActivePresetSnapshot(settingsStore.state, current),
+  );
 }
 
 export async function copyPreset(id: number) {
@@ -122,7 +129,7 @@ export async function changeToPreset(id = 0, savecurrent = true) {
   if (savecurrent) {
     await saveCurrentPreset();
   }
-  let db = settingsStore.state as Database;
+  const db = settingsStore.state;
   const summary = presetStore.summaries[id];
   if (!summary) return;
   const newPres = await presetStore.load(summary.id);
@@ -130,7 +137,7 @@ export async function changeToPreset(id = 0, savecurrent = true) {
   setPreset(db, newPres);
 }
 
-export function setPreset(db: Database, newPres: botPreset) {
+export function setPreset(db: DatabaseSettings, newPres: botPreset) {
   db.apiType = newPres.apiType ?? db.apiType;
   db.localNetworkMode = newPres.localNetworkMode ?? db.localNetworkMode;
   db.localNetworkTimeoutSec =

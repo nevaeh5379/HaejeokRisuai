@@ -49,6 +49,9 @@ import { getSqlStorage } from "../storage/sqlStorageFactory";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";
+import { personaStore } from "../stores/domain/personaStore.svelte";
+import { moduleStore } from "../stores/domain/moduleStore.svelte";
+import { saveCurrentPreset } from "../storage/presetService";
 import { decryptLegacyAccountBackup } from "./legacyBackupEncryption";
 import {
   makeLegacyCompatibleDatabase,
@@ -604,10 +607,15 @@ function normalizeBackupSnapshot(db: BackupDatabaseDraft): PortableDatabase {
 }
 
 async function flushDurableStores(): Promise<void> {
+  // SettingsStore is the canonical live model/prompt configuration. Fold it
+  // into the active preset before taking a storage-level backup snapshot.
+  await saveCurrentPreset();
   await Promise.all([
     characterStore.flush(),
     settingsStore.flush(),
     messageStore.flush(),
+    personaStore.flush(),
+    moduleStore.flush(),
   ]);
   if (
     characterStore.hasPendingWrites() ||

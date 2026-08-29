@@ -21,6 +21,8 @@ const PRESET_CACHE_MAX_ENTRIES = 6;
 
 class PresetStore {
   private storage: ISqlStorage | null = null;
+  private activePresetProvider: (() => StoredBotPreset | undefined) | null =
+    null;
   summaries = $state<BotPresetSummary[]>([]);
   activeId = $state("");
   private presetCache = new BoundedCache<string, StoredBotPreset>({
@@ -55,7 +57,22 @@ class PresetStore {
     return index < 0 ? 0 : index;
   }
   get activePreset(): StoredBotPreset | undefined {
-    return this.cache.get(this.activeId);
+    return this.activePresetProvider?.() ?? this.cache.get(this.activeId);
+  }
+
+  /**
+   * Makes the live SettingsStore configuration the canonical active preset.
+   * Only inactive preset documents remain cached after this boundary is bound.
+   */
+  bindActivePresetProvider(
+    provider: () => StoredBotPreset | undefined,
+  ): void {
+    this.activePresetProvider = provider;
+    this.cache.delete(this.activeId);
+  }
+
+  get activePresetMetadata(): BotPresetSummary | undefined {
+    return this.summaries.find((preset) => preset.id === this.activeId);
   }
 
   async init(storage: ISqlStorage): Promise<void> {
@@ -111,6 +128,10 @@ class PresetStore {
 
   async load(id: string, force = false): Promise<StoredBotPreset> {
     if (!this.storage) throw new Error("Preset store is not initialized");
+    if (id === this.activeId && this.activePresetProvider) {
+      const active = this.activePresetProvider();
+      if (active) return active;
+    }
     if (!force && this.cache.has(id)) return this.cache.get(id)!;
     const preset = await this.storage.loadBotPreset(id);
     if (!preset) throw new Error(`Preset not found: ${id}`);
@@ -160,7 +181,11 @@ class PresetStore {
       messages: [],
       messageManifests: [],
     });
-    this.cache.set(id, { ...data, id });
+    if (id === this.activeId && this.activePresetProvider) {
+      this.cache.delete(id);
+    } else {
+      this.cache.set(id, { ...data, id });
+    }
     this.summaries = await this.storage.listBotPresets();
   }
   async setActiveId(id: string, persist = true): Promise<void> {
@@ -171,6 +196,7 @@ class PresetStore {
     this.error = null;
     try {
       await this.load(id);
+      if (this.activePresetProvider) this.cache.delete(id);
       if (persist)
         await commitSqlChanges(this.storage, {
           baseRevision: this.storage.getRevision(),
@@ -274,6 +300,17 @@ class PresetStore {
     for (const summary of this.summaries)
       result.push(await this.load(summary.id));
     return result;
+  }
+
+  resetForTesting(): void {
+    this.storage = null;
+    this.activePresetProvider = null;
+    this.summaries = [];
+    this.activeId = "";
+    this.presetCache.clear();
+    this.listStatus = "idle";
+    this.activeStatus = "idle";
+    this.error = null;
   }
 }
 

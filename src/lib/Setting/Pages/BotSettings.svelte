@@ -1477,9 +1477,9 @@
             canvas.height = 48
             ctx.drawImage(img, 0, 0, 48, 48)
             const data = canvas.toDataURL('image/jpeg', 0.7)
-            if (presetStore.activePreset) {
-                presetStore.activePreset.image = data
-                await presetStore.savePreset(presetStore.activePreset)
+            const activePreset = presetStore.activePreset
+            if (activePreset) {
+                await presetStore.savePreset({...activePreset, image: data})
             }
         }}>
             <UploadIcon />

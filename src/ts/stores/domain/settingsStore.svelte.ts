@@ -1,4 +1,14 @@
 import type { DatabaseSettings } from "../../storage/schema";
+import type { ISqlStorage } from "../../storage/ISqlStorage";
+import { getSqlStorage } from "../../storage/sqlStorageFactory";
+import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
+import {
+  DOMAIN_STORE_SETTING_KEYS,
+  getSqlDeferredDomain,
+  PROMPT_SETTING_KEYS,
+  type SqlDeferredDomain,
+} from "../../storage/sqlDeferredSettings";
+import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 
 const FORBIDDEN_SETTINGS_KEYS = new Set([
   "characters",
@@ -30,17 +40,6 @@ function guardedSettingsState(state: Record<string, any>): Record<string, any> {
     },
   });
 }
-
-import type { ISqlStorage } from "../../storage/ISqlStorage";
-import { getSqlStorage } from "../../storage/sqlStorageFactory";
-import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
-import {
-  DOMAIN_STORE_SETTING_KEYS,
-  getSqlDeferredDomain,
-  PROMPT_SETTING_KEYS,
-  type SqlDeferredDomain,
-} from "../../storage/sqlDeferredSettings";
-import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 
 class SettingsStore {
   private storage: ISqlStorage | null = null;
@@ -430,8 +429,8 @@ class SettingsStore {
     this.scheduleCommit();
   }
 
-  update(updater: (state: Record<string, any>) => void): void {
-    updater(guardedSettingsState(this.stateData));
+  update(updater: (state: DatabaseSettings) => void): void {
+    updater(guardedSettingsState(this.stateData) as DatabaseSettings);
     for (const key of Object.keys(this.stateData)) {
       assertSettingsKey(key);
       if (key === "pluginCustomStorage") continue;
@@ -442,7 +441,7 @@ class SettingsStore {
   }
 
   /** Apply storage-derived runtime values without turning hydration into a write. */
-  hydrate(updater: (state: Record<string, any>) => void): void {
+  hydrate(updater: (state: DatabaseSettings) => void): void {
     const dirtyValues = new Map<string, any>();
     for (const key of this.dirtyKeys) {
       if (Object.prototype.hasOwnProperty.call(this.stateData, key)) {
@@ -458,7 +457,7 @@ class SettingsStore {
     this.keySetDispose = null;
     let hydrationError: unknown;
     try {
-      updater(guardedSettingsState(this.stateData));
+      updater(guardedSettingsState(this.stateData) as DatabaseSettings);
     } catch (error) {
       hydrationError = error;
     }

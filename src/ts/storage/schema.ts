@@ -38,8 +38,7 @@ export interface RisuPersona {
   embeddedModule?: RisuModule;
 }
 
-export interface Database {
-  characters: (character | groupChat)[];
+export interface DatabaseSettings {
   apiType: string;
   openAIKey: string;
   proxyKey: string;
@@ -64,9 +63,6 @@ export interface Database {
   }[];
   loreBookPage: number;
   supaMemoryPrompt: string;
-  username: string;
-  userIcon: string;
-  userNote: string;
   additionalPrompt: string;
   descriptionPrefix: string;
   forceReplaceUrl: string;
@@ -88,7 +84,6 @@ export interface Database {
   formatversion: number;
   waifuWidth: number;
   waifuWidth2: number;
-  activeBotPresetId?: string;
   sdProvider: string;
   webUiUrl: string;
   sdSteps: number;
@@ -180,7 +175,6 @@ export interface Database {
   proxyRequestModel: string;
   ooba: OobaSettings;
   ainconfig: AINsettings;
-  personaPrompt: string;
   openrouterRequestModel: string;
   openrouterSubRequestModel: string;
   openrouterKey: string;
@@ -196,8 +190,6 @@ export interface Database {
   nanogptUseSubscriptionEndpoint: boolean;
   nanogptSubUseSubscriptionEndpoint: boolean;
   openrouterFallback: boolean;
-  selectedPersona: number;
-  personas: RisuPersona[];
   personaNote: boolean;
   assetWidth: number;
   chatLimitSize: number;
@@ -262,9 +254,6 @@ export interface Database {
   lastPatchNoteCheckVersion?: string;
   removePunctuationHypa?: boolean;
   memoryLimitThickness?: number;
-  modules: RisuModule[];
-  enabledModules: string[];
-  moduleFolders: ModuleFolder[];
   sideMenuRerollButton?: boolean;
   requestInfoInsideChat?: boolean;
   additionalParams: [string, string][];
@@ -534,6 +523,26 @@ export interface Database {
   resizeTextarea?: boolean;
 }
 
+/**
+ * Complete portable database shape. Domain-owned data is composed around the
+ * settings shape so adding a setting requires changing only DatabaseSettings.
+ */
+export interface DatabaseDomainData {
+  characters: (character | groupChat)[];
+  username: string;
+  userIcon: string;
+  userNote: string;
+  personaPrompt: string;
+  activeBotPresetId?: string;
+  selectedPersona: number;
+  personas: RisuPersona[];
+  modules: RisuModule[];
+  enabledModules: string[];
+  moduleFolders: ModuleFolder[];
+}
+
+export interface Database extends DatabaseSettings, DatabaseDomainData {}
+
 /** Legacy root mirrors synthesized only at external compatibility boundaries. */
 export type LegacyPersonaMirrorKey =
   | "username"
@@ -545,19 +554,9 @@ export type LegacyPersonaMirrorKey =
 export type CanonicalDatabase = Omit<Database, LegacyPersonaMirrorKey>;
 
 /** Fields owned by dedicated domain stores rather than SettingsStore. */
-export type DomainStoreSettingKey =
-  | "personas"
-  | "selectedPersona"
-  | LegacyPersonaMirrorKey
-  | "modules"
-  | "enabledModules"
-  | "moduleFolders"
-  | "activeBotPresetId";
-
-/** Runtime settings contain only values owned by SettingsStore. */
-export type DatabaseSettings = Omit<
-  Database,
-  "characters" | DomainStoreSettingKey
+export type DomainStoreSettingKey = Exclude<
+  keyof DatabaseDomainData,
+  "characters"
 >;
 
 /** External backup/preset files retain the legacy ordered array boundary. */

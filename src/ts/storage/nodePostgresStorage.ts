@@ -14,6 +14,7 @@ import {
   type SqlCommit,
   type SqlCommitResult,
 } from "./sqlCommit";
+import { BoundedCache } from "../memory/boundedCache";
 
 import type {
   DbVendor,
@@ -221,10 +222,10 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     hash: string;
     presets: BotPresetSummary[];
   } | null = null;
-  private memoryBotPresetCache = new Map<
+  private memoryBotPresetCache = new BoundedCache<
     string,
     { hash: string; preset: StoredBotPreset }
-  >();
+  >({ maxEntries: 8 });
   private memoryLoreBookCache: {
     hash: string;
     loreBook: { name: string; data: loreBook[] }[];
@@ -620,10 +621,10 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
   private pluginKeyCacheForage = localforage.createInstance({
     name: "risuaiPostgresPluginKeyStorage",
   });
-  private memoryPluginKeyCache = new Map<
+  private memoryPluginKeyCache = new BoundedCache<
     string,
     { hash: string; value: any }
-  >();
+  >({ maxEntries: 64 });
 
   async listPluginCustomStorageKeys(): Promise<string[]> {
     if (!(await this.ensureEnabled())) {

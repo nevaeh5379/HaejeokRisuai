@@ -11,7 +11,10 @@ import { changeFullscreen, checkNullish, sleep } from "./util";
 import { v4 as uuidv4 } from "uuid";
 import { get } from "svelte/store";
 import { defaultSdDataFunc } from "./storage/presetDefaults";
-import { setPreset } from "./storage/presetService";
+import {
+  createActivePresetSnapshot,
+  setPreset,
+} from "./storage/presetService";
 import type { Database } from "./storage/schema";
 import { installStartupData } from "./storage/databaseLifecycle";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -357,7 +360,7 @@ export async function loadData() {
           }
           if (activePreset) {
             settingsStore.hydrate((state) =>
-              setPreset(state as Database, activePreset),
+              setPreset(state, activePreset),
             );
             const presetOwnedDeferredKeys = [
               "promptTemplate",
@@ -377,6 +380,12 @@ export async function loadData() {
                 : []),
             ];
             settingsStore.markDeferredLoaded(presetOwnedDeferredKeys);
+            presetStore.bindActivePresetProvider(() => {
+              const metadata = presetStore.activePresetMetadata;
+              return metadata
+                ? createActivePresetSnapshot(settingsStore.state, metadata)
+                : undefined;
+            });
           }
           performance.mark("active-preset-ready");
         })
