@@ -1,4 +1,5 @@
 import type { SqlCommit } from "./sqlCommit";
+import { isLegacyPersonaMirrorKey } from "./sqlDeferredSettings";
 import {
   flattenRelationalValue,
   MAX_RELATIONAL_NODE_DEPTH,
@@ -124,6 +125,12 @@ export function settingDomain(key: string): string {
   for (const [domain, keys] of Object.entries(SETTING_DOMAINS))
     if (keys.has(key)) return domain;
   return "account-sync-compatibility";
+}
+
+function assertCanonicalRootSetting(key: string): void {
+  if (isLegacyPersonaMirrorKey(key)) {
+    throw new Error(`${key} is a legacy persona mirror and cannot be persisted`);
+  }
 }
 
 function nodeBind(ownerValues: unknown[], row: RelationalNodeRow): unknown[] {
@@ -358,6 +365,7 @@ export function countSqliteCommitStatements(commit: SqlCommit): number {
   const replacingEntities = commit.action === "replace-entities";
 
   for (const upsert of commit.root.upserts) {
+    assertCanonicalRootSetting(upsert.key);
     if (upsert.key === "botPresets" || upsert.key === "botPresetsId") {
       throw new Error(`${upsert.key} must be written through presets`);
     }
@@ -661,6 +669,7 @@ async function applySettingDeletes(commit: SqlCommit, execute: SqliteExecute) {
 
 async function applySettingUpsert(commit: SqlCommit, execute: SqliteExecute) {
   for (const upsert of commit.root.upserts) {
+    assertCanonicalRootSetting(upsert.key);
     if (upsert.key === "botPresets" || upsert.key === "botPresetsId")
       throw new Error(`${upsert.key} must be written through presets`);
     if (upsert.key === "pluginCustomStorage") continue;

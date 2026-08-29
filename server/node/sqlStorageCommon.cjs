@@ -11,9 +11,11 @@ const {
     DEFERRED_SETTING_KEYS,
     DEFERRED_STARTUP_SETTING_KEYS,
     PROMPT_SETTING_KEYS,
+    LEGACY_PERSONA_MIRROR_KEYS,
     DOMAIN_STORE_SETTING_KEYS,
     BOOTSTRAP_SETTING_KEYS,
 } = require('../../packages/protocol/settings.json');
+const LEGACY_PERSONA_MIRROR_KEY_SET = new Set(LEGACY_PERSONA_MIRROR_KEYS);
 
 class SqlStorageBase {
     constructor() {
@@ -279,7 +281,18 @@ function createSqlStorageHelpers({
         }
     }
 
-    const validateSyncPayload = createSqlCommitValidator({ PayloadError, maxIdLength });
+    const validateProtocolSyncPayload = createSqlCommitValidator({ PayloadError, maxIdLength });
+    const validateSyncPayload = (rawPayload) => {
+        const payload = validateProtocolSyncPayload(rawPayload);
+        const legacyUpsert = payload.rootUpserts.find((upsert) =>
+            LEGACY_PERSONA_MIRROR_KEY_SET.has(upsert.key));
+        if (legacyUpsert) {
+            throw new PayloadError(
+                `${legacyUpsert.key} is a legacy persona mirror and cannot be persisted`
+            );
+        }
+        return payload;
+    };
 
     return {
         asArray,
@@ -420,6 +433,7 @@ module.exports = {
     DEFERRED_SETTING_KEYS,
     DEFERRED_STARTUP_SETTING_KEYS,
     PROMPT_SETTING_KEYS,
+    LEGACY_PERSONA_MIRROR_KEYS,
     DOMAIN_STORE_SETTING_KEYS,
     BOOTSTRAP_SETTING_KEYS,
     SqlStorageBase,

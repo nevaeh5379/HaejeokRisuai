@@ -23,9 +23,6 @@ const coreScalarDefaults = {
   jailbreakToggle: defaultBoolean(false),
   loreBookDepth: defaultNumber(5),
   loreBookToken: defaultNumber(800),
-  username: defaultString("User"),
-  userIcon: defaultString(),
-  userNote: defaultString(),
   additionalPrompt: defaultString(
     "The assistant must act as {{char}}. user is {{user}}.",
   ),

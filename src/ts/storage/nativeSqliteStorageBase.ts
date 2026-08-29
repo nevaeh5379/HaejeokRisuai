@@ -3,6 +3,7 @@ import type {
   character,
   Chat,
   customscript,
+  CanonicalDatabase,
   Database as DatabaseType,
   DatabaseSettings,
   groupChat,
@@ -41,7 +42,11 @@ import {
   SqlSchemaResetRequiredError,
 } from "./relationalNodeCodec";
 import { applySqliteCommit, writeSqliteColdStorage } from "./sqliteCommit";
-import { DEFERRED_STARTUP_SETTING_KEYS, DOMAIN_STORE_SETTING_KEYS } from "./sqlDeferredSettings";
+import {
+  DEFERRED_STARTUP_SETTING_KEYS,
+  DOMAIN_STORE_SETTING_KEYS,
+  LEGACY_PERSONA_MIRROR_KEYS,
+} from "./sqlDeferredSettings";
 import {
   AsyncSerialQueue,
   buildCharacterAssetFieldsQuery,
@@ -309,9 +314,9 @@ export abstract class NativeSqliteStorageBase {
     }
 
     const shallow = false;
-    const db: DatabaseType = {} as any;
+    const db: CanonicalDatabase = {} as CanonicalDatabase;
 
-    const deferredKeyList = shallow ? DEFERRED_STARTUP_SETTING_KEYS : [];
+    const deferredKeyList = [...LEGACY_PERSONA_MIRROR_KEYS];
     const settingQuery = this.buildSettingRowsQuery(deferredKeyList, shallow);
     const characterQuery: SqliteTransactionStatement = {
       sql: "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",

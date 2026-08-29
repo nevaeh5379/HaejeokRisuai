@@ -161,6 +161,16 @@ describe('shared SQL storage helpers', () => {
         })).toThrow(/written through presets/)
     })
 
+    it('rejects legacy persona mirrors as canonical root settings', () => {
+        const helpers = createSqlStorageHelpers({ PayloadError: TestPayloadError })
+        for (const key of ['username', 'userIcon', 'userNote', 'personaPrompt']) {
+            expect(() => helpers.validateSyncPayload({
+                baseRevision: 1,
+                root: { upserts: [{ key, value: 'legacy' }], deletes: [] },
+            })).toThrow(/legacy persona mirror/)
+        }
+    })
+
     it('groups relational child rows by entity and message', () => {
         const rows = [
             { owner_id: 'a', chat_id: 'chat', message_id: 'one' },

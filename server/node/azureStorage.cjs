@@ -42,6 +42,7 @@ const {
 } = require('./storageDriver.cjs');
 const {
     DEFERRED_STARTUP_SETTING_KEYS,
+    LEGACY_PERSONA_MIRROR_KEYS,
     DOMAIN_STORE_SETTING_KEYS,
     SqlStorageBase,
     createSqlStorageHelpers,
@@ -147,6 +148,9 @@ const STARTUP_EXCLUDED_SETTING_KEYS = [
     ...new Set([...DEFERRED_STARTUP_SETTING_KEYS, ...DOMAIN_STORE_SETTING_KEYS]),
 ];
 const STARTUP_EXCLUDED_KEYS_SQL_LITERAL = STARTUP_EXCLUDED_SETTING_KEYS
+    .map((key) => `'${key.replace(/'/g, "''")}'`)
+    .join(', ');
+const LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL = LEGACY_PERSONA_MIRROR_KEYS
     .map((key) => `'${key.replace(/'/g, "''")}'`)
     .join(', ');
 
@@ -682,12 +686,12 @@ class AzureStorage extends SqlStorageBase {
         }
 
         // 1. Settings
-        const settingsQuery = 'SELECT [key], [text_val], [num_val], [bool_val] FROM [system].[settings] ORDER BY [key]';
+        const settingsQuery = `SELECT [key], [text_val], [num_val], [bool_val] FROM [system].[settings] WHERE [key] NOT IN (${LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL}) ORDER BY [key]`;
         const settingsRes = await pool.request().query(settingsQuery);
         const settings = settingsRes.recordset;
         const settingKeys = new Set(settings.map((row) => row.key));
         const settingValuesRes = await pool.request().query(
-            'SELECT * FROM [system].[setting_values] ORDER BY setting_key, node_id'
+            `SELECT * FROM [system].[setting_values] WHERE setting_key NOT IN (${LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL}) ORDER BY setting_key, node_id`
         );
         const database = rebuildSettings(settings,
             settingValuesRes.recordset.filter((row) => settingKeys.has(row.setting_key)));

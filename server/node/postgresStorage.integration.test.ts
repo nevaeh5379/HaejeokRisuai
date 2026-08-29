@@ -104,7 +104,7 @@ describePostgres('PostgreSQL structured storage integration', () => {
             replaceAll: true,
             root: {
                 upserts: [
-                    { key: 'username', value: 'user' },
+                    { key: 'theme', value: 'dark' },
                     { key: 'optionalValue', value: null },
                     { key: 'sourceWithNul', value: { code: 'tool\0separator' } },
                     { key: 'translatorPresets', value: [{ name: 'Korean', prompt: 'Translate', maxResponse: 2048 }] },
@@ -192,7 +192,7 @@ describePostgres('PostgreSQL structured storage integration', () => {
         const loaded = await storage.exportDatabaseSnapshot()
         expect(loaded.revision).toBe(1)
         expect(loaded.initialized).toBe(true)
-        expect(loaded.database?.username).toBe('user')
+        expect(loaded.database?.theme).toBe('dark')
         expect(loaded.database?.optionalValue).toBeNull()
         expect(loaded.database?.sourceWithNul).toEqual({ code: 'tool\0separator' })
         expect(loaded.database?.translatorPresets).toEqual([
@@ -219,7 +219,7 @@ describePostgres('PostgreSQL structured storage integration', () => {
             baseRevision: 1,
             root: {
                 upserts: [
-                    { key: 'username', value: 'renamed' },
+                    { key: 'theme', value: 'light' },
                     { key: 'sourceWithNul', value: { code: 'updated\0text' } },
                 ],
                 deletes: ['optionalValue'],
@@ -254,7 +254,7 @@ describePostgres('PostgreSQL structured storage integration', () => {
 
         const updated = await storage.exportDatabaseSnapshot()
         expect(updated.revision).toBe(2)
-        expect(updated.database?.username).toBe('renamed')
+        expect(updated.database?.theme).toBe('light')
         expect(updated.database?.optionalValue).toBeUndefined()
         expect(updated.database?.sourceWithNul).toEqual({ code: 'updated\0text' })
         expect(updated.database?.translatorPresets).toEqual([
@@ -478,7 +478,7 @@ describePostgres('PostgreSQL structured storage integration', () => {
         await storage.sync({
             baseRevision: 0,
             replaceAll: true,
-            root: { upserts: [{ key: 'username', value: 'first' }], deletes: [] },
+            root: { upserts: [{ key: 'theme', value: 'first' }], deletes: [] },
             characterIds: [],
             characters: [],
             chats: [],
@@ -489,9 +489,9 @@ describePostgres('PostgreSQL structured storage integration', () => {
 
         await expect(storage.sync({
             baseRevision: 0,
-            root: { upserts: [{ key: 'username', value: 'stale' }], deletes: [] },
+            root: { upserts: [{ key: 'theme', value: 'stale' }], deletes: [] },
         })).rejects.toBeInstanceOf(PostgresRevisionConflictError)
-        expect((await storage.exportDatabaseSnapshot()).database?.username).toBe('first')
+        expect((await storage.exportDatabaseSnapshot()).database?.theme).toBe('first')
     })
 
     it('stores cold data in relational chat and message tables and prunes it with one set operation', async () => {
@@ -593,7 +593,7 @@ describePostgres('PostgreSQL structured storage integration', () => {
             replaceAll: true,
             root: {
                 upserts: [
-                    { key: 'username', value: 'first' },
+                    { key: 'theme', value: 'first' },
                     { key: 'translatorPresets', value: [{ name: 'Old', prompt: 'old', maxResponse: 100 }] },
                     { key: 'loadouts', value: [{
                         id: 'loadout-1', name: 'First loadout', lastUsed: 100, favorite: true,
@@ -616,7 +616,7 @@ describePostgres('PostgreSQL structured storage integration', () => {
             baseRevision: 1,
             root: {
                 upserts: [
-                    { key: 'username', value: 'second' },
+                    { key: 'theme', value: 'second' },
                     { key: 'translatorPresets', value: [{ name: 'New', prompt: 'new', maxResponse: 200 }] },
                     { key: 'loadouts', value: [{
                         id: 'loadout-1', name: 'Updated loadout', lastUsed: 200, favorite: false,
@@ -649,7 +649,7 @@ describePostgres('PostgreSQL structured storage integration', () => {
         const history = await storage.listRevisions()
         expect(history.map((revision) => revision.id)).toEqual([2, 1])
         await storage.restoreRevision(1)
-        expect((await storage.exportDatabaseSnapshot()).database?.username).toBe('first')
+        expect((await storage.exportDatabaseSnapshot()).database?.theme).toBe('first')
         expect((await storage.exportDatabaseSnapshot()).database?.translatorPresets).toEqual([
             { name: 'Old', prompt: 'old', maxResponse: 100 },
         ])

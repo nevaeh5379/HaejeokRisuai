@@ -10,7 +10,20 @@ import type { Database } from "./schema";
 describe("SQL row commits", () => {
   it("keeps character, chat, and message rows separate during explicit import", () => {
     const database = {
-      username: "User",
+      username: "Legacy User",
+      userIcon: "legacy-user.png",
+      userNote: "legacy note",
+      personaPrompt: "legacy prompt",
+      personas: [
+        {
+          name: "Canonical User",
+          icon: "persona.png",
+          note: "canonical note",
+          personaPrompt: "canonical prompt",
+          largePortrait: false,
+        },
+      ],
+      selectedPersona: 0,
       characters: [
         {
           chaId: "character-1",
@@ -50,9 +63,14 @@ describe("SQL row commits", () => {
     expect(commit.baseRevision).toBe(7);
     expect(commit.replaceAll).toBe(true);
     expect(commit.root.upserts).toEqual([
-      { key: "username", value: "User" },
+      { key: "personas", value: database.personas },
+      { key: "selectedPersona", value: 0 },
       { key: "pluginCustomStorage", value: {} },
     ]);
+    const rootKeys = commit.root.upserts.map(({ key }) => key);
+    for (const key of ["username", "userIcon", "userNote", "personaPrompt"]) {
+      expect(rootKeys).not.toContain(key);
+    }
     expect(commit.characters).toHaveLength(1);
     expect(commit.characters[0].data).not.toHaveProperty("chats");
     expect(commit.chats).toHaveLength(1);

@@ -32,6 +32,7 @@ const {
 const {
     DEFERRED_SETTING_KEYS,
     DEFERRED_STARTUP_SETTING_KEYS,
+    LEGACY_PERSONA_MIRROR_KEYS,
     DOMAIN_STORE_SETTING_KEYS,
     SqlStorageBase,
     createSqlStorageHelpers,
@@ -83,6 +84,9 @@ const STARTUP_EXCLUDED_SETTING_KEYS = [
     ...new Set([...DEFERRED_STARTUP_SETTING_KEYS, ...DOMAIN_STORE_SETTING_KEYS]),
 ];
 const STARTUP_EXCLUDED_KEYS_SQL_LITERAL = STARTUP_EXCLUDED_SETTING_KEYS
+    .map((key) => `'${key}'`)
+    .join(', ');
+const LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL = LEGACY_PERSONA_MIRROR_KEYS
     .map((key) => `'${key}'`)
     .join(', ');
 
@@ -1453,7 +1457,7 @@ class PostgresStorage extends SqlStorageBase {
             const queries = [
                 `SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key NOT IN (${STARTUP_EXCLUDED_KEYS_SQL_LITERAL}) ORDER BY key`,
                 `SELECT * FROM system.setting_values WHERE setting_key NOT IN (${STARTUP_EXCLUDED_KEYS_SQL_LITERAL}) ORDER BY setting_key, node_id`,
-                'SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM character.characters ORDER BY position, id',
+                'SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time FROM character.characters ORDER BY position, id',
             ];
             const [settingsRows, settingValueRows, characterRows] =
                 (await client.query(queries.join(';\n'))).map((result) => result.rows);
@@ -1503,8 +1507,8 @@ class PostgresStorage extends SqlStorageBase {
             }
 
             const loadQueries = [
-                'SELECT key, text_val, num_val, bool_val FROM system.settings ORDER BY key',
-                'SELECT * FROM system.setting_values ORDER BY setting_key, node_id',
+                `SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key NOT IN (${LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL}) ORDER BY key`,
+                `SELECT * FROM system.setting_values WHERE setting_key NOT IN (${LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL}) ORDER BY setting_key, node_id`,
                 'SELECT * FROM character.characters ORDER BY position, id',
                 'SELECT * FROM character.attributes ORDER BY character_id, key',
                 'SELECT * FROM character.tags ORDER BY character_id, position',

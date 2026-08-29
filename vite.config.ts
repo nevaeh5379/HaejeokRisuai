@@ -16,11 +16,7 @@ const localCommonJsDependencies = localCommonJsPackages.flatMap((packageName) =>
 
 // https://vitejs.dev/config/
 export default defineConfig(({command, mode}) => {
-  nodePolyfills({
-      globals: {
-        Buffer: true,
-      },
-    })
+  
   const buildVersion = resolveBuildVersion()
   console.log(`[HaejeokRisuAI] Build version: ${buildVersion.buildTag} (${buildVersion.source})`)
 
@@ -30,6 +26,13 @@ export default defineConfig(({command, mode}) => {
       'import.meta.env.VITE_HAEJEOK_BUILD_NUMBER': JSON.stringify(buildVersion.buildNumber ?? 0),
     },
     plugins: [
+      nodePolyfills({
+      globals: {
+        Buffer: true,
+        global: true,
+        process: true,
+      },
+    }),
       svelte({
         onwarn: (warning, handler) => {
           // disable a11y warnings
@@ -133,6 +136,7 @@ export default defineConfig(({command, mode}) => {
       // Otherwise every lazy screen causes its parser/model dependencies to be
       // module-preloaded with the initial HTML through the shared stores chunk.
       rolldownOptions: {
+        external: ['node:fs/promises'],
         checks: {
           // Rolldown's relative plugin timing heuristic is noisy for known-heavy
           // Vite/WASM asset plugins and does not indicate a correctness issue.
@@ -268,6 +272,7 @@ export default defineConfig(({command, mode}) => {
     worker: {
       format: 'es',
       rolldownOptions: {
+        external: ['node:fs/promises'],
         checks: {
           pluginTimings: false,
         },

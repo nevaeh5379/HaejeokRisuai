@@ -5,12 +5,7 @@ const FORBIDDEN_SETTINGS_KEYS = new Set([
   "isSql",
   "botPresets",
   "botPresetsId",
-  "personas",
-  "selectedPersona",
-  "modules",
-  "enabledModules",
-  "moduleFolders",
-  "activeBotPresetId",
+  ...DOMAIN_STORE_SETTING_KEYS,
 ]);
 
 function assertSettingsKey(key: string): void {
@@ -40,6 +35,7 @@ import type { ISqlStorage } from "../../storage/ISqlStorage";
 import { getSqlStorage } from "../../storage/sqlStorageFactory";
 import { commitSqlChanges } from "../../storage/sqlCommitCoordinator";
 import {
+  DOMAIN_STORE_SETTING_KEYS,
   getSqlDeferredDomain,
   PROMPT_SETTING_KEYS,
   type SqlDeferredDomain,

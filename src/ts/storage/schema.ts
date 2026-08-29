@@ -534,10 +534,21 @@ export interface Database {
   resizeTextarea?: boolean;
 }
 
+/** Legacy root mirrors synthesized only at external compatibility boundaries. */
+export type LegacyPersonaMirrorKey =
+  | "username"
+  | "userIcon"
+  | "userNote"
+  | "personaPrompt";
+
+/** Canonical SQL snapshots never persist legacy persona mirrors. */
+export type CanonicalDatabase = Omit<Database, LegacyPersonaMirrorKey>;
+
 /** Fields owned by dedicated domain stores rather than SettingsStore. */
 export type DomainStoreSettingKey =
   | "personas"
   | "selectedPersona"
+  | LegacyPersonaMirrorKey
   | "modules"
   | "enabledModules"
   | "moduleFolders"

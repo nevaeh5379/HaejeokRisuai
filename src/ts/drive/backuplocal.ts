@@ -21,7 +21,12 @@ import { LocalWriter, forageStorage } from "../globalApi.svelte";
 import { isCapacitor, isNodeServer, isTauri } from "src/ts/platform";
 import { decodeRisuSave, encodeRisuSaveLegacyAsync } from "../storage/risuSave";
 import { normalizeDatabaseDefaults } from "../storage/databaseDefaults";
-import type { Database, PortableDatabase } from "../storage/schema";
+import type {
+  CanonicalDatabase,
+  Database,
+  LegacyPersonaMirrorKey,
+  PortableDatabase,
+} from "../storage/schema";
 
 import { relaunch } from "@tauri-apps/plugin-process";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -488,9 +493,13 @@ async function saveNodeLocalBackupStream(mode: LocalBackupMode) {
   }
 }
 
+type BackupDatabaseDraft = CanonicalDatabase &
+  Partial<Pick<Database, LegacyPersonaMirrorKey>> &
+  Partial<Pick<PortableDatabase, "botPresets" | "botPresetsId">>;
+
 async function loadFullSqlBackupSnapshot(
   onProgress?: (msg: string) => void,
-): Promise<PortableDatabase | null> {
+): Promise<BackupDatabaseDraft | null> {
   try {
     const storage = await getSqlStorage();
     if (!(await storage.init())) return null;
@@ -505,7 +514,7 @@ async function loadFullSqlBackupSnapshot(
     try {
       const loaded = await storage.exportDatabaseSnapshot();
       if (!loaded?.database) return null;
-      return loaded.database as PortableDatabase;
+      return loaded.database;
     } finally {
       clearInterval(timer);
     }
@@ -520,13 +529,13 @@ async function loadFullSqlBackupSnapshot(
 
 async function loadFallbackBackupSnapshot(
   onProgress?: (msg: string) => void,
-): Promise<PortableDatabase> {
+): Promise<BackupDatabaseDraft> {
   onProgress?.("Loading database from storage...");
   await settingsStore.ensureDeferredLoaded();
   // $state.snapshot already returns a detached deep copy of the reactive
   // tree, so a second structuredClone here doubled the peak memory of the
   // backup path (the dominant cost on 4GB Android devices) for no benefit.
-  const snapshot = createDatabaseSnapshot() as PortableDatabase;
+  const snapshot: BackupDatabaseDraft = createDatabaseSnapshot();
 
   try {
     const storage = await getSqlStorage();
@@ -559,15 +568,15 @@ async function loadFallbackBackupSnapshot(
   return snapshot;
 }
 
-function normalizeBackupSnapshot(db: PortableDatabase): void {
+function normalizeBackupSnapshot(db: BackupDatabaseDraft): PortableDatabase {
   db.pluginCustomStorage ??= {};
   if (!db.personas || db.personas.length === 0) {
     db.personas = [
       {
-        name: db.username || "User",
-        icon: db.userIcon || "",
-        personaPrompt: "",
-        note: db.userNote || "",
+        name: db.username ?? "User",
+        icon: db.userIcon ?? "",
+        personaPrompt: db.personaPrompt ?? "",
+        note: db.userNote ?? "",
         largePortrait: false,
       },
     ];
@@ -578,11 +587,20 @@ function normalizeBackupSnapshot(db: PortableDatabase): void {
   }
   if (
     typeof db.selectedPersona !== "number" ||
-    db.selectedPersona < 0 ||
-    db.selectedPersona >= db.personas.length
+    !Number.isInteger(db.selectedPersona) ||
+    !db.personas[db.selectedPersona]
   ) {
     db.selectedPersona = 0;
   }
+
+  const activePersona = db.personas[db.selectedPersona];
+  db.username = activePersona.name;
+  db.userIcon = activePersona.icon;
+  db.userNote = activePersona.note ?? "";
+  db.personaPrompt = activePersona.personaPrompt;
+  db.botPresets ??= [];
+  db.botPresetsId ??= 0;
+  return db as PortableDatabase;
 }
 
 async function flushDurableStores(): Promise<void> {
@@ -628,8 +646,7 @@ export async function createBackupDatabaseSnapshot(
     }
   } catch {}
 
-  normalizeBackupSnapshot(db);
-  return db;
+  return normalizeBackupSnapshot(db);
 }
 
 type BackupAssetScope = "all" | "essential";

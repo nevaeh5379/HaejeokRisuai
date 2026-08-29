@@ -461,7 +461,7 @@ describe("NodePostgresStorage browser client", () => {
           JSON.stringify({
             status: "ready",
             revision: 10,
-            settings: { username: "test-user", theme: "dark" },
+            settings: { theme: "dark" },
             characters: [],
             deferredSettingKeys: ["plugins"],
           }),
@@ -472,7 +472,19 @@ describe("NodePostgresStorage browser client", () => {
         new Response(
           JSON.stringify({
             revision: 10,
-            database: { username: "test-user", characters: [] },
+            database: {
+              personas: [
+                {
+                  name: "test-user",
+                  icon: "",
+                  note: "",
+                  personaPrompt: "",
+                  largePortrait: false,
+                },
+              ],
+              selectedPersona: 0,
+              characters: [],
+            },
           }),
           { status: 200 },
         ),
@@ -481,13 +493,14 @@ describe("NodePostgresStorage browser client", () => {
 
     const storage = new NodePostgresStorage(async () => "test-auth");
     const startup = await storage.loadStartupData();
-    expect(startup?.settings.username).toBe("test-user");
     expect(startup?.settings.theme).toBe("dark");
+    expect(Object.prototype.hasOwnProperty.call(startup?.settings ?? {}, "username")).toBe(false);
     expect(startup?.characters).toEqual([]);
     expect(fetchMock.mock.calls[0][0]).toBe("/api/database-v2/startup");
 
     const snapshot = await storage.exportDatabaseSnapshot();
-    expect(snapshot?.database?.username).toBe("test-user");
+    expect(snapshot?.database?.personas[0]?.name).toBe("test-user");
+    expect(Object.prototype.hasOwnProperty.call(snapshot?.database ?? {}, "username")).toBe(false);
     expect(fetchMock.mock.calls[1][0]).toBe("/api/database-v2/export");
   });
 
@@ -499,7 +512,7 @@ describe("NodePostgresStorage browser client", () => {
           JSON.stringify({
             status: "ready",
             revision: 10,
-            settings: { username: "test-user" },
+            settings: {},
             characters: [],
             deferredSettingKeys: ["plugins"],
           }),
@@ -618,7 +631,7 @@ describe("NodePostgresStorage browser client", () => {
           JSON.stringify({
             status: "ready",
             revision: 10,
-            settings: { username: "test-user" },
+            settings: {},
             characters: [],
             deferredSettingKeys: ["plugins"],
           }),
@@ -709,7 +722,7 @@ describe("NodePostgresStorage browser client", () => {
           JSON.stringify({
             status: "ready",
             revision: 10,
-            settings: { username: "test-user" },
+            settings: {},
             characters: [],
             deferredSettingKeys: ["plugins"],
           }),
@@ -752,7 +765,7 @@ describe("NodePostgresStorage browser client", () => {
 
     const storage = new NodePostgresStorage(async () => "test-auth");
     const result = await storage.loadStartupData();
-    expect(result?.settings.username).toBe("test-user");
+    expect(Object.prototype.hasOwnProperty.call(result?.settings ?? {}, "username")).toBe(false);
     expect(result?.characters).toEqual([]);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);

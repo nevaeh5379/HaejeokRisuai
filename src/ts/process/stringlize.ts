@@ -126,7 +126,7 @@ export function getStopStrings(suggesting: boolean = false) {
   if (!seperator) {
     seperator = "\n";
   }
-  const { username } = db;
+  const username = getUserName();
   const stopStrings = [
     "GPT4 User",
     "</s>",

@@ -22,6 +22,7 @@ import {
 import type { ISqlStorage } from "./ISqlStorage";
 import {
   DEFERRED_STARTUP_SETTING_KEYS,
+  LEGACY_PERSONA_MIRROR_KEYS,
   PROMPT_SETTING_KEYS,
 } from "./sqlDeferredSettings";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
@@ -78,7 +79,10 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     const db = loaded?.database as any;
     expect(db).toBeDefined();
 
-    expect(db.username).toBe("tester");
+    for (const key of LEGACY_PERSONA_MIRROR_KEYS) {
+      expect(Object.prototype.hasOwnProperty.call(db, key)).toBe(false);
+    }
+    expect(db.personas).toEqual(source.personas);
     expect(db.language).toBe("en");
     expect(db.theme).toBe("dark");
     expect(db.characters[0].chats[0].message.map((m: Message) => m.data)).toEqual([
@@ -103,6 +107,16 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(chat?.message.map((m) => m.data)).toEqual(["one", "two"]);
     expect(chat?.message[0].generationInfo?.model).toBe("test-model");
     expect(chat?.message[0].promptInfo?.promptName).toBe("preset");
+    database.close();
+  });
+
+  it("rejects legacy persona mirrors as canonical root writes", async () => {
+    const { storage, database } = makeFreshHarness(make);
+    for (const key of LEGACY_PERSONA_MIRROR_KEYS) {
+      const commit = createEmptySqlCommit(storage.getRevision(), "legacy-mirror-test");
+      commit.root.upserts.push({ key, value: "legacy" });
+      await expect(storage.commit(commit)).rejects.toThrow(/legacy persona mirror/);
+    }
     database.close();
   });
 
@@ -351,12 +365,14 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     const { storage, database } = makeFreshHarness(make);
     await seed(storage);
     const replacement = buildFullDatabase();
-    replacement.username = "replaced";
+    replacement.username = "legacy mirror must be ignored";
+    replacement.personas[0].name = "replaced";
     replacement.characters = [];
     await storage.replaceDatabase(replacement as Database);
 
     const loaded = (await storage.exportDatabaseSnapshot())?.database as any;
-    expect(loaded.username).toBe("replaced");
+    expect(Object.prototype.hasOwnProperty.call(loaded, "username")).toBe(false);
+    expect(loaded.personas[0].name).toBe("replaced");
     expect(loaded.characters).toEqual([]);
     const charCount = database
       .prepare("SELECT COUNT(*) AS count FROM characters")

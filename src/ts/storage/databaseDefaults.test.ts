@@ -3,6 +3,7 @@ import type { Database } from "./schema";
 import {
   normalizeDatabaseDefaults,
   normalizeDatabaseInput,
+  normalizeSettingsInput,
   type DatabaseInput,
 } from "./databaseDefaults";
 
@@ -138,6 +139,16 @@ describe("normalizeDatabaseDefaults", () => {
     expect(db.maxContext).toBe(4000);
     expect(db.promptSettings.sendName).toBe(false);
     expect(db.openrouterProvider.order).toEqual([]);
+  });
+
+  it("keeps legacy persona mirrors out of runtime settings normalization", () => {
+    const settings = normalizeSettingsInput({});
+    for (const key of ["username", "userIcon", "userNote", "personaPrompt"]) {
+      expect(Object.prototype.hasOwnProperty.call(settings, key)).toBe(false);
+      expect(() => normalizeSettingsInput({ [key]: "legacy" })).toThrow(
+        /owned by another domain store/,
+      );
+    }
   });
 
   it("rejects non-object unknown database roots", () => {

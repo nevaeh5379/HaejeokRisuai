@@ -33,7 +33,6 @@ const contentScalarDefaults = {
   voyageApiKey: defaultString(),
   supaModelType: defaultString("none"),
   askRemoval: defaultBoolean(true),
-  personaPrompt: defaultString(),
   sendWithEnter: defaultBoolean(true),
   autoSuggestPrompt: defaultString(defaultAutoSuggestPrompt),
   autoSuggestPrefix: defaultString(),

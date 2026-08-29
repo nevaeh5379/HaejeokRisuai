@@ -1,5 +1,6 @@
 import type {
   Database,
+  CanonicalDatabase,
   DatabaseSettings,
   character,
   groupChat,
@@ -41,7 +42,8 @@ export interface SqlStartupDataResult {
 
 export interface SqlDatabaseSnapshotResult {
   revision: number;
-  database: Database | null;
+  /** Canonical aggregate for storage/backup work; legacy persona mirrors are absent. */
+  database: CanonicalDatabase | null;
 }
 
 export interface SqlChatLoadOptions {

@@ -46,6 +46,10 @@ afterAll(() => {
 describe('buildFullBackupPayload', () => {
     it('builds a replaceAll payload with the sync wire format', () => {
         const database = {
+            username: 'Legacy User',
+            userIcon: 'legacy-user.png',
+            userNote: 'legacy note',
+            personaPrompt: 'legacy prompt',
             mainPrompt: 'you are helpful',
             temperature: 0.7,
             pluginCustomStorage: undefined,

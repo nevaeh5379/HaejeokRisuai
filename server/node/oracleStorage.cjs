@@ -56,6 +56,7 @@ const {
 } = require('./storageDriver.cjs');
 const {
     DEFERRED_STARTUP_SETTING_KEYS,
+    LEGACY_PERSONA_MIRROR_KEYS,
     DOMAIN_STORE_SETTING_KEYS,
     SqlStorageBase,
     createSqlStorageHelpers,
@@ -178,6 +179,9 @@ const STARTUP_EXCLUDED_SETTING_KEYS = [
     ...new Set([...DEFERRED_STARTUP_SETTING_KEYS, ...DOMAIN_STORE_SETTING_KEYS]),
 ];
 const STARTUP_EXCLUDED_KEYS_SQL_LITERAL = STARTUP_EXCLUDED_SETTING_KEYS
+    .map((key) => `'${key.replace(/'/g, "''")}'`)
+    .join(', ');
+const LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL = LEGACY_PERSONA_MIRROR_KEYS
     .map((key) => `'${key.replace(/'/g, "''")}'`)
     .join(', ');
 
@@ -1324,9 +1328,9 @@ class OracleStorage extends SqlStorageBase {
             }
 
             // 전체 로드
-            const allSettings = await fetchRows(conn, `SELECT key, text_val, num_val, bool_val FROM system_settings ORDER BY key`,
+            const allSettings = await fetchRows(conn, `SELECT key, text_val, num_val, bool_val FROM system_settings WHERE key NOT IN (${LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL}) ORDER BY key`,
                 [], { clobColumns: ['text_val'] });
-            const allSettingValues = await fetchRows(conn, `SELECT * FROM system_setting_values ORDER BY setting_key, node_id`,
+            const allSettingValues = await fetchRows(conn, `SELECT * FROM system_setting_values WHERE setting_key NOT IN (${LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL}) ORDER BY setting_key, node_id`,
                 [], { clobColumns: ['member_key', 'encoded_member_key', 'text_value', 'encoded_text_value'] });
             const characters = await fetchRows(conn, `SELECT * FROM character_characters ORDER BY position, id`,
                 [], { clobColumns: ['image', 'description', 'notes', 'creator_notes', 'system_prompt',

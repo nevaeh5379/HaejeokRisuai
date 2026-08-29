@@ -1,4 +1,4 @@
-import type { Database, DatabaseSettings, character, groupChat, Chat, Message, RisuPersona, botPreset, loreBook, customscript } from "./schema";
+import type { CanonicalDatabase, Database, DatabaseSettings, character, groupChat, Chat, Message, RisuPersona, botPreset, loreBook, customscript } from "./schema";
 import type { RisuModule } from "../process/modules";
 import type {
   ISqlStorage,
@@ -23,6 +23,7 @@ import type {
 import {
   DEFERRED_STARTUP_SETTING_KEYS,
   DOMAIN_STORE_SETTING_KEYS,
+  LEGACY_PERSONA_MIRROR_KEYS,
   PROMPT_SETTING_KEYS,
 } from "./sqlDeferredSettings";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
@@ -483,11 +484,10 @@ export class WebSqliteStorage implements ISqlStorage {
       const ok = await this.init();
       if (!ok) return null;
     }
-    const shallow = false;
-    const db: Database = {} as any;
+    const db: CanonicalDatabase = {} as CanonicalDatabase;
 
     const settingsRows = await this.selectRows("SELECT key FROM system_settings");
-    const deferredKeyList = shallow ? [...DEFERRED_STARTUP_SETTING_KEYS] : [];
+    const deferredKeyList = [...LEGACY_PERSONA_MIRROR_KEYS];
     const deferredKeys = new Set<string>(deferredKeyList);
     const settingNodeQuery = buildDeferredSettingsQuery(deferredKeyList);
     const settingNodeRows = await this.selectRows(
@@ -503,13 +503,9 @@ export class WebSqliteStorage implements ISqlStorage {
       (db as any)[key] = settingValues.get(key);
     }
 
-    // A shallow startup only needs plugin-storage keys, which are loaded via
-    // the dedicated API later. Pulling every plugin value here defeats lazy
-    // loading and can clone a large payload across the Worker boundary.
     if (
-      !shallow &&
-      (!db.pluginCustomStorage ||
-        Object.keys(db.pluginCustomStorage).length === 0)
+      !db.pluginCustomStorage ||
+      Object.keys(db.pluginCustomStorage).length === 0
     ) {
       const pluginStorageRows = await this.selectRows(
         "SELECT key, value FROM plugin_custom_storage",
@@ -534,41 +530,25 @@ export class WebSqliteStorage implements ISqlStorage {
     );
     const characters: (character | groupChat)[] = [];
     for (const row of charRows) {
-      if (shallow) {
-        characters.push({
-          chaId: row.id as string,
-          type: (row.kind as "character" | "group") ?? "character",
-          name: (row.name as string) ?? "",
-          image: (row.image as string) ?? "",
-          trashTime: (row.trash_time as number) ?? undefined,
-          creationDate: (row.creation_time as number) ?? undefined,
-          modificationDate: (row.modification_time as number) ?? undefined,
-          lastInteraction: (row.last_interaction_time as number) ?? undefined,
-          detailsLoaded: false,
-          chats: [],
-          chatPage: 0,
-        } as any);
-      } else {
-        const fullChar = ((await this.loadNodeValue(
-          "character_extension_nodes",
-          "character_id = ?",
-          [row.id],
-        )) ?? {}) as any;
-        fullChar.chaId = row.id;
-        fullChar.detailsLoaded = true;
-        const chats = await this.loadCharacterChats(row.id as string);
-        for (const chat of chats) {
-          if (!chat.id) continue;
-          chat.message = await this.loadMessagesBatch(chat.id);
-          chat.messageOffset = 0;
-          chat.messageTotal = chat.message.length;
-          chat.messagesLoaded = true;
-          chat.messagesFullyLoaded = true;
-          chat.detailsLoaded = true;
-        }
-        fullChar.chats = chats;
-        characters.push(fullChar);
+      const fullChar = ((await this.loadNodeValue(
+        "character_extension_nodes",
+        "character_id = ?",
+        [row.id],
+      )) ?? {}) as any;
+      fullChar.chaId = row.id;
+      fullChar.detailsLoaded = true;
+      const chats = await this.loadCharacterChats(row.id as string);
+      for (const chat of chats) {
+        if (!chat.id) continue;
+        chat.message = await this.loadMessagesBatch(chat.id);
+        chat.messageOffset = 0;
+        chat.messageTotal = chat.message.length;
+        chat.messagesLoaded = true;
+        chat.messagesFullyLoaded = true;
+        chat.detailsLoaded = true;
       }
+      fullChar.chats = chats;
+      characters.push(fullChar);
     }
     db.characters = characters;
 

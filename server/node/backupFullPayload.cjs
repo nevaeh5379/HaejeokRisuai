@@ -1,6 +1,11 @@
 'use strict';
 
 const crypto = require('crypto');
+const {
+    LEGACY_PERSONA_MIRROR_KEYS,
+} = require('../../packages/protocol/settings.json');
+
+const LEGACY_PERSONA_MIRROR_KEY_SET = new Set(LEGACY_PERSONA_MIRROR_KEYS);
 
 /**
  * 전체(loaded) database 객체에서 백업용 full sync payload를 구성한다.
@@ -14,7 +19,12 @@ function buildFullBackupPayload(database) {
     }
     const rootUpserts = [];
     for (const [key, value] of Object.entries(database)) {
-        if (key === 'characters' || value === undefined || value === null) continue;
+        if (
+            key === 'characters' ||
+            value === undefined ||
+            value === null ||
+            LEGACY_PERSONA_MIRROR_KEY_SET.has(key)
+        ) continue;
         rootUpserts.push({ key, value });
     }
     const characters = [];

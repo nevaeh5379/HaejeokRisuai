@@ -405,10 +405,10 @@ describe("SettingsStore Reactivity and Persistence", () => {
 
   it("hydrates remote setting keys without re-saving them or dropping local dirty keys", async () => {
     settingsStore.init(
-      { theme: "dark", temperature: 70, username: "Old" } as any,
+      { theme: "dark", temperature: 70, language: "en" } as any,
       mockStorage,
     );
-    settingsStore.set("username" as any, "Local edit" as any);
+    settingsStore.set("language", "ko" as any);
     settingsStore.hydrateSettingKey("theme", "light", true);
     settingsStore.hydrateSettingKey("temperature", undefined, false);
 
@@ -418,7 +418,7 @@ describe("SettingsStore Reactivity and Persistence", () => {
     expect(settingsStore.state.temperature).toBeUndefined();
     expect(committed).toHaveLength(1);
     expect(committed[0].root.upserts).toEqual([
-      { key: "username", value: "Local edit" },
+      { key: "language", value: "ko" },
     ]);
     expect(committed[0].root.deletes).toEqual([]);
   });

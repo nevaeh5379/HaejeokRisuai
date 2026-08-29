@@ -1,6 +1,14 @@
 import protocolSettings from "../../../packages/protocol/settings.json";
 
 export const PROMPT_SETTING_KEYS = protocolSettings.PROMPT_SETTING_KEYS;
+export const LEGACY_PERSONA_MIRROR_KEYS =
+  protocolSettings.LEGACY_PERSONA_MIRROR_KEYS;
+const LEGACY_PERSONA_MIRROR_KEY_SET = new Set<string>(
+  LEGACY_PERSONA_MIRROR_KEYS,
+);
+export function isLegacyPersonaMirrorKey(key: string): boolean {
+  return LEGACY_PERSONA_MIRROR_KEY_SET.has(key);
+}
 export const DOMAIN_STORE_SETTING_KEYS = protocolSettings.DOMAIN_STORE_SETTING_KEYS;
 
 export const DEFERRED_STARTUP_SETTING_KEYS =

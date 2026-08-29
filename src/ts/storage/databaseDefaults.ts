@@ -7,6 +7,7 @@ import type {
 } from "./schema";
 import { safeStructuredClone } from "../polyfill";
 import { presetTemplate } from "./presetDefaults";
+import { DOMAIN_STORE_SETTING_KEYS } from "./sqlDeferredSettings";
 import {
   normalizeCoreDatabaseSettings,
   type CoreValidatedDefaults,
@@ -45,12 +46,7 @@ const NON_SETTINGS_KEYS = new Set([
   "isSql",
   "botPresets",
   "botPresetsId",
-  "personas",
-  "selectedPersona",
-  "modules",
-  "enabledModules",
-  "moduleFolders",
-  "activeBotPresetId",
+  ...DOMAIN_STORE_SETTING_KEYS,
 ]);
 function requireObject(input: unknown, label: string): Record<string, unknown> {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
@@ -124,7 +120,15 @@ export type NormalizedDatabaseInput = DatabaseInput &
     >
   >;
 
+function normalizeLegacyPersonaMirrors(data: Database): void {
+  if (typeof data.username !== "string") data.username = "User";
+  if (typeof data.userIcon !== "string") data.userIcon = "";
+  if (typeof data.userNote !== "string") data.userNote = "";
+  if (typeof data.personaPrompt !== "string") data.personaPrompt = "";
+}
+
 function normalizeAggregateDomains(data: Database): void {
+  normalizeLegacyPersonaMirrors(data);
   data.characters ??= [];
   data.modules ??= [];
   data.enabledModules ??= [];

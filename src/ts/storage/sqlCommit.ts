@@ -1,5 +1,6 @@
 import type { Chat, Database, PortableDatabase, Message, character, groupChat, botPreset } from "./schema";
 import { v4 as uuidv4 } from "uuid";
+import { isLegacyPersonaMirrorKey } from "./sqlDeferredSettings";
 
 export type {
   SqlSettingUpsert,
@@ -213,7 +214,8 @@ export function buildSqlReplaceCommit(
       typeof value !== "function" &&
       key !== "isSql" &&
       key !== "botPresets" &&
-      key !== "botPresetsId"
+      key !== "botPresetsId" &&
+      !isLegacyPersonaMirrorKey(key)
     ) {
       commit.root.upserts.push({ key, value });
     }
