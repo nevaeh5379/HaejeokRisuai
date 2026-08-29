@@ -399,7 +399,12 @@ function focusQuery(query: string) {
   }
 }
 
+let mobileGestureInitialized = false;
+
 export function initMobileGesture() {
+  if (mobileGestureInitialized) return;
+  mobileGestureInitialized = true;
+
   let pressingPointers = new Map<number, { x: number; y: number; time: number }>();
 
   document.addEventListener(

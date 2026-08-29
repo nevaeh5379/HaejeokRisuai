@@ -9,7 +9,7 @@ import { changeFullscreen } from "../util";
 import { updateAnimationSpeed } from "../gui/animation";
 import { guiSizeText, updateGuisize } from "../gui/guisize";
 import { updateTextThemeAndCSS } from "../gui/colorscheme";
-import { CustomGUISettingMenuStore } from "../stores.svelte";
+import { CustomGUISettingMenuStore, syncMobileGUI } from "../stores.svelte";
 
 export const displayThemeSettingsItems: SettingItem[] = [
   {
@@ -532,6 +532,9 @@ export const displayOtherSettingsItems: SettingItem[] = [
     helpKey: "betaMobileGUI",
     bindKey: "betaMobileGUI",
     keywords: ["beta", "mobile", "gui"],
+    onChange: (val: boolean) => {
+      syncMobileGUI(val);
+    },
   },
   {
     id: "display.menuSideBar",

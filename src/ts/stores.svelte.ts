@@ -51,12 +51,33 @@ type Database = import("./storage/schema").Database;
 type SimpleCharacter = import("./parser/parser.svelte").simpleCharacterArgument;
 type HubType = import("./hubCatalog").hubType;
 
+export function isMobileGUIActive(
+  betaEnabled = settingsStore.state?.betaMobileGUI,
+): boolean {
+  return Boolean(
+    import.meta.env.VITE_RISU_LITE === "TRUE" ||
+      (betaEnabled && window.innerWidth <= 800),
+  );
+}
+
+export function syncMobileGUI(betaEnabled = settingsStore.state?.betaMobileGUI) {
+  const active = isMobileGUIActive(betaEnabled);
+  if (active) {
+    void import("./hotkey").then(({ initMobileGesture }) => {
+      initMobileGesture();
+    });
+  }
+  MobileGUI.set(active);
+  return active;
+}
+
 function updateSize() {
   SizeStore.set({
     w: window.innerWidth,
     h: window.innerHeight,
   });
   DynamicGUI.set(window.innerWidth <= 1024);
+  syncMobileGUI();
 }
 
 export const SizeStore = writable({
@@ -229,13 +250,22 @@ export const assetManagerModalStore = $state({
 //Set might be more ideal, however since Svelte doesn't support reactive Sets, using array for now
 export const hotReloading = $state<string[]>([]);
 
-export const mobileSettingsReturnChar = $state<{ value: { charId: number; sideBar?: number } | null }>({
+export const mobileSettingsReturnChar = $state<{
+  value: { charId: number; sideBar?: number } | null;
+}>({
   value: null,
 });
 
-export function openMobileSettingsPage(menuIndex: number, fromCharId?: number, sidebar?: number) {
+export function openMobileSettingsPage(
+  menuIndex: number,
+  fromCharId?: number,
+  sidebar?: number,
+) {
   if (fromCharId !== undefined && fromCharId >= 0) {
-    mobileSettingsReturnChar.value = { charId: fromCharId, sideBar: sidebar ?? 0 };
+    mobileSettingsReturnChar.value = {
+      charId: fromCharId,
+      sideBar: sidebar ?? 0,
+    };
   }
   selectedCharID.set(-1);
   MobileSideBar.set(0);

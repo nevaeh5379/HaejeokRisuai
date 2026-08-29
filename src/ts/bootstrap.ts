@@ -16,7 +16,7 @@ import type { Database } from "./storage/schema";
 import { installDatabase } from "./storage/databaseLifecycle";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
-  MobileGUI,
+  syncMobileGUI,
   botMakerMode,
   selectedCharID,
   loadedStore,
@@ -46,7 +46,6 @@ import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
 import { changeLanguage, language } from "src/lang";
 import { startObserveDom } from "./observer.svelte";
 import { updateGuisize } from "./gui/guisize";
-import { initMobileGesture } from "./hotkey";
 import {
   getRemoteSaveCleanupAction,
   getRemoteSavePayloadName,
@@ -303,6 +302,10 @@ export async function loadData() {
       updateAnimationSpeed();
       updateHeightMode();
       updateGuisize();
+      syncMobileGUI(activeDb.betaMobileGUI);
+      if (activeDb.botSettingAtStart) {
+        botMakerMode.set(true);
+      }
       // Reset the initial selection before the shell becomes interactive.
       // Doing this later can overwrite a character the user selected while
       // the remaining startup work is still loading.
@@ -440,16 +443,6 @@ export async function loadData() {
         await waitAlert();
         //for testing, leave empty
         localStorage.setItem("nightlyWarned", "");
-      }
-      if (db.botSettingAtStart) {
-        botMakerMode.set(true);
-      }
-      if (
-        (db.betaMobileGUI && window.innerWidth <= 800) ||
-        import.meta.env.VITE_RISU_LITE === "TRUE"
-      ) {
-        initMobileGesture();
-        MobileGUI.set(true);
       }
       assignIds();
       startObserveDom();
