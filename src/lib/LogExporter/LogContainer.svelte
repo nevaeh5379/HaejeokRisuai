@@ -59,12 +59,17 @@
         const scale = Number(settings.htmlScaleFactor) || 1
         const isFull = settings.htmlScaleMode === 'full'
         const fontPx = effectiveFontSize(fontSize, settings.htmlScaleMode, settings.htmlScaleFactor)
+        // In 'full' mode the transform visually scales everything, so compensate
+        // the layout width by the factor to keep the document's footprint at the
+        // fixed preview width (the scale changes the composition inside the
+        // frame, not the frame size itself).
+        const widthPx = isFull ? baseWidth / scale : baseWidth
         const scaleRule = isFull
             ? `transform:scale(${scale});transform-origin:top left;--log-scale:${scale}`
             : ''
         return [
             `margin:${isForImageExport ? '0' : '16px auto'}`,
-            `width:${baseWidth}px`,
+            `width:${widthPx}px`,
             'max-width:none',
             'box-sizing:border-box',
             `font-size:${fontPx}px`,

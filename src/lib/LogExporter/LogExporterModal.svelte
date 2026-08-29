@@ -80,6 +80,7 @@
     let viewportEl: HTMLDivElement | null = $state(null)
     let documentEl: HTMLDivElement | null = $state(null)
     let documentHeight = $state(0)
+    let layoutHeight = $state(0)
 
     const palette: ColorPalette = $derived(resolveEffectiveColor(settings.theme, settings.color))
     const backgroundColor = $derived(palette.background)
@@ -229,18 +230,33 @@
         previewScale = 1
     }
 
+    // ── Preview height measurement ────────────────────────────────
+    // In 'full' scale mode the LogContainer applies its own transform
+    // (htmlScaleFactor), so the visual height is the layout height multiplied
+    // by that factor; the wrapper must reserve that extra space.
+    function getTotalScale(): number {
+        return previewScale * (settings.htmlScaleMode === 'full' ? (Number(settings.htmlScaleFactor) || 1) : 1)
+    }
+    function measureDocument() {
+        if (!documentEl) return
+        layoutHeight = documentEl.offsetHeight
+        documentHeight = layoutHeight * getTotalScale()
+    }
+
     $effect(() => {
         if (!viewportEl) return
         const observer = new ResizeObserver(() => {
             if (fitMode && isBasicFormat) fitToViewport()
-            if (documentEl) documentHeight = documentEl.offsetHeight
+            if (documentEl) measureDocument()
         })
         observer.observe(viewportEl)
         return () => observer.disconnect()
     })
     $effect(() => {
         void previewScale
-        if (documentEl) documentHeight = documentEl.offsetHeight
+        void settings.htmlScaleMode
+        void settings.htmlScaleFactor
+        if (documentEl) measureDocument()
     })
 
     // ── HTML / markdown / text preview generation ────────────────────────
@@ -663,7 +679,7 @@
                                     <div
                                         bind:this={documentEl}
                                         class="mx-auto origin-top transition-transform"
-                                        style="width:{viewWidth}px;transform:scale({previewScale});margin-bottom:{Math.max(0, documentHeight * (previewScale - 1))}px;"
+                                        style="width:{viewWidth}px;transform:scale({previewScale});margin-bottom:{Math.max(0, documentHeight - layoutHeight)}px;"
                                     >
                                         <LogContainer
                                             data={viewData}
