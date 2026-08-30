@@ -76,6 +76,15 @@ function findPullRequest(commit, { repository, baseBranch }) {
   };
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 export function formatReleaseNotes({ buildTag, previousTag, commits }) {
   const groups = [];
   const groupsByKey = new Map();
@@ -105,7 +114,11 @@ export function formatReleaseNotes({ buildTag, previousTag, commits }) {
   for (const group of groups) {
     if (group.pullRequest) {
       const { title, number, url } = group.pullRequest;
-      lines.push(`### ${title} [#${number}](${url}):`);
+      lines.push(
+        "<details>",
+        `<summary>${escapeHtml(title)} (<a href="${escapeHtml(url)}">#${number}</a>)</summary>`,
+        "",
+      );
     } else {
       lines.push("### Direct commits:");
     }
@@ -113,6 +126,9 @@ export function formatReleaseNotes({ buildTag, previousTag, commits }) {
       lines.push(
         `- ${commit.subject} (\`${commit.shortSha}\`) — ${commit.author}`,
       );
+    }
+    if (group.pullRequest) {
+      lines.push("", "</details>");
     }
     lines.push("");
   }
