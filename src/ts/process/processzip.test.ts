@@ -210,6 +210,38 @@ describe("CharXImporter", () => {
     );
   });
 
+  it("imports Android content wrappers from a different File realm", async () => {
+    const archive = zipSync({
+      "card.json": new TextEncoder().encode(
+        '{"spec":"chara_card_v3","data":{"name":"Cross-realm Amber"}}',
+      ),
+      "assets/icon/image/2.png": new Uint8Array([4, 5, 6]),
+    });
+    const backingBlob = new Blob([archive]);
+    const contentWrapper = {
+      name: "Amber.charx",
+      size: backingBlob.size,
+      type: "application/octet-stream",
+      slice: (start?: number, end?: number) => backingBlob.slice(start, end),
+      stream: () => {
+        throw new Error("File.stream() is unavailable for this content URI");
+      },
+    } as unknown as File;
+    expect(contentWrapper).not.toBeInstanceOf(File);
+
+    const importer = new CharXImporter();
+    await importer.parse(contentWrapper);
+    await importer.done();
+
+    expect(JSON.parse(importer.cardData ?? "{}")).toMatchObject({
+      spec: "chara_card_v3",
+      data: { name: "Cross-realm Amber" },
+    });
+    expect(importer.assets["assets/icon/image/2.png"]).toBe(
+      "saved/assets/icon/image/2.png",
+    );
+  });
+
   it("streams Node server assets in bounded bulk-write batches", async () => {
     const assetNames = Array.from(
       { length: 130 },

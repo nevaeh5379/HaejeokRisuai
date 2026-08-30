@@ -346,10 +346,26 @@ export class CharXImporter {
       return data;
     }
 
-    // Read File inputs through slices instead of File.stream(). Android WebView
-    // can hand us content-provider-backed Files whose Blob stream is unreliable,
-    // while slice().arrayBuffer() remains stable and keeps memory bounded.
-    if (data instanceof File) {
+    if (data instanceof Uint8Array) {
+      let offset = 0;
+      return new ReadableStream({
+        pull(controller) {
+          if (offset >= data.byteLength) {
+            controller.close();
+            return;
+          }
+          const end = Math.min(offset + CHUNK_SIZE_BYTES, data.byteLength);
+          controller.enqueue(data.subarray(offset, end));
+          offset = end;
+        },
+      });
+    }
+
+    // Read blob-like inputs through slices instead of File.stream(). Android
+    // WebView can hand us content-provider-backed wrappers that are not
+    // instanceof the page's File constructor. Their Blob stream may also be
+    // unreliable, while slice().arrayBuffer() remains stable and bounded.
+    if (this.#isBlobLike(data)) {
       let offset = 0;
       return new ReadableStream({
         async pull(controller) {
@@ -372,19 +388,19 @@ export class CharXImporter {
       });
     }
 
-    // Convert Uint8Array to stream, chunked to prevent blocking
-    let offset = 0;
-    return new ReadableStream({
-      pull(controller) {
-        if (offset >= data.byteLength) {
-          controller.close();
-          return;
-        }
-        const end = Math.min(offset + CHUNK_SIZE_BYTES, data.byteLength);
-        controller.enqueue(data.subarray(offset, end));
-        offset = end;
-      },
-    });
+    throw new Error("Unsupported character card input");
+  }
+
+  #isBlobLike(data: File): data is File & {
+    size: number;
+    slice(start?: number, end?: number): Blob;
+  } {
+    const candidate = data as Partial<File>;
+    return (
+      Number.isSafeInteger(candidate.size) &&
+      (candidate.size ?? -1) >= 0 &&
+      typeof candidate.slice === "function"
+    );
   }
 
   /**
