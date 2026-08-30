@@ -336,6 +336,16 @@ container() {
     "$container_engine" "$@"
 }
 
+compose_for_engine() (
+    compose_engine=$1
+    shift
+    case "$compose_engine" in
+        docker) "$compose_engine" compose --project-directory "$script_dir" "$@" ;;
+        podman) cd "$script_dir" && PODMAN_COMPOSE_WARNING_LOGS=false "$compose_engine" compose "$@" ;;
+        *) return 64 ;;
+    esac
+)
+
 compose_base_for_runtime() {
     case "$1" in
         node) printf '%s' "$compose_base" ;;
@@ -756,17 +766,17 @@ compose_with_env() (
 
     case "$selected_mode:$selected_dns:$selected_proxy" in
         local:*:*|proxy:*:host)
-            "$selected_engine" compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_local" "$@" ;;
+            compose_for_engine "$selected_engine" --project-name "$project_name" --env-file "$selected_env" -f "$selected_base" -f "$compose_local" "$@" ;;
         lan:*:*)
-            "$selected_engine" compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_lan" "$@" ;;
+            compose_for_engine "$selected_engine" --project-name "$project_name" --env-file "$selected_env" -f "$selected_base" -f "$compose_lan" "$@" ;;
         domain:cloudflare:*)
-            "$selected_engine" compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_caddy" -f "$compose_cloudflare" "$@" ;;
+            compose_for_engine "$selected_engine" --project-name "$project_name" --env-file "$selected_env" -f "$selected_base" -f "$compose_caddy" -f "$compose_cloudflare" "$@" ;;
         domain:manual:*)
-            "$selected_engine" compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_caddy" "$@" ;;
+            compose_for_engine "$selected_engine" --project-name "$project_name" --env-file "$selected_env" -f "$selected_base" -f "$compose_caddy" "$@" ;;
         dynv6:*:*)
-            "$selected_engine" compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_caddy" -f "$compose_dynv6" "$@" ;;
+            compose_for_engine "$selected_engine" --project-name "$project_name" --env-file "$selected_env" -f "$selected_base" -f "$compose_caddy" -f "$compose_dynv6" "$@" ;;
         proxy:*:docker)
-            "$selected_engine" compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_proxy_docker" "$@" ;;
+            compose_for_engine "$selected_engine" --project-name "$project_name" --env-file "$selected_env" -f "$selected_base" -f "$compose_proxy_docker" "$@" ;;
         *) return 64 ;;
     esac
 )
@@ -1037,10 +1047,35 @@ show_deployment_from() {
 
 expected_services() { compose config --services; }
 
+running_services() {
+    case "$container_engine" in
+        docker) compose ps --status running --services ;;
+        podman) container ps --filter "label=io.podman.compose.project=$project_name" --format '{{.Label "io.podman.compose.service"}}' ;;
+        *) return 64 ;;
+    esac
+}
+
+service_container_id() {
+    lookup_service=$1
+    case "$container_engine" in
+        docker) compose ps -q "$lookup_service" ;;
+        podman) container ps --filter "label=io.podman.compose.project=$project_name" --filter "label=io.podman.compose.service=$lookup_service" --format '{{.ID}}' ;;
+        *) return 64 ;;
+    esac
+}
+
+compose_ps_all() {
+    case "$container_engine" in
+        docker) compose ps --all ;;
+        podman) compose ps ;;
+        *) return 64 ;;
+    esac
+}
+
 services_are_running() {
     report_errors=${1:-true}
     expected_list=$(expected_services 2>/dev/null) || return 1
-    running_list=$(compose ps --status running --services 2>/dev/null) || return 1
+    running_list=$(running_services 2>/dev/null) || return 1
     services_ok=true
     for expected_service in $expected_list; do
         printf '%s\n' "$running_list" | grep -Fx "$expected_service" >/dev/null 2>&1 || {
@@ -1048,7 +1083,7 @@ services_are_running() {
             services_ok=false
             continue
         }
-        service_id=$(compose ps -q "$expected_service" 2>/dev/null || true)
+        service_id=$(service_container_id "$expected_service" 2>/dev/null || true)
         [ -n "$service_id" ] || {
             [ "$report_errors" = false ] || error "Cannot resolve container for service: $expected_service"
             services_ok=false
@@ -1069,7 +1104,7 @@ services_are_running() {
 show_readiness_diagnostics() {
     diagnostic_elapsed=$1
     warn "RisuAI is still starting after ${diagnostic_elapsed}s; current status and recent app logs follow."
-    compose ps --all >&2 || true
+    compose_ps_all >&2 || true
     compose logs --no-color --tail 40 risuai >&2 || true
 }
 
@@ -1104,13 +1139,13 @@ wait_for_risuai() {
         [ "$wait_elapsed" -lt "$wait_limit" ] || break
         sleep 2
     done
-    compose ps --all >&2 || true
+    compose_ps_all >&2 || true
     compose logs --no-color --tail 100 >&2 || true
     return 1
 }
 
 check_runtime_status() {
-    compose ps --all
+    compose_ps_all
     show_deployment_from "$env_file"
     if services_are_running; then ok "All configured services are running"; return 0; fi
     error "The deployment is configured but not healthy/running"
@@ -1258,7 +1293,7 @@ validate_new_database_password() {
 }
 
 postgres_is_running() {
-    compose ps --status running --services 2>/dev/null | grep -Fx postgres >/dev/null 2>&1
+    running_services 2>/dev/null | grep -Fx postgres >/dev/null 2>&1
 }
 
 ensure_postgres_running() {
@@ -1297,7 +1332,7 @@ set_postgres_role_password() {
 }
 
 recreate_risuai_for_database_password() {
-    if compose ps --status running --services 2>/dev/null | grep -Fx risuai >/dev/null 2>&1; then
+    if running_services 2>/dev/null | grep -Fx risuai >/dev/null 2>&1; then
         info "Recreating RisuAI with the updated database credentials"
         compose up -d --force-recreate risuai
         wait_for_risuai "$wait_timeout" || die "RisuAI did not become ready after the database password change"
@@ -1520,7 +1555,7 @@ run_doctor() {
                 else
                     error "One or more configured services are stopped, restarting, or unhealthy"
                     doctor_failures=$((doctor_failures + 1))
-                    compose ps --all || true
+                    compose_ps_all || true
                 fi
                 if [ "$doctor_runtime" = static ]; then
                     ok "Static runtime correctly has no PostgreSQL authentication check"
@@ -1610,7 +1645,7 @@ manage_existing_installation() {
             runtime_image=$(image_for_runtime "$runtime")
             if container image inspect "$runtime_image" >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local $runtime RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
             wait_for_risuai "$wait_timeout" || die "RisuAI did not become ready within ${wait_timeout}s"
-            compose ps --all
+            compose_ps_all
             show_deployment_from "$env_file"
             ;;
         stop)
@@ -1634,7 +1669,7 @@ manage_existing_installation() {
             if container image inspect "$runtime_image" >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local $runtime RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
             compose restart
             wait_for_risuai "$wait_timeout" || die "RisuAI did not become ready within ${wait_timeout}s"
-            compose ps --all
+            compose_ps_all
             ;;
         rebuild)
             [ "$#" -eq 0 ] || die "rebuild does not accept arguments"
@@ -1647,7 +1682,7 @@ manage_existing_installation() {
             compose up -d --force-recreate risuai
             compose up -d --remove-orphans
             wait_for_risuai "$wait_timeout" || die "Rebuilt RisuAI did not become ready within ${wait_timeout}s"
-            compose ps --all
+            compose_ps_all
             ;;
         *) die "Internal error: unsupported management action $action" ;;
     esac
@@ -1930,7 +1965,7 @@ if [ "$saved_configuration_valid" = true ]; then saved_id=$(read_env_value_from 
 if [ -n "$saved_id" ]; then installation_id=$saved_id; else installation_id=$(random_secret | cut -c1-32); fi
 check_container_ownership
 
-if [ "$no_start" = true ] && [ "$dry_run" = false ] && [ "$saved_configuration_valid" = true ] && compose ps --status running --services 2>/dev/null | grep -q .; then
+if [ "$no_start" = true ] && [ "$dry_run" = false ] && [ "$saved_configuration_valid" = true ] && running_services 2>/dev/null | grep -q .; then
     die "--no-start cannot replace the active configuration while this deployment is running; run '$script_path down' first, use --dry-run, or omit --no-start"
 fi
 
@@ -1976,7 +2011,15 @@ if [ "$assume_yes" != true ] && [ "$dry_run" != true ]; then
     printf '  Runtime:           %s\n' "$runtime"
     printf '  Container engine:  %s\n' "$container_engine"
     printf '  Mode:              %s\n' "$mode"
-    printf '  Configured target: %s\n' "$(case "$mode:$proxy_type" in local:*) printf 'http://localhost:%s' "$app_port" ;; lan:*) printf 'http://SERVER-IP:%s' "$app_port" ;; domain:*|dynv6:*) if [ "$https_port" = 443 ]; then printf 'https://%s' "$domain"; else printf 'https://%s:%s' "$domain" "$https_port"; fi ;; proxy:host) printf 'http://127.0.0.1:%s' "$app_port" ;; proxy:docker) printf 'http://risuai:6001 on %s' "$proxy_network" ;; esac)"
+    case "$mode:$proxy_type" in
+        local:*) configured_target=http://localhost:$app_port ;;
+        lan:*) configured_target=http://SERVER-IP:$app_port ;;
+        domain:*|dynv6:*)
+            if [ "$https_port" = 443 ]; then configured_target=https://$domain; else configured_target=https://$domain:$https_port; fi ;;
+        proxy:host) configured_target=http://127.0.0.1:$app_port ;;
+        proxy:docker) configured_target="http://risuai:6001 on $proxy_network" ;;
+    esac
+    printf '  Configured target: %s\n' "$configured_target"
     if [ "$runtime" = node ]; then printf '  RustFS:            loopback ports %s/%s only\n' "$rustfs_api_port" "$rustfs_console_port"; else printf '  Web server:        Caddy serving the browser-only static build\n'; fi
     [ "$saved_present" = false ] || printf '  Existing data:     credentials and volumes will be preserved\n'
     case "$mode" in lan) warn "LAN mode listens on every IPv4 interface without TLS." ;; domain|dynv6) warn "Public/NAT TCP mappings must ultimately expose HTTP on 80 and HTTPS on 443 for automatic certificates." ;; esac
@@ -2062,7 +2105,7 @@ fi
 if [ -f "$env_file" ]; then had_env=true; backup_env=$(mktemp "$state_dir/rustfs.env.rollback.XXXXXX"); cp -p "$env_file" "$backup_env"; fi
 if [ -f "$dynv6_token_file" ]; then had_dynv6=true; backup_dynv6=$(mktemp "$state_dir/dynv6-token.rollback.XXXXXX"); cp -p "$dynv6_token_file" "$backup_dynv6"; fi
 if [ -f "$cloudflare_token_file" ]; then had_cloudflare=true; backup_cloudflare=$(mktemp "$state_dir/cloudflare-token.rollback.XXXXXX"); cp -p "$cloudflare_token_file" "$backup_cloudflare"; fi
-if [ "$saved_configuration_valid" = true ] && compose ps --status running --services 2>/dev/null | grep -q .; then old_was_running=true; fi
+if [ "$saved_configuration_valid" = true ] && running_services 2>/dev/null | grep -q .; then old_was_running=true; fi
 
 transaction_active=true
 if [ "$mode" = dynv6 ]; then mv -f "$tmp_dynv6" "$dynv6_token_file"; tmp_dynv6=; fi

@@ -147,6 +147,13 @@ if (composeIndex !== -1) {
     if (command === "exec") exit(process.env.FAKE_READINESS_FAIL === "1" ? 1 : 0);
     if (command === "logs") exit(0, process.env.FAKE_LOG_OUTPUT || "");
     if (command === "ps") {
+        const psArgs = composeArgs.slice(composeArgs.indexOf("ps") + 1);
+        if (engine === "podman" && (
+            psArgs.includes("--all") ||
+            psArgs.includes("--status") ||
+            psArgs.includes("--services") ||
+            (psArgs.includes("-q") && psArgs.length > 1)
+        )) exit(2, "unsupported podman-compose ps option\\n");
         if (composeArgs.includes("-q")) {
             const service = composeArgs.at(-1);
             exit(isRunning() ? 0 : 1, isRunning() ? service + "-container-id\\n" : "");
@@ -166,7 +173,18 @@ if (args[0] === "context" && args[1] === "inspect") exit(0, "unix:///var/run/doc
 if (args[0] === "network" && args[1] === "inspect") exit(process.env.FAKE_NETWORK_MISSING === "1" ? 1 : 0);
 if (args[0] === "volume" && args[1] === "inspect") exit(1);
 if (args[0] === "image" && args[1] === "inspect") exit(process.env.FAKE_IMAGE_EXISTS === "1" ? 0 : 1);
-if (args[0] === "ps") exit(0);
+if (args[0] === "ps") {
+    if (!isRunning()) exit(0);
+    const formatIndex = args.indexOf("--format");
+    const format = formatIndex === -1 ? "" : args[formatIndex + 1];
+    const serviceFilter = args.find((argument) => argument.startsWith("label=io.podman.compose.service="));
+    if (format.includes(".ID")) {
+        const service = serviceFilter?.split("=").at(-1) ?? services()[0];
+        exit(0, service + "-container-id\\n");
+    }
+    if (format.includes("io.podman.compose.service")) exit(0, services().join("\\n") + "\\n");
+    exit(0);
+}
 if (args[0] === "inspect") {
     if (args.includes("--format")) exit(0, "none\\n");
     exit(1);

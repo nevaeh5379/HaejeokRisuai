@@ -58,3 +58,4 @@ playwright/.cache/
 Cargo.lock
 /.worktree/
 *.logcat
+/.codegraph/
