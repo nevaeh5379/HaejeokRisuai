@@ -85,7 +85,16 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-export function formatReleaseNotes({ buildTag, previousTag, commits }) {
+export function formatReleaseNotes({
+  buildTag,
+  previousTag,
+  commits,
+  repository,
+}) {
+  const compareUrl =
+    previousTag && repository
+      ? `https://github.com/${repository}/compare/${previousTag}...${buildTag}`
+      : null;
   const groups = [];
   const groupsByKey = new Map();
 
@@ -103,10 +112,10 @@ export function formatReleaseNotes({ buildTag, previousTag, commits }) {
   }
 
   const lines = [
-    `## ${buildTag}`,
-    "",
     previousTag
-      ? `Changes since \`${previousTag}\`:`
+      ? compareUrl
+        ? `Changes since [\`${previousTag}\`...\`${buildTag}\`](${compareUrl}):`
+        : `Changes since \`${previousTag}\`:`
       : "Changes included in this build:",
     "",
   ];
@@ -133,6 +142,11 @@ export function formatReleaseNotes({ buildTag, previousTag, commits }) {
     lines.push("");
   }
 
+  lines.push(
+    "<!-- release-downloads:start -->",
+    "<!-- release-downloads:end -->",
+  );
+
   return `${lines.join("\n")}\n`;
 }
 
@@ -150,7 +164,12 @@ export function generateReleaseNotes({
     ...commit,
     pullRequest: findPullRequest(commit, { repository, baseBranch }),
   }));
-  const notes = formatReleaseNotes({ buildTag, previousTag, commits });
+  const notes = formatReleaseNotes({
+    buildTag,
+    previousTag,
+    commits,
+    repository,
+  });
   writeFileSync(outputPath, notes);
 }
 

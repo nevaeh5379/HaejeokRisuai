@@ -12,6 +12,7 @@ test("groups release commits under their pull request", () => {
   const notes = formatReleaseNotes({
     buildTag: "b101",
     previousTag: "b100",
+    repository: "example/project",
     commits: [
       {
         subject: "feat: group commits",
@@ -36,9 +37,7 @@ test("groups release commits under their pull request", () => {
 
   assert.equal(
     notes,
-    `## b101
-
-Changes since \`b100\`:
+    `Changes since [\`b100\`...\`b101\`](https://github.com/example/project/compare/b100...b101):
 
 <details>
 <summary>Improve release notes (<a href="https://github.com/example/project/pull/42">#42</a>)</summary>
@@ -51,6 +50,8 @@ Changes since \`b100\`:
 ### Direct commits:
 - chore: emergency metadata fix (\`987fedc\`) — Linus
 
+<!-- release-downloads:start -->
+<!-- release-downloads:end -->
 `,
   );
 });
@@ -62,13 +63,17 @@ test("uses the first-build introduction when there is no previous tag", () => {
     commits: [],
   });
 
-  assert.equal(notes, "## b1\n\nChanges included in this build:\n\n");
+  assert.equal(
+    notes,
+    "Changes included in this build:\n\n<!-- release-downloads:start -->\n<!-- release-downloads:end -->\n",
+  );
 });
 
 test("escapes pull request titles inside details summaries", () => {
   const notes = formatReleaseNotes({
     buildTag: "b2",
     previousTag: "b1",
+    repository: "example/project",
     commits: [
       {
         subject: "fix: render safely",
