@@ -670,7 +670,7 @@
 
                         <!-- Editor Form (When Open) -->
                         {#if isOpen}
-                            <div class="border-t border-darkborderc/40 p-2.5 flex flex-col gap-2">
+                            <div class="border-t border-darkborderc/40 p-2.5 flex flex-col gap-2.5">
                                 {#if isFolder}
                                     <div class="flex flex-col gap-1">
                                         <span class="text-[10px] font-semibold text-textcolor2">{language.folderName || "Folder Name"}</span>
@@ -687,81 +687,99 @@
                                         </button>
                                     </div>
                                 {:else}
-                                    <div class="flex flex-col gap-1">
-                                        <span class="text-[10px] font-semibold text-textcolor2">{language.name || "Name / Comment"}</span>
-                                        <TextInput size="sm" bind:value={item.comment} placeholder="Lore Identifier" fullwidth />
-                                    </div>
-
-                                    {#if !item.alwaysActive}
-                                        <div class="flex flex-col gap-1">
-                                            <span class="text-[10px] font-semibold text-textcolor2">{language.activationKeys || "Activation Keys (comma separated)"}</span>
-                                            <TextInput size="sm" bind:value={item.key} placeholder="sword, magic, weapon" fullwidth />
+                                    <!-- Top Grid: Name + Activation Keys in 2 Columns -->
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        <div class="flex flex-col gap-0.5">
+                                            <span class="text-[10px] font-semibold text-textcolor2">{language.name || "Name / Identifier"}</span>
+                                            <TextInput size="sm" bind:value={item.comment} placeholder="Identifier / Name" fullwidth />
                                         </div>
 
-                                        {#if item.selective}
-                                            <div class="flex flex-col gap-1 pl-2 border-l-2 border-selected/50">
-                                                <span class="text-[10px] font-semibold text-textcolor2">{language.SecondaryKeys || "Secondary Keys (AND Condition)"}</span>
-                                                <TextInput size="sm" bind:value={item.secondkey} placeholder="holy, light" fullwidth />
+                                        {#if !item.alwaysActive}
+                                            <div class="flex flex-col gap-0.5">
+                                                <span class="text-[10px] font-semibold text-textcolor2">{language.activationKeys || "Activation Keys"}</span>
+                                                <TextInput size="sm" bind:value={item.key} placeholder="sword, excalibur, weapon" fullwidth />
+                                            </div>
+                                        {:else}
+                                            <div class="flex flex-col justify-end pb-1.5 text-[11px] text-selected font-semibold">
+                                                <span>✓ Always Active (Injected into context unconditionally)</span>
                                             </div>
                                         {/if}
+                                    </div>
+
+                                    <!-- Secondary Keys (If Selective) -->
+                                    {#if !item.alwaysActive && item.selective}
+                                        <div class="flex flex-col gap-0.5 pl-2 border-l-2 border-selected/50">
+                                            <span class="text-[10px] font-semibold text-textcolor2">{language.SecondaryKeys || "Secondary Keys (AND Condition)"}</span>
+                                            <TextInput size="sm" bind:value={item.secondkey} placeholder="holy, knight" fullwidth />
+                                        </div>
                                     {/if}
 
+                                    <!-- Prompt Content Area -->
                                     <div class="flex flex-col gap-1">
                                         <div class="flex items-center justify-between">
                                             <span class="text-[10px] font-semibold text-textcolor2">{language.prompt || "Prompt Content"}</span>
-                                            <span class="text-[10px] text-textcolor2">
-                                                {tokenCounts[id] !== undefined ? `${tokenCounts[id]} tok` : ''}
+                                            <span class="text-[10px] text-textcolor2 font-medium">
+                                                {tokenCounts[id] !== undefined ? `${tokenCounts[id]} tokens` : ''}
                                             </span>
                                         </div>
-                                        <div class="h-24 w-full">
+                                        <div class="h-28 w-full">
                                             <TextAreaInput
                                                 autocomplete="off"
                                                 height="full"
                                                 bind:value={item.content}
-                                                placeholder="Content injected into context..."
+                                                placeholder="Information injected into context when keys trigger..."
                                                 fullwidth
                                             />
                                         </div>
                                     </div>
 
-                                    <div class="grid grid-cols-2 gap-2 pt-1 border-t border-darkborderc/30">
-                                        <div>
-                                            <span class="block text-[10px] font-semibold text-textcolor2 mb-0.5">{language.insertOrder || "Order"}</span>
-                                            <NumberInput size="sm" bind:value={item.insertorder} min={0} max={1000} />
+                                    <!-- Bottom Meta Controls & Checkboxes (Compact 1-Row Layout) -->
+                                    <div class="flex flex-wrap items-center justify-between gap-2.5 pt-1.5 border-t border-darkborderc/30 text-xs">
+                                        <!-- Checkboxes -->
+                                        <div class="flex items-center gap-3">
+                                            <Check bind:check={item.alwaysActive} name={language.alwaysActive || "Always Active"} />
+
+                                            {#if !item.alwaysActive}
+                                                <Check bind:check={item.selective} name={language.selective || "Selective (AND)"} />
+                                                <Check bind:check={item.useRegex} name={language.useRegexLorebook || "Regex"} />
+                                            {/if}
                                         </div>
 
-                                        {#if !(item.activationPercent === undefined || item.activationPercent === null)}
-                                            <div>
-                                                <span class="block text-[10px] font-semibold text-textcolor2 mb-0.5">{language.activationProbability || "Probability (%)"}</span>
-                                                <NumberInput size="sm" bind:value={item.activationPercent} min={0} max={100} />
+                                        <!-- Compact Order, Probability & Folder Settings -->
+                                        <div class="flex items-center gap-2 flex-wrap">
+                                            <div class="flex items-center gap-1">
+                                                <span class="text-[10px] font-semibold text-textcolor2">{language.insertOrder || "Order"}:</span>
+                                                <div class="w-16">
+                                                    <NumberInput size="sm" bind:value={item.insertorder} min={0} max={1000} />
+                                                </div>
                                             </div>
-                                        {/if}
-                                    </div>
 
-                                    <div class="flex flex-wrap items-center gap-3 pt-0.5 text-xs">
-                                        <Check bind:check={item.alwaysActive} name={language.alwaysActive || "Always Active"} />
+                                            {#if !(item.activationPercent === undefined || item.activationPercent === null)}
+                                                <div class="flex items-center gap-1">
+                                                    <span class="text-[10px] font-semibold text-textcolor2">%:</span>
+                                                    <div class="w-14">
+                                                        <NumberInput size="sm" bind:value={item.activationPercent} min={0} max={100} />
+                                                    </div>
+                                                </div>
+                                            {/if}
 
-                                        {#if !item.alwaysActive}
-                                            <Check bind:check={item.selective} name={language.selective || "Selective"} />
-                                            <Check bind:check={item.useRegex} name={language.useRegexLorebook || "Regex"} />
-                                        {/if}
-
-                                        {#if folders.length > 0}
-                                            <div class="flex items-center gap-1 text-[11px] text-textcolor2 ml-auto">
-                                                <span>Folder:</span>
-                                                <select
-                                                    bind:value={item.folder}
-                                                    class="h-5.5 px-1 rounded border border-darkborderc bg-darkbutton text-textcolor text-[11px]"
-                                                >
-                                                    <option value={undefined}>(None)</option>
-                                                    {#each folders as folder}
-                                                        {#if folder.key !== item.key}
-                                                            <option value={folder.key}>{folder.comment || 'Folder'}</option>
-                                                        {/if}
-                                                    {/each}
-                                                </select>
-                                            </div>
-                                        {/if}
+                                            {#if folders.length > 0}
+                                                <div class="flex items-center gap-1 text-[11px] text-textcolor2">
+                                                    <span>Folder:</span>
+                                                    <select
+                                                        bind:value={item.folder}
+                                                        class="h-6 px-1.5 rounded border border-darkborderc bg-darkbutton text-textcolor text-[11px]"
+                                                    >
+                                                        <option value={undefined}>(Root)</option>
+                                                        {#each folders as folder}
+                                                            {#if folder.key !== item.key}
+                                                                <option value={folder.key}>{folder.comment || 'Folder'}</option>
+                                                            {/if}
+                                                        {/each}
+                                                    </select>
+                                                </div>
+                                            {/if}
+                                        </div>
                                     </div>
                                 {/if}
                             </div>
