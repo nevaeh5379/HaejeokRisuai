@@ -39,10 +39,20 @@
     // Display layout: 'list' for vertical row list, 'grid' for image card grid
     let displayMode = $state<'list' | 'grid'>('list');
     let searchQuery = $state('');
+    let editTab = $state<'prompt' | 'lorebooks'>('prompt');
 
     let personasReady = $state(personaStore.isLoaded);
     let selectedPersona = $derived(personaStore.activePersona);
     let selectedPersonaIcon = $derived(selectedPersona?.icon ?? '');
+
+    let totalBotLoreCount = $derived.by(() => {
+        if (!selectedPersona?.botLorebooks) return 0;
+        let sum = 0;
+        for (const list of Object.values(selectedPersona.botLorebooks)) {
+            if (Array.isArray(list)) sum += list.length;
+        }
+        return sum;
+    });
 
     onMount(() => {
         if (personasReady) return;
@@ -452,23 +462,48 @@
                     </div>
                 </div>
 
-                <!-- Description / Prompt Card -->
-                <div class="p-3 rounded-xl border border-darkborderc bg-darkbg/35 flex flex-col gap-1.5">
-                    <span class="block text-[11px] font-semibold text-textcolor2 shrink-0">{language.description}</span>
-                    <div class="w-full h-36">
-                        <TextAreaInput 
-                            autocomplete="off" 
-                            height={"full"} 
-                            bind:value={selectedPersona.personaPrompt}
-
-                            placeholder={`페르소나에 대한 설명이나 프롬프트를 입력하세요.\n예: [{{user}}는 활발하고 정의감이 넘치는 모험가이다.]`} 
-                            fullwidth
-                        />
-                    </div>
+                <!-- Tabs: Prompt / Per-bot Lorebooks -->
+                <div class="flex items-center gap-1 border-b border-darkborderc shrink-0 px-1">
+                    <button
+                        type="button"
+                        class="px-3 py-1.5 text-xs font-semibold border-b-2 transition-colors cursor-pointer {editTab === 'prompt' ? 'border-selected text-textcolor' : 'border-transparent text-textcolor2 hover:text-textcolor'}"
+                        onclick={() => { editTab = 'prompt'; }}
+                    >
+                        {language.description || 'Description'}
+                    </button>
+                    <button
+                        type="button"
+                        class="px-3 py-1.5 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 {editTab === 'lorebooks' ? 'border-selected text-textcolor' : 'border-transparent text-textcolor2 hover:text-textcolor'}"
+                        onclick={() => { editTab = 'lorebooks'; }}
+                    >
+                        <span>봇 전용 로어북</span>
+                        {#if totalBotLoreCount > 0}
+                            <span class="px-1.5 py-0.2 rounded-full text-[10px] bg-selected/20 text-selected font-bold">
+                                {totalBotLoreCount}
+                            </span>
+                        {/if}
+                    </button>
                 </div>
 
-                {#if selectedPersona}
-                    <PersonaBotLorebooks persona={selectedPersona} />
+                {#if editTab === 'prompt'}
+                    <!-- Description / Prompt Card -->
+                    <div class="p-3 rounded-xl border border-darkborderc bg-darkbg/35 flex flex-col gap-1.5">
+                        <span class="block text-[11px] font-semibold text-textcolor2 shrink-0">{language.description}</span>
+                        <div class="w-full h-44">
+                            <TextAreaInput 
+                                autocomplete="off" 
+                                height={"full"} 
+                                bind:value={selectedPersona.personaPrompt}
+                                placeholder={`페르소나에 대한 설명이나 프롬프트를 입력하세요.\n예: [{{user}}는 활발하고 정의감이 넘치는 모험가이다.]`} 
+                                fullwidth
+                            />
+                        </div>
+                    </div>
+                {:else if editTab === 'lorebooks' && selectedPersona}
+                    <!-- Per-bot Lorebooks View -->
+                    <div class="p-3 rounded-xl border border-darkborderc bg-darkbg/35 flex flex-col min-h-[300px]">
+                        <PersonaBotLorebooks persona={selectedPersona} />
+                    </div>
                 {/if}
 
                 <!-- Action Buttons Card -->

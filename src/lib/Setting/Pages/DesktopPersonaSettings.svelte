@@ -29,10 +29,20 @@
     let sorted = $state(0);
     let selectedId: string = null;
     let searchQuery = $state('');
+    let activeTab = $state<'prompt' | 'lorebooks'>('prompt');
 
     let personasReady = $state(personaStore.isLoaded);
     let selectedPersona = $derived(personaStore.activePersona);
     let selectedPersonaIcon = $derived(selectedPersona?.icon ?? '');
+
+    let totalBotLoreCount = $derived.by(() => {
+        if (!selectedPersona?.botLorebooks) return 0;
+        let sum = 0;
+        for (const list of Object.values(selectedPersona.botLorebooks)) {
+            if (Array.isArray(list)) sum += list.length;
+        }
+        return sum;
+    });
 
     let filteredPersonas = $derived.by(() => {
         const list = personaStore.list;
@@ -337,23 +347,46 @@
                 </div>
             </div>
 
-            <!-- Description (Prompt) Field (Fills remaining vertical space with full height) -->
-            <div class="flex flex-col min-w-0 flex-1 min-h-0 overflow-hidden">
-                <span class="block text-[11px] font-semibold text-textcolor2 mb-0.5 shrink-0">{language.description}</span>
-                <div class="flex-1 w-full min-h-0">
-                    <TextAreaInput 
-                        autocomplete="off" 
-                        height={"full"} 
-                        bind:value={selectedPersona.personaPrompt}
-
-                        placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`} 
-                        fullwidth
-                    />
-                </div>
+            <!-- Tabs: Prompt / Per-bot Lorebooks -->
+            <div class="flex items-center gap-1 border-b border-darkborderc/50 shrink-0">
+                <button
+                    type="button"
+                    class="px-3 py-1 text-xs font-semibold border-b-2 transition-colors cursor-pointer {activeTab === 'prompt' ? 'border-selected text-textcolor' : 'border-transparent text-textcolor2 hover:text-textcolor'}"
+                    onclick={() => { activeTab = 'prompt'; }}
+                >
+                    {language.description || 'Description'}
+                </button>
+                <button
+                    type="button"
+                    class="px-3 py-1 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 {activeTab === 'lorebooks' ? 'border-selected text-textcolor' : 'border-transparent text-textcolor2 hover:text-textcolor'}"
+                    onclick={() => { activeTab = 'lorebooks'; }}
+                >
+                    <span>Per-bot Lorebooks</span>
+                    {#if totalBotLoreCount > 0}
+                        <span class="px-1.5 py-0.2 rounded-full text-[10px] bg-selected/20 text-selected font-bold">
+                            {totalBotLoreCount}
+                        </span>
+                    {/if}
+                </button>
             </div>
 
-            {#if selectedPersona}
-                <PersonaBotLorebooks persona={selectedPersona} />
+            <!-- Tab Content -->
+            {#if activeTab === 'prompt'}
+                <div class="flex flex-col min-w-0 flex-1 min-h-0 overflow-hidden">
+                    <div class="flex-1 w-full min-h-0">
+                        <TextAreaInput 
+                            autocomplete="off" 
+                            height={"full"} 
+                            bind:value={selectedPersona.personaPrompt}
+                            placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`} 
+                            fullwidth
+                        />
+                    </div>
+                </div>
+            {:else if activeTab === 'lorebooks' && selectedPersona}
+                <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
+                    <PersonaBotLorebooks persona={selectedPersona} />
+                </div>
             {/if}
 
             <!-- Bottom Action Toolbar -->
