@@ -34,7 +34,7 @@
     /* Debugging */
     "sourceMap": true
   },
-  "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte", "public/sw.js"],
+  "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte", "public/sw.js", "e2e/**/*.ts", "playwright.config.ts"],
   "exclude": ["src/**/web/*.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

@@ -48,7 +48,11 @@ dist.zip
 .env.oracle
 /.risuai/
 /server/node/ssl/certificate
-.codegraph/
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
 
 # Due to Cargo.lock makes the project build fail, we ignore it
 Cargo.lock
