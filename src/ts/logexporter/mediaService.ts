@@ -1,67 +1,25 @@
-import type { FFmpeg } from "@ffmpeg/ffmpeg";
 import type { ImageFormat } from "./types";
+import { mergePngBlobsVertically } from "./pngStitch";
+import { getFFmpeg } from "./ffmpegClient";
 
 /**
  * ffmpeg.wasm media service.
  *
- * Replaces the plugin's hand-written binary codecs (png.ts / jpeg.ts /
- * webp.ts / webmConverter.ts): vertical image stitching, format conversion
- * and WebM → animated WebP conversion are delegated to a real ffmpeg build,
- * loaded on demand from CDN so it never touches the initial bundle.
+ * Vertical image stitching, format conversion and WebM → animated WebP
+ * conversion are delegated to a real ffmpeg build, loaded on demand from CDN
+ * so it never touches the initial bundle.
+ *
+ * The @ffmpeg/ffmpeg wrapper is replaced by ffmpegClient.ts: its worker is a
+ * MODULE worker under this app's build (vite worker.format='es'), where the
+ * classic UMD core cannot be importScripts'd and the ESM core fails with an
+ * FS error — the "failed to import ffmpeg-core.js" failure. A classic blob
+ * worker with importScripts supports every browser, so that is what runs the
+ * core now.
  */
-
-const CORE_VERSION = "0.12.10";
-const CORE_BASE_URL = `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/umd`;
 
 export const DEFAULT_WEBM_FPS = 10;
 export const DEFAULT_WEBM_MAX_WIDTH = 500;
 export const DEFAULT_WEBM_QUALITY = 80;
-
-let ffmpegInstance: FFmpeg | null = null;
-let loadPromise: Promise<FFmpeg> | null = null;
-
-export interface MediaProgress {
-  progress: number;
-  time: number;
-}
-
-/** Lazily loads (and caches) the ffmpeg.wasm core. */
-export async function getFFmpeg(
-  onLog?: (message: string) => void,
-): Promise<FFmpeg> {
-  if (ffmpegInstance) return ffmpegInstance;
-  if (!loadPromise) {
-    loadPromise = (async () => {
-      // Dynamic imports keep @ffmpeg/ffmpeg out of the initial bundle
-      const { FFmpeg: FFmpegClass } = await import("@ffmpeg/ffmpeg");
-      const { toBlobURL } = await import("@ffmpeg/util");
-      const ffmpeg = new FFmpegClass();
-      if (onLog) {
-        ffmpeg.on("log", ({ message }) => onLog(message));
-      }
-      await ffmpeg.load({
-        coreURL: await toBlobURL(
-          `${CORE_BASE_URL}/ffmpeg-core.js`,
-          "text/javascript",
-        ),
-        wasmURL: await toBlobURL(
-          `${CORE_BASE_URL}/ffmpeg-core.wasm`,
-          "application/wasm",
-        ),
-      });
-      ffmpegInstance = ffmpeg;
-      return ffmpeg;
-    })().catch((e) => {
-      loadPromise = null;
-      throw e;
-    });
-  }
-  return loadPromise;
-}
-
-export function isFFmpegLoaded(): boolean {
-  return ffmpegInstance !== null;
-}
 
 /** Converts a Blob into the data format ffmpeg.writeFile expects. */
 async function toFFmpegData(blob: Blob): Promise<Uint8Array> {
@@ -93,20 +51,69 @@ function mimeFor(format: ImageFormat): string {
 }
 
 /**
- * Stitches image blobs vertically into one file using ffmpeg's vstack filter.
+ * Stitches image blobs vertically into one file.
  *
- * Inputs of differing widths are scaled to the narrowest width first so the
- * filter never fails. Replaces the plugin's binary PNG/JPEG/WebP mergers and,
- * unlike canvas merging, is not limited by browser texture size limits.
+ * Falls back in order when a merge strategy is unavailable:
+ * 1. ffmpeg.wasm — not limited by browser canvas caps, format-faithful.
+ * 2. canvas draw — bounded by browser canvas caps, format preserved.
+ * 3. canvas-free streaming PNG merge — works for any total height, but the
+ *    output is always PNG (so the caller adjusts the file extension).
  */
+export interface MergedVertically {
+  blob: Blob;
+  /** Actual extension of the produced blob (may differ from the requested format). */
+  ext: string;
+}
+
 export async function mergeImagesVertically(
   blobs: Blob[],
   format: ImageFormat = "png",
   onProgressUpdate?: (update: { message?: string }) => void,
-): Promise<Blob> {
+): Promise<MergedVertically> {
   if (blobs.length === 0) throw new Error("No images to merge");
-  if (blobs.length === 1) return blobs[0];
+  if (blobs.length === 1) return { blob: blobs[0], ext: format };
+  try {
+    return {
+      blob: await mergeBlobsWithFFmpeg(blobs, format, onProgressUpdate),
+      ext: format,
+    };
+  } catch (e) {
+    console.warn(
+      "[logexporter] ffmpeg merge failed, falling back to canvas stitching:",
+      e,
+    );
+  }
+  try {
+    return {
+      blob: await mergeBlobsViaCanvas(blobs, format, onProgressUpdate),
+      ext: format,
+    };
+  } catch (e) {
+    console.warn(
+      "[logexporter] canvas merge failed, falling back to streaming PNG stitching:",
+      e,
+    );
+  }
+  // Split capture exists to build exports taller than the canvas limit, so a
+  // very tall log must still come out as one file. The streaming PNG merger
+  // bypasses the canvas entirely (row-level scanline surgery, bounded memory).
+  onProgressUpdate?.({
+    message: `캔버스 한도를 우회한 스트리밍 병합 중 (${blobs.length}개 섹션)...`,
+  });
+  const stitched = await mergePngBlobsVertically(blobs);
+  if (format !== "png") {
+    onProgressUpdate?.({
+      message: `브라우저에서 ${format.toUpperCase()} 인코딩이 불가하여 PNG로 저장됩니다`,
+    });
+  }
+  return { blob: stitched.blob, ext: "png" };
+}
 
+async function mergeBlobsWithFFmpeg(
+  blobs: Blob[],
+  format: ImageFormat = "png",
+  onProgressUpdate?: (update: { message?: string }) => void,
+): Promise<Blob> {
   onProgressUpdate?.({ message: "ffmpeg 로드 중..." });
   const ffmpeg = await getFFmpeg();
 
@@ -179,6 +186,90 @@ export async function mergeImagesVertically(
       /* ignore */
     }
   }
+}
+
+// ─── Canvas stitching fallback ──────────────────────────────────────────
+
+/** Conservative browser canvas caps shared by Chromium/Firefox/Safari. */
+const CANVAS_MAX_DIMENSION = 16384;
+const CANVAS_MAX_AREA = CANVAS_MAX_DIMENSION * CANVAS_MAX_DIMENSION;
+
+/**
+ * Canvas-based vertical stitch used when ffmpeg.wasm cannot load (offline
+ * CDN, module-worker restrictions, memory pressure). Sections are produced
+ * from the same element, so widths match in practice; mismatched widths are
+ * drawn scaled to the narrowest width. Unlike the ffmpeg path it is bounded
+ * by browser canvas caps — exceeding them throws an actionable error.
+ */
+async function mergeBlobsViaCanvas(
+  blobs: Blob[],
+  format: ImageFormat,
+  onProgressUpdate?: (update: { message?: string }) => void,
+): Promise<Blob> {
+  const mime = mimeFor(format);
+
+  // Probe pass: record natural dimensions while holding only one bitmap at a
+  // time, so peak memory stays at the largest section instead of the sum.
+  const dims: { w: number; h: number }[] = [];
+  let targetWidth = Infinity;
+  for (const blob of blobs) {
+    const bmp = await createImageBitmap(blob);
+    dims.push({ w: bmp.width, h: bmp.height });
+    if (bmp.width < targetWidth) targetWidth = bmp.width;
+    bmp.close?.();
+  }
+  if (!Number.isFinite(targetWidth) || targetWidth <= 0) {
+    throw new Error("Failed to decode images for canvas merge");
+  }
+  const scaledHeights = dims.map(({ w, h }) =>
+    Math.round((h * targetWidth) / w),
+  );
+  const totalHeight = scaledHeights.reduce((a, b) => a + b, 0);
+  if (
+    totalHeight > CANVAS_MAX_DIMENSION ||
+    targetWidth * totalHeight > CANVAS_MAX_AREA
+  ) {
+    throw new Error(
+      `병합 이미지(${targetWidth}x${totalHeight})가 브라우저 캔버스 한도를 초과했습니다. 해상도를 낮추거나 분할 높이를 늘려주세요.`,
+    );
+  }
+
+  onProgressUpdate?.({
+    message: `[대체 캔버스 방식] ${blobs.length}개 이미지 병합 중...`,
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = targetWidth;
+  canvas.height = totalHeight;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Failed to get 2D rendering context");
+  if (format === "jpeg") {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, targetWidth, totalHeight);
+  }
+
+  // Draw pass: decode and draw one section at a time.
+  let y = 0;
+  for (let i = 0; i < blobs.length; i++) {
+    const bmp = await createImageBitmap(blobs[i]);
+    try {
+      ctx.drawImage(bmp, 0, y, targetWidth, scaledHeights[i]);
+      y += scaledHeights[i];
+    } finally {
+      bmp.close?.();
+    }
+  }
+
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(
+      resolve,
+      mime,
+      format === "jpeg" ? 0.95 : format === "webp" ? 0.9 : undefined,
+    ),
+  );
+  if (!blob) {
+    throw new Error(`Failed to encode merged image (${format})`);
+  }
+  return blob;
 }
 
 // ─── WebM → Animated WebP ────────────────────────────────────────────────────

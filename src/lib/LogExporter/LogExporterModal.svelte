@@ -40,6 +40,7 @@
     import { generateExport } from 'src/ts/logexporter/htmlGenerator'
     import { copyToClipboard, saveAsFile, sanitizeFilename } from 'src/ts/logexporter/fileService'
     import { clearBatchCache, clearImageUrlCache } from 'src/ts/logexporter/messageRenderer'
+    import { alertError } from 'src/ts/alert'
     import type {
         ColorPalette,
         ExportFormat,
@@ -79,6 +80,7 @@
     let viewportEl: HTMLDivElement | null = $state(null)
     let documentEl: HTMLDivElement | null = $state(null)
     let documentHeight = $state(0)
+    let layoutHeight = $state(0)
 
     const palette: ColorPalette = $derived(resolveEffectiveColor(settings.theme, settings.color))
     const backgroundColor = $derived(palette.background)
@@ -232,18 +234,33 @@
         previewScale = 1
     }
 
+    // ── Preview height measurement ────────────────────────────────
+    // In 'full' scale mode the LogContainer applies its own transform
+    // (htmlScaleFactor), so the visual height is the layout height multiplied
+    // by that factor; the wrapper must reserve that extra space.
+    function getTotalScale(): number {
+        return previewScale * (settings.htmlScaleMode === 'full' ? (Number(settings.htmlScaleFactor) || 1) : 1)
+    }
+    function measureDocument() {
+        if (!documentEl) return
+        layoutHeight = documentEl.offsetHeight
+        documentHeight = layoutHeight * getTotalScale()
+    }
+
     $effect(() => {
         if (!viewportEl) return
         const observer = new ResizeObserver(() => {
             if (fitMode && isBasicFormat) fitToViewport()
-            if (documentEl) documentHeight = documentEl.offsetHeight
+            if (documentEl) measureDocument()
         })
         observer.observe(viewportEl)
         return () => observer.disconnect()
     })
     $effect(() => {
         void previewScale
-        if (documentEl) documentHeight = documentEl.offsetHeight
+        void settings.htmlScaleMode
+        void settings.htmlScaleFactor
+        if (documentEl) measureDocument()
     })
 
     // ── HTML / markdown / text preview generation ────────────────────────
@@ -272,6 +289,10 @@
         return `Risu_Log_${sanitizeFilename(charInfo.name)}_${sanitizeFilename(charInfo.chatName)}.${ext}`
     }
 
+    function describeError(e: unknown): string {
+        return e instanceof Error ? e.message : String(e)
+    }
+
     async function handleSaveImage() {
         try {
             await saveAsImage(viewData, settings, palette, settings.imageFormat, {
@@ -280,8 +301,9 @@
                 onProgressEnd: endProgress,
             })
         } catch (e) {
-            console.error(e)
+            console.error('[logexporter] Image save failed:', e)
             endProgress()
+            alertError(`이미지 저장에 실패했습니다: ${describeError(e)}`)
         }
     }
 
@@ -306,8 +328,9 @@
                 await saveAsFile(exportFilename('html'), result.content)
             }
         } catch (e) {
-            console.error(e)
+            console.error('[logexporter] HTML export failed:', e)
             endProgress()
+            alertError(`HTML 내보내기에 실패했습니다: ${describeError(e)}`)
         }
     }
 
@@ -323,8 +346,9 @@
                 await saveAsFile(exportFilename(result.extension), result.content)
             }
         } catch (e) {
-            console.error(e)
+            console.error('[logexporter] Text/Markdown export failed:', e)
             endProgress()
+            alertError(`내보내기에 실패했습니다: ${describeError(e)}`)
         }
     }
 
@@ -659,7 +683,7 @@
                                     <div
                                         bind:this={documentEl}
                                         class="mx-auto origin-top transition-transform"
-                                        style="width:{viewWidth}px;transform:scale({previewScale});margin-bottom:{Math.max(0, documentHeight * (previewScale - 1))}px;"
+                                        style="width:{viewWidth}px;transform:scale({previewScale});margin-bottom:{Math.max(0, documentHeight - layoutHeight)}px;"
                                     >
                                         <LogContainer
                                             data={viewData}

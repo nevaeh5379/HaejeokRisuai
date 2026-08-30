@@ -72,6 +72,41 @@ async function waitForMedia(
   await Promise.race([Promise.all(promises), delay(timeoutMs)]);
 }
 
+// ─── Placeholder & error helpers ────────────────────────────────────────────
+
+/**
+ * Neutral placeholder shown for images that fail to load during capture.
+ * html-to-image re-fetches every non-data img src internally; a failed fetch
+ * makes it set an empty data URL, which fires `onerror` and rejects the whole
+ * capture when no error handler is set. Baking failed images into a harmless
+ * placeholder up front keeps the export alive (with a visible hole) instead
+ * of dying silently.
+ */
+let placeholderDataUrl: string | null = null;
+function getImagePlaceholderDataUrl(): string {
+  if (placeholderDataUrl) return placeholderDataUrl;
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "rgba(150,153,158,0.35)";
+      ctx.fillRect(0, 0, 1, 1);
+    }
+    placeholderDataUrl = canvas.toDataURL("image/png");
+  } catch {
+    placeholderDataUrl =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+  }
+  return placeholderDataUrl;
+}
+
+function errorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  return String(e);
+}
+
 // ─── Offscreen rendering ─────────────────────────────────────────────────────
 
 export interface OffscreenRender {
@@ -142,11 +177,28 @@ async function renderOffscreen(
 
 // ─── Capture ─────────────────────────────────────────────────────────────────
 
+// ─── Capture ─────────────────────────────────────────────────────────────────
+
+/**
+ * html-to-image copies the capture root's computed styles into its clone,
+ * including `position:fixed; left:-10000px` from the off-screen wrapper. The
+ * SVG foreignObject honors those offsets too, so the content lands outside
+ * the rendered box and the capture comes out fully transparent. Overriding
+ * the clone root back into view fixes this (verified headlessly).
+ */
+const SECTION_CAPTURE_STYLE: Partial<CSSStyleDeclaration> = {
+  position: "static",
+  left: "0px",
+  top: "0px",
+  margin: "0px",
+};
+
 async function captureElementToBlob(
   element: HTMLElement,
   format: ImageFormat,
   bgColor: string,
   pixelRatio: number,
+  styleOverride?: Partial<CSSStyleDeclaration>,
 ): Promise<Blob> {
   const scale = getTransformScale(element);
   const options = {
@@ -154,19 +206,32 @@ async function captureElementToBlob(
     width: Math.round(element.offsetWidth * scale),
     height: Math.round(element.offsetHeight * scale),
     backgroundColor: format === "jpeg" ? bgColor : undefined,
+    // Any embed failure falls back to the placeholder instead of rejecting
+    // the whole capture.
+    imagePlaceholder: getImagePlaceholderDataUrl(),
+    onImageErrorHandler: () => undefined,
+    style: styleOverride,
   };
-  if (format === "webp") {
-    // html-to-image cannot encode WebP directly; produce PNG then convert
-    const pngBlob = await toBlob(element, { ...options, type: "image/png" });
-    const { convertViaCanvas } = await import("./canvasConvert");
-    return convertViaCanvas(pngBlob, "image/webp");
+  let blob: Blob | null = null;
+  try {
+    if (format === "webp") {
+      // html-to-image cannot encode WebP directly; produce PNG then convert
+      const pngBlob = await toBlob(element, { ...options, type: "image/png" });
+      if (!pngBlob) throw new Error("empty blob");
+      const { convertViaCanvas } = await import("./canvasConvert");
+      return await convertViaCanvas(pngBlob, "image/webp");
+    }
+    const mime = format === "jpeg" ? "image/jpeg" : "image/png";
+    blob = await toBlob(element, {
+      ...options,
+      type: mime,
+      quality: format === "jpeg" ? 1 : undefined,
+    });
+  } catch (e) {
+    throw new Error(
+      `Failed to capture element (${format}): ${errorMessage(e)}`,
+    );
   }
-  const mime = format === "jpeg" ? "image/jpeg" : "image/png";
-  const blob = await toBlob(element, {
-    ...options,
-    type: mime,
-    quality: format === "jpeg" ? 1 : undefined,
-  });
   if (!blob) throw new Error(`Failed to capture element (${format})`);
   return blob;
 }
@@ -213,6 +278,7 @@ async function forEachSection(
         format === "webp" ? "png" : format,
         bgColor,
         resolution,
+        SECTION_CAPTURE_STYLE,
       );
       await onSectionBlob(blob);
     } finally {
@@ -280,7 +346,12 @@ export async function saveAsImage(
 
   try {
     onProgressStart?.("이미지 생성 중...", 1);
-    const render = await renderOffscreen(data, settings, colorPalette);
+    let render: OffscreenRender;
+    try {
+      render = await renderOffscreen(data, settings, colorPalette);
+    } catch (e) {
+      throw new Error(`오프스크린 렌더링 실패: ${errorMessage(e)}`);
+    }
     try {
       const element = render.element;
       await inlineRemainingImages(element);
@@ -311,6 +382,7 @@ export async function saveAsImage(
       );
 
       let blob: Blob | null = null;
+      let mergedExt: string = format;
       const isTooTall = renderedHeight > finalMaxHeight;
 
       if (isTooTall && settings.splitImage === "chunk") {
@@ -326,7 +398,13 @@ export async function saveAsImage(
           },
           onProgressUpdate,
         );
-        blob = await mergeImagesVertically(blobs, format, onProgressUpdate);
+        const merged = await mergeImagesVertically(
+          blobs,
+          format,
+          onProgressUpdate,
+        );
+        blob = merged.blob;
+        mergedExt = merged.ext;
       } else if (isTooTall && settings.splitImage === "message") {
         let sectionIndex = 0;
         const numSections = Math.ceil(element.offsetHeight / finalMaxHeight);
@@ -340,9 +418,11 @@ export async function saveAsImage(
             onProgressUpdate?.({
               message: `[섹션 ${sectionIndex + 1}/${numSections}] 파일 저장 중...`,
             });
+            // webp sections are rasterized as PNG (html-to-image cannot encode
+            // webp directly), so the extension must follow the actual blob.
             await downloadBlob(
               b,
-              `${baseFilename}_part${++sectionIndex}.${format}`,
+              `${baseFilename}_part${++sectionIndex}.${format === "webp" ? "png" : format}`,
             );
             await delay(DOWNLOAD_PREPARATION_DELAY_MS);
           },
@@ -357,7 +437,7 @@ export async function saveAsImage(
       if (!blob) throw new Error("Failed to generate image blob.");
       onProgressUpdate?.({ message: "파일 다운로드 중..." });
       await delay(DOWNLOAD_PREPARATION_DELAY_MS);
-      await downloadBlob(blob, `${baseFilename}.${format}`);
+      await downloadBlob(blob, `${baseFilename}.${mergedExt}`);
     } finally {
       await render.destroy();
     }
@@ -386,14 +466,23 @@ async function inlineRemainingImages(element: HTMLElement): Promise<void> {
         img.remove();
         return;
       }
-      img.src = await imageUrlToDataUrl(src);
+      const dataUrl = await imageUrlToDataUrl(src);
+      // imageUrlToDataUrl keeps the original URL when it cannot embed it;
+      // leaving a broken src here would make html-to-image's own re-fetch
+      // error out and reject the capture, so swap in a placeholder instead.
+      img.src = dataUrl.startsWith("data:")
+        ? dataUrl
+        : getImagePlaceholderDataUrl();
     }),
     ...bgElements.map(async (el) => {
       const styleAttr = el.getAttribute("style") ?? "";
       const bgUrl = extractBackgroundImageUrl(styleAttr);
       if (!bgUrl || bgUrl.startsWith("data:")) return;
       const dataUrl = await imageUrlToDataUrl(bgUrl);
-      el.setAttribute("style", styleAttr.replace(bgUrl, dataUrl));
+      const inline = dataUrl.startsWith("data:")
+        ? dataUrl
+        : getImagePlaceholderDataUrl();
+      el.setAttribute("style", styleAttr.replace(bgUrl, inline));
     }),
   ]);
 }
