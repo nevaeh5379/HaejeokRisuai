@@ -44,7 +44,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_TAG: ${{ steps.version.outputs.build_tag }}
-        run: node tooling/release-notes.mjs
+        run: python3 tooling/release_notes.py
 
       - name: Ensure build tag exists
         shell: bash
@@ -404,7 +404,7 @@ jobs:
         shell: bash
         run: |
           gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" > release.json
-          node tooling/release-downloads.mjs release.json release-body.md
+          python3 tooling/release_downloads.py release.json release-body.md
           jq -n --rawfile body release-body.md '{body: $body}' > release-body.json
           gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
             --input release-body.json >/dev/null
