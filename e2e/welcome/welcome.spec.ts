@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { expect, test } from "../fixtures";
 
 /**
  * Interaction test: walking one layer into the first-run welcome flow.
