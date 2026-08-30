@@ -23,6 +23,7 @@ const currentChatState = vi.hoisted(() => ({ value: { message: [] } as any }));
 const getChatVarMock = vi.hoisted(() => vi.fn(() => "target-value"));
 const getGlobalChatVarMock = vi.hoisted(() => vi.fn(() => "global-value"));
 const setChatVarMock = vi.hoisted(() => vi.fn());
+const lowSpecModeState = vi.hoisted(() => ({ value: false }));
 
 vi.mock("../parser/chatVar.svelte", () => ({
   getChatVar: getChatVarMock,
@@ -76,7 +77,14 @@ vi.mock("../stores/domain/characterStore.svelte", () => ({
   },
 }));
 vi.mock("../stores/domain/settingsStore.svelte", () => ({
-  settingsStore: { state: { maxContext: 4096 } },
+  settingsStore: {
+    state: {
+      maxContext: 4096,
+      get lowSpecMode() {
+        return lowSpecModeState.value;
+      },
+    },
+  },
 }));
 
 vi.mock("../stores/domain/messageStore.svelte", () => ({
@@ -241,9 +249,11 @@ test("persists a user message added by Lua", async () => {
   );
 
   expect(commitMessages).toHaveBeenCalledOnce();
-  expect(commitMessages).toHaveBeenCalledWith("chat-1", [
-    { role: "user", data: "persist me" },
-  ]);
+  expect(commitMessages).toHaveBeenCalledWith(
+    "chat-1",
+    [{ role: "user", data: "persist me" }],
+    [],
+  );
 });
 
 test("does not persist when Lua only reads chat messages", async () => {
@@ -317,7 +327,11 @@ test("preserves message metadata when Lua replaces the full chat", async () => {
     name: "Narrator",
     generationInfo: { model: "test-model" },
   });
-  expect(commitMessages).toHaveBeenCalledWith("chat-1", chat.message);
+  expect(commitMessages).toHaveBeenCalledWith(
+    "chat-1",
+    chat.message,
+    ["message-1"],
+  );
 });
 
 test("checks module button triggers when character triggers are missing", async () => {
@@ -428,7 +442,11 @@ test("pins Lua module button actions to the clicked chat target", async () => {
     expect.any(String),
     target,
   );
-  expect(commitMessages).toHaveBeenCalledWith("target-chat", targetChat.message);
+  expect(commitMessages).toHaveBeenCalledWith(
+    "target-chat",
+    targetChat.message,
+    [],
+  );
 
   moduleTriggers.mockReset();
   databaseState.value = {
@@ -501,4 +519,35 @@ test("runs module button actions that read lorebooks before character details hy
   moduleLorebooks.mockReset();
   databaseState.value = { characters: [] } as any;
   currentChatState.value = { message: [] } as any;
+});
+
+test("evicts least recently used idle scripting engines", async () => {
+  lowSpecModeState.value = true;
+  const logSpy = vi.spyOn(console, "log");
+  const code = "function onStart() return true end";
+
+  try {
+    for (let i = 0; i < 5; i++) {
+      await runScripted(code, {
+        char: {} as never,
+        chat: { message: [] } as never,
+        mode: `memory-cache-${i}`,
+      });
+    }
+
+    logSpy.mockClear();
+    await runScripted(code, {
+      char: {} as never,
+      chat: { message: [] } as never,
+      mode: "memory-cache-0",
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      "Creating new Lua engine for mode:",
+      "memory-cache-0",
+    );
+  } finally {
+    lowSpecModeState.value = false;
+    logSpy.mockRestore();
+  }
 });

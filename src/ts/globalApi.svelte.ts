@@ -152,16 +152,9 @@ export async function downloadFile(
   }
 }
 
-let fileCache: {
-  origin: string[];
-  res: (Uint8Array | "loading" | "done")[];
-} = {
-  origin: [],
-  res: [],
-};
-
-let pathCache: { [key: string]: string } = {};
-let checkedPaths: string[] = [];
+const pathCache = new BoundedCache<string, string>({
+  maxEntries: () => (settingsStore.state.lowSpecMode ? 256 : 1024),
+});
 
 const revokeObjectUrl = (url: string) => {
   if (url.startsWith("blob:")) URL.revokeObjectURL(url);
@@ -336,7 +329,9 @@ export function preloadThumbnails(keys: string[]) {
   thumbnailBatchLoader.preload(keys);
 }
 
-const preparedNativeThumbnailKeys = new Set<string>();
+const preparedNativeThumbnailKeys = new BoundedCache<string, true>({
+  maxEntries: () => (settingsStore.state.lowSpecMode ? 4096 : 32768),
+});
 
 function nativeThumbnailCacheKey(loc: string, width: number, height: number) {
   return `${width}x${height}:${loc}`;
@@ -357,7 +352,7 @@ export function getPreparedNativeThumbnailSrc(
 ): string | undefined {
   if (
     !isCapacitor ||
-    !preparedNativeThumbnailKeys.has(
+    !preparedNativeThumbnailKeys.get(
       nativeThumbnailCacheKey(loc, width, height),
     )
   ) {
@@ -387,8 +382,9 @@ export async function prepareNativeThumbnails(
     maxHeight,
   });
   for (const loc of result.ready) {
-    preparedNativeThumbnailKeys.add(
+    preparedNativeThumbnailKeys.set(
       nativeThumbnailCacheKey(loc, maxWidth, maxHeight),
+      true,
     );
   }
   return result;
@@ -398,7 +394,10 @@ export function invalidateThumbnailCache(loc?: string) {
   thumbnailBatchLoader.invalidate(loc);
 }
 
-const registeredSwCaches = new Set<string>();
+const registeredSwCaches = new BoundedCache<string, true>({
+  maxEntries: () => (settingsStore.state.lowSpecMode ? 512 : 4096),
+});
+const swRegistrationPromises = new Map<string, Promise<void>>();
 const browserAssetWeights = new Map<string, number>();
 const browserAssetUrls = new BoundedCache<string, string>({
   maxEntries: () =>
@@ -443,7 +442,7 @@ export async function getFileSrc(
       if (appDataDirPath === "") {
         appDataDirPath = await appDataDir();
       }
-      const cached = isThumb ? tauriThumbnailUrls.get(loc) : pathCache[loc];
+      const cached = isThumb ? tauriThumbnailUrls.get(loc) : pathCache.get(loc);
       if (cached) {
         return cached.startsWith("blob:") ? cached : convertFileSrc(cached);
       } else {
@@ -461,7 +460,7 @@ export async function getFileSrc(
             return convertFileSrc(joined);
           }
         }
-        pathCache[loc] = joined;
+        pathCache.set(loc, joined);
         return convertFileSrc(joined);
       }
     }
@@ -478,15 +477,12 @@ export async function getFileSrc(
     const cacheKey = cacheVariantKey;
     if (usingSw && !options?.transient) {
       const encoded = Buffer.from(cacheKey, "utf-8").toString("hex");
-      if (registeredSwCaches.has(cacheKey)) {
+      if (registeredSwCaches.get(cacheKey)) {
         return "/sw/img/" + encoded;
       }
-      let ind = fileCache.origin.indexOf(cacheKey);
-      if (ind === -1) {
-        ind = fileCache.origin.length;
-        fileCache.origin.push(cacheKey);
-        fileCache.res.push("loading");
-        try {
+      let registration = swRegistrationPromises.get(cacheKey);
+      if (!registration) {
+        registration = (async () => {
           const raw = (await forageStorage.getItem(
             loc,
           )) as unknown as Uint8Array;
@@ -505,20 +501,21 @@ export async function getFileSrc(
               },
               body: f as any,
             });
-            registeredSwCaches.add(cacheKey);
+            registeredSwCaches.set(cacheKey, true);
           }
-          fileCache.res[ind] = "done";
-          return "/sw/img/" + encoded;
-        } catch (error) {}
-      } else {
-        const f = fileCache.res[ind];
-        if (f === "loading") {
-          while (fileCache.res[ind] === "loading") {
-            await sleep(10);
-          }
-        }
-        return "/sw/img/" + encoded;
+        })();
+        swRegistrationPromises.set(cacheKey, registration);
       }
+      try {
+        await registration;
+      } catch (error) {
+        console.warn("Failed to register service worker asset", error);
+      } finally {
+        if (swRegistrationPromises.get(cacheKey) === registration) {
+          swRegistrationPromises.delete(cacheKey);
+        }
+      }
+      return "/sw/img/" + encoded;
     } else {
       const cacheKey = cacheVariantKey;
       const cachedUrl = options?.transient

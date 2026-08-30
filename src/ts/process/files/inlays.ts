@@ -29,14 +29,9 @@ const inlayStorage = localforage.createInstance({
 
 export async function postInlayAsset(img: { name: string; data: Uint8Array }) {
   const extention = img.name.split(".").at(-1);
-  const imgObj = new Image();
 
   if (inlayImageExts.includes(extention)) {
-    imgObj.src = URL.createObjectURL(
-      new Blob([asBuffer(img.data)], { type: `image/${extention}` }),
-    );
-
-    return await writeInlayImage(imgObj, {
+    return await writeInlayImageFromBytes(img.data, {
       name: img.name,
       ext: extention,
     });
@@ -75,6 +70,24 @@ export async function postInlayAsset(img: { name: string; data: Uint8Array }) {
   }
 
   return null;
+}
+
+export async function writeInlayImageFromBytes(
+  data: Uint8Array,
+  arg: { name?: string; ext?: string; id?: string } = {},
+) {
+  const imgObj = new Image();
+  const ext = arg.ext ?? "png";
+  const objectUrl = URL.createObjectURL(
+    new Blob([asBuffer(data)], { type: `image/${ext}` }),
+  );
+  imgObj.src = objectUrl;
+  try {
+    return await writeInlayImage(imgObj, arg);
+  } finally {
+    imgObj.src = "";
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 export async function writeInlayImage(
@@ -326,17 +339,22 @@ export async function reencodeImage(img: Uint8Array) {
   }
   const canvas = document.createElement("canvas");
   const imgObj = new Image();
-  imgObj.src = URL.createObjectURL(
+  const objectUrl = URL.createObjectURL(
     new Blob([asBuffer(img)], { type: `image/png` }),
   );
-  await imgObj.decode();
-  let drawHeight = imgObj.height;
-  let drawWidth = imgObj.width;
-  canvas.width = drawWidth;
-  canvas.height = drawHeight;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(imgObj, 0, 0, drawWidth, drawHeight);
-  const b64 = canvas.toDataURL("image/png").split(",")[1];
-  const b = Buffer.from(b64, "base64");
-  return b;
+  imgObj.src = objectUrl;
+  try {
+    await imgObj.decode();
+    let drawHeight = imgObj.height;
+    let drawWidth = imgObj.width;
+    canvas.width = drawWidth;
+    canvas.height = drawHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(imgObj, 0, 0, drawWidth, drawHeight);
+    const b64 = canvas.toDataURL("image/png").split(",")[1];
+    return Buffer.from(b64, "base64");
+  } finally {
+    imgObj.src = "";
+    URL.revokeObjectURL(objectUrl);
+  }
 }

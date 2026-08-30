@@ -6,6 +6,7 @@ import type {
   ReplacementRule,
   MessageDisplayOptions,
 } from "./types";
+import { BoundedCache } from "../memory/boundedCache";
 
 /**
  * Message HTML processing for the Log Exporter.
@@ -34,7 +35,11 @@ export function effectiveFontSize(
 
 // ─── Image URL embedding ─────────────────────────────────────────────────────
 
-const dataUrlCache = new Map<string, string>();
+const dataUrlCache = new BoundedCache<string, string>({
+  maxEntries: 64,
+  maxWeight: 24 * 1024 * 1024,
+  weigh: (value, key) => (value.length + key.length) * 2,
+});
 
 /** Converts any image URL into a data URL so exports are self-contained. */
 export async function imageUrlToDataUrl(url: string): Promise<string> {
@@ -51,7 +56,6 @@ export async function imageUrlToDataUrl(url: string): Promise<string> {
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
-    if (dataUrlCache.size > 300) dataUrlCache.clear();
     dataUrlCache.set(url, dataUrl);
     return dataUrl;
   } catch (e) {
@@ -673,7 +677,11 @@ export async function processMessageHtml(
 
 // ─── Batch cache ─────────────────────────────────────────────────────────────
 
-const batchCache = new Map<string, string>();
+const batchCache = new BoundedCache<string, string>({
+  maxEntries: 256,
+  maxWeight: 16 * 1024 * 1024,
+  weigh: (value, key) => (value.length + key.length) * 2,
+});
 
 export function getCachedProcessedHtml(key: string): string | undefined {
   return batchCache.get(key);

@@ -153,18 +153,25 @@
             let duration = 0
             {
                 const video = document.createElement('video')
-                video.src = URL.createObjectURL(file)
+                const objectUrl = URL.createObjectURL(file)
+                video.src = objectUrl
                 video.preload = 'metadata'
                 video.muted = true
-                await video.play()
-                const d = video.duration
-                if(isNaN(d)){
-                    alertError('This video does not have a duration')
-                    return
+                try {
+                    await video.play()
+                    const d = video.duration
+                    if(isNaN(d)){
+                        alertError('This video does not have a duration')
+                        return
+                    }
+                    duration = d
+                } finally {
+                    video.pause()
+                    video.removeAttribute('src')
+                    video.load()
+                    video.remove()
+                    URL.revokeObjectURL(objectUrl)
                 }
-                video.pause()
-                video.remove()
-                duration = d
             }
 
             outputText = 'Converting video to audio...\n\n'
