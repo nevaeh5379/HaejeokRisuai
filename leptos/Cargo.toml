@@ -1,0 +1,22 @@
+[package]
+name = "risuai-frontend"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0"
+
+[dependencies]
+leptos = { version = "0.7", features = ["csr"] }
+leptos_router = { version = "0.7" }
+leptos_meta = { version = "0.7" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+urlencoding = "2.1"
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Document",
+    "Element",
+    "KeyboardEvent",
+] }
+gloo-net = { version = "0.6", features = ["http", "json"] }
+gloo-storage = "0.3"
+console_error_panic_hook = "0.1"
