@@ -27,7 +27,7 @@
     "username", "userIcon", "userNote", "personaPrompt"
   ],
   "DOMAIN_STORE_SETTING_KEYS": [
-    "personas", "selectedPersona", "username", "userIcon", "userNote", "personaPrompt",
+    "personas", "personaFolders", "selectedPersona", "username", "userIcon", "userNote", "personaPrompt",
     "modules", "enabledModules", "moduleFolders", "activeBotPresetId"
   ],
   "BOOTSTRAP_SETTING_KEYS": [

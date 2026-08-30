@@ -82,4 +82,106 @@ describe("PersonaStore", () => {
       false,
     );
   });
+
+  it("persists a new persona folder as a separate root setting", async () => {
+    await personaStore.init(storage);
+
+    const folder = await personaStore.addFolder("Favorites");
+
+    expect(personaStore.folders).toHaveLength(1);
+    expect(folder.name).toBe("Favorites");
+    expect(commits).toHaveLength(1);
+    expect(commits[0].root.upserts).toContainEqual({
+      key: "personaFolders",
+      value: [folder],
+    });
+    expect(commits[0].root.upserts.some(({ key }) => key === "personas")).toBe(
+      false,
+    );
+  });
+
+  it("loads persona folders from storage and moves personas between folders", async () => {
+    storage.loadPersonas = vi.fn(async () => [
+      { name: "A", icon: "", personaPrompt: "A", id: "a" },
+      { name: "B", icon: "", personaPrompt: "B", id: "b" },
+    ]);
+    storage.loadSettingKey = vi.fn(async (key: string) =>
+      key === "personaFolders"
+        ? [{ id: "f1", name: "Work", color: "" }]
+        : undefined,
+    );
+    await personaStore.init(storage);
+    expect(personaStore.folders).toMatchObject([{ id: "f1", name: "Work" }]);
+
+    await personaStore.movePersonaToFolder("a", "f1");
+
+    expect(personaStore.personasInFolder("f1").map((p) => p.name)).toEqual([
+      "A",
+    ]);
+    expect(personaStore.personasWithoutFolder().map((p) => p.name)).toEqual([
+      "B",
+    ]);
+    const moveCommit = commits.find((commit) =>
+      commit.root.upserts.some(({ key }) => key === "personas"),
+    );
+    expect(moveCommit).toBeDefined();
+    const upsert = moveCommit!.root.upserts.find(
+      ({ key }) => key === "personas",
+    )!;
+    expect(
+      (upsert.value as { name: string; folderId?: string }[]).find(
+        (p) => p.name === "A",
+      )?.folderId,
+    ).toBe("f1");
+  });
+
+  it("rejects moving a persona into a nonexistent folder", async () => {
+    storage.loadPersonas = vi.fn(async () => [
+      { name: "A", icon: "", personaPrompt: "A", id: "a" },
+    ]);
+    await personaStore.init(storage);
+
+    await expect(
+      personaStore.movePersonaToFolder("a", "missing"),
+    ).rejects.toThrow(/Persona folder not found/);
+  });
+
+  it("removing a folder keeps its personas by clearing folder assignments", async () => {
+    storage.loadPersonas = vi.fn(async () => [
+      { name: "A", icon: "", personaPrompt: "A", id: "a", folderId: "f1" },
+    ]);
+    storage.loadSettingKey = vi.fn(async (key: string) =>
+      key === "personaFolders"
+        ? [{ id: "f1", name: "Work", color: "" }]
+        : undefined,
+    );
+    await personaStore.init(storage);
+
+    await personaStore.removeFolder("f1");
+
+    expect(personaStore.folders).toHaveLength(0);
+    expect(personaStore.personasWithoutFolder().map((p) => p.name)).toEqual([
+      "A",
+    ]);
+    const persona = personaStore.require(0);
+    expect(persona.folderId).toBeUndefined();
+    expect(commits.at(-1)!.root.upserts.map(({ key }) => key)).toEqual([
+      "personas",
+      "personaFolders",
+    ]);
+  });
+
+  it("renames a folder and commits only the folder setting", async () => {
+    await personaStore.init(storage);
+    const folder = await personaStore.addFolder("Old");
+    commits.length = 0;
+
+    await personaStore.renameFolder(folder.id, "New");
+
+    expect(personaStore.getPersonaFolderById(folder.id)?.name).toBe("New");
+    expect(commits).toHaveLength(1);
+    expect(commits[0].root.upserts.map(({ key }) => key)).toEqual([
+      "personaFolders",
+    ]);
+  });
 });

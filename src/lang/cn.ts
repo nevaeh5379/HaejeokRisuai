@@ -1228,6 +1228,7 @@ export const languageChinese = {
   createFolder: "创建文件夹",
   removeFolder: "删除文件夹",
   removeFolderConfirm: "确定要删除此文件夹吗？其中的模块将移至根目录。",
+  personaFolderRemoveConfirm: "确定要删除此用户信息文件夹吗？其中的用户信息将移至根目录。",
   moveToFolder: "移至文件夹",
   noFolder: "无文件夹",
   ungrouped: "未分组",
