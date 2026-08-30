@@ -1,0 +1,80 @@
+name: Rust Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-rust-server:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary_name: risuai-server
+            asset_name: risuai-server-linux-x86_64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            binary_name: risuai-server
+            asset_name: risuai-server-linux-aarch64
+            use_cross: true
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            binary_name: risuai-server
+            asset_name: risuai-server-macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary_name: risuai-server
+            asset_name: risuai-server-macos-aarch64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary_name: risuai-server.exe
+            asset_name: risuai-server-windows-x86_64.exe
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            binary_name: risuai-server.exe
+            asset_name: risuai-server-windows-aarch64.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server/rust
+
+      - name: Install cross (if needed)
+        if: matrix.use_cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build binary
+        working-directory: server/rust
+        run: |
+          if [ "${{ matrix.use_cross }}" = "true" ]; then
+            cross build --release --target ${{ matrix.target }} --bin risuai-server
+          else
+            cargo build --release --target ${{ matrix.target }} --bin risuai-server
+          fi
+        shell: bash
+
+      - name: Prepare Artifact
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          cp server/rust/target/${{ matrix.target }}/release/${{ matrix.binary_name }} artifacts/${{ matrix.asset_name }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: artifacts/${{ matrix.asset_name }}
