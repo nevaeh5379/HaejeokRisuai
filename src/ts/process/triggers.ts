@@ -1324,6 +1324,38 @@ export async function runTrigger(
     setLocalVar(key, value, indent);
   }
 
+  /**
+   * Flatten the trigger-scoped variable state so that a remote scripting
+   * runtime (Node server) can resolve chat variables exactly like this
+   * trigger engine does: local scope first, then the chat scriptstate,
+   * defaults, and display temp vars.
+   */
+  function getVarSnapshot(): {
+    local: Record<string, string>;
+    temp: Record<string, string>;
+    displayMode: boolean;
+  } {
+    const local: Record<string, string> = {};
+    const currentScope =
+      localVarScopes && localVarScopes.length > 0
+        ? localVarScopes[localVarScopes.length - 1]
+        : null;
+    if (currentScope) {
+      for (let indent = currentIndent; indent >= 0; indent--) {
+        const scopeVars = currentScope[indent];
+        if (!scopeVars) continue;
+        for (const key of Object.keys(scopeVars)) {
+          if (!(key in local)) local[key] = scopeVars[key];
+        }
+      }
+    }
+    return {
+      local,
+      temp: { ...tempVars },
+      displayMode: arg.displayMode === true,
+    };
+  }
+
   function clearLocalVarsAtIndent(indent: number) {
     if (!localVarScopes || localVarScopes.length === 0) {
       return;
@@ -1763,6 +1795,7 @@ export async function runTrigger(
             mode: mode === "manual" ? arg.manualName : mode,
             setVar: setVar,
             getVar: getVar,
+            varSnapshot: getVarSnapshot(),
             char: char,
             chat: chat,
             chatTarget: target,

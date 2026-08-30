@@ -46,6 +46,7 @@ const {
 } = require('./realtimeEvents.cjs');
 const { createNodeChatExecutor } = require('./chatExecutor.cjs');
 const { createNodeProviderExecutor } = require('./providerExecutor.cjs');
+const { createNodeScriptingExecutor } = require('./scriptingExecutor.cjs');
 const { createHypaMemoryExecutor } = require('./hypaMemoryExecutor.cjs');
 const {
     createEntryHeader: createLocalBackupEntryHeader,
@@ -275,6 +276,11 @@ const modelJobManager = createModelJobManager({
 });
 const nodeChatExecutor = createNodeChatExecutor();
 const nodeProviderExecutor = createNodeProviderExecutor();
+const nodeScriptingExecutor = createNodeScriptingExecutor({
+    broadcast: (event, data) => realtimeEventHub.broadcast(event, data),
+    jsonLuaPath: path.join(__dirname, '..', '..', 'public', 'lua', 'json.lua'),
+    countTokensBatch,
+});
 const hypaMemoryExecutor = createHypaMemoryExecutor();
 const postgresConfigPath = path.join(savePath, '__postgres_config.json');
 const postgresManagedByEnvironment = Boolean(process.env.DATABASE_URL);
@@ -3665,6 +3671,10 @@ app.delete('/api/db-backup', authenticatedRouteLimiter, async (req, res, next) =
 });
 
 nodeChatExecutor.registerRoutes(app, {
+    auth: checkAuth,
+    limiter: authenticatedRouteLimiter,
+});
+nodeScriptingExecutor.registerRoutes(app, {
     auth: checkAuth,
     limiter: authenticatedRouteLimiter,
 });

@@ -37,6 +37,8 @@ import type { StreamResponseChunk } from "./request/requestContracts";
 import { v4 } from "uuid";
 import { getModuleLorebooks, getModuleTriggers } from "./modules";
 import { Mutex } from "../mutex";
+import { isNodeServer } from "../platform";
+import { runScriptedOnNode } from "./nodeScriptingBridge";
 import { tokenize } from "../tokenizer";
 import { fetchNative, readImage } from "../globalApi.svelte";
 import { loadLoreBookV3Prompt } from "./lorebook.svelte";
@@ -90,6 +92,11 @@ export async function runScripted(
     data?: string | OpenAIChat[];
     setVar?: (key: string, value: string) => boolean | void;
     getVar?: (key: string) => string;
+    varSnapshot?: {
+      local: Record<string, string>;
+      temp: Record<string, string>;
+      displayMode: boolean;
+    };
     lowLevelAccess?: boolean;
     meta?: object;
     mode?: string;
@@ -97,6 +104,9 @@ export async function runScripted(
   },
 ) {
   const type: "lua" | "py" = arg.type ?? "lua";
+  if (isNodeServer && type === "lua") {
+    return await runScriptedOnNode(code, arg);
+  }
   const char = arg.char ?? characterStore.currentCharacter;
   const data = arg.data ?? "";
   const setVar =

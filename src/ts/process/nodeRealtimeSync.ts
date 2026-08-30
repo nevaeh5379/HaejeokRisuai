@@ -13,6 +13,7 @@ import {
   isLocalChatGenerationActive,
   setRemoteChatGeneration,
 } from "./chatRuntimeState";
+import { handleNodeScriptingCall } from "./nodeScriptingBridge";
 
 type DatabaseChangeEvent = {
   revision?: number;
@@ -263,6 +264,17 @@ async function dispatchEvent(
     applyGenerationState(data as GenerationStateEvent);
   } else if (eventName === "ready") {
     applyReadyEvent(data as ReadyEvent);
+  } else if (eventName === "scripting-call") {
+    handleNodeScriptingCall(
+      data as {
+        runId: string;
+        clientId: string;
+        callId: string;
+        kind: string;
+        args: Record<string, any>;
+      },
+      storage.getClientId(),
+    );
   } else if (eventName === "resync-required") {
     scheduleFullResync();
   }
