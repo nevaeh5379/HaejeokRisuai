@@ -49,6 +49,7 @@ const capturedDockerEnvironment = [
     "COMPOSE_ENV_FILES",
     "RISUAI_MODE",
     "RISUAI_RUNTIME",
+    "RISUAI_CONTAINER_ENGINE",
     "RISUAI_DNS_PROVIDER",
     "RISUAI_PROXY_TYPE",
     "RISUAI_PROXY_NETWORK",
@@ -81,6 +82,7 @@ function fakeDockerSource() {
 const fs = require("node:fs");
 
 const args = process.argv.slice(2);
+const engine = require("node:path").basename(process.argv[1]);
 const environmentKeys = ${JSON.stringify(capturedDockerEnvironment)};
 const environment = Object.fromEntries(environmentKeys.map((key) => [key, process.env[key] ?? null]));
 const composeIndex = args.indexOf("compose");
@@ -89,11 +91,11 @@ const knownComposeCommands = new Set([
     "version", "config", "build", "run", "up", "ps", "exec", "logs", "down", "stop", "restart",
 ]);
 const command = composeArgs.find((argument) => knownComposeCommands.has(argument)) ?? null;
-const record = { args, compose: composeIndex !== -1, command, env: environment };
+const record = { engine, args, compose: composeIndex !== -1, command, env: environment };
 fs.appendFileSync(process.env.FAKE_DOCKER_LOG, JSON.stringify(record) + "\\n");
 
 function exit(code, output = "") {
-    if (output) process.stdout.write(output);
+    if (output) fs.writeSync(1, output);
     process.exit(code);
 }
 
@@ -155,7 +157,10 @@ if (composeIndex !== -1) {
     exit(0);
 }
 
-if (args[0] === "info") exit(process.env.FAKE_DOCKER_INFO_FAIL === "1" ? 1 : 0);
+if (args[0] === "info") {
+    const failureKey = engine === "podman" ? "FAKE_PODMAN_INFO_FAIL" : "FAKE_DOCKER_INFO_FAIL";
+    exit(process.env[failureKey] === "1" ? 1 : 0);
+}
 if (args[0] === "context" && args[1] === "show") exit(0, "default\\n");
 if (args[0] === "context" && args[1] === "inspect") exit(0, "unix:///var/run/docker.sock\\n");
 if (args[0] === "network" && args[1] === "inspect") exit(process.env.FAKE_NETWORK_MISSING === "1" ? 1 : 0);
@@ -218,6 +223,7 @@ async function createFixture(t) {
     const ufwLog = join(checkout, "ufw-calls.jsonl");
     await mkdir(fakeBin);
     await writeExecutable(join(fakeBin, "docker"), fakeDockerSource());
+    await writeExecutable(join(fakeBin, "podman"), fakeDockerSource());
     await writeExecutable(join(fakeBin, "ss"), fakeCommandSource("ss"));
     await writeExecutable(join(fakeBin, "sleep"), fakeCommandSource("sleep"));
     await writeExecutable(join(fakeBin, "date"), fakeDateSource());
@@ -384,7 +390,7 @@ test("help and version are side-effect free and do not require Docker", async (t
     for (const [arguments_, output] of [
         [["help"], /Deployment modes:/],
         [["--help"], /Usage:/],
-        [["version"], /^risuai\.sh 2\.2\.0 \(configuration schema 3\)$/m],
+        [["version"], /^risuai\.sh 2\.3\.0 \(configuration schema 3\)$/m],
     ]) {
         const result = await fixture.run(arguments_);
         assert.equal(result.code, 0, result.stderr);
@@ -449,6 +455,68 @@ test("non-interactive installs require both a mode and explicit confirmation", a
         assert.match(result.stderr, /No controlling terminal is available for confirmation/);
         assert.equal(await exists(join(fixture.checkout, ".risuai/rustfs.env")), false);
     });
+});
+
+test("Podman is selected explicitly, persisted, and reused by lifecycle commands", async (t) => {
+    const fixture = await createFixture(t);
+    const install = await installWithoutStarting(fixture, [
+        "--container-engine",
+        "podman",
+        "--runtime",
+        "static",
+        "--mode",
+        "local",
+        "--app-port",
+        "65431",
+    ]);
+    assert.equal(install.code, 0, install.stderr);
+
+    const saved = await readSavedEnvironment(fixture);
+    assert.equal(saved.RISUAI_CONTAINER_ENGINE, "podman");
+    let calls = await fixture.dockerCalls();
+    assert.ok(calls.length > 0);
+    assert.equal(calls.every((call) => call.engine === "podman"), true);
+    assert.equal(
+        calls
+            .filter((call) => call.compose && call.args.includes("--project-name"))
+            .every((call) => call.env.RISUAI_CONTAINER_ENGINE === "podman"),
+        true,
+    );
+
+    await fixture.clearDockerCalls();
+    const start = await fixture.run(["start"], { FAKE_IMAGE_EXISTS: "1" });
+    assert.equal(start.code, 0, start.stderr);
+    calls = await fixture.dockerCalls();
+    assert.ok(calls.some((call) => call.command === "up"));
+    assert.equal(calls.every((call) => call.engine === "podman"), true);
+
+    const switchAttempt = await installWithoutStarting(fixture, [
+        "--container-engine",
+        "docker",
+        "--runtime",
+        "static",
+        "--mode",
+        "local",
+        "--app-port",
+        "65431",
+    ]);
+    assert.notEqual(switchAttempt.code, 0);
+    assert.match(switchAttempt.stderr, /switching it to docker in place is unsafe/);
+});
+
+test("automatic engine selection falls back to a usable Podman when Docker is unavailable", async (t) => {
+    const fixture = await createFixture(t);
+    const install = await installWithoutStarting(
+        fixture,
+        ["--runtime", "static", "--mode", "local", "--app-port", "65430"],
+        { FAKE_DOCKER_INFO_FAIL: "1" },
+    );
+    assert.equal(install.code, 0, install.stderr);
+    const saved = await readSavedEnvironment(fixture);
+    assert.equal(saved.RISUAI_CONTAINER_ENGINE, "podman");
+    const calls = await fixture.dockerCalls();
+    assert.equal(calls.some((call) => call.engine === "docker" && call.args[0] === "info"), true);
+    assert.equal(calls.some((call) => call.engine === "podman" && call.command === "config"), true);
 });
 
 test("all deployment variants save isolated, protected no-start configurations", async (t) => {
@@ -575,6 +643,7 @@ test("all deployment variants save isolated, protected no-start configurations",
             const saved = parseEnv(envText);
             assert.equal(saved.RISUAI_CONFIG_VERSION, "3");
             assert.equal(saved.RISUAI_RUNTIME, "node");
+            assert.equal(saved.RISUAI_CONTAINER_ENGINE, "docker");
             assert.equal(saved.COMPOSE_PROJECT_NAME, "risuai-rustfs");
             assert.match(saved.RISUAI_INSTALLATION_ID, /^[0-9a-f]{32}$/);
             assert.equal(saved.POSTGRES_PASSWORD, fixedCredentials.POSTGRES_PASSWORD);
@@ -785,6 +854,7 @@ test("saved deployment values override hostile ambient Compose and deployment va
         COMPOSE_PROFILES: "attacker-profile",
         COMPOSE_ENV_FILES: "/tmp/attacker.env",
         RISUAI_MODE: "lan",
+        RISUAI_CONTAINER_ENGINE: "podman",
         RISUAI_DOMAIN: "attacker.example.com",
         RISUAI_DNS_PROVIDER: "cloudflare",
         RISUAI_PROXY_TYPE: "docker",
@@ -825,6 +895,7 @@ test("saved deployment values override hostile ambient Compose and deployment va
         assert.equal(call.env.COMPOSE_PROFILES, null);
         assert.equal(call.env.COMPOSE_ENV_FILES, null);
         assert.equal(call.env.RISUAI_MODE, "local");
+        assert.equal(call.env.RISUAI_CONTAINER_ENGINE, "docker");
         assert.equal(call.env.RISUAI_DNS_PROVIDER, "none");
         assert.equal(call.env.RISUAI_PROXY_TYPE, "none");
         assert.equal(call.env.RISUAI_PROXY_NETWORK, "");
@@ -929,7 +1000,7 @@ test("untrusted options, hostnames, ports, collisions, networks, and service nam
                 "proxy;touch-pwned",
                 "--yes",
             ],
-            error: /Invalid or missing Docker proxy network name/,
+            error: /Invalid or missing container proxy network name/,
         },
         {
             name: "Docker network env-line injection",
@@ -943,7 +1014,7 @@ test("untrusted options, hostnames, ports, collisions, networks, and service nam
                 "reverse_proxy\nCOMPOSE_FILE=attacker.yml",
                 "--yes",
             ],
-            error: /Invalid or missing Docker proxy network name/,
+            error: /Invalid or missing container proxy network name/,
         },
         {
             name: "Cloudflare Zone ID env-line injection",
@@ -1101,7 +1172,7 @@ test("Compose config failure leaves the active protected generation unchanged", 
         { FAKE_COMPOSE_CONFIG_FAIL: "1" },
     );
     assert.notEqual(result.code, 0);
-    assert.match(result.stderr, /Prospective Docker Compose configuration is invalid/);
+    assert.match(result.stderr, /Prospective docker Compose configuration is invalid/);
     assert.deepEqual(await protectedSnapshot(fixture), before);
     await assertNoTransactionDebris(fixture);
 });

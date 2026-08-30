@@ -4,7 +4,7 @@ set -eu
 # RisuAI Node/storage or static-web installer and lifecycle manager.
 # Keep this file POSIX-sh compatible: it is used on Linux, macOS, and WSL.
 
-program_version=2.2.0
+program_version=2.3.0
 config_version=3
 project_name=risuai-rustfs
 
@@ -100,7 +100,7 @@ Deployment modes:
   lan      All IPv4 interfaces, over unencrypted HTTP
   domain   Caddy HTTPS with manual DNS or Cloudflare DDNS
   dynv6    Caddy HTTPS with dynv6 DDNS
-  proxy    An existing reverse proxy on the host or a Docker network
+  proxy    An existing reverse proxy on the host or a container network
 
 Application runtimes:
   node     Node server with PostgreSQL and RustFS (default)
@@ -116,6 +116,7 @@ Database management:
 
 Install options:
   --runtime RUNTIME               node or static (default: node)
+  --container-engine ENGINE       auto, docker, or podman (default: auto)
   --mode MODE                     local, lan, domain, dynv6, or proxy
   --domain HOSTNAME               HTTPS hostname (a trailing dot is accepted)
   --dns-provider PROVIDER         manual or cloudflare (domain mode)
@@ -125,8 +126,8 @@ Install options:
   --dynv6-token-file FILE         Read the dynv6 HTTP token from FILE
   --dynv6-token TOKEN             Deprecated; token is visible in process argv
   --token TOKEN                   Compatibility alias for --dynv6-token
-  --proxy-type TYPE               host or docker
-  --proxy-network NAME            Existing external Docker network
+  --proxy-type TYPE               host or container (docker is a compatibility alias)
+  --proxy-network NAME            Existing external container network
   --app-port PORT                 Published RisuAI host port (default: 6001)
   --rustfs-api-port PORT          Loopback RustFS API port (default: 9000)
   --rustfs-console-port PORT      Loopback RustFS console port (default: 9001)
@@ -136,7 +137,7 @@ Install options:
   --ipv6 | --no-ipv6              Enable or disable AAAA updates
   --wait-timeout SECONDS          App readiness timeout, 10..3600 (default: 300)
   --skip-ddns-check               Skip the one-shot provider validation/update
-  --skip-port-check               Rely on Docker instead of host preflight checks
+  --skip-port-check               Rely on the container engine instead of host preflight checks
   --configure-firewall            Best-effort UFW rules for 80/443 host mappings
   --no-start                      Save validated configuration without building/starting
   --dry-run                       Validate and show the plan without persistent changes
@@ -146,7 +147,8 @@ Install options:
   -h, --help                      Show this help
 
 Environment inputs:
-  RISUAI_RUNTIME, RISUAI_MODE, RISUAI_DOMAIN, RISUAI_DNS_PROVIDER, RISUAI_PROXY_TYPE,
+  RISUAI_RUNTIME, RISUAI_CONTAINER_ENGINE, RISUAI_MODE, RISUAI_DOMAIN,
+  RISUAI_DNS_PROVIDER, RISUAI_PROXY_TYPE,
   RISUAI_PROXY_NETWORK, RISUAI_PORT, RUSTFS_API_PORT,
   RUSTFS_CONSOLE_PORT, RISUAI_HTTP_PORT, RISUAI_HTTPS_PORT,
   RISUAI_WAIT_TIMEOUT, DYNV6_TOKEN, CLOUDFLARE_TOKEN,
@@ -159,6 +161,7 @@ safer than command-line token values.
 
 Examples:
   ./risuai.sh install --mode local -y
+  ./risuai.sh install --container-engine podman --mode local -y
   ./risuai.sh install --runtime static --mode local -y
   ./risuai.sh install --runtime static --mode domain --domain chat.example.com \
     --dns-provider manual -y
@@ -184,6 +187,7 @@ short_usage() {
 # snapshot, so environment precedence cannot alter a saved deployment.
 input_mode=${RISUAI_MODE:-}
 input_runtime=${RISUAI_RUNTIME:-}
+input_container_engine=${RISUAI_CONTAINER_ENGINE:-}
 input_domain=${RISUAI_DOMAIN:-${DYNV6_ZONE:-}}
 input_dns_provider=${RISUAI_DNS_PROVIDER:-}
 input_proxy_type=${RISUAI_PROXY_TYPE:-}
@@ -206,7 +210,7 @@ input_rustfs_access_key=${RUSTFS_ACCESS_KEY:-}
 input_rustfs_secret_key=${RUSTFS_SECRET_KEY:-}
 
 unset COMPOSE_FILE COMPOSE_PROJECT_NAME COMPOSE_PROFILES COMPOSE_ENV_FILES
-unset RISUAI_RUNTIME RISUAI_MODE RISUAI_DOMAIN RISUAI_DNS_PROVIDER RISUAI_PROXY_TYPE RISUAI_PROXY_NETWORK
+unset RISUAI_RUNTIME RISUAI_CONTAINER_ENGINE RISUAI_MODE RISUAI_DOMAIN RISUAI_DNS_PROVIDER RISUAI_PROXY_TYPE RISUAI_PROXY_NETWORK
 unset RISUAI_PORT RISUAI_HTTP_PORT RISUAI_HTTPS_PORT RISUAI_INSTALLATION_ID RISUAI_MIGRATE_CONCURRENCY
 unset RUSTFS_BIND_ADDRESS RUSTFS_API_PORT RUSTFS_CONSOLE_PORT
 unset POSTGRES_PASSWORD RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY
@@ -298,6 +302,38 @@ stored_runtime_from() {
     runtime_value=$(read_env_value_from "$runtime_file" RISUAI_RUNTIME)
     [ -n "$runtime_value" ] || runtime_value=node
     printf '%s' "$runtime_value"
+}
+
+stored_container_engine_from() {
+    engine_file=$1
+    engine_value=$(read_env_value_from "$engine_file" RISUAI_CONTAINER_ENGINE)
+    # Configurations created before container-engine selection were Docker-only.
+    [ -n "$engine_value" ] || engine_value=docker
+    printf '%s' "$engine_value"
+}
+
+detect_container_engine() {
+    for detected_engine in docker podman; do
+        if command -v "$detected_engine" >/dev/null 2>&1 &&
+            "$detected_engine" compose version >/dev/null 2>&1 &&
+            "$detected_engine" info >/dev/null 2>&1; then
+            printf '%s' "$detected_engine"
+            return
+        fi
+    done
+    # Preserve the most useful prerequisite error when an installed engine is
+    # present but its service or Compose provider is not ready yet.
+    for detected_engine in docker podman; do
+        if command -v "$detected_engine" >/dev/null 2>&1; then
+            printf '%s' "$detected_engine"
+            return
+        fi
+    done
+    return 1
+}
+
+container() {
+    "$container_engine" "$@"
 }
 
 compose_base_for_runtime() {
@@ -551,29 +587,36 @@ require_files_for_configuration() {
             required_file "$script_dir/deploy/rustfs/Caddyfile" "Caddy configuration"
             required_file "$script_dir/deploy/rustfs/update-dynv6.sh" "dynv6 updater"
             ;;
-        proxy:*:docker) required_file "$compose_proxy_docker" "Docker proxy Compose overlay" ;;
+        proxy:*:docker) required_file "$compose_proxy_docker" "container proxy Compose overlay" ;;
         *) die "Invalid deployment combination: $required_mode/$required_dns/$required_proxy" ;;
     esac
 }
 
 require_compose() {
-    command -v docker >/dev/null 2>&1 || die "Docker is not installed. Install Docker Engine/Desktop with Compose v2."
-    docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is not available (expected: docker compose)."
+    command -v "$container_engine" >/dev/null 2>&1 || die "Container engine '$container_engine' is not installed. Install Docker or Podman with Compose support."
+    container compose version >/dev/null 2>&1 || die "$container_engine Compose is not available (expected: $container_engine compose)."
 }
 
-require_docker_daemon() {
+require_container_engine() {
     require_compose
-    docker info >/dev/null 2>&1 || die "Cannot access the Docker daemon. Start Docker or fix the current user's permissions."
+    container info >/dev/null 2>&1 || die "Cannot access $container_engine. Start its service if required or fix the current user's permissions."
 }
 
-require_local_docker() {
-    case "${DOCKER_HOST:-}" in
-        tcp://*|ssh://*) die "Remote Docker endpoints are unsupported because this stack uses local bind mounts and host port checks." ;;
-    esac
-    context_name=$(docker context show 2>/dev/null || true)
-    if [ -n "$context_name" ]; then
-        context_endpoint=$(docker context inspect "$context_name" --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)
-        case "$context_endpoint" in ''|unix://*|npipe://*) ;; *) die "Docker context '$context_name' is remote ($context_endpoint); use a local Docker context." ;; esac
+require_local_container_engine() {
+    if [ "$container_engine" = docker ]; then
+        case "${DOCKER_HOST:-}" in
+            tcp://*|ssh://*) die "Remote Docker endpoints are unsupported because this stack uses local bind mounts and host port checks." ;;
+        esac
+        context_name=$(container context show 2>/dev/null || true)
+        if [ -n "$context_name" ]; then
+            context_endpoint=$(container context inspect "$context_name" --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)
+            case "$context_endpoint" in ''|unix://*|npipe://*) ;; *) die "Docker context '$context_name' is remote ($context_endpoint); use a local Docker context." ;; esac
+        fi
+    else
+        case "${CONTAINER_HOST:-}" in
+            ''|unix://*) ;;
+            *) die "Remote Podman endpoints are unsupported because this stack uses local bind mounts and host port checks." ;;
+        esac
     fi
 }
 
@@ -588,6 +631,8 @@ validate_saved_configuration() {
     case "$saved_mode" in local|lan|domain|dynv6|proxy) ;; *) error "Missing or invalid RISUAI_MODE in $validate_file"; return 1 ;; esac
     saved_runtime=$(stored_runtime_from "$validate_file")
     case "$saved_runtime" in node|static) ;; *) error "Missing or invalid RISUAI_RUNTIME in $validate_file"; return 1 ;; esac
+    saved_engine=$(stored_container_engine_from "$validate_file")
+    case "$saved_engine" in docker|podman) ;; *) error "Missing or invalid RISUAI_CONTAINER_ENGINE in $validate_file"; return 1 ;; esac
     if [ "$saved_version" = 3 ] && [ -z "$(read_env_value_from "$validate_file" RISUAI_RUNTIME)" ]; then error "Schema 3 configuration is missing RISUAI_RUNTIME"; return 1; fi
     saved_dns=$(env_value_or "$validate_file" RISUAI_DNS_PROVIDER none)
     saved_proxy=$(env_value_or "$validate_file" RISUAI_PROXY_TYPE none)
@@ -644,7 +689,7 @@ validate_saved_configuration() {
     fi
     if [ "$saved_mode:$saved_proxy" = proxy:docker ]; then
         saved_network=$(read_env_value_from "$validate_file" RISUAI_PROXY_NETWORK)
-        is_valid_proxy_network "$saved_network" || { error "Invalid saved Docker proxy network"; return 1; }
+        is_valid_proxy_network "$saved_network" || { error "Invalid saved container proxy network"; return 1; }
     fi
     return 0
 }
@@ -655,6 +700,7 @@ compose_with_env() (
     selected_cloudflare_path=$3
     shift 3
     selected_runtime=$(stored_runtime_from "$selected_env")
+    selected_engine=$(stored_container_engine_from "$selected_env")
     selected_base=$(compose_base_for_runtime "$selected_runtime") || return 64
     selected_mode=$(stored_mode_from "$selected_env")
     selected_dns=$(env_value_or "$selected_env" RISUAI_DNS_PROVIDER none)
@@ -677,6 +723,7 @@ compose_with_env() (
     unset COMPOSE_FILE COMPOSE_PROFILES COMPOSE_ENV_FILES
     COMPOSE_PROJECT_NAME=$project_name
     RISUAI_RUNTIME=$selected_runtime
+    RISUAI_CONTAINER_ENGINE=$selected_engine
     RISUAI_MODE=$selected_mode
     RISUAI_DNS_PROVIDER=$selected_dns
     RISUAI_PROXY_TYPE=$selected_proxy
@@ -701,7 +748,7 @@ compose_with_env() (
     CLOUDFLARE_TOKEN_FILE=$selected_cloudflare_path
     CLOUDFLARE_UPDATE_INTERVAL=$selected_interval
     RISUAI_MIGRATE_CONCURRENCY=4
-    export COMPOSE_PROJECT_NAME RISUAI_RUNTIME RISUAI_MODE RISUAI_DNS_PROVIDER RISUAI_PROXY_TYPE RISUAI_PROXY_NETWORK
+    export COMPOSE_PROJECT_NAME RISUAI_RUNTIME RISUAI_CONTAINER_ENGINE RISUAI_MODE RISUAI_DNS_PROVIDER RISUAI_PROXY_TYPE RISUAI_PROXY_NETWORK
     export RISUAI_INSTALLATION_ID RISUAI_PORT RISUAI_HTTP_PORT RISUAI_HTTPS_PORT RISUAI_MIGRATE_CONCURRENCY
     export POSTGRES_PASSWORD RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY RUSTFS_BIND_ADDRESS RUSTFS_API_PORT RUSTFS_CONSOLE_PORT
     export RISUAI_DOMAIN DYNV6_ZONE DYNV6_IPV6 DYNV6_TOKEN_FILE DYNV6_UPDATE_INTERVAL
@@ -709,17 +756,17 @@ compose_with_env() (
 
     case "$selected_mode:$selected_dns:$selected_proxy" in
         local:*:*|proxy:*:host)
-            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_local" "$@" ;;
+            "$selected_engine" compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_local" "$@" ;;
         lan:*:*)
-            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_lan" "$@" ;;
+            "$selected_engine" compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_lan" "$@" ;;
         domain:cloudflare:*)
-            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_caddy" -f "$compose_cloudflare" "$@" ;;
+            "$selected_engine" compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_caddy" -f "$compose_cloudflare" "$@" ;;
         domain:manual:*)
-            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_caddy" "$@" ;;
+            "$selected_engine" compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_caddy" "$@" ;;
         dynv6:*:*)
-            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_caddy" -f "$compose_dynv6" "$@" ;;
+            "$selected_engine" compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_caddy" -f "$compose_dynv6" "$@" ;;
         proxy:*:docker)
-            docker compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_proxy_docker" "$@" ;;
+            "$selected_engine" compose --project-name "$project_name" --project-directory "$script_dir" --env-file "$selected_env" -f "$selected_base" -f "$compose_proxy_docker" "$@" ;;
         *) return 64 ;;
     esac
 )
@@ -744,14 +791,14 @@ random_secret() {
 recover_container_env() {
     recovery_container=$1
     recovery_key=$2
-    docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$recovery_container" 2>/dev/null | \
+    container inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$recovery_container" 2>/dev/null | \
         awk -v wanted="$recovery_key" 'index($0, wanted "=") == 1 { value=substr($0,length(wanted)+2) } END { printf "%s", value }'
 }
 
 container_label() {
     label_container=$1
     label_name=$2
-    docker inspect --format "{{index .Config.Labels \"$label_name\"}}" "$label_container" 2>/dev/null || true
+    container inspect --format "{{index .Config.Labels \"$label_name\"}}" "$label_container" 2>/dev/null || true
 }
 
 container_belongs_to_installation() {
@@ -767,7 +814,7 @@ container_belongs_to_installation() {
 
 check_container_ownership() {
     for ownership_name in risuai risuai-postgres risuai-rustfs risuai-caddy risuai-dynv6 risuai-cloudflare-ddns; do
-        docker inspect "$ownership_name" >/dev/null 2>&1 || continue
+        container inspect "$ownership_name" >/dev/null 2>&1 || continue
         if ! container_belongs_to_installation "$ownership_name"; then
             ownership_workdir=$(container_label "$ownership_name" com.docker.compose.project.working_dir)
             [ -n "$ownership_workdir" ] || ownership_workdir=unknown
@@ -825,19 +872,19 @@ port_details() {
     detail_bind=$3
     owned_binding=false
     foreign_binding=false
-    container_ids=$(docker ps --filter "publish=$detail_port/$detail_protocol" --format '{{.ID}}' 2>/dev/null || true)
+    container_ids=$(container ps --filter "publish=$detail_port/$detail_protocol" --format '{{.ID}}' 2>/dev/null || true)
     for detail_id in $container_ids; do
         if container_belongs_to_installation "$detail_id"; then
             owned_binding=true
         else
             foreign_binding=true
-            foreign_details=$(docker inspect --format 'Docker container {{.Name}}: {{json .NetworkSettings.Ports}}' "$detail_id" 2>/dev/null || true)
-            if [ -n "$foreign_details" ]; then printf '%s\n' "$foreign_details"; else printf 'Foreign Docker container %s publishes %s/%s\n' "$detail_id" "$detail_port" "$detail_protocol"; fi
+            foreign_details=$(container inspect --format 'Container {{.Name}}: {{json .NetworkSettings.Ports}}' "$detail_id" 2>/dev/null || true)
+            if [ -n "$foreign_details" ]; then printf '%s\n' "$foreign_details"; else printf 'Foreign container %s publishes %s/%s\n' "$detail_id" "$detail_port" "$detail_protocol"; fi
         fi
     done
 
-    # Docker already proved a foreign conflict. If the only publisher belongs
-    # to this installation, avoid mistaking Docker's host proxy for a conflict.
+    # The engine already proved a foreign conflict. If the only publisher belongs
+    # to this installation, avoid mistaking its host-side port forwarder for a conflict.
     [ "$foreign_binding" = false ] || return 0
     [ "$owned_binding" = false ] || return 0
     socket_output=
@@ -893,6 +940,7 @@ check_required_ports() {
 }
 
 load_saved_port_settings() {
+    container_engine=$(stored_container_engine_from "$env_file")
     runtime=$(stored_runtime_from "$env_file")
     mode=$(stored_mode_from "$env_file")
     dns_provider=$(env_value_or "$env_file" RISUAI_DNS_PROVIDER none)
@@ -940,7 +988,7 @@ deployment_url_from() {
         lan:*) printf 'http://%s:%s' "$(find_lan_address)" "$url_app_port" ;;
         domain:*|dynv6:*) if [ "$url_https_port" = 443 ]; then printf 'https://%s' "$url_domain"; else printf 'https://%s:%s' "$url_domain" "$url_https_port"; fi ;;
         proxy:host) printf 'host proxy target: http://127.0.0.1:%s' "$url_app_port" ;;
-        proxy:docker) printf 'Docker proxy target: http://risuai:6001' ;;
+        proxy:docker) printf 'Container proxy target: http://risuai:6001' ;;
         *) printf 'invalid configuration' ;;
     esac
 }
@@ -949,6 +997,7 @@ show_deployment_from() {
     show_env=$1
     current_mode=$(stored_mode_from "$show_env")
     current_runtime=$(stored_runtime_from "$show_env")
+    current_engine=$(stored_container_engine_from "$show_env")
     current_dns=$(env_value_or "$show_env" RISUAI_DNS_PROVIDER none)
     current_proxy=$(env_value_or "$show_env" RISUAI_PROXY_TYPE none)
     current_app_port=$(env_value_or "$show_env" RISUAI_PORT 6001)
@@ -959,6 +1008,7 @@ show_deployment_from() {
     current_ipv6=$(env_value_or "$show_env" DYNV6_IPV6 false)
     current_id=$(env_value_or "$show_env" RISUAI_INSTALLATION_ID legacy)
     printf '\n  Runtime:           %s\n' "$current_runtime"
+    printf '  Container engine:  %s\n' "$current_engine"
     printf '  Mode:              %s\n' "$current_mode"
     [ "$current_dns" = none ] || printf '  DNS provider:      %s\n' "$current_dns"
     [ "$current_proxy" = none ] || printf '  Proxy type:        %s\n' "$current_proxy"
@@ -1004,7 +1054,7 @@ services_are_running() {
             services_ok=false
             continue
         }
-        health_state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$service_id" 2>/dev/null || true)
+        health_state=$(container inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$service_id" 2>/dev/null || true)
         case "$health_state" in
             healthy|none) ;;
             *)
@@ -1102,11 +1152,11 @@ rollback_installation() {
     [ "$transaction_active" = true ] || return 0
     transaction_active=false
     warn "Installation did not complete; restoring the previous protected configuration."
-    if [ -f "$env_file" ] && docker info >/dev/null 2>&1; then compose down --remove-orphans >/dev/null 2>&1 || true; fi
+    if [ -f "$env_file" ] && container info >/dev/null 2>&1; then compose down --remove-orphans >/dev/null 2>&1 || true; fi
     restore_file_from_backup "$had_dynv6" "$backup_dynv6" "$dynv6_token_file" || warn "Could not restore the previous dynv6 token"
     restore_file_from_backup "$had_cloudflare" "$backup_cloudflare" "$cloudflare_token_file" || warn "Could not restore the previous Cloudflare token"
     restore_file_from_backup "$had_env" "$backup_env" "$env_file" || warn "Could not restore the previous environment file"
-    if [ "$old_was_running" = true ] && [ -f "$env_file" ] && docker info >/dev/null 2>&1; then
+    if [ "$old_was_running" = true ] && [ -f "$env_file" ] && container info >/dev/null 2>&1; then
         if compose up -d --remove-orphans >/dev/null 2>&1; then warn "The previous deployment configuration was restarted."; else warn "The previous files were restored, but its containers could not be restarted. Run: $script_path doctor"; fi
     fi
 }
@@ -1167,6 +1217,7 @@ require_installation() {
     validate_saved_configuration "$env_file" || die "Saved configuration is invalid. Run: $script_path doctor"
     saved_mode=$(stored_mode_from "$env_file")
     saved_runtime=$(stored_runtime_from "$env_file")
+    container_engine=$(stored_container_engine_from "$env_file")
     saved_dns=$(env_value_or "$env_file" RISUAI_DNS_PROVIDER none)
     saved_proxy=$(env_value_or "$env_file" RISUAI_PROXY_TYPE none)
     require_files_for_configuration "$saved_mode" "$saved_dns" "$saved_proxy" "$saved_runtime"
@@ -1181,6 +1232,7 @@ upgrade_legacy_installation_identity() {
         index($0, "RISUAI_CONFIG_VERSION=") != 1 &&
         index($0, "RISUAI_INSTALLATION_ID=") != 1 &&
         index($0, "RISUAI_RUNTIME=") != 1 &&
+        index($0, "RISUAI_CONTAINER_ENGINE=") != 1 &&
         index($0, "DYNV6_TOKEN_FILE=") != 1 &&
         index($0, "CLOUDFLARE_TOKEN_FILE=") != 1 { print }
     ' "$env_file" >"$tmp_upgrade" || die "Cannot read legacy configuration"
@@ -1188,6 +1240,7 @@ upgrade_legacy_installation_identity() {
         printf 'RISUAI_CONFIG_VERSION=%s\n' "$config_version"
         printf 'RISUAI_INSTALLATION_ID=%s\n' "$installation_id"
         printf 'RISUAI_RUNTIME=node\n'
+        printf 'RISUAI_CONTAINER_ENGINE=docker\n'
         printf 'DYNV6_TOKEN_FILE=./.risuai/dynv6-token\n'
         printf 'CLOUDFLARE_TOKEN_FILE=./.risuai/cloudflare-token\n'
     } >>"$tmp_upgrade" || die "Cannot write upgraded configuration"
@@ -1256,8 +1309,8 @@ recreate_risuai_for_database_password() {
 manage_database() {
     require_installation
     [ "$saved_runtime" = node ] || die "Database commands are unavailable for the static runtime because it has no PostgreSQL service"
-    require_docker_daemon
-    require_local_docker
+    require_container_engine
+    require_local_container_engine
     installation_id=$(env_value_or "$env_file" RISUAI_INSTALLATION_ID legacy)
     saved_present=true
     adopt_existing=false
@@ -1412,19 +1465,24 @@ EOF
 run_doctor() {
     [ "$#" -eq 0 ] || die "doctor does not accept arguments"
     doctor_failures=0
+    if [ -f "$env_file" ]; then
+        container_engine=$(stored_container_engine_from "$env_file")
+    else
+        container_engine=$(detect_container_engine 2>/dev/null || printf 'docker')
+    fi
     info "Checking checkout files"
     for doctor_file in "$compose_base" "$compose_static" "$compose_local" "$compose_lan" "$compose_caddy" "$compose_dynv6" "$compose_cloudflare" "$compose_proxy_docker" "$script_dir/Dockerfile" "$script_dir/Dockerfile.static" "$script_dir/deploy/rustfs/Caddyfile" "$script_dir/deploy/rustfs/Caddyfile.static" "$script_dir/deploy/rustfs/update-dynv6.sh" "$script_dir/deploy/rustfs/update-cloudflare.mjs"; do
         if [ -f "$doctor_file" ]; then ok "Found ${doctor_file#"$script_dir"/}"; else error "Missing $doctor_file"; doctor_failures=$((doctor_failures + 1)); fi
     done
-    info "Checking Docker"
-    if ! command -v docker >/dev/null 2>&1; then
-        error "Docker is not installed"; doctor_failures=$((doctor_failures + 1))
-    elif ! docker compose version >/dev/null 2>&1; then
-        error "Docker Compose v2 is unavailable"; doctor_failures=$((doctor_failures + 1))
-    elif ! docker info >/dev/null 2>&1; then
-        error "Docker daemon is unavailable"; doctor_failures=$((doctor_failures + 1))
+    info "Checking $container_engine"
+    if ! command -v "$container_engine" >/dev/null 2>&1; then
+        error "$container_engine is not installed"; doctor_failures=$((doctor_failures + 1))
+    elif ! container compose version >/dev/null 2>&1; then
+        error "$container_engine Compose is unavailable"; doctor_failures=$((doctor_failures + 1))
+    elif ! container info >/dev/null 2>&1; then
+        error "$container_engine is unavailable"; doctor_failures=$((doctor_failures + 1))
     else
-        ok "Docker daemon and Compose are available"
+        ok "$container_engine and Compose are available"
     fi
     if [ ! -f "$env_file" ]; then
         warn "No saved installation exists; installer prerequisites were checked only."
@@ -1451,11 +1509,11 @@ run_doctor() {
             doctor_dns=$(env_value_or "$env_file" RISUAI_DNS_PROVIDER none)
             doctor_proxy=$(env_value_or "$env_file" RISUAI_PROXY_TYPE none)
             if ( require_files_for_configuration "$doctor_mode" "$doctor_dns" "$doctor_proxy" "$doctor_runtime" ) 2>/dev/null; then ok "Runtime and mode-specific support files are present"; else error "Runtime or mode-specific support files are incomplete"; doctor_failures=$((doctor_failures + 1)); fi
-            if docker info >/dev/null 2>&1; then
-                if compose config --quiet; then ok "Docker Compose model is valid and isolated from ambient deployment variables"; else error "Docker Compose model is invalid"; doctor_failures=$((doctor_failures + 1)); fi
+            if container info >/dev/null 2>&1; then
+                if compose config --quiet; then ok "$container_engine Compose model is valid and isolated from ambient deployment variables"; else error "$container_engine Compose model is invalid"; doctor_failures=$((doctor_failures + 1)); fi
                 if [ "$doctor_mode:$doctor_proxy" = proxy:docker ]; then
                     doctor_network=$(read_env_value_from "$env_file" RISUAI_PROXY_NETWORK)
-                    if docker network inspect "$doctor_network" >/dev/null 2>&1; then ok "External proxy network exists"; else error "External proxy network is missing: $doctor_network"; doctor_failures=$((doctor_failures + 1)); fi
+                    if container network inspect "$doctor_network" >/dev/null 2>&1; then ok "External proxy network exists"; else error "External proxy network is missing: $doctor_network"; doctor_failures=$((doctor_failures + 1)); fi
                 fi
                 if services_are_running; then
                     ok "All configured services are running"
@@ -1500,8 +1558,8 @@ manage_existing_installation() {
         show_deployment_from "$env_file"
         return
     fi
-    require_docker_daemon
-    require_local_docker
+    require_container_engine
+    require_local_container_engine
     installation_id=$(env_value_or "$env_file" RISUAI_INSTALLATION_ID legacy)
     saved_present=true
     adopt_existing=false
@@ -1546,11 +1604,11 @@ manage_existing_installation() {
             [ "$#" -eq 0 ] || die "start does not accept arguments"
             load_saved_port_settings
             validate_port_layout
-            if [ "$mode:$proxy_type" = proxy:docker ] && ! docker network inspect "$proxy_network" >/dev/null 2>&1; then die "Saved Docker proxy network is missing: $proxy_network"; fi
+            if [ "$mode:$proxy_type" = proxy:docker ] && ! container network inspect "$proxy_network" >/dev/null 2>&1; then die "Saved $container_engine proxy network is missing: $proxy_network"; fi
             check_required_ports
             info "Starting the saved RisuAI deployment"
             runtime_image=$(image_for_runtime "$runtime")
-            if docker image inspect "$runtime_image" >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local $runtime RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
+            if container image inspect "$runtime_image" >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local $runtime RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
             wait_for_risuai "$wait_timeout" || die "RisuAI did not become ready within ${wait_timeout}s"
             compose ps --all
             show_deployment_from "$env_file"
@@ -1569,11 +1627,11 @@ manage_existing_installation() {
             [ "$#" -eq 0 ] || die "restart does not accept arguments"
             load_saved_port_settings
             validate_port_layout
-            if [ "$mode:$proxy_type" = proxy:docker ] && ! docker network inspect "$proxy_network" >/dev/null 2>&1; then die "Saved Docker proxy network is missing: $proxy_network"; fi
+            if [ "$mode:$proxy_type" = proxy:docker ] && ! container network inspect "$proxy_network" >/dev/null 2>&1; then die "Saved $container_engine proxy network is missing: $proxy_network"; fi
             check_required_ports
             info "Reconciling and restarting all RisuAI containers"
             runtime_image=$(image_for_runtime "$runtime")
-            if docker image inspect "$runtime_image" >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local $runtime RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
+            if container image inspect "$runtime_image" >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local $runtime RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
             compose restart
             wait_for_risuai "$wait_timeout" || die "RisuAI did not become ready within ${wait_timeout}s"
             compose ps --all
@@ -1582,7 +1640,7 @@ manage_existing_installation() {
             [ "$#" -eq 0 ] || die "rebuild does not accept arguments"
             load_saved_port_settings
             validate_port_layout
-            if [ "$mode:$proxy_type" = proxy:docker ] && ! docker network inspect "$proxy_network" >/dev/null 2>&1; then die "Saved Docker proxy network is missing: $proxy_network"; fi
+            if [ "$mode:$proxy_type" = proxy:docker ] && ! container network inspect "$proxy_network" >/dev/null 2>&1; then die "Saved $container_engine proxy network is missing: $proxy_network"; fi
             check_required_ports
             info "Rebuilding and recreating the RisuAI application"
             compose build risuai
@@ -1609,6 +1667,7 @@ if [ "$action" != install ]; then manage_existing_installation "$@"; exit $?; fi
 # ------------------------------ install ------------------------------
 
 runtime=$input_runtime
+container_engine=$input_container_engine
 mode=$input_mode
 domain=$input_domain
 dns_provider=$input_dns_provider
@@ -1657,6 +1716,7 @@ rustfs_console_port_explicit=false
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --runtime) [ "$#" -ge 2 ] || die "--runtime requires a value"; runtime=$2; shift 2 ;;
+        --container-engine) [ "$#" -ge 2 ] || die "--container-engine requires a value"; container_engine=$2; shift 2 ;;
         --mode) [ "$#" -ge 2 ] || die "--mode requires a value"; mode=$2; shift 2 ;;
         --domain) [ "$#" -ge 2 ] || die "--domain requires a value"; domain=$2; shift 2 ;;
         --dns-provider) [ "$#" -ge 2 ] || die "--dns-provider requires a value"; dns_provider=$2; shift 2 ;;
@@ -1716,16 +1776,27 @@ saved_present=false
 saved_configuration_valid=false
 saved_mode=
 saved_runtime=
+saved_container_engine=
 if [ -f "$env_file" ]; then
     saved_present=true
     if validate_saved_configuration "$env_file"; then
         saved_configuration_valid=true
         saved_mode=$(stored_mode_from "$env_file")
         saved_runtime=$(stored_runtime_from "$env_file")
+        saved_container_engine=$(stored_container_engine_from "$env_file")
     else
         [ -n "$mode" ] || die "The existing configuration is damaged; specify a complete replacement with --mode after reviewing $env_file"
         warn "The existing configuration is invalid. It will be backed up and replaced only after validation."
     fi
+fi
+
+if [ -z "$container_engine" ] && [ "$saved_configuration_valid" = true ]; then container_engine=$saved_container_engine; fi
+if [ -z "$container_engine" ] || [ "$container_engine" = auto ]; then
+    container_engine=$(detect_container_engine) || die "Neither Docker nor Podman is installed. Install one with Compose support."
+fi
+case "$container_engine" in docker|podman) ;; *) die "Invalid --container-engine: $container_engine (expected auto, docker, or podman)" ;; esac
+if [ "$saved_configuration_valid" = true ] && [ "$container_engine" != "$saved_container_engine" ]; then
+    die "This installation uses $saved_container_engine; switching it to $container_engine in place is unsafe because containers and volumes belong to different engines"
 fi
 
 if [ -z "$runtime" ] && [ "$saved_configuration_valid" = true ]; then runtime=$saved_runtime; fi
@@ -1753,7 +1824,7 @@ Choose how RisuAI will be reached:
   2) lan    - all IPv4 interfaces, unencrypted HTTP
   3) domain - Caddy HTTPS with manual DNS or Cloudflare DDNS
   4) dynv6  - Caddy HTTPS with dynv6 DDNS
-  5) proxy  - an existing host or Docker reverse proxy
+  5) proxy  - an existing host or container-network reverse proxy
 EOF
     while :; do
         selection=$(prompt_line "Selection" "1")
@@ -1780,15 +1851,15 @@ fi
 
 if [ "$mode" = proxy ]; then
     if [ -z "$proxy_type" ] && [ "$saved_configuration_valid" = true ] && [ "$saved_mode" = proxy ]; then proxy_type=$(env_value_or "$env_file" RISUAI_PROXY_TYPE host); fi
-    if [ -z "$proxy_type" ] && [ "$interactive" = true ]; then proxy_type=$(prompt_line "Proxy type (host or docker)" host); fi
-    [ -n "$proxy_type" ] || die "--mode proxy requires --proxy-type host|docker in non-interactive mode"
-    case "$proxy_type" in host|docker) ;; *) die "Invalid --proxy-type: $proxy_type" ;; esac
+    if [ -z "$proxy_type" ] && [ "$interactive" = true ]; then proxy_type=$(prompt_line "Proxy type (host or container)" host); fi
+    [ -n "$proxy_type" ] || die "--mode proxy requires --proxy-type host|container in non-interactive mode"
+    case "$proxy_type" in container) proxy_type=docker ;; host|docker) ;; *) die "Invalid --proxy-type: $proxy_type" ;; esac
     if [ "$proxy_type" = docker ]; then
         if [ -z "$proxy_network" ] && [ "$saved_configuration_valid" = true ] && [ "$saved_mode" = proxy ]; then proxy_network=$(read_env_value_from "$env_file" RISUAI_PROXY_NETWORK); fi
-        if [ -z "$proxy_network" ] && [ "$interactive" = true ]; then proxy_network=$(prompt_line "Existing Docker proxy network" ""); fi
-        is_valid_proxy_network "$proxy_network" || die "Invalid or missing Docker proxy network name: $proxy_network"
+        if [ -z "$proxy_network" ] && [ "$interactive" = true ]; then proxy_network=$(prompt_line "Existing container proxy network" ""); fi
+        is_valid_proxy_network "$proxy_network" || die "Invalid or missing container proxy network name: $proxy_network"
     else
-        [ -z "$proxy_network" ] || die "--proxy-network is only valid with --proxy-type docker"
+        [ -z "$proxy_network" ] || die "--proxy-network is only valid with --proxy-type container"
     fi
 else
     case "$proxy_type" in ''|none) proxy_type=none ;; *) die "--proxy-type is only valid with --mode proxy" ;; esac
@@ -1851,9 +1922,9 @@ case "$dynv6_token_source $cloudflare_token_source" in *argv*) warn "A provider 
 
 validate_port_layout
 require_files_for_configuration "$mode" "$dns_provider" "$proxy_type" "$runtime"
-require_docker_daemon
-require_local_docker
-if [ "$mode:$proxy_type" = proxy:docker ] && ! docker network inspect "$proxy_network" >/dev/null 2>&1; then die "Docker network '$proxy_network' does not exist. Create it first or select --proxy-type host."; fi
+require_container_engine
+require_local_container_engine
+if [ "$mode:$proxy_type" = proxy:docker ] && ! container network inspect "$proxy_network" >/dev/null 2>&1; then die "$container_engine network '$proxy_network' does not exist. Create it first or select --proxy-type host."; fi
 
 if [ "$saved_configuration_valid" = true ]; then saved_id=$(read_env_value_from "$env_file" RISUAI_INSTALLATION_ID); else saved_id=; fi
 if [ -n "$saved_id" ]; then installation_id=$saved_id; else installation_id=$(random_secret | cut -c1-32); fi
@@ -1867,8 +1938,8 @@ postgres_volume=${project_name}_risuai-postgres
 rustfs_volume=${project_name}_rustfs-data
 if [ "$runtime" = node ] && [ "$saved_present" = false ]; then
     existing_data=false
-    docker volume inspect "$postgres_volume" >/dev/null 2>&1 && existing_data=true
-    docker volume inspect "$rustfs_volume" >/dev/null 2>&1 && existing_data=true
+    container volume inspect "$postgres_volume" >/dev/null 2>&1 && existing_data=true
+    container volume inspect "$rustfs_volume" >/dev/null 2>&1 && existing_data=true
     if [ "$existing_data" = true ] && [ "$adopt_existing" != true ]; then die "Persistent RisuAI volumes exist but this checkout has no protected configuration. Refusing to generate incompatible credentials; recover .risuai or rerun with --adopt-existing and explicit credentials after verifying the volumes."; fi
 fi
 
@@ -1887,8 +1958,8 @@ if [ "$runtime" = node ]; then
     if [ -z "$postgres_password" ] && [ "$adopt_existing" = true ]; then postgres_password=$(recover_container_env risuai-postgres POSTGRES_PASSWORD); fi
     if [ -z "$rustfs_access_key" ] && [ "$adopt_existing" = true ]; then rustfs_access_key=$(recover_container_env risuai-rustfs RUSTFS_ACCESS_KEY); fi
     if [ -z "$rustfs_secret_key" ] && [ "$adopt_existing" = true ]; then rustfs_secret_key=$(recover_container_env risuai-rustfs RUSTFS_SECRET_KEY); fi
-    if docker volume inspect "$postgres_volume" >/dev/null 2>&1 && [ -z "$postgres_password" ]; then die "Existing PostgreSQL data requires its original POSTGRES_PASSWORD"; fi
-    if docker volume inspect "$rustfs_volume" >/dev/null 2>&1 && { [ -z "$rustfs_access_key" ] || [ -z "$rustfs_secret_key" ]; }; then die "Existing RustFS data requires its original RUSTFS_ACCESS_KEY and RUSTFS_SECRET_KEY"; fi
+    if container volume inspect "$postgres_volume" >/dev/null 2>&1 && [ -z "$postgres_password" ]; then die "Existing PostgreSQL data requires its original POSTGRES_PASSWORD"; fi
+    if container volume inspect "$rustfs_volume" >/dev/null 2>&1 && { [ -z "$rustfs_access_key" ] || [ -z "$rustfs_secret_key" ]; }; then die "Existing RustFS data requires its original RUSTFS_ACCESS_KEY and RUSTFS_SECRET_KEY"; fi
     [ -n "$postgres_password" ] || postgres_password=$(random_secret)
     [ -n "$rustfs_access_key" ] || rustfs_access_key=risuai-$(random_secret | cut -c1-24)
     [ -n "$rustfs_secret_key" ] || rustfs_secret_key=$(random_secret)
@@ -1903,6 +1974,7 @@ if [ "$assume_yes" != true ] && [ "$dry_run" != true ]; then
     [ "$interactive" = true ] || die "No controlling terminal is available for confirmation; rerun with --yes after reviewing --dry-run output"
     printf '\nInstallation plan:\n'
     printf '  Runtime:           %s\n' "$runtime"
+    printf '  Container engine:  %s\n' "$container_engine"
     printf '  Mode:              %s\n' "$mode"
     printf '  Configured target: %s\n' "$(case "$mode:$proxy_type" in local:*) printf 'http://localhost:%s' "$app_port" ;; lan:*) printf 'http://SERVER-IP:%s' "$app_port" ;; domain:*|dynv6:*) if [ "$https_port" = 443 ]; then printf 'https://%s' "$domain"; else printf 'https://%s:%s' "$domain" "$https_port"; fi ;; proxy:host) printf 'http://127.0.0.1:%s' "$app_port" ;; proxy:docker) printf 'http://risuai:6001 on %s' "$proxy_network" ;; esac)"
     if [ "$runtime" = node ]; then printf '  RustFS:            loopback ports %s/%s only\n' "$rustfs_api_port" "$rustfs_console_port"; else printf '  Web server:        Caddy serving the browser-only static build\n'; fi
@@ -1930,6 +2002,7 @@ RISUAI_CONFIG_VERSION=$config_version
 COMPOSE_PROJECT_NAME=$project_name
 RISUAI_INSTALLATION_ID=$installation_id
 RISUAI_RUNTIME=$runtime
+RISUAI_CONTAINER_ENGINE=$container_engine
 RISUAI_MODE=$mode
 RISUAI_DNS_PROVIDER=$dns_provider
 RISUAI_PROXY_TYPE=$proxy_type
@@ -1958,7 +2031,7 @@ EOF
 
 write_env "$tmp_env" "$staged_dynv6_path" "$staged_cloudflare_path"
 info "Validating the isolated prospective Compose model"
-compose_with_env "$tmp_env" "$staged_dynv6_path" "$staged_cloudflare_path" config --quiet || die "Prospective Docker Compose configuration is invalid"
+compose_with_env "$tmp_env" "$staged_dynv6_path" "$staged_cloudflare_path" config --quiet || die "Prospective $container_engine Compose configuration is invalid"
 
 if [ "$dry_run" = true ]; then
     ok "Dry run succeeded; no configuration, DNS, firewall, image, or container was changed."
@@ -2025,7 +2098,7 @@ if [ "$configure_firewall" = true ]; then
     else
         firewall_status=$(ufw status 2>&1 || true)
         if printf '%s\n' "$firewall_status" | grep -q '^Status: active'; then
-            info "Adding requested UFW host-port rules (Docker-published ports may require additional DOCKER-USER policy)"
+            info "Adding requested UFW host-port rules (container networking may require additional forwarding policy)"
             ufw allow "$http_port/tcp" >/dev/null 2>&1 || warn "Could not add UFW rule for $http_port/tcp"
             ufw allow "$https_port/tcp" >/dev/null 2>&1 || warn "Could not add UFW rule for $https_port/tcp"
             ufw allow "$https_port/udp" >/dev/null 2>&1 || warn "Could not add UFW rule for $https_port/udp"
