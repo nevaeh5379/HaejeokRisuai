@@ -193,7 +193,7 @@ test("lists lorebooks of a module with pagination", async () => {
     }),
   ).toMatchSnapshot();
 
-  module.lorebook = [];
+  moduleStore.modules[0].lorebook = [];
 
   expect(
     await instance.handle("risu-list-module-lorebooks", { id: "A" }),
@@ -234,7 +234,7 @@ test("lists all regex scripts of a module", async () => {
     await instance.handle("risu-get-module-regex-scripts", { id: "A" }),
   ).toMatchSnapshot();
 
-  module.regex = [];
+  moduleStore.modules[0].regex = [];
 
   expect(
     await instance.handle("risu-get-module-regex-scripts", { id: "A" }),

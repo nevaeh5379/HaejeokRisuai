@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { describe, it, expect, vi } from 'vitest'
 import { writable } from 'svelte/store'
 import { ParseMarkdown } from '../parser.svelte'
@@ -46,7 +48,11 @@ vi.mock(import('../../stores.svelte'), () => {
 
 //#endregion
 
-const parse = (html: string) => new DOMParser().parseFromString(html, 'text/html').body
+const parse = (html: string) => {
+    const container = document.createElement('div')
+    container.innerHTML = html
+    return container
+}
 
 /**
  * Every rendered style rule must stay scoped to the chat text container.

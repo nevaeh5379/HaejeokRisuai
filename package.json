@@ -148,6 +148,7 @@
     "fast-check": "^4.9.0",
     "happy-dom": "^20.11.15",
     "internal-ip": "^9.0.0",
+    "jsdom": "^30.0.1",
     "postcss": "^8.5.26",
     "source-map": "^0.8.0",
     "svelte": "^5.57.0",
