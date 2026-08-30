@@ -34,9 +34,14 @@ pub fn get_content_type(key: &str) -> &'static str {
         "ttf" => "font/ttf",
         "otf" => "font/otf",
 
-        "json" => "application/json",
-        "txt" => "text/plain",
-        "css" => "text/css",
+        "html" | "htm" => "text/html; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "js" | "mjs" | "cjs" => "text/javascript; charset=utf-8",
+        "json" | "map" => "application/json",
+        "wasm" => "application/wasm",
+        "webmanifest" => "application/manifest+json",
+        "xml" => "application/xml",
+        "txt" => "text/plain; charset=utf-8",
         "bin" => "application/octet-stream",
         _ => "application/octet-stream",
     }
@@ -67,4 +72,30 @@ pub fn hex_to_key(hex_str: &str) -> String {
 
 pub fn key_to_hex(key: &str) -> String {
     hex::encode(key.as_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::get_content_type;
+
+    #[test]
+    fn serves_javascript_modules_with_a_script_mime_type() {
+        assert_eq!(
+            get_content_type("assets/app.js"),
+            "text/javascript; charset=utf-8"
+        );
+        assert_eq!(
+            get_content_type("assets/chunk.MJS"),
+            "text/javascript; charset=utf-8"
+        );
+    }
+
+    #[test]
+    fn serves_wasm_and_manifests_with_web_mime_types() {
+        assert_eq!(get_content_type("assets/module.wasm"), "application/wasm");
+        assert_eq!(
+            get_content_type("manifest.webmanifest"),
+            "application/manifest+json"
+        );
+    }
 }
