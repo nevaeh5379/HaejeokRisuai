@@ -5,7 +5,6 @@ use crate::components::feedback::empty::EmptyState;
 use crate::components::feedback::error::ErrorBanner;
 use crate::components::feedback::loading::LoadingSpinner;
 use crate::state::app_state::AppState;
-use crate::state::ui_state::ToastType;
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 
@@ -22,9 +21,6 @@ pub fn CharactersPage() -> impl IntoView {
         let api = state.api.get();
         async move { api.search_characters(&query).await }
     });
-
-    let chat_state = state.chat;
-    let ui_state = state.ui;
 
     let on_search_submit = move || {
         let q = input_query.get().trim().to_string();
@@ -134,7 +130,6 @@ pub fn CharactersPage() -> impl IntoView {
                                             let id = char_data.id.clone();
                                             let name = char_data.name.clone();
                                             let id_for_click = id.clone();
-                                            let name_for_toast = name.clone();
                                             let navigate = navigate.clone();
 
                                             view! {
@@ -157,13 +152,12 @@ pub fn CharactersPage() -> impl IntoView {
                                                     <Button
                                                         variant=ButtonVariant::Primary
                                                         on_click=move |_| {
-                                                            chat_state.select_character(Some(id_for_click.clone()));
-                                                            ui_state.toast(format!("Selected character: {}", name_for_toast), ToastType::Info);
-                                                            navigate("/chat", Default::default());
+                                                            let encoded_id = urlencoding::encode(&id_for_click);
+                                                            navigate(&format!("/characters/{}", encoded_id), Default::default());
                                                         }
                                                     >
-                                                        <Icon name=IconName::Chat size=16 />
-                                                        <span>"Chat"</span>
+                                                        <Icon name=IconName::Eye size=16 />
+                                                        <span>"View Details"</span>
                                                     </Button>
                                                 </div>
                                             }

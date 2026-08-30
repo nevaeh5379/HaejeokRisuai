@@ -8,9 +8,7 @@ use crate::state::ui_state::ToastType;
 use leptos::prelude::*;
 
 #[component]
-pub fn LoginScreen(
-    #[prop(into)] on_success: ActionCallback,
-) -> impl IntoView {
+pub fn LoginScreen(#[prop(into)] on_success: ActionCallback) -> impl IntoView {
     let state = expect_context::<AppState>();
 
     let password = RwSignal::new(String::new());
@@ -39,7 +37,7 @@ pub fn LoginScreen(
                     public_key: None,
                 };
                 match api.login(&payload).await {
-                    Ok(_) => {
+                    Ok(resp) if resp.status == "success" => {
                         is_submitting.set(false);
                         state.auth.set_password(&pw);
                         state.sync_api_credential();
@@ -48,17 +46,25 @@ pub fn LoginScreen(
                             .toast("Authenticated successfully", ToastType::Success);
                         on_success.run();
                     }
+                    Ok(_) => {
+                        is_submitting.set(false);
+                        error_message
+                            .set(Some("Authentication failed. Please try again.".to_string()));
+                    }
                     Err(err) => {
                         is_submitting.set(false);
                         let msg = match &err {
-                            crate::api::client::ApiError::Http { status: 400, message } => {
-                                if message.contains("Password incorrect") {
-                                    "Incorrect master password. Please try again.".to_string()
-                                } else {
-                                    message.clone()
-                                }
+                            crate::api::client::ApiError::Http {
+                                status: 400,
+                                message,
+                            } if message.contains("Password incorrect") => {
+                                "Incorrect master password. Please try again.".to_string()
                             }
-                            _ => format!("Authentication failed: {}", err),
+                            crate::api::client::ApiError::Network(_) => {
+                                "Network error. Please check your connection and try again."
+                                    .to_string()
+                            }
+                            _ => "Authentication failed. Please try again.".to_string(),
                         };
                         error_message.set(Some(msg));
                     }

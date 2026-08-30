@@ -675,6 +675,63 @@ pub async fn get_plugin_custom_storage_handler(State(state): State<AppState>) ->
     }
 }
 
+fn setting_value(res: &Value, key: &str) -> Option<Value> {
+    res.get("settings")
+        .and_then(|s| s.get(key))
+        .cloned()
+        .or_else(|| res.get(key).cloned())
+}
+
+fn normalize_preset_list_response(res: Value) -> Value {
+    let presets = if let Some(p) = res.get("presets").and_then(|v| v.as_array()) {
+        Value::Array(p.clone())
+    } else if let Some(p) = res.get("botPresets").and_then(|v| v.as_array()) {
+        Value::Array(p.clone())
+    } else if let Some(p) = res
+        .get("settings")
+        .and_then(|s| s.get("botPresets"))
+        .and_then(|v| v.as_array())
+    {
+        Value::Array(p.clone())
+    } else {
+        Value::Array(Vec::new())
+    };
+
+    let hash = if let Some(h) = res.get("hash").and_then(|h| h.as_str()) {
+        h.to_string()
+    } else {
+        risuai_storage::codec::compute_hash(&presets.to_string())
+    };
+
+    json!({
+        "presets": presets,
+        "hash": hash,
+    })
+}
+
+fn normalize_preset_detail_response(res: Value) -> Value {
+    let (preset, hash) = if let Some(preset) = res.get("preset").filter(|v| !v.is_null()) {
+        let hash = res
+            .get("hash")
+            .and_then(|h| h.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| risuai_storage::codec::compute_hash(&preset.to_string()));
+        (preset.clone(), hash)
+    } else {
+        let hash = res
+            .get("hash")
+            .and_then(|h| h.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| risuai_storage::codec::compute_hash(&res.to_string()));
+        (res, hash)
+    };
+
+    json!({
+        "preset": preset,
+        "hash": hash,
+    })
+}
+
 pub async fn get_personas_handler(State(state): State<AppState>) -> impl IntoResponse {
     let storage = match state.storage_manager.get_storage().await {
         Ok(s) => s,
@@ -685,11 +742,7 @@ pub async fn get_personas_handler(State(state): State<AppState>) -> impl IntoRes
         .load_setting_keys(&keys)
         .await
         .unwrap_or(json!({ "settings": {} }));
-    let personas = res
-        .get("settings")
-        .and_then(|s| s.get("personas"))
-        .cloned()
-        .unwrap_or(json!([]));
+    let personas = setting_value(&res, "personas").unwrap_or(json!([]));
     let hash = risuai_storage::codec::compute_hash(&personas.to_string());
     (
         StatusCode::OK,
@@ -708,7 +761,7 @@ pub async fn get_presets_handler(State(state): State<AppState>) -> impl IntoResp
         Err(e) => return map_storage_error(e).into_response(),
     };
     match storage.list_presets().await {
-        Ok(res) => (StatusCode::OK, Json(res)).into_response(),
+        Ok(res) => (StatusCode::OK, Json(normalize_preset_list_response(res))).into_response(),
         Err(e) => map_storage_error(e).into_response(),
     }
 }
@@ -722,7 +775,9 @@ pub async fn get_preset_handler(
         Err(e) => return map_storage_error(e).into_response(),
     };
     match storage.load_preset(&id).await {
-        Ok(Some(res)) => (StatusCode::OK, Json(res)).into_response(),
+        Ok(Some(res)) => {
+            (StatusCode::OK, Json(normalize_preset_detail_response(res))).into_response()
+        }
         Ok(None) => (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Preset not found" })),
@@ -756,11 +811,7 @@ pub async fn get_lorebooks_handler(State(state): State<AppState>) -> impl IntoRe
         .load_setting_keys(&keys)
         .await
         .unwrap_or(json!({ "settings": {} }));
-    let lore_book = res
-        .get("settings")
-        .and_then(|s| s.get("loreBook"))
-        .cloned()
-        .unwrap_or(json!([]));
+    let lore_book = setting_value(&res, "loreBook").unwrap_or(json!([]));
     let hash = risuai_storage::codec::compute_hash(&lore_book.to_string());
     (
         StatusCode::OK,
@@ -783,11 +834,7 @@ pub async fn get_modules_handler(State(state): State<AppState>) -> impl IntoResp
         .load_setting_keys(&keys)
         .await
         .unwrap_or(json!({ "settings": {} }));
-    let modules = res
-        .get("settings")
-        .and_then(|s| s.get("modules"))
-        .cloned()
-        .unwrap_or(json!([]));
+    let modules = setting_value(&res, "modules").unwrap_or(json!([]));
     let hash = risuai_storage::codec::compute_hash(&modules.to_string());
     (
         StatusCode::OK,
@@ -820,11 +867,7 @@ pub async fn get_prompts_handler(State(state): State<AppState>) -> impl IntoResp
         .load_setting_keys(&keys)
         .await
         .unwrap_or(json!({ "settings": {} }));
-    let prompts = res
-        .get("settings")
-        .and_then(|s| s.get("prompts"))
-        .cloned()
-        .unwrap_or(json!([]));
+    let prompts = setting_value(&res, "prompts").unwrap_or(json!([]));
     let hash = risuai_storage::codec::compute_hash(&prompts.to_string());
     (
         StatusCode::OK,
@@ -847,11 +890,7 @@ pub async fn get_scripts_handler(State(state): State<AppState>) -> impl IntoResp
         .load_setting_keys(&keys)
         .await
         .unwrap_or(json!({ "settings": {} }));
-    let globalscript = res
-        .get("settings")
-        .and_then(|s| s.get("scripts"))
-        .cloned()
-        .unwrap_or(json!([]));
+    let globalscript = setting_value(&res, "scripts").unwrap_or(json!([]));
     let hash = risuai_storage::codec::compute_hash(&globalscript.to_string());
     (
         StatusCode::OK,
@@ -875,7 +914,7 @@ pub async fn get_setting_handler(
     let keys = vec![key.clone()];
     match storage.load_setting_keys(&keys).await {
         Ok(res) => {
-            if let Some(val) = res.get("settings").and_then(|s| s.get(&key)) {
+            if let Some(val) = setting_value(&res, &key) {
                 let hash = risuai_storage::codec::compute_hash(&val.to_string());
                 (
                     StatusCode::OK,
@@ -985,5 +1024,196 @@ pub async fn delete_module_handler(
     match storage.delete_module(&id).await {
         Ok(res) => (StatusCode::OK, Json(res)).into_response(),
         Err(e) => map_storage_error(e).into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_setting_value_flat_and_wrapped() {
+        // flat
+        let flat = json!({ "personas": ["p1", "p2"] });
+        assert_eq!(setting_value(&flat, "personas"), Some(json!(["p1", "p2"])));
+
+        // wrapped
+        let wrapped = json!({ "settings": { "personas": ["p1", "p2"] } });
+        assert_eq!(
+            setting_value(&wrapped, "personas"),
+            Some(json!(["p1", "p2"]))
+        );
+
+        // wrapped takes precedence if both exist
+        let both = json!({
+            "personas": ["flat"],
+            "settings": { "personas": ["wrapped"] }
+        });
+        assert_eq!(setting_value(&both, "personas"), Some(json!(["wrapped"])));
+
+        // missing
+        let missing = json!({ "settings": {} });
+        assert_eq!(setting_value(&missing, "personas"), None);
+
+        let empty = json!({});
+        assert_eq!(setting_value(&empty, "personas"), None);
+    }
+
+    #[test]
+    fn test_normalize_preset_list_postgres() {
+        let input = json!({
+            "botPresets": [{ "id": "preset1", "name": "Default" }]
+        });
+        let expected_hash = risuai_storage::codec::compute_hash(
+            &json!([{ "id": "preset1", "name": "Default" }]).to_string(),
+        );
+        let res = normalize_preset_list_response(input);
+        assert_eq!(
+            res,
+            json!({
+                "presets": [{ "id": "preset1", "name": "Default" }],
+                "hash": expected_hash,
+            })
+        );
+    }
+
+    #[test]
+    fn test_normalize_preset_list_canonical_azure() {
+        let input = json!({
+            "presets": [{ "id": "preset1", "name": "AzurePreset" }],
+            "hash": "azure_hash_abc"
+        });
+        let res = normalize_preset_list_response(input);
+        assert_eq!(
+            res,
+            json!({
+                "presets": [{ "id": "preset1", "name": "AzurePreset" }],
+                "hash": "azure_hash_abc",
+            })
+        );
+    }
+
+    #[test]
+    fn test_normalize_preset_list_wrapped_settings_fallback() {
+        let input = json!({
+            "settings": {
+                "botPresets": [{ "id": "preset2" }]
+            }
+        });
+        let expected_hash =
+            risuai_storage::codec::compute_hash(&json!([{ "id": "preset2" }]).to_string());
+        let res = normalize_preset_list_response(input);
+        assert_eq!(
+            res,
+            json!({
+                "presets": [{ "id": "preset2" }],
+                "hash": expected_hash,
+            })
+        );
+    }
+
+    #[test]
+    fn test_normalize_preset_list_malformed_becomes_empty() {
+        let malformed_string = json!({ "presets": "not an array" });
+        let empty_hash = risuai_storage::codec::compute_hash(&json!([]).to_string());
+        let res = normalize_preset_list_response(malformed_string);
+        assert_eq!(
+            res,
+            json!({
+                "presets": [],
+                "hash": empty_hash,
+            })
+        );
+
+        let malformed_number = json!({ "botPresets": 12345 });
+        let res2 = normalize_preset_list_response(malformed_number);
+        assert_eq!(
+            res2,
+            json!({
+                "presets": [],
+                "hash": empty_hash,
+            })
+        );
+
+        let empty = json!({});
+        let res3 = normalize_preset_list_response(empty);
+        assert_eq!(
+            res3,
+            json!({
+                "presets": [],
+                "hash": empty_hash,
+            })
+        );
+    }
+
+    #[test]
+    fn test_normalize_preset_detail_raw() {
+        let raw = json!({
+            "id": "p1",
+            "name": "Raw Preset",
+            "temperature": 0.7
+        });
+        let expected_hash = risuai_storage::codec::compute_hash(&raw.to_string());
+        let res = normalize_preset_detail_response(raw.clone());
+        assert_eq!(
+            res,
+            json!({
+                "preset": raw,
+                "hash": expected_hash,
+            })
+        );
+        assert!(res.get("queryMs").is_none());
+    }
+
+    #[test]
+    fn test_normalize_preset_detail_wrapped() {
+        let wrapped = json!({
+            "preset": {
+                "id": "p1",
+                "name": "Wrapped Preset",
+            },
+            "hash": "existing_detail_hash",
+            "queryMs": 12.34
+        });
+        let res = normalize_preset_detail_response(wrapped);
+        assert_eq!(
+            res,
+            json!({
+                "preset": {
+                    "id": "p1",
+                    "name": "Wrapped Preset",
+                },
+                "hash": "existing_detail_hash",
+            })
+        );
+        assert!(res.get("queryMs").is_none());
+
+        // wrapped without hash computes hash
+        let wrapped_no_hash = json!({
+            "preset": {
+                "id": "p2",
+                "name": "Wrapped No Hash",
+            },
+            "queryMs": 5.0
+        });
+        let expected_hash = risuai_storage::codec::compute_hash(
+            &json!({
+                "id": "p2",
+                "name": "Wrapped No Hash",
+            })
+            .to_string(),
+        );
+        let res2 = normalize_preset_detail_response(wrapped_no_hash);
+        assert_eq!(
+            res2,
+            json!({
+                "preset": {
+                    "id": "p2",
+                    "name": "Wrapped No Hash",
+                },
+                "hash": expected_hash,
+            })
+        );
+        assert!(res2.get("queryMs").is_none());
     }
 }

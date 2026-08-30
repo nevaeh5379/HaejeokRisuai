@@ -117,7 +117,9 @@ mod tests {
         let payload = UpdateDatabaseConfigPayload {
             enabled: true,
             connection_string: "postgresql://u:p@db.internal:5432/main".to_string(),
-            backup_connection_string: Some("postgresql://u:p@db-backup.internal:5432/main".to_string()),
+            backup_connection_string: Some(
+                "postgresql://u:p@db-backup.internal:5432/main".to_string(),
+            ),
         };
         let json_str = serde_json::to_string(&payload).unwrap();
         assert!(json_str.contains("backupConnectionString"));
@@ -129,7 +131,10 @@ mod tests {
         let err_res = r#"{"success":false,"error":"Failed to connect to database"}"#;
         let parsed_err: UpdateDatabaseConfigResponse = serde_json::from_str(err_res).unwrap();
         assert!(!parsed_err.success);
-        assert_eq!(parsed_err.error, Some("Failed to connect to database".to_string()));
+        assert_eq!(
+            parsed_err.error,
+            Some("Failed to connect to database".to_string())
+        );
     }
 
     #[test]

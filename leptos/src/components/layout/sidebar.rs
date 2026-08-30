@@ -58,6 +58,14 @@ pub fn Sidebar() -> impl IntoView {
                     <span>"Characters"</span>
                 </a>
                 <a
+                    href="/library"
+                    class="sidebar-link"
+                    on:click=move |_| state.ui.close_sidebar()
+                >
+                    <Icon name=IconName::BookOpen size=18 />
+                    <span>"Library"</span>
+                </a>
+                <a
                     href="/health"
                     class="sidebar-link"
                     on:click=move |_| state.ui.close_sidebar()

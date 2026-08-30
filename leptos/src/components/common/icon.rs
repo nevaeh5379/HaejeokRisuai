@@ -25,6 +25,7 @@ pub enum IconName {
     CheckCircle,
     LogOut,
     Server,
+    BookOpen,
 }
 
 #[component]
@@ -150,6 +151,10 @@ pub fn Icon(
                     <rect width="20" height="8" x="2" y="14" rx="2" ry="2"></rect>
                     <line x1="6" x2="6.01" y1="6" y2="6"></line>
                     <line x1="6" x2="6.01" y1="18" y2="18"></line>
+                }.into_any(),
+                IconName::BookOpen => view! {
+                    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
                 }.into_any(),
             }}
         </svg>

@@ -1,6 +1,6 @@
 # RisuAI Leptos Frontend (Rust WASM)
 
-Next-generation cross-platform WebAssembly frontend for RisuAI built with [Leptos](https://leptos.dev/) (CSR mode) and Rust. Designed from the ground up for high responsiveness, avoiding a JavaScript application framework/runtime (while using minimal Trunk/wasm-bindgen JS glue), and adhering to strict memory budgeting for resource-constrained environments.
+Next-generation cross-platform WebAssembly frontend for RisuAI built with [Leptos](https://leptos.dev/) (CSR mode) and Rust. Designed from the ground up for high responsiveness, eliminating heavy client-side JavaScript frameworks (using minimal Trunk/wasm-bindgen JS glue), and adhering to strict memory budgeting for resource-constrained mobile and desktop environments.
 
 ---
 
@@ -58,7 +58,7 @@ cargo run -p risuai-server -- --port 6001
 
 ## 4. Milestone Boundaries
 
-### Milestone 1: Core Shell & Database V2 Contract Alignment (Current)
+### Milestone 1: Core Shell & Database V2 Contract Alignment (Completed)
 - **CSR UI Shell & Layout**: Reactive sidebar, header, mobile bottom navigation, toast feedback, and modal system.
 - **Dynamic Theming Engine**: Seven classic RisuAI themes (Dracula default, Dark, Light, Cherry, Galaxy, Ocean, RealBlack) synced with CSS custom properties.
 - **Backend Health Diagnostics**: Live inspection of `/api/health` and database vendor storage status.
@@ -70,14 +70,35 @@ cargo run -p risuai-server -- --port 6001
 - **Paginated Chat Interface & Scaffold**:
   - Canonical RisuAI message model (`role: "user" | "char"`, `data: String`).
   - Chat message paging API client and serde contracts implemented for `/api/database-v2/chats/{id}/messages` utilizing `risuai_core::pagination::PaginatedMessagesResponse<T>`.
-  - ChatPage is currently an intentionally read-only scaffold and does not yet hydrate an active session from the backend.
 
-### Milestone 2: Card Parser & Local Storage (Upcoming)
+### Milestone 2: Recovery & Auth Bootstrap Gate (Completed)
+- **Application Bootstrap Gate**:
+  - Unauthenticated gate evaluated before `AppLayout` and routes are mounted.
+  - Queries `/api/health` and `/api/test_auth` without triggering storage-dependent routes.
+  - State machine transitions cleanly across `Checking`, `Offline`, `NeedSetPassword`, `NeedLogin`, `NeedDatabaseRecovery`, and `Ready`.
+- **Session-Memory Credential Architecture**:
+  - Pure in-memory credential management (`AuthCredential::Password`).
+  - Zero token or raw password leakage to `localStorage` or `sessionStorage`.
+  - Custom `fmt::Debug` implementations for `AuthCredential`, `AuthState`, and `ApiClient` redacting all credentials.
+- **Master Password Lifecycle**:
+  - Setup screen for initial server initialization (`POST /api/set_password`).
+  - Master password login screen (`POST /api/login`).
+  - Password fields default to obscured with accessible show/hide visibility toggles.
+- **Typed Database Recovery Interface**:
+  - Masked server configuration inspection via `GET /api/db-config`.
+  - Connectivity testing via `POST /api/db-config/test` with real-time latency reporting.
+  - Update and save workflow via `POST /api/db-config` (masked passwords are never prefilled or recycled into save payloads).
+  - Server-side retry workflow via `POST /api/db-config/retry`.
+  - Auto-entry into main app once storage is verified as `ready` on `/api/health`.
+- **Offline & Error Resilience**:
+  - Dedicated offline retry screen with optional custom backend endpoint configuration.
+
+### Milestone 3: Card Parser & Local Storage (Upcoming)
 - In-browser parsing of `.png` (tEXt chunks) and `.charx` character cards in pure WebAssembly.
 - Offline asset caching and image thumbnail pipeline via `/api/read/{path}`.
 - Character metadata and lorebook editor.
 
-### Milestone 3: AI Inference & Platform Packaging (Future)
+### Milestone 4: AI Inference & Platform Packaging (Future)
 - Streaming chat completions with AI providers (OpenAI, Claude, Gemini, OpenRouter, local backends).
 - Memory engines (HypaMemory, SupaMemory) ported to Rust.
 - Tauri 2.5 desktop and Android packaging.
@@ -86,10 +107,11 @@ cargo run -p risuai-server -- --port 6001
 
 ## 5. Memory & Lazy-Loading Rules
 
-In compliance with `AGENTS.md`, the frontend is strictly optimized to run smoothly on older mobile devices with **~4GB of RAM or less**:
+In compliance with low-memory design guidelines, the frontend is strictly optimized to run smoothly on older mobile devices with **~4GB of RAM or less**:
 
-1. **No Monolithic Database Deserialization**:
-   - The entire database is never deserialized into the WebAssembly heap.
+1. **No Monolithic Database Deserialization (`/api/database-v2/startup` Excluded)**:
+   - The monolithic startup dump is never requested or deserialized into the WebAssembly heap.
+   - Bootstrapping relies purely on `/api/health`, `/api/test_auth`, and recovery endpoints.
    - Catalog browsing loads only search summaries containing essential fields (`id` and `name`).
 2. **Windowed Message Pagination**:
    - Chat history loads in discrete windows via `limit` and `before` query parameters.
@@ -107,10 +129,12 @@ In compliance with `AGENTS.md`, the frontend is strictly optimized to run smooth
 
 ```mermaid
 graph TD
-    M1[Milestone 1: UI Shell & Exact DB Contracts] --> M2[Milestone 2: Card Parser & Lore Storage]
-    M2 --> M3[Milestone 3: AI Engine Streaming & Tauri Bundles]
+    M1[Milestone 1: UI Shell & Exact DB Contracts] --> M2[Milestone 2: Recovery & Auth Bootstrap Gate]
+    M2 --> M3[Milestone 3: Card Parser & Lore Storage]
+    M3 --> M4[Milestone 4: AI Engine Streaming & Tauri Bundles]
     
-    style M1 fill:#bd93f9,stroke:#6272a4,stroke-width:2px,color:#282a36
-    style M2 fill:#44475a,stroke:#6272a4,stroke-width:1px,color:#f8f8f2
-    style M3 fill:#21222c,stroke:#4b5563,stroke-width:1px,color:#f8f8f2
+    style M1 fill:#50fa7b,stroke:#6272a4,stroke-width:2px,color:#282a36
+    style M2 fill:#bd93f9,stroke:#6272a4,stroke-width:2px,color:#282a36
+    style M3 fill:#44475a,stroke:#6272a4,stroke-width:1px,color:#f8f8f2
+    style M4 fill:#21222c,stroke:#4b5563,stroke-width:1px,color:#f8f8f2
 ```

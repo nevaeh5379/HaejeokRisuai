@@ -29,7 +29,8 @@ impl ApiClient {
 
     /// Calls POST `/api/db-config/retry` to retry connecting with the existing configuration
     pub async fn retry_db_config(&self) -> Result<RetryDatabaseConfigResponse> {
-        self.post("/api/db-config/retry", &serde_json::json!({})).await
+        self.post("/api/db-config/retry", &serde_json::json!({}))
+            .await
     }
 
     /// Calls GET `/api/database-v2/state` to retrieve current database revision

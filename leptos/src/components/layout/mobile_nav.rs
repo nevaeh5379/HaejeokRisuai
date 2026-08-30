@@ -17,9 +17,9 @@ pub fn MobileNav() -> impl IntoView {
                 <Icon name=IconName::Users size=20 />
                 <span>"Chars"</span>
             </a>
-            <a href="/health" class="mobile-nav-item">
-                <Icon name=IconName::HeartPulse size=20 />
-                <span>"Health"</span>
+            <a href="/library" class="mobile-nav-item">
+                <Icon name=IconName::BookOpen size=20 />
+                <span>"Library"</span>
             </a>
             <a href="/settings" class="mobile-nav-item">
                 <Icon name=IconName::Settings size=20 />

@@ -5,6 +5,21 @@ use std::fmt;
 
 pub type Result<T> = std::result::Result<T, ApiError>;
 
+#[derive(Clone, PartialEq, Eq)]
+pub struct BinaryResponse {
+    pub bytes: Vec<u8>,
+    pub content_type: Option<String>,
+}
+
+impl fmt::Debug for BinaryResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BinaryResponse")
+            .field("bytes_len", &self.bytes.len())
+            .field("content_type", &self.content_type)
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApiError {
     Network(String),
@@ -109,6 +124,18 @@ impl ApiClient {
         self.handle_response(resp).await
     }
 
+    pub async fn get_binary(&self, path: &str) -> Result<BinaryResponse> {
+        let url = self.build_url(path);
+        let req = self.attach_auth(Request::get(&url));
+
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| ApiError::Network(e.to_string()))?;
+
+        self.handle_binary_response(resp).await
+    }
+
     pub async fn post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T> {
         let url = self.build_url(path);
         let req = self.attach_auth(Request::post(&url));
@@ -167,19 +194,47 @@ impl ApiClient {
                     .text()
                     .await
                     .unwrap_or_else(|_| "Unknown error".to_string());
-                let parsed_msg = if let Ok(val) = serde_json::from_str::<serde_json::Value>(&err_text) {
-                    val.get("error")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                        .unwrap_or(err_text)
-                } else {
-                    err_text
-                };
+                let parsed_msg =
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&err_text) {
+                        val.get("error")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or(err_text)
+                    } else {
+                        err_text
+                    };
                 Err(ApiError::Http {
                     status,
                     message: parsed_msg,
                 })
             }
+        }
+    }
+
+    async fn handle_binary_response(
+        &self,
+        resp: gloo_net::http::Response,
+    ) -> Result<BinaryResponse> {
+        let status = resp.status();
+        match status {
+            200..=299 => {
+                let content_type = resp.headers().get("content-type");
+                let bytes = resp
+                    .binary()
+                    .await
+                    .map_err(|e| ApiError::Network(e.to_string()))?;
+                Ok(BinaryResponse {
+                    bytes,
+                    content_type,
+                })
+            }
+            401 => Err(ApiError::Unauthorized),
+            404 => Err(ApiError::NotFound),
+            503 => Err(ApiError::StorageUnavailable),
+            _ => Err(ApiError::Http {
+                status,
+                message: format!("HTTP request failed with status {}", status),
+            }),
         }
     }
 }
@@ -206,7 +261,25 @@ mod tests {
     fn test_api_client_url_building() {
         let client = ApiClient::new("http://localhost:6001/");
         assert_eq!(client.base_url(), "http://localhost:6001");
-        assert_eq!(client.build_url("/api/health"), "http://localhost:6001/api/health");
-        assert_eq!(client.build_url("api/health"), "http://localhost:6001/api/health");
+        assert_eq!(
+            client.build_url("/api/health"),
+            "http://localhost:6001/api/health"
+        );
+        assert_eq!(
+            client.build_url("api/health"),
+            "http://localhost:6001/api/health"
+        );
+    }
+
+    #[test]
+    fn test_binary_response_debug() {
+        let bin_resp = BinaryResponse {
+            bytes: vec![1, 2, 3, 4, 5],
+            content_type: Some("image/png".to_string()),
+        };
+        let debug_str = format!("{:?}", bin_resp);
+        assert!(debug_str.contains("bytes_len: 5"));
+        assert!(debug_str.contains("content_type: Some(\"image/png\")"));
+        assert!(!debug_str.contains("[1, 2, 3, 4, 5]"));
     }
 }

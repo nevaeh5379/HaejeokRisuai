@@ -12,9 +12,7 @@ use crate::state::ui_state::ToastType;
 use leptos::prelude::*;
 
 #[component]
-pub fn DatabaseRecoveryScreen(
-    #[prop(into)] on_storage_ready: ActionCallback,
-) -> impl IntoView {
+pub fn DatabaseRecoveryScreen(#[prop(into)] on_storage_ready: ActionCallback) -> impl IntoView {
     let state = expect_context::<AppState>();
 
     let current_config = RwSignal::new(Option::<DatabaseConfigResponse>::None);
@@ -24,6 +22,7 @@ pub fn DatabaseRecoveryScreen(
     let connection_string_input = RwSignal::new(String::new());
     let backup_connection_string_input = RwSignal::new(String::new());
 
+    let test_success = RwSignal::new(false);
     let test_latency = RwSignal::new(Option::<u64>::None);
     let test_error = RwSignal::new(Option::<String>::None);
     let is_testing = RwSignal::new(false);
@@ -45,8 +44,10 @@ pub fn DatabaseRecoveryScreen(
                         current_config.set(Some(cfg));
                         is_loading_config.set(false);
                     }
-                    Err(err) => {
-                        general_error.set(Some(format!("Failed to fetch DB config: {}", err)));
+                    Err(_) => {
+                        general_error.set(Some(
+                            "Failed to fetch database configuration from server.".to_string(),
+                        ));
                         is_loading_config.set(false);
                     }
                 }
@@ -63,12 +64,16 @@ pub fn DatabaseRecoveryScreen(
         move || {
             let conn = connection_string_input.get().trim().to_string();
             if conn.is_empty() {
-                test_error.set(Some("Please enter a connection string to test".to_string()));
+                test_success.set(false);
+                test_error.set(Some(
+                    "Please enter a connection string to test.".to_string(),
+                ));
                 test_latency.set(None);
                 return;
             }
 
             is_testing.set(true);
+            test_success.set(false);
             test_error.set(None);
             test_latency.set(None);
 
@@ -81,17 +86,24 @@ pub fn DatabaseRecoveryScreen(
                     Ok(resp) => {
                         is_testing.set(false);
                         if resp.success {
-                            test_latency.set(resp.latency_ms.or(Some(0)));
+                            test_success.set(true);
+                            test_latency.set(resp.latency_ms);
                             test_error.set(None);
                         } else {
-                            test_error.set(Some(resp.error.unwrap_or_else(|| "Unknown database error".to_string())));
+                            test_success.set(false);
                             test_latency.set(None);
+                            test_error.set(Some(
+                                "Connection test failed. Please verify your database settings and connectivity.".to_string(),
+                            ));
                         }
                     }
-                    Err(err) => {
+                    Err(_) => {
                         is_testing.set(false);
-                        test_error.set(Some(err.to_string()));
+                        test_success.set(false);
                         test_latency.set(None);
+                        test_error.set(Some(
+                            "Network request failed while testing connection. Please check server connectivity.".to_string(),
+                        ));
                     }
                 }
             });
@@ -140,9 +152,10 @@ pub fn DatabaseRecoveryScreen(
                             match api.get_health().await {
                                 Ok(health) if health.is_ready() => {
                                     is_saving.set(false);
-                                    state
-                                        .ui
-                                        .toast("Database connected successfully!", ToastType::Success);
+                                    state.ui.toast(
+                                        "Database connected successfully!",
+                                        ToastType::Success,
+                                    );
                                     on_storage_ready.run();
                                 }
                                 Ok(health) => {
@@ -153,22 +166,26 @@ pub fn DatabaseRecoveryScreen(
                                     )));
                                     fetch_config();
                                 }
-                                Err(err) => {
+                                Err(_) => {
                                     is_saving.set(false);
-                                    general_error.set(Some(format!("Config saved, but health check failed: {}", err)));
+                                    general_error.set(Some(
+                                        "Configuration saved, but failed to verify health status with server.".to_string(),
+                                    ));
                                     fetch_config();
                                 }
                             }
                         } else {
                             is_saving.set(false);
                             general_error.set(Some(
-                                resp.error.unwrap_or_else(|| "Failed to update configuration".to_string()),
+                                "Failed to update database configuration. Please verify your settings.".to_string(),
                             ));
                         }
                     }
-                    Err(err) => {
+                    Err(_) => {
                         is_saving.set(false);
-                        general_error.set(Some(format!("Save request failed: {}", err)));
+                        general_error.set(Some(
+                            "Network request failed while saving configuration. Please check server connectivity.".to_string(),
+                        ));
                     }
                 }
             });
@@ -208,22 +225,28 @@ pub fn DatabaseRecoveryScreen(
                                     )));
                                     fetch_config();
                                 }
-                                Err(err) => {
+                                Err(_) => {
                                     is_retrying.set(false);
-                                    general_error.set(Some(format!("Health check failed: {}", err)));
+                                    general_error.set(Some(
+                                        "Retry completed, but failed to verify health status with server.".to_string(),
+                                    ));
                                     fetch_config();
                                 }
                             }
                         } else {
                             is_retrying.set(false);
                             general_error.set(Some(
-                                resp.error.unwrap_or_else(|| "Failed to reconnect to database".to_string()),
+                                "Failed to reconnect to database with existing configuration."
+                                    .to_string(),
                             ));
                         }
                     }
-                    Err(err) => {
+                    Err(_) => {
                         is_retrying.set(false);
-                        general_error.set(Some(format!("Retry failed: {}", err)));
+                        general_error.set(Some(
+                            "Network request failed while retrying database connection."
+                                .to_string(),
+                        ));
                     }
                 }
             });
@@ -347,18 +370,22 @@ pub fn DatabaseRecoveryScreen(
 
                     // Test Connection Result feedback
                     {move || {
-                        if let Some(latency) = test_latency.get() {
+                        if test_success.get() {
+                            let text = match test_latency.get() {
+                                Some(latency) => format!("Connection successful ({} ms)", latency),
+                                None => "Connection successful".to_string(),
+                            };
                             view! {
                                 <div style="display: flex; align-items: center; gap: 0.5rem; color: var(--risu-success); font-size: 0.875rem; background: rgba(80, 250, 123, 0.1); padding: 0.5rem 0.75rem; border-radius: var(--risu-radius-sm); border: 1px solid var(--risu-success);">
                                     <Icon name=IconName::CheckCircle size=16 />
-                                    <span>{format!("Test Successful! Connection Latency: {} ms", latency)}</span>
+                                    <span>{text}</span>
                                 </div>
                             }.into_any()
                         } else if let Some(err) = test_error.get() {
                             view! {
                                 <div style="display: flex; align-items: center; gap: 0.5rem; color: var(--risu-danger); font-size: 0.875rem; background: rgba(255, 85, 85, 0.1); padding: 0.5rem 0.75rem; border-radius: var(--risu-radius-sm); border: 1px solid var(--risu-danger);">
                                     <Icon name=IconName::AlertCircle size=16 />
-                                    <span>{format!("Connection Test Failed: {}", err)}</span>
+                                    <span>{err}</span>
                                 </div>
                             }.into_any()
                         } else {

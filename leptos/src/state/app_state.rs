@@ -83,3 +83,164 @@ impl AppState {
         self.gate_status.set(GateStatus::NeedLogin);
     }
 }
+
+/// Verification state of in-memory credentials against the backend
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CredentialVerification {
+    #[default]
+    NotChecked,
+    Valid,
+    Invalid,
+}
+
+/// Pure decision helper for bootstrap gate state transitions.
+///
+/// Semantics:
+/// - `AuthStatus::Unset` => `GateStatus::NeedSetPassword` regardless of other inputs.
+/// - Configured state is `AuthStatus::Incorrect`, `AuthStatus::Unknown`, or `AuthStatus::Success` (treated safely as configured).
+/// - Configured + no in-memory credential => `GateStatus::NeedLogin`.
+/// - Configured + credential + verification `Invalid` => `GateStatus::NeedLogin`.
+/// - Configured + credential + verification `Valid` + `storage_ready: true` => `GateStatus::Ready`.
+/// - Configured + credential + verification `Valid` + `storage_ready: false` => `GateStatus::NeedDatabaseRecovery`.
+/// - Configured + credential + verification `NotChecked` => `GateStatus::Checking`.
+pub fn decide_bootstrap_gate(
+    auth_status: crate::models::auth::AuthStatus,
+    has_credential: bool,
+    verification: CredentialVerification,
+    storage_ready: bool,
+) -> GateStatus {
+    use crate::models::auth::AuthStatus;
+
+    if matches!(auth_status, AuthStatus::Unset) {
+        return GateStatus::NeedSetPassword;
+    }
+
+    // Configured states: AuthStatus::Incorrect, AuthStatus::Unknown, AuthStatus::Success
+    if !has_credential {
+        return GateStatus::NeedLogin;
+    }
+
+    match verification {
+        CredentialVerification::NotChecked => GateStatus::Checking,
+        CredentialVerification::Invalid => GateStatus::NeedLogin,
+        CredentialVerification::Valid => {
+            if storage_ready {
+                GateStatus::Ready
+            } else {
+                GateStatus::NeedDatabaseRecovery
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::auth::AuthStatus;
+
+    #[test]
+    fn test_unset_auth_status_always_needs_set_password() {
+        for has_cred in [false, true] {
+            for verification in [
+                CredentialVerification::NotChecked,
+                CredentialVerification::Valid,
+                CredentialVerification::Invalid,
+            ] {
+                for storage_ready in [false, true] {
+                    let decision = decide_bootstrap_gate(
+                        AuthStatus::Unset,
+                        has_cred,
+                        verification,
+                        storage_ready,
+                    );
+                    assert_eq!(decision, GateStatus::NeedSetPassword);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_configured_no_in_memory_credential_needs_login() {
+        for auth_status in [
+            AuthStatus::Incorrect,
+            AuthStatus::Unknown,
+            AuthStatus::Success,
+        ] {
+            for verification in [
+                CredentialVerification::NotChecked,
+                CredentialVerification::Valid,
+                CredentialVerification::Invalid,
+            ] {
+                for storage_ready in [false, true] {
+                    let decision =
+                        decide_bootstrap_gate(auth_status, false, verification, storage_ready);
+                    assert_eq!(decision, GateStatus::NeedLogin);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_configured_with_credential_invalid_verification_needs_login() {
+        for auth_status in [
+            AuthStatus::Incorrect,
+            AuthStatus::Unknown,
+            AuthStatus::Success,
+        ] {
+            for storage_ready in [false, true] {
+                let decision = decide_bootstrap_gate(
+                    auth_status,
+                    true,
+                    CredentialVerification::Invalid,
+                    storage_ready,
+                );
+                assert_eq!(decision, GateStatus::NeedLogin);
+            }
+        }
+    }
+
+    #[test]
+    fn test_configured_with_credential_valid_and_storage_ready_is_ready() {
+        for auth_status in [
+            AuthStatus::Incorrect,
+            AuthStatus::Unknown,
+            AuthStatus::Success,
+        ] {
+            let decision =
+                decide_bootstrap_gate(auth_status, true, CredentialVerification::Valid, true);
+            assert_eq!(decision, GateStatus::Ready);
+        }
+    }
+
+    #[test]
+    fn test_configured_with_credential_valid_and_storage_not_ready_needs_database_recovery() {
+        for auth_status in [
+            AuthStatus::Incorrect,
+            AuthStatus::Unknown,
+            AuthStatus::Success,
+        ] {
+            let decision =
+                decide_bootstrap_gate(auth_status, true, CredentialVerification::Valid, false);
+            assert_eq!(decision, GateStatus::NeedDatabaseRecovery);
+        }
+    }
+
+    #[test]
+    fn test_configured_with_credential_not_checked_is_checking() {
+        for auth_status in [
+            AuthStatus::Incorrect,
+            AuthStatus::Unknown,
+            AuthStatus::Success,
+        ] {
+            for storage_ready in [false, true] {
+                let decision = decide_bootstrap_gate(
+                    auth_status,
+                    true,
+                    CredentialVerification::NotChecked,
+                    storage_ready,
+                );
+                assert_eq!(decision, GateStatus::Checking);
+            }
+        }
+    }
+}

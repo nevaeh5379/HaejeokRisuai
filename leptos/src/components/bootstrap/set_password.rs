@@ -8,9 +8,7 @@ use crate::state::ui_state::ToastType;
 use leptos::prelude::*;
 
 #[component]
-pub fn SetPasswordScreen(
-    #[prop(into)] on_success: ActionCallback,
-) -> impl IntoView {
+pub fn SetPasswordScreen(#[prop(into)] on_success: ActionCallback) -> impl IntoView {
     let state = expect_context::<AppState>();
 
     let password = RwSignal::new(String::new());
@@ -45,18 +43,32 @@ pub fn SetPasswordScreen(
                     password: pw.clone(),
                 };
                 match api.set_password(&payload).await {
-                    Ok(_) => {
+                    Ok(resp) if resp.success => {
                         is_submitting.set(false);
                         state.auth.set_password(&pw);
                         state.sync_api_credential();
-                        state
-                            .ui
-                            .toast("Master password configured successfully", ToastType::Success);
+                        state.ui.toast(
+                            "Master password configured successfully",
+                            ToastType::Success,
+                        );
                         on_success.run();
+                    }
+                    Ok(_) => {
+                        is_submitting.set(false);
+                        error_message.set(Some(
+                            "Failed to set master password. Please try again.".to_string(),
+                        ));
                     }
                     Err(err) => {
                         is_submitting.set(false);
-                        error_message.set(Some(format!("Failed to set password: {}", err)));
+                        let msg = match &err {
+                            crate::api::client::ApiError::Network(_) => {
+                                "Network error. Please check your connection and try again."
+                                    .to_string()
+                            }
+                            _ => "Failed to set master password. Please try again.".to_string(),
+                        };
+                        error_message.set(Some(msg));
                     }
                 }
             });
@@ -120,7 +132,7 @@ pub fn SetPasswordScreen(
                     />
 
                     <p style="font-size: 0.75rem; color: var(--risu-theme-textcolor2); line-height: 1.4;">
-                        "This password will protect your RisuAI database, settings, and chat history. Credentials are maintained in session memory and never leaked to localStorage."
+                        "This password will protect your RisuAI database, settings, and chat history. The credential is not persisted in browser storage and is kept in memory for the current page session."
                     </p>
 
                     <Button

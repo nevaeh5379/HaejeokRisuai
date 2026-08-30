@@ -55,7 +55,6 @@ impl ThemePreset {
 pub struct AppSettings {
     pub theme: ThemePreset,
     pub api_base_url: String,
-    pub auth_token: Option<String>,
     pub low_memory_mode: bool,
     pub page_size: usize,
 }
@@ -65,7 +64,6 @@ impl Default for AppSettings {
         Self {
             theme: ThemePreset::Default,
             api_base_url: String::new(),
-            auth_token: None,
             low_memory_mode: true,
             page_size: 20,
         }
