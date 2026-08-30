@@ -52,5 +52,7 @@ dist.zip
 
 # Due to Cargo.lock makes the project build fail, we ignore it
 Cargo.lock
+!/server/rust/Cargo.lock
 /.worktree/
-*.logcat
+*.logcattarget/
+/server/rust/target/

@@ -1,9 +1,24 @@
 # ------------------------------------------------------------------------------------------
+# Oracle-enabled multi-stage Docker build with Oracle Instant Client
+# ------------------------------------------------------------------------------------------
 
 FROM rust:1.98-bookworm AS rust-builder
 WORKDIR /app
 COPY server/rust ./server/rust
-RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y pkg-config libssl-dev libaio1 wget unzip && rm -rf /var/lib/apt/lists/*
+
+# Install Oracle Instant Client SDK
+RUN mkdir -p /opt/oracle && cd /opt/oracle && \
+    wget -q https://download.oracle.com/otn_software/linux/instantclient/2113000/instantclient-basiclite-linux.x64-21.13.0.0.0dbru.zip && \
+    wget -q https://download.oracle.com/otn_software/linux/instantclient/2113000/instantclient-sdk-linux.x64-21.13.0.0.0dbru.zip && \
+    unzip -q instantclient-basiclite-linux.x64-21.13.0.0.0dbru.zip && \
+    unzip -q instantclient-sdk-linux.x64-21.13.0.0.0dbru.zip && \
+    rm -f *.zip
+
+ENV LD_LIBRARY_PATH=/opt/oracle/instantclient_21_13
+ENV OCI_LIB_DIR=/opt/oracle/instantclient_21_13
+ENV OCI_INC_DIR=/opt/oracle/instantclient_21_13/sdk/include
+
 WORKDIR /app/server/rust
 RUN cargo build --release --bin risuai-server
 
@@ -13,7 +28,6 @@ FROM node:24-bookworm-slim AS base
 WORKDIR /app
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-# Copy dependency-related file
 COPY package.json .
 COPY pnpm-lock.yaml .
 
@@ -23,7 +37,6 @@ RUN corepack install --global pnpm@10.34.1
 # ------------------------------------------------------------------------------------------
 
 FROM base AS deps
-# Install only prod deps
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prod --frozen-lockfile
 
 # ------------------------------------------------------------------------------------------
@@ -32,7 +45,6 @@ FROM deps AS builder
 ARG HAEJEOK_BUILD_NUMBER
 ENV HAEJEOK_BUILD_NUMBER=${HAEJEOK_BUILD_NUMBER}
 COPY . .
-# Install including dev deps
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store VITE_RISU_LEGAL_CONFIGURED=TRUE pnpm build
 
@@ -41,7 +53,10 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store VITE_RISU_LEGAL_CONFIGURED=TRU
 FROM base AS runtime
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates libaio1 && rm -rf /var/lib/apt/lists/*
+
+COPY --from=rust-builder /opt/oracle /opt/oracle
+ENV LD_LIBRARY_PATH=/opt/oracle/instantclient_21_13
 
 COPY package.json .
 COPY --from=deps /app/node_modules /app/node_modules
@@ -50,7 +65,6 @@ COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/dist ./dist
 COPY --from=rust-builder /app/server/rust/target/release/risuai-server /usr/local/bin/risuai-server
 
-# Server modules import shared runtime contracts from packages/ at runtime.
 RUN node -e "require.resolve('./packages/protocol/modelJobs.cjs'); require.resolve('./packages/chat-core/index.cjs')"
 
 ENV NODE_ENV=production
@@ -58,5 +72,3 @@ ENV PORT=6001
 EXPOSE 6001
 
 CMD ["risuai-server", "--port", "6001", "--save-path", "./save", "--dist-path", "./dist"]
-
-# ------------------------------------------------------------------------------------------

@@ -1,0 +1,20 @@
+[build]
+target = "index.html"
+release = false
+
+[watch]
+watch = ["src", "style", "index.html"]
+ignore = ["target"]
+
+[serve]
+addresses = ["127.0.0.1"]
+port = 8080
+open = false
+
+[[proxy]]
+rewrite = "/api"
+backend = "http://127.0.0.1:6001/api"
+
+[[proxy]]
+rewrite = "/proxy"
+backend = "http://127.0.0.1:6001/proxy"

@@ -19,6 +19,7 @@ src-tauri
 dist
 dist-*
 build
+server/rust/target
 .wrangler
 .tauri
 __pycache__

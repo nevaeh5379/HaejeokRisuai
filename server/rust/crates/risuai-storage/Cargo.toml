@@ -1,0 +1,31 @@
+[package]
+name = "risuai-storage"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+risuai-core = { workspace = true }
+risuai-assets = { workspace = true }
+thiserror = { workspace = true }
+url = { workspace = true }
+
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+async-trait = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+bytes = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+flate2 = { workspace = true }
+
+sqlx = { workspace = true }
+tiberius = { workspace = true }
+oracle = { workspace = true }
+
+tracing = { workspace = true }

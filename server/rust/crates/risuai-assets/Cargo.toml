@@ -1,0 +1,35 @@
+[package]
+name = "risuai-assets"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+risuai-core = { workspace = true }
+base64 = { workspace = true }
+
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tokio-stream = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+async-trait = { workspace = true }
+tiberius = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+bytes = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+
+aws-config = { workspace = true }
+aws-sdk-s3 = { workspace = true }
+aws-credential-types = { workspace = true }
+aws-smithy-types = { workspace = true }
+aws-smithy-runtime = { workspace = true }
+
+reqwest = { workspace = true }
+image = { workspace = true }
+tracing = { workspace = true }
