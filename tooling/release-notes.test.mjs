@@ -40,9 +40,13 @@ test("groups release commits under their pull request", () => {
 
 Changes since \`b100\`:
 
-### Improve release notes [#42](https://github.com/example/project/pull/42):
+<details>
+<summary>Improve release notes (<a href="https://github.com/example/project/pull/42">#42</a>)</summary>
+
 - feat: group commits (\`abc1234\`) — Ada
 - test: cover direct commits (\`def5678\`) — Grace
+
+</details>
 
 ### Direct commits:
 - chore: emergency metadata fix (\`987fedc\`) — Linus
@@ -59,4 +63,28 @@ test("uses the first-build introduction when there is no previous tag", () => {
   });
 
   assert.equal(notes, "## b1\n\nChanges included in this build:\n\n");
+});
+
+test("escapes pull request titles inside details summaries", () => {
+  const notes = formatReleaseNotes({
+    buildTag: "b2",
+    previousTag: "b1",
+    commits: [
+      {
+        subject: "fix: render safely",
+        shortSha: "abc1234",
+        author: "Ada",
+        pullRequest: {
+          number: 7,
+          title: "Fix <details> & links",
+          url: "https://github.com/example/project/pull/7?view=files&tab=all",
+        },
+      },
+    ],
+  });
+
+  assert.match(
+    notes,
+    /<summary>Fix &lt;details&gt; &amp; links \(<a href="https:\/\/github\.com\/example\/project\/pull\/7\?view=files&amp;tab=all">#7<\/a>\)<\/summary>/,
+  );
 });

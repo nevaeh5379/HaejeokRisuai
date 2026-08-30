@@ -395,6 +395,20 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v6
+
+      - name: Add platform download links to release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
+        shell: bash
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" > release.json
+          node tooling/release-downloads.mjs release.json release-body.md
+          jq -n --rawfile body release-body.md '{body: $body}' > release-body.json
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            --input release-body.json >/dev/null
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
