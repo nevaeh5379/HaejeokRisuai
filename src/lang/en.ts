@@ -2476,6 +2476,12 @@ export const languageEnglish = {
   risuaiProTools: "Risuai Pro Tools",
   enableRisuaiProTools: "Enable Risuai Pro Tools",
   easyPanel: "Easy Panel",
+  floatingChat: "Open in Floating Window",
+  floatingChatHeader: "Floating chat window",
+  floatingChatResize: "Resize floating chat window",
+  floatingChatExpand: "Expand to Full Screen",
+  floatingChatClose: "Close Floating Chat",
+  floatingChatUnavailable: "The character for this floating chat is no longer available.",
   mainModel: "Main Model",
   epEnabled: "Easy Panel Override",
   epRequirementsNotMet:

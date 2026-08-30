@@ -2573,4 +2573,10 @@ export const languageKorean = {
   activeProviderSettings: "활성 프로바이더 설정",
   providerSettings: "API 및 프로바이더",
   exitAppConfirm: "RisuAI를 종료할까요?",
+  floatingChat: "플로팅 창으로 열기",
+  floatingChatHeader: "플로팅 챗 창",
+  floatingChatResize: "플로팅 챗 창 크기 조절",
+  floatingChatExpand: "전체 화면으로 확대",
+  floatingChatClose: "플로팅 챗 닫기",
+  floatingChatUnavailable: "플로팅 챗의 캐릭터를 더 이상 찾을 수 없습니다.",
 } satisfies DeepPartial<typeof import("./en").languageEnglish>;
