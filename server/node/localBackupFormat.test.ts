@@ -39,6 +39,23 @@ describe('local backup format', () => {
         expect(database.characters[0]).toHaveProperty('additionalAssetFolders')
     })
 
+    it('removes per-bot persona lorebooks without mutating the live database', () => {
+        const database = {
+            personas: [{
+                id: 'persona-1',
+                name: 'Persona',
+                botLorebooks: {
+                    'character-1': [{ key: 'secret', content: 'persona-only lore' }],
+                },
+            }],
+        }
+        const portable = makeLegacyCompatibleDatabase(database)
+
+        expect(portable.personas[0]).not.toHaveProperty('botLorebooks')
+        expect(database.personas[0].botLorebooks['character-1'][0].content)
+            .toBe('persona-only lore')
+    })
+
     it('encodes the existing little-endian entry framing', () => {
         const header = createEntryHeader('assets/example.webp', 1234)
         expect(header.readUInt32LE(0)).toBe('example.webp'.length)

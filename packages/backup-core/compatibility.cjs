@@ -239,6 +239,20 @@ function expandCharactersForCompatibility(
 function makeLegacyCompatibleDatabase(database, coldStorageValues = new Map(), options = {}) {
     if (!database || typeof database !== 'object') return database;
     const portable = { ...database };
+    if (Array.isArray(database.personas)) {
+        portable.personas = database.personas.map((persona) => {
+            if (
+                !persona ||
+                typeof persona !== 'object' ||
+                !Object.prototype.hasOwnProperty.call(persona, 'botLorebooks')
+            ) {
+                return persona;
+            }
+            const legacyPersona = { ...persona };
+            delete legacyPersona.botLorebooks;
+            return legacyPersona;
+        });
+    }
     if (Array.isArray(database.characters)) {
         portable.characters = expandCharactersForCompatibility(
             database.characters,

@@ -1,14 +1,42 @@
 import { BaseDirectory, mkdir } from "@tauri-apps/plugin-fs";
 import { describe, expect, it, vi } from "vitest";
-import type { Database } from "../storage/database/schema";
+import type { Database, PortableDatabase } from "../storage/database/schema";
 import type { DatabaseInput } from "../storage/database/databaseDefaults";
 import {
+  buildPortableLocalBackupDatabase,
   createNativeImportSource,
   ensureTauriBackupAssetsDirectory,
   normalizeLocalBackupAssetPath,
   restoreInlayBackupEntry,
 } from "./backuplocal";
 
+describe("buildPortableLocalBackupDatabase", () => {
+  it("excludes per-bot persona lorebooks only from compatible backups", () => {
+    const db = {
+      characters: [],
+      personas: [
+        {
+          id: "persona-1",
+          name: "Persona",
+          botLorebooks: {
+            "character-1": [
+              { key: "secret", content: "persona-only lore" },
+            ],
+          },
+        },
+      ],
+    } as unknown as PortableDatabase;
+
+    const nativeBackup = buildPortableLocalBackupDatabase(db, "native");
+    const compatibleBackup = buildPortableLocalBackupDatabase(db, "compatible");
+
+    expect(nativeBackup.personas[0].botLorebooks).toEqual(
+      db.personas[0].botLorebooks,
+    );
+    expect(compatibleBackup.personas[0]).not.toHaveProperty("botLorebooks");
+    expect(db.personas[0]).toHaveProperty("botLorebooks");
+  });
+});
 describe("createNativeImportSource", () => {
   it("pulls bounded chunks instead of assembling the native file eagerly", async () => {
     const bytes = new Uint8Array(1024 * 1024 + 17).map(
