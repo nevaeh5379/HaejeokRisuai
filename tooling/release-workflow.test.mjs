@@ -12,6 +12,10 @@ const releaseStep = workflow.slice(
   workflow.indexOf("\n\n  publish-tauri:"),
 );
 
+const publishStep = workflow.slice(
+  workflow.indexOf("      - name: Publish release"),
+);
+
 test("binds every draft release to the requested build tag", () => {
   assert.match(releaseStep, /target_commitish: \$target/);
   assert.match(releaseStep, /\.tag_name == \$tag or \.name == \$tag/);
@@ -31,4 +35,20 @@ test("gives Tauri a deterministic release commit target", () => {
     workflow,
     /tagName: \$\{\{ needs\.prepare-release\.outputs\.build_tag \}\}\n\s+releaseCommitish: \$\{\{ github\.sha \}\}/,
   );
+});
+
+test("preserves and verifies the build tag when publishing a release", () => {
+  assert.match(
+    publishStep,
+    /BUILD_TAG: \$\{\{ needs\.prepare-release\.outputs\.build_tag \}\}/,
+  );
+  assert.match(publishStep, /tag_name: \$tag/);
+  assert.match(publishStep, /target_commitish: \$target/);
+  assert.match(publishStep, /draft: false/);
+  assert.match(publishStep, /make_latest: "true"/);
+  assert.match(
+    publishStep,
+    /ACTUAL_TAG=.*?if \[ "\$ACTUAL_TAG" != "\$BUILD_TAG" \]/s,
+  );
+  assert.match(publishStep, /Published release .* expected \$\{BUILD_TAG\}/);
 });
