@@ -93,7 +93,7 @@ Usage:
   ./risuai.sh start|stop|restart|rebuild|down|status|doctor|config
   ./risuai.sh logs [--follow|--no-follow] [--tail N] [SERVICE]
   ./risuai.sh db status|password|sync-password|shell|backup|optimize
-  ./risuai.sh help|version
+  ./risuai.sh recovery|help|version
 
 Deployment modes:
   local    This machine only, over loopback HTTP
@@ -178,8 +178,71 @@ Examples:
 EOF
 }
 
+recovery_guide() {
+    cat <<EOF
+RisuAI persistent-volume recovery
+
+RisuAI keeps generated credentials and deployment settings in a protected,
+checkout-local directory that Git does not restore and separate worktrees do
+not share:
+  $state_dir
+
+If PostgreSQL or RustFS volumes still exist but this directory is missing, do
+not guess credentials or delete volumes before deciding whether the data must
+be preserved. Lifecycle commands such as start, stop, and rebuild also require
+the protected configuration and will report "No installation found" without it.
+
+Recovery options, safest first:
+
+1. Restore the protected configuration
+   Restore the entire .risuai directory from the original checkout, a secure
+   backup, or a machine backup. Keep its files private, then validate it:
+
+     chmod 700 "$state_dir"
+     chmod 600 "$state_dir"/*
+     "$script_path" doctor
+     "$script_path" rebuild
+
+2. Adopt the volumes with their original credentials
+   Use this only after verifying that the volumes belong to this deployment.
+   Export the exact original values in a private shell session; avoid putting
+   literal secrets in shared shell history:
+
+     export POSTGRES_PASSWORD='<original value>'
+     export RUSTFS_ACCESS_KEY='<original value>'
+     export RUSTFS_SECRET_KEY='<original value>'
+     "$script_path" install --adopt-existing
+     unset POSTGRES_PASSWORD RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY
+
+   With --adopt-existing, the installer can recover values automatically from
+   matching existing risuai-postgres and risuai-rustfs containers. Volumes by
+   themselves do not contain a recoverable plaintext PostgreSQL password.
+
+3. Preserve data when the original credentials are unavailable
+   Back up or export both volumes before changing anything. PostgreSQL's role
+   password must be reset against the existing database outside this installer,
+   then the new value can be supplied with --adopt-existing. Do not repeatedly
+   try guessed passwords against the original deployment.
+
+   If a failed first install kept .risuai and reported a password mismatch, use
+   the saved generated password to repair the PostgreSQL role, then retry:
+
+     "$script_path" db sync-password
+     "$script_path" rebuild
+
+4. Start fresh only when the stored data is disposable
+   After verifying and, preferably, exporting them, remove only these volumes
+   with the selected container engine and run install again:
+
+     ${project_name}_risuai-postgres
+     ${project_name}_rustfs-data
+
+   Removing either volume permanently deletes its stored database or assets.
+EOF
+}
+
 short_usage() {
-    printf 'Usage: %s [install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|help|version]\n' "${0##*/}" >&2
+    printf 'Usage: %s [install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|recovery|help|version]\n' "${0##*/}" >&2
 }
 
 # Capture user inputs, then remove deployment interpolation variables from the
@@ -219,7 +282,7 @@ unset CLOUDFLARE_TOKEN CLOUDFLARE_TOKEN_FILE CLOUDFLARE_ZONE_ID CLOUDFLARE_IPV6 
 
 action=install
 case "${1:-}" in
-    install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|help|version)
+    install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|recovery|help|version)
         action=$1
         shift
         ;;
@@ -231,6 +294,11 @@ esac
 if [ "$action" = help ]; then
     [ "$#" -eq 0 ] || die "help does not accept arguments"
     usage
+    exit 0
+fi
+if [ "$action" = recovery ]; then
+    [ "$#" -eq 0 ] || die "recovery does not accept arguments"
+    recovery_guide
     exit 0
 fi
 if [ "$action" = version ]; then
@@ -1110,6 +1178,7 @@ show_readiness_diagnostics() {
 
 wait_for_risuai() {
     wait_limit=$1
+    readiness_failure_reason=
     info "Waiting up to ${wait_limit}s for RisuAI"
     wait_started=$(date +%s 2>/dev/null || printf '0')
     wait_elapsed=0
@@ -1121,7 +1190,15 @@ wait_for_risuai() {
             compose exec -T risuai wget -q --spider http://127.0.0.1:6001/ >/dev/null 2>&1 && readiness_ok=true
         else
             readiness_ok=false
-            compose exec -T risuai node -e "fetch('http://127.0.0.1:6001').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))" >/dev/null 2>&1 && readiness_ok=true
+            readiness_probe_status=0
+            compose exec -T risuai node -e "fetch('http://127.0.0.1:6001/api/health').then(async r => { let body = {}; try { body = await r.json(); } catch {} const code = body?.storage?.error?.code; process.exit(r.ok ? 0 : (code === '28P01' || code === '28000') ? 42 : 1); }).catch(() => process.exit(1))" >/dev/null 2>&1 || readiness_probe_status=$?
+            if [ "$readiness_probe_status" -eq 0 ]; then
+                readiness_ok=true
+            elif [ "$readiness_probe_status" -eq 42 ]; then
+                readiness_failure_reason=database-authentication
+                show_readiness_diagnostics "$wait_elapsed"
+                return 1
+            fi
         fi
         if [ "$readiness_ok" = true ]; then
             if services_are_running false; then ok "RisuAI and all services are running"; return 0; fi
@@ -1186,8 +1263,22 @@ restore_file_from_backup() {
 rollback_installation() {
     [ "$transaction_active" = true ] || return 0
     transaction_active=false
-    warn "Installation did not complete; restoring the previous protected configuration."
+    preserve_new_configuration=false
+    if [ "$had_env" != true ] && [ -f "$env_file" ] && [ "$(stored_runtime_from "$env_file")" = node ]; then
+        if container volume inspect "${project_name}_risuai-postgres" >/dev/null 2>&1 || container volume inspect "${project_name}_rustfs-data" >/dev/null 2>&1; then
+            preserve_new_configuration=true
+        fi
+    fi
+    if [ "$preserve_new_configuration" = true ]; then
+        warn "Installation did not complete; stopping the candidate but keeping its protected configuration because persistent volumes were created."
+    else
+        warn "Installation did not complete; restoring the previous protected configuration."
+    fi
     if [ -f "$env_file" ] && container info >/dev/null 2>&1; then compose down --remove-orphans >/dev/null 2>&1 || true; fi
+    if [ "$preserve_new_configuration" = true ]; then
+        warn "The generated credentials remain in $env_file. Run '$script_path doctor'; for a PostgreSQL password mismatch run '$script_path db sync-password', then '$script_path rebuild'."
+        return 0
+    fi
     restore_file_from_backup "$had_dynv6" "$backup_dynv6" "$dynv6_token_file" || warn "Could not restore the previous dynv6 token"
     restore_file_from_backup "$had_cloudflare" "$backup_cloudflare" "$cloudflare_token_file" || warn "Could not restore the previous Cloudflare token"
     restore_file_from_backup "$had_env" "$backup_env" "$env_file" || warn "Could not restore the previous environment file"
@@ -1975,7 +2066,7 @@ if [ "$runtime" = node ] && [ "$saved_present" = false ]; then
     existing_data=false
     container volume inspect "$postgres_volume" >/dev/null 2>&1 && existing_data=true
     container volume inspect "$rustfs_volume" >/dev/null 2>&1 && existing_data=true
-    if [ "$existing_data" = true ] && [ "$adopt_existing" != true ]; then die "Persistent RisuAI volumes exist but this checkout has no protected configuration. Refusing to generate incompatible credentials; recover .risuai or rerun with --adopt-existing and explicit credentials after verifying the volumes."; fi
+    if [ "$existing_data" = true ] && [ "$adopt_existing" != true ]; then die "Persistent RisuAI volumes exist but this checkout has no protected configuration. Refusing to generate incompatible credentials. Run '$script_path recovery' for data-preserving recovery options."; fi
 fi
 
 if [ "$saved_configuration_valid" = true ]; then
@@ -1993,8 +2084,8 @@ if [ "$runtime" = node ]; then
     if [ -z "$postgres_password" ] && [ "$adopt_existing" = true ]; then postgres_password=$(recover_container_env risuai-postgres POSTGRES_PASSWORD); fi
     if [ -z "$rustfs_access_key" ] && [ "$adopt_existing" = true ]; then rustfs_access_key=$(recover_container_env risuai-rustfs RUSTFS_ACCESS_KEY); fi
     if [ -z "$rustfs_secret_key" ] && [ "$adopt_existing" = true ]; then rustfs_secret_key=$(recover_container_env risuai-rustfs RUSTFS_SECRET_KEY); fi
-    if container volume inspect "$postgres_volume" >/dev/null 2>&1 && [ -z "$postgres_password" ]; then die "Existing PostgreSQL data requires its original POSTGRES_PASSWORD"; fi
-    if container volume inspect "$rustfs_volume" >/dev/null 2>&1 && { [ -z "$rustfs_access_key" ] || [ -z "$rustfs_secret_key" ]; }; then die "Existing RustFS data requires its original RUSTFS_ACCESS_KEY and RUSTFS_SECRET_KEY"; fi
+    if container volume inspect "$postgres_volume" >/dev/null 2>&1 && [ -z "$postgres_password" ]; then die "Existing PostgreSQL data requires its original POSTGRES_PASSWORD. Run '$script_path recovery' for data-preserving recovery options."; fi
+    if container volume inspect "$rustfs_volume" >/dev/null 2>&1 && { [ -z "$rustfs_access_key" ] || [ -z "$rustfs_secret_key" ]; }; then die "Existing RustFS data requires its original RUSTFS_ACCESS_KEY and RUSTFS_SECRET_KEY. Run '$script_path recovery' for data-preserving recovery options."; fi
     [ -n "$postgres_password" ] || postgres_password=$(random_secret)
     [ -n "$rustfs_access_key" ] || rustfs_access_key=risuai-$(random_secret | cut -c1-24)
     [ -n "$rustfs_secret_key" ] || rustfs_secret_key=$(random_secret)
@@ -2123,7 +2214,12 @@ if [ "$no_start" = false ]; then
     fi
     info "Starting the validated deployment"
     compose up -d --remove-orphans
-    wait_for_risuai "$wait_timeout" || die "RisuAI did not become ready within ${wait_timeout}s"
+    if ! wait_for_risuai "$wait_timeout"; then
+        if [ "$readiness_failure_reason" = database-authentication ]; then
+            die "RisuAI reported a database authentication failure during startup; run '$script_path db sync-password', then '$script_path rebuild'"
+        fi
+        die "RisuAI did not become ready within ${wait_timeout}s"
+    fi
 else
     warn "Configuration was saved without building or starting containers. The next 'start' builds if needed."
 fi
