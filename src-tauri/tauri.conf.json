@@ -19,6 +19,9 @@
     ],
     "targets": ["deb", "rpm", "appimage", "nsis", "app", "dmg"],
     "createUpdaterArtifacts": true,
+    "macOS": {
+      "signingIdentity": "-"
+    },
     "fileAssociations": [
       {
         "ext": [
