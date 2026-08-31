@@ -2573,4 +2573,16 @@ export const languageKorean = {
   activeProviderSettings: "활성 프로바이더 설정",
   providerSettings: "API 및 프로바이더",
   exitAppConfirm: "RisuAI를 종료할까요?",
+  inlayMigrationButton: "인레이 이미지를 서버에 업로드",
+  inlayMigrationDescription:
+    "이 기기에만 저장된 인레이 이미지를 서버에 업로드하여 다른 기기에서도 볼 수 있게 합니다. 여러 번 실행해도 안전합니다.",
+  inlayMigrationConfirm:
+    "로컬의 모든 인레이 이미지를 서버에 업로드할까요? 이미 서버에 저장된 항목은 건너뜁니다.",
+  inlayMigrationRunning: "인레이 업로드 중...",
+  inlayMigrationDone: (count: number) =>
+    count > 0
+      ? `인레이 이미지 ${count}개를 서버에 업로드했습니다.`
+      : "모든 인레이 이미지가 이미 서버에 저장되어 있습니다.",
+  inlayMigrationPartial: (migrated: number, failed: number) =>
+    `인레이 이미지 ${migrated}개를 업로드했지만 ${failed}개는 실패했습니다. 콘솔을 확인하고 다시 시도해 주세요.`,
 } satisfies DeepPartial<typeof import("./en").languageEnglish>;

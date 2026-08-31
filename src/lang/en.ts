@@ -2538,6 +2538,18 @@ export const languageEnglish = {
   nanoGPTManualModelSelect: "Manual Model Select",
   coldStorage: "Cold Storage",
   cleanColdStorage: "Clean Unused Cold Storage",
+  inlayMigrationButton: "Upload Inlay Images to Server",
+  inlayMigrationDescription:
+    "Uploads inlay images that are only stored on this device to the server so they can be viewed from other devices. This is safe to run multiple times.",
+  inlayMigrationConfirm:
+    "Upload all local inlay images to the server? Assets already stored on the server will be skipped.",
+  inlayMigrationRunning: "Uploading Inlays...",
+  inlayMigrationDone: (count: number) =>
+    count > 0
+      ? `Uploaded ${count} inlay image(s) to the server.`
+      : "All inlay images are already stored on the server.",
+  inlayMigrationPartial: (migrated: number, failed: number) =>
+    `Uploaded ${migrated} inlay image(s), but ${failed} failed. Check the console for details and try again.`,
   customSidebarConfig: "Custom Sidebar Configuration",
   cleanColdStorageConfirm:
     "This will permanently delete all unused cold storage data. This may contain data that isn't currently used but may be useful in the future. Do you want to continue?",

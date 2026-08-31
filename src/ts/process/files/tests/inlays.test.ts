@@ -13,6 +13,13 @@ import {
   writeInlayImage,
 } from "../inlays";
 
+const { migrateLocalInlaysToServer, resetInlayRemoteWriteState } = await import(
+  "../inlays"
+);
+const { resetRemoteAvailability, getInlayServerKey } = await import(
+  "../inlayRemote"
+);
+
 //#region module mocks
 
 // happy-dom canvas getContext returns null
@@ -73,6 +80,89 @@ vi.mock(import("src/ts/model/modellist"), () => ({
   getModelInfo: vi.fn(),
 }));
 
+const remoteMocks = vi.hoisted(() => {
+  return {
+    remoteStore: new Map<string, Uint8Array>(),
+    remoteFailureCount: { _v: 0, get value() { return this._v; }, set value(v: number) { this._v = v; } },
+    nodeServerMode: { _v: false, get value() { return this._v; }, set value(v: boolean) { this._v = v; } },
+    forageStorage: {
+      Init: async () => {},
+      realStorage: null as unknown,
+      isAccount: false,
+    },
+  };
+});
+
+const mockNodeStorageInstance = {
+  setItem: vi.fn(async (key: string, value: Uint8Array) => {
+    if (remoteMocks.remoteFailureCount.value > 0) {
+      remoteMocks.remoteFailureCount.value--;
+      throw new Error("server unavailable");
+    }
+    remoteMocks.remoteStore.set(key, value);
+  }),
+  getItem: vi.fn(async (key: string) => {
+    return remoteMocks.remoteStore.get(key) ?? null;
+  }),
+  removeItem: vi.fn(async (key: string | string[]) => {
+    const keys = Array.isArray(key) ? key : [key];
+    for (const k of keys) remoteMocks.remoteStore.delete(k);
+  }),
+  keys: vi.fn(async (prefix: string) => {
+    return [...remoteMocks.remoteStore.keys()].filter((k) =>
+      k.startsWith(prefix),
+    );
+  }),
+};
+
+vi.mock("src/ts/platform", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("src/ts/platform")>();
+  return {
+    ...actual,
+    get isNodeServer() {
+      return remoteMocks.nodeServerMode.value;
+    },
+  };
+});
+
+vi.mock("src/ts/globalApi.svelte", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("src/ts/globalApi.svelte")>();
+  return {
+    ...actual,
+    forageStorage: remoteMocks.forageStorage,
+  };
+});
+
+vi.mock("src/ts/storage/files/nodeStorage", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("src/ts/storage/files/nodeStorage")
+  >();
+  return {
+    ...actual,
+    NodeStorage: class MockNodeStorage {
+      setItem = mockNodeStorageInstance.setItem;
+      getItem = mockNodeStorageInstance.getItem;
+      removeItem = mockNodeStorageInstance.removeItem;
+      keys = mockNodeStorageInstance.keys;
+    },
+  };
+});
+
+async function enableNodeServerMode() {
+  remoteMocks.nodeServerMode.value = true;
+  remoteMocks.remoteFailureCount.value = 0;
+  const { NodeStorage } = await import("src/ts/storage/files/nodeStorage");
+  remoteMocks.forageStorage.realStorage = new NodeStorage();
+  resetRemoteAvailability();
+}
+
+function disableNodeServerMode() {
+  remoteMocks.nodeServerMode.value = false;
+  remoteMocks.forageStorage.realStorage = null;
+  remoteMocks.remoteFailureCount.value = 0;
+  resetRemoteAvailability();
+}
+
 //#endregion
 
 const supportedAudioExts = ["wav", "mp3", "ogg", "flac"] as const;
@@ -108,11 +198,17 @@ function makeImage(w: number, h: number): HTMLImageElement {
   return img;
 }
 
+const remoteStore = remoteMocks.remoteStore;
+const remoteFailureCount = remoteMocks.remoteFailureCount;
+
 beforeEach(() => {
   vi.clearAllMocks();
   store.clear();
+  remoteStore.clear();
   canvasContextAvailable = true;
   canvasBlobAvailable = true;
+  disableNodeServerMode();
+  resetInlayRemoteWriteState();
 });
 
 describe("inlay backup payload", () => {
@@ -678,5 +774,115 @@ describe("set -> remove -> get", () => {
         },
       ),
     );
+  });
+});
+
+describe("remote inlay storage (node server)", () => {
+  function makeAsset(name: string): InlayAsset {
+    return {
+      data: new Blob(["remote-bytes"], { type: "image/png" }),
+      ext: "png",
+      height: 8,
+      width: 8,
+      name,
+      type: "image",
+    };
+  }
+
+  test("mirrors writes to the server in node mode", async () => {
+    await enableNodeServerMode();
+    await setInlayAsset("mirror-id", makeAsset("mirror.png"));
+
+    expect(remoteStore.has(getInlayServerKey("mirror-id"))).toBe(true);
+    const stored = await getInlayAsset("mirror-id");
+    expect(stored).not.toBeNull();
+    expect(stored!.name).toBe("mirror.png");
+  });
+
+  test("does not touch the server outside node mode", async () => {
+    await setInlayAsset("local-id", makeAsset("local.png"));
+    expect(remoteStore.size).toBe(0);
+  });
+
+  test("keeps the local cache when the server upload fails", async () => {
+    await enableNodeServerMode();
+    remoteFailureCount.value = 1;
+
+    await setInlayAsset("fail-id", makeAsset("fail.png"));
+    expect(remoteStore.size).toBe(0);
+
+    const cached = await getInlayAsset("fail-id");
+    expect(cached).not.toBeNull();
+    expect(cached!.name).toBe("fail.png");
+  });
+
+  test("fetches an asset from the server on local cache miss", async () => {
+    await enableNodeServerMode();
+    const asset = makeAsset("remote-only.png");
+    remoteStore.set(
+      getInlayServerKey("remote-id"),
+      await encodeInlayAssetBackup(asset),
+    );
+
+    const result = await getInlayAsset("remote-id");
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("remote-only.png");
+
+    // Second read is served from cache; server still holds the payload.
+    expect(await getInlayAsset("remote-id")).toMatchObject({
+      name: "remote-only.png",
+    });
+  });
+
+  test("listInlayAssets merges local and server entries in node mode", async () => {
+    await enableNodeServerMode();
+    await setInlayAsset("local-entry", makeAsset("local-entry.png"));
+
+    remoteStore.set(
+      getInlayServerKey("remote-entry"),
+      await encodeInlayAssetBackup(makeAsset("remote-entry.png")),
+    );
+
+    const ids = (await listInlayAssets()).map(([id]) => id).sort();
+    expect(ids).toEqual(["local-entry", "remote-entry"]);
+  });
+
+  test("removeInlayAsset deletes both cache and server copy", async () => {
+    await enableNodeServerMode();
+    await setInlayAsset("remove-id", makeAsset("remove.png"));
+    expect(remoteStore.has(getInlayServerKey("remove-id"))).toBe(true);
+
+    await removeInlayAsset("remove-id");
+    expect(remoteStore.has(getInlayServerKey("remove-id"))).toBe(false);
+    expect(await getInlayAsset("remove-id")).toBeNull();
+  });
+
+  test("migrateLocalInlaysToServer uploads only missing entries and is idempotent", async () => {
+    await enableNodeServerMode();
+    await setInlayAsset("mig-a", makeAsset("a.png"));
+    remoteStore.delete(getInlayServerKey("mig-a"));
+
+    const first = await migrateLocalInlaysToServer();
+    expect(first.migrated).toBe(1);
+    expect(first.failed).toBe(0);
+    expect(remoteStore.has(getInlayServerKey("mig-a"))).toBe(true);
+
+    // Second run: nothing left to upload.
+    const second = await migrateLocalInlaysToServer();
+    expect(second.migrated).toBe(0);
+  });
+
+  test("migrateLocalInlaysToServer reports failures without losing local data", async () => {
+    await enableNodeServerMode();
+    await setInlayAsset("mig-fail", makeAsset("f.png"));
+    remoteStore.delete(getInlayServerKey("mig-fail"));
+    remoteFailureCount.value = 1;
+
+    const result = await migrateLocalInlaysToServer();
+    expect(result.migrated).toBe(0);
+    expect(result.failed).toBe(1);
+
+    // The asset is still readable from the local cache.
+    expect(await getInlayAsset("mig-fail")).not.toBeNull();
   });
 });
