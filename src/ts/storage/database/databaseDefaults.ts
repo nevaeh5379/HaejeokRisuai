@@ -7,7 +7,7 @@ import type {
 } from "./schema";
 import { safeStructuredClone } from "../../polyfill";
 import { presetTemplate } from "../presets/presetDefaults";
-import { DOMAIN_STORE_SETTING_KEYS } from "../sql/sqlDeferredSettings";
+import { SETTINGS_STORE_EXCLUDED_KEYS } from "../sql/sqlDeferredSettings";
 import {
   normalizeCoreDatabaseSettings,
   type CoreValidatedDefaults,
@@ -41,13 +41,8 @@ export type NormalizedSettingsInput = SettingsInput &
   FeatureValidatedDefaults &
   RuntimeValidatedDefaults;
 
-const NON_SETTINGS_KEYS = new Set([
-  "characters",
-  "isSql",
-  "botPresets",
-  "botPresetsId",
-  ...DOMAIN_STORE_SETTING_KEYS,
-]);
+const NON_SETTINGS_KEYS = new Set(SETTINGS_STORE_EXCLUDED_KEYS);
+
 function requireObject(input: unknown, label: string): Record<string, unknown> {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
     throw new TypeError(`${label} must be a non-array object`);

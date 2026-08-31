@@ -2,7 +2,7 @@ import type { DatabaseSettings } from "../../storage/database/schema";
 import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
 import { getSqlStorage } from "../../storage/sql/sqlStorageFactory";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
-import { DOMAIN_STORE_SETTING_KEYS } from "../../storage/sql/sqlDeferredSettings";
+import { SETTINGS_STORE_EXCLUDED_KEYS } from "../../storage/sql/sqlDeferredSettings";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 import type {
   FlushableStore,
@@ -10,13 +10,7 @@ import type {
 } from "./storeContracts";
 import { deferredSettingsLoader } from "./deferredSettingsLoader";
 
-const FORBIDDEN_SETTINGS_KEYS = new Set([
-  "characters",
-  "isSql",
-  "botPresets",
-  "botPresetsId",
-  ...DOMAIN_STORE_SETTING_KEYS,
-]);
+const FORBIDDEN_SETTINGS_KEYS = new Set(SETTINGS_STORE_EXCLUDED_KEYS);
 
 function assertSettingsKey(key: string): void {
   if (FORBIDDEN_SETTINGS_KEYS.has(key)) {

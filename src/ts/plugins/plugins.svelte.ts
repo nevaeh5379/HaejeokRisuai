@@ -16,6 +16,8 @@ import {
   selectedCharID,
 } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
+import { moduleStore } from "../stores/domain/moduleStore.svelte";
+import { personaStore } from "../stores/domain/personaStore.svelte";
 import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
 import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
 import type { ScriptMode } from "../process/scripts";
@@ -600,6 +602,61 @@ export const allowedDbKeys = [
   "characterOrder",
 ];
 
+const domainDbKeys = new Set([
+  "characters",
+  "modules",
+  "enabledModules",
+  "personas",
+  "selectedPersona",
+]);
+
+function getDomainDbValue(key: string): any {
+  switch (key) {
+    case "characters":
+      return characterStore.characters;
+    case "modules":
+      return moduleStore.modules;
+    case "enabledModules":
+      return moduleStore.enabledModules;
+    case "personas":
+      return personaStore.personas;
+    case "selectedPersona":
+      return personaStore.activeIndex;
+  }
+}
+
+function setDomainDbValue(key: string, value: any): boolean {
+  switch (key) {
+    case "characters":
+      characterStore.characters = value;
+      return true;
+    case "modules":
+      moduleStore.modules = value;
+      return true;
+    case "enabledModules":
+      moduleStore.enabledModules = value;
+      return true;
+    case "personas":
+      personaStore.replace(value);
+      return true;
+    case "selectedPersona":
+      personaStore.select(value, "plugin compatibility API");
+      return true;
+    default:
+      return false;
+  }
+}
+
+function getAllowedDbValue(key: string): any {
+  return domainDbKeys.has(key)
+    ? getDomainDbValue(key)
+    : settingsStore.state[key];
+}
+
+function setAllowedDbValue(key: string, value: any): void {
+  if (!setDomainDbValue(key, value)) settingsStore.set(key as any, value);
+}
+
 export const getV2PluginAPIs = () => {
   return {
     risuFetch: globalFetch,
@@ -782,7 +839,7 @@ export const getV2PluginAPIs = () => {
         get(target, prop) {
           if (typeof prop === "string") {
             if (allowedDbKeys.includes(prop)) {
-              return settingsStore.state[prop];
+              return getAllowedDbValue(prop);
             }
             const custom = settingsStore.state.pluginCustomStorage;
             if (custom && prop in custom) {
@@ -794,7 +851,7 @@ export const getV2PluginAPIs = () => {
         set(target, prop, value) {
           if (typeof prop === "string") {
             if (allowedDbKeys.includes(prop)) {
-              settingsStore.set(prop as any, value);
+              setAllowedDbValue(prop, value);
               return true;
             } else {
               settingsStore.setPluginCustomStorageKey(prop, value);
@@ -804,15 +861,18 @@ export const getV2PluginAPIs = () => {
           return false;
         },
         ownKeys(target) {
-          const keys = Object.keys(settingsStore.state).filter((key) =>
-            allowedDbKeys.includes(key),
+          const keys = allowedDbKeys.filter(
+            (key) => domainDbKeys.has(key) || key in settingsStore.state,
           );
           keys.push(...settingsStore.getPluginCustomStorageKeys());
           return Array.from(new Set(keys));
         },
         has(target, prop) {
           if (typeof prop === "string") {
-            if (allowedDbKeys.includes(prop) && prop in settingsStore.state)
+            if (
+              allowedDbKeys.includes(prop) &&
+              (domainDbKeys.has(prop) || prop in settingsStore.state)
+            )
               return true;
             if (settingsStore.hasPluginCustomStorageKey(prop)) return true;
           }
@@ -820,9 +880,12 @@ export const getV2PluginAPIs = () => {
         },
         getOwnPropertyDescriptor(target, prop) {
           if (typeof prop === "string") {
-            if (allowedDbKeys.includes(prop) && prop in settingsStore.state) {
+            if (
+              allowedDbKeys.includes(prop) &&
+              (domainDbKeys.has(prop) || prop in settingsStore.state)
+            ) {
               return {
-                value: settingsStore.state[prop],
+                value: getAllowedDbValue(prop),
                 writable: true,
                 enumerable: true,
                 configurable: true,
@@ -905,7 +968,7 @@ export const getV2PluginAPIs = () => {
       if (!newDb || typeof newDb !== "object") return;
       for (const key of Object.keys(newDb)) {
         if (allowedDbKeys.includes(key)) {
-          settingsStore.set(key as any, newDb[key]);
+          setAllowedDbValue(key, newDb[key]);
         } else {
           settingsStore.setPluginCustomStorageKey(key, newDb[key]);
         }
@@ -922,7 +985,7 @@ export const getV2PluginAPIs = () => {
         }
 
         if (allowedDbKeys.includes(key)) {
-          settingsStore.set(key as any, newDb[key]);
+          setAllowedDbValue(key, newDb[key]);
         } else {
           settingsStore.setPluginCustomStorageKey(key, newDb[key]);
         }

@@ -30,6 +30,9 @@
     "personas", "selectedPersona", "username", "userIcon", "userNote", "personaPrompt",
     "modules", "enabledModules", "moduleFolders", "activeBotPresetId"
   ],
+  "NON_SETTINGS_ROOT_KEYS": [
+    "characters", "isSql", "botPresets", "botPresetsId"
+  ],
   "BOOTSTRAP_SETTING_KEYS": [
     "plugins", "pluginCustomStorage", "loreBook", "globalscript",
     "customModels", "translatorPresets", "loadouts", "customBackground",

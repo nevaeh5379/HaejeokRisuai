@@ -33,7 +33,7 @@ const {
     DEFERRED_SETTING_KEYS,
     DEFERRED_STARTUP_SETTING_KEYS,
     LEGACY_PERSONA_MIRROR_KEYS,
-    DOMAIN_STORE_SETTING_KEYS,
+    SETTINGS_STORE_EXCLUDED_KEYS,
     SqlStorageBase,
     createSqlStorageHelpers,
     groupRows,
@@ -82,7 +82,7 @@ const unzipAsync = promisify(unzip);
 
 
 const STARTUP_EXCLUDED_SETTING_KEYS = [
-    ...new Set([...DEFERRED_STARTUP_SETTING_KEYS, ...DOMAIN_STORE_SETTING_KEYS]),
+    ...new Set([...DEFERRED_STARTUP_SETTING_KEYS, ...SETTINGS_STORE_EXCLUDED_KEYS]),
 ];
 const STARTUP_EXCLUDED_KEYS_SQL_LITERAL = STARTUP_EXCLUDED_SETTING_KEYS
     .map((key) => `'${key}'`)

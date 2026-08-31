@@ -3,6 +3,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { getV2PluginAPIs, importPlugin } from "./plugins.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
+import { moduleStore } from "../stores/domain/moduleStore.svelte";
 import type { ISqlStorage } from "../storage/sql/ISqlStorage";
 import type { SqlCommit } from "../storage/sql/sqlCommit";
 
@@ -27,6 +28,7 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
       } as any,
       mockStorage,
     );
+    moduleStore.resetForTesting();
   });
 
   it("persists pluginStorage.setItem to settingsStore and SQL", async () => {
@@ -159,6 +161,19 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
       key: "theme",
       value: "dracula",
     });
+  });
+
+  it("routes module reads and writes through ModuleStore", async () => {
+    const apis = getV2PluginAPIs();
+    const db = apis.getDatabase();
+    const module = { id: "plugin-module", name: "Plugin module" };
+
+    expect(db.modules).toEqual([]);
+    expect(Object.keys(db)).toContain("modules");
+
+    await expect(apis.setDatabase({ modules: [module] })).resolves.toBeUndefined();
+    expect(moduleStore.modules).toEqual([module]);
+    expect(db.modules).toEqual([module]);
   });
 
   it("commits an updated plugin to SQL before reloading plugins", async () => {

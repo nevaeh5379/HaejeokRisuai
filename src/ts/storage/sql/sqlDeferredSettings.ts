@@ -10,6 +10,11 @@ export function isLegacyPersonaMirrorKey(key: string): boolean {
   return LEGACY_PERSONA_MIRROR_KEY_SET.has(key);
 }
 export const DOMAIN_STORE_SETTING_KEYS = protocolSettings.DOMAIN_STORE_SETTING_KEYS;
+export const NON_SETTINGS_ROOT_KEYS = protocolSettings.NON_SETTINGS_ROOT_KEYS;
+export const SETTINGS_STORE_EXCLUDED_KEYS = [
+  ...NON_SETTINGS_ROOT_KEYS,
+  ...DOMAIN_STORE_SETTING_KEYS,
+];
 
 export const DEFERRED_STARTUP_SETTING_KEYS =
   protocolSettings.DEFERRED_STARTUP_SETTING_KEYS;

@@ -24,6 +24,7 @@ import {
   DEFERRED_STARTUP_SETTING_KEYS,
   LEGACY_PERSONA_MIRROR_KEYS,
   PROMPT_SETTING_KEYS,
+  SETTINGS_STORE_EXCLUDED_KEYS,
 } from "../sqlDeferredSettings";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
 import {
@@ -202,6 +203,24 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(settingsStore.state.loreBook).toEqual(source.loreBook);
     expect(queryLog.touching("setting_extension_nodes")).toBeGreaterThan(0);
     settingsStore.dispose();
+    database.close();
+  });
+
+  it("does not leak stale non-settings rows into startup settings", async () => {
+    const { storage, database } = makeFreshHarness(make);
+    await seed(storage);
+    const insert = database.prepare(
+      "INSERT OR REPLACE INTO system_settings (key, domain, value_type, text_value) VALUES (?, 'root', 'string', 'stale')",
+    );
+    for (const key of SETTINGS_STORE_EXCLUDED_KEYS) insert.run(key);
+
+    const startup = await storage.loadStartupData();
+    for (const key of SETTINGS_STORE_EXCLUDED_KEYS) {
+      expect(
+        Object.prototype.hasOwnProperty.call(startup?.settings ?? {}, key),
+        `non-settings key '${key}' must be absent from startup settings`,
+      ).toBe(false);
+    }
     database.close();
   });
 

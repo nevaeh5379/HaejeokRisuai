@@ -44,7 +44,7 @@ import {
 import { applySqliteCommit, writeSqliteColdStorage } from "./sqliteCommit";
 import {
   DEFERRED_STARTUP_SETTING_KEYS,
-  DOMAIN_STORE_SETTING_KEYS,
+  SETTINGS_STORE_EXCLUDED_KEYS,
   LEGACY_PERSONA_MIRROR_KEYS,
 } from "../sqlDeferredSettings";
 import {
@@ -257,8 +257,12 @@ export abstract class NativeSqliteStorageBase {
     }
 
     const deferredKeys = [...DEFERRED_STARTUP_SETTING_KEYS];
-    const domainKeys = new Set<string>(DOMAIN_STORE_SETTING_KEYS);
-    const excludedKeys = [...new Set([...deferredKeys, ...DOMAIN_STORE_SETTING_KEYS])];
+    const settingsStoreExcludedKeys = new Set<string>(
+      SETTINGS_STORE_EXCLUDED_KEYS,
+    );
+    const excludedKeys = [
+      ...new Set([...deferredKeys, ...SETTINGS_STORE_EXCLUDED_KEYS]),
+    ];
     const settingQuery = this.buildSettingRowsQuery(excludedKeys, true);
     const characterQuery: SqliteTransactionStatement = {
       sql: "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
@@ -276,7 +280,9 @@ export abstract class NativeSqliteStorageBase {
     const rebuilt = this.rebuildSettingRows(settingRows, excludedKeys);
     const settings: Partial<DatabaseSettings> = {};
     for (const [key, value] of rebuilt.values) {
-      if (!domainKeys.has(key)) (settings as Record<string, unknown>)[key] = value;
+      if (!settingsStoreExcludedKeys.has(key)) {
+        (settings as Record<string, unknown>)[key] = value;
+      }
     }
     const characters = (characterRows as Array<Record<string, unknown>>).map(
       (row) => ({
@@ -302,7 +308,7 @@ export abstract class NativeSqliteStorageBase {
       settings,
       characters,
       deferredSettingKeys: [...rebuilt.deferredKeys].filter(
-        (key) => !domainKeys.has(key),
+        (key) => !settingsStoreExcludedKeys.has(key),
       ),
     };
   }

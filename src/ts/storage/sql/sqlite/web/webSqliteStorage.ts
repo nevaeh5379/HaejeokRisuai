@@ -22,7 +22,7 @@ import type {
 } from "../../postgres/nodePostgresStorage";
 import {
   DEFERRED_STARTUP_SETTING_KEYS,
-  DOMAIN_STORE_SETTING_KEYS,
+  SETTINGS_STORE_EXCLUDED_KEYS,
   LEGACY_PERSONA_MIRROR_KEYS,
   PROMPT_SETTING_KEYS,
 } from "../../sqlDeferredSettings";
@@ -433,8 +433,10 @@ export class WebSqliteStorage implements ISqlStorage {
 
     const settingsRows = await this.selectRows("SELECT key FROM system_settings");
     const deferredKeys = new Set<string>(DEFERRED_STARTUP_SETTING_KEYS);
-    const domainKeys = new Set<string>(DOMAIN_STORE_SETTING_KEYS);
-    const excludedKeys = [...deferredKeys, ...domainKeys];
+    const settingsStoreExcludedKeys = new Set<string>(
+      SETTINGS_STORE_EXCLUDED_KEYS,
+    );
+    const excludedKeys = [...deferredKeys, ...settingsStoreExcludedKeys];
     const settingNodeQuery = buildDeferredSettingsQuery(excludedKeys);
     const settingNodeRows = await this.selectRows(
       settingNodeQuery.sql,
@@ -444,7 +446,7 @@ export class WebSqliteStorage implements ISqlStorage {
     const settings: Partial<DatabaseSettings> = {};
     for (const row of settingsRows) {
       const key = row.key as string;
-      if (deferredKeys.has(key) || domainKeys.has(key)) continue;
+      if (deferredKeys.has(key) || settingsStoreExcludedKeys.has(key)) continue;
       (settings as Record<string, unknown>)[key] = settingValues.get(key);
     }
 

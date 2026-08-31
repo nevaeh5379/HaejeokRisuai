@@ -57,7 +57,7 @@ const {
 const {
     DEFERRED_STARTUP_SETTING_KEYS,
     LEGACY_PERSONA_MIRROR_KEYS,
-    DOMAIN_STORE_SETTING_KEYS,
+    SETTINGS_STORE_EXCLUDED_KEYS,
     SqlStorageBase,
     createSqlStorageHelpers,
     groupRows,
@@ -178,7 +178,7 @@ const DB_EXPLORER_MAX_ROWS = 200;
 const deflateAsync = promisify(deflate);
 const unzipAsync = promisify(unzip);
 const STARTUP_EXCLUDED_SETTING_KEYS = [
-    ...new Set([...DEFERRED_STARTUP_SETTING_KEYS, ...DOMAIN_STORE_SETTING_KEYS]),
+    ...new Set([...DEFERRED_STARTUP_SETTING_KEYS, ...SETTINGS_STORE_EXCLUDED_KEYS]),
 ];
 const STARTUP_EXCLUDED_KEYS_SQL_LITERAL = STARTUP_EXCLUDED_SETTING_KEYS
     .map((key) => `'${key.replace(/'/g, "''")}'`)

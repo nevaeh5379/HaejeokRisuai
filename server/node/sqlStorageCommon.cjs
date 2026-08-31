@@ -13,9 +13,13 @@ const {
     PROMPT_SETTING_KEYS,
     LEGACY_PERSONA_MIRROR_KEYS,
     DOMAIN_STORE_SETTING_KEYS,
+    NON_SETTINGS_ROOT_KEYS,
     BOOTSTRAP_SETTING_KEYS,
 } = require('../../packages/protocol/settings.json');
 const LEGACY_PERSONA_MIRROR_KEY_SET = new Set(LEGACY_PERSONA_MIRROR_KEYS);
+const SETTINGS_STORE_EXCLUDED_KEYS = [
+    ...new Set([...NON_SETTINGS_ROOT_KEYS, ...DOMAIN_STORE_SETTING_KEYS]),
+];
 
 class SqlStorageBase {
     constructor() {
@@ -469,6 +473,7 @@ module.exports = {
     PROMPT_SETTING_KEYS,
     LEGACY_PERSONA_MIRROR_KEYS,
     DOMAIN_STORE_SETTING_KEYS,
+    SETTINGS_STORE_EXCLUDED_KEYS,
     BOOTSTRAP_SETTING_KEYS,
     SqlStorageBase,
     createSqlStorageHelpers,
