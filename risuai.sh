@@ -1221,6 +1221,16 @@ wait_for_risuai() {
     return 1
 }
 
+wait_for_risuai_or_die() {
+    wait_limit=$1
+    timeout_message=$2
+    if wait_for_risuai "$wait_limit"; then return 0; fi
+    if [ "$readiness_failure_reason" = database-authentication ]; then
+        die "RisuAI reported a database authentication failure during startup (before the timeout); run '$script_path db sync-password', then '$script_path rebuild'"
+    fi
+    die "$timeout_message"
+}
+
 check_runtime_status() {
     compose_ps_all
     show_deployment_from "$env_file"
@@ -1394,11 +1404,11 @@ ensure_postgres_running() {
     fi
     postgres_wait=0
     while [ "$postgres_wait" -lt 30 ]; do
-        if compose exec -T postgres pg_isready -U risuai -d risuai >/dev/null 2>&1; then return 0; fi
+        if postgres_admin_sql -Atqc 'SELECT 1' >/dev/null 2>&1; then return 0; fi
         postgres_wait=$((postgres_wait + 1))
         sleep 1
     done
-    die "PostgreSQL did not become ready within 30s"
+    die "PostgreSQL did not become SQL-ready within 30s"
 }
 
 postgres_saved_password_matches() {
@@ -1422,11 +1432,19 @@ set_postgres_role_password() {
         postgres_admin_sql >/dev/null
 }
 
+prepare_postgres_for_application() {
+    saved_database_password=$(read_env_value_from "$env_file" POSTGRES_PASSWORD)
+    is_safe_credential "$saved_database_password" || die "Saved POSTGRES_PASSWORD is missing or invalid"
+    ensure_postgres_running
+    info "Synchronizing the PostgreSQL role before starting RisuAI"
+    set_postgres_role_password "$saved_database_password"
+}
+
 recreate_risuai_for_database_password() {
     if running_services 2>/dev/null | grep -Fx risuai >/dev/null 2>&1; then
         info "Recreating RisuAI with the updated database credentials"
         compose up -d --force-recreate risuai
-        wait_for_risuai "$wait_timeout" || die "RisuAI did not become ready after the database password change"
+        wait_for_risuai_or_die "$wait_timeout" "RisuAI did not become ready after the database password change"
     else
         warn "RisuAI is not running; the new password will be used on the next start."
     fi
@@ -1735,7 +1753,7 @@ manage_existing_installation() {
             info "Starting the saved RisuAI deployment"
             runtime_image=$(image_for_runtime "$runtime")
             if container image inspect "$runtime_image" >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local $runtime RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
-            wait_for_risuai "$wait_timeout" || die "RisuAI did not become ready within ${wait_timeout}s"
+            wait_for_risuai_or_die "$wait_timeout" "RisuAI did not become ready within ${wait_timeout}s"
             compose_ps_all
             show_deployment_from "$env_file"
             ;;
@@ -1759,7 +1777,7 @@ manage_existing_installation() {
             runtime_image=$(image_for_runtime "$runtime")
             if container image inspect "$runtime_image" >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local $runtime RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
             compose restart
-            wait_for_risuai "$wait_timeout" || die "RisuAI did not become ready within ${wait_timeout}s"
+            wait_for_risuai_or_die "$wait_timeout" "RisuAI did not become ready within ${wait_timeout}s"
             compose_ps_all
             ;;
         rebuild)
@@ -1772,7 +1790,7 @@ manage_existing_installation() {
             compose build risuai
             compose up -d --force-recreate risuai
             compose up -d --remove-orphans
-            wait_for_risuai "$wait_timeout" || die "Rebuilt RisuAI did not become ready within ${wait_timeout}s"
+            wait_for_risuai_or_die "$wait_timeout" "Rebuilt RisuAI did not become ready within ${wait_timeout}s"
             compose_ps_all
             ;;
         *) die "Internal error: unsupported management action $action" ;;
@@ -2211,15 +2229,11 @@ if [ "$no_start" = false ]; then
     if [ "$runtime" = node ]; then
         mkdir -p "$script_dir/save" || die "Cannot create the persistent save directory"
         [ -w "$script_dir/save" ] || die "Persistent save directory is not writable: $script_dir/save"
+        prepare_postgres_for_application
     fi
     info "Starting the validated deployment"
     compose up -d --remove-orphans
-    if ! wait_for_risuai "$wait_timeout"; then
-        if [ "$readiness_failure_reason" = database-authentication ]; then
-            die "RisuAI reported a database authentication failure during startup; run '$script_path db sync-password', then '$script_path rebuild'"
-        fi
-        die "RisuAI did not become ready within ${wait_timeout}s"
-    fi
+    wait_for_risuai_or_die "$wait_timeout" "RisuAI did not become ready within ${wait_timeout}s"
 else
     warn "Configuration was saved without building or starting containers. The next 'start' builds if needed."
 fi

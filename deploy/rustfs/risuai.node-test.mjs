@@ -154,8 +154,10 @@ if (composeIndex !== -1) {
         exit(0);
     }
     if (command === "exec") {
-        if (process.env.FAKE_READINESS_AUTH_FAIL === "1") exit(42);
-        exit(process.env.FAKE_READINESS_FAIL === "1" ? 1 : 0);
+        const isReadinessProbe =
+            composeArgs.includes("node") && composeArgs.some((argument) => argument.includes("/api/health"));
+        if (process.env.FAKE_READINESS_AUTH_FAIL === "1" && isReadinessProbe) exit(42);
+        exit(process.env.FAKE_READINESS_FAIL === "1" && isReadinessProbe ? 1 : 0);
     }
     if (command === "logs") exit(0, process.env.FAKE_LOG_OUTPUT || "");
     if (command === "ps") {
@@ -417,6 +419,14 @@ async function assertNoTransactionDebris(fixture) {
     assert.equal(names.includes("operation.lock"), false, names.join(", "));
 }
 
+test("managed Compose deployments keep PostgreSQL credentials environment-managed", async () => {
+    for (const name of ["docker-compose.yml", "docker-compose.postgres.yml", "docker-compose.rustfs.yml"]) {
+        const contents = await readFile(join(repositoryRoot, name), "utf8");
+        assert.match(contents, /DATABASE_URL: postgresql:\/\/risuai:\$\{POSTGRES_PASSWORD\}@postgres:5432\/risuai/);
+        assert.doesNotMatch(contents, /RISU_POSTGRES_BOOTSTRAP_URL:/);
+    }
+});
+
 test("help and version are side-effect free and do not require Docker", async (t) => {
     const fixture = await createFixture(t);
     for (const [arguments_, output] of [
@@ -471,6 +481,37 @@ test("database management keeps PostgreSQL credentials and saved configuration s
         assert.equal(after.POSTGRES_PASSWORD, before.POSTGRES_PASSWORD);
         await assertNoTransactionDebris(fixture);
     });
+});
+
+test("node install synchronizes PostgreSQL before starting the application", async (t) => {
+    const fixture = await createFixture(t);
+    const result = await fixture.run(
+        ["install", "--mode", "local", "--yes", "--skip-port-check"],
+        fixedCredentials,
+    );
+    assert.equal(result.code, 0, result.stderr);
+
+    const calls = await fixture.dockerCalls();
+    const postgresStart = calls.findIndex(
+        (call) => call.command === "up" && call.args.includes("-d") && call.args.at(-1) === "postgres",
+    );
+    const passwordSync = calls.findIndex(
+        (call) =>
+            call.command === "exec" &&
+            call.args.includes("postgres") &&
+            call.args.includes("psql") &&
+            call.args.includes("ON_ERROR_STOP=1"),
+    );
+    const applicationStart = calls.findIndex(
+        (call) => call.command === "up" && call.args.includes("--remove-orphans"),
+    );
+
+    assert.notEqual(postgresStart, -1, "PostgreSQL should be started separately");
+    assert.notEqual(passwordSync, -1, "the PostgreSQL role password should be synchronized");
+    assert.notEqual(applicationStart, -1, "the complete deployment should be started");
+    assert.ok(postgresStart < passwordSync, "PostgreSQL should start before password synchronization");
+    assert.ok(passwordSync < applicationStart, "password synchronization should finish before RisuAI starts");
+    assert.equal(calls[passwordSync].env.POSTGRES_PASSWORD, fixedCredentials.POSTGRES_PASSWORD);
 });
 
 test("non-interactive installs require both a mode and explicit confirmation", async (t) => {
@@ -1285,6 +1326,22 @@ test("failed first install preserves generated credentials after creating volume
 
     const rebuild = await fixture.run(["rebuild"]);
     assert.equal(rebuild.code, 0, rebuild.stderr);
+});
+
+test("rebuild reports an immediate database authentication failure instead of a timeout", async (t) => {
+    const fixture = await createFixture(t);
+    const install = await installWithoutStarting(fixture, ["--mode", "local"]);
+    assert.equal(install.code, 0, install.stderr);
+
+    const result = await fixture.run(["rebuild"], {
+        FAKE_READINESS_AUTH_FAIL: "1",
+        FAKE_LOG_OUTPUT: "risuai | password authentication failed for user risuai\n",
+    });
+
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /database authentication failure during startup \(before the timeout\)/);
+    assert.doesNotMatch(result.stderr, /Rebuilt RisuAI did not become ready within 300s/);
+    assert.match(result.stderr, /db sync-password/);
 });
 
 test("readiness failure tears down the candidate and restores the previous generation", async (t) => {

@@ -25,7 +25,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      RISU_POSTGRES_BOOTSTRAP_URL: postgresql://risuai:${POSTGRES_PASSWORD}@postgres:5432/risuai
+      DATABASE_URL: postgresql://risuai:${POSTGRES_PASSWORD}@postgres:5432/risuai
       RISU_POSTGRES_POOL_MAX: 10
       RISU_STORAGE_CONNECT_TIMEOUT_MS: ${RISU_STORAGE_CONNECT_TIMEOUT_MS:-30000}
       RISU_STORAGE_STARTUP_TIMEOUT_MS: ${RISU_STORAGE_STARTUP_TIMEOUT_MS:-180000}

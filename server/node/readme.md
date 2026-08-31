@@ -30,7 +30,7 @@ Large initial migrations and cold-storage writes use an authenticated PostgreSQL
 
 Large relational mutations are serialized before body parsing so concurrent clients cannot hold multiple migration payloads in the Node heap. SQL inserts use bounded batches (`RISUAI_SQL_BATCH_ROWS`, default `1000`), and plugin/custom-storage objects are not retained in a process-wide cache by default. Set `RISUAI_SQL_OBJECT_CACHE=1` only when lower database latency matters more than minimum resident memory.
 
-`RISU_POSTGRES_BOOTSTRAP_URL` can seed an editable server-side configuration on the first start. The provided Docker Compose example uses this mode. `RISU_SAVE_PATH` optionally changes the Node server save directory and defaults to `<working directory>/save`.
+`RISU_POSTGRES_BOOTSTRAP_URL` can seed an editable server-side configuration on the first start. The provided Docker Compose examples use `DATABASE_URL` instead so container-managed credentials always take precedence over a previously saved `save/__postgres_config.json`. `RISU_SAVE_PATH` optionally changes the Node server save directory and defaults to `<working directory>/save`.
 
 If SQL storage has not been configured, the Node server exposes the same configuration-only recovery surface. Legacy files in `save/` are retained for an explicit import, but they are not activated as an automatic application database.
 
