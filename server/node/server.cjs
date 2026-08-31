@@ -2737,6 +2737,34 @@ async function encodePortableServerDatabase(database, mode = 'native', coldStora
     return await encodeLocalBackupDatabase(portable);
 }
 
+// Profile-image asset keys referenced by the snapshot: character main images,
+// persona icons, user icon, custom background, folder images, bot preset images.
+// Mirrors the client's essential backup scope so partial exports stay small.
+function collectEssentialBackupAssetKeys(database, assetKeys) {
+    const wanted = new Set();
+    const add = (key) => {
+        if (typeof key === 'string' && key.startsWith('assets/')) wanted.add(key);
+    };
+    for (const character of database.characters ?? []) {
+        if (!character) continue;
+        add(character.image);
+    }
+    for (const persona of database.personas ?? []) {
+        if (persona?.icon) add(persona.icon);
+    }
+    add(database.userIcon);
+    add(database.customBackground);
+    for (const item of database.characterOrder ?? []) {
+        if (typeof item === 'string') continue;
+        add(item?.img);
+        add(item?.imgFile);
+    }
+    for (const preset of database.botPresets ?? []) {
+        if (preset?.image) add(preset.image);
+    }
+    return assetKeys.filter((key) => wanted.has(key));
+}
+
 async function streamServerLocalBackup(res, mode = 'native') {
     const database = await buildPortableServerDatabase();
     const coldItems = typeof postgresStorage.listColdStorage === 'function'
@@ -2750,12 +2778,15 @@ async function streamServerLocalBackup(res, mode = 'native') {
         loadedColdItems.push({ key: summary.key, data: loaded.data });
         coldStorageValues.set(summary.key, loaded.data);
     }
-    const databaseData = await encodePortableServerDatabase(database, mode, coldStorageValues);
+    const databaseData = await encodePortableServerDatabase(database, mode === 'partial' ? 'native' : mode, coldStorageValues);
     const storage = assetStorageManager.getStorage();
     const resolved = storage.type === 's3'
         ? await resolveCatalogedAssetKeys(storage, 'assets/')
         : { keys: await storage.list('assets/') };
-    const assetKeys = resolved.keys.filter((key) => typeof key === 'string' && key.startsWith('assets/'));
+    let assetKeys = resolved.keys.filter((key) => typeof key === 'string' && key.startsWith('assets/'));
+    if (mode === 'partial') {
+        assetKeys = collectEssentialBackupAssetKeys(database, assetKeys);
+    }
     const inlayKeys = mode === 'native'
         ? (await storage.list('inlay_')).filter((key) =>
             typeof key === 'string' && /^inlay_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.risuinlay$/.test(key))
@@ -2766,7 +2797,9 @@ async function streamServerLocalBackup(res, mode = 'native') {
     const dateStr = new Date().toISOString().slice(0, 10);
     const backupName = mode === 'compatible'
         ? `risu_compatible_backup_${dateStr}.risubackup`
-        : `haejeokrisu_backup_${dateStr}.risubackup`;
+        : mode === 'partial'
+            ? `haejeokrisu_partial_backup_${dateStr}.risubackup`
+            : `haejeokrisu_backup_${dateStr}.risubackup`;
     res.setHeader('Content-Disposition', `attachment; filename="${backupName}"`);
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Accel-Buffering', 'no');
@@ -2797,7 +2830,7 @@ async function streamServerLocalBackup(res, mode = 'native') {
 app.post('/api/local-backup/export/jobs', authenticatedRouteLimiter, async(req, res) => {
     if (!await checkAuth(req, res)) return;
     pruneLocalBackupJobs();
-    const mode = req.query.mode === 'compatible' ? 'compatible' : 'native';
+    const mode = ['compatible', 'partial'].includes(req.query.mode) ? req.query.mode : 'native';
     const id = crypto.randomBytes(24).toString('base64url');
     let resolveCompletion;
     const completion = new Promise((resolve) => { resolveCompletion = resolve; });

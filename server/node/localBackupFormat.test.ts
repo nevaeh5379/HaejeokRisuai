@@ -167,4 +167,73 @@ describe('local backup format', () => {
         expect(database.characters[0].name).toBe('Stub')
     })
 
+    it('limits partial export assets to the essential profile image set', async () => {
+        // The helper lives inside server.cjs; extract it the same way
+        // partial exports use it (plain function on the module scope).
+        const { collectEssentialBackupAssetKeys } = extractServerPartialHelper()
+        const database = {
+            characters: [
+                { name: 'main', image: 'assets/char-main.png' },
+                { name: 'emotion-bot', image: 'assets/char-emotions.png', emotionImages: [['joy', 'assets/emotion.png']] },
+            ],
+            personas: [{ name: 'user', icon: 'assets/persona.png' }],
+            userIcon: 'assets/user-icon.png',
+            customBackground: 'assets/background.png',
+            characterOrder: [
+                'plain-folder-id',
+                { name: 'folder', img: 'assets/folder.png', imgFile: 'assets/folder-file.png' },
+            ],
+            botPresets: [{ name: 'preset', image: 'assets/preset.png' }],
+        }
+        const assetKeys = [
+            'assets/char-main.png',
+            'assets/char-emotions.png',
+            'assets/emotion.png',
+            'assets/persona.png',
+            'assets/user-icon.png',
+            'assets/background.png',
+            'assets/folder.png',
+            'assets/folder-file.png',
+            'assets/preset.png',
+            'assets/orphan.png',
+            'https://example.com/external.png',
+        ]
+
+        const keys = collectEssentialBackupAssetKeys(database, assetKeys)
+        expect(keys).toEqual([
+            'assets/char-main.png',
+            'assets/char-emotions.png',
+            'assets/persona.png',
+            'assets/user-icon.png',
+            'assets/background.png',
+            'assets/folder.png',
+            'assets/folder-file.png',
+            'assets/preset.png',
+        ])
+        expect(keys).not.toContain('assets/emotion.png')
+        expect(keys).not.toContain('assets/orphan.png')
+    })
+
+    it('keeps full exports untouched after the partial filter runs', () => {
+        const { collectEssentialBackupAssetKeys } = extractServerPartialHelper()
+        const database = { characters: [{ image: 'assets/a.png' }] }
+        const assetKeys = ['assets/a.png', 'assets/b.png']
+        const copy = [...assetKeys]
+        collectEssentialBackupAssetKeys(database, copy)
+        expect(copy).toEqual(assetKeys)
+    })
 })
+
+// server.cjs starts an actual server when required, so instead of importing it
+// the partial-scope helper is duplicated here via a tiny regex extraction that
+// keeps the test in sync with the production routine.
+function extractServerPartialHelper() {
+    const fs = require('node:fs')
+    const path = require('node:path')
+    const source = fs.readFileSync(path.join(__dirname, 'server.cjs'), 'utf8')
+    const start = source.indexOf('function collectEssentialBackupAssetKeys(')
+    const end = source.indexOf('\n}', start)
+    if (start < 0 || end < 0) throw new Error('partial-scope helper not found in server.cjs')
+    const factory = new Function(`${source.slice(start, end + 2)}; return collectEssentialBackupAssetKeys;`)
+    return { collectEssentialBackupAssetKeys: factory() }
+}

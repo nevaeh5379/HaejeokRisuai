@@ -424,7 +424,9 @@ async function stageNodeInlaysForBackup(storage: NodeStorage) {
   await flush();
 }
 
-async function saveNodeLocalBackupStream(mode: LocalBackupMode) {
+type NodeServerBackupMode = LocalBackupMode | "partial";
+
+async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
   await forageStorage.Init();
   if (!(forageStorage.realStorage instanceof NodeStorage)) {
     throw new Error("Node local backup requires NodeStorage");
@@ -439,7 +441,9 @@ async function saveNodeLocalBackupStream(mode: LocalBackupMode) {
     alertProgress(
     mode === "compatible"
       ? "Saving compatible local backup... (Starting server stream)"
-      : "Saving HaejeokRisuAI local backup... (Starting server stream)",
+      : mode === "partial"
+        ? "Saving partial local backup... (Starting server stream)"
+        : "Saving HaejeokRisuAI local backup... (Starting server stream)",
     1,
   );
   const response = await fetch(`/api/local-backup/export/jobs?mode=${mode}`, {
@@ -467,7 +471,9 @@ async function saveNodeLocalBackupStream(mode: LocalBackupMode) {
   anchor.download =
     mode === "compatible"
       ? `risu_compatible_backup_${dateStr}.risubackup`
-      : `haejeokrisu_backup_${dateStr}.risubackup`;
+      : mode === "partial"
+        ? `haejeokrisu_partial_backup_${dateStr}.risubackup`
+        : `haejeokrisu_backup_${dateStr}.risubackup`;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -1074,6 +1080,11 @@ export async function SavePartialLocalBackup() {
   try {
     if (!(await alertConfirm(language.partialBackupFirstConfirm))) return;
     if (!(await alertConfirm(language.partialBackupSecondConfirm))) return;
+    if (isNodeServer && !forageStorage.isAccount) {
+      await flushDurableStores();
+      await saveNodeLocalBackupStream("partial");
+      return;
+    }
     await saveLocalBackupWithOptions({
       mode: "native",
       partial: true,
