@@ -33,6 +33,13 @@
     let isPanning = $state(false)
     let panPointerId: number | null = null
     let panStart = { x: 0, y: 0, panX: 0, panY: 0 }
+    const touchPointers = new Map<number, { x: number, y: number }>()
+    let pinchStart: {
+        distance: number
+        graphX: number
+        graphY: number
+        scale: number
+    } | null = null
     let hasInteracted = false
 
     const left = (x: number) => padding + x * (cardWidth + gapX)
@@ -101,10 +108,39 @@
         zoomAt(event.clientX, event.clientY, scale * Math.exp(-event.deltaY * 0.0015))
     }
 
+    function startPinch() {
+        if(!viewport || touchPointers.size < 2) return
+        const [first, second] = [...touchPointers.values()]
+        const distance = Math.hypot(second.x - first.x, second.y - first.y)
+        if(distance === 0) return
+        const bounds = viewport.getBoundingClientRect()
+        const centerX = (first.x + second.x) / 2 - bounds.left
+        const centerY = (first.y + second.y) / 2 - bounds.top
+        pinchStart = {
+            distance,
+            graphX: (centerX - panX) / scale,
+            graphY: (centerY - panY) / scale,
+            scale,
+        }
+        panPointerId = null
+        isPanning = true
+        hasInteracted = true
+        for(const pointerId of touchPointers.keys()) viewport.setPointerCapture?.(pointerId)
+    }
+
     function startPan(event: PointerEvent) {
         if(event.pointerType === 'mouse' && event.button !== 0 && event.button !== 1) return
         const target = event.target as HTMLElement | null
-        if(event.button !== 1 && target?.closest('button:not(.branch-node), .branch-node--selectable')) return
+        const isInteractive = event.button !== 1 && target?.closest('button:not(.branch-node), .branch-node--selectable')
+        if(event.pointerType === 'touch') {
+            touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+            if(touchPointers.size >= 2) {
+                event.preventDefault()
+                startPinch()
+                return
+            }
+        }
+        if(isInteractive) return
         event.preventDefault()
         hasInteracted = true
         isPanning = true
@@ -114,12 +150,51 @@
     }
 
     function movePan(event: PointerEvent) {
+        if(event.pointerType === 'touch' && touchPointers.has(event.pointerId)) {
+            touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+            if(touchPointers.size >= 2) {
+                event.preventDefault()
+                if(!pinchStart) startPinch()
+                if(!viewport || !pinchStart) return
+                const [first, second] = [...touchPointers.values()]
+                const distance = Math.hypot(second.x - first.x, second.y - first.y)
+                const bounds = viewport.getBoundingClientRect()
+                const centerX = (first.x + second.x) / 2 - bounds.left
+                const centerY = (first.y + second.y) / 2 - bounds.top
+                const nextScale = clampScale(pinchStart.scale * distance / pinchStart.distance)
+                panX = centerX - pinchStart.graphX * nextScale
+                panY = centerY - pinchStart.graphY * nextScale
+                scale = nextScale
+                return
+            }
+        }
         if(panPointerId !== event.pointerId) return
         panX = panStart.panX + event.clientX - panStart.x
         panY = panStart.panY + event.clientY - panStart.y
     }
 
     function finishPan(event: PointerEvent) {
+        if(event.pointerType === 'touch' && touchPointers.delete(event.pointerId)) {
+            if(viewport?.hasPointerCapture?.(event.pointerId)) viewport.releasePointerCapture(event.pointerId)
+            if(pinchStart) {
+                pinchStart = null
+                if(touchPointers.size >= 2) {
+                    startPinch()
+                    return
+                }
+                const remaining = touchPointers.entries().next().value
+                if(remaining) {
+                    const [pointerId, pointer] = remaining
+                    panPointerId = pointerId
+                    panStart = { x: pointer.x, y: pointer.y, panX, panY }
+                    viewport?.setPointerCapture?.(pointerId)
+                } else {
+                    panPointerId = null
+                    isPanning = false
+                }
+                return
+            }
+        }
         if(panPointerId !== event.pointerId) return
         if(viewport?.hasPointerCapture?.(event.pointerId)) viewport.releasePointerCapture(event.pointerId)
         panPointerId = null
