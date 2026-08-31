@@ -113,6 +113,25 @@ export function syncActiveChatBranch(chat: Chat): void {
   Object.assign(active, cloneBranchScriptState(chat));
 }
 
+/**
+ * Keep every saved timeline that references the same logical message in sync.
+ * Branches intentionally clone their message suffixes, so updating only the
+ * live array can otherwise restore stale content when another branch is opened.
+ */
+export function syncChatBranchMessage(chat: Chat, message: Message): void {
+  const state = chat.branchState;
+  if (!state || !message.chatId) return;
+
+  syncActiveChatBranch(chat);
+  for (const branch of state.branches) {
+    for (let index = 0; index < branch.messages.length; index++) {
+      if (branch.messages[index]?.chatId === message.chatId) {
+        branch.messages[index] = cloneMessages([message])[0];
+      }
+    }
+  }
+}
+
 function createRootState(chat: Chat, forkIndex: number): ChatBranchState {
   const rootId = uuidv4();
   return {

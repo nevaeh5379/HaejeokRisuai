@@ -7,6 +7,7 @@ import { sqlMessageData, type SqlCommit } from "../../storage/sql/sqlCommit";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { isCapacitor } from "../../platform";
 import type { FlushableStore } from "./storeContracts";
+import { syncChatBranchMessage } from "../../chatBranches";
 
 /**
  * In-memory retention cap for a single active chat. Messages beyond the most
@@ -285,6 +286,8 @@ class MessageStore implements FlushableStore {
       const index = chat.message.findIndex((m) => m.chatId === message.chatId);
       if (index >= 0) {
         chat.message[index] = message;
+        syncChatBranchMessage(chat, message);
+        if (chat.branchState) characterStore.markChatDirty(chatId);
         position =
           (chat.messagesFullyLoaded === false ? (chat.messageOffset ?? 0) : 0) +
           index;

@@ -6,6 +6,7 @@ import {
   getRerollAlternatives,
   resolveRerollTarget,
   syncActiveChatBranch,
+  syncChatBranchMessage,
 } from "./chatBranches";
 import type { Chat, Message } from "./storage/database/schema";
 
@@ -72,6 +73,42 @@ describe("chatBranches", () => {
     activateChatBranch(chat, child.id);
     expect(data(chat)).toEqual(["hello", "alternative"]);
     expect(chat.id).toBe("chat-1");
+  });
+
+  it("keeps edited user input consistent across saved branch copies", () => {
+    const chat = makeChat([
+      makeMessage("user", "first prompt", "m1"),
+      makeMessage("char", "first answer", "m2"),
+      makeMessage("user", "original input", "m3"),
+      makeMessage("char", "original response", "m4"),
+    ]);
+    const reroll = createChatTimelineBranch(chat, {
+      branchMessageIndex: 0,
+      branchMessageId: "m1",
+      reason: "reroll",
+      createdAt: 5,
+    });
+    chat.message.push(
+      makeMessage("char", "rerolled answer", "r2"),
+      makeMessage("user", "original input", "m3"),
+      makeMessage("char", "rerolled response", "r4"),
+    );
+    syncActiveChatBranch(chat);
+    const child = createChatTimelineBranch(chat, {
+      branchMessageIndex: 2,
+      branchMessageId: "m3",
+      reason: "manual",
+      createdAt: 10,
+    });
+    const editedInput = chat.message[2];
+
+    editedInput.data = "edited input";
+    syncChatBranchMessage(chat, editedInput);
+
+    activateChatBranch(chat, reroll.id);
+    expect(chat.message[2]?.data).toBe("edited input");
+    activateChatBranch(chat, child.id);
+    expect(chat.message[2]?.data).toBe("edited input");
   });
 
   it("treats rerolls from the same turn as sibling timelines", () => {
