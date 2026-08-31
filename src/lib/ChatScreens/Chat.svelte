@@ -1,7 +1,7 @@
 <script lang="ts">
     import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, DownloadIcon, FileText, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors } from "@lucide/svelte"
     import { aiLawApplies, changeChatTo, foldChatToMessage, getFileSrc } from "src/ts/globalApi.svelte"
-    import { createChatTimelineBranch } from "src/ts/chatBranches"
+    import { createChatTimelineBranch, createEditedMessageBranch } from "src/ts/chatBranches"
     import { chatTargetFromIndexes, requireChatTargetFromIndexes, type ChatExecutionTarget } from "src/ts/chatTarget"
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme"
     import { longpress } from "src/ts/gui/longtouch"
@@ -188,29 +188,40 @@
         }
     }
 
-    async function edit(){
+    async function saveEditedMessage(newData: string, createBranch = false){
+        const targetIndex = await ensureFullMessageIndex()
+        if (targetIndex < 0) return
         const char = characterStore.characters[targetCharacterIndex]
         const currentChat = char?.chats?.[targetChatIndex]
-        if (currentChat && currentChat.message?.[idx]) {
-            currentChat.message[idx].data = message
-            if (currentChat.id) {
-                await messageStore.updateMessage(currentChat.id, currentChat.message[idx])
-            }
+        const currentMessage = currentChat?.message?.[targetIndex]
+        if (!currentChat || !currentMessage || currentMessage.data === newData) return
+
+        if (createBranch) {
+            currentChat.id ??= v4()
+            const previousMessages = $state.snapshot(currentChat.message)
+            const branch = createEditedMessageBranch(currentChat, targetIndex, newData)
+            if (!branch) return
+            await messageStore.replaceMessages(currentChat.id, currentChat.message, previousMessages)
+            characterStore.markChatDirty(currentChat.id)
+            await characterStore.flush()
+            return
         }
+
+        currentMessage.data = newData
+        if (currentChat.id) {
+            await messageStore.updateMessage(currentChat.id, currentMessage)
+        }
+    }
+
+    async function edit(createBranch = false){
+        await saveEditedMessage(message, createBranch)
     }
 
     function handlePartialEditSave(e: CustomEvent<{ newData: string }>) {
         if (idx >= 0) {
             message = e.detail.newData
-            const char = characterStore.characters[targetCharacterIndex]
-            const currentChat = char?.chats?.[targetChatIndex]
-            if (currentChat && currentChat.message?.[idx]) {
-                currentChat.message[idx].data = e.detail.newData
-                displaya(e.detail.newData)
-                if (currentChat.id) {
-                    void messageStore.updateMessage(currentChat.id, currentChat.message[idx])
-                }
-            }
+            displaya(e.detail.newData)
+            void saveEditedMessage(e.detail.newData, false)
         }
     }
 
@@ -919,13 +930,16 @@
         </button>
     {/if}
     {#if idx > -1 && !isOptimizedStreamingMessage}
-        <button class={"flex items-center hover:text-blue-500 transition-colors button-icon-edit "+(editMode?'text-blue-400':'')} onclick={() => {
+        <button
+            title={language.edit}
+            class={"flex items-center hover:text-blue-500 transition-colors button-icon-edit "+(editMode?'text-blue-400':'')}
+            onclick={() => {
             if(!editMode){
                 editMode = true
             }
             else{
                 editMode = false
-                edit()
+                void edit(false)
             }
         }}>
             <PencilIcon size={20}/>
@@ -934,6 +948,21 @@
                 <span class="ml-1">{language.edit}</span>
             {/if}
         </button>
+        {#if editMode}
+            <button
+                title={`${language.edit} (${language.branch})`}
+                class="flex items-center hover:text-blue-500 transition-colors button-icon-edit-branch"
+                onclick={() => {
+                    editMode = false
+                    void edit(true)
+                }}
+            >
+                <GitBranch size={20}/>
+                {#if showNames}
+                    <span class="ml-1">{language.edit} ({language.branch})</span>
+                {/if}
+            </button>
+        {/if}
     {/if}
 {/snippet}
 

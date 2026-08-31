@@ -132,6 +132,52 @@ export function syncChatBranchMessage(chat: Chat, message: Message): void {
   }
 }
 
+/**
+ * Preserve the current timeline and start a distinct path with an edited
+ * message. The edited message gets a new ID so the branch graph does not merge it
+ * back into the original message node.
+ */
+export function createEditedMessageBranch(
+  chat: Chat,
+  messageIndex: number,
+  data: string,
+  createdAt = Date.now(),
+): ChatBranchTimeline | null {
+  const originalMessage = chat.message[messageIndex];
+  if (!originalMessage || originalMessage.data === data) {
+    return null;
+  }
+
+  const state = ensureChatBranchState(chat, messageIndex - 1);
+  const editedMessage: Message = {
+    ...cloneMessages([originalMessage])[0],
+    chatId: uuidv4(),
+    data,
+  };
+  const branch: ChatBranchTimeline = {
+    id: uuidv4(),
+    parentBranchId: state.activeBranchId,
+    branchMessageId: editedMessage.chatId,
+    branchMessageIndex: messageIndex,
+    reason: "manual",
+    createdAt,
+    messages: cloneMessages([
+      ...chat.message.slice(state.baseMessageIndex + 1, messageIndex),
+      editedMessage,
+    ]),
+    ...cloneBranchScriptState(chat),
+  };
+
+  state.branches.push(branch);
+  state.activeBranchId = branch.id;
+  chat.message = cloneMessages([
+    ...chat.message.slice(0, messageIndex),
+    editedMessage,
+  ]);
+  updateChatMessageRuntime(chat);
+  return branch;
+}
+
 function createRootState(chat: Chat, forkIndex: number): ChatBranchState {
   const rootId = uuidv4();
   return {
