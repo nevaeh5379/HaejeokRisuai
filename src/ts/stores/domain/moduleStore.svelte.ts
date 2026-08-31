@@ -95,23 +95,27 @@ class ModuleStore
    * authority to delete every module it omitted.
    */
   upsertModules(modules: RisuModule[]): void {
-    const merged = [...this.modules];
-    const positions = new Map(
-      merged.map((module, index) => [module.id, index] as const),
+    const nextModules = [...this.modules];
+    const indexById = new Map(
+      nextModules.map((module, index) => [module.id, index] as const),
     );
+
     for (const module of modules) {
       if (!module || typeof module.id !== "string" || module.id.length === 0) {
         throw new TypeError("Module id must be a non-empty string");
       }
-      const position = positions.get(module.id);
-      if (position === undefined) {
-        positions.set(module.id, merged.length);
-        merged.push(module);
-      } else {
-        merged[position] = module;
+
+      const existingIndex = indexById.get(module.id);
+      if (existingIndex !== undefined) {
+        nextModules[existingIndex] = module;
+        continue;
       }
+
+      indexById.set(module.id, nextModules.length);
+      nextModules.push(module);
     }
-    this.modules = merged;
+
+    this.modules = nextModules;
   }
 
   async installModule(module: RisuModule): Promise<void> {
