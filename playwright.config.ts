@@ -64,7 +64,7 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: "pnpm run dev",
+    command: "./node_modules/.bin/vite",
     url: "http://127.0.0.1:5174",
     // Vite cold-start of this app can take a while
     timeout: 300_000,
