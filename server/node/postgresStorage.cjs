@@ -169,6 +169,7 @@ const {
     validateColdStorageKeys,
     findLegacyColdStorageFiles,
     validateSyncPayload,
+    dedupeRootUpserts,
 } = createSqlStorageHelpers({
     PayloadError: PostgresPayloadError,
     maxIdLength: 1024,
@@ -2299,6 +2300,7 @@ class PostgresStorage extends SqlStorageBase {
             }
 
             onProgress?.({ stage: 'settings', message: `Syncing settings (${payload.rootUpserts.length})`, count: payload.rootUpserts.length });
+            dedupeRootUpserts(payload);
             const rootSettingUpserts = payload.rootUpserts.filter((row) => row.key !== 'pluginCustomStorage');
             if (rootSettingUpserts.length > 0) {
                 const settingRows = rootSettingUpserts.map((row) => {

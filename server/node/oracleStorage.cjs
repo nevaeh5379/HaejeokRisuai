@@ -80,6 +80,7 @@ const {
     validateColdStorageKeys,
     findLegacyColdStorageFiles,
     validateSyncPayload,
+    dedupeRootUpserts,
 } = createSqlStorageHelpers({
     PayloadError: StoragePayloadError,
     allowShortColdStorageKeys: true,
@@ -1867,6 +1868,7 @@ class OracleStorage extends SqlStorageBase {
 
             // 설정 upsert (MERGE INTO system_settings)
             onProgress?.({ stage: 'settings', message: `설정 동기화 중... (${payload.rootUpserts.length}개 설정)`, percent: 10 });
+            dedupeRootUpserts(payload);
             const rootSettingUpserts = payload.rootUpserts.filter((row) => row.key !== 'pluginCustomStorage');
             if (rootSettingUpserts.length > 0) {
                 const mergeSql = `MERGE INTO system_settings t

@@ -66,6 +66,7 @@ const {
     validateColdStorageKeys,
     findLegacyColdStorageFiles,
     validateSyncPayload,
+    dedupeRootUpserts,
 } = createSqlStorageHelpers({
     PayloadError: StoragePayloadError,
     allowShortColdStorageKeys: true,
@@ -1197,6 +1198,7 @@ class AzureStorage extends SqlStorageBase {
                 if (activeId !== undefined) payload.rootUpserts.push({ key: 'activeBotPresetId', value: activeId });
             }
 
+            dedupeRootUpserts(payload);
             const rootSettingUpserts = (payload.rootUpserts || []).filter((row) => row.key !== 'pluginCustomStorage');
             if (rootSettingUpserts.length > 0) {
                 const settingRows = rootSettingUpserts.map((row) => {

@@ -294,6 +294,25 @@ function createSqlStorageHelpers({
         return payload;
     };
 
+    // Preset handling pushes `activeBotPresetId` into rootUpserts after
+    // validation. Restores built from portable databases can already contain
+    // that key, and a duplicated key makes the single-statement bulk upsert
+    // fail with "ON CONFLICT DO UPDATE command cannot affect row a second
+    // time" on PostgreSQL. Keep the last occurrence, matching ordinary
+    // last-write-wins upsert semantics.
+    const dedupeRootUpserts = (payload) => {
+        const seen = new Set();
+        for (let index = payload.rootUpserts.length - 1; index >= 0; index--) {
+            const key = payload.rootUpserts[index].key;
+            if (seen.has(key)) {
+                payload.rootUpserts.splice(index, 1);
+            } else {
+                seen.add(key);
+            }
+        }
+        return payload;
+    };
+
     return {
         asArray,
         assertId,
@@ -305,6 +324,7 @@ function createSqlStorageHelpers({
         validateColdStorageKeys,
         findLegacyColdStorageFiles,
         validateSyncPayload,
+        dedupeRootUpserts,
     };
 }
 

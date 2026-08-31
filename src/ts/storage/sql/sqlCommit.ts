@@ -215,6 +215,12 @@ export function buildSqlReplaceCommit(
       key !== "isSql" &&
       key !== "botPresets" &&
       key !== "botPresetsId" &&
+      // Preset activation is owned by the presets section: the server derives
+      // `activeBotPresetId` from presets.activeId and pushes it into the root
+      // upserts itself. Emitting it here as well would duplicate the key in a
+      // single bulk upsert, which PostgreSQL rejects with "ON CONFLICT DO
+      // UPDATE command cannot affect row a second time" during restores.
+      key !== "activeBotPresetId" &&
       !isLegacyPersonaMirrorKey(key)
     ) {
       commit.root.upserts.push({ key, value });

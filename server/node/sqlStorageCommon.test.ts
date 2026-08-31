@@ -171,6 +171,27 @@ describe('shared SQL storage helpers', () => {
         }
     })
 
+    it('dedupes root upserts added after preset handling restores', () => {
+        const helpers = createSqlStorageHelpers({ PayloadError: TestPayloadError })
+        const presetId = '123e4567-e89b-42d3-a456-426614174000'
+        // Portable backups carry activeBotPresetId as a plain root setting and
+        // sync() pushes the preset-derived value again; the second one wins.
+        const payload = helpers.dedupeRootUpserts({
+            rootUpserts: [
+                { key: 'temperature', value: 0.7 },
+                { key: 'activeBotPresetId', value: 'stale-id' },
+                { key: 'mainPrompt', value: 'prompt' },
+                { key: 'activeBotPresetId', value: presetId },
+            ],
+            rootDeletes: [],
+        })
+        expect(payload.rootUpserts).toEqual([
+            { key: 'temperature', value: 0.7 },
+            { key: 'mainPrompt', value: 'prompt' },
+            { key: 'activeBotPresetId', value: presetId },
+        ])
+    })
+
     it('groups relational child rows by entity and message', () => {
         const rows = [
             { owner_id: 'a', chat_id: 'chat', message_id: 'one' },

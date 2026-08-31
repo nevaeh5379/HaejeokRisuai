@@ -303,6 +303,22 @@ describe("SQL row commits", () => {
     expect(pluginStorageUpsert?.value).toEqual({});
   });
 
+  it("excludes activeBotPresetId from root upserts in favor of the presets section", () => {
+    const database = {
+      activeBotPresetId: "stale-preset-id",
+      botPresets: [{ name: "Preset" }],
+      botPresetsId: 0,
+      characters: [],
+    } as unknown as Database;
+
+    const commit = buildSqlReplaceCommit(database, 0);
+    const rootKeys = commit.root.upserts.map(({ key }) => key);
+    expect(rootKeys).not.toContain("activeBotPresetId");
+    // The preset activation is conveyed through presets.activeId, which the
+    // server turns into its own activeBotPresetId upsert.
+    expect(commit.presets?.activeId).toBeDefined();
+  });
+
   it("migrates the live module integration value into the active preset", () => {
     const database = {
       characters: [],
