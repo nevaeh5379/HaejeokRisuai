@@ -358,30 +358,23 @@ export abstract class NativeSqliteStorageBase {
     ]);
     const settings = this.rebuildSettingRows(settingRows, deferredKeyList);
     for (const [key, value] of settings.values) {
-      (db as any)[key] = value;
+      (db as Record<string, unknown>)[key] = value;
     }
 
-    // Also merge plugin_custom_storage table if present
-    if (
-      !db.pluginCustomStorage ||
-      Object.keys(db.pluginCustomStorage).length === 0
-    ) {
-      const pluginStorageRows = await this.selectRows<{
-        key: string;
-        value: string;
-      }>("SELECT key, value FROM plugin_custom_storage");
-      if (pluginStorageRows.length > 0) {
-        db.pluginCustomStorage = {};
-        for (const row of pluginStorageRows) {
-          try {
-            db.pluginCustomStorage[row.key] = JSON.parse(row.value);
-          } catch {
-            db.pluginCustomStorage[row.key] = row.value;
-          }
-        }
+    // Merge plugin_custom_storage table
+    const pluginStorageRows = await this.selectRows<{
+      key: string;
+      value: string;
+    }>("SELECT key, value FROM plugin_custom_storage");
+    const pluginCustomStorage: Record<string, unknown> = {};
+    for (const row of pluginStorageRows) {
+      try {
+        pluginCustomStorage[row.key] = JSON.parse(row.value);
+      } catch {
+        pluginCustomStorage[row.key] = row.value;
       }
     }
-    db.pluginCustomStorage ??= {};
+    db.pluginCustomStorage = pluginCustomStorage;
 
     // Load characters
     const charRows = characterRows as Array<{
@@ -403,7 +396,7 @@ export abstract class NativeSqliteStorageBase {
         "character_extension_nodes",
         "character_id = ?",
         [row.id],
-      )) ?? {}) as any;
+      )) ?? {}) as character | groupChat;
       fullChar.chaId = row.id;
       fullChar.detailsLoaded = true;
       const chatRows = await this.selectRows<{
@@ -431,7 +424,7 @@ export abstract class NativeSqliteStorageBase {
           )
         : new Map<string, unknown>();
       const chats: Chat[] = chatRows.map((chatRow) => {
-        const chatData = (chatValues.get(chatRow.id) ?? {}) as any;
+        const chatData = (chatValues.get(chatRow.id) ?? {}) as Chat;
         chatData.id = chatRow.id;
         chatData.name = chatRow.name ?? "";
         chatData.note = chatRow.note ?? "";
@@ -460,12 +453,44 @@ export abstract class NativeSqliteStorageBase {
       characters.push(fullChar);
     }
     db.characters = characters;
+    db.modules = await this.loadModules();
+
+    const presetRows = await this.selectRows<{
+      preset_id: string;
+      data: string;
+    }>("SELECT preset_id, data FROM bot_presets ORDER BY position");
+    if (presetRows.length > 0) {
+      const presets: botPreset[] = [];
+      for (const row of presetRows) {
+        try {
+          presets.push(
+            typeof row.data === "string"
+              ? JSON.parse(row.data)
+              : (row.data as botPreset),
+          );
+        } catch {}
+      }
+      db.botPresets = presets;
+      if (db.activeBotPresetId) {
+        const activeIndex = presetRows.findIndex(
+          (row) => row.preset_id === db.activeBotPresetId,
+        );
+        db.botPresetsId = activeIndex >= 0 ? activeIndex : 0;
+      } else {
+        db.botPresetsId = 0;
+      }
+    } else {
+      db.botPresets = [];
+      db.botPresetsId = 0;
+    }
 
     const metaRow = metaRows[0] as { initialized?: number } | undefined;
     const isInitialized =
       metaRow?.initialized === 1 ||
       characters.length > 0 ||
-      settings.keyCount > 0;
+      settings.keyCount > 0 ||
+      (db.modules?.length ?? 0) > 0 ||
+      (db.botPresets?.length ?? 0) > 0;
 
     if (!isInitialized) {
       return { revision: this.revision, database: null };

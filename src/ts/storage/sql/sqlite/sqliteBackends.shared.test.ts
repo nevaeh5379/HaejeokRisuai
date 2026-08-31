@@ -85,6 +85,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       expect(Object.prototype.hasOwnProperty.call(db, key)).toBe(false);
     }
     expect(db.personas).toEqual(source.personas);
+    expect(db.modules).toEqual(source.modules);
     expect(db.language).toBe("en");
     expect(db.theme).toBe("dark");
     expect(db.characters[0].chats[0].message.map((m: Message) => m.data)).toEqual([

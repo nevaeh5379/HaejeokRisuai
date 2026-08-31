@@ -2718,15 +2718,21 @@ async function buildPortableServerDatabase() {
     const loaded = await postgresStorage.exportDatabaseSnapshot();
     if (!loaded?.database) throw new Error('Database is not initialized');
     const database = loaded.database;
-    const summaries = (await postgresStorage.listBotPresets()).presets;
-    const loadedPresets = (await Promise.all(summaries.map((summary) => postgresStorage.loadBotPreset(summary.id))))
-        .filter(Boolean);
-    database.botPresets = loadedPresets.map((result) => {
-        const { id: _id, ...preset } = result.preset;
-        return preset;
-    });
-    const activeId = database.activeBotPresetId;
-    database.botPresetsId = Math.max(0, summaries.findIndex((summary) => summary.id === activeId));
+    if (!database.botPresets || database.botPresets.length === 0) {
+        const summaries = (await postgresStorage.listBotPresets()).presets;
+        const loadedPresets = (await Promise.all(summaries.map((summary) => postgresStorage.loadBotPreset(summary.id))))
+            .filter(Boolean);
+        database.botPresets = loadedPresets.map((result) => {
+            const { id: _id, ...preset } = result.preset;
+            return preset;
+        });
+        const activeId = database.activeBotPresetId;
+        database.botPresetsId = Math.max(0, summaries.findIndex((summary) => summary.id === activeId));
+    }
+    if (!database.modules) {
+        const moduleResult = await postgresStorage.loadModules?.();
+        database.modules = moduleResult?.modules || [];
+    }
     return database;
 }
 
@@ -2738,7 +2744,7 @@ async function encodePortableServerDatabase(database, mode = 'native', coldStora
 }
 
 // Profile-image asset keys referenced by the snapshot: character main images,
-// persona icons, user icon, custom background, folder images, bot preset images.
+// persona icons, user icon, custom background, module icons, folder images, bot preset images.
 // Mirrors the client's essential backup scope so partial exports stay small.
 function collectEssentialBackupAssetKeys(database, assetKeys) {
     const wanted = new Set();
@@ -2754,6 +2760,9 @@ function collectEssentialBackupAssetKeys(database, assetKeys) {
     }
     add(database.userIcon);
     add(database.customBackground);
+    for (const mod of database.modules ?? []) {
+        if (mod?.icon) add(mod.icon);
+    }
     for (const item of database.characterOrder ?? []) {
         if (typeof item === 'string') continue;
         add(item?.img);

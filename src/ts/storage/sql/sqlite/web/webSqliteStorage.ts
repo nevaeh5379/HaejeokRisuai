@@ -40,6 +40,7 @@ import {
   RELATIONAL_SCHEMA_LAYOUT,
   SQLITE_SCHEMA_VERSION,
   SqlSchemaResetRequiredError,
+  type RelationalNodeRow,
 } from "../relationalNodeCodec";
 import {
   AsyncSerialQueue,
@@ -50,6 +51,7 @@ import {
   buildMessageRowsQuery,
   buildCharacterAssetFieldsQuery,
   type MessageLoadMode,
+  type SettingNodeRow,
 } from "../sqliteStorageUtils";
 
 // ── Worker RPC plumbing ──────────────────────────────────────────────
@@ -254,12 +256,12 @@ export class WebSqliteStorage implements ISqlStorage {
     }
   }
 
-  private async selectRows(
+  private async selectRows<T = Record<string, unknown>>(
     sql: string,
     bind: unknown[] = [],
-  ): Promise<Record<string, unknown>[]> {
+  ): Promise<T[]> {
     if (!this.rpc) throw new Error("Database not opened");
-    return (await this.rpc.select(sql, bind)).rows;
+    return (await this.rpc.select(sql, bind)).rows as T[];
   }
 
   private async selectOne(
@@ -443,7 +445,9 @@ export class WebSqliteStorage implements ISqlStorage {
       settingNodeQuery.sql,
       settingNodeQuery.bind,
     );
-    const settingValues = groupSettingNodeRows(settingNodeRows as any);
+    const settingValues = groupSettingNodeRows(
+      settingNodeRows as SettingNodeRow[],
+    );
     const settings: Partial<DatabaseSettings> = {};
     for (const row of settingsRows) {
       const key = row.key as string;
@@ -497,38 +501,50 @@ export class WebSqliteStorage implements ISqlStorage {
       settingNodeQuery.sql,
       settingNodeQuery.bind,
     );
-    const settingValues = groupSettingNodeRows(settingNodeRows as any);
+    const settingValues = groupSettingNodeRows(
+      settingNodeRows as SettingNodeRow[],
+    );
     for (const row of settingsRows) {
       const key = row.key as string;
       if (deferredKeys.has(key)) continue;
       // The batched node read above already covers every non-deferred key;
       // a key without node rows simply stores `undefined`.
-      (db as any)[key] = settingValues.get(key);
+      (db as Record<string, unknown>)[key] = settingValues.get(key);
     }
 
     if (
       !db.pluginCustomStorage ||
       Object.keys(db.pluginCustomStorage).length === 0
     ) {
-      const pluginStorageRows = await this.selectRows(
-        "SELECT key, value FROM plugin_custom_storage",
-      );
+      const pluginStorageRows = await this.selectRows<{
+        key: string;
+        value: string;
+      }>("SELECT key, value FROM plugin_custom_storage");
       if (pluginStorageRows.length > 0) {
         db.pluginCustomStorage = {};
         for (const row of pluginStorageRows) {
           try {
-            db.pluginCustomStorage[row.key as string] = JSON.parse(
-              row.value as string,
-            );
+            db.pluginCustomStorage[row.key] = JSON.parse(row.value);
           } catch {
-            db.pluginCustomStorage[row.key as string] = row.value;
+            db.pluginCustomStorage[row.key] = row.value;
           }
         }
       }
     }
     db.pluginCustomStorage ??= {};
 
-    const charRows = await this.selectRows(
+    const charRows = await this.selectRows<{
+      id: string;
+      position: number;
+      kind: string;
+      name: string;
+      image: string | null;
+      trash_time: number | null;
+      creation_time: number | null;
+      modification_time: number | null;
+      last_interaction_time: number | null;
+      details_loaded: number;
+    }>(
       "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
     );
     const characters: (character | groupChat)[] = [];
@@ -537,10 +553,10 @@ export class WebSqliteStorage implements ISqlStorage {
         "character_extension_nodes",
         "character_id = ?",
         [row.id],
-      )) ?? {}) as any;
+      )) ?? {}) as character | groupChat;
       fullChar.chaId = row.id;
       fullChar.detailsLoaded = true;
-      const chats = await this.loadCharacterChats(row.id as string);
+      const chats = await this.loadCharacterChats(row.id);
       for (const chat of chats) {
         if (!chat.id) continue;
         chat.message = await this.loadMessagesBatch(chat.id);
@@ -554,6 +570,36 @@ export class WebSqliteStorage implements ISqlStorage {
       characters.push(fullChar);
     }
     db.characters = characters;
+    db.modules = await this.loadModules();
+
+    const presetRows = await this.selectRows<{
+      preset_id: string;
+      data: string;
+    }>("SELECT preset_id, data FROM bot_presets ORDER BY position");
+    if (presetRows.length > 0) {
+      const presets: botPreset[] = [];
+      for (const row of presetRows) {
+        try {
+          presets.push(
+            typeof row.data === "string"
+              ? JSON.parse(row.data)
+              : (row.data as botPreset),
+          );
+        } catch {}
+      }
+      db.botPresets = presets;
+      if (db.activeBotPresetId) {
+        const activeIndex = presetRows.findIndex(
+          (row) => row.preset_id === db.activeBotPresetId,
+        );
+        db.botPresetsId = activeIndex >= 0 ? activeIndex : 0;
+      } else {
+        db.botPresetsId = 0;
+      }
+    } else {
+      db.botPresets = [];
+      db.botPresetsId = 0;
+    }
 
     const metaRow = await this.selectOne(
       "SELECT initialized FROM system_storage_meta WHERE singleton = 1",
@@ -561,7 +607,9 @@ export class WebSqliteStorage implements ISqlStorage {
     const isInit =
       metaRow?.initialized === 1 ||
       characters.length > 0 ||
-      settingsRows.length > 0;
+      settingsRows.length > 0 ||
+      (db.modules?.length ?? 0) > 0 ||
+      (db.botPresets?.length ?? 0) > 0;
     if (!isInit) return { revision: this.revision, database: null };
     return { revision: this.revision, database: db };
   }

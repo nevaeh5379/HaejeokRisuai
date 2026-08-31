@@ -1409,6 +1409,24 @@ class OracleStorage extends SqlStorageBase {
                 characterRelations, chatRelations, messageRelations,
                 rebuildCharacter, rebuildChat, rebuildMessage,
             });
+
+            const moduleResult = await this.loadModuleRecords();
+            database.modules = moduleResult?.modules || database.modules || [];
+
+            const presetRows = await fetchRows(conn, 'SELECT preset_id, data FROM system_bot_presets ORDER BY position', [], { clobColumns: ['data'] });
+            if (presetRows.length > 0) {
+                database.botPresets = presetRows.map((row) => {
+                    const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                    const { id: _id, ...rest } = data;
+                    return rest;
+                });
+                const activeId = database.activeBotPresetId;
+                database.botPresetsId = Math.max(0, presetRows.findIndex((row) => row.preset_id === activeId));
+            } else {
+                database.botPresets = database.botPresets || [];
+                database.botPresetsId = database.botPresetsId || 0;
+            }
+
             await conn.rollback();
             return { revision, initialized, database };
         } catch (error) {

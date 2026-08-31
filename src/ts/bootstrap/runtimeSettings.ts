@@ -27,5 +27,7 @@ export async function initRuntimeSettings(storage: ISqlStorage): Promise<void> {
       await storage.listPluginCustomStorageKeys(),
     );
     await loadPlugins();
-  } catch {}
+  } catch (err) {
+    console.error("[RUNTIME SETTINGS INIT ERROR]:", err);
+  }
 }

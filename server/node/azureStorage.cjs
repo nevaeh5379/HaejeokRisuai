@@ -808,6 +808,25 @@ class AzureStorage extends SqlStorageBase {
             rebuildMessage,
         });
 
+        const moduleResult = await this.loadModuleRecords();
+        database.modules = moduleResult?.modules || database.modules || [];
+
+        const presetRows = (await pool.request().query(
+            'SELECT preset_id, data FROM [system].[bot_presets] ORDER BY position'
+        )).recordset;
+        if (presetRows.length > 0) {
+            database.botPresets = presetRows.map((row) => {
+                const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                const { id: _id, ...rest } = data;
+                return rest;
+            });
+            const activeId = database.activeBotPresetId;
+            database.botPresetsId = Math.max(0, presetRows.findIndex((row) => row.preset_id === activeId));
+        } else {
+            database.botPresets = database.botPresets || [];
+            database.botPresetsId = database.botPresetsId || 0;
+        }
+
         return {
             database,
             revision: state.revision,

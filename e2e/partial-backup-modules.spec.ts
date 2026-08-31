@@ -160,12 +160,56 @@ test.describe("partial local backup module persistence", () => {
     const backupBytes = await saveOutcomePromise;
     expect(backupBytes.length).toBeGreaterThan(0);
 
+    // Verify backup container contains database.risudat and decoded modules
+    const backupProbe = await page.evaluate(async (bytesIn) => {
+      const risuSaveUrl = "/src/ts/storage/backup/risuSave.ts";
+      const { decodeRisuSave } = (await import(
+        /* @vite-ignore */ risuSaveUrl
+      )) as {
+        decodeRisuSave: (data: Uint8Array) => Promise<any>;
+      };
+      const data = new Uint8Array(bytesIn);
+      const entries: { name: string; length: number }[] = [];
+      let offset = 0;
+      const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+      while (offset < data.length) {
+        const nameLength = view.getUint32(offset, true);
+        offset += 4;
+        const name = new TextDecoder().decode(
+          data.subarray(offset, offset + nameLength),
+        );
+        offset += nameLength;
+        const dataLength = view.getUint32(offset, true);
+        offset += 4;
+        entries.push({ name, length: dataLength });
+        offset += dataLength;
+      }
+      let cursor = 0;
+      for (const entry of entries) {
+        if (entry.name === "database.risudat") break;
+        cursor += 4 + entry.name.length + 4 + entry.length;
+      }
+      const dbEntry = entries.find((e) => e.name === "database.risudat");
+      if (!dbEntry) return { entries: entries.map((e) => e.name), modules: null };
+      const dbDataStart = cursor + 4 + dbEntry.name.length + 4;
+      const decodedDb = (await decodeRisuSave(
+        data.subarray(dbDataStart, dbDataStart + dbEntry.length),
+      )) as any;
+      return {
+        entries: entries.map((e) => e.name),
+        modules: decodedDb?.modules ?? null,
+      };
+    }, backupBytes);
+
+    console.log("BACKUP CONTAINER PROBE:", JSON.stringify(backupProbe));
+
     // 3. Create a fresh clean context (new environment) to restore the backup file
     const freshContext = await browser.newContext();
     await freshContext.addInitScript(() => {
       localStorage.setItem("haejeok_tos_2026_08_23", "true");
     });
     const freshPage = await freshContext.newPage();
+    freshPage.on("console", (msg) => console.log("FRESH PAGE LOG:", msg.text()));
 
     try {
       await waitForAppReady(freshPage);
@@ -192,40 +236,47 @@ test.describe("partial local backup module persistence", () => {
         await restoreLocalBackupFile(file);
       }, backupBytes);
 
-      // Page reloads after restore
-      await freshPage.waitForLoadState("domcontentloaded");
-      await freshPage.waitForFunction(
-        async () => {
-          const moduleStoreUrl = "/src/ts/stores/domain/moduleStore.svelte.ts";
-          const { moduleStore } = (await import(
-            /* @vite-ignore */ moduleStoreUrl
-          )) as {
-            moduleStore: { loaded: boolean };
-          };
-          return moduleStore?.loaded === true;
-        },
-        undefined,
-        { timeout: 60_000 },
-      );
+      // Allow reload and bootstrap initialization to settle
+      await freshPage.waitForTimeout(4000);
+      await waitForAppReady(freshPage);
 
-      // 4. Assert that the modules were preserved after restore
-      const restoredModules = await freshPage.evaluate(async () => {
-        const moduleStoreUrl = "/src/ts/stores/domain/moduleStore.svelte.ts";
-        const { moduleStore } = (await import(
-          /* @vite-ignore */ moduleStoreUrl
-        )) as {
-          moduleStore: {
-            modules: { id: string; name: string; description: string }[];
-          };
-        };
-        return moduleStore.modules.map((m) => ({
-          id: m.id,
-          name: m.name,
-          description: m.description,
-        }));
-      });
+      // 4. Poll until moduleStore has hydrated the restored modules
+      let restoredModules: { id: string; name: string; description: string }[] =
+        [];
+      const startPoll = Date.now();
+      while (Date.now() - startPoll < 30_000) {
+        const check = await freshPage.evaluate(async () => {
+          try {
+            const moduleStoreUrl = "/src/ts/stores/domain/moduleStore.svelte.ts";
+            const { moduleStore } = (await import(
+              /* @vite-ignore */ moduleStoreUrl
+            )) as {
+              moduleStore: {
+                loaded: boolean;
+                modules: { id: string; name: string; description: string }[];
+              };
+            };
+            return {
+              loaded: moduleStore.loaded,
+              modules: moduleStore.modules.map((m) => ({
+                id: m.id,
+                name: m.name,
+                description: m.description,
+              })),
+            };
+          } catch {
+            return { loaded: false, modules: [] };
+          }
+        });
+        if (check.loaded && check.modules.length >= 2) {
+          restoredModules = check.modules;
+          break;
+        }
+        await freshPage.waitForTimeout(250);
+      }
 
-      // THIS IS EXPECTED TO FAIL when modules are missing from the backup snapshot:
+      console.log("RESTORED MODULES FINAL:", JSON.stringify(restoredModules));
+
       expect(restoredModules).toEqual(
         expect.arrayContaining([
           expect.objectContaining({

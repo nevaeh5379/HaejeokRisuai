@@ -8,6 +8,7 @@ import type { HypaV3Settings, HypaV3Preset } from "../../process/memory/hypav3Pr
 import type { TranslatorPreset } from "../../translator/presets";
 import type { OnnxModelFiles } from "../../process/transformers";
 import type { RisuModule, ModuleFolder } from "../../process/modules";
+export type { RisuModule, ModuleFolder };
 import type { SerializableHypaV2Data } from "../../process/memory/hypav2";
 import { LLMFlags, LLMFormat, LLMTokenizer } from "../../model/types";
 import type { HypaModel } from "../../process/memory/hypamemory";
@@ -588,7 +589,10 @@ export interface Database
 export type LegacyPersonaMirrorKey = keyof LegacyPersonaMirrorData;
 
 /** Canonical SQL snapshots never persist legacy persona mirrors. */
-export type CanonicalDatabase = Omit<Database, LegacyPersonaMirrorKey>;
+export type CanonicalDatabase = Omit<Database, LegacyPersonaMirrorKey> & {
+  botPresets?: botPreset[];
+  botPresetsId?: number;
+};
 
 /** Fields owned by dedicated domain stores rather than SettingsStore. */
 export type DomainStoreSettingKey =

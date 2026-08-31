@@ -1550,7 +1550,10 @@ class PostgresStorage extends SqlStorageBase {
                 'SELECT * FROM chat.message_generation',
                 'SELECT * FROM chat.message_prompt_info',
                 'SELECT * FROM chat.message_prompt_toggles ORDER BY chat_id, message_id, position',
-                'SELECT * FROM chat.message_prompt_items ORDER BY chat_id, message_id, position'
+                'SELECT * FROM chat.message_prompt_items ORDER BY chat_id, message_id, position',
+                'SELECT module_id, position FROM system.module_records ORDER BY position',
+                'SELECT module_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system.module_values ORDER BY module_id, node_id',
+                'SELECT preset_id, position, name, image, api_type, ai_model, data, content_hash FROM system.bot_presets ORDER BY position'
             ];
 
             const results = await client.query(loadQueries.join(';\n'));
@@ -1559,12 +1562,36 @@ class PostgresStorage extends SqlStorageBase {
                 settings, settingValues, characters, characterAttributes, tags, greetings, biases, emotions,
                 characterModules, groupMembers, chatFolders, scripts, sdData, assets, characterLore,
                 chats, chatAttributes, suggestions, chatModules, scriptState, bookmarks, memory,
-                chatLore, messages, messageAttributes, generations, promptInfos, promptToggles, promptItems
+                chatLore, messages, messageAttributes, generations, promptInfos, promptToggles, promptItems,
+                moduleRecords, moduleValues, botPresetRows
             ] = rows;
 
             const database = rebuildSettingRows(settings, settingValues);
             database.pluginCustomStorage = Object.fromEntries((await client.query(
                 'SELECT key, value FROM system.plugin_custom_storage ORDER BY key')).rows.map((row) => [row.key, row.value]));
+
+            if (moduleRecords && moduleRecords.length > 0) {
+                const rebuiltModules = rebuildSettings(
+                    moduleRecords.map((row) => ({ key: row.module_id })),
+                    moduleValues,
+                );
+                database.modules = moduleRecords.map((row) => ({ ...rebuiltModules[row.module_id], id: row.module_id }));
+            } else {
+                database.modules = database.modules || [];
+            }
+
+            if (botPresetRows && botPresetRows.length > 0) {
+                database.botPresets = botPresetRows.map((row) => {
+                    const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                    const { id: _id, ...rest } = data;
+                    return rest;
+                });
+                const activeId = database.activeBotPresetId;
+                database.botPresetsId = Math.max(0, botPresetRows.findIndex((row) => row.preset_id === activeId));
+            } else {
+                database.botPresets = database.botPresets || [];
+                database.botPresetsId = database.botPresetsId || 0;
+            }
 
             const characterRelations = createCharacterRelations({
                 attributes: characterAttributes, tags, greetings, biases, emotions,

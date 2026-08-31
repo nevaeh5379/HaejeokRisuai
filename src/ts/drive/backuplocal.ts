@@ -640,29 +640,17 @@ export async function createBackupDatabaseSnapshot(
     (await loadFullSqlBackupSnapshot(onProgress)) ??
     (await loadFallbackBackupSnapshot(onProgress));
 
-  db.botPresets = (await presetStore.loadAll()).map(
-    ({ id: _id, ...preset }) => preset,
-  );
-  db.botPresetsId = presetStore.activeIndex;
-
-  try {
-    const storage = await getSqlStorage();
-    if (
-      storage.isEnabled() &&
-      (!db.pluginCustomStorage ||
-        Object.keys(db.pluginCustomStorage).length === 0)
-    ) {
-      const pluginStorage = await storage.loadPluginCustomStorage();
-      if (pluginStorage && Object.keys(pluginStorage).length > 0) {
-        db.pluginCustomStorage = pluginStorage;
-      }
-    }
-  } catch {}
+  ensureAllDomains(db);
 
   return normalizeBackupSnapshot(db);
 }
 
-type BackupAssetScope = "all" | "essential";
+import {
+  collectAllDomainAssets,
+  ensureAllDomains,
+  type BackupAssetScope,
+} from "../storage/database/domainRegistry.svelte";
+
 type BackupAssetInfo = { charName: string; assetName: string };
 
 interface LocalBackupExportOptions {
@@ -677,83 +665,11 @@ function backupLabel(partial: boolean) {
   return partial ? "Saving partial local backup..." : "Saving local backup...";
 }
 
-function addBackupAsset(
-  map: Map<string, BackupAssetInfo>,
-  key: string | undefined,
-  charName: string,
-  assetName: string,
-) {
-  if (key) map.set(key, { charName, assetName });
-}
-
 function buildBackupAssetMap(
   db: PortableDatabase,
   scope: BackupAssetScope,
 ): Map<string, BackupAssetInfo> {
-  const assets = new Map<string, BackupAssetInfo>();
-  for (const char of db.characters ?? []) {
-    if (!char) continue;
-    const charName = char.name ?? "Unknown Character";
-    addBackupAsset(
-      assets,
-      char.image,
-      charName,
-      scope === "essential" ? "Profile Image" : "Main Image",
-    );
-    if (scope === "essential") continue;
-
-    for (const emotion of char.emotionImages ?? []) {
-      if (emotion?.[1])
-        addBackupAsset(assets, emotion[1], charName, emotion[0]);
-    }
-    if (char.type === "group") continue;
-    for (const asset of char.additionalAssets ?? []) {
-      if (asset?.[1]) addBackupAsset(assets, asset[1], charName, asset[0]);
-    }
-    for (const [name, key] of Object.entries(char.vits?.files ?? {})) {
-      if (key) addBackupAsset(assets, key, charName, name);
-    }
-    for (const asset of char.ccAssets ?? []) {
-      if (asset?.uri) addBackupAsset(assets, asset.uri, charName, asset.name);
-    }
-  }
-
-  addBackupAsset(assets, db.userIcon, "User Settings", "User Icon");
-  addBackupAsset(
-    assets,
-    db.customBackground,
-    "User Settings",
-    "Custom Background",
-  );
-  for (const persona of db.personas ?? []) {
-    if (persona?.icon) {
-      addBackupAsset(assets, persona.icon, "Persona", `${persona.name} Icon`);
-    }
-  }
-
-  if (scope === "essential") {
-    for (const item of db.characterOrder ?? []) {
-      if (typeof item === "string") continue;
-      addBackupAsset(assets, item.img, "Folder", `${item.name} Folder Image`);
-      addBackupAsset(
-        assets,
-        item.imgFile,
-        "Folder",
-        `${item.name} Folder Image File`,
-      );
-    }
-    for (const preset of db.botPresets ?? []) {
-      if (preset?.image) {
-        addBackupAsset(
-          assets,
-          preset.image,
-          "Preset",
-          `${preset.name} Preset Image`,
-        );
-      }
-    }
-  }
-  return assets;
+  return collectAllDomainAssets(db, scope);
 }
 
 function findBackupAssetInfo(
