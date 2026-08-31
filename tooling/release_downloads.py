@@ -6,7 +6,7 @@ replaces the ``<!-- release-downloads:** -->`` marker block left by
 ``tooling/release_notes.py`` with a per-platform download list, and writes
 the final Markdown body.
 
-Usage: python3 tooling/release_downloads.py <release.json> <output.md>
+Usage: python3 tooling/release_downloads.py <release.json> <output.md> <tag>
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 # Must stay in sync with DOWNLOADS_START/DOWNLOADS_END in tooling/release_notes.py
 DOWNLOADS_START = "<!-- release-downloads:start -->"
@@ -37,7 +38,23 @@ def escape_markdown_label(value: str) -> str:
     return value
 
 
-def format_download_section(assets: list[dict]) -> str:
+def tagged_download_url(url: str, tag: str) -> str:
+    """Replace the release tag segment without changing the asset path or host."""
+    match = re.search(r"/releases/download/[^/]+/", url)
+    if match is None:
+        raise ValueError(f"Unrecognized GitHub release asset URL: {url}")
+
+    prefix = "/releases/download/"
+    return f"{url[:match.start()]}{prefix}{quote(tag, safe='')}/{url[match.end():]}"
+
+
+def asset_download_url(asset: dict, tag: str | None) -> str:
+    """Return an asset URL pinned to ``tag`` when one is supplied."""
+    url = asset["browser_download_url"]
+    return tagged_download_url(url, tag) if tag else url
+
+
+def format_download_section(assets: list[dict], tag: str | None = None) -> str:
     """Render the per-platform download block wrapped in the markers."""
     lines = [DOWNLOADS_START, "## Downloads", ""]
 
@@ -51,7 +68,7 @@ def format_download_section(assets: list[dict]) -> str:
 
         lines.append(f"{label}:")
         lines.extend(
-            f"- [{escape_markdown_label(item['name'])}]({item['browser_download_url']})"
+            f"- [{escape_markdown_label(item['name'])}]({asset_download_url(item, tag)})"
             for item in downloads
         )
         lines.append("")
@@ -60,9 +77,11 @@ def format_download_section(assets: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def update_release_body(body: str, assets: list[dict]) -> str:
+def update_release_body(
+    body: str, assets: list[dict], tag: str | None = None
+) -> str:
     """Insert the download section into ``body``, replacing existing markers."""
-    downloads = format_download_section(assets)
+    downloads = format_download_section(assets, tag)
 
     # Preferred path: markers emitted by tooling/release_notes.py.
     start = body.find(DOWNLOADS_START)
@@ -87,14 +106,14 @@ def update_release_body(body: str, assets: list[dict]) -> str:
 
 
 def main(argv: list[str]) -> None:
-    if len(argv) != 2:
+    if len(argv) != 3:
         raise SystemExit(
-            "Usage: python3 tooling/release_downloads.py <release.json> <output.md>"
+            "Usage: python3 tooling/release_downloads.py <release.json> <output.md> <tag>"
         )
 
-    release_path, output_path = argv
+    release_path, output_path, tag = argv
     release = json.loads(Path(release_path).read_text(encoding="utf-8"))
-    body = update_release_body(release.get("body") or "", release["assets"])
+    body = update_release_body(release.get("body") or "", release["assets"], tag)
     Path(output_path).write_text(body, encoding="utf-8")
 
 

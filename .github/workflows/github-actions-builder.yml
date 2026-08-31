@@ -424,10 +424,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
+          BUILD_TAG: ${{ needs.prepare-release.outputs.build_tag }}
         shell: bash
         run: |
           gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" > release.json
-          python3 tooling/release_downloads.py release.json release-body.md
+          python3 tooling/release_downloads.py release.json release-body.md "$BUILD_TAG"
           jq -n --rawfile body release-body.md '{body: $body}' > release-body.json
           gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
             --input release-body.json >/dev/null
