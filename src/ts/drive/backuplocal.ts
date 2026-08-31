@@ -401,6 +401,11 @@ async function clearNodeBackupInlayStage(storage: NodeStorage) {
 }
 
 async function stageNodeInlaysForBackup(storage: NodeStorage) {
+  // Inlays are persisted on the server permanently since the remote inlay
+  // storage landed; this restage only re-exports what listInlayAssets still
+  // reports (local cache misses are resolved from the server by the inlay
+  // layer itself), so existing server keys are simply rewritten with the
+  // same payload.
   await clearNodeBackupInlayStage(storage);
   const inlays = await listInlayAssets();
   let batch = new Map<string, Uint8Array>();

@@ -1,20 +1,24 @@
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
-import localforage from "localforage";
 import { v4 } from "uuid";
 import { getImageType } from "src/ts/media";
 
 import { getModelInfo, LLMFlags, LLMFormat } from "src/ts/model/modellist";
 import { asBuffer } from "../../util";
+import {
+  clearInlayCache,
+  fetchRemoteInlayAsset,
+  getRemoteNodeStorage,
+  listInlayCacheEntries,
+  listRemoteInlayIds,
+  putRemoteInlayAsset,
+  readCachedInlay,
+  removeCachedInlay,
+  removeRemoteInlayAsset,
+  writeCachedInlay,
+} from "./inlayRemote";
 
-export type InlayAsset = {
-  data: string | Blob;
-  /** File extension */
-  ext: string;
-  height?: number;
-  name: string;
-  type: "image" | "video" | "audio" | "signature";
-  width?: number;
-};
+export type { InlayAsset } from "./inlayCodec";
+import type { InlayAsset } from "./inlayCodec";
 
 const inlayImageExts = ["jpg", "jpeg", "png", "gif", "webp", "avif"];
 
@@ -22,10 +26,64 @@ const inlayAudioExts = ["wav", "mp3", "ogg", "flac"];
 
 const inlayVideoExts = ["webm", "mp4", "mkv"];
 
-const inlayStorage = localforage.createInstance({
-  name: "inlay",
-  storeName: "inlay",
-});
+let remoteWriteFailed = false;
+
+/** Clears the inlay remote-write circuit breaker (used by tests and after successful migrations). */
+export function resetInlayRemoteWriteState() {
+  remoteWriteFailed = false;
+}
+
+async function writeInlayStorage(id: string, asset: InlayAsset) {
+  await writeCachedInlay(id, asset);
+  try {
+    const storage = await getRemoteNodeStorage();
+    if (!storage) return;
+    await putRemoteInlayAsset(id, asset);
+    remoteWriteFailed = false;
+  } catch (error) {
+    if (!remoteWriteFailed) {
+      console.warn(
+        "Inlay server upload failed; keeping local cache only",
+        error,
+      );
+    }
+    remoteWriteFailed = true;
+  }
+}
+
+export async function migrateLocalInlaysToServer(): Promise<{
+  migrated: number;
+  total: number;
+  failed: number;
+}> {
+  const storage = await getRemoteNodeStorage();
+  if (!storage) {
+    throw new Error("Inlay server storage is only available on the node server");
+  }
+  const stored = await readAllCachedInlays();
+  const remoteIds = new Set(await listRemoteInlayIds());
+  let migrated = 0;
+  let failed = 0;
+  const total = stored.length;
+  const pending = stored.filter(([id]) => !remoteIds.has(id));
+  for (const [id, asset] of pending) {
+    try {
+      await putRemoteInlayAsset(id, asset);
+      migrated++;
+    } catch (error) {
+      failed++;
+      console.warn(`Failed to upload inlay ${id} to server`, error);
+    }
+  }
+  if (migrated > 0 && failed === 0) {
+    resetInlayRemoteWriteState();
+  }
+  return { migrated, total: pending.length, failed };
+}
+
+async function readAllCachedInlays(): Promise<[string, InlayAsset][]> {
+  return listInlayCacheEntries();
+}
 
 export async function postInlayAsset(img: { name: string; data: Uint8Array }) {
   const extention = img.name.split(".").at(-1);
@@ -43,7 +101,7 @@ export async function postInlayAsset(img: { name: string; data: Uint8Array }) {
     });
     const imgid = v4();
 
-    await inlayStorage.setItem(imgid, {
+    await writeInlayStorage(imgid, {
       name: img.name,
       data: audioBlob,
       ext: extention,
@@ -59,7 +117,7 @@ export async function postInlayAsset(img: { name: string; data: Uint8Array }) {
     });
     const imgid = v4();
 
-    await inlayStorage.setItem(imgid, {
+    await writeInlayStorage(imgid, {
       name: img.name,
       data: videoBlob,
       ext: extention,
@@ -146,7 +204,7 @@ export async function writeInlayImage(
 
   const imgid = arg.id ?? v4();
 
-  await inlayStorage.setItem(imgid, {
+  await writeInlayStorage(imgid, {
     name: arg.name ?? imgid,
     data: imageBlob,
     ext: "png",
@@ -171,7 +229,7 @@ export async function saveInlayedSignature(
   sigid: string,
   signature: InlaySignature,
 ) {
-  await inlayStorage.setItem(sigid, {
+  await writeInlayStorage(sigid, {
     name: sigid,
     data: JSON.stringify(signature),
     ext: "json",
@@ -211,7 +269,7 @@ function blobToBase64(blob: Blob): Promise<string> {
 
 // Returns with base64 data URI
 export async function getInlayAsset(id: string) {
-  const img = await inlayStorage.getItem<InlayAsset | null>(id);
+  const img = await getInlayStorageItem(id);
   if (img === null) {
     return null;
   }
@@ -228,7 +286,7 @@ export async function getInlayAsset(id: string) {
 
 // Returns media data as Blob; signature data remains text.
 export async function getInlayAssetBlob(id: string) {
-  const img = await inlayStorage.getItem<InlayAsset | null>(id);
+  const img = await getInlayStorageItem(id);
   if (img === null) {
     return null;
   }
@@ -253,80 +311,61 @@ export async function getInlayAssetBlob(id: string) {
 }
 
 export async function listInlayAssets(): Promise<[id: string, InlayAsset][]> {
-  const assets: [id: string, InlayAsset][] = [];
-  await inlayStorage.iterate<InlayAsset, void>((value, key) => {
-    assets.push([key, value]);
-  });
+  const localEntries = await readAllCachedInlays();
+  const remoteStorage = await getRemoteNodeStorage();
+  if (!remoteStorage) {
+    return localEntries;
+  }
 
-  return assets;
+  const results: [id: string, InlayAsset][] = [];
+  const seen = new Set<string>();
+  for (const [id, asset] of localEntries) {
+    seen.add(id);
+    results.push([id, asset]);
+  }
+  try {
+    const remoteIds = await listRemoteInlayIds();
+    for (const id of remoteIds) {
+      if (seen.has(id)) continue;
+      const asset = await fetchRemoteInlayAsset(id);
+      if (asset) results.push([id, asset]);
+    }
+  } catch (error) {
+    console.warn("Failed to list remote inlays", error);
+  }
+
+  return results;
 }
 
 export async function setInlayAsset(id: string, img: InlayAsset) {
-  await inlayStorage.setItem(id, img);
+  await writeInlayStorage(id, img);
 }
 
-type InlayBackupMetadata = Omit<InlayAsset, "data"> & {
-  dataType: "blob" | "text";
-  mime?: string;
-};
-
-export async function encodeInlayAssetBackup(asset: InlayAsset): Promise<Uint8Array> {
-  const { data, ...rest } = asset;
-  const isBlob = data instanceof Blob;
-  const payload = isBlob
-    ? new Uint8Array(await data.arrayBuffer())
-    : new TextEncoder().encode(data);
-  const metadata: InlayBackupMetadata = {
-    ...rest,
-    dataType: isBlob ? "blob" : "text",
-    ...(isBlob && data.type ? { mime: data.type } : {}),
-  };
-  const metadataBytes = new TextEncoder().encode(JSON.stringify(metadata));
-  const output = new Uint8Array(4 + metadataBytes.byteLength + payload.byteLength);
-  new DataView(output.buffer).setUint32(0, metadataBytes.byteLength, true);
-  output.set(metadataBytes, 4);
-  output.set(payload, 4 + metadataBytes.byteLength);
-  return output;
-}
-
-export function decodeInlayAssetBackup(data: Uint8Array): InlayAsset {
-  if (data.byteLength < 4) throw new Error("Invalid inlay backup payload");
-  const metadataLength = new DataView(
-    data.buffer,
-    data.byteOffset,
-    data.byteLength,
-  ).getUint32(0, true);
-  if (metadataLength === 0 || metadataLength > 1024 * 1024 || 4 + metadataLength > data.byteLength) {
-    throw new Error("Invalid inlay backup metadata length");
-  }
-  const metadata = JSON.parse(
-    new TextDecoder().decode(data.subarray(4, 4 + metadataLength)),
-  ) as Partial<InlayBackupMetadata>;
-  if (
-    typeof metadata.name !== "string" ||
-    typeof metadata.ext !== "string" ||
-    !["image", "video", "audio", "signature"].includes(metadata.type ?? "") ||
-    (metadata.dataType !== "blob" && metadata.dataType !== "text")
-  ) {
-    throw new Error("Invalid inlay backup metadata");
-  }
-  const payload = data.subarray(4 + metadataLength);
-  const restoredData = metadata.dataType === "blob"
-    ? new Blob([asBuffer(payload)], { type: metadata.mime ?? "" })
-    : new TextDecoder().decode(payload);
-  return {
-    name: metadata.name,
-    ext: metadata.ext,
-    type: metadata.type,
-    ...(typeof metadata.width === "number" ? { width: metadata.width } : {}),
-    ...(typeof metadata.height === "number" ? { height: metadata.height } : {}),
-    data: restoredData,
-  } as InlayAsset;
-}
+export { encodeInlayAssetBackup, decodeInlayAssetBackup } from "./inlayCodec";
 
 export async function removeInlayAsset(id: string) {
-  await inlayStorage.removeItem(id);
+  await removeCachedInlay(id);
+  try {
+    await removeRemoteInlayAsset(id);
+  } catch (error) {
+    console.warn(`Failed to remove inlay ${id} from server`, error);
+  }
 }
+
+async function getInlayStorageItem(id: string): Promise<InlayAsset | null> {
+  const cached = await readCachedInlay(id);
+  if (cached !== null) {
+    return cached;
+  }
+  try {
+    return await fetchRemoteInlayAsset(id);
+  } catch (error) {
+    console.warn(`Failed to fetch inlay ${id} from server`, error);
+    return null;
+  }
+}
+
+export { clearInlayCache };
 
 export function supportsInlayImage() {
   const db = settingsStore.state;

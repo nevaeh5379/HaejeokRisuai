@@ -1,6 +1,6 @@
 <script lang="ts">
     import { language } from "src/lang";
-    import { alertConfirm } from "src/ts/alert";
+    import { alertConfirm, alertError, alertNormal } from "src/ts/alert";
     import { loadInternalBackup } from "src/ts/globalApi.svelte";
     import { isTauri, isNodeServer } from "src/ts/platform";
     import { checkDriver } from "src/ts/drive/drive";
@@ -8,6 +8,26 @@
     import Button from "src/lib/UI/GUI/Button.svelte";
     import { exportAsDataset } from "src/ts/storage/backup/exportAsDataset";
     import { cleanColdStorage } from "src/ts/process/coldstorage.svelte";
+    import { migrateLocalInlaysToServer } from "src/ts/process/files/inlays";
+
+    let inlayMigrating = $state(false);
+
+    async function runInlayMigration() {
+        if (inlayMigrating) return;
+        inlayMigrating = true;
+        try {
+            const result = await migrateLocalInlaysToServer();
+            if (result.failed > 0) {
+                alertError(language.inlayMigrationPartial(result.migrated, result.failed));
+            } else {
+                alertNormal(language.inlayMigrationDone(result.migrated));
+            }
+        } catch (error) {
+            alertError(error);
+        } finally {
+            inlayMigrating = false;
+        }
+    }
 </script>
 
 
@@ -72,6 +92,18 @@
     }} className="mt-2">
     {language.cleanColdStorage}
 </Button>
+
+{#if isNodeServer}
+    <Button
+        onclick={async () => {
+            if(await alertConfirm(language.inlayMigrationConfirm)){
+                runInlayMigration()
+            }
+        }} className="mt-2" disabled={inlayMigrating}>
+        {inlayMigrating ? language.inlayMigrationRunning : language.inlayMigrationButton}
+    </Button>
+    <p class="mt-1 text-xs text-textcolor2">{language.inlayMigrationDescription}</p>
+{/if}
 
 <Button
     onclick={async () => {
