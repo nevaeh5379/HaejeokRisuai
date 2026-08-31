@@ -898,6 +898,64 @@ export class WebSqliteStorage implements ISqlStorage {
     };
   }
 
+  async listRecentChats(
+    limit = 50,
+  ): Promise<import("../../ISqlStorage").SqlRecentChatMetadata[]> {
+    const normalizedLimit = Math.max(1, Math.min(Math.floor(limit), 100));
+    const rows = await this.selectRows<{
+      character_id: string;
+      character_name: string;
+      character_image: string | null;
+      character_kind: string;
+      chat_id: string;
+      chat_position: number;
+      chat_name: string;
+      folder_id: string | null;
+      last_message_time: number | null;
+      last_message_text: string | null;
+      last_message_encoded: string | null;
+    }>(
+      `SELECT c.id AS character_id,
+              c.name AS character_name,
+              c.image AS character_image,
+              c.kind AS character_kind,
+              ch.id AS chat_id,
+              ch.position AS chat_position,
+              ch.name AS chat_name,
+              ch.folder_id AS folder_id,
+              ch.last_message_time AS last_message_time,
+              m.content_text AS last_message_text,
+              m.content_encoded AS last_message_encoded
+         FROM chats ch
+         JOIN characters c ON c.id = ch.character_id
+    LEFT JOIN messages m ON m.chat_id = ch.id
+       AND m.position = COALESCE((
+              SELECT MAX(m2.position) FROM messages m2 WHERE m2.chat_id = ch.id
+            ), -1)
+        WHERE c.trash_time IS NULL
+        ORDER BY ch.last_message_time DESC
+        LIMIT ?`,
+      [normalizedLimit],
+    );
+    return rows.map((row) => ({
+      characterId: row.character_id,
+      characterName: (row.character_name as string) ?? "",
+      characterImage: row.character_image ?? null,
+      characterType:
+        row.character_kind === "group" ? ("group" as const) : ("character" as const),
+      chatId: row.chat_id,
+      chatPosition: Number(row.chat_position) || 0,
+      chatName: (row.chat_name as string) ?? "",
+      folderId: row.folder_id ?? null,
+      lastDate:
+        row.last_message_time == null ? null : Number(row.last_message_time),
+      lastMessage: decodedText(
+        row.last_message_text,
+        row.last_message_encoded,
+      ),
+    }));
+  }
+
   async loadPersonas(): Promise<RisuPersona[]> {
     return (
       ((await this.loadSettingValue("personas")) as

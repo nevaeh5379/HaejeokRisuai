@@ -4425,6 +4425,26 @@ app.get('/api/database-v2/chats/:chatId/messages', authenticatedRouteLimiter, as
     }
 });
 
+app.get('/api/database-v2/recent-chats', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) {
+        return;
+    }
+    if (!postgresStorage.enabled) {
+        res.status(404).send({
+            error: 'SQL storage is not configured',
+            code: 'sql_disabled',
+        });
+        return;
+    }
+    try {
+        await sendCompressedJson(req, res, {
+            chats: await postgresStorage.listRecentChats(req.query.limit),
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
 app.get('/api/database-v2/revisions', authenticatedRouteLimiter, async (req, res, next) => {
     if (!await checkAuth(req, res)) {
         return;

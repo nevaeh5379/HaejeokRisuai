@@ -6,6 +6,7 @@ import type {
   INodeSqlStorageAdmin,
   SqlStartupDataResult,
   SqlDatabaseSnapshotResult,
+  SqlRecentChatMetadata,
   BotPresetSummary,
   StoredBotPreset,
 } from "../ISqlStorage";
@@ -1152,6 +1153,29 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       );
     }
     return await response.json();
+  }
+
+  async listRecentChats(limit?: number): Promise<SqlRecentChatMetadata[]> {
+    if (!(await this.ensureEnabled())) {
+      return [];
+    }
+    const url =
+      limit !== undefined && limit !== null && limit > 0
+        ? `/api/database-v2/recent-chats?limit=${encodeURIComponent(limit)}`
+        : "/api/database-v2/recent-chats";
+    const response = await fetch(url, {
+      method: "GET",
+      cache: "no-cache",
+      headers: await this.authHeaders(),
+    });
+    if (response.status === 404) {
+      return [];
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(response, "PostgreSQL recent chats load failed");
+    }
+    const body: { chats: SqlRecentChatMetadata[] } = await response.json();
+    return body.chats ?? [];
   }
 
   async listRevisions(limit?: number): Promise<NodePostgresRevision[]> {

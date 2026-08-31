@@ -2788,6 +2788,47 @@ class PostgresStorage extends SqlStorageBase {
         }
     }
 
+    async listRecentChats(rawLimit) {
+        this.assertEnabled();
+        const parsedLimit = Number.parseInt(rawLimit, 10);
+        const limit = Number.isSafeInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 50;
+        const result = await this.pool.query(
+            `SELECT ch.character_id,
+                    c.name AS character_name,
+                    c.image AS character_image,
+                    c.kind AS character_kind,
+                    ch.id AS chat_id,
+                    ch.position AS chat_position,
+                    ch.name AS chat_name,
+                    ch.folder_id,
+                    ch.last_message_time,
+                    m.content_text AS last_message_text
+               FROM chat.chats AS ch
+               JOIN character.characters AS c ON c.id = ch.character_id
+               LEFT JOIN chat.messages AS m
+                 ON m.chat_id = ch.id
+                AND m.position = COALESCE((
+                      SELECT MAX(m2.position) FROM chat.messages AS m2 WHERE m2.chat_id = ch.id
+                    ), -1)
+              WHERE c.trash_time IS NULL
+              ORDER BY ch.last_message_time DESC NULLS LAST
+              LIMIT $1`,
+            [limit]
+        );
+        return result.rows.map((row) => ({
+            characterId: row.character_id,
+            characterName: row.character_name || '',
+            characterImage: row.character_image || null,
+            characterType: row.character_kind === 'group' ? 'group' : 'character',
+            chatId: row.chat_id,
+            chatPosition: Number(row.chat_position) || 0,
+            chatName: row.chat_name || '',
+            folderId: row.folder_id || null,
+            lastDate: row.last_message_time == null ? null : Number(row.last_message_time),
+            lastMessage: row.last_message_text || '',
+        }));
+    }
+
     async searchMessages(rawQuery, rawScope = 'all', rawLimit = 50) {
         this.assertEnabled();
         const query = typeof rawQuery === 'string' ? rawQuery.trim() : '';
