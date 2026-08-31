@@ -436,8 +436,27 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
+          BUILD_TAG: ${{ needs.prepare-release.outputs.build_tag }}
         shell: bash
         run: |
+          jq -n \
+            --arg tag "$BUILD_TAG" \
+            --arg target "$GITHUB_SHA" \
+            '{tag_name: $tag, target_commitish: $target, draft: false, make_latest: "true"}' \
+            > release-publish-payload.json
+
           gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
-            -F draft=false \
-            -f make_latest=true >/dev/null
+            --input release-publish-payload.json >/dev/null
+
+          ACTUAL_TAG=$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" --jq '.tag_name')
+          if [ "$ACTUAL_TAG" != "$BUILD_TAG" ]; then
+            echo "Published release ${RELEASE_ID} was associated with tag ${ACTUAL_TAG}; retrying with ${BUILD_TAG}" >&2
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+              --input release-publish-payload.json >/dev/null
+            ACTUAL_TAG=$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" --jq '.tag_name')
+          fi
+
+          if [ "$ACTUAL_TAG" != "$BUILD_TAG" ]; then
+            echo "Published release ${RELEASE_ID} is associated with tag ${ACTUAL_TAG}, expected ${BUILD_TAG}" >&2
+            exit 1
+          fi
