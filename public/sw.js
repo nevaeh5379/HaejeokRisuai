@@ -7,6 +7,25 @@ self.addEventListener('activate', (event) => {
 })
 
 const downloadStreams = new Map()
+// The page fires the /sw/download request right after posting the
+// REGISTER_STREAM_DOWNLOAD message. The two cross the same IPC boundary in
+// either order, so a fetch that arrives before its registration must wait
+// briefly — otherwise the browser downloads an empty/404 body and the user
+// sees a silent empty backup file. Unknown/expired ids simply pay a short
+// delay before the 404 (an acceptable cost for a rare path).
+const PENDING_REGISTER_GRACE_MS = 1500
+
+function waitForStreamRegistration(id) {
+    return new Promise((resolve) => {
+        const startedAt = Date.now()
+        const poll = () => {
+            if (downloadStreams.has(id)) return resolve(true)
+            if (Date.now() - startedAt >= PENDING_REGISTER_GRACE_MS) return resolve(false)
+            setTimeout(poll, 25)
+        }
+        poll()
+    })
+}
 
 self.addEventListener('message', (event) => {
     if (event.data?.type === 'REGISTER_STREAM_DOWNLOAD') {
@@ -17,9 +36,14 @@ self.addEventListener('message', (event) => {
                 start(controller) {
                     streamPort.onmessage = (e) => {
                         if (e.data?.done) {
+                            // The producer finished writing. Closing the
+                            // stream flushes the buffered chunks; the entry
+                            // must STAY in downloadStreams until the download
+                            // request actually consumes it (the /sw/download
+                            // handler deletes it). Deleting here raced the
+                            // browser's download request and produced silent
+                            // empty backup files.
                             try { controller.close() } catch {}
-                            try { streamPort.close() } catch {}
-                            downloadStreams.delete(id)
                         } else if (e.data?.error) {
                             try { controller.error(new Error(e.data.error)) } catch {}
                             try { streamPort.close() } catch {}
@@ -49,21 +73,26 @@ self.addEventListener('fetch', (event) => {
             switch (path[2]){
                 case "download": {
                     const id = url.searchParams.get('id')
-                    const item = downloadStreams.get(id)
-                    if (item) {
+                    event.respondWith((async () => {
+                        // Wait out the register/fetch race described above.
+                        if (!(await waitForStreamRegistration(id))) {
+                            return new Response("Download stream not found or expired", { status: 404 })
+                        }
+                        const item = downloadStreams.get(id)
+                        if (!item) {
+                            return new Response("Download stream not found or expired", { status: 404 })
+                        }
                         downloadStreams.delete(id)
                         const rawFilename = item.filename || 'backup.bin'
                         const encodedFilename = encodeURIComponent(rawFilename)
-                        event.respondWith(new Response(item.readable, {
+                        return new Response(item.readable, {
                             headers: {
                                 'Content-Type': 'application/octet-stream',
                                 'Content-Disposition': `attachment; filename="${rawFilename.replace(/"/g, '')}"; filename*=UTF-8''${encodedFilename}`,
                                 'Cache-Control': 'no-store'
                             }
-                        }))
-                    } else {
-                        event.respondWith(new Response("Download stream not found or expired", { status: 404 }))
-                    }
+                        })
+                    })())
                     break
                 }
                 case "check":{
