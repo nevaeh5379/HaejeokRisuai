@@ -9,7 +9,6 @@ import {
   globalFetch,
   readImage,
   saveAsset,
-  toGetter,
 } from "../globalApi.svelte";
 import {
   hotReloading,
@@ -512,7 +511,8 @@ export async function loadPlugins() {
     (a: RisuPlugin) => a.version === "3.0",
   );
 
-  await loadV2Plugin(pluginV2);
+  // HaejeokRisuai does not support V2 Plugins.
+  // await loadV2Plugin(pluginV2);
   if (pluginV3.length > 0) {
     const { loadV3Plugins } = await import("./apiV3/v3.svelte");
     await loadV3Plugins(pluginV3);
@@ -780,7 +780,7 @@ export const getV2PluginAPIs = () => {
       safeGlobal.showDirectoryPicker = directoryPicker?.bind(window);
 
       safeGlobal.DBState = {
-        db: toGetter(globalThis.__pluginApis__.getDatabase),
+        db: globalThis.__pluginApis__.getDatabase(),
       };
       safeGlobal.setInterval = (...args: any[]) => {
         //@ts-expect-error spreading any[] into setInterval params causes type mismatch with TimerHandler signature

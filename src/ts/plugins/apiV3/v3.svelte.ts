@@ -893,13 +893,13 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       if (!conf) {
         return null;
       }
-      const db = settingsStore.state;
-      let liteDB = {};
+      const db = oldApis.getDatabase();
+      const liteDB = {};
       for (const key of allowedDbKeys) {
         if (includeOnly !== "all" && !includeOnly.includes(key)) {
           continue;
         }
-        (liteDB as any)[key] = $state.snapshot((db as any)[key]);
+        (liteDB as any)[key] = $state.snapshot(db[key]);
       }
       return liteDB;
     },
