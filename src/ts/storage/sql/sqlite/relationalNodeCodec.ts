@@ -88,9 +88,10 @@ function encodedText(value: string): {
     : { text: null, encoded: encodeUtf16(value) };
 }
 
-function decodedText(text: unknown, encoded: unknown): string {
-  if (encoded !== null && encoded !== undefined)
+export function decodedText(text: unknown, encoded: unknown): string {
+  if (encoded !== null && encoded !== undefined && encoded !== "") {
     return decodeUtf16(String(encoded));
+  }
   return String(text ?? "");
 }
 

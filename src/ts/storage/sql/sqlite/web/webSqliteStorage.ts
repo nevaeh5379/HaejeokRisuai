@@ -37,6 +37,7 @@ import {
 import { applySqliteCommit, writeSqliteColdStorage } from "../sqliteCommit";
 import {
   rebuildRelationalValue,
+  decodedText,
   RELATIONAL_SCHEMA_LAYOUT,
   SQLITE_SCHEMA_VERSION,
   SqlSchemaResetRequiredError,
@@ -493,7 +494,17 @@ export class WebSqliteStorage implements ISqlStorage {
     }
     const db: CanonicalDatabase = {} as CanonicalDatabase;
 
-    const settingsRows = await this.selectRows("SELECT key FROM system_settings");
+    const settingsRows = await this.selectRows<{
+      key: string;
+      domain: string;
+      value_type: string;
+      text_value: string | null;
+      encoded_text_value: string | null;
+      number_value: number | null;
+      boolean_value: number | null;
+    }>(
+      "SELECT key, domain, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system_settings",
+    );
     const deferredKeyList = [...LEGACY_PERSONA_MIRROR_KEYS];
     const deferredKeys = new Set<string>(deferredKeyList);
     const settingNodeQuery = buildDeferredSettingsQuery(deferredKeyList);
@@ -505,11 +516,32 @@ export class WebSqliteStorage implements ISqlStorage {
       settingNodeRows as SettingNodeRow[],
     );
     for (const row of settingsRows) {
-      const key = row.key as string;
+      const key = row.key;
       if (deferredKeys.has(key)) continue;
-      // The batched node read above already covers every non-deferred key;
-      // a key without node rows simply stores `undefined`.
-      (db as Record<string, unknown>)[key] = settingValues.get(key);
+      if (settingValues.has(key)) {
+        (db as Record<string, unknown>)[key] = settingValues.get(key);
+      } else {
+        switch (row.value_type) {
+          case "string":
+            (db as Record<string, unknown>)[key] = decodedText(
+              row.text_value,
+              row.encoded_text_value,
+            );
+            break;
+          case "number":
+            (db as Record<string, unknown>)[key] = Number(row.number_value);
+            break;
+          case "boolean":
+            (db as Record<string, unknown>)[key] = Boolean(row.boolean_value);
+            break;
+          case "null":
+            (db as Record<string, unknown>)[key] = null;
+            break;
+          case "undefined":
+            (db as Record<string, unknown>)[key] = undefined;
+            break;
+        }
+      }
     }
 
     if (
@@ -555,6 +587,15 @@ export class WebSqliteStorage implements ISqlStorage {
         [row.id],
       )) ?? {}) as character | groupChat;
       fullChar.chaId = row.id;
+      fullChar.name = (row.name as string) ?? fullChar.name ?? "";
+      fullChar.type = (row.kind as "character" | "group") ?? fullChar.type ?? "character";
+      fullChar.image = (row.image as string) ?? fullChar.image ?? "";
+      fullChar.trashTime = (row.trash_time as number) ?? fullChar.trashTime;
+      fullChar.lastInteraction = (row.last_interaction_time as number) ?? fullChar.lastInteraction;
+      if (fullChar.type === "character") {
+        fullChar.creation_date = (row.creation_time as number) ?? fullChar.creation_date;
+        fullChar.modification_date = (row.modification_time as number) ?? fullChar.modification_date;
+      }
       fullChar.detailsLoaded = true;
       const chats = await this.loadCharacterChats(row.id);
       for (const chat of chats) {

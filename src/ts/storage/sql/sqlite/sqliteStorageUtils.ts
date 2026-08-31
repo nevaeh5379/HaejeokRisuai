@@ -5,6 +5,7 @@ export interface SqliteTransactionStatement {
 
 import {
   rebuildRelationalValue,
+  decodedText,
   type RelationalNodeRow,
 } from "./relationalNodeCodec";
 import type { Message } from "../../database/schema";
@@ -126,7 +127,10 @@ export function rebuildMessageRows(
     // them remain readable because the core values simply replace the copies.
     message.role = String(core.message_role ?? "char") as Message["role"];
     if (!Object.prototype.hasOwnProperty.call(message, "data")) {
-      message.data = String(core.message_content_text ?? "");
+      message.data = decodedText(
+        core.message_content_text as string | null,
+        core.message_content_encoded as string | null,
+      );
     }
     if (core.message_sender_name != null) {
       message.name = String(core.message_sender_name);
@@ -237,7 +241,7 @@ export function buildMessageRowsQuery(
   mode: MessageLoadMode = "full",
 ): { sql: string; bind: unknown[] } {
   let selectedSql =
-    "SELECT chat_id, id, position, role, content_text, sender_name, sent_time, generation_model, input_tokens, output_tokens FROM messages WHERE chat_id = ?";
+    "SELECT chat_id, id, position, role, content_text, content_encoded, sender_name, sent_time, generation_model, input_tokens, output_tokens FROM messages WHERE chat_id = ?";
   const bind: unknown[] = [chatId];
   if (limit === undefined) {
     selectedSql += " ORDER BY position";
@@ -281,6 +285,7 @@ excluded(chat_id, message_id, node_id) AS (
     sql: `WITH selected AS (${selectedSql})${withExcluded}
    SELECT selected.id AS message_id, selected.position AS message_position,
           selected.role AS message_role, selected.content_text AS message_content_text,
+          selected.content_encoded AS message_content_encoded,
           selected.sender_name AS message_sender_name, selected.sent_time AS message_sent_time,
           selected.generation_model AS message_generation_model,
           selected.input_tokens AS message_input_tokens,

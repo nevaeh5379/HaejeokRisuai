@@ -43,8 +43,6 @@ import {
   setColdStorageItem,
 } from "../process/coldstorage.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
-import { createDatabaseSnapshot } from "../storage/database/databaseSnapshot";
 import { NodeStorage } from "../storage/files/nodeStorage";
 import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
 import { presetStore } from "../stores/domain/presetStore.svelte";
@@ -510,73 +508,33 @@ type BackupDatabaseDraft = CanonicalDatabase &
 
 async function loadFullSqlBackupSnapshot(
   onProgress?: (msg: string) => void,
-): Promise<BackupDatabaseDraft | null> {
-  try {
-    const storage = await getSqlStorage();
-    if (!(await storage.init())) return null;
-
-    const startedAt = Date.now();
-    const update = () =>
-      onProgress?.(
-        `Loading full database snapshot (elapsed ${formatBackupElapsed(startedAt)})`,
-      );
-    update();
-    const timer = setInterval(update, 1000);
-    try {
-      const loaded = await storage.exportDatabaseSnapshot();
-      if (!loaded?.database) return null;
-      return loaded.database;
-    } finally {
-      clearInterval(timer);
-    }
-  } catch (error) {
-    console.warn(
-      "Full SQL backup snapshot failed; falling back to entity loading:",
-      error,
-    );
-    return null;
-  }
-}
-
-async function loadFallbackBackupSnapshot(
-  onProgress?: (msg: string) => void,
 ): Promise<BackupDatabaseDraft> {
-  onProgress?.("Loading database from storage...");
-  await deferredSettingsLoader.ensureAll();
-  // $state.snapshot already returns a detached deep copy of the reactive
-  // tree, so a second structuredClone here doubled the peak memory of the
-  // backup path (the dominant cost on 4GB Android devices) for no benefit.
-  const snapshot: BackupDatabaseDraft = createDatabaseSnapshot();
-
-  try {
-    const storage = await getSqlStorage();
-    if (!storage.isEnabled()) return snapshot;
-    const total = snapshot.characters?.length ?? 0;
-    for (let index = 0; index < total; index++) {
-      const shell = snapshot.characters[index];
-      if (!shell?.chaId) continue;
-      onProgress?.(`Loading character chats (${index + 1} / ${total})`);
-      const fullCharacter = await storage.loadCharacter(shell.chaId);
-      if (fullCharacter) snapshot.characters[index] = fullCharacter;
-      const character = snapshot.characters[index];
-      for (
-        let chatIndex = 0;
-        chatIndex < (character.chats?.length ?? 0);
-        chatIndex++
-      ) {
-        const chat = character.chats[chatIndex];
-        if (!chat?.id) continue;
-        const fullChat = await storage.loadChat(chat.id);
-        if (fullChat) character.chats[chatIndex] = fullChat;
-      }
+  const storage = await getSqlStorage();
+  if (!storage.isEnabled()) {
+    const ok = await storage.init();
+    if (!ok || !storage.isEnabled()) {
+      throw new Error("Failed to initialize SQL storage for backup snapshot");
     }
-  } catch (error) {
-    console.warn(
-      "Backup entity fallback could not fully hydrate SQL data:",
-      error,
-    );
   }
-  return snapshot;
+
+  const startedAt = Date.now();
+  const update = () =>
+    onProgress?.(
+      `Loading full database snapshot (elapsed ${formatBackupElapsed(startedAt)})`,
+    );
+  update();
+  const timer = setInterval(update, 1000);
+  try {
+    const loaded = await storage.exportDatabaseSnapshot();
+    if (!loaded?.database) {
+      throw new Error(
+        "SQL storage returned an uninitialized or empty database snapshot",
+      );
+    }
+    return loaded.database;
+  } finally {
+    clearInterval(timer);
+  }
 }
 
 function normalizeBackupSnapshot(db: BackupDatabaseDraft): PortableDatabase {
@@ -636,9 +594,7 @@ export async function createBackupDatabaseSnapshot(
 ): Promise<PortableDatabase> {
   await flushDurableStores();
 
-  const db =
-    (await loadFullSqlBackupSnapshot(onProgress)) ??
-    (await loadFallbackBackupSnapshot(onProgress));
+  const db = await loadFullSqlBackupSnapshot(onProgress);
 
   ensureAllDomains(db);
 

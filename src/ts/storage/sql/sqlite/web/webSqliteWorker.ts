@@ -29,6 +29,7 @@ import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
 import sqliteSchemaSql from "../sqlite-schema.sql?raw";
 import {
   rebuildRelationalValue,
+  decodedText,
   SQLITE_SCHEMA_VERSION,
   RELATIONAL_SCHEMA_LAYOUT,
   SqlSchemaResetRequiredError,
@@ -285,7 +286,10 @@ function rebuildMessagesFromRows(
 
     message.role = String(core.message_role ?? "char");
     if (!Object.prototype.hasOwnProperty.call(message, "data")) {
-      message.data = String(core.message_content_text ?? "");
+      message.data = decodedText(
+        core.message_content_text as string | null,
+        core.message_content_encoded as string | null,
+      );
     }
     if (core.message_sender_name != null) {
       message.name = String(core.message_sender_name);

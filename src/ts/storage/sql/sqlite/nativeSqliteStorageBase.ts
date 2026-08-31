@@ -38,6 +38,7 @@ import {
 } from "../sqlCommit";
 import {
   rebuildRelationalValue,
+  decodedText,
   RELATIONAL_SCHEMA_LAYOUT,
   SQLITE_SCHEMA_VERSION,
   SqlSchemaResetRequiredError,
@@ -228,7 +229,10 @@ export abstract class NativeSqliteStorageBase {
                THEN 1 ELSE 0 END AS startup_oversized,`
       : "";
     return {
-      sql: `SELECT s.key AS setting_key, n.node_id, n.parent_node_id, n.node_order,
+      sql: `SELECT s.key AS setting_key, s.domain AS setting_domain, s.value_type AS setting_value_type,
+              s.text_value AS setting_text_value, s.encoded_text_value AS setting_encoded_text_value,
+              s.number_value AS setting_number_value, s.boolean_value AS setting_boolean_value,
+              n.node_id, n.parent_node_id, n.node_order,
               ${objectKey} AS object_key, ${encodedObjectKey} AS object_key_encoded,
               n.value_type, ${textValue} AS text_value,
               ${encodedTextValue} AS encoded_text_value, n.number_value, n.boolean_value,
@@ -251,17 +255,60 @@ export abstract class NativeSqliteStorageBase {
   ): { values: Map<string, unknown>; keyCount: number; deferredKeys: Set<string> } {
     const deferredKeys = new Set(deferredKeyList);
     const grouped = new Map<string, Record<string, unknown>[]>();
+    const rootRows = new Map<string, Record<string, unknown>>();
     for (const row of rows) {
       const key = String(row.setting_key ?? "");
+      if (!rootRows.has(key)) rootRows.set(key, row);
       if (Number(row.startup_oversized) === 1) deferredKeys.add(key);
       const nodes = grouped.get(key) ?? [];
-      if (row.node_id !== null) nodes.push(row);
+      if (row.node_id !== null && row.node_id !== undefined) nodes.push(row);
       grouped.set(key, nodes);
     }
     const values = new Map<string, unknown>();
     for (const [key, nodes] of grouped) {
       if (deferredKeys.has(key)) continue;
-      values.set(key, nodes.length ? rebuildRelationalValue(nodes) : undefined);
+      if (nodes.length) {
+        values.set(key, rebuildRelationalValue(nodes));
+      } else {
+        const root = rootRows.get(key);
+        if (!root) {
+          values.set(key, undefined);
+          continue;
+        }
+        const valType = root.setting_value_type ?? root.value_type;
+        switch (valType) {
+          case "string":
+            values.set(
+              key,
+              decodedText(
+                root.setting_text_value ?? root.text_value,
+                root.setting_encoded_text_value ?? root.encoded_text_value,
+              ),
+            );
+            break;
+          case "number":
+            values.set(
+              key,
+              Number(root.setting_number_value ?? root.number_value),
+            );
+            break;
+          case "boolean":
+            values.set(
+              key,
+              Boolean(root.setting_boolean_value ?? root.boolean_value),
+            );
+            break;
+          case "null":
+            values.set(key, null);
+            break;
+          case "undefined":
+            values.set(key, undefined);
+            break;
+          default:
+            values.set(key, undefined);
+            break;
+        }
+      }
     }
     return { values, keyCount: grouped.size, deferredKeys };
   }
@@ -398,6 +445,15 @@ export abstract class NativeSqliteStorageBase {
         [row.id],
       )) ?? {}) as character | groupChat;
       fullChar.chaId = row.id;
+      fullChar.name = row.name ?? fullChar.name ?? "";
+      fullChar.type = (row.kind as "character" | "group") ?? fullChar.type ?? "character";
+      fullChar.image = row.image ?? fullChar.image ?? "";
+      fullChar.trashTime = row.trash_time ?? fullChar.trashTime;
+      fullChar.lastInteraction = row.last_interaction_time ?? fullChar.lastInteraction;
+      if (fullChar.type === "character") {
+        fullChar.creation_date = row.creation_time ?? fullChar.creation_date;
+        fullChar.modification_date = row.modification_time ?? fullChar.modification_date;
+      }
       fullChar.detailsLoaded = true;
       const chatRows = await this.selectRows<{
         id: string;
