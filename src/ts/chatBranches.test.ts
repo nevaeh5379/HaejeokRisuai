@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   activateChatBranch,
+  createEditedMessageBranch,
   createChatTimelineBranch,
   getChatBranchMessages,
   getRerollAlternatives,
@@ -75,7 +76,7 @@ describe("chatBranches", () => {
     expect(chat.id).toBe("chat-1");
   });
 
-  it("keeps edited user input consistent across saved branch copies", () => {
+  it("keeps same-ID message edits consistent across saved branch copies", () => {
     const chat = makeChat([
       makeMessage("user", "first prompt", "m1"),
       makeMessage("char", "first answer", "m2"),
@@ -109,6 +110,57 @@ describe("chatBranches", () => {
     expect(chat.message[2]?.data).toBe("edited input");
     activateChatBranch(chat, child.id);
     expect(chat.message[2]?.data).toBe("edited input");
+  });
+
+  it("creates a distinct branch when a user input is edited", () => {
+    const chat = makeChat([
+      makeMessage("user", "first prompt", "m1"),
+      makeMessage("char", "first answer", "m2"),
+      makeMessage("user", "original input", "m3"),
+      makeMessage("char", "original response", "m4"),
+    ]);
+
+    const editedBranch = createEditedMessageBranch(chat, 2, "edited input", 10)!;
+    const originalBranchId = editedBranch.parentBranchId!;
+
+    expect(chat.branchState?.baseMessageIndex).toBe(1);
+    expect(chat.branchState?.activeBranchId).toBe(editedBranch.id);
+    expect(chat.message.map((message) => message.data)).toEqual([
+      "first prompt",
+      "first answer",
+      "edited input",
+    ]);
+    expect(chat.message[2]?.chatId).not.toBe("m3");
+    expect(getChatBranchMessages(chat, originalBranchId).map((message) => message.data)).toEqual([
+      "first prompt",
+      "first answer",
+      "original input",
+      "original response",
+    ]);
+
+    activateChatBranch(chat, originalBranchId);
+    expect(chat.message[2]?.chatId).toBe("m3");
+    activateChatBranch(chat, editedBranch.id);
+    expect(chat.message[2]?.data).toBe("edited input");
+  });
+
+  it("can branch an edit from the first user input", () => {
+    const chat = makeChat([
+      makeMessage("user", "original input", "m1"),
+      makeMessage("char", "original response", "m2"),
+    ]);
+
+    const editedBranch = createEditedMessageBranch(chat, 0, "edited input", 10)!;
+    const originalBranchId = editedBranch.parentBranchId!;
+
+    expect(chat.branchState?.baseMessageIndex).toBe(-1);
+    expect(getChatBranchMessages(chat, originalBranchId).map((message) => message.data)).toEqual([
+      "original input",
+      "original response",
+    ]);
+    expect(getChatBranchMessages(chat, editedBranch.id).map((message) => message.data)).toEqual([
+      "edited input",
+    ]);
   });
 
   it("treats rerolls from the same turn as sibling timelines", () => {

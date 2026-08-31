@@ -5,6 +5,7 @@ import {
   getChatBranches,
   type ChatGraphTimeline,
 } from "./branches";
+import { createEditedMessageBranch } from "../chatBranches";
 import type { Chat, Message } from "../storage/database/schema";
 
 function message(
@@ -175,5 +176,27 @@ describe("getChatBranches", () => {
       "focused tab message",
       "focused tab response",
     ]);
+  });
+
+  it("renders edited user input as a separate branch node", () => {
+    const chat = {
+      message: [
+        message("u1", "user", "first prompt"),
+        message("a1", "char", "first answer"),
+        message("u2", "user", "original input"),
+        message("a2", "char", "original response"),
+      ],
+    } as Chat;
+
+    createEditedMessageBranch(chat, 2, "edited input", 10);
+    const graph = getChatBranches(chat);
+    const originalInput = graph.nodes.find((node) => node.preview === "original input")!;
+    const editedInput = graph.nodes.find((node) => node.preview === "edited input")!;
+    const fork = graph.nodes.find((node) => node.preview === "first answer")!;
+
+    expect(graph.timelineCount).toBe(2);
+    expect(originalInput.id).not.toBe(editedInput.id);
+    expect(originalInput.y).toBe(editedInput.y);
+    expect(fork.branchPoint).toBe(true);
   });
 });
