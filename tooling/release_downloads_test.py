@@ -46,6 +46,22 @@ class FormatDownloadSectionTest(unittest.TestCase):
         self.assertRegex(updated, r"<!-- release-downloads:end -->\n\nChanges\n$")
         self.assertEqual(updated.count("## Downloads"), 1)
 
+    def test_replaces_stale_asset_url_tags_with_the_requested_build_tag(self):
+        stale_assets = [
+            {
+                **item,
+                "browser_download_url": item["browser_download_url"].replace(
+                    "/b10/", "/untagged-generated/"
+                ),
+            }
+            for item in ASSETS
+        ]
+
+        updated = update_release_body("## b11\n\nChanges", stale_assets, "b11")
+
+        self.assertIn("/releases/download/b11/", updated)
+        self.assertNotIn("untagged-generated", updated)
+
     def test_fails_instead_of_publishing_an_incomplete_platform_list(self):
         with self.assertRaisesRegex(
             ValueError, "No Android release download was found"

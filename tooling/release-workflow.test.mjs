@@ -16,6 +16,11 @@ const publishStep = workflow.slice(
   workflow.indexOf("      - name: Publish release"),
 );
 
+const downloadLinksStep = workflow.slice(
+  workflow.indexOf("      - name: Add platform download links to release notes"),
+  workflow.indexOf("      - name: Publish release"),
+);
+
 test("binds every draft release to the requested build tag", () => {
   assert.match(releaseStep, /target_commitish: \$target/);
   assert.match(releaseStep, /\.tag_name == \$tag or \.name == \$tag/);
@@ -34,6 +39,17 @@ test("gives Tauri a deterministic release commit target", () => {
   assert.match(
     workflow,
     /tagName: \$\{\{ needs\.prepare-release\.outputs\.build_tag \}\}\n\s+releaseCommitish: \$\{\{ github\.sha \}\}/,
+  );
+});
+
+test("builds release-note download links with the requested build tag", () => {
+  assert.match(
+    downloadLinksStep,
+    /BUILD_TAG: \$\{\{ needs\.prepare-release\.outputs\.build_tag \}\}/,
+  );
+  assert.match(
+    downloadLinksStep,
+    /python3 tooling\/release_downloads\.py release\.json release-body\.md "\$BUILD_TAG"/,
   );
 });
 
