@@ -944,13 +944,42 @@ kernel_socket_details() {
     done
 }
 
+containers_publishing_port() {
+    publishing_protocol=$1
+    publishing_port=$2
+    case "$container_engine" in
+        docker)
+            container ps --filter "publish=$publishing_port/$publishing_protocol" --format '{{.ID}}' 2>/dev/null || true
+            ;;
+        podman)
+            # Podman does not support Docker's `publish` ps filter. Inspect the
+            # compact port listing instead so gvproxy-owned listeners can still
+            # be attributed to this installation's container on macOS/Windows.
+            container ps --format '{{.ID}}' 2>/dev/null | while IFS= read -r publishing_id; do
+                publishing_ports=$(container port "$publishing_id" 2>/dev/null || true)
+                if printf '%s\n' "$publishing_ports" | awk -v protocol="$publishing_protocol" -v port="$publishing_port" '
+                    $1 ~ ("/" protocol "$") {
+                        host_port = $NF
+                        sub(/^.*:/, "", host_port)
+                        if (host_port == port) found = 1
+                    }
+                    END { exit !found }
+                '; then
+                    printf '%s\n' "$publishing_id"
+                fi
+            done
+            ;;
+        *) return 64 ;;
+    esac
+}
+
 port_details() {
     detail_protocol=$1
     detail_port=$2
     detail_bind=$3
     owned_binding=false
     foreign_binding=false
-    container_ids=$(container ps --filter "publish=$detail_port/$detail_protocol" --format '{{.ID}}' 2>/dev/null || true)
+    container_ids=$(containers_publishing_port "$detail_protocol" "$detail_port")
     for detail_id in $container_ids; do
         if container_belongs_to_installation "$detail_id"; then
             owned_binding=true
