@@ -60,6 +60,28 @@ CREATE TABLE IF NOT EXISTS setting_extension_nodes (
 );
 CREATE INDEX IF NOT EXISTS setting_nodes_parent_idx ON setting_extension_nodes (setting_key, parent_node_id, node_order);
 
+CREATE TABLE IF NOT EXISTS module_records (
+    module_id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL UNIQUE CHECK (position >= 0),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS module_records_position_idx ON module_records (position);
+
+CREATE TABLE IF NOT EXISTS module_extension_nodes (
+    module_id TEXT NOT NULL REFERENCES module_records(module_id) ON DELETE CASCADE,
+    node_id INTEGER NOT NULL, parent_node_id INTEGER, node_order INTEGER NOT NULL CHECK (node_order >= 0),
+    object_key TEXT, object_key_encoded TEXT,
+    value_type TEXT NOT NULL CHECK (value_type IN ('null','undefined','boolean','number','string','array','object')),
+    text_value TEXT, encoded_text_value TEXT, number_value REAL,
+    boolean_value INTEGER CHECK (boolean_value IN (0, 1)),
+    PRIMARY KEY (module_id, node_id),
+    FOREIGN KEY (module_id, parent_node_id) REFERENCES module_extension_nodes(module_id, node_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    CHECK (node_id = 0 OR parent_node_id IS NOT NULL),
+    CHECK (text_value IS NULL OR encoded_text_value IS NULL),
+    CHECK (object_key IS NULL OR object_key_encoded IS NULL)
+);
+CREATE INDEX IF NOT EXISTS module_nodes_parent_idx ON module_extension_nodes (module_id, parent_node_id, node_order);
+
 CREATE TABLE IF NOT EXISTS characters (
     id TEXT PRIMARY KEY, position INTEGER NOT NULL CHECK (position >= 0),
     kind TEXT NOT NULL DEFAULT 'character' CHECK (kind IN ('character', 'group')),

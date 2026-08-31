@@ -363,7 +363,7 @@ export async function writeSqliteColdStorage(
 }
 
 export function countSqliteCommitStatements(commit: SqlCommit): number {
-  let total = commit.replaceAll ? 2 : 0;
+  let total = commit.replaceAll ? 3 : 0;
   const replacingEntities = commit.action === "replace-entities";
 
   for (const upsert of commit.root.upserts) {
@@ -394,6 +394,15 @@ export function countSqliteCommitStatements(commit: SqlCommit): number {
     if (commit.presets.activeId !== undefined) {
       total += 1 + countReplaceNodeStatements(commit.presets.activeId);
     }
+  }
+
+  if (commit.modules) {
+    total += commit.modules.deletes.length;
+    total += commit.modules.upserts.reduce(
+      (count, entry) => count + 1 + countReplaceNodeStatements(entry.data),
+      0,
+    );
+    if (commit.modules.order) total += 1 + commit.modules.order.length;
   }
 
   for (const entry of commit.characters) {
@@ -436,7 +445,9 @@ export async function applySqliteCommit(
   if (commit.replaceAll) {
     await execute("DELETE FROM plugin_custom_storage");
     await execute("DELETE FROM bot_presets");
+    await execute("DELETE FROM module_records");
   }
+  await applyModules(commit, execute);
   await applySettingUpsert(commit, execute);
   await applySettingDeletes(commit, execute);
 
@@ -642,6 +653,41 @@ async function applyPresets(commit: SqlCommit, execute: SqliteExecute) {
       ["activeBotPresetId"],
       value
     );
+  }
+}
+
+async function applyModules(commit: SqlCommit, execute: SqliteExecute) {
+  if (!commit.modules) return;
+
+  for (const id of commit.modules.deletes) {
+    await execute("DELETE FROM module_records WHERE module_id = ?", [id]);
+  }
+  if (commit.modules.order) {
+    await execute("UPDATE module_records SET position = position + 1000000000");
+  }
+  for (const entry of commit.modules.upserts) {
+    await execute(
+      `INSERT INTO module_records (module_id, position, updated_at)
+       VALUES (?, ?, datetime('now'))
+       ON CONFLICT(module_id) DO UPDATE SET
+       position=excluded.position, updated_at=datetime('now')`,
+      [entry.id, entry.position ?? 0],
+    );
+    await replaceNodes(
+      execute,
+      "module_extension_nodes",
+      ["module_id"],
+      [entry.id],
+      entry.data,
+    );
+  }
+  if (commit.modules.order) {
+    for (const [position, id] of commit.modules.order.entries()) {
+      await execute("UPDATE module_records SET position = ? WHERE module_id = ?", [
+        position,
+        id,
+      ]);
+    }
   }
 }
 

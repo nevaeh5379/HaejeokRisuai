@@ -31,6 +31,7 @@ import type {
 } from "../postgres/nodePostgresStorage";
 import {
   buildSqlReplaceCommit,
+  mergeLegacyModulesIntoCommit,
   type SqlCommit,
   type SqlCommitResult,
   SqlRevisionConflictError,
@@ -180,6 +181,22 @@ export abstract class NativeSqliteStorageBase {
 
   private async ensurePerformanceIndexes(): Promise<void> {
     await this.executeNativeTransaction(null, [
+      {
+        sql: "CREATE TABLE IF NOT EXISTS module_records (module_id TEXT PRIMARY KEY, position INTEGER NOT NULL UNIQUE CHECK (position >= 0), updated_at TEXT NOT NULL DEFAULT (datetime('now')))",
+        bind: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS module_records_position_idx ON module_records (position)",
+        bind: [],
+      },
+      {
+        sql: "CREATE TABLE IF NOT EXISTS module_extension_nodes (module_id TEXT NOT NULL REFERENCES module_records(module_id) ON DELETE CASCADE, node_id INTEGER NOT NULL, parent_node_id INTEGER, node_order INTEGER NOT NULL CHECK (node_order >= 0), object_key TEXT, object_key_encoded TEXT, value_type TEXT NOT NULL CHECK (value_type IN ('null','undefined','boolean','number','string','array','object')), text_value TEXT, encoded_text_value TEXT, number_value REAL, boolean_value INTEGER CHECK (boolean_value IN (0, 1)), PRIMARY KEY (module_id, node_id), FOREIGN KEY (module_id, parent_node_id) REFERENCES module_extension_nodes(module_id, node_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED, CHECK (node_id = 0 OR parent_node_id IS NOT NULL), CHECK (text_value IS NULL OR encoded_text_value IS NULL), CHECK (object_key IS NULL OR object_key_encoded IS NULL))",
+        bind: [],
+      },
+      {
+        sql: "CREATE INDEX IF NOT EXISTS module_nodes_parent_idx ON module_extension_nodes (module_id, parent_node_id, node_order)",
+        bind: [],
+      },
       {
         sql: "CREATE INDEX IF NOT EXISTS chats_recent_idx ON chats (last_message_time DESC)",
         bind: [],
@@ -475,6 +492,7 @@ export abstract class NativeSqliteStorageBase {
     if (commit.baseRevision !== currentRevision) {
       throw new SqlRevisionConflictError(currentRevision);
     }
+    await this.prepareModuleCommit(commit);
     await this.validatePresetCommit(commit);
 
     const statements: SqliteTransactionStatement[] = [];
@@ -556,6 +574,19 @@ export abstract class NativeSqliteStorageBase {
     return this.loadNodeValue("setting_extension_nodes", "setting_key = ?", [
       key,
     ]);
+  }
+
+  protected async prepareModuleCommit(commit: SqlCommit): Promise<void> {
+    if (!commit.modules || commit.replaceAll) return;
+    const moduleCount = await this.selectOne<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM module_records",
+    );
+    if (Number(moduleCount?.count) === 0) {
+      mergeLegacyModulesIntoCommit(
+        commit,
+        await this.loadSettingValue("modules"),
+      );
+    }
   }
 
   /**
@@ -1027,10 +1058,28 @@ export abstract class NativeSqliteStorageBase {
   }
 
   async loadModules(): Promise<RisuModule[]> {
-    return (
-      ((await this.loadSettingValue("modules")) as RisuModule[] | undefined) ??
-      []
+    const rows = await this.selectRows<{ module_id: string }>(
+      "SELECT module_id FROM module_records ORDER BY position",
     );
+    if (rows.length === 0) {
+      return (
+        ((await this.loadSettingValue("modules")) as
+          | RisuModule[]
+          | undefined) ?? []
+      );
+    }
+    const nodeRows = await this.selectRows(
+      `SELECT module_id, node_id, parent_node_id, node_order, object_key,
+              object_key_encoded, value_type, text_value, encoded_text_value,
+              number_value, boolean_value
+         FROM module_extension_nodes
+        ORDER BY module_id, node_id`,
+    );
+    const values = this.rebuildGroupedNodeValues(nodeRows, "module_id");
+    return rows.map(({ module_id }) => ({
+      ...(values.get(module_id) as RisuModule),
+      id: module_id,
+    }));
   }
 
   async loadPrompts(): Promise<Record<string, any>> {

@@ -125,6 +125,34 @@ CREATE TABLE IF NOT EXISTS system.setting_values (
 CREATE INDEX IF NOT EXISTS setting_values_parent_idx
 ON system.setting_values (setting_key, parent_node_id, position, node_id);
 
+CREATE TABLE IF NOT EXISTS system.module_records (
+    module_id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL UNIQUE CHECK (position >= 0),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS system.module_values (
+    module_id TEXT NOT NULL REFERENCES system.module_records(module_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    node_id INTEGER NOT NULL,
+    parent_node_id INTEGER,
+    member_key TEXT,
+    encoded_member_key TEXT,
+    position INTEGER CHECK (position >= 0),
+    value_type TEXT NOT NULL CHECK (value_type IN ('null','text','encoded-text','number','boolean','array','object')),
+    text_value TEXT,
+    encoded_text_value TEXT,
+    number_value DOUBLE PRECISION,
+    boolean_value BOOLEAN,
+    PRIMARY KEY (module_id, node_id),
+    FOREIGN KEY (module_id, parent_node_id) REFERENCES system.module_values(module_id, node_id)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    CHECK (node_id = 0 OR parent_node_id IS NOT NULL),
+    CHECK (member_key IS NULL OR encoded_member_key IS NULL),
+    CHECK (text_value IS NULL OR encoded_text_value IS NULL)
+);
+CREATE INDEX IF NOT EXISTS module_values_parent_idx
+ON system.module_values (module_id, parent_node_id, position, node_id);
+
 CREATE TABLE IF NOT EXISTS system.plugin_custom_storage (
     key TEXT PRIMARY KEY,
     value JSONB NOT NULL,
@@ -1253,6 +1281,8 @@ BEGIN
         ARRAY['system', 'setting_values'],
         ARRAY['system', 'plugin_custom_storage'],
         ARRAY['system', 'bot_presets'],
+        ARRAY['system', 'module_records'],
+        ARRAY['system', 'module_values'],
         ARRAY['system', 'personas'],
         ARRAY['system', 'modules'],
         ARRAY['system', 'plugins'],

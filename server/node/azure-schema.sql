@@ -117,6 +117,32 @@ BEGIN
     CREATE INDEX setting_values_parent_idx ON [system].[setting_values] (setting_key, parent_node_id, position, node_id);
 END;
 
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[system].[module_records]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE [system].[module_records] (
+        module_id NVARCHAR(450) NOT NULL PRIMARY KEY,
+        position INT NOT NULL UNIQUE CHECK (position >= 0),
+        updated_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+    );
+    CREATE TABLE [system].[module_values] (
+        module_id NVARCHAR(450) NOT NULL,
+        node_id INT NOT NULL,
+        parent_node_id INT,
+        member_key NVARCHAR(MAX), encoded_member_key NVARCHAR(MAX),
+        position INT CHECK (position >= 0),
+        value_type NVARCHAR(32) NOT NULL CHECK (value_type IN ('null','text','encoded-text','number','boolean','array','object')),
+        text_value NVARCHAR(MAX), encoded_text_value NVARCHAR(MAX),
+        number_value FLOAT, boolean_value BIT,
+        PRIMARY KEY (module_id, node_id),
+        FOREIGN KEY (module_id) REFERENCES [system].[module_records](module_id) ON DELETE CASCADE,
+        FOREIGN KEY (module_id, parent_node_id) REFERENCES [system].[module_values](module_id, node_id),
+        CHECK (node_id = 0 OR parent_node_id IS NOT NULL),
+        CHECK (member_key IS NULL OR encoded_member_key IS NULL),
+        CHECK (text_value IS NULL OR encoded_text_value IS NULL)
+    );
+    CREATE INDEX module_values_parent_idx ON [system].[module_values] (module_id, parent_node_id, position, node_id);
+END;
+
 IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[system].[bot_presets]') AND type in (N'U'))
 BEGIN
     CREATE TABLE [system].[bot_presets] (

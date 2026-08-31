@@ -126,7 +126,12 @@ test.describe("domain store boundaries", () => {
         };
       };
 
-      moduleStore.modules = [];
+      const existingModule = {
+        id: "existing-playwright-module",
+        name: "Existing Playwright Module",
+        description: "Must survive plugin module creation",
+      };
+      moduleStore.modules = [existingModule];
       await moduleStore.flush();
 
       let reproducedMisrouteError = "";
@@ -173,12 +178,15 @@ test.describe("domain store boundaries", () => {
     });
 
     expect(result.modulesWasEnumerable).toBe(true);
-    expect(result.modulesBefore).toEqual([]);
+    expect(result.modulesBefore).toEqual([
+      expect.objectContaining({ id: "existing-playwright-module" }),
+    ]);
     expect(result.reproducedMisrouteError).toContain(
       "[SettingsStore] modules is owned by another domain store",
     );
     expect(result.applyError).toBe("");
     expect(result.modulesAfter).toEqual([
+      expect.objectContaining({ id: "existing-playwright-module" }),
       expect.objectContaining({ id: "playwright-plugin-module" }),
     ]);
     expect(result.storedModules).toEqual(result.modulesAfter);

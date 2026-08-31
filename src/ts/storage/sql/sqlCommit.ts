@@ -8,6 +8,7 @@ export type {
   SqlCharacterTouch,
   SqlChatUpsert,
   SqlMessageUpsert,
+  SqlModuleUpsert,
   SqlCommitResult,
 } from "../../../../packages/protocol/sqlCommit.cjs";
 import type {
@@ -63,6 +64,12 @@ export function hasSqlCommitChanges(commit: SqlCommit): boolean {
         commit.presets.order !== undefined ||
         commit.presets.activeId !== undefined),
     ) ||
+    Boolean(
+      commit.modules &&
+      (commit.modules.upserts.length > 0 ||
+        commit.modules.deletes.length > 0 ||
+        commit.modules.order !== undefined),
+    ) ||
     commit.characters.length > 0 ||
     (commit.characterTouches !== undefined && commit.characterTouches.length > 0) ||
     commit.characterIds !== undefined ||
@@ -74,6 +81,50 @@ export function hasSqlCommitChanges(commit: SqlCommit): boolean {
     commit.messageManifests.length > 0 ||
     (commit.messageDeletes !== undefined && commit.messageDeletes.length > 0)
   );
+}
+
+export function mergeLegacyModulesIntoCommit(
+  commit: SqlCommit,
+  legacyModules: unknown,
+): void {
+  if (!commit.modules || !Array.isArray(legacyModules)) return;
+
+  const deleted = new Set(commit.modules.deletes);
+  const changed = new Set(commit.modules.upserts.map((entry) => entry.id));
+  const inferredOrder = [
+    ...legacyModules
+      .filter(
+        (module): module is { id: string } & Record<string, unknown> =>
+          Boolean(
+            module &&
+              typeof module === "object" &&
+              typeof (module as { id?: unknown }).id === "string",
+          ),
+      )
+      .map((module) => module.id)
+      .filter((id) => !deleted.has(id)),
+    ...commit.modules.upserts
+      .map((entry) => entry.id)
+      .filter((id) => !deleted.has(id)),
+  ];
+  const order =
+    commit.modules.order ?? [...new Set(inferredOrder)];
+  const positions = new Map(order.map((id, position) => [id, position]));
+  const migrated = legacyModules.flatMap((module) => {
+    if (
+      !module ||
+      typeof module !== "object" ||
+      typeof (module as { id?: unknown }).id !== "string"
+    ) return [];
+    const data = module as { id: string } & Record<string, unknown>;
+    if (deleted.has(data.id) || changed.has(data.id)) return [];
+    return [{ id: data.id, position: positions.get(data.id) ?? 0, data }];
+  });
+  commit.modules.upserts = [...migrated, ...commit.modules.upserts];
+  commit.modules.order = order;
+  if (!commit.root.deletes.includes("modules")) {
+    commit.root.deletes.push("modules");
+  }
 }
 
 export function sqlCharacterData(value: character | groupChat): unknown {
@@ -207,6 +258,16 @@ export function buildSqlReplaceCommit(
       activeId: presetIds[activePresetIndex],
     };
   }
+  const modules = Array.isArray(database.modules) ? database.modules : [];
+  commit.modules = {
+    upserts: modules.map((data, position) => ({
+      id: data.id,
+      position,
+      data,
+    })),
+    deletes: [],
+    order: modules.map((module) => module.id),
+  };
   for (const [key, value] of Object.entries(database)) {
     if (
       key !== "characters" &&
@@ -215,6 +276,7 @@ export function buildSqlReplaceCommit(
       key !== "isSql" &&
       key !== "botPresets" &&
       key !== "botPresetsId" &&
+      key !== "modules" &&
       // Preset activation is owned by the presets section: the server derives
       // `activeBotPresetId` from presets.activeId and pushes it into the root
       // upserts itself. Emitting it here as well would duplicate the key in a

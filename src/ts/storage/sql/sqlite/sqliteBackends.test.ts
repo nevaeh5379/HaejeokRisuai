@@ -196,6 +196,61 @@ describe("WebSqliteStorage", () => {
     database.close();
   });
 
+  it("migrates legacy module arrays and updates only the addressed module", async () => {
+    const { database, storage } = makeFreshWeb();
+    const first = { id: "module-a", name: "A", description: "keep" };
+    const second = { id: "module-b", name: "B", description: "keep" };
+    const legacy = createEmptySqlCommit(0, "legacy-modules");
+    legacy.root.upserts.push({ key: "modules", value: [first, second] });
+    await storage.commit(legacy);
+    expect(await storage.loadModules()).toEqual([first, second]);
+
+    const created = { id: "module-c", name: "C" };
+    const migrate = createEmptySqlCommit(1, "modules");
+    migrate.modules = {
+      upserts: [{ id: created.id, position: 2, data: created }],
+      deletes: [],
+      order: [first.id, second.id, created.id],
+    };
+    await storage.commit(migrate);
+
+    expect(await storage.loadModules()).toEqual([first, second, created]);
+    expect(
+      database
+        .prepare("SELECT COUNT(*) AS count FROM module_records")
+        .get(),
+    ).toEqual({ count: 3 });
+    expect(
+      database
+        .prepare("SELECT COUNT(*) AS count FROM system_settings WHERE key = 'modules'")
+        .get(),
+    ).toEqual({ count: 0 });
+
+    const rpc = (storage as any).rpc;
+    const batchSpy = vi.spyOn(rpc, "execBatch");
+    const updated = { ...first, name: "A2" };
+    const delta = createEmptySqlCommit(2, "modules");
+    delta.modules = {
+      upserts: [{ id: updated.id, position: 0, data: updated }],
+      deletes: [],
+    };
+    await storage.commit(delta);
+
+    expect(await storage.loadModules()).toEqual([updated, second, created]);
+    const statements = batchSpy.mock.calls[0][0] as Array<{
+      sql: string;
+      bind?: unknown[];
+    }>;
+    const moduleNodeWrites = statements.filter(({ sql }) =>
+      sql.includes("module_extension_nodes"),
+    );
+    expect(moduleNodeWrites.length).toBeGreaterThan(0);
+    expect(
+      moduleNodeWrites.every(({ bind }) => bind?.[0] === updated.id),
+    ).toBe(true);
+    database.close();
+  });
+
   it("preserves unchanged character tags without delete-and-reinsert churn", async () => {
     const { database, storage } = makeFreshWeb();
     const tags = Array.from({ length: 300 }, (_, index) => `tag-${index}`);

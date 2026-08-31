@@ -42,7 +42,14 @@ describe("batched SQL database replacement", () => {
     expect(root.replaceAll).toBe(true);
     expect(root.characters).toHaveLength(0);
     expect(root.root.upserts.some((entry) => entry.key === "personas")).toBe(true);
-    expect(root.root.upserts.some((entry) => entry.key === "modules")).toBe(true);
+    expect(root.root.upserts.some((entry) => entry.key === "modules")).toBe(false);
+    expect(root.modules?.upserts).toEqual([
+      {
+        id: "module-1",
+        position: 0,
+        data: { id: "module-1", name: "Module" },
+      },
+    ]);
     expect(root.presets?.upserts).toHaveLength(1);
 
     expect(batches.flatMap((batch) => batch.characters)).toHaveLength(1);

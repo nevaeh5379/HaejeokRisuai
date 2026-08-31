@@ -3,6 +3,7 @@ import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
 import { createEmptySqlCommit } from "../../storage/sql/sqlCommit";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { snapshotFingerprint, trackDeep } from "./reactiveUtils";
+import { buildModuleDelta } from "./moduleCommit";
 import type {
   FlushableStore,
   InitializableStore,
@@ -23,6 +24,7 @@ class ModuleStore
   private commitTimer: ReturnType<typeof setTimeout> | null = null;
   private writeChain: Promise<void> = Promise.resolve();
   private committed = { modules: "", enabled: "", folders: "" };
+  private committedModules: RisuModule[] = [];
 
   get list(): RisuModule[] {
     return this.modules;
@@ -53,6 +55,7 @@ class ModuleStore
       ? folders as ModuleFolder[]
       : [];
     this.loaded = true;
+    this.committedModules = $state.snapshot(this.modules);
     this.committed = this.fingerprints();
     this.observeDispose = $effect.root(() => {
       $effect(() => {
@@ -86,10 +89,33 @@ class ModuleStore
       (module) => !module.folderId || !this.getFolderById(module.folderId),
     );
   }
+
+  /**
+   * Adds or updates modules without treating an external partial payload as
+   * authority to delete every module it omitted.
+   */
+  upsertModules(modules: RisuModule[]): void {
+    const merged = [...this.modules];
+    const positions = new Map(
+      merged.map((module, index) => [module.id, index] as const),
+    );
+    for (const module of modules) {
+      if (!module || typeof module.id !== "string" || module.id.length === 0) {
+        throw new TypeError("Module id must be a non-empty string");
+      }
+      const position = positions.get(module.id);
+      if (position === undefined) {
+        positions.set(module.id, merged.length);
+        merged.push(module);
+      } else {
+        merged[position] = module;
+      }
+    }
+    this.modules = merged;
+  }
+
   async installModule(module: RisuModule): Promise<void> {
-    const index = this.modules.findIndex((current) => current.id === module.id);
-    if (index >= 0) this.modules[index] = module;
-    else this.modules.push(module);
+    this.upsertModules([module]);
     await this.flush();
   }
 
@@ -180,15 +206,15 @@ class ModuleStore
 
     const storage = this.storage;
     if (!storage) {
+      this.committedModules = $state.snapshot(this.modules);
       this.committed = current;
       return;
     }
     const commit = createEmptySqlCommit(0, "modules");
+    let moduleSnapshot: RisuModule[] | undefined;
     if (current.modules !== this.committed.modules) {
-      commit.root.upserts.push({
-        key: "modules",
-        value: $state.snapshot(this.modules),
-      });
+      moduleSnapshot = $state.snapshot(this.modules);
+      commit.modules = buildModuleDelta(this.committedModules, moduleSnapshot);
     }
     if (current.enabled !== this.committed.enabled) {
       commit.root.upserts.push({
@@ -205,6 +231,7 @@ class ModuleStore
     const operation = this.writeChain.then(() => commitSqlChanges(storage, commit));
     this.writeChain = operation.then(() => undefined, () => undefined);
     await operation;
+    if (moduleSnapshot) this.committedModules = moduleSnapshot;
     this.committed = current;
   }
 
@@ -250,6 +277,7 @@ class ModuleStore
     this.moduleFolders = [];
     this.loaded = false;
     this.committed = { modules: "", enabled: "", folders: "" };
+    this.committedModules = [];
     this.writeChain = Promise.resolve();
   }
 }

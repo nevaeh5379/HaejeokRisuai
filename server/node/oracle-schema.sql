@@ -142,6 +142,29 @@ CREATE TABLE system_setting_values (
 );
 CREATE INDEX setting_values_parent_idx ON system_setting_values (setting_key, parent_node_id, position, node_id);
 
+CREATE TABLE system_module_records (
+    module_id VARCHAR2(4000) PRIMARY KEY,
+    position INTEGER NOT NULL UNIQUE CHECK (position >= 0),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL
+);
+
+CREATE TABLE system_module_values (
+    module_id VARCHAR2(4000) NOT NULL REFERENCES system_module_records(module_id) ON DELETE CASCADE,
+    node_id INTEGER NOT NULL,
+    parent_node_id INTEGER,
+    member_key CLOB, encoded_member_key CLOB,
+    position INTEGER CHECK (position >= 0),
+    value_type VARCHAR2(32) NOT NULL CHECK (value_type IN ('null','text','encoded-text','number','boolean','array','object')),
+    text_value CLOB, encoded_text_value CLOB,
+    number_value BINARY_DOUBLE, boolean_value NUMBER(1),
+    PRIMARY KEY (module_id, node_id),
+    FOREIGN KEY (module_id, parent_node_id) REFERENCES system_module_values(module_id, node_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    CHECK (node_id = 0 OR parent_node_id IS NOT NULL),
+    CHECK (member_key IS NULL OR encoded_member_key IS NULL),
+    CHECK (text_value IS NULL OR encoded_text_value IS NULL)
+);
+CREATE INDEX module_values_parent_idx ON system_module_values (module_id, parent_node_id, position, node_id);
+
 CREATE TABLE system_plugin_custom_storage (
     key VARCHAR2(4000) PRIMARY KEY,
     value JSON NOT NULL,

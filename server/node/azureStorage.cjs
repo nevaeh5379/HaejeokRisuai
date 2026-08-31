@@ -53,6 +53,7 @@ const {
     createChatRelations,
     createMessageRelations,
     rebuildDatabaseGraph,
+    mergeLegacyModulesIntoPayload,
 } = require('./sqlStorageCommon.cjs');
 
 const {
@@ -110,7 +111,7 @@ const RELATIONAL_SCHEMA_LAYOUT = 'relational-schema-v3';
 const MAX_SYNC_ROWS = 250000;
 
 const AUDITED_TABLES = [
-    'system.settings', 'system.setting_values', 'system.bot_presets',
+    'system.settings', 'system.setting_values', 'system.module_records', 'system.module_values', 'system.bot_presets',
     'system.personas', 'system.modules', 'system.plugins',
     'system.global_lorebooks', 'system.global_lore_entries', 'system.global_lore_cache_items',
     'system.translator_presets', 'system.hotkeys', 'system.custom_models',
@@ -1077,6 +1078,24 @@ class AzureStorage extends SqlStorageBase {
         };
     }
 
+    async loadModuleRecords() {
+        const pool = await this.getPool();
+        const modules = (await pool.request().query(
+            'SELECT module_id, position FROM [system].[module_records] ORDER BY position')).recordset;
+        if (modules.length === 0) return null;
+        const values = (await pool.request().query(
+            'SELECT module_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM [system].[module_values] ORDER BY module_id, node_id')).recordset;
+        const rebuilt = rebuildSettings(
+            modules.map((row) => ({ key: row.module_id })),
+            values,
+        );
+        const result = modules.map((row) => ({ ...rebuilt[row.module_id], id: row.module_id }));
+        return {
+            modules: result,
+            hash: crypto.createHash('sha256').update(JSON.stringify(result)).digest('hex'),
+        };
+    }
+
     async listBotPresets() {
         const started = process.hrtime.bigint();
         const pool = await this.getPool();
@@ -1159,6 +1178,54 @@ class AzureStorage extends SqlStorageBase {
                 await tx.request().query('DELETE FROM [system].[settings];');
                 await tx.request().query('DELETE FROM [system].[plugin_custom_storage];');
                 await tx.request().query('DELETE FROM [system].[bot_presets];');
+                await tx.request().query('DELETE FROM [system].[module_records];');
+            }
+
+            if (payload.modules) {
+                const existing = (await tx.request().query(
+                    'SELECT module_id, position FROM [system].[module_records] ORDER BY position')).recordset;
+                if (!payload.replaceAll && existing.length === 0) {
+                    const settings = (await tx.request().query(
+                        "SELECT [key] FROM [system].[settings] WHERE [key]='modules'")).recordset;
+                    const values = (await tx.request().query(
+                        "SELECT * FROM [system].[setting_values] WHERE setting_key='modules' ORDER BY node_id")).recordset;
+                    mergeLegacyModulesIntoPayload(payload, rebuildSettings(settings, values).modules);
+                }
+                for (const id of payload.modules.deletes) {
+                    const request = tx.request();
+                    request.input('id', sql.NVarChar(450), id);
+                    await request.query('DELETE FROM [system].[module_records] WHERE module_id=@id');
+                }
+                if (payload.modules.order) {
+                    await tx.request().query('UPDATE [system].[module_records] SET position=position+1000000000');
+                }
+                const positions = new Map(existing.map((row) => [row.module_id, Number(row.position)]));
+                for (const entry of payload.modules.upserts) {
+                    const request = tx.request();
+                    request.input('id', sql.NVarChar(450), entry.id);
+                    request.input('position', sql.Int, entry.position ?? positions.get(entry.id) ?? 0);
+                    await request.query(`MERGE [system].[module_records] AS t
+                        USING (SELECT @id module_id) AS s ON t.module_id=s.module_id
+                        WHEN MATCHED THEN UPDATE SET position=@position,updated_at=SYSDATETIMEOFFSET()
+                        WHEN NOT MATCHED THEN INSERT (module_id,position) VALUES (@id,@position);`);
+                }
+                if (payload.modules.upserts.length > 0) {
+                    const ids = payload.modules.upserts.map((entry) => `'${entry.id.replace(/'/g, "''")}'`).join(', ');
+                    await tx.request().query(`DELETE FROM [system].[module_values] WHERE module_id IN (${ids})`);
+                    const rows = payload.modules.upserts.flatMap((entry) =>
+                        splitSetting(entry.id, entry.data).values.map((row) => ({ ...row, module_id: row.setting_key })));
+                    await bulkInsert(tx, 'system.module_values',
+                        ['module_id', 'node_id', 'parent_node_id', 'member_key', 'encoded_member_key', 'position', 'value_type', 'text_value', 'encoded_text_value', 'number_value', 'boolean_value'],
+                        ['nvarchar(450)', 'int', 'int', 'nvarchar(max)', 'nvarchar(max)', 'int', 'nvarchar(32)', 'nvarchar(max)', 'nvarchar(max)', 'float', 'bit'], rows);
+                }
+                if (payload.modules.order) {
+                    for (const [position, id] of payload.modules.order.entries()) {
+                        const request = tx.request();
+                        request.input('id', sql.NVarChar(450), id);
+                        request.input('position', sql.Int, position);
+                        await request.query('UPDATE [system].[module_records] SET position=@position WHERE module_id=@id');
+                    }
+                }
             }
 
             if (payload.presets) {

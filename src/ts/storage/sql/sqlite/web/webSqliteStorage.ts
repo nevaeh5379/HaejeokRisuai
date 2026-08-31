@@ -29,6 +29,7 @@ import {
 import sqliteSchemaSql from "../sqlite-schema.sql?raw";
 import {
   buildSqlReplaceCommit,
+  mergeLegacyModulesIntoCommit,
   SqlRevisionConflictError,
   type SqlCommit,
   type SqlCommitResult,
@@ -581,6 +582,17 @@ export class WebSqliteStorage implements ISqlStorage {
       const currentRevision = Number(meta?.revision) || 0;
       if (commit.baseRevision !== currentRevision)
         throw new SqlRevisionConflictError(currentRevision);
+      if (commit.modules && !commit.replaceAll) {
+        const moduleCount = await this.selectOne(
+          "SELECT COUNT(*) AS count FROM module_records",
+        );
+        if (Number(moduleCount?.count) === 0) {
+          mergeLegacyModulesIntoCommit(
+            commit,
+            await this.loadSettingValue("modules"),
+          );
+        }
+      }
       await this.validatePresetCommit(commit);
       const statements: SqliteBatchStatement[] = [];
       const append = async (sql: string, bind: unknown[] = []) => {
@@ -835,11 +847,28 @@ export class WebSqliteStorage implements ISqlStorage {
     );
   }
   async loadModules(): Promise<RisuModule[]> {
-    return (
-      ((await this.loadSettingValue("modules")) as
-        | RisuModule[]
-        | undefined) ?? []
+    const rows = await this.selectRows(
+      "SELECT module_id FROM module_records ORDER BY position",
     );
+    if (rows.length === 0) {
+      return (
+        ((await this.loadSettingValue("modules")) as
+          | RisuModule[]
+          | undefined) ?? []
+      );
+    }
+    const nodeRows = await this.selectRows(
+      `SELECT module_id, node_id, parent_node_id, node_order, object_key,
+              object_key_encoded, value_type, text_value, encoded_text_value,
+              number_value, boolean_value
+         FROM module_extension_nodes
+        ORDER BY module_id, node_id`,
+    );
+    const values = this.rebuildGroupedNodeValues(nodeRows, "module_id");
+    return rows.map((row) => {
+      const id = row.module_id as string;
+      return { ...(values.get(id) as RisuModule), id };
+    });
   }
   async loadPrompts(): Promise<Record<string, any>> {
     const rows = await this.selectRows(

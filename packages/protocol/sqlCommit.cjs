@@ -195,6 +195,25 @@ class SqlCommitParser {
             activeId: value.activeId,
         };
     }
+    parseModules(value) {
+        if (value === undefined)
+            return undefined;
+        if (!isRecord(value))
+            throw new this.PayloadError("modules must be an object");
+        const upserts = this.parseRows(value.upserts, "modules.upserts", (item, index) => {
+            this.assertId(item.id, `modules.upserts[${index}].id`);
+            if (item.position !== undefined)
+                this.assertPosition(item.position, `modules.upserts[${index}].position`);
+            if (!isRecord(item.data))
+                throw new this.PayloadError(`modules.upserts[${index}].data must be an object`);
+            return { id: item.id, position: item.position, data: item.data };
+        });
+        const deletes = this.parseIds(value.deletes, "modules.deletes");
+        const order = value.order === undefined
+            ? undefined
+            : this.parseIds(value.order, "modules.order");
+        return { upserts, deletes, order };
+    }
     // Parses plugin-storage upserts, deletes, and the optional clear operation.
     parsePluginStorage(value) {
         if (value === undefined) {
@@ -266,6 +285,7 @@ class SqlCommitParser {
         const baseRevision = this.parseBaseRevision(payload.baseRevision);
         const root = this.parseRoot(payload.root);
         const presets = this.parsePresets(payload.presets);
+        const modules = this.parseModules(payload.modules);
         const pluginStorage = this.parsePluginStorage(payload.pluginStorage);
         const entities = this.parseEntities(payload);
         return {
@@ -275,6 +295,7 @@ class SqlCommitParser {
             ...root,
             ...pluginStorage,
             presets,
+            modules,
             ...entities,
         };
     }

@@ -28,6 +28,11 @@ export interface SqlPresetUpsert<TPreset extends object = Record<string, unknown
     position?: number;
     data: TPreset;
 }
+export interface SqlModuleUpsert {
+    id: string;
+    position?: number;
+    data: object;
+}
 export interface SqlCommit<TPreset extends object = Record<string, unknown>> {
     baseRevision: number;
     idempotencyKey?: string;
@@ -47,6 +52,11 @@ export interface SqlCommit<TPreset extends object = Record<string, unknown>> {
         deletes: string[];
         order?: string[];
         activeId?: string;
+    };
+    modules?: {
+        upserts: SqlModuleUpsert[];
+        deletes: string[];
+        order?: string[];
     };
     characters: SqlCharacterUpsert[];
     characterTouches?: SqlCharacterTouch[];
@@ -90,6 +100,11 @@ export interface NormalizedSqlCommit {
         deletes: string[];
         order?: string[];
         activeId?: string;
+    };
+    modules?: {
+        upserts: SqlModuleUpsert[];
+        deletes: string[];
+        order?: string[];
     };
     characters: SqlCharacterUpsert[];
     characterTouches: SqlCharacterTouch[];

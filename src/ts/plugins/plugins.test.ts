@@ -163,17 +163,41 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
     });
   });
 
-  it("routes module reads and writes through ModuleStore", async () => {
+  it("commits plugin module upserts without replacing existing modules", async () => {
+    const existing = { id: "existing", name: "Existing module" };
+    const untouched = { id: "untouched", name: "Untouched module" };
+    const updated = { id: "existing", name: "Updated existing module" };
+    const created = { id: "plugin-module", name: "Plugin module" };
+    mockStorage.loadModules = vi.fn(async () => [existing, untouched] as any);
+    mockStorage.loadSettingKey = vi.fn(async () => []);
+    await moduleStore.init(mockStorage);
+
     const apis = getV2PluginAPIs();
     const db = apis.getDatabase();
-    const module = { id: "plugin-module", name: "Plugin module" };
 
-    expect(db.modules).toEqual([]);
+    expect(db.modules).toEqual([existing, untouched]);
     expect(Object.keys(db)).toContain("modules");
 
-    await expect(apis.setDatabase({ modules: [module] })).resolves.toBeUndefined();
-    expect(moduleStore.modules).toEqual([module]);
-    expect(db.modules).toEqual([module]);
+    await expect(
+      apis.setDatabase({ modules: [updated, created] }),
+    ).resolves.toBeUndefined();
+    await moduleStore.flush();
+
+    expect(moduleStore.modules).toEqual([updated, untouched, created]);
+    expect(db.modules).toEqual([updated, untouched, created]);
+    expect(committed).toHaveLength(1);
+    expect(committed[0].replaceAll).not.toBe(true);
+    expect(committed[0].root.upserts).not.toContainEqual(
+      expect.objectContaining({ key: "modules" }),
+    );
+    expect(committed[0].modules).toEqual({
+      upserts: [
+        { id: updated.id, position: 0, data: updated },
+        { id: created.id, position: 2, data: created },
+      ],
+      deletes: [],
+      order: [updated.id, untouched.id, created.id],
+    });
   });
 
   it("commits an updated plugin to SQL before reloading plugins", async () => {

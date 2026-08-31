@@ -21,6 +21,27 @@ const SETTINGS_STORE_EXCLUDED_KEYS = [
     ...new Set([...NON_SETTINGS_ROOT_KEYS, ...DOMAIN_STORE_SETTING_KEYS]),
 ];
 
+function mergeLegacyModulesIntoPayload(payload, legacyModules) {
+    if (!payload.modules || !Array.isArray(legacyModules)) return;
+    const deleted = new Set(payload.modules.deletes);
+    const changed = new Set(payload.modules.upserts.map((entry) => entry.id));
+    const inferredOrder = [
+        ...legacyModules.filter((module) => module && typeof module === 'object' && typeof module.id === 'string')
+            .map((module) => module.id).filter((id) => !deleted.has(id)),
+        ...payload.modules.upserts.map((entry) => entry.id).filter((id) => !deleted.has(id)),
+    ];
+    const order = payload.modules.order || [...new Set(inferredOrder)];
+    const positions = new Map(order.map((id, position) => [id, position]));
+    const migrated = legacyModules.flatMap((module) => {
+        if (!module || typeof module !== 'object' || typeof module.id !== 'string' ||
+            deleted.has(module.id) || changed.has(module.id)) return [];
+        return [{ id: module.id, position: positions.get(module.id) || 0, data: module }];
+    });
+    payload.modules.upserts = [...migrated, ...payload.modules.upserts];
+    payload.modules.order = order;
+    if (!payload.rootDeletes.includes('modules')) payload.rootDeletes.push('modules');
+}
+
 class SqlStorageBase {
     constructor() {
         this.objectCacheEnabled = process.env.RISUAI_SQL_OBJECT_CACHE === '1';
@@ -97,6 +118,10 @@ class SqlStorageBase {
     }
 
     async loadModules() {
+        if (typeof this.loadModuleRecords === 'function') {
+            const records = await this.loadModuleRecords();
+            if (records) return records;
+        }
         return this.loadSettingCollection('modules', 'modules');
     }
 
@@ -484,4 +509,5 @@ module.exports = {
     createChatRelations,
     createMessageRelations,
     rebuildDatabaseGraph,
+    mergeLegacyModulesIntoPayload,
 };

@@ -345,6 +345,7 @@ export class CapacitorSqliteStorage
     if (commit.baseRevision !== currentRevision) {
       throw new SqlRevisionConflictError(currentRevision);
     }
+    await this.prepareModuleCommit(commit);
     await this.validatePresetCommit(commit);
 
     const revision = currentRevision + 1;

@@ -43,6 +43,7 @@ const {
     createChatRelations,
     createMessageRelations,
     rebuildDatabaseGraph,
+    mergeLegacyModulesIntoPayload,
 } = require('./sqlStorageCommon.cjs');
 
 const POSTGRES_SCHEMA_VERSION = 4;
@@ -53,7 +54,8 @@ const BULK_INSERT_BATCH_ROWS = Math.max(
     Number.parseInt(process.env.RISUAI_SQL_BATCH_ROWS || '1000', 10) || 1000
 );
 const AUDITED_TABLES = [
-    'system.settings', 'system.setting_values', 'system.plugin_custom_storage', 'character.characters',
+    'system.settings', 'system.setting_values', 'system.module_records', 'system.module_values',
+    'system.plugin_custom_storage', 'character.characters',
     ...SETTING_RELATION_DEFINITIONS.map((definition) => definition.table),
     'character.attributes', 'character.tags',
     'character.greetings', 'character.biases', 'character.emotions',
@@ -114,6 +116,17 @@ async function replaceSettingValueRows(client, upserts) {
     const rows = upserts.flatMap((item) => splitSetting(item.key, item.value).values);
     await bulkInsert(client, 'system.setting_values',
         ['setting_key', 'node_id', 'parent_node_id', 'member_key', 'encoded_member_key', 'position', 'value_type', 'text_value', 'encoded_text_value', 'number_value', 'boolean_value'],
+        ['text', 'integer', 'integer', 'text', 'text', 'integer', 'text', 'text', 'text', 'double precision', 'boolean'], rows);
+}
+
+async function replaceModuleValueRows(client, upserts) {
+    if (upserts.length === 0) return;
+    const ids = upserts.map((item) => item.id);
+    await client.query('DELETE FROM system.module_values WHERE module_id = ANY($1::text[])', [ids]);
+    const rows = upserts.flatMap((item) =>
+        splitSetting(item.id, item.data).values.map((row) => ({ ...row, module_id: row.setting_key })));
+    await bulkInsert(client, 'system.module_values',
+        ['module_id', 'node_id', 'parent_node_id', 'member_key', 'encoded_member_key', 'position', 'value_type', 'text_value', 'encoded_text_value', 'number_value', 'boolean_value'],
         ['text', 'integer', 'integer', 'text', 'text', 'integer', 'text', 'text', 'text', 'double precision', 'boolean'], rows);
 }
 
@@ -1979,6 +1992,34 @@ class PostgresStorage extends SqlStorageBase {
         }
     }
 
+    async loadModuleRecords() {
+        this.assertEnabled();
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+            const modules = (await client.query(
+                'SELECT module_id, position FROM system.module_records ORDER BY position')).rows;
+            const values = (await client.query(
+                'SELECT module_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system.module_values ORDER BY module_id, node_id')).rows;
+            await client.query('COMMIT');
+            if (modules.length === 0) return null;
+            const rebuilt = rebuildSettings(
+                modules.map((row) => ({ key: row.module_id })),
+                values,
+            );
+            const result = modules.map((row) => ({ ...rebuilt[row.module_id], id: row.module_id }));
+            return {
+                modules: result,
+                hash: crypto.createHash('sha256').update(JSON.stringify(result)).digest('hex'),
+            };
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
     async listBotPresets() {
         this.assertEnabled();
         const started = process.hrtime.bigint();
@@ -2106,53 +2147,62 @@ class PostgresStorage extends SqlStorageBase {
     async saveModule(moduleData) {
         return await this.executeRevision(`module:save (${moduleData.name || moduleData.id})`, 'database', async (client) => {
             const id = moduleData.id;
-            const columns = [
-                'setting_key', 'position', 'module_id', 'name', 'description', 'cjs',
-                'low_level_access', 'hide_icon', 'background_embedding', 'namespace',
-                'custom_toggle', 'mcp_url', 'icon',
-            ];
-            const posResult = await client.query(
-                `SELECT position FROM system.modules WHERE module_id = $1 LIMIT 1`,
-                [id]
-            );
-            const maxPosResult = await client.query(
-                `SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM system.modules`
-            );
-            const position = posResult.rowCount > 0 ? posResult.rows[0].position : maxPosResult.rows[0].next_pos;
-            const row = {
-                setting_key: 'modules',
-                position,
-                module_id: id,
-                name: moduleData.name ?? null,
-                description: moduleData.description ?? null,
-                cjs: moduleData.cjs ?? null,
-                low_level_access: Boolean(moduleData.lowLevelAccess),
-                hide_icon: Boolean(moduleData.hideIcon),
-                background_embedding: moduleData.backgroundEmbedding ?? null,
-                namespace: moduleData.namespace ?? null,
-                custom_toggle: moduleData.customModuleToggle ?? null,
-                mcp_url: moduleData.mcp?.url ?? null,
-                icon: moduleData.icon ?? null,
-            };
-            await bulkInsert(
-                client,
-                'system.modules',
-                columns,
-                [
-                    'text', 'integer', 'text', 'text', 'text', 'text', 'boolean', 'boolean', 'text',
-                    'text', 'text', 'text', 'text',
-                ],
-                [row],
-                `ON CONFLICT (setting_key, position) DO UPDATE SET ${columns.slice(2).map((c) =>
-                    `"${c}" = EXCLUDED."${c}"`).join(', ')}`
-            );
+            const records = (await client.query(
+                'SELECT module_id, position FROM system.module_records ORDER BY position')).rows;
+            const nextPosition = records.reduce(
+                (max, row) => Math.max(max, Number(row.position)), -1) + 1;
+            let entries = [{ id, position: records.find((row) => row.module_id === id)?.position ?? nextPosition, data: moduleData }];
+            if (records.length === 0) {
+                const settings = (await client.query(
+                    "SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key = 'modules'")).rows;
+                const values = (await client.query(
+                    "SELECT * FROM system.setting_values WHERE setting_key = 'modules' ORDER BY node_id")).rows;
+                const legacy = rebuildSettingRows(settings, values).modules;
+                if (Array.isArray(legacy)) {
+                    const merged = legacy.filter((module) => module?.id !== id);
+                    merged.push(moduleData);
+                    entries = merged.map((data, position) => ({ id: data.id, position, data }));
+                }
+            }
+            for (const entry of entries) {
+                await client.query(
+                    `INSERT INTO system.module_records (module_id, position, updated_at)
+                     VALUES ($1, $2, NOW()) ON CONFLICT (module_id) DO UPDATE SET
+                     position=EXCLUDED.position, updated_at=NOW()`,
+                    [entry.id, entry.position],
+                );
+            }
+            await replaceModuleValueRows(client, entries);
+            await client.query("DELETE FROM system.settings WHERE key = 'modules'");
             return { id };
         });
     }
 
     async deleteModule(moduleId) {
         return await this.executeRevision(`module:delete (${moduleId})`, 'database', async (client) => {
-            await client.query('DELETE FROM system.modules WHERE module_id = $1', [moduleId]);
+            const records = (await client.query(
+                'SELECT module_id FROM system.module_records LIMIT 1')).rows;
+            if (records.length === 0) {
+                const settings = (await client.query(
+                    "SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key = 'modules'")).rows;
+                const values = (await client.query(
+                    "SELECT * FROM system.setting_values WHERE setting_key = 'modules' ORDER BY node_id")).rows;
+                const legacy = rebuildSettingRows(settings, values).modules;
+                if (Array.isArray(legacy)) {
+                    const entries = legacy
+                        .filter((module) => module?.id !== moduleId)
+                        .map((data, position) => ({ id: data.id, position, data }));
+                    for (const entry of entries) {
+                        await client.query(
+                            'INSERT INTO system.module_records (module_id, position) VALUES ($1, $2)',
+                            [entry.id, entry.position],
+                        );
+                    }
+                    await replaceModuleValueRows(client, entries);
+                }
+            }
+            await client.query('DELETE FROM system.module_records WHERE module_id = $1', [moduleId]);
+            await client.query("DELETE FROM system.settings WHERE key = 'modules'");
             return { id: moduleId };
         });
     }
@@ -2244,7 +2294,49 @@ class PostgresStorage extends SqlStorageBase {
                 await client.query('DELETE FROM system.settings');
                 await client.query('DELETE FROM system.plugin_custom_storage');
                 await client.query('DELETE FROM system.bot_presets');
+                await client.query('DELETE FROM system.module_records');
                 await client.query('DELETE FROM character.characters');
+            }
+
+            if (payload.modules) {
+                const existing = (await client.query(
+                    'SELECT module_id, position FROM system.module_records ORDER BY position')).rows;
+                if (!payload.replaceAll && existing.length === 0) {
+                    const legacySettings = (await client.query(
+                        "SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key = 'modules'")).rows;
+                    const legacyValues = (await client.query(
+                        "SELECT * FROM system.setting_values WHERE setting_key = 'modules' ORDER BY node_id")).rows;
+                    const legacy = rebuildSettingRows(legacySettings, legacyValues).modules;
+                    mergeLegacyModulesIntoPayload(payload, legacy);
+                }
+                if (payload.modules.deletes.length) {
+                    await client.query(
+                        'DELETE FROM system.module_records WHERE module_id = ANY($1::text[])',
+                        [payload.modules.deletes],
+                    );
+                }
+                if (payload.modules.order) {
+                    await client.query('UPDATE system.module_records SET position = position + 1000000000');
+                }
+                const positions = new Map(existing.map((row) => [row.module_id, Number(row.position)]));
+                for (const entry of payload.modules.upserts) {
+                    const position = entry.position ?? positions.get(entry.id) ?? 0;
+                    await client.query(
+                        `INSERT INTO system.module_records (module_id, position, updated_at)
+                         VALUES ($1, $2, NOW()) ON CONFLICT (module_id) DO UPDATE SET
+                         position=EXCLUDED.position, updated_at=NOW()`,
+                        [entry.id, position],
+                    );
+                }
+                await replaceModuleValueRows(client, payload.modules.upserts);
+                if (payload.modules.order) {
+                    for (const [position, id] of payload.modules.order.entries()) {
+                        await client.query(
+                            'UPDATE system.module_records SET position = $1 WHERE module_id = $2',
+                            [position, id],
+                        );
+                    }
+                }
             }
 
             if (payload.presets) {

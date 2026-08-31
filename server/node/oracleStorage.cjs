@@ -67,6 +67,7 @@ const {
     createChatRelations,
     createMessageRelations,
     rebuildDatabaseGraph,
+    mergeLegacyModulesIntoPayload,
 } = require('./sqlStorageCommon.cjs');
 
 const {
@@ -149,7 +150,8 @@ function mapColumnsToSettingValue(row) {
 
 // 감사 대상 테이블 목록 (PostgreSQL AUDITED_TABLES와 동일, 접두어 변환)
 const AUDITED_TABLES_QUALIFIED = [
-    'system.settings', 'system.setting_values', 'system.plugin_custom_storage', 'character.characters',
+    'system.settings', 'system.setting_values', 'system.module_records', 'system.module_values',
+    'system.plugin_custom_storage', 'character.characters',
     ...SETTING_RELATION_DEFINITIONS.map((d) => d.table),
     'character.attributes', 'character.tags',
     'character.greetings', 'character.biases', 'character.emotions',
@@ -1762,6 +1764,27 @@ class OracleStorage extends SqlStorageBase {
         }
     }
 
+    async loadModuleRecords() {
+        this.assertEnabled();
+        const conn = await this.pool.getConnection();
+        try {
+            const modules = await fetchRows(conn,
+                'SELECT module_id, position FROM system_module_records ORDER BY position');
+            if (modules.length === 0) return null;
+            const values = await fetchRows(conn,
+                'SELECT module_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system_module_values ORDER BY module_id, node_id',
+                [], { clobColumns: ['member_key', 'encoded_member_key', 'text_value', 'encoded_text_value'] });
+            const rebuilt = rebuildSettings(
+                modules.map((row) => ({ key: row.module_id })),
+                values,
+            );
+            const result = modules.map((row) => ({ ...rebuilt[row.module_id], id: row.module_id }));
+            return { modules: result, hash: crypto.createHash('sha256').update(JSON.stringify(result)).digest('hex') };
+        } finally {
+            try { await conn.close(); } catch {}
+        }
+    }
+
     async listBotPresets() {
         this.assertEnabled();
         const started = process.hrtime.bigint();
@@ -1822,7 +1845,58 @@ class OracleStorage extends SqlStorageBase {
                 await conn.execute('DELETE FROM system_settings');
                 await conn.execute('DELETE FROM system_plugin_custom_storage');
                 await conn.execute('DELETE FROM system_bot_presets');
+                await conn.execute('DELETE FROM system_module_records');
                 await conn.execute('DELETE FROM character_characters');
+            }
+
+            if (payload.modules) {
+                const existing = await fetchRows(conn,
+                    'SELECT module_id, position FROM system_module_records ORDER BY position');
+                if (!payload.replaceAll && existing.length === 0) {
+                    const settings = await fetchRows(conn,
+                        "SELECT * FROM system_settings WHERE key = 'modules'");
+                    const values = await fetchRows(conn,
+                        "SELECT * FROM system_setting_values WHERE setting_key = 'modules' ORDER BY node_id",
+                        [], { clobColumns: ['member_key', 'encoded_member_key', 'text_value', 'encoded_text_value'] });
+                    mergeLegacyModulesIntoPayload(payload, rebuildSettings(settings, values).modules);
+                }
+                for (const id of payload.modules.deletes) {
+                    await conn.execute('DELETE FROM system_module_records WHERE module_id = :1', [id]);
+                }
+                if (payload.modules.order) {
+                    await conn.execute('UPDATE system_module_records SET position = position + 1000000000');
+                }
+                const positions = new Map(existing.map((row) => [row.module_id, Number(row.position)]));
+                const mergeModule = `MERGE INTO system_module_records t
+                    USING (SELECT :module_id module_id FROM dual) s ON (t.module_id=s.module_id)
+                    WHEN MATCHED THEN UPDATE SET t.position=:position,t.updated_at=SYSTIMESTAMP
+                    WHEN NOT MATCHED THEN INSERT (module_id,position,updated_at)
+                    VALUES (:module_id,:position,SYSTIMESTAMP)`;
+                for (const entry of payload.modules.upserts) {
+                    await conn.execute(mergeModule, {
+                        module_id: entry.id,
+                        position: entry.position ?? positions.get(entry.id) ?? 0,
+                    });
+                }
+                if (payload.modules.upserts.length > 0) {
+                    await conn.executeMany(
+                        'DELETE FROM system_module_values WHERE module_id = :1',
+                        payload.modules.upserts.map((entry) => [entry.id]),
+                    );
+                    const rows = payload.modules.upserts.flatMap((entry) =>
+                        splitSetting(entry.id, entry.data).values.map((row) => ({ ...row, module_id: row.setting_key })));
+                    await this._bulkInsertRows(conn, 'system_module_values',
+                        ['module_id', 'node_id', 'parent_node_id', 'member_key', 'encoded_member_key', 'position', 'value_type', 'text_value', 'encoded_text_value', 'number_value', 'boolean_value'],
+                        rows, onProgress);
+                }
+                if (payload.modules.order) {
+                    for (const [position, id] of payload.modules.order.entries()) {
+                        await conn.execute(
+                            'UPDATE system_module_records SET position = :1 WHERE module_id = :2',
+                            [position, id],
+                        );
+                    }
+                }
             }
 
             if (payload.presets) {
@@ -2268,6 +2342,7 @@ class OracleStorage extends SqlStorageBase {
         const mapped = mapTableName(table);
         const lobCols = {
             'system_setting_values': ['member_key', 'encoded_member_key', 'text_value', 'encoded_text_value'],
+            'system_module_values': ['member_key', 'encoded_member_key', 'text_value', 'encoded_text_value'],
             'system_bot_presets': ['image', 'data'],
             'system_personas': ['prompt', 'icon', 'note'],
             'system_modules': ['description', 'cjs', 'background_embedding', 'custom_toggle', 'icon'],

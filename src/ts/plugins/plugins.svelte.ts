@@ -631,7 +631,10 @@ function setDomainDbValue(key: string, value: any): boolean {
       characterStore.characters = value;
       return true;
     case "modules":
-      moduleStore.modules = value;
+      if (!Array.isArray(value)) {
+        throw new TypeError("Plugin database modules must be an array");
+      }
+      moduleStore.upsertModules(value);
       return true;
     case "enabledModules":
       moduleStore.enabledModules = value;
