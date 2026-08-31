@@ -4,10 +4,15 @@ import { createEmptySqlCommit } from "../../storage/sql/sqlCommit";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { snapshotFingerprint, trackDeep } from "./reactiveUtils";
 import { buildModuleDelta } from "./moduleCommit";
+import { StoreCommitQueue } from "./storeCommitQueue";
 import type {
   FlushableStore,
   InitializableStore,
 } from "./storeContracts";
+
+function fingerprintOf(value: unknown): string {
+  return snapshotFingerprint($state.snapshot(value));
+}
 
 class ModuleStore
   implements
@@ -21,10 +26,15 @@ class ModuleStore
 
   private storage: ISqlStorage | null = null;
   private observeDispose: (() => void) | null = null;
-  private commitTimer: ReturnType<typeof setTimeout> | null = null;
-  private writeChain: Promise<void> = Promise.resolve();
-  private committed = { modules: "", enabled: "", folders: "" };
+  private queue = new StoreCommitQueue();
+  private dirtyModules = false;
+  private dirtyEnabled = false;
+  private dirtyFolders = false;
   private committedModules: RisuModule[] = [];
+  // Fingerprint baselines, taken once at init/commit — never on reactive runs.
+  private committedModulesFingerprint = "";
+  private committedEnabledFingerprint = "";
+  private committedFoldersFingerprint = "";
 
   get list(): RisuModule[] {
     return this.modules;
@@ -56,18 +66,29 @@ class ModuleStore
       : [];
     this.loaded = true;
     this.committedModules = $state.snapshot(this.modules);
-    this.committed = this.fingerprints();
+    this.committedModulesFingerprint = fingerprintOf(this.modules);
+    this.committedEnabledFingerprint = fingerprintOf(this.enabledModules);
+    this.committedFoldersFingerprint = fingerprintOf(this.moduleFolders);
+    this.dirtyModules = false;
+    this.dirtyEnabled = false;
+    this.dirtyFolders = false;
+    // Baselines come from the synchronous assignments above — effect runs
+    // must never serialise modules (they can embed MB-sized lorebooks).
+    // Content is verified once per flush / hasPendingWrites.
+    let initial = true;
     this.observeDispose = $effect.root(() => {
       $effect(() => {
         trackDeep(this.modules);
         trackDeep(this.enabledModules);
         trackDeep(this.moduleFolders);
-        const current = this.fingerprints();
-        if (
-          current.modules !== this.committed.modules ||
-          current.enabled !== this.committed.enabled ||
-          current.folders !== this.committed.folders
-        ) this.scheduleCommit();
+        if (initial) {
+          initial = false;
+          return;
+        }
+        this.dirtyModules = true;
+        this.dirtyEnabled = true;
+        this.dirtyFolders = true;
+        this.scheduleCommit();
       });
     });
   }
@@ -116,6 +137,7 @@ class ModuleStore
     }
 
     this.modules = nextModules;
+    this.markModulesDirty();
   }
 
   async installModule(module: RisuModule): Promise<void> {
@@ -127,6 +149,7 @@ class ModuleStore
     const index = this.modules.findIndex((current) => current.id === id);
     if (index < 0) throw new Error(`Module not found: ${id}`);
     this.modules[index] = module;
+    this.markModulesDirty();
     await this.flush();
   }
 
@@ -135,6 +158,8 @@ class ModuleStore
     this.enabledModules = this.enabledModules.filter(
       (moduleId) => moduleId !== id,
     );
+    this.markModulesDirty();
+    this.dirtyEnabled = true;
     await this.flush();
   }
 
@@ -144,6 +169,7 @@ class ModuleStore
     if (shouldEnable) enabled.add(id);
     else enabled.delete(id);
     this.enabledModules = [...enabled];
+    this.dirtyEnabled = true;
     await this.flush();
     return shouldEnable;
   }
@@ -154,6 +180,7 @@ class ModuleStore
 
   async setEnabledModules(ids: string[]): Promise<void> {
     this.enabledModules = [...new Set(ids)];
+    this.dirtyEnabled = true;
     await this.flush();
   }
 
@@ -164,6 +191,7 @@ class ModuleStore
       color,
     };
     this.moduleFolders.push(folder);
+    this.markFoldersDirty();
     await this.flush();
     return folder;
   }
@@ -172,6 +200,7 @@ class ModuleStore
     const folder = this.getFolderById(id);
     if (!folder) throw new Error(`Module folder not found: ${id}`);
     folder.name = name;
+    this.dirtyFolders = true;
     await this.flush();
   }
 
@@ -180,6 +209,8 @@ class ModuleStore
     for (const module of this.modules) {
       if (module.folderId === id) module.folderId = undefined;
     }
+    this.markModulesDirty();
+    this.dirtyFolders = true;
     await this.flush();
   }
 
@@ -193,84 +224,112 @@ class ModuleStore
       throw new Error(`Module folder not found: ${folderId}`);
     }
     module.folderId = folderId;
+    this.markModulesDirty();
     await this.flush();
   }
 
   async flush(): Promise<void> {
-    if (this.commitTimer) {
-      clearTimeout(this.commitTimer);
-      this.commitTimer = null;
-    }
-    const current = this.fingerprints();
+    this.queue.cancel();
+    // Verify dirty flags against content once at commit time — mutating and
+    // awaiting flush() synchronously can beat effect-based detection.
     if (
-      current.modules === this.committed.modules &&
-      current.enabled === this.committed.enabled &&
-      current.folders === this.committed.folders
+      !this.dirtyModules &&
+      !this.dirtyEnabled &&
+      !this.dirtyFolders &&
+      !this.hasPendingContentChange()
     ) return;
 
     const storage = this.storage;
     if (!storage) {
       this.committedModules = $state.snapshot(this.modules);
-      this.committed = current;
+      this.committedModulesFingerprint = fingerprintOf(this.modules);
+      this.committedEnabledFingerprint = fingerprintOf(this.enabledModules);
+      this.committedFoldersFingerprint = fingerprintOf(this.moduleFolders);
+      this.clearDirty();
       return;
     }
     const commit = createEmptySqlCommit(0, "modules");
     let moduleSnapshot: RisuModule[] | undefined;
-    if (current.modules !== this.committed.modules) {
+    // Only serialise domains known (or verified) to be dirty — a no-op flush
+    // on a large library must not clone and stringify the whole domain.
+    if (
+      this.dirtyModules ||
+      fingerprintOf(this.modules) !== this.committedModulesFingerprint
+    ) {
       moduleSnapshot = $state.snapshot(this.modules);
       commit.modules = buildModuleDelta(this.committedModules, moduleSnapshot);
     }
-    if (current.enabled !== this.committed.enabled) {
+    if (
+      this.dirtyEnabled ||
+      fingerprintOf(this.enabledModules) !== this.committedEnabledFingerprint
+    ) {
       commit.root.upserts.push({
         key: "enabledModules",
         value: $state.snapshot(this.enabledModules),
       });
     }
-    if (current.folders !== this.committed.folders) {
+    if (
+      this.dirtyFolders ||
+      fingerprintOf(this.moduleFolders) !== this.committedFoldersFingerprint
+    ) {
       commit.root.upserts.push({
         key: "moduleFolders",
         value: $state.snapshot(this.moduleFolders),
       });
     }
-    const operation = this.writeChain.then(() => commitSqlChanges(storage, commit));
-    this.writeChain = operation.then(() => undefined, () => undefined);
+    const operation = this.queue.enqueue(() =>
+      commitSqlChanges(storage, commit),
+    );
     await operation;
     if (moduleSnapshot) this.committedModules = moduleSnapshot;
-    this.committed = current;
+    this.committedModulesFingerprint = fingerprintOf(this.modules);
+    this.committedEnabledFingerprint = fingerprintOf(this.enabledModules);
+    this.committedFoldersFingerprint = fingerprintOf(this.moduleFolders);
+    this.clearDirty();
   }
 
   hasPendingWrites(): boolean {
-    const current = this.fingerprints();
     return (
-      current.modules !== this.committed.modules ||
-      current.enabled !== this.committed.enabled ||
-      current.folders !== this.committed.folders
+      this.dirtyModules ||
+      this.dirtyEnabled ||
+      this.dirtyFolders ||
+      this.hasPendingContentChange()
     );
   }
 
-  private fingerprints() {
-    return {
-      modules: snapshotFingerprint($state.snapshot(this.modules)),
-      enabled: snapshotFingerprint($state.snapshot(this.enabledModules)),
-      folders: snapshotFingerprint($state.snapshot(this.moduleFolders)),
-    };
+  /** O(modules) clone+stringify — call only from flush/backup paths. */
+  private hasPendingContentChange(): boolean {
+    return (
+      fingerprintOf(this.modules) !== this.committedModulesFingerprint ||
+      fingerprintOf(this.enabledModules) !== this.committedEnabledFingerprint ||
+      fingerprintOf(this.moduleFolders) !== this.committedFoldersFingerprint
+    );
+  }
+
+  private markModulesDirty(): void {
+    this.dirtyModules = true;
+    this.scheduleCommit();
+  }
+
+  private markFoldersDirty(): void {
+    this.dirtyFolders = true;
+    this.scheduleCommit();
+  }
+
+  private clearDirty(): void {
+    this.dirtyModules = false;
+    this.dirtyEnabled = false;
+    this.dirtyFolders = false;
   }
 
   private scheduleCommit(): void {
-    if (this.commitTimer) clearTimeout(this.commitTimer);
-    this.commitTimer = setTimeout(() => {
-      this.commitTimer = null;
-      void this.flush().catch((error) => {
-        console.error("[ModuleStore] Failed to persist modules:", error);
-      });
-    }, 100);
+    this.queue.schedule(() => this.flush());
   }
 
   private disposeObserver(): void {
     this.observeDispose?.();
     this.observeDispose = null;
-    if (this.commitTimer) clearTimeout(this.commitTimer);
-    this.commitTimer = null;
+    this.queue.cancel();
   }
 
   resetForTesting(): void {
@@ -280,9 +339,12 @@ class ModuleStore
     this.enabledModules = [];
     this.moduleFolders = [];
     this.loaded = false;
-    this.committed = { modules: "", enabled: "", folders: "" };
     this.committedModules = [];
-    this.writeChain = Promise.resolve();
+    this.committedModulesFingerprint = "";
+    this.committedEnabledFingerprint = "";
+    this.committedFoldersFingerprint = "";
+    this.clearDirty();
+    this.queue.reset();
   }
 }
 

@@ -7,6 +7,7 @@ import { sqlMessageData, type SqlCommit } from "../../storage/sql/sqlCommit";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { isCapacitor } from "../../platform";
 import type { FlushableStore } from "./storeContracts";
+import { StoreCommitQueue } from "./storeCommitQueue";
 import { syncChatBranchMessage } from "../../chatBranches";
 
 /**
@@ -34,18 +35,16 @@ function findChatAcrossCharacters(chatId: string): Chat | undefined {
 
 class MessageStore implements FlushableStore {
   private pendingCommits: SqlCommit[] = [];
-  private writeChain: Promise<void> = Promise.resolve();
+  private queue = new StoreCommitQueue();
 
   private drainPendingCommits(): Promise<void> {
-    const operation = this.writeChain.then(async () => {
+    return this.queue.enqueue(async () => {
       const storage = await getSqlStorage();
       while (this.pendingCommits.length > 0) {
         await commitSqlChanges(storage, this.pendingCommits[0]);
         this.pendingCommits.shift();
       }
     });
-    this.writeChain = operation.catch(() => undefined);
-    return operation;
   }
 
   private persist(commit: SqlCommit): Promise<void> {
@@ -55,7 +54,7 @@ class MessageStore implements FlushableStore {
 
   /** Retry any writes retained after an earlier transient storage failure. */
   async flush(): Promise<void> {
-    await this.writeChain;
+    await this.queue.enqueue(async () => {});
     if (this.pendingCommits.length > 0) await this.drainPendingCommits();
   }
 
@@ -65,7 +64,7 @@ class MessageStore implements FlushableStore {
 
   resetPersistenceForTesting(): void {
     this.pendingCommits = [];
-    this.writeChain = Promise.resolve();
+    this.queue.reset();
   }
 
   get currentMessages(): Message[] {
@@ -486,9 +485,11 @@ export function releaseInactiveChatMessages(
  */
 export function compactChatMessages(chatId: string): void {
   const chat = findChatAcrossCharacters(chatId);
-  if (!chat || !chat.id) return;
-  if (chat.preventMessageCompaction) return;
-  if (chat.messagesFullyLoaded === false) return;
+  if (!chat 
+    || !chat.id
+    || chat.preventMessageCompaction
+    || chat.messagesFullyLoaded === false
+  ) return;
   const messages = chat.message;
   const retention = getActiveChatMessageRetention();
   if (!messages || messages.length <= retention) return;
