@@ -118,6 +118,14 @@ function setRunning(running) {
     }
 }
 
+function setVolumesCreated() {
+    fs.writeFileSync(process.env.FAKE_DOCKER_VOLUME_STATE, "created\\n");
+}
+
+function volumesExist() {
+    return fs.existsSync(process.env.FAKE_DOCKER_VOLUME_STATE);
+}
+
 function isRunning() {
     return process.env.FAKE_RUNNING === "1" || fs.existsSync(process.env.FAKE_DOCKER_STATE);
 }
@@ -132,6 +140,7 @@ if (composeIndex !== -1) {
     if (command === "build") exit(process.env.FAKE_COMPOSE_BUILD_FAIL === "1" ? 1 : 0);
     if (command === "run") exit(process.env.FAKE_COMPOSE_RUN_FAIL === "1" ? 1 : 0);
     if (command === "up") {
+        if (process.env.RISUAI_RUNTIME !== "static") setVolumesCreated();
         if (process.env.FAKE_COMPOSE_UP_FAIL === "1") exit(1);
         setRunning(true);
         exit(0);
@@ -144,7 +153,10 @@ if (composeIndex !== -1) {
         setRunning(true);
         exit(0);
     }
-    if (command === "exec") exit(process.env.FAKE_READINESS_FAIL === "1" ? 1 : 0);
+    if (command === "exec") {
+        if (process.env.FAKE_READINESS_AUTH_FAIL === "1") exit(42);
+        exit(process.env.FAKE_READINESS_FAIL === "1" ? 1 : 0);
+    }
     if (command === "logs") exit(0, process.env.FAKE_LOG_OUTPUT || "");
     if (command === "ps") {
         const psArgs = composeArgs.slice(composeArgs.indexOf("ps") + 1);
@@ -171,7 +183,7 @@ if (args[0] === "info") {
 if (args[0] === "context" && args[1] === "show") exit(0, "default\\n");
 if (args[0] === "context" && args[1] === "inspect") exit(0, "unix:///var/run/docker.sock\\n");
 if (args[0] === "network" && args[1] === "inspect") exit(process.env.FAKE_NETWORK_MISSING === "1" ? 1 : 0);
-if (args[0] === "volume" && args[1] === "inspect") exit(1);
+if (args[0] === "volume" && args[1] === "inspect") exit(volumesExist() ? 0 : 1);
 if (args[0] === "image" && args[1] === "inspect") exit(process.env.FAKE_IMAGE_EXISTS === "1" ? 0 : 1);
 if (args[0] === "ps") {
     if (!isRunning()) exit(0);
@@ -237,6 +249,7 @@ async function createFixture(t) {
     const fakeBin = join(checkout, "fake-bin");
     const dockerLog = join(checkout, "docker-calls.jsonl");
     const dockerState = join(checkout, "docker-state");
+    const dockerVolumeState = join(checkout, "docker-volume-state");
     const dateState = join(checkout, "date-state");
     const ufwLog = join(checkout, "ufw-calls.jsonl");
     await mkdir(fakeBin);
@@ -270,6 +283,7 @@ async function createFixture(t) {
         LC_ALL: "C",
         FAKE_DOCKER_LOG: dockerLog,
         FAKE_DOCKER_STATE: dockerState,
+        FAKE_DOCKER_VOLUME_STATE: dockerVolumeState,
         FAKE_DATE_STATE: dateState,
         FAKE_UFW_LOG: ufwLog,
     });
@@ -408,6 +422,7 @@ test("help and version are side-effect free and do not require Docker", async (t
     for (const [arguments_, output] of [
         [["help"], /Deployment modes:/],
         [["--help"], /Usage:/],
+        [["recovery"], /Recovery options, safest first:[\s\S]*--adopt-existing/],
         [["version"], /^risuai\.sh 2\.3\.0 \(configuration schema 3\)$/m],
     ]) {
         const result = await fixture.run(arguments_);
@@ -1237,6 +1252,39 @@ test("Compose up failure rolls back env and provider token files", async (t) => 
     assert.match(result.stderr, /restoring the previous protected configuration/);
     assert.deepEqual(await protectedSnapshot(fixture), before);
     await assertNoTransactionDebris(fixture);
+});
+
+test("failed first install preserves generated credentials after creating volumes", async (t) => {
+    const fixture = await createFixture(t);
+    const result = await fixture.run(
+        [
+            "install",
+            "--mode",
+            "local",
+            "--yes",
+            "--skip-port-check",
+            "--wait-timeout",
+            "10",
+        ],
+        {
+            ...fixedCredentials,
+            FAKE_READINESS_AUTH_FAIL: "1",
+            FAKE_LOG_OUTPUT: "risuai | password authentication failed for user risuai\n",
+        },
+    );
+
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /database authentication failure during startup/);
+    assert.match(result.stderr, /keeping its protected configuration because persistent volumes were created/);
+    assert.match(result.stderr, /db sync-password/);
+    const saved = await readSavedEnvironment(fixture);
+    assert.equal(saved.POSTGRES_PASSWORD, fixedCredentials.POSTGRES_PASSWORD);
+    assert.equal(saved.RUSTFS_ACCESS_KEY, fixedCredentials.RUSTFS_ACCESS_KEY);
+    assert.equal(saved.RUSTFS_SECRET_KEY, fixedCredentials.RUSTFS_SECRET_KEY);
+    await assertNoTransactionDebris(fixture);
+
+    const rebuild = await fixture.run(["rebuild"]);
+    assert.equal(rebuild.code, 0, rebuild.stderr);
 });
 
 test("readiness failure tears down the candidate and restores the previous generation", async (t) => {
