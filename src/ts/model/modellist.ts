@@ -1084,7 +1084,7 @@ export function getModelInfo(id?: string | null): LLMModel {
         name: found.name,
         shortName: found.name,
         fullName: found.name,
-        internalID: found.internalId,
+        internalID: found.internalId || found.name || found.id,
         provider: LLMProvider.AsIs,
         format: found.format,
         flags: found.flags,
