@@ -89,6 +89,7 @@ export async function loadData() {
       }
 
       installStartupData(startup, storage);
+      await initPresetDomain(storage);
 
       // Non-English dictionaries are separate chunks. Resolve the one
       // selected by this database before mounting the application so
@@ -131,10 +132,8 @@ export async function loadData() {
 
       // ── Step 7: Plugins, format checks, state updates ─────────────
       LoadingStatusState.text = "Loading chat runtime...";
-      const presetReady = initPresetDomain(storage);
       const runtimeSettingsReady = initRuntimeSettings(storage);
       await Promise.all([
-        presetReady,
         runtimeSettingsReady,
         serviceWorkerReady,
       ]);

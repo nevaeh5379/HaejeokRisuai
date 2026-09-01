@@ -1,5 +1,7 @@
 <script lang="ts">
-    import type { PromptItem, PromptItemChat, PromptRole } from "src/ts/process/prompt";
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import type { PromptItem, PromptItemChat, PromptRole } from "src/ts/process/prompt";
     import OptionInput from "./GUI/OptionInput.svelte";
     import TextAreaInput from "./GUI/TextAreaInput.svelte";
     import SelectInput from "./GUI/SelectInput.svelte";
@@ -10,7 +12,7 @@
     import TextInput from "./GUI/TextInput.svelte";
     import { settingsStore } from 'src/ts/stores/domain';
     import { RISU_PROMPT_DRAG_TYPE } from "src/ts/dragTypes";
-    
+
     interface Props {
         promptItem: PromptItem;
         onRemove?: () => void;
@@ -108,17 +110,17 @@
             return
         }
 
-        const ind = settingsStore.state.promptTemplate.findIndex((item, index) => {
+        const ind = presetStore.state.promptTemplate.findIndex((item, index) => {
             return JSON.stringify(item) === JSON.stringify(prompt)
         })
 
         if(ind !== -1){
-            settingsStore.state.promptTemplate.splice(ind, 1)
+            presetStore.state.promptTemplate.splice(ind, 1)
         }
-        const myInd = settingsStore.state.promptTemplate.findIndex((item, index) => {
+        const myInd = presetStore.state.promptTemplate.findIndex((item, index) => {
             return JSON.stringify(item) === JSON.stringify(promptItem)
         })
-        settingsStore.state.promptTemplate.splice(myInd, 0, prompt)
+        presetStore.state.promptTemplate.splice(myInd, 0, prompt)
 
     }
 
@@ -379,7 +381,7 @@
                                         promptItem.rangeEnd = promptItem.rangeEnd === 'end' ? 0 : 'end'
                                     }
                                 }} />
-                                {#if settingsStore.state.promptSettings.sendChatAsSystem}
+                                {#if presetStore.state.promptSettings.sendChatAsSystem}
                                     <CheckInput name={language.chatAsOriginalOnSystem} bind:check={promptItem.chatAsOriginalOnSystem}/>
                                 {/if}
                             </div>
@@ -438,7 +440,7 @@
                         <OptionInput value="postEverything">{language.formating.postEverything}</OptionInput>
                         <OptionInput value="chatML">{"chatML"}</OptionInput>
                         <OptionInput value="cache">{language.cachePoint}</OptionInput>
-                        {#if settingsStore.state.promptSettings.customChainOfThought}
+                        {#if presetStore.state.promptSettings.customChainOfThought}
                             <OptionInput value="cot">{language.cot}</OptionInput>
                         {/if}
                     </SelectInput>

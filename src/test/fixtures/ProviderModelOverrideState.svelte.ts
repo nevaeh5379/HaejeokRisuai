@@ -1,5 +1,6 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 /**
- * `$state`-backed stand-in for `settingsStore.state.providerModelOverrides[role]`.
+ * `$state`-backed stand-in for `presetStore.state.providerModelOverrides[role]`.
  *
  * BotSettings binds directly into the store object (`bind:value={currentOverride.*}`)
  * and Svelte relies on the source being a reactive state proxy to propagate changes

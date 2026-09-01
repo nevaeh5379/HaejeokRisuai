@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { requestChatData } from "src/ts/process/request/chatRequestOrchestrator";
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import { requestChatData } from "src/ts/process/request/chatRequestOrchestrator";
     import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
     import { activeGenerationChatIds } from "../../ts/process/chatRuntimeState";
     import type { character, Message, groupChat } from "../../ts/storage/database/schema";
@@ -74,28 +76,28 @@
             requestChatPage,
         )
         let messages:Message[] = []
-        
+
         messages = [...messages, ...currentChat.message];
         let lastMessages:Message[] = messages.slice(Math.max(messages.length - 10, 0));
         if(lastMessages.length === 0)
             return
-        const prompt = settingsStore.state.autoSuggestPrompt && settingsStore.state.autoSuggestPrompt.length > 0 ? settingsStore.state.autoSuggestPrompt : defaultAutoSuggestPrompt
+        const prompt = presetStore.state.autoSuggestPrompt && presetStore.state.autoSuggestPrompt.length > 0 ? presetStore.state.autoSuggestPrompt : defaultAutoSuggestPrompt
         let promptbody:OpenAIChat[] = [
             {
                 role:'system',
                 content: replacePlaceholders(prompt, currentChar.name, requestTarget)
             },
             {
-                role: 'user', 
+                role: 'user',
                 content: lastMessages.map(b=>(b.role==='char'? currentChar.name : getUserName(requestTarget))+":"+b.data).reduce((a,b)=>a+','+b)
             }
         ]
 
-        if(settingsStore.state.subModel === "textgen_webui" || settingsStore.state.subModel === 'mancer' || settingsStore.state.subModel.startsWith('local_')){
+        if(presetStore.state.subModel === "textgen_webui" || presetStore.state.subModel === 'mancer' || presetStore.state.subModel.startsWith('local_')){
             promptbody = [
                 {
                     role: 'system',
-                    content: replacePlaceholders(settingsStore.state.autoSuggestPrompt, currentChar.name, requestTarget)
+                    content: replacePlaceholders(presetStore.state.autoSuggestPrompt, currentChar.name, requestTarget)
                 },
                 ...lastMessages.map(({ role, data }) => ({
                     role: role === "user" ? "user" as const : "assistant" as const,
@@ -177,7 +179,7 @@
         <div class="flex bg-textcolor2 p-2 rounded-lg items-center">
             <div class="loadmove mx-2"></div>
             <div>{language.creatingSuggestions}</div>
-        </div>        
+        </div>
     {:else if !isCurrentChatGenerating()}
         {#if settingsStore.state.translator !== ''}
             <div class="flex mr-2 mb-2">
@@ -188,9 +190,9 @@
                 >
                     <LanguagesIcon/>
                 </button>
-            </div>    
+            </div>
         {/if}
-        
+
 
         <div class="flex mr-2 mb-2">
             <button class="bg-textcolor2 hover:bg-darkbutton font-bold py-2 px-4 rounded-sm text-textcolor"
@@ -225,12 +227,12 @@
                 </button>
             </div>
         {/each}
-        
+
     {/if}
 </div>
 
 <style>
-    
+
     .loadmove {
         animation: spin 1s linear infinite;
         border-radius: 50%;

@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { parseChatML } from "../parser/chatML";
 import { risuChatParser } from "../parser/parser.svelte";
 import type { Chat, character } from "../storage/database/schema";
@@ -1255,7 +1256,7 @@ export async function runTrigger(
     if (targetChat.id) characterStore.markChatDirty(targetChat.id);
   };
   const defaultVariables = parseKeyValue(char.defaultVariables).concat(
-    parseKeyValue(db.templateDefaultVariables),
+    parseKeyValue(presetStore.state.templateDefaultVariables),
   );
   let chat = arg.displayMode
     ? arg.chat

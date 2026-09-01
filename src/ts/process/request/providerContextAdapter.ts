@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { prepareProviderExecutionContext } from "@risuai/chat-core/providerContext.cjs";
 import { getModelInfo } from "../../model/modellist";
@@ -16,8 +17,8 @@ export function prepareBrowserProviderContext(
 ) {
   const db = settingsStore.state;
   const modeOverride = getProviderModeOverride(
-    db.seperateModelsForAxModels,
-    db.providerModelOverrides,
+    presetStore.state.seperateModelsForAxModels,
+    presetStore.state.providerModelOverrides,
     model,
   );
 
@@ -25,33 +26,33 @@ export function prepareBrowserProviderContext(
     prepared: prepareProviderExecutionContext(
       { ...arg, mode: model },
       {
-        primaryModel: db.aiModel,
-        subModel: db.subModel,
-        separateModelsForAxModels: db.seperateModelsForAxModels,
-        separateModels: db.seperateModels,
-        maxResponseTokens: db.maxResponse,
-        temperaturePercent: db.temperature,
+        primaryModel: presetStore.state.aiModel,
+        subModel: presetStore.state.subModel,
+        separateModelsForAxModels: presetStore.state.seperateModelsForAxModels,
+        separateModels: presetStore.state.seperateModels,
+        maxResponseTokens: presetStore.state.maxResponse,
+        temperaturePercent: presetStore.state.temperature,
         useStreaming: db.useStreaming,
         genTime: db.genTime,
-        extractJson: db.extractJson,
+        extractJson: presetStore.state.extractJson,
         reverseProxy: {
           requestModel: resolveProviderRoleModelForMode(
-            db.customProxyRequestModel,
-            db.customProxySubRequestModel,
+            presetStore.state.customProxyRequestModel,
+            presetStore.state.customProxySubRequestModel,
             model,
             modeOverride?.customProxyRequestModel,
           ),
-          format: db.customAPIFormat,
-          url: db.forceReplaceUrl,
-          key: db.proxyKey,
+          format: presetStore.state.customAPIFormat,
+          url: presetStore.state.forceReplaceUrl,
+          key: presetStore.state.proxyKey,
         },
         customModels: db.customModels,
       },
       getModelInfo,
     ),
     messageFormatting: {
-      systemContentReplacement: db.systemContentReplacement,
-      systemRoleReplacement: db.systemRoleReplacement,
+      systemContentReplacement: presetStore.state.systemContentReplacement,
+      systemRoleReplacement: presetStore.state.systemRoleReplacement,
     },
   };
 }

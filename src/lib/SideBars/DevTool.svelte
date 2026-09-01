@@ -1,5 +1,7 @@
 <script lang="ts">
-    import { selectedCharID } from "src/ts/stores.svelte";
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import { selectedCharID } from "src/ts/stores.svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
     import NumberInput from "../UI/GUI/NumberInput.svelte";
     import Button from "../UI/GUI/Button.svelte";
@@ -8,7 +10,7 @@
     import Accordion from "../UI/Accordion.svelte";
     import { getCharToken, getChatToken } from "src/ts/tokenizer";
     import { tokenizePreset } from "src/ts/process/prompt";
-    
+
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import TextAreaInput from "../UI/GUI/TextAreaInput.svelte";
     import { HardDriveUploadIcon, PlusIcon, TrashIcon } from "@lucide/svelte";
@@ -81,12 +83,12 @@
         }
 
         for(let i=0;i<formated.length;i++){
-            
+
             md += '### ' + (styledRole[formated[i].role] ?? '🤔 Unknown role') + '\n'
             const modals = formated[i].multimodals
 
             if(modals && modals.length > 0){
-                md += `> ${modals.length} non-text content(s) included\n` 
+                md += `> ${modals.length} non-text content(s) included\n`
             }
 
             if(formated[i].thoughts && formated[i].thoughts.length > 0){
@@ -101,7 +103,7 @@
         }
         alertMd(md)
     }
-    
+
     let autopilot = $state([])
 </script>
 
@@ -144,8 +146,8 @@
             <span>Current Chat</span>
             <div class="p-2 text-center">{token} Tokens</div>
         {/await}
-        {#if settingsStore.state.promptTemplate}
-            {#await tokenizePreset(settingsStore.state.promptTemplate)}
+        {#if presetStore.state.promptTemplate}
+            {#await tokenizePreset(presetStore.state.promptTemplate)}
                 <span>Prompt Template</span>
                 <div class="p-2 text-center">Loading...</div>
             {:then token}

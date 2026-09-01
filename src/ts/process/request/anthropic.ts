@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { Sha256 } from "@aws-crypto/sha256-js";
 import { HttpRequest } from "@smithy/protocol-http";
@@ -54,7 +55,7 @@ export async function requestClaude(
   const ollamaCloudAnthropic = aiModel === "ollama-cloud";
   let replacerURL = arg.customURL ?? DEFAULT_ANTHROPIC_MESSAGES_URL;
   let apiKey =
-    arg.key || (aiModel === "reverse_proxy" ? db.proxyKey : db.claudeAPIKey);
+    arg.key || (aiModel === "reverse_proxy" ? presetStore.state.proxyKey : db.claudeAPIKey);
   const maxTokens = arg.maxTokens;
   if (aiModel === "reverse_proxy" && db.autofillRequestUrl) {
     if (replacerURL.endsWith("v1")) {
@@ -184,16 +185,16 @@ export async function requestClaude(
   );
 
   // Handle thinking mode: off, adaptive, or budget
-  if (db.thinkingType === "off") {
+  if (presetStore.state.thinkingType === "off") {
     delete body.thinking;
   } else if (
-    db.thinkingType === "adaptive" &&
+    presetStore.state.thinkingType === "adaptive" &&
     arg.modelInfo.flags.includes(LLMFlags.claudeAdaptiveThinking)
   ) {
     // Adaptive thinking mode
     delete body.thinking;
     body.thinking = { type: "adaptive", display: "summarized" };
-    let effort = db.adaptiveThinkingEffort ?? "high";
+    let effort = presetStore.state.adaptiveThinkingEffort ?? "high";
     if (
       effort === "xhigh" &&
       !arg.modelInfo.flags.includes(LLMFlags.claudeXHighEffort)
@@ -378,10 +379,10 @@ export async function requestClaude(
       resText += "</Thoughts>\n\n";
     }
 
-    if (arg.extractJson && db.jsonSchemaEnabled) {
+    if (arg.extractJson && presetStore.state.jsonSchemaEnabled) {
       return {
         type: "success",
-        result: extractJSON(resText, db.jsonSchema, resolveRequestParserContext(arg)),
+        result: extractJSON(resText, presetStore.state.jsonSchema, resolveRequestParserContext(arg)),
       };
     }
     return {
@@ -1083,10 +1084,10 @@ async function requestClaudeHTTP(
   }
 
   arg.additionalOutput ??= "";
-  if (arg.extractJson && db.jsonSchemaEnabled) {
+  if (arg.extractJson && presetStore.state.jsonSchemaEnabled) {
     return {
       type: "success",
-      result: arg.additionalOutput + extractJSON(resText, db.jsonSchema, resolveRequestParserContext(arg)),
+      result: arg.additionalOutput + extractJSON(resText, presetStore.state.jsonSchema, resolveRequestParserContext(arg)),
     };
   }
   return {

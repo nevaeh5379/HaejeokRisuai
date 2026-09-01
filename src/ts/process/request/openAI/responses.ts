@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { language } from "src/lang";
 import { alertError } from "src/ts/alert";
@@ -226,8 +227,8 @@ function getResponsesRequestURL(arg: RequestDataArgumentExtended): {
   const db = settingsStore.state;
   const aiModel = arg.aiModel;
   const modeOverride = getProviderModeOverride(
-    db.seperateModelsForAxModels,
-    db.providerModelOverrides,
+    presetStore.state.seperateModelsForAxModels,
+    presetStore.state.providerModelOverrides,
     arg.mode,
   );
   let requestURL =
@@ -303,8 +304,8 @@ function buildResponsesHeaders(
   const db = settingsStore.state;
   const aiModel = arg.aiModel;
   const modeOverride = getProviderModeOverride(
-    db.seperateModelsForAxModels,
-    db.providerModelOverrides,
+    presetStore.state.seperateModelsForAxModels,
+    presetStore.state.providerModelOverrides,
     arg.mode,
   );
   const headers = {
@@ -314,7 +315,7 @@ function buildResponsesHeaders(
         (aiModel === "nanogpt"
           ? db.nanogptKey
           : aiModel === "reverse_proxy"
-            ? db.proxyKey
+            ? presetStore.state.proxyKey
             : db.openAIKey)),
     "Content-Type": "application/json",
   };
@@ -356,8 +357,8 @@ function getResponsesRequestModel(arg: RequestDataArgumentExtended): string {
   const db = settingsStore.state;
   if (arg.aiModel === "nanogpt") {
     const modeOverride = getProviderModeOverride(
-      db.seperateModelsForAxModels,
-      db.providerModelOverrides,
+      presetStore.state.seperateModelsForAxModels,
+      presetStore.state.providerModelOverrides,
       arg.mode,
     );
     return (
@@ -458,7 +459,7 @@ async function buildResponsesBody(
       })),
     );
   }
-  if (db.modelTools.includes("search")) {
+  if (presetStore.state.modelTools.includes("search")) {
     tools.push({ type: "web_search_preview" });
   }
 
@@ -497,7 +498,7 @@ async function buildResponsesBody(
   if (arg.aiModel === "ollama-cloud") {
     delete body.store;
   }
-  if (db.jsonSchemaEnabled || arg.schema) {
+  if (presetStore.state.jsonSchemaEnabled || arg.schema) {
     body.text ??= {};
     body.text.format = {
       type: "json_schema",
@@ -598,7 +599,7 @@ function extractResponsesText(
   if (thoughts.length > 0 && !result.startsWith("<Thoughts>")) {
     result = `<Thoughts>\n\n${thoughts.join("\n\n")}\n\n</Thoughts>\n${result}`;
   }
-  if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
+  if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
     return extractJSON(result, arg.extractJson, resolveRequestParserContext(arg));
   }
 
@@ -842,7 +843,7 @@ function getResponsesTranStream(
     if (reasoning) {
       result = `<Thoughts>\n\n${reasoning}\n\n</Thoughts>\n${result}`;
     }
-    if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
+    if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
       result = extractJSON(result, arg.extractJson, resolveRequestParserContext(arg));
     }
     const chunk: Record<string, string> = { "0": error || result };

@@ -39,7 +39,7 @@
                     settingsOpen.set(true);
                 }
             }}>{
-                getModelInfo(settingsStore.state.aiModel)?.fullName || settingsStore.state.aiModel || language.none
+                getModelInfo(presetStore.state.aiModel)?.fullName || presetStore.state.aiModel || language.none
             }</Button>
         {:else if item.type === 'preset'}
             <Button onclick={() => {

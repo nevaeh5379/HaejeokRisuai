@@ -1,5 +1,7 @@
 <script lang="ts">
-    import { PlusIcon, TrashIcon, LinkIcon, CodeXmlIcon, PowerIcon, PowerOffIcon } from "@lucide/svelte";
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import { PlusIcon, TrashIcon, LinkIcon, CodeXmlIcon, PowerIcon, PowerOffIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import { alertConfirm, alertMd, alertSelect } from "src/ts/alert";
     import { TriangleAlert } from '@lucide/svelte';
@@ -118,8 +120,8 @@
                             (plugin.displayName ?? plugin.name),
                     );
                     if (v) {
-                        if (settingsStore.state.currentPluginProvider === plugin.name) {
-                            settingsStore.state.currentPluginProvider = "";
+                        if (presetStore.state.currentPluginProvider === plugin.name) {
+                            presetStore.state.currentPluginProvider = "";
                         }
                         let plugins = settingsStore.state.plugins ?? [];
                         plugins.splice(i, 1);

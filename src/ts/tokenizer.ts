@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import type { Tiktoken } from "@dqbd/tiktoken";
@@ -104,10 +105,10 @@ function resolveServerTiktokenEncoding(
     "gemma", "cohere", "deepseek", "deepseek-v4", "glm4", "glm5",
   ]);
 
-  if (db.aiModel === "openrouter" || db.aiModel === "reverse_proxy") {
+  if (presetStore.state.aiModel === "openrouter" || presetStore.state.aiModel === "reverse_proxy") {
     return nonTiktoken.has(db.customTokenizer) ? null : "o200k_base";
   }
-  if (db.aiModel === "custom" && pluginTokenizer) {
+  if (presetStore.state.aiModel === "custom" && pluginTokenizer) {
     if (pluginTokenizer === "custom") return null;
     if (pluginTokenizer === "cl100k_base") return "cl100k_base";
     if (pluginTokenizer === "o200k_base") return "o200k_base";
@@ -121,25 +122,25 @@ function resolveServerTiktokenEncoding(
 
 export function getServerTiktokenEncoding(): TokenizerEncoding | null {
   const db = settingsStore.state;
-  const modelInfo = getModelInfo(db.aiModel);
+  const modelInfo = getModelInfo(presetStore.state.aiModel);
   const pluginTokenizer =
-    pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizer ?? "none";
+    pluginV2.providerOptions.get(presetStore.state.currentPluginProvider)?.tokenizer ?? "none";
   return resolveServerTiktokenEncoding(modelInfo, pluginTokenizer);
 }
 
 export async function countTokenTexts(texts: string[]): Promise<number[]> {
   if (texts.length === 0) return [];
   const db = settingsStore.state;
-  const modelInfo = getModelInfo(db.aiModel);
+  const modelInfo = getModelInfo(presetStore.state.aiModel);
   const pluginTokenizer =
-    pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizer ?? "none";
+    pluginV2.providerOptions.get(presetStore.state.currentPluginProvider)?.tokenizer ?? "none";
   const results = new Array<number>(texts.length);
   const missingTexts: string[] = [];
   const missingIndexes: number[] = [];
 
   for (let i = 0; i < texts.length; i++) {
-    const key = getHash(texts[i], db.aiModel, db.customTokenizer,
-      db.currentPluginProvider, db.googleClaudeTokenizing, modelInfo, pluginTokenizer);
+    const key = getHash(texts[i], presetStore.state.aiModel, db.customTokenizer,
+      presetStore.state.currentPluginProvider, db.googleClaudeTokenizing, modelInfo, pluginTokenizer);
     const cached = db.useTokenizerCaching ? tokenCountCache.get(key) : undefined;
     if (cached !== undefined) results[i] = cached;
     else { missingTexts.push(texts[i]); missingIndexes.push(i); }
@@ -163,8 +164,8 @@ export async function countTokenTexts(texts: string[]): Promise<number[]> {
       const index = missingIndexes[i];
       results[index] = counts[i];
       if (db.useTokenizerCaching) {
-        const key = getHash(texts[index], db.aiModel, db.customTokenizer,
-          db.currentPluginProvider, db.googleClaudeTokenizing, modelInfo, pluginTokenizer);
+        const key = getHash(texts[index], presetStore.state.aiModel, db.customTokenizer,
+          presetStore.state.currentPluginProvider, db.googleClaudeTokenizing, modelInfo, pluginTokenizer);
         tokenCountCache.set(key, counts[i]);
       }
     }
@@ -176,17 +177,17 @@ export async function encode(
   data: string,
 ): Promise<number[] | Uint32Array | Int32Array> {
   const db = settingsStore.state;
-  const modelInfo = getModelInfo(db.aiModel);
+  const modelInfo = getModelInfo(presetStore.state.aiModel);
   const pluginTokenizer =
-    pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizer ?? "none";
+    pluginV2.providerOptions.get(presetStore.state.currentPluginProvider)?.tokenizer ?? "none";
 
   let cacheKey = "";
   if (db.useTokenizerCaching) {
     cacheKey = getHash(
       data,
-      db.aiModel,
+      presetStore.state.aiModel,
       db.customTokenizer,
-      db.currentPluginProvider,
+      presetStore.state.currentPluginProvider,
       db.googleClaudeTokenizing,
       modelInfo,
       pluginTokenizer,
@@ -199,7 +200,7 @@ export async function encode(
 
   let result: number[] | Uint32Array | Int32Array;
 
-  if (db.aiModel === "openrouter" || db.aiModel === "reverse_proxy") {
+  if (presetStore.state.aiModel === "openrouter" || presetStore.state.aiModel === "reverse_proxy") {
     switch (db.customTokenizer) {
       case "mistral":
         result = await tokenizeWebTokenizers(data, "mistral");
@@ -241,7 +242,7 @@ export async function encode(
         result = await tikJS(data, "o200k_base");
         break;
     }
-  } else if (db.aiModel === "custom" && pluginTokenizer) {
+  } else if (presetStore.state.aiModel === "custom" && pluginTokenizer) {
     switch (pluginTokenizer) {
       case "mistral":
         result = await tokenizeWebTokenizers(data, "mistral");
@@ -287,7 +288,7 @@ export async function encode(
         break;
       case "custom":
         result = (await pluginV2.providerOptions
-          .get(db.currentPluginProvider)
+          .get(presetStore.state.currentPluginProvider)
           ?.tokenizerFunc?.(data)) ?? [0];
         break;
       default:
@@ -367,7 +368,7 @@ const googleCloudTokenizedCache = new LRUMap<string, number>(128);
 
 async function tokenizeGoogleCloud(text: string) {
   const db = settingsStore.state;
-  const model = getModelInfo(db.aiModel);
+  const model = getModelInfo(presetStore.state.aiModel);
   const cacheKey = text + model.internalID;
 
   if (googleCloudTokenizedCache.has(cacheKey)) {
@@ -451,7 +452,7 @@ async function tikJS(text: string, model = "cl100k_base") {
 async function geminiTokenizer(text: string) {
   const db = settingsStore.state;
   const fetchResult = await globalFetch(
-    `https://generativelanguage.googleapis.com/v1beta/${db.aiModel}:countTextTokens`,
+    `https://generativelanguage.googleapis.com/v1beta/${presetStore.state.aiModel}:countTextTokens`,
     {
       headers: {
         "content-type": "application/json",

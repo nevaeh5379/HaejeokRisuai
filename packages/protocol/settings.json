@@ -30,6 +30,26 @@
     "personas", "selectedPersona", "username", "userIcon", "userNote", "personaPrompt",
     "modules", "enabledModules", "moduleFolders", "activeBotPresetId"
   ],
+  "PRESET_STORE_SETTING_KEYS": [
+    "apiType", "localNetworkMode", "localNetworkTimeoutSec", "mainPrompt", "jailbreak",
+    "globalNote", "temperature", "maxContext", "maxResponse", "frequencyPenalty",
+    "PresensePenalty", "formatingOrder", "aiModel", "subModel", "currentPluginProvider",
+    "textgenWebUIStreamURL", "textgenWebUIBlockingURL", "forceReplaceUrl", "promptPreprocess",
+    "bias", "koboldURL", "proxyKey", "ooba", "ainconfig", "openrouterRequestModel",
+    "openrouterSubRequestModel", "proxyRequestModel", "NAIsettings", "autoSuggestPrompt",
+    "autoSuggestPrefix", "autoSuggestClean", "promptTemplate", "NAIadventure", "NAIappendName",
+    "localStopStrings", "customProxyRequestModel", "customProxySubRequestModel",
+    "reverseProxyOobaArgs", "top_p", "promptSettings", "repetition_penalty", "min_p", "top_a",
+    "openrouterProvider", "useInstructPrompt", "customPromptTemplateToggle",
+    "templateDefaultVariables", "moduleIntergration", "top_k", "instructChatTemplate",
+    "JinjaTemplate", "jsonSchemaEnabled", "jsonSchema", "strictJsonSchema", "extractJson",
+    "groupOtherBotRole", "groupTemplate", "seperateParametersEnabled", "customAPIFormat",
+    "systemContentReplacement", "systemRoleReplacement", "customFlags", "enableCustomFlags",
+    "presetRegex", "reasoningEffort", "thinkingTokens", "thinkingType", "deepseekThinkingType",
+    "adaptiveThinkingEffort", "deepseekReasoningEffort", "outputImageModal",
+    "seperateModelsForAxModels", "seperateModels", "providerModelOverrides", "fallbackModels",
+    "fallbackWhenBlankResponse", "seperateParameters", "modelTools", "verbosity", "dynamicOutput"
+  ],
   "NON_SETTINGS_ROOT_KEYS": [
     "characters", "isSql", "botPresets", "botPresetsId"
   ],

@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import {
   allowedDbKeys,
   customProviderStore,
@@ -1447,7 +1448,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       }
 
       if (
-        getModelInfo(settingsStore.state.aiModel).id.startsWith(
+        getModelInfo(presetStore.state.aiModel).id.startsWith(
           "pluginmodel:::",
         )
       ) {

@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { parseChatML } from "src/ts/parser/chatML";
 import type { Chat, character, groupChat } from "../../storage/database/schema";
@@ -131,7 +132,7 @@ async function summary(
       ...message,
       memo: "supaPrompt",
     }));
-    console.log("Using submodel: ", db.subModel, "for supaMemory model");
+    console.log("Using submodel: ", presetStore.state.subModel, "for supaMemory model");
     const da = await requestChatData(
       {
         formated: promptbody,
@@ -383,7 +384,7 @@ export async function hypaMemoryV2(
       room: { id: room.id, hypaV2Data: room.hypaV2Data },
       character: { id: char.chaId, name: char.name, type: char.type },
       config: {
-        maxResponse: db.maxResponse,
+        maxResponse: presetStore.state.maxResponse,
         hypaAllocatedTokens: db.hypaAllocatedTokens,
         hypaChunkSize: db.hypaChunkSize,
         hypaModel: db.hypaModel,
@@ -412,7 +413,7 @@ export async function hypaMemoryV2(
   // Subtract maxResponse from currentTokens to fix the token calculation issue.
   // This is not a fundamental solution but rather a temporary fix.
   // It is designed to minimize impact on other code.
-  currentTokens -= db.maxResponse;
+  currentTokens -= presetStore.state.maxResponse;
 
   if (room.hypaV2Data) {
     if (isOldHypaV2Data(room.hypaV2Data)) {

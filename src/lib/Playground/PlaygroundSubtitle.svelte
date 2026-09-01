@@ -1,6 +1,8 @@
 
 <script lang="ts">
-    import { language } from "src/lang";
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import { language } from "src/lang";
     import TextInput from "../UI/GUI/TextInput.svelte";
     import TextAreaInput from "../UI/GUI/TextAreaInput.svelte";
     import Button from "../UI/GUI/Button.svelte";
@@ -22,20 +24,20 @@
 
     let selLang = $state(settingsStore.state.language)
     let prompt = $state(LLMModePrompt)
-    let modelInfo = $derived(getModelInfo(settingsStore.state.aiModel))
+    let modelInfo = $derived(getModelInfo(presetStore.state.aiModel))
     let outputText = $state('')
     let fileB64 = $state('')
     let vttB64 = $state('')
     let vobj:TranscribeObj[] = $state([])
     let mode = $state('llm')
-    let sourceLang:string|null = $state(null)    
+    let sourceLang:string|null = $state(null)
 
     async function runLLMMode() {
         outputText = 'Loading...\n\n'
 
         const file = await selectSingleFile([
             'mp3', 'ogg', 'wav', 'flac',
-            'mp4', 'webm', 'mkv', 'avi', 'mov'  
+            'mp4', 'webm', 'mkv', 'avi', 'mov'
         ])
 
         if(!file){
@@ -129,7 +131,7 @@
 
         const files = await selectFileByDom([
             'mp3', 'ogg', 'wav', 'flac',
-            'mp4', 'webm', 'mkv', 'avi', 'mov'  
+            'mp4', 'webm', 'mkv', 'avi', 'mov'
 
         ])
 
@@ -147,7 +149,7 @@
 
         const ext = file.name.split('.').pop()
         if(videos.includes(ext)){
-            
+
 
             //check duration
             let duration = 0
@@ -257,7 +259,7 @@
                         combined[j] = -1
                     }
                 }
-                
+
                 outputText = ('Transcribing... (This may take a while. Do not close the tab.)')
                 if(device !== 'webgpu'){
                     outputText += `\nYour browser or OS do not support WebGPU, so the transcription may be slower.`
@@ -357,7 +359,7 @@
         audio.play().catch(() => {});
     }
 
-    
+
 
 
     type TranscribeObj = {
@@ -365,7 +367,7 @@
         end: string
         text: string
     }
-    
+
 
     function convertTransToObj(r:string){
         const lines = r.split('\n').map(v => v.trim()).filter(v => v)
@@ -531,7 +533,7 @@
         // SRT
         if(sel === 1){
             downloadFile('subtitle.srt', webVttToSrt().join('\n\n'))
-            return   
+            return
         }
     }}>
         {language.download}

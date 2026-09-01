@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 
 import { parseAdditionalParamJsonValue } from "./additionalParams";
@@ -196,12 +197,12 @@ export function applyParameters(
   }
 
   if (
-    db.seperateParametersEnabled &&
+    presetStore.state.seperateParametersEnabled &&
     (modelMode !== "model" || db.seperateParametersByModel)
   ) {
-    let sepParams = db.seperateParameters[modelMode];
+    let sepParams = presetStore.state.seperateParameters[modelMode];
     if (db.seperateParametersByModel) {
-      sepParams = db.seperateParameters.overrides[arg.modelId];
+      sepParams = presetStore.state.seperateParameters.overrides[arg.modelId];
 
       if (!sepParams) {
         throw new Error(
@@ -210,7 +211,7 @@ export function applyParameters(
       }
     }
     if (modelMode === "submodel") {
-      sepParams = db.seperateParameters["otherAx"];
+      sepParams = presetStore.state.seperateParameters["otherAx"];
     }
 
     for (const parameter of parameters) {
@@ -306,37 +307,37 @@ export function applyParameters(
     if (isReasoningCapabilityParameter(parameter)) {
       continue;
     }
-    if (parameter === "top_k" && arg.ignoreTopKIfZero && db.top_k === 0) {
+    if (parameter === "top_k" && arg.ignoreTopKIfZero && presetStore.state.top_k === 0) {
       continue;
     }
     switch (parameter) {
       case "temperature": {
-        value = db.temperature === -1000 ? -1000 : db.temperature / 100;
+        value = presetStore.state.temperature === -1000 ? -1000 : presetStore.state.temperature / 100;
         break;
       }
       case "top_k": {
-        value = db.top_k;
+        value = presetStore.state.top_k;
         break;
       }
       case "repetition_penalty": {
-        value = db.repetition_penalty;
+        value = presetStore.state.repetition_penalty;
         break;
       }
       case "min_p": {
-        value = db.min_p;
+        value = presetStore.state.min_p;
         break;
       }
       case "top_a": {
-        value = db.top_a;
+        value = presetStore.state.top_a;
         break;
       }
       case "top_p": {
-        value = db.top_p;
+        value = presetStore.state.top_p;
         break;
       }
       case "reasoning_effort": {
         value = getEffort(
-          db.reasoningEffort,
+          presetStore.state.reasoningEffort,
           reasoningDisabledEffort,
           supportsXHighReasoning,
           reasoningMinEffort,
@@ -344,20 +345,20 @@ export function applyParameters(
         break;
       }
       case "verbosity": {
-        value = getVerbosity(db.verbosity);
+        value = getVerbosity(presetStore.state.verbosity);
         break;
       }
       case "frequency_penalty": {
         value =
-          db.frequencyPenalty === -1000 ? -1000 : db.frequencyPenalty / 100;
+          presetStore.state.frequencyPenalty === -1000 ? -1000 : presetStore.state.frequencyPenalty / 100;
         break;
       }
       case "presence_penalty": {
-        value = db.PresensePenalty === -1000 ? -1000 : db.PresensePenalty / 100;
+        value = presetStore.state.PresensePenalty === -1000 ? -1000 : presetStore.state.PresensePenalty / 100;
         break;
       }
       case "thinking_tokens": {
-        value = db.thinkingTokens;
+        value = presetStore.state.thinkingTokens;
         break;
       }
     }

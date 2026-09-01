@@ -5,6 +5,7 @@
  */
 
 import type { SettingItem } from "./types";
+import { presetStore } from "../stores/domain/presetStore.svelte";
 
 export const chatFormatSettingsItems: SettingItem[] = [
   {
@@ -32,7 +33,7 @@ export const chatFormatSettingsItems: SettingItem[] = [
     type: "textarea",
     fallbackLabel: "Jinja Template",
     bindKey: "JinjaTemplate",
-    condition: (ctx) => ctx.db.instructChatTemplate === "jinja",
+    condition: () => presetStore.state.instructChatTemplate === "jinja",
     keywords: ["jinja", "template", "custom"],
   },
 ];

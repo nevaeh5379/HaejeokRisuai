@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { Ollama } from "ollama/dist/browser.mjs";
 import { fetchNative } from "../../globalApi.svelte";
@@ -154,8 +155,8 @@ export async function requestOllama(
   const isCloud = arg.aiModel === "ollama-cloud";
   const requestFormat = isCloud ? db.ollamaRequestFormat : LLMFormat.Ollama;
   const modeOverride = getProviderModeOverride(
-    db.seperateModelsForAxModels,
-    db.providerModelOverrides,
+    presetStore.state.seperateModelsForAxModels,
+    presetStore.state.providerModelOverrides,
     arg.mode,
   );
   const ollamaModel = resolveOllamaRequestModel(

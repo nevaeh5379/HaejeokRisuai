@@ -1,6 +1,6 @@
 import {
   createActivePresetSnapshot,
-  setPreset,
+  createPresetSettingsState,
 } from "../storage/presets/presetService";
 import type { ISqlStorage } from "../storage/sql/ISqlStorage";
 import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
@@ -30,7 +30,7 @@ const PRESET_OWNED_DEFERRED_KEYS = [
 /**
  * Initialises the preset domain: loads the presets, repairs the stale
  * `moduleIntergration` reference carried over by older SQL migrations and
- * binds the active-preset provider consumed by SettingsStore.
+ * installs the active preset as PresetStore's canonical reactive state.
  *
  * Never rejects (matches the historical best-effort behavior).
  */
@@ -42,7 +42,7 @@ export function initPresetDomain(storage: ISqlStorage): Promise<void> {
       // Older SQL migrations copied the stale botPresets entry without
       // folding in the live root value for the active preset. Repair that
       // representation before setPreset can blank the visible setting.
-      const liveModuleIntegration = settingsStore.state.moduleIntergration;
+      const liveModuleIntegration = settingsStore.getStateRecord().moduleIntergration;
       if (
         activePreset &&
         activePreset.moduleIntergration === undefined &&
@@ -56,19 +56,29 @@ export function initPresetDomain(storage: ISqlStorage): Promise<void> {
         activePreset = presetStore.activePreset;
       }
       if (activePreset) {
-        settingsStore.hydrate((state) => setPreset(state, activePreset));
+        const activeState = createPresetSettingsState(
+          settingsStore.getStateRecord(),
+          activePreset,
+        );
+        presetStore.bindActivePresetState(activeState, () => {
+          const metadata = presetStore.activePresetMetadata;
+          return metadata
+            ? createActivePresetSnapshot(
+                {
+                  ...settingsStore.getStateRecord(),
+                  ...presetStore.getStateRecord(),
+                },
+                metadata,
+              )
+            : undefined;
+        });
+        settingsStore.releasePresetOwnedState();
         const presetOwnedDeferredKeys = PRESET_OWNED_DEFERRED_KEYS.filter(
           (key) =>
             (activePreset as unknown as Record<string, unknown>)[key] !==
             undefined,
         );
         deferredSettingsLoader.markLoaded(presetOwnedDeferredKeys);
-        presetStore.bindActivePresetProvider(() => {
-          const metadata = presetStore.activePresetMetadata;
-          return metadata
-            ? createActivePresetSnapshot(settingsStore.state, metadata)
-            : undefined;
-        });
       }
       performance.mark("active-preset-ready");
     })

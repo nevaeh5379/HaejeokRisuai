@@ -3,7 +3,7 @@
     import Check from "src/lib/UI/GUI/CheckInput.svelte";
     import { language } from "src/lang";
     import Help from "src/lib/Others/Help.svelte";
-    
+
     import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
     import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
     import { customProviderStore } from "src/ts/plugins/plugins.svelte";
@@ -38,7 +38,6 @@
     import { openPresetList } from "src/ts/stores.svelte";
     import { selectSingleFile } from "src/ts/util";
     import { getModelInfo, LLMFlags, LLMFormat, LLMProvider } from "src/ts/model/modellist";
-    import { saveCurrentPreset } from "../../../ts/storage/presets/presetService";
     import RegexList from "src/lib/SideBars/Scripts/RegexList.svelte";
     import SettingRenderer from "../SettingRenderer.svelte";
     import { allBasicParameterItems } from "src/ts/setting/botSettingsParamsData";
@@ -56,18 +55,18 @@
     let isFeatureRole = $derived(featureRoles.includes(providerModelRole as FeatureRole));
     let currentOverride = $derived(
         isFeatureRole
-            ? settingsStore.state.providerModelOverrides[providerModelRole as FeatureRole]
+            ? presetStore.state.providerModelOverrides[providerModelRole as FeatureRole]
             : undefined
     );
 
     $effect(() => {
-        if (settingsStore.state.seperateModelsForAxModels) {
+        if (presetStore.state.seperateModelsForAxModels) {
             if (providerModelRole === 'sub') providerModelRole = auxSubTab
         } else if (isFeatureRole) {
             providerModelRole = 'sub'
         }
     })
-    
+
     const openrouterPinnedItems: ModelGridPinnedItem[] = [
         { id: 'risu/free',       displayName: 'Free Auto',       providerName: 'Risu'       },
         { id: 'openrouter/auto', displayName: 'OpenRouter Auto', providerName: 'OpenRouter' },
@@ -78,7 +77,7 @@
     function getEffectiveNanoGPTSubscription(role: ProviderRole): boolean {
         if (role === 'main') return settingsStore.state.nanogptUseSubscriptionEndpoint
         if (role === 'sub') return settingsStore.state.nanogptSubUseSubscriptionEndpoint
-        return settingsStore.state.providerModelOverrides[role].nanogptUseSubscriptionEndpoint
+        return presetStore.state.providerModelOverrides[role].nanogptUseSubscriptionEndpoint
             ?? settingsStore.state.nanogptSubUseSubscriptionEndpoint
     }
 
@@ -92,7 +91,7 @@
             settingsStore.state.nanogptSubRequestModelName = ''
             settingsStore.state.nanogptSubProvider = ''
         } else {
-            const override = settingsStore.state.providerModelOverrides[role]
+            const override = presetStore.state.providerModelOverrides[role]
             override.nanogptRequestModel = ''
             override.nanogptRequestModelName = ''
             override.nanogptProvider = ''
@@ -100,7 +99,7 @@
     }
 
     function setFeatureNanoGPTSubscription(role: FeatureRole, enabled: boolean) {
-        settingsStore.state.providerModelOverrides[role].nanogptUseSubscriptionEndpoint = enabled
+        presetStore.state.providerModelOverrides[role].nanogptUseSubscriptionEndpoint = enabled
         clearNanoGPTSelection(role)
     }
 
@@ -109,12 +108,12 @@
             ? settingsStore.state.nanogptRequestModel
             : role === 'sub'
                 ? settingsStore.state.nanogptSubRequestModel
-                : settingsStore.state.providerModelOverrides[role].nanogptRequestModel
+                : presetStore.state.providerModelOverrides[role].nanogptRequestModel
         const modelName = role === 'main'
             ? settingsStore.state.nanogptRequestModelName
             : role === 'sub'
                 ? settingsStore.state.nanogptSubRequestModelName
-                : settingsStore.state.providerModelOverrides[role].nanogptRequestModelName
+                : presetStore.state.providerModelOverrides[role].nanogptRequestModelName
         return model && !modelName ? 'manual' : 'list'
     }
 
@@ -153,7 +152,7 @@
             previousNanoGPTSubscriptionMode.sub = sub
             clearNanoGPTSelection('sub')
             for (const role of featureRoles) {
-                if (settingsStore.state.providerModelOverrides[role].nanogptUseSubscriptionEndpoint === undefined) {
+                if (presetStore.state.providerModelOverrides[role].nanogptUseSubscriptionEndpoint === undefined) {
                     clearNanoGPTSelection(role)
                 }
             }
@@ -170,7 +169,7 @@
             clearNanoGPTSelection('main')
             clearNanoGPTSelection('sub')
             for (const role of featureRoles) {
-                delete settingsStore.state.providerModelOverrides[role].nanogptUseSubscriptionEndpoint
+                delete presetStore.state.providerModelOverrides[role].nanogptUseSubscriptionEndpoint
                 clearNanoGPTSelection(role)
             }
         }
@@ -193,14 +192,14 @@
     let { goPromptTemplate = () => {}, targetSubmenu, targetModelTab, hideTabs = false }: Props = $props();
 
     async function loadTokenize(){
-        tokens.mainPrompt = await tokenizeAccurate(settingsStore.state.mainPrompt, true)
-        tokens.jailbreak = await tokenizeAccurate(settingsStore.state.jailbreak, true)
-        tokens.globalNote = await tokenizeAccurate(settingsStore.state.globalNote, true)
+        tokens.mainPrompt = await tokenizeAccurate(presetStore.state.mainPrompt, true)
+        tokens.jailbreak = await tokenizeAccurate(presetStore.state.jailbreak, true)
+        tokens.globalNote = await tokenizeAccurate(presetStore.state.globalNote, true)
     }
 
     $effect.pre(() => {
-        if(settingsStore.state.aiModel === 'textgen_webui' || settingsStore.state.subModel === 'mancer'){
-            settingsStore.state.useStreaming = settingsStore.state.textgenWebUIStreamURL.startsWith("wss://")
+        if(presetStore.state.aiModel === 'textgen_webui' || presetStore.state.subModel === 'mancer'){
+            settingsStore.state.useStreaming = presetStore.state.textgenWebUIStreamURL.startsWith("wss://")
         }
     });
 
@@ -209,11 +208,6 @@
         settingsStore.state.vertexAccessTokenExpires = 0;
         console.log('Vertex AI token cleared');
     }
-
-    function persistModelSelection() {
-        void saveCurrentPreset();
-    }
-
 
     let submenu = $state(settingsStore.state.useLegacyGUI ? -1 : 0)
     $effect(() => {
@@ -225,13 +219,13 @@
             if (targetModelTab !== 'provider') providerModelRole = targetModelTab
         }
     })
-    let modelInfo = $derived(getModelInfo(settingsStore.state.aiModel))
-    let subModelInfo = $derived(getModelInfo(settingsStore.state.subModel))
+    let modelInfo = $derived(getModelInfo(presetStore.state.aiModel))
+    let subModelInfo = $derived(getModelInfo(presetStore.state.subModel))
     let configuredModelIds = $derived.by(() => {
-        const ids = [settingsStore.state.aiModel, settingsStore.state.subModel]
-        if (settingsStore.state.seperateModelsForAxModels) {
+        const ids = [presetStore.state.aiModel, presetStore.state.subModel]
+        if (presetStore.state.seperateModelsForAxModels) {
             for (const key of ['memory', 'translate', 'emotion', 'otherAx'] as const) {
-                const modelId = settingsStore.state.seperateModels[key]
+                const modelId = presetStore.state.seperateModels[key]
                 if (modelId) ids.push(modelId)
             }
         }
@@ -245,9 +239,9 @@
         const set = new Set<LLMProvider>();
         if (modelInfo?.provider !== undefined) set.add(modelInfo.provider);
         if (subModelInfo?.provider !== undefined) set.add(subModelInfo.provider);
-        if (settingsStore.state.seperateModelsForAxModels) {
+        if (presetStore.state.seperateModelsForAxModels) {
             for (const key of ['memory', 'translate', 'emotion', 'otherAx'] as const) {
-                const mId = settingsStore.state.seperateModels[key];
+                const mId = presetStore.state.seperateModels[key];
                 if (mId) {
                     const info = getModelInfo(mId);
                     if (info?.provider !== undefined) set.add(info.provider);
@@ -274,9 +268,9 @@
     let usesKobold = $derived(configuredModelIds.includes('kobold'));
     let usesTextGen = $derived(configuredModelIds.includes('textgen_webui'));
     let usesOoba = $derived(configuredModelIds.includes('ooba'));
-    let usesCustomPlugin = $derived(settingsStore.state.aiModel === 'custom' || settingsStore.state.subModel === 'custom');
+    let usesCustomPlugin = $derived(presetStore.state.aiModel === 'custom' || presetStore.state.subModel === 'custom');
     let usesEcho = $derived(configuredModelIds.includes('echo_model'));
-    
+
     let hasAnyProviderSettings = $derived(
         usesGoogle || usesVertex || usesAnthropicOrAWS || usesOpenAI || usesMistral ||
         usesNovelAI || usesNovelList || usesCohere || usesMancer || usesOpenRouter ||
@@ -336,7 +330,7 @@
 
 {#snippet providerRoleSelector(providerName: string)}
     <span class="text-xs text-textcolor2">{providerName} {language.model}</span>
-    {#if settingsStore.state.seperateModelsForAxModels}
+    {#if presetStore.state.seperateModelsForAxModels}
         <div class="flex flex-wrap gap-1">
             <SegmentedControl
                 bind:value={providerModelRole}
@@ -401,21 +395,21 @@
         {#if !hideTabs}
             <!-- Submenu 0 Tabs: Main Model vs Auxiliary Model vs Provider Credentials (Slim Single Line) -->
             <div class="flex w-full rounded-xl border border-darkborderc overflow-hidden bg-darkbg/40 p-1 gap-1">
-                <button 
+                <button
                     onclick={() => { modelTab = 'main'; providerModelRole = 'main'; }}
                     class="py-1.5 px-3 flex-1 rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap {modelTab === 'main' ? 'bg-darkbutton text-textcolor shadow-sm' : 'text-textcolor2 hover:text-textcolor'}"
                 >
                     <span>{language.mainModelCardTitle || language.model}</span>
                     <Help key="model" />
                 </button>
-                <button 
+                <button
                     onclick={() => { modelTab = 'sub'; providerModelRole = 'sub'; }}
                     class="py-1.5 px-3 flex-1 rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap {modelTab === 'sub' ? 'bg-darkbutton text-textcolor shadow-sm' : 'text-textcolor2 hover:text-textcolor'}"
                 >
                     <span>{language.subModelCardTitle || language.submodel}</span>
                     <Help key="submodel" />
                 </button>
-                <button 
+                <button
                     onclick={() => { modelTab = 'provider'; }}
                     class="py-1.5 px-3 flex-1 rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap {modelTab === 'provider' ? 'bg-darkbutton text-textcolor shadow-sm' : 'text-textcolor2 hover:text-textcolor'}"
                 >
@@ -428,25 +422,25 @@
         {#if modelTab === 'main'}
             <!-- Main Model Inline Browser & Quick Options -->
             <div class="flex flex-col gap-3">
-                <ModelBrowser bind:value={settingsStore.state.aiModel} onChange={persistModelSelection} />
+                <ModelBrowser bind:value={presetStore.state.aiModel} />
 
                 <!-- Main Model Options (Bottom) -->
                 <div class="flex flex-col gap-2.5 pt-3 border-t border-darkborderc/60">
                     {#if !usesOllamaCloud && (modelInfo.flags.includes(LLMFlags.hasStreaming) || subModelInfo.flags.includes(LLMFlags.hasStreaming))}
                         <Check bind:check={settingsStore.state.useStreaming} name={`Response ${language.streaming}`} />
-                        
+
                         {#if settingsStore.state.useStreaming && (modelInfo.flags.includes(LLMFlags.geminiThinking) || subModelInfo.flags.includes(LLMFlags.geminiThinking))}
                             <Check bind:check={settingsStore.state.streamGeminiThoughts} name={`Stream Gemini Thoughts`} />
                         {/if}
                     {/if}
 
-                    {#if settingsStore.state.aiModel === 'reverse_proxy' || settingsStore.state.subModel === 'reverse_proxy'}
+                    {#if presetStore.state.aiModel === 'reverse_proxy' || presetStore.state.subModel === 'reverse_proxy'}
                         <Check bind:check={settingsStore.state.reverseProxyOobaMode} name={`${language.reverseProxyOobaMode}`} />
                     {/if}
 
                     {#if modelInfo.provider === LLMProvider.NovelAI || subModelInfo.provider === LLMProvider.NovelAI}
-                        <Check bind:check={settingsStore.state.NAIadventure} name={language.textAdventureNAI} />
-                        <Check bind:check={settingsStore.state.NAIappendName} name={language.appendNameNAI} />
+                        <Check bind:check={presetStore.state.NAIadventure} name={language.textAdventureNAI} />
+                        <Check bind:check={presetStore.state.NAIappendName} name={language.appendNameNAI} />
                     {/if}
                 </div>
             </div>
@@ -455,11 +449,11 @@
             <!-- Auxiliary Model Section -->
             <div class="flex flex-col gap-3">
                 <div class="flex items-center justify-between pb-1">
-                    <Check bind:check={settingsStore.state.seperateModelsForAxModels} name={language.seperateModelsForAxModels} />
+                    <Check bind:check={presetStore.state.seperateModelsForAxModels} name={language.seperateModelsForAxModels} />
                 </div>
 
-                {#if !settingsStore.state.seperateModelsForAxModels}
-                    <ModelBrowser bind:value={settingsStore.state.subModel} blankable onChange={persistModelSelection} />
+                {#if !presetStore.state.seperateModelsForAxModels}
+                    <ModelBrowser bind:value={presetStore.state.subModel} blankable />
                 {:else}
                     <div class="flex items-center mb-1">
                         <Check bind:check={settingsStore.state.doNotChangeSeperateModels} name={language.doNotChangeSeperateModels} />
@@ -467,25 +461,25 @@
 
                     <!-- Aux feature sub-tabs -->
                     <div class="flex w-full rounded-xl border border-darkborderc overflow-hidden bg-darkbg/40 p-1 gap-1">
-                        <button 
+                        <button
                             onclick={() => { auxSubTab = 'memory'; }}
                             class="py-1.5 px-3 flex-1 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 {auxSubTab === 'memory' ? 'bg-darkbutton text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
                         >
                             <span>Memory</span>
                         </button>
-                        <button 
+                        <button
                             onclick={() => { auxSubTab = 'translate'; }}
                             class="py-1.5 px-3 flex-1 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 {auxSubTab === 'translate' ? 'bg-darkbutton text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
                         >
                             <span>Translations</span>
                         </button>
-                        <button 
+                        <button
                             onclick={() => { auxSubTab = 'emotion'; }}
                             class="py-1.5 px-3 flex-1 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 {auxSubTab === 'emotion' ? 'bg-darkbutton text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
                         >
                             <span>Emotion</span>
                         </button>
-                        <button 
+                        <button
                             onclick={() => { auxSubTab = 'otherAx'; }}
                             class="py-1.5 px-3 flex-1 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 {auxSubTab === 'otherAx' ? 'bg-darkbutton text-textcolor shadow-xs' : 'text-textcolor2 hover:text-textcolor'}"
                         >
@@ -495,13 +489,13 @@
 
                     <!-- Inline Browser for current aux sub-tab -->
                     {#if auxSubTab === 'memory'}
-                        <ModelBrowser bind:value={settingsStore.state.seperateModels.memory} blankable />
+                        <ModelBrowser bind:value={presetStore.state.seperateModels.memory} blankable />
                     {:else if auxSubTab === 'translate'}
-                        <ModelBrowser bind:value={settingsStore.state.seperateModels.translate} blankable />
+                        <ModelBrowser bind:value={presetStore.state.seperateModels.translate} blankable />
                     {:else if auxSubTab === 'emotion'}
-                        <ModelBrowser bind:value={settingsStore.state.seperateModels.emotion} blankable />
+                        <ModelBrowser bind:value={presetStore.state.seperateModels.emotion} blankable />
                     {:else if auxSubTab === 'otherAx'}
-                        <ModelBrowser bind:value={settingsStore.state.seperateModels.otherAx} blankable />
+                        <ModelBrowser bind:value={presetStore.state.seperateModels.otherAx} blankable />
                     {/if}
                 {/if}
             </div>
@@ -513,7 +507,7 @@
                 <div class="flex items-center justify-between pb-1 border-b border-darkborderc/60 text-xs">
                     <span class="text-textcolor2 font-medium">Click any provider to configure its API Key & options</span>
                     <div class="flex items-center gap-2">
-                        <button 
+                        <button
                             class="px-2 py-1 rounded bg-darkbutton hover:bg-darkbutton/80 text-textcolor text-xs font-medium cursor-pointer"
                             onclick={toggleAllProviders}
                         >
@@ -525,7 +519,7 @@
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
                     <!-- Google AI Studio -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('google', usesGoogle)}
                         >
@@ -549,7 +543,7 @@
 
                     <!-- Google Cloud Vertex AI -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('vertex', usesVertex)}
                         >
@@ -567,13 +561,13 @@
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">Project ID</span>
                                 <TextInput marginBottom={false} size={"sm"} placeholder="..." bind:value={settingsStore.state.google.projectId} oninput={clearVertexToken} />
-                                
+
                                 <span class="text-xs text-textcolor2">Vertex Client Email</span>
                                 <TextInput marginBottom={false} size={"sm"} placeholder="..." bind:value={settingsStore.state.vertexClientEmail} oninput={clearVertexToken} />
-                                
+
                                 <span class="text-xs text-textcolor2">Vertex Private Key</span>
                                 <TextInput marginBottom={false} size={"sm"} placeholder="..." hideText={settingsStore.state.hideApiKey} bind:value={settingsStore.state.vertexPrivateKey} oninput={clearVertexToken} />
-                                
+
                                 <span class="text-xs text-textcolor2">Region</span>
                                 <SelectInput value={settingsStore.state.vertexRegion} onchange={(e) => {
                                     settingsStore.state.vertexRegion = e.currentTarget.value;
@@ -589,7 +583,7 @@
 
                     <!-- OpenAI -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('openai', usesOpenAI)}
                         >
@@ -613,7 +607,7 @@
 
                     <!-- Anthropic Claude / AWS Bedrock -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('anthropic', usesAnthropicOrAWS)}
                         >
@@ -637,7 +631,7 @@
 
                     <!-- OpenRouter -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('openrouter', usesOpenRouter)}
                         >
@@ -668,19 +662,19 @@
                                 <span class="text-xs text-textcolor2 mt-1">OpenRouter {language.model}</span>
                                 {#await getOpenRouterModels()}
                                     {#if providerModelRole === 'main'}
-                                        <ModelGrid bind:value={settingsStore.state.openrouterRequestModel} pinnedItems={openrouterPinnedItems} loading={true} />
+                                        <ModelGrid bind:value={presetStore.state.openrouterRequestModel} pinnedItems={openrouterPinnedItems} loading={true} />
                                     {:else if isFeatureRole && currentOverride}
                                         <ModelGrid bind:value={currentOverride.openrouterRequestModel} pinnedItems={openrouterPinnedItems} loading={true} />
                                     {:else}
-                                        <ModelGrid bind:value={settingsStore.state.openrouterSubRequestModel} pinnedItems={openrouterPinnedItems} loading={true} />
+                                        <ModelGrid bind:value={presetStore.state.openrouterSubRequestModel} pinnedItems={openrouterPinnedItems} loading={true} />
                                     {/if}
                                 {:then m}
                                     {#if providerModelRole === 'main'}
-                                        <ModelGrid bind:value={settingsStore.state.openrouterRequestModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
+                                        <ModelGrid bind:value={presetStore.state.openrouterRequestModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
                                     {:else if isFeatureRole && currentOverride}
                                         <ModelGrid bind:value={currentOverride.openrouterRequestModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
                                     {:else}
-                                        <ModelGrid bind:value={settingsStore.state.openrouterSubRequestModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
+                                        <ModelGrid bind:value={presetStore.state.openrouterSubRequestModel} items={(m ?? []).map(orToGridItem)} pinnedItems={openrouterPinnedItems} />
                                     {/if}
                                 {/await}
                             </div>
@@ -689,7 +683,7 @@
 
                     <!-- NanoGPT -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('nanogpt', usesNanoGPT)}
                         >
@@ -811,7 +805,7 @@
 
                     <!-- Ollama -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('ollama', usesOllamaLocal || usesOllamaCloud)}
                         >
@@ -831,7 +825,7 @@
 
                                 <span class="text-xs text-textcolor2">Ollama URL</span>
                                 <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaURL} />
-                                
+
                                 <span class="text-xs text-textcolor2 mt-1">Ollama Local</span>
                                 {#if providerModelRole === 'main'}
                                     <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.ollamaModel} placeholder="Model" oninput={() => { settingsStore.state.ollamaModelSource = 'local'; settingsStore.state.ollamaModelName = '' }} />
@@ -930,7 +924,7 @@
 
                     <!-- Reverse Proxy -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('proxy', usesReverseProxy)}
                         >
@@ -949,23 +943,23 @@
                                 {@render providerRoleSelector('Reverse Proxy')}
 
                                 <span class="text-xs text-textcolor2">URL <Help key="forceUrl"/></span>
-                                <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.forceReplaceUrl} placeholder="https://..." />
-                                
+                                <TextInput marginBottom={false} size={"sm"} bind:value={presetStore.state.forceReplaceUrl} placeholder="https://..." />
+
                                 <span class="text-xs text-textcolor2 mt-1">{language.proxyAPIKey}</span>
-                                <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} placeholder="leave blank if none" bind:value={settingsStore.state.proxyKey} />
-                                
+                                <TextInput hideText={settingsStore.state.hideApiKey} marginBottom={false} size={"sm"} placeholder="leave blank if none" bind:value={presetStore.state.proxyKey} />
+
                                 <span class="text-xs text-textcolor2 mt-1">{language.proxyRequestModel}</span>
                                 {#if providerModelRole === 'main'}
-                                    <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.customProxyRequestModel} placeholder="Model Name" />
+                                    <TextInput marginBottom={false} size={"sm"} bind:value={presetStore.state.customProxyRequestModel} placeholder="Model Name" />
                                 {:else if isFeatureRole && currentOverride}
                                     <TextInput marginBottom={false} size={"sm"} bind:value={currentOverride.customProxyRequestModel} placeholder="Model Name (override)" />
                                 {:else}
-                                    <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.customProxySubRequestModel} placeholder="Model Name" />
+                                    <TextInput marginBottom={false} size={"sm"} bind:value={presetStore.state.customProxySubRequestModel} placeholder="Model Name" />
                                 {/if}
-                                
+
                                 <span class="text-xs text-textcolor2 mt-1">{language.format}</span>
-                                <SelectInput value={settingsStore.state.customAPIFormat.toString()} onchange={(e) => {
-                                    settingsStore.state.customAPIFormat = parseInt(e.currentTarget.value) as LLMFormat
+                                <SelectInput value={presetStore.state.customAPIFormat.toString()} onchange={(e) => {
+                                    presetStore.state.customAPIFormat = parseInt(e.currentTarget.value) as LLMFormat
                                 }}>
                                     <OptionInput value={LLMFormat.OpenAICompatible.toString()}>OpenAI Compatible</OptionInput>
                                     <OptionInput value={LLMFormat.OpenAIResponseAPI.toString()}>OpenAI Response API</OptionInput>
@@ -987,7 +981,7 @@
 
                     <!-- Mistral AI -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('mistral', usesMistral)}
                         >
@@ -1011,7 +1005,7 @@
 
                     <!-- Cohere -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('cohere', usesCohere)}
                         >
@@ -1035,7 +1029,7 @@
 
                     <!-- NovelAI -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('novelai', usesNovelAI)}
                         >
@@ -1059,7 +1053,7 @@
 
                     <!-- NovelList -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('novellist', usesNovelList)}
                         >
@@ -1083,7 +1077,7 @@
 
                     <!-- Mancer -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('mancer', usesMancer)}
                         >
@@ -1107,7 +1101,7 @@
 
                     <!-- AI Horde -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('horde', usesHorde)}
                         >
@@ -1132,7 +1126,7 @@
 
                     <!-- Kobold -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('kobold', usesKobold)}
                         >
@@ -1149,7 +1143,7 @@
                         {#if isProviderOpen('kobold', usesKobold)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">Kobold URL</span>
-                                <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.koboldURL} />
+                                <TextInput marginBottom={false} size={"sm"} bind:value={presetStore.state.koboldURL} />
                                 <ChatFormatSettings />
                             </div>
                         {/if}
@@ -1157,7 +1151,7 @@
 
                     <!-- TextGen WebUI -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('textgen', usesTextGen)}
                         >
@@ -1174,11 +1168,11 @@
                         {#if isProviderOpen('textgen', usesTextGen)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">Blocking {language.providerURL}</span>
-                                <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.textgenWebUIBlockingURL} placeholder="https://..." />
+                                <TextInput marginBottom={false} size={"sm"} bind:value={presetStore.state.textgenWebUIBlockingURL} placeholder="https://..." />
                                 <span class="text-draculared text-xs">You must use textgen webui with --public-api</span>
-                                
+
                                 <span class="text-xs text-textcolor2 mt-1">Stream {language.providerURL}</span>
-                                <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.textgenWebUIStreamURL} placeholder="wss://..." />
+                                <TextInput marginBottom={false} size={"sm"} bind:value={presetStore.state.textgenWebUIStreamURL} placeholder="wss://..." />
                                 {#if !isTauri}
                                     <span class="text-draculared text-xs">You are using web version. You must use ngrok or tunnels for local WebUI.</span>
                                 {/if}
@@ -1189,7 +1183,7 @@
 
                     <!-- Ooba -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('ooba', usesOoba)}
                         >
@@ -1206,14 +1200,14 @@
                         {#if isProviderOpen('ooba', usesOoba)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">Ooba {language.providerURL}</span>
-                                <TextInput marginBottom={false} size={"sm"} bind:value={settingsStore.state.textgenWebUIBlockingURL} placeholder="https://..." />
+                                <TextInput marginBottom={false} size={"sm"} bind:value={presetStore.state.textgenWebUIBlockingURL} placeholder="https://..." />
                             </div>
                         {/if}
                     </div>
 
                     <!-- Custom Plugin Provider -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('plugin', usesCustomPlugin)}
                         >
@@ -1229,7 +1223,7 @@
                         </button>
                         {#if isProviderOpen('plugin', usesCustomPlugin)}
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
-                                <SelectInput bind:value={settingsStore.state.currentPluginProvider}>
+                                <SelectInput bind:value={presetStore.state.currentPluginProvider}>
                                     <OptionInput value="">None</OptionInput>
                                     {#each $customProviderStore as plugin}
                                         <OptionInput value={plugin}>{plugin}</OptionInput>
@@ -1241,7 +1235,7 @@
 
                     <!-- Echo Model -->
                     <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
-                        <button 
+                        <button
                             class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
                             onclick={() => toggleProvider('echo', usesEcho)}
                         >
@@ -1273,62 +1267,62 @@
 {#if submenu === 1 || submenu === -1}
     <!-- Data-driven basic parameters -->
     <SettingRenderer items={allBasicParameterItems} {modelInfo} {subModelInfo} />
-    {#if settingsStore.state.aiModel === 'textgen_webui' || settingsStore.state.aiModel === 'mancer' || settingsStore.state.aiModel.startsWith('local_') || settingsStore.state.aiModel.startsWith('hf:::')}
+    {#if presetStore.state.aiModel === 'textgen_webui' || presetStore.state.aiModel === 'mancer' || presetStore.state.aiModel.startsWith('local_') || presetStore.state.aiModel.startsWith('hf:::')}
         <span class="text-textcolor">Repetition Penalty</span>
-        <SliderInput min={1} max={1.5} step={0.01} fixed={2} marginBottom bind:value={settingsStore.state.ooba.repetition_penalty}/>
+        <SliderInput min={1} max={1.5} step={0.01} fixed={2} marginBottom bind:value={presetStore.state.ooba.repetition_penalty}/>
         <span class="text-textcolor">Length Penalty</span>
-        <SliderInput min={-5} max={5} step={0.05} marginBottom fixed={2} bind:value={settingsStore.state.ooba.length_penalty}/>
+        <SliderInput min={-5} max={5} step={0.05} marginBottom fixed={2} bind:value={presetStore.state.ooba.length_penalty}/>
         <span class="text-textcolor">Top K</span>
-        <SliderInput min={0} max={100} step={1} marginBottom bind:value={settingsStore.state.ooba.top_k} />
+        <SliderInput min={0} max={100} step={1} marginBottom bind:value={presetStore.state.ooba.top_k} />
         <span class="text-textcolor">Top P</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.ooba.top_p}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.ooba.top_p}/>
         <span class="text-textcolor">Typical P</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.ooba.typical_p}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.ooba.typical_p}/>
         <span class="text-textcolor">Top A</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.ooba.top_a}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.ooba.top_a}/>
         <span class="text-textcolor">No Repeat n-gram Size</span>
-        <SliderInput min={0} max={20} step={1} marginBottom bind:value={settingsStore.state.ooba.no_repeat_ngram_size}/>
+        <SliderInput min={0} max={20} step={1} marginBottom bind:value={presetStore.state.ooba.no_repeat_ngram_size}/>
         <div class="flex items-center mt-4">
-            <Check bind:check={settingsStore.state.ooba.do_sample} name={'Do Sample'}/>
+            <Check bind:check={presetStore.state.ooba.do_sample} name={'Do Sample'}/>
         </div>
         <div class="flex items-center mt-4">
-            <Check bind:check={settingsStore.state.ooba.add_bos_token} name={'Add BOS Token'}/>
+            <Check bind:check={presetStore.state.ooba.add_bos_token} name={'Add BOS Token'}/>
         </div>
         <div class="flex items-center mt-4">
-            <Check bind:check={settingsStore.state.ooba.ban_eos_token} name={'Ban EOS Token'}/>
+            <Check bind:check={presetStore.state.ooba.ban_eos_token} name={'Ban EOS Token'}/>
         </div>
         <div class="flex items-center mt-4">
-            <Check bind:check={settingsStore.state.ooba.skip_special_tokens} name={'Skip Special Tokens'}/>
+            <Check bind:check={presetStore.state.ooba.skip_special_tokens} name={'Skip Special Tokens'}/>
         </div>
         <div class="flex items-center mt-4">
-            <Check check={!!settingsStore.state.localStopStrings} name={language.customStopWords} onChange={() => {
-                if(!settingsStore.state.localStopStrings){
-                    settingsStore.state.localStopStrings = []
+            <Check check={!!presetStore.state.localStopStrings} name={language.customStopWords} onChange={() => {
+                if(!presetStore.state.localStopStrings){
+                    presetStore.state.localStopStrings = []
                 }
                 else{
-                    settingsStore.state.localStopStrings = null
+                    presetStore.state.localStopStrings = null
                 }
             }} />
         </div>
-        {#if settingsStore.state.localStopStrings}
+        {#if presetStore.state.localStopStrings}
             <div class="flex flex-col p-2 rounded-sm border border-selected mt-2 gap-1">
                 <div class="p-2">
                     <button class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full" onclick={() => {
-                        let localStopStrings = settingsStore.state.localStopStrings
+                        let localStopStrings = presetStore.state.localStopStrings
                         localStopStrings.push('')
-                        settingsStore.state.localStopStrings = localStopStrings
+                        presetStore.state.localStopStrings = localStopStrings
                     }}><PlusIcon /></button>
                 </div>
-                {#each settingsStore.state.localStopStrings as stopString, i}
+                {#each presetStore.state.localStopStrings as stopString, i}
                     <div class="flex w-full">
                         <div class="grow">
-                            <TextInput marginBottom bind:value={settingsStore.state.localStopStrings[i]} fullwidth fullh/>
+                            <TextInput marginBottom bind:value={presetStore.state.localStopStrings[i]} fullwidth fullh/>
                         </div>
                         <div>
                             <button class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full" onclick={() => {
-                                let localStopStrings = settingsStore.state.localStopStrings
+                                let localStopStrings = presetStore.state.localStopStrings
                                 localStopStrings.splice(i, 1)
-                                settingsStore.state.localStopStrings = localStopStrings
+                                presetStore.state.localStopStrings = localStopStrings
                             }}><TrashIcon /></button>
                         </div>
                     </div>
@@ -1338,66 +1332,66 @@
         <div class="flex flex-col p-3 rounded-md border-selected border mt-4">
             <ChatFormatSettings />
         </div>
-        <Check bind:check={settingsStore.state.ooba.formating.useName} name={language.useNamePrefix}/>
-    
+        <Check bind:check={presetStore.state.ooba.formating.useName} name={language.useNamePrefix}/>
+
     {:else if modelInfo.format === LLMFormat.NovelAI}
         <div class="flex flex-col p-3 bg-darkbg mt-4">
             <span class="text-textcolor">Starter</span>
-            <TextInput bind:value={settingsStore.state.NAIsettings.starter} placeholder={'⁂'} />
+            <TextInput bind:value={presetStore.state.NAIsettings.starter} placeholder={'⁂'} />
             <span class="text-textcolor">Seperator</span>
-            <TextInput bind:value={settingsStore.state.NAIsettings.seperator} placeholder={"\\n"}/>
+            <TextInput bind:value={presetStore.state.NAIsettings.seperator} placeholder={"\\n"}/>
         </div>
         <span class="text-textcolor">Top P</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.topP}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.topP}/>
         <span class="text-textcolor">Top K</span>
-        <SliderInput min={0} max={100} step={1} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.topK}/>
+        <SliderInput min={0} max={100} step={1} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.topK}/>
         <span class="text-textcolor">Top A</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.topA}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.topA}/>
         <span class="text-textcolor">Tailfree Sampling</span>
-        <SliderInput min={0} max={1} step={0.001} marginBottom fixed={3} bind:value={settingsStore.state.NAIsettings.tailFreeSampling}/>
+        <SliderInput min={0} max={1} step={0.001} marginBottom fixed={3} bind:value={presetStore.state.NAIsettings.tailFreeSampling}/>
         <span class="text-textcolor">Typical P</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.typicalp}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.typicalp}/>
         <span class="text-textcolor">Repetition Penalty</span>
-        <SliderInput min={0} max={3} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.repetitionPenalty}/>
+        <SliderInput min={0} max={3} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.repetitionPenalty}/>
         <span class="text-textcolor">Repetition Penalty Range</span>
-        <SliderInput min={0} max={8192} step={1} marginBottom fixed={0} bind:value={settingsStore.state.NAIsettings.repetitionPenaltyRange}/>
+        <SliderInput min={0} max={8192} step={1} marginBottom fixed={0} bind:value={presetStore.state.NAIsettings.repetitionPenaltyRange}/>
         <span class="text-textcolor">Repetition Penalty Slope</span>
-        <SliderInput min={0} max={10} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.repetitionPenaltySlope}/>
+        <SliderInput min={0} max={10} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.repetitionPenaltySlope}/>
         <span class="text-textcolor">Frequency Penalty</span>
-        <SliderInput min={-2} max={2} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.frequencyPenalty}/>
+        <SliderInput min={-2} max={2} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.frequencyPenalty}/>
         <span class="text-textcolor">Presence Penalty</span>
-        <SliderInput min={-2} max={2} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.presencePenalty}/>
+        <SliderInput min={-2} max={2} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.presencePenalty}/>
         <span class="text-textcolor">Mirostat LR</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.mirostat_lr}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.mirostat_lr}/>
         <span class="text-textcolor">Mirostat Tau</span>
-        <SliderInput min={0} max={6} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.mirostat_tau}/>
+        <SliderInput min={0} max={6} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.mirostat_tau}/>
         <span class="text-textcolor">Cfg Scale</span>
-        <SliderInput min={1} max={3} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.NAIsettings.cfg_scale}/>
+        <SliderInput min={1} max={3} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.cfg_scale}/>
 
     {:else if modelInfo.format === LLMFormat.NovelList}
         <span class="text-textcolor">Top P</span>
-        <SliderInput min={0} max={2} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.ainconfig.top_p}/>
+        <SliderInput min={0} max={2} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.ainconfig.top_p}/>
         <span class="text-textcolor">Reputation Penalty</span>
-        <SliderInput min={0} max={2} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.ainconfig.rep_pen}/>
+        <SliderInput min={0} max={2} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.ainconfig.rep_pen}/>
         <span class="text-textcolor">Reputation Penalty Range</span>
-        <SliderInput min={0} max={2048} step={1} marginBottom fixed={2} bind:value={settingsStore.state.ainconfig.rep_pen_range}/>
+        <SliderInput min={0} max={2048} step={1} marginBottom fixed={2} bind:value={presetStore.state.ainconfig.rep_pen_range}/>
         <span class="text-textcolor">Reputation Penalty Slope</span>
-        <SliderInput min={0} max={10} step={0.1} marginBottom fixed={2} bind:value={settingsStore.state.ainconfig.rep_pen_slope}/>
+        <SliderInput min={0} max={10} step={0.1} marginBottom fixed={2} bind:value={presetStore.state.ainconfig.rep_pen_slope}/>
         <span class="text-textcolor">Top K</span>
-        <SliderInput min={1} max={500} step={1} marginBottom fixed={2} bind:value={settingsStore.state.ainconfig.top_k}/>
+        <SliderInput min={1} max={500} step={1} marginBottom fixed={2} bind:value={presetStore.state.ainconfig.top_k}/>
         <span class="text-textcolor">Top A</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.ainconfig.top_a}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.ainconfig.top_a}/>
         <span class="text-textcolor">Typical P</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={settingsStore.state.ainconfig.typical_p}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.ainconfig.typical_p}/>
     {:else}
         <!-- Standard parameters now handled by SettingRenderer above -->
     {/if}
 
-    {#if (settingsStore.state.reverseProxyOobaMode && settingsStore.state.aiModel === 'reverse_proxy') || (settingsStore.state.aiModel === 'ooba')}
-        <OobaSettings instructionMode={settingsStore.state.aiModel === 'ooba'} />
+    {#if (settingsStore.state.reverseProxyOobaMode && presetStore.state.aiModel === 'reverse_proxy') || (presetStore.state.aiModel === 'ooba')}
+        <OobaSettings instructionMode={presetStore.state.aiModel === 'ooba'} />
     {/if}
 
-    {#if settingsStore.state.aiModel.startsWith('openrouter')}
+    {#if presetStore.state.aiModel.startsWith('openrouter')}
         <OpenrouterSettings />
     {/if}
 
@@ -1414,30 +1408,30 @@
                 <th class="font-medium">{language.value}</th>
                 <th>
                     <button class="font-medium cursor-pointer hover:text-green-500 w-full flex justify-center items-center" onclick={() => {
-                        let bia = settingsStore.state.bias
+                        let bia = presetStore.state.bias
                         bia.push(['', 0])
-                        settingsStore.state.bias = bia
+                        presetStore.state.bias = bia
                     }}><PlusIcon /></button>
                 </th>
             </tr>
-            {#if settingsStore.state.bias.length === 0}
+            {#if presetStore.state.bias.length === 0}
                 <tr>
                     <td colspan="3" class="text-textcolor2">{language.noBias}</td>
                 </tr>
             {/if}
-            {#each settingsStore.state.bias as bias, i}
+            {#each presetStore.state.bias as bias, i}
                 <tr>
                     <td class="font-medium truncate">
-                        <TextInput bind:value={settingsStore.state.bias[i][0]} size="lg" fullwidth/>
+                        <TextInput bind:value={presetStore.state.bias[i][0]} size="lg" fullwidth/>
                     </td>
                     <td class="font-medium truncate">
-                        <NumberInput bind:value={settingsStore.state.bias[i][1]} max={100} min={-101} size="lg" fullwidth/>
+                        <NumberInput bind:value={presetStore.state.bias[i][1]} max={100} min={-101} size="lg" fullwidth/>
                     </td>
                     <td>
                         <button class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full" onclick={() => {
-                            let bia = settingsStore.state.bias
+                            let bia = presetStore.state.bias
                             bia.splice(i, 1)
-                            settingsStore.state.bias = bia
+                            presetStore.state.bias = bia
                         }}><TrashIcon /></button>
                     </td>
                 </tr>
@@ -1446,14 +1440,14 @@
         </table>
         <div class="text-textcolor2 mt-2 flex items-center gap-2">
             <button class="font-medium cursor-pointer hover:text-textcolor gap-2" onclick={() => {
-                const data = JSON.stringify(settingsStore.state.bias, null, 2)
+                const data = JSON.stringify(presetStore.state.bias, null, 2)
                 downloadFile('bias.json', data)
             }}><DownloadIcon /></button>
             <button class="font-medium cursor-pointer hover:text-textcolor" onclick={async () => {
                 const sel = await selectSingleFile(['json'])
                 const utf8 = new TextDecoder().decode(sel.data)
                 if(Array.isArray(JSON.parse(utf8))){
-                    settingsStore.state.bias = JSON.parse(utf8)
+                    presetStore.state.bias = JSON.parse(utf8)
                 }
             }}><HardDriveUploadIcon /></button>
         </div>
@@ -1499,35 +1493,35 @@
 
 
     <Accordion styled name={language.promptTemplate}>
-        {#if settingsStore.state.promptTemplate}
+        {#if presetStore.state.promptTemplate}
             {#if submenu !== -1}
                 <PromptSettings mode='inline' subMenu={1} />
             {/if}
         {:else}
             <Check check={false} name={language.usePromptTemplate} onChange={() => {
-                settingsStore.state.promptTemplate = []
+                presetStore.state.promptTemplate = []
             }}/>
         {/if}
     </Accordion>
 
     {#snippet CustomFlagButton(name:string,flag:number)}
         <Button className="mt-2" onclick={(e) => {
-            if(settingsStore.state.customFlags.includes(flag as LLMFlags)){
-                settingsStore.state.customFlags = settingsStore.state.customFlags.filter((f: LLMFlags) => f !== flag)
+            if(presetStore.state.customFlags.includes(flag as LLMFlags)){
+                presetStore.state.customFlags = presetStore.state.customFlags.filter((f: LLMFlags) => f !== flag)
             }
             else{
-                settingsStore.state.customFlags.push(flag as LLMFlags)
+                presetStore.state.customFlags.push(flag as LLMFlags)
             }
-        }} styled={settingsStore.state.customFlags.includes(flag as LLMFlags) ? 'primary' : 'outlined'}>
+        }} styled={presetStore.state.customFlags.includes(flag as LLMFlags) ? 'primary' : 'outlined'}>
             {name}
         </Button>
     {/snippet}
 
     <Accordion styled name={language.customFlags}>
-        <Check bind:check={settingsStore.state.enableCustomFlags} name={language.enableCustomFlags}/>
+        <Check bind:check={presetStore.state.enableCustomFlags} name={language.enableCustomFlags}/>
 
 
-        {#if settingsStore.state.enableCustomFlags}
+        {#if presetStore.state.enableCustomFlags}
             {@render CustomFlagButton('hasImageInput', 0)}
             {@render CustomFlagButton('hasImageOutput', 1)}
             {@render CustomFlagButton('hasAudioInput', 2)}
@@ -1557,22 +1551,22 @@
     </Accordion>
 
     <Accordion styled name={language.moduleIntergration} help="moduleIntergration">
-        <TextAreaInput bind:value={settingsStore.state.moduleIntergration} fullwidth height={"32"} autocomplete="off"/>
+        <TextAreaInput bind:value={presetStore.state.moduleIntergration} fullwidth height={"32"} autocomplete="off"/>
     </Accordion>
 
     <Accordion styled name={language.tools}>
-        <Check name={language.search} check={settingsStore.state.modelTools.includes('search')} onChange={() => {
-            if(settingsStore.state.modelTools.includes('search')){
-                settingsStore.state.modelTools = settingsStore.state.modelTools.filter((tool: string) => tool !== 'search')
+        <Check name={language.search} check={presetStore.state.modelTools.includes('search')} onChange={() => {
+            if(presetStore.state.modelTools.includes('search')){
+                presetStore.state.modelTools = presetStore.state.modelTools.filter((tool: string) => tool !== 'search')
             }
             else{
-                settingsStore.state.modelTools.push('search')
+                presetStore.state.modelTools.push('search')
             }
         }} />
     </Accordion>
-    
+
     <Accordion styled name={language.regexScript}>
-        <RegexList bind:value={settingsStore.state.presetRegex} buttons />
+        <RegexList bind:value={presetStore.state.presetRegex} buttons />
     </Accordion>
 
     <Accordion styled name={language.icon}>
@@ -1622,20 +1616,20 @@
 {/if}
 
 {#if submenu === 2 || submenu === -1}
-    {#if !settingsStore.state.promptTemplate}
+    {#if !presetStore.state.promptTemplate}
         <span class="text-textcolor">{language.mainPrompt} <Help key="mainprompt"/></span>
-        <TextAreaInput fullwidth autocomplete="off" height={"32"} bind:value={settingsStore.state.mainPrompt}></TextAreaInput>
+        <TextAreaInput fullwidth autocomplete="off" height={"32"} bind:value={presetStore.state.mainPrompt}></TextAreaInput>
         <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.mainPrompt} {language.tokens}</span>
         <span class="text-textcolor">{language.jailbreakPrompt} <Help key="jailbreak"/></span>
-        <TextAreaInput fullwidth autocomplete="off" height={"32"} bind:value={settingsStore.state.jailbreak}></TextAreaInput>
+        <TextAreaInput fullwidth autocomplete="off" height={"32"} bind:value={presetStore.state.jailbreak}></TextAreaInput>
         <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.jailbreak} {language.tokens}</span>
         <span class="text-textcolor">{language.globalNote} <Help key="globalNote"/></span>
-        <TextAreaInput fullwidth autocomplete="off" height={"32"} bind:value={settingsStore.state.globalNote}></TextAreaInput>
-        <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.globalNote} {language.tokens}</span>  
+        <TextAreaInput fullwidth autocomplete="off" height={"32"} bind:value={presetStore.state.globalNote}></TextAreaInput>
+        <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.globalNote} {language.tokens}</span>
         <span class="text-textcolor mb-2 mt-4">{language.formatingOrder} <Help key="formatOrder"/></span>
-        <DropList bind:list={settingsStore.state.formatingOrder} />
+        <DropList bind:list={presetStore.state.formatingOrder} />
         <div class="flex items-center mt-4">
-            <Check bind:check={settingsStore.state.promptPreprocess} name={language.promptPreprocess}/>
+            <Check bind:check={presetStore.state.promptPreprocess} name={language.promptPreprocess}/>
         </div>
     {:else if submenu === 2}
         <PromptSettings mode='inline' />
@@ -1643,7 +1637,7 @@
 {/if}
 
 
-{#if settingsStore.state.promptTemplate && submenu === -1}
+{#if presetStore.state.promptTemplate && submenu === -1}
     <div class="mt-2">
         <Button onclick={goPromptTemplate} size="sm">{language.promptTemplate}</Button>
     </div>

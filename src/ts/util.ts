@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { endsWithCompletionPunctuation } from "@risuai/chat-core/finalization.cjs";
 import { get, writable, type Writable } from "svelte/store";
 import {
@@ -409,7 +410,7 @@ export async function getEmotion(
 
 export function getAuthorNoteDefaultText() {
   const db = settingsStore.state;
-  const template = db.promptTemplate;
+  const template = presetStore.state.promptTemplate;
   if (!template) {
     return "";
   }

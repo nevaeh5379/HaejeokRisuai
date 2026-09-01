@@ -74,16 +74,16 @@ function promptOverridesFromPreset(
       ? {
           promptTemplate: safeStructuredClone(preset.promptTemplate ?? null),
           promptSettings: safeStructuredClone(
-            preset.promptSettings ?? settingsStore.state.promptSettings,
+            preset.promptSettings ?? presetStore.state.promptSettings,
           ),
-          mainPrompt: preset.mainPrompt ?? settingsStore.state.mainPrompt,
-          jailbreak: preset.jailbreak ?? settingsStore.state.jailbreak,
-          globalNote: preset.globalNote ?? settingsStore.state.globalNote,
+          mainPrompt: preset.mainPrompt ?? presetStore.state.mainPrompt,
+          jailbreak: preset.jailbreak ?? presetStore.state.jailbreak,
+          globalNote: preset.globalNote ?? presetStore.state.globalNote,
           formatingOrder: safeStructuredClone(
-            preset.formatingOrder ?? settingsStore.state.formatingOrder,
+            preset.formatingOrder ?? presetStore.state.formatingOrder,
           ),
           promptPreprocess:
-            preset.promptPreprocess ?? settingsStore.state.promptPreprocess,
+            preset.promptPreprocess ?? presetStore.state.promptPreprocess,
         }
       : {}),
     jailbreakToggle: config.jailbreakToggle,
@@ -395,15 +395,15 @@ export async function sendBtwMessage(
     const preset = await loadPromptPreset(session.config.promptPresetId);
     const generation = promptOverridesFromPreset(preset, session.config);
     const tokenizer = new ChatTokenizer(
-      settingsStore.state.aiModel.startsWith("gpt") ? 5 : 3,
-      settingsStore.state.aiModel.startsWith("gpt") ? "noName" : "name",
+      presetStore.state.aiModel.startsWith("gpt") ? 5 : 3,
+      presetStore.state.aiModel.startsWith("gpt") ? "noName" : "name",
     );
     const prompt = await buildGenerationPrompt({
       currentChar,
       currentChat: syntheticChat,
       nowChatroom: room,
       tokenizer,
-      maxContextTokens: settingsStore.state.maxContext,
+      maxContextTokens: presetStore.state.maxContext,
       selectedChar: characterIndex,
       selectedChat: chatIndex,
       stageTimings: createStageTimings(),
@@ -424,13 +424,13 @@ export async function sendBtwMessage(
     const plan =
       (await tryCreateNodeChatGenerationPlan({
         formated: prompt.formated,
-        maxContextTokens: settingsStore.state.maxContext,
+        maxContextTokens: presetStore.state.maxContext,
         tokenizer,
         runtime,
       })) ??
       (await createChatGenerationPlan(runtime, {
         formated: prompt.formated,
-        maxContextTokens: settingsStore.state.maxContext,
+        maxContextTokens: presetStore.state.maxContext,
       }));
     if (!plan.ok) {
       throw new Error("BTW context is too large for the current model");
@@ -463,7 +463,7 @@ export async function sendBtwMessage(
       generationId: plan.generationId,
       inputTokens: plan.inputTokens,
       outputTokens: plan.outputTokens,
-      maxContext: settingsStore.state.maxContext,
+      maxContext: presetStore.state.maxContext,
     };
     if (session.config.pluginsEnabled) {
       await runChatOutputListeners(

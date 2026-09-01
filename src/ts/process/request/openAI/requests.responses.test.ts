@@ -55,6 +55,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock("src/ts/stores/domain/settingsStore.svelte", () => ({
   settingsStore: { state: mocks.db },
 }));
+vi.mock("src/ts/stores/domain/presetStore.svelte", () => ({
+  presetStore: { state: mocks.db },
+}));
 
 vi.mock("src/ts/globalApi.svelte", () => ({
   addFetchLog: vi.fn(),

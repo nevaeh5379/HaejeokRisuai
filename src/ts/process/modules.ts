@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { language } from "src/lang";
@@ -462,8 +463,8 @@ function getModulesForCharacter(
   if (persona && persona.embeddedModule) {
     ids = ids.concat([persona.embeddedModule?.id]);
   }
-  if (db.moduleIntergration) {
-    const intList = db.moduleIntergration.split(",").map((s) => s.trim());
+  if (presetStore.state.moduleIntergration) {
+    const intList = presetStore.state.moduleIntergration.split(",").map((s) => s.trim());
     ids = ids.concat(intList);
   }
   return getModuleByIds(ids);

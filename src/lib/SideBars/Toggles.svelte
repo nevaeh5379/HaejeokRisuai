@@ -1,5 +1,7 @@
 <script lang="ts">
-    import { getModuleToggles } from "src/ts/process/modules";
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import { getModuleToggles } from "src/ts/process/modules";
     import { selectedCharID } from "src/ts/stores.svelte";
     import { characterStore, settingsStore } from "src/ts/stores/domain";
     import { parseToggleSyntax, type sidebarToggle, type sidebarToggleGroup } from "src/ts/util";
@@ -47,9 +49,9 @@
         })
 
     let hasJailbreakPrompt = $derived.by(() => {
-        const template = settingsStore.state.promptTemplate
+        const template = presetStore.state.promptTemplate
         if (!template) {
-            return (settingsStore.state.jailbreak ?? '').trim().length > 0
+            return (presetStore.state.jailbreak ?? '').trim().length > 0
         }
         return templateUsesJailbreakToggle(template)
     })
@@ -64,7 +66,7 @@
 
     let groupedToggles = $derived.by(() => {
         const ungrouped = parseToggleSyntax(
-            settingsStore.state.customPromptTemplateToggle + '\n' +
+            presetStore.state.customPromptTemplateToggle + '\n' +
             getModuleToggles() + '\n' +
             charToggle
         )

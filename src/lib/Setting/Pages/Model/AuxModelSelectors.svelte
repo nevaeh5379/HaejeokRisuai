@@ -1,14 +1,11 @@
 <script lang="ts">
-  import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
   import Check from "src/lib/UI/GUI/CheckInput.svelte";
   import { language } from 'src/lang';
   import ModelList from 'src/lib/UI/ModelList.svelte';
   import { BrainIcon, GlobeIcon, SmileIcon, CpuIcon } from "@lucide/svelte";
-  import { saveCurrentPreset } from '../../../../ts/storage/presets/presetService';
-
-  function persistModelSelection() {
-    void saveCurrentPreset();
-  }
 </script>
 
 <div class="mt-4 flex flex-col gap-3">
@@ -23,11 +20,11 @@
         </p>
       </div>
       <div class="shrink-0">
-        <Check bind:check={settingsStore.state.seperateModelsForAxModels} name="" />
+        <Check bind:check={presetStore.state.seperateModelsForAxModels} name="" />
       </div>
     </div>
 
-    {#if settingsStore.state.seperateModelsForAxModels}
+    {#if presetStore.state.seperateModelsForAxModels}
       <div class="pt-2 border-t border-darkborderc/60 flex items-center">
         <Check bind:check={settingsStore.state.doNotChangeSeperateModels} name={language.doNotChangeSeperateModels} />
       </div>
@@ -44,7 +41,7 @@
               <span class="text-[11px] text-textcolor2">HypaMemory / Summaries</span>
             </div>
           </div>
-          <ModelList bind:value={settingsStore.state.seperateModels.memory} blankable noMargin onChange={persistModelSelection} />
+          <ModelList bind:value={presetStore.state.seperateModels.memory} blankable noMargin />
         </div>
 
         <!-- Translation Model -->
@@ -58,7 +55,7 @@
               <span class="text-[11px] text-textcolor2">Input / Output Auto-translation</span>
             </div>
           </div>
-          <ModelList bind:value={settingsStore.state.seperateModels.translate} blankable noMargin onChange={persistModelSelection} />
+          <ModelList bind:value={presetStore.state.seperateModels.translate} blankable noMargin />
         </div>
 
         <!-- Emotion Model -->
@@ -72,7 +69,7 @@
               <span class="text-[11px] text-textcolor2">Emotion Expressions & Sprites</span>
             </div>
           </div>
-          <ModelList bind:value={settingsStore.state.seperateModels.emotion} blankable noMargin onChange={persistModelSelection} />
+          <ModelList bind:value={presetStore.state.seperateModels.emotion} blankable noMargin />
         </div>
 
         <!-- Other Auxiliary Model -->
@@ -86,7 +83,7 @@
               <span class="text-[11px] text-textcolor2">Secondary Tasks & Tools</span>
             </div>
           </div>
-          <ModelList bind:value={settingsStore.state.seperateModels.otherAx} blankable noMargin onChange={persistModelSelection} />
+          <ModelList bind:value={presetStore.state.seperateModels.otherAx} blankable noMargin />
         </div>
       </div>
     {/if}

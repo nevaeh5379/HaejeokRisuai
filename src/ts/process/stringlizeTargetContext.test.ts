@@ -24,6 +24,21 @@ vi.mock("../stores/domain/settingsStore.svelte", () => ({
     },
   },
 }));
+vi.mock("../stores/domain/presetStore.svelte", () => ({
+  presetStore: {
+    state: {
+      ooba: {
+        formating: {
+          systemPrefix: "",
+          userPrefix: "",
+          assistantPrefix: "",
+          seperator: "\n",
+          useName: true,
+        },
+      },
+    },
+  },
+}));
 
 import {
   getUnstringlizerChunks,

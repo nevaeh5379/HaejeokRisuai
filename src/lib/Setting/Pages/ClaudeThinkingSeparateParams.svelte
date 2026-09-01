@@ -1,5 +1,7 @@
 <script lang="ts">
-    import { language } from 'src/lang';
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import { language } from 'src/lang';
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { getModelInfo } from 'src/ts/model/modellist';
     import { LLMFlags } from 'src/ts/model/types';
@@ -8,7 +10,7 @@
     import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte';
     import type { SeparateParameters } from '../../../ts/storage/database/schema';
 
-    type AuxModelKey = keyof typeof settingsStore.state.seperateModels
+    type AuxModelKey = keyof typeof presetStore.state.seperateModels
 
     let {
         value = $bindable(),
@@ -21,12 +23,12 @@
     const auxModelKeys: AuxModelKey[] = ['memory', 'emotion', 'translate', 'otherAx']
 
     let effectiveModel = $derived.by(() => {
-        if (!paramKey) return settingsStore.state.subModel
+        if (!paramKey) return presetStore.state.subModel
         if (auxModelKeys.includes(paramKey as AuxModelKey)) {
-            if (settingsStore.state.seperateModelsForAxModels) {
-                return settingsStore.state.seperateModels[paramKey as AuxModelKey] || settingsStore.state.subModel
+            if (presetStore.state.seperateModelsForAxModels) {
+                return presetStore.state.seperateModels[paramKey as AuxModelKey] || presetStore.state.subModel
             }
-            return settingsStore.state.subModel
+            return presetStore.state.subModel
         }
         return paramKey
     })

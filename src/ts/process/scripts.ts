@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { get } from "svelte/store";
@@ -206,7 +207,7 @@ export async function processScriptFull(
 
   data = risuChatParser(data, { chatID: chatID, cbsConditions, chatTarget });
   const moduleRoom = resolvedTarget?.character ?? (char.type === "simple" ? undefined : char);
-  const scripts = (db.presetRegex ?? [])
+  const scripts = (presetStore.state.presetRegex ?? [])
     .concat(char.customscript ?? [])
     .concat(getModuleRegexScripts(moduleRoom, undefined, resolvedTarget?.chat))
     .filter((script): script is customscript => !!script);
