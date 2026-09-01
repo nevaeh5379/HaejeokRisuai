@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import fc from "fast-check";
 import { writable } from "svelte/store";
 import { beforeEach, expect, test, vi } from "vitest";
@@ -101,7 +102,7 @@ test("can get a template default variable", () => {
       anyValidDefaultVarKey,
       anyValidDefaultVarValue,
       (key, value) => {
-        settingsStore.state.templateDefaultVariables = `${key}=${value}`;
+        presetStore.state.templateDefaultVariables = `${key}=${value}`;
         expect(getChatVar(key)).toBe(value);
       },
     ),
@@ -144,7 +145,7 @@ test("can target chat variables without following the selected character", () =>
 
 test("can set a chat variable over its default value", () => {
   characterStore.characters[0].defaultVariables = "char=default";
-  settingsStore.state.templateDefaultVariables = "template=default";
+  presetStore.state.templateDefaultVariables = "template=default";
 
   setChatVar("char", "overridden");
   setChatVar("template", "overridden");

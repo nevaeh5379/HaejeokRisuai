@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import fc from "fast-check";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
@@ -18,7 +19,7 @@ export const resetChatVariables = (): void => {
   }
 
   settingsStore.state.globalChatVariables = {};
-  settingsStore.state.templateDefaultVariables = "";
+  presetStore.state.templateDefaultVariables = "";
 };
 
 export const trimVarPrefix = (key: unknown): string => {

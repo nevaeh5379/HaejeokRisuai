@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 
 import {
   LLMFlags,
@@ -1038,8 +1039,8 @@ export function getModelInfo(id?: string | null): LLMModel {
   );
 
   if (found) {
-    if (db.enableCustomFlags) {
-      found.flags = db.customFlags;
+    if (presetStore.state.enableCustomFlags) {
+      found.flags = presetStore.state.customFlags;
     }
 
     return found;

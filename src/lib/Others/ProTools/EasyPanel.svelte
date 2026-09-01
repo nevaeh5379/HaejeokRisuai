@@ -1,5 +1,7 @@
 <script lang="ts">
-    import { language } from "src/lang";
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import { language } from "src/lang";
     import ClaudeThinkingSeparateParams from "src/lib/Setting/Pages/ClaudeThinkingSeparateParams.svelte";
     import SegmentedControl from "src/lib/UI/GUI/SegmentedControl.svelte";
     import SliderInput from "src/lib/UI/GUI/SliderInput.svelte";
@@ -14,26 +16,21 @@
     import { XIcon } from "@lucide/svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import CustomModelsSettings from "src/lib/Setting/Pages/Advanced/CustomModelsSettings.svelte";
-    import { saveCurrentPreset } from "../../../ts/storage/presets/presetService";
 
     let selectedOption = $state('models');
     let selectedParameterOption = $state('memory')
     let parameterModelSelection = $state('')
 
     let hasEPRequirements = $derived.by(() => {
-        return  settingsStore.state.seperateParametersEnabled &&
+        return  presetStore.state.seperateParametersEnabled &&
                 settingsStore.state.doNotChangeSeperateModels &&
-                settingsStore.state.seperateModels &&
+                presetStore.state.seperateModels &&
                 settingsStore.state.epEnabled &&
                 settingsStore.state.disableSeperateParameterChangeOnPresetChange
     })
 
     const onClose = () => {
         easyPanelStore.open = false
-    }
-
-    function persistModelSelection() {
-        void saveCurrentPreset();
     }
 
 </script>
@@ -66,9 +63,9 @@
             </div>
 
             <Button className="mt-4" onclick={() => {
-                settingsStore.state.seperateParametersEnabled = true
+                presetStore.state.seperateParametersEnabled = true
                 settingsStore.state.doNotChangeSeperateModels = true
-                settingsStore.state.seperateModels = {
+                presetStore.state.seperateModels = {
                     memory: '',
                     translate: '',
                     emotion: '',
@@ -84,30 +81,30 @@
              <div class="w-full grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 justify-center items-center">
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.mainModel}</span>
-                    <ModelList bind:value={settingsStore.state.aiModel} blankable excludesPrefix="plugin" onChange={persistModelSelection}/>
+                    <ModelList bind:value={presetStore.state.aiModel} blankable excludesPrefix="plugin" />
                 </div>
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.submodel}</span>
-                    <ModelList bind:value={settingsStore.state.subModel} blankable excludesPrefix="plugin" onChange={persistModelSelection}/>
+                    <ModelList bind:value={presetStore.state.subModel} blankable excludesPrefix="plugin" />
                 </div>
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.longTermMemory}</span>
-                    <ModelList bind:value={settingsStore.state.seperateModels.memory} blankable excludesPrefix="plugin" onChange={persistModelSelection}/>
+                    <ModelList bind:value={presetStore.state.seperateModels.memory} blankable excludesPrefix="plugin" />
                 </div>
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.translator}</span>
-                    <ModelList bind:value={settingsStore.state.seperateModels.translate} blankable excludesPrefix="plugin" onChange={persistModelSelection}/>
+                    <ModelList bind:value={presetStore.state.seperateModels.translate} blankable excludesPrefix="plugin" />
                 </div>
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.emotionImage}</span>
-                    <ModelList bind:value={settingsStore.state.seperateModels.emotion} blankable excludesPrefix="plugin" onChange={persistModelSelection}/>
+                    <ModelList bind:value={presetStore.state.seperateModels.emotion} blankable excludesPrefix="plugin" />
                 </div>
 
                 <div class="col-span-1">
                     <span class="text-textcolor">{language.others}</span>
-                    <ModelList bind:value={settingsStore.state.seperateModels.otherAx} blankable excludesPrefix="plugin" onChange={persistModelSelection}/>
+                    <ModelList bind:value={presetStore.state.seperateModels.otherAx} blankable excludesPrefix="plugin" />
                 </div>
-                
+
             </div>
         {/if}
         {#if selectedOption === 'parameters'}
@@ -115,12 +112,12 @@
             {#if settingsStore.state.seperateParametersByModel}
 
                 <ModelList bind:value={parameterModelSelection} blankable excludesPrefix="plugin" onChange={(v) => {
-                    settingsStore.state.seperateParameters.overrides ??= {}
-                    settingsStore.state.seperateParameters.overrides[v] ??= {}
+                    presetStore.state.seperateParameters.overrides ??= {}
+                    presetStore.state.seperateParameters.overrides[v] ??= {}
                 }}/>
 
                 {#if parameterModelSelection !== ''}
-                    <AllSeperateParameters bind:value={settingsStore.state.seperateParameters.overrides[parameterModelSelection]} withImportExport paramKey={parameterModelSelection} />
+                    <AllSeperateParameters bind:value={presetStore.state.seperateParameters.overrides[parameterModelSelection]} withImportExport paramKey={parameterModelSelection} />
 
                 {/if}
             {:else}
@@ -136,13 +133,13 @@
                 />
                 <div class="w-full mt-4 flex flex-col">
                     {#if selectedParameterOption === 'memory'}
-                        <AllSeperateParameters bind:value={settingsStore.state.seperateParameters.memory} withImportExport paramKey="memory" />
+                        <AllSeperateParameters bind:value={presetStore.state.seperateParameters.memory} withImportExport paramKey="memory" />
                     {:else if selectedParameterOption === 'translate'}
-                        <AllSeperateParameters bind:value={settingsStore.state.seperateParameters.translate} withImportExport paramKey="translate" />
+                        <AllSeperateParameters bind:value={presetStore.state.seperateParameters.translate} withImportExport paramKey="translate" />
                     {:else if selectedParameterOption === 'emotion'}
-                        <AllSeperateParameters bind:value={settingsStore.state.seperateParameters.emotion} withImportExport paramKey="emotion" />
+                        <AllSeperateParameters bind:value={presetStore.state.seperateParameters.emotion} withImportExport paramKey="emotion" />
                     {:else if selectedParameterOption === 'otherAx'}
-                        <AllSeperateParameters bind:value={settingsStore.state.seperateParameters.otherAx} withImportExport paramKey="otherAx" />
+                        <AllSeperateParameters bind:value={presetStore.state.seperateParameters.otherAx} withImportExport paramKey="otherAx" />
                     {/if}
                 </div>
 

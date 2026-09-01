@@ -16,6 +16,14 @@ vi.mock("src/ts/stores/domain/settingsStore.svelte", () => ({
     },
   },
 }));
+vi.mock("src/ts/stores/domain/presetStore.svelte", () => ({
+  presetStore: {
+    state: {
+      instructChatTemplate: "jinja",
+      JinjaTemplate: "{{ risu_char }}|{{ risu_user }}",
+    },
+  },
+}));
 vi.mock("src/ts/stores/domain/characterStore.svelte", () => ({
   characterStore: { currentCharacter: { name: "Selected Character" } },
 }));

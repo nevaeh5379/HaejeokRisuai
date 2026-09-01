@@ -133,28 +133,6 @@ describe("SettingsStore Reactivity and Persistence", () => {
     errorSpy.mockRestore();
   });
 
-  it("does not let a deferred prompt reload overwrite an authoritative value", async () => {
-    mockStorage.loadPrompts = vi.fn(async () => ({
-      mainPrompt: "stale stored prompt",
-    })) as any;
-    settingsStore.init(
-      { mainPrompt: "active preset prompt" } as any,
-      mockStorage,
-    );
-    deferredSettingsLoader.init({
-      storage: mockStorage,
-      unloadedKeys: ["mainPrompt"],
-      hydrateSettingKey: (key, value, exists) =>
-        settingsStore.hydrateSettingKey(key, value, exists),
-    });
-
-    deferredSettingsLoader.markLoaded(["mainPrompt"]);
-    await deferredSettingsLoader.ensureKey("mainPrompt");
-
-    expect(settingsStore.state.mainPrompt).toBe("active preset prompt");
-    expect(mockStorage.loadPrompts).not.toHaveBeenCalled();
-  });
-
   it("detects deep mutations on customModels across consecutive edits", async () => {
     settingsStore.init(
       {
@@ -427,17 +405,17 @@ describe("SettingsStore Reactivity and Persistence", () => {
 
   it("hydrates remote setting keys without re-saving them or dropping local dirty keys", async () => {
     settingsStore.init(
-      { theme: "dark", temperature: 70, language: "en" } as any,
+      { theme: "dark", customBackground: "bg.png", language: "en" } as any,
       mockStorage,
     );
     settingsStore.set("language", "ko" as any);
     settingsStore.hydrateSettingKey("theme", "light", true);
-    settingsStore.hydrateSettingKey("temperature", undefined, false);
+    settingsStore.hydrateSettingKey("customBackground", undefined, false);
 
     await settingsStore.flush();
 
     expect(settingsStore.state.theme).toBe("light");
-    expect(settingsStore.state.temperature).toBeUndefined();
+    expect(settingsStore.state.customBackground).toBeUndefined();
     expect(committed).toHaveLength(1);
     expect(committed[0].root.upserts).toEqual([
       { key: "language", value: "ko" },
@@ -509,32 +487,27 @@ describe("SettingsStore Reactivity and Persistence", () => {
     });
   });
 
-  it("does not let late lazy hydration overwrite local edits or revive deletes", async () => {
+  it("releases active preset fields from the settings domain", async () => {
     settingsStore.init(
       {
         moduleIntergration: "stored-old",
         apiType: "openai",
+        theme: "dark",
       } as any,
       mockStorage,
     );
-    settingsStore.set("moduleIntergration", "local-new" as any);
-    settingsStore.delete("apiType");
-    expect((settingsStore as any).pendingDeletes.has("apiType")).toBe(true);
-    expect(Object.keys(settingsStore.state)).not.toContain("apiType");
+    settingsStore.releasePresetOwnedState();
 
-    settingsStore.hydrate((state) => {
-      state.moduleIntergration = "hydrated-stale";
-      state.apiType = "gemini";
-    });
-
-    expect(settingsStore.state.moduleIntergration).toBe("local-new");
     expect(Object.keys(settingsStore.state)).not.toContain("apiType");
+    expect(Object.keys(settingsStore.state)).not.toContain("moduleIntergration");
+    expect(settingsStore.state.theme).toBe("dark");
+    expect(() => settingsStore.state.apiType).toThrow(/owned by PresetStore/);
+    expect(() => settingsStore.set("apiType", "openai" as any)).toThrow(
+      /owned by PresetStore/,
+    );
     await settingsStore.flush();
-    expect(committed[0].root.upserts).toContainEqual({
-      key: "moduleIntergration",
-      value: "local-new",
-    });
-    expect(committed[0].root.deletes).toContain("apiType");
+    expect(committed).toHaveLength(0);
+    expect(settingsStore.hasPendingWrites()).toBe(false);
   });
 
   it("rejects data owned by other domain stores at every mutation boundary", () => {

@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { get } from "svelte/store";
@@ -68,7 +69,7 @@ export async function translate(text: string, reverse: boolean) {
     text,
     reverse,
     db.translator,
-    db.aiModel.startsWith("novellist") ? "ja" : "en",
+    presetStore.state.aiModel.startsWith("novellist") ? "ja" : "en",
   );
 }
 
@@ -347,7 +348,7 @@ export async function translateHTML(
     return applyEdittransRegex(r, charArg, alwaysExistChar, chatID, chatTarget);
   }
   if (db.translatorType == "bergamot" && db.htmlTranslation) {
-    const from = db.aiModel.startsWith("novellist") ? "ja" : "en";
+    const from = presetStore.state.aiModel.startsWith("novellist") ? "ja" : "en";
     const to = db.translator || "en";
 
     if (!bergamotTranslate) {
@@ -756,7 +757,7 @@ export function applyEdittransRegex(
     resolvedTarget?.character ??
     (alwaysExistChar.type === "simple" ? undefined : alwaysExistChar);
   let scripts: customscript[] = [];
-  scripts = (db.presetRegex ?? [])
+  scripts = (presetStore.state.presetRegex ?? [])
     .concat(getModuleRegexScripts(moduleCharacter, undefined, resolvedTarget?.chat) ?? [])
     .concat(alwaysExistChar?.customscript ?? []);
 

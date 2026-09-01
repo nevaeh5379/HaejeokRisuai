@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import {
   appendOpenAIStreamingFragment,
@@ -62,7 +63,7 @@ export function getTranStream(
                     );
                   }
                 }
-                if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
+                if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
                   for (const key in readed) {
                     const extracted = extractJSON(readed[key], arg.extractJson, resolveRequestParserContext(arg));
                     JSONreaded[key] = extracted;
@@ -138,7 +139,7 @@ export function getTranStream(
             reasoningContent = reasoningContent.replace(/\<think\>/gm, "");
           }
         }
-        if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
+        if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
           for (const key in readed) {
             const extracted = extractJSON(readed[key], arg.extractJson, resolveRequestParserContext(arg));
             JSONreaded[key] = extracted;
@@ -209,7 +210,7 @@ export function wrapToolStream(
             const shouldPassDeepSeekReasoning =
               arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingInput) ||
               (arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingToggle) &&
-                db.deepseekThinkingType === "enabled");
+                presetStore.state.deepseekThinkingType === "enabled");
 
             if (shouldPassDeepSeekReasoning) {
               const extracted = extractThoughts(content);

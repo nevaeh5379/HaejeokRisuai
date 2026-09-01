@@ -132,7 +132,7 @@ export interface SettingItem {
 
   /**
    * Path for nested object binding (e.g., 'ooba.top_p')
-   * Use when binding to nested properties like settingsStore.state.ooba.top_p
+   * Use when binding to nested properties like presetStore.state.ooba.top_p
    * Takes precedence over bindKey if both are specified
    */
   bindPath?: string;

@@ -2,7 +2,10 @@ import type { DatabaseSettings } from "../../storage/database/schema";
 import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
 import { getSqlStorage } from "../../storage/sql/sqlStorageFactory";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
-import { SETTINGS_STORE_EXCLUDED_KEYS } from "../../storage/sql/sqlDeferredSettings";
+import {
+  PRESET_STORE_SETTING_KEYS,
+  SETTINGS_STORE_EXCLUDED_KEYS,
+} from "../../storage/sql/sqlDeferredSettings";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 import type {
   FlushableStore,
@@ -11,6 +14,7 @@ import type {
 import { deferredSettingsLoader } from "./deferredSettingsLoader";
 
 const FORBIDDEN_SETTINGS_KEYS = new Set(SETTINGS_STORE_EXCLUDED_KEYS);
+const PRESET_OWNED_KEYS = new Set<string>(PRESET_STORE_SETTING_KEYS);
 
 function assertSettingsKey(key: string): void {
   if (FORBIDDEN_SETTINGS_KEYS.has(key)) {
@@ -18,18 +22,25 @@ function assertSettingsKey(key: string): void {
   }
 }
 
+function assertPublicSettingsKey(key: string): void {
+  assertSettingsKey(key);
+  if (PRESET_OWNED_KEYS.has(key)) {
+    throw new Error(`[SettingsStore] ${key} is owned by PresetStore`);
+  }
+}
+
 function guardedSettingsState(state: Record<string, any>): Record<string, any> {
   return new Proxy(state, {
     set(target, property, value) {
-      if (typeof property === "string") assertSettingsKey(property);
+      if (typeof property === "string") assertPublicSettingsKey(property);
       return Reflect.set(target, property, value);
     },
     deleteProperty(target, property) {
-      if (typeof property === "string") assertSettingsKey(property);
+      if (typeof property === "string") assertPublicSettingsKey(property);
       return Reflect.deleteProperty(target, property);
     },
     defineProperty(target, property, descriptor) {
-      if (typeof property === "string") assertSettingsKey(property);
+      if (typeof property === "string") assertPublicSettingsKey(property);
       return Reflect.defineProperty(target, property, descriptor);
     },
   });
@@ -58,15 +69,18 @@ class SettingsStore
   private stateData = $state<DatabaseSettings>({} as DatabaseSettings);
   readonly state = new Proxy({} as DatabaseSettings, {
     get: (_target, prop) => {
-      if (typeof prop === "string") deferredSettingsLoader.request(prop);
+      if (typeof prop === "string") {
+        assertPublicSettingsKey(prop);
+        deferredSettingsLoader.request(prop);
+      }
       return Reflect.get(this.stateData, prop);
     },
     set: (_target, prop, value) => {
-      if (typeof prop === "string") assertSettingsKey(prop);
+      if (typeof prop === "string") assertPublicSettingsKey(prop);
       return Reflect.set(this.stateData, prop, value);
     },
     deleteProperty: (_target, prop) => {
-      if (typeof prop === "string") assertSettingsKey(prop);
+      if (typeof prop === "string") assertPublicSettingsKey(prop);
       return Reflect.deleteProperty(this.stateData, prop);
     },
     has: (_target, prop) => Reflect.has(this.stateData, prop),
@@ -122,6 +136,9 @@ class SettingsStore
 
   private observeKey(key: string): void {
     assertSettingsKey(key);
+    // Kept on the public settings facade for compatibility. PresetStore alone
+    // observes and persists these values.
+    if (PRESET_OWNED_KEYS.has(key)) return;
     if (this.keyDisposers.has(key) || key === "pluginCustomStorage") return;
     // Synchronous baseline taken at observe time.  The first (async) effect
     // run compares against it so mutations occurring between observe and the
@@ -279,6 +296,16 @@ class SettingsStore
     return this.stateData;
   }
 
+  releasePresetOwnedState(): void {
+    for (const key of PRESET_OWNED_KEYS) {
+      this.keyDisposers.get(key)?.();
+      this.keyDisposers.delete(key);
+      this.dirtyKeys.delete(key);
+      this.pendingDeletes.delete(key);
+      delete this.stateData[key];
+    }
+  }
+
   hasPendingWrites(): boolean {
     return (
       this.dirtyKeys.size > 0 ||
@@ -291,15 +318,16 @@ class SettingsStore
 
   get<K extends keyof DatabaseSettings>(key: K): DatabaseSettings[K] | undefined {
     const keyStr = String(key);
-    assertSettingsKey(keyStr);
+    assertPublicSettingsKey(keyStr);
     deferredSettingsLoader.request(keyStr);
     return this.stateData[keyStr];
   }
 
   set<K extends keyof DatabaseSettings>(key: K, value: DatabaseSettings[K]): void {
     const keyStr = String(key);
-    assertSettingsKey(keyStr);
+    assertPublicSettingsKey(keyStr);
     this.stateData[keyStr] = value;
+    if (PRESET_OWNED_KEYS.has(keyStr)) return;
     if (keyStr === "pluginCustomStorage") {
       this.pluginStorageKeys.clear();
       if (value && typeof value === "object") {
@@ -319,7 +347,7 @@ class SettingsStore
     updater(guardedSettingsState(this.stateData) as DatabaseSettings);
     for (const key of Object.keys(this.stateData)) {
       assertSettingsKey(key);
-      if (key === "pluginCustomStorage") continue;
+      if (key === "pluginCustomStorage" || PRESET_OWNED_KEYS.has(key)) continue;
       this.pendingDeletes.delete(key);
       this.dirtyKeys.add(key);
     }
@@ -380,12 +408,13 @@ class SettingsStore
 
   delete(key: keyof DatabaseSettings): void {
     const keyStr = String(key);
-    assertSettingsKey(keyStr);
+    assertPublicSettingsKey(keyStr);
     if (keyStr === "pluginCustomStorage") {
       this.clearPluginCustomStorage();
       return;
     }
     delete this.stateData[keyStr];
+    if (PRESET_OWNED_KEYS.has(keyStr)) return;
     this.keyDisposers.get(keyStr)?.();
     this.keyDisposers.delete(keyStr);
     this.dirtyKeys.delete(keyStr);

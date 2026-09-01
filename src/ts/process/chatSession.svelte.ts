@@ -103,7 +103,7 @@ async function synchronizePeer(
 function buildPromptInfo(room: character | groupChat): MessagePresetInfo {
   if (!settingsStore.state.promptInfoInsideChat) return {};
   const promptToggles = parseToggleSyntax(
-    settingsStore.state.customPromptTemplateToggle + getModuleToggles(room),
+    presetStore.state.customPromptTemplateToggle + getModuleToggles(room),
   ).flatMap((toggle) => {
     const raw =
       settingsStore.state.globalChatVariables[`toggle_${toggle.key}`];
@@ -216,7 +216,7 @@ async function resolveCurrentCharacter(
 function createTokenizer(additionalTokens: number) {
   return new ChatTokenizer(
     additionalTokens,
-    settingsStore.state.aiModel.startsWith("gpt") ? "noName" : "name",
+    presetStore.state.aiModel.startsWith("gpt") ? "noName" : "name",
   );
 }
 
@@ -248,7 +248,7 @@ function buildReadySession(
     currentChat,
     promptInfo: buildPromptInfo(selection.nowChatroom),
     tokenizer,
-    maxContextTokens: settingsStore.state.maxContext,
+    maxContextTokens: presetStore.state.maxContext,
     findCharacter,
   };
 }
@@ -260,7 +260,7 @@ export async function prepareChatSession(options: PrepareChatSessionOptions) {
   const selection = await loadSelectedChat(options);
   if (!selection) return { status: "done" as const, result: false };
 
-  const calculatedChatTokens = settingsStore.state.aiModel.startsWith("gpt") ? 5 : 3;
+  const calculatedChatTokens = presetStore.state.aiModel.startsWith("gpt") ? 5 : 3;
   const findCharacter = createCharacterLookup();
   const speaker = await resolveCurrentCharacter(
     options,

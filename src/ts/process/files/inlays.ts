@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { v4 } from "uuid";
 import { getImageType } from "src/ts/media";
@@ -369,7 +370,7 @@ export { clearInlayCache };
 
 export function supportsInlayImage() {
   const db = settingsStore.state;
-  return getModelInfo(db.aiModel).flags.includes(LLMFlags.hasImageInput);
+  return getModelInfo(presetStore.state.aiModel).flags.includes(LLMFlags.hasImageInput);
 }
 
 export async function reencodeImage(img: Uint8Array) {

@@ -21,6 +21,9 @@ vi.mock("../../parser/parser.svelte", () => ({ risuChatParser: parser }));
 vi.mock("../../stores/domain/settingsStore.svelte", () => ({
   settingsStore: { state: db },
 }));
+vi.mock("../../stores/domain/presetStore.svelte", () => ({
+  presetStore: { state: db },
+}));
 vi.mock("../../stores/domain/characterStore.svelte", () => ({
   characterStore: { currentCharacter: currentUiCharacter },
 }));

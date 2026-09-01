@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import type { character, Chat, groupChat, Message } from "../storage/database/schema";
 import {
   replaceTargetChat,
@@ -74,7 +75,7 @@ async function addFirstMessage(
   const promptSettings = generationOverride(
     generation,
     "promptSettings",
-    settingsStore.state.promptSettings,
+    presetStore.state.promptSettings,
   );
   if (usingPromptTemplate && promptSettings.sendName) {
     chat.content = `${currentChar.name}: ${chat.content}`;
@@ -102,7 +103,7 @@ function extractInlayReferences(content: string, role: Message["role"]) {
 
 async function resolveInlays(content: string, inlays: string[]) {
   const multimodals: MultiModal[] = [];
-  const modelInfo = getModelInfo(settingsStore.state.aiModel);
+  const modelInfo = getModelInfo(presetStore.state.aiModel);
   for (const inlay of inlays) {
     const name = inlay
       .replace("{{inlayed::", "")
@@ -177,27 +178,27 @@ function resolveMessageRole(
   const promptSettings = generationOverride(
     generation,
     "promptSettings",
-    settingsStore.state.promptSettings,
+    presetStore.state.promptSettings,
   );
   const shouldWrapName =
     (nowChatroom.type === "group" &&
       findCharacter(message.saying).chaId !== currentChar.chaId) ||
-    (nowChatroom.type === "group" && settingsStore.state.groupOtherBotRole === "assistant") ||
+    (nowChatroom.type === "group" && presetStore.state.groupOtherBotRole === "assistant") ||
     (usingPromptTemplate && promptSettings.sendName);
 
   if (!shouldWrapName) return { role, content };
 
   const format =
-    settingsStore.state.groupTemplate ||
+    presetStore.state.groupTemplate ||
     `<{{char}}\'s Message>\n{{slot}}\n</{{char}}\'s Message>`;
   content = risuChatParser(format, {
     chara: findCharacter(message.saying).name,
     chatTarget,
   }).replace("{{slot}}", content);
   role = ["user", "assistant", "system"].includes(
-    settingsStore.state.groupOtherBotRole,
+    presetStore.state.groupOtherBotRole,
   )
-    ? (settingsStore.state.groupOtherBotRole as typeof role)
+    ? (presetStore.state.groupOtherBotRole as typeof role)
     : "assistant";
   return { role, content };
 }
@@ -212,7 +213,7 @@ function extractThoughts(
   const maxDepth = generationOverride(
     generation,
     "promptSettings",
-    settingsStore.state.promptSettings,
+    presetStore.state.promptSettings,
   )?.maxThoughtTagDepth ?? -1;
   content = content.replace(/<Thoughts>(.+)<\/Thoughts>/gms, (_match, thought) => {
     if (maxDepth === -1 || maxDepth - messageCount <= index) thoughts.push(thought);
@@ -329,10 +330,10 @@ async function initializeHistory(options: BuildChatHistoryOptions) {
   const promptSettings = generationOverride(
     options.generation,
     "promptSettings",
-    settingsStore.state.promptSettings,
+    presetStore.state.promptSettings,
   );
   if (
-    !settingsStore.state.aiModel.startsWith("novelai") &&
+    !presetStore.state.aiModel.startsWith("novelai") &&
     !promptSettings?.trimStartNewChat
   ) {
     chats.push({ role: "system", content: "[Start a new chat]", memo: "NewChat" });

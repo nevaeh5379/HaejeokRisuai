@@ -1,5 +1,7 @@
 <script lang="ts">
-    import { settingsStore } from "src/ts/stores/domain";
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import { settingsStore } from "src/ts/stores/domain";
     import Help from "./Help.svelte";
     import { language } from "src/lang";
     import SliderInput from "../UI/GUI/SliderInput.svelte";
@@ -25,12 +27,12 @@
     } = $props()
 
     let effectiveModel = $derived.by(() => {
-        if (!paramKey) return settingsStore.state.subModel
+        if (!paramKey) return presetStore.state.subModel
         if (auxModelKeys.includes(paramKey as AuxModelKey)) {
-            if (settingsStore.state.seperateModelsForAxModels) {
-                return settingsStore.state.seperateModels[paramKey as AuxModelKey] || settingsStore.state.subModel
+            if (presetStore.state.seperateModelsForAxModels) {
+                return presetStore.state.seperateModels[paramKey as AuxModelKey] || presetStore.state.subModel
             }
-            return settingsStore.state.subModel
+            return presetStore.state.subModel
         }
         return paramKey
     })

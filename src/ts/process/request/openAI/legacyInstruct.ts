@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { DEFAULT_OPENAI_COMPLETIONS_URL } from "@risuai/chat-core/openAIProvider.cjs";
 import { language } from "src/lang";
@@ -68,8 +69,8 @@ export async function requestOpenAILegacyInstruct(
     temperature: arg.temperature,
     top_p: 1,
     stop: ["User:", " User:", "user:", " user:"],
-    presence_penalty: arg.PresensePenalty || db.PresensePenalty / 100,
-    frequency_penalty: arg.frequencyPenalty || db.frequencyPenalty / 100,
+    presence_penalty: arg.PresensePenalty || presetStore.state.PresensePenalty / 100,
+    frequency_penalty: arg.frequencyPenalty || presetStore.state.frequencyPenalty / 100,
   };
 
   const headers: Record<string, string> = {

@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import { onMount } from 'svelte';
   import { fade, fly, scale } from 'svelte/transition';
   import {
     Database,
@@ -23,7 +25,7 @@
   } from '@lucide/svelte';
 
   import { changeLanguage, language } from 'src/lang';
-  import { setPreset } from '../../ts/storage/presets/presetService';
+  import { applyPresetToCurrentState } from '../../ts/storage/presets/presetService';
   import { installStartupData } from 'src/ts/storage/database/databaseLifecycle';
   import { settingsStore, personaStore } from 'src/ts/stores/domain';
   import { prebuiltPresets } from 'src/ts/process/templates/templates';
@@ -64,8 +66,8 @@
   let modelName = $state('claude-3-7-sonnet-20250219');
   let customURL = $state('');
   let apiKey = $state('');
-  let maxContext = $state<number>(settingsStore.state.maxContext || 16000);
-  let maxResponse = $state<number>(settingsStore.state.maxResponse || 1000);
+  let maxContext = $state<number>(presetStore.state.maxContext || 16000);
+  let maxResponse = $state<number>(presetStore.state.maxResponse || 1000);
   let chatLang = $state(0); // 0: English, 1: Auto translate, 2: Direct
 
   // Common context preset tokens for quick chips
@@ -310,7 +312,7 @@
 
   // Complete onboarding & enter app
   async function finishAndEnterApp() {
-    setPreset(settingsStore.state as any, prebuiltPresets.OAI2);
+    applyPresetToCurrentState(prebuiltPresets.OAI2);
     settingsStore.state.textTheme = 'highcontrast';
     updateTextThemeAndCSS();
 
@@ -327,50 +329,50 @@
     }
 
     // Match the limits enforced by the numeric inputs even when values are set programmatically.
-    settingsStore.state.maxContext = Number.isFinite(contextTokens)
+    presetStore.state.maxContext = Number.isFinite(contextTokens)
       ? Math.min(2_000_000, Math.max(1_000, contextTokens))
       : 16_000;
-    settingsStore.state.maxResponse = Number.isFinite(responseTokens)
+    presetStore.state.maxResponse = Number.isFinite(responseTokens)
       ? Math.min(8_192, Math.max(100, responseTokens))
       : 1_000;
 
     // Provider & model setup. aiModel stores Risu's registry ID, not always the API model slug.
     if (selectedProvider === 'claude') {
       const targetModel = trimmedModel || 'claude-3-7-sonnet-20250219';
-      settingsStore.state.aiModel = targetModel;
-      settingsStore.state.subModel = targetModel;
+      presetStore.state.aiModel = targetModel;
+      presetStore.state.subModel = targetModel;
       if (trimmedApiKey) settingsStore.state.claudeAPIKey = trimmedApiKey;
       settingsStore.state.claudeCachingExperimental = true;
     } else if (selectedProvider === 'openai') {
       const apiModel = trimmedModel || 'gpt-4o';
       const targetModel = apiModel === 'gpt-4o' ? 'gpt4o' : apiModel === 'gpt-4o-mini' ? 'gpt4om' : apiModel;
-      settingsStore.state.aiModel = targetModel;
-      settingsStore.state.subModel = targetModel;
+      presetStore.state.aiModel = targetModel;
+      presetStore.state.subModel = targetModel;
       if (trimmedApiKey) settingsStore.state.openAIKey = trimmedApiKey;
     } else if (selectedProvider === 'gemini') {
       const targetModel = trimmedModel || 'gemini-2.5-flash';
-      settingsStore.state.aiModel = targetModel;
-      settingsStore.state.subModel = targetModel;
+      presetStore.state.aiModel = targetModel;
+      presetStore.state.subModel = targetModel;
       if (trimmedApiKey) settingsStore.state.google.accessToken = trimmedApiKey;
     } else if (selectedProvider === 'openrouter') {
       const targetModel = trimmedModel || 'anthropic/claude-3.7-sonnet';
-      settingsStore.state.aiModel = 'openrouter';
-      settingsStore.state.subModel = 'openrouter';
-      settingsStore.state.openrouterRequestModel = targetModel;
-      settingsStore.state.openrouterSubRequestModel = targetModel;
+      presetStore.state.aiModel = 'openrouter';
+      presetStore.state.subModel = 'openrouter';
+      presetStore.state.openrouterRequestModel = targetModel;
+      presetStore.state.openrouterSubRequestModel = targetModel;
       if (trimmedApiKey) settingsStore.state.openrouterKey = trimmedApiKey;
     } else if (selectedProvider === 'reverse_proxy') {
-      settingsStore.state.aiModel = 'reverse_proxy';
-      settingsStore.state.subModel = 'reverse_proxy';
-      if (trimmedUrl) settingsStore.state.forceReplaceUrl = trimmedUrl;
+      presetStore.state.aiModel = 'reverse_proxy';
+      presetStore.state.subModel = 'reverse_proxy';
+      if (trimmedUrl) presetStore.state.forceReplaceUrl = trimmedUrl;
       if (trimmedModel) {
-        settingsStore.state.customProxyRequestModel = trimmedModel;
-        settingsStore.state.customProxySubRequestModel = trimmedModel;
+        presetStore.state.customProxyRequestModel = trimmedModel;
+        presetStore.state.customProxySubRequestModel = trimmedModel;
       }
-      if (trimmedApiKey) settingsStore.state.proxyKey = trimmedApiKey;
+      if (trimmedApiKey) presetStore.state.proxyKey = trimmedApiKey;
     } else if (selectedProvider === 'ollama') {
-      settingsStore.state.aiModel = 'ollama-hosted';
-      settingsStore.state.subModel = 'ollama-hosted';
+      presetStore.state.aiModel = 'ollama-hosted';
+      presetStore.state.subModel = 'ollama-hosted';
       if (trimmedModel) {
         settingsStore.state.ollamaModel = trimmedModel;
         settingsStore.state.ollamaSubModel = trimmedModel;
@@ -378,8 +380,8 @@
       if (trimmedUrl) settingsStore.state.ollamaURL = trimmedUrl;
       settingsStore.state.ollamaModelSource = 'local';
     } else if (selectedProvider === 'horde') {
-      settingsStore.state.aiModel = 'horde:::auto';
-      settingsStore.state.subModel = 'horde:::auto';
+      presetStore.state.aiModel = 'horde:::auto';
+      presetStore.state.subModel = 'horde:::auto';
       if (trimmedApiKey) settingsStore.state.hordeConfig.apiKey = trimmedApiKey;
     }
 

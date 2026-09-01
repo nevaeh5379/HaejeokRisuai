@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { language } from "src/lang";
 import {
@@ -35,7 +36,7 @@ export async function interpretOpenAINonStreamingResponse(
   function processTextResponse(dat: any): string {
     if (dat?.choices[0]?.text) {
       let text = dat.choices[0].text as string;
-      if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
+      if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
         try {
           const parsed = JSON.parse(text);
           const extracted = extractJSON(parsed, arg.extractJson, resolveRequestParserContext(arg));
@@ -47,7 +48,7 @@ export async function interpretOpenAINonStreamingResponse(
       }
       return text;
     }
-    if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
+    if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
       return extractJSON(dat.choices[0].message.content, arg.extractJson, resolveRequestParserContext(arg));
     }
     return formatOpenAIReasoningText(dat, {
@@ -190,7 +191,7 @@ export async function interpretOpenAINonStreamingResponse(
       }
 
       if (arg.multiGen && dat.choices) {
-        if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
+        if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
           const c = dat.choices.map((v: { message: { content: string } }) => {
             const extracted = extractJSON(
               v.message.content ?? "",

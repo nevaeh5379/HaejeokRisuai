@@ -1,5 +1,6 @@
 import type { SettingItem } from "./types";
 import { isNodeServer, isTauri } from "../platform";
+import { presetStore } from "../stores/domain/presetStore.svelte";
 
 export const advancedSettingsItems: SettingItem[] = [
   {
@@ -255,7 +256,7 @@ export const advancedSettingsItems: SettingItem[] = [
     type: "number",
     fallbackLabel: "Local Network Timeout (sec)",
     bindKey: "localNetworkTimeoutSec",
-    condition: (ctx) => ctx.db.localNetworkMode,
+    condition: () => presetStore.state.localNetworkMode,
     classes: "block mb-1",
     containerClasses: "pl-7",
     options: {

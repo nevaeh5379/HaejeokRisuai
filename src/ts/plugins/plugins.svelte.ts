@@ -15,6 +15,8 @@ import {
   selectedCharID,
 } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
+import { presetStore } from "../stores/domain/presetStore.svelte";
+import { isPresetStoreSettingKey } from "../storage/sql/sqlDeferredSettings";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
 import { personaStore } from "../stores/domain/personaStore.svelte";
 import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
@@ -651,13 +653,25 @@ function setDomainDbValue(key: string, value: any): boolean {
 }
 
 function getAllowedDbValue(key: string): any {
-  return domainDbKeys.has(key)
-    ? getDomainDbValue(key)
-    : settingsStore.state[key];
+  if (domainDbKeys.has(key)) return getDomainDbValue(key);
+  if (isPresetStoreSettingKey(key)) return presetStore.state[key];
+  return settingsStore.state[key];
 }
 
 function setAllowedDbValue(key: string, value: any): void {
-  if (!setDomainDbValue(key, value)) settingsStore.set(key as any, value);
+  if (setDomainDbValue(key, value)) return;
+  if (isPresetStoreSettingKey(key)) {
+    presetStore.state[key] = value;
+  } else {
+    settingsStore.set(key as any, value);
+  }
+}
+
+function hasAllowedDbValue(key: string): boolean {
+  return (
+    domainDbKeys.has(key) ||
+    (isPresetStoreSettingKey(key) ? key in presetStore.state : key in settingsStore.state)
+  );
 }
 
 export const getV2PluginAPIs = () => {
@@ -865,7 +879,7 @@ export const getV2PluginAPIs = () => {
         },
         ownKeys(target) {
           const keys = allowedDbKeys.filter(
-            (key) => domainDbKeys.has(key) || key in settingsStore.state,
+            (key) => hasAllowedDbValue(key),
           );
           keys.push(...settingsStore.getPluginCustomStorageKeys());
           return Array.from(new Set(keys));
@@ -874,7 +888,7 @@ export const getV2PluginAPIs = () => {
           if (typeof prop === "string") {
             if (
               allowedDbKeys.includes(prop) &&
-              (domainDbKeys.has(prop) || prop in settingsStore.state)
+              hasAllowedDbValue(prop)
             )
               return true;
             if (settingsStore.hasPluginCustomStorageKey(prop)) return true;
@@ -885,7 +899,7 @@ export const getV2PluginAPIs = () => {
           if (typeof prop === "string") {
             if (
               allowedDbKeys.includes(prop) &&
-              (domainDbKeys.has(prop) || prop in settingsStore.state)
+              hasAllowedDbValue(prop)
             ) {
               return {
                 value: getAllowedDbValue(prop),

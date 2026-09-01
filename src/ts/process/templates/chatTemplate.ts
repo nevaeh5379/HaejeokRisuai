@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { Template } from "@huggingface/jinja";
@@ -39,14 +40,14 @@ export const applyChatTemplate = (
 ) => {
   const db = settingsStore.state;
   const currentChar = arg.currentChar ?? characterStore.currentCharacter;
-  const type = arg.type ?? db.instructChatTemplate;
+  const type = arg.type ?? presetStore.state.instructChatTemplate;
   if (!type) {
     throw new Error("Template type is not set");
   }
   let clonedMessages = safeStructuredClone(messages);
   const template =
     type === "jinja"
-      ? new Template(arg.custom ?? db.JinjaTemplate)
+      ? new Template(arg.custom ?? presetStore.state.JinjaTemplate)
       : new Template(chatTemplates[type]);
   let formatedMessages: {
     role: "user" | "assistant" | "system";

@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { globalFetch } from "../../globalApi.svelte";
 import { LLMFormat } from "../../model/modellist";
@@ -40,7 +41,7 @@ export async function requestNovelList(
     ),
     maxTokens,
     temperature,
-    sampler: db.ainconfig,
+    sampler: presetStore.state.ainconfig,
     modelId: aiModel,
     biasString,
   });

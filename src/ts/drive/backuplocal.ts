@@ -50,7 +50,6 @@ import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";
 import { personaStore } from "../stores/domain/personaStore.svelte";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
-import { saveCurrentPreset } from "../storage/presets/presetService";
 import type { FlushableStore } from "../stores/domain/storeContracts";
 import { decryptLegacyAccountBackup } from "./legacyBackupEncryption";
 import {
@@ -578,11 +577,9 @@ function normalizeBackupSnapshot(db: BackupDatabaseDraft): PortableDatabase {
 }
 
 async function flushDurableStores(): Promise<void> {
-  // SettingsStore is the canonical live model/prompt configuration. Fold it
-  // into the active preset before taking a storage-level backup snapshot.
-  await saveCurrentPreset();
   const stores: readonly FlushableStore[] = [
     characterStore,
+    presetStore,
     settingsStore,
     messageStore,
     personaStore,

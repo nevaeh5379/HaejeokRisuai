@@ -11,6 +11,7 @@ import * as fflate from "fflate";
 import { decodeRPack, encodeRPack } from "../../rpack/rpack_js";
 import type { DatabaseSettings, botPreset } from "../database/schema";
 import type { StoredBotPreset } from "../sql/ISqlStorage";
+import { PRESET_STORE_SETTING_KEYS } from "../sql/sqlDeferredSettings";
 import { presetTemplate } from "./presetDefaults";
 import { LLMFormat } from "../../model/types";
 
@@ -21,7 +22,6 @@ export function createActivePresetSnapshot(
   const savedPreset: botPreset = {
     name: current.name,
     apiType: db.apiType,
-    openAIKey: db.openAIKey,
     localNetworkMode: db.localNetworkMode,
     localNetworkTimeoutSec: db.localNetworkTimeoutSec,
     mainPrompt: db.mainPrompt,
@@ -111,16 +111,8 @@ export function createActivePresetSnapshot(
   return { ...savedPreset, id: current.id } as StoredBotPreset;
 }
 
-export async function saveCurrentPreset() {
-  const current = presetStore.activePresetMetadata;
-  if (!current) return;
-  await presetStore.savePreset(
-    createActivePresetSnapshot(settingsStore.state, current),
-  );
-}
-
 export async function copyPreset(id: number) {
-  await saveCurrentPreset();
+  await presetStore.flush();
   const source = await presetStore.load(presetStore.summaries[id].id);
   const newPres = safeStructuredClone(source);
   delete (newPres as any).id;
@@ -130,14 +122,43 @@ export async function copyPreset(id: number) {
 
 export async function changeToPreset(id = 0, savecurrent = true) {
   if (savecurrent) {
-    await saveCurrentPreset();
+    await presetStore.flush();
   }
-  const db = settingsStore.state;
   const summary = presetStore.summaries[id];
   if (!summary) return;
   const newPres = await presetStore.load(summary.id);
-  await presetStore.setActiveId(summary.id);
-  setPreset(db, newPres);
+  const nextState = createPresetSettingsState(
+    {
+      ...settingsStore.getStateRecord(),
+      ...presetStore.getStateRecord(),
+    } as DatabaseSettings,
+    newPres,
+  );
+  await presetStore.activate(summary.id, nextState);
+}
+
+export function createPresetSettingsState(
+  base: DatabaseSettings,
+  preset: botPreset,
+): DatabaseSettings {
+  const combined = safeStructuredClone(base);
+  setPreset(combined, preset);
+  const state: Record<string, unknown> = {};
+  for (const key of PRESET_STORE_SETTING_KEYS) {
+    state[key] = combined[key as keyof DatabaseSettings];
+  }
+  return state as unknown as DatabaseSettings;
+}
+
+export function applyPresetToCurrentState(preset: botPreset): void {
+  const nextState = createPresetSettingsState(
+    {
+      ...settingsStore.getStateRecord(),
+      ...presetStore.getStateRecord(),
+    } as DatabaseSettings,
+    preset,
+  );
+  presetStore.replaceActivePresetState(nextState);
 }
 
 export function setPreset(db: DatabaseSettings, newPres: botPreset) {
@@ -288,7 +309,7 @@ export async function downloadPreset(
   id: number,
   type: "json" | "risupreset" | "return" = "json",
 ) {
-  await saveCurrentPreset();
+  await presetStore.flush();
   let pres = safeStructuredClone(
     await presetStore.load(presetStore.summaries[id].id),
   );

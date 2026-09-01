@@ -1,10 +1,12 @@
 <script lang="ts">
-    import { ArrowLeft, PlusIcon, TrashIcon, ChevronsUpDown, ChevronDown } from "@lucide/svelte";
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import { ArrowLeft, PlusIcon, TrashIcon, ChevronsUpDown, ChevronDown } from "@lucide/svelte";
     import { language } from "src/lang";
     import PromptDataItem from "src/lib/UI/PromptDataItem.svelte";
     import { tokenizePreset, type PromptItem } from "src/ts/process/prompt";
     import { templateCheck } from "src/ts/process/templates/templateCheck";
-    
+
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import Check from "src/lib/UI/GUI/CheckInput.svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
@@ -26,7 +28,7 @@
     let draggedIndex = $state(-1)
     let dragOverIndex = $state(-1)
     let openedItemIndices = $state(new Set<number>())
-    executeTokenize(settingsStore.state.promptTemplate)
+    executeTokenize(presetStore.state.promptTemplate)
   interface Props {
     onGoBack?: () => void;
     mode?: 'independent'|'inline';
@@ -44,11 +46,11 @@
     warns = templateCheck(settingsStore.state as any)
   });
   $effect.pre(() => {
-    executeTokenize(settingsStore.state.promptTemplate)
+    executeTokenize(presetStore.state.promptTemplate)
   });
 
   function getDisplayTemplate() {
-    return settingsStore.state.promptTemplate.map((item: any, i: number) => ({
+    return presetStore.state.promptTemplate.map((item: any, i: number) => ({
       item,
       originalIndex: i,
       displayIndex: i
@@ -77,7 +79,7 @@
       return
     }
 
-    const templates = [...settingsStore.state.promptTemplate]
+    const templates = [...presetStore.state.promptTemplate]
     const [movedItem] = templates.splice(draggedIndex, 1)
 
     const adjustedDropIndex = draggedIndex < dragOverIndex ? dragOverIndex - 1 : dragOverIndex
@@ -103,17 +105,17 @@
     })
     openedItemIndices = newOpenedIndices
 
-    settingsStore.state.promptTemplate = templates
+    presetStore.state.promptTemplate = templates
     draggedIndex = -1
     dragOverIndex = -1
   }
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.ctrlKey && e.altKey && e.key === 'o') {
-      if (openedItemIndices.size === settingsStore.state.promptTemplate.length) {
+      if (openedItemIndices.size === presetStore.state.promptTemplate.length) {
         openedItemIndices = new Set<number>()
       } else {
-        openedItemIndices = new Set(settingsStore.state.promptTemplate.map((_: any, i: number) => i))
+        openedItemIndices = new Set(presetStore.state.promptTemplate.map((_: any, i: number) => i))
       }
     }
   }
@@ -143,9 +145,9 @@
   ]
 
   function addPromptWithType(defaults: Partial<PromptItem>) {
-    let value = settingsStore.state.promptTemplate ?? []
+    let value = presetStore.state.promptTemplate ?? []
     value.push(defaults as PromptItem)
-    settingsStore.state.promptTemplate = value
+    presetStore.state.promptTemplate = value
     addNewPromptOpen = false
   }
 
@@ -184,29 +186,29 @@
 {#if subMenu === 0}
     <!-- Toolbar -->
     <div class="flex items-center justify-between mt-4 mb-1 px-1">
-        <span class="text-xs text-textcolor2">{settingsStore.state.promptTemplate.length} items</span>
+        <span class="text-xs text-textcolor2">{presetStore.state.promptTemplate.length} items</span>
         <button
             class="text-xs px-2 py-1 rounded border border-darkborderc text-textcolor2 hover:text-textcolor hover:bg-selected transition-colors flex items-center gap-1 cursor-pointer"
             onclick={() => {
-                if (openedItemIndices.size === settingsStore.state.promptTemplate.length) {
+                if (openedItemIndices.size === presetStore.state.promptTemplate.length) {
                     openedItemIndices = new Set<number>()
                 } else {
-                    openedItemIndices = new Set(settingsStore.state.promptTemplate.map((_: any, i: number) => i))
+                    openedItemIndices = new Set(presetStore.state.promptTemplate.map((_: any, i: number) => i))
                 }
             }}
         >
             <ChevronsUpDown size={13} />
-            {openedItemIndices.size === settingsStore.state.promptTemplate.length ? 'Collapse All' : 'Expand All'}
+            {openedItemIndices.size === presetStore.state.promptTemplate.length ? 'Collapse All' : 'Expand All'}
         </button>
     </div>
     <div class="contain w-full max-w-full flex flex-col p-3 rounded-md">
-        {#if settingsStore.state.promptTemplate.length === 0}
+        {#if presetStore.state.promptTemplate.length === 0}
                 <div class="text-textcolor2">No Format</div>
         {/if}
         {#key sorted}
             {#each getReorderedTemplate() as { item: prompt, originalIndex, displayIndex }}
                 <PromptDataItem
-                    bind:promptItem={settingsStore.state.promptTemplate[originalIndex]}
+                    bind:promptItem={presetStore.state.promptTemplate[originalIndex]}
                     isDragging={draggedIndex === originalIndex}
                     isOpened={openedItemIndices.has(originalIndex)}
                     bind:draggedIndex
@@ -216,9 +218,9 @@
                     displayIndex={displayIndex}
                     onDrop={handlePromptDrop}
                     onRemove={() => {
-                        let templates = settingsStore.state.promptTemplate
+                        let templates = presetStore.state.promptTemplate
                         templates.splice(originalIndex, 1)
-                        settingsStore.state.promptTemplate = templates
+                        presetStore.state.promptTemplate = templates
 
                         const newOpenedIndices = new Set<number>()
                         openedItemIndices.forEach((index) => {
@@ -236,14 +238,14 @@
                         dragOverIndex = -1
                     }}
                     moveDown={() => {
-                        if(originalIndex === settingsStore.state.promptTemplate.length - 1){
+                        if(originalIndex === presetStore.state.promptTemplate.length - 1){
                             return
                         }
-                        let templates = settingsStore.state.promptTemplate
+                        let templates = presetStore.state.promptTemplate
                         let temp = templates[originalIndex]
                         templates[originalIndex] = templates[originalIndex + 1]
                         templates[originalIndex + 1] = temp
-                        settingsStore.state.promptTemplate = templates
+                        presetStore.state.promptTemplate = templates
 
                         const newOpenedIndices = new Set<number>()
                         openedItemIndices.forEach((index) => {
@@ -261,11 +263,11 @@
                         if(originalIndex === 0){
                             return
                         }
-                        let templates = settingsStore.state.promptTemplate
+                        let templates = presetStore.state.promptTemplate
                         let temp = templates[originalIndex]
                         templates[originalIndex] = templates[originalIndex - 1]
                         templates[originalIndex - 1] = temp
-                        settingsStore.state.promptTemplate = templates
+                        presetStore.state.promptTemplate = templates
 
                         const newOpenedIndices = new Set<number>()
                         openedItemIndices.forEach((index) => {
@@ -312,81 +314,81 @@
     <span class="text-textcolor2 mb-6 text-sm mt-2">{extokens} {language.exactTokens}</span>
 {:else}
     <span class="text-textcolor mt-4">{language.postEndInnerFormat}</span>
-    <TextInput bind:value={settingsStore.state.promptSettings.postEndInnerFormat}/>
+    <TextInput bind:value={presetStore.state.promptSettings.postEndInnerFormat}/>
 
-    <Check bind:check={settingsStore.state.promptSettings.sendChatAsSystem} name={language.sendChatAsSystem} className="mt-4"/>
-    <Check bind:check={settingsStore.state.promptSettings.sendName} name={language.formatGroupInSingle} className="mt-4"/>
-    <Check bind:check={settingsStore.state.promptSettings.trimStartNewChat} name={language.trimStartNewChat} className="mt-4"/>
-    <Check bind:check={settingsStore.state.promptSettings.utilOverride} name={language.utilOverride} className="mt-4"/>
-    <Check bind:check={settingsStore.state.jsonSchemaEnabled} name={language.enableJsonSchema} className="mt-4"/>
-    <Check bind:check={settingsStore.state.outputImageModal} name={language.outputImageModal} className="mt-4"/>
+    <Check bind:check={presetStore.state.promptSettings.sendChatAsSystem} name={language.sendChatAsSystem} className="mt-4"/>
+    <Check bind:check={presetStore.state.promptSettings.sendName} name={language.formatGroupInSingle} className="mt-4"/>
+    <Check bind:check={presetStore.state.promptSettings.trimStartNewChat} name={language.trimStartNewChat} className="mt-4"/>
+    <Check bind:check={presetStore.state.promptSettings.utilOverride} name={language.utilOverride} className="mt-4"/>
+    <Check bind:check={presetStore.state.jsonSchemaEnabled} name={language.enableJsonSchema} className="mt-4"/>
+    <Check bind:check={presetStore.state.outputImageModal} name={language.outputImageModal} className="mt-4"/>
 
-    <Check bind:check={settingsStore.state.strictJsonSchema} name={language.strictJsonSchema} className="mt-4"/>
+    <Check bind:check={presetStore.state.strictJsonSchema} name={language.strictJsonSchema} className="mt-4"/>
 
     {#if settingsStore.state.showUnrecommended}
-        <Check bind:check={settingsStore.state.promptSettings.customChainOfThought} name={language.customChainOfThought} className="mt-4">
+        <Check bind:check={presetStore.state.promptSettings.customChainOfThought} name={language.customChainOfThought} className="mt-4">
             <Help unrecommended key='customChainOfThought' />
         </Check>
     {/if}
     <span class="text-textcolor mt-4">{language.maxThoughtTagDepth}</span>
-    <NumberInput bind:value={settingsStore.state.promptSettings.maxThoughtTagDepth}/>
+    <NumberInput bind:value={presetStore.state.promptSettings.maxThoughtTagDepth}/>
     <span class="text-textcolor mt-4">{language.groupOtherBotRole} <Help key="groupOtherBotRole"/></span>
-    <SelectInput bind:value={settingsStore.state.groupOtherBotRole}>
+    <SelectInput bind:value={presetStore.state.groupOtherBotRole}>
         <OptionInput value="user">User</OptionInput>
         <OptionInput value="system">System</OptionInput>
         <OptionInput value="assistant">assistant</OptionInput>
     </SelectInput>
     <span class="text-textcolor mt-4">{language.customPromptTemplateToggle} <Help key='customPromptTemplateToggle' /></span>
-    <TextAreaInput bind:value={settingsStore.state.customPromptTemplateToggle}/>
+    <TextAreaInput bind:value={presetStore.state.customPromptTemplateToggle}/>
     <span class="text-textcolor mt-4">{language.defaultVariables} <Help key='defaultVariables' /></span>
-    <TextAreaInput bind:value={settingsStore.state.templateDefaultVariables}/>
+    <TextAreaInput bind:value={presetStore.state.templateDefaultVariables}/>
     <span class="text-textcolor mt-4">{language.predictedOutput}</span>
     <TextAreaInput bind:value={settingsStore.state.OAIPrediction}/>
     <span class="text-textcolor mt-4">{language.autoSuggest} <Help key='autoSuggest' /></span>
-    <TextAreaInput bind:value={settingsStore.state.autoSuggestPrompt} placeholder={defaultAutoSuggestPrompt}/>
+    <TextAreaInput bind:value={presetStore.state.autoSuggestPrompt} placeholder={defaultAutoSuggestPrompt}/>
     <span class="text-textcolor mt-4">{language.groupInnerFormat} <Help key='groupInnerFormat' /></span>
-    <TextAreaInput placeholder={`<{{char}}\'s Message>\n{{slot}}\n</{{char}}\'s Message>`} bind:value={settingsStore.state.groupTemplate}/>
+    <TextAreaInput placeholder={`<{{char}}\'s Message>\n{{slot}}\n</{{char}}\'s Message>`} bind:value={presetStore.state.groupTemplate}/>
     <span class="text-textcolor mt-4">{language.systemContentReplacement} <Help key="systemContentReplacement"/></span>
-    <TextAreaInput bind:value={settingsStore.state.systemContentReplacement}/>
+    <TextAreaInput bind:value={presetStore.state.systemContentReplacement}/>
     <span class="text-textcolor mt-4">{language.systemRoleReplacement} <Help key="systemRoleReplacement"/></span>
-    <SelectInput bind:value={settingsStore.state.systemRoleReplacement}>
+    <SelectInput bind:value={presetStore.state.systemRoleReplacement}>
         <OptionInput value="user">User</OptionInput>
         <OptionInput value="assistant">assistant</OptionInput>
     </SelectInput>
-    {#if settingsStore.state.jsonSchemaEnabled}
+    {#if presetStore.state.jsonSchemaEnabled}
         <span class="text-textcolor mt-4">{language.jsonSchema} <Help key='jsonSchema' /></span>
-        <TextAreaInput bind:value={settingsStore.state.jsonSchema}/>
+        <TextAreaInput bind:value={presetStore.state.jsonSchema}/>
         <span class="text-textcolor mt-4">{language.extractJson} <Help key='extractJson' /></span>
-        <TextInput bind:value={settingsStore.state.extractJson}/>
+        <TextInput bind:value={presetStore.state.extractJson}/>
     {/if}
 
     {#if !settingsStore.state.auxModelUnderModelSettings}
         <AuxModelSelectors />
     {/if}
-    
+
     {#snippet fallbackModelList(arg:'model'|'memory'|'translate'|'emotion'|'otherAx')}
-        {#each settingsStore.state.fallbackModels[arg] as model, i}
+        {#each presetStore.state.fallbackModels[arg] as model, i}
             <span class="text-textcolor mt-4">
                 {language.model} {i + 1}
             </span>
-            <ModelList bind:value={settingsStore.state.fallbackModels[arg][i]} blankable />
+            <ModelList bind:value={presetStore.state.fallbackModels[arg][i]} blankable />
         {/each}
         <div class="flex gap-2">
             <button class="bg-selected text-textcolor p-2 rounded-md" onclick={() => {
-                let value = settingsStore.state.fallbackModels[arg] ?? []
+                let value = presetStore.state.fallbackModels[arg] ?? []
                 value.push('')
-                settingsStore.state.fallbackModels[arg] = value
+                presetStore.state.fallbackModels[arg] = value
             }}><PlusIcon /></button>
             <button class="bg-red-500 text-white p-2 rounded-md" onclick={() => {
-                let value = settingsStore.state.fallbackModels[arg] ?? []
+                let value = presetStore.state.fallbackModels[arg] ?? []
                 value.pop()
-                settingsStore.state.fallbackModels[arg] = value
+                presetStore.state.fallbackModels[arg] = value
             }}><TrashIcon /></button>
         </div>
     {/snippet}
 
     <Accordion name={language.fallbackModel} styled>
-        <Check bind:check={settingsStore.state.fallbackWhenBlankResponse} name={language.fallbackWhenBlankResponse} className="mt-4"/>
+        <Check bind:check={presetStore.state.fallbackWhenBlankResponse} name={language.fallbackWhenBlankResponse} className="mt-4"/>
         <Check bind:check={settingsStore.state.doNotChangeFallbackModels} name={language.doNotChangeFallbackModels} className="mt-4"/>
 
         <Accordion name={language.model} styled>

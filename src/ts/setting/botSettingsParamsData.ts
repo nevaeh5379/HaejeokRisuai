@@ -7,6 +7,7 @@
 
 import type { SettingItem } from "./types";
 import { LLMFlags } from "../model/types";
+import { presetStore } from "../stores/domain/presetStore.svelte";
 
 /**
  * Basic parameter settings that are always visible
@@ -38,10 +39,10 @@ export const seedSetting: SettingItem = {
   type: "number",
   labelKey: "seed",
   bindKey: "generationSeed",
-  condition: (ctx) =>
-    ctx.db.aiModel.startsWith("gpt") ||
-    ctx.db.aiModel === "reverse_proxy" ||
-    ctx.db.aiModel === "openrouter",
+  condition: () =>
+    presetStore.state.aiModel.startsWith("gpt") ||
+    presetStore.state.aiModel === "reverse_proxy" ||
+    presetStore.state.aiModel === "openrouter",
   keywords: ["seed", "random", "deterministic"],
 };
 
@@ -172,7 +173,7 @@ export const modelSpecificParameterItems: SettingItem[] = [
     bindKey: "thinkingTokens",
     condition: (ctx) =>
       ctx.modelInfo.parameters.includes("thinking_tokens") &&
-      ctx.db.thinkingType === "budget",
+      presetStore.state.thinkingType === "budget",
     options: {
       min: -1,
       max: 64000,
@@ -188,7 +189,7 @@ export const modelSpecificParameterItems: SettingItem[] = [
     bindKey: "adaptiveThinkingEffort",
     condition: (ctx) =>
       ctx.modelInfo.flags.includes(LLMFlags.claudeAdaptiveThinking) &&
-      ctx.db.thinkingType === "adaptive",
+      presetStore.state.thinkingType === "adaptive",
     options: {
       segmentOptions: [
         { value: "low", label: "Low" },
@@ -212,7 +213,7 @@ export const modelSpecificParameterItems: SettingItem[] = [
     bindKey: "deepseekReasoningEffort",
     condition: (ctx) =>
       ctx.modelInfo.flags.includes(LLMFlags.deepSeekThinkingToggle) &&
-      ctx.db.deepseekThinkingType === "enabled",
+      presetStore.state.deepseekThinkingType === "enabled",
     options: {
       segmentOptions: [
         { value: "high", label: "High" },
