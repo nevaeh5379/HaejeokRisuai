@@ -40,7 +40,12 @@ test('Termux runtime excludes optional native and cloud backends', () => {
 });
 
 test('Termux installer is deterministic and localhost-first', () => {
+  assert.match(installScript, /pkg install -y .*openssl-tool/);
+  assert.doesNotMatch(installScript, /pkg install -y .* openssl(?: |$)/);
   assert.match(installScript, /npm ci --omit=dev --ignore-scripts/);
+  assert.match(installScript, /pkg install -y .*openssl/);
+  assert.match(installScript, /command -v openssl/);
+  assert.match(installScript, /\/dev\/urandom/);
   assert.match(installScript, /RISU_HOST=127\.0\.0\.1/);
   assert.match(managerScript, /update_config_value RISU_HOST 0\.0\.0\.0/);
   assert.match(managerScript, /update_config_value RISU_HOST 127\.0\.0\.1/);
