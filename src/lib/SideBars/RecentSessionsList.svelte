@@ -143,14 +143,17 @@
             );
             allSessions = rows.flatMap((row) => {
                 const charIndex = indexById.get(row.characterId);
-                if (charIndex === undefined) return [];
-                const char = characterStore.characters[charIndex];
+                const char = charIndex !== undefined ? characterStore.characters[charIndex] : undefined;
                 const folderName = row.folderId
                     ? char?.chatFolders?.find((folder) => folder.id === row.folderId)?.name
                     : undefined;
+                const lastMessageSnippet = cleanSnippet(row.lastMessage ?? '');
+                // A chat with no usable timestamp (e.g. legacy rows) would sink to
+                // the bottom of a timestamp sort; fall back to the character's
+                // last interaction so it still shows up near the top.
                 const timestamp = row.lastDate ?? char?.lastInteraction ?? 0;
                 return [{
-                    charIndex,
+                    charIndex: charIndex ?? -1,
                     chatIndex: row.chatPosition,
                     chatId: row.chatId,
                     characterName: row.characterName || char?.name || 'Unknown',
@@ -159,11 +162,12 @@
                     isGroup: row.characterType === 'group',
                     chatName: row.chatName || `${language.Chat} ${row.chatPosition + 1}`,
                     folderName,
-                    lastMessageSnippet: cleanSnippet(row.lastMessage),
+                    lastMessageSnippet,
                     timestamp,
                     agoText: makeAgoText(timestamp),
                 } satisfies SessionItem];
             });
+            allSessions.sort((a, b) => b.timestamp - a.timestamp);
         } catch (error) {
             console.warn('[RecentSessions] SQL feed failed; using loaded chats', error);
             if (token === refreshToken) allSessions = buildLocalSessionSnapshot();
@@ -200,10 +204,21 @@
 
     async function selectSession(item: SessionItem) {
         const { changeChar } = await import('../../ts/characters');
-        const char = characterStore.characters[item.charIndex];
-        if (!char) return;
+        let index = item.charIndex;
+        if (
+            index < 0 ||
+            index >= characterStore.characters.length ||
+            characterStore.characters[index]?.chaId !== item.characterId
+        ) {
+            // The SQL feed is not bound to character-store indices; re-resolve
+            // the character by its stable id before navigating.
+            index = (characterStore.characters ?? []).findIndex(
+                (character) => character.chaId === item.characterId,
+            );
+        }
+        if (index < 0 || !characterStore.characters[index]) return;
 
-        await changeChar(item.charIndex, {
+        await changeChar(index, {
             reseter,
             chatId: item.chatId,
         });

@@ -2432,6 +2432,50 @@ class OracleStorage extends SqlStorageBase {
     // 검색: searchMessages, searchCharactersByTag, searchCharactersByName
     // ============================================================
 
+    async listRecentChats(rawLimit) {
+        this.assertEnabled();
+        const parsedLimit = Number.parseInt(rawLimit, 10);
+        const limit = Number.isSafeInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 50;
+        const conn = await this.pool.getConnection();
+        try {
+            await conn.execute('SET TRANSACTION READ ONLY');
+            const rows = await fetchRows(conn,
+                `SELECT ch.character_id,
+                        c.name AS character_name,
+                        c.image AS character_image,
+                        c.kind AS character_kind,
+                        ch.id AS chat_id,
+                        ch.position AS chat_position,
+                        ch.name AS chat_name,
+                        ch.folder_id,
+                        ch.last_message_time,
+                        m.content_text AS last_message_text
+                   FROM chat_chats ch
+                   JOIN character_characters c ON c.id = ch.character_id
+                   LEFT JOIN chat_messages m
+                     ON m.chat_id = ch.id
+                    AND m.position = (SELECT NVL(MAX(m2.position), -1) FROM chat_messages m2 WHERE m2.chat_id = ch.id)
+                  WHERE c.trash_time IS NULL
+                  ORDER BY ch.last_message_time DESC NULLS LAST
+                  FETCH FIRST :limit ROWS ONLY`,
+                [limit], { clobColumns: ['character_image', 'last_message_text'] });
+            return rows.map((row) => ({
+                characterId: row.character_id,
+                characterName: row.character_name || '',
+                characterImage: row.character_image || null,
+                characterType: row.character_kind === 'group' ? 'group' : 'character',
+                chatId: row.chat_id,
+                chatPosition: Number(row.chat_position) || 0,
+                chatName: row.chat_name || '',
+                folderId: row.folder_id || null,
+                lastDate: row.last_message_time == null ? null : Number(row.last_message_time),
+                lastMessage: row.last_message_text || '',
+            }));
+        } finally {
+            try { await conn.close(); } catch (e) {}
+        }
+    }
+
     async searchMessages(rawQuery, rawScope = 'all', rawLimit = 50) {
         this.assertEnabled();
         const query = typeof rawQuery === 'string' ? rawQuery.trim() : '';
