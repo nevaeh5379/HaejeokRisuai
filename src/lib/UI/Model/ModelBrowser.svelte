@@ -106,7 +106,7 @@
   }
 
   // Filtered models
-  let displayedModels = $derived.by(() => {
+  let displayedFilterResult = $derived.by(() => {
     let list = allRawModels.filter(m => !excludesPrefix || !m.id.startsWith(excludesPrefix));
 
     // Search query filter
@@ -135,10 +135,14 @@
 
     // Provider filter
     if (selectedProvider !== 'all') {
-      list = list.filter(m => {
-        const pName = ProviderNames.get(m.provider) || 'Unknown';
-        return pName === selectedProvider || (selectedProvider === 'Plugins' && m.id.startsWith('plugin'));
-      });
+      if (selectedProvider === 'custom') {
+        list = list.filter(m => m.id.startsWith('xcustom:::'));
+      } else {
+        list = list.filter(m => {
+          const pName = ProviderNames.get(m.provider) || 'Unknown';
+          return pName === selectedProvider || (selectedProvider === 'Plugins' && m.id.startsWith('plugin'));
+        });
+      }
     }
 
     // Tag filter
@@ -155,12 +159,23 @@
       list = list.filter(m => m.recommended);
     }
 
-    return list;
+    // Custom models are separated out of the regular provider flow
+    const customModelsDisplayed = (selectedProvider === 'all' || selectedProvider === 'custom')
+      ? list.filter(m => m.id.startsWith('xcustom:::'))
+      : [];
+    list = list.filter(m => !m.id.startsWith('xcustom:::'));
+
+    return { main: list, custom: customModelsDisplayed };
   });
+
+  let displayedCustomModels = $derived(displayedFilterResult.custom);
+  // Custom models form their own section, listed ahead of other providers
+  let displayedModels = $derived([...displayedCustomModels, ...displayedFilterResult.main]);
 
   function getProviderDisplayName(model: LLMModel): string {
     if (model.id.startsWith('plugin')) return 'Plugin';
     if (model.id.startsWith('horde:::')) return 'Horde';
+    if (model.id.startsWith('xcustom:::')) return language.customModels || "Custom Models";
     return ProviderNames.get(model.provider) || 'AI';
   }
 
@@ -249,6 +264,7 @@
                 <option value={group.providerName}>{group.providerName} ({group.models.length})</option>
               {/if}
             {/each}
+            <option value="custom">{language.customModels || "Custom Models"}{settingsStore.state.customModels?.length ? ` (${settingsStore.state.customModels.length})` : ''}</option>
             <option value="Horde">Horde</option>
           </select>
           <div class="pointer-events-none absolute right-2 text-textcolor2">
@@ -384,7 +400,13 @@
           {#each displayedModelGroups as group}
             <section class="min-w-0">
               <div class="mb-1.5 flex items-center gap-2 px-0.5">
-                <span class="text-xs font-bold text-textcolor2">{group.provider}</span>
+                {#if group.provider === (language.customModels || "Custom Models")}
+                  <span class="text-xs font-bold text-textcolor flex items-center gap-1">
+                    <LayersIcon size={12} /> {group.provider}
+                  </span>
+                {:else}
+                  <span class="text-xs font-bold text-textcolor2">{group.provider}</span>
+                {/if}
                 <span class="rounded-full bg-textcolor/8 px-1.5 py-0.5 text-[9px] font-bold text-textcolor2/80">{group.models.length}</span>
                 <div class="h-px min-w-4 flex-1 bg-darkborderc/40"></div>
               </div>
