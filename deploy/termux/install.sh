@@ -24,7 +24,7 @@ trap cleanup EXIT INT TERM
 [ -n "${PREFIX:-}" ] || fail "This installer must run inside Termux."
 command -v pkg >/dev/null 2>&1 || fail "The Termux pkg command is unavailable."
 info "Installing Termux runtime prerequisites"
-pkg install -y postgresql termux-services curl tar openssl coreutils gawk >/dev/null
+pkg install -y postgresql termux-services curl tar openssl-tool coreutils gawk >/dev/null
 if ! command -v node >/dev/null 2>&1; then
   pkg install -y nodejs-lts >/dev/null
 fi
@@ -109,14 +109,24 @@ valid_port() {
   [ "$1" -ge 1 ] 2>/dev/null && [ "$1" -le 65535 ] 2>/dev/null
 }
 
+random_hex() {
+  local bytes="$1"
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex "$bytes"
+    return
+  fi
+  [ -r /dev/urandom ] || fail "Neither openssl nor /dev/urandom is available for credential generation."
+  od -An -N"$bytes" -tx1 /dev/urandom | tr -d ' \n'
+}
+
 create_initial_config() {
   local app_port="${HAEJEOK_PORT:-6001}"
   local db_port="${HAEJEOK_DB_PORT:-54329}"
   valid_port "$app_port" || fail "Invalid HAEJEOK_PORT: $app_port"
   valid_port "$db_port" || fail "Invalid HAEJEOK_DB_PORT: $db_port"
   local db_password admin_password
-  db_password=$(openssl rand -hex 32)
-  admin_password=$(openssl rand -hex 32)
+  db_password=$(random_hex 32)
+  admin_password=$(random_hex 32)
 
   cat > "$CONFIG" <<EOF
 HAEJEOK_RELEASE=$TAG
