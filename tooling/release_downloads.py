@@ -26,6 +26,7 @@ DOWNLOADS_END = "<!-- release-downloads:end -->"
 PLATFORMS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("macOS", re.compile(r"\.dmg$", re.IGNORECASE)),
     ("Linux", re.compile(r"\.(?:AppImage|deb|rpm|tar\.zst)$", re.IGNORECASE)),
+    ("Termux", re.compile(r"^RisuAI-Termux-.+\.tar\.gz$", re.IGNORECASE)),
     ("Android", re.compile(r"\.apk$", re.IGNORECASE)),
     ("Windows", re.compile(r"\.(?:exe|msi)$", re.IGNORECASE)),
 )

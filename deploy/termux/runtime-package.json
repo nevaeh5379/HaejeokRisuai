@@ -1,0 +1,16 @@
+{
+  "name": "haejeok-risuai-termux-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Minimal Node runtime dependencies for Haejeok RisuAI on Termux",
+  "dependencies": {
+    "@dqbd/tiktoken": "1.0.22",
+    "express": "5.2.1",
+    "express-rate-limit": "8.7.0",
+    "msgpackr": "2.1.0",
+    "node-html-parser": "9.0.2",
+    "openid-client": "6.8.7",
+    "pg": "8.23.0",
+    "ws": "8.21.3"
+  }
+}

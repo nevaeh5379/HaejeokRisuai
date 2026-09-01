@@ -25,6 +25,7 @@ process.on('unhandledRejection', (err) => {
 const http = require('http');
 const path = require('path');
 const net = require('net');
+const { formatListenHost, resolveListenHost } = require('./listenAddress.cjs');
 const { isSecurePostgresConfigRequest } = require('./requestSecurity.cjs');
 const htmlparser = require('node-html-parser');
 const fsSync = require('fs');
@@ -5830,7 +5831,7 @@ function setupProxyStreamWebSocket(server) {
 let activeHttpServer = null;
 let shutdownInProgress = false;
 
-function listenHttpServer(server, port) {
+function listenHttpServer(server, port, host = null) {
     return new Promise((resolve, reject) => {
         const onError = (error) => {
             server.off('listening', onListening);
@@ -5842,7 +5843,8 @@ function listenHttpServer(server, port) {
         };
         server.once('error', onError);
         server.once('listening', onListening);
-        server.listen(port);
+        if (host) server.listen(port, host);
+        else server.listen(port);
     });
 }
 
@@ -5883,6 +5885,7 @@ async function startServer() {
         // 자동 마이그레이션 제거: 사용자가 명시적으로 마이그레이션을 승인할 때만 수행.
         // /api/db-config POST (migrate: true) 또는 /api/database-v2/migrate-legacy 에서 트리거.
         const port = process.env.PORT || 6001;
+        const listenHost = resolveListenHost();
         const httpsOptions = await getHttpsOptions();
         const protocol = httpsOptions ? 'HTTPS' : 'HTTP';
         const server = httpsOptions
@@ -5894,12 +5897,12 @@ async function startServer() {
         await runStartupStage({
             scope: 'Server startup',
             operation: `Step 4/4 listen for ${protocol} requests`,
-            detail: `port=${port}`,
+            detail: listenHost ? `host=${listenHost}; port=${port}` : `port=${port}`,
             timeoutMs: 30000,
             heartbeatMs: storageStartupSettings.heartbeatMs,
-        }, () => listenHttpServer(server, port));
+        }, () => listenHttpServer(server, port, listenHost));
         console.log(`[Server] ${protocol} server is running.`);
-        console.log(`[Server] ${httpsOptions ? 'https' : 'http'}://localhost:${port}/`);
+        console.log(`[Server] ${httpsOptions ? 'https' : 'http'}://${formatListenHost(listenHost)}:${port}/`);
         if (!isPrimaryStorageReady()) {
             console.warn(
                 `[Server startup] Recovery mode is active (${primaryStorageRuntime.status}). ` +

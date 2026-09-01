@@ -59,6 +59,13 @@ jobs:
       - name: install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Validate Termux deployment scripts
+        shell: bash
+        run: |
+          bash -n deploy/termux/install.sh
+          bash -n deploy/termux/haejeok.sh
+          python3 tooling/release_downloads_test.py
+
       - name: Run svelte-check
         run: pnpm check
 

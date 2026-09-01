@@ -412,8 +412,59 @@ jobs:
         shell: bash
         run: rm -f "$RUNNER_TEMP/risuai-release.p12"
 
+  publish-termux:
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        shell: bash
+        run: npm install --global pnpm@10.34.1
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Termux frontend
+        env:
+          HAEJEOK_BUILD_NUMBER: ${{ needs.prepare-release.outputs.build_number }}
+          VITE_RISU_LEGAL_CONFIGURED: 'TRUE'
+        run: pnpm run build:protocol && node tooling/vite-build.mjs
+
+      - name: Prepare Termux runtime bundle
+        shell: bash
+        env:
+          BUILD_TAG: ${{ needs.prepare-release.outputs.build_tag }}
+        run: |
+          rm -rf .termux-runtime dist-termux
+          mkdir -p .termux-runtime/deploy dist-termux
+          cp -R dist server packages .termux-runtime/
+          cp -R deploy/termux .termux-runtime/deploy/
+          cp LICENSE .termux-runtime/
+          cp deploy/termux/runtime-package.json .termux-runtime/package.json
+          printf '%s\n' "$BUILD_TAG" > .termux-runtime/RELEASE
+          (cd .termux-runtime && npm install --package-lock-only --ignore-scripts --no-audit --no-fund)
+          tar -czf "dist-termux/RisuAI-Termux-${BUILD_TAG}.tar.gz" -C .termux-runtime .
+          (cd dist-termux && sha256sum "RisuAI-Termux-${BUILD_TAG}.tar.gz" > "RisuAI-Termux-${BUILD_TAG}.tar.gz.sha256")
+
+      - name: Upload Termux runtime to draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_TAG: ${{ needs.prepare-release.outputs.build_tag }}
+        run: gh release upload "$BUILD_TAG" dist-termux/* --clobber
+
   publish-release:
-    needs: [prepare-release, publish-tauri, publish-android]
+    needs: [prepare-release, publish-tauri, publish-android, publish-termux]
     runs-on: ubuntu-latest
     permissions:
       contents: write

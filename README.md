@@ -154,6 +154,16 @@ The backup helper briefly quiesces application writes, creates a PostgreSQL `pg_
 
 See the [quick deployment guide](deploy/quick/README.md) for backup details and remote restic configuration.
 
+### Android / Termux server
+
+Android devices can run the Node server directly in Termux without Docker. The Termux build uses a private PostgreSQL cluster plus local filesystem asset storage.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nevaeh5379/HaejeokRisuAI/main/deploy/termux/install.sh | bash
+```
+
+After installation, `haejeok open` starts the services and opens the local browser. The server is localhost-only by default; use `haejeok lan on` only when access from other devices on the LAN is required. See [the Termux deployment guide](deploy/termux/README.md) for details.
+
 #### Advanced/source installation
 
 The full `risuai.sh` installer remains available for Node/server or browser-only static source builds and `lan`, `domain`, `dynv6`, and external reverse-proxy modes:

@@ -19,6 +19,8 @@ ASSETS = [
     asset("RisuAI_0.0.10_aarch64.dmg"),
     asset("RisuAI_0.0.10_amd64.AppImage"),
     asset("RisuAI-Android-b10.apk"),
+    asset("RisuAI-Termux-b10.tar.gz"),
+    asset("RisuAI-Termux-b10.tar.gz.sha256"),
     asset("RisuAI_0.0.10_amd64.deb"),
     asset("latest.json"),
 ]
@@ -33,6 +35,7 @@ class FormatDownloadSectionTest(unittest.TestCase):
             section,
             r"Linux:\n- \[RisuAI_0\.0\.10_amd64\.AppImage\].*\n- \[RisuAI_0\.0\.10_amd64\.deb\]",
         )
+        self.assertRegex(section, r"Termux:\n- \[RisuAI-Termux-b10\.tar\.gz\]")
         self.assertRegex(section, r"Android:\n- \[RisuAI-Android-b10\.apk\]")
         self.assertRegex(section, r"Windows:\n- \[RisuAI_0\.0\.10_x64-setup\.exe\]")
         self.assertNotRegex(section, r"sha256|\.sig|latest\.json")
