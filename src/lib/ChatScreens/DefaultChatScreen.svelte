@@ -9,7 +9,7 @@
     import type { Chat as ChatSession, Message } from "../../ts/storage/database/schema";
     import { characterStore, settingsStore, personaStore, messageStore, presetStore } from 'src/ts/stores/domain';
     import { getCharImage } from "../../ts/characterImage";
-    import { activeGenerationChatIds, chatProcessStages, getChatProcessStage } from "../../ts/process/chatRuntimeState";
+    import { activeGenerationChatIds, beginChatGeneration, chatProcessStages, endChatGeneration, getChatProcessStage } from "../../ts/process/chatRuntimeState";
     import { sleep } from "../../ts/util";
     import { language } from "../../lang";
     import { alertError, alertNormal, alertWait, showHypaV2Alert } from "../../ts/alert";
@@ -405,9 +405,16 @@
         if(!activeChat.id) return false
         const switched = activateChatBranch(activeChat, branchId)
         if(!switched) return false
-        await messageStore.replaceMessages(activeChat.id, switched.nextMessages, switched.previousMessages)
-        characterStore.markChatDirty(activeChat.id)
-        await characterStore.flush()
+        // Reroll taps must respond instantly: the UI state is applied
+        // synchronously above, so persistence is fire-and-forget here (it
+        // still lands before the next generation commits).
+        void (async () => {
+            await messageStore.replaceMessages(activeChat.id!, switched.nextMessages, switched.previousMessages)
+            characterStore.markChatDirty(activeChat.id!)
+            await characterStore.flush()
+        })().catch((error) => {
+            console.error("[reroll] Failed to persist branch switch:", error)
+        })
         return true
     }
 
@@ -417,23 +424,29 @@
         parentBranchId: string,
     ) {
         activeChat.id ??= v4()
-        const previousMessages = $state.snapshot(activeChat.message)
         const branch = createChatTimelineBranch(activeChat, {
             parentBranchId,
             branchMessageId: activeChat.message[branchMessageIndex]?.chatId,
             branchMessageIndex,
             reason: 'reroll',
         })
-        await messageStore.replaceMessages(activeChat.id, activeChat.message, previousMessages)
+        // Only the trimmed messages (now held inside the new branch) leave the
+        // live array; nothing needs a bulk message upsert. The chat row itself
+        // (manifest/branch state) is persisted via the debounced characterStore
+        // commit so generation starts without waiting on storage.
+        const previousMessages = $state.snapshot(activeChat.message)
+        void messageStore.replaceMessages(activeChat.id, activeChat.message, previousMessages)
+            .catch((error) => {
+                console.error("[reroll] Failed to persist branch switch:", error)
+            })
         characterStore.markChatDirty(activeChat.id)
-        await characterStore.flush()
         return branch
     }
 
     async function reroll(targetMessageIndex?: number) {
         const selectedChar = selectedCharacterIndex
         const currentChatPage = selectedChatIndex
-        await preLoadChat(selectedChar, currentChatPage, { full: true })
+        const fullLoad = preLoadChat(selectedChar, currentChatPage, { full: true })
         if(currentChatGenerating) return
 
         const activeChat = characterStore.characters[selectedChar]?.chats?.[currentChatPage]
@@ -469,13 +482,22 @@
                 }
                 activeChat.message.push(rerolledMessage)
                 await messageStore.appendMessage(activeChat.id, rerolledMessage)
+                characterStore.markChatDirty(activeChat.id)
                 return
             }
         }
 
         openMenu = false
-        await createRerollBranch(activeChat, branchMessageIndex, alternatives.parentBranchId)
-        await sendChatMain(false, selectedChar, currentChatPage)
+        // Show the generating indicator before the branch snapshot/storage work
+        // so the tap is acknowledged instantly while heavy prep runs.
+        beginChatGeneration(activeChat.id)
+        try {
+            await fullLoad
+            await createRerollBranch(activeChat, branchMessageIndex, alternatives.parentBranchId)
+            await sendChatMain(false, selectedChar, currentChatPage)
+        } finally {
+            endChatGeneration(activeChat.id)
+        }
     }
 
     async function unReroll(targetMessageIndex?: number) {
