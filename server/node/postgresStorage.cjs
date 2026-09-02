@@ -1648,7 +1648,10 @@ class PostgresStorage extends SqlStorageBase {
                 'SELECT * FROM character.lore_entries WHERE character_id = $1 ORDER BY position',
                 'SELECT id, name, note, folder_id, last_message_time FROM chat.chats WHERE character_id = $1 ORDER BY position, id',
             ];
-            const results = await Promise.all(queries.map((q) => client.query(q, [characterId])));
+            const results = [];
+            for (const query of queries) {
+                results.push(await client.query(query, [characterId]));
+            }
             const [
                 charRes, attributesRes, tagsRes, greetingsRes, biasesRes, emotionsRes,
                 modulesRes, groupMembersRes, chatFoldersRes, scriptsRes, sdDataRes,
@@ -1698,12 +1701,17 @@ class PostgresStorage extends SqlStorageBase {
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-            const [charRes, attributesRes, emotionsRes, assetsRes] = await Promise.all([
+            const assetQueries = [
                 'SELECT image FROM character.characters WHERE id = $1',
                 'SELECT * FROM character.attributes WHERE character_id = $1 ORDER BY key',
                 'SELECT * FROM character.emotions WHERE character_id = $1 ORDER BY position',
                 'SELECT * FROM character.assets WHERE character_id = $1 ORDER BY position',
-            ].map((q) => client.query(q, [characterId])));
+            ];
+            const assetResults = [];
+            for (const query of assetQueries) {
+                assetResults.push(await client.query(query, [characterId]));
+            }
+            const [charRes, attributesRes, emotionsRes, assetsRes] = assetResults;
 
             if (charRes.rows.length === 0) {
                 await client.query('COMMIT');
@@ -1741,14 +1749,19 @@ class PostgresStorage extends SqlStorageBase {
     }
 
     async _loadLinearMessagesForBranchMigration(client, chatId) {
-        const [messagesRes, attributesRes, generationsRes, promptInfosRes, promptTogglesRes, promptItemsRes] = await Promise.all([
-            client.query('SELECT * FROM chat.messages WHERE chat_id = $1 ORDER BY position, id', [chatId]),
-            client.query('SELECT * FROM chat.message_attributes WHERE chat_id = $1 ORDER BY message_id, key', [chatId]),
-            client.query('SELECT * FROM chat.message_generation WHERE chat_id = $1', [chatId]),
-            client.query('SELECT * FROM chat.message_prompt_info WHERE chat_id = $1', [chatId]),
-            client.query('SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 ORDER BY message_id, position', [chatId]),
-            client.query('SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 ORDER BY message_id, position', [chatId]),
-        ]);
+        const migrationQueries = [
+            'SELECT * FROM chat.messages WHERE chat_id = $1 ORDER BY position, id',
+            'SELECT * FROM chat.message_attributes WHERE chat_id = $1 ORDER BY message_id, key',
+            'SELECT * FROM chat.message_generation WHERE chat_id = $1',
+            'SELECT * FROM chat.message_prompt_info WHERE chat_id = $1',
+            'SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 ORDER BY message_id, position',
+            'SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 ORDER BY message_id, position',
+        ];
+        const migrationResults = [];
+        for (const query of migrationQueries) {
+            migrationResults.push(await client.query(query, [chatId]));
+        }
+        const [messagesRes, attributesRes, generationsRes, promptInfosRes, promptTogglesRes, promptItemsRes] = migrationResults;
         const relations = {
             attributes: groupMessageRows(attributesRes.rows),
             generation: new Map(generationsRes.rows.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
@@ -1972,18 +1985,22 @@ class PostgresStorage extends SqlStorageBase {
             for (const messageId of deletion.ids || []) {
                 await client.query(
                     `UPDATE chat.message_branch_links child
-                        SET parent_message_id = removed.parent_message_id
-                       FROM chat.message_branch_links removed
-                      WHERE removed.chat_id = $1 AND removed.message_id = $2
-                        AND child.chat_id = $1 AND child.parent_message_id = $2`,
+                        SET parent_message_id = (
+                            SELECT removed.parent_message_id
+                              FROM chat.message_branch_links removed
+                             WHERE removed.chat_id = $1 AND removed.message_id = $2
+                        )
+                      WHERE child.chat_id = $1 AND child.parent_message_id = $2`,
                     [deletion.chatId, messageId]
                 );
                 await client.query(
                     `UPDATE chat.branches branch
-                        SET head_message_id = removed.parent_message_id
-                       FROM chat.message_branch_links removed
-                      WHERE removed.chat_id = $1 AND removed.message_id = $2
-                        AND branch.chat_id = $1 AND branch.head_message_id = $2`,
+                        SET head_message_id = (
+                            SELECT removed.parent_message_id
+                              FROM chat.message_branch_links removed
+                             WHERE removed.chat_id = $1 AND removed.message_id = $2
+                        )
+                      WHERE branch.chat_id = $1 AND branch.head_message_id = $2`,
                     [deletion.chatId, messageId]
                 );
                 await client.query(
@@ -2048,21 +2065,18 @@ class PostgresStorage extends SqlStorageBase {
             return { messages: [], offset, total, hasMore: offset > 0 };
         }
         const includeMetadata = options.mode !== 'generation';
-        const queries = [
-            client.query(
-                'SELECT * FROM chat.message_attributes WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, key',
-                [chatId, ids]
-            ),
-        ];
+        const results = [await client.query(
+            'SELECT * FROM chat.message_attributes WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, key',
+            [chatId, ids]
+        )];
         if (includeMetadata) {
-            queries.push(
-                client.query('SELECT * FROM chat.message_generation WHERE chat_id = $1 AND message_id = ANY($2::text[])', [chatId, ids]),
-                client.query('SELECT * FROM chat.message_prompt_info WHERE chat_id = $1 AND message_id = ANY($2::text[])', [chatId, ids]),
-                client.query('SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position', [chatId, ids]),
-                client.query('SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position', [chatId, ids])
+            results.push(
+                await client.query('SELECT * FROM chat.message_generation WHERE chat_id = $1 AND message_id = ANY($2::text[])', [chatId, ids]),
+                await client.query('SELECT * FROM chat.message_prompt_info WHERE chat_id = $1 AND message_id = ANY($2::text[])', [chatId, ids]),
+                await client.query('SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position', [chatId, ids]),
+                await client.query('SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position', [chatId, ids])
             );
         }
-        const results = await Promise.all(queries);
         const attributes = results[0]?.rows ?? [];
         const generations = results[1]?.rows ?? [];
         const promptInfos = results[2]?.rows ?? [];
@@ -2109,8 +2123,11 @@ class PostgresStorage extends SqlStorageBase {
                 'SELECT * FROM chat.memory WHERE chat_id = $1 ORDER BY memory_type',
                 'SELECT * FROM chat.lore_entries WHERE chat_id = $1 ORDER BY position',
             ];
-            const [chatRes, attributesRes, suggestionsRes, modulesRes, scriptStateRes, bookmarksRes, memoryRes, loreRes] =
-                await Promise.all(queries.map((query) => client.query(query, [chatId])));
+            const chatResults = [];
+            for (const query of queries) {
+                chatResults.push(await client.query(query, [chatId]));
+            }
+            const [chatRes, attributesRes, suggestionsRes, modulesRes, scriptStateRes, bookmarksRes, memoryRes, loreRes] = chatResults;
             if (chatRes.rows.length === 0 || !activeBranchId) {
                 await client.query('COMMIT');
                 return null;
@@ -2735,6 +2752,7 @@ class PostgresStorage extends SqlStorageBase {
 
     async deleteMessage(chatId, messageId) {
         return await this.executeRevision('message:delete', 'database', async (client) => {
+            await this.detachMessagesFromBranchGraph(client, [{ chatId, ids: [messageId] }]);
             await client.query('DELETE FROM chat.messages WHERE chat_id = $1 AND id = $2', [chatId, messageId]);
             return { chatId, messageId };
         });

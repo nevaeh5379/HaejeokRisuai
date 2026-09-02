@@ -430,9 +430,9 @@ export function countSqliteCommitStatements(commit: SqlCommit): number {
         : countReplaceNodeStatements(extension, replacingEntities)
     );
   }
-  total += (commit.messageDeletes ?? []).filter(
-    (deletion) => deletion.ids.length > 0,
-  ).length;
+  for (const deletion of commit.messageDeletes ?? []) {
+    if (deletion.ids.length > 0) total += deletion.ids.length * 4 + 1;
+  }
 
   return total;
 }
@@ -586,6 +586,36 @@ export async function applySqliteCommit(
   }
   for (const deletion of commit.messageDeletes ?? [])
     if (deletion.ids.length) {
+      for (const messageId of deletion.ids) {
+        await execute(
+          `UPDATE message_branch_links
+              SET parent_message_id = (
+                SELECT removed.parent_message_id
+                  FROM message_branch_links removed
+                 WHERE removed.chat_id = ? AND removed.message_id = ?
+              )
+            WHERE chat_id = ? AND parent_message_id = ?`,
+          [deletion.chatId, messageId, deletion.chatId, messageId],
+        );
+        await execute(
+          `UPDATE chat_branches
+              SET head_message_id = (
+                SELECT removed.parent_message_id
+                  FROM message_branch_links removed
+                 WHERE removed.chat_id = ? AND removed.message_id = ?
+              )
+            WHERE chat_id = ? AND head_message_id = ?`,
+          [deletion.chatId, messageId, deletion.chatId, messageId],
+        );
+        await execute(
+          "UPDATE chat_branches SET fork_message_id = NULL WHERE chat_id = ? AND fork_message_id = ?",
+          [deletion.chatId, messageId],
+        );
+        await execute(
+          "DELETE FROM message_branch_links WHERE chat_id = ? AND message_id = ?",
+          [deletion.chatId, messageId],
+        );
+      }
       await execute(
         `DELETE FROM messages WHERE chat_id = ? AND id IN (${deletion.ids.map(() => "?").join(",")})`,
         [deletion.chatId, ...deletion.ids],

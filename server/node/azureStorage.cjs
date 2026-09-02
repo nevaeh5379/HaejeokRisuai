@@ -1176,16 +1176,20 @@ class AzureStorage extends SqlStorageBase {
                 req.input('detachMessageId', sql.NVarChar(450), messageId);
                 await req.query(`
                     UPDATE child
-                       SET parent_message_id = removed.parent_message_id
+                       SET parent_message_id = (
+                           SELECT removed.parent_message_id
+                             FROM [chat].[message_branch_links] removed
+                            WHERE removed.chat_id = @detachChatId AND removed.message_id = @detachMessageId
+                       )
                       FROM [chat].[message_branch_links] child
-                      JOIN [chat].[message_branch_links] removed
-                        ON removed.chat_id = @detachChatId AND removed.message_id = @detachMessageId
                      WHERE child.chat_id = @detachChatId AND child.parent_message_id = @detachMessageId;
                     UPDATE branch
-                       SET head_message_id = removed.parent_message_id
+                       SET head_message_id = (
+                           SELECT removed.parent_message_id
+                             FROM [chat].[message_branch_links] removed
+                            WHERE removed.chat_id = @detachChatId AND removed.message_id = @detachMessageId
+                       )
                       FROM [chat].[branches] branch
-                      JOIN [chat].[message_branch_links] removed
-                        ON removed.chat_id = @detachChatId AND removed.message_id = @detachMessageId
                      WHERE branch.chat_id = @detachChatId AND branch.head_message_id = @detachMessageId;
                     UPDATE [chat].[branches]
                        SET fork_message_id = NULL

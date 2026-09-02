@@ -8,7 +8,7 @@ import type { SqliteTransactionStatement } from "./sqliteStorageUtils";
 // reuse existing relational-schema-v3 databases without replaying that file.
 export const SQLITE_BRANCH_SCHEMA_STATEMENTS: SqliteTransactionStatement[] = [
   {
-    sql: "CREATE TABLE IF NOT EXISTS chat_branches (chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE, id TEXT NOT NULL, parent_branch_id TEXT, fork_message_id TEXT, head_message_id TEXT, reason TEXT NOT NULL CHECK (reason IN ('root','manual','reroll')), created_at INTEGER NOT NULL, PRIMARY KEY (chat_id, id), FOREIGN KEY (chat_id, parent_branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED, FOREIGN KEY (chat_id, fork_message_id) REFERENCES messages(chat_id, id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED, FOREIGN KEY (chat_id, head_message_id) REFERENCES messages(chat_id, id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED)",
+    sql: "CREATE TABLE IF NOT EXISTS chat_branches (chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE, id TEXT NOT NULL, parent_branch_id TEXT, fork_message_id TEXT, head_message_id TEXT, reason TEXT NOT NULL CHECK (reason IN ('root','manual','reroll')), created_at INTEGER NOT NULL, PRIMARY KEY (chat_id, id), FOREIGN KEY (chat_id, parent_branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED, FOREIGN KEY (chat_id, fork_message_id) REFERENCES messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED, FOREIGN KEY (chat_id, head_message_id) REFERENCES messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED)",
     bind: [],
   },
   {
@@ -20,7 +20,7 @@ export const SQLITE_BRANCH_SCHEMA_STATEMENTS: SqliteTransactionStatement[] = [
     bind: [],
   },
   {
-    sql: "CREATE TABLE IF NOT EXISTS message_branch_links (chat_id TEXT NOT NULL, message_id TEXT NOT NULL, parent_message_id TEXT, origin_branch_id TEXT NOT NULL, PRIMARY KEY (chat_id, message_id), FOREIGN KEY (chat_id, message_id) REFERENCES messages(chat_id, id) ON DELETE CASCADE, FOREIGN KEY (chat_id, parent_message_id) REFERENCES messages(chat_id, id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED, FOREIGN KEY (chat_id, origin_branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED)",
+    sql: "CREATE TABLE IF NOT EXISTS message_branch_links (chat_id TEXT NOT NULL, message_id TEXT NOT NULL, parent_message_id TEXT, origin_branch_id TEXT NOT NULL, PRIMARY KEY (chat_id, message_id), FOREIGN KEY (chat_id, message_id) REFERENCES messages(chat_id, id) ON DELETE CASCADE, FOREIGN KEY (chat_id, parent_message_id) REFERENCES messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED, FOREIGN KEY (chat_id, origin_branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED)",
     bind: [],
   },
   {

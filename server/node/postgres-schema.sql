@@ -815,8 +815,10 @@ CREATE TABLE IF NOT EXISTS chat.branches (
     created_at BIGINT NOT NULL,
     PRIMARY KEY (chat_id, id),
     FOREIGN KEY (chat_id, parent_branch_id) REFERENCES chat.branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
-    FOREIGN KEY (chat_id, fork_message_id) REFERENCES chat.messages(chat_id, id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
-    FOREIGN KEY (chat_id, head_message_id) REFERENCES chat.messages(chat_id, id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED
+    CONSTRAINT branches_fork_message_fk FOREIGN KEY (chat_id, fork_message_id)
+        REFERENCES chat.messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED,
+    CONSTRAINT branches_head_message_fk FOREIGN KEY (chat_id, head_message_id)
+        REFERENCES chat.messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED
 );
 CREATE INDEX IF NOT EXISTS branches_parent_idx ON chat.branches (chat_id, parent_branch_id, created_at);
 
@@ -833,11 +835,59 @@ CREATE TABLE IF NOT EXISTS chat.message_branch_links (
     origin_branch_id TEXT NOT NULL,
     PRIMARY KEY (chat_id, message_id),
     FOREIGN KEY (chat_id, message_id) REFERENCES chat.messages(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
-    FOREIGN KEY (chat_id, parent_message_id) REFERENCES chat.messages(chat_id, id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
+    CONSTRAINT message_branch_links_parent_message_fk FOREIGN KEY (chat_id, parent_message_id)
+        REFERENCES chat.messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED,
     FOREIGN KEY (chat_id, origin_branch_id) REFERENCES chat.branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
 );
 CREATE INDEX IF NOT EXISTS message_branch_parent_idx ON chat.message_branch_links (chat_id, parent_message_id);
 CREATE INDEX IF NOT EXISTS message_branch_origin_idx ON chat.message_branch_links (chat_id, origin_branch_id);
+
+-- Early branch schemas used composite ON DELETE SET NULL actions, which tried
+-- to NULL the NOT NULL chat_id column. Branch references are detached explicitly
+-- before message deletion, so keep these FKs restrictive and migrate old schemas.
+ALTER TABLE chat.branches
+    DROP CONSTRAINT IF EXISTS branches_chat_id_fork_message_id_fkey;
+ALTER TABLE chat.branches
+    DROP CONSTRAINT IF EXISTS branches_chat_id_head_message_id_fkey;
+ALTER TABLE chat.message_branch_links
+    DROP CONSTRAINT IF EXISTS message_branch_links_chat_id_parent_message_id_fkey;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'chat.branches'::regclass
+           AND conname = 'branches_fork_message_fk'
+    ) THEN
+        ALTER TABLE chat.branches
+            ADD CONSTRAINT branches_fork_message_fk
+            FOREIGN KEY (chat_id, fork_message_id)
+            REFERENCES chat.messages(chat_id, id)
+            DEFERRABLE INITIALLY DEFERRED;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'chat.branches'::regclass
+           AND conname = 'branches_head_message_fk'
+    ) THEN
+        ALTER TABLE chat.branches
+            ADD CONSTRAINT branches_head_message_fk
+            FOREIGN KEY (chat_id, head_message_id)
+            REFERENCES chat.messages(chat_id, id)
+            DEFERRABLE INITIALLY DEFERRED;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'chat.message_branch_links'::regclass
+           AND conname = 'message_branch_links_parent_message_fk'
+    ) THEN
+        ALTER TABLE chat.message_branch_links
+            ADD CONSTRAINT message_branch_links_parent_message_fk
+            FOREIGN KEY (chat_id, parent_message_id)
+            REFERENCES chat.messages(chat_id, id)
+            DEFERRABLE INITIALLY DEFERRED;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS chat.message_attributes (
     chat_id TEXT NOT NULL,

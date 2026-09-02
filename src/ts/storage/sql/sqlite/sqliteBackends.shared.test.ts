@@ -465,6 +465,32 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     database.close();
   });
 
+  it("deletes a parent message safely when its own branch-link row is missing", async () => {
+    const { storage, database } = makeFreshHarness(make);
+    await seed(storage);
+
+    const append = createEmptySqlCommit(storage.getRevision(), "append-child");
+    append.messages.push({
+      id: "m3",
+      chatId: "chat-1",
+      position: 2,
+      data: makeMessage("m3", "char", "three"),
+    });
+    await storage.commit(append);
+
+    database.exec("DELETE FROM message_branch_links WHERE chat_id = 'chat-1' AND message_id = 'm2'");
+    const deletion = createEmptySqlCommit(storage.getRevision(), "delete-missing-link-parent");
+    deletion.messageDeletes.push({ chatId: "chat-1", ids: ["m2"] });
+
+    await expect(storage.commit(deletion)).resolves.toBeDefined();
+    const dangling = database.prepare(
+      "SELECT parent_message_id FROM message_branch_links WHERE chat_id = ? AND message_id = ?",
+    ).get("chat-1", "m3") as { parent_message_id: string | null } | undefined;
+    expect(dangling?.parent_message_id ?? null).toBeNull();
+    expect(database.prepare("SELECT 1 FROM messages WHERE chat_id = ? AND id = ?").get("chat-1", "m2")).toBeUndefined();
+    database.close();
+  });
+
   it("switches persistent branches without rewriting existing messages", async () => {
     const { storage, database, queryLog } = makeFreshHarness(make);
     await seed(storage);

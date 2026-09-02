@@ -184,8 +184,8 @@ CREATE TABLE IF NOT EXISTS chat_branches (
     created_at INTEGER NOT NULL,
     PRIMARY KEY (chat_id, id),
     FOREIGN KEY (chat_id, parent_branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
-    FOREIGN KEY (chat_id, fork_message_id) REFERENCES messages(chat_id, id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
-    FOREIGN KEY (chat_id, head_message_id) REFERENCES messages(chat_id, id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED
+    FOREIGN KEY (chat_id, fork_message_id) REFERENCES messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (chat_id, head_message_id) REFERENCES messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED
 );
 CREATE INDEX IF NOT EXISTS chat_branches_parent_idx ON chat_branches (chat_id, parent_branch_id, created_at);
 
@@ -202,7 +202,7 @@ CREATE TABLE IF NOT EXISTS message_branch_links (
     origin_branch_id TEXT NOT NULL,
     PRIMARY KEY (chat_id, message_id),
     FOREIGN KEY (chat_id, message_id) REFERENCES messages(chat_id, id) ON DELETE CASCADE,
-    FOREIGN KEY (chat_id, parent_message_id) REFERENCES messages(chat_id, id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (chat_id, parent_message_id) REFERENCES messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED,
     FOREIGN KEY (chat_id, origin_branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
 );
 CREATE INDEX IF NOT EXISTS message_branch_parent_idx ON message_branch_links (chat_id, parent_message_id);
