@@ -166,6 +166,83 @@ describe("CharacterStore", () => {
     expect(hydrated.chats[hydrated.chatPage].id).toBe("chat-stable-b");
   });
 
+  it("does not let an incomplete chat summary erase loaded variables", async () => {
+    const shallow = makeChar("variable-summary", 1);
+    shallow.detailsLoaded = false;
+    shallow.chats[0].id = "chat-variable-summary";
+    shallow.chats[0].detailsLoaded = false;
+    shallow.chats[0].scriptstate = {};
+    shallow.chats[0].GLGlobalVariables = {};
+
+    const loaded = makeChar("variable-summary-loaded", 1);
+    loaded.chaId = shallow.chaId;
+    loaded.detailsLoaded = true;
+    loaded.chats[0].id = "chat-variable-summary";
+    loaded.chats[0].detailsLoaded = false;
+    loaded.chats[0].scriptstate = { $persisted: "keep" };
+    loaded.chats[0].GLGlobalVariables = { localToggle: "keep" };
+    loaded.chats[0].useLocallySetGlobalVariables = true;
+    vi.mocked(mockStorage.loadCharacter).mockResolvedValue(loaded);
+    characterStore.init([shallow], mockStorage);
+
+    await characterStore.ensureCharacterDetails(shallow.chaId!);
+
+    const chat = characterStore.characters[0].chats[0];
+    expect(chat.scriptstate).toEqual({ $persisted: "keep" });
+    expect(chat.GLGlobalVariables).toEqual({ localToggle: "keep" });
+    expect(chat.useLocallySetGlobalVariables).toBe(true);
+  });
+
+  it("merges variable writes made while lazy chat metadata is loading", async () => {
+    const chars = [makeChar("variable-write")];
+    const chat = chars[0].chats[0];
+    chat.id = "chat-variable-write";
+    chat.messagesLoaded = false;
+    chat.detailsLoaded = false;
+    delete chat.scriptstate;
+    delete chat.GLGlobalVariables;
+
+    let resolveLoad!: (value: Chat) => void;
+    vi.mocked(mockStorage.loadChat).mockImplementationOnce(
+      () => new Promise<Chat>((resolve) => (resolveLoad = resolve)),
+    );
+    characterStore.init(chars, mockStorage);
+    characterStore.select(0);
+    const activeChat = characterStore.characters[0].chats[0];
+
+    const hydration = characterStore.ensureChatMessages(activeChat.id);
+    activeChat.scriptstate = { $duringOpen: "new" };
+    activeChat.GLGlobalVariables = { newToggle: "new" };
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(characterStore.hasPendingWrites()).toBe(false);
+
+    resolveLoad({
+      ...makeChat("loaded"),
+      id: activeChat.id,
+      scriptstate: { $persisted: "keep", $duringOpen: "old" },
+      GLGlobalVariables: { oldToggle: "keep" },
+      messagesLoaded: true,
+      detailsLoaded: true,
+    });
+    await hydration;
+
+    expect(activeChat.scriptstate).toEqual({
+      $persisted: "keep",
+      $duringOpen: "new",
+    });
+    expect(activeChat.GLGlobalVariables).toEqual({
+      oldToggle: "keep",
+      newToggle: "new",
+    });
+    expect(characterStore.hasPendingWrites()).toBe(true);
+
+    await characterStore.flush();
+    expect(committed.at(-1)?.chats[0].data).toMatchObject({
+      scriptstate: { $persisted: "keep", $duringOpen: "new" },
+      GLGlobalVariables: { oldToggle: "keep", newToggle: "new" },
+    });
+  });
+
   it("matches the initial SQL message page to the configured render window", async () => {
     const chars = [makeChar("initial-page")];
     const chat = chars[0].chats[0];

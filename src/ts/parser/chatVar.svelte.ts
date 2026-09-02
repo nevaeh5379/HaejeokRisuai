@@ -17,8 +17,7 @@ export function getChatVar(key: string, target?: ChatExecutionTarget): string {
     return "null";
   }
   const { character: char, chat } = resolved;
-  chat.scriptstate ??= {};
-  const state = chat.scriptstate["$" + key];
+  const state = chat.scriptstate?.["$" + key];
   if (state === undefined || state === null) {
     const defaultVariables = parseKeyValue(char.defaultVariables).concat(
       parseKeyValue(presetStore.state.templateDefaultVariables),
