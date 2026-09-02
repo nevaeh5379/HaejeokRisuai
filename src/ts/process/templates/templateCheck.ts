@@ -1,7 +1,6 @@
-import type { Database } from "../../storage/database/schema";
+import type { PromptItem } from "../prompt";
 
-export function templateCheck(db: Database) {
-  const temp = db.promptTemplate;
+export function templateCheck(temp: PromptItem[] | undefined) {
   if (!temp) {
     return [];
   }

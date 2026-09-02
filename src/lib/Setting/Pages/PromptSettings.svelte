@@ -43,7 +43,7 @@ import { ArrowLeft, PlusIcon, TrashIcon, ChevronsUpDown, ChevronDown } from "@lu
     }
 
     $effect.pre(() => {
-    warns = templateCheck(settingsStore.state as any)
+    warns = templateCheck(presetStore.state.promptTemplate)
   });
   $effect.pre(() => {
     executeTokenize(presetStore.state.promptTemplate)
