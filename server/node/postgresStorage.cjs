@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs/promises');
 const path = require('path');
 const { Pool } = require('pg');
+const { buildLegacyBranchMigrationPlan } = require('../../packages/protocol/legacyBranchMigration.cjs');
 const { promisify } = require('util');
 const { deflate, unzip } = require('zlib');
 const {
@@ -64,6 +65,7 @@ const AUDITED_TABLES = [
     'character.lore_entries', 'chat.chats', 'chat.attributes',
     'chat.suggestions', 'chat.modules', 'chat.script_state',
     'chat.bookmarks', 'chat.memory', 'chat.lore_entries', 'chat.messages',
+    'chat.branches', 'chat.active_branches', 'chat.message_branch_links',
     'chat.message_attributes', 'chat.message_generation', 'chat.message_prompt_info',
     'chat.message_prompt_toggles', 'chat.message_prompt_items', 'cold.archives',
     'cold.archive_attributes', 'cold.field_presence', 'cold.character_tags',
@@ -1646,7 +1648,10 @@ class PostgresStorage extends SqlStorageBase {
                 'SELECT * FROM character.lore_entries WHERE character_id = $1 ORDER BY position',
                 'SELECT id, name, note, folder_id, last_message_time FROM chat.chats WHERE character_id = $1 ORDER BY position, id',
             ];
-            const results = await Promise.all(queries.map((q) => client.query(q, [characterId])));
+            const results = [];
+            for (const query of queries) {
+                results.push(await client.query(query, [characterId]));
+            }
             const [
                 charRes, attributesRes, tagsRes, greetingsRes, biasesRes, emotionsRes,
                 modulesRes, groupMembersRes, chatFoldersRes, scriptsRes, sdDataRes,
@@ -1696,12 +1701,17 @@ class PostgresStorage extends SqlStorageBase {
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-            const [charRes, attributesRes, emotionsRes, assetsRes] = await Promise.all([
+            const assetQueries = [
                 'SELECT image FROM character.characters WHERE id = $1',
                 'SELECT * FROM character.attributes WHERE character_id = $1 ORDER BY key',
                 'SELECT * FROM character.emotions WHERE character_id = $1 ORDER BY position',
                 'SELECT * FROM character.assets WHERE character_id = $1 ORDER BY position',
-            ].map((q) => client.query(q, [characterId])));
+            ];
+            const assetResults = [];
+            for (const query of assetQueries) {
+                assetResults.push(await client.query(query, [characterId]));
+            }
+            const [charRes, attributesRes, emotionsRes, assetsRes] = assetResults;
 
             if (charRes.rows.length === 0) {
                 await client.query('COMMIT');
@@ -1738,12 +1748,375 @@ class PostgresStorage extends SqlStorageBase {
         }
     }
 
-    async loadChat(chatId) {
+    async _loadLinearMessagesForBranchMigration(client, chatId) {
+        const migrationQueries = [
+            'SELECT * FROM chat.messages WHERE chat_id = $1 ORDER BY position, id',
+            'SELECT * FROM chat.message_attributes WHERE chat_id = $1 ORDER BY message_id, key',
+            'SELECT * FROM chat.message_generation WHERE chat_id = $1',
+            'SELECT * FROM chat.message_prompt_info WHERE chat_id = $1',
+            'SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 ORDER BY message_id, position',
+            'SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 ORDER BY message_id, position',
+        ];
+        const migrationResults = [];
+        for (const query of migrationQueries) {
+            migrationResults.push(await client.query(query, [chatId]));
+        }
+        const [messagesRes, attributesRes, generationsRes, promptInfosRes, promptTogglesRes, promptItemsRes] = migrationResults;
+        const relations = {
+            attributes: groupMessageRows(attributesRes.rows),
+            generation: new Map(generationsRes.rows.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+            promptInfo: new Map(promptInfosRes.rows.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+            promptToggles: groupMessageRows(promptTogglesRes.rows),
+            promptItems: groupMessageRows(promptItemsRes.rows),
+        };
+        return messagesRes.rows.map((row) => {
+            const key = `${row.chat_id}\0${row.id}`;
+            return rebuildMessage(row, {
+                attributes: relations.attributes.get(key),
+                generation: relations.generation.get(key),
+                promptInfo: relations.promptInfo.get(key),
+                promptToggles: relations.promptToggles.get(key),
+                promptItems: relations.promptItems.get(key),
+            });
+        });
+    }
+
+    async migrateLegacyBranchState(client, chatId) {
+        const legacyRes = await client.query(
+            `SELECT
+                (SELECT COUNT(*)::integer FROM chat.branches WHERE chat_id = $1) AS branch_count,
+                (SELECT value FROM chat.attributes WHERE chat_id = $1 AND key = 'branchState') AS branch_state`,
+            [chatId]
+        );
+        const legacyRow = legacyRes.rows[0] || {};
+        if (Number(legacyRow.branch_count ?? 0) > 1 || legacyRow.branch_state == null) return false;
+        const branchState = decodePostgresJsonValue(legacyRow.branch_state);
+        if (!Array.isArray(branchState?.branches) || branchState.branches.length <= 1) return false;
+        const messages = await this._loadLinearMessagesForBranchMigration(client, chatId);
+        const plan = buildLegacyBranchMigrationPlan({ id: chatId, message: messages, branchState }, () => crypto.randomUUID());
+        if (!plan) return false;
+
+        await client.query('DELETE FROM chat.active_branches WHERE chat_id = $1', [chatId]);
+        await client.query('DELETE FROM chat.message_branch_links WHERE chat_id = $1', [chatId]);
+        await client.query('DELETE FROM chat.branches WHERE chat_id = $1', [chatId]);
+
+        const splitMessages = plan.messages.map((message) => splitMessage({
+            chatId,
+            id: message.id,
+            position: message.position,
+            data: message.data,
+        }));
+        const messageColumns = ['chat_id', 'id', 'position', 'role', 'content_text', 'content_binary', 'saying_character_id', 'sent_time', 'sender_name', 'other_user', 'disabled_scope', 'is_comment'];
+        await bulkInsert(client, 'chat.messages', messageColumns,
+            ['text', 'text', 'integer', 'text', 'text', 'bytea', 'text', 'bigint', 'text', 'boolean', 'text', 'boolean'],
+            splitMessages.map((item) => item.core),
+            buildUpsertClause('chat.messages', ['chat_id', 'id'], messageColumns.slice(2), true));
+
+        const ids = splitMessages.map((item) => item.core.id);
+        if (ids.length > 0) {
+            for (const table of ['chat.message_attributes', 'chat.message_generation', 'chat.message_prompt_info', 'chat.message_prompt_toggles', 'chat.message_prompt_items']) {
+                await client.query(`DELETE FROM ${table} WHERE chat_id = $1 AND message_id = ANY($2::text[])`, [chatId, ids]);
+            }
+        }
+        await bulkInsert(client, 'chat.message_attributes', ['chat_id', 'message_id', 'key', 'value'], ['text', 'text', 'text', 'jsonb'],
+            splitMessages.flatMap((item) => item.attributes.map((row) => ({ ...row, chat_id: item.core.chat_id, message_id: item.core.id }))));
+        await bulkInsert(client, 'chat.message_generation', ['chat_id', 'message_id', 'model', 'generation_id', 'input_tokens', 'output_tokens', 'max_context', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time'],
+            ['text', 'text', 'text', 'text', 'integer', 'integer', 'integer', 'double precision', 'double precision', 'double precision', 'double precision'],
+            splitMessages.flatMap((item) => item.generation ? [item.generation] : []));
+        await bulkInsert(client, 'chat.message_prompt_info', ['chat_id', 'message_id', 'prompt_name'], ['text', 'text', 'text'],
+            splitMessages.flatMap((item) => item.prompt?.info ? [item.prompt.info] : []));
+        await bulkInsert(client, 'chat.message_prompt_toggles', ['chat_id', 'message_id', 'position', 'toggle_key', 'toggle_value'], ['text', 'text', 'integer', 'text', 'text'],
+            splitMessages.flatMap((item) => item.prompt?.toggles || []));
+        await bulkInsert(client, 'chat.message_prompt_items', ['chat_id', 'message_id', 'position', 'payload'], ['text', 'text', 'integer', 'jsonb'],
+            splitMessages.flatMap((item) => item.prompt?.items || []));
+
+        await bulkInsert(client, 'chat.branches',
+            ['chat_id', 'id', 'parent_branch_id', 'fork_message_id', 'head_message_id', 'reason', 'created_at'],
+            ['text', 'text', 'text', 'text', 'text', 'text', 'bigint'],
+            plan.branches.map((branch) => ({
+                chat_id: chatId,
+                id: branch.id,
+                parent_branch_id: branch.parentBranchId ?? null,
+                fork_message_id: branch.forkMessageId ?? null,
+                head_message_id: branch.headMessageId ?? null,
+                reason: branch.reason,
+                created_at: branch.createdAt,
+            })));
+        await bulkInsert(client, 'chat.message_branch_links',
+            ['chat_id', 'message_id', 'parent_message_id', 'origin_branch_id'],
+            ['text', 'text', 'text', 'text'],
+            plan.links.map((link) => ({
+                chat_id: chatId,
+                message_id: link.messageId,
+                parent_message_id: link.parentMessageId ?? null,
+                origin_branch_id: link.originBranchId,
+            })));
+        await client.query(
+            'INSERT INTO chat.active_branches (chat_id, branch_id) VALUES ($1, $2)',
+            [chatId, plan.activeBranchId]
+        );
+        // Keep branchState stored as archival input until per-branch runtime state
+        // also has a persistent table. Runtime loaders ignore it after migration.
+        return true;
+    }
+
+    async ensureChatBranchGraphs(client, chatIds) {
+        const ids = [...new Set((chatIds || []).filter(Boolean))];
+        if (ids.length === 0) return;
+        await client.query(
+            `INSERT INTO chat.branches
+                (chat_id, id, parent_branch_id, fork_message_id, head_message_id, reason, created_at)
+             SELECT chats.id, chats.id || ':root', NULL, NULL,
+                    (SELECT id FROM chat.messages WHERE chat_id = chats.id ORDER BY position DESC, id DESC LIMIT 1),
+                    'root', 0
+               FROM chat.chats chats
+              WHERE chats.id = ANY($1::text[])
+                AND NOT EXISTS (
+                    SELECT 1 FROM chat.branches existing WHERE existing.chat_id = chats.id
+                )
+             ON CONFLICT (chat_id, id) DO NOTHING`,
+            [ids]
+        );
+        await client.query(
+            `INSERT INTO chat.message_branch_links
+                (chat_id, message_id, parent_message_id, origin_branch_id)
+             SELECT ordered.chat_id, ordered.id, ordered.parent_message_id, ordered.chat_id || ':root'
+               FROM (
+                    SELECT messages.chat_id, messages.id,
+                           LAG(messages.id) OVER (PARTITION BY messages.chat_id ORDER BY messages.position, messages.id) AS parent_message_id
+                      FROM chat.messages messages
+                     WHERE messages.chat_id = ANY($1::text[])
+                       AND NOT EXISTS (
+                           SELECT 1 FROM chat.active_branches active WHERE active.chat_id = messages.chat_id
+                       )
+                       AND (SELECT COUNT(*) FROM chat.branches branches WHERE branches.chat_id = messages.chat_id) = 1
+                       AND EXISTS (
+                           SELECT 1 FROM chat.branches root
+                            WHERE root.chat_id = messages.chat_id
+                              AND root.id = messages.chat_id || ':root'
+                       )
+               ) ordered
+             ON CONFLICT (chat_id, message_id) DO NOTHING`,
+            [ids]
+        );
+        await client.query(
+            `INSERT INTO chat.active_branches (chat_id, branch_id)
+             SELECT chats.id, chats.id || ':root'
+               FROM chat.chats chats
+              WHERE chats.id = ANY($1::text[])
+                AND (SELECT COUNT(*) FROM chat.branches branches WHERE branches.chat_id = chats.id) = 1
+                AND EXISTS (
+                    SELECT 1 FROM chat.branches root
+                     WHERE root.chat_id = chats.id AND root.id = chats.id || ':root'
+                )
+             ON CONFLICT (chat_id) DO NOTHING`,
+            [ids]
+        );
+    }
+
+    async ensureChatBranchGraph(client, chatId) {
+        await this.migrateLegacyBranchState(client, chatId);
+        let result = await client.query('SELECT branch_id FROM chat.active_branches WHERE chat_id = $1', [chatId]);
+        if (result.rows[0]?.branch_id) return result.rows[0].branch_id;
+        await this.ensureChatBranchGraphs(client, [chatId]);
+        result = await client.query('SELECT branch_id FROM chat.active_branches WHERE chat_id = $1', [chatId]);
+        return result.rows[0]?.branch_id ?? null;
+    }
+
+    async linkIncomingMessagesToActiveBranches(client, splitMessages) {
+        if (!splitMessages || splitMessages.length === 0) return;
+        const chatIds = splitMessages.map((item) => item.core.chat_id);
+        const messageIds = splitMessages.map((item) => item.core.id);
+        const positions = splitMessages.map((item) => item.core.position);
+        const inserted = await client.query(
+            `WITH incoming(chat_id, message_id, position) AS (
+                 SELECT * FROM UNNEST($1::text[], $2::text[], $3::integer[])
+             ),
+             unlinked AS (
+                 SELECT incoming.*
+                   FROM incoming
+                   LEFT JOIN chat.message_branch_links links
+                     ON links.chat_id = incoming.chat_id AND links.message_id = incoming.message_id
+                  WHERE links.message_id IS NULL
+             ),
+             ordered AS (
+                 SELECT unlinked.*,
+                        LAG(message_id) OVER (PARTITION BY chat_id ORDER BY position, message_id) AS previous_incoming_id
+                   FROM unlinked
+             )
+             INSERT INTO chat.message_branch_links
+                 (chat_id, message_id, parent_message_id, origin_branch_id)
+             SELECT ordered.chat_id,
+                    ordered.message_id,
+                    COALESCE(ordered.previous_incoming_id, branch.head_message_id),
+                    active.branch_id
+               FROM ordered
+               JOIN chat.active_branches active ON active.chat_id = ordered.chat_id
+               JOIN chat.branches branch ON branch.chat_id = active.chat_id AND branch.id = active.branch_id
+              ORDER BY ordered.chat_id, ordered.position, ordered.message_id
+             ON CONFLICT (chat_id, message_id) DO NOTHING
+             RETURNING chat_id, message_id, origin_branch_id`,
+            [chatIds, messageIds, positions]
+        );
+        if (inserted.rows.length === 0) return;
+        const positionByKey = new Map(splitMessages.map((item) => [
+            `${item.core.chat_id}\0${item.core.id}`,
+            Number(item.core.position) || 0,
+        ]));
+        const heads = new Map();
+        for (const row of inserted.rows) {
+            const key = `${row.chat_id}\0${row.origin_branch_id}`;
+            const position = positionByKey.get(`${row.chat_id}\0${row.message_id}`) ?? 0;
+            const previous = heads.get(key);
+            if (!previous || position >= previous.position) {
+                heads.set(key, { chatId: row.chat_id, branchId: row.origin_branch_id, messageId: row.message_id, position });
+            }
+        }
+        for (const head of heads.values()) {
+            await client.query(
+                'UPDATE chat.branches SET head_message_id = $3 WHERE chat_id = $1 AND id = $2',
+                [head.chatId, head.branchId, head.messageId]
+            );
+        }
+    }
+
+    async detachMessagesFromBranchGraph(client, deletions) {
+        for (const deletion of deletions || []) {
+            for (const messageId of deletion.ids || []) {
+                await client.query(
+                    `UPDATE chat.message_branch_links child
+                        SET parent_message_id = (
+                            SELECT removed.parent_message_id
+                              FROM chat.message_branch_links removed
+                             WHERE removed.chat_id = $1 AND removed.message_id = $2
+                        )
+                      WHERE child.chat_id = $1 AND child.parent_message_id = $2`,
+                    [deletion.chatId, messageId]
+                );
+                await client.query(
+                    `UPDATE chat.branches branch
+                        SET head_message_id = (
+                            SELECT removed.parent_message_id
+                              FROM chat.message_branch_links removed
+                             WHERE removed.chat_id = $1 AND removed.message_id = $2
+                        )
+                      WHERE branch.chat_id = $1 AND branch.head_message_id = $2`,
+                    [deletion.chatId, messageId]
+                );
+                await client.query(
+                    'UPDATE chat.branches SET fork_message_id = NULL WHERE chat_id = $1 AND fork_message_id = $2',
+                    [deletion.chatId, messageId]
+                );
+                await client.query(
+                    'DELETE FROM chat.message_branch_links WHERE chat_id = $1 AND message_id = $2',
+                    [deletion.chatId, messageId]
+                );
+            }
+        }
+    }
+
+    async _loadBranchPageWithClient(client, chatId, branchId, options = {}) {
+        const countRes = await client.query(
+            `WITH RECURSIVE branch_path(message_id) AS (
+                 SELECT head_message_id FROM chat.branches WHERE chat_id = $1 AND id = $2
+                 UNION ALL
+                 SELECT links.parent_message_id
+                   FROM branch_path path
+                   JOIN chat.message_branch_links links
+                     ON links.chat_id = $1 AND links.message_id = path.message_id
+                  WHERE links.parent_message_id IS NOT NULL
+             )
+             SELECT COUNT(message_id)::bigint AS total FROM branch_path`,
+            [chatId, branchId]
+        );
+        const total = Number(countRes.rows[0]?.total ?? 0);
+        const rawBefore = options.before;
+        const end = rawBefore === undefined
+            ? total
+            : Math.max(0, Math.min(total, Math.floor(Number(rawBefore) || 0)));
+        const requestedLimit = options.limit === undefined
+            ? end
+            : Math.max(1, Math.floor(Number(options.limit) || 1));
+        const offset = Math.max(0, end - requestedLimit);
+        const pageSize = Math.max(0, end - offset);
+        if (pageSize === 0) {
+            return { messages: [], offset, total, hasMore: offset > 0 };
+        }
+        const messagesRes = await client.query(
+            `WITH RECURSIVE branch_path(message_id, depth) AS (
+                 SELECT head_message_id, 0 FROM chat.branches WHERE chat_id = $1 AND id = $2
+                 UNION ALL
+                 SELECT links.parent_message_id, path.depth + 1
+                   FROM branch_path path
+                   JOIN chat.message_branch_links links
+                     ON links.chat_id = $1 AND links.message_id = path.message_id
+                  WHERE links.parent_message_id IS NOT NULL
+             )
+             SELECT messages.*, branch_path.depth
+               FROM branch_path
+               JOIN chat.messages messages
+                 ON messages.chat_id = $1 AND messages.id = branch_path.message_id
+              ORDER BY branch_path.depth DESC
+              OFFSET $3 LIMIT $4`,
+            [chatId, branchId, offset, pageSize]
+        );
+        const ids = messagesRes.rows.map((row) => row.id);
+        if (ids.length === 0) {
+            return { messages: [], offset, total, hasMore: offset > 0 };
+        }
+        let attributes = [];
+        let generations = [];
+        let promptInfos = [];
+        let promptToggles = [];
+        let promptItems = [];
+        if (options.mode === 'graph') {
+            generations = (await client.query(
+                'SELECT * FROM chat.message_generation WHERE chat_id = $1 AND message_id = ANY($2::text[])',
+                [chatId, ids]
+            )).rows;
+        } else {
+            attributes = (await client.query(
+                'SELECT * FROM chat.message_attributes WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, key',
+                [chatId, ids]
+            )).rows;
+            if (options.mode !== 'generation') {
+                generations = (await client.query('SELECT * FROM chat.message_generation WHERE chat_id = $1 AND message_id = ANY($2::text[])', [chatId, ids])).rows;
+                promptInfos = (await client.query('SELECT * FROM chat.message_prompt_info WHERE chat_id = $1 AND message_id = ANY($2::text[])', [chatId, ids])).rows;
+                promptToggles = (await client.query('SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position', [chatId, ids])).rows;
+                promptItems = (await client.query('SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position', [chatId, ids])).rows;
+            }
+        }
+        const relations = {
+            attributes: groupMessageRows(attributes),
+            generation: new Map(generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+            promptInfo: new Map(promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+            promptToggles: groupMessageRows(promptToggles),
+            promptItems: groupMessageRows(promptItems),
+        };
+        const messages = messagesRes.rows.map((row) => {
+            const key = `${row.chat_id}\0${row.id}`;
+            return rebuildMessage(row, {
+                attributes: relations.attributes.get(key),
+                generation: relations.generation.get(key),
+                promptInfo: relations.promptInfo.get(key),
+                promptToggles: relations.promptToggles.get(key),
+                promptItems: relations.promptItems.get(key),
+            });
+        });
+        return { messages, offset, total, hasMore: offset > 0 };
+    }
+
+    async _activeBranchIdWithClient(client, chatId) {
+        return await this.ensureChatBranchGraph(client, chatId);
+    }
+
+    async loadChat(chatId, options = {}) {
         this.assertEnabled();
         assertId(chatId, 'chatId');
         const client = await this.pool.connect();
         try {
-            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+            const activeBranchId = await this._activeBranchIdWithClient(client, chatId);
             const queries = [
                 'SELECT * FROM chat.chats WHERE id = $1',
                 'SELECT * FROM chat.attributes WHERE chat_id = $1 ORDER BY key',
@@ -1753,46 +2126,21 @@ class PostgresStorage extends SqlStorageBase {
                 'SELECT * FROM chat.bookmarks WHERE chat_id = $1 ORDER BY position',
                 'SELECT * FROM chat.memory WHERE chat_id = $1 ORDER BY memory_type',
                 'SELECT * FROM chat.lore_entries WHERE chat_id = $1 ORDER BY position',
-                'SELECT * FROM chat.messages WHERE chat_id = $1 ORDER BY position, id',
-                'SELECT * FROM chat.message_attributes WHERE chat_id = $1 ORDER BY chat_id, message_id, key',
-                'SELECT * FROM chat.message_generation WHERE chat_id = $1',
-                'SELECT * FROM chat.message_prompt_info WHERE chat_id = $1',
-                'SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 ORDER BY chat_id, message_id, position',
-                'SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 ORDER BY chat_id, message_id, position',
             ];
-            const [
-                chatRes, attributesRes, suggestionsRes, modulesRes, scriptStateRes,
-                bookmarksRes, memoryRes, loreRes, messagesRes, messageAttributesRes,
-                generationsRes, promptInfosRes, promptTogglesRes, promptItemsRes
-            ] = await Promise.all(queries.map((q) => client.query(q, [chatId])));
-
-            if (chatRes.rows.length === 0) {
+            const chatResults = [];
+            for (const query of queries) {
+                chatResults.push(await client.query(query, [chatId]));
+            }
+            const [chatRes, attributesRes, suggestionsRes, modulesRes, scriptStateRes, bookmarksRes, memoryRes, loreRes] = chatResults;
+            if (chatRes.rows.length === 0 || !activeBranchId) {
                 await client.query('COMMIT');
                 return null;
             }
-
-            const messageRelations = {
-                attributes: groupMessageRows(messageAttributesRes.rows),
-                generation: new Map(generationsRes.rows.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
-                promptInfo: new Map(promptInfosRes.rows.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
-                promptToggles: groupMessageRows(promptTogglesRes.rows),
-                promptItems: groupMessageRows(promptItemsRes.rows),
-            };
-
-            const messages = [];
-            for (const row of messagesRes.rows) {
-                const key = `${row.chat_id}\0${row.id}`;
-                const related = {
-                    attributes: messageRelations.attributes.get(key),
-                    generation: messageRelations.generation.get(key),
-                    promptInfo: messageRelations.promptInfo.get(key),
-                    promptToggles: messageRelations.promptToggles.get(key),
-                    promptItems: messageRelations.promptItems.get(key),
-                };
-                messages.push(rebuildMessage(row, related));
-            }
-
-            const chatRelations = {
+            const page = await this._loadBranchPageWithClient(client, chatId, activeBranchId, {
+                limit: options.messageLimit,
+                mode: 'full',
+            });
+            const chat = rebuildChat(chatRes.rows[0], {
                 attributes: attributesRes.rows,
                 suggestions: suggestionsRes.rows,
                 modules: modulesRes.rows,
@@ -1800,13 +2148,15 @@ class PostgresStorage extends SqlStorageBase {
                 bookmarks: bookmarksRes.rows,
                 memory: memoryRes.rows,
                 lore: loreRes.rows,
-                messages,
-            };
-
-            const chat = rebuildChat(chatRes.rows[0], chatRelations);
+                messages: page.messages,
+            });
+            chat.activeBranchId = activeBranchId;
+            delete chat.branchState;
+            chat.messageOffset = page.offset;
+            chat.messageTotal = page.total;
+            chat.messagesFullyLoaded = !page.hasMore;
             chat.messagesLoaded = true;
             chat.detailsLoaded = true;
-
             await client.query('COMMIT');
             return chat;
         } catch (error) {
@@ -1821,47 +2171,230 @@ class PostgresStorage extends SqlStorageBase {
         this.assertEnabled();
         assertId(chatId, 'chatId');
         const client = await this.pool.connect();
-        const includeMetadata = options.mode !== 'generation';
         try {
-            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-            const queries = [
-                'SELECT * FROM chat.messages WHERE chat_id = $1 ORDER BY position, id',
-                'SELECT * FROM chat.message_attributes WHERE chat_id = $1 ORDER BY chat_id, message_id, key',
-            ];
-            if (includeMetadata) {
-                queries.push(
-                    'SELECT * FROM chat.message_generation WHERE chat_id = $1',
-                    'SELECT * FROM chat.message_prompt_info WHERE chat_id = $1',
-                    'SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 ORDER BY chat_id, message_id, position',
-                    'SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 ORDER BY chat_id, message_id, position',
-                );
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+            const branchId = await this._activeBranchIdWithClient(client, chatId);
+            if (!branchId) {
+                await client.query('COMMIT');
+                return [];
             }
-            const results = await Promise.all(queries.map((query) => client.query(query, [chatId])));
-            const messagesRes = results[0];
-            const attributesRes = results[1];
-            const generations = results[2]?.rows ?? [];
-            const promptInfos = results[3]?.rows ?? [];
-            const promptToggles = results[4]?.rows ?? [];
-            const promptItems = results[5]?.rows ?? [];
-            const relations = {
-                attributes: groupMessageRows(attributesRes.rows),
-                generation: new Map(generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
-                promptInfo: new Map(promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
-                promptToggles: groupMessageRows(promptToggles),
-                promptItems: groupMessageRows(promptItems),
+            const page = await this._loadBranchPageWithClient(client, chatId, branchId, { mode: options.mode });
+            await client.query('COMMIT');
+            return page.messages;
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async loadChatMessagePage(chatId, before, limit) {
+        this.assertEnabled();
+        assertId(chatId, 'chatId');
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+            const branchId = await this._activeBranchIdWithClient(client, chatId);
+            const page = branchId
+                ? await this._loadBranchPageWithClient(client, chatId, branchId, { before, limit, mode: 'full' })
+                : { messages: [], offset: 0, total: 0, hasMore: false };
+            await client.query('COMMIT');
+            return page;
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async listChatBranches(chatId) {
+        this.assertEnabled();
+        assertId(chatId, 'chatId');
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+            await this.ensureChatBranchGraph(client, chatId);
+            const result = await client.query(
+                `SELECT id, chat_id, parent_branch_id, fork_message_id, head_message_id, reason, created_at
+                   FROM chat.branches WHERE chat_id = $1 ORDER BY created_at, id`,
+                [chatId]
+            );
+            await client.query('COMMIT');
+            return result.rows.map((row) => ({
+                id: row.id,
+                chatId: row.chat_id,
+                parentBranchId: row.parent_branch_id ?? undefined,
+                forkMessageId: row.fork_message_id ?? undefined,
+                headMessageId: row.head_message_id ?? undefined,
+                reason: row.reason,
+                createdAt: Number(row.created_at) || 0,
+            }));
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async loadChatBranchGraph(chatId) {
+        this.assertEnabled();
+        assertId(chatId, 'chatId');
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+            await this.ensureChatBranchGraph(client, chatId);
+            const branchResult = await client.query(
+                `SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
+                        branch.head_message_id, branch.reason, branch.created_at,
+                        active.branch_id AS active_branch_id
+                   FROM chat.branches branch
+              LEFT JOIN chat.active_branches active ON active.chat_id = branch.chat_id
+                  WHERE branch.chat_id = $1
+               ORDER BY branch.created_at, branch.id`,
+                [chatId]
+            );
+            const graphRows = await client.query(
+                `SELECT messages.*, links.parent_message_id, links.origin_branch_id,
+                        generation.model AS graph_generation_model
+                   FROM chat.message_branch_links links
+                   JOIN chat.messages messages
+                     ON messages.chat_id = links.chat_id AND messages.id = links.message_id
+              LEFT JOIN chat.message_generation generation
+                     ON generation.chat_id = messages.chat_id AND generation.message_id = messages.id
+                  WHERE links.chat_id = $1
+               ORDER BY messages.position, messages.id`,
+                [chatId]
+            );
+            await client.query('COMMIT');
+            const branches = branchResult.rows.map((row) => ({
+                id: row.id,
+                chatId: row.chat_id,
+                parentBranchId: row.parent_branch_id ?? undefined,
+                forkMessageId: row.fork_message_id ?? undefined,
+                headMessageId: row.head_message_id ?? undefined,
+                reason: row.reason,
+                createdAt: Number(row.created_at) || 0,
+            }));
+            const messages = graphRows.rows.map((row) => {
+                const message = rebuildMessage(row);
+                if (row.graph_generation_model != null) {
+                    message.generationInfo = { model: row.graph_generation_model };
+                }
+                return message;
+            });
+            const links = graphRows.rows.map((row) => ({
+                messageId: row.id,
+                parentMessageId: row.parent_message_id ?? undefined,
+                originBranchId: row.origin_branch_id,
+            }));
+            return {
+                branches,
+                activeBranchId: branchResult.rows[0]?.active_branch_id ?? undefined,
+                messages,
+                links,
             };
-            const messages = messagesRes.rows.map((row) => {
-                const key = `${row.chat_id}\0${row.id}`;
-                return rebuildMessage(row, {
-                    attributes: relations.attributes.get(key),
-                    generation: relations.generation.get(key),
-                    promptInfo: relations.promptInfo.get(key),
-                    promptToggles: relations.promptToggles.get(key),
-                    promptItems: relations.promptItems.get(key),
-                });
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async loadBranchMessages(chatId, branchId, options = {}) {
+        this.assertEnabled();
+        assertId(chatId, 'chatId');
+        assertId(branchId, 'branchId');
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+            await this.ensureChatBranchGraph(client, chatId);
+            const page = await this._loadBranchPageWithClient(client, chatId, branchId, {
+                limit: options.messageLimit,
+                mode: options.mode,
             });
             await client.query('COMMIT');
-            return messages;
+            return page.messages;
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async createChatBranch(input) {
+        this.assertEnabled();
+        assertId(input?.chatId, 'chatId');
+        assertId(input?.id, 'branchId');
+        if (input?.parentBranchId) assertId(input.parentBranchId, 'parentBranchId');
+        if (input?.forkMessageId) assertId(input.forkMessageId, 'forkMessageId');
+        const chatId = input.chatId;
+        const branchId = input.id;
+        const parentBranchIdInput = input.parentBranchId ?? null;
+        const forkMessageId = input.forkMessageId ?? null;
+        const reason = input?.reason;
+        if (!['root', 'manual', 'reroll'].includes(reason)) throw new PostgresPayloadError('Invalid chat branch reason');
+        const createdAt = Number.isFinite(Number(input?.createdAt)) ? Math.trunc(Number(input.createdAt)) : Date.now();
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+            await this.ensureChatBranchGraph(client, chatId);
+            const activeRes = await client.query('SELECT branch_id FROM chat.active_branches WHERE chat_id = $1', [chatId]);
+            const parentBranchId = parentBranchIdInput ?? activeRes.rows[0]?.branch_id;
+            if (!parentBranchId) throw new PostgresPayloadError('Chat branch root does not exist');
+            const parentRes = await client.query('SELECT 1 FROM chat.branches WHERE chat_id = $1 AND id = $2', [chatId, parentBranchId]);
+            if (parentRes.rows.length === 0) throw new PostgresPayloadError('Parent chat branch does not exist');
+            await client.query(
+                `INSERT INTO chat.branches
+                    (chat_id, id, parent_branch_id, fork_message_id, head_message_id, reason, created_at)
+                 VALUES ($1, $2, $3, $4, $4, $5, $6)`,
+                [chatId, branchId, parentBranchId, forkMessageId, reason, createdAt]
+            );
+            await client.query(
+                `INSERT INTO chat.active_branches (chat_id, branch_id) VALUES ($1, $2)
+                 ON CONFLICT (chat_id) DO UPDATE SET branch_id = EXCLUDED.branch_id`,
+                [chatId, branchId]
+            );
+            const result = await client.query(
+                `SELECT id, chat_id, parent_branch_id, fork_message_id, head_message_id, reason, created_at
+                   FROM chat.branches WHERE chat_id = $1 AND id = $2`,
+                [chatId, branchId]
+            );
+            await client.query('COMMIT');
+            const row = result.rows[0];
+            return {
+                id: row.id,
+                chatId: row.chat_id,
+                parentBranchId: row.parent_branch_id ?? undefined,
+                forkMessageId: row.fork_message_id ?? undefined,
+                headMessageId: row.head_message_id ?? undefined,
+                reason: row.reason,
+                createdAt: Number(row.created_at) || 0,
+            };
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async activateChatBranch(chatId, branchId) {
+        this.assertEnabled();
+        assertId(chatId, 'chatId');
+        assertId(branchId, 'branchId');
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+            await this.ensureChatBranchGraph(client, chatId);
+            const exists = await client.query('SELECT 1 FROM chat.branches WHERE chat_id = $1 AND id = $2', [chatId, branchId]);
+            if (exists.rows.length === 0) throw new PostgresPayloadError('Chat branch does not exist');
+            await client.query('UPDATE chat.active_branches SET branch_id = $2 WHERE chat_id = $1', [chatId, branchId]);
+            await client.query('COMMIT');
         } catch (error) {
             await client.query('ROLLBACK').catch(() => {});
             throw error;
@@ -2288,6 +2821,7 @@ class PostgresStorage extends SqlStorageBase {
 
     async deleteMessage(chatId, messageId) {
         return await this.executeRevision('message:delete', 'database', async (client) => {
+            await this.detachMessagesFromBranchGraph(client, [{ chatId, ids: [messageId] }]);
             await client.query('DELETE FROM chat.messages WHERE chat_id = $1 AND id = $2', [chatId, messageId]);
             return { chatId, messageId };
         });
@@ -2651,11 +3185,13 @@ class PostgresStorage extends SqlStorageBase {
 
             onProgress?.({ stage: 'messages', message: `Syncing messages (${payload.messages.length})`, count: payload.messages.length });
             const splitMessages = payload.messages.map(splitMessage);
+            await this.ensureChatBranchGraphs(client, splitMessages.map((item) => item.core.chat_id));
             const messageColumns = ['chat_id', 'id', 'position', 'role', 'content_text', 'content_binary', 'saying_character_id', 'sent_time', 'sender_name', 'other_user', 'disabled_scope', 'is_comment'];
             await bulkInsert(client, 'chat.messages', messageColumns,
                 ['text', 'text', 'integer', 'text', 'text', 'bytea', 'text', 'bigint', 'text', 'boolean', 'text', 'boolean'],
                 splitMessages.map((item) => item.core),
                 buildUpsertClause('chat.messages', ['chat_id', 'id'], messageColumns.slice(2), true));
+            await this.linkIncomingMessagesToActiveBranches(client, splitMessages);
 
             // 1. message_attributes
             const msgAttrRows = splitMessages.flatMap((item) => item.attributes.map((row) => ({ ...row, chat_id: item.core.chat_id, message_id: item.core.id })));
@@ -2745,6 +3281,7 @@ class PostgresStorage extends SqlStorageBase {
                 );
             }
             if (payload.messageDeletes) {
+                await this.detachMessagesFromBranchGraph(client, payload.messageDeletes);
                 for (const del of payload.messageDeletes) {
                     if (del.ids.length > 0) {
                         await client.query(

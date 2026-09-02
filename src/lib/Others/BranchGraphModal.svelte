@@ -1,16 +1,17 @@
 <script lang="ts">
-    import { onMount, tick, untrack } from 'svelte'
+    import { onMount, tick } from 'svelte'
     import { Ellipsis, GitBranch, Maximize, ZoomIn, ZoomOut, XIcon } from '@lucide/svelte'
 
     import { language } from 'src/lang'
     import { getChatBranches } from 'src/ts/gui/branches'
     import type { Chat } from '../../ts/storage/database/schema';interface Props {
         chat?: Chat | null
+        loading?: boolean
         onselect: (branchId: string) => void | Promise<void>
         onclose: () => void
     }
 
-    let { chat, onselect, onclose }: Props = $props()
+    let { chat, loading = false, onselect, onclose }: Props = $props()
 
     const cardWidth = 292
     const cardHeight = 116
@@ -20,12 +21,12 @@
     const minScale = 0.25
     const maxScale = 1.6
 
-    const graph = untrack(() => getChatBranches(chat))
-    const nodesById = new Map(graph.nodes.map((node) => [node.id, node]))
-    const graphWidth = padding * 2 + graph.columns * cardWidth + Math.max(0, graph.columns - 1) * gapX
-    const graphHeight = padding * 2 + graph.rows * cardHeight + Math.max(0, graph.rows - 1) * gapY
-    const activeNode = graph.nodes.find((node) => node.activeTerminal)
-        ?? [...graph.nodes].reverse().find((node) => node.activePath)
+    const graph = $derived(getChatBranches(chat))
+    const nodesById = $derived(new Map(graph.nodes.map((node) => [node.id, node])))
+    const graphWidth = $derived(padding * 2 + graph.columns * cardWidth + Math.max(0, graph.columns - 1) * gapX)
+    const graphHeight = $derived(padding * 2 + graph.rows * cardHeight + Math.max(0, graph.rows - 1) * gapY)
+    const activeNode = $derived(graph.nodes.find((node) => node.activeTerminal)
+        ?? [...graph.nodes].reverse().find((node) => node.activePath))
     let viewport: HTMLDivElement | undefined = $state()
     let panX = $state(0)
     let panY = $state(0)
@@ -79,6 +80,7 @@
     }
 
     function selectMessageNode(node: typeof graph.nodes[number]) {
+        if(loading) return
         const terminal = node.terminals.find((item) => item.active) ?? node.terminals.at(-1)
         if(terminal) void onselect(terminal.branchId)
     }
@@ -208,6 +210,14 @@
         if(event.key === '0' && !event.metaKey && !event.ctrlKey) fitGraph()
     }
 
+    $effect(() => {
+        graph
+        if(!viewport || hasInteracted) return
+        void tick().then(() => {
+            if(viewport && !hasInteracted) fitGraph(false)
+        })
+    })
+
     onMount(() => {
         let observer: ResizeObserver | undefined
         void tick().then(() => {
@@ -300,12 +310,13 @@
                     class="branch-node absolute z-10 flex flex-col overflow-hidden rounded-2xl border px-4 py-3 text-left"
                     class:branch-node--active={node.activeTerminal}
                     class:branch-node--path={!node.activeTerminal && node.activePath}
-                    class:branch-node--selectable={node.terminals.length > 0}
+                    class:branch-node--selectable={!loading && node.terminals.length > 0}
                     class:branch-node--summary={node.kind === 'summary'}
+                    class:branch-node--fork={node.branchPoint}
                     style={`left:${left(node.x)}px;top:${top(node.y)}px;width:${cardWidth}px;height:${cardHeight}px;`}
                     aria-current={node.activeTerminal ? 'true' : undefined}
-                    aria-disabled={node.terminals.length === 0 ? 'true' : undefined}
-                    tabindex={node.terminals.length > 0 ? 0 : -1}
+                    aria-disabled={loading || node.terminals.length === 0 ? 'true' : undefined}
+                    tabindex={!loading && node.terminals.length > 0 ? 0 : -1}
                     onclick={() => selectMessageNode(node)}
                 >
                     <span class="branch-node-glow pointer-events-none absolute -right-8 -top-12 size-28 rounded-full opacity-0 blur-2xl"></span>

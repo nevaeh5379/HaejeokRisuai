@@ -57,6 +57,41 @@ export interface SqlMessagePage {
   hasMore: boolean;
 }
 
+export type SqlChatBranchReason = "root" | "manual" | "reroll";
+
+/** Lightweight branch metadata. Branch messages are loaded separately. */
+export interface SqlChatBranchSummary {
+  id: string;
+  chatId: string;
+  parentBranchId?: string;
+  forkMessageId?: string;
+  headMessageId?: string;
+  reason: SqlChatBranchReason;
+  createdAt: number;
+}
+
+export interface SqlChatBranchGraphLink {
+  messageId: string;
+  parentMessageId?: string;
+  originBranchId: string;
+}
+
+export interface SqlChatBranchGraphData {
+  branches: SqlChatBranchSummary[];
+  activeBranchId?: string;
+  messages: Message[];
+  links: SqlChatBranchGraphLink[];
+}
+
+export interface SqlCreateChatBranchInput {
+  id: string;
+  chatId: string;
+  parentBranchId?: string;
+  forkMessageId?: string;
+  reason: Exclude<SqlChatBranchReason, "root">;
+  createdAt: number;
+}
+
 export interface SqlCharacterMetadata {
   chaId: string;
   name: string;
@@ -169,6 +204,23 @@ export interface ISqlStorage {
     before: number | undefined,
     limit: number,
   ): Promise<SqlMessagePage>;
+  /**
+   * Persistent branch graph APIs. These remain optional only at the transport
+   * boundary while remote SQL servers roll out the protocol. Runtime branch
+   * features must require them and fail fast; they must never fall back to the
+   * legacy in-memory branchState path.
+   */
+  listChatBranches?(chatId: string): Promise<SqlChatBranchSummary[]>;
+  loadChatBranchGraph?(chatId: string): Promise<SqlChatBranchGraphData>;
+  loadBranchMessages?(
+    chatId: string,
+    branchId: string,
+    options?: { messageLimit?: number; mode?: "full" | "generation" | "graph" },
+  ): Promise<Message[]>;
+  createChatBranch?(
+    input: SqlCreateChatBranchInput,
+  ): Promise<SqlChatBranchSummary>;
+  activateChatBranch?(chatId: string, branchId: string): Promise<void>;
   /** Lightweight recent-chat feed; avoids hydrating character/chat trees. */
   listRecentChats?(limit?: number): Promise<SqlRecentChatMetadata[]>;
 

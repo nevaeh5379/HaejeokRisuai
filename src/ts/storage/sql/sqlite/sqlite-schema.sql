@@ -171,6 +171,43 @@ CREATE TABLE IF NOT EXISTS message_extension_nodes (
 );
 CREATE INDEX IF NOT EXISTS message_nodes_parent_idx ON message_extension_nodes (chat_id, message_id, parent_node_id, node_order);
 
+-- Branches are stored as a parent-linked message graph. These are additive
+-- tables so relational-schema-v3 databases can adopt branching without a
+-- destructive schema reset.
+CREATE TABLE IF NOT EXISTS chat_branches (
+    chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    parent_branch_id TEXT,
+    fork_message_id TEXT,
+    head_message_id TEXT,
+    reason TEXT NOT NULL CHECK (reason IN ('root','manual','reroll')),
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (chat_id, id),
+    FOREIGN KEY (chat_id, parent_branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (chat_id, fork_message_id) REFERENCES messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (chat_id, head_message_id) REFERENCES messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED
+);
+CREATE INDEX IF NOT EXISTS chat_branches_parent_idx ON chat_branches (chat_id, parent_branch_id, created_at);
+
+CREATE TABLE IF NOT EXISTS chat_active_branches (
+    chat_id TEXT PRIMARY KEY REFERENCES chats(id) ON DELETE CASCADE,
+    branch_id TEXT NOT NULL,
+    FOREIGN KEY (chat_id, branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE TABLE IF NOT EXISTS message_branch_links (
+    chat_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    parent_message_id TEXT,
+    origin_branch_id TEXT NOT NULL,
+    PRIMARY KEY (chat_id, message_id),
+    FOREIGN KEY (chat_id, message_id) REFERENCES messages(chat_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (chat_id, parent_message_id) REFERENCES messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (chat_id, origin_branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+CREATE INDEX IF NOT EXISTS message_branch_parent_idx ON message_branch_links (chat_id, parent_message_id);
+CREATE INDEX IF NOT EXISTS message_branch_origin_idx ON message_branch_links (chat_id, origin_branch_id);
+
 CREATE TABLE IF NOT EXISTS cold_archives (
     archive_id TEXT PRIMARY KEY,
     archive_kind TEXT NOT NULL CHECK (archive_kind IN ('legacy','character','chat','unknown')),

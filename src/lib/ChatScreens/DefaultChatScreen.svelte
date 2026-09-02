@@ -19,7 +19,7 @@
     import MainMenu from '../UI/MainMenu.svelte';
     import AssetInput from './AssetInput.svelte';
     import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile } from 'src/ts/globalApi.svelte';
-    import { activateChatBranch, createChatTimelineBranch, ensureChatBranchState, getRerollAlternatives, resolveRerollTarget } from 'src/ts/chatBranches';
+    import { resolveRerollTarget } from 'src/ts/chatBranches';
     import { requireChatTargetFromIndexes } from 'src/ts/chatTarget';
     import { v4 } from 'uuid';
     import { getInlayAsset } from 'src/ts/process/files/inlays';
@@ -33,6 +33,7 @@
     import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages';
     import { getMimeType } from 'src/ts/media';
     import { compactChatMessages } from 'src/ts/stores/domain/messageStore.svelte';
+    import { getSqlBranchStorage } from 'src/ts/storage/sql/sqlStorageFactory';
     import { openLogExporter } from 'src/ts/logexporter/index';
     import LogExporterModal from 'src/lib/LogExporter/LogExporterModal.svelte';
     import GenerationStatsFloat from './GenerationStatsFloat.svelte';
@@ -403,11 +404,21 @@
 
     async function persistBranchSwitch(activeChat: ChatSession, branchId: string) {
         if(!activeChat.id) return false
-        const switched = activateChatBranch(activeChat, branchId)
-        if(!switched) return false
-        await messageStore.replaceMessages(activeChat.id, switched.nextMessages, switched.previousMessages)
-        characterStore.markChatDirty(activeChat.id)
-        await characterStore.flush()
+        if(activeChat.branchState){
+            throw new Error('Legacy branchState runtime fallback is disabled; migrate this chat to persistent branches first')
+        }
+        const storage = await getSqlBranchStorage()
+        await storage.activateChatBranch(activeChat.id, branchId)
+        const loaded = await storage.loadChat(activeChat.id, {
+            messageLimit: Math.max(12, activeChat.message.length),
+        })
+        if(!loaded) return false
+        activeChat.message.splice(0, activeChat.message.length, ...loaded.message)
+        activeChat.activeBranchId = branchId
+        activeChat.messageOffset = loaded.messageOffset
+        activeChat.messageTotal = loaded.messageTotal
+        activeChat.messagesFullyLoaded = loaded.messagesFullyLoaded
+        activeChat.messagesLoaded = true
         return true
     }
 
@@ -417,23 +428,67 @@
         parentBranchId: string,
     ) {
         activeChat.id ??= v4()
-        const previousMessages = $state.snapshot(activeChat.message)
-        const branch = createChatTimelineBranch(activeChat, {
+        if(activeChat.branchState){
+            throw new Error('Legacy branchState runtime fallback is disabled; migrate this chat to persistent branches first')
+        }
+        const storage = await getSqlBranchStorage()
+        const forkMessage = activeChat.message[branchMessageIndex]
+        if(!forkMessage?.chatId) throw new Error('Cannot reroll a message without a persistent message id')
+        const branch = await storage.createChatBranch({
+            id: v4(),
+            chatId: activeChat.id,
             parentBranchId,
-            branchMessageId: activeChat.message[branchMessageIndex]?.chatId,
-            branchMessageIndex,
+            forkMessageId: forkMessage.chatId,
             reason: 'reroll',
+            createdAt: Date.now(),
         })
-        await messageStore.replaceMessages(activeChat.id, activeChat.message, previousMessages)
-        characterStore.markChatDirty(activeChat.id)
-        await characterStore.flush()
+        activeChat.activeBranchId = branch.id
+        activeChat.message.splice(branchMessageIndex + 1)
+        const absoluteLength = (activeChat.messageOffset ?? 0) + activeChat.message.length
+        activeChat.messageTotal = absoluteLength
+        activeChat.messagesFullyLoaded = (activeChat.messageOffset ?? 0) === 0
         return branch
+    }
+
+    async function resolveRerollAlternatives(
+        activeChat: ChatSession,
+        branchMessageIndex: number,
+    ) {
+        if(!activeChat.id) return null
+        if(activeChat.branchState){
+            throw new Error('Legacy branchState runtime fallback is disabled; migrate this chat to persistent branches first')
+        }
+        const storage = await getSqlBranchStorage()
+        const branches = await storage.listChatBranches(activeChat.id)
+        const forkMessageId = activeChat.message[branchMessageIndex]?.chatId
+        const activeId = activeChat.activeBranchId
+            ?? branches.find((branch) => branch.reason === 'root')?.id
+        const active = branches.find((branch) => branch.id === activeId)
+        if(!activeId || !active) return null
+        const sameFork = active.reason === 'reroll'
+            && (!active.forkMessageId || !forkMessageId || active.forkMessageId === forkMessageId)
+        const parentBranchId = sameFork
+            ? (active.parentBranchId ?? active.id)
+            : active.id
+        const siblings = branches
+            .filter((branch) => branch.reason === 'reroll'
+                && branch.parentBranchId === parentBranchId
+                && (!forkMessageId || !branch.forkMessageId || branch.forkMessageId === forkMessageId))
+            .sort((a, b) => a.createdAt - b.createdAt)
+        const branchIds = [
+            parentBranchId,
+            ...siblings.map((branch) => branch.id).filter((id) => id !== parentBranchId),
+        ]
+        return {
+            parentBranchId,
+            branchIds,
+            currentIndex: Math.max(0, branchIds.indexOf(activeId)),
+        }
     }
 
     async function reroll(targetMessageIndex?: number) {
         const selectedChar = selectedCharacterIndex
         const currentChatPage = selectedChatIndex
-        await preLoadChat(selectedChar, currentChatPage, { full: true })
         if(currentChatGenerating) return
 
         const activeChat = characterStore.characters[selectedChar]?.chats?.[currentChatPage]
@@ -445,8 +500,7 @@
         if(!target) return
         const { branchMessageIndex, responseMessageIndex } = target
 
-        ensureChatBranchState(activeChat, branchMessageIndex)
-        const alternatives = getRerollAlternatives(activeChat, branchMessageIndex)
+        const alternatives = await resolveRerollAlternatives(activeChat, branchMessageIndex)
         if(!alternatives) return
         if(alternatives.currentIndex < alternatives.branchIds.length - 1){
             await persistBranchSwitch(activeChat, alternatives.branchIds[alternatives.currentIndex + 1])
@@ -481,15 +535,14 @@
     async function unReroll(targetMessageIndex?: number) {
         const selectedChar = selectedCharacterIndex
         const currentChatPage = selectedChatIndex
-        await preLoadChat(selectedChar, currentChatPage, { full: true })
         if(currentChatGenerating) return
 
         const activeChat = characterStore.characters[selectedChar]?.chats?.[currentChatPage]
-        if(!activeChat?.branchState) return
+        if(!activeChat) return
         const target = resolveRerollTarget(activeChat.message, targetMessageIndex)
         if(!target) return
 
-        const alternatives = getRerollAlternatives(activeChat, target.branchMessageIndex)
+        const alternatives = await resolveRerollAlternatives(activeChat, target.branchMessageIndex)
         if(!alternatives || alternatives.currentIndex <= 0) return
         await persistBranchSwitch(activeChat, alternatives.branchIds[alternatives.currentIndex - 1])
     }

@@ -84,7 +84,15 @@ describe("message SQL core/extension split", () => {
     await applySqliteCommit(commit, async (sql, bind = []) => {
       statements.push({ sql, bind });
     });
-    expect(statements).toHaveLength(1);
-    expect(statements[0].sql).toContain("INSERT INTO messages");
+    expect(
+      statements.filter((statement) =>
+        statement.sql.includes("INSERT INTO messages"),
+      ),
+    ).toHaveLength(1);
+    expect(
+      statements.some((statement) =>
+        statement.sql.includes("message_extension_nodes"),
+      ),
+    ).toBe(false);
   });
 });

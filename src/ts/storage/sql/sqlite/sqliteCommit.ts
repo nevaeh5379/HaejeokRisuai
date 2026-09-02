@@ -205,7 +205,7 @@ function countCharacterTagStatements(value: unknown): number {
     Math.ceil(removed / CHARACTER_TAG_BATCH_SIZE);
 }
 
-function messageExtensionData(
+export function messageExtensionData(
   data: Record<string, any>,
   content: RelationalNodeRow,
 ): Record<string, unknown> {
@@ -414,7 +414,7 @@ export function countSqliteCommitStatements(commit: SqlCommit): number {
   total += commit.characterDeletes?.length ?? 0;
 
   for (const entry of commit.chats) {
-    total += 1 + countReplaceNodeStatements(entry.data, replacingEntities);
+    total += 3 + countReplaceNodeStatements(entry.data, replacingEntities);
   }
   total += commit.chatDeletes?.length ?? 0;
 
@@ -424,15 +424,15 @@ export function countSqliteCommitStatements(commit: SqlCommit): number {
       typeof data.data === "string" ? data.data : String(data.data ?? ""),
     )[0];
     const extension = messageExtensionData(data, content);
-    total += 1 + (
+    total += 3 + (
       Object.keys(extension).length === 0
         ? (replacingEntities ? 0 : 1)
         : countReplaceNodeStatements(extension, replacingEntities)
     );
   }
-  total += (commit.messageDeletes ?? []).filter(
-    (deletion) => deletion.ids.length > 0,
-  ).length;
+  for (const deletion of commit.messageDeletes ?? []) {
+    if (deletion.ids.length > 0) total += deletion.ids.length * 4 + 1;
+  }
 
   return total;
 }
@@ -487,6 +487,17 @@ export async function applySqliteCommit(
         data.lastDate ?? null,
       ],
     );
+    const rootBranchId = `${entry.id}:root`;
+    await execute(
+      `INSERT OR IGNORE INTO chat_branches
+          (chat_id, id, parent_branch_id, fork_message_id, head_message_id, reason, created_at)
+       VALUES (?, ?, NULL, NULL, NULL, 'root', 0)`,
+      [entry.id, rootBranchId],
+    );
+    await execute(
+      "INSERT OR IGNORE INTO chat_active_branches (chat_id, branch_id) VALUES (?, ?)",
+      [entry.id, rootBranchId],
+    );
     await replaceNodes(
       execute,
       "chat_extension_nodes",
@@ -526,6 +537,34 @@ export async function applySqliteCommit(
         data.generationInfo?.outputTokens ?? null,
       ],
     );
+    await execute(
+      `INSERT OR IGNORE INTO message_branch_links
+          (chat_id, message_id, parent_message_id, origin_branch_id)
+       SELECT ?, ?, branch.head_message_id, active.branch_id
+         FROM chat_active_branches active
+         JOIN chat_branches branch
+           ON branch.chat_id = active.chat_id AND branch.id = active.branch_id
+        WHERE active.chat_id = ?`,
+      [entry.chatId, entry.id, entry.chatId],
+    );
+    await execute(
+      `UPDATE chat_branches
+          SET head_message_id = ?
+        WHERE chat_id = ?
+          AND id = (SELECT branch_id FROM chat_active_branches WHERE chat_id = ?)
+          AND (head_message_id = ? OR head_message_id IS (
+                SELECT parent_message_id FROM message_branch_links
+                 WHERE chat_id = ? AND message_id = ?
+              ))`,
+      [
+        entry.id,
+        entry.chatId,
+        entry.chatId,
+        entry.id,
+        entry.chatId,
+        entry.id,
+      ],
+    );
     const extension = messageExtensionData(data, content);
     if (Object.keys(extension).length === 0) {
       if (!replacingEntities) {
@@ -547,6 +586,36 @@ export async function applySqliteCommit(
   }
   for (const deletion of commit.messageDeletes ?? [])
     if (deletion.ids.length) {
+      for (const messageId of deletion.ids) {
+        await execute(
+          `UPDATE message_branch_links
+              SET parent_message_id = (
+                SELECT removed.parent_message_id
+                  FROM message_branch_links removed
+                 WHERE removed.chat_id = ? AND removed.message_id = ?
+              )
+            WHERE chat_id = ? AND parent_message_id = ?`,
+          [deletion.chatId, messageId, deletion.chatId, messageId],
+        );
+        await execute(
+          `UPDATE chat_branches
+              SET head_message_id = (
+                SELECT removed.parent_message_id
+                  FROM message_branch_links removed
+                 WHERE removed.chat_id = ? AND removed.message_id = ?
+              )
+            WHERE chat_id = ? AND head_message_id = ?`,
+          [deletion.chatId, messageId, deletion.chatId, messageId],
+        );
+        await execute(
+          "UPDATE chat_branches SET fork_message_id = NULL WHERE chat_id = ? AND fork_message_id = ?",
+          [deletion.chatId, messageId],
+        );
+        await execute(
+          "DELETE FROM message_branch_links WHERE chat_id = ? AND message_id = ?",
+          [deletion.chatId, messageId],
+        );
+      }
       await execute(
         `DELETE FROM messages WHERE chat_id = ? AND id IN (${deletion.ids.map(() => "?").join(",")})`,
         [deletion.chatId, ...deletion.ids],

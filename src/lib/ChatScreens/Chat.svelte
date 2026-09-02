@@ -1,7 +1,6 @@
 <script lang="ts">
     import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, DownloadIcon, FileText, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors } from "@lucide/svelte"
     import { aiLawApplies, changeChatTo, foldChatToMessage, getFileSrc } from "src/ts/globalApi.svelte"
-    import { createChatTimelineBranch, createEditedMessageBranch } from "src/ts/chatBranches"
     import { chatTargetFromIndexes, requireChatTargetFromIndexes, type ChatExecutionTarget } from "src/ts/chatTarget"
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme"
     import { longpress } from "src/ts/gui/longtouch"
@@ -24,6 +23,7 @@
     import PartialEditController from './PartialEditController.svelte';
     import { preLoadChat } from "../../ts/process/coldstorage.svelte"
     import { openLogExporterFrom, openLogExporterSingle } from "src/ts/logexporter/index"
+    import { getSqlBranchStorage } from "src/ts/storage/sql/sqlStorageFactory"
 
     let translating = $state(false)
     let editMode = $state(false)
@@ -135,7 +135,9 @@
     }
 
     async function rerollAtCurrentMessage(direction: 'previous'|'next') {
-        const targetIndex = firstMessage ? idx : await ensureFullMessageIndex()
+        // Reroll is keyed by the visible message ID. Expanding a paged chat to
+        // its full history here made the button block for seconds on Android.
+        const targetIndex = idx
         if (direction === 'previous') {
             await unReroll(targetIndex)
         } else {
@@ -189,7 +191,7 @@
     }
 
     async function saveEditedMessage(newData: string, createBranch = false){
-        const targetIndex = await ensureFullMessageIndex()
+        const targetIndex = createBranch ? idx : await ensureFullMessageIndex()
         if (targetIndex < 0) return
         const char = characterStore.characters[targetCharacterIndex]
         const currentChat = char?.chats?.[targetChatIndex]
@@ -198,12 +200,36 @@
 
         if (createBranch) {
             currentChat.id ??= v4()
-            const previousMessages = $state.snapshot(currentChat.message)
-            const branch = createEditedMessageBranch(currentChat, targetIndex, newData)
-            if (!branch) return
-            await messageStore.replaceMessages(currentChat.id, currentChat.message, previousMessages)
-            characterStore.markChatDirty(currentChat.id)
-            await characterStore.flush()
+            if(currentChat.branchState){
+                throw new Error('Legacy branchState runtime fallback is disabled; migrate this chat to persistent branches first')
+            }
+            const storage = await getSqlBranchStorage()
+            const branches = await storage.listChatBranches(currentChat.id)
+            const parentBranchId = currentChat.activeBranchId
+                ?? branches.find((branch) => branch.reason === 'root')?.id
+            const forkMessageId = currentChat.message[targetIndex - 1]?.chatId
+            const branch = await storage.createChatBranch({
+                id: v4(),
+                chatId: currentChat.id,
+                parentBranchId,
+                forkMessageId,
+                reason: 'manual',
+                createdAt: Date.now(),
+            })
+            const editedMessage = {
+                ...$state.snapshot(currentMessage),
+                chatId: v4(),
+                data: newData,
+            }
+            currentChat.activeBranchId = branch.id
+            currentChat.message.splice(
+                targetIndex,
+                currentChat.message.length - targetIndex,
+                editedMessage,
+            )
+            currentChat.messageTotal = (currentChat.messageOffset ?? 0) + currentChat.message.length
+            currentChat.messagesFullyLoaded = (currentChat.messageOffset ?? 0) === 0
+            await messageStore.appendMessage(currentChat.id, editedMessage)
             return
         }
 
@@ -1002,22 +1028,33 @@
 
     <button class="flex items-center hover:text-blue-500 transition-colors" onclick={async () => {
         await sleep(1)
-        const targetIndex = await ensureFullMessageIndex()
+        const targetIndex = idx
         if (targetIndex < 0) return
         const char = characterStore.characters[targetCharacterIndex]
         const currentChat = char.chats[targetChatIndex]
 
         currentChat.id ??= v4()
-        const previousMessages = $state.snapshot(currentChat.message)
         const currentMessage = currentChat.message[targetIndex]
-        createChatTimelineBranch(currentChat, {
-            branchMessageId: currentMessage.chatId,
-            branchMessageIndex: targetIndex,
+        if(!currentMessage?.chatId) throw new Error('Cannot branch a message without a persistent message id')
+        if(currentChat.branchState){
+            throw new Error('Legacy branchState runtime fallback is disabled; migrate this chat to persistent branches first')
+        }
+        const storage = await getSqlBranchStorage()
+        const branches = await storage.listChatBranches(currentChat.id)
+        const parentBranchId = currentChat.activeBranchId
+            ?? branches.find((branch) => branch.reason === 'root')?.id
+        const branch = await storage.createChatBranch({
+            id: v4(),
+            chatId: currentChat.id,
+            parentBranchId,
+            forkMessageId: currentMessage.chatId,
             reason: 'manual',
+            createdAt: Date.now(),
         })
-        await messageStore.replaceMessages(currentChat.id, currentChat.message, previousMessages)
-        characterStore.markChatDirty(currentChat.id)
-        await characterStore.flush()
+        currentChat.activeBranchId = branch.id
+        currentChat.message.splice(targetIndex + 1)
+        currentChat.messageTotal = (currentChat.messageOffset ?? 0) + currentChat.message.length
+        currentChat.messagesFullyLoaded = (currentChat.messageOffset ?? 0) === 0
     }}>
         <SplitIcon size={20}/>
         {#if showNames}

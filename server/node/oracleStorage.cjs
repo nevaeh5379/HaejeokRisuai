@@ -17,6 +17,7 @@
 
 const oracledb = require('oracledb');
 const crypto = require('crypto');
+const { buildLegacyBranchMigrationPlan } = require('../../packages/protocol/legacyBranchMigration.cjs');
 const fs = require('fs/promises');
 const fsSync = require('fs');
 const path = require('path');
@@ -160,6 +161,7 @@ const AUDITED_TABLES_QUALIFIED = [
     'character.lore_entries', 'chat.chats', 'chat.attributes',
     'chat.suggestions', 'chat.modules', 'chat.script_state',
     'chat.bookmarks', 'chat.memory', 'chat.lore_entries', 'chat.messages',
+    'chat.branches', 'chat.active_branches', 'chat.message_branch_links',
     'chat.message_attributes', 'chat.message_generation', 'chat.message_prompt_info',
     'chat.message_prompt_toggles', 'chat.message_prompt_items', 'cold.archives',
     'cold.archive_attributes', 'cold.field_presence', 'cold.character_tags',
@@ -717,6 +719,7 @@ class OracleStorage extends SqlStorageBase {
             } else {
                 console.log('[Oracle startup] 5/8 and 6/8 existing storage schema is current; schema apply skipped.');
             }
+            await this.runStartupStep('6b/8 ensure persistent chat branch schema', () => this.ensureBranchSchema(testConn));
             await this.runStartupStep('7/8 ensure asset catalog schema', () => this.ensureAssetCatalogSchema(testConn));
             await testConn.close();
 
@@ -740,6 +743,43 @@ class OracleStorage extends SqlStorageBase {
             try { await pool.close(0); } catch (e) {}
             throw error;
         }
+    }
+
+    async ensureBranchSchema(connection) {
+        const statements = [
+            `CREATE TABLE chat_branches (
+                chat_id VARCHAR2(4000) NOT NULL REFERENCES chat_chats(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+                id VARCHAR2(4000) NOT NULL,
+                parent_branch_id VARCHAR2(4000), fork_message_id VARCHAR2(4000), head_message_id VARCHAR2(4000),
+                reason VARCHAR2(32) NOT NULL CHECK (reason IN ('root', 'manual', 'reroll')),
+                created_at NUMBER NOT NULL,
+                PRIMARY KEY (chat_id, id),
+                FOREIGN KEY (chat_id, parent_branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+                FOREIGN KEY (chat_id, fork_message_id) REFERENCES chat_messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED,
+                FOREIGN KEY (chat_id, head_message_id) REFERENCES chat_messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED)`,
+            `CREATE INDEX branches_parent_idx ON chat_branches (chat_id, parent_branch_id, created_at)`,
+            `CREATE TABLE chat_active_branches (
+                chat_id VARCHAR2(4000) PRIMARY KEY REFERENCES chat_chats(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+                branch_id VARCHAR2(4000) NOT NULL,
+                FOREIGN KEY (chat_id, branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED)`,
+            `CREATE TABLE chat_message_branch_links (
+                chat_id VARCHAR2(4000) NOT NULL,
+                message_id VARCHAR2(4000) NOT NULL, parent_message_id VARCHAR2(4000), origin_branch_id VARCHAR2(4000) NOT NULL,
+                PRIMARY KEY (chat_id, message_id),
+                FOREIGN KEY (chat_id, message_id) REFERENCES chat_messages(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+                FOREIGN KEY (chat_id, parent_message_id) REFERENCES chat_messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED,
+                FOREIGN KEY (chat_id, origin_branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED)`,
+            `CREATE INDEX message_branch_parent_idx ON chat_message_branch_links (chat_id, parent_message_id)`,
+            `CREATE INDEX message_branch_origin_idx ON chat_message_branch_links (chat_id, origin_branch_id)`,
+        ];
+        for (const statement of statements) {
+            try {
+                await connection.execute(statement);
+            } catch (error) {
+                if (!String(error?.message || '').includes('ORA-00955')) throw error;
+            }
+        }
+        await connection.commit();
     }
 
     async ensureAssetCatalogSchema(connection) {
@@ -1536,20 +1576,411 @@ class OracleStorage extends SqlStorageBase {
         }
     }
 
-    async loadChat(chatId) {
+    async _loadLinearMessagesForBranchMigration(conn, chatId) {
+        const [messages, attributes, generations, promptInfos, promptToggles, promptItems] = await Promise.all([
+            fetchRows(conn, `SELECT * FROM chat_messages WHERE chat_id = :1 ORDER BY position, id`, [chatId], { clobColumns: ['content_text'], blobColumns: ['content_binary'] }),
+            fetchRows(conn, `SELECT * FROM chat_message_attributes WHERE chat_id = :1 ORDER BY message_id, key_value`, [chatId]),
+            fetchRows(conn, `SELECT * FROM chat_message_generation WHERE chat_id = :1`, [chatId]),
+            fetchRows(conn, `SELECT * FROM chat_message_prompt_info WHERE chat_id = :1`, [chatId]),
+            fetchRows(conn, `SELECT * FROM chat_message_prompt_toggles WHERE chat_id = :1 ORDER BY message_id, position`, [chatId], { clobColumns: ['toggle_value'] }),
+            fetchRows(conn, `SELECT * FROM chat_message_prompt_items WHERE chat_id = :1 ORDER BY message_id, position`, [chatId]),
+        ]);
+        const relations = {
+            attributes: groupMessageRows(attributes),
+            generation: new Map(generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+            promptInfo: new Map(promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+            promptToggles: groupMessageRows(promptToggles),
+            promptItems: groupMessageRows(promptItems),
+        };
+        return messages.map((row) => {
+            const key = `${row.chat_id}\0${row.id}`;
+            return rebuildMessage(row, {
+                attributes: relations.attributes.get(key),
+                generation: relations.generation.get(key),
+                promptInfo: relations.promptInfo.get(key),
+                promptToggles: relations.promptToggles.get(key),
+                promptItems: relations.promptItems.get(key),
+            });
+        });
+    }
+
+    async _upsertMessagesForBranchMigration(conn, splitMessages) {
+        if (splitMessages.length === 0) return;
+        const messageColumns = ['chat_id', 'id', 'position', 'role', 'content_text', 'content_binary', 'saying_character_id', 'sent_time', 'sender_name', 'other_user', 'disabled_scope', 'is_comment'];
+        const updateCols = messageColumns.slice(2);
+        const upsertSql = `BEGIN
+            UPDATE chat_messages SET
+                ${updateCols.map((column) => `${column.toUpperCase()} = :${column}`).join(', ')},
+                updated_at = SYSTIMESTAMP
+            WHERE chat_id = :chat_id AND id = :id;
+            IF SQL%ROWCOUNT = 0 THEN
+                INSERT INTO chat_messages (${messageColumns.map((column) => column.toUpperCase()).join(', ')})
+                VALUES (${messageColumns.map((column) => `:${column}`).join(', ')});
+            END IF;
+        END;`;
+        const bindDefs = {};
+        for (const column of messageColumns) {
+            const type = this._getColumnBindType('chat_messages', column);
+            bindDefs[column] = type === oracledb.DB_TYPE_VARCHAR ? { type, maxSize: 4000 } : { type };
+        }
+        const binds = splitMessages.map((item) => {
+            const row = {};
+            for (const column of messageColumns) {
+                const type = this._getColumnBindType('chat_messages', column);
+                row[column] = this._formatBindValue(item.core[column], type, false);
+            }
+            return row;
+        });
+        await conn.executeMany(upsertSql, binds, { bindDefs });
+    }
+
+    async migrateLegacyBranchState(conn, chatId) {
+        const legacyRow = await fetchOne(conn, `
+            SELECT
+                (SELECT COUNT(*) FROM chat_branches WHERE chat_id = :1) AS branch_count,
+                (SELECT value FROM chat_attributes WHERE chat_id = :1 AND key_value = 'branchState') AS branch_state
+              FROM dual
+        `, [chatId]);
+        if (!legacyRow || Number(legacyRow.branch_count ?? 0) > 1 || legacyRow.branch_state == null) return false;
+        let branchState = legacyRow.branch_state;
+        if (typeof branchState === 'string') {
+            try { branchState = JSON.parse(branchState); } catch {}
+        }
+        branchState = decodePostgresJsonValue(branchState);
+        if (!Array.isArray(branchState?.branches) || branchState.branches.length <= 1) return false;
+        const messages = await this._loadLinearMessagesForBranchMigration(conn, chatId);
+        const plan = buildLegacyBranchMigrationPlan({ id: chatId, message: messages, branchState }, () => crypto.randomUUID());
+        if (!plan) return false;
+
+        await conn.execute(`DELETE FROM chat_active_branches WHERE chat_id = :1`, [chatId]);
+        await conn.execute(`DELETE FROM chat_message_branch_links WHERE chat_id = :1`, [chatId]);
+        await conn.execute(`DELETE FROM chat_branches WHERE chat_id = :1`, [chatId]);
+
+        const splitMessages = plan.messages.map((message) => splitMessage({
+            chatId,
+            id: message.id,
+            position: message.position,
+            data: message.data,
+        }));
+        await deleteMessageChildren(conn, plan.messages.map((message) => ({ chatId, id: message.id })));
+        await this._upsertMessagesForBranchMigration(conn, splitMessages);
+        await this._bulkInsertRows(conn, 'chat_message_attributes', ['chat_id', 'message_id', 'key_value', 'value'],
+            splitMessages.flatMap((item) => item.attributes.map((row) => ({ chat_id: chatId, message_id: item.core.id, key_value: row.key, value: row.value }))));
+        await this._bulkInsertRows(conn, 'chat_message_generation', ['chat_id', 'message_id', 'model', 'generation_id', 'input_tokens', 'output_tokens', 'max_context', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time'],
+            splitMessages.flatMap((item) => item.generation ? [{ ...item.generation, chat_id: chatId, message_id: item.core.id }] : []));
+        await this._bulkInsertRows(conn, 'chat_message_prompt_info', ['chat_id', 'message_id', 'prompt_name'],
+            splitMessages.flatMap((item) => item.prompt?.info ? [{ ...item.prompt.info, chat_id: chatId, message_id: item.core.id }] : []));
+        await this._bulkInsertRows(conn, 'chat_message_prompt_toggles', ['chat_id', 'message_id', 'position', 'toggle_key', 'toggle_value'],
+            splitMessages.flatMap((item) => (item.prompt?.toggles || []).map((row) => ({ ...row, chat_id: chatId, message_id: item.core.id }))));
+        await this._bulkInsertRows(conn, 'chat_message_prompt_items', ['chat_id', 'message_id', 'position', 'payload'],
+            splitMessages.flatMap((item) => (item.prompt?.items || []).map((row) => ({ ...row, chat_id: chatId, message_id: item.core.id }))));
+
+        await this._bulkInsertRows(conn, 'chat_branches', ['chat_id', 'id', 'parent_branch_id', 'fork_message_id', 'head_message_id', 'reason', 'created_at'],
+            plan.branches.map((branch) => ({
+                chat_id: chatId, id: branch.id, parent_branch_id: branch.parentBranchId ?? null,
+                fork_message_id: branch.forkMessageId ?? null, head_message_id: branch.headMessageId ?? null,
+                reason: branch.reason, created_at: branch.createdAt,
+            })));
+        await this._bulkInsertRows(conn, 'chat_message_branch_links', ['chat_id', 'message_id', 'parent_message_id', 'origin_branch_id'],
+            plan.links.map((link) => ({ chat_id: chatId, message_id: link.messageId, parent_message_id: link.parentMessageId ?? null, origin_branch_id: link.originBranchId })));
+        await conn.execute(
+            `INSERT INTO chat_active_branches (chat_id, branch_id) VALUES (:1, :2)`,
+            [chatId, plan.activeBranchId]
+        );
+        return true;
+    }
+
+    async ensureChatBranchGraphs(conn, chatIds) {
+        const ids = [...new Set((chatIds || []).filter(Boolean))];
+        if (ids.length === 0) return;
+        const idsJson = JSON.stringify(ids);
+        await conn.execute(`
+            MERGE INTO chat_branches target
+            USING (
+                SELECT chats.id AS chat_id,
+                       chats.id || ':root' AS id,
+                       (SELECT id FROM chat_messages
+                         WHERE chat_id = chats.id
+                         ORDER BY position DESC, id DESC FETCH FIRST 1 ROW ONLY) AS head_message_id
+                  FROM chat_chats chats
+                  JOIN JSON_TABLE(:idsJson, '$[*]' COLUMNS (id VARCHAR2(4000) PATH '$')) ids
+                    ON ids.id = chats.id
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM chat_branches existing WHERE existing.chat_id = chats.id
+                 )
+            ) source
+            ON (target.chat_id = source.chat_id AND target.id = source.id)
+            WHEN NOT MATCHED THEN INSERT
+                (chat_id, id, parent_branch_id, fork_message_id, head_message_id, reason, created_at)
+            VALUES
+                (source.chat_id, source.id, NULL, NULL, source.head_message_id, 'root', 0)
+        `, { idsJson });
+        await conn.execute(`
+            MERGE INTO chat_message_branch_links target
+            USING (
+                SELECT ordered.chat_id,
+                       ordered.id AS message_id,
+                       ordered.parent_message_id,
+                       ordered.chat_id || ':root' AS origin_branch_id
+                  FROM (
+                      SELECT messages.chat_id, messages.id,
+                             LAG(messages.id) OVER (PARTITION BY messages.chat_id ORDER BY messages.position, messages.id) AS parent_message_id
+                        FROM chat_messages messages
+                        JOIN JSON_TABLE(:idsJson, '$[*]' COLUMNS (id VARCHAR2(4000) PATH '$')) ids
+                          ON ids.id = messages.chat_id
+                       WHERE NOT EXISTS (
+                           SELECT 1 FROM chat_active_branches active WHERE active.chat_id = messages.chat_id
+                       )
+                         AND (SELECT COUNT(*) FROM chat_branches branches WHERE branches.chat_id = messages.chat_id) = 1
+                         AND EXISTS (
+                             SELECT 1 FROM chat_branches root
+                              WHERE root.chat_id = messages.chat_id AND root.id = messages.chat_id || ':root'
+                         )
+                  ) ordered
+            ) source
+            ON (target.chat_id = source.chat_id AND target.message_id = source.message_id)
+            WHEN NOT MATCHED THEN INSERT
+                (chat_id, message_id, parent_message_id, origin_branch_id)
+            VALUES
+                (source.chat_id, source.message_id, source.parent_message_id, source.origin_branch_id)
+        `, { idsJson });
+        await conn.execute(`
+            MERGE INTO chat_active_branches target
+            USING (
+                SELECT chats.id AS chat_id, chats.id || ':root' AS branch_id
+                  FROM chat_chats chats
+                  JOIN JSON_TABLE(:idsJson, '$[*]' COLUMNS (id VARCHAR2(4000) PATH '$')) ids
+                    ON ids.id = chats.id
+                 WHERE (SELECT COUNT(*) FROM chat_branches branches WHERE branches.chat_id = chats.id) = 1
+                   AND EXISTS (
+                       SELECT 1 FROM chat_branches root
+                        WHERE root.chat_id = chats.id AND root.id = chats.id || ':root'
+                   )
+            ) source
+            ON (target.chat_id = source.chat_id)
+            WHEN NOT MATCHED THEN INSERT (chat_id, branch_id)
+            VALUES (source.chat_id, source.branch_id)
+        `, { idsJson });
+    }
+
+    async ensureChatBranchGraph(conn, chatId) {
+        await this.migrateLegacyBranchState(conn, chatId);
+        let active = await this._activeBranchId(conn, chatId);
+        if (active) return active;
+        await this.ensureChatBranchGraphs(conn, [chatId]);
+        active = await this._activeBranchId(conn, chatId);
+        return active;
+    }
+
+    async linkIncomingMessagesToActiveBranches(conn, splitMessages) {
+        if (!splitMessages || splitMessages.length === 0) return;
+        const incoming = splitMessages.map((item) => ({
+            chat_id: item.core.chat_id,
+            message_id: item.core.id,
+            position: item.core.position,
+        }));
+        const incomingJson = JSON.stringify(incoming);
+        const unlinked = await fetchRows(conn, `
+            SELECT incoming.chat_id, incoming.message_id, incoming.position, active.branch_id
+              FROM JSON_TABLE(:incomingJson, '$[*]' COLUMNS (
+                       chat_id VARCHAR2(4000) PATH '$.chat_id',
+                       message_id VARCHAR2(4000) PATH '$.message_id',
+                       position NUMBER PATH '$.position'
+                   )) incoming
+              JOIN chat_active_branches active ON active.chat_id = incoming.chat_id
+              LEFT JOIN chat_message_branch_links links
+                ON links.chat_id = incoming.chat_id AND links.message_id = incoming.message_id
+             WHERE links.message_id IS NULL
+             ORDER BY incoming.chat_id, incoming.position, incoming.message_id
+        `, { incomingJson });
+        if (unlinked.length === 0) return;
+        const unlinkedJson = JSON.stringify(unlinked.map((row) => ({
+            chat_id: row.chat_id,
+            message_id: row.message_id,
+            position: Number(row.position) || 0,
+        })));
+        await conn.execute(`
+            MERGE INTO chat_message_branch_links target
+            USING (
+                SELECT ordered.chat_id,
+                       ordered.message_id,
+                       COALESCE(ordered.previous_incoming_id, branch.head_message_id) AS parent_message_id,
+                       active.branch_id AS origin_branch_id
+                  FROM (
+                      SELECT incoming.*,
+                             LAG(message_id) OVER (PARTITION BY chat_id ORDER BY position, message_id) AS previous_incoming_id
+                        FROM JSON_TABLE(:unlinkedJson, '$[*]' COLUMNS (
+                                 chat_id VARCHAR2(4000) PATH '$.chat_id',
+                                 message_id VARCHAR2(4000) PATH '$.message_id',
+                                 position NUMBER PATH '$.position'
+                             )) incoming
+                  ) ordered
+                  JOIN chat_active_branches active ON active.chat_id = ordered.chat_id
+                  JOIN chat_branches branch ON branch.chat_id = active.chat_id AND branch.id = active.branch_id
+            ) source
+            ON (target.chat_id = source.chat_id AND target.message_id = source.message_id)
+            WHEN NOT MATCHED THEN INSERT
+                (chat_id, message_id, parent_message_id, origin_branch_id)
+            VALUES
+                (source.chat_id, source.message_id, source.parent_message_id, source.origin_branch_id)
+        `, { unlinkedJson });
+        const heads = new Map();
+        for (const row of unlinked) {
+            const key = `${row.chat_id}\0${row.branch_id}`;
+            const position = Number(row.position) || 0;
+            const previous = heads.get(key);
+            if (!previous || position >= previous.position) {
+                heads.set(key, { chatId: row.chat_id, branchId: row.branch_id, messageId: row.message_id, position });
+            }
+        }
+        for (const head of heads.values()) {
+            await conn.execute(
+                `UPDATE chat_branches SET head_message_id = :3 WHERE chat_id = :1 AND id = :2`,
+                [head.chatId, head.branchId, head.messageId]
+            );
+        }
+    }
+
+    async detachMessagesFromBranchGraph(conn, deletions) {
+        for (const deletion of deletions || []) {
+            for (const messageId of deletion.ids || []) {
+                await conn.execute(`
+                    UPDATE chat_message_branch_links child
+                       SET parent_message_id = (
+                           SELECT removed.parent_message_id
+                             FROM chat_message_branch_links removed
+                            WHERE removed.chat_id = :1 AND removed.message_id = :2
+                       )
+                     WHERE child.chat_id = :1 AND child.parent_message_id = :2
+                `, [deletion.chatId, messageId]);
+                await conn.execute(`
+                    UPDATE chat_branches branch
+                       SET head_message_id = (
+                           SELECT removed.parent_message_id
+                             FROM chat_message_branch_links removed
+                            WHERE removed.chat_id = :1 AND removed.message_id = :2
+                       )
+                     WHERE branch.chat_id = :1 AND branch.head_message_id = :2
+                `, [deletion.chatId, messageId]);
+                await conn.execute(
+                    `UPDATE chat_branches SET fork_message_id = NULL WHERE chat_id = :1 AND fork_message_id = :2`,
+                    [deletion.chatId, messageId]
+                );
+                await conn.execute(
+                    `DELETE FROM chat_message_branch_links WHERE chat_id = :1 AND message_id = :2`,
+                    [deletion.chatId, messageId]
+                );
+            }
+        }
+    }
+
+    async _activeBranchId(conn, chatId) {
+        const row = await fetchOne(conn, `SELECT branch_id FROM chat_active_branches WHERE chat_id = :1`, [chatId]);
+        return row?.branch_id ?? null;
+    }
+
+    async _loadBranchPage(conn, chatId, branchId, options = {}) {
+        const countRow = await fetchOne(conn, `
+            SELECT COUNT(*) AS total
+              FROM (
+                  SELECT links.message_id, LEVEL AS depth
+                    FROM chat_message_branch_links links
+                   WHERE links.chat_id = :chatId
+                   START WITH links.message_id = (
+                       SELECT head_message_id FROM chat_branches
+                        WHERE chat_id = :chatId AND id = :branchId
+                   )
+                 CONNECT BY NOCYCLE PRIOR links.parent_message_id = links.message_id
+                                    AND PRIOR links.chat_id = links.chat_id
+              )
+        `, { chatId, branchId });
+        const total = Number(countRow?.total ?? 0);
+        const end = options.before === undefined
+            ? total
+            : Math.max(0, Math.min(total, Math.floor(Number(options.before) || 0)));
+        const requestedLimit = options.limit === undefined
+            ? end
+            : Math.max(1, Math.floor(Number(options.limit) || 1));
+        const offset = Math.max(0, end - requestedLimit);
+        const pageSize = Math.max(0, end - offset);
+        if (pageSize === 0) return { messages: [], offset, total, hasMore: offset > 0 };
+        const messages = await fetchRows(conn, `
+            SELECT messages.*, path.depth
+              FROM (
+                  SELECT links.message_id, LEVEL AS depth
+                    FROM chat_message_branch_links links
+                   WHERE links.chat_id = :chatId
+                   START WITH links.message_id = (
+                       SELECT head_message_id FROM chat_branches
+                        WHERE chat_id = :chatId AND id = :branchId
+                   )
+                 CONNECT BY NOCYCLE PRIOR links.parent_message_id = links.message_id
+                                    AND PRIOR links.chat_id = links.chat_id
+              ) path
+              JOIN chat_messages messages
+                ON messages.chat_id = :chatId AND messages.id = path.message_id
+             ORDER BY path.depth DESC
+             OFFSET :branchOffset ROWS FETCH NEXT :branchPageSize ROWS ONLY
+        `, { chatId, branchId, branchOffset: offset, branchPageSize: pageSize }, {
+            clobColumns: ['content_text'], blobColumns: ['content_binary'],
+        });
+        const ids = messages.map((row) => row.id);
+        if (ids.length === 0) return { messages: [], offset, total, hasMore: offset > 0 };
+        const idsJson = JSON.stringify(ids);
+        const relationJoin = `JOIN JSON_TABLE(:idsJson, '$[*]' COLUMNS (id VARCHAR2(4000) PATH '$')) ids ON ids.id = source.message_id`;
+        let attributes = [];
+        let generations = [];
+        let promptInfos = [];
+        let promptToggles = [];
+        let promptItems = [];
+        if (options.mode === 'graph') {
+            generations = await fetchRows(conn, `SELECT source.* FROM chat_message_generation source ${relationJoin} WHERE source.chat_id = :chatId`, { idsJson, chatId });
+        } else {
+            attributes = await fetchRows(conn, `SELECT source.* FROM chat_message_attributes source ${relationJoin} WHERE source.chat_id = :chatId ORDER BY source.message_id, source.key_value`, { idsJson, chatId });
+            if (options.mode !== 'generation') {
+                [generations, promptInfos, promptToggles, promptItems] = await Promise.all([
+                    fetchRows(conn, `SELECT source.* FROM chat_message_generation source ${relationJoin} WHERE source.chat_id = :chatId`, { idsJson, chatId }),
+                    fetchRows(conn, `SELECT source.* FROM chat_message_prompt_info source ${relationJoin} WHERE source.chat_id = :chatId`, { idsJson, chatId }),
+                    fetchRows(conn, `SELECT source.* FROM chat_message_prompt_toggles source ${relationJoin} WHERE source.chat_id = :chatId ORDER BY source.message_id, source.position`, { idsJson, chatId }, { clobColumns: ['toggle_value'] }),
+                    fetchRows(conn, `SELECT source.* FROM chat_message_prompt_items source ${relationJoin} WHERE source.chat_id = :chatId ORDER BY source.message_id, source.position`, { idsJson, chatId }),
+                ]);
+            }
+        }
+        const relations = {
+            attributes: groupMessageRows(attributes),
+            generation: new Map(generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+            promptInfo: new Map(promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+            promptToggles: groupMessageRows(promptToggles),
+            promptItems: groupMessageRows(promptItems),
+        };
+        const rebuilt = messages.map((row) => {
+            const key = `${row.chat_id}\0${row.id}`;
+            return rebuildMessage(row, {
+                attributes: relations.attributes.get(key),
+                generation: relations.generation.get(key),
+                promptInfo: relations.promptInfo.get(key),
+                promptToggles: relations.promptToggles.get(key),
+                promptItems: relations.promptItems.get(key),
+            });
+        });
+        return { messages: rebuilt, offset, total, hasMore: offset > 0 };
+    }
+
+    async loadChat(chatId, options = {}) {
         this.assertEnabled();
         assertId(chatId, 'chatId');
         const conn = await this.pool.getConnection();
         try {
-            await conn.execute('SET TRANSACTION READ ONLY');
+            await this.ensureChatBranchGraph(conn, chatId);
+            const activeBranchId = await this._activeBranchId(conn, chatId);
             const chatRow = await fetchOne(conn,
                 `SELECT * FROM chat_chats WHERE id = :1`, [chatId],
                 { clobColumns: ['note', 'sd_data', 'supa_memory_data', 'last_memory'] });
-            if (!chatRow) {
-                await conn.rollback();
+            if (!chatRow || !activeBranchId) {
+                await conn.commit();
                 return null;
             }
-            const [attributes, suggestions, modules, scriptState, bookmarks, memory, lore, messages, messageAttributes, generations, promptInfos, promptToggles, promptItems] = await Promise.all([
+            const [attributes, suggestions, modules, scriptState, bookmarks, memory, lore] = await Promise.all([
                 fetchRows(conn, `SELECT * FROM chat_attributes WHERE chat_id = :1 ORDER BY key_value`, [chatId]),
                 fetchRows(conn, `SELECT * FROM chat_suggestions WHERE chat_id = :1 ORDER BY position`, [chatId], { clobColumns: ['content'] }),
                 fetchRows(conn, `SELECT * FROM chat_modules WHERE chat_id = :1 ORDER BY position`, [chatId]),
@@ -1557,38 +1988,19 @@ class OracleStorage extends SqlStorageBase {
                 fetchRows(conn, `SELECT * FROM chat_bookmarks WHERE chat_id = :1 ORDER BY position`, [chatId]),
                 fetchRows(conn, `SELECT * FROM chat_memory WHERE chat_id = :1 ORDER BY memory_type`, [chatId]),
                 fetchRows(conn, `SELECT * FROM chat_lore_entries WHERE chat_id = :1 ORDER BY position`, [chatId], { clobColumns: ['comment_text', 'content', 'cache_payload'] }),
-                fetchRows(conn, `SELECT * FROM chat_messages WHERE chat_id = :1 ORDER BY position, id`, [chatId], { clobColumns: ['content_text'], blobColumns: ['content_binary'] }),
-                fetchRows(conn, `SELECT * FROM chat_message_attributes WHERE chat_id = :1 ORDER BY message_id, key_value`, [chatId]),
-                fetchRows(conn, `SELECT * FROM chat_message_generation WHERE chat_id = :1`, [chatId]),
-                fetchRows(conn, `SELECT * FROM chat_message_prompt_info WHERE chat_id = :1`, [chatId]),
-                fetchRows(conn, `SELECT * FROM chat_message_prompt_toggles WHERE chat_id = :1 ORDER BY message_id, position`, [chatId], { clobColumns: ['toggle_value'] }),
-                fetchRows(conn, `SELECT * FROM chat_message_prompt_items WHERE chat_id = :1 ORDER BY message_id, position`, [chatId]),
             ]);
-            const messageRelations = {
-                attributes: groupMessageRows(messageAttributes),
-                generation: new Map(generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
-                promptInfo: new Map(promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
-                promptToggles: groupMessageRows(promptToggles),
-                promptItems: groupMessageRows(promptItems),
-            };
-            const rebuiltMessages = [];
-            for (const row of messages) {
-                const key = `${row.chat_id}\0${row.id}`;
-                const related = {
-                    attributes: messageRelations.attributes.get(key),
-                    generation: messageRelations.generation.get(key),
-                    promptInfo: messageRelations.promptInfo.get(key),
-                    promptToggles: messageRelations.promptToggles.get(key),
-                    promptItems: messageRelations.promptItems.get(key),
-                };
-                rebuiltMessages.push(rebuildMessage(row, related));
-            }
+            const page = await this._loadBranchPage(conn, chatId, activeBranchId, { limit: options.messageLimit, mode: 'full' });
             const chat = rebuildChat(chatRow, {
-                attributes, suggestions, modules, scriptState, bookmarks, memory, lore, messages: rebuiltMessages,
+                attributes, suggestions, modules, scriptState, bookmarks, memory, lore, messages: page.messages,
             });
+            chat.activeBranchId = activeBranchId;
+            delete chat.branchState;
+            chat.messageOffset = page.offset;
+            chat.messageTotal = page.total;
+            chat.messagesFullyLoaded = !page.hasMore;
             chat.messagesLoaded = true;
             chat.detailsLoaded = true;
-            await conn.rollback();
+            await conn.commit();
             return chat;
         } catch (error) {
             try { await conn.rollback(); } catch (e) {}
@@ -1602,47 +2014,211 @@ class OracleStorage extends SqlStorageBase {
         this.assertEnabled();
         assertId(chatId, 'chatId');
         const conn = await this.pool.getConnection();
-        const includeMetadata = options.mode !== 'generation';
         try {
-            await conn.execute('SET TRANSACTION READ ONLY');
-            const queries = [
-                fetchRows(conn, `SELECT * FROM chat_messages WHERE chat_id = :1 ORDER BY position, id`, [chatId], { clobColumns: ['content_text'], blobColumns: ['content_binary'] }),
-                fetchRows(conn, `SELECT * FROM chat_message_attributes WHERE chat_id = :1 ORDER BY message_id, key_value`, [chatId]),
-            ];
-            if (includeMetadata) {
-                queries.push(
-                    fetchRows(conn, `SELECT * FROM chat_message_generation WHERE chat_id = :1`, [chatId]),
-                    fetchRows(conn, `SELECT * FROM chat_message_prompt_info WHERE chat_id = :1`, [chatId]),
-                    fetchRows(conn, `SELECT * FROM chat_message_prompt_toggles WHERE chat_id = :1 ORDER BY message_id, position`, [chatId], { clobColumns: ['toggle_value'] }),
-                    fetchRows(conn, `SELECT * FROM chat_message_prompt_items WHERE chat_id = :1 ORDER BY message_id, position`, [chatId]),
-                );
-            }
-            const results = await Promise.all(queries);
-            const messages = results[0];
-            const attributes = results[1];
-            const generations = results[2] ?? [];
-            const promptInfos = results[3] ?? [];
-            const promptToggles = results[4] ?? [];
-            const promptItems = results[5] ?? [];
-            const relations = {
-                attributes: groupMessageRows(attributes),
-                generation: new Map(generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
-                promptInfo: new Map(promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
-                promptToggles: groupMessageRows(promptToggles),
-                promptItems: groupMessageRows(promptItems),
-            };
-            const rebuilt = messages.map((row) => {
-                const key = `${row.chat_id}\0${row.id}`;
-                return rebuildMessage(row, {
-                    attributes: relations.attributes.get(key),
-                    generation: relations.generation.get(key),
-                    promptInfo: relations.promptInfo.get(key),
-                    promptToggles: relations.promptToggles.get(key),
-                    promptItems: relations.promptItems.get(key),
-                });
+            await this.ensureChatBranchGraph(conn, chatId);
+            const branchId = await this._activeBranchId(conn, chatId);
+            const messages = branchId
+                ? (await this._loadBranchPage(conn, chatId, branchId, { mode: options.mode })).messages
+                : [];
+            await conn.commit();
+            return messages;
+        } catch (error) {
+            try { await conn.rollback(); } catch (e) {}
+            throw error;
+        } finally {
+            try { await conn.close(); } catch (e) {}
+        }
+    }
+
+    async loadChatMessagePage(chatId, before, limit) {
+        this.assertEnabled();
+        assertId(chatId, 'chatId');
+        const conn = await this.pool.getConnection();
+        try {
+            await this.ensureChatBranchGraph(conn, chatId);
+            const branchId = await this._activeBranchId(conn, chatId);
+            const page = branchId
+                ? await this._loadBranchPage(conn, chatId, branchId, { before, limit, mode: 'full' })
+                : { messages: [], offset: 0, total: 0, hasMore: false };
+            await conn.commit();
+            return page;
+        } catch (error) {
+            try { await conn.rollback(); } catch (e) {}
+            throw error;
+        } finally {
+            try { await conn.close(); } catch (e) {}
+        }
+    }
+
+    async listChatBranches(chatId) {
+        this.assertEnabled();
+        assertId(chatId, 'chatId');
+        const conn = await this.pool.getConnection();
+        try {
+            await this.ensureChatBranchGraph(conn, chatId);
+            const rows = await fetchRows(conn, `
+                SELECT id, chat_id, parent_branch_id, fork_message_id, head_message_id, reason, created_at
+                  FROM chat_branches WHERE chat_id = :1 ORDER BY created_at, id
+            `, [chatId]);
+            await conn.commit();
+            return rows.map((row) => ({
+                id: row.id,
+                chatId: row.chat_id,
+                parentBranchId: row.parent_branch_id ?? undefined,
+                forkMessageId: row.fork_message_id ?? undefined,
+                headMessageId: row.head_message_id ?? undefined,
+                reason: row.reason,
+                createdAt: Number(row.created_at) || 0,
+            }));
+        } catch (error) {
+            try { await conn.rollback(); } catch (e) {}
+            throw error;
+        } finally {
+            try { await conn.close(); } catch (e) {}
+        }
+    }
+
+    async loadChatBranchGraph(chatId) {
+        this.assertEnabled();
+        assertId(chatId, 'chatId');
+        const conn = await this.pool.getConnection();
+        try {
+            await this.ensureChatBranchGraph(conn, chatId);
+            const branchesRows = await fetchRows(conn, `
+                SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
+                       branch.head_message_id, branch.reason, branch.created_at,
+                       active.branch_id AS active_branch_id
+                  FROM chat_branches branch
+             LEFT JOIN chat_active_branches active ON active.chat_id = branch.chat_id
+                 WHERE branch.chat_id = :graphChatId
+              ORDER BY branch.created_at, branch.id
+            `, { graphChatId: chatId });
+            const graphRows = await fetchRows(conn, `
+                SELECT messages.*, links.parent_message_id, links.origin_branch_id,
+                       generation.model AS graph_generation_model
+                  FROM chat_message_branch_links links
+                  JOIN chat_messages messages
+                    ON messages.chat_id = links.chat_id AND messages.id = links.message_id
+             LEFT JOIN chat_message_generation generation
+                    ON generation.chat_id = messages.chat_id AND generation.message_id = messages.id
+                 WHERE links.chat_id = :graphChatId
+              ORDER BY messages.position, messages.id
+            `, { graphChatId: chatId }, {
+                clobColumns: ['content_text'], blobColumns: ['content_binary'],
             });
-            await conn.rollback();
-            return rebuilt;
+            await conn.commit();
+            const branches = branchesRows.map((row) => ({
+                id: row.id,
+                chatId: row.chat_id,
+                parentBranchId: row.parent_branch_id ?? undefined,
+                forkMessageId: row.fork_message_id ?? undefined,
+                headMessageId: row.head_message_id ?? undefined,
+                reason: row.reason,
+                createdAt: Number(row.created_at) || 0,
+            }));
+            const messages = graphRows.map((row) => {
+                const message = rebuildMessage(row);
+                if (row.graph_generation_model != null) {
+                    message.generationInfo = { model: row.graph_generation_model };
+                }
+                return message;
+            });
+            const links = graphRows.map((row) => ({
+                messageId: row.id,
+                parentMessageId: row.parent_message_id ?? undefined,
+                originBranchId: row.origin_branch_id,
+            }));
+            return {
+                branches,
+                activeBranchId: branchesRows[0]?.active_branch_id ?? undefined,
+                messages,
+                links,
+            };
+        } catch (error) {
+            try { await conn.rollback(); } catch (e) {}
+            throw error;
+        } finally {
+            try { await conn.close(); } catch (e) {}
+        }
+    }
+
+    async loadBranchMessages(chatId, branchId, options = {}) {
+        this.assertEnabled();
+        assertId(chatId, 'chatId');
+        assertId(branchId, 'branchId');
+        const conn = await this.pool.getConnection();
+        try {
+            await this.ensureChatBranchGraph(conn, chatId);
+            const page = await this._loadBranchPage(conn, chatId, branchId, {
+                limit: options.messageLimit,
+                mode: options.mode,
+            });
+            await conn.commit();
+            return page.messages;
+        } catch (error) {
+            try { await conn.rollback(); } catch (e) {}
+            throw error;
+        } finally {
+            try { await conn.close(); } catch (e) {}
+        }
+    }
+
+    async createChatBranch(input) {
+        this.assertEnabled();
+        assertId(input?.chatId, 'chatId');
+        assertId(input?.id, 'branchId');
+        if (input?.parentBranchId) assertId(input.parentBranchId, 'parentBranchId');
+        if (input?.forkMessageId) assertId(input.forkMessageId, 'forkMessageId');
+        const chatId = input.chatId;
+        const branchId = input.id;
+        const parentInput = input.parentBranchId ?? null;
+        const forkMessageId = input.forkMessageId ?? null;
+        const reason = input?.reason;
+        if (!['root', 'manual', 'reroll'].includes(reason)) throw new StoragePayloadError('Invalid chat branch reason');
+        const createdAt = Number.isFinite(Number(input?.createdAt)) ? Math.trunc(Number(input.createdAt)) : Date.now();
+        const conn = await this.pool.getConnection();
+        try {
+            await this.ensureChatBranchGraph(conn, chatId);
+            const activeId = await this._activeBranchId(conn, chatId);
+            const parentBranchId = parentInput ?? activeId;
+            if (!parentBranchId) throw new StoragePayloadError('Chat branch root does not exist');
+            const parent = await fetchOne(conn, `SELECT 1 AS ok FROM chat_branches WHERE chat_id = :1 AND id = :2`, [chatId, parentBranchId]);
+            if (!parent) throw new StoragePayloadError('Parent chat branch does not exist');
+            await conn.execute(`
+                INSERT INTO chat_branches
+                    (chat_id, id, parent_branch_id, fork_message_id, head_message_id, reason, created_at)
+                VALUES (:1, :2, :3, :4, :4, :5, :6)
+            `, [chatId, branchId, parentBranchId, forkMessageId, reason, createdAt]);
+            await conn.execute(`UPDATE chat_active_branches SET branch_id = :2 WHERE chat_id = :1`, [chatId, branchId]);
+            await conn.commit();
+            return {
+                id: branchId,
+                chatId,
+                parentBranchId,
+                forkMessageId: forkMessageId ?? undefined,
+                headMessageId: forkMessageId ?? undefined,
+                reason,
+                createdAt,
+            };
+        } catch (error) {
+            try { await conn.rollback(); } catch (e) {}
+            throw error;
+        } finally {
+            try { await conn.close(); } catch (e) {}
+        }
+    }
+
+    async activateChatBranch(chatId, branchId) {
+        this.assertEnabled();
+        assertId(chatId, 'chatId');
+        assertId(branchId, 'branchId');
+        const conn = await this.pool.getConnection();
+        try {
+            await this.ensureChatBranchGraph(conn, chatId);
+            const exists = await fetchOne(conn, `SELECT 1 AS ok FROM chat_branches WHERE chat_id = :1 AND id = :2`, [chatId, branchId]);
+            if (!exists) throw new StoragePayloadError('Chat branch does not exist');
+            await conn.execute(`UPDATE chat_active_branches SET branch_id = :2 WHERE chat_id = :1`, [chatId, branchId]);
+            await conn.commit();
         } catch (error) {
             try { await conn.rollback(); } catch (e) {}
             throw error;
@@ -2165,11 +2741,37 @@ class OracleStorage extends SqlStorageBase {
             ];
             if (payload.messages.length > 0) {
                 await deleteMessageChildren(conn, payload.messages);
-                const delMsgSql = `DELETE FROM chat_messages WHERE chat_id = :1 AND id = :2`;
-                await conn.executeMany(delMsgSql, payload.messages.map((m) => [m.chatId, m.id]));
+                await this.ensureChatBranchGraphs(conn, splitMessages.map((item) => item.core.chat_id));
             }
             if (splitMessages.length > 0) {
-                await this._bulkInsertRows(conn, 'chat_messages', messageColumns, splitMessages.map((m) => m.core), onProgress);
+                const updateCols = messageColumns.slice(2);
+                const upsertSql = `BEGIN
+                    UPDATE chat_messages SET
+                        ${updateCols.map((column) => `${column.toUpperCase()} = :${column}`).join(', ')},
+                        updated_at = SYSTIMESTAMP
+                    WHERE chat_id = :chat_id AND id = :id;
+                    IF SQL%ROWCOUNT = 0 THEN
+                        INSERT INTO chat_messages (${messageColumns.map((column) => column.toUpperCase()).join(', ')})
+                        VALUES (${messageColumns.map((column) => `:${column}`).join(', ')});
+                    END IF;
+                END;`;
+                const bindDefs = {};
+                for (const column of messageColumns) {
+                    const type = this._getColumnBindType('chat_messages', column);
+                    bindDefs[column] = type === oracledb.DB_TYPE_VARCHAR
+                        ? { type, maxSize: 4000 }
+                        : { type };
+                }
+                const binds = splitMessages.map((item) => {
+                    const row = {};
+                    for (const column of messageColumns) {
+                        const type = this._getColumnBindType('chat_messages', column);
+                        row[column] = this._formatBindValue(item.core[column], type, false);
+                    }
+                    return row;
+                });
+                await conn.executeMany(upsertSql, binds, { bindDefs });
+                await this.linkIncomingMessagesToActiveBranches(conn, splitMessages);
             }
             onProgress?.({ stage: 'message_children', message: '메시지 메타데이터 및 프롬프트 토글 저장 중...', percent: 85 });
             await this._bulkInsertRows(conn, 'chat_message_attributes', ['chat_id', 'message_id', 'key_value', 'value'],
@@ -2193,6 +2795,7 @@ class OracleStorage extends SqlStorageBase {
                     payload.chatDeletes.map((id) => [id]));
             }
             if (payload.messageDeletes) {
+                await this.detachMessagesFromBranchGraph(conn, payload.messageDeletes);
                 for (const del of payload.messageDeletes) {
                     if (del.ids.length > 0) {
                         await conn.executeMany(`DELETE FROM chat_messages WHERE chat_id = :1 AND id = :2`,
@@ -2262,7 +2865,7 @@ class OracleStorage extends SqlStorageBase {
             'last_message_time', 'sent_time', 'is_comment', 'is_streaming', 'streaming_optimization_mode',
             'node_id', 'parent_node_id', 'bias', 'sd_model', 'use_sd', 'new_chat_on_start',
             'chat_page', 'utility_bot', 'is_private', 'creation_time', 'modification_time', 'last_interaction_time', 'trash_time',
-            'revision', 'schema_version', 'singleton', 'initialized'
+            'revision', 'schema_version', 'singleton', 'initialized', 'created_at'
         ]);
 
         if (numberCols.has(col) && !(mappedTable === 'character_scripts' && col === 'flag')) {

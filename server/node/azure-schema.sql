@@ -898,6 +898,50 @@ BEGIN
     CREATE INDEX messages_sent_time_idx ON [chat].[messages] (sent_time DESC);
 END;
 
+
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[chat].[branches]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE [chat].[branches] (
+        chat_id NVARCHAR(450) NOT NULL REFERENCES [chat].[chats](id) ON DELETE CASCADE,
+        id NVARCHAR(450) NOT NULL,
+        parent_branch_id NVARCHAR(450),
+        fork_message_id NVARCHAR(450),
+        head_message_id NVARCHAR(450),
+        reason NVARCHAR(32) NOT NULL CHECK (reason IN ('root', 'manual', 'reroll')),
+        created_at BIGINT NOT NULL,
+        PRIMARY KEY (chat_id, id),
+        FOREIGN KEY (chat_id, parent_branch_id) REFERENCES [chat].[branches](chat_id, id),
+        FOREIGN KEY (chat_id, fork_message_id) REFERENCES [chat].[messages](chat_id, id),
+        FOREIGN KEY (chat_id, head_message_id) REFERENCES [chat].[messages](chat_id, id)
+    );
+    CREATE INDEX branches_parent_idx ON [chat].[branches] (chat_id, parent_branch_id, created_at);
+END;
+
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[chat].[active_branches]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE [chat].[active_branches] (
+        chat_id NVARCHAR(450) NOT NULL PRIMARY KEY REFERENCES [chat].[chats](id) ON DELETE CASCADE,
+        branch_id NVARCHAR(450) NOT NULL,
+        FOREIGN KEY (chat_id, branch_id) REFERENCES [chat].[branches](chat_id, id)
+    );
+END;
+
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[chat].[message_branch_links]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE [chat].[message_branch_links] (
+        chat_id NVARCHAR(450) NOT NULL REFERENCES [chat].[chats](id) ON DELETE CASCADE,
+        message_id NVARCHAR(450) NOT NULL,
+        parent_message_id NVARCHAR(450),
+        origin_branch_id NVARCHAR(450) NOT NULL,
+        PRIMARY KEY (chat_id, message_id),
+        FOREIGN KEY (chat_id, message_id) REFERENCES [chat].[messages](chat_id, id),
+        FOREIGN KEY (chat_id, parent_message_id) REFERENCES [chat].[messages](chat_id, id),
+        FOREIGN KEY (chat_id, origin_branch_id) REFERENCES [chat].[branches](chat_id, id)
+    );
+    CREATE INDEX message_branch_parent_idx ON [chat].[message_branch_links] (chat_id, parent_message_id);
+    CREATE INDEX message_branch_origin_idx ON [chat].[message_branch_links] (chat_id, origin_branch_id);
+END;
+
 IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[chat].[message_attributes]') AND type in (N'U'))
 BEGIN
     CREATE TABLE [chat].[message_attributes] (
