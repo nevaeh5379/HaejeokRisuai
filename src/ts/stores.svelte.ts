@@ -91,7 +91,7 @@ export const loadedStore = writable(false);
 export const startupPhase = writable<
   "core-loading" | "shell-ready" | "chat-ready"
 >("core-loading");
-export const saving = $state({ state: false });
+export { saving } from "./storage/sql/saveActivity.svelte";
 export const AccountWarning = writable("");
 export const DynamicGUI = writable(false);
 export const sideBarClosing = writable(false);

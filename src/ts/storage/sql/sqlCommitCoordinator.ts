@@ -1,5 +1,6 @@
 import type { ISqlStorage } from "./ISqlStorage";
 import type { SqlCommit, SqlCommitResult } from "./sqlCommit";
+import { beginSave } from "./saveActivity.svelte";
 
 const storageQueues = new WeakMap<ISqlStorage, Promise<void>>();
 
@@ -23,6 +24,7 @@ export function commitSqlChanges(
   storage: ISqlStorage,
   commit: SqlCommit,
 ): Promise<SqlCommitResult> {
+  const finishSave = beginSave();
   const previous = storageQueues.get(storage) ?? Promise.resolve();
   const operation = previous.catch(() => undefined).then(async () => {
     const rebased = { ...commit, baseRevision: storage.getRevision() };
@@ -34,12 +36,13 @@ export function commitSqlChanges(
       return storage.commit({ ...rebased, baseRevision: currentRevision });
     }
   });
+  const trackedOperation = operation.finally(finishSave);
   storageQueues.set(
     storage,
-    operation.then(
+    trackedOperation.then(
       () => undefined,
       () => undefined,
     ),
   );
-  return operation;
+  return trackedOperation;
 }
