@@ -108,7 +108,7 @@ describePostgres('PostgreSQL structured storage integration', () => {
                     { key: 'optionalValue', value: null },
                     { key: 'sourceWithNul', value: { code: 'tool\0separator' } },
                     { key: 'translatorPresets', value: [{ name: 'Korean', prompt: 'Translate', maxResponse: 2048 }] },
-                    { key: 'globalChatVariables', value: { player: 'Jihoon' } },
+                    { key: 'globalChatVariables', value: { player: 'iris' } },
                     { key: 'botPresets', value: [{
                         name: 'SQL preset', apiType: 'openai', aiModel: 'model-sql',
                         mainPrompt: 'Main', jailbreak: '', globalNote: '', temperature: 0.8,
@@ -198,7 +198,7 @@ describePostgres('PostgreSQL structured storage integration', () => {
         expect(loaded.database?.translatorPresets).toEqual([
             { name: 'Korean', prompt: 'Translate', maxResponse: 2048 },
         ])
-        expect(loaded.database?.globalChatVariables).toEqual({ player: 'Jihoon' })
+        expect(loaded.database?.globalChatVariables).toEqual({ player: 'iris' })
         expect(loaded.database?.botPresets?.[0]?.aiModel).toBe('model-sql')
         expect(loaded.database?.personas?.[0]?.id).toBe('persona-sql')
         expect(loaded.database?.modules?.[0]?.mcp).toEqual({ url: 'https://mcp.test' })
@@ -275,7 +275,7 @@ describePostgres('PostgreSQL structured storage integration', () => {
                 upserts: [
                     { key: 'sourceWithNul', value: { code: 'tool\0separator' } },
                     { key: 'translatorPresets', value: [{ name: 'Korean', prompt: 'Translate', maxResponse: 2048 }] },
-                    { key: 'globalChatVariables', value: { player: 'Jihoon' } },
+                    { key: 'globalChatVariables', value: { player: 'iris' } },
                     { key: 'loreBook', value: [{
                         name: 'World',
                         data: [{
@@ -353,7 +353,7 @@ describePostgres('PostgreSQL structured storage integration', () => {
                     WHERE name = 'Korean' AND max_response = 2048) AS translator_presets,
                 (SELECT count(*)::int FROM system.string_map_settings
                     WHERE setting_key = 'globalChatVariables' AND key = 'player'
-                        AND value = 'Jihoon') AS global_variables,
+                        AND value = 'iris') AS global_variables,
                 (SELECT count(*)::int FROM system.global_lore_entries
                     WHERE primary_key = 'city' AND content = 'Queryable lore') AS global_lore,
                 (SELECT count(*)::int FROM system.bot_presets
