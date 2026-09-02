@@ -48,6 +48,48 @@ function persistedFieldsFingerprint(
   return snapshotFingerprint(persisted);
 }
 
+function mergeVariableRecord<T extends Record<string, unknown>>(
+  loaded: T | undefined,
+  current: T | undefined,
+): T | undefined {
+  if (loaded === undefined && current === undefined) return undefined;
+  return { ...(loaded ?? {}), ...(current ?? {}) } as T;
+}
+
+type ChatVariableState = Pick<
+  Chat,
+  "scriptstate" | "GLGlobalVariables" | "useLocallySetGlobalVariables"
+>;
+
+function mergeLoadedChatVariables(
+  target: Chat,
+  loaded: ChatVariableState,
+  current: ChatVariableState,
+): void {
+  const scriptstate = mergeVariableRecord(
+    loaded.scriptstate,
+    current.scriptstate,
+  );
+  const globalVariables = mergeVariableRecord(
+    loaded.GLGlobalVariables,
+    current.GLGlobalVariables,
+  );
+
+  if (scriptstate === undefined) delete target.scriptstate;
+  else target.scriptstate = scriptstate;
+  if (globalVariables === undefined) delete target.GLGlobalVariables;
+  else target.GLGlobalVariables = globalVariables;
+  const localGlobalVariableMode =
+    current.useLocallySetGlobalVariables !== undefined
+      ? current.useLocallySetGlobalVariables
+      : loaded.useLocallySetGlobalVariables;
+  if (localGlobalVariableMode === undefined) {
+    delete target.useLocallySetGlobalVariables;
+  } else {
+    target.useLocallySetGlobalVariables = localGlobalVariableMode;
+  }
+}
+
 function mergeLoadedChats(loaded: Chat[], current: Chat[]): Chat[] {
   if (current.length === 0) return loaded;
 
@@ -60,7 +102,13 @@ function mergeLoadedChats(loaded: Chat[], current: Chat[]): Chat[] {
     currentIds.add(chat.id);
     const persisted = loadedById.get(chat.id);
     if (!persisted) return chat;
+    const loadedVariableState: ChatVariableState = {
+      scriptstate: persisted.scriptstate,
+      GLGlobalVariables: persisted.GLGlobalVariables,
+      useLocallySetGlobalVariables: persisted.useLocallySetGlobalVariables,
+    };
     Object.assign(persisted, chat);
+    mergeLoadedChatVariables(persisted, loadedVariableState, chat);
     return persisted;
   });
 
@@ -337,6 +385,13 @@ class CharacterStore
         );
         if (chat.id !== lastChatId) {
           lastChatId = chat.id;
+          lastChatFingerprint = fingerprint;
+          return;
+        }
+        // A lazy summary is not authoritative for omitted metadata. In
+        // particular, reading a variable must never turn an absent scriptstate
+        // into a deletion that races the pending storage hydration.
+        if (chat.detailsLoaded === false) {
           lastChatFingerprint = fingerprint;
           return;
         }
@@ -969,7 +1024,18 @@ class CharacterStore
           options.full ? undefined : { messageLimit: initialMessagePageSize },
         );
         if (fullChat && chat) {
+          const deferredVariableEdit =
+            chat.detailsLoaded === false &&
+            (chat.scriptstate !== undefined ||
+              chat.GLGlobalVariables !== undefined ||
+              chat.useLocallySetGlobalVariables !== undefined);
+          const currentVariableState = {
+            scriptstate: chat.scriptstate,
+            GLGlobalVariables: chat.GLGlobalVariables,
+            useLocallySetGlobalVariables: chat.useLocallySetGlobalVariables,
+          } satisfies ChatVariableState;
           Object.assign(chat, fullChat);
+          mergeLoadedChatVariables(chat, fullChat, currentVariableState);
           chat.messagesLoaded = true;
           chat.messageOffset ??= 0;
           chat.messageTotal ??= chat.message.length;
@@ -982,6 +1048,10 @@ class CharacterStore
           // back to SQLite as a false-positive change.
           if (char && this.characters[this.selectedId] === char) {
             this.observeActive();
+          }
+          if (deferredVariableEdit) {
+            this.dirtyChats.add(chatId);
+            this.scheduleCommit();
           }
         }
       } catch (error) {

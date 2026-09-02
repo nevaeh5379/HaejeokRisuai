@@ -180,6 +180,14 @@ test('returns "null" for undefined variables', () => {
   );
 });
 
+test("reading an undefined variable does not initialize chat state", () => {
+  const chat = characterStore.characters[0].chats[0];
+  delete chat.scriptstate;
+
+  expect(getChatVar("missing")).toBe("null");
+  expect(chat.scriptstate).toBeUndefined();
+});
+
 test("stores toggle values in the current chat when local toggles are enabled", () => {
   const chat = characterStore.characters[0].chats[0];
   settingsStore.state.globalChatVariables.toggle_demo = "global";
